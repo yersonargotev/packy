@@ -6,7 +6,7 @@
 
 Coordinate focused Codex subagents
 
-- Version: `1.0.1`
+- Version: `1.0.2`
 - Supported surfaces: `codex`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
@@ -25,7 +25,7 @@ Coordinate focused Codex subagents
 - `mit` — Preserve the upstream Orchestrate MIT license and attribution
   - Role: `notice`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 
 ### Skill
 
