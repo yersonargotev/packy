@@ -14,11 +14,14 @@ work; the primary deliverable remains independent from memory availability.
    failure as task evidence and diagnose it within scope. For other tasks,
    continue without memory when the CLI is unavailable or fails.
 2. Run `engram current-project --json` before the first project-scoped operation.
-3. Use the returned project only when it is exact. When `project` is empty,
-   ask the user to select from `available_projects` for an explicit memory
-   task; otherwise skip memory and continue. Similar names are not an exact
-   selection.
-4. Pass the exact project to every command that accepts it: use
+3. Treat detection and write authority separately. For reads, a non-empty weak
+   result remains useful best-effort scope. For writes, use the result as exact
+   only when `project_strength` is `strong` or `explicit`. Never turn a weak
+   `git_root`, `git_child`, or `dir_basename` result into authority by copying it
+   into `--project`. Ask the user for the exact project on an explicit memory
+   task; otherwise skip the write and continue. When `project` is empty, ask the
+   user to select from `available_projects` for an explicit memory task.
+4. Pass an exact project to every command that accepts it: use
    `--project <project>` for project-scoped flags and positional `[project]` for
    `engram context`.
 5. Use `--json` for agent operations. Parse successful stdout as JSON and
@@ -31,34 +34,33 @@ skipped without delaying the primary deliverable.
 
 Recall only when prior project knowledge could materially change the work.
 
-1. Generate one Task briefing from the current task intent:
+1. Search one lookup intent with one to three distinctive anchors:
 
    ```bash
-   engram context "<project>" --brief --task "<current task intent>" \
-     --scope project --limit 5 --json
+   engram search "<narrow query>" --project "<project>" \
+     --scope project --match-mode all --limit 5 --json
    ```
 
-2. Account for every selected memory, Selection evidence, diagnostic, and
-   omission before acting. Use `engram get <id> --json` when relation context
-   could change the task.
-3. Run a targeted search when the briefing command is unavailable, when a
-   material memory is expected but absent, or when the task needs an exact
-   known fact. Search one lookup intent with one to three distinctive anchors:
+2. Inspect every result's complete content, state, pin, and relations. Use
+   `engram get <id> --json` when relation context could change the task.
+3. If a material memory is expected and the first search is empty or too broad,
+   refine once. Remove generic terms, choose a more distinctive anchor, or
+   switch to `--match-mode any`; keep the same lookup intent.
+4. Request chronological context separately when recent session continuity can
+   materially change the work:
 
    ```bash
-   engram search "<narrow query>" --project "<project>" --match-mode all --limit 5 --json
+   engram context "<project>" --scope project --json
    ```
 
-4. Inspect every search result's content, state, pin, and relations. If a
-   material memory is expected and the first search is empty, refine once.
-   Remove generic terms or switch to `--match-mode any`; keep the same intent.
-5. Prefer the newest applicable memory while honoring `supersedes`,
+5. Account for every relevant search and context result before acting. Prefer
+   the newest applicable memory while honoring `supersedes`,
    `superseded_by`, and `conflicts_with` relations. Surface unresolved conflicts
    instead of silently choosing one side.
 
 Use `--all-projects` only for an explicitly cross-project request. Complete
-recall when every relevant briefing/search result and diagnostic is accounted
-for, or when the briefing and up to two targeted searches are empty.
+recall when every relevant result is accounted for, or when up to two targeted
+searches are empty and chronological context was either unnecessary or checked.
 
 ## Preserve
 

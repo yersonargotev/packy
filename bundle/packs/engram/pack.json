@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "engram",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "Upstream Engram CLI memory workflows for agent work",
   "selectable": true,
   "surfaces": [
