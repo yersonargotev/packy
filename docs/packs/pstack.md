@@ -6,7 +6,7 @@
 
 Apply pstack's reviewed portable engineering workflows and principles
 
-- Version: `1.0.0`
+- Version: `1.0.1`
 - Supported surfaces: `claude`, `codex`, `opencode`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
@@ -18,7 +18,7 @@ Apply pstack's reviewed portable engineering workflows and principles
 - `pstack-mit` — Preserve the upstream pstack MIT license and attribution
   - Role: `notice`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:pstack-mit`
 
 ### Skill
 
@@ -129,12 +129,7 @@ Apply pstack's reviewed portable engineering workflows and principles
 
 ## Pack exclusions
 
-- `agents` — Cursor agent metadata and invocation semantics require a future surface-specific adaptation
-- `automations` — Benny requires Cursor Automations, Slack actions, tracker adapters, and unsupported host lifecycle behavior
-- `cursor-metadata` — Cursor marketplace metadata is not a Packy capability
-- `guides` — Upstream guides describe Cursor-only installation, routing, models, transcripts, and automation behavior
-- `source-maintenance` — Upstream repository metadata and source documentation remain inert
-- `unselected-skills` — These skills require adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope
+None.
 
 ## Inspect and preview
 

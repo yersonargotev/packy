@@ -10,7 +10,7 @@ This index is generated from the bundled selectable Pack manifests. Use `packy s
 - [issue-delivery](issue-delivery.md) — Deliver issues through policy-driven or Matt-configured workflows (version `1.1.1`)
 - [matty](matty.md) — Matty workflow (version `1.1.0`)
 - [orchestrate](orchestrate.md) — Coordinate focused Codex subagents (version `1.0.1`)
-- [pstack](pstack.md) — Apply pstack's reviewed portable engineering workflows and principles (version `1.0.0`)
+- [pstack](pstack.md) — Apply pstack's reviewed portable engineering workflows and principles (version `1.0.1`)
 
 ## Pack authoring vocabulary
 
