@@ -181,7 +181,7 @@ res.status(500).json({
 | 3 | Injection | Parameterized queries, input validation |
 | 4 | Insecure Design | Threat modeling, spec-driven development |
 | 5 | Security Misconfiguration | Security headers, minimal permissions, audit deps |
-| 6 | Vulnerable Components | `npm audit`, keep deps updated, minimal deps |
+| 6 | Vulnerable Components | The ecosystem's dependency audit (`npm audit`, `pip-audit`, ...), keep deps updated, minimal deps |
 | 7 | Auth Failures | Strong passwords, rate limiting, session management |
 | 8 | Data Integrity Failures | Verify updates/dependencies, signed artifacts |
 | 9 | Logging Failures | Log security events, don't log secrets |
