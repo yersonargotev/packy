@@ -1,0 +1,109 @@
+{
+  "schema_version": "engram-protocol-contract-v1",
+  "protocol": {
+    "version": 1,
+    "identity_fields": [
+      "host",
+      "session_id",
+      "root_turn_id"
+    ],
+    "checkpoint_dispositions": [
+      "saved",
+      "needs_review",
+      "skipped"
+    ],
+    "checkpoint_persistence": "local_only",
+    "minimum_tools": [
+      "mem_current_project",
+      "mem_search",
+      "mem_get_observation",
+      "mem_checkpoint",
+      "mem_checkpoint_status"
+    ],
+    "recall_default": "agent_initiated",
+    "recall_limits": {
+      "initial_candidates": 5,
+      "followup_candidates": 10,
+      "candidate_utf8_bytes": 4096,
+      "content_utf8_bytes": 16384,
+      "continuation": "explicit_position"
+    },
+    "capture_default": "disabled",
+    "required_vocabulary": [
+      "Protocol contract",
+      "Memory checkpoint",
+      "Root user turn",
+      "Activation cue",
+      "Compatibility tuple",
+      "Terminal Memory commit",
+      "Content capture"
+    ],
+    "cue_markers": [
+      "<!-- engram:checkpoint-cue:start -->",
+      "<!-- engram:checkpoint-cue:end -->"
+    ],
+    "mcp_initialization_guidance": [
+      "Engram provides persistent memory that survives across sessions and compactions.",
+      "Terminal Memory commit",
+      "operation=preflight",
+      "Mixed Memory",
+      "saved",
+      "needs_review",
+      "skipped(no_durable_knowledge)",
+      "Current user intent, maintained source, and runtime evidence override Memory.",
+      "Automatic Recall requires strong or explicit project identity.",
+      "Initial Recall: five candidates, 4 KiB, at most one reformulation.",
+      "Deliberate follow-up: at most ten candidates; broad scope requires explicit relevance.",
+      "Complete Recall: one selected result, at most 16 KiB, with explicit positioned continuation.",
+      "Unavailable Recall fails open without blocking the task.",
+      "mem_current_project",
+      "mem_search",
+      "mem_get_observation",
+      "mem_checkpoint",
+      "mem_checkpoint_status"
+    ],
+    "checkpoint_descriptions": {
+      "mem_checkpoint": "Preflight prospective Memories without writes, or record the terminal Memory checkpoint for one settled root user turn. Record saved with settled Memories, needs_review with exactly one proposal plus optional settled Memories, or skipped with reason=no_durable_knowledge.",
+      "mem_checkpoint_status": "Inspect the terminal Memory checkpoint for one exact root user turn."
+    }
+  },
+  "distributions": {
+    "managed_pack": {
+      "version": "3.3.0",
+      "skill_sha256": "5e8e94eeea4dc6fb2d389999f0de92b1182784f6700bb89332f1040295c0b3a9",
+      "legacy_compatible": true,
+      "supported_protocol": {
+        "minimum": 1,
+        "maximum": 1
+      }
+    },
+    "engram_binary": {
+      "legacy_compatible": true,
+      "supported_protocol": {
+        "minimum": 1,
+        "maximum": 1
+      }
+    },
+    "codex_plugin": {
+      "version": "0.1.7",
+      "legacy_compatible": true,
+      "supported_protocol": {
+        "minimum": 1,
+        "maximum": 1
+      }
+    }
+  },
+  "legacy_compatibility": {
+    "managed_pack": {
+      "version": "3.1.2",
+      "sha256": "2b570eda04db214ed496d14c09d287f5b1c0750dc2f0ff1928b8b314e257e20c"
+    },
+    "engram_binary": {
+      "version": "3.0.0"
+    },
+    "codex_plugin": {
+      "version": "0.1.5",
+      "sha256": "b3ee231a8ba88ae54b018365af392d1976b1e8a02c2ea8c60d9e4464f824c4ed"
+    }
+  }
+}
