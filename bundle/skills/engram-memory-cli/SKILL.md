@@ -2,7 +2,7 @@
 name: engram-memory-cli
 description: Recall and finalize durable project Memory with Engram's CLI. Use for history-dependent work, Terminal Memory commits, explicit curation, or material loss-risk handoffs. Scope this skill to project memory.
 metadata:
-  version: "3.3.0"
+  version: "3.3.1"
 ---
 
 # Engram Memory CLI
@@ -110,16 +110,34 @@ never synthesize a replacement identity.
      --root-turn-id '<root-turn>' --disposition saved --project '<project>' \
      --memory-json '{"title":"<concise title>","content":"What: <durable result>\nWhy: <future value>\nWhere: <subsystem or path>\nLearned: <non-obvious implication>"}' --json
    ```
-4. Use `skipped --reason no_durable_knowledge` only when the rubric finds no
-   durable result. Use `needs_review` with one redacted `--proposal-json` when
-   potentially durable knowledge cannot be admitted directly; include any
-   independently settled `--memory-id` or `--memory-json` values in the same
-   Mixed Memory checkpoint.
-5. Treat `created` and same-disposition `already_recorded` as success. Surface
-   conflicts and persistence failures rather than changing the disposition.
+4. When the rubric finds no durable result, record `skipped` with identity,
+   reason, optional Recall feedback, and JSON output:
 
-Complete normal preservation only when the exact root-turn identity has one
-terminal result.
+   ```bash
+   engram checkpoint record --host '<host>' --session-id '<session>' \
+     --root-turn-id '<root-turn>' --disposition skipped \
+     --reason no_durable_knowledge --json
+   ```
+
+   Project and Memory reference flags belong to `saved` and `needs_review`, not
+   `skipped`.
+5. Use `needs_review` with one redacted `--proposal-json` when potentially
+   durable knowledge cannot be admitted directly; include any independently
+   settled `--memory-id` or `--memory-json` values in the same Mixed Memory
+   checkpoint.
+6. Normal finalization ends on the `checkpoint record` result. `created` or a
+   same-disposition `already_recorded` proves completion. For a structured
+   argument or semantic error, correct the input and replay the same identity
+   and disposition. Surface conflicts and persistence failures without changing
+   the disposition.
+7. Reserve `checkpoint status` for explicit inspection or an ambiguous process
+   or transport outcome where `checkpoint record` returned no result. In that
+   recovery branch, `checkpoint_not_found` means the terminal result remains
+   absent, so issue the corrected `checkpoint record` call.
+
+Complete normal preservation when the exact root-turn identity returns `created`
+or same-disposition `already_recorded`; the record result is the routine
+completion signal.
 
 ## Independent save
 
