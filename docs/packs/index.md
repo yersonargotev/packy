@@ -5,7 +5,7 @@
 This index is generated from the bundled selectable Pack manifests. Use `packy show <pack>` to inspect the same descriptive inventory in the CLI.
 
 - [addy](addy.md) — Addy agent skills (version `2.0.3`)
-- [argote](argote.md) — Yerson Argote's engineering and communication guidance (version `1.0.2`)
+- [argote](argote.md) — Yerson Argote's engineering and communication guidance (version `1.0.3`)
 - [engram](engram.md) — Upstream Engram CLI memory workflows for agent work (version `3.1.0`)
 - [issue-delivery](issue-delivery.md) — Deliver issues through policy-driven or Matt-configured workflows (version `1.1.1`)
 - [matty](matty.md) — Matty workflow (version `1.1.0`)
