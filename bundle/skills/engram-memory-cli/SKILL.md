@@ -1,31 +1,31 @@
 ---
 name: engram-memory-cli
-description: Use Engram's CLI for durable project memory. Activate before project work when a prior decision, root cause, convention, configuration, or discovery could change the approach; after work that produced durable project knowledge; or when inspecting, reviewing, pinning, diagnosing, relating, or merging Engram memories. Keep personal memory outside this skill.
+description: Recall and preserve durable project memory with Engram's CLI. Use before work that may depend on prior project knowledge, after work produces durable project knowledge, or for explicit memory curation. Scope this skill to project memory.
 ---
 
 # Engram Memory CLI
 
-Use Engram as a local-first, best-effort project memory. Keep the primary task
-deliverable independent from memory availability.
+Engram is local-first, best-effort project memory. Memory can inform or preserve
+work; the primary deliverable remains independent from memory availability.
 
-## Establish the project
+## Best-effort protocol
 
-1. Confirm that `engram` is available. Continue the primary task without memory
-   when it is missing or fails.
+1. Confirm that `engram` is available. For tasks about Engram itself, keep a CLI
+   failure as task evidence and diagnose it within scope. For other tasks,
+   continue without memory when the CLI is unavailable or fails.
 2. Run `engram current-project --json` before the first project-scoped operation.
-3. Use the returned project when it is unambiguous. When `project` is empty,
-   present `available_projects` and obtain an exact selection before writing or
-   searching. Never infer a project from a similar name.
-4. Pass the exact project explicitly when the working directory does not
-   resolve to it: use `--project <project>` for project-scoped commands and the
-   positional `[project]` argument for `engram context`.
+3. Use the returned project only when it is exact. When `project` is empty,
+   ask the user to select from `available_projects` for an explicit memory
+   task; otherwise skip memory and continue. Similar names are not an exact
+   selection.
+4. Pass the exact project to every command that accepts it: use
+   `--project <project>` for project-scoped flags and positional `[project]` for
+   `engram context`.
+5. Use `--json` for agent operations. Parse successful stdout as JSON and
+   non-zero stderr as `{"code","message","details?"}`.
 
-Use `--json` for agent and script operations. Parse successful stdout as JSON;
-parse non-zero stderr as `{"code","message","details?"}`. Treat failures as
-best-effort unless the user's task is explicitly about Engram itself.
-
-Complete project establishment when one exact project is known or memory use has
-been skipped without blocking the primary task.
+Complete this protocol when one exact project is known or memory use has been
+skipped without delaying the primary deliverable.
 
 ## Recall
 
@@ -38,10 +38,9 @@ Recall only when prior project knowledge could materially change the work.
      --scope project --limit 5 --json
    ```
 
-2. Inspect every selected memory's complete content and Selection evidence.
-   Honor typed diagnostics, especially selected conflicts and input or output
-   omissions. Use `engram get <id> --json` when relation context could change
-   the task.
+2. Account for every selected memory, Selection evidence, diagnostic, and
+   omission before acting. Use `engram get <id> --json` when relation context
+   could change the task.
 3. Run a targeted search when the briefing command is unavailable, when a
    material memory is expected but absent, or when the task needs an exact
    known fact. Search one lookup intent with one to three distinctive anchors:
@@ -58,32 +57,37 @@ Recall only when prior project knowledge could materially change the work.
    instead of silently choosing one side.
 
 Use `--all-projects` only for an explicitly cross-project request. Complete
-recall when the briefing and any warranted targeted search account for relevant
-context, or when the briefing and up to two targeted searches are empty.
+recall when every relevant briefing/search result and diagnostic is accounted
+for, or when the briefing and up to two targeted searches are empty.
 
 ## Preserve
 
-Preserve after the primary work has a durable result. Save one concise
-observation for one durable subject; split only genuinely independent subjects.
+Preserve after the primary work produces reusable project knowledge.
 
-1. Exclude transcripts, progress updates, speculation, secrets, personal facts,
-   and facts already obvious from maintained project documentation.
-2. Write structured content with `What`, `Why`, and `Where`:
+1. Save only non-obvious decisions, root causes, conventions, configurations,
+   or discoveries. Content must be safe to persist, free of secrets and personal
+   facts, and not already maintained in project documentation.
+2. Save one concise subject with `What`, `Why`, `Where`, and `Learned`:
 
    ```bash
-   engram save "<concise title>" "What: <durable result>
+   engram save --title "<concise title>" --content "What: <durable result>
    Why: <future value>
-   Where: <subsystem or path>" --project "<project>" --json
+   Where: <subsystem or path>
+   Learned: <non-obvious implication>" --project "<project>" --json
    ```
 
-3. Add `--topic-key <stable-key>` only for an evolving subject that later
+3. An older binary without named save inputs can return `unknown_flag`. Retry
+   once with `engram save "<same title>" "<same content>" ...` only when the
+   JSON error names `--title` or `--content`; preserve every remaining flag.
+   Other failures follow the best-effort protocol.
+4. Add `--topic-key <stable-key>` only for an evolving subject that later
    observations should update or group. When a stable key is warranted but
    unclear, run:
 
    ```bash
    engram suggest-topic-key --title "<title>" --content "<content>" --json
    ```
-4. Inspect `judgment_required` after every save. For each candidate, inspect the
+5. Inspect `judgment_required` after every save. For each candidate, inspect the
    candidate memory and resolve its own `judgment_id` as described in
    [references/curation.md](references/curation.md).
 
@@ -93,7 +97,6 @@ work completes without a write.
 
 ## Curate
 
-Read [references/curation.md](references/curation.md) when the task requires
-editing or reviewing memories, changing local context priority, recording
-relations, diagnosing the store, or merging project names. Follow its preview
-and confirmation gates for destructive or multi-record changes.
+For editing, review, context priority, relations, diagnosis, or project merges,
+read [references/curation.md](references/curation.md). Load it only for those
+branches and follow every completion and authorization gate it defines.

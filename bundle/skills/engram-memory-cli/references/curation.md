@@ -36,8 +36,9 @@ human judgment.
 ## Resolve relations
 
 Allowed relations are `related`, `compatible`, `scoped`, `conflicts_with`,
-`supersedes`, and `not_conflict`. The `not_conflict` verdict succeeds without
-persisting a relation.
+`supersedes`, and `not_conflict`. Resolving an existing candidate with
+`engram conflicts judge` persists every verdict, including `not_conflict`.
+Direct comparison has a different contract, described below.
 
 When `engram save --json` returns candidates:
 
@@ -56,10 +57,12 @@ When `engram save --json` returns candidates:
 
 Use `engram conflicts compare <id-a> <id-b> --relation <relation> --confidence
 <0..1> --reasoning "<brief reasoning>" --json` only after reaching a verdict.
-It records the supplied verdict and never performs semantic analysis.
+It never performs semantic analysis. It persists `related`, `compatible`,
+`scoped`, `conflicts_with`, and `supersedes`; `not_conflict` succeeds with an
+empty `sync_id` and no new relation.
 
-Complete relation work when each intended pair has an evidence-backed verdict
-or is explicitly awaiting the user's decision.
+Complete relation work when every candidate and intended direct-comparison pair
+has an evidence-backed verdict or is explicitly awaiting the user's decision.
 
 ## Diagnose
 
@@ -83,9 +86,9 @@ are exact:
 
 2. Report the preview counts and obtain explicit authorization.
 3. Apply the same source and target set with `--yes --json`.
-4. Verify the returned canonical name and updated observation, session, and
-   prompt counts.
+4. Verify the returned canonical name and every updated observation, session,
+   prompt, and shadow-run count.
 
 Complete a merge only after preview and applied results agree on the intended
-source set. Never substitute heuristic `projects consolidate` for an exact
-agent-driven merge.
+source set. Use `projects merge` for exact agent-driven work; reserve heuristic
+`projects consolidate` for an explicit user request.
