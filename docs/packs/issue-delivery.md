@@ -6,7 +6,7 @@
 
 Deliver issues through policy-driven or Matt-configured workflows
 
-- Version: `1.1.1`
+- Version: `1.1.2`
 - Supported surfaces: `codex`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `gh`, `git`
@@ -15,7 +15,7 @@ Deliver issues through policy-driven or Matt-configured workflows
 
 ### Notice
 
-- `mit` — Preserve the upstream issue-delivery MIT license and attribution
+- `mit` — Preserve the Issue Delivery MIT license and attribution
   - Role: `notice`
   - Dependencies: None.
   - Notices: None.
