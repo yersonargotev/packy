@@ -1,6 +1,7 @@
 {
+  "schema_version": 1,
   "id": "addy",
-  "version": "1.1.0",
+  "version": "2.0.3",
   "description": "Addy agent skills",
   "selectable": true,
   "surfaces": [
@@ -13,6 +14,14 @@
     "surface-authorization"
   ],
   "external_requirements": [],
+  "origins": [
+    {
+      "id": "addy-agent-skills",
+      "repository": "addyosmani/agent-skills",
+      "commit": "5a5ea45e806f82273549fd85e60adb95d55f510d",
+      "revision": "5a5ea45e806f82273549fd85e60adb95d55f510d"
+    }
+  ],
   "resources": [
     {
       "bindings": [
@@ -168,7 +177,15 @@
       "tools": [
         "browser"
       ],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "agents/code-reviewer.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -327,7 +344,15 @@
       "tools": [
         "browser"
       ],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "agents/security-auditor.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -485,7 +510,15 @@
       "tools": [
         "browser"
       ],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "agents/test-engineer.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -644,7 +677,15 @@
       "tools": [
         "browser"
       ],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "agents/web-performance-auditor.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [],
@@ -652,9 +693,17 @@
       "id": "accessibility-checklist",
       "kind": "asset",
       "requires": [],
-      "source": "references/accessibility-checklist.md",
+      "source": "assets/accessibility-checklist.md",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "references/accessibility-checklist.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [],
@@ -662,9 +711,17 @@
       "id": "definition-of-done",
       "kind": "asset",
       "requires": [],
-      "source": "references/definition-of-done.md",
+      "source": "assets/definition-of-done.md",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "references/definition-of-done.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [],
@@ -672,9 +729,17 @@
       "id": "observability-checklist",
       "kind": "asset",
       "requires": [],
-      "source": "references/observability-checklist.md",
+      "source": "assets/observability-checklist.md",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "references/observability-checklist.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [],
@@ -682,9 +747,17 @@
       "id": "orchestration-patterns",
       "kind": "asset",
       "requires": [],
-      "source": "references/orchestration-patterns.md",
+      "source": "assets/orchestration-patterns.md",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "references/orchestration-patterns.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [],
@@ -692,9 +765,17 @@
       "id": "performance-checklist",
       "kind": "asset",
       "requires": [],
-      "source": "references/performance-checklist.md",
+      "source": "assets/performance-checklist.md",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "references/performance-checklist.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [],
@@ -702,9 +783,17 @@
       "id": "security-checklist",
       "kind": "asset",
       "requires": [],
-      "source": "references/security-checklist.md",
+      "source": "assets/security-checklist.md",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "references/security-checklist.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [],
@@ -712,9 +801,17 @@
       "id": "testing-patterns",
       "kind": "asset",
       "requires": [],
-      "source": "references/testing-patterns.md",
+      "source": "assets/testing-patterns.md",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "references/testing-patterns.md",
+        "relationship": "exact-copy"
+      }
     },
     {
       "arguments": {
@@ -806,7 +903,15 @@
       ],
       "source": "commands/build.toml",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "commands/build.toml",
+        "relationship": "exact-copy"
+      }
     },
     {
       "arguments": {
@@ -898,7 +1003,15 @@
       ],
       "source": "commands/code-simplify.toml",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "commands/code-simplify.toml",
+        "relationship": "exact-copy"
+      }
     },
     {
       "arguments": {
@@ -990,7 +1103,15 @@
       ],
       "source": "commands/planning.toml",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "commands/planning.toml",
+        "relationship": "exact-copy"
+      }
     },
     {
       "arguments": {
@@ -1087,7 +1208,15 @@
       ],
       "source": "commands/review.toml",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "commands/review.toml",
+        "relationship": "exact-copy"
+      }
     },
     {
       "arguments": {
@@ -1194,7 +1323,15 @@
       ],
       "source": "commands/ship.toml",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "commands/ship.toml",
+        "relationship": "exact-copy"
+      }
     },
     {
       "arguments": {
@@ -1286,7 +1423,15 @@
       ],
       "source": "commands/spec.toml",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "commands/spec.toml",
+        "relationship": "exact-copy"
+      }
     },
     {
       "arguments": {
@@ -1383,7 +1528,15 @@
       ],
       "source": "commands/test.toml",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "commands/test.toml",
+        "relationship": "exact-copy"
+      }
     },
     {
       "arguments": {
@@ -1480,7 +1633,15 @@
       ],
       "source": "commands/webperf.toml",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "commands/webperf.toml",
+        "relationship": "exact-copy"
+      }
     },
     {
       "attribution": "Copyright 2025 Addy Osmani; synthetic Packy acceptance fixture derived from addyosmani/agent-skills",
@@ -1490,9 +1651,17 @@
       "kind": "notice",
       "license": "MIT",
       "requires": [],
-      "source": "LICENSE",
+      "source": "notices/addy-mit",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "LICENSE",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1567,7 +1736,15 @@
       "requires": [],
       "source": "skills/api-and-interface-design",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/api-and-interface-design",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1642,7 +1819,15 @@
       "requires": [],
       "source": "skills/browser-testing-with-devtools",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/browser-testing-with-devtools",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1717,7 +1902,15 @@
       "requires": [],
       "source": "skills/ci-cd-and-automation",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/ci-cd-and-automation",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1749,14 +1942,6 @@
                   {
                     "kind": "asset",
                     "id": "orchestration-patterns"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "performance-checklist"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "security-checklist"
                   },
                   {
                     "kind": "asset",
@@ -1792,7 +1977,15 @@
       "requires": [],
       "source": "skills/code-review-and-quality",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/code-review-and-quality",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -1867,7 +2060,15 @@
       "requires": [],
       "source": "skills/code-simplification",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/code-simplification",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1942,7 +2143,15 @@
       "requires": [],
       "source": "skills/context-engineering",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/context-engineering",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -2017,7 +2226,15 @@
       "requires": [],
       "source": "skills/debugging-and-error-recovery",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/debugging-and-error-recovery",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -2092,7 +2309,15 @@
       "requires": [],
       "source": "skills/deprecation-and-migration",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/deprecation-and-migration",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -2167,7 +2392,15 @@
       "requires": [],
       "source": "skills/documentation-and-adrs",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/documentation-and-adrs",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -2195,10 +2428,6 @@
                   {
                     "kind": "asset",
                     "id": "observability-checklist"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "orchestration-patterns"
                   },
                   {
                     "kind": "asset",
@@ -2242,7 +2471,15 @@
       "requires": [],
       "source": "skills/doubt-driven-development",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/doubt-driven-development",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -2259,10 +2496,6 @@
               "claude_composite_skill": {
                 "dependencies": [],
                 "references": [
-                  {
-                    "kind": "asset",
-                    "id": "accessibility-checklist"
-                  },
                   {
                     "kind": "asset",
                     "id": "definition-of-done"
@@ -2317,7 +2550,15 @@
       "requires": [],
       "source": "skills/frontend-ui-engineering",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/frontend-ui-engineering",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -2392,7 +2633,15 @@
       "requires": [],
       "source": "skills/git-workflow-and-versioning",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/git-workflow-and-versioning",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -2467,7 +2716,15 @@
       "requires": [],
       "source": "skills/idea-refine",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/idea-refine",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -2487,10 +2744,6 @@
                   {
                     "kind": "asset",
                     "id": "accessibility-checklist"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "definition-of-done"
                   },
                   {
                     "kind": "asset",
@@ -2542,7 +2795,15 @@
       "requires": [],
       "source": "skills/incremental-implementation",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/incremental-implementation",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -2617,7 +2878,15 @@
       "requires": [],
       "source": "skills/interview-me",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/interview-me",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -2641,10 +2910,6 @@
                   {
                     "kind": "asset",
                     "id": "definition-of-done"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "observability-checklist"
                   },
                   {
                     "kind": "asset",
@@ -2692,7 +2957,15 @@
       "requires": [],
       "source": "skills/observability-and-instrumentation",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/observability-and-instrumentation",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -2724,10 +2997,6 @@
                   {
                     "kind": "asset",
                     "id": "orchestration-patterns"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "performance-checklist"
                   },
                   {
                     "kind": "asset",
@@ -2767,7 +3036,15 @@
       "requires": [],
       "source": "skills/performance-optimization",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/performance-optimization",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -2787,10 +3064,6 @@
                   {
                     "kind": "asset",
                     "id": "accessibility-checklist"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "definition-of-done"
                   },
                   {
                     "kind": "asset",
@@ -2842,7 +3115,15 @@
       "requires": [],
       "source": "skills/planning-and-task-breakdown",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/planning-and-task-breakdown",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -2881,10 +3162,6 @@
                   },
                   {
                     "kind": "asset",
-                    "id": "security-checklist"
-                  },
-                  {
-                    "kind": "asset",
                     "id": "testing-patterns"
                   }
                 ]
@@ -2917,7 +3194,15 @@
       "requires": [],
       "source": "skills/security-and-hardening",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/security-and-hardening",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -2936,27 +3221,11 @@
                 "references": [
                   {
                     "kind": "asset",
-                    "id": "accessibility-checklist"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "definition-of-done"
-                  },
-                  {
-                    "kind": "asset",
                     "id": "observability-checklist"
                   },
                   {
                     "kind": "asset",
                     "id": "orchestration-patterns"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "performance-checklist"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "security-checklist"
                   },
                   {
                     "kind": "asset",
@@ -2992,7 +3261,15 @@
       "requires": [],
       "source": "skills/shipping-and-launch",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/shipping-and-launch",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -3067,7 +3344,15 @@
       "requires": [],
       "source": "skills/source-driven-development",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/source-driven-development",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -3142,7 +3427,15 @@
       "requires": [],
       "source": "skills/spec-driven-development",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/spec-driven-development",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -3182,10 +3475,6 @@
                   {
                     "kind": "asset",
                     "id": "security-checklist"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "testing-patterns"
                   }
                 ]
               }
@@ -3217,7 +3506,15 @@
       "requires": [],
       "source": "skills/test-driven-development",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/test-driven-development",
+        "relationship": "adapted"
+      }
     },
     {
       "bindings": [
@@ -3237,10 +3534,6 @@
                   {
                     "kind": "asset",
                     "id": "accessibility-checklist"
-                  },
-                  {
-                    "kind": "asset",
-                    "id": "definition-of-done"
                   },
                   {
                     "kind": "asset",
@@ -3300,34 +3593,15 @@
       ],
       "source": "skills/using-agent-skills",
       "surface_exclusions": [],
-      "conflicts": []
-    }
-  ],
-  "exclusions": [
-    {
-      "id": "runtime-hooks",
-      "reason": "hooks are not Addy 1.0.0 runtime resources",
-      "source_paths": [
-        "hooks/sdd-cache-post.sh",
-        "hooks/sdd-cache-pre.sh",
-        "hooks/session-start.sh",
-        "hooks/simplify-ignore.sh"
-      ]
-    },
-    {
-      "id": "source-maintenance",
-      "reason": "source-only setup, manifests, symlinks, evaluators, validators, tests, and CI remain inert",
-      "source_paths": [
-        ".agents/**",
-        ".claude-plugin/**",
-        ".codex-plugin/**",
-        ".github/**",
-        ".opencode/skills",
-        "AGENTS.md",
-        "evals/**",
-        "scripts/**",
-        "tests/**"
-      ]
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "addy-agent-skills",
+        "path": "skills/using-agent-skills",
+        "relationship": "adapted"
+      }
     }
   ]
 }

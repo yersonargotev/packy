@@ -6,7 +6,7 @@
 
 Addy agent skills
 
-- Version: `1.1.0`
+- Version: `2.0.3`
 - Supported surfaces: `claude`, `codex`, `opencode`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
@@ -18,22 +18,22 @@ Addy agent skills
 - `code-reviewer` — Reviews code for correctness, readability, architecture, security, and performance
   - Role: `operational`
   - Dependencies: `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-agent-document`
 - `security-auditor` — Audits code for vulnerabilities, threat exposure, and secure coding practices
   - Role: `operational`
   - Dependencies: `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-agent-document`
 - `test-engineer` — Designs test strategies, writes tests, and evaluates coverage and test quality
   - Role: `operational`
   - Dependencies: `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-agent-document`
 - `web-performance-auditor` — Audits web performance, Core Web Vitals, loading, rendering, and network behavior
   - Role: `operational`
   - Dependencies: `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-agent-document`
 
 ### Asset
@@ -41,80 +41,80 @@ Addy agent skills
 - `accessibility-checklist` — Provides a quick-reference checklist for WCAG 2.1 AA accessibility compliance
   - Role: `supporting`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `definition-of-done` — Defines the project-wide quality bar that every completed change must satisfy
   - Role: `supporting`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `observability-checklist` — Provides a quick-reference checklist for instrumenting observable production systems
   - Role: `supporting`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `orchestration-patterns` — Catalogs endorsed agent orchestration patterns and anti-patterns
   - Role: `supporting`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `performance-checklist` — Provides a quick-reference checklist for web application performance
   - Role: `supporting`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `security-checklist` — Provides a quick-reference checklist for web application security
   - Role: `supporting`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `testing-patterns` — Provides common testing patterns for unit, integration, component, API, and end-to-end tests
   - Role: `supporting`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 
 ### Command
 
 - `build` — Implements planned tasks incrementally with testing, verification, and commits
   - Role: `operational`
   - Dependencies: `asset:definition-of-done`, `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
   - Codex degradation: `codex-command-as-workflow-skill`
 - `code-simplify` — Simplifies code for clarity and maintainability without changing behavior
   - Role: `operational`
   - Dependencies: `asset:definition-of-done`, `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
   - Codex degradation: `codex-command-as-workflow-skill`
 - `plan` — Breaks work into small, verifiable tasks with acceptance criteria and dependency ordering
   - Role: `operational`
   - Dependencies: `asset:definition-of-done`, `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
   - Codex degradation: `codex-command-as-workflow-skill`
 - `review` — Reviews code for correctness, readability, architecture, security, and performance
   - Role: `operational`
   - Dependencies: `agent:code-reviewer`, `asset:definition-of-done`, `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
   - Codex degradation: `codex-command-as-workflow-skill`
 - `ship` — Runs specialist pre-launch checks and synthesizes a go or no-go decision
   - Role: `operational`
   - Dependencies: `agent:code-reviewer`, `agent:security-auditor`, `agent:test-engineer`, `asset:definition-of-done`, `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
   - Codex degradation: `codex-command-as-workflow-skill`
 - `spec` — Creates a structured specification before implementation begins
   - Role: `operational`
   - Dependencies: `asset:definition-of-done`, `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
   - Codex degradation: `codex-command-as-workflow-skill`
 - `test` — Runs a test-driven workflow from failing tests through implementation and verification
   - Role: `operational`
   - Dependencies: `agent:test-engineer`, `asset:definition-of-done`, `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
   - Codex degradation: `codex-command-as-workflow-skill`
 - `webperf` — Runs a web performance audit through the web-performance-auditor persona
   - Role: `operational`
   - Dependencies: `agent:web-performance-auditor`, `asset:definition-of-done`, `skill:using-agent-skills`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
   - Codex degradation: `codex-command-as-workflow-skill`
 
@@ -123,135 +123,134 @@ Addy agent skills
 - `mit` — Preserves Addy Osmani's MIT license and attribution for the reviewed resources
   - Role: `notice`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 
 ### Skill
 
 - `api-and-interface-design` — Guides stable API, module boundary, and public interface design
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `browser-testing-with-devtools` — Tests and diagnoses browser behavior through Chrome DevTools MCP
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `ci-cd-and-automation` — Automates CI/CD pipelines, quality gates, test runners, and deployment strategies
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `code-review-and-quality` — Guides multi-axis code review across correctness, readability, architecture, security, and performance
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `code-simplification` — Simplifies code for clarity and maintainability while preserving behavior
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `context-engineering` — Optimizes agent context, rules, and task-relevant information
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `debugging-and-error-recovery` — Guides systematic root-cause debugging and recovery from failures
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `deprecation-and-migration` — Guides safe deprecation, system replacement, and user migration
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `documentation-and-adrs` — Records architectural decisions and durable engineering context
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `doubt-driven-development` — Subjects non-trivial decisions to fresh-context adversarial review
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `frontend-ui-engineering` — Builds accessible, responsive, production-quality user interfaces
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `git-workflow-and-versioning` — Guides Git workflows, commits, branches, releases, and semantic versioning
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `idea-refine` — Refines raw ideas into actionable concepts through divergent and convergent thinking
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `incremental-implementation` — Delivers changes as small, working, independently verifiable increments
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `interview-me` — Clarifies underlying user intent through a focused one-question-at-a-time interview
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `observability-and-instrumentation` — Instruments production code with logging, metrics, tracing, and alerting
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `performance-optimization` — Optimizes frontend, backend, query, and database performance
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `planning-and-task-breakdown` — Breaks requirements into ordered, implementable, and verifiable tasks
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `security-and-hardening` — Hardens code against vulnerabilities in input, identity, storage, and integrations
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `shipping-and-launch` — Prepares production launches with readiness, rollout, monitoring, and rollback checks
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `source-driven-development` — Grounds implementation decisions in authoritative documentation
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `spec-driven-development` — Creates structured specifications before significant implementation work
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `test-driven-development` — Guides implementation through failing tests, minimal code, and verification
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 - `using-agent-skills` — Discovers and invokes the agent skill appropriate to a task
   - Role: `operational`
   - Dependencies: `asset:accessibility-checklist`, `asset:definition-of-done`, `asset:observability-checklist`, `asset:orchestration-patterns`, `asset:performance-checklist`, `asset:security-checklist`, `asset:testing-patterns`
-  - Notices: None.
+  - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
 
 ## Pack exclusions
 
-- `runtime-hooks` — hooks are not Addy 1.0.0 runtime resources
-- `source-maintenance` — source-only setup, manifests, symlinks, evaluators, validators, tests, and CI remain inert
+None.
 
 ## Inspect and preview
 
