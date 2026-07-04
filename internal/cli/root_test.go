@@ -193,6 +193,21 @@ func TestResolvePathsFallsBackForRelativeXDGConfigHome(t *testing.T) {
 	}
 }
 
+func TestResolvePathsDefaultsToMattyOwnedSkillBundle(t *testing.T) {
+	home := t.TempDir()
+	paths, err := ResolvePaths(MapEnv{"HOME": home})
+	if err != nil {
+		t.Fatalf("ResolvePaths failed: %v", err)
+	}
+	wantSuffix := filepath.Join("bundle", "skills")
+	if !strings.HasSuffix(paths.SkillSourceRoot, wantSuffix) {
+		t.Fatalf("SkillSourceRoot = %q, want suffix %q", paths.SkillSourceRoot, wantSuffix)
+	}
+	if strings.Contains(paths.SkillSourceRoot, filepath.Join("skills", "skills")) {
+		t.Fatalf("SkillSourceRoot should not default to external skills clone: %q", paths.SkillSourceRoot)
+	}
+}
+
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

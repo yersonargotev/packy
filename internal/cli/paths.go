@@ -58,7 +58,7 @@ func resolveSkillSourceRoot(env Env) (string, error) {
 		return "", fmt.Errorf("resolve skill source root: %w", err)
 	}
 	for dir := cwd; ; dir = filepath.Dir(dir) {
-		candidate := filepath.Join(dir, "skills", "skills")
+		candidate := filepath.Join(dir, "bundle", "skills")
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			return filepath.Abs(candidate)
 		}
@@ -67,5 +67,5 @@ func resolveSkillSourceRoot(env Env) (string, error) {
 			break
 		}
 	}
-	return filepath.Abs(filepath.Join(cwd, "skills", "skills"))
+	return filepath.Abs(filepath.Join(cwd, "bundle", "skills"))
 }
