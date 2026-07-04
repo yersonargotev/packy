@@ -9,19 +9,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yersonargotev/matty/internal/opencode"
 	"github.com/yersonargotev/matty/internal/prompt"
 )
 
 type ActionKind string
 
 const (
-	ActionWriteFile         ActionKind = "write-file"
-	ActionWriteCodexPrompt  ActionKind = "write-codex-prompt"
-	ActionSymlink           ActionKind = "symlink"
-	ActionRemove            ActionKind = "remove"
-	ActionRemoveCodexPrompt ActionKind = "remove-codex-prompt"
-	ActionRun               ActionKind = "run"
-	ActionSkip              ActionKind = "skip"
+	ActionWriteFile            ActionKind = "write-file"
+	ActionWriteCodexPrompt     ActionKind = "write-codex-prompt"
+	ActionWriteOpenCodePrompt  ActionKind = "write-opencode-prompt"
+	ActionSymlink              ActionKind = "symlink"
+	ActionRemove               ActionKind = "remove"
+	ActionRemoveCodexPrompt    ActionKind = "remove-codex-prompt"
+	ActionRemoveOpenCodePrompt ActionKind = "remove-opencode-prompt"
+	ActionRun                  ActionKind = "run"
+	ActionSkip                 ActionKind = "skip"
 )
 
 // PlannedAction is a human-reportable unit of work. Issue 02 introduced the
@@ -66,7 +69,7 @@ func BuildInstallPlan(paths Paths, checkedAt time.Time, engramInstalled bool) (P
 		actions = append(actions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"install", "gentleman-programming/tap/engram"}, Description: "install Engram via Homebrew"})
 	}
 	actions = append(actions, engramSetupActions()...)
-	actions = append(actions, codexPromptWriteAction(paths))
+	actions = append(actions, codexPromptWriteAction(paths), openCodePromptWriteAction(paths))
 	return Plan{Actions: actions, State: DesiredState(paths, checkedAt, managed)}, nil
 }
 
@@ -79,19 +82,23 @@ func BuildUpdatePlan(paths Paths, checkedAt time.Time) (Plan, error) {
 	actions = append(actions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"update"}, Description: "refresh Homebrew formula metadata"})
 	actions = append(actions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"upgrade", "engram"}, Description: "update Engram via Homebrew"})
 	for _, action := range plan.Actions {
-		if action.Kind == ActionRun || action.Kind == ActionWriteCodexPrompt {
+		if action.Kind == ActionRun || action.Kind == ActionWriteCodexPrompt || action.Kind == ActionWriteOpenCodePrompt {
 			continue
 		}
 		actions = append(actions, action)
 	}
 	actions = append(actions, engramSetupActions()...)
-	actions = append(actions, codexPromptWriteAction(paths))
+	actions = append(actions, codexPromptWriteAction(paths), openCodePromptWriteAction(paths))
 	plan.Actions = actions
 	return plan, nil
 }
 
 func codexPromptWriteAction(paths Paths) PlannedAction {
 	return PlannedAction{Kind: ActionWriteCodexPrompt, Path: paths.CodexPromptFile, Description: "write Codex Matty prompt markers"}
+}
+
+func openCodePromptWriteAction(paths Paths) PlannedAction {
+	return PlannedAction{Kind: ActionWriteOpenCodePrompt, Path: paths.OpenCodeConfigFile, Target: paths.OpenCodePromptFile, Description: "write OpenCode Matty prompt reference"}
 }
 
 func engramSetupActions() []PlannedAction {
@@ -151,6 +158,7 @@ func BuildUninstallPlan(paths Paths, state State) Plan {
 	}
 	actions = append(actions, PlannedAction{Kind: ActionRemove, Path: paths.StateFile, Description: "remove Matty state metadata"})
 	actions = append(actions, PlannedAction{Kind: ActionRemoveCodexPrompt, Path: paths.CodexPromptFile, Description: "remove Codex Matty prompt markers"})
+	actions = append(actions, PlannedAction{Kind: ActionRemoveOpenCodePrompt, Path: paths.OpenCodeConfigFile, Target: paths.OpenCodePromptFile, Description: "remove OpenCode Matty prompt reference"})
 	return Plan{Actions: actions, State: state}
 }
 
@@ -162,6 +170,11 @@ func PrintPlan(w io.Writer, plan Plan) error {
 		switch action.Kind {
 		case ActionWriteFile, ActionWriteCodexPrompt, ActionRemove, ActionRemoveCodexPrompt:
 			_, err := fmt.Fprintf(w, " (%s)\n", action.Path)
+			if err != nil {
+				return err
+			}
+		case ActionWriteOpenCodePrompt, ActionRemoveOpenCodePrompt:
+			_, err := fmt.Fprintf(w, " (%s -> %s)\n", action.Path, action.Target)
 			if err != nil {
 				return err
 			}
@@ -210,6 +223,12 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 				return nil, err
 			}
 			warnings = append(warnings, result.Warnings...)
+		case ActionWriteOpenCodePrompt:
+			result, err := opencode.Write(action.Path, action.Target)
+			if err != nil {
+				return nil, err
+			}
+			warnings = append(warnings, result.Warnings...)
 		case ActionRun:
 			if err := runner.Run(ctx, action.Command, action.Args...); err != nil {
 				return nil, actionRunError(action, err)
@@ -238,7 +257,7 @@ func actionRunError(action PlannedAction, err error) error {
 
 func ApplyUninstallPlan(_ context.Context, paths Paths, plan Plan) error {
 	for _, action := range plan.Actions {
-		if action.Kind != ActionRemove && action.Kind != ActionRemoveCodexPrompt {
+		if action.Kind != ActionRemove && action.Kind != ActionRemoveCodexPrompt && action.Kind != ActionRemoveOpenCodePrompt {
 			continue
 		}
 		if action.Path == paths.StateFile {
@@ -249,6 +268,12 @@ func ApplyUninstallPlan(_ context.Context, paths Paths, plan Plan) error {
 		}
 		if action.Kind == ActionRemoveCodexPrompt {
 			if err := prompt.RemoveCodex(action.Path); err != nil {
+				return err
+			}
+			continue
+		}
+		if action.Kind == ActionRemoveOpenCodePrompt {
+			if err := opencode.Remove(action.Path, action.Target); err != nil {
 				return err
 			}
 			continue

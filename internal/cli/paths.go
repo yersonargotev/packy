@@ -9,13 +9,15 @@ import (
 // Paths contains every global path Matty v0 will manage or inspect. Keeping
 // this derived from injected Env makes command tests independent from real HOME.
 type Paths struct {
-	HomeDir         string
-	ConfigHome      string
-	MattyDir        string
-	StateFile       string
-	AgentSkillsDir  string
-	SkillSourceRoot string
-	CodexPromptFile string
+	HomeDir            string
+	ConfigHome         string
+	MattyDir           string
+	StateFile          string
+	AgentSkillsDir     string
+	SkillSourceRoot    string
+	CodexPromptFile    string
+	OpenCodeConfigFile string
+	OpenCodePromptFile string
 }
 
 func ResolvePaths(env Env) (Paths, error) {
@@ -35,13 +37,15 @@ func ResolvePaths(env Env) (Paths, error) {
 		return Paths{}, err
 	}
 	return Paths{
-		HomeDir:         home,
-		ConfigHome:      configHome,
-		MattyDir:        mattyDir,
-		StateFile:       filepath.Join(mattyDir, "config.json"),
-		AgentSkillsDir:  filepath.Join(home, ".agents", "skills"),
-		SkillSourceRoot: skillSourceRoot,
-		CodexPromptFile: filepath.Join(home, ".codex", "AGENTS.md"),
+		HomeDir:            home,
+		ConfigHome:         configHome,
+		MattyDir:           mattyDir,
+		StateFile:          filepath.Join(mattyDir, "config.json"),
+		AgentSkillsDir:     filepath.Join(home, ".agents", "skills"),
+		SkillSourceRoot:    skillSourceRoot,
+		CodexPromptFile:    filepath.Join(home, ".codex", "AGENTS.md"),
+		OpenCodeConfigFile: filepath.Join(configHome, "opencode", "opencode.json"),
+		OpenCodePromptFile: filepath.Join(configHome, "opencode", "matty.md"),
 	}, nil
 }
 
