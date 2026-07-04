@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "engram": {
+      "args": [
+        "mcp"
+      ],
+      "command": "/opt/homebrew/bin/engram"
+    }
+  }
+}
