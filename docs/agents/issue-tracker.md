@@ -1,6 +1,8 @@
 # Issue tracker: Local Markdown
 
-Issues and PRDs for this repo live as markdown files in `.scratch/`.
+Issues and PRDs for active planning can live as markdown files in `.scratch/`.
+Durable product and architecture decisions should be migrated to `docs/` before
+temporary planning folders are removed.
 
 ## Conventions
 
@@ -9,6 +11,16 @@ Issues and PRDs for this repo live as markdown files in `.scratch/`.
 - Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
 - Triage state is recorded as a `Status:` line near the top of each issue file
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
+
+## Archiving completed planning
+
+When a `.scratch/<feature-slug>/` effort is complete, keep durable information
+in repo docs instead of relying on scratch files forever:
+
+- Product scope and user-facing decisions go under `docs/product/`.
+- Architecture decisions go under `docs/adr/`.
+- Future work and unresolved fog go in `docs/roadmap.md` or a focused planning doc.
+- After migration, the completed `.scratch/<feature-slug>/` directory can be deleted.
 
 ## When a skill says "publish to the issue tracker"
 
