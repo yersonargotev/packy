@@ -42,9 +42,10 @@ changing `~/.local/share/matty`. If the default Installed Source is missing or
 stale for the running binary, the dry-run should fail with guidance to run
 `matty init` rather than repairing the checkout itself.
 
-Follow-up implementation issues: none for v0. Existing behavior already keeps
-`matty update` scoped to Engram/workflow refresh (`brew update`,
-`brew upgrade engram`, skill links, prompts, state) and the package-install
-smoke test covers update dry-run non-mutation against the sandboxed Installed
-Source. Future release-note work can document this in the first public tag
-announcement, but it is not a separate implementation issue.
+Follow-up implementation issue: [12](12-validate-stale-installed-source-before-update.md)
+should add an explicit stale Installed Source guard before `matty update` and
+`matty update --dry-run` plan from the default package-installed bundle. Existing
+behavior already keeps `matty update` scoped to Engram/workflow refresh
+(`brew update`, `brew upgrade engram`, skill links, prompts, state), and the
+package-install smoke test covers update dry-run non-mutation against the
+sandboxed Installed Source; ticket 12 closes the remaining stale-check gap.

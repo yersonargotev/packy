@@ -39,11 +39,11 @@ Standing constraints:
 - Release workflow implemented — `.github/workflows/release.yml` publishes `v0.*` tags or manually selected existing tags by building `dist/*`, proving token-backed Homebrew tap update access, creating the GitHub Release with generated notes if needed, uploading assets, then pushing the prepared tap commit. See [08](issues/08-add-release-workflow-and-tap-update.md).
 - Installable release docs added — `docs/release.md` documents maintainer publishing, `HOMEBREW_TAP_TOKEN`, first-release checklist, sandboxed package-install smoke expectations, and Linux artifact support boundaries; README quickstart documents the user Homebrew path through `matty init` and `matty install`. See [09](issues/09-document-installable-release.md).
 - Package-install smoke implemented — `internal/release/package_install_smoke_test.go` builds a local release-like binary, runs it outside the repo with temp `HOME`/`XDG_CONFIG_HOME`, initializes a local Source fixture, verifies install/update/uninstall dry-run and apply paths plus doctor, and stubs `brew`/`engram` calls. See [10](issues/10-package-install-smoke-test.md).
-- Update vs upgrade semantics decided — `matty update` remains a managed workflow/Engram refresh and never upgrades the Matty binary or mutates the Installed Source; package users upgrade via Homebrew or GitHub Release artifact replacement, then rerun `matty init` to align the Installed Source. No `matty upgrade` command is needed for v0. See [11](issues/11-decide-update-vs-upgrade-semantics.md).
+- Update vs upgrade semantics decided — `matty update` remains a managed workflow/Engram refresh and never upgrades the Matty binary or mutates the Installed Source; package users upgrade via Homebrew or GitHub Release artifact replacement, then rerun `matty init` to align the Installed Source. No `matty upgrade` command is needed for v0; follow-up [12](issues/12-validate-stale-installed-source-before-update.md) should add explicit stale-source validation before update planning. See [11](issues/11-decide-update-vs-upgrade-semantics.md).
 
 ## Frontier
 
-Tickets 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, and 11 are resolved. The next frontier is the lowest-numbered remaining open, unblocked installable-roadmap ticket.
+Tickets 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, and 11 are resolved. The next frontier is [12](issues/12-validate-stale-installed-source-before-update.md).
 
 ## Fog
 
