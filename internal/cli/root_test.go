@@ -752,6 +752,103 @@ func TestUninstallRemovesOnlyManagedSymlinks(t *testing.T) {
 	}
 }
 
+func TestEndToEndSandboxLifecyclePreservesGentleAIAndRealHome(t *testing.T) {
+	opts, runner, home := sandboxOptions(t)
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("resolve real home: %v", err)
+	}
+	if home == realHome {
+		t.Fatalf("sandbox HOME unexpectedly equals real HOME %q", realHome)
+	}
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatalf("ResolvePaths failed: %v", err)
+	}
+	for _, path := range []string{paths.StateFile, paths.CodexPromptFile, paths.OpenCodeConfigFile, paths.OpenCodePromptFile, paths.AgentSkillsDir} {
+		if strings.HasPrefix(path, realHome+string(os.PathSeparator)) {
+			t.Fatalf("sandbox path %q points inside real HOME %q", path, realHome)
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(paths.CodexPromptFile), 0o700); err != nil {
+		t.Fatalf("mkdir codex config: %v", err)
+	}
+	codexOriginal := "# Existing Codex\n\n<!-- gentle-ai:persona -->\nkeep gentle codex\n<!-- /gentle-ai:persona -->\n"
+	if err := os.WriteFile(paths.CodexPromptFile, []byte(codexOriginal), 0o600); err != nil {
+		t.Fatalf("write codex fixture: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.OpenCodeConfigFile), 0o700); err != nil {
+		t.Fatalf("mkdir opencode config: %v", err)
+	}
+	openCodeOriginal := `{"plugin":["gentle-ai"],"instructions":["CONTRIBUTING.md"]}` + "\n"
+	if err := os.WriteFile(paths.OpenCodeConfigFile, []byte(openCodeOriginal), 0o600); err != nil {
+		t.Fatalf("write opencode fixture: %v", err)
+	}
+
+	out, err := executeCommand(t, NewRootCommand(opts), "install")
+	if err != nil {
+		t.Fatalf("install failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"warning: Codex prompt contains gentle-ai managed blocks",
+		"warning: OpenCode config contains gentle-ai references",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("install output missing %q:\n%s", want, out)
+		}
+	}
+	if !exists(paths.StateFile) || !exists(filepath.Join(paths.AgentSkillsDir, "ask-matt")) {
+		t.Fatalf("install did not create expected Matty-managed artifacts in sandbox")
+	}
+
+	beforeDoctor := snapshotTree(t, home)
+	runner.calls = nil
+	out, err = executeCommand(t, NewRootCommand(opts), "doctor")
+	if err != nil {
+		t.Fatalf("doctor failed: %v\n%s", err, out)
+	}
+	if afterDoctor := snapshotTree(t, home); afterDoctor != beforeDoctor {
+		t.Fatalf("doctor mutated sandbox:\nbefore:\n%s\nafter:\n%s", beforeDoctor, afterDoctor)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("doctor ran external commands: %#v", runner.calls)
+	}
+	for _, want := range []string{"PASS matty-state:", "WARN codex-conflict:", "WARN opencode-conflict:"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, out)
+		}
+	}
+
+	out, err = executeCommand(t, NewRootCommand(opts), "update")
+	if err != nil {
+		t.Fatalf("update failed: %v\n%s", err, out)
+	}
+	if got, want := callStrings(runner.calls), []string{"brew update", "brew upgrade engram", "engram setup codex", "engram setup opencode"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("update runner calls = %#v, want %#v", got, want)
+	}
+
+	out, err = executeCommand(t, NewRootCommand(opts), "uninstall")
+	if err != nil {
+		t.Fatalf("uninstall failed: %v\n%s", err, out)
+	}
+	if exists(paths.StateFile) || exists(filepath.Join(paths.AgentSkillsDir, "ask-matt")) || exists(paths.OpenCodePromptFile) {
+		t.Fatalf("uninstall left Matty-managed artifacts in sandbox")
+	}
+	if got := readFileString(t, paths.CodexPromptFile); got != codexOriginal {
+		t.Fatalf("uninstall did not restore Codex user/Gentle AI content:\ngot:\n%s\nwant:\n%s", got, codexOriginal)
+	}
+	openCodeAfter := readFileString(t, paths.OpenCodeConfigFile)
+	for _, want := range []string{"gentle-ai", "CONTRIBUTING.md"} {
+		if !strings.Contains(openCodeAfter, want) {
+			t.Fatalf("uninstall lost OpenCode user/Gentle AI content %q:\n%s", want, openCodeAfter)
+		}
+	}
+	if strings.Contains(openCodeAfter, paths.OpenCodePromptFile) {
+		t.Fatalf("uninstall left Matty OpenCode prompt reference:\n%s", openCodeAfter)
+	}
+}
+
 func TestInstallDryRunReportsUnmanagedSkipsWithoutMutating(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
 	paths, err := ResolvePaths(opts.Env)
