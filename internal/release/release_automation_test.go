@@ -125,6 +125,160 @@ func TestBuildReleaseArtifactsValidatesReleaseVersionBeforeBuilding(t *testing.T
 	})
 }
 
+func TestGenerateHomebrewFormulaUsesChecksummedReleaseArtifacts(t *testing.T) {
+	root := repoRoot(t)
+	checksumsPath := filepath.Join(t.TempDir(), "checksums.txt")
+	checksums := strings.Join([]string{
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  matty_v0.99.0_darwin_amd64",
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  matty_v0.99.0_darwin_arm64",
+		"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  matty_v0.99.0_linux_amd64",
+		"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  matty_v0.99.0_linux_arm64",
+	}, "\n") + "\n"
+	if err := os.WriteFile(checksumsPath, []byte(checksums), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(t.TempDir(), "Formula", "matty.rb")
+
+	cmd := exec.Command(
+		"bash",
+		filepath.Join(root, "scripts", "generate-homebrew-formula.sh"),
+		"--version", "v0.99.0",
+		"--checksums", checksumsPath,
+		"--out", outputPath,
+		"--repo", "yersonargotev/matty",
+		"--homepage", "https://github.com/yersonargotev/matty",
+		"--desc", "AI coding workflow installer",
+	)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("generate formula: %v\n%s", err, output)
+	}
+
+	formula, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(formula)
+	for _, want := range []string{
+		"class Matty < Formula",
+		`desc "AI coding workflow installer"`,
+		`homepage "https://github.com/yersonargotev/matty"`,
+		`version "0.99.0"`,
+		`url "https://github.com/yersonargotev/matty/releases/download/v0.99.0/matty_v0.99.0_darwin_amd64", using: :nounzip`,
+		`sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`,
+		`url "https://github.com/yersonargotev/matty/releases/download/v0.99.0/matty_v0.99.0_darwin_arm64", using: :nounzip`,
+		`sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`,
+		`url "https://github.com/yersonargotev/matty/releases/download/v0.99.0/matty_v0.99.0_linux_amd64", using: :nounzip`,
+		`sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"`,
+		`url "https://github.com/yersonargotev/matty/releases/download/v0.99.0/matty_v0.99.0_linux_arm64", using: :nounzip`,
+		`sha256 "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"`,
+		`bin.install downloaded_binary => "matty"`,
+		`system "#{bin}/matty", "--version"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("formula should contain %q\nformula:\n%s", want, text)
+		}
+	}
+	if got := strings.Count(text, "using: :nounzip"); got != len(supportedReleasePlatforms) {
+		t.Fatalf("formula should mark every raw executable URL as using: :nounzip; got %d occurrences in:\n%s", got, text)
+	}
+}
+
+func TestGenerateHomebrewFormulaFailsClearlyWhenChecksumEntryIsMissing(t *testing.T) {
+	root := repoRoot(t)
+	checksumsPath := filepath.Join(t.TempDir(), "checksums.txt")
+	checksums := strings.Join([]string{
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  matty_v0.99.0_darwin_amd64",
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  matty_v0.99.0_darwin_arm64",
+		"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  matty_v0.99.0_linux_amd64",
+	}, "\n") + "\n"
+	if err := os.WriteFile(checksumsPath, []byte(checksums), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(t.TempDir(), "Formula", "matty.rb")
+
+	cmd := exec.Command(
+		"bash",
+		filepath.Join(root, "scripts", "generate-homebrew-formula.sh"),
+		"--version", "v0.99.0",
+		"--checksums", checksumsPath,
+		"--out", outputPath,
+	)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("generate formula should fail when a checksum entry is missing\n%s", output)
+	}
+	if !strings.Contains(string(output), "missing checksum entry for matty_v0.99.0_linux_arm64") {
+		t.Fatalf("failure should name the missing artifact, got:\n%s", output)
+	}
+	if _, err := os.Stat(outputPath); !os.IsNotExist(err) {
+		t.Fatalf("formula should not be written with incomplete checksums; stat error: %v", err)
+	}
+}
+
+func TestGenerateHomebrewFormulaFailsClearlyWhenChecksumManifestIsNotExact(t *testing.T) {
+	root := repoRoot(t)
+
+	baseChecksums := []string{
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  matty_v0.99.0_darwin_amd64",
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  matty_v0.99.0_darwin_arm64",
+		"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  matty_v0.99.0_linux_amd64",
+		"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  matty_v0.99.0_linux_arm64",
+	}
+
+	tests := []struct {
+		name      string
+		extraLine string
+		wantError string
+	}{
+		{
+			name:      "rejects unexpected release artifact",
+			extraLine: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee  matty_v0.99.0_linux_386",
+			wantError: "unexpected checksum entry for matty_v0.99.0_linux_386",
+		},
+		{
+			name:      "rejects duplicate expected artifact",
+			extraLine: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  matty_v0.99.0_darwin_amd64",
+			wantError: "duplicate checksum entry for matty_v0.99.0_darwin_amd64",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checksumsPath := filepath.Join(t.TempDir(), "checksums.txt")
+			checksums := strings.Join(append(baseChecksums, tt.extraLine), "\n") + "\n"
+			if err := os.WriteFile(checksumsPath, []byte(checksums), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			outputPath := filepath.Join(t.TempDir(), "Formula", "matty.rb")
+
+			cmd := exec.Command(
+				"bash",
+				filepath.Join(root, "scripts", "generate-homebrew-formula.sh"),
+				"--version", "v0.99.0",
+				"--checksums", checksumsPath,
+				"--out", outputPath,
+			)
+			cmd.Dir = root
+			cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
+			output, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("generate formula should fail when the checksum manifest is not exact\n%s", output)
+			}
+			if !strings.Contains(string(output), tt.wantError) {
+				t.Fatalf("failure should explain the manifest mismatch, got:\n%s", output)
+			}
+			if _, err := os.Stat(outputPath); !os.IsNotExist(err) {
+				t.Fatalf("formula should not be written with invalid checksum manifest; stat error: %v", err)
+			}
+		})
+	}
+}
+
 func fakeGoBuild(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
