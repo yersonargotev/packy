@@ -3,11 +3,7 @@ package cli
 import "github.com/yersonargotev/matty/internal/skillbundle"
 
 func DiscoverManagedSkills(paths Paths) ([]ManagedSkill, error) {
-	skills, err := skillbundle.Discover(
-		paths.SkillSourceRoot,
-		paths.AgentSkillsDir,
-		skillbundle.WithMissingSourceHint(paths.SkillSourceMissingHint),
-	)
+	skills, err := skillbundle.Discover(paths.SkillSourceRoot, paths.AgentSkillsDir, paths.SkillSourceMissingHint)
 	if err != nil {
 		return nil, err
 	}

@@ -17,23 +17,6 @@ type Skill struct {
 	LinkPath   string
 }
 
-type discoverOptions struct {
-	missingSourceHint string
-}
-
-// DiscoverOption customizes bundle discovery without making callers own the
-// skill bundle shape or validation rules.
-type DiscoverOption func(*discoverOptions)
-
-// WithMissingSourceHint adds actionable guidance when sourceRoot itself is
-// missing. The bundle package still owns the source validation; callers only
-// provide context about how the selected source should be initialized.
-func WithMissingSourceHint(hint string) DiscoverOption {
-	return func(opts *discoverOptions) {
-		opts.missingSourceHint = hint
-	}
-}
-
 // MissingSourceError reports a selected bundle source that does not exist.
 type MissingSourceError struct {
 	Path string
@@ -50,13 +33,11 @@ func (err MissingSourceError) Error() string {
 // Discover returns Matty's v0 skill bundle from a Matty-owned source root.
 // The root is expected to contain engineering/, productivity/, and the selected
 // in-progress/ skills. Callers provide linkDir so this package owns the bundle
-// shape without knowing HOME or CLI state details.
-func Discover(sourceRoot, linkDir string, options ...DiscoverOption) ([]Skill, error) {
-	opts := discoverOptions{}
-	for _, option := range options {
-		option(&opts)
-	}
-	if err := requireSourceRoot(sourceRoot, opts); err != nil {
+// shape without knowing HOME or CLI state details. missingSourceHint adds
+// source-selection context to a MissingSourceError without moving validation out
+// of this package.
+func Discover(sourceRoot, linkDir, missingSourceHint string) ([]Skill, error) {
+	if err := requireSourceRoot(sourceRoot, missingSourceHint); err != nil {
 		return nil, err
 	}
 
@@ -92,7 +73,7 @@ func Discover(sourceRoot, linkDir string, options ...DiscoverOption) ([]Skill, e
 	return skills, nil
 }
 
-func requireSourceRoot(sourceRoot string, opts discoverOptions) error {
+func requireSourceRoot(sourceRoot, missingSourceHint string) error {
 	info, err := os.Stat(sourceRoot)
 	if err == nil {
 		if !info.IsDir() {
@@ -101,7 +82,7 @@ func requireSourceRoot(sourceRoot string, opts discoverOptions) error {
 		return nil
 	}
 	if os.IsNotExist(err) {
-		return MissingSourceError{Path: sourceRoot, Hint: opts.missingSourceHint}
+		return MissingSourceError{Path: sourceRoot, Hint: missingSourceHint}
 	}
 	return fmt.Errorf("inspect skill source %s: %w", sourceRoot, err)
 }
