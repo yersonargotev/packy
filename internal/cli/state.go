@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	mattyversion "github.com/yersonargotev/matty/internal/version"
 )
 
 const stateSchemaVersion = 1
@@ -73,7 +75,7 @@ func SaveState(path string, state State) error {
 func DesiredState(paths Paths, checkedAt time.Time, managedSkills []ManagedSkill) State {
 	return State{
 		SchemaVersion:      stateSchemaVersion,
-		MattyVersion:       version,
+		MattyVersion:       mattyversion.Value,
 		ManagedSkills:      append([]ManagedSkill(nil), managedSkills...),
 		ConfiguredSurfaces: append([]string(nil), defaultConfiguredSurfaces...),
 		Paths: StatePaths{

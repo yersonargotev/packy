@@ -6,9 +6,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	mattyversion "github.com/yersonargotev/matty/internal/version"
 )
-
-const version = "0.0.0-dev"
 
 // Options carries injectable process boundaries for tests and future command
 // implementations. The zero value uses the real OS environment and runner.
@@ -36,7 +35,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 		Short:         "Install and configure the Matty AI coding workflow",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       version,
+		Version:       mattyversion.Value,
 	}
 
 	root.AddCommand(

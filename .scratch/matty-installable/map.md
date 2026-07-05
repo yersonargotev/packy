@@ -30,14 +30,11 @@ Standing constraints:
 - v0 lifecycle exists — Matty already supports `install`, `doctor`, `update`, and `uninstall`, and sandbox smoke testing has passed.
 - Dots reference pattern — build raw cross-platform binaries, publish `checksums.txt`, generate a Homebrew formula from that manifest, prepare/dry-run tap update before GitHub Release mutation, then push the tap after release assets exist.
 - Package-installed source model — use `matty init` to clone the Matty Source of Truth into `~/.local/share/matty`, then resolve the default skill bundle from `~/.local/share/matty/bundle/skills`; `MATTY_SKILLS_SOURCE` stays a direct dev/test override. See `docs/adr/0002-package-installed-source-model.md`.
+- Release-injectable version package — `internal/version.Value` defaults to `dev` and can be overridden with `go build -ldflags "-X github.com/yersonargotev/matty/internal/version.Value=v0.x.y"`; `internal/cli` consumes that value for `matty --version` and state metadata. See [02](issues/02-add-version-package.md).
 
 ## Frontier
 
-Ticket 01 is resolved. The next frontier starts with
-[02 — Add release-injectable version package](issues/02-add-version-package.md)
-because version injection unblocks version-pinned `matty init` and release
-artifact generation. Ticket 07 is also unblocked, but lower priority by issue
-order.
+Tickets 01 and 02 are resolved. The next frontier is ticket 03 for package-installed source resolution because version injection is now available for version-pinned `matty init`. Ticket 07 is also unblocked, but lower priority by issue order.
 
 ## Fog
 

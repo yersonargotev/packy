@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	mattyversion "github.com/yersonargotev/matty/internal/version"
 )
 
 type fakeRunner struct {
@@ -92,6 +93,15 @@ func createSkillSource(t *testing.T) string {
 	return root
 }
 
+func withVersion(t *testing.T, value string) {
+	t.Helper()
+	previous := mattyversion.Value
+	mattyversion.Value = value
+	t.Cleanup(func() {
+		mattyversion.Value = previous
+	})
+}
+
 func TestHelpRendersForRootAndV0Subcommands(t *testing.T) {
 	tests := []struct {
 		name string
@@ -118,6 +128,32 @@ func TestHelpRendersForRootAndV0Subcommands(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVersionReportsDevByDefault(t *testing.T) {
+	withVersion(t, "dev")
+	opts, _, _ := sandboxOptions(t)
+
+	out, err := executeCommand(t, NewRootCommand(opts), "--version")
+	if err != nil {
+		t.Fatalf("version command failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "dev") {
+		t.Fatalf("version output missing dev:\n%s", out)
+	}
+}
+
+func TestVersionCanBeInjected(t *testing.T) {
+	withVersion(t, "v0.2.3")
+	opts, _, _ := sandboxOptions(t)
+
+	out, err := executeCommand(t, NewRootCommand(opts), "--version")
+	if err != nil {
+		t.Fatalf("version command failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "v0.2.3") {
+		t.Fatalf("version output missing injected version:\n%s", out)
 	}
 }
 
@@ -352,7 +388,7 @@ func TestInstallWritesSmallStateAndRunsEngramSetup(t *testing.T) {
 	if !found {
 		t.Fatal("expected state file to be written")
 	}
-	if state.SchemaVersion != stateSchemaVersion || state.MattyVersion != version {
+	if state.SchemaVersion != stateSchemaVersion || state.MattyVersion != mattyversion.Value {
 		t.Fatalf("unexpected state metadata: %#v", state)
 	}
 	if got, want := state.ConfiguredSurfaces, []string{"codex", "opencode"}; strings.Join(got, ",") != strings.Join(want, ",") {
