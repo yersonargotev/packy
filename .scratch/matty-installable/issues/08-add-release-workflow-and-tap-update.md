@@ -1,7 +1,7 @@
 # 08 — Add release workflow and tap update
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 05, 06
 
 ## Question

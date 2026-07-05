@@ -36,10 +36,11 @@ Standing constraints:
 - Release artifact builder implemented — `scripts/build-release-artifacts.sh` accepts exact `v0.x.y` tags, builds raw `matty_<version>_<goos>_<goarch>` binaries for supported Darwin/Linux architectures, injects `internal/version.Value` via ldflags, and writes `checksums.txt`. See [05](issues/05-add-release-artifact-builder.md).
 - Homebrew formula generator implemented — `scripts/generate-homebrew-formula.sh` emits the Matty formula from `checksums.txt`, validates supported release artifacts and checksums, installs the raw binary as `matty`, and includes a `matty --version` brew test. See [06](issues/06-add-homebrew-formula-generator.md).
 - CI workflow implemented — `.github/workflows/ci.yml` runs on pull requests and pushes to `main`, uses Go from `go.mod`, verifies Matty-owned Go formatting, runs `go vet ./...`, builds, and runs `go test ./...`. See [07](issues/07-add-ci-workflow.md).
+- Release workflow implemented — `.github/workflows/release.yml` publishes `v0.*` tags or manually selected existing tags by building `dist/*`, proving token-backed Homebrew tap update access, creating the GitHub Release with generated notes if needed, uploading assets, then pushing the prepared tap commit. See [08](issues/08-add-release-workflow-and-tap-update.md).
 
 ## Frontier
 
-Tickets 01, 02, 03, 04, 05, 06, and 07 are resolved. The next frontier is the lowest-numbered remaining open, unblocked installable-roadmap ticket.
+Tickets 01, 02, 03, 04, 05, 06, 07, and 08 are resolved. The next frontier is the lowest-numbered remaining open, unblocked installable-roadmap ticket.
 
 ## Fog
 

@@ -21,6 +21,131 @@ var supportedReleasePlatforms = []string{
 	"linux/arm64",
 }
 
+func TestReleaseWorkflowPublishesMattyArtifactsAndTapFormula(t *testing.T) {
+	root := repoRoot(t)
+	text := readReleaseWorkflow(t, root)
+
+	for _, want := range []string{
+		"workflow_dispatch:",
+		"tag:",
+		"push:",
+		"- 'v0.*'",
+		"actions/checkout@v5",
+		"fetch-depth: 0",
+		"actions/setup-go@v6",
+		"go-version-file: go.mod",
+		"git checkout --detach \"$tag\"",
+		"scripts/build-release-artifacts.sh",
+		"--out-dir dist",
+		"HOMEBREW_TAP_TOKEN",
+		"yersonargotev/homebrew-tap",
+		"scripts/generate-homebrew-formula.sh",
+		"--checksums dist/checksums.txt",
+		"--out homebrew-tap/Formula/matty.rb",
+		"--repo yersonargotev/matty",
+		"gh release upload",
+		"dist/* --clobber",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("release workflow should contain %q so GitHub Releases and the Homebrew tap stay in sync", want)
+		}
+	}
+}
+
+func TestReleaseWorkflowCreatesReleaseWithGeneratedNotes(t *testing.T) {
+	root := repoRoot(t)
+	step := releaseWorkflowStep(t, readReleaseWorkflow(t, root), "Create GitHub Release if needed")
+
+	if !strings.Contains(step, "gh release view") {
+		t.Fatalf("release creation step should be idempotent by checking whether the release exists; step:\n%s", step)
+	}
+	if !strings.Contains(step, "gh release create") {
+		t.Fatalf("release creation step should create the GitHub Release; step:\n%s", step)
+	}
+	if !strings.Contains(step, "--generate-notes") {
+		t.Fatalf("release creation should ask GitHub to generate per-tag notes; step:\n%s", step)
+	}
+	if strings.Contains(step, "--notes") {
+		t.Fatalf("release creation should not pass static release notes; step:\n%s", step)
+	}
+}
+
+func TestReleaseWorkflowProvesTapAccessBeforePublishingReleaseAssets(t *testing.T) {
+	root := repoRoot(t)
+	text := readReleaseWorkflow(t, root)
+
+	buildIndex := releaseWorkflowStepIndex(t, text, "Build release artifacts and checksums.txt", []string{
+		"scripts/build-release-artifacts.sh", "--out-dir dist",
+	})
+	requireTapTokenIndex := releaseWorkflowStepIndex(t, text, "Require Homebrew tap token", []string{
+		"HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}",
+		"HOMEBREW_TAP_TOKEN is required",
+		"yersonargotev/homebrew-tap",
+	})
+	tapCheckoutIndex := releaseWorkflowStepIndex(t, text, "Check out Homebrew tap", []string{
+		"uses: actions/checkout@v5",
+		"repository: yersonargotev/homebrew-tap",
+		"path: homebrew-tap",
+		"token: ${{ secrets.HOMEBREW_TAP_TOKEN }}",
+	})
+	formulaIndex := releaseWorkflowStepIndex(t, text, "Generate Homebrew formula from release checksums", []string{
+		"scripts/generate-homebrew-formula.sh",
+		"--checksums dist/checksums.txt",
+		"--out homebrew-tap/Formula/matty.rb",
+	})
+	prepareTapIndex := releaseWorkflowStepIndex(t, text, "Prepare Homebrew tap formula update", []string{
+		"id: prepare_tap",
+		"working-directory: homebrew-tap",
+		`git config user.name "github-actions[bot]"`,
+		`git config user.email "github-actions[bot]@users.noreply.github.com"`,
+		"git add Formula/matty.rb",
+		"git diff --cached --quiet",
+		`echo "changed=false" >> "$GITHUB_OUTPUT"`,
+		`echo "changed=true" >> "$GITHUB_OUTPUT"`,
+		`git commit -m "feat: update matty formula to ${RELEASE_TAG}"`,
+	})
+	tapPushAccessProofIndex := releaseWorkflowStepIndex(t, text, "Prove Homebrew tap push permission", []string{
+		"working-directory: homebrew-tap",
+		"git push --dry-run origin HEAD:main",
+	})
+	createReleaseIndex := releaseWorkflowStepIndex(t, text, "Create GitHub Release if needed", []string{
+		"GH_TOKEN: ${{ github.token }}",
+		"gh release create",
+		"--generate-notes",
+	})
+	uploadIndex := releaseWorkflowStepIndex(t, text, "Upload release assets", []string{
+		"GH_TOKEN: ${{ github.token }}",
+		"gh release upload",
+		"dist/* --clobber",
+	})
+	pushTapIndex := releaseWorkflowStepIndex(t, text, "Push prepared Homebrew tap formula update", []string{
+		"working-directory: homebrew-tap",
+		"TAP_UPDATE_CHANGED: ${{ steps.prepare_tap.outputs.changed }}",
+		`[[ "$TAP_UPDATE_CHANGED" != "true" ]]`,
+		"git push origin HEAD:main",
+	})
+
+	if strings.Contains(releaseWorkflowStep(t, text, "Prove Homebrew tap push permission"), "git commit") {
+		t.Fatalf("tap push proof must dry-run the prepared local commit without creating another commit")
+	}
+	if strings.Contains(releaseWorkflowStep(t, text, "Push prepared Homebrew tap formula update"), "git push --dry-run") {
+		t.Fatalf("final tap push must be mutating, not another dry run")
+	}
+
+	assertReleaseWorkflowStepBefore(t, buildIndex, formulaIndex, "formula generation must consume freshly built artifacts and dist/checksums.txt")
+	assertReleaseWorkflowStepBefore(t, requireTapTokenIndex, tapCheckoutIndex, "the workflow must reject a missing HOMEBREW_TAP_TOKEN before falling back to anonymous tap checkout")
+	assertReleaseWorkflowStepBefore(t, requireTapTokenIndex, createReleaseIndex, "a missing HOMEBREW_TAP_TOKEN must fail before creating a GitHub Release")
+	assertReleaseWorkflowStepBefore(t, requireTapTokenIndex, uploadIndex, "a missing HOMEBREW_TAP_TOKEN must fail before re-uploading release assets")
+	assertReleaseWorkflowStepBefore(t, tapCheckoutIndex, formulaIndex, "the tap checkout must exist before writing Formula/matty.rb into it")
+	assertReleaseWorkflowStepBefore(t, formulaIndex, prepareTapIndex, "the generated formula must be staged before preparing a local tap commit")
+	assertReleaseWorkflowStepBefore(t, prepareTapIndex, tapPushAccessProofIndex, "the workflow must dry-run push the already-prepared local tap state, not the untouched checkout")
+	assertReleaseWorkflowStepBefore(t, tapPushAccessProofIndex, createReleaseIndex, "token-backed tap push permission must be proven before creating a GitHub Release")
+	assertReleaseWorkflowStepBefore(t, tapPushAccessProofIndex, uploadIndex, "token-backed tap push permission must be proven before re-uploading release assets")
+	assertReleaseWorkflowStepBefore(t, uploadIndex, pushTapIndex, "the tap update must not be published until release assets exist")
+	assertReleaseWorkflowStepBefore(t, tapPushAccessProofIndex, pushTapIndex, "token-backed tap push permission must be proven before the mutating tap push")
+	assertReleaseWorkflowStepBefore(t, prepareTapIndex, pushTapIndex, "the final tap push must publish the already-prepared commit instead of creating a new commit after assets upload")
+}
+
 func TestBuildReleaseArtifactsCreatesChecksummedSupportedPlatforms(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compiles release artifacts")
@@ -252,6 +377,50 @@ func TestGenerateHomebrewFormulaFailsClearlyWhenChecksumManifestIsNotExact(t *te
 				t.Fatalf("formula should not be written with invalid checksum manifest; stat error: %v", err)
 			}
 		})
+	}
+}
+
+func readReleaseWorkflow(t *testing.T, root string) string {
+	t.Helper()
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(workflow)
+}
+
+func releaseWorkflowStepIndex(t *testing.T, workflow, name string, requiredFragments []string) int {
+	t.Helper()
+	step := releaseWorkflowStep(t, workflow, name)
+	for _, fragment := range requiredFragments {
+		if !strings.Contains(step, fragment) {
+			t.Fatalf("release workflow step %q should contain %q\nstep:\n%s", name, fragment, step)
+		}
+	}
+	return strings.Index(workflow, "- name: "+name)
+}
+
+func releaseWorkflowStep(t *testing.T, workflow, name string) string {
+	t.Helper()
+	start := strings.Index(workflow, "- name: "+name)
+	if start < 0 {
+		t.Fatalf("release workflow missing step %q", name)
+	}
+	rest := workflow[start+len("- name: "+name):]
+	end := strings.Index(rest, "\n      - name: ")
+	if end < 0 {
+		return workflow[start:]
+	}
+	return workflow[start : start+len("- name: "+name)+end]
+}
+
+func assertReleaseWorkflowStepBefore(t *testing.T, earlier, later int, reason string) {
+	t.Helper()
+	if earlier < 0 || later < 0 {
+		t.Fatalf("cannot compare missing workflow steps: earlier=%d later=%d", earlier, later)
+	}
+	if earlier >= later {
+		t.Fatalf("release workflow ordering violation: %s", reason)
 	}
 }
 
