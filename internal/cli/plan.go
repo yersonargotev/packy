@@ -62,6 +62,7 @@ type PlannedAction struct {
 	Command     string
 	Args        []string
 	Description string
+	skipReason  skillLinkStatus
 }
 
 type Plan struct {
@@ -187,7 +188,7 @@ var skillLinkBehaviors = map[skillLinkStatus]skillLinkBehavior{
 	},
 	skillLinkUnmanagedPath: {
 		plannedAction: func(skill ManagedSkill, _ skillLinkInspection) PlannedAction {
-			return PlannedAction{Kind: ActionSkip, Path: skill.LinkPath, Target: skill.SourcePath, Description: "preserve unmanaged path for skill " + skill.Name}
+			return PlannedAction{Kind: ActionSkip, Path: skill.LinkPath, Target: skill.SourcePath, Description: "preserve unmanaged path for skill " + skill.Name, skipReason: skillLinkUnmanagedPath}
 		},
 		doctorProblem: func(skill ManagedSkill, _ skillLinkInspection) (skillLinkDoctorProblem, bool) {
 			return skillLinkDoctorProblem{detail: skill.Name + " is not a symlink"}, true
@@ -195,7 +196,7 @@ var skillLinkBehaviors = map[skillLinkStatus]skillLinkBehavior{
 	},
 	skillLinkUnmanagedSymlink: {
 		plannedAction: func(skill ManagedSkill, link skillLinkInspection) PlannedAction {
-			return PlannedAction{Kind: ActionSkip, Path: skill.LinkPath, Target: link.target, Description: "preserve unmanaged symlink for skill " + skill.Name}
+			return PlannedAction{Kind: ActionSkip, Path: skill.LinkPath, Target: link.target, Description: "preserve unmanaged symlink for skill " + skill.Name, skipReason: skillLinkUnmanagedSymlink}
 		},
 		doctorProblem: func(skill ManagedSkill, _ skillLinkInspection) (skillLinkDoctorProblem, bool) {
 			return skillLinkDoctorProblem{detail: skill.Name}, true
@@ -283,6 +284,52 @@ func PrintPlan(w io.Writer, plan Plan) error {
 		}
 	}
 	return nil
+}
+
+type unmanagedSymlinkSummary struct {
+	count   int
+	example PlannedAction
+}
+
+func unmanagedSymlinkSkipSummary(plan Plan) (unmanagedSymlinkSummary, bool) {
+	var summary unmanagedSymlinkSummary
+	skipped := 0
+	for _, action := range plan.Actions {
+		if action.Kind != ActionSkip {
+			continue
+		}
+		skipped++
+		if action.skipReason == skillLinkUnmanagedSymlink {
+			if summary.count == 0 {
+				summary.example = action
+			}
+			summary.count++
+		}
+	}
+	if summary.count == 0 {
+		return unmanagedSymlinkSummary{}, false
+	}
+	expectedSkillLinks := len(plan.State.ManagedSkills) + skipped
+	if !isMostExpectedSkillLinks(summary.count, expectedSkillLinks) {
+		return unmanagedSymlinkSummary{}, false
+	}
+	return summary, true
+}
+
+func isMostExpectedSkillLinks(count, expectedSkillLinks int) bool {
+	return expectedSkillLinks > 0 && count*2 > expectedSkillLinks
+}
+
+func unmanagedSymlinkRecoveryWarning(plan Plan) (string, bool) {
+	summary, ok := unmanagedSymlinkSkipSummary(plan)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("skipped %d unmanaged skill symlinks; setup may be incomplete. Example: %s -> %s. %s", summary.count, summary.example.Path, summary.example.Target, unmanagedSymlinkRecoveryAdvice()), true
+}
+
+func unmanagedSymlinkRecoveryAdvice() string {
+	return "Safe recovery: verify these are stale Matty-created links, remove them, then run matty install; Matty will not overwrite arbitrary files or links."
 }
 
 func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner) ([]string, error) {

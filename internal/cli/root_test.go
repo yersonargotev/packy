@@ -82,20 +82,48 @@ func createSkillSource(t *testing.T) string {
 
 func createSkillSourceAt(t *testing.T, root string) {
 	t.Helper()
-	for _, rel := range []string{
-		"engineering/ask-matt",
-		"engineering/codebase-design",
-		"productivity/grilling",
-		"productivity/handoff",
-		"in-progress/loop-me",
-		"engineering/wayfinder",
-	} {
+	for _, rel := range testSkillSourceRels() {
 		dir := filepath.Join(root, rel)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatalf("mkdir skill source: %v", err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+filepath.Base(dir)+"\n---\n"), 0o600); err != nil {
 			t.Fatalf("write skill source: %v", err)
+		}
+	}
+}
+
+func testSkillSourceRels() []string {
+	return []string{
+		"engineering/ask-matt",
+		"engineering/codebase-design",
+		"productivity/grilling",
+		"productivity/handoff",
+		"in-progress/loop-me",
+		"engineering/wayfinder",
+	}
+}
+
+func testSkillNames() []string {
+	names := make([]string, 0, len(testSkillSourceRels()))
+	for _, rel := range testSkillSourceRels() {
+		names = append(names, filepath.Base(rel))
+	}
+	return names
+}
+
+func createUnmanagedSkillSymlinks(t *testing.T, paths Paths, targetRoot string) {
+	t.Helper()
+	if err := os.MkdirAll(paths.AgentSkillsDir, 0o700); err != nil {
+		t.Fatalf("mkdir agent skills: %v", err)
+	}
+	if err := os.MkdirAll(targetRoot, 0o700); err != nil {
+		t.Fatalf("mkdir unmanaged target root: %v", err)
+	}
+	for _, name := range testSkillNames() {
+		target := filepath.Join(targetRoot, name)
+		if err := os.Symlink(target, filepath.Join(paths.AgentSkillsDir, name)); err != nil {
+			t.Fatalf("write unmanaged symlink %s: %v", name, err)
 		}
 	}
 }
@@ -754,6 +782,47 @@ func TestDoctorReportsStateStatusWithoutCreatingState(t *testing.T) {
 	}
 }
 
+func TestDoctorWarnsWhenNullManagedSkillsHaveExpectedUnmanagedSymlinks(t *testing.T) {
+	opts, runner, home := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatalf("ResolvePaths failed: %v", err)
+	}
+	createUnmanagedSkillSymlinks(t, paths, filepath.Join(home, "stale-repo-skills"))
+	if err := os.MkdirAll(paths.MattyDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	state := DesiredState(paths, fixedTestTime(), nil)
+	if err := SaveState(paths.StateFile, state); err != nil {
+		t.Fatalf("SaveState failed: %v", err)
+	}
+	before := snapshotTree(t, home)
+	runner.calls = nil
+
+	out, err := executeCommand(t, NewRootCommand(opts), "doctor")
+	if err != nil {
+		t.Fatalf("doctor failed: %v\n%s", err, out)
+	}
+	after := snapshotTree(t, home)
+	if before != after {
+		t.Fatalf("doctor mutated sandbox:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("doctor ran external commands: %#v", runner.calls)
+	}
+	recoveryAdvice := unmanagedSymlinkRecoveryAdvice()
+	for _, want := range []string{
+		"WARN skill-symlinks: state has no managed skills",
+		"6 expected skill symlinks are unmanaged by current Matty state",
+		filepath.Join(paths.AgentSkillsDir, "ask-matt") + " -> " + filepath.Join(home, "stale-repo-skills", "ask-matt"),
+		recoveryAdvice,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestDoctorReportsFullSetupHealthAndIsReadOnly(t *testing.T) {
 	opts, runner, _ := sandboxOptions(t)
 	paths, err := ResolvePaths(opts.Env)
@@ -949,6 +1018,47 @@ func TestInstallPreservesUnmanagedPaths(t *testing.T) {
 	}
 	if !hasManagedSkill(state, "wayfinder") {
 		t.Fatalf("non-conflicting skills should still be managed: %#v", state.ManagedSkills)
+	}
+}
+
+func TestInstallWarnsWhenMostExpectedSkillsAreUnmanagedSymlinks(t *testing.T) {
+	opts, _, home := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatalf("ResolvePaths failed: %v", err)
+	}
+	createUnmanagedSkillSymlinks(t, paths, filepath.Join(home, "stale-repo-skills"))
+
+	out, err := executeCommand(t, NewRootCommand(opts), "install")
+	if err != nil {
+		t.Fatalf("install failed: %v\n%s", err, out)
+	}
+	recoveryAdvice := unmanagedSymlinkRecoveryAdvice()
+	for _, want := range []string{
+		"warning: skipped 6 unmanaged skill symlinks; setup may be incomplete",
+		"Example: " + filepath.Join(paths.AgentSkillsDir, "ask-matt") + " -> " + filepath.Join(home, "stale-repo-skills", "ask-matt"),
+		recoveryAdvice,
+		"matty install: synced 0 managed skills",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("install output missing %q:\n%s", want, out)
+		}
+	}
+	state, found, err := LoadState(paths.StateFile)
+	if err != nil || !found {
+		t.Fatalf("LoadState = found %v err %v", found, err)
+	}
+	if len(state.ManagedSkills) != 0 {
+		t.Fatalf("expected no managed skills when all skill links were unmanaged, got %#v", state.ManagedSkills)
+	}
+	for _, name := range testSkillNames() {
+		target, err := os.Readlink(filepath.Join(paths.AgentSkillsDir, name))
+		if err != nil {
+			t.Fatalf("read unmanaged symlink %s: %v", name, err)
+		}
+		if want := filepath.Join(home, "stale-repo-skills", name); target != want {
+			t.Fatalf("unmanaged symlink %s target = %q, want %q", name, target, want)
+		}
 	}
 }
 

@@ -76,7 +76,7 @@ func skillChecks(paths Paths, state State, stateFound bool) []doctorCheck {
 		return []doctorCheck{{status: doctorWarn, name: "skill-symlinks", detail: "state is missing, so Matty-owned skill links are unknown; run matty install"}}
 	}
 	if len(state.ManagedSkills) == 0 {
-		return []doctorCheck{{status: doctorWarn, name: "skill-symlinks", detail: "state has no managed skills; run matty install"}}
+		return []doctorCheck{{status: doctorWarn, name: "skill-symlinks", detail: zeroManagedSkillsDetail(paths)}}
 	}
 	var missing, changed []string
 	for _, skill := range state.ManagedSkills {
@@ -111,6 +111,19 @@ func skillChecks(paths Paths, state State, stateFound bool) []doctorCheck {
 		detail += "; changed: " + strings.Join(changed, ", ")
 	}
 	return []doctorCheck{{status: doctorFail, name: "skill-symlinks", detail: detail + "; run matty update"}}
+}
+
+func zeroManagedSkillsDetail(paths Paths) string {
+	detail := "state has no managed skills; run matty install"
+	plan, err := BuildInstallPlan(paths, time.Now(), true)
+	if err != nil {
+		return detail + "; could not inspect expected skill links: " + err.Error()
+	}
+	summary, ok := unmanagedSymlinkSkipSummary(plan)
+	if !ok {
+		return detail
+	}
+	return fmt.Sprintf("state has no managed skills, but %d expected skill symlinks are unmanaged by current Matty state; setup may be incomplete. Example: %s -> %s. %s", summary.count, summary.example.Path, summary.example.Target, unmanagedSymlinkRecoveryAdvice())
 }
 
 func engramChecks(runner Runner, pathEnv, homebrewPrefixEnv string, state State, stateFound bool) []doctorCheck {

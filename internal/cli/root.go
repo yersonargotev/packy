@@ -159,6 +159,7 @@ func newInstallCommand(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnings = appendPlanWarnings(warnings, plan)
 			if err := printWarnings(cmd.OutOrStdout(), warnings); err != nil {
 				return err
 			}
@@ -216,6 +217,7 @@ func newUpdateCommand(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnings = appendPlanWarnings(warnings, plan)
 			if err := printWarnings(cmd.OutOrStdout(), warnings); err != nil {
 				return err
 			}
@@ -281,6 +283,13 @@ func printWarnings(out io.Writer, warnings []string) error {
 		}
 	}
 	return nil
+}
+
+func appendPlanWarnings(warnings []string, plan Plan) []string {
+	if warning, ok := unmanagedSymlinkRecoveryWarning(plan); ok {
+		return append(warnings, warning)
+	}
+	return warnings
 }
 
 func newUninstallCommand(opts Options) *cobra.Command {
