@@ -41,6 +41,7 @@ type Paths struct {
 	CodexPromptFile        string
 	OpenCodeConfigFile     string
 	OpenCodePromptFile     string
+	LocalBinEngram         string
 }
 
 func ResolvePaths(env Env) (Paths, error) {
@@ -76,6 +77,7 @@ func ResolvePaths(env Env) (Paths, error) {
 		CodexPromptFile:        filepath.Join(home, ".codex", "AGENTS.md"),
 		OpenCodeConfigFile:     filepath.Join(configHome, "opencode", "opencode.json"),
 		OpenCodePromptFile:     filepath.Join(configHome, "opencode", "matty.md"),
+		LocalBinEngram:         filepath.Join(home, ".local", "bin", "engram"),
 	}, nil
 }
 

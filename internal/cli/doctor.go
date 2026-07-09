@@ -1,15 +1,13 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/yersonargotev/matty/internal/engrambin"
 	"github.com/yersonargotev/matty/internal/opencode"
 	"github.com/yersonargotev/matty/internal/prompt"
 )
@@ -44,7 +42,7 @@ func RunDoctor(w io.Writer, paths Paths, runner Runner) error {
 
 	checks := []doctorCheck{stateCheck(paths, stateFound, err)}
 	checks = append(checks, skillChecks(paths, state, stateFound)...)
-	checks = append(checks, engramChecks(runner, paths.PathEnv, paths.HomebrewPrefixEnv, state, stateFound)...)
+	checks = append(checks, engramChecks(runner, paths, state, stateFound)...)
 	checks = append(checks, codexChecks(paths)...)
 	openCodeChecks, err := openCodeChecks(paths)
 	if err != nil {
@@ -126,8 +124,10 @@ func zeroManagedSkillsDetail(paths Paths) string {
 	return fmt.Sprintf("state has no managed skills, but %d expected skill symlinks are unmanaged by current Matty state; setup may be incomplete. Example: %s -> %s. %s", summary.count, summary.example.Path, summary.example.Target, unmanagedSymlinkRecoveryAdvice())
 }
 
-func engramChecks(runner Runner, pathEnv, homebrewPrefixEnv string, state State, stateFound bool) []doctorCheck {
-	checks := engramBinaryChecks(runner, pathEnv, homebrewPrefixEnv)
+func engramChecks(runner Runner, paths Paths, state State, stateFound bool) []doctorCheck {
+	checks := engramBinaryChecks(runner, paths)
+	canonical := engrambin.DiscoverHomebrew(paths.HomebrewPrefixEnv)
+	checks = append(checks, engramRuntimeChecks(canonical, pathEngramExecutable(runner, canonical))...)
 	if !stateFound {
 		checks = append(checks, doctorCheck{status: doctorWarn, name: "engram-setup", detail: "state is missing, so delegated setup cannot be confirmed; run matty install"})
 		return checks
@@ -140,134 +140,72 @@ func engramChecks(runner Runner, pathEnv, homebrewPrefixEnv string, state State,
 	return checks
 }
 
-type engramExecutable struct {
-	path       string
-	version    string
-	versionErr error
+func engramBinaryChecks(runner Runner, paths Paths) []doctorCheck {
+	return engramBinaryChecksWithHomebrewPrefixes(runner, paths.PathEnv, paths.LocalBinEngram, engrambin.HomebrewPrefixes(paths.HomebrewPrefixEnv))
 }
 
-func engramBinaryChecks(runner Runner, pathEnv, homebrewPrefixEnv string) []doctorCheck {
-	return engramBinaryChecksWithHomebrewPrefixes(runner, pathEnv, homebrewPrefixes(homebrewPrefixEnv))
-}
-
-func engramBinaryChecksWithHomebrewPrefixes(runner Runner, pathEnv string, homebrewPrefixes []string) []doctorCheck {
+func engramBinaryChecksWithHomebrewPrefixes(runner Runner, pathEnv, localBinEngram string, homebrewPrefixes []string) []doctorCheck {
+	canonical := engrambin.DiscoverHomebrewFromPrefixes(homebrewPrefixes)
 	resolved, err := runner.LookPath("engram")
 	if err != nil {
-		return []doctorCheck{{status: doctorFail, name: "engram-binary", detail: "engram is not available; run matty install"}}
+		detail := "engram is not available on PATH; run matty install"
+		if canonical != nil {
+			detail = fmt.Sprintf("engram is not available on PATH; Homebrew Engram exists at %s; add it to PATH or run matty install", canonical.Path)
+		}
+		checks := []doctorCheck{{status: doctorFail, name: "engram-binary", detail: detail}}
+		checks = append(checks, engramLocalBinChecks(localBinEngram, canonical)...)
+		return checks
 	}
 
-	paths := uniqueEngramPaths(resolved, pathEnv, homebrewPrefixes)
-	executables := make([]engramExecutable, 0, len(paths))
-	for _, path := range paths {
-		version, versionErr := engramVersion(path)
-		executables = append(executables, engramExecutable{path: path, version: version, versionErr: versionErr})
+	executablePaths := engrambin.UniquePaths(resolved, pathEnv, homebrewPrefixes)
+	executables := make([]engrambin.Executable, 0, len(executablePaths))
+	for _, path := range executablePaths {
+		version, versionErr := engrambin.Version(path)
+		executables = append(executables, engrambin.NewExecutable(path, canonical, version, versionErr))
 	}
-	checks := []doctorCheck{{status: doctorPass, name: "engram-binary", detail: engramBinaryDetail(executables[0])}}
+	pathEngram := executables[0]
+	checks := []doctorCheck{engramPathCheck(pathEngram, canonical, homebrewPrefixes)}
 	checks = append(checks, engramVersionMismatchChecks(executables)...)
 	if shadowing := engramHomebrewShadowingCheck(executables); shadowing != nil {
 		checks = append(checks, *shadowing)
 	}
+	checks = append(checks, engramLocalBinChecks(localBinEngram, canonical)...)
 	return checks
 }
 
-func uniqueEngramPaths(resolved, pathEnv string, homebrewPrefixes []string) []string {
-	seen := map[string]bool{}
-	paths := []string{}
-	add := func(path string) {
-		if path == "" {
-			return
-		}
-		key := filepath.Clean(path)
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		paths = append(paths, path)
-	}
-
-	add(resolved)
-	for _, dir := range filepath.SplitList(pathEnv) {
-		addIfExecutable(filepath.Join(dir, "engram"), add)
-	}
-	for _, prefix := range homebrewPrefixes {
-		addIfExecutable(filepath.Join(prefix, "bin", "engram"), add)
-	}
-	return paths
-}
-
-func addIfExecutable(path string, add func(string)) {
-	if path == "" {
-		return
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
-		return
-	}
-	add(path)
-}
-
-func homebrewPrefixes(prefixEnv string) []string {
-	prefixes := []string{}
-	seen := map[string]bool{}
-	add := func(prefix string) {
-		if prefix == "" {
-			return
-		}
-		key := filepath.Clean(prefix)
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		prefixes = append(prefixes, prefix)
-	}
-	add(prefixEnv)
-	add("/opt/homebrew")
-	add("/usr/local")
-	return prefixes
-}
-
-func engramVersion(path string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "--version").CombinedOutput()
+func pathEngramExecutable(runner Runner, canonical *engrambin.Canonical) *engrambin.Executable {
+	resolved, err := runner.LookPath("engram")
 	if err != nil {
-		return "", err
+		return nil
 	}
-	return cleanEngramVersion(string(out)), nil
+	executable := engrambin.NewExecutable(resolved, canonical, "", nil)
+	return &executable
 }
 
-func cleanEngramVersion(output string) string {
-	firstLine, _, _ := strings.Cut(strings.TrimSpace(output), "\n")
-	version := strings.TrimSpace(firstLine)
-	lower := strings.ToLower(version)
-	for _, prefix := range []string{"engram version ", "engram ", "version "} {
-		if strings.HasPrefix(lower, prefix) {
-			version = strings.TrimSpace(version[len(prefix):])
-			break
-		}
+func engramPathCheck(pathEngram engrambin.Executable, canonical *engrambin.Canonical, prefixes []string) doctorCheck {
+	if pathEngram.Canonical {
+		return doctorCheck{status: doctorPass, name: "engram-binary", detail: "PATH resolves to canonical Homebrew Engram: " + engrambin.Detail(pathEngram)}
 	}
-	return strings.TrimPrefix(version, "v")
+	expected := engrambin.ExpectedHomebrewPathFromPrefixes(prefixes)
+	if canonical != nil {
+		expected = canonical.Path
+	}
+	return doctorCheck{
+		status: doctorWarn,
+		name:   "engram-binary",
+		detail: fmt.Sprintf("PATH resolves to non-Homebrew Engram %s; expected Homebrew-managed Engram at %s", engrambin.Detail(pathEngram), expected),
+	}
 }
 
-func engramBinaryDetail(executable engramExecutable) string {
-	if executable.version != "" {
-		return fmt.Sprintf("%s version %s", executable.path, executable.version)
-	}
-	if executable.versionErr != nil {
-		return fmt.Sprintf("%s (version unavailable: %v)", executable.path, executable.versionErr)
-	}
-	return executable.path + " (version empty)"
-}
-
-func engramVersionMismatchChecks(executables []engramExecutable) []doctorCheck {
+func engramVersionMismatchChecks(executables []engrambin.Executable) []doctorCheck {
 	versionByPath := []string{}
 	versions := map[string]bool{}
 	for _, executable := range executables {
-		if executable.version == "" {
+		if executable.Version == "" {
 			continue
 		}
-		versions[executable.version] = true
-		versionByPath = append(versionByPath, fmt.Sprintf("%s version %s", executable.path, executable.version))
+		versions[executable.Version] = true
+		versionByPath = append(versionByPath, fmt.Sprintf("%s version %s", executable.Path, executable.Version))
 	}
 	if len(versions) <= 1 {
 		return nil
@@ -279,31 +217,66 @@ func engramVersionMismatchChecks(executables []engramExecutable) []doctorCheck {
 	}}
 }
 
-func engramHomebrewShadowingCheck(executables []engramExecutable) *doctorCheck {
-	if len(executables) < 2 {
+func engramHomebrewShadowingCheck(executables []engrambin.Executable) *doctorCheck {
+	if len(executables) < 2 || executables[0].Canonical {
 		return nil
 	}
 	resolved := executables[0]
 	for _, executable := range executables[1:] {
-		if !isHomebrewEngramPath(executable.path) {
+		if !executable.Canonical {
 			continue
 		}
-		detail := fmt.Sprintf("%s appears before Homebrew Engram at %s", resolved.path, executable.path)
-		if resolved.version != "" {
-			detail += " and reports version " + resolved.version
+		detail := fmt.Sprintf("%s appears before Homebrew Engram at %s", resolved.Path, executable.Path)
+		if resolved.Version != "" {
+			detail += " and reports version " + resolved.Version
 		}
-		if executable.version != "" {
-			detail += "; Homebrew reports version " + executable.version
+		if executable.Version != "" {
+			detail += "; Homebrew reports version " + executable.Version
 		}
 		return &doctorCheck{status: doctorWarn, name: "engram-path-shadowing", detail: detail}
 	}
 	return nil
 }
 
-func isHomebrewEngramPath(path string) bool {
-	cleaned := filepath.ToSlash(filepath.Clean(path))
-	return strings.HasSuffix(cleaned, "/homebrew/bin/engram") ||
-		strings.HasSuffix(cleaned, "/usr/local/bin/engram")
+func engramLocalBinChecks(localBinEngram string, canonical *engrambin.Canonical) []doctorCheck {
+	diagnoses := engrambin.DiagnoseLocalBin(localBinEngram, canonical)
+	checks := make([]doctorCheck, 0, len(diagnoses))
+	for _, diagnosis := range diagnoses {
+		status := doctorWarn
+		if diagnosis.OK {
+			status = doctorPass
+		}
+		checks = append(checks, doctorCheck{status: status, name: "engram-local-bin", detail: diagnosis.Detail})
+	}
+	return checks
+}
+
+func engramRuntimeChecks(canonical *engrambin.Canonical, pathEngram *engrambin.Executable) []doctorCheck {
+	processes, err := engrambin.FindServeProcesses()
+	if err != nil {
+		return []doctorCheck{{status: doctorWarn, name: "engram-runtime", detail: "could not inspect active engram serve processes: " + err.Error()}}
+	}
+	return engramRuntimeChecksForProcesses(processes, canonical, pathEngram)
+}
+
+func engramRuntimeChecksForProcesses(processes []engrambin.Process, canonical *engrambin.Canonical, pathEngram *engrambin.Executable) []doctorCheck {
+	if len(processes) == 0 {
+		return []doctorCheck{{status: doctorPass, name: "engram-runtime", detail: "no active engram serve process found"}}
+	}
+	checks := make([]doctorCheck, 0, len(processes))
+	for _, process := range processes {
+		checks = append(checks, engramRuntimeCheckForProcess(process, canonical, pathEngram))
+	}
+	return checks
+}
+
+func engramRuntimeCheckForProcess(process engrambin.Process, canonical *engrambin.Canonical, pathEngram *engrambin.Executable) doctorCheck {
+	diagnosis := engrambin.DiagnoseRuntimeProcess(process, canonical, pathEngram)
+	detail := fmt.Sprintf("pid %d running %s", process.PID, process.ExecutablePath)
+	if diagnosis.OK() {
+		return doctorCheck{status: doctorPass, name: "engram-runtime", detail: detail + " (matches PATH and canonical Homebrew Engram)"}
+	}
+	return doctorCheck{status: doctorWarn, name: "engram-runtime", detail: detail + "; " + strings.Join(diagnosis.Problems, "; ") + "; " + diagnosis.Remediation}
 }
 
 func hasSurface(state State, want string) bool {
