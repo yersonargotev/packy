@@ -144,7 +144,7 @@ func newInstallCommand(opts Options) *cobra.Command {
 				return err
 			}
 
-			engramInstalled := EngramInstalled(opts.Runner)
+			engramInstalled := HomebrewEngramInstalled(paths, opts.Runner)
 			plan, err := BuildInstallPlan(paths, time.Now(), engramInstalled)
 			if err != nil {
 				return err

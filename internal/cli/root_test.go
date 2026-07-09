@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yersonargotev/matty/internal/engrambin"
 	"github.com/yersonargotev/matty/internal/skillbundle"
 	mattyversion "github.com/yersonargotev/matty/internal/version"
 )
@@ -21,6 +22,7 @@ type fakeRunner struct {
 	calls []fakeCall
 	path  map[string]string
 	fail  map[string]error
+	after map[string]func()
 }
 
 type fakeCall struct {
@@ -45,6 +47,11 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) error {
 			return err
 		}
 	}
+	if f.after != nil {
+		if after, ok := f.after[key]; ok {
+			after()
+		}
+	}
 	return nil
 }
 
@@ -62,15 +69,49 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 	t.Helper()
 	home := t.TempDir()
 	sourceRoot := createSkillSource(t)
-	runner := &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}}
+	homebrewPrefix := filepath.Join(t.TempDir(), "homebrew")
+	homebrewBin := filepath.Join(homebrewPrefix, "bin")
+	engram := writeEngramExecutable(t, homebrewBin, "engram version 1.19.0")
+	runner := &fakeRunner{path: map[string]string{"engram": engram}}
 	return Options{
 		Env: MapEnv{
 			"HOME":                home,
 			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg-config"),
+			"PATH":                homebrewBin,
+			"HOMEBREW_PREFIX":     homebrewPrefix,
 			"MATTY_SKILLS_SOURCE": sourceRoot,
 		},
 		Runner: runner,
 	}, runner, home
+}
+
+func expandHomebrewEngramCalls(t *testing.T, opts Options, calls []string) []string {
+	t.Helper()
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatalf("ResolvePaths failed: %v", err)
+	}
+	engram := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)
+	expanded := make([]string, 0, len(calls))
+	for _, call := range calls {
+		expanded = append(expanded, strings.ReplaceAll(call, "<homebrew-engram>", engram))
+	}
+	return expanded
+}
+
+func engramSetupCallStrings(t *testing.T, opts Options) []string {
+	t.Helper()
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatalf("ResolvePaths failed: %v", err)
+	}
+	engram := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)
+	return []string{engram + " setup codex", engram + " setup opencode"}
+}
+
+func engramUpdateCallStrings(t *testing.T, opts Options) []string {
+	t.Helper()
+	return append([]string{"brew update", "brew upgrade engram"}, engramSetupCallStrings(t, opts)...)
 }
 
 func createSkillSource(t *testing.T) string {
@@ -233,9 +274,9 @@ func TestCommandsUseFakeRunnerForExternalCommands(t *testing.T) {
 		wantCalls []string
 	}{
 		{name: "install dry-run", args: []string{"install", "--dry-run"}},
-		{name: "install", args: []string{"install"}, wantCalls: []string{"engram setup codex", "engram setup opencode"}},
+		{name: "install", args: []string{"install"}, wantCalls: []string{"<homebrew-engram> setup codex", "<homebrew-engram> setup opencode"}},
 		{name: "doctor", args: []string{"doctor"}},
-		{name: "update", args: []string{"update"}, wantCalls: []string{"brew update", "brew upgrade engram", "engram setup codex", "engram setup opencode"}},
+		{name: "update", args: []string{"update"}, wantCalls: []string{"brew update", "brew upgrade engram", "<homebrew-engram> setup codex", "<homebrew-engram> setup opencode"}},
 		{name: "uninstall", args: []string{"uninstall"}},
 	}
 
@@ -246,8 +287,9 @@ func TestCommandsUseFakeRunnerForExternalCommands(t *testing.T) {
 			if err != nil {
 				t.Fatalf("command failed: %v\n%s", err, out)
 			}
-			if got := callStrings(runner.calls); strings.Join(got, "\n") != strings.Join(tt.wantCalls, "\n") {
-				t.Fatalf("runner calls = %#v, want %#v", got, tt.wantCalls)
+			wantCalls := expandHomebrewEngramCalls(t, opts, tt.wantCalls)
+			if got := callStrings(runner.calls); strings.Join(got, "\n") != strings.Join(wantCalls, "\n") {
+				t.Fatalf("runner calls = %#v, want %#v", got, wantCalls)
 			}
 		})
 	}
@@ -371,8 +413,10 @@ func TestInstallAndUpdateReportInstalledSourceOutsideRepo(t *testing.T) {
 	createSkillSourceAt(t, installedSkillSourceRoot(home))
 	chdirTempOutsideRepo(t)
 
-	runner := &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}}
-	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")}, Runner: runner}
+	homebrewPrefix := filepath.Join(t.TempDir(), "homebrew")
+	engram := writeEngramExecutable(t, filepath.Join(homebrewPrefix, "bin"), "engram version 1.19.0")
+	runner := &fakeRunner{path: map[string]string{"engram": engram}}
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config"), "PATH": filepath.Dir(engram), "HOMEBREW_PREFIX": homebrewPrefix}, Runner: runner}
 	installedSkillSource := installedSkillSourceRoot(home)
 
 	for _, args := range [][]string{{"install", "--dry-run"}, {"install"}, {"update", "--dry-run"}, {"update"}} {
@@ -410,8 +454,10 @@ func TestPackageInstalledCommandsUseInitializedSourceOutsideRepo(t *testing.T) {
 	repo := createMattySourceRepo(t)
 	chdirTempOutsideRepo(t)
 
-	runner := &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}}
-	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")}, Runner: runner}
+	homebrewPrefix := filepath.Join(t.TempDir(), "homebrew")
+	engram := writeEngramExecutable(t, filepath.Join(homebrewPrefix, "bin"), "engram version 1.19.0")
+	runner := &fakeRunner{path: map[string]string{"engram": engram}}
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config"), "PATH": filepath.Dir(engram), "HOMEBREW_PREFIX": homebrewPrefix}, Runner: runner}
 
 	out, err := executeCommand(t, NewRootCommand(opts), "init", "--repository-url", repo)
 	if err != nil {
@@ -453,7 +499,7 @@ func TestPackageInstalledCommandsUseInitializedSourceOutsideRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update failed outside repo after init: %v\n%s", err, out)
 	}
-	if got, want := callStrings(runner.calls), []string{"brew update", "brew upgrade engram", "engram setup codex", "engram setup opencode"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if got, want := callStrings(runner.calls), engramUpdateCallStrings(t, opts); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("update runner calls = %#v, want %#v", got, want)
 	}
 
@@ -640,6 +686,9 @@ func TestUninstallDryRunReportsPlanAndDoesNotMutateSandbox(t *testing.T) {
 func TestInstallDryRunReportsPlanAndDoesNotMutateSandbox(t *testing.T) {
 	opts, runner, home := sandboxOptions(t)
 	runner.path = nil
+	missingPrefix := filepath.Join(t.TempDir(), "missing-homebrew")
+	opts.Env.(MapEnv)["HOMEBREW_PREFIX"] = missingPrefix
+	opts.Env.(MapEnv)["PATH"] = ""
 	cmd := NewRootCommand(opts)
 
 	out, err := executeCommand(t, cmd, "install", "--dry-run")
@@ -655,14 +704,19 @@ func TestInstallDryRunReportsPlanAndDoesNotMutateSandbox(t *testing.T) {
 		t.Fatalf("dry-run output changed between runs:\nfirst:\n%s\nsecond:\n%s", out, outAgain)
 	}
 
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatalf("ResolvePaths failed: %v", err)
+	}
+	engram := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)
 	wants := []string{
 		"matty install dry-run: planned actions",
 		"write-file: persist Matty state metadata",
 		filepath.Join(home, ".matty", "config.json"),
 		"symlink: link managed skill ask-matt",
 		"run: install Engram via Homebrew (brew install gentleman-programming/tap/engram)",
-		"run: delegate Codex Engram setup (engram setup codex)",
-		"run: delegate OpenCode Engram setup (engram setup opencode)",
+		"run: delegate Codex Engram setup through Homebrew binary (" + engram + " setup codex)",
+		"run: delegate OpenCode Engram setup through Homebrew binary (" + engram + " setup opencode)",
 	}
 	for _, want := range wants {
 		if !strings.Contains(out, want) {
@@ -685,7 +739,7 @@ func TestInstallWritesSmallStateAndRunsEngramSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install failed: %v\n%s", err, out)
 	}
-	if got, want := callStrings(runner.calls), []string{"engram setup codex", "engram setup opencode"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if got, want := callStrings(runner.calls), engramSetupCallStrings(t, opts); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("runner calls = %#v, want %#v", got, want)
 	}
 
@@ -1254,7 +1308,7 @@ func TestEndToEndSandboxLifecyclePreservesGentleAIAndRealHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update failed: %v\n%s", err, out)
 	}
-	if got, want := callStrings(runner.calls), []string{"brew update", "brew upgrade engram", "engram setup codex", "engram setup opencode"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if got, want := callStrings(runner.calls), engramUpdateCallStrings(t, opts); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("update runner calls = %#v, want %#v", got, want)
 	}
 
@@ -1337,11 +1391,18 @@ func readSkillLinks(t *testing.T, paths Paths) []string {
 func TestInstallInstallsEngramViaHomebrewWhenMissing(t *testing.T) {
 	opts, runner, _ := sandboxOptions(t)
 	runner.path = nil
+	missingPrefix := filepath.Join(t.TempDir(), "missing-homebrew")
+	opts.Env.(MapEnv)["HOMEBREW_PREFIX"] = missingPrefix
+	opts.Env.(MapEnv)["PATH"] = ""
+	engram := filepath.Join(missingPrefix, "bin", "engram")
+	runner.after = map[string]func(){"brew install gentleman-programming/tap/engram": func() {
+		writeEngramExecutable(t, filepath.Dir(engram), "engram version 1.19.0")
+	}}
 	out, err := executeCommand(t, NewRootCommand(opts), "install")
 	if err != nil {
 		t.Fatalf("install failed: %v\n%s", err, out)
 	}
-	want := []string{"brew install gentleman-programming/tap/engram", "engram setup codex", "engram setup opencode"}
+	want := []string{"brew install gentleman-programming/tap/engram", engram + " setup codex", engram + " setup opencode"}
 	if got := callStrings(runner.calls); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("runner calls = %#v, want %#v", got, want)
 	}
@@ -1353,15 +1414,35 @@ func TestUpdateRunsEngramHomebrewUpdateAndSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update failed: %v\n%s", err, out)
 	}
-	want := []string{"brew update", "brew upgrade engram", "engram setup codex", "engram setup opencode"}
+	want := engramUpdateCallStrings(t, opts)
 	if got := callStrings(runner.calls); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("runner calls = %#v, want %#v", got, want)
+	}
+}
+
+func TestInstallFailsClearlyWhenHomebrewSetupBinaryMissingAfterBrewInstall(t *testing.T) {
+	opts, runner, _ := sandboxOptions(t)
+	runner.path = nil
+	missingPrefix := filepath.Join(t.TempDir(), "missing-homebrew")
+	opts.Env.(MapEnv)["HOMEBREW_PREFIX"] = missingPrefix
+	opts.Env.(MapEnv)["PATH"] = ""
+
+	out, err := executeCommand(t, NewRootCommand(opts), "install")
+	if err == nil {
+		t.Fatalf("expected missing canonical Engram error, got output:\n%s", out)
+	}
+	for _, want := range []string{"canonical Homebrew Engram was not found", filepath.Join(missingPrefix, "bin", "engram"), "HOMEBREW_PREFIX"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %v, want %q", err, want)
+		}
 	}
 }
 
 func TestExternalCommandFailureIsActionable(t *testing.T) {
 	opts, runner, _ := sandboxOptions(t)
 	runner.path = nil
+	opts.Env.(MapEnv)["HOMEBREW_PREFIX"] = filepath.Join(t.TempDir(), "missing-homebrew")
+	opts.Env.(MapEnv)["PATH"] = ""
 	runner.fail = map[string]error{"brew install gentleman-programming/tap/engram": errors.New("brew missing")}
 	out, err := executeCommand(t, NewRootCommand(opts), "install")
 	if err == nil {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yersonargotev/matty/internal/engrambin"
 	"github.com/yersonargotev/matty/internal/opencode"
 	"github.com/yersonargotev/matty/internal/prompt"
 )
@@ -93,9 +94,9 @@ func BuildInstallPlan(paths Paths, checkedAt time.Time, engramInstalled bool) (P
 		}
 	}
 	if !engramInstalled {
-		actions = append(actions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"install", "gentleman-programming/tap/engram"}, Description: "install Engram via Homebrew"})
+		actions = append(actions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"install", engrambin.Formula}, Description: "install Engram via Homebrew"})
 	}
-	actions = append(actions, engramSetupActions()...)
+	actions = append(actions, engramSetupActions(paths)...)
 	actions = append(actions, codexPromptWriteAction(paths), openCodePromptWriteAction(paths))
 	return Plan{Actions: actions, State: DesiredState(paths, checkedAt, managed)}, nil
 }
@@ -114,7 +115,7 @@ func BuildUpdatePlan(paths Paths, checkedAt time.Time) (Plan, error) {
 		}
 		actions = append(actions, action)
 	}
-	actions = append(actions, engramSetupActions()...)
+	actions = append(actions, engramSetupActions(paths)...)
 	actions = append(actions, codexPromptWriteAction(paths), openCodePromptWriteAction(paths))
 	plan.Actions = actions
 	return plan, nil
@@ -128,10 +129,11 @@ func openCodePromptWriteAction(paths Paths) PlannedAction {
 	return PlannedAction{Kind: ActionWriteOpenCodePrompt, Path: paths.OpenCodeConfigFile, Target: paths.OpenCodePromptFile, Description: "write OpenCode Matty prompt reference"}
 }
 
-func engramSetupActions() []PlannedAction {
+func engramSetupActions(paths Paths) []PlannedAction {
+	engram := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)
 	return []PlannedAction{
-		{Kind: ActionRun, Command: "engram", Args: []string{"setup", "codex"}, Description: "delegate Codex Engram setup"},
-		{Kind: ActionRun, Command: "engram", Args: []string{"setup", "opencode"}, Description: "delegate OpenCode Engram setup"},
+		{Kind: ActionRun, Command: engram, Args: []string{"setup", "codex"}, Description: "delegate Codex Engram setup through Homebrew binary"},
+		{Kind: ActionRun, Command: engram, Args: []string{"setup", "opencode"}, Description: "delegate OpenCode Engram setup through Homebrew binary"},
 	}
 }
 
@@ -359,6 +361,13 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 			}
 			warnings = append(warnings, result.Warnings...)
 		case ActionRun:
+			if isEngramSetupAction(action) {
+				canonical := engrambin.DiscoverHomebrew(paths.HomebrewPrefixEnv)
+				if canonical == nil {
+					return nil, missingCanonicalEngramSetupError(action, engrambin.HomebrewCandidatePaths(engrambin.HomebrewPrefixes(paths.HomebrewPrefixEnv)))
+				}
+				action.Command = canonical.Path
+			}
 			if err := runner.Run(ctx, action.Command, action.Args...); err != nil {
 				return nil, actionRunError(action, err)
 			}
@@ -370,6 +379,14 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 	return warnings, nil
 }
 
+func isEngramSetupAction(action PlannedAction) bool {
+	return filepath.Base(action.Command) == "engram" && len(action.Args) >= 2 && action.Args[0] == "setup"
+}
+
+func missingCanonicalEngramSetupError(action PlannedAction, candidates []string) error {
+	return fmt.Errorf("run %s: canonical Homebrew Engram was not found at any expected Homebrew path (%s); run brew install %s or set HOMEBREW_PREFIX to the active Homebrew prefix, then retry matty install or matty update", strings.Join(append([]string{action.Command}, action.Args...), " "), strings.Join(candidates, ", "), engrambin.Formula)
+}
+
 func actionRunError(action PlannedAction, err error) error {
 	cmd := strings.Join(append([]string{action.Command}, action.Args...), " ")
 	switch {
@@ -377,8 +394,8 @@ func actionRunError(action PlannedAction, err error) error {
 		return fmt.Errorf("run %s: failed to install Engram via Homebrew; ensure Homebrew is installed and retry: %w", cmd, err)
 	case action.Command == "brew" && len(action.Args) > 0 && (action.Args[0] == "update" || action.Args[0] == "upgrade"):
 		return fmt.Errorf("run %s: failed to update Engram via Homebrew; ensure Homebrew is installed and retry: %w", cmd, err)
-	case action.Command == "engram" && len(action.Args) >= 2 && action.Args[0] == "setup":
-		return fmt.Errorf("run %s: failed to configure Engram for %s; install Engram and retry matty install or matty update: %w", cmd, action.Args[1], err)
+	case isEngramSetupAction(action):
+		return fmt.Errorf("run %s: failed to configure Engram for %s through the Homebrew-managed binary; run brew install %s or brew upgrade engram, then retry matty install or matty update: %w", cmd, action.Args[1], engrambin.Formula, err)
 	default:
 		return fmt.Errorf("run %s: %w", cmd, err)
 	}

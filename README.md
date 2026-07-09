@@ -25,7 +25,7 @@ Matty v0 manages:
 - small Matty state at `~/.matty/config.json`
 - Codex prompt markers in `~/.codex/AGENTS.md`
 - an OpenCode prompt file and reference under `$XDG_CONFIG_HOME/opencode`
-- Engram install/update/setup by delegating to Homebrew and `engram setup`
+- Engram install/update/setup by delegating to the Homebrew-managed Engram binary (`<brew-prefix>/bin/engram setup ...`)
 
 Matty v0 is macOS-first. Linux and other agent adapters may be added later, but they are outside v0.
 
@@ -56,7 +56,7 @@ If `XDG_CONFIG_HOME` is unset or relative, Matty uses `~/.config`.
 
 ## Safety model
 
-- `doctor` is read-only.
+- `doctor` is read-only and reports which Engram binary is on `PATH`, whether it is Homebrew-managed, any `engram serve` daemon executable it can see, and whether a `~/.local/bin/engram` compatibility entry is a symlink to Homebrew.
 - `--dry-run` reports planned actions without writing files or running external commands.
 - Matty-owned prompt content is wrapped in `matty:*` markers and only those blocks are updated or removed.
 - `uninstall` removes Matty-managed symlinks, Matty prompt blocks/references, the Matty OpenCode prompt, and Matty state.
@@ -71,7 +71,7 @@ If `XDG_CONFIG_HOME` is unset or relative, Matty uses `~/.config`.
 - repo-local docs/config by default
 - Claude Code, Antigravity, GitHub Copilot CLI, Gemini, Cursor, or other adapters
 - automatic Gentle AI cleanup or migration
-- vendoring the Engram binary
+- vendoring the Engram binary or installing a second copy under `~/.local/bin`; Homebrew owns Engram, and Matty only delegates setup/configuration
 - installing only a tiny skill subset
 
 ## Verification

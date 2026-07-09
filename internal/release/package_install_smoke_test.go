@@ -19,6 +19,7 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 	xdgConfigHome := filepath.Join(sandbox, "xdg")
 	outsideCheckout := filepath.Join(sandbox, "outside-checkout")
 	stubBin := filepath.Join(sandbox, "bin")
+	homebrewPrefix := sandbox
 	externalLog := filepath.Join(sandbox, "external-calls.log")
 	for _, dir := range []string{home, xdgConfigHome, outsideCheckout, stubBin} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -36,6 +37,7 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 		"HOME="+home,
 		"XDG_CONFIG_HOME="+xdgConfigHome,
 		"PATH="+stubBin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"HOMEBREW_PREFIX="+homebrewPrefix,
 		"GIT_CONFIG_NOSYSTEM=1",
 	)
 
