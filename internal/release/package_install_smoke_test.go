@@ -88,10 +88,12 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 	assertSmokeExternalCalls(t, externalLog, []string{
 		"engram setup codex",
 		"engram setup opencode",
+		"engram --version",
 		"brew update",
 		"brew upgrade engram",
 		"engram setup codex",
 		"engram setup opencode",
+		"engram --version",
 	})
 }
 
