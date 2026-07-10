@@ -19,6 +19,8 @@ Reach an implementation-ready product and architecture specification for opt-in,
 
 - [Map host capability surfaces](tickets/01-map-host-capability-surfaces.md) — Verified the shared skill/MCP concepts and the host-specific adapters required for every lifecycle and non-portable surface.
 - [Define pack manifest contract](tickets/02-define-pack-manifest-contract.md) — Fixed the strict portable manifest, four-resource vocabulary, and complete `matty`/`engram` proof cases.
+- [Define trust and consent boundaries](tickets/03-define-trust-and-consent-boundaries.md) — Separated previewed reconciliation from host trust, authentication, executable-code consent, and destructive human checkpoints.
+- [Place pack domain and surface seams](tickets/04-place-pack-domain-and-surface-seams.md) — Placed portable planning and ownership behind one deep capability-pack facade with sibling host adapters and narrow bundle/tool seams.
 
 ## Not yet specified
 

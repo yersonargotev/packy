@@ -26,6 +26,18 @@ A global prerequisite a capability pack consumes but does not contribute to a CL
 ### Lifecycle resource
 A pack resource that declares behavior triggered at CLI lifecycle points. It names the portable intent while each CLI-surface adapter owns its event names, handlers, trust model, and rendered artifacts; it is not a universal hook schema.
 
+### Pack activation
+The user's explicit consent to a previewed reconciliation of one capability pack on one CLI surface. Activation does not itself grant host trust, authenticate accounts, authorize executable code, or consent to destructive cleanup.
+
+### Pack readiness
+The progression from **configured** (Matty-owned projections are reconciled), through **authorized** (required human trust and authentication are complete), to **usable** (the host has loaded the capability under its runtime permissions). An active pack may remain pending human action between these stages.
+
+### Pack desired state
+The complete logical outcome Matty computes from the active capability packs on each CLI surface, including required shared resources and readiness, before translating that outcome into host-specific artifacts.
+
+### Pack ownership
+Matty's recorded authority over a projected resource or config fragment. Ownership determines whether Matty may update or remove it and is distinct from the host's trust, authentication, and runtime authorization.
+
 ### Memory layer
 The Engram-backed persistence and recall behaviour Matty provides across supported CLI surfaces.
 
