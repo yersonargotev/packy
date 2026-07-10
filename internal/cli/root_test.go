@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -579,6 +580,44 @@ func TestPackageInstalledUpdateRejectsStaleDefaultInstalledSource(t *testing.T) 
 				t.Fatalf("stale update mutated sandbox home\nbefore:\n%s\nafter:\n%s", before, after)
 			}
 		})
+	}
+}
+
+func TestPackageInstalledUpdateAcceptsSourceAfterInitAlignsReleaseTag(t *testing.T) {
+	withVersion(t, "v0.2.0")
+	home := t.TempDir()
+	repo := createMattySourceRepo(t)
+	runGitCommand(t, repo, "tag", "v0.1.0")
+	chdirTempOutsideRepo(t)
+
+	runner := &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}}
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")}, Runner: runner}
+	repositoryURL := (&url.URL{Scheme: "file", Path: repo}).String()
+	if out, err := executeCommand(t, NewRootCommand(opts), "init", "--repository-url", repositoryURL, "--repository-ref", "v0.1.0"); err != nil {
+		t.Fatalf("init old source failed: %v\n%s", err, out)
+	}
+	sourceRoot := filepath.Join(home, ".local", "share", "matty")
+	if got := strings.TrimSpace(runGitCommand(t, sourceRoot, "rev-parse", "--is-shallow-repository")); got != "true" {
+		t.Fatalf("initial Installed Source shallow = %q, want true", got)
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, "bundle", "skills", "engineering", "ask-matt", "CHANGELOG.md"), []byte("v0.2.0 only"), 0o600); err != nil {
+		t.Fatalf("write newer source fixture: %v", err)
+	}
+	runGitCommand(t, repo, "add", ".")
+	runGitCommand(t, repo, "-c", "user.name=Matty Test", "-c", "user.email=matty@example.test", "commit", "-m", "v0.2.0")
+	runGitCommand(t, repo, "tag", "v0.2.0")
+
+	if out, err := executeCommand(t, NewRootCommand(opts), "init", "--repository-url", repositoryURL); err != nil {
+		t.Fatalf("align source with current release failed: %v\n%s", err, out)
+	}
+	got := strings.TrimSpace(runGitCommand(t, sourceRoot, "rev-parse", "--verify", "v0.2.0^{commit}"))
+	want := strings.TrimSpace(runGitCommand(t, repo, "rev-parse", "--verify", "v0.2.0^{commit}"))
+	if got != want {
+		t.Fatalf("Installed Source v0.2.0 = %s, want %s", got, want)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "--dry-run"); err != nil {
+		t.Fatalf("update --dry-run after init failed: %v\n%s", err, out)
 	}
 }
 
