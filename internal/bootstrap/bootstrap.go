@@ -96,7 +96,7 @@ func ensureInstalledSourceRef(opts BootstrapOptions) (bool, error) {
 	if err := reportProgress(opts, fmt.Sprintf("updating Installed Source at %s to %s", opts.SourceRoot, ref)); err != nil {
 		return false, err
 	}
-	if _, err := gitOutput(opts, "fetch", "--depth", "1", "origin", ref); err != nil {
+	if err := fetchInstalledSourceRef(opts, ref); err != nil {
 		return false, fmt.Errorf("update Installed Source to %s: %w", ref, err)
 	}
 	if _, err := gitOutput(opts, "checkout", "--detach", "FETCH_HEAD"); err != nil {
@@ -106,6 +106,17 @@ func ensureInstalledSourceRef(opts BootstrapOptions) (bool, error) {
 		return false, errors.New("updated Installed Source does not contain bundle/skills")
 	}
 	return true, nil
+}
+
+func fetchInstalledSourceRef(opts BootstrapOptions, ref string) error {
+	if strings.HasPrefix(ref, "v") {
+		tagRef := "refs/tags/" + ref
+		if _, err := gitOutput(opts, "fetch", "--depth", "1", "origin", tagRef+":"+tagRef); err == nil {
+			return nil
+		}
+	}
+	_, err := gitOutput(opts, "fetch", "--depth", "1", "origin", ref)
+	return err
 }
 
 func ValidateInstalledSourceRef(opts BootstrapOptions) error {
