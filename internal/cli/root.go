@@ -43,6 +43,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 	}
 
 	root.AddCommand(
+		newPackCommand(opts),
 		newInitCommand(opts),
 		newInstallCommand(opts),
 		newDoctorCommand(opts),

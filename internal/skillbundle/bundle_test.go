@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+func TestBundleRootOwnsPhysicalSourceLayout(t *testing.T) {
+	want := filepath.Join(t.TempDir(), "bundle")
+	if got := BundleRoot(filepath.Join(want, "skills")); got != want {
+		t.Fatalf("BundleRoot = %q, want %q", got, want)
+	}
+}
+
 func TestDiscoverReportsMissingSourceWithHint(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "bundle", "skills")
 	_, err := Discover(missing, t.TempDir(), "run matty init to initialize it")

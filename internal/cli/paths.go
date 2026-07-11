@@ -35,6 +35,7 @@ type Paths struct {
 	AgentSkillsDir         string
 	InstalledSourceRoot    string
 	SkillSourceRoot        string
+	BundleSourceRoot       string
 	SkillSourceMissingHint string
 	SkillSourceIsDefault   bool
 	SkillSourceOrigin      SkillSourceOrigin
@@ -71,6 +72,7 @@ func ResolvePaths(env Env) (Paths, error) {
 		AgentSkillsDir:         filepath.Join(home, ".agents", "skills"),
 		InstalledSourceRoot:    installedSourceRoot,
 		SkillSourceRoot:        skillSource.Root,
+		BundleSourceRoot:       skillbundle.BundleRoot(skillSource.Root),
 		SkillSourceMissingHint: skillSource.MissingHint,
 		SkillSourceIsDefault:   skillSource.IsDefault,
 		SkillSourceOrigin:      skillSource.Origin,

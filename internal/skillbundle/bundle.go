@@ -14,6 +14,13 @@ func SourceRoot(mattyRoot string) string {
 	return filepath.Join(mattyRoot, "bundle", "skills")
 }
 
+// BundleRoot returns the Matty-owned bundle containing a selected skill source.
+// Keeping this physical relationship here prevents capability modules from
+// learning the source tree layout.
+func BundleRoot(skillSourceRoot string) string {
+	return filepath.Dir(filepath.Clean(skillSourceRoot))
+}
+
 func SourceRootExists(sourceRoot string) bool {
 	info, err := os.Stat(sourceRoot)
 	return err == nil && info.IsDir()
