@@ -22,6 +22,7 @@ Reach an implementation-ready product and architecture specification for opt-in,
 - [Define trust and consent boundaries](tickets/03-define-trust-and-consent-boundaries.md) — Separated previewed reconciliation from host trust, authentication, executable-code consent, and destructive human checkpoints.
 - [Place pack domain and surface seams](tickets/04-place-pack-domain-and-surface-seams.md) — Placed portable planning and ownership behind one deep capability-pack facade with sibling host adapters and narrow bundle/tool seams.
 - [Prototype reconciliation state machine](tickets/05-prototype-reconciliation-state-machine.md) — Fixed exact-plan approval, stale rejection, bounded atomicity, recovery, readiness, and shared ownership semantics.
+- [Prototype pack lifecycle UX](tickets/06-prototype-pack-lifecycle-ux.md) — Fixed the grouped interactive lifecycle, typed approvals, status/readiness, blocker, stale, no-op, and recovery experience.
 
 ## Not yet specified
 
