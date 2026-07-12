@@ -1617,6 +1617,44 @@ func TestExternalCommandFailureIsActionable(t *testing.T) {
 	}
 }
 
+func TestInterruptedInstallIsExplicitAndDoctorReportsSafeRecovery(t *testing.T) {
+	opts, runner, _ := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.fail = map[string]error{engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv) + " setup codex": errors.New("interrupted")}
+
+	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
+		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	}
+	state, found, err := LoadState(paths.StateFile)
+	if err != nil || !found {
+		t.Fatalf("LoadState = found %v err %v", found, err)
+	}
+	if !state.RecoveryRequired() {
+		t.Fatalf("install status = %q, want recovery-required", state.InstallStatus)
+	}
+
+	before := snapshotTree(t, paths.HomeDir)
+	runner.calls = nil
+	out, err := executeCommand(t, NewRootCommand(opts), "doctor")
+	if !errors.Is(err, ErrDoctorUnhealthy) {
+		t.Fatalf("doctor error = %v, want ErrDoctorUnhealthy\n%s", err, out)
+	}
+	for _, want := range []string{"FAIL matty-state:", "interrupted", "matty install or matty update"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, out)
+		}
+	}
+	if after := snapshotTree(t, paths.HomeDir); after != before {
+		t.Fatalf("doctor mutated sandbox:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("doctor ran commands: %#v", runner.calls)
+	}
+}
+
 func callStrings(calls []fakeCall) []string {
 	out := make([]string, 0, len(calls))
 	for _, call := range calls {
@@ -1869,4 +1907,180 @@ func runGitCommand(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, output)
 	}
 	return string(output)
+}
+
+func TestInterruptedInstallConvergesWithoutAdoptingConflict(t *testing.T) {
+	opts, runner, home := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv) + " setup codex"
+	runner.fail = map[string]error{setup: errors.New("interrupted")}
+	if _, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
+		t.Fatal("expected interrupted install")
+	}
+	conflict := filepath.Join(paths.AgentSkillsDir, "ask-matt")
+	if err := os.Remove(conflict); err != nil {
+		t.Fatal(err)
+	}
+	unmanagedTarget := filepath.Join(home, "unmanaged-target")
+	if err := os.Mkdir(unmanagedTarget, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(unmanagedTarget, conflict); err != nil {
+		t.Fatal(err)
+	}
+	delete(runner.fail, setup)
+	if out, err := executeCommand(t, NewRootCommand(opts), "update"); err != nil {
+		t.Fatalf("update recovery failed: %v\n%s", err, out)
+	}
+	state, _, err := LoadState(paths.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.RecoveryRequired() || state.InstallStatus != InstallConfirmed {
+		t.Fatalf("recovered status = %q", state.InstallStatus)
+	}
+	for _, skill := range state.ManagedSkills {
+		if skill.LinkPath == conflict {
+			t.Fatal("recovery adopted conflicting symlink")
+		}
+	}
+	if target, err := os.Readlink(conflict); err != nil || target != unmanagedTarget {
+		t.Fatalf("conflict changed: %q %v", target, err)
+	}
+}
+
+func TestUninstallFromInterruptedInstallUsesOnlyVerifiedOwnership(t *testing.T) {
+	opts, runner, home := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv) + " setup codex"
+	runner.fail = map[string]error{setup: errors.New("interrupted")}
+	if _, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
+		t.Fatal("expected interrupted install")
+	}
+	changed := filepath.Join(paths.AgentSkillsDir, "ask-matt")
+	if err := os.Remove(changed); err != nil {
+		t.Fatal(err)
+	}
+	unmanagedTarget := filepath.Join(home, "unmanaged-target")
+	if err := os.Mkdir(unmanagedTarget, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(unmanagedTarget, changed); err != nil {
+		t.Fatal(err)
+	}
+	contributor := filepath.Join(paths.AgentSkillsDir, "contributor.txt")
+	if err := os.WriteFile(contributor, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "uninstall"); err != nil {
+		t.Fatalf("partial uninstall failed: %v\n%s", err, out)
+	}
+	if !exists(changed) || !exists(contributor) {
+		t.Fatal("partial uninstall removed unmanaged content")
+	}
+	if exists(filepath.Join(paths.AgentSkillsDir, "wayfinder")) {
+		t.Fatal("partial uninstall left verified owned symlink")
+	}
+}
+
+func TestFinalStateCommitFailureLeavesRecoverableState(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPublish := publishStateTemp
+	t.Cleanup(func() { publishStateTemp = originalPublish })
+	publishStateTemp = func(oldPath, newPath string) error {
+		data, err := os.ReadFile(oldPath)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), `"install_status": "confirmed"`) {
+			return errors.New("final commit interrupted")
+		}
+		return os.Rename(oldPath, newPath)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
+		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	}
+	state, found, err := LoadState(paths.StateFile)
+	if err != nil || !found || !state.RecoveryRequired() {
+		t.Fatalf("state = %#v found %v err %v", state, found, err)
+	}
+}
+
+func TestStatePreparationFailureLeavesNoLocalWrites(t *testing.T) {
+	opts, _, home := sandboxOptions(t)
+	originalPublish := publishStateTemp
+	t.Cleanup(func() { publishStateTemp = originalPublish })
+	publishStateTemp = func(_, _ string) error { return errors.New("preparation interrupted") }
+	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
+		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	}
+	if got := snapshotTree(t, home); strings.Count(strings.TrimSpace(got), "\n") != 0 {
+		t.Fatalf("preparation failure left local writes:\n%s", got)
+	}
+}
+
+func TestPartialContainerProvisionFailureKeepsRecoveryEvidence(t *testing.T) {
+	opts, _, home := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflict := filepath.Join(home, ".codex")
+	if err := os.WriteFile(conflict, []byte("contributor"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
+		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	}
+	state, found, err := LoadState(paths.StateFile)
+	if err != nil || !found || !state.RecoveryRequired() {
+		t.Fatalf("state = %#v found %v err %v", state, found, err)
+	}
+	if got := readFileString(t, conflict); got != "contributor" {
+		t.Fatalf("container conflict changed: %q", got)
+	}
+}
+
+func TestSymlinkOwnershipPersistenceFailureRollsBackUnrecordedLink(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPublish := publishStateTemp
+	t.Cleanup(func() { publishStateTemp = originalPublish })
+	partialPublications := 0
+	publishStateTemp = func(oldPath, newPath string) error {
+		data, err := os.ReadFile(oldPath)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), `"install_status": "recovery-required"`) {
+			partialPublications++
+			if partialPublications == 2 {
+				return errors.New("ownership persistence interrupted")
+			}
+		}
+		return os.Rename(oldPath, newPath)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
+		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	}
+	if exists(filepath.Join(paths.AgentSkillsDir, "ask-matt")) {
+		t.Fatal("unrecorded symlink was not rolled back")
+	}
+	state, found, err := LoadState(paths.StateFile)
+	if err != nil || !found || !state.RecoveryRequired() || len(state.ManagedSkills) != 0 {
+		t.Fatalf("state = %#v found %v err %v", state, found, err)
+	}
 }

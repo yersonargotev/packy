@@ -53,7 +53,7 @@ func RunDoctor(w io.Writer, paths Paths, runner Runner) error {
 		return writeErr
 	}
 
-	checks := []doctorCheck{stateCheck(paths, stateFound, err)}
+	checks := []doctorCheck{stateCheck(paths, state, stateFound, err)}
 	checks = append(checks, skillChecks(paths, state, stateFound)...)
 	checks = append(checks, engramChecks(runner, paths, state, stateFound)...)
 	checks = append(checks, codexChecks(paths)...)
@@ -79,12 +79,15 @@ func RunDoctor(w io.Writer, paths Paths, runner Runner) error {
 	return nil
 }
 
-func stateCheck(paths Paths, found bool, loadErr error) doctorCheck {
+func stateCheck(paths Paths, state State, found bool, loadErr error) doctorCheck {
 	if loadErr != nil {
 		return doctorCheck{status: doctorFail, name: "matty-state", detail: loadErr.Error() + "; inspect or remove the corrupt state, then run matty install"}
 	}
 	if !found {
 		return doctorCheck{status: doctorWarn, name: "matty-state", detail: "missing at " + paths.StateFile + "; run matty install"}
+	}
+	if state.RecoveryRequired() {
+		return doctorCheck{status: doctorFail, name: "matty-state", detail: "classic installation was interrupted and requires recovery; run matty install or matty update to retry safely, or matty uninstall to remove only verified Matty-owned artifacts"}
 	}
 	return doctorCheck{status: doctorPass, name: "matty-state", detail: "present at " + paths.StateFile}
 }

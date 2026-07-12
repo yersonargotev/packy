@@ -13,6 +13,13 @@ import (
 
 const stateSchemaVersion = 1
 
+type InstallStatus string
+
+const (
+	InstallConfirmed        InstallStatus = "confirmed"
+	InstallRecoveryRequired InstallStatus = "recovery-required"
+)
+
 var defaultConfiguredSurfaces = []string{"codex", "opencode"}
 
 var (
@@ -42,6 +49,7 @@ type State struct {
 	Paths              StatePaths              `json:"paths"`
 	LastInstallCheck   string                  `json:"last_install_check,omitempty"`
 	CreatedContainers  []ownedcontainer.Record `json:"created_containers,omitempty"`
+	InstallStatus      InstallStatus           `json:"install_status,omitempty"`
 }
 
 type StatePaths struct {
@@ -115,5 +123,10 @@ func DesiredState(paths Paths, checkedAt time.Time, managedSkills []ManagedSkill
 			AgentSkillsDir: paths.AgentSkillsDir,
 		},
 		LastInstallCheck: checkedAt.UTC().Format(time.RFC3339),
+		InstallStatus:    InstallConfirmed,
 	}
+}
+
+func (state State) RecoveryRequired() bool {
+	return state.InstallStatus == InstallRecoveryRequired
 }

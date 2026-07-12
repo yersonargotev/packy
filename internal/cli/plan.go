@@ -342,17 +342,31 @@ func unmanagedSymlinkRecoveryAdvice() string {
 }
 
 func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner) ([]string, error) {
-	previous, _, err := LoadState(paths.StateFile)
+	previous, previousFound, err := LoadState(paths.StateFile)
 	if err != nil {
 		return nil, err
 	}
-	created, err := ownedcontainer.Provision(containerRecords(paths))
+	anchor, err := provisionStateAnchor(paths)
 	if err != nil {
 		return nil, err
 	}
-	plan.State.CreatedContainers = ownedcontainer.Merge(previous.CreatedContainers, created)
-	if err := SaveState(paths.StateFile, plan.State); err != nil {
+	recovery := recoveryState(plan.State, previous, previousFound, anchor)
+	if err := SaveState(paths.StateFile, recovery); err != nil {
+		if cleanupErr := cleanupUnrecordedContainers(anchor); cleanupErr != nil {
+			return nil, fmt.Errorf("%w; clean up unrecorded Matty containers: %v", err, cleanupErr)
+		}
 		return nil, err
+	}
+	created, provisionErr := ownedcontainer.Provision(effectContainerRecords(paths))
+	recovery.CreatedContainers = ownedcontainer.Merge(recovery.CreatedContainers, created)
+	if err := SaveState(paths.StateFile, recovery); err != nil {
+		if cleanupErr := cleanupUnrecordedContainers(created); cleanupErr != nil {
+			return nil, fmt.Errorf("%w; clean up unrecorded Matty containers: %v", err, cleanupErr)
+		}
+		return nil, err
+	}
+	if provisionErr != nil {
+		return nil, provisionErr
 	}
 	if err := os.MkdirAll(paths.MattyDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create Matty config directory %s: %w", paths.MattyDir, err)
@@ -366,6 +380,13 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 		case ActionSymlink:
 			if err := os.Symlink(action.Target, action.Path); err != nil {
 				return nil, fmt.Errorf("create skill symlink %s -> %s: %w", action.Path, action.Target, err)
+			}
+			recovery.ManagedSkills = append(recovery.ManagedSkills, managedSkillForAction(plan.State.ManagedSkills, action))
+			if err := SaveState(paths.StateFile, recovery); err != nil {
+				if removeErr := os.Remove(action.Path); removeErr != nil {
+					return nil, fmt.Errorf("%w; roll back unrecorded skill symlink %s: %v", err, action.Path, removeErr)
+				}
+				return nil, err
 			}
 		case ActionWriteCodexPrompt:
 			result, err := prompt.WriteCodex(action.Path)
@@ -392,10 +413,78 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 			}
 		}
 	}
+	if previous.RecoveryRequired() {
+		plan.State.ManagedSkills = append([]ManagedSkill(nil), recovery.ManagedSkills...)
+	}
+	plan.State.CreatedContainers = append([]ownedcontainer.Record(nil), recovery.CreatedContainers...)
+	plan.State.InstallStatus = InstallConfirmed
 	if err := SaveState(paths.StateFile, plan.State); err != nil {
 		return nil, err
 	}
 	return warnings, nil
+}
+
+func provisionStateAnchor(paths Paths) ([]ownedcontainer.Record, error) {
+	var created []ownedcontainer.Record
+	if _, err := os.Lstat(paths.MattyDir); os.IsNotExist(err) {
+		if err := os.Mkdir(paths.MattyDir, 0o700); err != nil {
+			return nil, fmt.Errorf("create Matty config directory %s: %w", paths.MattyDir, err)
+		}
+		created = append(created, ownedcontainer.Record{Path: paths.MattyDir, Kind: ownedcontainer.Directory})
+	} else if err != nil {
+		return nil, fmt.Errorf("inspect Matty config directory %s: %w", paths.MattyDir, err)
+	}
+	if _, err := os.Lstat(paths.StateFile); os.IsNotExist(err) {
+		created = append(created, ownedcontainer.Record{Path: paths.StateFile, Kind: ownedcontainer.File})
+	} else if err != nil {
+		return nil, fmt.Errorf("inspect Matty state %s: %w", paths.StateFile, err)
+	}
+	return created, nil
+}
+
+func effectContainerRecords(paths Paths) []ownedcontainer.Record {
+	records := containerRecords(paths)
+	out := make([]ownedcontainer.Record, 0, len(records)-2)
+	for _, record := range records {
+		if record.Path != paths.MattyDir && record.Path != paths.StateFile {
+			out = append(out, record)
+		}
+	}
+	return out
+}
+
+func cleanupUnrecordedContainers(created []ownedcontainer.Record) error {
+	cleanup, err := ownedcontainer.Preview(created)
+	if err != nil {
+		return err
+	}
+	_, err = cleanup.Cleanup()
+	return err
+}
+
+func recoveryState(desired, previous State, previousFound bool, created []ownedcontainer.Record) State {
+	recovery := desired
+	recovery.InstallStatus = InstallRecoveryRequired
+	recovery.ManagedSkills = nil
+	if previousFound {
+		for _, skill := range previous.ManagedSkills {
+			link, err := inspectSkillLink(skill)
+			if err == nil && link.status == skillLinkManaged {
+				recovery.ManagedSkills = append(recovery.ManagedSkills, skill)
+			}
+		}
+	}
+	recovery.CreatedContainers = ownedcontainer.Merge(previous.CreatedContainers, created)
+	return recovery
+}
+
+func managedSkillForAction(skills []ManagedSkill, action PlannedAction) ManagedSkill {
+	for _, skill := range skills {
+		if skill.LinkPath == action.Path && skill.SourcePath == action.Target {
+			return skill
+		}
+	}
+	panic("install plan symlink has no matching managed skill")
 }
 
 func isEngramSetupAction(action PlannedAction) bool {

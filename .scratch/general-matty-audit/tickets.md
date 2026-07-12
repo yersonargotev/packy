@@ -46,12 +46,12 @@ Work the **frontier**: any ticket whose blockers are all done. Several tickets c
 
 **Blocked by:** Persist classic lifecycle state atomically.
 
-- [ ] Durable state distinguishes the provenance needed for safe cleanup from confirmed completed installation state.
-- [ ] A failure after state preparation but before all local and external actions complete leaves an explicit recoverable condition.
-- [ ] Doctor reports the partial condition and provides a safe next action.
-- [ ] Update or reinstall can converge the interrupted installation without losing ownership evidence or silently adopting conflicting content.
-- [ ] Uninstall remains contributor-safe and removes only artifacts and empty containers whose ownership can still be proven.
-- [ ] Failure-injection tests cover interruption before local writes, between local and external work, and before final commit.
+- [x] Durable state distinguishes the provenance needed for safe cleanup from confirmed completed installation state.
+- [x] A failure after state preparation but before all local and external actions complete leaves an explicit recoverable condition.
+- [x] Doctor reports the partial condition and provides a safe next action.
+- [x] Update or reinstall can converge the interrupted installation without losing ownership evidence or silently adopting conflicting content.
+- [x] Uninstall remains contributor-safe and removes only artifacts and empty containers whose ownership can still be proven.
+- [x] Failure-injection tests cover interruption before local writes, between local and external work, and before final commit.
 
 ## Add machine-readable health and pack status output
 

@@ -107,3 +107,18 @@ func assertStateFileModeAndNoTemps(t *testing.T, path string) {
 		t.Fatalf("abandoned state temporaries: %v", temps)
 	}
 }
+
+func TestLoadLegacyStateTreatsMissingInstallStatusAsConfirmed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	legacy := `{"schema_version":1,"matty_version":"legacy","managed_skills":[],"configured_surfaces":[],"paths":{"state_file":"legacy","agent_skills_dir":"legacy"}}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, found, err := LoadState(path)
+	if err != nil || !found {
+		t.Fatalf("LoadState = found %v err %v", found, err)
+	}
+	if state.RecoveryRequired() {
+		t.Fatal("legacy state was treated as interrupted")
+	}
+}
