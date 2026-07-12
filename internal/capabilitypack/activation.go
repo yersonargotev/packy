@@ -967,11 +967,25 @@ func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		return ApplyResult{}, err
 	}
 	readiness := verified.Readiness
-	readiness.Configured = true
-	if !readiness.Authorized {
-		readiness.Usable = false
+	pendingHumanActions := append([]string(nil), verified.PendingHumanActions...)
+	if inspector := f.readinessInspectors[request.Plan.surface]; inspector != nil {
+		fresh, err := inspector.InspectReadiness(ctx, pack, verified, resolutions)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		readiness = ReadinessStatus{
+			Configured: true,
+			Authorized: fresh.AuthorizationObserved && fresh.Authorized,
+		}
+		readiness.Usable = readiness.Authorized && fresh.UsabilityObserved && fresh.Usable
+		pendingHumanActions = append([]string(nil), fresh.PendingHumanActions...)
+	} else {
+		readiness.Configured = true
+		if !readiness.Authorized {
+			readiness.Usable = false
+		}
 	}
-	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: len(state.Ownership), Readiness: readiness, PendingHumanActions: append([]string(nil), verified.PendingHumanActions...)}, nil
+	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: len(state.Ownership), Readiness: readiness, PendingHumanActions: pendingHumanActions}, nil
 }
 
 func verificationMatchesSubset(desired []projectionExpectation, observed []ObservedProjection) bool {
@@ -1534,10 +1548,6 @@ func inspectActivation(ctx context.Context, adapter ActivationAdapter, pack Pack
 	}
 	if err != nil {
 		return ActivationObservation{}, err
-	}
-	if pack.ID == "matty" {
-		observation.Readiness.Authorized = true
-		observation.Readiness.Usable = true
 	}
 	return observation, nil
 }

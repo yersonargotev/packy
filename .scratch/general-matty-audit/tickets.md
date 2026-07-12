@@ -10,11 +10,11 @@ Work the **frontier**: any ticket whose blockers are all done. Several tickets c
 
 **Blocked by:** None — can start immediately.
 
-- [ ] Activating the Matty pack can succeed after its exact approved plan is applied and its owned projections verify, without claiming that the host has loaded the capability.
-- [ ] Apply output reports configured, authorized, and usable readiness using the same meanings as fresh status inspection.
-- [ ] An immediate `status --require usable` result does not contradict the readiness rendered by Apply.
-- [ ] Pending reload or runtime-verification actions are explicit and actionable.
-- [ ] Focused lifecycle and CLI tests reproduce the former contradiction and protect both supported surfaces where applicable.
+- [x] Activating the Matty pack can succeed after its exact approved plan is applied and its owned projections verify, without claiming that the host has loaded the capability.
+- [x] Apply output reports configured, authorized, and usable readiness using the same meanings as fresh status inspection.
+- [x] An immediate `status --require usable` result does not contradict the readiness rendered by Apply.
+- [x] Pending reload or runtime-verification actions are explicit and actionable.
+- [x] Focused lifecycle and CLI tests reproduce the former contradiction and protect both supported surfaces where applicable.
 
 ## Expose doctor failures to automation
 

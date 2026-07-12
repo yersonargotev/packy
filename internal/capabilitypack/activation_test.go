@@ -195,6 +195,38 @@ func TestApplyPersistsIntentAndJournalBeforeEffectsThenRecordsVerifiedOwnership(
 	}
 }
 
+func TestMattyApplyReportsFreshReadinessWithoutInventingRuntimeUsability(t *testing.T) {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode} {
+		t.Run(string(surface), func(t *testing.T) {
+			verified := pendingObservation("missing")
+			for i := range verified.Projections {
+				verified.Projections[i].ObservedFingerprint = verified.Projections[i].DesiredFingerprint
+			}
+			facade, _, _ := activationFixtureForSurface(surface, pendingObservation("missing"), pendingObservation("missing"), verified)
+			facade.readinessInspectors = map[Surface]ReadinessInspector{surface: &fakeReadinessInspector{observations: []ReadinessObservation{{
+				AuthorizationObserved: true,
+				Authorized:            true,
+				PendingHumanActions:   []string{"reload host and verify the capability in a new runtime session"},
+			}}}}
+
+			plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: surface})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Verified || result.Readiness != (ReadinessStatus{Configured: true, Authorized: true}) {
+				t.Fatalf("readiness = %+v", result.Readiness)
+			}
+			if !reflect.DeepEqual(result.PendingHumanActions, []string{"reload host and verify the capability in a new runtime session"}) {
+				t.Fatalf("pending actions = %v", result.PendingHumanActions)
+			}
+		})
+	}
+}
+
 func TestVerificationFailureDoesNotInventOwnership(t *testing.T) {
 	facade, _, store := activationFixture(pendingObservation("missing"), pendingObservation("missing"), pendingObservation("missing"))
 	plan, _ := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})

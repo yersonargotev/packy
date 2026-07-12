@@ -641,6 +641,28 @@ func TestPackStatusRequireUsableIsIndependentNonInteractiveGate(t *testing.T) {
 	}
 }
 
+func TestPackActivateMattyAndFreshStatusAgreeRuntimeUsabilityIsPending(t *testing.T) {
+	for _, surface := range []string{"codex", "opencode"} {
+		t.Run(surface, func(t *testing.T) {
+			terminal := &fakeTerminal{interactive: true, approve: true}
+			opts, _, _ := packActivationOptions(t, terminal)
+			out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface)
+			if err != nil {
+				t.Fatalf("activate: %v\n%s", err, out)
+			}
+			for _, want := range []string{"Readiness: configured=yes, authorized=yes, usable=no", "reload " + map[string]string{"codex": "Codex", "opencode": "OpenCode"}[surface]} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("activate output missing %q:\n%s", want, out)
+				}
+			}
+			status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", surface, "--require", "usable")
+			if err == nil || !strings.Contains(status, "Readiness: configured=yes, authorized=yes, usable=no") {
+				t.Fatalf("usable gate: err=%v\n%s", err, status)
+			}
+		})
+	}
+}
+
 func TestPackActivateOpenCodeDryRunIsCompletelySideEffectFree(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, repoRoot := packActivationOptions(t, terminal)
