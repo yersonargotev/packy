@@ -32,6 +32,7 @@ type Paths struct {
 	ConfigHome             string
 	MattyDir               string
 	StateFile              string
+	PackStateFile          string
 	AgentSkillsDir         string
 	InstalledSourceRoot    string
 	SkillSourceRoot        string
@@ -69,6 +70,7 @@ func ResolvePaths(env Env) (Paths, error) {
 		ConfigHome:             configHome,
 		MattyDir:               mattyDir,
 		StateFile:              filepath.Join(mattyDir, "config.json"),
+		PackStateFile:          filepath.Join(mattyDir, "packs.json"),
 		AgentSkillsDir:         filepath.Join(home, ".agents", "skills"),
 		InstalledSourceRoot:    installedSourceRoot,
 		SkillSourceRoot:        skillSource.Root,

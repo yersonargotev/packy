@@ -67,10 +67,15 @@ type StatusReport struct {
 type Facade struct {
 	catalog    Catalog
 	inspectors map[Surface]SurfaceInspector
+	activation *activationDependencies
 }
 
-func NewFacade(catalog Catalog, inspectors map[Surface]SurfaceInspector) Facade {
-	return Facade{catalog: catalog, inspectors: inspectors}
+func NewFacade(catalog Catalog, inspectors map[Surface]SurfaceInspector, options ...FacadeOption) Facade {
+	facade := Facade{catalog: catalog, inspectors: inspectors}
+	for _, option := range options {
+		option(&facade)
+	}
+	return facade
 }
 
 // Status freshly inspects every requested host pair. Until activation intent

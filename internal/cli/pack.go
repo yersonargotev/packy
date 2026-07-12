@@ -7,12 +7,101 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/matty/internal/capabilitypack"
+	"github.com/yersonargotev/matty/internal/codex"
 )
 
 func newPackCommand(opts Options) *cobra.Command {
 	cmd := &cobra.Command{Use: "pack", Short: "Discover and manage capability packs"}
-	cmd.AddCommand(newPackListCommand(opts), newPackShowCommand(opts), newPackStatusCommand(opts))
+	cmd.AddCommand(newPackListCommand(opts), newPackShowCommand(opts), newPackStatusCommand(opts), newPackActivateCommand(opts))
 	return cmd
+}
+
+func newPackActivateCommand(opts Options) *cobra.Command {
+	var surface string
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			facade, err := activationFacade(opts)
+			if err != nil {
+				return err
+			}
+			plan, err := facade.Preview(cmd.Context(), capabilitypack.ActivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface)})
+			if err != nil {
+				return err
+			}
+			if err := renderActivationPlan(cmd, plan, dryRun); err != nil {
+				return err
+			}
+			if dryRun || plan.NoOp() {
+				return nil
+			}
+			interactive := opts.Terminal.Interactive(cmd.InOrStdin())
+			if !interactive {
+				_, err = facade.Apply(cmd.Context(), capabilitypack.ApplyRequest{Plan: plan, Interactive: false})
+				return err
+			}
+			var receipts []capabilitypack.ApprovalReceipt
+			for _, phase := range plan.Phases() {
+				approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve %s phase for exact plan %s?", phase.Kind, plan.ID()))
+				if err != nil {
+					return err
+				}
+				if !approved {
+					return fmt.Errorf("activation cancelled; plan %s was not approved", plan.ID())
+				}
+				receipts = append(receipts, facade.Approve(plan, phase.Kind))
+			}
+			result, err := facade.Apply(cmd.Context(), capabilitypack.ApplyRequest{Plan: plan, Approvals: receipts, Interactive: true})
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Verified plan %s: %d Codex projections owned by matty\n", result.PlanID, result.Projections)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex required for this activation slice)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
+	_ = cmd.MarkFlagRequired("surface")
+	return cmd
+}
+
+func activationFacade(opts Options) (capabilitypack.Facade, error) {
+	catalog, err := discoverPackCatalog(opts)
+	if err != nil {
+		return capabilitypack.Facade{}, err
+	}
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		return capabilitypack.Facade{}, err
+	}
+	adapter := codex.NewActivationAdapter(paths.BundleSourceRoot, paths.AgentSkillsDir, paths.CodexPromptFile)
+	return capabilitypack.NewFacade(catalog, nil, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(paths.PackStateFile), map[capabilitypack.Surface]capabilitypack.ActivationAdapter{capabilitypack.SurfaceCodex: adapter})), nil
+}
+
+func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.ReconciliationPlan, dryRun bool) error {
+	prefix := "Activation plan"
+	if dryRun {
+		prefix = "Activation dry-run plan"
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s\nDigest: %s\nPack: %s %s\nSurface: %s\n", prefix, plan.ID(), plan.Digest(), plan.Pack().ID, plan.Pack().Version, plan.Surface()); err != nil {
+		return err
+	}
+	if plan.NoOp() {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), "Already converged: no approval or Apply required.")
+		return err
+	}
+	for _, phase := range plan.Phases() {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Phase: %s (%s)\n", phase.Kind, phase.Digest); err != nil {
+			return err
+		}
+		for _, action := range phase.Actions {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", action.Description); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func newPackStatusCommand(opts Options) *cobra.Command {

@@ -16,8 +16,9 @@ import (
 // Options carries injectable process boundaries for tests and future command
 // implementations. The zero value uses the real OS environment and runner.
 type Options struct {
-	Env    Env
-	Runner Runner
+	Env      Env
+	Runner   Runner
+	Terminal Terminal
 }
 
 func (o Options) withDefaults() Options {
@@ -26,6 +27,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.Runner == nil {
 		o.Runner = execRunner{}
+	}
+	if o.Terminal == nil {
+		o.Terminal = processTerminal{}
 	}
 	return o
 }

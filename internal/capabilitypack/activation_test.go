@@ -1,0 +1,196 @@
+package capabilitypack
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"testing"
+)
+
+type fakeActivationAdapter struct {
+	observations []ActivationObservation
+	inspectCalls int
+	actions      []ProjectionAction
+	events       *[]string
+	applyErr     error
+}
+
+func (f *fakeActivationAdapter) InspectActivation(context.Context, Pack) (ActivationObservation, error) {
+	f.inspectCalls++
+	if f.inspectCalls > len(f.observations) {
+		return f.observations[len(f.observations)-1], nil
+	}
+	return f.observations[f.inspectCalls-1], nil
+}
+
+func (f *fakeActivationAdapter) ApplyProjections(_ context.Context, actions []ProjectionAction) error {
+	if f.events != nil {
+		*f.events = append(*f.events, "effects")
+	}
+	f.actions = append(f.actions, actions...)
+	return f.applyErr
+}
+
+type fakeActivationStore struct {
+	state  ActivationState
+	events *[]string
+	saves  []ActivationState
+}
+
+func (f *fakeActivationStore) Load(context.Context) (ActivationState, error) {
+	return cloneActivationState(f.state), nil
+}
+func (f *fakeActivationStore) Save(_ context.Context, expectedRevision int, state ActivationState) error {
+	if f.state.Intent.Revision != expectedRevision {
+		return ErrStalePlan
+	}
+	if f.events != nil {
+		*f.events = append(*f.events, "persist")
+	}
+	f.state = cloneActivationState(state)
+	f.saves = append(f.saves, cloneActivationState(state))
+	return nil
+}
+
+func activationFixture(observations ...ActivationObservation) (Facade, *fakeActivationAdapter, *fakeActivationStore) {
+	pack := Pack{ID: "matty", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "ask-matt", Source: "/bundle/skills/ask-matt"}, {Kind: "instruction", ID: "matty-guidance", Source: "/bundle/instructions/matty-guidance.md"}}}
+	adapter := &fakeActivationAdapter{observations: observations}
+	store := &fakeActivationStore{}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, map[Surface]SurfaceInspector{SurfaceCodex: fakeSurfaceInspectorPtr()}, WithActivation(store, map[Surface]ActivationAdapter{SurfaceCodex: adapter}))
+	return facade, adapter, store
+}
+
+func fakeSurfaceInspectorPtr() SurfaceInspector { return &fakeSurfaceInspector{} }
+
+func pendingObservation(fingerprint string) ActivationObservation {
+	return ActivationObservation{Revision: "host-1", Projections: []ObservedProjection{{ID: "skill:ask-matt", DesiredFingerprint: "skill-new", ObservedFingerprint: fingerprint, Action: ProjectionAction{ID: "skill:ask-matt", Description: "link ask-matt skill"}}, {ID: "instruction:matty-guidance", DesiredFingerprint: "instruction-new", ObservedFingerprint: fingerprint, Action: ProjectionAction{ID: "instruction:matty-guidance", Description: "write Matty guidance"}}}}
+}
+
+func TestActivationPreviewIsPureAndProducesStableImmutablePlan(t *testing.T) {
+	facade, adapter, store := activationFixture(pendingObservation("missing"))
+
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.NoOp() || plan.ID() == "" || plan.Digest() == "" {
+		t.Fatalf("invalid plan: %+v", plan)
+	}
+	if got := plan.Phases(); len(got) != 1 || got[0].Kind != ConsentReversibleLocal || len(got[0].Actions) != 2 {
+		t.Fatalf("phases = %+v", got)
+	}
+	if adapter.inspectCalls != 1 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("preview side effects: inspect=%d actions=%v saves=%v", adapter.inspectCalls, adapter.actions, store.saves)
+	}
+	mutated := plan.Phases()
+	mutated[0].Actions[0].Description = "tampered"
+	if plan.Phases()[0].Actions[0].Description == "tampered" {
+		t.Fatal("plan exposed mutable action storage")
+	}
+}
+
+func TestApplyRejectsNonInteractiveBeforeStateOrEffects(t *testing.T) {
+	facade, adapter, store := activationFixture(pendingObservation("missing"))
+	plan, _ := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+	receipt := facade.Approve(plan, ConsentReversibleLocal)
+
+	_, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{receipt}, Interactive: false})
+	if !errors.Is(err, ErrInteractiveRequired) {
+		t.Fatalf("error = %v", err)
+	}
+	if adapter.inspectCalls != 1 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("non-interactive caused effects: %+v %+v", adapter.actions, store.saves)
+	}
+}
+
+func TestApprovalIsBoundToExactPlan(t *testing.T) {
+	facade, adapter, store := activationFixture(pendingObservation("missing"), pendingObservation("missing"))
+	plan, _ := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+	otherFacade, _, _ := activationFixture(ActivationObservation{Revision: "host-other", Projections: pendingObservation("missing").Projections})
+	other, _ := otherFacade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+
+	_, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{otherFacade.Approve(other, ConsentReversibleLocal)}, Interactive: true})
+	if !errors.Is(err, ErrApprovalMismatch) {
+		t.Fatalf("error = %v", err)
+	}
+	if adapter.inspectCalls != 1 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("mismatched approval caused effects")
+	}
+}
+
+func TestStalePlanExecutesZeroActions(t *testing.T) {
+	facade, adapter, store := activationFixture(pendingObservation("missing"), ActivationObservation{Revision: "host-2", Projections: pendingObservation("missing").Projections})
+	plan, _ := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+
+	_, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
+	if !errors.Is(err, ErrStalePlan) {
+		t.Fatalf("error = %v", err)
+	}
+	if len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("stale plan caused effects")
+	}
+}
+
+func TestApplyPersistsIntentAndJournalBeforeEffectsThenRecordsVerifiedOwnership(t *testing.T) {
+	events := []string{}
+	verified := pendingObservation("missing")
+	verified.Revision = "host-2"
+	for i := range verified.Projections {
+		verified.Projections[i].ObservedFingerprint = verified.Projections[i].DesiredFingerprint
+	}
+	facade, adapter, store := activationFixture(pendingObservation("missing"), pendingObservation("missing"), verified)
+	adapter.events, store.events = &events, &events
+	plan, _ := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+
+	result, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Verified || !reflect.DeepEqual(events[:2], []string{"persist", "effects"}) {
+		t.Fatalf("result/events = %+v %v", result, events)
+	}
+	if len(store.saves) != 2 || store.saves[0].Journal == nil || store.saves[0].Intent.Revision != 1 || len(store.saves[0].Ownership) != 0 {
+		t.Fatalf("pre-effect state = %+v", store.saves[0])
+	}
+	if store.saves[1].Journal != nil || len(store.saves[1].Ownership) != 2 {
+		t.Fatalf("verified state = %+v", store.saves[1])
+	}
+	for _, owner := range store.saves[1].Ownership {
+		if !reflect.DeepEqual(owner.Contributors, []string{"matty"}) || owner.Fingerprint == "" {
+			t.Fatalf("ownership = %+v", owner)
+		}
+	}
+}
+
+func TestVerificationFailureDoesNotInventOwnership(t *testing.T) {
+	facade, _, store := activationFixture(pendingObservation("missing"), pendingObservation("missing"), pendingObservation("missing"))
+	plan, _ := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+
+	_, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
+	if !errors.Is(err, ErrVerificationFailed) {
+		t.Fatalf("error = %v", err)
+	}
+	if len(store.state.Ownership) != 0 || store.state.Journal == nil {
+		t.Fatalf("failure invented ownership or cleared journal: %+v", store.state)
+	}
+}
+
+func TestAlreadyConvergedActivationIsNoOpWithoutApprovalOrApply(t *testing.T) {
+	obs := pendingObservation("missing")
+	for i := range obs.Projections {
+		obs.Projections[i].ObservedFingerprint = obs.Projections[i].DesiredFingerprint
+	}
+	facade, adapter, store := activationFixture(obs)
+	store.state = ActivationState{Intent: ActivationIntent{PackID: "matty", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 7}, Ownership: []ProjectionOwnership{{ID: "skill:ask-matt", Contributors: []string{"matty"}, Fingerprint: "skill-new"}, {ID: "instruction:matty-guidance", Contributors: []string{"matty"}, Fingerprint: "instruction-new"}}}
+
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.NoOp() {
+		t.Fatalf("plan is not no-op: %+v", plan)
+	}
+	if adapter.inspectCalls != 1 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("no-op caused apply/save")
+	}
+}

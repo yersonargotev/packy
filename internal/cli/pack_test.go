@@ -1,11 +1,133 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type fakeTerminal struct {
+	interactive bool
+	approve     bool
+	calls       int
+	onApprove   func()
+}
+
+func (f *fakeTerminal) Interactive(io.Reader) bool { return f.interactive }
+func (f *fakeTerminal) Approve(_ io.Reader, _ io.Writer, _ string) (bool, error) {
+	f.calls++
+	if f.onApprove != nil {
+		f.onApprove()
+	}
+	return f.approve, nil
+}
+
+func packActivationOptions(t *testing.T, terminal Terminal) (Options, string, string) {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	return Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "MATTY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}, Runner: &fakeRunner{}, Terminal: terminal}, home, repoRoot
+}
+
+func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, repoRoot := packActivationOptions(t, terminal)
+	beforeHome := snapshotTree(t, home)
+	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
+
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--dry-run")
+	if err != nil {
+		t.Fatalf("dry-run failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{"Activation dry-run plan plan-", "Digest:", "Phase: reversible-local", "link skill ask-matt", "write instruction matty-guidance"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	if terminal.calls != 0 {
+		t.Fatalf("dry-run requested approval %d times", terminal.calls)
+	}
+	if got := snapshotTree(t, home); got != beforeHome {
+		t.Fatalf("dry-run mutated HOME:\n%s", got)
+	}
+	if got := snapshotTree(t, filepath.Join(repoRoot, "bundle")); got != beforeBundle {
+		t.Fatal("dry-run mutated source bundle")
+	}
+}
+
+func TestPackActivateCodexRejectsNonTTYBeforeEffects(t *testing.T) {
+	terminal := &fakeTerminal{interactive: false, approve: true}
+	opts, home, _ := packActivationOptions(t, terminal)
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	if err == nil || !strings.Contains(err.Error(), "interactive terminal") {
+		t.Fatalf("error = %v\n%s", err, out)
+	}
+	if terminal.calls != 0 {
+		t.Fatalf("non-TTY requested approval")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".matty", "packs.json")); !os.IsNotExist(err) {
+		t.Fatalf("state written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents")); !os.IsNotExist(err) {
+		t.Fatalf("skills changed: %v", err)
+	}
+}
+
+func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, _ := packActivationOptions(t, terminal)
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	if err != nil {
+		t.Fatalf("activate failed: %v\n%s", err, out)
+	}
+	if terminal.calls != 1 || !strings.Contains(out, "Verified plan") || !strings.Contains(out, "24 Codex projections") {
+		t.Fatalf("unexpected interaction/output: calls=%d\n%s", terminal.calls, out)
+	}
+	if target, err := os.Readlink(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil || !strings.HasSuffix(target, "bundle/skills/engineering/ask-matt") {
+		t.Fatalf("ask-matt link = %q err=%v", target, err)
+	}
+	prompt, err := os.ReadFile(filepath.Join(home, ".codex", "AGENTS.md"))
+	if err != nil || !strings.Contains(string(prompt), "matty:pack:matty-guidance:start") {
+		t.Fatalf("prompt = %q err=%v", prompt, err)
+	}
+	state, err := os.ReadFile(filepath.Join(home, ".matty", "packs.json"))
+	if err != nil || !strings.Contains(string(state), `"contributors": [`) || strings.Contains(string(state), "applying_journal") {
+		t.Fatalf("state = %s err=%v", state, err)
+	}
+
+	out, err = executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	if err != nil {
+		t.Fatalf("repeat failed: %v\n%s", err, out)
+	}
+	if terminal.calls != 1 || !strings.Contains(out, "Already converged") {
+		t.Fatalf("repeat was not approval-free no-op: calls=%d\n%s", terminal.calls, out)
+	}
+}
+
+func TestPackActivateCodexStalePlanExecutesNoActions(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, _ := packActivationOptions(t, terminal)
+	terminal.onApprove = func() {
+		_ = os.MkdirAll(filepath.Join(home, ".codex"), 0o755)
+		_ = os.WriteFile(filepath.Join(home, ".codex", "AGENTS.md"), []byte("concurrent change\n"), 0o600)
+	}
+
+	_, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	if err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".matty", "packs.json")); !os.IsNotExist(err) {
+		t.Fatalf("stale plan wrote state: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents")); !os.IsNotExist(err) {
+		t.Fatalf("stale plan wrote skills: %v", err)
+	}
+}
 
 func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
