@@ -42,6 +42,26 @@ matty uninstall        # remove only Matty-managed artifacts
 matty uninstall --dry-run
 ```
 
+## Opt-in capability packs
+
+Matty core remains available even when the optional `matty` capability pack is
+inactive. The initial Matty-owned catalog contains only `matty` and `engram`, and
+supports only the `codex` and `opencode` surfaces. Existing installations are not
+automatically migrated or adopted.
+
+Before opting in, inspect the catalog and current host state without mutation:
+
+```sh
+matty pack list
+matty pack show matty
+matty pack status
+matty pack status matty --surface codex
+```
+
+Then follow the explicit [manual capability-pack transition](docs/capability-packs.md).
+It documents dry-run, typed approvals, readiness gating, update, reconcile,
+recovery, and contributor-safe deactivation for both supported surfaces.
+
 ## Global paths
 
 | Path | Purpose |

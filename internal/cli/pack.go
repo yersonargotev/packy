@@ -15,7 +15,31 @@ import (
 )
 
 func newPackCommand(opts Options) *cobra.Command {
-	cmd := &cobra.Command{Use: "pack", Short: "Discover and manage capability packs"}
+	cmd := &cobra.Command{
+		Use:   "pack",
+		Short: "Discover and manage capability packs",
+		Long: `Discover and manage opt-in capability packs independently on Codex and OpenCode.
+
+Lifecycle commands preview an immutable plan before interactive Apply. Approvals
+are requested separately for each consent kind. A verified Apply can succeed while
+login, trust, permissions, reload, or runtime loading remain pending; use targeted
+status with --require usable as the separate automation gate.
+
+After a stale plan or recovery-required attempt, repeat the original lifecycle
+verb to inspect fresh state and receive a new Preview. Matty never retries it
+automatically.`,
+		Example: `  matty pack list
+  matty pack show matty
+  matty pack status
+  matty pack status engram --surface codex
+  matty pack status engram --surface codex --require usable
+  matty pack activate matty --surface codex --dry-run
+  matty pack activate matty --surface codex
+  matty pack update matty --surface codex
+  matty pack reconcile matty --surface codex
+  matty pack reconcile --surface codex
+  matty pack deactivate matty --surface codex`,
+	}
 	cmd.AddCommand(newPackListCommand(opts), newPackShowCommand(opts), newPackStatusCommand(opts), newPackActivateCommand(opts), newPackUpdateCommand(opts), newPackDeactivateCommand(opts), newPackReconcileCommand(opts))
 	return cmd
 }
