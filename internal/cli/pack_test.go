@@ -508,3 +508,80 @@ func TestPackActivateEngramSurfacesRemainIndependent(t *testing.T) {
 		t.Fatalf("state did not preserve both surfaces:\n%s", state)
 	}
 }
+
+func TestPackCompositionDryRunRendersRequestedAndRequiredWithoutPrompts(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, _ := packActivationOptions(t, terminal)
+	bundle := writeCompositionBundle(t, false)
+	opts.Env.(MapEnv)["MATTY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	before := snapshotTree(t, home)
+	for _, surface := range []string{"codex", "opencode"} {
+		out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface, "--dry-run")
+		if err != nil {
+			t.Fatalf("%s dry-run: %v\n%s", surface, err, out)
+		}
+		for _, want := range []string{"Activation: requested matty 1.0.0", "Activation: required engram 1.0.0"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("%s missing %q:\n%s", surface, want, out)
+			}
+		}
+	}
+	if terminal.calls != 0 || snapshotTree(t, home) != before {
+		t.Fatal("composition dry-run prompted or mutated HOME")
+	}
+}
+
+func TestPackCompositionBlockedPreviewRendersAllBlockersWithoutPromptOrEffects(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, _ := packActivationOptions(t, terminal)
+	bundle := writeCompositionBundle(t, true)
+	opts.Env.(MapEnv)["MATTY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex")
+	if err != nil {
+		t.Fatalf("seed dependency: %v\n%s", err, out)
+	}
+	prompts := terminal.calls
+	before := snapshotTree(t, home)
+	out, err = executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	if err != nil {
+		t.Fatalf("blocked preview: %v\n%s", err, out)
+	}
+	for _, want := range []string{"Cannot apply activation: 2 blockers", "capability-conflict", "dependency cap:missing"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	if terminal.calls != prompts || snapshotTree(t, home) != before {
+		t.Fatal("blocked preview prompted or mutated HOME")
+	}
+}
+
+func writeCompositionBundle(t *testing.T, blocked bool) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, dir := range []string{"skills", "packs/matty", "packs/engram", "instructions"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "instructions/app.md"), []byte("app\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "instructions/dep.md"), []byte("dep\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	requires := "[\"cap:dep\"]"
+	conflicts := "[]"
+	if blocked {
+		requires = "[\"cap:missing\"]"
+		conflicts = "[\"cap:dep\"]"
+	}
+	app := `{"schema_version":1,"id":"matty","version":"1.0.0","provides":[],"requires":{"capabilities":` + requires + `,"tools":[]},"conflicts":` + conflicts + `,"resources":[{"kind":"instruction","id":"matty","source":"instructions/app.md"}]}`
+	dep := `{"schema_version":1,"id":"engram","version":"1.0.0","provides":["cap:dep"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"engram","source":"instructions/dep.md"}]}`
+	for path, data := range map[string]string{"packs/matty/pack.json": app, "packs/engram/pack.json": dep} {
+		if err := os.WriteFile(filepath.Join(root, path), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}

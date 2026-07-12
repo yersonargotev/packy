@@ -36,6 +36,9 @@ func newPackActivateCommand(opts Options) *cobra.Command {
 			if err := renderActivationPlan(cmd, plan, dryRun); err != nil {
 				return err
 			}
+			if !plan.Applicable() {
+				return nil
+			}
 			if dryRun || plan.NoOp() {
 				return nil
 			}
@@ -122,6 +125,22 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 	}
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s\nDigest: %s\nPack: %s %s\nSurface: %s\n", prefix, plan.ID(), plan.Digest(), plan.Pack().ID, plan.Pack().Version, plan.Surface()); err != nil {
 		return err
+	}
+	for _, activation := range plan.Activations() {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Activation: %s %s %s\n", activation.Role, activation.Pack.ID, activation.Pack.Version); err != nil {
+			return err
+		}
+	}
+	if !plan.Applicable() {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Cannot apply activation: %d blockers\n", len(plan.Blockers())); err != nil {
+			return err
+		}
+		for _, blocker := range plan.Blockers() {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Blocker: %s %s — %s\n", blocker.Kind, blocker.Subject, blocker.Detail); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if plan.NoOp() {
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), "Already converged: no approval or Apply required.")

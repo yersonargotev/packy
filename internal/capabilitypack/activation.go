@@ -147,6 +147,7 @@ type ExternalEffect struct {
 type ActivationState struct {
 	SchemaVersion int                   `json:"schema_version"`
 	Intent        ActivationIntent      `json:"intent"`
+	Intents       []ActivationIntent    `json:"intents,omitempty"`
 	Journal       *ApplyingJournal      `json:"applying_journal,omitempty"`
 	Ownership     []ProjectionOwnership `json:"ownership,omitempty"`
 	External      []ExternalEffect      `json:"external_effects,omitempty"`
@@ -210,6 +211,11 @@ type ReconciliationPlan struct {
 	readiness              ReadinessStatus
 	pendingHumanActions    []string
 	noOp                   bool
+	activations            []PlannedActivation
+	contributors           map[string][]string
+	blockers               []PlanBlocker
+	compositionFacts       []Pack
+	intentFacts            []ActivationIntent
 }
 
 type projectionExpectation struct{ ID, Fingerprint string }
@@ -220,6 +226,17 @@ func (p ReconciliationPlan) Digest() string   { return p.digest }
 func (p ReconciliationPlan) Pack() Pack       { return clonePack(p.pack) }
 func (p ReconciliationPlan) Surface() Surface { return p.surface }
 func (p ReconciliationPlan) NoOp() bool       { return p.noOp }
+func (p ReconciliationPlan) Applicable() bool { return len(p.blockers) == 0 }
+func (p ReconciliationPlan) Activations() []PlannedActivation {
+	result := append([]PlannedActivation(nil), p.activations...)
+	for i := range result {
+		result[i].Pack = clonePack(result[i].Pack)
+	}
+	return result
+}
+func (p ReconciliationPlan) Blockers() []PlanBlocker {
+	return append([]PlanBlocker(nil), p.blockers...)
+}
 func (p ReconciliationPlan) PortableOutcomes() []PortableOutcome {
 	return append([]PortableOutcome(nil), p.portable...)
 }
@@ -269,10 +286,12 @@ type ApplyResult struct {
 }
 
 func (f Facade) Preview(ctx context.Context, request ActivationRequest) (ReconciliationPlan, error) {
-	pack, adapter, state, err := f.activationInputs(ctx, request)
+	requested, adapter, state, err := f.activationInputs(ctx, request)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
+	composition := f.compose(requested, state, request.Surface)
+	pack := composition.combinedPack()
 	resolutions, err := f.resolveExecutables(ctx, pack)
 	if err != nil {
 		return ReconciliationPlan{}, err
@@ -288,18 +307,18 @@ func (f Facade) Preview(ctx context.Context, request ActivationRequest) (Reconci
 			return ReconciliationPlan{}, fmt.Errorf("inspect activation of pack %q on %s: adapter returned an invalid projection", pack.ID, request.Surface)
 		}
 		if projection.ObservedFingerprint != projection.DesiredFingerprint {
-			if projection.Exists && !ownedAtFingerprint(state.Ownership, projection.ID, projection.ObservedFingerprint, pack.ID) {
-				return ReconciliationPlan{}, fmt.Errorf("projection %q is unmanaged or drifted; preserving existing %s content", projection.ID, request.Surface)
+			if projection.Exists && !ownedAtComposition(state.Ownership, projection.ID, projection.ObservedFingerprint, composition) {
+				composition.blockers = append(composition.blockers, PlanBlocker{BlockerOwnership, projection.ID, fmt.Sprintf("projection is unmanaged or drifted; preserving existing %s content", request.Surface)})
+				continue
 			}
 			actions = append(actions, projection.Action)
 		}
 	}
 	sort.Slice(actions, func(i, j int) bool { return actions[i].ID < actions[j].ID })
-	externalActions, err := f.externalPlan(pack, request.Surface, state, resolutions)
-	if err != nil {
-		return ReconciliationPlan{}, err
-	}
-	noOp := state.Intent.Active && state.Intent.PackID == pack.ID && state.Intent.Surface == request.Surface && state.Intent.Version == pack.Version && ownershipMatches(state.Ownership, observation.Projections, pack.ID) && len(actions) == 0 && len(externalActions) == 0
+	externalActions, externalBlockers := f.externalPlan(pack, request.Surface, state, resolutions)
+	composition.blockers = append(composition.blockers, externalBlockers...)
+	sortBlockers(composition.blockers)
+	noOp := compositionActive(state, composition.packs, request.Surface) && ownershipMatchesContributors(state.Ownership, observation.Projections, composition) && len(actions) == 0 && len(externalActions) == 0
 	readiness := observation.Readiness
 	readiness.Configured = noOp
 	if !readiness.Configured {
@@ -310,7 +329,7 @@ func (f Facade) Preview(ctx context.Context, request ActivationRequest) (Reconci
 	}
 	pendingHumanActions := append([]string(nil), observation.PendingHumanActions...)
 	sort.Strings(pendingHumanActions)
-	plan := ReconciliationPlan{pack: pack, operation: OperationActivate, surface: request.Surface, intentRevision: state.Intent.Revision, observationFingerprint: observationDigest(observation), resolutions: resolutions, readiness: readiness, pendingHumanActions: pendingHumanActions, noOp: noOp}
+	plan := ReconciliationPlan{pack: requested, operation: OperationActivate, surface: request.Surface, intentRevision: state.Intent.Revision, observationFingerprint: observationDigest(observation), resolutions: resolutions, readiness: readiness, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts}
 	for _, resource := range pack.Resources {
 		plan.portable = append(plan.portable, PortableOutcome{Kind: resource.Kind, ID: resource.ID})
 	}
@@ -337,8 +356,9 @@ func (f Facade) Preview(ctx context.Context, request ActivationRequest) (Reconci
 		}
 		plan.phases = append(plan.phases, PlanPhase{Kind: ConsentHostFollowUp, Actions: hostActions})
 	}
-	if !noOp && len(actions) == 0 && len(externalActions) == 0 {
-		return ReconciliationPlan{}, fmt.Errorf("existing %s projections are not verified Matty ownership", request.Surface)
+	if len(plan.blockers) > 0 {
+		plan.phases = nil
+		plan.noOp = false
 	}
 	plan.seal()
 	return plan, nil
@@ -354,14 +374,20 @@ func (f Facade) Approve(plan ReconciliationPlan, kind ConsentKind) ApprovalRecei
 }
 
 func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
+	if !request.Plan.Applicable() {
+		return ApplyResult{}, fmt.Errorf("blocked reconciliation plan is not applicable")
+	}
+	if !request.Plan.validSeal() {
+		return ApplyResult{}, ErrApprovalMismatch
+	}
 	if request.Plan.noOp {
+		if _, err := f.preflightPlan(ctx, request.Plan); err != nil {
+			return ApplyResult{}, err
+		}
 		return ApplyResult{Verified: true, PlanID: request.Plan.id, Readiness: request.Plan.readiness, PendingHumanActions: request.Plan.PendingHumanActions()}, nil
 	}
 	if !request.Interactive {
 		return ApplyResult{}, ErrInteractiveRequired
-	}
-	if !request.Plan.validSeal() {
-		return ApplyResult{}, ErrApprovalMismatch
 	}
 	for _, phase := range request.Plan.phases {
 		if !phase.ApprovalRequired {
@@ -378,34 +404,32 @@ func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			return ApplyResult{}, ErrApprovalMismatch
 		}
 	}
-	pack, adapter, state, err := f.activationInputs(ctx, ActivationRequest{PackID: request.Plan.pack.ID, Surface: request.Plan.surface})
+	preflight, err := f.preflightPlan(ctx, request.Plan)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	resolutions, err := f.resolveExecutables(ctx, pack)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	if !sameResolutions(request.Plan.resolutions, resolutions) {
-		return ApplyResult{}, StalePlanError{Precondition: "Engram executable resolution changed after Preview; rerun activation to preview a fresh plan"}
-	}
-	observation, err := inspectActivation(ctx, adapter, pack, resolutions)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	if state.Intent.Revision != request.Plan.intentRevision {
-		return ApplyResult{}, StalePlanError{Precondition: fmt.Sprintf("activation intent revision changed from %d to %d; rerun activation to preview a fresh plan", request.Plan.intentRevision, state.Intent.Revision)}
-	}
-	if observationDigest(observation) != request.Plan.observationFingerprint {
-		return ApplyResult{}, StalePlanError{Precondition: fmt.Sprintf("%s projections changed after Preview; rerun activation to preview a fresh plan", request.Plan.surface)}
-	}
+	pack, adapter, state := preflight.pack, preflight.adapter, preflight.state
+	currentComposition, combined, resolutions := preflight.composition, preflight.combined, preflight.resolutions
 	if hasPhaseActions(request.Plan.phases, ConsentExecutableExternal) && f.activation.executor == nil {
 		return ApplyResult{}, fmt.Errorf("external effects are not configured")
 	}
 
 	actions := flattenActions(request.Plan.phases)
 	state.SchemaVersion = 1
+	previousIntents := activeIntents(state)
 	state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: pack.Version, Active: true, Revision: state.Intent.Revision + 1}
+	byID := map[string]ActivationIntent{}
+	for _, intent := range previousIntents {
+		byID[intent.PackID] = intent
+	}
+	for _, activation := range request.Plan.activations {
+		byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision}
+	}
+	state.Intents = nil
+	for _, intent := range byID {
+		state.Intents = append(state.Intents, intent)
+	}
+	sort.Slice(state.Intents, func(i, j int) bool { return state.Intents[i].PackID < state.Intents[j].PackID })
 	state.Journal = &ApplyingJournal{PlanID: request.Plan.id}
 	for _, action := range actions {
 		if action.Kind != ActionHostFollowUp {
@@ -427,7 +451,7 @@ func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			return ApplyResult{}, err
 		}
 	}
-	verified, err := inspectActivation(ctx, adapter, pack, resolutions)
+	verified, err := inspectActivation(ctx, adapter, combined, resolutions)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -464,7 +488,7 @@ func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 	}
 	if len(externalActions) > 0 {
-		verified, err = inspectActivation(ctx, adapter, pack, resolutions)
+		verified, err = inspectActivation(ctx, adapter, combined, resolutions)
 		if err != nil {
 			return ApplyResult{}, err
 		}
@@ -480,7 +504,7 @@ func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	state.Journal = nil
 	state.Ownership = make([]ProjectionOwnership, 0, len(verified.Projections))
 	for _, projection := range verified.Projections {
-		state.Ownership = append(state.Ownership, ProjectionOwnership{ID: projection.ID, Contributors: []string{pack.ID}, Fingerprint: projection.DesiredFingerprint})
+		state.Ownership = append(state.Ownership, ProjectionOwnership{ID: projection.ID, Contributors: currentComposition.contributorSet(projection.ID), Fingerprint: projection.DesiredFingerprint})
 	}
 	sort.Slice(state.Ownership, func(i, j int) bool { return state.Ownership[i].ID < state.Ownership[j].ID })
 	if err := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); err != nil {
@@ -492,6 +516,46 @@ func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		readiness.Usable = false
 	}
 	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: len(state.Ownership), Readiness: readiness, PendingHumanActions: append([]string(nil), verified.PendingHumanActions...)}, nil
+}
+
+type planPreflight struct {
+	pack        Pack
+	adapter     ActivationAdapter
+	state       ActivationState
+	composition composition
+	combined    Pack
+	resolutions []ExecutableResolution
+}
+
+func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (planPreflight, error) {
+	pack, adapter, state, err := f.activationInputs(ctx, ActivationRequest{PackID: plan.pack.ID, Surface: plan.surface})
+	if err != nil {
+		return planPreflight{}, err
+	}
+	current := f.compose(pack, state, plan.surface)
+	planned := composition{packs: plan.compositionFacts, activations: plan.activations, contributors: plan.contributors, blockers: plan.blockers, intentFacts: plan.intentFacts}
+	if current.identityDigest() != planned.identityDigest() {
+		return planPreflight{}, StalePlanError{Precondition: "dependency or catalog composition changed after Preview; rerun activation to preview a fresh plan"}
+	}
+	combined := current.combinedPack()
+	resolutions, err := f.resolveExecutables(ctx, combined)
+	if err != nil {
+		return planPreflight{}, err
+	}
+	if !sameResolutions(plan.resolutions, resolutions) {
+		return planPreflight{}, StalePlanError{Precondition: "executable resolution changed after Preview; rerun activation to preview a fresh plan"}
+	}
+	observation, err := inspectActivation(ctx, adapter, combined, resolutions)
+	if err != nil {
+		return planPreflight{}, err
+	}
+	if state.Intent.Revision != plan.intentRevision {
+		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("activation intent revision changed from %d to %d; rerun activation to preview a fresh plan", plan.intentRevision, state.Intent.Revision)}
+	}
+	if observationDigest(observation) != plan.observationFingerprint {
+		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("%s projections changed after Preview; rerun activation to preview a fresh plan", plan.surface)}
+	}
+	return planPreflight{pack: pack, adapter: adapter, state: state, composition: current, combined: combined, resolutions: resolutions}, nil
 }
 
 func appendCompleted(completed []string, id string) []string {
@@ -513,9 +577,6 @@ func (f Facade) activationInputs(ctx context.Context, request ActivationRequest)
 	pack, err := f.catalog.Show(request.PackID)
 	if err != nil {
 		return Pack{}, nil, ActivationState{}, err
-	}
-	if pack.ID != "matty" && pack.ID != "engram" {
-		return Pack{}, nil, ActivationState{}, fmt.Errorf("activation currently supports only capability packs %q and %q", "matty", "engram")
 	}
 	adapter := f.activation.adapters[request.Surface]
 	if adapter == nil {
@@ -555,7 +616,43 @@ func (p ReconciliationPlan) sealPayload() any {
 		Readiness       ReadinessStatus
 		Pending         []string
 		NoOp            bool
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.readiness, p.pendingHumanActions, p.noOp}
+		Activations     []PlannedActivation
+		Contributors    map[string][]string
+		Blockers        []PlanBlocker
+		Composition     []Pack
+		IntentFacts     []ActivationIntent
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.blockers, p.compositionFacts, p.intentFacts}
+}
+
+func compositionActive(state ActivationState, packs []Pack, surface Surface) bool {
+	active := map[string]ActivationIntent{}
+	for _, intent := range activeIntents(state) {
+		active[intent.PackID] = intent
+	}
+	for _, pack := range packs {
+		intent, ok := active[pack.ID]
+		if !ok || !intent.Active || intent.Surface != surface || intent.Version != pack.Version {
+			return false
+		}
+	}
+	return len(packs) > 0
+}
+
+func ownershipMatchesContributors(owners []ProjectionOwnership, projections []ObservedProjection, c composition) bool {
+	if len(owners) != len(projections) {
+		return false
+	}
+	byID := map[string]ProjectionOwnership{}
+	for _, owner := range owners {
+		byID[owner.ID] = owner
+	}
+	for _, projection := range projections {
+		owner, ok := byID[projection.ID]
+		if !ok || owner.Fingerprint != projection.DesiredFingerprint || digestJSON(owner.Contributors) != digestJSON(c.contributorSet(projection.ID)) {
+			return false
+		}
+	}
+	return true
 }
 func digestJSON(value any) string {
 	data, _ := json.Marshal(value)
@@ -645,8 +742,17 @@ func ownedAtFingerprint(owners []ProjectionOwnership, id, fingerprint, packID st
 	}
 	return false
 }
+func ownedAtComposition(owners []ProjectionOwnership, id, fingerprint string, c composition) bool {
+	for _, owner := range owners {
+		if owner.ID == id && owner.Fingerprint == fingerprint && digestJSON(owner.Contributors) == digestJSON(c.contributorSet(id)) {
+			return true
+		}
+	}
+	return false
+}
 func cloneActivationState(state ActivationState) ActivationState {
 	state.Ownership = append([]ProjectionOwnership(nil), state.Ownership...)
+	state.Intents = append([]ActivationIntent(nil), state.Intents...)
 	for i := range state.Ownership {
 		state.Ownership[i].Contributors = append([]string(nil), state.Ownership[i].Contributors...)
 	}
@@ -660,15 +766,14 @@ func cloneActivationState(state ActivationState) ActivationState {
 	return state
 }
 
-func (f Facade) externalPlan(pack Pack, surface Surface, state ActivationState, resolutions []ExecutableResolution) ([]ProjectionAction, error) {
-	if pack.ID != "engram" {
-		return nil, nil
-	}
+func (f Facade) externalPlan(pack Pack, surface Surface, state ActivationState, resolutions []ExecutableResolution) ([]ProjectionAction, []PlanBlocker) {
 	var actions []ProjectionAction
+	var blockers []PlanBlocker
 	for _, resolution := range resolutions {
 		if !resolution.Available {
 			if !resolution.AcquisitionSupported || strings.TrimSpace(resolution.AcquisitionCommand) == "" {
-				return nil, fmt.Errorf("unsatisfied global tool requirement %q: no supported acquisition action is available; set HOMEBREW_PREFIX or install the supported Homebrew formula before retrying", resolution.Tool)
+				blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "no supported acquisition action is available; configure a supported acquisition or install it before retrying"})
+				continue
 			}
 			acquisition := ProjectionAction{ID: "external:" + resolution.Tool + ":acquire", Kind: ActionExternalCommand, Command: resolution.AcquisitionCommand, Args: append([]string(nil), resolution.AcquisitionArgs...), Description: fmt.Sprintf("acquire global tool %s via %s %s", resolution.Tool, resolution.AcquisitionCommand, strings.Join(resolution.AcquisitionArgs, " "))}
 			if !externalEffectCompleted(state.External, acquisition) {
@@ -676,14 +781,16 @@ func (f Facade) externalPlan(pack Pack, surface Surface, state ActivationState, 
 			}
 		}
 		if strings.TrimSpace(resolution.Path) == "" {
-			return nil, fmt.Errorf("resolved global tool %q has no executable path", resolution.Tool)
+			blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "resolved tool has no executable path"})
+			continue
 		}
 		setup := ProjectionAction{ID: "external:" + resolution.Tool + ":setup:" + string(surface), Kind: ActionExternalCommand, Command: resolution.Path, Args: []string{"setup", string(surface)}, Description: fmt.Sprintf("run %s setup %s", resolution.Path, surface)}
 		if !externalEffectCompleted(state.External, setup) {
 			actions = append(actions, setup)
 		}
 	}
-	return actions, nil
+	sortBlockers(blockers)
+	return actions, blockers
 }
 
 func inspectActivation(ctx context.Context, adapter ActivationAdapter, pack Pack, resolutions []ExecutableResolution) (ActivationObservation, error) {
