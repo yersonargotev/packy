@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/matty/internal/bootstrap"
 	"github.com/yersonargotev/matty/internal/capabilitypack"
+	"github.com/yersonargotev/matty/internal/engrambin"
 	"github.com/yersonargotev/matty/internal/skillbundle"
 	mattyversion "github.com/yersonargotev/matty/internal/version"
 )
@@ -21,6 +22,7 @@ type Options struct {
 	Runner              Runner
 	Terminal            Terminal
 	ReadinessInspectors map[capabilitypack.Surface]capabilitypack.ReadinessInspector
+	EngramFacts         engrambin.Facts
 	DoctorReportBuilder func(Paths, Runner) DoctorReport
 }
 
@@ -31,8 +33,12 @@ func (o Options) withDefaults() Options {
 	if o.Runner == nil {
 		o.Runner = execRunner{}
 	}
+	o.EngramFacts = o.EngramFacts.WithDefaults()
 	if o.DoctorReportBuilder == nil {
-		o.DoctorReportBuilder = BuildDoctorReport
+		facts := o.EngramFacts
+		o.DoctorReportBuilder = func(paths Paths, runner Runner) DoctorReport {
+			return buildDoctorReport(paths, runner, facts)
+		}
 	}
 	if o.Terminal == nil {
 		o.Terminal = processTerminal{}

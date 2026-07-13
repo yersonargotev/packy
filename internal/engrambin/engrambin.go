@@ -127,6 +127,10 @@ type LocalBinDiagnosis struct {
 	Detail string
 }
 
+type VersionDiagnosis struct {
+	Detail string
+}
+
 type RuntimeDiagnosis struct {
 	Process     Process
 	Problems    []string
@@ -134,6 +138,29 @@ type RuntimeDiagnosis struct {
 }
 
 func (diagnosis RuntimeDiagnosis) OK() bool { return len(diagnosis.Problems) == 0 }
+
+// Facts supplies the two subprocess-backed observations used by doctor.
+// Keeping them separate from PATH lookup preserves version and runtime evidence
+// as independent facts while allowing callers to isolate workstation state.
+type Facts struct {
+	Version        func(string) (string, error)
+	ServeProcesses func() ([]Process, error)
+}
+
+func SystemFacts() Facts {
+	return Facts{Version: Version, ServeProcesses: FindServeProcesses}
+}
+
+func (facts Facts) WithDefaults() Facts {
+	defaults := SystemFacts()
+	if facts.Version == nil {
+		facts.Version = defaults.Version
+	}
+	if facts.ServeProcesses == nil {
+		facts.ServeProcesses = defaults.ServeProcesses
+	}
+	return facts
+}
 
 func HomebrewPrefixes(prefixEnv string) []string {
 	prefixes := []string{}
@@ -196,17 +223,19 @@ func ExpectedHomebrewPathFromPrefixes(prefixes []string) string {
 }
 
 func UniquePaths(resolved, pathEnv string, homebrewPrefixes []string) []string {
-	seen := map[string]bool{}
+	identities := []Identity{}
 	paths := []string{}
 	add := func(path string) {
 		if path == "" {
 			return
 		}
-		key := filepath.Clean(path)
-		if seen[key] {
-			return
+		identity := NewIdentity(path)
+		for _, seen := range identities {
+			if identity.Matches(seen) {
+				return
+			}
 		}
-		seen[key] = true
+		identities = append(identities, identity)
 		paths = append(paths, path)
 	}
 
@@ -339,6 +368,17 @@ func Detail(executable Executable) string {
 	return executable.Path + " (version empty)"
 }
 
+func DiagnoseVersion(executable Executable) *VersionDiagnosis {
+	switch {
+	case executable.VersionErr != nil:
+		return &VersionDiagnosis{Detail: fmt.Sprintf("could not inspect %s version: %v", executable.Path, executable.VersionErr)}
+	case executable.Version == "":
+		return &VersionDiagnosis{Detail: executable.Path + " returned an empty version"}
+	default:
+		return nil
+	}
+}
+
 func FindServeProcesses() ([]Process, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -467,10 +507,6 @@ func RuntimeRemediation(canonical *Canonical) string {
 }
 
 func commandHasServeArg(command string) bool {
-	for _, field := range strings.Fields(command) {
-		if field == "serve" {
-			return true
-		}
-	}
-	return false
+	fields := strings.Fields(command)
+	return len(fields) >= 2 && fields[1] == "serve"
 }

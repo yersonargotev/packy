@@ -126,6 +126,15 @@ func TestFindServeProcessesPreservesInspectionError(t *testing.T) {
 	}
 }
 
+func TestFindServeProcessesReportsNoProcesses(t *testing.T) {
+	processes, err := findServeProcesses(context.Background(), func(context.Context, string, ...string) ([]byte, error) {
+		return []byte("42 /tmp/engram setup codex\n"), nil
+	}, func(int) string { return "" })
+	if err != nil || len(processes) != 0 {
+		t.Fatalf("FindServeProcesses() = %#v, %v; want no processes", processes, err)
+	}
+}
+
 func writeVersionExecutable(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "engram")
@@ -168,5 +177,126 @@ func TestResolverReportsSupportedHomebrewAcquisitionWhenMissing(t *testing.T) {
 	}
 	if resolution.Path != filepath.Join(prefix, "bin", "engram") {
 		t.Fatalf("missing path = %q", resolution.Path)
+	}
+}
+
+func TestDiscoverHomebrewUsesOnlyExplicitPrefixAndFallsBackAcrossCandidates(t *testing.T) {
+	first := filepath.Join(t.TempDir(), "first")
+	second := filepath.Join(t.TempDir(), "second")
+	if err := os.MkdirAll(filepath.Join(first, "bin", "engram"), 0o700); err != nil {
+		t.Fatalf("mkdir directory candidate: %v", err)
+	}
+	path := filepath.Join(second, "bin", "engram")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir executable candidate: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("not executed"), 0o700); err != nil {
+		t.Fatalf("write executable candidate: %v", err)
+	}
+
+	canonical := DiscoverHomebrewFromPrefixes([]string{first, second})
+	if canonical == nil || canonical.Path != path {
+		t.Fatalf("DiscoverHomebrewFromPrefixes() = %#v, want %s", canonical, path)
+	}
+	if got := HomebrewPrefixes(first); len(got) != 1 || got[0] != first {
+		t.Fatalf("HomebrewPrefixes(explicit) = %#v, want only %s", got, first)
+	}
+}
+
+func TestHomebrewPrefixesPreserveProductionFallbackOrder(t *testing.T) {
+	if got, want := HomebrewPrefixes(""), []string{"/opt/homebrew", "/usr/local"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("HomebrewPrefixes(defaults) = %#v, want %#v", got, want)
+	}
+}
+
+func TestDiscoverHomebrewRejectsMissingNonExecutableAndDirectoryCandidates(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	nonExecutable := filepath.Join(t.TempDir(), "non-executable")
+	directory := filepath.Join(t.TempDir(), "directory")
+	for _, prefix := range []string{nonExecutable, directory} {
+		if err := os.MkdirAll(filepath.Join(prefix, "bin"), 0o700); err != nil {
+			t.Fatalf("mkdir candidate bin: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(nonExecutable, "bin", "engram"), []byte("not executable"), 0o600); err != nil {
+		t.Fatalf("write non-executable candidate: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(directory, "bin", "engram"), 0o700); err != nil {
+		t.Fatalf("mkdir directory candidate: %v", err)
+	}
+
+	if canonical := DiscoverHomebrewFromPrefixes([]string{missing, nonExecutable, directory}); canonical != nil {
+		t.Fatalf("DiscoverHomebrewFromPrefixes() = %#v, want nil", canonical)
+	}
+}
+
+func TestUniquePathsObservesEachExecutableIdentityOnce(t *testing.T) {
+	canonical := writeVersionExecutable(t, "printf 'engram version 1.19.0\\n'")
+	linkDir := t.TempDir()
+	link := filepath.Join(linkDir, "engram")
+	if err := os.Symlink(canonical, link); err != nil {
+		t.Fatalf("symlink canonical: %v", err)
+	}
+
+	paths := UniquePaths(link, strings.Join([]string{linkDir, filepath.Dir(canonical)}, string(os.PathListSeparator)), nil)
+	if len(paths) != 1 || paths[0] != link {
+		t.Fatalf("UniquePaths() = %#v, want one path for canonical identity via %s", paths, link)
+	}
+}
+
+func TestParseServeProcessesIgnoresNonServeEngramCommands(t *testing.T) {
+	processes := ParseServeProcessesWithResolver("42 /tmp/engram setup serve codex\n43 /tmp/engram serve\n", func(int) string { return "" })
+	if len(processes) != 1 || processes[0].PID != 43 {
+		t.Fatalf("ParseServeProcessesWithResolver() = %#v, want only direct serve command", processes)
+	}
+}
+
+func TestResolverDoesNotTreatNonHomebrewPathAsOwned(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "homebrew")
+	other := writeVersionExecutable(t, "printf 'engram version 1.19.0\\n'")
+	resolution, err := NewResolver(prefix, func(string) (string, error) { return other, nil }).Resolve(context.Background(), "engram")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolution.Available || resolution.Origin != "homebrew" || resolution.Path != filepath.Join(prefix, "bin", "engram") {
+		t.Fatalf("non-Homebrew resolution = %+v", resolution)
+	}
+}
+
+func TestDiagnoseRuntimeProcessKeepsPathAndCanonicalEvidenceIndependent(t *testing.T) {
+	canonicalPath := writeVersionExecutable(t, "printf '1.19.0\\n'")
+	pathExecutable := writeVersionExecutable(t, "printf '1.18.0\\n'")
+	canonical := NewCanonical(canonicalPath)
+	pathEngram := NewExecutable(pathExecutable, canonical, "1.18.0", nil)
+
+	diagnosis := DiagnoseRuntimeProcess(Process{PID: 42, ExecutablePath: canonicalPath, Command: canonicalPath + " serve"}, canonical, &pathEngram)
+	if diagnosis.OK() || len(diagnosis.Problems) != 1 || !strings.Contains(diagnosis.Problems[0], "different from PATH Engram "+pathExecutable) {
+		t.Fatalf("DiagnoseRuntimeProcess() = %#v, want canonical process distinguished only from shadowing PATH", diagnosis)
+	}
+}
+
+func TestDiagnoseVersionReportsStableExecutableProblems(t *testing.T) {
+	wantErr := errors.New("command failed")
+	for _, tt := range []struct {
+		name       string
+		executable Executable
+		want       string
+	}{
+		{name: "command failure", executable: Executable{Path: "/tmp/engram", VersionErr: wantErr}, want: "could not inspect /tmp/engram version: command failed"},
+		{name: "empty output", executable: Executable{Path: "/tmp/engram"}, want: "/tmp/engram returned an empty version"},
+		{name: "reported version", executable: Executable{Path: "/tmp/engram", Version: "1.19.0"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			diagnosis := DiagnoseVersion(tt.executable)
+			if tt.want == "" {
+				if diagnosis != nil {
+					t.Fatalf("DiagnoseVersion() = %#v, want nil", diagnosis)
+				}
+				return
+			}
+			if diagnosis == nil || diagnosis.Detail != tt.want {
+				t.Fatalf("DiagnoseVersion() = %#v, want %q", diagnosis, tt.want)
+			}
+		})
 	}
 }

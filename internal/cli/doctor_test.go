@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,11 +11,26 @@ import (
 )
 
 func TestEngramBinaryChecks_NoEngram(t *testing.T) {
-	checks := engramBinaryChecksWithHomebrewPrefixes(&fakeRunner{}, "", "", nil)
+	checks := engramBinaryChecksWithHomebrewPrefixes(&fakeRunner{}, "", "", nil, engrambin.SystemFacts())
 
 	assertDoctorCheck(t, checks, doctorFail, "engram-binary", "engram is not available")
 	assertNoDoctorCheck(t, checks, "engram-version-mismatch")
 	assertNoDoctorCheck(t, checks, "engram-path-shadowing")
+}
+
+func TestHomebrewEngramInstalledDoesNotTreatNonHomebrewPathAsOwned(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "homebrew")
+	other := writeEngramExecutable(t, t.TempDir(), "1.19.0")
+	paths := Paths{HomebrewPrefixEnv: prefix}
+
+	if HomebrewEngramInstalled(paths, &fakeRunner{path: map[string]string{"engram": other}}) {
+		t.Fatal("non-Homebrew PATH executable reported as Homebrew-owned")
+	}
+
+	canonical := writeEngramExecutable(t, filepath.Join(prefix, "bin"), "1.19.0")
+	if !HomebrewEngramInstalled(paths, &fakeRunner{path: map[string]string{"engram": other}}) {
+		t.Fatalf("canonical Homebrew executable %s was not discovered independently of PATH %s", canonical, other)
+	}
 }
 
 func TestEngramBinaryChecks_SingleEngramReportsPathAndVersion(t *testing.T) {
@@ -83,6 +99,76 @@ func TestEngramBinaryChecks_HomebrewEngramOutsidePathStillWarnsWhenShadowed(t *t
 	assertDoctorCheck(t, checks, doctorWarn, "engram-path-shadowing", "Homebrew reports version 1.19.0")
 }
 
+func TestEngramBinaryChecksReportsEveryExecutableVersionInspectionFailure(t *testing.T) {
+	localBin := t.TempDir()
+	homebrewPrefix := filepath.Join(t.TempDir(), "homebrew")
+	local := writeEngramExecutable(t, localBin, "engram version 1.19.0")
+	homebrew := writeEngramExecutable(t, filepath.Join(homebrewPrefix, "bin"), "not observed")
+	wantErr := errors.New("version command failed")
+	facts := engrambin.Facts{
+		Version: func(path string) (string, error) {
+			if path == homebrew {
+				return "", wantErr
+			}
+			return "1.19.0", nil
+		},
+		ServeProcesses: func() ([]engrambin.Process, error) { return nil, nil },
+	}
+	checks := engramBinaryChecksWithHomebrewPrefixes(
+		&fakeRunner{path: map[string]string{"engram": local}},
+		strings.Join([]string{localBin, filepath.Join(homebrewPrefix, "bin")}, string(os.PathListSeparator)),
+		"",
+		[]string{homebrewPrefix},
+		facts,
+	)
+
+	assertDoctorCheck(t, checks, doctorWarn, "engram-version", homebrew)
+	assertDoctorCheck(t, checks, doctorWarn, "engram-version", wantErr.Error())
+	assertDoctorCheck(t, checks, doctorWarn, "engram-path-shadowing", local+" appears before Homebrew Engram at "+homebrew)
+}
+
+func TestEngramBinaryChecksObservesMultipleVersionsThroughFacts(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		homebrew     string
+		wantMismatch bool
+	}{
+		{name: "same", homebrew: "1.19.0"},
+		{name: "different", homebrew: "1.20.0", wantMismatch: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			localBin := t.TempDir()
+			homebrewPrefix := filepath.Join(t.TempDir(), "homebrew")
+			local := writeEngramExecutable(t, localBin, "not executed")
+			homebrew := writeEngramExecutable(t, filepath.Join(homebrewPrefix, "bin"), "not executed")
+			versions := map[string]string{local: "1.19.0", homebrew: tt.homebrew}
+			calls := []string{}
+			facts := engrambin.Facts{
+				Version: func(path string) (string, error) {
+					calls = append(calls, path)
+					return versions[path], nil
+				},
+				ServeProcesses: func() ([]engrambin.Process, error) { return nil, nil },
+			}
+			checks := engramBinaryChecksWithHomebrewPrefixes(
+				&fakeRunner{path: map[string]string{"engram": local}},
+				strings.Join([]string{localBin, filepath.Join(homebrewPrefix, "bin")}, string(os.PathListSeparator)),
+				"",
+				[]string{homebrewPrefix},
+				facts,
+			)
+			if len(calls) != 2 || calls[0] != local || calls[1] != homebrew {
+				t.Fatalf("version calls = %#v", calls)
+			}
+			if tt.wantMismatch {
+				assertDoctorCheck(t, checks, doctorWarn, "engram-version-mismatch", homebrew+" version "+tt.homebrew)
+			} else {
+				assertNoDoctorCheck(t, checks, "engram-version-mismatch")
+			}
+		})
+	}
+}
+
 func TestEngramBinaryChecks_HomebrewEngramOnPathPasses(t *testing.T) {
 	homebrewPrefix := filepath.Join(t.TempDir(), "opt", "homebrew")
 	homebrewBin := filepath.Join(homebrewPrefix, "bin")
@@ -135,7 +221,7 @@ func TestParseEngramServeProcesses(t *testing.T) {
 		"  102 /usr/bin/grep engram serve\n" +
 		"  103 /tmp/engram setup codex\n"
 
-	processes := engrambin.ParseServeProcesses(output)
+	processes := engrambin.ParseServeProcessesWithResolver(output, func(int) string { return "" })
 
 	if len(processes) != 1 {
 		t.Fatalf("processes = %#v, want one engram serve", processes)
@@ -176,6 +262,16 @@ func TestEngramRuntimeChecksWarnsForDifferentDaemonExecutable(t *testing.T) {
 	assertDoctorCheck(t, checks, doctorWarn, "engram-runtime", "different from PATH Engram "+homebrew)
 	assertDoctorCheck(t, checks, doctorWarn, "engram-runtime", "does not match canonical Homebrew Engram "+homebrew)
 	assertDoctorCheck(t, checks, doctorWarn, "engram-runtime", "safe remediation: pkill -f 'engram serve' && "+homebrew+" serve")
+}
+
+func TestEngramRuntimeChecksReportNoActiveProcessIndependently(t *testing.T) {
+	homebrew := writeEngramExecutable(t, filepath.Join(t.TempDir(), "homebrew", "bin"), "1.19.0")
+	canonical := engrambin.NewCanonical(homebrew)
+	pathEngram := engrambin.NewExecutable(homebrew, canonical, "1.19.0", nil)
+
+	checks := engramRuntimeChecksForProcesses(nil, canonical, &pathEngram)
+
+	assertDoctorCheck(t, checks, doctorPass, "engram-runtime", "no active engram serve process found")
 }
 
 func writeEngramExecutable(t *testing.T, dir, versionOutput string) string {

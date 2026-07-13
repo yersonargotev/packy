@@ -143,6 +143,10 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 			"MATTY_SKILLS_SOURCE": sourceRoot,
 		},
 		Runner: runner,
+		EngramFacts: engrambin.Facts{
+			Version:        func(string) (string, error) { return "1.19.0", nil },
+			ServeProcesses: func() ([]engrambin.Process, error) { return nil, nil },
+		},
 	}, runner, home
 }
 
@@ -308,7 +312,14 @@ func TestVersionOutput(t *testing.T) {
 func TestCommandsResolvePathsFromInjectedEnvironment(t *testing.T) {
 	home := t.TempDir()
 	xdg := filepath.Join(home, "custom-xdg")
-	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": xdg}, Runner: &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}}}
+	opts := Options{
+		Env:    MapEnv{"HOME": home, "XDG_CONFIG_HOME": xdg},
+		Runner: &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}},
+		EngramFacts: engrambin.Facts{
+			Version:        func(string) (string, error) { return "1.19.0", nil },
+			ServeProcesses: func() ([]engrambin.Process, error) { return nil, nil },
+		},
+	}
 
 	out, err := executeCommand(t, NewRootCommand(opts), "doctor")
 	if err != nil {
@@ -379,6 +390,78 @@ func TestReadOnlyOrScaffoldCommandsDoNotCreateFilesInSandboxHome(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDoctorUsesInjectedEngramFactsWithoutMutationOrRunnerSideEffects(t *testing.T) {
+	opts, runner, _ := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatalf("ResolvePaths: %v", err)
+	}
+	canonical := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)
+	versionCalls := []string{}
+	processCalls := 0
+	opts.EngramFacts = engrambin.Facts{
+		Version: func(path string) (string, error) {
+			versionCalls = append(versionCalls, path)
+			return "1.19.0", nil
+		},
+		ServeProcesses: func() ([]engrambin.Process, error) {
+			processCalls++
+			return []engrambin.Process{{PID: 42, ExecutablePath: canonical, Command: canonical + " serve"}}, nil
+		},
+	}
+	out, err := executeCommand(t, NewRootCommand(opts), "doctor")
+	if err != nil {
+		t.Fatalf("doctor: %v\n%s", err, out)
+	}
+	assertDoctorManagedPathsAbsent(t, paths)
+	if len(runner.calls) != 0 {
+		t.Fatalf("doctor ran side-effect commands: %#v", runner.calls)
+	}
+	if len(versionCalls) != 1 || versionCalls[0] != canonical || processCalls != 1 {
+		t.Fatalf("Engram facts calls: versions=%#v processes=%d", versionCalls, processCalls)
+	}
+	if !strings.Contains(out, "PASS engram-runtime: pid 42 running "+canonical) {
+		t.Fatalf("doctor did not render injected runtime fact:\n%s", out)
+	}
+	if !strings.Contains(out, "WARN engram-setup: state is missing") {
+		t.Fatalf("doctor setup intent was not reported independently:\n%s", out)
+	}
+}
+
+func TestDoctorReportsInjectedEngramInspectionFailuresStably(t *testing.T) {
+	opts, runner, _ := sandboxOptions(t)
+	paths, err := ResolvePaths(opts.Env)
+	if err != nil {
+		t.Fatalf("ResolvePaths: %v", err)
+	}
+	opts.EngramFacts = engrambin.Facts{
+		Version:        func(string) (string, error) { return "", errors.New("version unavailable") },
+		ServeProcesses: func() ([]engrambin.Process, error) { return nil, errors.New("process inspection unavailable") },
+	}
+	out, err := executeCommand(t, NewRootCommand(opts), "doctor", "--json")
+	if err != nil {
+		t.Fatalf("doctor: %v\n%s", err, out)
+	}
+	assertDoctorManagedPathsAbsent(t, paths)
+	if len(runner.calls) != 0 {
+		t.Fatalf("doctor ran side effects: calls=%#v", runner.calls)
+	}
+	for _, want := range []string{"version unavailable", "could not inspect active engram serve processes", "process inspection unavailable"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor JSON missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func assertDoctorManagedPathsAbsent(t *testing.T, paths Paths) {
+	t.Helper()
+	for _, path := range []string{paths.StateFile, paths.AgentSkillsDir, paths.CodexPromptFile, paths.OpenCodeConfigFile, paths.OpenCodePromptFile} {
+		if exists(path) {
+			t.Fatalf("doctor unexpectedly created managed path %s", path)
+		}
 	}
 }
 

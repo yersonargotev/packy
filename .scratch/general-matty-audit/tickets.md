@@ -95,8 +95,8 @@ Work the **frontier**: any ticket whose blockers are all done. Several tickets c
 
 **Blocked by:** None — can start immediately.
 
-- [ ] Tests cover canonical Homebrew discovery, non-Homebrew PATH resolution, shadowing, and multiple reported versions.
-- [ ] Missing executables, failed version commands, and process-inspection errors produce stable diagnoses without mutation.
-- [ ] Active process evidence is classified independently from PATH ownership and configured intent.
-- [ ] Test fixtures do not rely on the operator's installed Engram binary, real Homebrew prefix, or active processes.
-- [ ] Coverage improvement is demonstrated on the previously under-tested executable-discovery boundary, without a percentage-only test target.
+- [x] Tests cover canonical Homebrew discovery, non-Homebrew PATH resolution, shadowing, and multiple reported versions.
+- [x] Missing executables, failed version commands, and process-inspection errors produce stable diagnoses without mutation.
+- [x] Active process evidence is classified independently from PATH ownership and configured intent.
+- [x] Test fixtures do not rely on the operator's installed Engram binary, real Homebrew prefix, or active processes.
+- [x] Coverage improvement is demonstrated on the previously under-tested executable-discovery boundary, without a percentage-only test target.
