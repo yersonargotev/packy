@@ -1,7 +1,23 @@
-Status: ready-for-agent
+Status: resolved
 Blocked by: None — can start immediately
 
 # Contract setup health behavior and record the architecture
+
+## Answer
+
+Accepted [ADR 0004](../../../docs/adr/0004-setup-health-deep-module.md)
+records setup-health ownership, its single Diagnose-to-Report seam, read-only
+best-effort observations, least-authority dependencies, compatibility contract,
+CLI responsibilities, and exclusions while linking the independent lifecycle
+observation decision.
+
+Command-level characterization tests in
+`internal/cli/doctor_contract_test.go` freeze the exact human and JSON v1
+reports for a warning-only sandbox and a combined lookup/process-observation
+failure. They assert context, ordered checks, severities, complete remediation,
+summary and exit behavior, substituted active facts, full-report best effort,
+and zero filesystem or command mutation. Production diagnosis and observable
+output remain unchanged.
 
 ## Parent
 
