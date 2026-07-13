@@ -173,7 +173,7 @@ func ValidateInstalledSourceRef(opts BootstrapOptions) error {
 // without invoking Git. Lifecycle Preview uses this path so dry-runs never
 // execute commands; mutating bootstrap operations continue to use Git itself.
 func repositoryRefMatchesReadOnly(opts BootstrapOptions, missingGitReason string) (bool, error) {
-	repository, err := git.PlainOpen(opts.SourceRoot)
+	repository, err := git.PlainOpenWithOptions(opts.SourceRoot, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
 	if err != nil {
 		if errors.Is(err, git.ErrRepositoryNotExists) {
 			return false, fmt.Errorf("Installed Source at %s is not a git checkout; %s. Move it aside or pass --source-root", opts.SourceRoot, missingGitReason)
@@ -184,43 +184,11 @@ func repositoryRefMatchesReadOnly(opts BootstrapOptions, missingGitReason string
 	if err != nil {
 		return false, fmt.Errorf("inspect Installed Source HEAD: %w", err)
 	}
-	references, err := installedSourceReferenceRepository(opts.SourceRoot, repository)
-	if err != nil {
-		return false, fmt.Errorf("inspect Installed Source git metadata: %w", err)
-	}
-	target, err := references.ResolveRevision(plumbing.Revision(opts.RepositoryRef + "^{commit}"))
+	target, err := repository.ResolveRevision(plumbing.Revision(opts.RepositoryRef + "^{commit}"))
 	if err != nil {
 		return false, nil
 	}
 	return head.Hash() == *target, nil
-}
-
-func installedSourceReferenceRepository(sourceRoot string, repository *git.Repository) (*git.Repository, error) {
-	gitFile := filepath.Join(sourceRoot, ".git")
-	info, err := os.Stat(gitFile)
-	if err != nil || info.IsDir() {
-		return repository, err
-	}
-	data, err := os.ReadFile(gitFile)
-	if err != nil {
-		return nil, err
-	}
-	gitDir := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "gitdir:"))
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(sourceRoot, gitDir)
-	}
-	common, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return repository, nil
-		}
-		return nil, err
-	}
-	commonDir := strings.TrimSpace(string(common))
-	if !filepath.IsAbs(commonDir) {
-		commonDir = filepath.Join(gitDir, commonDir)
-	}
-	return git.PlainOpen(filepath.Clean(commonDir))
 }
 
 func repositoryRefMatches(opts BootstrapOptions, missingGitReason string) (bool, error) {
