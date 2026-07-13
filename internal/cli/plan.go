@@ -31,10 +31,6 @@ const (
 	ActionCleanup              ActionKind = "cleanup"
 )
 
-func (kind ActionKind) refreshesDuringUpdate() bool {
-	return kind == ActionRun || kind == ActionWriteCodexPrompt || kind == ActionWriteOpenCodePrompt
-}
-
 func (kind ActionKind) appliesDuringUninstall() bool {
 	return kind == ActionRemove || kind == ActionRemoveCodexPrompt || kind == ActionRemoveOpenCodePrompt
 }
@@ -75,7 +71,7 @@ type Plan struct {
 	cleanup ownedcontainer.Plan
 }
 
-func BuildInstallPlan(paths Paths, checkedAt time.Time, engramInstalled bool) (Plan, error) {
+func BuildUpdatePlan(paths Paths, checkedAt time.Time) (Plan, error) {
 	discovered, err := DiscoverManagedSkills(paths)
 	if err != nil {
 		return Plan{}, err
@@ -97,32 +93,14 @@ func BuildInstallPlan(paths Paths, checkedAt time.Time, engramInstalled bool) (P
 			managed = append(managed, skill)
 		}
 	}
-	if !engramInstalled {
-		actions = append(actions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"install", engrambin.Formula}, Description: "install Engram via Homebrew"})
-	}
+	updateActions := make([]PlannedAction, 0, len(actions)+6)
+	updateActions = append(updateActions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"update"}, Description: "refresh Homebrew formula metadata"})
+	updateActions = append(updateActions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"upgrade", "engram"}, Description: "update Engram via Homebrew"})
+	updateActions = append(updateActions, actions...)
+	actions = updateActions
 	actions = append(actions, engramSetupActions(paths)...)
 	actions = append(actions, codexPromptWriteAction(paths), openCodePromptWriteAction(paths))
 	return Plan{Actions: actions, State: corelifecycle.DesiredState(classicStateConfig(paths), checkedAt, managed)}, nil
-}
-
-func BuildUpdatePlan(paths Paths, checkedAt time.Time) (Plan, error) {
-	plan, err := BuildInstallPlan(paths, checkedAt, true)
-	if err != nil {
-		return Plan{}, err
-	}
-	actions := make([]PlannedAction, 0, len(plan.Actions)+2)
-	actions = append(actions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"update"}, Description: "refresh Homebrew formula metadata"})
-	actions = append(actions, PlannedAction{Kind: ActionRun, Command: "brew", Args: []string{"upgrade", "engram"}, Description: "update Engram via Homebrew"})
-	for _, action := range plan.Actions {
-		if action.Kind.refreshesDuringUpdate() {
-			continue
-		}
-		actions = append(actions, action)
-	}
-	actions = append(actions, engramSetupActions(paths)...)
-	actions = append(actions, codexPromptWriteAction(paths), openCodePromptWriteAction(paths))
-	plan.Actions = actions
-	return plan, nil
 }
 
 func codexPromptWriteAction(paths Paths) PlannedAction {
@@ -342,11 +320,11 @@ func unmanagedSymlinkRecoveryAdvice() string {
 	return "Safe recovery: verify these are stale Matty-created links, remove them, then run matty install; Matty will not overwrite arbitrary files or links."
 }
 
-// persistClassicState remains injectable while the CLI owns operation
-// sequencing. The install-facade slice moves this seam into corelifecycle.
-var persistClassicState = corelifecycle.SaveState
+// persistUpdateState remains injectable until update sequencing moves behind
+// corelifecycle in ticket 03.
+var persistUpdateState = corelifecycle.SaveState
 
-func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner) ([]string, error) {
+func ApplyUpdatePlan(ctx context.Context, paths Paths, plan Plan, runner Runner) ([]string, error) {
 	previous, previousFound, err := corelifecycle.LoadState(paths.StateFile)
 	if err != nil {
 		return nil, err
@@ -356,7 +334,7 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 		return nil, err
 	}
 	recovery := recoveryState(plan.State, previous, previousFound, anchor)
-	if err := persistClassicState(paths.StateFile, recovery); err != nil {
+	if err := persistUpdateState(paths.StateFile, recovery); err != nil {
 		if cleanupErr := cleanupUnrecordedContainers(anchor); cleanupErr != nil {
 			return nil, fmt.Errorf("%w; clean up unrecorded Matty containers: %v", err, cleanupErr)
 		}
@@ -364,7 +342,7 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 	}
 	created, provisionErr := ownedcontainer.Provision(effectContainerRecords(paths))
 	recovery.CreatedContainers = ownedcontainer.Merge(recovery.CreatedContainers, created)
-	if err := persistClassicState(paths.StateFile, recovery); err != nil {
+	if err := persistUpdateState(paths.StateFile, recovery); err != nil {
 		if cleanupErr := cleanupUnrecordedContainers(created); cleanupErr != nil {
 			return nil, fmt.Errorf("%w; clean up unrecorded Matty containers: %v", err, cleanupErr)
 		}
@@ -387,7 +365,7 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 				return nil, fmt.Errorf("create skill symlink %s -> %s: %w", action.Path, action.Target, err)
 			}
 			recovery.ManagedSkills = append(recovery.ManagedSkills, managedSkillForAction(plan.State.ManagedSkills, action))
-			if err := persistClassicState(paths.StateFile, recovery); err != nil {
+			if err := persistUpdateState(paths.StateFile, recovery); err != nil {
 				if removeErr := os.Remove(action.Path); removeErr != nil {
 					return nil, fmt.Errorf("%w; roll back unrecorded skill symlink %s: %v", err, action.Path, removeErr)
 				}
@@ -423,7 +401,7 @@ func ApplyInstallPlan(ctx context.Context, paths Paths, plan Plan, runner Runner
 	}
 	plan.State.CreatedContainers = append([]ownedcontainer.Record(nil), recovery.CreatedContainers...)
 	plan.State.InstallStatus = corelifecycle.InstallConfirmed
-	if err := persistClassicState(paths.StateFile, plan.State); err != nil {
+	if err := persistUpdateState(paths.StateFile, plan.State); err != nil {
 		return nil, err
 	}
 	return warnings, nil

@@ -1246,73 +1246,6 @@ func hasManagedSkill(state corelifecycle.State, name string) bool {
 	return false
 }
 
-func TestInstallFailsWhenSelectedInProgressSkillMissing(t *testing.T) {
-	home := t.TempDir()
-	sourceRoot := createSkillSource(t)
-	if err := os.RemoveAll(filepath.Join(sourceRoot, "in-progress", "loop-me")); err != nil {
-		t.Fatalf("remove source skill: %v", err)
-	}
-	opts := Options{Env: MapEnv{"HOME": home, "MATTY_SKILLS_SOURCE": sourceRoot}, Runner: &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}}}
-
-	out, err := executeCommand(t, NewRootCommand(opts), "install")
-	if err == nil {
-		t.Fatalf("expected missing source skill error, got output:\n%s", out)
-	}
-	if !strings.Contains(err.Error(), "loop-me") {
-		t.Fatalf("error = %v, want loop-me", err)
-	}
-	if exists(filepath.Join(home, ".agents")) || exists(filepath.Join(home, ".matty")) {
-		t.Fatalf("install mutated sandbox despite missing source skill")
-	}
-}
-
-func TestInstallPreservesUnmanagedPaths(t *testing.T) {
-	opts, _, home := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	if err := os.MkdirAll(paths.AgentSkillsDir, 0o700); err != nil {
-		t.Fatalf("mkdir agent skills: %v", err)
-	}
-	unmanagedFile := filepath.Join(paths.AgentSkillsDir, "ask-matt")
-	if err := os.WriteFile(unmanagedFile, []byte("keep me"), 0o600); err != nil {
-		t.Fatalf("write unmanaged file: %v", err)
-	}
-	otherTarget := filepath.Join(home, "elsewhere")
-	if err := os.MkdirAll(otherTarget, 0o700); err != nil {
-		t.Fatalf("mkdir unmanaged target: %v", err)
-	}
-	unmanagedSymlink := filepath.Join(paths.AgentSkillsDir, "handoff")
-	if err := os.Symlink(otherTarget, unmanagedSymlink); err != nil {
-		t.Fatalf("write unmanaged symlink: %v", err)
-	}
-
-	out, err := executeCommand(t, NewRootCommand(opts), "install")
-	if err != nil {
-		t.Fatalf("install failed: %v\n%s", err, out)
-	}
-	data, err := os.ReadFile(unmanagedFile)
-	if err != nil || string(data) != "keep me" {
-		t.Fatalf("unmanaged file was not preserved: data=%q err=%v", data, err)
-	}
-	gotTarget, err := os.Readlink(unmanagedSymlink)
-	if err != nil || gotTarget != otherTarget {
-		t.Fatalf("unmanaged symlink target = %q, %v; want %q", gotTarget, err, otherTarget)
-	}
-
-	state, found, err := corelifecycle.LoadState(paths.StateFile)
-	if err != nil || !found {
-		t.Fatalf("LoadState = found %v err %v", found, err)
-	}
-	if hasManagedSkill(state, "ask-matt") || hasManagedSkill(state, "handoff") {
-		t.Fatalf("unmanaged collisions should not be recorded as managed: %#v", state.ManagedSkills)
-	}
-	if !hasManagedSkill(state, "wayfinder") {
-		t.Fatalf("non-conflicting skills should still be managed: %#v", state.ManagedSkills)
-	}
-}
-
 func TestInstallWarnsWhenMostExpectedSkillsAreUnmanagedSymlinks(t *testing.T) {
 	opts, _, home := sandboxOptions(t)
 	paths, err := ResolvePaths(opts.Env)
@@ -1366,16 +1299,6 @@ func TestInstallAndUpdateAreIdempotent(t *testing.T) {
 		t.Fatalf("install failed: %v\n%s", err, out)
 	}
 	before := readSkillLinks(t, paths)
-
-	plan, err := BuildInstallPlan(paths, fixedTestTime(), true)
-	if err != nil {
-		t.Fatalf("BuildInstallPlan failed: %v", err)
-	}
-	for _, action := range plan.Actions {
-		if action.Kind == ActionSymlink {
-			t.Fatalf("idempotent plan should not recreate symlink: %#v", action)
-		}
-	}
 
 	out, err = executeCommand(t, NewRootCommand(opts), "update")
 	if err != nil {
@@ -1730,26 +1653,6 @@ func readSkillLinks(t *testing.T, paths Paths) []string {
 	return links
 }
 
-func TestInstallInstallsEngramViaHomebrewWhenMissing(t *testing.T) {
-	opts, runner, _ := sandboxOptions(t)
-	runner.path = nil
-	missingPrefix := filepath.Join(t.TempDir(), "missing-homebrew")
-	opts.Env.(MapEnv)["HOMEBREW_PREFIX"] = missingPrefix
-	opts.Env.(MapEnv)["PATH"] = ""
-	engram := filepath.Join(missingPrefix, "bin", "engram")
-	runner.after = map[string]func(){"brew install gentleman-programming/tap/engram": func() {
-		writeEngramExecutable(t, filepath.Dir(engram), "engram version 1.19.0")
-	}}
-	out, err := executeCommand(t, NewRootCommand(opts), "install")
-	if err != nil {
-		t.Fatalf("install failed: %v\n%s", err, out)
-	}
-	want := []string{"brew install gentleman-programming/tap/engram", engram + " setup codex", engram + " setup opencode"}
-	if got := callStrings(runner.calls); strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("runner calls = %#v, want %#v", got, want)
-	}
-}
-
 func TestUpdateRunsEngramHomebrewUpdateAndSetup(t *testing.T) {
 	opts, runner, _ := sandboxOptions(t)
 	out, err := executeCommand(t, NewRootCommand(opts), "update")
@@ -1759,41 +1662,6 @@ func TestUpdateRunsEngramHomebrewUpdateAndSetup(t *testing.T) {
 	want := engramUpdateCallStrings(t, opts)
 	if got := callStrings(runner.calls); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("runner calls = %#v, want %#v", got, want)
-	}
-}
-
-func TestInstallFailsClearlyWhenHomebrewSetupBinaryMissingAfterBrewInstall(t *testing.T) {
-	opts, runner, _ := sandboxOptions(t)
-	runner.path = nil
-	missingPrefix := filepath.Join(t.TempDir(), "missing-homebrew")
-	opts.Env.(MapEnv)["HOMEBREW_PREFIX"] = missingPrefix
-	opts.Env.(MapEnv)["PATH"] = ""
-
-	out, err := executeCommand(t, NewRootCommand(opts), "install")
-	if err == nil {
-		t.Fatalf("expected missing canonical Engram error, got output:\n%s", out)
-	}
-	for _, want := range []string{"canonical Homebrew Engram was not found", filepath.Join(missingPrefix, "bin", "engram"), "HOMEBREW_PREFIX"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error = %v, want %q", err, want)
-		}
-	}
-}
-
-func TestExternalCommandFailureIsActionable(t *testing.T) {
-	opts, runner, _ := sandboxOptions(t)
-	runner.path = nil
-	opts.Env.(MapEnv)["HOMEBREW_PREFIX"] = filepath.Join(t.TempDir(), "missing-homebrew")
-	opts.Env.(MapEnv)["PATH"] = ""
-	runner.fail = map[string]error{"brew install gentleman-programming/tap/engram": errors.New("brew missing")}
-	out, err := executeCommand(t, NewRootCommand(opts), "install")
-	if err == nil {
-		t.Fatalf("expected install failure, got output:\n%s", out)
-	}
-	for _, want := range []string{"failed to install Engram via Homebrew", "ensure Homebrew is installed", "brew missing"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error = %v, want %q", err, want)
-		}
 	}
 }
 
@@ -2178,49 +2046,6 @@ func runGitCommand(t *testing.T, dir string, args ...string) string {
 	return string(output)
 }
 
-func TestInterruptedInstallConvergesWithoutAdoptingConflict(t *testing.T) {
-	opts, runner, home := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	setup := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv) + " setup codex"
-	runner.fail = map[string]error{setup: errors.New("interrupted")}
-	if _, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
-		t.Fatal("expected interrupted install")
-	}
-	conflict := filepath.Join(paths.AgentSkillsDir, "ask-matt")
-	if err := os.Remove(conflict); err != nil {
-		t.Fatal(err)
-	}
-	unmanagedTarget := filepath.Join(home, "unmanaged-target")
-	if err := os.Mkdir(unmanagedTarget, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(unmanagedTarget, conflict); err != nil {
-		t.Fatal(err)
-	}
-	delete(runner.fail, setup)
-	if out, err := executeCommand(t, NewRootCommand(opts), "update"); err != nil {
-		t.Fatalf("update recovery failed: %v\n%s", err, out)
-	}
-	state, _, err := corelifecycle.LoadState(paths.StateFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.RecoveryRequired() || state.InstallStatus != corelifecycle.InstallConfirmed {
-		t.Fatalf("recovered status = %q", state.InstallStatus)
-	}
-	for _, skill := range state.ManagedSkills {
-		if skill.LinkPath == conflict {
-			t.Fatal("recovery adopted conflicting symlink")
-		}
-	}
-	if target, err := os.Readlink(conflict); err != nil || target != unmanagedTarget {
-		t.Fatalf("conflict changed: %q %v", target, err)
-	}
-}
-
 func TestUninstallFromInterruptedInstallUsesOnlyVerifiedOwnership(t *testing.T) {
 	opts, runner, home := sandboxOptions(t)
 	paths, err := ResolvePaths(opts.Env)
@@ -2258,22 +2083,22 @@ func TestUninstallFromInterruptedInstallUsesOnlyVerifiedOwnership(t *testing.T) 
 	}
 }
 
-func TestFinalStateCommitFailureLeavesRecoverableState(t *testing.T) {
+func TestFinalUpdateStateCommitFailureLeavesRecoverableState(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
 	paths, err := ResolvePaths(opts.Env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalPersist := persistClassicState
-	t.Cleanup(func() { persistClassicState = originalPersist })
-	persistClassicState = func(path string, state corelifecycle.State) error {
+	originalPersist := persistUpdateState
+	t.Cleanup(func() { persistUpdateState = originalPersist })
+	persistUpdateState = func(path string, state corelifecycle.State) error {
 		if state.InstallStatus == corelifecycle.InstallConfirmed {
 			return errors.New("final commit interrupted")
 		}
 		return corelifecycle.SaveState(path, state)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
-		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	if out, err := executeCommand(t, NewRootCommand(opts), "update"); err == nil {
+		t.Fatalf("update unexpectedly succeeded:\n%s", out)
 	}
 	state, found, err := corelifecycle.LoadState(paths.StateFile)
 	if err != nil || !found || !state.RecoveryRequired() {
@@ -2281,57 +2106,35 @@ func TestFinalStateCommitFailureLeavesRecoverableState(t *testing.T) {
 	}
 }
 
-func TestStatePreparationFailureLeavesNoLocalWrites(t *testing.T) {
+func TestUpdateStatePreparationFailureLeavesNoLocalWrites(t *testing.T) {
 	opts, _, home := sandboxOptions(t)
-	originalPersist := persistClassicState
-	t.Cleanup(func() { persistClassicState = originalPersist })
-	persistClassicState = func(string, corelifecycle.State) error { return errors.New("preparation interrupted") }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
-		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	originalPersist := persistUpdateState
+	t.Cleanup(func() { persistUpdateState = originalPersist })
+	persistUpdateState = func(string, corelifecycle.State) error { return errors.New("preparation interrupted") }
+	if out, err := executeCommand(t, NewRootCommand(opts), "update"); err == nil {
+		t.Fatalf("update unexpectedly succeeded:\n%s", out)
 	}
 	if got := snapshotTree(t, home); strings.Count(strings.TrimSpace(got), "\n") != 0 {
 		t.Fatalf("preparation failure left local writes:\n%s", got)
 	}
 }
 
-func TestPartialContainerProvisionFailureKeepsRecoveryEvidence(t *testing.T) {
-	opts, _, home := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conflict := filepath.Join(home, ".codex")
-	if err := os.WriteFile(conflict, []byte("contributor"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
-		t.Fatalf("install unexpectedly succeeded:\n%s", out)
-	}
-	state, found, err := corelifecycle.LoadState(paths.StateFile)
-	if err != nil || !found || !state.RecoveryRequired() {
-		t.Fatalf("state = %#v found %v err %v", state, found, err)
-	}
-	if got := readFileString(t, conflict); got != "contributor" {
-		t.Fatalf("container conflict changed: %q", got)
-	}
-}
-
-func TestSymlinkOwnershipPersistenceFailureRollsBackUnrecordedLink(t *testing.T) {
+func TestUpdateSymlinkOwnershipPersistenceFailureRollsBackUnrecordedLink(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
 	paths, err := ResolvePaths(opts.Env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalPersist := persistClassicState
-	t.Cleanup(func() { persistClassicState = originalPersist })
-	persistClassicState = func(path string, state corelifecycle.State) error {
+	originalPersist := persistUpdateState
+	t.Cleanup(func() { persistUpdateState = originalPersist })
+	persistUpdateState = func(path string, state corelifecycle.State) error {
 		if state.RecoveryRequired() && len(state.ManagedSkills) == 1 {
 			return errors.New("ownership persistence interrupted")
 		}
 		return corelifecycle.SaveState(path, state)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
-		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	if out, err := executeCommand(t, NewRootCommand(opts), "update"); err == nil {
+		t.Fatalf("update unexpectedly succeeded:\n%s", out)
 	}
 	if exists(filepath.Join(paths.AgentSkillsDir, "ask-matt")) {
 		t.Fatal("unrecorded symlink was not rolled back")

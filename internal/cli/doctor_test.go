@@ -18,21 +18,6 @@ func TestEngramBinaryChecks_NoEngram(t *testing.T) {
 	assertNoDoctorCheck(t, checks, "engram-path-shadowing")
 }
 
-func TestHomebrewEngramInstalledDoesNotTreatNonHomebrewPathAsOwned(t *testing.T) {
-	prefix := filepath.Join(t.TempDir(), "homebrew")
-	other := writeEngramExecutable(t, t.TempDir(), "1.19.0")
-	paths := Paths{HomebrewPrefixEnv: prefix}
-
-	if HomebrewEngramInstalled(paths, &fakeRunner{path: map[string]string{"engram": other}}) {
-		t.Fatal("non-Homebrew PATH executable reported as Homebrew-owned")
-	}
-
-	canonical := writeEngramExecutable(t, filepath.Join(prefix, "bin"), "1.19.0")
-	if !HomebrewEngramInstalled(paths, &fakeRunner{path: map[string]string{"engram": other}}) {
-		t.Fatalf("canonical Homebrew executable %s was not discovered independently of PATH %s", canonical, other)
-	}
-}
-
 func TestEngramBinaryChecks_SingleEngramReportsPathAndVersion(t *testing.T) {
 	bin := t.TempDir()
 	engram := writeEngramExecutable(t, bin, "engram version 1.19.0")

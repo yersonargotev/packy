@@ -21,6 +21,7 @@ import (
 type Options struct {
 	Env                 Env
 	Runner              Runner
+	Clock               func() time.Time
 	Terminal            Terminal
 	ReadinessInspectors map[capabilitypack.Surface]capabilitypack.ReadinessInspector
 	EngramFacts         engrambin.Facts
@@ -33,6 +34,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.Runner == nil {
 		o.Runner = execRunner{}
+	}
+	if o.Clock == nil {
+		o.Clock = time.Now
 	}
 	o.EngramFacts = o.EngramFacts.WithDefaults()
 	if o.DoctorReportBuilder == nil {
@@ -162,12 +166,8 @@ func newInstallCommand(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, _, err := corelifecycle.LoadState(paths.StateFile); err != nil {
-				return err
-			}
-
-			engramInstalled := HomebrewEngramInstalled(paths, opts.Runner)
-			plan, err := BuildInstallPlan(paths, time.Now(), engramInstalled)
+			lifecycle := corelifecycle.NewFacade(classicLifecycleConfig(paths), opts.Runner, opts.Clock)
+			plan, err := lifecycle.Preview(corelifecycle.Install)
 			if err != nil {
 				return err
 			}
@@ -175,17 +175,16 @@ func newInstallCommand(opts Options) *cobra.Command {
 				return err
 			}
 			if dryRun {
-				return printDryRunPlan(cmd.OutOrStdout(), "matty install", plan)
+				return printLifecycleDryRunPlan(cmd.OutOrStdout(), "matty install", plan)
 			}
-			warnings, err := ApplyInstallPlan(cmd.Context(), paths, plan, opts.Runner)
+			result, err := lifecycle.Apply(cmd.Context(), plan)
 			if err != nil {
 				return err
 			}
-			warnings = appendPlanWarnings(warnings, plan)
-			if err := printWarnings(cmd.OutOrStdout(), warnings); err != nil {
+			if err := printWarnings(cmd.OutOrStdout(), result.Warnings()); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty install: synced %d managed skills and wrote state %s\n", len(plan.State.ManagedSkills), paths.StateFile)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty install: synced %d managed skills and wrote state %s\n", result.ManagedSkillCount(), result.StateFile())
 			return err
 		},
 	}
@@ -246,7 +245,7 @@ func newUpdateCommand(opts Options) *cobra.Command {
 			if dryRun {
 				return printDryRunPlan(cmd.OutOrStdout(), "matty update", plan)
 			}
-			warnings, err := ApplyInstallPlan(cmd.Context(), paths, plan, opts.Runner)
+			warnings, err := ApplyUpdatePlan(cmd.Context(), paths, plan, opts.Runner)
 			if err != nil {
 				return err
 			}
@@ -307,6 +306,32 @@ func printDryRunPlan(out io.Writer, command string, plan Plan) error {
 		return err
 	}
 	return PrintPlan(out, plan)
+}
+
+func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.Plan) error {
+	if _, err := fmt.Fprintf(out, "%s dry-run: planned actions\n", command); err != nil {
+		return err
+	}
+	for _, action := range plan.Actions() {
+		if _, err := fmt.Fprintf(out, "- %s: %s", action.Kind, action.Description); err != nil {
+			return err
+		}
+		switch action.Kind {
+		case corelifecycle.ActionWriteOpenCodePrompt, corelifecycle.ActionSymlink:
+			if _, err := fmt.Fprintf(out, " (%s -> %s)\n", action.Path, action.Target); err != nil {
+				return err
+			}
+		case corelifecycle.ActionRun:
+			if _, err := fmt.Fprintf(out, " (%s)\n", strings.Join(append([]string{action.Command}, action.Args...), " ")); err != nil {
+				return err
+			}
+		default:
+			if _, err := fmt.Fprintf(out, " (%s)\n", action.Path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func printWarnings(out io.Writer, warnings []string) error {

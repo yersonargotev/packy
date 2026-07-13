@@ -206,7 +206,7 @@ func skillChecks(paths Paths, state corelifecycle.StateObservation) []doctorChec
 
 func zeroManagedSkillsDetail(paths Paths) string {
 	detail := "state has no managed skills; run matty install"
-	plan, err := BuildInstallPlan(paths, time.Now(), true)
+	plan, err := BuildUpdatePlan(paths, time.Now())
 	if err != nil {
 		return detail + "; could not inspect expected skill links: " + err.Error()
 	}

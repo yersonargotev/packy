@@ -96,6 +96,21 @@ func classicStateConfig(paths Paths) corelifecycle.StateConfig {
 	return corelifecycle.StateConfig{StateFile: paths.StateFile, AgentSkillsDir: paths.AgentSkillsDir}
 }
 
+func classicLifecycleConfig(paths Paths) corelifecycle.Config {
+	return corelifecycle.Config{
+		ConfigHome:             paths.ConfigHome,
+		MattyDir:               paths.MattyDir,
+		StateFile:              paths.StateFile,
+		AgentSkillsDir:         paths.AgentSkillsDir,
+		SkillSourceRoot:        paths.SkillSourceRoot,
+		SkillSourceMissingHint: paths.SkillSourceMissingHint,
+		CodexPromptFile:        paths.CodexPromptFile,
+		OpenCodeConfigFile:     paths.OpenCodeConfigFile,
+		OpenCodePromptFile:     paths.OpenCodePromptFile,
+		HomebrewPrefix:         paths.HomebrewPrefixEnv,
+	}
+}
+
 func resolveSkillSourceRoot(env Env, installedSourceRoot string) (SkillSource, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
