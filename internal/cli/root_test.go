@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/matty/internal/corelifecycle"
 	"github.com/yersonargotev/matty/internal/engrambin"
+	"github.com/yersonargotev/matty/internal/setuphealth"
 	"github.com/yersonargotev/matty/internal/skillbundle"
 	mattyversion "github.com/yersonargotev/matty/internal/version"
 )
@@ -23,8 +24,8 @@ import (
 func TestDoctorJSONHealthyWarningsAndFailures(t *testing.T) {
 	t.Run("healthy", func(t *testing.T) {
 		opts, _, _ := sandboxOptions(t)
-		opts.DoctorReportBuilder = func(Paths, Runner) DoctorReport {
-			return DoctorReport{SchemaVersion: 1, Report: "doctor", Checks: []doctorCheck{{status: doctorPass, name: "fixture", detail: "healthy"}}, Summary: DoctorSummary{Status: "healthy", Passes: 1}}
+		opts.SetupHealthDiagnose = func(setuphealth.Config) setuphealth.Report {
+			return setuphealth.Report{SchemaVersion: 1, Kind: "doctor", Checks: []setuphealth.Check{{Severity: setuphealth.Pass, Name: "fixture", Detail: "healthy"}}, Summary: setuphealth.Summary{Status: "healthy", Passes: 1}}
 		}
 		out, err := executeCommand(t, NewRootCommand(opts), "doctor", "--json")
 		if err != nil {

@@ -1,7 +1,27 @@
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 
 # Route doctor through the setup health module
+
+## Answer
+
+Added `internal/setuphealth` as the sole production owner of base setup
+diagnosis. Its constructor accepts only executable lookup and bounded Engram
+facts, and its single `Diagnose(Config) Report` operation returns structured
+context, ordered checks, and a calculated summary after one shared lifecycle
+state observation. The module reuses lifecycle, Engram, prompt, and OpenCode
+observations and keeps filesystem diagnosis read-only and best-effort.
+
+The productive `doctor` command now maps resolved CLI paths into the module's
+minimal configuration, renders the self-contained report through CLI-owned
+human and JSON v1 adapters, and preserves the existing unhealthy exit mapping.
+Report-level tests cover healthy and degraded state, skills, Engram, Codex,
+OpenCode, observation failures, ordering, details, remediation, summaries, and
+read-only sandbox behavior. The ticket 01 command contracts and the full Go
+test suite pass unchanged.
+
+The old CLI report builders and private diagnosis helpers remain without a
+production caller, explicitly reserved for deletion by ticket 03.
 
 ## Parent
 

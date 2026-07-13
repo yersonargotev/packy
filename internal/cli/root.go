@@ -12,6 +12,7 @@ import (
 	"github.com/yersonargotev/matty/internal/capabilitypack"
 	"github.com/yersonargotev/matty/internal/corelifecycle"
 	"github.com/yersonargotev/matty/internal/engrambin"
+	"github.com/yersonargotev/matty/internal/setuphealth"
 	"github.com/yersonargotev/matty/internal/skillbundle"
 	mattyversion "github.com/yersonargotev/matty/internal/version"
 )
@@ -25,7 +26,7 @@ type Options struct {
 	Terminal            Terminal
 	ReadinessInspectors map[capabilitypack.Surface]capabilitypack.ReadinessInspector
 	EngramFacts         engrambin.Facts
-	DoctorReportBuilder func(Paths, Runner) DoctorReport
+	SetupHealthDiagnose func(setuphealth.Config) setuphealth.Report
 }
 
 func (o Options) withDefaults() Options {
@@ -39,11 +40,8 @@ func (o Options) withDefaults() Options {
 		o.Clock = time.Now
 	}
 	o.EngramFacts = o.EngramFacts.WithDefaults()
-	if o.DoctorReportBuilder == nil {
-		facts := o.EngramFacts
-		o.DoctorReportBuilder = func(paths Paths, runner Runner) DoctorReport {
-			return buildDoctorReport(paths, runner, facts)
-		}
+	if o.SetupHealthDiagnose == nil {
+		o.SetupHealthDiagnose = setuphealth.New(o.Runner, o.EngramFacts).Diagnose
 	}
 	if o.Terminal == nil {
 		o.Terminal = processTerminal{}
@@ -203,15 +201,15 @@ func newDoctorCommand(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			report := opts.DoctorReportBuilder(paths, opts.Runner)
+			report := opts.SetupHealthDiagnose(setupHealthConfig(paths))
 			if jsonOutput {
-				if err := RenderDoctorJSON(cmd.OutOrStdout(), report); err != nil {
+				if err := renderSetupHealthJSON(cmd.OutOrStdout(), report); err != nil {
 					return err
 				}
-			} else if err := RenderDoctorHuman(cmd.OutOrStdout(), report); err != nil {
+			} else if err := renderSetupHealthHuman(cmd.OutOrStdout(), report); err != nil {
 				return err
 			}
-			return report.HealthError()
+			return setupHealthError(report)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")

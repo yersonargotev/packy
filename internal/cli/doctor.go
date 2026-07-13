@@ -76,6 +76,9 @@ func BuildDoctorReport(paths Paths, runner Runner) DoctorReport {
 	return buildDoctorReport(paths, runner, engrambin.SystemFacts())
 }
 
+// The CLI-owned diagnosis implementation below is intentionally retained
+// without production callers until ticket 03 contracts the old owner.
+
 func buildDoctorReport(paths Paths, runner Runner, facts engrambin.Facts) DoctorReport {
 	state := corelifecycle.ObserveState(paths.StateFile)
 	checks := []doctorCheck{stateCheck(paths, state)}
