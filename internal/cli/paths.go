@@ -8,7 +8,7 @@ import (
 	"github.com/yersonargotev/matty/internal/skillbundle"
 )
 
-type SkillSourceOrigin string
+type SkillSourceOrigin = skillbundle.SourceOrigin
 
 type SkillSource struct {
 	Root        string
@@ -18,9 +18,9 @@ type SkillSource struct {
 }
 
 const (
-	SkillSourceOriginOverride  SkillSourceOrigin = "override"
-	SkillSourceOriginRepo      SkillSourceOrigin = "repo"
-	SkillSourceOriginInstalled SkillSourceOrigin = "installed"
+	SkillSourceOriginOverride  = skillbundle.SourceOriginOverride
+	SkillSourceOriginRepo      = skillbundle.SourceOriginRepository
+	SkillSourceOriginInstalled = skillbundle.SourceOriginInstalled
 )
 
 // Paths contains every global path Matty v0 will manage or inspect. Keeping
@@ -92,29 +92,19 @@ func (p Paths) SkillLinkPath(name string) string {
 }
 
 func resolveSkillSourceRoot(env Env, installedSourceRoot string) (SkillSource, error) {
-	configured := env.Getenv("MATTY_SKILLS_SOURCE")
-	if configured != "" {
-		path, err := filepath.Abs(configured)
-		return SkillSource{Root: path, Origin: SkillSourceOriginOverride}, err
-	}
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		return SkillSource{}, fmt.Errorf("resolve skill source root: %w", err)
 	}
-	for dir := cwd; ; dir = filepath.Dir(dir) {
-		candidate := skillbundle.SourceRoot(dir)
-		if skillbundle.SourceRootExists(candidate) {
-			path, err := filepath.Abs(candidate)
-			return SkillSource{Root: path, Origin: SkillSourceOriginRepo}, err
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
+	source, err := skillbundle.ResolveSource(skillbundle.SourceOptions{
+		ExplicitRoot:    env.Getenv("MATTY_SKILLS_SOURCE"),
+		RepositoryStart: cwd,
+		InstalledRoot:   installedSourceRoot,
+	})
+	if err != nil {
+		return SkillSource{}, err
 	}
-	path, err := filepath.Abs(skillbundle.SourceRoot(installedSourceRoot))
-	return SkillSource{Root: path, MissingHint: "run matty init to initialize it", IsDefault: true, Origin: SkillSourceOriginInstalled}, err
+	return SkillSource(source), nil
 }
 
 func DefaultInstalledSourceRoot(home string) string {

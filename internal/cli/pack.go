@@ -13,6 +13,7 @@ import (
 	"github.com/yersonargotev/matty/internal/codex"
 	"github.com/yersonargotev/matty/internal/engrambin"
 	"github.com/yersonargotev/matty/internal/opencodeactivation"
+	"github.com/yersonargotev/matty/internal/skillbundle"
 )
 
 func newPackCommand(opts Options) *cobra.Command {
@@ -522,6 +523,9 @@ func newPackShowCommand(opts Options) *cobra.Command {
 func discoverPackCatalog(opts Options) (capabilitypack.Catalog, error) {
 	paths, err := ResolvePaths(opts.Env)
 	if err != nil {
+		return capabilitypack.Catalog{}, err
+	}
+	if err := skillbundle.ValidateSource(paths.SkillSourceRoot, paths.SkillSourceMissingHint); err != nil {
 		return capabilitypack.Catalog{}, err
 	}
 	return capabilitypack.Discover(paths.BundleSourceRoot)

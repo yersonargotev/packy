@@ -600,6 +600,45 @@ func TestPackageInstalledInstallAndUpdateSuggestInitWhenSourceMissing(t *testing
 	}
 }
 
+func TestPackageInstalledInstallAndUpdateRejectMalformedSourceBeforeMutation(t *testing.T) {
+	home := t.TempDir()
+	chdirTempOutsideRepo(t)
+	malformed := installedSkillSourceRoot(home)
+	for _, rel := range []string{"engineering/ask-matt/SKILL.md", "in-progress/loop-me/SKILL.md"} {
+		path := filepath.Join(malformed, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("---\nname: fixture\n---\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runner := &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}}
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")}, Runner: runner}
+	before := snapshotTree(t, home)
+	for _, args := range [][]string{{"install"}, {"update"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			runner.calls = nil
+			out, err := executeCommand(t, NewRootCommand(opts), args...)
+			if err == nil {
+				t.Fatalf("expected malformed Installed Source error, got output:\n%s", out)
+			}
+			for _, want := range []string{"malformed", malformed, "productivity"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error missing %q: %v", want, err)
+				}
+			}
+			if len(runner.calls) != 0 {
+				t.Fatalf("malformed source ran external commands: %#v", runner.calls)
+			}
+			if after := snapshotTree(t, home); after != before {
+				t.Fatalf("malformed source mutated sandbox\nbefore:\n%s\nafter:\n%s", before, after)
+			}
+		})
+	}
+}
+
 func TestPackageInstalledUpdateRejectsStaleDefaultInstalledSource(t *testing.T) {
 	withVersion(t, "v0.2.0")
 	home := t.TempDir()
@@ -1789,6 +1828,95 @@ func TestInitClonesDefaultInstalledSourceAndIsIdempotent(t *testing.T) {
 	}
 	if !strings.Contains(out, "already initialized") {
 		t.Fatalf("second init did not report idempotent state:\n%s", out)
+	}
+}
+
+func TestInitRejectsMalformedExistingInstalledSourceWithoutMutation(t *testing.T) {
+	home := t.TempDir()
+	installedRoot := DefaultInstalledSourceRoot(home)
+	manifest := filepath.Join(installedRoot, "bundle", "skills", "engineering", "ask-matt", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("---\nname: fixture\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, home)
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")}}
+
+	out, err := executeCommand(t, NewRootCommand(opts), "init")
+	if err == nil {
+		t.Fatalf("expected malformed Installed Source error, got output:\n%s", out)
+	}
+	for _, want := range []string{"not a valid Matty checkout", "Move it aside", "--source-root"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+	if after := snapshotTree(t, home); after != before {
+		t.Fatalf("init mutated malformed Installed Source\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestInitDoesNotPublishMalformedClonedSource(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	manifest := filepath.Join(repo, "bundle", "skills", "engineering", "ask-matt", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("---\nname: fixture\n---\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGitCommand(t, repo, "init")
+	runGitCommand(t, repo, "add", ".")
+	runGitCommand(t, repo, "-c", "user.name=Matty Test", "-c", "user.email=matty@example.test", "commit", "-m", "malformed")
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")}}
+
+	out, err := executeCommand(t, NewRootCommand(opts), "init", "--repository-url", repo)
+	if err == nil {
+		t.Fatalf("expected malformed cloned source error, got output:\n%s", out)
+	}
+	for _, want := range []string{"invalid skill bundle", "productivity"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+	if exists(DefaultInstalledSourceRoot(home)) {
+		t.Fatalf("init published malformed source at %s", DefaultInstalledSourceRoot(home))
+	}
+}
+
+func TestInitDoesNotReplaceValidInstalledSourceWithMalformedRef(t *testing.T) {
+	home := t.TempDir()
+	repo := createMattySourceRepo(t)
+	runGitCommand(t, repo, "tag", "v0.1.0")
+	if err := os.RemoveAll(filepath.Join(repo, "bundle", "skills", "productivity")); err != nil {
+		t.Fatal(err)
+	}
+	runGitCommand(t, repo, "add", "-A")
+	runGitCommand(t, repo, "-c", "user.name=Matty Test", "-c", "user.email=matty@example.test", "commit", "-m", "malformed")
+	runGitCommand(t, repo, "tag", "v0.2.0")
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")}}
+	if out, err := executeCommand(t, NewRootCommand(opts), "init", "--repository-url", repo, "--repository-ref", "v0.1.0"); err != nil {
+		t.Fatalf("initialize valid source: %v\n%s", err, out)
+	}
+	installedRoot := DefaultInstalledSourceRoot(home)
+	beforeHead := strings.TrimSpace(runGitCommand(t, installedRoot, "rev-parse", "HEAD"))
+	beforeBundle := snapshotTree(t, filepath.Join(installedRoot, "bundle"))
+
+	out, err := executeCommand(t, NewRootCommand(opts), "init", "--repository-url", repo, "--repository-ref", "v0.2.0")
+	if err == nil {
+		t.Fatalf("expected malformed ref error, got output:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "invalid skill bundle") || !strings.Contains(err.Error(), "productivity") {
+		t.Fatalf("malformed ref error is not actionable: %v", err)
+	}
+	if afterHead := strings.TrimSpace(runGitCommand(t, installedRoot, "rev-parse", "HEAD")); afterHead != beforeHead {
+		t.Fatalf("Installed Source HEAD changed from %s to %s", beforeHead, afterHead)
+	}
+	if afterBundle := snapshotTree(t, filepath.Join(installedRoot, "bundle")); afterBundle != beforeBundle {
+		t.Fatalf("malformed ref replaced valid bundle\nbefore:\n%s\nafter:\n%s", beforeBundle, afterBundle)
 	}
 }
 

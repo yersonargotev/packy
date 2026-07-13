@@ -10,6 +10,70 @@ import (
 var defaultGroups = []string{"engineering", "productivity"}
 var selectedInProgress = []string{"loop-me"}
 
+type SourceOrigin string
+
+const (
+	SourceOriginOverride   SourceOrigin = "override"
+	SourceOriginRepository SourceOrigin = "repo"
+	SourceOriginInstalled  SourceOrigin = "installed"
+)
+
+// SourceOptions supplies the process-specific roots used to select a skill
+// source. Callers own environment and cwd lookup; this package owns precedence
+// and the Matty bundle layout.
+type SourceOptions struct {
+	ExplicitRoot    string
+	RepositoryStart string
+	InstalledRoot   string
+}
+
+type Source struct {
+	Root        string
+	MissingHint string
+	IsDefault   bool
+	Origin      SourceOrigin
+}
+
+// ResolveSource selects an explicit development source, then a repository
+// ancestor, then the package Installed Source. Selection is deliberately
+// separate from Discover validation so path-only commands can still inspect a
+// missing installation and mutating commands fail when they request resources.
+func ResolveSource(opts SourceOptions) (Source, error) {
+	repositoryStart, err := filepath.Abs(opts.RepositoryStart)
+	if err != nil {
+		return Source{}, fmt.Errorf("resolve repository start: %w", err)
+	}
+	if opts.ExplicitRoot != "" {
+		root := opts.ExplicitRoot
+		if !filepath.IsAbs(root) {
+			root = filepath.Join(repositoryStart, root)
+		}
+		return Source{Root: filepath.Clean(root), Origin: SourceOriginOverride}, nil
+	}
+
+	for dir := repositoryStart; ; dir = filepath.Dir(dir) {
+		candidate := SourceRoot(dir)
+		if SourceRootExists(candidate) {
+			return Source{Root: candidate, Origin: SourceOriginRepository}, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+
+	installedRoot := opts.InstalledRoot
+	if !filepath.IsAbs(installedRoot) {
+		installedRoot = filepath.Join(repositoryStart, installedRoot)
+	}
+	return Source{
+		Root:        SourceRoot(filepath.Clean(installedRoot)),
+		MissingHint: "run matty init to initialize it",
+		IsDefault:   true,
+		Origin:      SourceOriginInstalled,
+	}, nil
+}
+
 func SourceRoot(mattyRoot string) string {
 	return filepath.Join(mattyRoot, "bundle", "skills")
 }
@@ -46,6 +110,21 @@ func (err MissingSourceError) Error() string {
 	return fmt.Sprintf("skill source is missing at %s; %s", err.Path, err.Hint)
 }
 
+// MalformedSourceError reports a selected source that exists but does not
+// satisfy the Matty-owned bundle structure.
+type MalformedSourceError struct {
+	Path string
+	Err  error
+}
+
+func (err MalformedSourceError) Error() string {
+	return fmt.Sprintf("skill source is malformed at %s: %v", err.Path, err.Err)
+}
+
+func (err MalformedSourceError) Unwrap() error {
+	return err.Err
+}
+
 // Discover returns Matty's v0 skill bundle from a Matty-owned source root.
 // The root is expected to contain engineering/, productivity/, and the selected
 // in-progress/ skills. Callers provide linkDir so this package owns the bundle
@@ -63,7 +142,7 @@ func Discover(sourceRoot, linkDir, missingSourceHint string) ([]Skill, error) {
 		groupDir := filepath.Join(sourceRoot, group)
 		entries, err := os.ReadDir(groupDir)
 		if err != nil {
-			return nil, fmt.Errorf("discover %s skills in %s: %w", group, groupDir, err)
+			return nil, malformedSource(sourceRoot, fmt.Errorf("discover %s skills in %s: %w", group, groupDir, err))
 		}
 		for _, entry := range entries {
 			if !entry.IsDir() {
@@ -71,7 +150,7 @@ func Discover(sourceRoot, linkDir, missingSourceHint string) ([]Skill, error) {
 			}
 			skill, err := fromSource(linkDir, filepath.Join(groupDir, entry.Name()))
 			if err != nil {
-				return nil, err
+				return nil, malformedSource(sourceRoot, err)
 			}
 			skills = append(skills, skill)
 		}
@@ -80,7 +159,7 @@ func Discover(sourceRoot, linkDir, missingSourceHint string) ([]Skill, error) {
 	for _, name := range selectedInProgress {
 		skill, err := fromSource(linkDir, filepath.Join(sourceRoot, "in-progress", name))
 		if err != nil {
-			return nil, err
+			return nil, malformedSource(sourceRoot, err)
 		}
 		skills = append(skills, skill)
 	}
@@ -89,11 +168,18 @@ func Discover(sourceRoot, linkDir, missingSourceHint string) ([]Skill, error) {
 	return skills, nil
 }
 
+// ValidateSource verifies that a selected root contains the complete Matty v0
+// skill structure without writing or publishing any resources.
+func ValidateSource(sourceRoot, missingSourceHint string) error {
+	_, err := Discover(sourceRoot, "", missingSourceHint)
+	return err
+}
+
 func requireSourceRoot(sourceRoot, missingSourceHint string) error {
 	info, err := os.Stat(sourceRoot)
 	if err == nil {
 		if !info.IsDir() {
-			return fmt.Errorf("skill source path is not a directory: %s", sourceRoot)
+			return malformedSource(sourceRoot, fmt.Errorf("skill source path is not a directory: %s", sourceRoot))
 		}
 		return nil
 	}
@@ -101,6 +187,10 @@ func requireSourceRoot(sourceRoot, missingSourceHint string) error {
 		return MissingSourceError{Path: sourceRoot, Hint: missingSourceHint}
 	}
 	return fmt.Errorf("inspect skill source %s: %w", sourceRoot, err)
+}
+
+func malformedSource(sourceRoot string, err error) error {
+	return MalformedSourceError{Path: sourceRoot, Err: err}
 }
 
 func fromSource(linkDir, sourcePath string) (Skill, error) {

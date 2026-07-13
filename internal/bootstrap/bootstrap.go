@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/yersonargotev/matty/internal/skillbundle"
 )
 
 const DefaultRepositoryURL = "https://github.com/yersonargotev/matty.git"
@@ -38,7 +40,7 @@ func EnsureInstalledSource(opts BootstrapOptions) (BootstrapResult, error) {
 	}
 
 	result := BootstrapResult{SourceRoot: opts.SourceRoot}
-	if validInstalledSource(opts.SourceRoot) {
+	if validateInstalledSource(opts.SourceRoot) == nil {
 		updated, err := ensureInstalledSourceRef(opts)
 		if err != nil {
 			return BootstrapResult{}, err
@@ -99,13 +101,38 @@ func ensureInstalledSourceRef(opts BootstrapOptions) (bool, error) {
 	if err := fetchInstalledSourceRef(opts, ref); err != nil {
 		return false, fmt.Errorf("update Installed Source to %s: %w", ref, err)
 	}
+	if err := validateFetchedInstalledSource(opts); err != nil {
+		return false, err
+	}
 	if _, err := gitOutput(opts, "checkout", "--detach", "FETCH_HEAD"); err != nil {
 		return false, fmt.Errorf("checkout Installed Source ref %s: %w", ref, err)
 	}
-	if !validInstalledSource(opts.SourceRoot) {
-		return false, errors.New("updated Installed Source does not contain bundle/skills")
-	}
 	return true, nil
+}
+
+func validateFetchedInstalledSource(opts BootstrapOptions) (err error) {
+	validationRoot, err := os.MkdirTemp(filepath.Dir(opts.SourceRoot), ".matty-validate.*")
+	if err != nil {
+		return fmt.Errorf("create Installed Source validation directory: %w", err)
+	}
+	if err := os.Remove(validationRoot); err != nil {
+		return fmt.Errorf("prepare Installed Source validation worktree: %w", err)
+	}
+	if _, err := gitOutput(opts, "worktree", "add", "--detach", validationRoot, "FETCH_HEAD"); err != nil {
+		return fmt.Errorf("prepare fetched Installed Source for validation: %w", err)
+	}
+	defer func() {
+		_, cleanupErr := gitOutput(opts, "worktree", "remove", "--force", validationRoot)
+		_ = os.RemoveAll(validationRoot)
+		if cleanupErr != nil && err == nil {
+			err = fmt.Errorf("clean up Installed Source validation worktree: %w", cleanupErr)
+		}
+	}()
+
+	if err := validateInstalledSource(validationRoot); err != nil {
+		return fmt.Errorf("fetched Installed Source has an invalid skill bundle: %w", err)
+	}
+	return nil
 }
 
 func fetchInstalledSourceRef(opts BootstrapOptions, ref string) error {
@@ -127,7 +154,7 @@ func ValidateInstalledSourceRef(opts BootstrapOptions) error {
 	if strings.TrimSpace(opts.SourceRoot) == "" {
 		return errors.New("installed source root is required")
 	}
-	if !validInstalledSource(opts.SourceRoot) {
+	if validateInstalledSource(opts.SourceRoot) != nil {
 		return fmt.Errorf("default Installed Source is missing or invalid at %s; run matty init to initialize it", filepath.Join(opts.SourceRoot, "bundle", "skills"))
 	}
 	matches, err := repositoryRefMatches(opts, fmt.Sprintf("run matty init to align it with %s", ref))
@@ -192,8 +219,8 @@ func cloneInstalledSource(opts BootstrapOptions) error {
 	if _, err := runGit(opts, args...); err != nil {
 		return fmt.Errorf("clone Matty Source of Truth: %w", err)
 	}
-	if !validInstalledSource(tmp) {
-		return errors.New("cloned Matty Source of Truth does not contain bundle/skills")
+	if err := validateInstalledSource(tmp); err != nil {
+		return fmt.Errorf("cloned Matty Source of Truth has an invalid skill bundle: %w", err)
 	}
 	if err := os.Rename(tmp, opts.SourceRoot); err != nil {
 		return fmt.Errorf("install cloned Matty Source of Truth: %w", err)
@@ -237,9 +264,8 @@ func gitEnv(opts BootstrapOptions) []string {
 	return env
 }
 
-func validInstalledSource(dir string) bool {
-	info, err := os.Stat(filepath.Join(dir, "bundle", "skills"))
-	return err == nil && info.IsDir()
+func validateInstalledSource(dir string) error {
+	return skillbundle.ValidateSource(skillbundle.SourceRoot(dir), "")
 }
 
 func dirEmpty(dir string) (bool, error) {

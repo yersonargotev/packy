@@ -286,6 +286,35 @@ func TestCapabilityPackRolloutMatrixStaysInsideSandbox(t *testing.T) {
 	}
 }
 
+func TestPackLifecycleRejectsInvalidBundleResourceBeforeMutation(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, repoRoot := packActivationOptions(t, terminal)
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	malformedSkill := filepath.Join(bundle, "skills", "engineering", "unlisted-broken")
+	if err := os.MkdirAll(malformedSkill, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	opts.Env.(MapEnv)["MATTY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	runner := opts.Runner.(*fakeRunner)
+	before := snapshotTree(t, home)
+
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	if err == nil {
+		t.Fatalf("expected invalid bundle resource error, got output:\n%s", out)
+	}
+	for _, want := range []string{"malformed", "unlisted-broken", "missing SKILL.md"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+	if terminal.calls != 0 || len(runner.calls) != 0 {
+		t.Fatalf("invalid bundle prompted or ran external effects: prompts=%d calls=%#v", terminal.calls, runner.calls)
+	}
+	if after := snapshotTree(t, home); after != before {
+		t.Fatalf("invalid bundle mutated HOME\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
 func pathInside(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
@@ -1232,6 +1261,7 @@ func writeUpdateBundle(t *testing.T, version string) string {
 			t.Fatal(err)
 		}
 	}
+	createSkillSourceAt(t, filepath.Join(root, "skills"))
 	if err := os.WriteFile(filepath.Join(root, "instructions/shared.md"), []byte("shared\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -1259,6 +1289,7 @@ func writeCompositionBundle(t *testing.T, blocked bool) string {
 			t.Fatal(err)
 		}
 	}
+	createSkillSourceAt(t, filepath.Join(root, "skills"))
 	if err := os.WriteFile(filepath.Join(root, "instructions/app.md"), []byte("app\n"), 0600); err != nil {
 		t.Fatal(err)
 	}

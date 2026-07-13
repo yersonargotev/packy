@@ -83,11 +83,11 @@ Work the **frontier**: any ticket whose blockers are all done. Several tickets c
 
 **Blocked by:** None — can start immediately.
 
-- [ ] Tests cover repository discovery, initialized Installed Source discovery, and explicit source override precedence.
-- [ ] Missing default Installed Source and malformed bundle cases fail before lifecycle mutation with actionable messages.
-- [ ] Stale package-installed source behavior remains distinct from the explicit development/test override.
-- [ ] Bundle resource validation covers representative valid and invalid skill trees without depending on external clones.
-- [ ] Coverage improvement is demonstrated on the previously under-tested discovery boundary, without a percentage-only test target.
+- [x] Tests cover repository discovery, initialized Installed Source discovery, and explicit source override precedence.
+- [x] Missing default Installed Source and malformed bundle cases fail before lifecycle mutation with actionable messages.
+- [x] Stale package-installed source behavior remains distinct from the explicit development/test override.
+- [x] Bundle resource validation covers representative valid and invalid skill trees without depending on external clones.
+- [x] Coverage improvement is demonstrated on the previously under-tested discovery boundary, without a percentage-only test target.
 
 ## Protect Engram executable discovery with boundary tests
 
