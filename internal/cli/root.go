@@ -283,13 +283,6 @@ func printSkillSourceReport(out io.Writer, paths Paths) error {
 	return nil
 }
 
-func printDryRunPlan(out io.Writer, command string, plan Plan) error {
-	if _, err := fmt.Fprintf(out, "%s dry-run: planned actions\n", command); err != nil {
-		return err
-	}
-	return PrintPlan(out, plan)
-}
-
 func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.Plan) error {
 	if _, err := fmt.Fprintf(out, "%s dry-run: planned actions\n", command); err != nil {
 		return err
@@ -299,7 +292,7 @@ func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.
 			return err
 		}
 		switch action.Kind {
-		case corelifecycle.ActionWriteOpenCodePrompt, corelifecycle.ActionSymlink:
+		case corelifecycle.ActionWriteOpenCodePrompt, corelifecycle.ActionRemoveOpenCodePrompt, corelifecycle.ActionSymlink:
 			if _, err := fmt.Fprintf(out, " (%s -> %s)\n", action.Path, action.Target); err != nil {
 				return err
 			}
@@ -336,23 +329,23 @@ func newUninstallCommand(opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			state, _, err := corelifecycle.LoadState(paths.StateFile)
+			lifecycle := corelifecycle.NewFacade(classicLifecycleConfig(paths, mattyversion.Value), opts.Runner, opts.Clock)
+			plan, err := lifecycle.Preview(corelifecycle.Uninstall)
 			if err != nil {
 				return err
 			}
-			plan := BuildUninstallPlan(paths, state)
-			hasWork := UninstallPlanHasWork(paths, state)
 			if dryRun {
-				return printDryRunPlan(cmd.OutOrStdout(), "matty uninstall", plan)
+				return printLifecycleDryRunPlan(cmd.OutOrStdout(), "matty uninstall", plan)
 			}
-			if !hasWork {
+			result, err := lifecycle.Apply(cmd.Context(), plan)
+			if err != nil {
+				return err
+			}
+			if !result.HasWork() {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "matty uninstall: no Matty-managed artifacts found")
 				return err
 			}
-			if err := ApplyUninstallPlan(cmd.Context(), paths, plan); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty uninstall: removed Matty-managed artifacts and state %s\n", paths.StateFile)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty uninstall: removed Matty-managed artifacts and state %s\n", result.StateFile())
 			return err
 		},
 	}

@@ -19,19 +19,24 @@ import (
 type Operation string
 
 const (
-	Install Operation = "install"
-	Update  Operation = "update"
+	Install   Operation = "install"
+	Update    Operation = "update"
+	Uninstall Operation = "uninstall"
 )
 
 type ActionKind string
 
 const (
-	ActionWriteFile           ActionKind = "write-file"
-	ActionWriteCodexPrompt    ActionKind = "write-codex-prompt"
-	ActionWriteOpenCodePrompt ActionKind = "write-opencode-prompt"
-	ActionSymlink             ActionKind = "symlink"
-	ActionRun                 ActionKind = "run"
-	ActionSkip                ActionKind = "skip"
+	ActionWriteFile            ActionKind = "write-file"
+	ActionWriteCodexPrompt     ActionKind = "write-codex-prompt"
+	ActionWriteOpenCodePrompt  ActionKind = "write-opencode-prompt"
+	ActionSymlink              ActionKind = "symlink"
+	ActionRun                  ActionKind = "run"
+	ActionSkip                 ActionKind = "skip"
+	ActionRemove               ActionKind = "remove"
+	ActionRemoveCodexPrompt    ActionKind = "remove-codex-prompt"
+	ActionRemoveOpenCodePrompt ActionKind = "remove-opencode-prompt"
+	ActionCleanup              ActionKind = "cleanup"
 )
 
 // ActionView is a detached, read-only view of one ordered lifecycle action.
@@ -88,10 +93,13 @@ type plannedAction struct {
 // Plan deliberately exposes behavior only through detached views. Its state,
 // action ordering, and owning facade remain unavailable to callers.
 type Plan struct {
-	owner     *Facade
-	operation Operation
-	actions   []plannedAction
-	desired   State
+	owner         *Facade
+	operation     Operation
+	actions       []plannedAction
+	desired       State
+	cleanup       ownedcontainer.Plan
+	preconditions ownedcontainer.Plan
+	hasWork       bool
 }
 
 var ErrForeignPlan = errors.New("core lifecycle plan was not previewed by this facade")
@@ -100,11 +108,13 @@ type Result struct {
 	warnings          []string
 	managedSkillCount int
 	stateFile         string
+	hasWork           bool
 }
 
 func (result Result) Warnings() []string     { return append([]string(nil), result.warnings...) }
 func (result Result) ManagedSkillCount() int { return result.managedSkillCount }
 func (result Result) StateFile() string      { return result.stateFile }
+func (result Result) HasWork() bool          { return result.hasWork }
 
 func (plan Plan) Actions() []ActionView {
 	actions := make([]ActionView, len(plan.actions))
@@ -118,6 +128,9 @@ func (plan Plan) Actions() []ActionView {
 func (plan Plan) ManagedSkillCount() int { return len(plan.desired.ManagedSkills) }
 
 func (facade *Facade) Preview(operation Operation) (Plan, error) {
+	if operation == Uninstall {
+		return facade.previewUninstall()
+	}
 	if operation != Install && operation != Update {
 		return Plan{}, fmt.Errorf("preview unsupported core lifecycle operation %q", operation)
 	}
@@ -183,6 +196,9 @@ var saveInstallState = SaveState
 var saveUpdateState = SaveState
 
 func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
+	if plan.owner == facade && plan.operation == Uninstall {
+		return facade.applyUninstall(plan)
+	}
 	if plan.owner != facade || (plan.operation != Install && plan.operation != Update) {
 		return Result{}, ErrForeignPlan
 	}
@@ -275,7 +291,7 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	if warning, ok := unmanagedInstallSymlinkWarning(plan); ok {
 		warnings = append(warnings, warning)
 	}
-	return Result{warnings: warnings, managedSkillCount: len(plan.desired.ManagedSkills), stateFile: facade.config.StateFile}, nil
+	return Result{warnings: warnings, managedSkillCount: len(plan.desired.ManagedSkills), stateFile: facade.config.StateFile, hasWork: true}, nil
 }
 
 func (facade *Facade) homebrewEngramInstalled() bool {

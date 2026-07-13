@@ -1,0 +1,155 @@
+package corelifecycle
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/yersonargotev/matty/internal/opencode"
+	"github.com/yersonargotev/matty/internal/ownedcontainer"
+	"github.com/yersonargotev/matty/internal/prompt"
+)
+
+func (facade *Facade) previewUninstall() (Plan, error) {
+	state, found, err := LoadState(facade.config.StateFile)
+	if err != nil {
+		return Plan{}, err
+	}
+	actions := make([]plannedAction, 0, len(state.ManagedSkills)+4)
+	for _, skill := range state.ManagedSkills {
+		action, ok, err := previewManagedSkillRemoval(skill)
+		if err != nil {
+			return Plan{}, err
+		}
+		if ok {
+			actions = append(actions, action)
+		}
+	}
+	if found {
+		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemove, Path: facade.config.StateFile, Description: "remove Matty state metadata"}})
+	}
+	codex, err := prompt.InspectCodex(facade.config.CodexPromptFile)
+	if err != nil {
+		return Plan{}, err
+	}
+	if codex.HasMattySection {
+		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemoveCodexPrompt, Path: facade.config.CodexPromptFile, Description: "remove Codex Matty prompt markers"}})
+	}
+	openCode, err := opencode.Inspect(facade.config.OpenCodeConfigFile, facade.config.OpenCodePromptFile)
+	if err != nil {
+		return Plan{}, err
+	}
+	if openCode.PromptExists || openCode.HasMattyInstruction {
+		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemoveOpenCodePrompt, Path: facade.config.OpenCodeConfigFile, Target: facade.config.OpenCodePromptFile, Description: "remove OpenCode Matty prompt reference"}})
+	}
+
+	cleanup, err := ownedcontainer.Preview(facade.authorizedContainers(state.CreatedContainers))
+	if err != nil {
+		return Plan{}, err
+	}
+	for _, record := range cleanup.Records() {
+		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionCleanup, Path: record.Path, Description: "remove Matty-created container if empty; preserve if non-empty, unmanaged, contributor-owned, or changed after preview"}})
+	}
+	preconditions, err := ownedcontainer.Preview(uninstallFilePreconditions(facade.config, found, codex.HasMattySection, openCode))
+	if err != nil {
+		return Plan{}, err
+	}
+	return Plan{owner: facade, operation: Uninstall, actions: actions, desired: state, cleanup: cleanup, preconditions: preconditions, hasWork: len(actions) > 0}, nil
+}
+
+func previewManagedSkillRemoval(skill ManagedSkill) (plannedAction, bool, error) {
+	info, err := os.Lstat(skill.LinkPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return plannedAction{}, false, nil
+		}
+		return plannedAction{}, false, fmt.Errorf("inspect skill link %s: %w", skill.LinkPath, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return plannedAction{}, false, nil
+	}
+	target, err := os.Readlink(skill.LinkPath)
+	if err != nil {
+		return plannedAction{}, false, fmt.Errorf("read skill link %s: %w", skill.LinkPath, err)
+	}
+	if !sameLinkTarget(skill.LinkPath, target, skill.SourcePath) {
+		return plannedAction{}, false, nil
+	}
+	return plannedAction{ActionView: ActionView{Kind: ActionRemove, Path: skill.LinkPath, Target: target, Description: "remove managed skill " + skill.Name}}, true, nil
+}
+
+func uninstallFilePreconditions(config Config, stateFound, codexOwned bool, openCode opencode.Inspection) []ownedcontainer.Record {
+	var records []ownedcontainer.Record
+	if stateFound {
+		records = append(records, ownedcontainer.Record{Path: config.StateFile, Kind: ownedcontainer.File})
+	}
+	if codexOwned {
+		records = append(records, ownedcontainer.Record{Path: config.CodexPromptFile, Kind: ownedcontainer.File})
+	}
+	if openCode.ConfigExists && openCode.HasMattyInstruction {
+		records = append(records, ownedcontainer.Record{Path: config.OpenCodeConfigFile, Kind: ownedcontainer.File})
+	}
+	if openCode.PromptExists {
+		records = append(records, ownedcontainer.Record{Path: config.OpenCodePromptFile, Kind: ownedcontainer.File})
+	}
+	return records
+}
+
+func (facade *Facade) applyUninstall(plan Plan) (Result, error) {
+	if err := plan.preconditions.Verify(); err != nil {
+		return Result{}, err
+	}
+	if err := plan.cleanup.Verify(); err != nil {
+		return Result{}, err
+	}
+	if !plan.hasWork {
+		return Result{stateFile: facade.config.StateFile}, nil
+	}
+	for _, action := range plan.actions {
+		switch action.Kind {
+		case ActionRemove:
+			if action.Path == facade.config.StateFile {
+				if err := os.Remove(action.Path); err != nil && !os.IsNotExist(err) {
+					return Result{}, fmt.Errorf("remove Matty state %s: %w", action.Path, err)
+				}
+				continue
+			}
+			current, ok, err := previewManagedSkillRemoval(ManagedSkill{SourcePath: action.Target, LinkPath: action.Path})
+			if err != nil {
+				return Result{}, err
+			}
+			if !ok || current.Target != action.Target {
+				continue
+			}
+			if err := os.Remove(action.Path); err != nil && !os.IsNotExist(err) {
+				return Result{}, fmt.Errorf("remove skill symlink %s: %w", action.Path, err)
+			}
+		case ActionRemoveCodexPrompt:
+			if err := prompt.RemoveCodex(action.Path); err != nil {
+				return Result{}, err
+			}
+		case ActionRemoveOpenCodePrompt:
+			if err := opencode.Remove(action.Path, action.Target); err != nil {
+				return Result{}, err
+			}
+		}
+	}
+	if _, err := plan.cleanup.Cleanup(); err != nil {
+		return Result{}, err
+	}
+	return Result{stateFile: facade.config.StateFile, hasWork: true}, nil
+}
+
+func (facade *Facade) authorizedContainers(records []ownedcontainer.Record) []ownedcontainer.Record {
+	allowed := make(map[string]struct{})
+	for _, record := range facade.containerRecords() {
+		allowed[filepath.Clean(record.Path)] = struct{}{}
+	}
+	authorized := make([]ownedcontainer.Record, 0, len(records))
+	for _, record := range records {
+		if _, ok := allowed[filepath.Clean(record.Path)]; ok {
+			authorized = append(authorized, record)
+		}
+	}
+	return authorized
+}
