@@ -76,3 +76,13 @@ implementations instead of retaining forwarding modules or dual ownership.
 - Setup health can later deepen independently by consuming lifecycle
   observations instead of CLI state types.
 - Workstation path redesign remains a separate architectural opportunity.
+
+## Subsequent refinement
+
+[ADR 0006](0006-own-workstation-layout-by-domain.md) accepted that separate
+opportunity and refines only this ADR's temporary path-composition boundary.
+The CLI now supplies one Workstation snapshot and owner values; core lifecycle
+derives its classic state layout beneath Matty Home, while `skillbundle`,
+`bootstrap`, Codex, OpenCode, and `engrambin` derive their own layouts. The
+lifecycle ownership, facade, observation seam, and compatibility commitments
+decided here remain unchanged.

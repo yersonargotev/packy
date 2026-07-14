@@ -101,6 +101,15 @@ semantic scenario matrix belongs at the setup-health report seam.
 - Tests substitute only nondeterministic workstation facts while exercising
   real domain observers against sandboxed filesystems.
 
+## Subsequent refinement
+
+[ADR 0006](0006-own-workstation-layout-by-domain.md) refines this ADR's
+temporary shared-workstation boundary. Setup health now receives detached
+observations from the owners of lifecycle state, skills, host configuration,
+and Engram topology instead of receiving a CLI-composed path configuration.
+The diagnostic policy, report seam, rendering boundary, and compatibility
+commitments decided here remain unchanged.
+
 ## Exclusions
 
 - No new checks, fields, commands, flags, repair actions, or automatic

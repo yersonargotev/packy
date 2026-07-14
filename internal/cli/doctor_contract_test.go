@@ -13,11 +13,8 @@ import (
 
 func TestDoctorCommandPreservesHumanAndJSONWarningContractsReadOnly(t *testing.T) {
 	opts, _, home := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := &doctorContractRunner{path: engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)}
+	fixture := newCLITestFixture(t, opts)
+	runner := &doctorContractRunner{path: fixture.engram.ExpectedPath()}
 	versionCalls := []string{}
 	processCalls := 0
 	opts.Runner = runner
@@ -37,14 +34,14 @@ func TestDoctorCommandPreservesHumanAndJSONWarningContractsReadOnly(t *testing.T
 	if err != nil {
 		t.Fatalf("doctor returned a fatal warning: %v\n%s", err, human)
 	}
-	wantHuman := fmt.Sprintf("HOME=%s\nCONFIG_HOME=%s\nMATTY_STATE=%s\nMATTY_STATE_STATUS=missing\nAGENT_SKILLS=%s\n", paths.HomeDir, paths.ConfigHome, paths.StateFile, paths.AgentSkillsDir) +
-		fmt.Sprintf("WARN matty-state: missing at %s; run matty install\n", paths.StateFile) +
+	wantHuman := fmt.Sprintf("HOME=%s\nCONFIG_HOME=%s\nMATTY_STATE=%s\nMATTY_STATE_STATUS=missing\nAGENT_SKILLS=%s\n", fixture.workstation.Home(), fixture.workstation.ConfigurationHome(), fixture.classicState.StateFile(), fixture.skills.Root()) +
+		fmt.Sprintf("WARN matty-state: missing at %s; run matty install\n", fixture.classicState.StateFile()) +
 		"WARN skill-symlinks: state is missing, so Matty-owned skill links are unknown; run matty install\n" +
 		fmt.Sprintf("PASS engram-binary: PATH resolves to canonical Homebrew Engram: %s version 1.19.0\n", runner.path) +
 		"PASS engram-local-bin: no ~/.local/bin/engram compatibility symlink is present; Homebrew remains the Engram owner\n" +
 		"PASS engram-runtime: no active engram serve process found\n" +
 		"WARN engram-setup: state is missing, so delegated setup cannot be confirmed; run matty install\n" +
-		fmt.Sprintf("WARN codex-config: missing Matty Codex prompt markers at %s; run matty install\n", paths.CodexPromptFile) +
+		fmt.Sprintf("WARN codex-config: missing Matty Codex prompt markers at %s; run matty install\n", fixture.codex.PromptFile()) +
 		"WARN opencode-config: missing OpenCode config; run matty install\n"
 	if human != wantHuman {
 		t.Fatalf("human doctor contract changed:\ngot:\n%s\nwant:\n%s", human, wantHuman)
@@ -64,9 +61,9 @@ func TestDoctorCommandPreservesHumanAndJSONWarningContractsReadOnly(t *testing.T
 		"{\"name\":\"codex-config\",\"severity\":\"WARN\",\"detail\":%s},"+
 		"{\"name\":\"opencode-config\",\"severity\":\"WARN\",\"detail\":\"missing OpenCode config; run matty install\"}],"+
 		"\"summary\":{\"status\":\"warnings\",\"passes\":3,\"warnings\":5,\"failures\":0}}\n",
-		jsonQuote(t, "missing at "+paths.StateFile+"; run matty install"),
+		jsonQuote(t, "missing at "+fixture.classicState.StateFile()+"; run matty install"),
 		jsonQuote(t, "PATH resolves to canonical Homebrew Engram: "+runner.path+" version 1.19.0"),
-		jsonQuote(t, "missing Matty Codex prompt markers at "+paths.CodexPromptFile+"; run matty install"),
+		jsonQuote(t, "missing Matty Codex prompt markers at "+fixture.codex.PromptFile()+"; run matty install"),
 	)
 	if jsonOutput != wantJSON {
 		t.Fatalf("JSON doctor contract changed:\ngot:\n%s\nwant:\n%s", jsonOutput, wantJSON)
@@ -88,10 +85,7 @@ func TestDoctorCommandPreservesHumanAndJSONWarningContractsReadOnly(t *testing.T
 
 func TestDoctorCommandPreservesCompleteReportAndFatalExitAfterObservationFailures(t *testing.T) {
 	opts, _, home := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := newCLITestFixture(t, opts)
 	lookupErr := errors.New("substituted PATH lookup failure")
 	processErr := errors.New("substituted process inspection failure")
 	runner := &doctorContractRunner{lookupErr: lookupErr}
@@ -124,10 +118,10 @@ func TestDoctorCommandPreservesCompleteReportAndFatalExitAfterObservationFailure
 		"{\"name\":\"codex-config\",\"severity\":\"WARN\",\"detail\":%s},"+
 		"{\"name\":\"opencode-config\",\"severity\":\"WARN\",\"detail\":\"missing OpenCode config; run matty install\"}],"+
 		"\"summary\":{\"status\":\"failures\",\"passes\":1,\"warnings\":6,\"failures\":1}}\n",
-		jsonQuote(t, "missing at "+paths.StateFile+"; run matty install"),
-		jsonQuote(t, "engram is not available on PATH; Homebrew Engram exists at "+engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)+"; add it to PATH or run matty install"),
+		jsonQuote(t, "missing at "+fixture.classicState.StateFile()+"; run matty install"),
+		jsonQuote(t, "engram is not available on PATH; Homebrew Engram exists at "+fixture.engram.ExpectedPath()+"; add it to PATH or run matty install"),
 		jsonQuote(t, "could not inspect active engram serve processes: "+processErr.Error()),
-		jsonQuote(t, "missing Matty Codex prompt markers at "+paths.CodexPromptFile+"; run matty install"),
+		jsonQuote(t, "missing Matty Codex prompt markers at "+fixture.codex.PromptFile()+"; run matty install"),
 	)
 	if out != want {
 		t.Fatalf("failed-observation contract changed:\ngot:\n%s\nwant:\n%s", out, want)

@@ -9,10 +9,7 @@ import (
 
 func TestInstallDryRunDoesNotWriteCodexPrompt(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
+	fixture := newCLITestFixture(t, opts)
 
 	out, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
 	if err != nil {
@@ -21,7 +18,7 @@ func TestInstallDryRunDoesNotWriteCodexPrompt(t *testing.T) {
 	if !strings.Contains(out, "write-codex-prompt: write Codex Matty prompt markers") {
 		t.Fatalf("dry-run did not report Codex prompt action:\n%s", out)
 	}
-	if exists(paths.CodexPromptFile) || exists(filepath.Dir(paths.CodexPromptFile)) {
+	if exists(fixture.codex.PromptFile()) || exists(filepath.Dir(fixture.codex.PromptFile())) {
 		t.Fatalf("dry-run wrote Codex prompt/config directory")
 	}
 }
@@ -37,10 +34,7 @@ func readFileString(t *testing.T, path string) string {
 
 func TestInstallDryRunDoesNotWriteOpenCodePrompt(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
+	fixture := newCLITestFixture(t, opts)
 
 	out, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
 	if err != nil {
@@ -49,7 +43,7 @@ func TestInstallDryRunDoesNotWriteOpenCodePrompt(t *testing.T) {
 	if !strings.Contains(out, "write-opencode-prompt: write OpenCode Matty prompt reference") {
 		t.Fatalf("dry-run did not report OpenCode prompt action:\n%s", out)
 	}
-	if exists(paths.OpenCodeConfigFile) || exists(paths.OpenCodePromptFile) || exists(filepath.Dir(paths.OpenCodeConfigFile)) {
+	if exists(fixture.opencode.ConfigFile()) || exists(fixture.opencode.PromptFile()) || exists(filepath.Dir(fixture.opencode.ConfigFile())) {
 		t.Fatalf("dry-run wrote OpenCode prompt/config")
 	}
 }

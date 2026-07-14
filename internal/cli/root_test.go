@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yersonargotev/matty/internal/bootstrap"
 	"github.com/yersonargotev/matty/internal/corelifecycle"
 	"github.com/yersonargotev/matty/internal/engrambin"
 	"github.com/yersonargotev/matty/internal/setuphealth"
@@ -187,11 +188,7 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 
 func expandHomebrewEngramCalls(t *testing.T, opts Options, calls []string) []string {
 	t.Helper()
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	engram := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)
+	engram := newCLITestFixture(t, opts).engram.ExpectedPath()
 	expanded := make([]string, 0, len(calls))
 	for _, call := range calls {
 		expanded = append(expanded, strings.ReplaceAll(call, "<homebrew-engram>", engram))
@@ -201,11 +198,7 @@ func expandHomebrewEngramCalls(t *testing.T, opts Options, calls []string) []str
 
 func engramSetupCallStrings(t *testing.T, opts Options) []string {
 	t.Helper()
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	engram := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)
+	engram := newCLITestFixture(t, opts).engram.ExpectedPath()
 	return []string{engram + " setup codex", engram + " setup opencode"}
 }
 
@@ -253,9 +246,9 @@ func testSkillNames() []string {
 	return names
 }
 
-func createUnmanagedSkillSymlinks(t *testing.T, paths Paths, targetRoot string) {
+func createUnmanagedSkillSymlinks(t *testing.T, skills skillbundle.GlobalLayout, targetRoot string) {
 	t.Helper()
-	if err := os.MkdirAll(paths.AgentSkillsDir, 0o700); err != nil {
+	if err := os.MkdirAll(skills.Root(), 0o700); err != nil {
 		t.Fatalf("mkdir agent skills: %v", err)
 	}
 	if err := os.MkdirAll(targetRoot, 0o700); err != nil {
@@ -263,14 +256,14 @@ func createUnmanagedSkillSymlinks(t *testing.T, paths Paths, targetRoot string) 
 	}
 	for _, name := range testSkillNames() {
 		target := filepath.Join(targetRoot, name)
-		if err := os.Symlink(target, filepath.Join(paths.AgentSkillsDir, name)); err != nil {
+		if err := os.Symlink(target, skills.Skill(name)); err != nil {
 			t.Fatalf("write unmanaged symlink %s: %v", name, err)
 		}
 	}
 }
 
 func installedSkillSourceRoot(home string) string {
-	return skillbundle.SourceRoot(DefaultInstalledSourceRoot(home))
+	return skillbundle.SourceRoot(bootstrap.DefaultInstalledSourceRoot(home))
 }
 
 func createRepoCheckoutSkillSource(t *testing.T) (string, string) {
@@ -413,7 +406,7 @@ func TestLifecycleCommandResolvesSkillSourceOnce(t *testing.T) {
 	}
 }
 
-func TestCommandsResolvePathsFromInjectedEnvironment(t *testing.T) {
+func TestCommandsResolveOwnerLayoutsFromInjectedEnvironment(t *testing.T) {
 	home := t.TempDir()
 	xdg := filepath.Join(home, "custom-xdg")
 	opts := Options{
@@ -497,54 +490,6 @@ func TestReadOnlyOrScaffoldCommandsDoNotCreateFilesInSandboxHome(t *testing.T) {
 	}
 }
 
-func TestResolvePathsRejectsMissingHome(t *testing.T) {
-	_, err := ResolvePaths(MapEnv{})
-	if err == nil {
-		t.Fatal("expected missing HOME error")
-	}
-}
-
-func TestResolvePathsFallsBackForRelativeXDGConfigHome(t *testing.T) {
-	home := t.TempDir()
-	paths, err := ResolvePaths(MapEnv{"HOME": home, "XDG_CONFIG_HOME": "relative"})
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	want := filepath.Join(home, ".config")
-	if paths.ConfigHome != want {
-		t.Fatalf("ConfigHome = %q, want %q", paths.ConfigHome, want)
-	}
-}
-
-func TestResolvePathsDefaultsToMattyOwnedSkillBundle(t *testing.T) {
-	home := t.TempDir()
-	paths, err := ResolvePaths(MapEnv{"HOME": home})
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	wantSuffix := filepath.Join("bundle", "skills")
-	if !strings.HasSuffix(paths.SkillSourceRoot, wantSuffix) {
-		t.Fatalf("SkillSourceRoot = %q, want suffix %q", paths.SkillSourceRoot, wantSuffix)
-	}
-	if strings.Contains(paths.SkillSourceRoot, filepath.Join("skills", "skills")) {
-		t.Fatalf("SkillSourceRoot should not default to external skills clone: %q", paths.SkillSourceRoot)
-	}
-}
-
-func TestResolvePathsFallsBackToInstalledSourceOutsideRepo(t *testing.T) {
-	home := t.TempDir()
-	chdirTempOutsideRepo(t)
-
-	paths, err := ResolvePaths(MapEnv{"HOME": home})
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	want := installedSkillSourceRoot(home)
-	if paths.SkillSourceRoot != want {
-		t.Fatalf("SkillSourceRoot = %q, want %q", paths.SkillSourceRoot, want)
-	}
-}
-
 func TestInstallDryRunReportsRepoSourceAndInstalledSourceWarning(t *testing.T) {
 	home := t.TempDir()
 	repoRoot, _ := createRepoCheckoutSkillSource(t)
@@ -564,16 +509,13 @@ func TestInstallDryRunReportsRepoSourceAndInstalledSourceWarning(t *testing.T) {
 	})
 
 	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")}, Runner: &fakeRunner{path: map[string]string{"engram": "/fake/bin/engram"}}}
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
+	fixture := newCLITestFixture(t, opts)
 	out, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
 	if err != nil {
 		t.Fatalf("install --dry-run failed: %v\n%s", err, out)
 	}
 	for _, want := range []string{
-		"Skill source: repo checkout (" + paths.SkillSourceRoot + ")",
+		"Skill source: repo checkout (" + fixture.skillSource.Root + ")",
 		"warning: installed source also exists at " + installedSkillSourceRoot(home),
 		"repo checkout source may create a development-mode install",
 		"For package-installed setup, run matty install outside the repo or set MATTY_SKILLS_SOURCE explicitly.",
@@ -644,14 +586,11 @@ func TestPackageInstalledCommandsUseInitializedSourceOutsideRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install failed outside repo after init: %v\n%s", err, out)
 	}
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	if got, want := paths.SkillSourceRoot, filepath.Join(home, ".local", "share", "matty", "bundle", "skills"); got != want {
+	fixture := newCLITestFixture(t, opts)
+	if got, want := fixture.skillSource.Root, skillbundle.SourceRoot(fixture.installedSource.Root()); got != want {
 		t.Fatalf("SkillSourceRoot = %q, want installed source %q", got, want)
 	}
-	if !exists(paths.StateFile) || !exists(filepath.Join(paths.AgentSkillsDir, "wayfinder")) {
+	if !exists(fixture.classicState.StateFile()) || !exists(fixture.skills.Skill("wayfinder")) {
 		t.Fatalf("install did not create Matty-managed artifacts from installed source")
 	}
 
@@ -668,11 +607,11 @@ func TestPackageInstalledCommandsUseInitializedSourceOutsideRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("uninstall failed outside repo after init: %v\n%s", err, out)
 	}
-	if exists(paths.StateFile) || exists(filepath.Join(paths.AgentSkillsDir, "wayfinder")) {
+	if exists(fixture.classicState.StateFile()) || exists(fixture.skills.Skill("wayfinder")) {
 		t.Fatalf("uninstall left Matty-managed artifacts in sandbox")
 	}
-	if !exists(paths.SkillSourceRoot) {
-		t.Fatalf("uninstall should not remove Installed Source at %s", paths.SkillSourceRoot)
+	if !exists(fixture.skillSource.Root) {
+		t.Fatalf("uninstall should not remove Installed Source at %s", fixture.skillSource.Root)
 	}
 }
 
@@ -836,11 +775,8 @@ func TestInstallDryRunReportsPlanAndDoesNotMutateSandbox(t *testing.T) {
 		t.Fatalf("dry-run output changed between runs:\nfirst:\n%s\nsecond:\n%s", out, outAgain)
 	}
 
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	engram := engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv)
+	fixture := newCLITestFixture(t, opts)
+	engram := fixture.engram.ExpectedPath()
 	wants := []string{
 		"matty install dry-run: planned actions",
 		"write-file: persist Matty state metadata",
@@ -867,14 +803,11 @@ func TestInstallDryRunReportsPlanAndDoesNotMutateSandbox(t *testing.T) {
 
 func TestInstallRejectsCorruptState(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	if err := os.MkdirAll(paths.MattyDir, 0o700); err != nil {
+	fixture := newCLITestFixture(t, opts)
+	if err := os.MkdirAll(fixture.classicState.MattyHome(), 0o700); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
-	if err := os.WriteFile(paths.StateFile, []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(fixture.classicState.StateFile(), []byte("{not json"), 0o600); err != nil {
 		t.Fatalf("write corrupt state: %v", err)
 	}
 
@@ -889,11 +822,8 @@ func TestInstallRejectsCorruptState(t *testing.T) {
 
 func TestInstallWarnsWhenMostExpectedSkillsAreUnmanagedSymlinks(t *testing.T) {
 	opts, _, home := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	createUnmanagedSkillSymlinks(t, paths, filepath.Join(home, "stale-repo-skills"))
+	fixture := newCLITestFixture(t, opts)
+	createUnmanagedSkillSymlinks(t, fixture.skills, filepath.Join(home, "stale-repo-skills"))
 
 	out, err := executeCommand(t, NewRootCommand(opts), "install")
 	if err != nil {
@@ -902,7 +832,7 @@ func TestInstallWarnsWhenMostExpectedSkillsAreUnmanagedSymlinks(t *testing.T) {
 	recoveryAdvice := "Safe recovery: verify these are stale Matty-created links, remove them, then run matty install; Matty will not overwrite arbitrary files or links."
 	for _, want := range []string{
 		"warning: skipped 6 unmanaged skill symlinks; setup may be incomplete",
-		"Example: " + filepath.Join(paths.AgentSkillsDir, "ask-matt") + " -> " + filepath.Join(home, "stale-repo-skills", "ask-matt"),
+		"Example: " + fixture.skills.Skill("ask-matt") + " -> " + filepath.Join(home, "stale-repo-skills", "ask-matt"),
 		recoveryAdvice,
 		"matty install: synced 0 managed skills",
 	} {
@@ -921,28 +851,25 @@ func TestEndToEndSandboxLifecyclePreservesGentleAIAndRealHome(t *testing.T) {
 	if home == realHome {
 		t.Fatalf("sandbox HOME unexpectedly equals real HOME %q", realHome)
 	}
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	for _, path := range []string{paths.StateFile, paths.CodexPromptFile, paths.OpenCodeConfigFile, paths.OpenCodePromptFile, paths.AgentSkillsDir} {
+	fixture := newCLITestFixture(t, opts)
+	for _, path := range []string{fixture.classicState.StateFile(), fixture.codex.PromptFile(), fixture.opencode.ConfigFile(), fixture.opencode.PromptFile(), fixture.skills.Root()} {
 		if strings.HasPrefix(path, realHome+string(os.PathSeparator)) {
 			t.Fatalf("sandbox path %q points inside real HOME %q", path, realHome)
 		}
 	}
 
-	if err := os.MkdirAll(filepath.Dir(paths.CodexPromptFile), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(fixture.codex.PromptFile()), 0o700); err != nil {
 		t.Fatalf("mkdir codex config: %v", err)
 	}
 	codexOriginal := "# Existing Codex\n\n<!-- gentle-ai:persona -->\nkeep gentle codex\n<!-- /gentle-ai:persona -->\n"
-	if err := os.WriteFile(paths.CodexPromptFile, []byte(codexOriginal), 0o600); err != nil {
+	if err := os.WriteFile(fixture.codex.PromptFile(), []byte(codexOriginal), 0o600); err != nil {
 		t.Fatalf("write codex fixture: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(paths.OpenCodeConfigFile), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(fixture.opencode.ConfigFile()), 0o700); err != nil {
 		t.Fatalf("mkdir opencode config: %v", err)
 	}
 	openCodeOriginal := `{"plugin":["gentle-ai"],"instructions":["CONTRIBUTING.md"]}` + "\n"
-	if err := os.WriteFile(paths.OpenCodeConfigFile, []byte(openCodeOriginal), 0o600); err != nil {
+	if err := os.WriteFile(fixture.opencode.ConfigFile(), []byte(openCodeOriginal), 0o600); err != nil {
 		t.Fatalf("write opencode fixture: %v", err)
 	}
 
@@ -958,7 +885,7 @@ func TestEndToEndSandboxLifecyclePreservesGentleAIAndRealHome(t *testing.T) {
 			t.Fatalf("install output missing %q:\n%s", want, out)
 		}
 	}
-	if !exists(paths.StateFile) || !exists(filepath.Join(paths.AgentSkillsDir, "ask-matt")) {
+	if !exists(fixture.classicState.StateFile()) || !exists(fixture.skills.Skill("ask-matt")) {
 		t.Fatalf("install did not create expected Matty-managed artifacts in sandbox")
 	}
 
@@ -975,33 +902,30 @@ func TestEndToEndSandboxLifecyclePreservesGentleAIAndRealHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("uninstall failed: %v\n%s", err, out)
 	}
-	if exists(paths.StateFile) || exists(filepath.Join(paths.AgentSkillsDir, "ask-matt")) || exists(paths.OpenCodePromptFile) {
+	if exists(fixture.classicState.StateFile()) || exists(fixture.skills.Skill("ask-matt")) || exists(fixture.opencode.PromptFile()) {
 		t.Fatalf("uninstall left Matty-managed artifacts in sandbox")
 	}
-	if got := readFileString(t, paths.CodexPromptFile); got != codexOriginal {
+	if got := readFileString(t, fixture.codex.PromptFile()); got != codexOriginal {
 		t.Fatalf("uninstall did not restore Codex user/Gentle AI content:\ngot:\n%s\nwant:\n%s", got, codexOriginal)
 	}
-	openCodeAfter := readFileString(t, paths.OpenCodeConfigFile)
+	openCodeAfter := readFileString(t, fixture.opencode.ConfigFile())
 	for _, want := range []string{"gentle-ai", "CONTRIBUTING.md"} {
 		if !strings.Contains(openCodeAfter, want) {
 			t.Fatalf("uninstall lost OpenCode user/Gentle AI content %q:\n%s", want, openCodeAfter)
 		}
 	}
-	if strings.Contains(openCodeAfter, paths.OpenCodePromptFile) {
+	if strings.Contains(openCodeAfter, fixture.opencode.PromptFile()) {
 		t.Fatalf("uninstall left Matty OpenCode prompt reference:\n%s", openCodeAfter)
 	}
 }
 
 func TestInstallDryRunReportsUnmanagedSkipsWithoutMutating(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatalf("ResolvePaths failed: %v", err)
-	}
-	if err := os.MkdirAll(paths.AgentSkillsDir, 0o700); err != nil {
+	fixture := newCLITestFixture(t, opts)
+	if err := os.MkdirAll(fixture.skills.Root(), 0o700); err != nil {
 		t.Fatalf("mkdir agent skills: %v", err)
 	}
-	unmanaged := filepath.Join(paths.AgentSkillsDir, "ask-matt")
+	unmanaged := fixture.skills.Skill("ask-matt")
 	if err := os.WriteFile(unmanaged, []byte("keep"), 0o600); err != nil {
 		t.Fatalf("write unmanaged file: %v", err)
 	}
@@ -1017,23 +941,20 @@ func TestInstallDryRunReportsUnmanagedSkipsWithoutMutating(t *testing.T) {
 	if err != nil || string(data) != "keep" {
 		t.Fatalf("dry-run mutated unmanaged file: data=%q err=%v", data, err)
 	}
-	if exists(paths.StateFile) {
+	if exists(fixture.classicState.StateFile()) {
 		t.Fatalf("dry-run wrote state")
 	}
 }
 
 func TestInterruptedInstallIsExplicitAndPersistsRecoveryState(t *testing.T) {
 	opts, runner, _ := sandboxOptions(t)
-	paths, err := ResolvePaths(opts.Env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner.fail = map[string]error{engrambin.ExpectedHomebrewPath(paths.HomebrewPrefixEnv) + " setup codex": errors.New("interrupted")}
+	fixture := newCLITestFixture(t, opts)
+	runner.fail = map[string]error{fixture.engram.ExpectedPath() + " setup codex": errors.New("interrupted")}
 
 	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
 		t.Fatalf("install unexpectedly succeeded:\n%s", out)
 	}
-	state, found, err := corelifecycle.LoadState(paths.StateFile)
+	state, found, err := corelifecycle.LoadState(fixture.classicState.StateFile())
 	if err != nil || !found {
 		t.Fatalf("LoadState = found %v err %v", found, err)
 	}
@@ -1187,7 +1108,7 @@ func TestInitWithAbsoluteSourceDoesNotRequireCurrentDirectory(t *testing.T) {
 
 func TestInitRejectsMalformedExistingInstalledSourceWithoutMutation(t *testing.T) {
 	home := t.TempDir()
-	installedRoot := DefaultInstalledSourceRoot(home)
+	installedRoot := bootstrap.DefaultInstalledSourceRoot(home)
 	manifest := filepath.Join(installedRoot, "bundle", "skills", "engineering", "ask-matt", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(manifest), 0o700); err != nil {
 		t.Fatal(err)
@@ -1236,8 +1157,8 @@ func TestInitDoesNotPublishMalformedClonedSource(t *testing.T) {
 			t.Fatalf("error missing %q: %v", want, err)
 		}
 	}
-	if exists(DefaultInstalledSourceRoot(home)) {
-		t.Fatalf("init published malformed source at %s", DefaultInstalledSourceRoot(home))
+	if exists(bootstrap.DefaultInstalledSourceRoot(home)) {
+		t.Fatalf("init published malformed source at %s", bootstrap.DefaultInstalledSourceRoot(home))
 	}
 }
 
@@ -1255,7 +1176,7 @@ func TestInitDoesNotReplaceValidInstalledSourceWithMalformedRef(t *testing.T) {
 	if out, err := executeCommand(t, NewRootCommand(opts), "init", "--repository-url", repo, "--repository-ref", "v0.1.0"); err != nil {
 		t.Fatalf("initialize valid source: %v\n%s", err, out)
 	}
-	installedRoot := DefaultInstalledSourceRoot(home)
+	installedRoot := bootstrap.DefaultInstalledSourceRoot(home)
 	beforeHead := strings.TrimSpace(runGitCommand(t, installedRoot, "rev-parse", "HEAD"))
 	beforeBundle := snapshotTree(t, filepath.Join(installedRoot, "bundle"))
 

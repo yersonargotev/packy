@@ -304,11 +304,11 @@ func newUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *
 
 func printSkillSourceReport(out io.Writer, source skillbundle.Source, installedSource bootstrap.InstalledSource) error {
 	switch source.Origin {
-	case SkillSourceOriginOverride:
+	case skillbundle.SourceOriginOverride:
 		if _, err := fmt.Fprintf(out, "Skill source: explicit override (MATTY_SKILLS_SOURCE=%s)\n", source.Root); err != nil {
 			return err
 		}
-	case SkillSourceOriginRepo:
+	case skillbundle.SourceOriginRepository:
 		if _, err := fmt.Fprintf(out, "Skill source: repo checkout (%s)\n", source.Root); err != nil {
 			return err
 		}
@@ -318,7 +318,7 @@ func printSkillSourceReport(out io.Writer, source skillbundle.Source, installedS
 				return err
 			}
 		}
-	case SkillSourceOriginInstalled:
+	case skillbundle.SourceOriginInstalled:
 		if _, err := fmt.Fprintf(out, "Skill source: installed source (%s)\n", source.Root); err != nil {
 			return err
 		}
