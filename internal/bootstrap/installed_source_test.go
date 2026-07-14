@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -80,10 +81,16 @@ func TestValidateInstalledSourceRefUsesDescriptor(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "descriptor-source")
 	err := ValidateInstalledSourceRef(BootstrapOptions{
 		InstalledSource: InstalledSourceAt(root),
-		SourceRoot:      filepath.Join(t.TempDir(), "legacy-source"),
 		RepositoryRef:   "v1.2.3",
 	})
 	if err == nil || !strings.Contains(err.Error(), filepath.Join(root, "bundle", "skills")) {
 		t.Fatalf("ValidateInstalledSourceRef error = %v, want descriptor path", err)
+	}
+}
+
+func TestBootstrapOptionsHasOneInstalledSourceLocation(t *testing.T) {
+	typeOfOptions := reflect.TypeOf(BootstrapOptions{})
+	if _, found := typeOfOptions.FieldByName("SourceRoot"); found {
+		t.Fatal("BootstrapOptions retains legacy SourceRoot beside InstalledSource")
 	}
 }

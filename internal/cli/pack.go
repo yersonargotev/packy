@@ -9,7 +9,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"github.com/yersonargotev/matty/internal/bootstrap"
 	"github.com/yersonargotev/matty/internal/capabilitypack"
 	"github.com/yersonargotev/matty/internal/codex"
 	"github.com/yersonargotev/matty/internal/engrambin"
@@ -532,26 +531,14 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 	if err != nil {
 		return packComposition{}, err
 	}
-	installedSource, err := bootstrap.ResolveInstalledSource(snapshot, "")
+	sources, err := resolveInvocationSources(opts, snapshot)
 	if err != nil {
 		return packComposition{}, err
 	}
-	currentDirectory, err := snapshot.CurrentDirectory()
-	if err != nil {
-		return packComposition{}, fmt.Errorf("resolve skill source root: %w", err)
-	}
-	source, err := skillbundle.ResolveSource(skillbundle.SourceOptions{
-		ExplicitRoot:    opts.Env.Getenv("MATTY_SKILLS_SOURCE"),
-		RepositoryStart: currentDirectory,
-		InstalledRoot:   installedSource.Root(),
-	})
-	if err != nil {
+	if err := skillbundle.ValidateSource(sources.skills.Root, sources.skills.MissingHint); err != nil {
 		return packComposition{}, err
 	}
-	if err := skillbundle.ValidateSource(source.Root, source.MissingHint); err != nil {
-		return packComposition{}, err
-	}
-	bundleRoot := skillbundle.BundleRoot(source.Root)
+	bundleRoot := skillbundle.BundleRoot(sources.skills.Root)
 	catalog, err := capabilitypack.Discover(bundleRoot)
 	if err != nil {
 		return packComposition{}, err

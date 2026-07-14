@@ -18,13 +18,19 @@ const (
 	SourceOriginInstalled  SourceOrigin = "installed"
 )
 
-// SourceOptions supplies the process-specific roots used to select a skill
-// source. Callers own environment and cwd lookup; this package owns precedence
-// and the Matty bundle layout.
+// InstalledSource is the narrow bootstrap-owned descriptor consumed when the
+// package installation is the selected fallback.
+type InstalledSource interface {
+	BundleRoot() string
+}
+
+// SourceOptions supplies the process-specific candidates used to select a
+// skill source. Callers own environment and cwd lookup; this package owns
+// precedence and the Matty bundle layout.
 type SourceOptions struct {
 	ExplicitRoot    string
 	RepositoryStart string
-	InstalledRoot   string
+	InstalledSource InstalledSource
 }
 
 type Source struct {
@@ -62,16 +68,18 @@ func ResolveSource(opts SourceOptions) (Source, error) {
 		}
 	}
 
-	installedRoot := opts.InstalledRoot
-	if !filepath.IsAbs(installedRoot) {
-		installedRoot = filepath.Join(repositoryStart, installedRoot)
-	}
 	return Source{
-		Root:        SourceRoot(filepath.Clean(installedRoot)),
+		Root:        InstalledSourceRoot(opts.InstalledSource),
 		MissingHint: "run matty init to initialize it",
 		IsDefault:   true,
 		Origin:      SourceOriginInstalled,
 	}, nil
+}
+
+// InstalledSourceRoot derives the skill source beneath bootstrap's Installed
+// Source bundle without reacquiring checkout layout knowledge.
+func InstalledSourceRoot(source InstalledSource) string {
+	return filepath.Join(source.BundleRoot(), "skills")
 }
 
 func SourceRoot(mattyRoot string) string {

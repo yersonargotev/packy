@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+type installedSourceStub struct{ bundleRoot string }
+
+func (source installedSourceStub) BundleRoot() string { return source.bundleRoot }
+
 func TestResolveSourcePrecedenceAndFallbacks(t *testing.T) {
 	repositoryRoot := t.TempDir()
 	repositorySource := SourceRoot(repositoryRoot)
@@ -15,6 +19,7 @@ func TestResolveSourcePrecedenceAndFallbacks(t *testing.T) {
 	installedRoot := t.TempDir()
 	installedSource := SourceRoot(installedRoot)
 	writeValidSkillSource(t, installedSource)
+	installed := installedSourceStub{bundleRoot: filepath.Join(installedRoot, "bundle")}
 	override := filepath.Join(t.TempDir(), "explicit-skills")
 	writeValidSkillSource(t, override)
 
@@ -27,17 +32,17 @@ func TestResolveSourcePrecedenceAndFallbacks(t *testing.T) {
 	}{
 		{
 			name:     "explicit override wins over repository and installed sources",
-			opts:     SourceOptions{ExplicitRoot: override, RepositoryStart: filepath.Join(repositoryRoot, "nested"), InstalledRoot: installedRoot},
+			opts:     SourceOptions{ExplicitRoot: override, RepositoryStart: filepath.Join(repositoryRoot, "nested"), InstalledSource: installed},
 			wantRoot: override, origin: SourceOriginOverride,
 		},
 		{
 			name:     "repository source wins over initialized installed source",
-			opts:     SourceOptions{RepositoryStart: filepath.Join(repositoryRoot, "nested"), InstalledRoot: installedRoot},
+			opts:     SourceOptions{RepositoryStart: filepath.Join(repositoryRoot, "nested"), InstalledSource: installed},
 			wantRoot: repositorySource, origin: SourceOriginRepository,
 		},
 		{
 			name:     "initialized installed source is the package fallback",
-			opts:     SourceOptions{RepositoryStart: t.TempDir(), InstalledRoot: installedRoot},
+			opts:     SourceOptions{RepositoryStart: t.TempDir(), InstalledSource: installed},
 			wantRoot: installedSource, origin: SourceOriginInstalled, isDefault: true,
 		},
 	}
@@ -68,7 +73,7 @@ func TestResolveSourceKeepsInvalidExplicitOverrideSelected(t *testing.T) {
 	got, err := ResolveSource(SourceOptions{
 		ExplicitRoot:    missingOverride,
 		RepositoryStart: repositoryRoot,
-		InstalledRoot:   installedRoot,
+		InstalledSource: installedSourceStub{bundleRoot: filepath.Join(installedRoot, "bundle")},
 	})
 	if err != nil {
 		t.Fatalf("ResolveSource: %v", err)
@@ -84,7 +89,7 @@ func TestResolveSourceKeepsInvalidExplicitOverrideSelected(t *testing.T) {
 
 func TestResolveSourceMakesRelativeOverrideAbsoluteFromRepositoryStart(t *testing.T) {
 	start := t.TempDir()
-	got, err := ResolveSource(SourceOptions{ExplicitRoot: filepath.Join("fixtures", "skills"), RepositoryStart: start, InstalledRoot: t.TempDir()})
+	got, err := ResolveSource(SourceOptions{ExplicitRoot: filepath.Join("fixtures", "skills"), RepositoryStart: start, InstalledSource: installedSourceStub{bundleRoot: filepath.Join(t.TempDir(), "bundle")}})
 	if err != nil {
 		t.Fatalf("ResolveSource: %v", err)
 	}
@@ -96,7 +101,7 @@ func TestResolveSourceMakesRelativeOverrideAbsoluteFromRepositoryStart(t *testin
 
 func TestResolveSourceMissingInstalledFallbackCarriesInitializationGuidance(t *testing.T) {
 	installedRoot := filepath.Join(t.TempDir(), "installed")
-	got, err := ResolveSource(SourceOptions{RepositoryStart: t.TempDir(), InstalledRoot: installedRoot})
+	got, err := ResolveSource(SourceOptions{RepositoryStart: t.TempDir(), InstalledSource: installedSourceStub{bundleRoot: filepath.Join(installedRoot, "bundle")}})
 	if err != nil {
 		t.Fatalf("ResolveSource: %v", err)
 	}

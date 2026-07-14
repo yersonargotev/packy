@@ -88,6 +88,23 @@ func TestCLIWorkstationLayoutOwnershipIsContracted(t *testing.T) {
 	}
 }
 
+func TestCLISourceSelectionHasOneSharedProductionRoute(t *testing.T) {
+	var installedSourceResolutions, skillSourceResolutions int
+	for _, source := range cliGoSources(t) {
+		if strings.HasSuffix(source.name, "_test.go") {
+			continue
+		}
+		installedSourceResolutions += strings.Count(source.text, "bootstrap.ResolveInstalledSource(")
+		skillSourceResolutions += strings.Count(source.text, "skillbundle.ResolveSource(")
+	}
+	if installedSourceResolutions != 2 {
+		t.Fatalf("CLI has %d Installed Source resolution routes, want init plus one shared command route", installedSourceResolutions)
+	}
+	if skillSourceResolutions != 1 {
+		t.Fatalf("CLI has %d Skill Source selection routes, want one shared command route", skillSourceResolutions)
+	}
+}
+
 func containsArtifactLiteral(node ast.Node, known map[string]bool) bool {
 	found := false
 	ast.Inspect(node, func(node ast.Node) bool {

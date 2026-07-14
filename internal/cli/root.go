@@ -116,11 +116,11 @@ func newInitCommand(opts Options, workstationResolver *workstation.Resolver) *co
 			}
 			switch {
 			case result.Cloned:
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty init: initialized Installed Source at %s\n", result.SourceRoot)
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty init: initialized Installed Source at %s\n", installedSource.Root())
 			case result.Updated:
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty init: updated Installed Source at %s\n", result.SourceRoot)
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty init: updated Installed Source at %s\n", installedSource.Root())
 			default:
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty init: Installed Source already initialized at %s\n", result.SourceRoot)
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "matty init: Installed Source already initialized at %s\n", installedSource.Root())
 			}
 			return err
 		},
@@ -232,19 +232,7 @@ func diagnoseSetupHealth(opts Options, resolver *workstation.Resolver) (setuphea
 	if err != nil {
 		return setuphealth.Report{}, err
 	}
-	installedSource, err := bootstrap.ResolveInstalledSource(snapshot, "")
-	if err != nil {
-		return setuphealth.Report{}, err
-	}
-	currentDirectory, err := snapshot.CurrentDirectory()
-	if err != nil {
-		return setuphealth.Report{}, fmt.Errorf("resolve skill source root: %w", err)
-	}
-	source, err := skillbundle.ResolveSource(skillbundle.SourceOptions{
-		ExplicitRoot:    opts.Env.Getenv("MATTY_SKILLS_SOURCE"),
-		RepositoryStart: currentDirectory,
-		InstalledRoot:   installedSource.Root(),
-	})
+	sources, err := resolveInvocationSources(opts, snapshot)
 	if err != nil {
 		return setuphealth.Report{}, err
 	}
@@ -258,7 +246,7 @@ func diagnoseSetupHealth(opts Options, resolver *workstation.Resolver) (setuphea
 	return setuphealth.Diagnose(
 		snapshot.Home(),
 		snapshot.ConfigurationHome(),
-		corelifecycle.ObserveSetup(state, skills, source),
+		corelifecycle.ObserveSetup(state, skills, sources.skills),
 		engrambin.ObserveSetup(engramLayout, snapshot.ExecutableSearchPath(), opts.Runner.LookPath, opts.EngramFacts),
 		codex.ObserveSetup(codexLayout),
 		opencode.ObserveSetup(openCodeLayout),
@@ -312,7 +300,7 @@ func printSkillSourceReport(out io.Writer, source skillbundle.Source, installedS
 		if _, err := fmt.Fprintf(out, "Skill source: repo checkout (%s)\n", source.Root); err != nil {
 			return err
 		}
-		installedSkillSource := skillbundle.SourceRoot(installedSource.Root())
+		installedSkillSource := skillbundle.InstalledSourceRoot(installedSource)
 		if skillbundle.SourceRootExists(installedSkillSource) {
 			if _, err := fmt.Fprintf(out, "warning: installed source also exists at %s; repo checkout source may create a development-mode install. For package-installed setup, run matty install outside the repo or set MATTY_SKILLS_SOURCE explicitly.\n", installedSkillSource); err != nil {
 				return err
@@ -406,24 +394,37 @@ type classicLifecycleComposition struct {
 	installedSource bootstrap.InstalledSource
 }
 
+type invocationSources struct {
+	installed bootstrap.InstalledSource
+	skills    skillbundle.Source
+}
+
+func resolveInvocationSources(opts Options, snapshot workstation.Snapshot) (invocationSources, error) {
+	installed, err := bootstrap.ResolveInstalledSource(snapshot, "")
+	if err != nil {
+		return invocationSources{}, err
+	}
+	currentDirectory, err := snapshot.CurrentDirectory()
+	if err != nil {
+		return invocationSources{}, fmt.Errorf("resolve skill source root: %w", err)
+	}
+	skills, err := skillbundle.ResolveSource(skillbundle.SourceOptions{
+		ExplicitRoot:    opts.Env.Getenv("MATTY_SKILLS_SOURCE"),
+		RepositoryStart: currentDirectory,
+		InstalledSource: installed,
+	})
+	if err != nil {
+		return invocationSources{}, err
+	}
+	return invocationSources{installed: installed, skills: skills}, nil
+}
+
 func resolveClassicLifecycle(opts Options, resolver *workstation.Resolver) (classicLifecycleComposition, error) {
 	snapshot, err := resolver.Resolve(workstation.Options{})
 	if err != nil {
 		return classicLifecycleComposition{}, err
 	}
-	installedSource, err := bootstrap.ResolveInstalledSource(snapshot, "")
-	if err != nil {
-		return classicLifecycleComposition{}, err
-	}
-	currentDirectory, err := snapshot.CurrentDirectory()
-	if err != nil {
-		return classicLifecycleComposition{}, fmt.Errorf("resolve skill source root: %w", err)
-	}
-	source, err := skillbundle.ResolveSource(skillbundle.SourceOptions{
-		ExplicitRoot:    opts.Env.Getenv("MATTY_SKILLS_SOURCE"),
-		RepositoryStart: currentDirectory,
-		InstalledRoot:   installedSource.Root(),
-	})
+	sources, err := resolveInvocationSources(opts, snapshot)
 	if err != nil {
 		return classicLifecycleComposition{}, err
 	}
@@ -431,14 +432,14 @@ func resolveClassicLifecycle(opts Options, resolver *workstation.Resolver) (clas
 		config: corelifecycle.FacadeConfig{
 			MattyHome:       snapshot.MattyHome(),
 			Skills:          skillbundle.NewGlobalLayout(snapshot.Home()),
-			SkillSource:     source,
+			SkillSource:     sources.skills,
 			Codex:           codex.NewCanonicalLayout(snapshot.Home()),
 			OpenCode:        opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
 			Engram:          engrambin.NewTopology(snapshot.HomebrewPrefix()),
-			InstalledSource: installedSource,
+			InstalledSource: sources.installed,
 			RunningVersion:  mattyversion.Value,
 		},
-		skillSource:     source,
-		installedSource: installedSource,
+		skillSource:     sources.skills,
+		installedSource: sources.installed,
 	}, nil
 }

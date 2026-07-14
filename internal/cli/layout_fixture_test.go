@@ -50,7 +50,7 @@ func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
 	skillSource, err := skillbundle.ResolveSource(skillbundle.SourceOptions{
 		ExplicitRoot:    opts.Env.Getenv("MATTY_SKILLS_SOURCE"),
 		RepositoryStart: currentDirectory,
-		InstalledRoot:   installedSource.Root(),
+		InstalledSource: installedSource,
 	})
 	if err != nil {
 		t.Fatalf("resolve Skill Source fixture: %v", err)

@@ -587,7 +587,7 @@ func TestPackageInstalledCommandsUseInitializedSourceOutsideRepo(t *testing.T) {
 		t.Fatalf("install failed outside repo after init: %v\n%s", err, out)
 	}
 	fixture := newCLITestFixture(t, opts)
-	if got, want := fixture.skillSource.Root, skillbundle.SourceRoot(fixture.installedSource.Root()); got != want {
+	if got, want := fixture.skillSource.Root, skillbundle.InstalledSourceRoot(fixture.installedSource); got != want {
 		t.Fatalf("SkillSourceRoot = %q, want installed source %q", got, want)
 	}
 	if !exists(fixture.classicState.StateFile()) || !exists(fixture.skills.Skill("wayfinder")) {

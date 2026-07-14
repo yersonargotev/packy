@@ -20,7 +20,6 @@ const DefaultRepositoryURL = "https://github.com/yersonargotev/matty.git"
 // remains an adapter around source bootstrapping behavior.
 type BootstrapOptions struct {
 	InstalledSource InstalledSource
-	SourceRoot      string
 	RepositoryURL   string
 	RepositoryRef   string
 	HomeDir         string
@@ -29,24 +28,20 @@ type BootstrapOptions struct {
 }
 
 type BootstrapResult struct {
-	SourceRoot string
-	Cloned     bool
-	Updated    bool
+	Cloned  bool
+	Updated bool
 }
 
 func EnsureInstalledSource(opts BootstrapOptions) (BootstrapResult, error) {
-	if opts.InstalledSource.Root() != "" {
-		opts.SourceRoot = opts.InstalledSource.Root()
-	}
-	if strings.TrimSpace(opts.SourceRoot) == "" {
+	if strings.TrimSpace(opts.InstalledSource.Root()) == "" {
 		return BootstrapResult{}, errors.New("installed source root is required")
 	}
 	if strings.TrimSpace(opts.RepositoryURL) == "" {
 		opts.RepositoryURL = DefaultRepositoryURL
 	}
 
-	result := BootstrapResult{SourceRoot: opts.SourceRoot}
-	if validateInstalledSource(opts.SourceRoot) == nil {
+	result := BootstrapResult{}
+	if validateInstalledSource(opts.InstalledSource.Root()) == nil {
 		updated, err := ensureInstalledSourceRef(opts)
 		if err != nil {
 			return BootstrapResult{}, err
@@ -55,19 +50,19 @@ func EnsureInstalledSource(opts BootstrapOptions) (BootstrapResult, error) {
 		return result, nil
 	}
 
-	info, err := os.Stat(opts.SourceRoot)
+	info, err := os.Stat(opts.InstalledSource.Root())
 	switch {
 	case err == nil && !info.IsDir():
-		return BootstrapResult{}, fmt.Errorf("Installed Source path exists but is not a directory: %s", opts.SourceRoot)
+		return BootstrapResult{}, fmt.Errorf("Installed Source path exists but is not a directory: %s", opts.InstalledSource.Root())
 	case err == nil:
-		empty, err := dirEmpty(opts.SourceRoot)
+		empty, err := dirEmpty(opts.InstalledSource.Root())
 		if err != nil {
 			return BootstrapResult{}, err
 		}
 		if !empty {
-			return BootstrapResult{}, fmt.Errorf("Installed Source path exists but is not a valid Matty checkout: %s. Move it aside or pass --source-root", opts.SourceRoot)
+			return BootstrapResult{}, fmt.Errorf("Installed Source path exists but is not a valid Matty checkout: %s. Move it aside or pass --source-root", opts.InstalledSource.Root())
 		}
-		if err := os.Remove(opts.SourceRoot); err != nil {
+		if err := os.Remove(opts.InstalledSource.Root()); err != nil {
 			return BootstrapResult{}, fmt.Errorf("remove empty Installed Source directory: %w", err)
 		}
 	case !os.IsNotExist(err):
@@ -75,7 +70,7 @@ func EnsureInstalledSource(opts BootstrapOptions) (BootstrapResult, error) {
 	}
 
 	if _, err := exec.LookPath("git"); err != nil {
-		return BootstrapResult{}, fmt.Errorf("git is required to clone the Matty Source of Truth into %s", opts.SourceRoot)
+		return BootstrapResult{}, fmt.Errorf("git is required to clone the Matty Source of Truth into %s", opts.InstalledSource.Root())
 	}
 	if err := cloneInstalledSource(opts); err != nil {
 		return BootstrapResult{}, err
@@ -99,9 +94,9 @@ func ensureInstalledSourceRef(opts BootstrapOptions) (bool, error) {
 	if dirty, err := repositoryDirty(opts); err != nil {
 		return false, err
 	} else if dirty {
-		return false, fmt.Errorf("Installed Source at %s has local changes; refusing to update to %s. Commit/stash them, move it aside, or pass --source-root", opts.SourceRoot, ref)
+		return false, fmt.Errorf("Installed Source at %s has local changes; refusing to update to %s. Commit/stash them, move it aside, or pass --source-root", opts.InstalledSource.Root(), ref)
 	}
-	if err := reportProgress(opts, fmt.Sprintf("updating Installed Source at %s to %s", opts.SourceRoot, ref)); err != nil {
+	if err := reportProgress(opts, fmt.Sprintf("updating Installed Source at %s to %s", opts.InstalledSource.Root(), ref)); err != nil {
 		return false, err
 	}
 	if err := fetchInstalledSourceRef(opts, ref); err != nil {
@@ -117,7 +112,7 @@ func ensureInstalledSourceRef(opts BootstrapOptions) (bool, error) {
 }
 
 func validateFetchedInstalledSource(opts BootstrapOptions) (err error) {
-	validationRoot, err := os.MkdirTemp(filepath.Dir(opts.SourceRoot), ".matty-validate.*")
+	validationRoot, err := os.MkdirTemp(filepath.Dir(opts.InstalledSource.Root()), ".matty-validate.*")
 	if err != nil {
 		return fmt.Errorf("create Installed Source validation directory: %w", err)
 	}
@@ -153,25 +148,22 @@ func fetchInstalledSourceRef(opts BootstrapOptions, ref string) error {
 }
 
 func ValidateInstalledSourceRef(opts BootstrapOptions) error {
-	if opts.InstalledSource.Root() != "" {
-		opts.SourceRoot = opts.InstalledSource.Root()
-	}
 	ref := strings.TrimSpace(opts.RepositoryRef)
 	if ref == "" {
 		return nil
 	}
-	if strings.TrimSpace(opts.SourceRoot) == "" {
+	if strings.TrimSpace(opts.InstalledSource.Root()) == "" {
 		return errors.New("installed source root is required")
 	}
-	if validateInstalledSource(opts.SourceRoot) != nil {
-		return fmt.Errorf("default Installed Source is missing or invalid at %s; run matty init to initialize it", filepath.Join(opts.SourceRoot, "bundle", "skills"))
+	if validateInstalledSource(opts.InstalledSource.Root()) != nil {
+		return fmt.Errorf("default Installed Source is missing or invalid at %s; run matty init to initialize it", skillbundle.InstalledSourceRoot(opts.InstalledSource))
 	}
 	matches, err := repositoryRefMatchesReadOnly(opts, fmt.Sprintf("run matty init to align it with %s", ref))
 	if err != nil {
 		return err
 	}
 	if !matches {
-		return fmt.Errorf("default Installed Source at %s is stale for Matty %s; run matty init to align it before matty update", opts.SourceRoot, ref)
+		return fmt.Errorf("default Installed Source at %s is stale for Matty %s; run matty init to align it before matty update", opts.InstalledSource.Root(), ref)
 	}
 	return nil
 }
@@ -180,10 +172,10 @@ func ValidateInstalledSourceRef(opts BootstrapOptions) error {
 // without invoking Git. Lifecycle Preview uses this path so dry-runs never
 // execute commands; mutating bootstrap operations continue to use Git itself.
 func repositoryRefMatchesReadOnly(opts BootstrapOptions, missingGitReason string) (bool, error) {
-	repository, err := git.PlainOpenWithOptions(opts.SourceRoot, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
+	repository, err := git.PlainOpenWithOptions(opts.InstalledSource.Root(), &git.PlainOpenOptions{EnableDotGitCommonDir: true})
 	if err != nil {
 		if errors.Is(err, git.ErrRepositoryNotExists) {
-			return false, fmt.Errorf("Installed Source at %s is not a git checkout; %s. Move it aside or pass --source-root", opts.SourceRoot, missingGitReason)
+			return false, fmt.Errorf("Installed Source at %s is not a git checkout; %s. Move it aside or pass --source-root", opts.InstalledSource.Root(), missingGitReason)
 		}
 		return false, fmt.Errorf("inspect Installed Source git metadata: %w", err)
 	}
@@ -199,9 +191,9 @@ func repositoryRefMatchesReadOnly(opts BootstrapOptions, missingGitReason string
 }
 
 func repositoryRefMatches(opts BootstrapOptions, missingGitReason string) (bool, error) {
-	if _, err := os.Stat(filepath.Join(opts.SourceRoot, ".git")); err != nil {
+	if _, err := os.Stat(filepath.Join(opts.InstalledSource.Root(), ".git")); err != nil {
 		if os.IsNotExist(err) {
-			return false, fmt.Errorf("Installed Source at %s is not a git checkout; %s. Move it aside or pass --source-root", opts.SourceRoot, missingGitReason)
+			return false, fmt.Errorf("Installed Source at %s is not a git checkout; %s. Move it aside or pass --source-root", opts.InstalledSource.Root(), missingGitReason)
 		}
 		return false, fmt.Errorf("inspect Installed Source git metadata: %w", err)
 	}
@@ -229,7 +221,7 @@ func repositoryDirty(opts BootstrapOptions) (bool, error) {
 }
 
 func cloneInstalledSource(opts BootstrapOptions) error {
-	parent := filepath.Dir(opts.SourceRoot)
+	parent := filepath.Dir(opts.InstalledSource.Root())
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("create Installed Source parent: %w", err)
 	}
@@ -244,7 +236,7 @@ func cloneInstalledSource(opts BootstrapOptions) error {
 		args = append(args, "--branch", opts.RepositoryRef)
 	}
 	args = append(args, opts.RepositoryURL, tmp)
-	if err := reportProgress(opts, fmt.Sprintf("cloning Installed Source into %s", opts.SourceRoot)); err != nil {
+	if err := reportProgress(opts, fmt.Sprintf("cloning Installed Source into %s", opts.InstalledSource.Root())); err != nil {
 		return err
 	}
 	if _, err := runGit(opts, args...); err != nil {
@@ -253,7 +245,7 @@ func cloneInstalledSource(opts BootstrapOptions) error {
 	if err := validateInstalledSource(tmp); err != nil {
 		return fmt.Errorf("cloned Matty Source of Truth has an invalid skill bundle: %w", err)
 	}
-	if err := os.Rename(tmp, opts.SourceRoot); err != nil {
+	if err := os.Rename(tmp, opts.InstalledSource.Root()); err != nil {
 		return fmt.Errorf("install cloned Matty Source of Truth: %w", err)
 	}
 	return nil
@@ -270,7 +262,7 @@ func reportProgress(opts BootstrapOptions, message string) error {
 }
 
 func gitOutput(opts BootstrapOptions, args ...string) (string, error) {
-	return runGit(opts, append([]string{"-C", opts.SourceRoot}, args...)...)
+	return runGit(opts, append([]string{"-C", opts.InstalledSource.Root()}, args...)...)
 }
 
 func runGit(opts BootstrapOptions, args ...string) (string, error) {
