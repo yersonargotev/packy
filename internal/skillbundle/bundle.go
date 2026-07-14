@@ -209,5 +209,5 @@ func fromSource(linkDir, sourcePath string) (Skill, error) {
 		return Skill{}, fmt.Errorf("resolve source skill %s: %w", sourcePath, err)
 	}
 	name := filepath.Base(sourcePath)
-	return Skill{Name: name, SourcePath: absSource, LinkPath: filepath.Join(linkDir, name)}, nil
+	return Skill{Name: name, SourcePath: absSource, LinkPath: (GlobalLayout{root: linkDir}).Skill(name)}, nil
 }

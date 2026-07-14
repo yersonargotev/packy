@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # Route Matty core lifecycle through owning layouts
 
@@ -20,18 +20,18 @@ have not migrated yet.
 
 ## Acceptance criteria
 
-- [ ] Core lifecycle derives its classic state location from Matty Home and retains sole ownership of classic state behavior.
-- [ ] Skill Source precedence is resolved once by skillbundle and the same resolved value is used throughout one lifecycle invocation.
-- [ ] Bootstrap's Installed Source descriptor is reused for default-source validation.
-- [ ] Skillbundle owns and exposes the global skill installation layout used by core lifecycle.
-- [ ] Codex and OpenCode own and expose their canonical host layouts used by core lifecycle.
-- [ ] Engrambin owns executable candidates, precedence, resolution, and observation used by core lifecycle.
-- [ ] CLI lifecycle composition no longer maps a broad path value into the core lifecycle facade.
-- [ ] Install, update, and uninstall preserve plans, warnings, errors, rendering, command execution, state schemas, ownership, recovery, and filesystem effects.
-- [ ] Sandboxed lifecycle tests use owner values rather than independently deriving canonical paths.
-- [ ] Capability-pack and setup-health behavior are not migrated or changed in this ticket.
-- [ ] No permanent compatibility wrapper or duplicate owner policy is introduced.
-- [ ] Focused owner, lifecycle, and CLI tests pass, followed by the complete repository test suite with sandboxed Home and XDG configuration.
+- [x] Core lifecycle derives its classic state location from Matty Home and retains sole ownership of classic state behavior.
+- [x] Skill Source precedence is resolved once by skillbundle and the same resolved value is used throughout one lifecycle invocation.
+- [x] Bootstrap's Installed Source descriptor is reused for default-source validation.
+- [x] Skillbundle owns and exposes the global skill installation layout used by core lifecycle.
+- [x] Codex and OpenCode own and expose their canonical host layouts used by core lifecycle.
+- [x] Engrambin owns executable candidates, precedence, resolution, and observation used by core lifecycle.
+- [x] CLI lifecycle composition no longer maps a broad path value into the core lifecycle facade.
+- [x] Install, update, and uninstall preserve plans, warnings, errors, rendering, command execution, state schemas, ownership, recovery, and filesystem effects.
+- [x] Sandboxed lifecycle tests use owner values rather than independently deriving canonical paths.
+- [x] Capability-pack and setup-health behavior are not migrated or changed in this ticket.
+- [x] No permanent compatibility wrapper or duplicate owner policy is introduced.
+- [x] Focused owner, lifecycle, and CLI tests pass, followed by the complete repository test suite with sandboxed Home and XDG configuration.
 
 ## Out of scope
 

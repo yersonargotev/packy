@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/yersonargotev/matty/internal/bootstrap"
-	"github.com/yersonargotev/matty/internal/corelifecycle"
 	"github.com/yersonargotev/matty/internal/skillbundle"
 )
 
@@ -87,25 +86,6 @@ func ResolvePaths(env Env) (Paths, error) {
 		OpenCodePromptFile:     filepath.Join(configHome, "opencode", "matty.md"),
 		LocalBinEngram:         filepath.Join(home, ".local", "bin", "engram"),
 	}, nil
-}
-
-func classicLifecycleConfig(paths Paths, runningVersion string) corelifecycle.Config {
-	return corelifecycle.Config{
-		HomeDir:                paths.HomeDir,
-		ConfigHome:             paths.ConfigHome,
-		MattyDir:               paths.MattyDir,
-		StateFile:              paths.StateFile,
-		AgentSkillsDir:         paths.AgentSkillsDir,
-		SkillSourceRoot:        paths.SkillSourceRoot,
-		SkillSourceMissingHint: paths.SkillSourceMissingHint,
-		CodexPromptFile:        paths.CodexPromptFile,
-		OpenCodeConfigFile:     paths.OpenCodeConfigFile,
-		OpenCodePromptFile:     paths.OpenCodePromptFile,
-		HomebrewPrefix:         paths.HomebrewPrefixEnv,
-		InstalledSourceRoot:    paths.InstalledSourceRoot,
-		SkillSourceIsDefault:   paths.SkillSourceIsDefault,
-		RunningVersion:         runningVersion,
-	}
 }
 
 func resolveSkillSourceRoot(env Env, installedSourceRoot string) (SkillSource, error) {

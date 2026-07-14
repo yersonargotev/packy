@@ -200,7 +200,11 @@ func TestObserveManagedSkillLinksReportsReadOnlyFilesystemFacts(t *testing.T) {
 
 func TestObserveExpectedManagedSkillLinksUsesLifecycleDiscovery(t *testing.T) {
 	config := installTestConfig(t)
-	observations, err := ObserveExpectedManagedSkillLinks(config)
+	observations, err := ObserveExpectedManagedSkillLinks(Config{
+		AgentSkillsDir:         config.Skills.Root(),
+		SkillSourceRoot:        config.SkillSource.Root,
+		SkillSourceMissingHint: config.SkillSource.MissingHint,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

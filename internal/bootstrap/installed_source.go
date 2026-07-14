@@ -22,6 +22,11 @@ func DefaultInstalledSourceRoot(home string) string {
 	return filepath.Join(home, ".local", "share", "matty")
 }
 
+func InstalledSourceAt(root string) InstalledSource {
+	root = filepath.Clean(root)
+	return InstalledSource{root: root, bundleRoot: filepath.Join(root, "bundle")}
+}
+
 // ResolveInstalledSource applies bootstrap's Installed Source layout and
 // normalizes an explicit root relative to the captured invocation directory.
 func ResolveInstalledSource(snapshot workstation.Snapshot, explicitRoot string) (InstalledSource, error) {
@@ -37,8 +42,5 @@ func ResolveInstalledSource(snapshot workstation.Snapshot, explicitRoot string) 
 		root = filepath.Join(currentDirectory, root)
 	}
 	root = filepath.Clean(root)
-	return InstalledSource{
-		root:       root,
-		bundleRoot: filepath.Join(root, "bundle"),
-	}, nil
+	return InstalledSourceAt(root), nil
 }

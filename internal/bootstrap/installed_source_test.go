@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/yersonargotev/matty/internal/workstation"
@@ -61,5 +62,28 @@ func TestResolveInstalledSourceNeedsCurrentDirectoryOnlyForRelativeRoot(t *testi
 	}
 	if _, err := ResolveInstalledSource(snapshot, filepath.Join("relative", "installed")); !errors.Is(err, wantErr) {
 		t.Fatalf("relative root error = %v; want %v", err, wantErr)
+	}
+}
+
+func TestInstalledSourceAtOwnsCheckoutAndBundleLayout(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	installed := InstalledSourceAt(root)
+	if installed.Root() != root {
+		t.Fatalf("Root = %q, want %q", installed.Root(), root)
+	}
+	if installed.BundleRoot() != filepath.Join(root, "bundle") {
+		t.Fatalf("BundleRoot = %q", installed.BundleRoot())
+	}
+}
+
+func TestValidateInstalledSourceRefUsesDescriptor(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "descriptor-source")
+	err := ValidateInstalledSourceRef(BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		SourceRoot:      filepath.Join(t.TempDir(), "legacy-source"),
+		RepositoryRef:   "v1.2.3",
+	})
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(root, "bundle", "skills")) {
+		t.Fatalf("ValidateInstalledSourceRef error = %v, want descriptor path", err)
 	}
 }

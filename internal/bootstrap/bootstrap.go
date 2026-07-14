@@ -153,6 +153,9 @@ func fetchInstalledSourceRef(opts BootstrapOptions, ref string) error {
 }
 
 func ValidateInstalledSourceRef(opts BootstrapOptions) error {
+	if opts.InstalledSource.Root() != "" {
+		opts.SourceRoot = opts.InstalledSource.Root()
+	}
 	ref := strings.TrimSpace(opts.RepositoryRef)
 	if ref == "" {
 		return nil

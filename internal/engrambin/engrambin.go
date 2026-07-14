@@ -35,6 +35,53 @@ type Executable struct {
 	Canonical    bool
 }
 
+// Topology owns the ordered Homebrew candidates and their observation for one
+// captured workstation invocation.
+type Topology struct {
+	prefixes []string
+}
+
+type Observation struct {
+	homebrew  *Canonical
+	installed bool
+}
+
+func NewTopology(homebrewPrefix string) Topology {
+	return Topology{prefixes: HomebrewPrefixes(homebrewPrefix)}
+}
+
+func (t Topology) Candidates() []string {
+	return HomebrewCandidatePaths(t.prefixes)
+}
+
+func (t Topology) ExpectedPath() string {
+	return ExpectedHomebrewPathFromPrefixes(t.prefixes)
+}
+
+func (t Topology) Observe(lookPath func(string) (string, error)) Observation {
+	homebrew := DiscoverHomebrewFromPrefixes(t.prefixes)
+	if homebrew != nil {
+		return Observation{homebrew: homebrew, installed: true}
+	}
+	if lookPath != nil {
+		resolved, err := lookPath("engram")
+		if err == nil && IsExpectedHomebrewPath(resolved, t.ExpectedPath()) {
+			return Observation{installed: true}
+		}
+	}
+	return Observation{}
+}
+
+func (o Observation) Homebrew() *Canonical {
+	if o.homebrew == nil {
+		return nil
+	}
+	copy := *o.homebrew
+	return &copy
+}
+
+func (o Observation) Installed() bool { return o.installed }
+
 // Resolver adapts the existing Homebrew/path identity checks to the
 // capability-pack executable-resolution seam. It never executes the tool;
 // callers that need a version or runtime observation use a separate seam.

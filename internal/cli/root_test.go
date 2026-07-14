@@ -102,6 +102,23 @@ type countingEnv struct {
 	calls  map[string]int
 }
 
+type changingSkillSourceEnv struct {
+	MapEnv
+	first string
+	calls int
+}
+
+func (e *changingSkillSourceEnv) Getenv(key string) string {
+	if key != "MATTY_SKILLS_SOURCE" {
+		return e.MapEnv.Getenv(key)
+	}
+	e.calls++
+	if e.calls == 1 {
+		return e.first
+	}
+	return filepath.Join(e.MapEnv["HOME"], "missing-second-source")
+}
+
 func (e *countingEnv) Getenv(key string) string {
 	e.calls[key]++
 	return e.values[key]
@@ -346,6 +363,53 @@ func TestHelpAndVersionDoNotResolveWorkstation(t *testing.T) {
 				t.Fatalf("workstation captured for %v: getwd=%d env=%v", args, getwdCalls, env.calls)
 			}
 		})
+	}
+}
+
+func TestLifecycleCommandCapturesOneWorkstationSnapshot(t *testing.T) {
+	home := t.TempDir()
+	source := createSkillSource(t)
+	getwdCalls := 0
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"MATTY_SKILLS_SOURCE": source,
+		},
+		Getwd: func() (string, error) {
+			getwdCalls++
+			return t.TempDir(), nil
+		},
+		Runner: &fakeRunner{},
+	}
+
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
+	if err != nil {
+		t.Fatalf("install --dry-run: %v\n%s", err, out)
+	}
+	if getwdCalls != 1 {
+		t.Fatalf("Getwd calls = %d, want one captured workstation", getwdCalls)
+	}
+}
+
+func TestLifecycleCommandResolvesSkillSourceOnce(t *testing.T) {
+	home := t.TempDir()
+	source := createSkillSource(t)
+	env := &changingSkillSourceEnv{
+		MapEnv: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg")},
+		first:  source,
+	}
+	opts := Options{Env: env, Getwd: func() (string, error) { return t.TempDir(), nil }, Runner: &fakeRunner{}}
+
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
+	if err != nil {
+		t.Fatalf("install --dry-run: %v\n%s", err, out)
+	}
+	if env.calls != 1 {
+		t.Fatalf("MATTY_SKILLS_SOURCE reads = %d, want one", env.calls)
+	}
+	if !strings.Contains(out, "MATTY_SKILLS_SOURCE="+source) {
+		t.Fatalf("source report did not use resolved source:\n%s", out)
 	}
 }
 

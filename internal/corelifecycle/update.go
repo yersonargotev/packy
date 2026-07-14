@@ -7,7 +7,7 @@ import (
 )
 
 func (facade *Facade) validateUpdateInstalledSource() error {
-	if !facade.config.SkillSourceIsDefault {
+	if !facade.config.SkillSource.IsDefault {
 		return nil
 	}
 	releaseRef := ""
@@ -15,9 +15,7 @@ func (facade *Facade) validateUpdateInstalledSource() error {
 		releaseRef = facade.config.RunningVersion
 	}
 	return bootstrap.ValidateInstalledSourceRef(bootstrap.BootstrapOptions{
-		SourceRoot:    facade.config.InstalledSourceRoot,
-		RepositoryRef: releaseRef,
-		HomeDir:       facade.config.HomeDir,
-		ConfigHome:    facade.config.ConfigHome,
+		InstalledSource: facade.config.InstalledSource,
+		RepositoryRef:   releaseRef,
 	})
 }

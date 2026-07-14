@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yersonargotev/matty/internal/bootstrap"
+	"github.com/yersonargotev/matty/internal/codex"
 	"github.com/yersonargotev/matty/internal/engrambin"
 	"github.com/yersonargotev/matty/internal/opencode"
 	"github.com/yersonargotev/matty/internal/ownedcontainer"
@@ -51,20 +53,33 @@ type ActionView struct {
 }
 
 type Config struct {
-	HomeDir                string
-	ConfigHome             string
-	MattyDir               string
-	StateFile              string
 	AgentSkillsDir         string
 	SkillSourceRoot        string
 	SkillSourceMissingHint string
-	CodexPromptFile        string
-	OpenCodeConfigFile     string
-	OpenCodePromptFile     string
-	HomebrewPrefix         string
-	InstalledSourceRoot    string
-	SkillSourceIsDefault   bool
-	RunningVersion         string
+}
+
+type facadeConfig struct {
+	State           Layout
+	Skills          skillbundle.GlobalLayout
+	SkillSource     skillbundle.Source
+	Codex           codex.CanonicalLayout
+	OpenCode        opencode.CanonicalLayout
+	Engram          engrambin.Topology
+	InstalledSource bootstrap.InstalledSource
+	RunningVersion  string
+}
+
+// FacadeConfig is the narrow composition contract for classic lifecycle.
+// Every derived artifact path comes from its owning module.
+type FacadeConfig struct {
+	MattyHome       string
+	Skills          skillbundle.GlobalLayout
+	SkillSource     skillbundle.Source
+	Codex           codex.CanonicalLayout
+	OpenCode        opencode.CanonicalLayout
+	Engram          engrambin.Topology
+	InstalledSource bootstrap.InstalledSource
+	RunningVersion  string
 }
 
 type Commands interface {
@@ -73,14 +88,25 @@ type Commands interface {
 }
 
 type Facade struct {
-	config   Config
+	config   facadeConfig
 	commands Commands
 	now      func() time.Time
 }
 
-func NewFacade(config Config, commands Commands, now func() time.Time) *Facade {
+func NewFacade(owners FacadeConfig, commands Commands, now func() time.Time) *Facade {
 	if now == nil {
 		now = time.Now
+	}
+	state := NewLayout(owners.MattyHome)
+	config := facadeConfig{
+		State:           state,
+		Skills:          owners.Skills,
+		SkillSource:     owners.SkillSource,
+		Codex:           owners.Codex,
+		OpenCode:        owners.OpenCode,
+		RunningVersion:  owners.RunningVersion,
+		InstalledSource: owners.InstalledSource,
+		Engram:          owners.Engram,
 	}
 	return &Facade{config: config, commands: commands, now: now}
 }
@@ -139,14 +165,14 @@ func (facade *Facade) Preview(operation Operation) (Plan, error) {
 			return Plan{}, err
 		}
 	}
-	if _, _, err := LoadState(facade.config.StateFile); err != nil {
+	if _, _, err := LoadState(facade.config.State.StateFile()); err != nil {
 		return Plan{}, err
 	}
-	discovered, err := skillbundle.Discover(facade.config.SkillSourceRoot, facade.config.AgentSkillsDir, facade.config.SkillSourceMissingHint)
+	discovered, err := skillbundle.Discover(facade.config.SkillSource.Root, facade.config.Skills.Root(), facade.config.SkillSource.MissingHint)
 	if err != nil {
 		return Plan{}, err
 	}
-	actions := []plannedAction{{ActionView: ActionView{Kind: ActionWriteFile, Path: facade.config.StateFile, Description: "persist Matty state metadata"}}}
+	actions := []plannedAction{{ActionView: ActionView{Kind: ActionWriteFile, Path: facade.config.State.StateFile(), Description: "persist Matty state metadata"}}}
 	managed := make([]ManagedSkill, 0, len(discovered))
 	for _, skill := range discovered {
 		managedSkill := ManagedSkill{Name: skill.Name, SourcePath: skill.SourcePath, LinkPath: skill.LinkPath}
@@ -170,20 +196,20 @@ func (facade *Facade) Preview(operation Operation) (Plan, error) {
 			{ActionView: ActionView{Kind: ActionRun, Command: "brew", Args: []string{"upgrade", "engram"}, Description: "update Engram via Homebrew"}},
 		}, actions...)
 	}
-	engram := engrambin.ExpectedHomebrewPath(facade.config.HomebrewPrefix)
+	engram := facade.config.Engram.ExpectedPath()
 	actions = append(actions,
 		plannedAction{ActionView: ActionView{Kind: ActionRun, Command: engram, Args: []string{"setup", "codex"}, Description: "delegate Codex Engram setup through Homebrew binary"}},
 		plannedAction{ActionView: ActionView{Kind: ActionRun, Command: engram, Args: []string{"setup", "opencode"}, Description: "delegate OpenCode Engram setup through Homebrew binary"}},
-		plannedAction{ActionView: ActionView{Kind: ActionWriteCodexPrompt, Path: facade.config.CodexPromptFile, Description: "write Codex Matty prompt markers"}},
-		plannedAction{ActionView: ActionView{Kind: ActionWriteOpenCodePrompt, Path: facade.config.OpenCodeConfigFile, Target: facade.config.OpenCodePromptFile, Description: "write OpenCode Matty prompt reference"}},
+		plannedAction{ActionView: ActionView{Kind: ActionWriteCodexPrompt, Path: facade.config.Codex.PromptFile(), Description: "write Codex Matty prompt markers"}},
+		plannedAction{ActionView: ActionView{Kind: ActionWriteOpenCodePrompt, Path: facade.config.OpenCode.ConfigFile(), Target: facade.config.OpenCode.PromptFile(), Description: "write OpenCode Matty prompt reference"}},
 	)
 	return Plan{
 		owner:     facade,
 		operation: operation,
 		actions:   actions,
 		desired: DesiredState(StateConfig{
-			StateFile:      facade.config.StateFile,
-			AgentSkillsDir: facade.config.AgentSkillsDir,
+			StateFile:      facade.config.State.StateFile(),
+			AgentSkillsDir: facade.config.Skills.Root(),
 		}, facade.now(), managed),
 	}, nil
 }
@@ -206,7 +232,7 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	if plan.operation == Update {
 		saveState = saveUpdateState
 	}
-	previous, previousFound, err := LoadState(facade.config.StateFile)
+	previous, previousFound, err := LoadState(facade.config.State.StateFile())
 	if err != nil {
 		return Result{}, err
 	}
@@ -215,7 +241,7 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 		return Result{}, err
 	}
 	recovery := facade.recoveryState(plan.desired, previous, previousFound, anchor)
-	if err := saveState(facade.config.StateFile, recovery); err != nil {
+	if err := saveState(facade.config.State.StateFile(), recovery); err != nil {
 		if cleanupErr := cleanupInstallContainers(anchor); cleanupErr != nil {
 			return Result{}, fmt.Errorf("%w; clean up unrecorded Matty containers: %v", err, cleanupErr)
 		}
@@ -223,7 +249,7 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	}
 	created, provisionErr := ownedcontainer.Provision(facade.effectContainerRecords())
 	recovery.CreatedContainers = ownedcontainer.Merge(recovery.CreatedContainers, created)
-	if err := saveState(facade.config.StateFile, recovery); err != nil {
+	if err := saveState(facade.config.State.StateFile(), recovery); err != nil {
 		if cleanupErr := cleanupInstallContainers(created); cleanupErr != nil {
 			return Result{}, fmt.Errorf("%w; clean up unrecorded Matty containers: %v", err, cleanupErr)
 		}
@@ -232,11 +258,11 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	if provisionErr != nil {
 		return Result{}, provisionErr
 	}
-	if err := os.MkdirAll(facade.config.MattyDir, 0o700); err != nil {
-		return Result{}, fmt.Errorf("create Matty config directory %s: %w", facade.config.MattyDir, err)
+	if err := os.MkdirAll(facade.config.State.MattyHome(), 0o700); err != nil {
+		return Result{}, fmt.Errorf("create Matty config directory %s: %w", facade.config.State.MattyHome(), err)
 	}
-	if err := os.MkdirAll(facade.config.AgentSkillsDir, 0o700); err != nil {
-		return Result{}, fmt.Errorf("create agent skills directory %s: %w", facade.config.AgentSkillsDir, err)
+	if err := os.MkdirAll(facade.config.Skills.Root(), 0o700); err != nil {
+		return Result{}, fmt.Errorf("create agent skills directory %s: %w", facade.config.Skills.Root(), err)
 	}
 	var warnings []string
 	for _, action := range plan.actions {
@@ -246,7 +272,7 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 				return Result{}, fmt.Errorf("create skill symlink %s -> %s: %w", action.Path, action.Target, err)
 			}
 			recovery.ManagedSkills = append(recovery.ManagedSkills, managedSkillForInstallAction(plan.desired.ManagedSkills, action))
-			if err := saveState(facade.config.StateFile, recovery); err != nil {
+			if err := saveState(facade.config.State.StateFile(), recovery); err != nil {
 				if removeErr := os.Remove(action.Path); removeErr != nil {
 					return Result{}, fmt.Errorf("%w; roll back unrecorded skill symlink %s: %v", err, action.Path, removeErr)
 				}
@@ -267,9 +293,9 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 		case ActionRun:
 			command := action.Command
 			if isInstallEngramSetup(action) {
-				canonical := engrambin.DiscoverHomebrew(facade.config.HomebrewPrefix)
+				canonical := facade.config.Engram.Observe(nil).Homebrew()
 				if canonical == nil {
-					return Result{}, missingInstallEngramError(action, engrambin.HomebrewCandidatePaths(engrambin.HomebrewPrefixes(facade.config.HomebrewPrefix)))
+					return Result{}, missingInstallEngramError(action, facade.config.Engram.Candidates())
 				}
 				command = canonical.Path
 			}
@@ -285,21 +311,17 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	}
 	confirmed.CreatedContainers = append([]ownedcontainer.Record(nil), recovery.CreatedContainers...)
 	confirmed.InstallStatus = InstallConfirmed
-	if err := saveState(facade.config.StateFile, confirmed); err != nil {
+	if err := saveState(facade.config.State.StateFile(), confirmed); err != nil {
 		return Result{}, err
 	}
 	if warning, ok := unmanagedInstallSymlinkWarning(plan); ok {
 		warnings = append(warnings, warning)
 	}
-	return Result{warnings: warnings, managedSkillCount: len(plan.desired.ManagedSkills), stateFile: facade.config.StateFile, hasWork: true}, nil
+	return Result{warnings: warnings, managedSkillCount: len(plan.desired.ManagedSkills), stateFile: facade.config.State.StateFile(), hasWork: true}, nil
 }
 
 func (facade *Facade) homebrewEngramInstalled() bool {
-	if engrambin.DiscoverHomebrew(facade.config.HomebrewPrefix) != nil {
-		return true
-	}
-	resolved, err := facade.commands.LookPath("engram")
-	return err == nil && engrambin.IsExpectedHomebrewPath(resolved, engrambin.ExpectedHomebrewPath(facade.config.HomebrewPrefix))
+	return facade.config.Engram.Observe(facade.commands.LookPath).Installed()
 }
 
 type SkillLinkCondition string
@@ -412,18 +434,18 @@ func sameLinkTarget(linkPath, gotTarget, wantTarget string) bool {
 
 func (facade *Facade) provisionStateAnchor() ([]ownedcontainer.Record, error) {
 	var created []ownedcontainer.Record
-	if _, err := os.Lstat(facade.config.MattyDir); os.IsNotExist(err) {
-		if err := os.Mkdir(facade.config.MattyDir, 0o700); err != nil {
-			return nil, fmt.Errorf("create Matty config directory %s: %w", facade.config.MattyDir, err)
+	if _, err := os.Lstat(facade.config.State.MattyHome()); os.IsNotExist(err) {
+		if err := os.Mkdir(facade.config.State.MattyHome(), 0o700); err != nil {
+			return nil, fmt.Errorf("create Matty config directory %s: %w", facade.config.State.MattyHome(), err)
 		}
-		created = append(created, ownedcontainer.Record{Path: facade.config.MattyDir, Kind: ownedcontainer.Directory})
+		created = append(created, ownedcontainer.Record{Path: facade.config.State.MattyHome(), Kind: ownedcontainer.Directory})
 	} else if err != nil {
-		return nil, fmt.Errorf("inspect Matty config directory %s: %w", facade.config.MattyDir, err)
+		return nil, fmt.Errorf("inspect Matty config directory %s: %w", facade.config.State.MattyHome(), err)
 	}
-	if _, err := os.Lstat(facade.config.StateFile); os.IsNotExist(err) {
-		created = append(created, ownedcontainer.Record{Path: facade.config.StateFile, Kind: ownedcontainer.File})
+	if _, err := os.Lstat(facade.config.State.StateFile()); os.IsNotExist(err) {
+		created = append(created, ownedcontainer.Record{Path: facade.config.State.StateFile(), Kind: ownedcontainer.File})
 	} else if err != nil {
-		return nil, fmt.Errorf("inspect Matty state %s: %w", facade.config.StateFile, err)
+		return nil, fmt.Errorf("inspect Matty state %s: %w", facade.config.State.StateFile(), err)
 	}
 	return created, nil
 }
@@ -432,7 +454,7 @@ func (facade *Facade) effectContainerRecords() []ownedcontainer.Record {
 	records := facade.containerRecords()
 	out := make([]ownedcontainer.Record, 0, len(records)-2)
 	for _, record := range records {
-		if record.Path != facade.config.MattyDir && record.Path != facade.config.StateFile {
+		if record.Path != facade.config.State.MattyHome() && record.Path != facade.config.State.StateFile() {
 			out = append(out, record)
 		}
 	}
@@ -441,16 +463,16 @@ func (facade *Facade) effectContainerRecords() []ownedcontainer.Record {
 
 func (facade *Facade) containerRecords() []ownedcontainer.Record {
 	return []ownedcontainer.Record{
-		{Path: facade.config.MattyDir, Kind: ownedcontainer.Directory},
-		{Path: filepath.Dir(facade.config.AgentSkillsDir), Kind: ownedcontainer.Directory},
-		{Path: facade.config.AgentSkillsDir, Kind: ownedcontainer.Directory},
-		{Path: filepath.Dir(facade.config.CodexPromptFile), Kind: ownedcontainer.Directory},
-		{Path: facade.config.ConfigHome, Kind: ownedcontainer.Directory},
-		{Path: filepath.Dir(facade.config.OpenCodeConfigFile), Kind: ownedcontainer.Directory},
-		{Path: facade.config.StateFile, Kind: ownedcontainer.File},
-		{Path: facade.config.CodexPromptFile, Kind: ownedcontainer.File},
-		{Path: facade.config.OpenCodeConfigFile, Kind: ownedcontainer.File},
-		{Path: facade.config.OpenCodePromptFile, Kind: ownedcontainer.File},
+		{Path: facade.config.State.MattyHome(), Kind: ownedcontainer.Directory},
+		{Path: filepath.Dir(facade.config.Skills.Root()), Kind: ownedcontainer.Directory},
+		{Path: facade.config.Skills.Root(), Kind: ownedcontainer.Directory},
+		{Path: filepath.Dir(facade.config.Codex.PromptFile()), Kind: ownedcontainer.Directory},
+		{Path: facade.config.OpenCode.ConfigurationHome(), Kind: ownedcontainer.Directory},
+		{Path: filepath.Dir(facade.config.OpenCode.ConfigFile()), Kind: ownedcontainer.Directory},
+		{Path: facade.config.State.StateFile(), Kind: ownedcontainer.File},
+		{Path: facade.config.Codex.PromptFile(), Kind: ownedcontainer.File},
+		{Path: facade.config.OpenCode.ConfigFile(), Kind: ownedcontainer.File},
+		{Path: facade.config.OpenCode.PromptFile(), Kind: ownedcontainer.File},
 	}
 }
 

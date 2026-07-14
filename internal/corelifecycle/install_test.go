@@ -9,12 +9,18 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yersonargotev/matty/internal/bootstrap"
+	"github.com/yersonargotev/matty/internal/codex"
+	"github.com/yersonargotev/matty/internal/engrambin"
+	"github.com/yersonargotev/matty/internal/opencode"
+	"github.com/yersonargotev/matty/internal/skillbundle"
 )
 
 func TestInstallPreviewIsReadOnlyAndItsActionViewCannotMutateThePlan(t *testing.T) {
 	config := installTestConfig(t)
 	commands := &installTestCommands{}
-	facade := NewFacade(config, commands, func() time.Time { return time.Unix(123, 0) })
+	facade := newTestFacade(config, commands, func() time.Time { return time.Unix(123, 0) })
 	before := installTestSnapshot(t, installTestHome(config))
 
 	plan, err := facade.Preview(Install)
@@ -47,9 +53,9 @@ func TestInstallPreviewIsReadOnlyAndItsActionViewCannotMutateThePlan(t *testing.
 
 func TestInstallApplyConsumesThePreviewedPlanAndPublishesConfirmedOwnership(t *testing.T) {
 	config := installTestConfig(t)
-	writeInstallTestExecutable(t, filepath.Join(config.HomebrewPrefix, "bin", "engram"))
+	writeInstallTestExecutable(t, config.Engram.ExpectedPath())
 	commands := &installTestCommands{}
-	facade := NewFacade(config, commands, func() time.Time { return time.Unix(123, 0) })
+	facade := newTestFacade(config, commands, func() time.Time { return time.Unix(123, 0) })
 	plan, err := facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -69,10 +75,10 @@ func TestInstallApplyConsumesThePreviewedPlanAndPublishesConfirmedOwnership(t *t
 	if err != nil {
 		t.Fatalf("Apply failed: %v", err)
 	}
-	if result.ManagedSkillCount() != 6 || result.StateFile() != config.StateFile || len(result.Warnings()) != 0 {
+	if result.ManagedSkillCount() != 6 || result.StateFile() != config.State.StateFile() || len(result.Warnings()) != 0 {
 		t.Fatalf("result = skills %d state %q warnings %#v", result.ManagedSkillCount(), result.StateFile(), result.Warnings())
 	}
-	state, found, err := LoadState(config.StateFile)
+	state, found, err := LoadState(config.State.StateFile())
 	if err != nil || !found {
 		t.Fatalf("LoadState = %#v, %v, %v", state, found, err)
 	}
@@ -82,14 +88,14 @@ func TestInstallApplyConsumesThePreviewedPlanAndPublishesConfirmedOwnership(t *t
 	if state.LastInstallCheck != "1970-01-01T00:02:03Z" {
 		t.Fatalf("LastInstallCheck = %q, want injected clock", state.LastInstallCheck)
 	}
-	for _, path := range []string{config.MattyDir, config.StateFile, config.AgentSkillsDir, config.CodexPromptFile, config.OpenCodeConfigFile, config.OpenCodePromptFile} {
+	for _, path := range []string{config.State.MattyHome(), config.State.StateFile(), config.Skills.Root(), config.Codex.PromptFile(), config.OpenCode.ConfigFile(), config.OpenCode.PromptFile()} {
 		if !installTestHasContainer(state, path) {
 			t.Fatalf("confirmed state missing container provenance for %s: %#v", path, state.CreatedContainers)
 		}
 	}
 	if got := commands.runs; !reflect.DeepEqual(got, []string{
-		filepath.Join(config.HomebrewPrefix, "bin", "engram") + " setup codex",
-		filepath.Join(config.HomebrewPrefix, "bin", "engram") + " setup opencode",
+		config.Engram.ExpectedPath() + " setup codex",
+		config.Engram.ExpectedPath() + " setup opencode",
 	}) {
 		t.Fatalf("commands = %#v", got)
 	}
@@ -98,14 +104,14 @@ func TestInstallApplyConsumesThePreviewedPlanAndPublishesConfirmedOwnership(t *t
 			t.Fatalf("managed link %s = %q, %v", skill.LinkPath, target, err)
 		}
 	}
-	if _, err := os.Stat(config.CodexPromptFile); err != nil {
+	if _, err := os.Stat(config.Codex.PromptFile()); err != nil {
 		t.Fatalf("Codex prompt was not projected: %v", err)
 	}
-	if _, err := os.Stat(config.OpenCodePromptFile); err != nil {
+	if _, err := os.Stat(config.OpenCode.PromptFile()); err != nil {
 		t.Fatalf("OpenCode prompt was not projected: %v", err)
 	}
 
-	other := NewFacade(config, commands, time.Now)
+	other := newTestFacade(config, commands, time.Now)
 	if _, err := other.Apply(context.Background(), plan); !errors.Is(err, ErrForeignPlan) {
 		t.Fatalf("other facade Apply error = %v, want ErrForeignPlan", err)
 	}
@@ -115,9 +121,9 @@ func TestClassicLifecycleDoesNotReadOrMutateCapabilityPackStateOrArtifacts(t *te
 	for _, operation := range []Operation{Install, Update, Uninstall} {
 		t.Run(string(operation), func(t *testing.T) {
 			config := installTestConfig(t)
-			writeInstallTestExecutable(t, filepath.Join(config.HomebrewPrefix, "bin", "engram"))
+			writeInstallTestExecutable(t, config.Engram.ExpectedPath())
 			commands := &installTestCommands{}
-			facade := NewFacade(config, commands, func() time.Time { return time.Unix(123, 0) })
+			facade := newTestFacade(config, commands, func() time.Time { return time.Unix(123, 0) })
 
 			if operation != Install {
 				plan, err := facade.Preview(Install)
@@ -129,9 +135,9 @@ func TestClassicLifecycleDoesNotReadOrMutateCapabilityPackStateOrArtifacts(t *te
 				}
 			}
 
-			packState := filepath.Join(config.MattyDir, "packs.json")
+			packState := filepath.Join(config.State.MattyHome(), "packs.json")
 			packArtifact := filepath.Join(installTestHome(config), ".codex", "pack-owned-artifact")
-			if err := os.MkdirAll(config.MattyDir, 0o700); err != nil {
+			if err := os.MkdirAll(config.State.MattyHome(), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.MkdirAll(filepath.Dir(packArtifact), 0o700); err != nil {
@@ -165,11 +171,11 @@ func TestClassicLifecycleDoesNotReadOrMutateCapabilityPackStateOrArtifacts(t *te
 
 func TestInstallApplyAcquiresMissingEngramBeforeDelegatedSetup(t *testing.T) {
 	config := installTestConfig(t)
-	engram := filepath.Join(config.HomebrewPrefix, "bin", "engram")
+	engram := config.Engram.ExpectedPath()
 	commands := &installTestCommands{after: map[string]func(){
 		"brew install gentleman-programming/tap/engram": func() { writeInstallTestExecutable(t, engram) },
 	}}
-	facade := NewFacade(config, commands, time.Now)
+	facade := newTestFacade(config, commands, time.Now)
 	plan, err := facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +198,7 @@ func TestInstallPreviewDoesNotAdoptANonHomebrewEngramFromPATH(t *testing.T) {
 	other := filepath.Join(t.TempDir(), "engram")
 	writeInstallTestExecutable(t, other)
 	commands := &installTestCommands{paths: map[string]string{"engram": other}}
-	facade := NewFacade(config, commands, time.Now)
+	facade := newTestFacade(config, commands, time.Now)
 	plan, err := facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +206,7 @@ func TestInstallPreviewDoesNotAdoptANonHomebrewEngramFromPATH(t *testing.T) {
 	if !installTestHasCommand(plan, "brew", "install gentleman-programming/tap/engram") {
 		t.Fatal("non-Homebrew PATH executable incorrectly satisfied Engram acquisition")
 	}
-	writeInstallTestExecutable(t, filepath.Join(config.HomebrewPrefix, "bin", "engram"))
+	writeInstallTestExecutable(t, config.Engram.ExpectedPath())
 	plan, err = facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -212,15 +218,15 @@ func TestInstallPreviewDoesNotAdoptANonHomebrewEngramFromPATH(t *testing.T) {
 
 func TestInstallPreviewRejectsCorruptStateBeforeMutation(t *testing.T) {
 	config := installTestConfig(t)
-	if err := os.MkdirAll(config.MattyDir, 0o700); err != nil {
+	if err := os.MkdirAll(config.State.MattyHome(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(config.StateFile, []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(config.State.StateFile(), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	commands := &installTestCommands{}
 	before := installTestSnapshot(t, installTestHome(config))
-	_, err := NewFacade(config, commands, time.Now).Preview(Install)
+	_, err := newTestFacade(config, commands, time.Now).Preview(Install)
 	if err == nil || !containsInstallTestText(err.Error(), "invalid JSON") {
 		t.Fatalf("Preview error = %v, want invalid JSON", err)
 	}
@@ -234,12 +240,12 @@ func TestInstallPreviewRejectsCorruptStateBeforeMutation(t *testing.T) {
 
 func TestInstallPreviewRejectsMalformedSkillSourceBeforeMutation(t *testing.T) {
 	config := installTestConfig(t)
-	if err := os.RemoveAll(filepath.Join(config.SkillSourceRoot, "in-progress", "loop-me")); err != nil {
+	if err := os.RemoveAll(filepath.Join(config.SkillSource.Root, "in-progress", "loop-me")); err != nil {
 		t.Fatal(err)
 	}
 	before := installTestSnapshot(t, installTestHome(config))
 	commands := &installTestCommands{}
-	_, err := NewFacade(config, commands, time.Now).Preview(Install)
+	_, err := newTestFacade(config, commands, time.Now).Preview(Install)
 	if err == nil || !containsInstallTestText(err.Error(), "loop-me") {
 		t.Fatalf("Preview error = %v, want missing loop-me", err)
 	}
@@ -253,10 +259,10 @@ func TestInstallPreviewRejectsMalformedSkillSourceBeforeMutation(t *testing.T) {
 
 func TestInstallApplyPreservesMixedUnmanagedSkillPaths(t *testing.T) {
 	config := installTestConfig(t)
-	if err := os.MkdirAll(config.AgentSkillsDir, 0o700); err != nil {
+	if err := os.MkdirAll(config.Skills.Root(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	unmanagedFile := filepath.Join(config.AgentSkillsDir, "ask-matt")
+	unmanagedFile := filepath.Join(config.Skills.Root(), "ask-matt")
 	if err := os.WriteFile(unmanagedFile, []byte("keep me"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -264,12 +270,12 @@ func TestInstallApplyPreservesMixedUnmanagedSkillPaths(t *testing.T) {
 	if err := os.Mkdir(unmanagedTarget, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	unmanagedLink := filepath.Join(config.AgentSkillsDir, "handoff")
+	unmanagedLink := filepath.Join(config.Skills.Root(), "handoff")
 	if err := os.Symlink(unmanagedTarget, unmanagedLink); err != nil {
 		t.Fatal(err)
 	}
-	writeInstallTestExecutable(t, filepath.Join(config.HomebrewPrefix, "bin", "engram"))
-	facade := NewFacade(config, &installTestCommands{}, time.Now)
+	writeInstallTestExecutable(t, config.Engram.ExpectedPath())
+	facade := newTestFacade(config, &installTestCommands{}, time.Now)
 	plan, err := facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +289,7 @@ func TestInstallApplyPreservesMixedUnmanagedSkillPaths(t *testing.T) {
 	if target, err := os.Readlink(unmanagedLink); err != nil || target != unmanagedTarget {
 		t.Fatalf("unmanaged symlink changed: %q, %v", target, err)
 	}
-	state, _, err := LoadState(config.StateFile)
+	state, _, err := LoadState(config.State.StateFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +302,7 @@ func TestInstallApplyPreservesMixedUnmanagedSkillPaths(t *testing.T) {
 
 func TestInstallApplyPreservesUnmanagedPathsAndReturnsStructuredWarning(t *testing.T) {
 	config := installTestConfig(t)
-	if err := os.MkdirAll(config.AgentSkillsDir, 0o700); err != nil {
+	if err := os.MkdirAll(config.Skills.Root(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	targetRoot := filepath.Join(installTestHome(config), "unmanaged")
@@ -304,12 +310,12 @@ func TestInstallApplyPreservesUnmanagedPathsAndReturnsStructuredWarning(t *testi
 		t.Fatal(err)
 	}
 	for _, name := range []string{"ask-matt", "codebase-design", "grilling", "handoff", "loop-me", "wayfinder"} {
-		if err := os.Symlink(filepath.Join(targetRoot, name), filepath.Join(config.AgentSkillsDir, name)); err != nil {
+		if err := os.Symlink(filepath.Join(targetRoot, name), filepath.Join(config.Skills.Root(), name)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	writeInstallTestExecutable(t, filepath.Join(config.HomebrewPrefix, "bin", "engram"))
-	facade := NewFacade(config, &installTestCommands{}, time.Now)
+	writeInstallTestExecutable(t, config.Engram.ExpectedPath())
+	facade := newTestFacade(config, &installTestCommands{}, time.Now)
 	plan, err := facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -332,11 +338,11 @@ func TestInstallApplyPreservesUnmanagedPathsAndReturnsStructuredWarning(t *testi
 
 func TestInstallExternalFailurePublishesRecoveryAndSafeRetryConfirmsIt(t *testing.T) {
 	config := installTestConfig(t)
-	engram := filepath.Join(config.HomebrewPrefix, "bin", "engram")
+	engram := config.Engram.ExpectedPath()
 	writeInstallTestExecutable(t, engram)
 	failedCall := engram + " setup codex"
 	commands := &installTestCommands{fail: map[string]error{failedCall: errors.New("interrupted")}}
-	facade := NewFacade(config, commands, time.Now)
+	facade := newTestFacade(config, commands, time.Now)
 	plan, err := facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -344,7 +350,7 @@ func TestInstallExternalFailurePublishesRecoveryAndSafeRetryConfirmsIt(t *testin
 	if _, err := facade.Apply(context.Background(), plan); err == nil || !containsInstallTestText(err.Error(), "failed to configure Engram for codex") {
 		t.Fatalf("Apply error = %v", err)
 	}
-	state, found, err := LoadState(config.StateFile)
+	state, found, err := LoadState(config.State.StateFile())
 	if err != nil || !found || !state.RecoveryRequired() || len(state.ManagedSkills) != 6 {
 		t.Fatalf("recovery state = %#v found %v err %v", state, found, err)
 	}
@@ -356,7 +362,7 @@ func TestInstallExternalFailurePublishesRecoveryAndSafeRetryConfirmsIt(t *testin
 	if _, err := facade.Apply(context.Background(), retry); err != nil {
 		t.Fatalf("safe retry failed: %v", err)
 	}
-	state, _, err = LoadState(config.StateFile)
+	state, _, err = LoadState(config.State.StateFile())
 	if err != nil || state.RecoveryRequired() || state.InstallStatus != InstallConfirmed || len(state.ManagedSkills) != 6 {
 		t.Fatalf("retried state = %#v err %v", state, err)
 	}
@@ -364,11 +370,11 @@ func TestInstallExternalFailurePublishesRecoveryAndSafeRetryConfirmsIt(t *testin
 
 func TestInstallSafeRetryDoesNotAdoptANewConflict(t *testing.T) {
 	config := installTestConfig(t)
-	engram := filepath.Join(config.HomebrewPrefix, "bin", "engram")
+	engram := config.Engram.ExpectedPath()
 	writeInstallTestExecutable(t, engram)
 	failedCall := engram + " setup codex"
 	commands := &installTestCommands{fail: map[string]error{failedCall: errors.New("interrupted")}}
-	facade := NewFacade(config, commands, time.Now)
+	facade := newTestFacade(config, commands, time.Now)
 	plan, err := facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -376,7 +382,7 @@ func TestInstallSafeRetryDoesNotAdoptANewConflict(t *testing.T) {
 	if _, err := facade.Apply(context.Background(), plan); err == nil {
 		t.Fatal("Apply unexpectedly succeeded")
 	}
-	conflict := filepath.Join(config.AgentSkillsDir, "ask-matt")
+	conflict := filepath.Join(config.Skills.Root(), "ask-matt")
 	if err := os.Remove(conflict); err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +401,7 @@ func TestInstallSafeRetryDoesNotAdoptANewConflict(t *testing.T) {
 	if _, err := facade.Apply(context.Background(), retry); err != nil {
 		t.Fatal(err)
 	}
-	state, _, err := LoadState(config.StateFile)
+	state, _, err := LoadState(config.State.StateFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +420,7 @@ func TestInstallEngramFailuresAreActionableAndRecoverable(t *testing.T) {
 		config := installTestConfig(t)
 		call := "brew install gentleman-programming/tap/engram"
 		commands := &installTestCommands{fail: map[string]error{call: errors.New("brew missing")}}
-		facade := NewFacade(config, commands, time.Now)
+		facade := newTestFacade(config, commands, time.Now)
 		plan, err := facade.Preview(Install)
 		if err != nil {
 			t.Fatal(err)
@@ -429,13 +435,13 @@ func TestInstallEngramFailuresAreActionableAndRecoverable(t *testing.T) {
 
 	t.Run("brew succeeds without canonical setup binary", func(t *testing.T) {
 		config := installTestConfig(t)
-		facade := NewFacade(config, &installTestCommands{}, time.Now)
+		facade := newTestFacade(config, &installTestCommands{}, time.Now)
 		plan, err := facade.Preview(Install)
 		if err != nil {
 			t.Fatal(err)
 		}
 		_, err = facade.Apply(context.Background(), plan)
-		for _, want := range []string{"canonical Homebrew Engram was not found", filepath.Join(config.HomebrewPrefix, "bin", "engram"), "HOMEBREW_PREFIX"} {
+		for _, want := range []string{"canonical Homebrew Engram was not found", config.Engram.ExpectedPath(), "HOMEBREW_PREFIX"} {
 			if err == nil || !containsInstallTestText(err.Error(), want) {
 				t.Fatalf("Apply error = %v, want %q", err, want)
 			}
@@ -446,7 +452,7 @@ func TestInstallEngramFailuresAreActionableAndRecoverable(t *testing.T) {
 func TestInstallPersistenceFailuresPreserveTruthfulRecovery(t *testing.T) {
 	t.Run("state preparation leaves no local writes", func(t *testing.T) {
 		config := installTestConfig(t)
-		plan, err := NewFacade(config, &installTestCommands{}, time.Now).Preview(Install)
+		plan, err := newTestFacade(config, &installTestCommands{}, time.Now).Preview(Install)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -465,8 +471,8 @@ func TestInstallPersistenceFailuresPreserveTruthfulRecovery(t *testing.T) {
 
 	t.Run("symlink ownership publication rolls back the unrecorded link", func(t *testing.T) {
 		config := installTestConfig(t)
-		writeInstallTestExecutable(t, filepath.Join(config.HomebrewPrefix, "bin", "engram"))
-		facade := NewFacade(config, &installTestCommands{}, time.Now)
+		writeInstallTestExecutable(t, config.Engram.ExpectedPath())
+		facade := newTestFacade(config, &installTestCommands{}, time.Now)
 		plan, err := facade.Preview(Install)
 		if err != nil {
 			t.Fatal(err)
@@ -482,10 +488,10 @@ func TestInstallPersistenceFailuresPreserveTruthfulRecovery(t *testing.T) {
 		if _, err := facade.Apply(context.Background(), plan); err == nil {
 			t.Fatal("Apply unexpectedly succeeded")
 		}
-		if _, err := os.Lstat(filepath.Join(config.AgentSkillsDir, "ask-matt")); !os.IsNotExist(err) {
+		if _, err := os.Lstat(filepath.Join(config.Skills.Root(), "ask-matt")); !os.IsNotExist(err) {
 			t.Fatalf("unrecorded symlink remains: %v", err)
 		}
-		state, found, err := LoadState(config.StateFile)
+		state, found, err := LoadState(config.State.StateFile())
 		if err != nil || !found || !state.RecoveryRequired() || len(state.ManagedSkills) != 0 {
 			t.Fatalf("state = %#v found %v err %v", state, found, err)
 		}
@@ -493,8 +499,8 @@ func TestInstallPersistenceFailuresPreserveTruthfulRecovery(t *testing.T) {
 
 	t.Run("final publication leaves recovery state", func(t *testing.T) {
 		config := installTestConfig(t)
-		writeInstallTestExecutable(t, filepath.Join(config.HomebrewPrefix, "bin", "engram"))
-		facade := NewFacade(config, &installTestCommands{}, time.Now)
+		writeInstallTestExecutable(t, config.Engram.ExpectedPath())
+		facade := newTestFacade(config, &installTestCommands{}, time.Now)
 		plan, err := facade.Preview(Install)
 		if err != nil {
 			t.Fatal(err)
@@ -510,7 +516,7 @@ func TestInstallPersistenceFailuresPreserveTruthfulRecovery(t *testing.T) {
 		if _, err := facade.Apply(context.Background(), plan); err == nil {
 			t.Fatal("Apply unexpectedly succeeded")
 		}
-		state, found, err := LoadState(config.StateFile)
+		state, found, err := LoadState(config.State.StateFile())
 		if err != nil || !found || !state.RecoveryRequired() || len(state.ManagedSkills) != 6 {
 			t.Fatalf("state = %#v found %v err %v", state, found, err)
 		}
@@ -519,11 +525,11 @@ func TestInstallPersistenceFailuresPreserveTruthfulRecovery(t *testing.T) {
 
 func TestInstallPartialContainerCreationKeepsRecoveryEvidence(t *testing.T) {
 	config := installTestConfig(t)
-	conflict := filepath.Dir(config.CodexPromptFile)
+	conflict := filepath.Dir(config.Codex.PromptFile())
 	if err := os.WriteFile(conflict, []byte("contributor"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	facade := NewFacade(config, &installTestCommands{}, time.Now)
+	facade := newTestFacade(config, &installTestCommands{}, time.Now)
 	plan, err := facade.Preview(Install)
 	if err != nil {
 		t.Fatal(err)
@@ -531,7 +537,7 @@ func TestInstallPartialContainerCreationKeepsRecoveryEvidence(t *testing.T) {
 	if _, err := facade.Apply(context.Background(), plan); err == nil {
 		t.Fatal("Apply unexpectedly succeeded")
 	}
-	state, found, err := LoadState(config.StateFile)
+	state, found, err := LoadState(config.State.StateFile())
 	if err != nil || !found || !state.RecoveryRequired() {
 		t.Fatalf("state = %#v found %v err %v", state, found, err)
 	}
@@ -569,7 +575,7 @@ func (commands *installTestCommands) Run(_ context.Context, name string, args ..
 	return nil
 }
 
-func installTestConfig(t *testing.T) Config {
+func installTestConfig(t *testing.T) facadeConfig {
 	t.Helper()
 	home := t.TempDir()
 	source := filepath.Join(t.TempDir(), "bundle", "skills")
@@ -583,20 +589,26 @@ func installTestConfig(t *testing.T) Config {
 		}
 	}
 	configHome := filepath.Join(home, "xdg")
-	return Config{
-		ConfigHome:         configHome,
-		MattyDir:           filepath.Join(home, ".matty"),
-		StateFile:          filepath.Join(home, ".matty", "config.json"),
-		AgentSkillsDir:     filepath.Join(home, ".agents", "skills"),
-		SkillSourceRoot:    source,
-		CodexPromptFile:    filepath.Join(home, ".codex", "AGENTS.md"),
-		OpenCodeConfigFile: filepath.Join(configHome, "opencode", "opencode.json"),
-		OpenCodePromptFile: filepath.Join(configHome, "opencode", "matty.md"),
-		HomebrewPrefix:     filepath.Join(home, "homebrew"),
-	}
+	homebrewPrefix := filepath.Join(home, "homebrew")
+	return NewFacade(FacadeConfig{
+		MattyHome:       filepath.Join(home, ".matty"),
+		Skills:          skillbundle.NewGlobalLayout(home),
+		SkillSource:     skillbundle.Source{Root: source},
+		Codex:           codex.NewCanonicalLayout(home),
+		OpenCode:        opencode.NewCanonicalLayout(configHome),
+		Engram:          engrambin.NewTopology(homebrewPrefix),
+		InstalledSource: bootstrap.InstalledSourceAt(filepath.Join(home, ".local", "share", "matty")),
+	}, &installTestCommands{}, time.Now).config
 }
 
-func installTestHome(config Config) string { return filepath.Dir(config.MattyDir) }
+func newTestFacade(config facadeConfig, commands Commands, now func() time.Time) *Facade {
+	if now == nil {
+		now = time.Now
+	}
+	return &Facade{config: config, commands: commands, now: now}
+}
+
+func installTestHome(config facadeConfig) string { return filepath.Dir(config.State.MattyHome()) }
 
 func installTestSnapshot(t *testing.T, root string) string {
 	t.Helper()

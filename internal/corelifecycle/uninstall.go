@@ -11,7 +11,7 @@ import (
 )
 
 func (facade *Facade) previewUninstall() (Plan, error) {
-	state, found, err := LoadState(facade.config.StateFile)
+	state, found, err := LoadState(facade.config.State.StateFile())
 	if err != nil {
 		return Plan{}, err
 	}
@@ -26,21 +26,21 @@ func (facade *Facade) previewUninstall() (Plan, error) {
 		}
 	}
 	if found {
-		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemove, Path: facade.config.StateFile, Description: "remove Matty state metadata"}})
+		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemove, Path: facade.config.State.StateFile(), Description: "remove Matty state metadata"}})
 	}
-	codex, err := prompt.InspectCodex(facade.config.CodexPromptFile)
+	codex, err := prompt.InspectCodex(facade.config.Codex.PromptFile())
 	if err != nil {
 		return Plan{}, err
 	}
 	if codex.HasMattySection {
-		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemoveCodexPrompt, Path: facade.config.CodexPromptFile, Description: "remove Codex Matty prompt markers"}})
+		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemoveCodexPrompt, Path: facade.config.Codex.PromptFile(), Description: "remove Codex Matty prompt markers"}})
 	}
-	openCode, err := opencode.Inspect(facade.config.OpenCodeConfigFile, facade.config.OpenCodePromptFile)
+	openCode, err := opencode.Inspect(facade.config.OpenCode.ConfigFile(), facade.config.OpenCode.PromptFile())
 	if err != nil {
 		return Plan{}, err
 	}
 	if openCode.PromptExists || openCode.HasMattyInstruction {
-		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemoveOpenCodePrompt, Path: facade.config.OpenCodeConfigFile, Target: facade.config.OpenCodePromptFile, Description: "remove OpenCode Matty prompt reference"}})
+		actions = append(actions, plannedAction{ActionView: ActionView{Kind: ActionRemoveOpenCodePrompt, Path: facade.config.OpenCode.ConfigFile(), Target: facade.config.OpenCode.PromptFile(), Description: "remove OpenCode Matty prompt reference"}})
 	}
 
 	cleanup, err := ownedcontainer.Preview(facade.authorizedContainers(state.CreatedContainers))
@@ -78,19 +78,19 @@ func previewManagedSkillRemoval(skill ManagedSkill) (plannedAction, bool, error)
 	return plannedAction{ActionView: ActionView{Kind: ActionRemove, Path: skill.LinkPath, Target: target, Description: "remove managed skill " + skill.Name}}, true, nil
 }
 
-func uninstallFilePreconditions(config Config, stateFound, codexOwned bool, openCode opencode.Inspection) []ownedcontainer.Record {
+func uninstallFilePreconditions(config facadeConfig, stateFound, codexOwned bool, openCode opencode.Inspection) []ownedcontainer.Record {
 	var records []ownedcontainer.Record
 	if stateFound {
-		records = append(records, ownedcontainer.Record{Path: config.StateFile, Kind: ownedcontainer.File})
+		records = append(records, ownedcontainer.Record{Path: config.State.StateFile(), Kind: ownedcontainer.File})
 	}
 	if codexOwned {
-		records = append(records, ownedcontainer.Record{Path: config.CodexPromptFile, Kind: ownedcontainer.File})
+		records = append(records, ownedcontainer.Record{Path: config.Codex.PromptFile(), Kind: ownedcontainer.File})
 	}
 	if openCode.ConfigExists && openCode.HasMattyInstruction {
-		records = append(records, ownedcontainer.Record{Path: config.OpenCodeConfigFile, Kind: ownedcontainer.File})
+		records = append(records, ownedcontainer.Record{Path: config.OpenCode.ConfigFile(), Kind: ownedcontainer.File})
 	}
 	if openCode.PromptExists {
-		records = append(records, ownedcontainer.Record{Path: config.OpenCodePromptFile, Kind: ownedcontainer.File})
+		records = append(records, ownedcontainer.Record{Path: config.OpenCode.PromptFile(), Kind: ownedcontainer.File})
 	}
 	return records
 }
@@ -103,12 +103,12 @@ func (facade *Facade) applyUninstall(plan Plan) (Result, error) {
 		return Result{}, err
 	}
 	if !plan.hasWork {
-		return Result{stateFile: facade.config.StateFile}, nil
+		return Result{stateFile: facade.config.State.StateFile()}, nil
 	}
 	for _, action := range plan.actions {
 		switch action.Kind {
 		case ActionRemove:
-			if action.Path == facade.config.StateFile {
+			if action.Path == facade.config.State.StateFile() {
 				if err := os.Remove(action.Path); err != nil && !os.IsNotExist(err) {
 					return Result{}, fmt.Errorf("remove Matty state %s: %w", action.Path, err)
 				}
@@ -137,7 +137,7 @@ func (facade *Facade) applyUninstall(plan Plan) (Result, error) {
 	if _, err := plan.cleanup.Cleanup(); err != nil {
 		return Result{}, err
 	}
-	return Result{stateFile: facade.config.StateFile, hasWork: true}, nil
+	return Result{stateFile: facade.config.State.StateFile(), hasWork: true}, nil
 }
 
 func (facade *Facade) authorizedContainers(records []ownedcontainer.Record) []ownedcontainer.Record {
