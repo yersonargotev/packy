@@ -19,12 +19,13 @@ const DefaultRepositoryURL = "https://github.com/yersonargotev/matty.git"
 // Source of Truth checkout. It lives outside command construction so the CLI
 // remains an adapter around source bootstrapping behavior.
 type BootstrapOptions struct {
-	SourceRoot     string
-	RepositoryURL  string
-	RepositoryRef  string
-	HomeDir        string
-	ConfigHome     string
-	ReportProgress func(string) error
+	InstalledSource InstalledSource
+	SourceRoot      string
+	RepositoryURL   string
+	RepositoryRef   string
+	HomeDir         string
+	ConfigHome      string
+	ReportProgress  func(string) error
 }
 
 type BootstrapResult struct {
@@ -34,6 +35,9 @@ type BootstrapResult struct {
 }
 
 func EnsureInstalledSource(opts BootstrapOptions) (BootstrapResult, error) {
+	if opts.InstalledSource.Root() != "" {
+		opts.SourceRoot = opts.InstalledSource.Root()
+	}
 	if strings.TrimSpace(opts.SourceRoot) == "" {
 		return BootstrapResult{}, errors.New("installed source root is required")
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/yersonargotev/matty/internal/bootstrap"
 	"github.com/yersonargotev/matty/internal/corelifecycle"
 	"github.com/yersonargotev/matty/internal/skillbundle"
 )
@@ -124,5 +125,5 @@ func resolveSkillSourceRoot(env Env, installedSourceRoot string) (SkillSource, e
 }
 
 func DefaultInstalledSourceRoot(home string) string {
-	return filepath.Join(home, ".local", "share", "matty")
+	return bootstrap.DefaultInstalledSourceRoot(home)
 }

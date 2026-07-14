@@ -97,6 +97,16 @@ type fakeCall struct {
 	args []string
 }
 
+type countingEnv struct {
+	values map[string]string
+	calls  map[string]int
+}
+
+func (e *countingEnv) Getenv(key string) string {
+	e.calls[key]++
+	return e.values[key]
+}
+
 func (f *fakeRunner) LookPath(name string) (string, error) {
 	if f.path != nil {
 		if path, ok := f.path[name]; ok {
@@ -312,6 +322,28 @@ func TestVersionOutput(t *testing.T) {
 			}
 			if !strings.Contains(out, tt.version) {
 				t.Fatalf("version output missing %q:\n%s", tt.version, out)
+			}
+		})
+	}
+}
+
+func TestHelpAndVersionDoNotResolveWorkstation(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"init", "--help"}, {"--version"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			env := &countingEnv{values: map[string]string{}, calls: map[string]int{}}
+			getwdCalls := 0
+			opts := Options{
+				Env: env,
+				Getwd: func() (string, error) {
+					getwdCalls++
+					return "", errors.New("must not capture cwd")
+				},
+			}
+			if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
+				t.Fatalf("command failed: %v\n%s", err, out)
+			}
+			if getwdCalls != 0 || len(env.calls) != 0 {
+				t.Fatalf("workstation captured for %v: getwd=%d env=%v", args, getwdCalls, env.calls)
 			}
 		})
 	}
@@ -1027,6 +1059,68 @@ func TestInitClonesDefaultInstalledSourceAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestInitCapturesOneWorkstationSnapshot(t *testing.T) {
+	home := t.TempDir()
+	repo := createMattySourceRepo(t)
+	env := &countingEnv{
+		values: map[string]string{
+			"HOME":            home,
+			"XDG_CONFIG_HOME": filepath.Join(home, "xdg-config"),
+			"PATH":            "/sandbox/bin",
+			"HOMEBREW_PREFIX": "/sandbox/homebrew",
+		},
+		calls: map[string]int{},
+	}
+	getwdCalls := 0
+	opts := Options{
+		Env: env,
+		Getwd: func() (string, error) {
+			getwdCalls++
+			return t.TempDir(), nil
+		},
+	}
+
+	if out, err := executeCommand(t, NewRootCommand(opts), "init", "--repository-url", repo); err != nil {
+		t.Fatalf("init failed: %v\n%s", err, out)
+	}
+	if getwdCalls != 1 {
+		t.Fatalf("getwd calls = %d; want 1", getwdCalls)
+	}
+	for _, key := range []string{"HOME", "XDG_CONFIG_HOME", "PATH", "HOMEBREW_PREFIX"} {
+		if env.calls[key] != 1 {
+			t.Fatalf("%s calls = %d; want 1 (all calls: %v)", key, env.calls[key], env.calls)
+		}
+	}
+}
+
+func TestInitPreservesMissingHomeError(t *testing.T) {
+	out, err := executeCommand(t, NewRootCommand(Options{
+		Env:   MapEnv{},
+		Getwd: func() (string, error) { return "", errors.New("cwd unavailable") },
+	}), "init")
+	if err == nil || err.Error() != "HOME is required" {
+		t.Fatalf("error = %v; want HOME is required\n%s", err, out)
+	}
+}
+
+func TestInitWithAbsoluteSourceDoesNotRequireCurrentDirectory(t *testing.T) {
+	home := t.TempDir()
+	repo := createMattySourceRepo(t)
+	sourceRoot := filepath.Join(t.TempDir(), "installed")
+	opts := Options{
+		Env:   MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")},
+		Getwd: func() (string, error) { return "", errors.New("cwd unavailable") },
+	}
+
+	out, err := executeCommand(t, NewRootCommand(opts), "init", "--source-root", sourceRoot, "--repository-url", repo)
+	if err != nil {
+		t.Fatalf("init failed: %v\n%s", err, out)
+	}
+	if !exists(filepath.Join(sourceRoot, "bundle", "skills")) {
+		t.Fatalf("init did not use absolute source root")
+	}
+}
+
 func TestInitRejectsMalformedExistingInstalledSourceWithoutMutation(t *testing.T) {
 	home := t.TempDir()
 	installedRoot := DefaultInstalledSourceRoot(home)
@@ -1196,6 +1290,24 @@ func TestInitSupportsExplicitSourceRoot(t *testing.T) {
 	}
 	if exists(filepath.Join(home, ".local", "share", "matty")) {
 		t.Fatalf("init with --source-root unexpectedly wrote default Installed Source")
+	}
+}
+
+func TestInitNormalizesRelativeSourceRootFromCapturedDirectory(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	repo := createMattySourceRepo(t)
+	opts := Options{
+		Env:   MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg-config")},
+		Getwd: func() (string, error) { return cwd, nil },
+	}
+
+	out, err := executeCommand(t, NewRootCommand(opts), "init", "--source-root", filepath.Join("relative", "source"), "--repository-url", repo)
+	if err != nil {
+		t.Fatalf("init failed: %v\n%s", err, out)
+	}
+	if !exists(filepath.Join(cwd, "relative", "source", "bundle", "skills")) {
+		t.Fatalf("init did not resolve relative --source-root from captured cwd")
 	}
 }
 

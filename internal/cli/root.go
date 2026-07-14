@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
-	"path/filepath"
+	"os"
 	"strings"
 	"time"
 
@@ -15,12 +15,14 @@ import (
 	"github.com/yersonargotev/matty/internal/setuphealth"
 	"github.com/yersonargotev/matty/internal/skillbundle"
 	mattyversion "github.com/yersonargotev/matty/internal/version"
+	"github.com/yersonargotev/matty/internal/workstation"
 )
 
 // Options carries injectable process boundaries for tests and future command
 // implementations. The zero value uses the real OS environment and runner.
 type Options struct {
 	Env                 Env
+	Getwd               func() (string, error)
 	Runner              Runner
 	Clock               func() time.Time
 	Terminal            Terminal
@@ -35,6 +37,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.Runner == nil {
 		o.Runner = execRunner{}
+	}
+	if o.Getwd == nil {
+		o.Getwd = os.Getwd
 	}
 	if o.Clock == nil {
 		o.Clock = time.Now
@@ -52,6 +57,7 @@ func (o Options) withDefaults() Options {
 // NewRootCommand constructs the Matty CLI command tree.
 func NewRootCommand(opts Options) *cobra.Command {
 	opts = opts.withDefaults()
+	workstationResolver := newWorkstationResolver(opts)
 
 	root := &cobra.Command{
 		Use:           "matty",
@@ -63,7 +69,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 
 	root.AddCommand(
 		newPackCommand(opts),
-		newInitCommand(opts),
+		newInitCommand(opts, workstationResolver),
 		newInstallCommand(opts),
 		newDoctorCommand(opts),
 		newUpdateCommand(opts),
@@ -73,7 +79,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 	return root
 }
 
-func newInitCommand(opts Options) *cobra.Command {
+func newInitCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var (
 		homeFlag      string
 		sourceRoot    string
@@ -86,36 +92,21 @@ func newInitCommand(opts Options) *cobra.Command {
 		Short: "Initialize Matty's package-installed source checkout",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			home := strings.TrimSpace(homeFlag)
-			if home == "" {
-				home = opts.Env.Getenv("HOME")
-			}
-			if home == "" {
-				return fmt.Errorf("HOME is required")
-			}
-			configHome := ""
-			if strings.TrimSpace(homeFlag) == "" {
-				configHome = opts.Env.Getenv("XDG_CONFIG_HOME")
-			}
-			if configHome == "" || !filepath.IsAbs(configHome) {
-				configHome = filepath.Join(home, ".config")
-			}
-
-			root := strings.TrimSpace(sourceRoot)
-			if root == "" {
-				root = DefaultInstalledSourceRoot(home)
-			}
-			root, err := filepath.Abs(root)
+			snapshot, err := workstationResolver.Resolve(workstation.Options{Home: strings.TrimSpace(homeFlag)})
 			if err != nil {
-				return fmt.Errorf("resolve installed source root: %w", err)
+				return err
+			}
+			installedSource, err := bootstrap.ResolveInstalledSource(snapshot, sourceRoot)
+			if err != nil {
+				return err
 			}
 
 			result, err := bootstrap.EnsureInstalledSource(bootstrap.BootstrapOptions{
-				SourceRoot:    root,
-				RepositoryURL: repositoryURL,
-				RepositoryRef: defaultInitRepositoryRef(repositoryRef, mattyversion.Value),
-				HomeDir:       home,
-				ConfigHome:    configHome,
+				InstalledSource: installedSource,
+				RepositoryURL:   repositoryURL,
+				RepositoryRef:   defaultInitRepositoryRef(repositoryRef, mattyversion.Value),
+				HomeDir:         snapshot.Home(),
+				ConfigHome:      snapshot.ConfigurationHome(),
 				ReportProgress: func(message string) error {
 					_, err := fmt.Fprintf(cmd.OutOrStdout(), "matty init: %s\n", message)
 					return err
@@ -141,6 +132,20 @@ func newInitCommand(opts Options) *cobra.Command {
 	cmd.Flags().StringVar(&repositoryURL, "repository-url", bootstrap.DefaultRepositoryURL, "Matty Source of Truth Git URL")
 	cmd.Flags().StringVar(&repositoryRef, "repository-ref", "", "optional Matty Source of Truth Git ref to clone or check out")
 	return cmd
+}
+
+func newWorkstationResolver(opts Options) *workstation.Resolver {
+	return workstation.NewResolver(func() (workstation.Inputs, error) {
+		cwd, err := opts.Getwd()
+		return workstation.Inputs{
+			Home:                 opts.Env.Getenv("HOME"),
+			ConfigurationHome:    opts.Env.Getenv("XDG_CONFIG_HOME"),
+			ExecutableSearchPath: opts.Env.Getenv("PATH"),
+			HomebrewPrefix:       opts.Env.Getenv("HOMEBREW_PREFIX"),
+			CurrentDirectory:     cwd,
+			CurrentDirectoryErr:  err,
+		}, nil
+	})
 }
 
 func defaultInitRepositoryRef(explicitRef, currentVersion string) string {
