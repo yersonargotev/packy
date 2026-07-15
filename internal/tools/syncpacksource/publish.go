@@ -96,6 +96,13 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	if err := writeCanonical(filepath.Join(option.outputDir, "proposal-brief.json"), builder.brief); err != nil {
 		return err
 	}
+	markdown, err := builder.brief.Markdown()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(option.outputDir, "proposal-brief.md"), []byte(markdown), 0o600); err != nil {
+		return err
+	}
 	artifact := map[string]any{"schema_version": 1, "source_id": dispatch.SourceID, "plan_id": plan.PlanID, "base_sha": plan.Preconditions.BaseCommit, "candidate_sha": plan.Candidate.Commit, "result_tree_sha": result.Proposal.ResultTreeSHA, "head_sha": result.Proposal.HeadSHA, "provenance_sha256": builder.provenance, "branch_name": result.Decision.Branch, "pr_number": result.PullRequest.Number, "pr_state_sha256": result.PullRequest.MetadataHash, "managed_title": result.Proposal.ManagedTitle, "managed_metadata_hash": result.PullRequest.MetadataHash, "validation": result.Readiness.Gates, "decision_ready": result.Readiness.DecisionReady, "auto_merge": false, "manual_merge_required": true, "upstream_content_executed": false, "invalidation_conditions": result.Proposal.InvalidationConditions}
 	if err := writeCanonical(filepath.Join(option.outputDir, "publication.json"), artifact); err != nil {
 		return err
