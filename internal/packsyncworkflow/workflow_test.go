@@ -183,6 +183,16 @@ func TestFailureArtifactNeverSerializesRawBoundaryErrors(t *testing.T) {
 	}
 }
 
+func TestFailureArtifactNormalizesUntrustedOptionalContext(t *testing.T) {
+	artifact := NewFailureArtifact(FailureArtifactContext{SourceID: "../source", BaseSHA: "bad", CandidateSHA: "bad", RunURL: "://bad", Blockers: []string{"blocked", "", "blocked"}}, errors.New("invalid input"))
+	if artifact.SourceID != "unknown" || artifact.BaseSHA != "" || artifact.CandidateSHA != "" || artifact.RunURL != "" || len(artifact.Blockers) != 1 {
+		t.Fatalf("normalized artifact = %#v", artifact)
+	}
+	if _, err := artifact.CanonicalJSON(); err != nil {
+		t.Fatalf("normalized artifact is not canonical: %v", err)
+	}
+}
+
 func TestPublicationFailureArtifactPreservesExactSafeRecovery(t *testing.T) {
 	state := pristineState()
 	state.PR.MetadataHash = strings.Repeat("9", 64)

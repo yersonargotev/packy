@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -170,7 +171,7 @@ type FailureArtifact struct {
 }
 
 func (artifact FailureArtifact) CanonicalJSON() ([]byte, error) {
-	if artifact.SchemaVersion != 1 || artifact.State == "" || !ValidSourceID(artifact.SourceID) || len(artifact.Blockers) == 0 || len(artifact.Recovery) == 0 {
+	if artifact.SchemaVersion != 1 || artifact.State != "blocked" || !ValidSourceID(artifact.SourceID) || !validOptionalSHA(artifact.BaseSHA) || !validOptionalSHA(artifact.CandidateSHA) || !validUniqueStrings(artifact.Blockers) || !validUniqueStrings(artifact.Recovery) || !validOptionalURI(artifact.RunURL) {
 		return nil, errors.New("operational artifact is incomplete")
 	}
 	if artifact.ContainsSecrets || artifact.ContainsUpstreamBytes {
@@ -191,6 +192,35 @@ func (artifact FailureArtifact) CanonicalJSON() ([]byte, error) {
 // ValidSourceID reports whether value is safe for canonical workflow identity.
 func ValidSourceID(value string) bool {
 	return sourceIDPattern.MatchString(value)
+}
+
+func validOptionalSHA(value string) bool {
+	return value == "" || fullSHAPattern.MatchString(value)
+}
+
+func validUniqueStrings(values []string) bool {
+	if len(values) == 0 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			return false
+		}
+		if _, exists := seen[value]; exists {
+			return false
+		}
+		seen[value] = struct{}{}
+	}
+	return true
+}
+
+func validOptionalURI(value string) bool {
+	if value == "" {
+		return true
+	}
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.IsAbs()
 }
 
 func requireFullSHA(name, value string) error {

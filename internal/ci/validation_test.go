@@ -207,6 +207,37 @@ func TestSynchronizationSchemasAcceptCanonicalRuntimeArtifacts(t *testing.T) {
 	}
 }
 
+func TestOperationalArtifactSchemaMatchesRuntimeValidation(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	valid := packsyncworkflow.FailureArtifact{SchemaVersion: 1, State: "blocked", SourceID: "source", PlanID: "plan", BaseSHA: sha, CandidateSHA: sha, Blockers: []string{"blocked"}, Recovery: []string{"retry safely"}, RunURL: "https://github.com/owner/repo/actions/runs/1"}
+	cases := []packsyncworkflow.FailureArtifact{
+		valid,
+		func() packsyncworkflow.FailureArtifact { value := valid; value.State = "failed"; return value }(),
+		func() packsyncworkflow.FailureArtifact { value := valid; value.SourceID = "../source"; return value }(),
+		func() packsyncworkflow.FailureArtifact { value := valid; value.BaseSHA = "bad"; return value }(),
+		func() packsyncworkflow.FailureArtifact { value := valid; value.CandidateSHA = "bad"; return value }(),
+		func() packsyncworkflow.FailureArtifact {
+			value := valid
+			value.Blockers = []string{"blocked", "blocked"}
+			return value
+		}(),
+		func() packsyncworkflow.FailureArtifact { value := valid; value.Recovery = []string{""}; return value }(),
+		func() packsyncworkflow.FailureArtifact { value := valid; value.RunURL = "://bad"; return value }(),
+		func() packsyncworkflow.FailureArtifact { value := valid; value.ContainsSecrets = true; return value }(),
+	}
+	for _, artifact := range cases {
+		data, err := json.Marshal(artifact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		schemaErr := validateSchemaInstance(t, "pack-source-operational-artifact.schema.json", data)
+		_, runtimeErr := artifact.CanonicalJSON()
+		if (runtimeErr == nil) != (schemaErr == nil) {
+			t.Fatalf("runtime/schema operational artifact disagreement for %s: runtime=%v schema=%v", data, runtimeErr, schemaErr)
+		}
+	}
+}
+
 func validateSchemaInstance(t *testing.T, name string, instance []byte) error {
 	t.Helper()
 	root := filepath.Join(repositoryRoot(t), "workflows", "schemas")
@@ -215,6 +246,7 @@ func validateSchemaInstance(t *testing.T, name string, instance []byte) error {
 		t.Fatalf("parse schema %s: %v", name, err)
 	}
 	compiler := jsonschema.NewCompiler()
+	compiler.AssertFormat()
 	if err := compiler.AddResource(name, document); err != nil {
 		t.Fatalf("add schema %s: %v", name, err)
 	}

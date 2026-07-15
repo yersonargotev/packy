@@ -19,12 +19,24 @@ type FailureArtifactContext struct {
 }
 
 func NewFailureArtifact(context FailureArtifactContext, err error) FailureArtifact {
+	if !ValidSourceID(context.SourceID) {
+		context.SourceID = "unknown"
+	}
+	if !validOptionalSHA(context.BaseSHA) {
+		context.BaseSHA = ""
+	}
+	if !validOptionalSHA(context.CandidateSHA) {
+		context.CandidateSHA = ""
+	}
+	if !validOptionalURI(context.RunURL) {
+		context.RunURL = ""
+	}
 	kind := FailureIntegrity
 	var failure Failure
 	if errors.As(err, &failure) {
 		kind = failure.Kind
 	}
-	blockers := append([]string(nil), context.Blockers...)
+	blockers := uniqueNonEmptyStrings(context.Blockers)
 	if len(blockers) == 0 {
 		if failure.Blocker != "" {
 			blockers = []string{failure.Blocker}
@@ -37,6 +49,22 @@ func NewFailureArtifact(context FailureArtifactContext, err error) FailureArtifa
 		recovery = failure.Recovery
 	}
 	return FailureArtifact{SchemaVersion: 1, State: "blocked", SourceID: context.SourceID, PlanID: context.PlanID, BaseSHA: context.BaseSHA, CandidateSHA: context.CandidateSHA, Blockers: blockers, Recovery: []string{recovery}, RunURL: context.RunURL, ContainsSecrets: false, ContainsUpstreamBytes: false}
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func publicBlocker(kind FailureKind) string {
