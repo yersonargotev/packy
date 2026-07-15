@@ -53,6 +53,9 @@ The complete user-visible behavior of a capability pack, including its skill con
 ### Pack compatibility
 Whether a newer pack observable contract preserves the workflows and expectations of an active older version without an incompatible migration or newly mandatory user action.
 
+### Decision-ready synchronization proposal
+A source update whose exact identity, provenance, content changes, pack compatibility evidence, migrations, and validations are complete and unchanged, leaving human acceptance as the only remaining decision.
+
 ### Reconciliation plan
 An immutable preview of the exact ordered changes needed to move one approved pack operation from freshly observed state toward pack desired state. Its identity covers the activation intent revision, relied-on observations, actions, and human-consent phases; changed inputs require a new plan and approval.
 
