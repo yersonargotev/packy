@@ -108,6 +108,37 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceIsIncomplete(t *testing.T) {
 	assertBlocker(t, plan, "divergent-file mapping")
 }
 
+func TestCheckFailsClosedWhenAcceptedMigrationHistoryIsMissing(t *testing.T) {
+	repository := repositoryRoot(t)
+	snapshot := realSnapshot(t, repository, true)
+	copyRoot := t.TempDir()
+	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
+	if err := os.RemoveAll(filepath.Join(copyRoot, "bundle", "history", "matty", "1.0.0")); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := checkWith(t, copyRoot, &fixtureSource{root: snapshot, candidate: acceptedCandidate()})
+	assertBlocker(t, plan, "accepted compatibility history is missing")
+}
+
+func TestCheckRejectsCoordinatedReplacementEvidenceAndInstructionDrift(t *testing.T) {
+	repository := repositoryRoot(t)
+	snapshot := realSnapshot(t, repository, true)
+	copyRoot := t.TempDir()
+	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
+	mutateCompatibilityEvidence(t, copyRoot, func(evidence map[string]any) {
+		rule := evidence["migration"].(map[string]any)["replacement_rules"].([]any)[0].(map[string]any)
+		rule["semantics"] = "Use arbitrary replacement vocabulary."
+	})
+	instruction := filepath.Join(copyRoot, "bundle", "instructions", "matty-workflow-conventions.md")
+	writeFile(t, instruction, strings.Replace(string(mustReadFile(t, instruction)), "Use **Specs and tickets** as the workflow vocabulary.", "Use arbitrary replacement vocabulary.", 1))
+
+	plan := checkWith(t, copyRoot, &fixtureSource{root: snapshot, candidate: acceptedCandidate()})
+	assertBlocker(t, plan, "trusted digest")
+}
+
 func TestCheckFailsClosedWhenMajorMigrationEvidenceOrReplacementSemanticsDrift(t *testing.T) {
 	repository := repositoryRoot(t)
 	snapshot := realSnapshot(t, repository, true)

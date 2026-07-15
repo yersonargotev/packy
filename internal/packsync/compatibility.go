@@ -1,8 +1,6 @@
 package packsync
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -50,24 +48,47 @@ type replacementRule struct {
 }
 
 type replacementFile struct {
-	Path            string `json:"path"`
-	ReplacementRule string `json:"replacement_rule"`
+	Path             string   `json:"path"`
+	ReplacementRules []string `json:"replacement_rules"`
+}
+
+type acceptedCompatibilityContract struct {
+	PackID         string
+	FromVersion    string
+	ToVersion      string
+	EvidenceSHA256 string
+}
+
+var acceptedCompatibilityContracts = []acceptedCompatibilityContract{
+	{PackID: "matty", FromVersion: "1.0.0", ToVersion: "2.0.0", EvidenceSHA256: "fc15a7e2a3d14851356278d206b32cea5ea6b770cabc7a30267bd04e68b61bac"},
 }
 
 func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, manifests map[string]packManifest) []string {
-	paths, err := filepath.Glob(filepath.Join(repositoryRoot, "bundle", "history", "*", "*", "pack.json"))
-	if err != nil {
-		return []string{"inspect compatibility history: " + err.Error()}
-	}
+	validated := map[string]bool{}
 	var blockers []string
-	for _, historyPath := range paths {
-		data, err := os.ReadFile(historyPath)
-		if err != nil {
-			blockers = append(blockers, "read historical manifest for compatibility: "+err.Error())
+	for _, contract := range acceptedCompatibilityContracts {
+		current, ok := manifests[contract.PackID]
+		if !ok || current.Version != contract.ToVersion {
 			continue
 		}
-		var historical packManifest
-		if err := json.Unmarshal(data, &historical); err != nil {
+		historyRoot := filepath.Join(repositoryRoot, "bundle", "history", contract.PackID, contract.FromVersion)
+		historical, err := readCompatibilityManifest(filepath.Join(historyRoot, "pack.json"))
+		if err != nil || historical.ID != contract.PackID || historical.Version != contract.FromVersion {
+			blockers = append(blockers, fmt.Sprintf("accepted compatibility history is missing or invalid for %s %s to %s", contract.PackID, contract.FromVersion, contract.ToVersion))
+			continue
+		}
+		key := compatibilityKey(contract.PackID, contract.FromVersion, contract.ToVersion)
+		validated[key] = true
+		blockers = append(blockers, validateCompatibilityEvidence(repositoryRoot, snapshotRoot, source, bindings, current, historical, historyRoot, contract.EvidenceSHA256)...)
+	}
+
+	paths, err := filepath.Glob(filepath.Join(repositoryRoot, "bundle", "history", "*", "*", "pack.json"))
+	if err != nil {
+		return append(blockers, "inspect compatibility history: "+err.Error())
+	}
+	for _, historyPath := range paths {
+		historical, err := readCompatibilityManifest(historyPath)
+		if err != nil {
 			blockers = append(blockers, "decode historical manifest for compatibility: "+err.Error())
 			continue
 		}
@@ -75,12 +96,15 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 		if !ok || current.Version == historical.Version {
 			continue
 		}
-		blockers = append(blockers, validateCompatibilityEvidence(repositoryRoot, snapshotRoot, source, bindings, current, historical, filepath.Dir(historyPath))...)
+		if validated[compatibilityKey(historical.ID, historical.Version, current.Version)] {
+			continue
+		}
+		blockers = append(blockers, validateCompatibilityEvidence(repositoryRoot, snapshotRoot, source, bindings, current, historical, filepath.Dir(historyPath), "")...)
 	}
 	return blockers
 }
 
-func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, current, historical packManifest, historyRoot string) []string {
+func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, current, historical packManifest, historyRoot, trustedDigest string) []string {
 	evidencePath := filepath.Join(repositoryRoot, "bundle", "compatibility", historical.ID, fmt.Sprintf("%s-to-%s.json", historical.Version, current.Version))
 	data, err := os.ReadFile(evidencePath)
 	if err != nil {
@@ -96,6 +120,9 @@ func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source S
 		return []string{"compatibility evidence is invalid: " + err.Error()}
 	}
 	var failures []string
+	if trustedDigest != "" && hashBytes(data) != trustedDigest {
+		failures = append(failures, "accepted compatibility evidence does not match its trusted digest")
+	}
 	if evidence.SchemaVersion != 1 || evidence.PackID != historical.ID || evidence.FromVersion != historical.Version || evidence.ToVersion != current.Version {
 		failures = append(failures, "identity and exact versions are incomplete")
 	}
@@ -150,7 +177,7 @@ func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source S
 	} else {
 		artifactPath := filepath.Join(repositoryRoot, "bundle", filepath.FromSlash(expectedArtifactPath))
 		artifactBytes, err := os.ReadFile(artifactPath)
-		if err != nil || hashCompatibilityBytes(artifactBytes) != evidence.HistoricalArtifact.ArtifactSHA256 {
+		if err != nil || hashBytes(artifactBytes) != evidence.HistoricalArtifact.ArtifactSHA256 {
 			failures = append(failures, "historical-artifact hash or path changed")
 			return prefixCompatibility(failures)
 		}
@@ -162,6 +189,22 @@ func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source S
 		}
 	}
 	return prefixCompatibility(failures)
+}
+
+func readCompatibilityManifest(name string) (packManifest, error) {
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return packManifest{}, err
+	}
+	var manifest packManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return packManifest{}, err
+	}
+	return manifest, nil
+}
+
+func compatibilityKey(packID, fromVersion, toVersion string) string {
+	return packID + "@" + fromVersion + "->" + toVersion
 }
 
 func compatibilitySelection(source SourceConfig, bindings []Binding, current, historical packManifest, evidence compatibilityEvidence) ([]Binding, []string) {
@@ -250,11 +293,18 @@ func validateReplacementMapping(files []replacementFile, rules map[string]string
 	usedRules := map[string]bool{}
 	var actual []string
 	for _, file := range files {
-		if file.Path == "" || !safeSlashPath(file.Path) || seen[file.Path] || rules[file.ReplacementRule] == "" {
+		if file.Path == "" || !safeSlashPath(file.Path) || seen[file.Path] || len(file.ReplacementRules) == 0 {
 			return []string{"divergent-file mapping is incomplete, duplicated, or references missing replacement semantics"}
 		}
 		seen[file.Path] = true
-		usedRules[file.ReplacementRule] = true
+		seenFileRules := map[string]bool{}
+		for _, rule := range file.ReplacementRules {
+			if rules[rule] == "" || seenFileRules[rule] {
+				return []string{"divergent-file mapping is incomplete, duplicated, or references missing replacement semantics"}
+			}
+			seenFileRules[rule] = true
+			usedRules[rule] = true
+		}
 		actual = append(actual, file.Path)
 	}
 	sort.Strings(actual)
@@ -292,9 +342,4 @@ func prefixCompatibility(failures []string) []string {
 		failures[i] = "compatibility evidence: " + failures[i]
 	}
 	return failures
-}
-
-func hashCompatibilityBytes(data []byte) string {
-	digest := sha256.Sum256(data)
-	return hex.EncodeToString(digest[:])
 }

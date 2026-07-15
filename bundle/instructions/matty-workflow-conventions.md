@@ -8,7 +8,7 @@ Use **Specs and tickets** as the workflow vocabulary. A spec defines the accepte
 
 ## Local ticket layout
 
-When the configured issue tracker is local Markdown, keep each feature under `.scratch/<feature-slug>/`. Store its spec at `spec.md` and its tickets beneath `tickets/` inside that feature directory.
+When the configured issue tracker is local Markdown, keep its spec and all ticket artifacts under `.scratch/<feature-slug>/`; never write local tickets at the repository root.
 
 ## Tracker-defined wayfinding
 

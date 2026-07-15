@@ -18,7 +18,7 @@
       },
       {
         "id": "local-feature-ticket-layout",
-        "semantics": "When the configured issue tracker is local Markdown, keep each feature under `.scratch/<feature-slug>/`."
+        "semantics": "When the configured issue tracker is local Markdown, keep its spec and all ticket artifacts under `.scratch/<feature-slug>/`"
       },
       {
         "id": "tracker-defined-wayfinding",
@@ -28,23 +28,35 @@
     "divergent_files": [
       {
         "path": "skills/engineering/setup-matt-pocock-skills/issue-tracker-github.md",
-        "replacement_rule": "specs-and-tickets-vocabulary"
+        "replacement_rules": [
+          "specs-and-tickets-vocabulary"
+        ]
       },
       {
         "path": "skills/engineering/setup-matt-pocock-skills/issue-tracker-gitlab.md",
-        "replacement_rule": "specs-and-tickets-vocabulary"
+        "replacement_rules": [
+          "specs-and-tickets-vocabulary"
+        ]
       },
       {
         "path": "skills/engineering/setup-matt-pocock-skills/issue-tracker-local.md",
-        "replacement_rule": "specs-and-tickets-vocabulary"
+        "replacement_rules": [
+          "specs-and-tickets-vocabulary",
+          "local-feature-ticket-layout",
+          "tracker-defined-wayfinding"
+        ]
       },
       {
         "path": "skills/engineering/to-tickets/SKILL.md",
-        "replacement_rule": "local-feature-ticket-layout"
+        "replacement_rules": [
+          "local-feature-ticket-layout"
+        ]
       },
       {
         "path": "skills/engineering/wayfinder/SKILL.md",
-        "replacement_rule": "tracker-defined-wayfinding"
+        "replacement_rules": [
+          "tracker-defined-wayfinding"
+        ]
       }
     ]
   },
