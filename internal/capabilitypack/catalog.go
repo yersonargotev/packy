@@ -84,6 +84,7 @@ type Catalog struct {
 	entries               []catalogEntry
 	allowSyntheticHistory bool
 	deferSourceValidation bool
+	transactionHeld       bool
 }
 
 type catalogEntry struct {
@@ -149,7 +150,25 @@ func (c Catalog) refreshed() (Catalog, error) {
 	if c.bundleRoot == "" {
 		return c, nil
 	}
-	return discoverCatalogWithSourceValidation(c.bundleRoot, c.entries, !c.deferSourceValidation)
+	var refreshed Catalog
+	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
+		var err error
+		refreshed, err = discoverCatalogUnlocked(c.bundleRoot, c.entries, !c.deferSourceValidation)
+		refreshed.allowSyntheticHistory = c.allowSyntheticHistory
+		refreshed.transactionHeld = locked.transactionHeld
+		return err
+	})
+	return refreshed, err
+}
+
+func (c Catalog) withBundleLock(ctx context.Context, observe func(Catalog) error) error {
+	if c.bundleRoot == "" || c.transactionHeld {
+		return observe(c)
+	}
+	return bundletransaction.WithExclusive(ctx, filepath.Dir(filepath.Clean(c.bundleRoot)), func() error {
+		c.transactionHeld = true
+		return observe(c)
+	})
 }
 
 func (c Catalog) List() []Pack {
@@ -164,10 +183,10 @@ func (c Catalog) List() []Pack {
 // passed the same source validation as direct current selection.
 func (c Catalog) ListCurrent() ([]Pack, error) {
 	var packs []Pack
-	err := bundletransaction.WithExclusive(context.Background(), filepath.Dir(filepath.Clean(c.bundleRoot)), func() error {
+	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
 		packs = make([]Pack, 0, len(c.packs))
 		for _, metadata := range c.packs {
-			pack, err := c.showUnlocked(metadata.ID)
+			pack, err := locked.showUnlocked(metadata.ID)
 			if err != nil {
 				return err
 			}
@@ -183,9 +202,9 @@ func (c Catalog) Show(id string) (Pack, error) {
 		return c.showUnlocked(id)
 	}
 	var pack Pack
-	err := bundletransaction.WithExclusive(context.Background(), filepath.Dir(filepath.Clean(c.bundleRoot)), func() error {
+	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
 		var err error
-		pack, err = c.showUnlocked(id)
+		pack, err = locked.showUnlocked(id)
 		return err
 	})
 	return pack, err

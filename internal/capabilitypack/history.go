@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/yersonargotev/matty/internal/bundletransaction"
 )
 
 const historicalArtifactSchemaVersion = 1
@@ -69,7 +67,7 @@ func (c Catalog) resolveIntentPack(id, version string) (Pack, error) {
 	}
 	root := filepath.Join(c.bundleRoot, "history", id, version)
 	var pack Pack
-	err = bundletransaction.WithExclusive(context.Background(), filepath.Dir(filepath.Clean(c.bundleRoot)), func() error {
+	err = c.withBundleLock(context.Background(), func(Catalog) error {
 		var err error
 		pack, err = loadHistoricalArtifact(root, c.bundleRoot, id, version)
 		return err

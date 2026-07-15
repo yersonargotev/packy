@@ -103,6 +103,12 @@ func NewFacade(catalog Catalog, options ...FacadeOption) Facade {
 }
 
 func (f Facade) Status(ctx context.Context, request StatusRequest) (StatusReport, error) {
+	return withBundleObservation(ctx, f, func(locked Facade) (StatusReport, error) {
+		return locked.status(ctx, request)
+	})
+}
+
+func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport, error) {
 	packs := f.catalog.List()
 	if request.PackID != "" {
 		if request.Surface == "" {

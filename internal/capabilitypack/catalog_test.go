@@ -42,6 +42,83 @@ func TestDiscoverWaitsForCompleteBundleTransaction(t *testing.T) {
 	}
 }
 
+type blockingBundleAdapter struct {
+	bundleRoot string
+	entered    chan string
+	release    chan struct{}
+}
+
+func (a *blockingBundleAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
+	data, err := os.ReadFile(filepath.Join(a.bundleRoot, filepath.FromSlash(transition.Desired.Resources[0].Source)))
+	if err != nil {
+		return SurfaceInspection{}, err
+	}
+	a.entered <- string(data)
+	<-a.release
+	return SurfaceInspection{}, nil
+}
+
+func (*blockingBundleAdapter) ApplyProjections(context.Context, []ProjectionAction) *ProjectionActionError {
+	return nil
+}
+
+func TestPreviewHoldsBundleTransactionThroughAdapterReads(t *testing.T) {
+	bundle := writeCatalogFixture(t)
+	catalog, err := Discover(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := &blockingBundleAdapter{bundleRoot: bundle, entered: make(chan string, 1), release: make(chan struct{})}
+	facade := NewFacade(catalog, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	previewDone := make(chan error, 1)
+	go func() {
+		_, err := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+		previewDone <- err
+	}()
+	select {
+	case got := <-adapter.entered:
+		if got != "matty" {
+			t.Fatalf("adapter read %q, want one complete old bundle generation", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("adapter did not inspect the bundle")
+	}
+
+	transaction := make(chan *bundletransaction.Guard, 1)
+	transactionErr := make(chan error, 1)
+	go func() {
+		guard, err := bundletransaction.Acquire(context.Background(), filepath.Dir(bundle))
+		if err != nil {
+			transactionErr <- err
+			return
+		}
+		transaction <- guard
+	}()
+	select {
+	case guard := <-transaction:
+		guard.Release()
+		t.Fatal("bundle transaction started before the adapter completed its observation")
+	case err := <-transactionErr:
+		t.Fatal(err)
+	case <-time.After(40 * time.Millisecond):
+	}
+
+	close(adapter.release)
+	if err := <-previewDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case guard := <-transaction:
+		if err := guard.Release(); err != nil {
+			t.Fatal(err)
+		}
+	case err := <-transactionErr:
+		t.Fatal(err)
+	case <-time.After(time.Second):
+		t.Fatal("bundle transaction did not resume after the complete observation")
+	}
+}
+
 func TestDiscoverLoadsInitialStrictCatalog(t *testing.T) {
 	bundleRoot := writeCatalogFixture(t)
 	catalog, err := Discover(bundleRoot)

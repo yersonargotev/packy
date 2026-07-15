@@ -483,10 +483,18 @@ type ApplyResult struct {
 }
 
 func (f Facade) Preview(ctx context.Context, request ActivationRequest) (ReconciliationPlan, error) {
-	return f.preview(ctx, request, OperationActivate, "")
+	return withBundleObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
+		return locked.preview(ctx, request, OperationActivate, "")
+	})
 }
 
 func (f Facade) PreviewUpdate(ctx context.Context, request UpdateRequest) (ReconciliationPlan, error) {
+	return withBundleObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
+		return locked.previewUpdate(ctx, request)
+	})
+}
+
+func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (ReconciliationPlan, error) {
 	activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface}
 	_, _, state, err := f.activationInputs(ctx, activation)
 	if err != nil {
@@ -500,6 +508,12 @@ func (f Facade) PreviewUpdate(ctx context.Context, request UpdateRequest) (Recon
 }
 
 func (f Facade) PreviewDeactivate(ctx context.Context, request DeactivationRequest) (ReconciliationPlan, error) {
+	return withBundleObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
+		return locked.previewDeactivate(ctx, request)
+	})
+}
+
+func (f Facade) previewDeactivate(ctx context.Context, request DeactivationRequest) (ReconciliationPlan, error) {
 	activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface}
 	requested, adapter, state, err := f.activationInputsForOperation(ctx, activation, OperationDeactivate)
 	if err != nil {
@@ -729,6 +743,12 @@ func (f Facade) Approve(plan ReconciliationPlan, kind ConsentKind) ApprovalRecei
 }
 
 func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
+	return withBundleObservation(ctx, f, func(locked Facade) (ApplyResult, error) {
+		return locked.apply(ctx, request)
+	})
+}
+
+func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
 	if !request.Plan.Applicable() {
 		return ApplyResult{}, PlanNotActionableError{Disposition: request.Plan.Disposition()}
 	}
