@@ -410,14 +410,14 @@ func continuousTagChain(candidate Candidate) bool {
 
 func eligibleAutomaticEvidence(candidate Candidate) bool {
 	eligible := validVerification(candidate.CommitVerify)
-	if !validVerification(candidate.CommitVerify) && !unsignedVerification(candidate.CommitVerify) {
+	if !completeVerification(candidate.CommitVerify) {
 		return false
 	}
 	for _, tag := range candidate.TagObjects {
 		if validVerification(tag.Verification) {
 			eligible = true
 		}
-		if !validVerification(tag.Verification) && !unsignedVerification(tag.Verification) {
+		if !completeVerification(tag.Verification) {
 			return false
 		}
 	}
@@ -425,11 +425,11 @@ func eligibleAutomaticEvidence(candidate Candidate) bool {
 }
 
 func invalidVerification(candidate Candidate) bool {
-	if !validVerification(candidate.CommitVerify) && !unsignedVerification(candidate.CommitVerify) {
+	if !completeVerification(candidate.CommitVerify) {
 		return true
 	}
 	for _, tag := range candidate.TagObjects {
-		if !validVerification(tag.Verification) && !unsignedVerification(tag.Verification) {
+		if !completeVerification(tag.Verification) {
 			return true
 		}
 	}
