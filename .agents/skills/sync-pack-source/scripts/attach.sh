@@ -2,10 +2,12 @@
 
 set -euo pipefail
 
-request="${1:?usage: attach.sh canonical-request.json runs.json}"
-runs="${2:?usage: attach.sh canonical-request.json runs.json}"
+request="${1:?usage: attach.sh canonical-request.json runs.json request-artifacts}"
+runs="${2:?usage: attach.sh canonical-request.json runs.json request-artifacts}"
+artifacts="${3:?usage: attach.sh canonical-request.json runs.json request-artifacts}"
+. "$(dirname "${BASH_SOURCE[0]}")/request.sh"
 source_id="$(jq -er .source_id "$request")"
-request_digest="$(jq -cS . "$request" | shasum -a 256 | cut -d ' ' -f 1)"
+request_digest="$(request_digest "$request")"
 run_name="sync-pack-source / $source_id / $request_digest"
 
 matches="$(jq -c --arg name "$run_name" '[.[] | select(
@@ -20,5 +22,14 @@ if [[ "$count" -gt 1 ]]; then
 fi
 if [[ "$count" -eq 0 ]]; then
   exit 1
+fi
+status="$(jq -er '.[0].status' <<<"$matches")"
+if [[ "$status" == "in_progress" ]]; then
+  run_id="$(jq -er '.[0].databaseId' <<<"$matches")"
+  owner_request="$artifacts/$run_id-request.json"
+  if [[ ! -f "$owner_request" ]] || ! cmp -s <(jq -cS . "$request") <(jq -cS . "$owner_request"); then
+    echo "started run request artifact is absent or does not match its run identity" >&2
+    exit 2
+  fi
 fi
 jq -er '.[0].url' <<<"$matches"

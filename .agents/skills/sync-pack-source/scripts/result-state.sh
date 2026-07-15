@@ -2,8 +2,9 @@
 
 set -euo pipefail
 
-run="${1:?usage: result-state.sh run.json artifact-directory}"
-artifacts="${2:?usage: result-state.sh run.json artifact-directory}"
+run="${1:?usage: result-state.sh run.json artifact-directory live-pr.json}"
+artifacts="${2:?usage: result-state.sh run.json artifact-directory live-pr.json}"
+live_pr="${3:-}"
 status="$(jq -er .status "$run")"
 
 case "$status" in
@@ -20,7 +21,17 @@ find_artifact() {
 if [[ -n "$(find_artifact no-op.json)" ]]; then
   echo "sin cambios"
 elif publication="$(find_artifact publication.json)"; [[ -n "$publication" ]] && jq -e '.decision_ready == true' "$publication" >/dev/null; then
-  echo "decision-ready"
+  number="$(jq -er .pr_number "$publication")"
+  head="$(jq -er .head_sha "$publication")"
+  branch="$(jq -er .branch_name "$publication")"
+  if [[ -n "$live_pr" ]] && jq -e --argjson number "$number" --arg head "$head" --arg branch "$branch" '
+    .number == $number and .headRefOid == $head and .headRefName == $branch and
+    .state == "OPEN" and .isDraft == false
+  ' "$live_pr" >/dev/null; then
+    echo "decision-ready"
+  else
+    echo "bloqueada"
+  fi
 elif [[ -n "$(find_artifact inspection.json)" ]]; then
   echo "pendiente"
 elif [[ -n "$(find_artifact operational-artifact.json)" ]]; then

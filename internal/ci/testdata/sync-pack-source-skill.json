@@ -116,6 +116,15 @@
       "operation": "request"
     },
     {
+      "name": "forged-active",
+      "same_digest": true,
+      "run_status": "in_progress",
+      "artifact": "none",
+      "dispatches": 0,
+      "state": "bloqueada",
+      "operation": "request"
+    },
+    {
       "name": "distinct-pending",
       "same_digest": false,
       "run_status": "queued",
@@ -158,6 +167,15 @@
       "artifact": "publication",
       "dispatches": 0,
       "state": "decision-ready",
+      "operation": "monitor"
+    },
+    {
+      "name": "terminal-stale-pr",
+      "same_digest": true,
+      "run_status": "completed",
+      "artifact": "stale-publication",
+      "dispatches": 0,
+      "state": "bloqueada",
       "operation": "monitor"
     },
     {

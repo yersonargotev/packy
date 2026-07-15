@@ -11,11 +11,30 @@ Load this reference for normalization, preflight, attachment, or dispatch.
 - Read `bundle/sources.json`, the dispatch schema, and
   `.github/workflows/sync-pack-source.yml` through GitHub's contents API at
   `ref=main`. Confirm the workflow is active and remote `main` resolves.
+- Download `scripts/request.sh`, `attach.sh`, `dispatch.sh`, and
+  `result-state.sh` from that same observed remote-main commit into a fresh
+  temporary directory and execute only those copies. Checkout-local script
+  bytes are never operational authority.
 - Observe per-source active/pending workflow runs, `sync/<source-id>`, and its
   open PR. These are preflight facts only; the workflow owns deep ownership,
   regression, provenance, divergence, and readiness decisions.
 - Never checkout, pull, clone, execute upstream content, or read synchronization
   authority from the local tree. Never change permissions or handle secrets.
+
+Materialize the remote runtime without touching the checkout:
+
+```sh
+remote_main_sha="$(gh api repos/yersonargotev/matty/branches/main --jq .commit.sha)"
+remote_skill_runtime="$(mktemp -d)"
+for script in request.sh attach.sh dispatch.sh result-state.sh; do
+  gh api -H 'Accept: application/vnd.github.raw+json' \
+    "repos/yersonargotev/matty/contents/.agents/skills/sync-pack-source/scripts/$script?ref=$remote_main_sha" \
+    > "$remote_skill_runtime/$script"
+  chmod 700 "$remote_skill_runtime/$script"
+done
+```
+
+Use that same `remote_main_sha` for every subsequent remote contents read.
 
 ## Normalize intent
 
@@ -63,11 +82,17 @@ A distinct admitted request may be dispatched; GitHub's non-cancelling
 per-source concurrency owns queueing and pending supersession. Report the
 observed active and pending URLs and never manipulate that queue.
 
-Submit stdin JSON exactly once with the repository-owned renderer, which adds
+List canonical runs with `databaseId`, `displayTitle`, `status`, and `url`,
+download any started run's `request.json` as `<databaseId>-request.json`, then
+invoke the remote `attach.sh`. Exit 0 attaches, exit 1 admits dispatch, and exit
+2 is ambiguous and blocks. Pending attachment relies on the verified run-name
+digest because it cannot yet own an artifact.
+
+Submit stdin JSON exactly once with the remote-main renderer, which adds
 only the required transport digest and executes the accepted primary command:
 
 ```sh
-./.agents/skills/sync-pack-source/scripts/dispatch.sh canonical-request.json
+"$remote_skill_runtime/dispatch.sh" canonical-request.json
 ```
 
 Require the returned run URL; do not rediscover the run by time or actor. If

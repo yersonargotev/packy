@@ -220,6 +220,13 @@ func TestMaintainerSkillFixturesCoverCanonicalRequestsAndMonitoring(t *testing.T
 		workspace := t.TempDir()
 		requestPath := filepath.Join(workspace, "request.json")
 		writeFile(t, requestPath, string(fixtures.Requests[0].Request))
+		artifacts := filepath.Join(workspace, "artifacts")
+		if err := os.MkdirAll(artifacts, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if fixture.Artifact == "request" {
+			writeFile(t, filepath.Join(artifacts, "42-request.json"), string(fixtures.Requests[0].Request))
+		}
 		runsPath := filepath.Join(workspace, "runs.json")
 		runs := []map[string]any{}
 		if fixture.RunStatus != "none" {
@@ -227,36 +234,30 @@ func TestMaintainerSkillFixturesCoverCanonicalRequestsAndMonitoring(t *testing.T
 			if fixture.SameDigest {
 				titleDigest = digest
 			}
-			runs = append(runs, map[string]any{"displayTitle": "sync-pack-source / mattpocock-skills / " + titleDigest, "status": fixture.RunStatus, "url": "https://github.com/yersonargotev/matty/actions/runs/42"})
+			runs = append(runs, map[string]any{"databaseId": 42, "displayTitle": "sync-pack-source / mattpocock-skills / " + titleDigest, "status": fixture.RunStatus, "url": "https://github.com/yersonargotev/matty/actions/runs/42"})
 		}
 		runsJSON, _ := json.Marshal(runs)
 		writeFile(t, runsPath, string(runsJSON))
-		attached := exec.Command(attachScript, requestPath, runsPath).Run() == nil
+		attachErr := exec.Command(attachScript, requestPath, runsPath, artifacts).Run()
+		attached := attachErr == nil
+		attachBlocked := false
+		if exit, ok := attachErr.(*exec.ExitError); ok && exit.ExitCode() == 2 {
+			attachBlocked = true
+		}
 		dispatches := 1
-		if attached || fixture.Operation == "monitor" {
+		if attached || attachBlocked || fixture.Operation == "monitor" {
 			dispatches = 0
 		}
 		state := "solicitud aceptada"
-		if fixture.Name == "interrupted" {
+		if attachBlocked {
+			state = "bloqueada"
+		} else if fixture.Name == "interrupted" {
 			state = "pendiente"
 		} else if dispatches == 0 {
 			runPath := filepath.Join(workspace, "run.json")
 			writeFile(t, runPath, fmt.Sprintf(`{"status":%q}`, fixture.RunStatus))
-			artifacts := filepath.Join(workspace, "artifacts")
-			if err := os.MkdirAll(artifacts, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			switch fixture.Artifact {
-			case "noop":
-				writeFile(t, filepath.Join(artifacts, "no-op.json"), `{}`)
-			case "publication":
-				writeFile(t, filepath.Join(artifacts, "publication.json"), `{"decision_ready":true}`)
-			case "operational":
-				writeFile(t, filepath.Join(artifacts, "operational-artifact.json"), `{}`)
-			case "inspection":
-				writeFile(t, filepath.Join(artifacts, "inspection.json"), `{}`)
-			}
-			output, err := exec.Command(resultScript, runPath, artifacts).CombinedOutput()
+			prPath := writeMaintainerArtifactFixture(t, artifacts, fixture.Artifact)
+			output, err := exec.Command(resultScript, runPath, artifacts, prPath).CombinedOutput()
 			if err != nil {
 				t.Fatalf("monitoring fixture %s: %v: %s", fixture.Name, err, output)
 			}
@@ -266,6 +267,48 @@ func TestMaintainerSkillFixturesCoverCanonicalRequestsAndMonitoring(t *testing.T
 			t.Fatalf("monitoring fixture %s = dispatches %d state %q, want %d %q", fixture.Name, dispatches, state, fixture.Dispatches, fixture.State)
 		}
 	}
+}
+
+func writeMaintainerArtifactFixture(t *testing.T, artifacts, kind string) string {
+	t.Helper()
+	sha, head, hash := strings.Repeat("a", 40), strings.Repeat("c", 40), strings.Repeat("b", 64)
+	var name string
+	var instance any
+	switch kind {
+	case "noop":
+		name = "pack-source-noop.schema.json"
+		instance = map[string]any{"schema_version": 1, "state": "no-op", "source_id": "mattpocock-skills", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "contains_secrets": false, "contains_upstream_bytes": false}
+	case "publication", "stale-publication":
+		name = "pack-source-publication.schema.json"
+		instance = map[string]any{"schema_version": 1, "source_id": "mattpocock-skills", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "result_tree_sha": sha, "head_sha": head, "provenance_sha256": hash, "branch_name": "sync/mattpocock-skills", "pr_number": 7, "pr_state_sha256": hash, "managed_title": "managed", "managed_metadata_hash": hash, "validation": map[string]bool{"provenance": true, "classification": true, "reacquisition": true, "apply": true, "diff": true, "ownership": true, "matty_suite": true}, "decision_ready": true, "auto_merge": false, "manual_merge_required": true, "upstream_content_executed": false, "invalidation_conditions": packsyncworkflow.DecisionReadyInvalidationConditions()}
+	case "operational":
+		name = "pack-source-operational-artifact.schema.json"
+		instance = packsyncworkflow.FailureArtifact{SchemaVersion: 1, State: "blocked", SourceID: "mattpocock-skills", PlanID: "plan", BaseSHA: sha, CandidateSHA: sha, Blockers: []string{"blocked"}, Recovery: []string{"retry safely"}}
+	case "inspection":
+		writeFile(t, filepath.Join(artifacts, "inspection.json"), `{"schema_version":1}`)
+		return ""
+	default:
+		return ""
+	}
+	data, err := json.Marshal(instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSchemaInstance(t, name, data); err != nil {
+		t.Fatalf("fixture %s rejected: %v", kind, err)
+	}
+	artifactName := map[string]string{"noop": "no-op.json", "publication": "publication.json", "stale-publication": "publication.json", "operational": "operational-artifact.json"}[kind]
+	writeFile(t, filepath.Join(artifacts, artifactName), string(data))
+	if kind != "publication" && kind != "stale-publication" {
+		return ""
+	}
+	prPath := filepath.Join(artifacts, "live-pr.json")
+	prHead := head
+	if kind == "stale-publication" {
+		prHead = strings.Repeat("d", 40)
+	}
+	writeFile(t, prPath, fmt.Sprintf(`{"number":7,"headRefOid":%q,"headRefName":"sync/mattpocock-skills","state":"OPEN","isDraft":false}`, prHead))
+	return prPath
 }
 
 func testMaintainerDispatchRenderer(t *testing.T, request json.RawMessage) {
