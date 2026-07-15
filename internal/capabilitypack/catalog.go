@@ -3,6 +3,7 @@ package capabilitypack
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/yersonargotev/matty/internal/bundletransaction"
 )
 
 const schemaVersion = 1
@@ -81,6 +84,7 @@ type Catalog struct {
 	entries               []catalogEntry
 	allowSyntheticHistory bool
 	deferSourceValidation bool
+	transactionHeld       bool
 }
 
 type catalogEntry struct {
@@ -111,6 +115,16 @@ func discoverCatalog(bundleRoot string, entries []catalogEntry) (Catalog, error)
 }
 
 func discoverCatalogWithSourceValidation(bundleRoot string, entries []catalogEntry, validateSources bool) (Catalog, error) {
+	var catalog Catalog
+	err := bundletransaction.WithExclusive(context.Background(), filepath.Dir(filepath.Clean(bundleRoot)), func() error {
+		var err error
+		catalog, err = discoverCatalogUnlocked(bundleRoot, entries, validateSources)
+		return err
+	})
+	return catalog, err
+}
+
+func discoverCatalogUnlocked(bundleRoot string, entries []catalogEntry, validateSources bool) (Catalog, error) {
 	packs := make([]Pack, 0, len(entries))
 	for _, entry := range entries {
 		manifestPath := filepath.Join(bundleRoot, "packs", entry.ID, "pack.json")
@@ -136,7 +150,25 @@ func (c Catalog) refreshed() (Catalog, error) {
 	if c.bundleRoot == "" {
 		return c, nil
 	}
-	return discoverCatalogWithSourceValidation(c.bundleRoot, c.entries, !c.deferSourceValidation)
+	var refreshed Catalog
+	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
+		var err error
+		refreshed, err = discoverCatalogUnlocked(c.bundleRoot, c.entries, !c.deferSourceValidation)
+		refreshed.allowSyntheticHistory = c.allowSyntheticHistory
+		refreshed.transactionHeld = locked.transactionHeld
+		return err
+	})
+	return refreshed, err
+}
+
+func (c Catalog) withBundleLock(ctx context.Context, observe func(Catalog) error) error {
+	if c.bundleRoot == "" || c.transactionHeld {
+		return observe(c)
+	}
+	return bundletransaction.WithExclusive(ctx, filepath.Dir(filepath.Clean(c.bundleRoot)), func() error {
+		c.transactionHeld = true
+		return observe(c)
+	})
 }
 
 func (c Catalog) List() []Pack {
@@ -150,18 +182,42 @@ func (c Catalog) List() []Pack {
 // ListCurrent returns only after every advertised catalog-current pack has
 // passed the same source validation as direct current selection.
 func (c Catalog) ListCurrent() ([]Pack, error) {
-	packs := make([]Pack, 0, len(c.packs))
-	for _, metadata := range c.packs {
-		pack, err := c.Show(metadata.ID)
+	var packs []Pack
+	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
+		fresh, err := locked.refreshed()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		packs = append(packs, pack)
-	}
-	return packs, nil
+		packs = make([]Pack, 0, len(fresh.packs))
+		for _, metadata := range fresh.packs {
+			pack, err := fresh.showUnlocked(metadata.ID)
+			if err != nil {
+				return err
+			}
+			packs = append(packs, pack)
+		}
+		return nil
+	})
+	return packs, err
 }
 
 func (c Catalog) Show(id string) (Pack, error) {
+	if !c.deferSourceValidation {
+		return c.showUnlocked(id)
+	}
+	var pack Pack
+	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
+		fresh, err := locked.refreshed()
+		if err != nil {
+			return err
+		}
+		pack, err = fresh.showUnlocked(id)
+		return err
+	})
+	return pack, err
+}
+
+func (c Catalog) showUnlocked(id string) (Pack, error) {
 	for _, pack := range c.packs {
 		if pack.ID == id {
 			if c.deferSourceValidation {

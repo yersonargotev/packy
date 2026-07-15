@@ -1,12 +1,183 @@
 package capabilitypack
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/yersonargotev/matty/internal/bundletransaction"
 )
+
+func TestDiscoverWaitsForCompleteBundleTransaction(t *testing.T) {
+	bundle := writeCatalogFixture(t)
+	repository := filepath.Dir(bundle)
+	guard, err := bundletransaction.Acquire(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := Discover(bundle)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("Discover completed outside the shared lock: %v", err)
+	case <-time.After(40 * time.Millisecond):
+	}
+	if err := guard.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Discover did not resume after the bundle transaction")
+	}
+}
+
+type blockingBundleAdapter struct {
+	bundleRoot string
+	entered    chan string
+	release    chan struct{}
+}
+
+func (a *blockingBundleAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
+	data, err := os.ReadFile(filepath.Join(a.bundleRoot, filepath.FromSlash(transition.Desired.Resources[0].Source)))
+	if err != nil {
+		return SurfaceInspection{}, err
+	}
+	a.entered <- string(data)
+	<-a.release
+	return SurfaceInspection{}, nil
+}
+
+func (*blockingBundleAdapter) ApplyProjections(context.Context, []ProjectionAction) *ProjectionActionError {
+	return nil
+}
+
+func TestPreviewHoldsBundleTransactionThroughAdapterReads(t *testing.T) {
+	bundle := writeCatalogFixture(t)
+	catalog, err := Discover(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := &blockingBundleAdapter{bundleRoot: bundle, entered: make(chan string, 1), release: make(chan struct{})}
+	facade := NewFacade(catalog, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	previewDone := make(chan error, 1)
+	go func() {
+		_, err := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
+		previewDone <- err
+	}()
+	select {
+	case got := <-adapter.entered:
+		if got != "matty" {
+			t.Fatalf("adapter read %q, want one complete old bundle generation", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("adapter did not inspect the bundle")
+	}
+
+	transaction := make(chan *bundletransaction.Guard, 1)
+	transactionErr := make(chan error, 1)
+	go func() {
+		guard, err := bundletransaction.Acquire(context.Background(), filepath.Dir(bundle))
+		if err != nil {
+			transactionErr <- err
+			return
+		}
+		transaction <- guard
+	}()
+	select {
+	case guard := <-transaction:
+		guard.Release()
+		t.Fatal("bundle transaction started before the adapter completed its observation")
+	case err := <-transactionErr:
+		t.Fatal(err)
+	case <-time.After(40 * time.Millisecond):
+	}
+
+	close(adapter.release)
+	if err := <-previewDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case guard := <-transaction:
+		if err := guard.Release(); err != nil {
+			t.Fatal(err)
+		}
+	case err := <-transactionErr:
+		t.Fatal(err)
+	case <-time.After(time.Second):
+		t.Fatal("bundle transaction did not resume after the complete observation")
+	}
+}
+
+func TestDeferredCatalogRefreshesAfterBundleSwap(t *testing.T) {
+	bundle := writeCatalogFixture(t)
+	catalog, err := DiscoverForDurableIntents(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Dir(bundle)
+	stage := filepath.Join(repository, "bundle-stage")
+	for _, path := range []string{
+		"instructions/engram.md",
+		"instructions/matty.md",
+		"packs/engram/pack.json",
+		"packs/matty/pack.json",
+	} {
+		data, err := os.ReadFile(filepath.Join(bundle, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if path == "packs/matty/pack.json" {
+			data = []byte(strings.Replace(string(data), `"version":"1.0.0"`, `"version":"2.0.0"`, 1))
+		}
+		target := filepath.Join(stage, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	guard, err := bundletransaction.Acquire(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(repository, "bundle-backup")
+	if err := os.Rename(bundle, backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(stage, bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := guard.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := catalog.Show("matty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Version != "2.0.0" {
+		t.Fatalf("Show version=%s, want complete new generation 2.0.0", pack.Version)
+	}
+	packs, err := catalog.ListCurrent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packs[1].ID != "matty" || packs[1].Version != "2.0.0" {
+		t.Fatalf("ListCurrent packs=%+v, want complete new generation", packs)
+	}
+}
 
 func TestDiscoverLoadsInitialStrictCatalog(t *testing.T) {
 	bundleRoot := writeCatalogFixture(t)

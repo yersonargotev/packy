@@ -10,6 +10,12 @@ import (
 // PreviewReconcile repairs the complete desired state implied by existing
 // activation intents. An empty PackID selects every active pack on the surface.
 func (f Facade) PreviewReconcile(ctx context.Context, request ReconcileRequest) (ReconciliationPlan, error) {
+	return withBundleObservation(ctx, f, func(locked Facade) (ReconciliationPlan, error) {
+		return locked.previewReconcile(ctx, request)
+	})
+}
+
+func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) (ReconciliationPlan, error) {
 	if request.PackID != "" {
 		activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface}
 		_, _, state, err := f.activationInputsForOperation(ctx, activation, OperationReconcile)

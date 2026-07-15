@@ -1,16 +1,104 @@
 package skillbundle
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/yersonargotev/matty/internal/bundletransaction"
 )
 
 type installedSourceStub struct{ bundleRoot string }
 
 func (source installedSourceStub) BundleRoot() string { return source.bundleRoot }
+
+func TestDiscoverWaitsForCompleteBundleTransaction(t *testing.T) {
+	repository := t.TempDir()
+	source := SourceRoot(repository)
+	writeValidSkillSource(t, source)
+	guard, err := bundletransaction.Acquire(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := Discover(source, t.TempDir(), "")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("Discover completed outside the shared lock: %v", err)
+	case <-time.After(40 * time.Millisecond):
+	}
+	if err := guard.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Discover did not resume after the bundle transaction")
+	}
+}
+
+func TestResolveSourceWaitsBetweenBundleRenames(t *testing.T) {
+	repository := t.TempDir()
+	repositorySource := SourceRoot(repository)
+	writeValidSkillSource(t, repositorySource)
+	stageRoot := filepath.Join(repository, "bundle-stage")
+	writeValidSkillSource(t, filepath.Join(stageRoot, "skills"))
+	installedRoot := t.TempDir()
+	writeValidSkillSource(t, SourceRoot(installedRoot))
+	installed := installedSourceStub{bundleRoot: filepath.Join(installedRoot, "bundle")}
+
+	guard, err := bundletransaction.Acquire(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(repository, "bundle-backup")
+	if err := os.Rename(filepath.Join(repository, "bundle"), backup); err != nil {
+		t.Fatal(err)
+	}
+	resolved := make(chan Source, 1)
+	resolveErr := make(chan error, 1)
+	go func() {
+		source, err := ResolveSource(SourceOptions{RepositoryStart: repository, InstalledSource: installed})
+		if err != nil {
+			resolveErr <- err
+			return
+		}
+		resolved <- source
+	}()
+	select {
+	case source := <-resolved:
+		t.Fatalf("ResolveSource observed the between-renames gap and selected %+v", source)
+	case err := <-resolveErr:
+		t.Fatal(err)
+	case <-time.After(40 * time.Millisecond):
+	}
+	if err := os.Rename(stageRoot, filepath.Join(repository, "bundle")); err != nil {
+		t.Fatal(err)
+	}
+	if err := guard.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case source := <-resolved:
+		if source.Origin != SourceOriginRepository || source.Root != repositorySource {
+			t.Fatalf("ResolveSource=%+v, want the complete new repository source", source)
+		}
+	case err := <-resolveErr:
+		t.Fatal(err)
+	case <-time.After(time.Second):
+		t.Fatal("ResolveSource did not resume after the bundle transaction")
+	}
+}
 
 func TestResolveSourcePrecedenceAndFallbacks(t *testing.T) {
 	repositoryRoot := t.TempDir()
