@@ -44,15 +44,15 @@ type historicalArtifact struct {
 }
 
 func (c Catalog) resolveIntentPack(id, version string) (Pack, error) {
-	current, err := c.Show(id)
+	current, err := c.catalogMetadata(id)
 	if err != nil {
 		return Pack{}, err
 	}
 	if version == "" {
-		return current, nil
+		return c.Show(id)
 	}
 	if version == current.Version {
-		return current, nil
+		return c.Show(id)
 	}
 	if c.allowSyntheticHistory {
 		current.Version = version

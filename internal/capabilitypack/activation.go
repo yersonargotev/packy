@@ -501,7 +501,7 @@ func (f Facade) PreviewUpdate(ctx context.Context, request UpdateRequest) (Recon
 
 func (f Facade) PreviewDeactivate(ctx context.Context, request DeactivationRequest) (ReconciliationPlan, error) {
 	activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface}
-	requested, adapter, state, err := f.activationInputs(ctx, activation)
+	requested, adapter, state, err := f.activationInputsForOperation(ctx, activation, OperationDeactivate)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -601,7 +601,7 @@ func hasContributor(values []ProjectionOwnership, packID string) bool {
 }
 
 func (f Facade) preview(ctx context.Context, request ActivationRequest, operation Operation, oldVersion string) (ReconciliationPlan, error) {
-	requested, adapter, state, err := f.activationInputs(ctx, request)
+	requested, adapter, state, err := f.activationInputsForOperation(ctx, request, operation)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -1035,14 +1035,12 @@ type planPreflight struct {
 }
 
 func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (planPreflight, error) {
-	if !planUsesHistoricalIntent(plan) {
-		freshCatalog, err := f.catalog.refreshed()
-		if err != nil {
-			return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("catalog or manifest changed after Preview: %v; rerun %s to preview a fresh plan", err, plan.operation)}
-		}
-		f.catalog = freshCatalog
+	freshCatalog, err := f.catalog.refreshed()
+	if err != nil {
+		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("catalog or manifest changed after Preview: %v; rerun %s to preview a fresh plan", err, plan.operation)}
 	}
-	pack, adapter, state, err := f.activationInputs(ctx, ActivationRequest{PackID: plan.pack.ID, Surface: plan.surface})
+	f.catalog = freshCatalog
+	pack, adapter, state, err := f.activationInputsForOperation(ctx, ActivationRequest{PackID: plan.pack.ID, Surface: plan.surface}, plan.operation)
 	if err != nil {
 		return planPreflight{}, err
 	}
@@ -1125,18 +1123,6 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	return planPreflight{pack: pack, adapter: adapter, state: state, composition: current, combined: combined, resolutions: resolutions}, nil
 }
 
-func planUsesHistoricalIntent(plan ReconciliationPlan) bool {
-	if plan.operation != OperationReconcile && plan.operation != OperationDeactivate {
-		return false
-	}
-	for _, pack := range append(append([]Pack(nil), plan.compositionFacts...), plan.beforeCompositionFacts...) {
-		if hasTrustedHistoricalArtifact(pack.ID, pack.Version) {
-			return true
-		}
-	}
-	return false
-}
-
 func appendCompleted(completed []string, id string) []string {
 	for _, existing := range completed {
 		if existing == id {
@@ -1147,13 +1133,17 @@ func appendCompleted(completed []string, id string) []string {
 }
 
 func (f Facade) activationInputs(ctx context.Context, request ActivationRequest) (Pack, SurfaceAdapter, ActivationState, error) {
+	return f.activationInputsForOperation(ctx, request, OperationActivate)
+}
+
+func (f Facade) activationInputsForOperation(ctx context.Context, request ActivationRequest, operation Operation) (Pack, SurfaceAdapter, ActivationState, error) {
 	if f.activation == nil || f.activation.store == nil {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("activation is not configured")
 	}
 	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("activation does not support CLI surface %q", request.Surface)
 	}
-	pack, err := f.catalog.Show(request.PackID)
+	pack, err := f.catalog.catalogMetadata(request.PackID)
 	if err != nil {
 		return Pack{}, nil, ActivationState{}, err
 	}
@@ -1162,7 +1152,18 @@ func (f Facade) activationInputs(ctx context.Context, request ActivationRequest)
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("no activation adapter configured for CLI surface %q", request.Surface)
 	}
 	state, err := f.activation.store.Load(ctx, request.Surface)
-	return pack, adapter, state, err
+	if err != nil {
+		return Pack{}, nil, ActivationState{}, err
+	}
+	intent, hasIntent := intentForPack(state, request.PackID, request.Surface)
+	usesHistory := (operation == OperationReconcile || operation == OperationDeactivate) && hasIntent && intent.Active && hasTrustedHistoricalArtifact(intent.PackID, intent.Version)
+	if !usesHistory {
+		pack, err = f.catalog.Show(request.PackID)
+		if err != nil {
+			return Pack{}, nil, ActivationState{}, err
+		}
+	}
+	return pack, adapter, state, nil
 }
 
 func (p *ReconciliationPlan) seal() {

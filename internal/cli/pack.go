@@ -556,7 +556,7 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 		return packComposition{}, err
 	}
 	bundleRoot := skillbundle.BundleRoot(sources.skills.Root)
-	catalog, err := capabilitypack.Discover(bundleRoot)
+	catalog, err := capabilitypack.DiscoverForDurableIntents(bundleRoot)
 	if err != nil {
 		return packComposition{}, err
 	}

@@ -2,6 +2,7 @@ package capabilitypack
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -119,15 +120,6 @@ func TestHistoricalArtifactFailsClosed(t *testing.T) {
 
 func TestHistoricalOperationsUseOnlyHistoryWhileSelectionStaysCatalogCurrent(t *testing.T) {
 	catalog, root, bundle := clonedHistoricalCatalog(t)
-	catalog.packs[0].Version = "2.0.0"
-	for i := range catalog.packs[0].Resources {
-		if catalog.packs[0].Resources[i].Source != "" {
-			catalog.packs[0].Resources[i].Source = "catalog-current/removed/" + catalog.packs[0].Resources[i].ID
-		}
-	}
-	if err := os.RemoveAll(filepath.Join(bundle, "catalog-current")); err != nil {
-		t.Fatal(err)
-	}
 	intent := ActivationIntent{PackID: "matty", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4}
 	state := ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}
 	adapter := &fakeSurfaceAdapter{}
@@ -151,6 +143,12 @@ func TestHistoricalOperationsUseOnlyHistoryWhileSelectionStaysCatalogCurrent(t *
 	}
 	if update.Pack().Version != "2.0.0" || len(update.beforeCompositionFacts) != 1 || update.beforeCompositionFacts[0].Version != "1.0.0" {
 		t.Fatalf("update did not compare historical 1.0.0 to catalog-current 2.0.0: %+v", update)
+	}
+	if selected, err := catalog.Show("matty"); err != nil || selected.Version != "2.0.0" {
+		t.Fatalf("catalog-current selection did not remain on 2.0.0: pack=%+v err=%v", selected, err)
+	}
+	if err := os.Remove(filepath.Join(bundle, "instructions", "matty-guidance.md")); err != nil {
+		t.Fatal(err)
 	}
 
 	historicalInstruction := filepath.Join(root, "instructions", "matty-guidance.md")
@@ -187,12 +185,11 @@ func TestHistoricalOperationsUseOnlyHistoryWhileSelectionStaysCatalogCurrent(t *
 	assertHistoricalTransitionSources(t, adapter.calls)
 
 	store.state = ActivationState{}
-	fresh, err := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex})
-	if err != nil || fresh.Pack().Version != "2.0.0" {
-		t.Fatalf("fresh activation selected history: version=%s err=%v", fresh.Pack().Version, err)
+	if _, err := facade.Preview(context.Background(), ActivationRequest{PackID: "matty", Surface: SurfaceCodex}); err == nil {
+		t.Fatal("fresh activation selected history after catalog-current bytes were removed")
 	}
-	if selected, err := catalog.Show("matty"); err != nil || selected.Version != "2.0.0" {
-		t.Fatalf("catalog selection exposed history: pack=%+v err=%v", selected, err)
+	if _, err := catalog.Show("matty"); err == nil {
+		t.Fatal("catalog-current selection ignored missing current bytes")
 	}
 	if _, err := os.Stat(root); err != nil {
 		t.Fatal(err)
@@ -224,19 +221,53 @@ func TestHistoryNeverFallsBackToCatalogCurrent(t *testing.T) {
 	}
 }
 
-func clonedHistoricalCatalog(t *testing.T) (Catalog, string, string) {
-	t.Helper()
-	repositoryBundle := filepath.Join("..", "..", "bundle")
-	current, err := decodeManifest(filepath.Join(repositoryBundle, "packs", "matty", "pack.json"), repositoryBundle)
+func TestHistoricalPreflightRejectsChangedCurrentPackInMixedComposition(t *testing.T) {
+	_, _, bundle := clonedHistoricalCatalog(t)
+	engramManifest := `{"schema_version":1,"id":"engram","version":"1.0.0","provides":["memory:persistent"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"engram-memory","source":"instructions/engram-memory.md"}]}`
+	mustWrite(t, filepath.Join(bundle, "packs", "engram", "pack.json"), []byte(engramManifest), 0o644)
+	catalog, err := DiscoverForDurableIntents(bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
-	current.Surfaces = []Surface{SurfaceCodex, SurfaceOpenCode}
-	current.Version = "2.0.0"
+	mattyIntent := ActivationIntent{PackID: "matty", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 3}
+	engramIntent := ActivationIntent{PackID: "engram", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 2}
+	state := ActivationState{Intent: mattyIntent, Intents: []ActivationIntent{mattyIntent, engramIntent}}
+	facade := NewFacade(catalog, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}))
+	plan, err := facade.PreviewReconcile(context.Background(), ReconcileRequest{PackID: "matty", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustRemove(t, filepath.Join(bundle, "instructions", "engram-memory.md"))
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); err == nil || !strings.Contains(err.Error(), "changed after Preview") {
+		t.Fatalf("mixed historical/current composition accepted stale current bytes: %v", err)
+	}
+}
+
+func clonedHistoricalCatalog(t *testing.T) (Catalog, string, string) {
+	t.Helper()
+	repositoryBundle := filepath.Join("..", "..", "bundle")
 	bundle := filepath.Join(t.TempDir(), "bundle")
 	root := filepath.Join(bundle, "history", "matty", "1.0.0")
 	copyHistoricalTree(t, filepath.Join(repositoryBundle, "history", "matty", "1.0.0"), root)
-	return Catalog{packs: []Pack{current}, bundleRoot: bundle}, root, bundle
+	for _, path := range []string{"packs", "skills", "instructions"} {
+		copyHistoricalTree(t, filepath.Join(repositoryBundle, path), filepath.Join(bundle, path))
+	}
+	manifestPath := filepath.Join(bundle, "packs", "matty", "pack.json")
+	var manifest map[string]any
+	if err := json.Unmarshal(mustRead(t, manifestPath), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["version"] = "2.0.0"
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, manifestPath, encoded, 0o644)
+	catalog, err := DiscoverForDurableIntents(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalog, root, bundle
 }
 
 func mustDecodeHistoricalManifest(t *testing.T, root string) Pack {

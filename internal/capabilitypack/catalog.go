@@ -80,6 +80,7 @@ type Catalog struct {
 	bundleRoot            string
 	entries               []catalogEntry
 	allowSyntheticHistory bool
+	deferSourceValidation bool
 }
 
 type catalogEntry struct {
@@ -98,11 +99,22 @@ func Discover(bundleRoot string) (Catalog, error) {
 	return discoverCatalog(bundleRoot, initialCatalog)
 }
 
+// DiscoverForDurableIntents loads catalog metadata while deferring current
+// source validation until a catalog-current pack is selected. This lets an
+// existing pinned intent be reproduced solely from its historical artifact.
+func DiscoverForDurableIntents(bundleRoot string) (Catalog, error) {
+	return discoverCatalogWithSourceValidation(bundleRoot, initialCatalog, false)
+}
+
 func discoverCatalog(bundleRoot string, entries []catalogEntry) (Catalog, error) {
+	return discoverCatalogWithSourceValidation(bundleRoot, entries, true)
+}
+
+func discoverCatalogWithSourceValidation(bundleRoot string, entries []catalogEntry, validateSources bool) (Catalog, error) {
 	packs := make([]Pack, 0, len(entries))
 	for _, entry := range entries {
 		manifestPath := filepath.Join(bundleRoot, "packs", entry.ID, "pack.json")
-		pack, err := decodeManifest(manifestPath, bundleRoot)
+		pack, err := decodeManifestWithSourceValidation(manifestPath, bundleRoot, validateSources)
 		if err != nil {
 			return Catalog{}, err
 		}
@@ -117,14 +129,14 @@ func discoverCatalog(bundleRoot string, entries []catalogEntry) (Catalog, error)
 		packs = append(packs, pack)
 	}
 	sort.Slice(packs, func(i, j int) bool { return packs[i].ID < packs[j].ID })
-	return Catalog{packs: packs, bundleRoot: bundleRoot, entries: append([]catalogEntry(nil), entries...)}, nil
+	return Catalog{packs: packs, bundleRoot: bundleRoot, entries: append([]catalogEntry(nil), entries...), deferSourceValidation: !validateSources}, nil
 }
 
 func (c Catalog) refreshed() (Catalog, error) {
 	if c.bundleRoot == "" {
 		return c, nil
 	}
-	return discoverCatalog(c.bundleRoot, c.entries)
+	return discoverCatalogWithSourceValidation(c.bundleRoot, c.entries, !c.deferSourceValidation)
 }
 
 func (c Catalog) List() []Pack {
@@ -136,6 +148,20 @@ func (c Catalog) List() []Pack {
 }
 
 func (c Catalog) Show(id string) (Pack, error) {
+	for _, pack := range c.packs {
+		if pack.ID == id {
+			if c.deferSourceValidation {
+				if err := validatePackSources(pack, c.bundleRoot); err != nil {
+					return Pack{}, fmt.Errorf("invalid catalog-current pack %q: %w", id, err)
+				}
+			}
+			return clonePack(pack), nil
+		}
+	}
+	return Pack{}, fmt.Errorf("unknown capability pack %q; run `matty pack list` to see available packs", id)
+}
+
+func (c Catalog) catalogMetadata(id string) (Pack, error) {
 	for _, pack := range c.packs {
 		if pack.ID == id {
 			return clonePack(pack), nil
@@ -168,6 +194,10 @@ type manifest struct {
 }
 
 func decodeManifest(path, bundleRoot string) (Pack, error) {
+	return decodeManifestWithSourceValidation(path, bundleRoot, true)
+}
+
+func decodeManifestWithSourceValidation(path, bundleRoot string, validateSources bool) (Pack, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Pack{}, fmt.Errorf("read pack manifest %s: %w", path, err)
@@ -184,8 +214,13 @@ func decodeManifest(path, bundleRoot string) (Pack, error) {
 		}
 		pack.Resources = append(pack.Resources, resource)
 	}
-	if err := validatePack(pack, raw.SchemaVersion, bundleRoot); err != nil {
+	if err := validatePackMetadata(pack, raw.SchemaVersion); err != nil {
 		return Pack{}, fmt.Errorf("invalid pack manifest %s: %w", path, err)
+	}
+	if validateSources {
+		if err := validatePackSources(pack, bundleRoot); err != nil {
+			return Pack{}, fmt.Errorf("invalid pack manifest %s: %w", path, err)
+		}
 	}
 	return pack, nil
 }
@@ -241,6 +276,13 @@ func decodeResource(data []byte) (Resource, error) {
 }
 
 func validatePack(pack Pack, version int, bundleRoot string) error {
+	if err := validatePackMetadata(pack, version); err != nil {
+		return err
+	}
+	return validatePackSources(pack, bundleRoot)
+}
+
+func validatePackMetadata(pack Pack, version int) error {
 	if version != schemaVersion {
 		return fmt.Errorf("schema_version must be %d", schemaVersion)
 	}
@@ -293,7 +335,7 @@ func validatePack(pack Pack, version int, bundleRoot string) error {
 		}
 		switch resource.Kind {
 		case "skill", "instruction":
-			if err := validateSource(bundleRoot, resource); err != nil {
+			if err := validateSourcePath(resource.Source); err != nil {
 				return fmt.Errorf("resource %q source: %w", identity, err)
 			}
 		case "mcp_server":
@@ -307,6 +349,29 @@ func validatePack(pack Pack, version int, bundleRoot string) error {
 		default:
 			return fmt.Errorf("unsupported resource kind %q", resource.Kind)
 		}
+	}
+	return nil
+}
+
+func validatePackSources(pack Pack, bundleRoot string) error {
+	for _, resource := range pack.Resources {
+		if resource.Kind != "skill" && resource.Kind != "instruction" {
+			continue
+		}
+		if err := validateSource(bundleRoot, resource); err != nil {
+			return fmt.Errorf("resource %q source: %w", resource.Kind+":"+resource.ID, err)
+		}
+	}
+	return nil
+}
+
+func validateSourcePath(source string) error {
+	if source == "" || filepath.IsAbs(source) {
+		return fmt.Errorf("%q must be a relative path", source)
+	}
+	clean := filepath.Clean(source)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("%q escapes the bundle root", source)
 	}
 	return nil
 }
@@ -347,13 +412,10 @@ func validSemver(version string) bool {
 
 func validateSource(root string, resource Resource) error {
 	source := resource.Source
-	if source == "" || filepath.IsAbs(source) {
-		return fmt.Errorf("%q must be a relative path", source)
+	if err := validateSourcePath(source); err != nil {
+		return err
 	}
 	clean := filepath.Clean(source)
-	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%q escapes the bundle root", source)
-	}
 	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return fmt.Errorf("resolve bundle root: %w", err)

@@ -12,7 +12,7 @@ import (
 func (f Facade) PreviewReconcile(ctx context.Context, request ReconcileRequest) (ReconciliationPlan, error) {
 	if request.PackID != "" {
 		activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface}
-		_, _, state, err := f.activationInputs(ctx, activation)
+		_, _, state, err := f.activationInputsForOperation(ctx, activation, OperationReconcile)
 		if err != nil {
 			return ReconciliationPlan{}, err
 		}

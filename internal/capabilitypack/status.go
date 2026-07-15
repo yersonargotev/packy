@@ -158,7 +158,11 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 			if err != nil {
 				return StatusEntry{}, err
 			}
+		} else if evidencePack, err = f.catalog.Show(pack.ID); err != nil {
+			return StatusEntry{}, err
 		}
+	} else if evidencePack, err = f.catalog.Show(pack.ID); err != nil {
+		return StatusEntry{}, err
 	}
 	entry.LatestAttempt = latestAttemptStatus(state, pack.ID, surface)
 	surfaceComposition, err := f.compose(evidencePack, state, surface, true)

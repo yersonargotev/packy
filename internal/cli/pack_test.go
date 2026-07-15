@@ -1329,6 +1329,33 @@ func copyPackBundleForUpdate(t *testing.T, repoRoot string) string {
 	return root
 }
 
+func TestRuntimePackCompositionCanLoadHistoryWhenCurrentResourceIsMissing(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	if err := os.CopyFS(filepath.Join(bundle, "history"), os.DirFS(filepath.Join(repoRoot, "bundle", "history"))); err != nil {
+		t.Fatal(err)
+	}
+	writeUpdateManifest(t, bundle, "2.0.0")
+	if err := os.Remove(filepath.Join(bundle, "instructions", "matty-guidance.md")); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	opts := Options{Env: MapEnv{
+		"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
+		"MATTY_SKILLS_SOURCE": filepath.Join(bundle, "skills"),
+	}, Runner: &fakeRunner{}, Terminal: &fakeTerminal{}}.withDefaults()
+	composition, err := resolvePackComposition(opts, newWorkstationResolver(opts))
+	if err != nil {
+		t.Fatalf("runtime composition still required catalog-current resource bytes: %v", err)
+	}
+	if _, err := composition.catalog.Show("matty"); err == nil {
+		t.Fatal("fresh catalog-current selection ignored the missing resource")
+	}
+}
+
 func writeUpdateBundle(t *testing.T, version string) string {
 	t.Helper()
 	root := t.TempDir()
