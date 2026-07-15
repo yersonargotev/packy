@@ -118,6 +118,10 @@ func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t 
 	}
 	var result map[string]any
 	readJSONForTest(t, filepath.Join(publication, "publication.json"), &result)
+	markdown, err := os.ReadFile(filepath.Join(publication, "proposal-brief.md"))
+	if err != nil || !strings.Contains(string(markdown), "## Matty pack synchronization") {
+		t.Fatalf("canonical proposal Markdown = %q, %v", markdown, err)
+	}
 	if result["decision_ready"] != true || result["auto_merge"] != false {
 		t.Fatalf("publication result = %#v", result)
 	}

@@ -97,8 +97,9 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 	}
 	for _, required := range []string{
 		"workflow_dispatch:", "permissions: {}", "group: sync-pack-source-${{ inputs.source_id }}", "cancel-in-progress: false",
+		"run-name: sync-pack-source / ${{ inputs.source_id }} / ${{ inputs.request_digest }}", "MATTY_REQUEST_DIGEST: ${{ inputs.request_digest }}",
 		"inspect:", "classify:", "validate:", "publish:", "needs: [inspect, classify, validate]", "contents: write", "pull-requests: write",
-		"--phase validate", "steps.route.outputs.noop", "matty-sync/inspect/no-op.json", "retention-days: 30",
+		"--phase validate", "steps.route.outputs.noop", "matty-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("synchronization workflow missing %q", required)
@@ -162,6 +163,210 @@ func TestDispatchSchemaMatchesRuntimeValidation(t *testing.T) {
 		if (request.Validate() == nil) != (schemaErr == nil) {
 			t.Fatalf("runtime/schema dispatch disagreement for %s: runtime=%v schema=%v", data, request.Validate(), schemaErr)
 		}
+	}
+}
+
+func TestMaintainerSkillFixturesCoverCanonicalRequestsAndMonitoring(t *testing.T) {
+	type requestFixture struct {
+		Name    string          `json:"name"`
+		Intent  string          `json:"intent"`
+		Valid   bool            `json:"valid"`
+		Request json.RawMessage `json:"request"`
+	}
+	type monitoringFixture struct {
+		Name       string `json:"name"`
+		Operation  string `json:"operation"`
+		SameDigest bool   `json:"same_digest"`
+		RunStatus  string `json:"run_status"`
+		Artifact   string `json:"artifact"`
+		Dispatches int    `json:"dispatches"`
+		State      string `json:"state"`
+	}
+	var fixtures struct {
+		Requests   []requestFixture    `json:"requests"`
+		Monitoring []monitoringFixture `json:"monitoring"`
+	}
+	path := filepath.Join(repositoryRoot(t), "internal", "ci", "testdata", "sync-pack-source-skill.json")
+	if err := json.Unmarshal([]byte(readFile(t, path)), &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range fixtures.Requests {
+		var request packsyncworkflow.DispatchRequest
+		runtimeErr := json.Unmarshal(fixture.Request, &request)
+		if runtimeErr == nil {
+			runtimeErr = request.Validate()
+		}
+		schemaErr := validateSchemaInstance(t, "pack-source-dispatch.schema.json", fixture.Request)
+		if (runtimeErr == nil) != fixture.Valid || (schemaErr == nil) != fixture.Valid {
+			t.Fatalf("request fixture %s valid=%t runtime=%v schema=%v", fixture.Name, fixture.Valid, runtimeErr, schemaErr)
+		}
+		if fixture.Intent == "" {
+			t.Fatalf("request fixture %s has no maintainer intent", fixture.Name)
+		}
+	}
+	testMaintainerDispatchRenderer(t, fixtures.Requests[0].Request)
+	var canonical packsyncworkflow.DispatchRequest
+	if err := json.Unmarshal(fixtures.Requests[0].Request, &canonical); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := canonical.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := repositoryRoot(t)
+	attachScript := filepath.Join(root, ".agents", "skills", "sync-pack-source", "scripts", "attach.sh")
+	resultScript := filepath.Join(root, ".agents", "skills", "sync-pack-source", "scripts", "result-state.sh")
+	for _, fixture := range fixtures.Monitoring {
+		workspace := t.TempDir()
+		requestPath := filepath.Join(workspace, "request.json")
+		writeFile(t, requestPath, string(fixtures.Requests[0].Request))
+		artifacts := filepath.Join(workspace, "artifacts")
+		if err := os.MkdirAll(artifacts, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if fixture.Artifact == "request" {
+			writeFile(t, filepath.Join(artifacts, "42-request.json"), string(fixtures.Requests[0].Request))
+		}
+		runsPath := filepath.Join(workspace, "runs.json")
+		runs := []map[string]any{}
+		if fixture.RunStatus != "none" {
+			titleDigest := "different"
+			if fixture.SameDigest {
+				titleDigest = digest
+			}
+			runs = append(runs, map[string]any{"databaseId": 42, "displayTitle": "sync-pack-source / mattpocock-skills / " + titleDigest, "status": fixture.RunStatus, "url": "https://github.com/yersonargotev/matty/actions/runs/42"})
+		}
+		runsJSON, _ := json.Marshal(runs)
+		writeFile(t, runsPath, string(runsJSON))
+		attachErr := exec.Command(attachScript, requestPath, runsPath, artifacts).Run()
+		attached := attachErr == nil
+		attachBlocked := false
+		if exit, ok := attachErr.(*exec.ExitError); ok && exit.ExitCode() == 2 {
+			attachBlocked = true
+		}
+		dispatches := 1
+		if attached || attachBlocked || fixture.Operation == "monitor" {
+			dispatches = 0
+		}
+		state := "solicitud aceptada"
+		if attachBlocked {
+			state = "bloqueada"
+		} else if fixture.Name == "interrupted" {
+			state = "pendiente"
+		} else if dispatches == 0 {
+			runPath := filepath.Join(workspace, "run.json")
+			writeFile(t, runPath, fmt.Sprintf(`{"status":%q}`, fixture.RunStatus))
+			prPath, mainPath := writeMaintainerArtifactFixture(t, artifacts, fixture.Artifact)
+			output, err := exec.Command(resultScript, runPath, artifacts, prPath, mainPath).CombinedOutput()
+			if err != nil {
+				t.Fatalf("monitoring fixture %s: %v: %s", fixture.Name, err, output)
+			}
+			state = strings.TrimSpace(string(output))
+		}
+		if dispatches != fixture.Dispatches || state != fixture.State {
+			t.Fatalf("monitoring fixture %s = dispatches %d state %q, want %d %q", fixture.Name, dispatches, state, fixture.Dispatches, fixture.State)
+		}
+	}
+}
+
+func writeMaintainerArtifactFixture(t *testing.T, artifacts, kind string) (string, string) {
+	t.Helper()
+	sha, head, hash := strings.Repeat("a", 40), strings.Repeat("c", 40), strings.Repeat("b", 64)
+	title, body := "managed", "managed body\n<!-- matty-pack-sync:fixture -->\n"
+	metadataHash := packsyncworkflow.ManagedMetadataHash(title, body)
+	var name string
+	var instance any
+	switch kind {
+	case "noop":
+		name = "pack-source-noop.schema.json"
+		instance = map[string]any{"schema_version": 1, "state": "no-op", "source_id": "mattpocock-skills", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "contains_secrets": false, "contains_upstream_bytes": false}
+	case "publication", "stale-publication", "stale-base-publication", "edited-publication":
+		name = "pack-source-publication.schema.json"
+		instance = map[string]any{"schema_version": 1, "source_id": "mattpocock-skills", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "result_tree_sha": sha, "head_sha": head, "provenance_sha256": hash, "branch_name": "sync/mattpocock-skills", "pr_number": 7, "pr_state_sha256": metadataHash, "managed_title": title, "managed_metadata_hash": metadataHash, "validation": map[string]bool{"provenance": true, "classification": true, "reacquisition": true, "apply": true, "diff": true, "ownership": true, "matty_suite": true}, "decision_ready": true, "auto_merge": false, "manual_merge_required": true, "upstream_content_executed": false, "invalidation_conditions": packsyncworkflow.DecisionReadyInvalidationConditions()}
+	case "operational":
+		name = "pack-source-operational-artifact.schema.json"
+		instance = packsyncworkflow.FailureArtifact{SchemaVersion: 1, State: "blocked", SourceID: "mattpocock-skills", PlanID: "plan", BaseSHA: sha, CandidateSHA: sha, Blockers: []string{"blocked"}, Recovery: []string{"retry safely"}}
+	case "inspection":
+		writeFile(t, filepath.Join(artifacts, "inspection.json"), `{"schema_version":1}`)
+		return "", ""
+	default:
+		return "", ""
+	}
+	data, err := json.Marshal(instance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSchemaInstance(t, name, data); err != nil {
+		t.Fatalf("fixture %s rejected: %v", kind, err)
+	}
+	artifactName := map[string]string{"noop": "no-op.json", "publication": "publication.json", "stale-publication": "publication.json", "stale-base-publication": "publication.json", "edited-publication": "publication.json", "operational": "operational-artifact.json"}[kind]
+	writeFile(t, filepath.Join(artifacts, artifactName), string(data))
+	if !strings.Contains(kind, "publication") {
+		return "", ""
+	}
+	prPath := filepath.Join(artifacts, "live-pr.json")
+	prHead := head
+	if kind == "stale-publication" {
+		prHead = strings.Repeat("d", 40)
+	}
+	prBase := sha
+	if kind == "stale-base-publication" {
+		prBase = strings.Repeat("d", 40)
+	}
+	prBody := body
+	if kind == "edited-publication" {
+		prBody = "reviewer edit\n" + body
+	}
+	prJSON, _ := json.Marshal(map[string]any{"number": 7, "baseRefOid": prBase, "headRefOid": prHead, "headRefName": "sync/mattpocock-skills", "state": "OPEN", "isDraft": false, "title": title, "body": prBody})
+	writeFile(t, prPath, string(prJSON))
+	mainPath := filepath.Join(artifacts, "remote-main.json")
+	writeFile(t, mainPath, fmt.Sprintf(`{"sha":%q}`, sha))
+	return prPath, mainPath
+}
+
+func testMaintainerDispatchRenderer(t *testing.T, request json.RawMessage) {
+	t.Helper()
+	root := repositoryRoot(t)
+	workspace := t.TempDir()
+	requestPath := filepath.Join(workspace, "request.json")
+	writeFile(t, requestPath, string(request))
+	bin := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argsPath, stdinPath := filepath.Join(workspace, "args"), filepath.Join(workspace, "stdin")
+	fake := `#!/bin/sh
+printf '%s\n' "$*" > "$FAKE_GH_ARGS"
+cat > "$FAKE_GH_STDIN"
+echo https://github.com/yersonargotev/matty/actions/runs/42
+`
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(root, ".agents", "skills", "sync-pack-source", "scripts", "dispatch.sh")
+	cmd := exec.Command(script, requestPath)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "FAKE_GH_ARGS="+argsPath, "FAKE_GH_STDIN="+stdinPath)
+	if output, err := cmd.CombinedOutput(); err != nil || !strings.Contains(string(output), "/actions/runs/42") {
+		t.Fatalf("fixture dispatch = %v: %s", err, output)
+	}
+	wantArgs := "workflow run .github/workflows/sync-pack-source.yml --repo yersonargotev/matty --ref main --json"
+	if got := strings.TrimSpace(readFile(t, argsPath)); got != wantArgs {
+		t.Fatalf("gh args = %q, want %q", got, wantArgs)
+	}
+	var inputs map[string]string
+	if err := json.Unmarshal([]byte(readFile(t, stdinPath)), &inputs); err != nil {
+		t.Fatal(err)
+	}
+	var canonical packsyncworkflow.DispatchRequest
+	if err := json.Unmarshal(request, &canonical); err != nil {
+		t.Fatal(err)
+	}
+	digest, _ := canonical.Digest()
+	if inputs["request_digest"] != digest || inputs["source_id"] != canonical.SourceID || inputs["selector"] != string(canonical.Selector) || inputs["classification_mode"] != string(canonical.ClassificationMode) || inputs["request_reason"] != canonical.RequestReason {
+		t.Fatalf("workflow inputs = %#v", inputs)
+	}
+	if _, present := inputs["schema_version"]; present {
+		t.Fatal("workflow transport contains schema_version")
 	}
 }
 
