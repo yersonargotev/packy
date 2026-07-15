@@ -409,15 +409,15 @@ func continuousTagChain(candidate Candidate) bool {
 }
 
 func eligibleAutomaticEvidence(candidate Candidate) bool {
-	eligible := candidate.CommitVerify.Verified && candidate.CommitVerify.Reason == "valid"
-	if !candidate.CommitVerify.Verified && candidate.CommitVerify.Reason != "unsigned" {
+	eligible := validVerification(candidate.CommitVerify)
+	if !validVerification(candidate.CommitVerify) && !unsignedVerification(candidate.CommitVerify) {
 		return false
 	}
 	for _, tag := range candidate.TagObjects {
-		if tag.Verification.Verified && tag.Verification.Reason == "valid" {
+		if validVerification(tag.Verification) {
 			eligible = true
 		}
-		if !tag.Verification.Verified && tag.Verification.Reason != "unsigned" {
+		if !validVerification(tag.Verification) && !unsignedVerification(tag.Verification) {
 			return false
 		}
 	}
@@ -425,11 +425,11 @@ func eligibleAutomaticEvidence(candidate Candidate) bool {
 }
 
 func invalidVerification(candidate Candidate) bool {
-	if !candidate.CommitVerify.Verified && candidate.CommitVerify.Reason != "unsigned" {
+	if !validVerification(candidate.CommitVerify) && !unsignedVerification(candidate.CommitVerify) {
 		return true
 	}
 	for _, tag := range candidate.TagObjects {
-		if !tag.Verification.Verified && tag.Verification.Reason != "unsigned" {
+		if !validVerification(tag.Verification) && !unsignedVerification(tag.Verification) {
 			return true
 		}
 	}
@@ -437,14 +437,15 @@ func invalidVerification(candidate Candidate) bool {
 }
 
 func completeVerification(value Verification) bool {
-	switch {
-	case value.Verified && value.Reason == "valid":
-		return value.VerifiedAt != nil && value.SignatureSHA256 != nil && value.PayloadSHA256 != nil && fullDigest(*value.SignatureSHA256) && fullDigest(*value.PayloadSHA256)
-	case !value.Verified && value.Reason == "unsigned":
-		return value.VerifiedAt == nil && value.SignatureSHA256 == nil && value.PayloadSHA256 == nil
-	default:
-		return value.Reason != ""
-	}
+	return validVerification(value) || unsignedVerification(value)
+}
+
+func validVerification(value Verification) bool {
+	return value.Verified && value.Reason == "valid" && value.VerifiedAt != nil && value.SignatureSHA256 != nil && value.PayloadSHA256 != nil && fullDigest(*value.SignatureSHA256) && fullDigest(*value.PayloadSHA256)
+}
+
+func unsignedVerification(value Verification) bool {
+	return !value.Verified && value.Reason == "unsigned" && value.VerifiedAt == nil && value.SignatureSHA256 == nil && value.PayloadSHA256 == nil
 }
 
 func validActor(value Actor) bool {

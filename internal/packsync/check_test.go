@@ -338,6 +338,29 @@ func TestRecursiveAnnotatedTagChainAllowsDistinctInnerNames(t *testing.T) {
 	}
 }
 
+func TestVerificationEvidenceRejectsInconsistentAndMixedStates(t *testing.T) {
+	candidate := acceptedCandidate()
+	malformed := candidate.CommitVerify
+	malformed.Reason = "malformed_signature"
+	candidate.TagObjects[0].Verification = malformed
+	if eligibleAutomaticEvidence(candidate) {
+		t.Fatal("one valid commit masked malformed tag verification evidence")
+	}
+	assertContains(t, validateCandidate(SourceConfig{Repository: candidate.Repository}, candidate, Selector{Mode: SelectorStableRelease}), "stable release lacks eligible verification evidence")
+
+	manual := acceptedCandidate()
+	manual.Release = nil
+	manual.TagRefName = ""
+	manual.TagRefType = ""
+	manual.TagRefSHA = ""
+	manual.TagObjects = nil
+	manual.CommitVerify.Reason = "unavailable"
+	if !invalidVerification(manual) {
+		t.Fatal("manual candidate accepted unavailable verification evidence")
+	}
+	assertContains(t, validateCandidate(SourceConfig{Repository: manual.Repository}, manual, Selector{Mode: SelectorCommit, Ref: manual.Commit}), "manual candidate carries invalid verification evidence")
+}
+
 func TestConfigPathSafetyDiffAndCanonicalization(t *testing.T) {
 	valid := `{"schema_version":1,"sources":[{"id":"s","provider":"github","repository":"o/r","selector":{"mode":"stable-release"},"resources":[{"pack_id":"p","kind":"skill","resource_id":"r","upstream_path":"skills/x/r"}]}]}`
 	if _, err := LoadConfig(strings.NewReader(valid)); err != nil {
@@ -587,6 +610,16 @@ func assertChange(t *testing.T, plan Plan, kind string) {
 		}
 	}
 	t.Fatalf("changes %#v do not contain %q", plan.Changes, kind)
+}
+
+func assertContains(t *testing.T, values []string, contains string) {
+	t.Helper()
+	for _, value := range values {
+		if strings.Contains(value, contains) {
+			return
+		}
+	}
+	t.Fatalf("values %#v do not contain %q", values, contains)
 }
 
 func repositoryRoot(t *testing.T) string {
