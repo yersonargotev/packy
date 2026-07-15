@@ -1,0 +1,6 @@
+{
+  "classification_mode": "ai",
+  "request_reason": "Validate the synchronization design with a Matty dry run",
+  "selector": "latest-stable",
+  "source_id": "mattpocock-skills"
+}

@@ -1,0 +1,268 @@
+[
+  {
+    "area": "normalize",
+    "assertion": "infer the sole configured source",
+    "case": "unique source",
+    "expected_state": "dispatch",
+    "result": "pass"
+  },
+  {
+    "area": "normalize",
+    "assertion": "ask for source_id",
+    "case": "ambiguous source",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "normalize",
+    "assertion": "report zero configured matches",
+    "case": "unknown source",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "selector",
+    "assertion": "resolve newest published stable release once",
+    "case": "latest-stable",
+    "expected_state": "dispatch",
+    "result": "pass"
+  },
+  {
+    "area": "selector",
+    "assertion": "retain exact tag and peeled commit",
+    "case": "exact published prerelease",
+    "expected_state": "dispatch",
+    "result": "pass"
+  },
+  {
+    "area": "selector",
+    "assertion": "verify commit in configured repository",
+    "case": "exact full SHA",
+    "expected_state": "dispatch",
+    "result": "pass"
+  },
+  {
+    "area": "selector",
+    "assertion": "reject floating or forbidden ref",
+    "case": "branch, abbreviated SHA, or arbitrary tag",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "preflight",
+    "assertion": "report as informational; remote main is authority",
+    "case": "dirty non-main local checkout",
+    "expected_state": "dispatch",
+    "result": "pass"
+  },
+  {
+    "area": "preflight",
+    "assertion": "return exact recovery action",
+    "case": "invalid remote repo/auth/workflow/config",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "concurrency",
+    "assertion": "monitor existing normalized request",
+    "case": "identical active or pending run",
+    "expected_state": "attach",
+    "result": "pass"
+  },
+  {
+    "area": "concurrency",
+    "assertion": "queue without canceling active run",
+    "case": "different request behind active run",
+    "expected_state": "pending",
+    "result": "pass"
+  },
+  {
+    "area": "concurrency",
+    "assertion": "link old request to replacement",
+    "case": "new request replaces pending",
+    "expected_state": "superseded",
+    "result": "pass"
+  },
+  {
+    "area": "concurrency",
+    "assertion": "never replace a newer proposal with an older candidate",
+    "case": "candidate regression",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "classification",
+    "assertion": "mark proposed and not human-accepted",
+    "case": "valid AI evidence",
+    "expected_state": "continue",
+    "result": "pass"
+  },
+  {
+    "area": "classification",
+    "assertion": "preserve failure evidence; publish nothing",
+    "case": "invalid or below-floor AI evidence",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "classification",
+    "assertion": "offer new dispatch or human mode",
+    "case": "AI unavailable after bounded retries",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "classification",
+    "assertion": "emit immutable plan only",
+    "case": "human first dispatch",
+    "expected_state": "awaiting-human-classification",
+    "result": "pass"
+  },
+  {
+    "area": "classification",
+    "assertion": "bind evidence to commit, plan_id, and base",
+    "case": "human second dispatch",
+    "expected_state": "continue",
+    "result": "pass"
+  },
+  {
+    "area": "classification",
+    "assertion": "collect and validate evidence per pack",
+    "case": "multiple affected packs",
+    "expected_state": "continue",
+    "result": "pass"
+  },
+  {
+    "area": "classification",
+    "assertion": "require migration evidence",
+    "case": "major without migration",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "classification",
+    "assertion": "discard human evidence and inspect again",
+    "case": "stale plan or base",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "security",
+    "assertion": "treat bytes as inert; never execute",
+    "case": "malicious upstream scripts/hooks/actions",
+    "expected_state": "continue",
+    "result": "pass"
+  },
+  {
+    "area": "security",
+    "assertion": "reject overrides, bypasses, credentials, secrets, or bytes",
+    "case": "forbidden dispatch inputs",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "publication",
+    "assertion": "verify exact candidate and unchanged snapshot",
+    "case": "no content change",
+    "expected_state": "no-op",
+    "result": "pass"
+  },
+  {
+    "area": "publication",
+    "assertion": "publish one stable source PR after all checks",
+    "case": "new or updated pristine PR",
+    "expected_state": "decision-ready",
+    "result": "pass"
+  },
+  {
+    "area": "publication",
+    "assertion": "fresh exact-candidate dispatch from new base",
+    "case": "base advanced",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "publication",
+    "assertion": "restore, close, or typed replacement authorization",
+    "case": "edited PR metadata",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "publication",
+    "assertion": "never overwrite reviewer work",
+    "case": "human commits or divergent branch",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "publication",
+    "assertion": "new explicit request only if ownership remains provable",
+    "case": "closed PR",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "publication",
+    "assertion": "observe only; never auto-merge",
+    "case": "manual merge",
+    "expected_state": "merged",
+    "result": "pass"
+  },
+  {
+    "area": "recovery",
+    "assertion": "a new latest-stable request is not an exact retry",
+    "case": "failure before candidate resolution",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "recovery",
+    "assertion": "retry by new full-SHA dispatch",
+    "case": "failure after candidate resolution",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "recovery",
+    "assertion": "bind retry_of_run to resolved commit",
+    "case": "valid operational artifact",
+    "expected_state": "retryable",
+    "result": "pass"
+  },
+  {
+    "area": "recovery",
+    "assertion": "no silent fallback",
+    "case": "missing, invalid, or expired artifact",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "recovery",
+    "assertion": "new dispatch; never Actions rerun",
+    "case": "exact retry",
+    "expected_state": "dispatch",
+    "result": "pass"
+  },
+  {
+    "area": "recovery",
+    "assertion": "terminal success is contractually unexplained",
+    "case": "success without PR/no-op/human-wait",
+    "expected_state": "blocked",
+    "result": "pass"
+  },
+  {
+    "area": "monitoring",
+    "assertion": "return run URL and current identity",
+    "case": "monitoring interrupted",
+    "expected_state": "pending",
+    "result": "pass"
+  },
+  {
+    "area": "monitoring",
+    "assertion": "return immediately without claiming completion",
+    "case": "URL-only mode",
+    "expected_state": "request-accepted",
+    "result": "pass"
+  }
+]

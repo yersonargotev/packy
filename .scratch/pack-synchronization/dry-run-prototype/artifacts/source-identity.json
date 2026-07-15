@@ -1,0 +1,70 @@
+{
+  "archive_sha256": "30dabb0ec9fad9d8299d9898f05f1ae00deadba5170c3525fcbc1242cf8a79db",
+  "commit": {
+    "node_id": "C_kwDORHkddtoAKGQ1NzQ3NzhmOTRjZjYyMGZjYzhjZTc0MTU4NDA5M2JjNjUwYTYxZDM",
+    "parents": [
+      "cc1e24891df515a43a034cd91d3f64e17d1c9ffb",
+      "47845ac1e15d048c2bbb20413a44de8681209601"
+    ],
+    "sha": "d574778f94cf620fcc8ce741584093bc650a61d3",
+    "tree_sha": "fa3f8882cef6fa6d9960283a49db0a58636af3ca",
+    "verification": {
+      "payload": "tree fa3f8882cef6fa6d9960283a49db0a58636af3ca\nparent cc1e24891df515a43a034cd91d3f64e17d1c9ffb\nparent 47845ac1e15d048c2bbb20413a44de8681209601\nauthor Matt Pocock <mattpocockvoice@gmail.com> 1783516840 +0100\ncommitter GitHub <noreply@github.com> 1783516840 +0100\n\nMerge pull request #353 from mattpocock/changeset-release/main\n\nchore: version skills",
+      "reason": "valid",
+      "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqTk6oCRC1aQ7uu5UhlAAAyw8QACLHpWMx0enmouPR7R/PLmRr\nrEiCznBjyH95wRd/o9u9SwZhU8Qiz4i1v8NuhyxdAFDLaKm+Q50q+mpjegZzy9lz\nPPFtGwgvwaZZ65N5HG7Q2DvG4u4pJ6UIJNvkiyT79EshP3/9ACQy7Qv8LRckmqB6\nBdHrT9dbFwYhMzXZZRfQCqi3jUB4z6JVfUkt43Zn1UVvSBhdUq0MTa7PSm9EizVC\n5WPoWU/IKOKkFccfU4iI/FHFjqK6wpgkW6Yst6SQWVAJBHreH610bxBWY4cSoTvk\nhmkDUFFaHw+nBz4n/GxM+xfs/l8BqUmAeh9HehY8awmDtUYKC2R5L1VDsf1vFpLS\nav37AO3jTY307jR53ppa+QFPefy/dM4cLZglceMb1QsSxhiZVgoA3BE69TgW3ule\nE7MvFEW5GrPtQy1NXsGkqY6B68x+6vuuFhKhCFbB+p4u5MpCuGGuSEd9od2Lfui2\nbsIaHrclaLpH/ddUngenWNlB9f9Q80o6CQec3zUUJ9uuVLPdUMAJ5PUZHGs8dSu9\nkJiUzW7LgKEqei7fPWqjP2B/LaGUBzqgpntDjbktVVDjy/NFadpLg/7NyIv+WRL3\nsc9Dz6Uq7skv7Dr8TLIHiVk8Vd2TtsQyDXf65dR4RGgoFItu++pjCOwAXQHkYKqo\nP1vOkeVdxSq1it4b8C6N\n=74cd\n-----END PGP SIGNATURE-----\n",
+      "verified": true,
+      "verified_at": "2026-07-08T13:20:40Z"
+    }
+  },
+  "immutable_review_links": {
+    "commit": "https://github.com/mattpocock/skills/tree/d574778f94cf620fcc8ce741584093bc650a61d3",
+    "compare_local_base": "https://github.com/yersonargotev/matty/tree/bc6ed4215b30a0b391eddf97fc8f3da045308c62"
+  },
+  "owner": {
+    "id": 28293365,
+    "login": "mattpocock",
+    "node_id": "MDQ6VXNlcjI4MjkzMzY1",
+    "type": "User"
+  },
+  "release": {
+    "created_at": "2026-07-08T13:20:55Z",
+    "draft": false,
+    "id": 350942193,
+    "immutable": false,
+    "name": "v1.1.0",
+    "node_id": "RE_kwDORHkdds4U6vPx",
+    "prerelease": false,
+    "published_at": "2026-07-08T13:20:57Z",
+    "tag_name": "v1.1.0",
+    "target_commitish": "main"
+  },
+  "repository": {
+    "archived": false,
+    "disabled": false,
+    "full_name": "mattpocock/skills",
+    "html_url": "https://github.com/mattpocock/skills",
+    "id": 1148788086,
+    "node_id": "R_kgDORHkddg",
+    "visibility": "public"
+  },
+  "tag_chain": [
+    {
+      "sha": "eabea89380927aadb93abf6e290a19334d249292",
+      "tag": "v1.1.0",
+      "target_sha": "d574778f94cf620fcc8ce741584093bc650a61d3",
+      "target_type": "commit",
+      "verification": {
+        "payload": null,
+        "reason": "unsigned",
+        "signature": null,
+        "verified": false,
+        "verified_at": null
+      }
+    }
+  ],
+  "tag_ref": {
+    "ref": "refs/tags/v1.1.0",
+    "target_sha": "eabea89380927aadb93abf6e290a19334d249292",
+    "target_type": "tag"
+  }
+}

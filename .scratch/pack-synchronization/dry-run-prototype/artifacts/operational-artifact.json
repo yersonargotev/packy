@@ -1,0 +1,34 @@
+{
+  "base_sha": "bc6ed4215b30a0b391eddf97fc8f3da045308c62",
+  "blockers": [
+    "The real bundle has five locally modified selected files and therefore violates byte identity.",
+    "Production bundle/sources.json and bundle/sources.lock.json do not exist; this dry run uses the accepted prototype fixture only.",
+    "The legacy root skills-lock.json covers one resource, pins no immutable release identity, and does not describe the local wayfinder bytes.",
+    "A major AI classification and migration are proposed evidence only; no maintainer has accepted them.",
+    "No immutable historical artifact for matty 1.0.0 exists to preserve pinned-version behavior.",
+    "The hardened Matty-owned validation entrypoint required by the workflow contract is not implemented."
+  ],
+  "branch": "sync/mattpocock-skills",
+  "candidate_sha": "d574778f94cf620fcc8ce741584093bc650a61d3",
+  "contains_secrets": false,
+  "contains_upstream_bytes": false,
+  "head_sha": null,
+  "next_action": "Resolve the five intentional local adaptations at a Matty-owned seam, then rerun inspection from the same exact candidate.",
+  "plan_id": "6b23527b3edbce7a191d2db15d90a69bdc198d3c83c386c5a2a232d56fca615e",
+  "prototype": true,
+  "pull_request": null,
+  "request": {
+    "classification_mode": "ai",
+    "request_reason": "Validate the synchronization design with a Matty dry run",
+    "selector": "latest-stable",
+    "source_id": "mattpocock-skills"
+  },
+  "run": {
+    "attempt": null,
+    "mode": "local-read-only-dry-run",
+    "url": null
+  },
+  "schema_version": 1,
+  "source_id": "mattpocock-skills",
+  "state": "blocked"
+}

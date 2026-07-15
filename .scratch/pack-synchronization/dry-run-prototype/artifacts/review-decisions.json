@@ -1,0 +1,32 @@
+{
+  "accepted": [
+    {
+      "decision": "terminal_state",
+      "reason": "five intentional local adaptations violate byte identity",
+      "value": "blocked"
+    },
+    {
+      "decision": "compatibility",
+      "pack_id": "matty",
+      "value": "major",
+      "version": "2.0.0"
+    },
+    {
+      "decision": "migration_direction",
+      "value": "preserve adaptations at a Matty-owned seam"
+    },
+    {
+      "decision": "allowlist",
+      "discovered_resources_selected": 0,
+      "value": "unchanged"
+    },
+    {
+      "decision": "follow_up",
+      "value": "create one planning-only grilling ticket for implementation slices and delivery sequence after final acceptance"
+    }
+  ],
+  "complete_result_accepted": true,
+  "maintainer": "yersonargotev",
+  "note": "These decisions were supplied by the maintainer during HITL review; they are not inferred from AI evidence and do not authorize production writes.",
+  "prototype_review_only": true
+}

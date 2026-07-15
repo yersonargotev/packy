@@ -1,0 +1,236 @@
+{
+  "base_sha": "bc6ed4215b30a0b391eddf97fc8f3da045308c62",
+  "blockers": [
+    "The real bundle has five locally modified selected files and therefore violates byte identity.",
+    "Production bundle/sources.json and bundle/sources.lock.json do not exist; this dry run uses the accepted prototype fixture only.",
+    "The legacy root skills-lock.json covers one resource, pins no immutable release identity, and does not describe the local wayfinder bytes.",
+    "A major AI classification and migration are proposed evidence only; no maintainer has accepted them.",
+    "No immutable historical artifact for matty 1.0.0 exists to preserve pinned-version behavior.",
+    "The hardened Matty-owned validation entrypoint required by the workflow contract is not implemented."
+  ],
+  "branch": "sync/mattpocock-skills",
+  "candidate_sha": "d574778f94cf620fcc8ce741584093bc650a61d3",
+  "changes": {
+    "counts": {
+      "added": 0,
+      "modified": 5,
+      "moved": 0,
+      "removed": 0
+    },
+    "items": [
+      {
+        "change": "modified",
+        "new_sha256": "52e9f9f1ec0f6d47c6785ac500708ac0521f34abb4cc5475b5dc747165dab17e",
+        "old_sha256": "273c1d57c36426d80df362b20288d8575d3d9ba5aeb7334bd4c966cd73eae863",
+        "path": "bundle/skills/engineering/setup-matt-pocock-skills/issue-tracker-github.md",
+        "resource_id": "setup-matt-pocock-skills"
+      },
+      {
+        "change": "modified",
+        "new_sha256": "4470f2f64d015fba01af877233296b401bb0d44b5acb9572ffc3ff6b30e8de88",
+        "old_sha256": "07fc81c40f529e5574f1d9cc20bb6196679efe910c66ffc3217d4ed65031c1e3",
+        "path": "bundle/skills/engineering/setup-matt-pocock-skills/issue-tracker-gitlab.md",
+        "resource_id": "setup-matt-pocock-skills"
+      },
+      {
+        "change": "modified",
+        "new_sha256": "e0dd9835e3658909132058e9a5fdd851e972220bbadaf78a57e3c6220d470922",
+        "old_sha256": "1ad2ce603d6bdb7b8db99417a8e1b4b8a32837369a87d525fec696d12322fcad",
+        "path": "bundle/skills/engineering/setup-matt-pocock-skills/issue-tracker-local.md",
+        "resource_id": "setup-matt-pocock-skills"
+      },
+      {
+        "change": "modified",
+        "new_sha256": "918bdefab9313100cb1f7ccb412e2a773fe2f2801dd20d44f6b2acf7a42ca456",
+        "old_sha256": "87376aa0b0e0f2e5bcfe51d8686b27637bfe0a42ba6430943602dc3f14c20823",
+        "path": "bundle/skills/engineering/to-tickets/SKILL.md",
+        "resource_id": "to-tickets"
+      },
+      {
+        "change": "modified",
+        "new_sha256": "bef437de697fb6984a8a90b7fd82f128609148d6e02f635ce419d03555b351e1",
+        "old_sha256": "6ea93ad3760821ca8f21e8d5f2c7eeb2a812eb8c4d7ed6349494787fc5e7f522",
+        "path": "bundle/skills/engineering/wayfinder/SKILL.md",
+        "resource_id": "wayfinder"
+      }
+    ],
+    "unselected_upstream_resources": [
+      "skills/deprecated/design-an-interface",
+      "skills/deprecated/qa",
+      "skills/deprecated/request-refactor-plan",
+      "skills/deprecated/ubiquitous-language",
+      "skills/in-progress/claude-handoff",
+      "skills/in-progress/wizard",
+      "skills/in-progress/writing-beats",
+      "skills/in-progress/writing-fragments",
+      "skills/in-progress/writing-shape",
+      "skills/misc/git-guardrails-claude-code",
+      "skills/misc/migrate-to-shoehorn",
+      "skills/misc/scaffold-exercises",
+      "skills/misc/setup-pre-commit",
+      "skills/personal/edit-article",
+      "skills/personal/obsidian-vault"
+    ]
+  },
+  "head_sha": null,
+  "pack_impacts": [
+    {
+      "classifier": {
+        "acceptance": "evidencia propuesta por IA; no aceptada todavía por el mantenedor",
+        "identity": "OpenAI Codex dry-run reviewer",
+        "type": "ai"
+      },
+      "current_version": "1.0.0",
+      "mechanical_floor": "semantic-classification-required (content-only drift)",
+      "migration": "Before publication, move each intentional Matty adaptation to a Matty-owned seam or explicitly adopt upstream behavior; document the resulting user-visible migration.",
+      "pack_id": "matty",
+      "proposed_classification": "major",
+      "proposed_version": "2.0.0",
+      "rationale": "Replacing the five Matty-adapted files with upstream bytes redefines issue/spec vocabulary, local ticket paths, and wayfinder's local-tracker behavior; existing Matty workflows would change incompatibly."
+    }
+  ],
+  "plan_id": "6b23527b3edbce7a191d2db15d90a69bdc198d3c83c386c5a2a232d56fca615e",
+  "pull_request": null,
+  "readiness": {
+    "auto_merge": false,
+    "decision_ready": false,
+    "manual_merge_required": true
+  },
+  "request": {
+    "classification_mode": "ai",
+    "request_reason": "Validate the synchronization design with a Matty dry run",
+    "selector": "latest-stable",
+    "source_id": "mattpocock-skills"
+  },
+  "retry": "Not retryable unchanged: first resolve the deterministic local-drift and migration blockers.",
+  "schema_version": 1,
+  "source": {
+    "archive_sha256": "30dabb0ec9fad9d8299d9898f05f1ae00deadba5170c3525fcbc1242cf8a79db",
+    "commit": {
+      "node_id": "C_kwDORHkddtoAKGQ1NzQ3NzhmOTRjZjYyMGZjYzhjZTc0MTU4NDA5M2JjNjUwYTYxZDM",
+      "parents": [
+        "cc1e24891df515a43a034cd91d3f64e17d1c9ffb",
+        "47845ac1e15d048c2bbb20413a44de8681209601"
+      ],
+      "sha": "d574778f94cf620fcc8ce741584093bc650a61d3",
+      "tree_sha": "fa3f8882cef6fa6d9960283a49db0a58636af3ca",
+      "verification": {
+        "payload": "tree fa3f8882cef6fa6d9960283a49db0a58636af3ca\nparent cc1e24891df515a43a034cd91d3f64e17d1c9ffb\nparent 47845ac1e15d048c2bbb20413a44de8681209601\nauthor Matt Pocock <mattpocockvoice@gmail.com> 1783516840 +0100\ncommitter GitHub <noreply@github.com> 1783516840 +0100\n\nMerge pull request #353 from mattpocock/changeset-release/main\n\nchore: version skills",
+        "reason": "valid",
+        "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqTk6oCRC1aQ7uu5UhlAAAyw8QACLHpWMx0enmouPR7R/PLmRr\nrEiCznBjyH95wRd/o9u9SwZhU8Qiz4i1v8NuhyxdAFDLaKm+Q50q+mpjegZzy9lz\nPPFtGwgvwaZZ65N5HG7Q2DvG4u4pJ6UIJNvkiyT79EshP3/9ACQy7Qv8LRckmqB6\nBdHrT9dbFwYhMzXZZRfQCqi3jUB4z6JVfUkt43Zn1UVvSBhdUq0MTa7PSm9EizVC\n5WPoWU/IKOKkFccfU4iI/FHFjqK6wpgkW6Yst6SQWVAJBHreH610bxBWY4cSoTvk\nhmkDUFFaHw+nBz4n/GxM+xfs/l8BqUmAeh9HehY8awmDtUYKC2R5L1VDsf1vFpLS\nav37AO3jTY307jR53ppa+QFPefy/dM4cLZglceMb1QsSxhiZVgoA3BE69TgW3ule\nE7MvFEW5GrPtQy1NXsGkqY6B68x+6vuuFhKhCFbB+p4u5MpCuGGuSEd9od2Lfui2\nbsIaHrclaLpH/ddUngenWNlB9f9Q80o6CQec3zUUJ9uuVLPdUMAJ5PUZHGs8dSu9\nkJiUzW7LgKEqei7fPWqjP2B/LaGUBzqgpntDjbktVVDjy/NFadpLg/7NyIv+WRL3\nsc9Dz6Uq7skv7Dr8TLIHiVk8Vd2TtsQyDXf65dR4RGgoFItu++pjCOwAXQHkYKqo\nP1vOkeVdxSq1it4b8C6N\n=74cd\n-----END PGP SIGNATURE-----\n",
+        "verified": true,
+        "verified_at": "2026-07-08T13:20:40Z"
+      }
+    },
+    "immutable_review_links": {
+      "commit": "https://github.com/mattpocock/skills/tree/d574778f94cf620fcc8ce741584093bc650a61d3",
+      "compare_local_base": "https://github.com/yersonargotev/matty/tree/bc6ed4215b30a0b391eddf97fc8f3da045308c62"
+    },
+    "owner": {
+      "id": 28293365,
+      "login": "mattpocock",
+      "node_id": "MDQ6VXNlcjI4MjkzMzY1",
+      "type": "User"
+    },
+    "release": {
+      "created_at": "2026-07-08T13:20:55Z",
+      "draft": false,
+      "id": 350942193,
+      "immutable": false,
+      "name": "v1.1.0",
+      "node_id": "RE_kwDORHkdds4U6vPx",
+      "prerelease": false,
+      "published_at": "2026-07-08T13:20:57Z",
+      "tag_name": "v1.1.0",
+      "target_commitish": "main"
+    },
+    "repository": {
+      "archived": false,
+      "disabled": false,
+      "full_name": "mattpocock/skills",
+      "html_url": "https://github.com/mattpocock/skills",
+      "id": 1148788086,
+      "node_id": "R_kgDORHkddg",
+      "visibility": "public"
+    },
+    "tag_chain": [
+      {
+        "sha": "eabea89380927aadb93abf6e290a19334d249292",
+        "tag": "v1.1.0",
+        "target_sha": "d574778f94cf620fcc8ce741584093bc650a61d3",
+        "target_type": "commit",
+        "verification": {
+          "payload": null,
+          "reason": "unsigned",
+          "signature": null,
+          "verified": false,
+          "verified_at": null
+        }
+      }
+    ],
+    "tag_ref": {
+      "ref": "refs/tags/v1.1.0",
+      "target_sha": "eabea89380927aadb93abf6e290a19334d249292",
+      "target_type": "tag"
+    }
+  },
+  "state": "blocked",
+  "title": "sync(mattpocock-skills): v1.1.0 [BLOCKED DRY RUN]",
+  "validations": [
+    {
+      "detail": "unsigned tag plus GitHub-verified peeled commit",
+      "name": "repository and release provenance",
+      "result": "eligible"
+    },
+    {
+      "detail": "23 bindings resolve to real matty pack resources",
+      "name": "source allowlist and manifest-derived destinations",
+      "result": "pass"
+    },
+    {
+      "detail": "45 proposed files across 23 resources",
+      "name": "selected resource presence",
+      "result": "pass"
+    },
+    {
+      "detail": "5 modified, 0 added, 0 removed",
+      "name": "byte identity",
+      "result": "blocked"
+    },
+    {
+      "detail": "0 symlink/hardlink entries rejected; no absolute or parent paths admitted",
+      "name": "archive paths, symlinks, and permissions",
+      "result": "pass"
+    },
+    {
+      "detail": "production lock absent; proposed hashes are emitted without writing bundle",
+      "name": "generated provenance lock",
+      "result": "blocked"
+    },
+    {
+      "detail": "matty 1.0.0 immutable artifact absent",
+      "name": "historical artifacts",
+      "result": "blocked"
+    },
+    {
+      "detail": "AI proposes major 2.0.0; maintainer acceptance/migration decision pending",
+      "name": "compatibility and migration",
+      "result": "blocked"
+    },
+    {
+      "detail": "prototype wrote only beneath its explicitly allowed scratch directory",
+      "name": "allowed repository diff",
+      "result": "pass"
+    },
+    {
+      "detail": "required targeted production entrypoint does not yet exist",
+      "name": "Matty-owned safe validation",
+      "result": "blocked"
+    },
+    {
+      "detail": "no upstream scripts, hooks, Actions, tests, generators, binaries, lifecycle scripts, submodules, or LFS were executed",
+      "name": "upstream execution",
+      "result": "pass"
+    }
+  ]
+}

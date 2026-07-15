@@ -1,0 +1,41 @@
+{
+  "base_sha": "bc6ed4215b30a0b391eddf97fc8f3da045308c62",
+  "blocker_count": 6,
+  "candidate_sha": "d574778f94cf620fcc8ce741584093bc650a61d3",
+  "changes": {
+    "added": 0,
+    "modified": 5,
+    "moved": 0,
+    "removed": 0
+  },
+  "latest_stable": "v1.1.0",
+  "local_checkout": {
+    "authority": "informational only",
+    "branch": "main",
+    "dirty": true
+  },
+  "matrix": {
+    "cases": 38,
+    "passed": 38
+  },
+  "selected_files": 45,
+  "selected_resources": 23,
+  "terminal_state": "blocked",
+  "unselected_upstream_resources": [
+    "skills/deprecated/design-an-interface",
+    "skills/deprecated/qa",
+    "skills/deprecated/request-refactor-plan",
+    "skills/deprecated/ubiquitous-language",
+    "skills/in-progress/claude-handoff",
+    "skills/in-progress/wizard",
+    "skills/in-progress/writing-beats",
+    "skills/in-progress/writing-fragments",
+    "skills/in-progress/writing-shape",
+    "skills/misc/git-guardrails-claude-code",
+    "skills/misc/migrate-to-shoehorn",
+    "skills/misc/scaffold-exercises",
+    "skills/misc/setup-pre-commit",
+    "skills/personal/edit-article",
+    "skills/personal/obsidian-vault"
+  ]
+}
