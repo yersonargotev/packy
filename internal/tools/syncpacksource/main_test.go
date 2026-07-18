@@ -56,6 +56,58 @@ func TestValidationSubprocessEnvironmentDropsCredentials(t *testing.T) {
 	}
 }
 
+func TestCommandValidatorRunsStagedBundleFromCopiedRepositoryWithSandboxedConfiguration(t *testing.T) {
+	repository := t.TempDir()
+	staged := filepath.Join(t.TempDir(), "bundle")
+	if err := os.MkdirAll(filepath.Join(repository, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repository, "bundle"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(staged, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "bundle", "identity"), []byte("production\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staged, "identity"), []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+test "$(cat bundle/identity)" = "staged"
+test "${PACKY_VALIDATION_STAGED:-}" = "1"
+test "${HOME}" != "${OPERATOR_HOME}"
+test "${XDG_CONFIG_HOME}" != "${OPERATOR_XDG}"
+test -z "${GITHUB_TOKEN:-}"
+mkdir -p "${HOME}" "${XDG_CONFIG_HOME}"
+printf validated > "${HOME}/proof"
+printf validated > "${XDG_CONFIG_HOME}/proof"
+`
+	if err := os.WriteFile(filepath.Join(repository, "scripts", "validate-packy.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	operatorHome := filepath.Join(t.TempDir(), "operator-home")
+	operatorXDG := filepath.Join(t.TempDir(), "operator-xdg")
+	t.Setenv("HOME", operatorHome)
+	t.Setenv("XDG_CONFIG_HOME", operatorXDG)
+	t.Setenv("OPERATOR_HOME", operatorHome)
+	t.Setenv("OPERATOR_XDG", operatorXDG)
+	t.Setenv("GITHUB_TOKEN", "must-not-reach-validator")
+	t.Setenv("PACKY_VALIDATION_STAGED", "hostile-inherited-value")
+
+	if err := (commandValidator{}).ValidateBundle(context.Background(), repository, staged); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{operatorHome, operatorXDG} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("staged validation wrote operator configuration path %s: %v", path, err)
+		}
+	}
+}
+
 func TestPublicSourceRetriesRateLimit403AndContinuesAfterSuccess(t *testing.T) {
 	underlying := &sourceFailureFixture{failures: []error{githubsource.HTTPError{Operation: "test", StatusCode: http.StatusForbidden, Status: "403 Forbidden", RetryAfter: "4", RateLimitRemaining: "0"}}}
 	sleeper := &sourceSleeper{}

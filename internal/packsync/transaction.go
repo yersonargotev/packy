@@ -362,7 +362,7 @@ func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged,
 	if len(blockers) != 0 || len(stagedPlan.Changes) != 0 || lockDigest(stagedPlan.ProposedLock) != lockDigest(plan.ProposedLock) {
 		return fmt.Errorf("staged bundle validation blocked: %s", strings.Join(blockers, "; "))
 	}
-	if err := engine.Validate.ValidateBundle(ctx, view, viewBundle); err != nil {
+	if err := engine.Validate.ValidateBundle(ctx, repositoryRoot, viewBundle); err != nil {
 		return fmt.Errorf("validate staged bundle with Packy-owned suite: %w", err)
 	}
 	return nil

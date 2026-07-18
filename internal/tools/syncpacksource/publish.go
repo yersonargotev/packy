@@ -238,6 +238,8 @@ func (builder *publicationBuilder) Build(ctx context.Context, repositoryRoot str
 
 type commandValidator struct{}
 
+const stagedValidationEnvironment = "PACKY_VALIDATION_STAGED=1"
+
 func (commandValidator) ValidateBundle(ctx context.Context, repositoryRoot, bundleRoot string) error {
 	if filepath.Clean(bundleRoot) == filepath.Join(filepath.Clean(repositoryRoot), "bundle") {
 		return commandValidator{}.Validate(ctx, repositoryRoot)
@@ -251,10 +253,14 @@ func (commandValidator) ValidateBundle(ctx context.Context, repositoryRoot, bund
 	if err := copyForValidation(repositoryRoot, checkout, bundleRoot); err != nil {
 		return err
 	}
-	return commandValidator{}.Validate(ctx, checkout)
+	return commandValidator{}.validate(ctx, checkout, true)
 }
 
 func (commandValidator) Validate(ctx context.Context, repositoryRoot string) error {
+	return commandValidator{}.validate(ctx, repositoryRoot, false)
+}
+
+func (commandValidator) validate(ctx context.Context, repositoryRoot string, staged bool) error {
 	home, err := os.MkdirTemp("", "packy-validation-home-")
 	if err != nil {
 		return err
@@ -262,12 +268,27 @@ func (commandValidator) Validate(ctx context.Context, repositoryRoot string) err
 	defer os.RemoveAll(home)
 	cmd := exec.CommandContext(ctx, "bash", "./scripts/validate-packy.sh")
 	cmd.Dir = repositoryRoot
-	cmd.Env = append(withoutCredentials(os.Environ()), "HOME="+filepath.Join(home, "home"), "XDG_CONFIG_HOME="+filepath.Join(home, "xdg"))
+	environment := withoutStagedValidationMarker(withoutCredentials(os.Environ()))
+	environment = append(environment, "HOME="+filepath.Join(home, "home"), "XDG_CONFIG_HOME="+filepath.Join(home, "xdg"))
+	if staged {
+		environment = append(environment, stagedValidationEnvironment)
+	}
+	cmd.Env = environment
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Packy-owned validation failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func withoutStagedValidationMarker(environment []string) []string {
+	filtered := make([]string, 0, len(environment))
+	for _, variable := range environment {
+		if !strings.HasPrefix(variable, "PACKY_VALIDATION_STAGED=") {
+			filtered = append(filtered, variable)
+		}
+	}
+	return filtered
 }
 
 func copyForValidation(repositoryRoot, checkout, bundleRoot string) error {
