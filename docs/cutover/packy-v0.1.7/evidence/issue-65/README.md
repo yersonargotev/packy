@@ -15,6 +15,10 @@ cutover/finalization stdout and stderr are in
 only adjudicated gate is in
 [`diagnostic-adjudication.log`](diagnostic-adjudication.log). The final record
 ends with `overall_failures=0`, `cutover=passed`, and `finalization=passed`.
+The separate, sandboxed public-boundary proof
+[`prove-codex-config-preservation.sh`](prove-codex-config-preservation.sh) and
+its captured [`codex-config-preservation.log`](codex-config-preservation.log)
+verify that the delegated Engram setup preserves contributor-owned Codex values.
 
 ## Pre-mutation gate
 
@@ -65,9 +69,13 @@ marketplace metadata, so the initial whole-file digest gate stopped after the
 otherwise successful Packy install. This was not contributor loss: normalized
 Codex prompt content, normalized OpenCode content, and the Engram binary matched
 their pre-cutover digests; the contributor Codex config and its unrelated
-sections remained; Engram projections, binary, and running MCP processes passed
-fresh checks. [`finalize.sh`](finalize.sh) records that adjudication and the
-unchanged final product/archive/history gates. No Matty restoration was needed.
+sections remained; and the sandbox proof exercised the same installed
+`engram setup codex` boundary with unrelated root values, nested tables, MCP,
+project, marketplace, plugin, desktop, notice, and shell-policy sentinels. Their
+canonical semantic digest matched before and after while the Engram projection
+was added. Engram projections, binary, and running MCP processes passed fresh
+checks. [`finalize.sh`](finalize.sh) records that adjudication and the unchanged
+final product/archive/history gates. No Matty restoration was needed.
 
 ## Authentic history
 
@@ -78,6 +86,7 @@ is outside Packy ownership.
 
 ## Evidence integrity
 
-[`SHA256SUMS`](SHA256SUMS) binds this index, both exact harnesses, the complete
-compressed transcript, and the diagnostic record. Any change requires
-regenerating the manifest and re-reviewing issue #65 evidence.
+[`SHA256SUMS`](SHA256SUMS) binds this index, both exact cutover harnesses, the
+sandbox proof, the complete compressed transcript, and both diagnostic records.
+Any change requires regenerating the manifest and re-reviewing issue #65
+evidence.

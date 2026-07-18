@@ -157,6 +157,7 @@ files = {
     "opencode_without_product_instruction": digest(json.dumps(opencode, sort_keys=True, separators=(",", ":"))),
 }
 for name, path in {
+    "codex_config": os.path.join(home, ".codex", "config.toml"),
     "engram_binary": os.path.join(home, ".local", "bin", "engram"),
 }.items():
     if os.path.isfile(path):
@@ -249,7 +250,6 @@ grep -Fq 'already exists with unmanaged settings' "$RUN_ROOT/engram-opencode.log
 
 normalized_host_fingerprint "$RUN_ROOT/host-before.json"
 printf 'normalized_host_before='; cat "$RUN_ROOT/host-before.json"; printf '\n'
-run_expect 0 "Codex config digest before delegated Engram setup" shasum -a 256 "$REAL_HOME/.codex/config.toml"
 run_expect 0 "Engram version before" "$REAL_HOME/.local/bin/engram" version
 run_capture 0 "Engram process before" "$RUN_ROOT/engram-process-before.log" pgrep -lf '/engram'
 
@@ -360,7 +360,6 @@ section "preservation and authentic-history gates"
 normalized_host_fingerprint "$RUN_ROOT/host-after.json"
 printf 'normalized_host_after='; cat "$RUN_ROOT/host-after.json"; printf '\n'
 cmp "$RUN_ROOT/host-before.json" "$RUN_ROOT/host-after.json" || die "contributor-owned host configuration or Engram binary changed"
-run_expect 0 "Codex config digest after delegated Engram setup" shasum -a 256 "$REAL_HOME/.codex/config.toml"
 run_expect 0 "Engram version after" "$REAL_HOME/.local/bin/engram" version
 run_capture 0 "Engram process after" "$RUN_ROOT/engram-process-after.log" pgrep -lf '/engram'
 (cd "$ARCHIVE" && shasum -a 256 -c SHA256SUMS) || die "external recovery archive failed final verification"
