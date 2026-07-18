@@ -98,10 +98,10 @@ func TestInspectBoundaryReportsNonRateLimit403AsSecretFreeAccessFailure(t *testi
 	t.Cleanup(func() { workflowSourceFactory = oldFactory })
 
 	t.Setenv("GITHUB_TOKEN", "inspect-secret-token")
-	t.Setenv("MATTY_SOURCE_ID", "mattpocock-skills")
-	t.Setenv("MATTY_SELECTOR", "latest-stable")
-	t.Setenv("MATTY_CLASSIFICATION_MODE", "ai")
-	t.Setenv("MATTY_REQUEST_REASON", "access failure fixture")
+	t.Setenv("PACKY_SOURCE_ID", "mattpocock-skills")
+	t.Setenv("PACKY_SELECTOR", "latest-stable")
+	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
+	t.Setenv("PACKY_REQUEST_REASON", "access failure fixture")
 	output := t.TempDir()
 	err := run(context.Background(), []string{"--phase", "inspect", "--repository-root", repository, "--output", output}, io.Discard)
 	var failure packsyncworkflow.Failure
@@ -225,10 +225,10 @@ func prepareInspectFixture(t *testing.T) (string, string, packsync.Lock) {
 
 func setInspectEnvironment(t *testing.T, reason string) {
 	t.Helper()
-	t.Setenv("MATTY_SOURCE_ID", "mattpocock-skills")
-	t.Setenv("MATTY_SELECTOR", "latest-stable")
-	t.Setenv("MATTY_CLASSIFICATION_MODE", "ai")
-	t.Setenv("MATTY_REQUEST_REASON", reason)
+	t.Setenv("PACKY_SOURCE_ID", "mattpocock-skills")
+	t.Setenv("PACKY_SELECTOR", "latest-stable")
+	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
+	t.Setenv("PACKY_REQUEST_REASON", reason)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -248,29 +248,44 @@ func TestWorkflowAcceptsOnlyEmptyEvidenceWhenNoPackIsAffected(t *testing.T) {
 }
 
 func TestInspectNormalizesWorkflowEnvironmentThroughCanonicalDispatch(t *testing.T) {
-	t.Setenv("MATTY_SOURCE_ID", "source")
-	t.Setenv("MATTY_SELECTOR", "commit")
-	t.Setenv("MATTY_SELECTOR_REF", strings.Repeat("a", 40))
-	t.Setenv("MATTY_CLASSIFICATION_MODE", "ai")
-	t.Setenv("MATTY_REQUEST_REASON", "fixture")
+	t.Setenv("PACKY_SOURCE_ID", "source")
+	t.Setenv("PACKY_SELECTOR", "commit")
+	t.Setenv("PACKY_SELECTOR_REF", strings.Repeat("a", 40))
+	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
+	t.Setenv("PACKY_REQUEST_REASON", "fixture")
 	request := packsyncworkflow.DispatchRequest{SchemaVersion: 1, SourceID: "source", Selector: packsyncworkflow.SelectorCommit, SelectorRef: strings.Repeat("a", 40), ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "fixture"}
 	digest, err := request.Digest()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MATTY_REQUEST_DIGEST", digest)
+	t.Setenv("PACKY_REQUEST_DIGEST", digest)
 	got, check, err := inspectRequest(options{repositoryRoot: t.TempDir()})
 	if err != nil || got.SourceID != "source" || check.Selector == nil || check.Selector.Mode != packsync.SelectorCommit {
 		t.Fatalf("normalized request = %#v, %#v, %v", got, check, err)
 	}
 }
 
+func TestInspectDoesNotAdoptLegacyMattyWorkflowEnvironment(t *testing.T) {
+	t.Setenv("PACKY_SOURCE_ID", "")
+	t.Setenv("MATTY_SOURCE_ID", "legacy-source")
+	t.Setenv("MATTY_SELECTOR", "commit")
+	t.Setenv("MATTY_SELECTOR_REF", strings.Repeat("a", 40))
+
+	got, check, err := inspectRequest(options{repositoryRoot: t.TempDir(), sourceID: "explicit-source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceID != "explicit-source" || check.SourceID != "explicit-source" {
+		t.Fatalf("legacy Matty environment was adopted: request=%#v check=%#v", got, check)
+	}
+}
+
 func TestInspectRejectsMismatchedWorkflowRequestDigest(t *testing.T) {
-	t.Setenv("MATTY_SOURCE_ID", "source")
-	t.Setenv("MATTY_SELECTOR", "latest-stable")
-	t.Setenv("MATTY_CLASSIFICATION_MODE", "ai")
-	t.Setenv("MATTY_REQUEST_REASON", "fixture")
-	t.Setenv("MATTY_REQUEST_DIGEST", strings.Repeat("0", 64))
+	t.Setenv("PACKY_SOURCE_ID", "source")
+	t.Setenv("PACKY_SELECTOR", "latest-stable")
+	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
+	t.Setenv("PACKY_REQUEST_REASON", "fixture")
+	t.Setenv("PACKY_REQUEST_DIGEST", strings.Repeat("0", 64))
 	if _, _, err := inspectRequest(options{repositoryRoot: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "request digest") {
 		t.Fatalf("mismatched request digest error = %v", err)
 	}
@@ -278,10 +293,10 @@ func TestInspectRejectsMismatchedWorkflowRequestDigest(t *testing.T) {
 
 func TestInvalidDispatchStillEmitsCanonicalFailureArtifact(t *testing.T) {
 	output := t.TempDir()
-	t.Setenv("MATTY_SOURCE_ID", "../source")
-	t.Setenv("MATTY_SELECTOR", "latest-stable")
-	t.Setenv("MATTY_CLASSIFICATION_MODE", "ai")
-	t.Setenv("MATTY_REQUEST_REASON", "invalid source fixture")
+	t.Setenv("PACKY_SOURCE_ID", "../source")
+	t.Setenv("PACKY_SELECTOR", "latest-stable")
+	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
+	t.Setenv("PACKY_REQUEST_REASON", "invalid source fixture")
 	if err := run(context.Background(), []string{"--phase", "inspect", "--output", output}, io.Discard); err == nil {
 		t.Fatal("invalid dispatch was admitted")
 	}

@@ -23,11 +23,11 @@ type ValidationGates struct {
 	Apply          bool `json:"apply"`
 	Diff           bool `json:"diff"`
 	Ownership      bool `json:"ownership"`
-	MattySuite     bool `json:"matty_suite"`
+	PackySuite     bool `json:"packy_suite"`
 }
 
 func (gates ValidationGates) Complete() bool {
-	return gates.Provenance && gates.Classification && gates.Reacquisition && gates.Apply && gates.Diff && gates.Ownership && gates.MattySuite
+	return gates.Provenance && gates.Classification && gates.Reacquisition && gates.Apply && gates.Diff && gates.Ownership && gates.PackySuite
 }
 
 type Proposal struct {

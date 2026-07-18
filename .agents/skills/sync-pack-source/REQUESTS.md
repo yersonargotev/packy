@@ -5,7 +5,7 @@ Load this reference for normalization, preflight, attachment, or dispatch.
 ## Authority
 
 - Work only inside a checkout whose canonical remote resolves to
-  `yersonargotev/matty`, but read authority with `gh api` from remote `main`.
+  `yersonargotev/packy`, but read authority with `gh api` from remote `main`.
 - Require `git`, `gh`, `jq`, active authentication, read access to repository
   contents/Actions/branches/pull requests, and actual workflow-dispatch access.
 - Read `bundle/sources.json`, the dispatch schema, and
@@ -24,11 +24,11 @@ Load this reference for normalization, preflight, attachment, or dispatch.
 Materialize the remote runtime without touching the checkout:
 
 ```sh
-remote_main_sha="$(gh api repos/yersonargotev/matty/branches/main --jq .commit.sha)"
+remote_main_sha="$(gh api repos/yersonargotev/packy/branches/main --jq .commit.sha)"
 remote_skill_runtime="$(mktemp -d)"
 for script in request.sh attach.sh dispatch.sh result-state.sh; do
   gh api -H 'Accept: application/vnd.github.raw+json' \
-    "repos/yersonargotev/matty/contents/.agents/skills/sync-pack-source/scripts/$script?ref=$remote_main_sha" \
+    "repos/yersonargotev/packy/contents/.agents/skills/sync-pack-source/scripts/$script?ref=$remote_main_sha" \
     > "$remote_skill_runtime/$script"
   chmod 700 "$remote_skill_runtime/$script"
 done
@@ -97,6 +97,6 @@ only the required transport digest and executes the accepted primary command:
 
 Require the returned run URL; do not rediscover the run by time or actor. If
 dispatch is unavailable, report **bloqueada** and show the exact `gh workflow
-run .github/workflows/sync-pack-source.yml --repo yersonargotev/matty --ref
+run .github/workflows/sync-pack-source.yml --repo yersonargotev/packy --ref
 main --json` command plus equivalent Actions UI fields. Instructions are not
 success.

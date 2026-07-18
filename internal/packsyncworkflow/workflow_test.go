@@ -264,7 +264,7 @@ func TestPublicationFailureArtifactPreservesExactSafeRecovery(t *testing.T) {
 }
 
 func TestValidationArtifactBindsSandboxProofWithoutUpstreamBytes(t *testing.T) {
-	artifact := ValidationArtifact{SchemaVersion: 1, SourceID: "mattpocock-skills", PlanID: "plan-1", BaseSHA: baseA, CandidateSHA: candidateA, MattySuite: true, Apply: true}
+	artifact := ValidationArtifact{SchemaVersion: 1, SourceID: "mattpocock-skills", PlanID: "plan-1", BaseSHA: baseA, CandidateSHA: candidateA, PackySuite: true, Apply: true}
 	if err := artifact.Validate(); err != nil {
 		t.Fatalf("valid proof: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestValidationArtifactBindsSandboxProofWithoutUpstreamBytes(t *testing.T) {
 
 func TestDecisionReadinessBindsExactIdentityAndInvalidatesOnAnyLaterChange(t *testing.T) {
 	identity := ReadinessIdentity{PlanID: "plan-1", BaseSHA: baseA, HeadSHA: headA, CandidateSHA: candidateA, ProvenanceSHA256: strings.Repeat("5", 64), PRNumber: 7, PRStateSHA256: strings.Repeat("6", 64)}
-	gates := ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, MattySuite: true}
+	gates := ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}
 	ready, err := MarkDecisionReady(identity, gates, false, false)
 	if err != nil || !ready.DecisionReady || ready.AutoMerge || !ready.ManualMergeRequired {
 		t.Fatalf("readiness = %#v, %v", ready, err)
@@ -299,7 +299,7 @@ func TestDecisionReadinessBindsExactIdentityAndInvalidatesOnAnyLaterChange(t *te
 
 func TestMarkdownBriefRendersTheSameCanonicalEvidenceWithoutUpstreamBytes(t *testing.T) {
 	request := DispatchRequest{SchemaVersion: 1, SourceID: "source", Selector: SelectorCommit, SelectorRef: candidateA, ClassificationMode: ClassificationAI, RequestReason: "fixture"}
-	brief := ReviewBrief{SchemaVersion: 1, Actor: "maintainer", RunID: "1", RunAttempt: "1", RunURL: "https://github.com/owner/repo/actions/runs/1", Request: request, Candidate: packsync.Candidate{Commit: candidateA}, PlanID: "plan", BaseSHA: baseA, HeadSHA: headA, ResultTreeSHA: treeA, Branch: "sync/source", SelectedResources: []packsync.ResourceEvidence{{SHA256: strings.Repeat("4", 64)}}, PreviousSnapshotSHA256: strings.Repeat("3", 64), ProposedSnapshotSHA256: strings.Repeat("5", 64), ApplyStatus: "applied", Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, MattySuite: true}, DecisionReady: true, ManualMergeRequired: true, InvalidationConditions: []string{"base_changed", "candidate_changed", "provenance_changed", "head_changed", "pr_state_changed"}}
+	brief := ReviewBrief{SchemaVersion: 1, Actor: "maintainer", RunID: "1", RunAttempt: "1", RunURL: "https://github.com/owner/repo/actions/runs/1", Request: request, Candidate: packsync.Candidate{Commit: candidateA}, PlanID: "plan", BaseSHA: baseA, HeadSHA: headA, ResultTreeSHA: treeA, Branch: "sync/source", SelectedResources: []packsync.ResourceEvidence{{SHA256: strings.Repeat("4", 64)}}, PreviousSnapshotSHA256: strings.Repeat("3", 64), ProposedSnapshotSHA256: strings.Repeat("5", 64), ApplyStatus: "applied", Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}, DecisionReady: true, ManualMergeRequired: true, InvalidationConditions: []string{"base_changed", "candidate_changed", "provenance_changed", "head_changed", "pr_state_changed"}}
 	canonical, err := brief.CanonicalJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -563,7 +563,7 @@ func contains(values []string, value string) bool {
 }
 
 func validProposal() Proposal {
-	return Proposal{SourceID: "mattpocock-skills", PlanID: "plan-1", BaseSHA: baseA, CandidateSHA: candidateA, ResultTreeSHA: headA, HeadSHA: headA, ProvenanceSHA256: strings.Repeat("5", 64), ManagedTitle: "sync(mattpocock-skills): candidate", ManagedMetadataHash: strings.Repeat("6", 64), Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, MattySuite: true}, InvalidationConditions: DecisionReadyInvalidationConditions()}
+	return Proposal{SourceID: "mattpocock-skills", PlanID: "plan-1", BaseSHA: baseA, CandidateSHA: candidateA, ResultTreeSHA: headA, HeadSHA: headA, ProvenanceSHA256: strings.Repeat("5", 64), ManagedTitle: "sync(mattpocock-skills): candidate", ManagedMetadataHash: strings.Repeat("6", 64), Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}, InvalidationConditions: DecisionReadyInvalidationConditions()}
 }
 
 func pristineState() PublicationState {

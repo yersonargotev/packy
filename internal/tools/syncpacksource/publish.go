@@ -58,7 +58,7 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	if err := validation.Validate(); err != nil || validation.SourceID != dispatch.SourceID || validation.PlanID != plan.PlanID || validation.BaseSHA != plan.Preconditions.BaseCommit || validation.CandidateSHA != plan.Candidate.Commit {
 		return packsyncworkflow.Failure{Kind: packsyncworkflow.FailureValidation, Err: errors.New("sandbox validation proof is missing, invalid, or stale")}
 	}
-	acquisition, err := os.MkdirTemp("", "matty-pack-publish-")
+	acquisition, err := os.MkdirTemp("", "packy-pack-publish-")
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func validateSandbox(ctx context.Context, option options, output io.Writer) erro
 	if err := validateWorkflowEvidence(plan, evidence); err != nil {
 		return packsyncworkflow.Failure{Kind: packsyncworkflow.FailureClassification, Err: err}
 	}
-	acquisition, err := os.MkdirTemp("", "matty-pack-validate-")
+	acquisition, err := os.MkdirTemp("", "packy-pack-validate-")
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,7 @@ func validateSandbox(ctx context.Context, option options, output io.Writer) erro
 	if err := validator.Validate(ctx, option.repositoryRoot); err != nil {
 		return packsyncworkflow.Failure{Kind: packsyncworkflow.FailureValidation, Err: err}
 	}
-	artifact := packsyncworkflow.ValidationArtifact{SchemaVersion: 1, SourceID: dispatch.SourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, MattySuite: true, Apply: true, UpstreamBytes: false}
+	artifact := packsyncworkflow.ValidationArtifact{SchemaVersion: 1, SourceID: dispatch.SourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, PackySuite: true, Apply: true, UpstreamBytes: false}
 	if err := artifact.Validate(); err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func (commandValidator) ValidateBundle(ctx context.Context, repositoryRoot, bund
 	if filepath.Clean(bundleRoot) == filepath.Join(filepath.Clean(repositoryRoot), "bundle") {
 		return commandValidator{}.Validate(ctx, repositoryRoot)
 	}
-	sandbox, err := os.MkdirTemp("", "matty-staged-validation-")
+	sandbox, err := os.MkdirTemp("", "packy-staged-validation-")
 	if err != nil {
 		return err
 	}
@@ -255,17 +255,17 @@ func (commandValidator) ValidateBundle(ctx context.Context, repositoryRoot, bund
 }
 
 func (commandValidator) Validate(ctx context.Context, repositoryRoot string) error {
-	home, err := os.MkdirTemp("", "matty-validation-home-")
+	home, err := os.MkdirTemp("", "packy-validation-home-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(home)
-	cmd := exec.CommandContext(ctx, "bash", "./scripts/validate-matty.sh")
+	cmd := exec.CommandContext(ctx, "bash", "./scripts/validate-packy.sh")
 	cmd.Dir = repositoryRoot
 	cmd.Env = append(withoutCredentials(os.Environ()), "HOME="+filepath.Join(home, "home"), "XDG_CONFIG_HOME="+filepath.Join(home, "xdg"))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Matty-owned validation failed: %w: %s", err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("Packy-owned validation failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

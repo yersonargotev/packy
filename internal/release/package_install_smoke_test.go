@@ -49,7 +49,7 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 	if err == nil {
 		t.Fatalf("stale update --dry-run unexpectedly succeeded:\n%s", out)
 	}
-	for _, want := range []string{"stale", "v0.99.0", "run matty init"} {
+	for _, want := range []string{"stale", "v0.99.0", "run packy init"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stale update --dry-run output missing %q:\n%s", want, out)
 		}
@@ -62,12 +62,12 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 	runSmokeCommand(t, binary, outsideCheckout, env, "init", "--repository-url", sourceRepo)
 
 	runSmokeCommand(t, binary, outsideCheckout, env, "install", "--dry-run")
-	assertSmokePathMissing(t, filepath.Join(home, ".matty"), "install --dry-run must not write state")
+	assertSmokePathMissing(t, filepath.Join(home, ".packy"), "install --dry-run must not write state")
 	assertSmokePathMissing(t, filepath.Join(home, ".agents"), "install --dry-run must not write skill links")
 	assertSmokeExternalCalls(t, externalLog, nil)
 
 	runSmokeCommand(t, binary, outsideCheckout, env, "install")
-	assertSmokePathExists(t, filepath.Join(home, ".matty", "config.json"), "install should write state")
+	assertSmokePathExists(t, filepath.Join(home, ".packy", "config.json"), "install should write state")
 	assertSmokePathExists(t, filepath.Join(home, ".agents", "skills", "wayfinder"), "install should link bundled skills")
 	runSmokeCommand(t, binary, outsideCheckout, env, "doctor")
 
@@ -84,11 +84,11 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 		t.Fatalf("uninstall --dry-run mutated sandbox home\nbefore:\n%s\nafter:\n%s", beforeUninstallDryRun, after)
 	}
 	runSmokeCommand(t, binary, outsideCheckout, env, "uninstall")
-	assertSmokePathMissing(t, filepath.Join(home, ".matty", "config.json"), "uninstall should remove state")
+	assertSmokePathMissing(t, filepath.Join(home, ".packy", "config.json"), "uninstall should remove state")
 	assertSmokePathMissing(t, filepath.Join(home, ".agents", "skills", "wayfinder"), "uninstall should remove managed skill links")
 
 	runSmokeCommand(t, binary, outsideCheckout, env, "doctor")
-	assertSmokePathExists(t, filepath.Join(home, ".local", "share", "matty", "bundle", "skills"), "uninstall should keep initialized source")
+	assertSmokePathExists(t, filepath.Join(home, ".local", "share", "packy", "bundle", "skills"), "uninstall should keep initialized source")
 	assertSmokeExternalCalls(t, externalLog, []string{
 		"engram setup codex",
 		"engram setup opencode",
@@ -103,8 +103,8 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 
 func buildLocalReleaseBinary(t *testing.T, root, sandbox, version string) string {
 	t.Helper()
-	binary := filepath.Join(sandbox, "matty")
-	cmd := exec.Command("go", "build", "-ldflags", "-X github.com/yersonargotev/packy/internal/version.Value="+version, "-o", binary, "./cmd/matty")
+	binary := filepath.Join(sandbox, "packy")
+	cmd := exec.Command("go", "build", "-ldflags", "-X github.com/yersonargotev/packy/internal/version.Value="+version, "-o", binary, "./cmd/packy")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),
 		"HOME="+filepath.Join(sandbox, "go-home"),
@@ -140,7 +140,7 @@ func createSmokeSourceRepo(t *testing.T, sandbox, version string) string {
 	}
 	runSmokeGit(t, repo, sandbox, "init")
 	runSmokeGit(t, repo, sandbox, "add", ".")
-	runSmokeGit(t, repo, sandbox, "-c", "user.name=Matty Smoke", "-c", "user.email=matty-smoke@example.test", "commit", "-m", "fixture source")
+	runSmokeGit(t, repo, sandbox, "-c", "user.name=Packy Smoke", "-c", "user.email=packy-smoke@example.test", "commit", "-m", "fixture source")
 	runSmokeGit(t, repo, sandbox, "tag", version)
 	return repo
 }
@@ -152,7 +152,7 @@ func appendSmokeSourceTag(t *testing.T, repo, sandbox, version string) {
 		t.Fatalf("write newer smoke source fixture: %v", err)
 	}
 	runSmokeGit(t, repo, sandbox, "add", ".")
-	runSmokeGit(t, repo, sandbox, "-c", "user.name=Matty Smoke", "-c", "user.email=matty-smoke@example.test", "commit", "-m", "fixture source "+version)
+	runSmokeGit(t, repo, sandbox, "-c", "user.name=Packy Smoke", "-c", "user.email=packy-smoke@example.test", "commit", "-m", "fixture source "+version)
 	runSmokeGit(t, repo, sandbox, "tag", version)
 }
 
@@ -187,7 +187,7 @@ func runSmokeCommand(t *testing.T, binary, dir string, env []string, args ...str
 	t.Helper()
 	output, err := runSmokeCommandAllowError(t, binary, dir, env, args...)
 	if err != nil {
-		t.Fatalf("matty %s failed: %v\n%s", strings.Join(args, " "), err, output)
+		t.Fatalf("packy %s failed: %v\n%s", strings.Join(args, " "), err, output)
 	}
 	return output
 }
@@ -206,7 +206,7 @@ func assertSourceRepositoryExcludesExternalReferenceTrees(t *testing.T, root str
 	for _, name := range []string{"engram", "gentle-ai", "skills"} {
 		path := filepath.Join(root, name)
 		if _, err := os.Stat(path); err == nil {
-			t.Fatalf("Matty source must not track external reference tree %s", name)
+			t.Fatalf("Packy source must not track external reference tree %s", name)
 		} else if !os.IsNotExist(err) {
 			t.Fatalf("inspect external reference tree %s: %v", name, err)
 		}
@@ -215,7 +215,7 @@ func assertSourceRepositoryExcludesExternalReferenceTrees(t *testing.T, root str
 
 func assertInitializedSourceExcludesExternalReferenceTrees(t *testing.T, home string) {
 	t.Helper()
-	root := filepath.Join(home, ".local", "share", "matty")
+	root := filepath.Join(home, ".local", "share", "packy")
 	for _, name := range []string{"engram", "gentle-ai", "skills"} {
 		assertSmokePathMissing(t, filepath.Join(root, name), "initialized source must exclude external reference tree "+name)
 	}

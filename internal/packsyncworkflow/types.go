@@ -112,13 +112,13 @@ type ValidationArtifact struct {
 	PlanID        string `json:"plan_id"`
 	BaseSHA       string `json:"base_sha"`
 	CandidateSHA  string `json:"candidate_sha"`
-	MattySuite    bool   `json:"matty_suite"`
+	PackySuite    bool   `json:"packy_suite"`
 	Apply         bool   `json:"apply"`
 	UpstreamBytes bool   `json:"contains_upstream_bytes"`
 }
 
 func (artifact ValidationArtifact) Validate() error {
-	if artifact.SchemaVersion != 1 || !sourceIDPattern.MatchString(artifact.SourceID) || artifact.PlanID == "" || requireFullSHA("base", artifact.BaseSHA) != nil || requireFullSHA("candidate", artifact.CandidateSHA) != nil || !artifact.MattySuite || !artifact.Apply || artifact.UpstreamBytes {
+	if artifact.SchemaVersion != 1 || !sourceIDPattern.MatchString(artifact.SourceID) || artifact.PlanID == "" || requireFullSHA("base", artifact.BaseSHA) != nil || requireFullSHA("candidate", artifact.CandidateSHA) != nil || !artifact.PackySuite || !artifact.Apply || artifact.UpstreamBytes {
 		return errors.New("sandbox validation proof is incomplete or contradictory")
 	}
 	return nil

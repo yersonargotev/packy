@@ -17,8 +17,8 @@ import (
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
 )
 
-var mattyOwnedPackages = []string{
-	"./cmd/matty",
+var packyOwnedPackages = []string{
+	"./cmd/packy",
 	"./internal/bootstrap",
 	"./internal/bundletransaction",
 	"./internal/capabilitypack",
@@ -45,11 +45,11 @@ var mattyOwnedPackages = []string{
 
 func TestValidationEntrypointOwnsTheExactPackageAllowlist(t *testing.T) {
 	root := repositoryRoot(t)
-	script := readFile(t, filepath.Join(root, "scripts", "validate-matty.sh"))
+	script := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
 
 	packages := shellArray(t, script, "readonly packages=(")
-	if !reflect.DeepEqual(packages, mattyOwnedPackages) {
-		t.Fatalf("validation package allowlist = %#v, want %#v", packages, mattyOwnedPackages)
+	if !reflect.DeepEqual(packages, packyOwnedPackages) {
+		t.Fatalf("validation package allowlist = %#v, want %#v", packages, packyOwnedPackages)
 	}
 	for _, forbidden := range []string{"./" + "...", "bundle/", ".scratch/"} {
 		if strings.Contains(script, forbidden) {
@@ -78,7 +78,7 @@ func TestValidationEntrypointOwnsTheExactPackageAllowlist(t *testing.T) {
 
 func TestCIUsesOnlyTheValidationEntrypoint(t *testing.T) {
 	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
-	if strings.Count(workflow, "run: ./scripts/validate-matty.sh") != 1 {
+	if strings.Count(workflow, "run: ./scripts/validate-packy.sh") != 1 {
 		t.Fatal("CI must invoke the repository validation authority exactly once")
 	}
 	for _, unsafe := range []string{"go test", "go vet", "go build", "gofmt"} {
@@ -97,9 +97,9 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 	}
 	for _, required := range []string{
 		"workflow_dispatch:", "permissions: {}", "group: sync-pack-source-${{ inputs.source_id }}", "cancel-in-progress: false",
-		"run-name: sync-pack-source / ${{ inputs.source_id }} / ${{ inputs.request_digest }}", "MATTY_REQUEST_DIGEST: ${{ inputs.request_digest }}",
+		"run-name: sync-pack-source / ${{ inputs.source_id }} / ${{ inputs.request_digest }}", "PACKY_REQUEST_DIGEST: ${{ inputs.request_digest }}",
 		"inspect:", "classify:", "validate:", "publish:", "needs: [inspect, classify, validate]", "contents: write", "pull-requests: write",
-		"--phase validate", "steps.route.outputs.noop", "matty-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
+		"--phase validate", "steps.route.outputs.noop", "packy-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("synchronization workflow missing %q", required)
@@ -239,7 +239,7 @@ func TestMaintainerSkillFixturesCoverCanonicalRequestsAndMonitoring(t *testing.T
 			if fixture.SameDigest {
 				titleDigest = digest
 			}
-			runs = append(runs, map[string]any{"databaseId": 42, "displayTitle": "sync-pack-source / mattpocock-skills / " + titleDigest, "status": fixture.RunStatus, "url": "https://github.com/yersonargotev/matty/actions/runs/42"})
+			runs = append(runs, map[string]any{"databaseId": 42, "displayTitle": "sync-pack-source / mattpocock-skills / " + titleDigest, "status": fixture.RunStatus, "url": "https://github.com/yersonargotev/packy/actions/runs/42"})
 		}
 		runsJSON, _ := json.Marshal(runs)
 		writeFile(t, runsPath, string(runsJSON))
@@ -277,7 +277,7 @@ func TestMaintainerSkillFixturesCoverCanonicalRequestsAndMonitoring(t *testing.T
 func writeMaintainerArtifactFixture(t *testing.T, artifacts, kind string) (string, string) {
 	t.Helper()
 	sha, head, hash := strings.Repeat("a", 40), strings.Repeat("c", 40), strings.Repeat("b", 64)
-	title, body := "managed", "managed body\n<!-- matty-pack-sync:fixture -->\n"
+	title, body := "managed", "managed body\n<!-- packy-pack-sync:fixture -->\n"
 	metadataHash := packsyncworkflow.ManagedMetadataHash(title, body)
 	var name string
 	var instance any
@@ -287,7 +287,7 @@ func writeMaintainerArtifactFixture(t *testing.T, artifacts, kind string) (strin
 		instance = map[string]any{"schema_version": 1, "state": "no-op", "source_id": "mattpocock-skills", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "contains_secrets": false, "contains_upstream_bytes": false}
 	case "publication", "stale-publication", "stale-base-publication", "edited-publication":
 		name = "pack-source-publication.schema.json"
-		instance = map[string]any{"schema_version": 1, "source_id": "mattpocock-skills", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "result_tree_sha": sha, "head_sha": head, "provenance_sha256": hash, "branch_name": "sync/mattpocock-skills", "pr_number": 7, "pr_state_sha256": metadataHash, "managed_title": title, "managed_metadata_hash": metadataHash, "validation": map[string]bool{"provenance": true, "classification": true, "reacquisition": true, "apply": true, "diff": true, "ownership": true, "matty_suite": true}, "decision_ready": true, "auto_merge": false, "manual_merge_required": true, "upstream_content_executed": false, "invalidation_conditions": packsyncworkflow.DecisionReadyInvalidationConditions()}
+		instance = map[string]any{"schema_version": 1, "source_id": "mattpocock-skills", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "result_tree_sha": sha, "head_sha": head, "provenance_sha256": hash, "branch_name": "sync/mattpocock-skills", "pr_number": 7, "pr_state_sha256": metadataHash, "managed_title": title, "managed_metadata_hash": metadataHash, "validation": map[string]bool{"provenance": true, "classification": true, "reacquisition": true, "apply": true, "diff": true, "ownership": true, "packy_suite": true}, "decision_ready": true, "auto_merge": false, "manual_merge_required": true, "upstream_content_executed": false, "invalidation_conditions": packsyncworkflow.DecisionReadyInvalidationConditions()}
 	case "operational":
 		name = "pack-source-operational-artifact.schema.json"
 		instance = packsyncworkflow.FailureArtifact{SchemaVersion: 1, State: "blocked", SourceID: "mattpocock-skills", PlanID: "plan", BaseSHA: sha, CandidateSHA: sha, Blockers: []string{"blocked"}, Recovery: []string{"retry safely"}}
@@ -343,7 +343,7 @@ func testMaintainerDispatchRenderer(t *testing.T, request json.RawMessage) {
 	fake := `#!/bin/sh
 printf '%s\n' "$*" > "$FAKE_GH_ARGS"
 cat > "$FAKE_GH_STDIN"
-echo https://github.com/yersonargotev/matty/actions/runs/42
+echo https://github.com/yersonargotev/packy/actions/runs/42
 `
 	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
@@ -354,7 +354,7 @@ echo https://github.com/yersonargotev/matty/actions/runs/42
 	if output, err := cmd.CombinedOutput(); err != nil || !strings.Contains(string(output), "/actions/runs/42") {
 		t.Fatalf("fixture dispatch = %v: %s", err, output)
 	}
-	wantArgs := "workflow run .github/workflows/sync-pack-source.yml --repo yersonargotev/matty --ref main --json"
+	wantArgs := "workflow run .github/workflows/sync-pack-source.yml --repo yersonargotev/packy --ref main --json"
 	if got := strings.TrimSpace(readFile(t, argsPath)); got != wantArgs {
 		t.Fatalf("gh args = %q, want %q", got, wantArgs)
 	}
@@ -402,8 +402,8 @@ func TestSynchronizationSchemasAcceptCanonicalRuntimeArtifacts(t *testing.T) {
 	sha, hash := strings.Repeat("a", 40), strings.Repeat("b", 64)
 	instances := map[string]any{
 		"pack-source-operational-artifact.schema.json": packsyncworkflow.FailureArtifact{SchemaVersion: 1, State: "blocked", SourceID: "source", PlanID: "plan", BaseSHA: sha, CandidateSHA: sha, Blockers: []string{"blocked"}, Recovery: []string{"retry safely"}},
-		"pack-source-validation.schema.json":           packsyncworkflow.ValidationArtifact{SchemaVersion: 1, SourceID: "source", PlanID: "plan", BaseSHA: sha, CandidateSHA: sha, MattySuite: true, Apply: true},
-		"pack-source-publication.schema.json":          map[string]any{"schema_version": 1, "source_id": "source", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "result_tree_sha": sha, "head_sha": strings.Repeat("c", 40), "provenance_sha256": hash, "branch_name": "sync/source", "pr_number": 7, "pr_state_sha256": hash, "managed_title": "managed", "managed_metadata_hash": hash, "validation": map[string]bool{"provenance": true, "classification": true, "reacquisition": true, "apply": true, "diff": true, "ownership": true, "matty_suite": true}, "decision_ready": true, "auto_merge": false, "manual_merge_required": true, "upstream_content_executed": false, "invalidation_conditions": packsyncworkflow.DecisionReadyInvalidationConditions()},
+		"pack-source-validation.schema.json":           packsyncworkflow.ValidationArtifact{SchemaVersion: 1, SourceID: "source", PlanID: "plan", BaseSHA: sha, CandidateSHA: sha, PackySuite: true, Apply: true},
+		"pack-source-publication.schema.json":          map[string]any{"schema_version": 1, "source_id": "source", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "result_tree_sha": sha, "head_sha": strings.Repeat("c", 40), "provenance_sha256": hash, "branch_name": "sync/source", "pr_number": 7, "pr_state_sha256": hash, "managed_title": "managed", "managed_metadata_hash": hash, "validation": map[string]bool{"provenance": true, "classification": true, "reacquisition": true, "apply": true, "diff": true, "ownership": true, "packy_suite": true}, "decision_ready": true, "auto_merge": false, "manual_merge_required": true, "upstream_content_executed": false, "invalidation_conditions": packsyncworkflow.DecisionReadyInvalidationConditions()},
 		"pack-source-noop.schema.json":                 map[string]any{"schema_version": 1, "state": "no-op", "source_id": "source", "plan_id": "plan", "base_sha": sha, "candidate_sha": sha, "contains_secrets": false, "contains_upstream_bytes": false},
 	}
 	for name, instance := range instances {
@@ -482,7 +482,7 @@ func workflowSection(t *testing.T, workflow, start, end string) string {
 }
 
 func TestValidationEntrypointIgnoresHostileUnownedGoContent(t *testing.T) {
-	if os.Getenv("MATTY_VALIDATION_NESTED") == "1" {
+	if os.Getenv("PACKY_VALIDATION_NESTED") == "1" {
 		t.Skip("nested validation invoked by hostile-content tracer")
 	}
 
@@ -510,7 +510,7 @@ func TestHostile(t *testing.T) {
 
 	operatorHome := filepath.Join(tempRoot, "operator-home")
 	operatorXDG := filepath.Join(tempRoot, "operator-xdg")
-	cmd := exec.Command("bash", filepath.Join(tempRoot, "scripts", "validate-matty.sh"))
+	cmd := exec.Command("bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"))
 	cmd.Dir = tempRoot
 	cmd.Env = append(os.Environ(),
 		"HOME="+operatorHome,
@@ -519,7 +519,7 @@ func TestHostile(t *testing.T) {
 		"GOMODCACHE="+goEnv(t, "GOMODCACHE"),
 		"GOPATH="+goEnv(t, "GOPATH"),
 		"HOSTILE_SENTINEL="+sentinel,
-		"MATTY_VALIDATION_NESTED=1",
+		"PACKY_VALIDATION_NESTED=1",
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
