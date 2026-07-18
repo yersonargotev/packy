@@ -210,7 +210,7 @@ if (directories, files) != (6, 3):
 print("recovery_typed_inventory=6_directories,3_regular_files,0_special_entries")
 PY
 run_expect 0 "historical Matty tag" bash -o pipefail -c 'git ls-remote https://github.com/yersonargotev/matty.git refs/tags/v0.1.6 | grep -q "^68aec8969374fa9e9a6ea86b33e6719646b999f8"'
-run_expect 0 "historical Matty release asset" curl -fsIL https://github.com/yersonargotev/packy/releases/download/v0.1.6/matty_v0.1.6_darwin_arm64
+run_expect 0 "historical Matty release asset" curl -fsIL -o /dev/null https://github.com/yersonargotev/packy/releases/download/v0.1.6/matty_v0.1.6_darwin_arm64
 
 section "final result"
 printf '[%s] overall_failures=0 final_audit=passed availability_candidate=ready automation_candidate=ready\n' "$(stamp)"
