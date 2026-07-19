@@ -1,0 +1,1113 @@
+{
+  "conflicts": [],
+  "contract": {
+    "exclusions": [
+      {
+        "id": "runtime-hooks",
+        "reason": "hooks are not Addy 1.0.0 runtime resources",
+        "source_paths": [
+          "hooks/sdd-cache-post.sh",
+          "hooks/sdd-cache-pre.sh",
+          "hooks/session-start.sh",
+          "hooks/simplify-ignore.sh"
+        ]
+      },
+      {
+        "id": "source-maintenance",
+        "reason": "source-only setup, manifests, symlinks, evaluators, validators, tests, and CI remain inert",
+        "source_paths": [
+          ".agents/**",
+          ".claude-plugin/**",
+          ".codex-plugin/**",
+          ".github/**",
+          ".opencode/skills",
+          "AGENTS.md",
+          "evals/**",
+          "scripts/**",
+          "tests/**"
+        ]
+      }
+    ],
+    "optional_modes": [
+      {
+        "authorities": [
+          "browser",
+          "network"
+        ],
+        "fallback": "static evidence-only analysis",
+        "id": "browser-network"
+      },
+      {
+        "authorities": [
+          "package-manager",
+          "process"
+        ],
+        "fallback": "report commands without running them",
+        "id": "package-tools"
+      },
+      {
+        "authorities": [
+          "commit",
+          "deploy"
+        ],
+        "fallback": "none",
+        "id": "privileged-shipping"
+      },
+      {
+        "authorities": [
+          "subagent"
+        ],
+        "fallback": "sequential single-agent analysis",
+        "id": "specialist-fanout"
+      }
+    ]
+  },
+  "id": "addy",
+  "provides": [
+    "workflow:addy"
+  ],
+  "requires": {
+    "capabilities": [],
+    "tools": []
+  },
+  "resources": [
+    {
+      "bindings": [
+        {
+          "invocation": "$code-reviewer",
+          "mode": "native",
+          "name": "code-reviewer",
+          "projection": "agent",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "code-reviewer",
+          "mode": "native",
+          "name": "code-reviewer",
+          "projection": "agent",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "description": "Synthetic Addy code-reviewer persona",
+      "id": "code-reviewer",
+      "kind": "agent",
+      "mode": "subagent",
+      "permissions": [
+        "filesystem",
+        "process"
+      ],
+      "requires": [
+        "skill:using-agent-skills"
+      ],
+      "source": "agents/code-reviewer.md",
+      "tools": [
+        "browser"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$security-auditor",
+          "mode": "native",
+          "name": "security-auditor",
+          "projection": "agent",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "security-auditor",
+          "mode": "native",
+          "name": "security-auditor",
+          "projection": "agent",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "description": "Synthetic Addy security-auditor persona",
+      "id": "security-auditor",
+      "kind": "agent",
+      "mode": "subagent",
+      "permissions": [
+        "filesystem",
+        "process"
+      ],
+      "requires": [
+        "skill:using-agent-skills"
+      ],
+      "source": "agents/security-auditor.md",
+      "tools": [
+        "browser"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$test-engineer",
+          "mode": "native",
+          "name": "test-engineer",
+          "projection": "agent",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "test-engineer",
+          "mode": "native",
+          "name": "test-engineer",
+          "projection": "agent",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "description": "Synthetic Addy test-engineer persona",
+      "id": "test-engineer",
+      "kind": "agent",
+      "mode": "subagent",
+      "permissions": [
+        "filesystem",
+        "process"
+      ],
+      "requires": [
+        "skill:using-agent-skills"
+      ],
+      "source": "agents/test-engineer.md",
+      "tools": [
+        "browser"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$web-performance-auditor",
+          "mode": "native",
+          "name": "web-performance-auditor",
+          "projection": "agent",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "web-performance-auditor",
+          "mode": "native",
+          "name": "web-performance-auditor",
+          "projection": "agent",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "description": "Synthetic Addy web-performance-auditor persona",
+      "id": "web-performance-auditor",
+      "kind": "agent",
+      "mode": "subagent",
+      "permissions": [
+        "filesystem",
+        "process"
+      ],
+      "requires": [
+        "skill:using-agent-skills"
+      ],
+      "source": "agents/web-performance-auditor.md",
+      "tools": [
+        "browser"
+      ]
+    },
+    {
+      "id": "accessibility-checklist",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/accessibility-checklist.md"
+    },
+    {
+      "id": "definition-of-done",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/definition-of-done.md"
+    },
+    {
+      "id": "observability-checklist",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/observability-checklist.md"
+    },
+    {
+      "id": "orchestration-patterns",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/orchestration-patterns.md"
+    },
+    {
+      "id": "performance-checklist",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/performance-checklist.md"
+    },
+    {
+      "id": "security-checklist",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/security-checklist.md"
+    },
+    {
+      "id": "testing-patterns",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/testing-patterns.md"
+    },
+    {
+      "arguments": {
+        "mode": "freeform",
+        "placeholder": "$ARGUMENTS"
+      },
+      "bindings": [
+        {
+          "degradation": "codex-command-as-workflow-skill",
+          "invocation": "$build",
+          "mode": "degraded",
+          "name": "build",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "/build",
+          "mode": "native",
+          "name": "build",
+          "projection": "command",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "build",
+      "kind": "command",
+      "requires": [
+        "asset:definition-of-done",
+        "skill:using-agent-skills"
+      ],
+      "source": "commands/build.toml"
+    },
+    {
+      "arguments": {
+        "mode": "freeform",
+        "placeholder": "$ARGUMENTS"
+      },
+      "bindings": [
+        {
+          "degradation": "codex-command-as-workflow-skill",
+          "invocation": "$code-simplify",
+          "mode": "degraded",
+          "name": "code-simplify",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "/code-simplify",
+          "mode": "native",
+          "name": "code-simplify",
+          "projection": "command",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "code-simplify",
+      "kind": "command",
+      "requires": [
+        "asset:definition-of-done",
+        "skill:using-agent-skills"
+      ],
+      "source": "commands/code-simplify.toml"
+    },
+    {
+      "arguments": {
+        "mode": "freeform",
+        "placeholder": "$ARGUMENTS"
+      },
+      "bindings": [
+        {
+          "degradation": "codex-command-as-workflow-skill",
+          "invocation": "$plan",
+          "mode": "degraded",
+          "name": "plan",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "/plan",
+          "mode": "native",
+          "name": "plan",
+          "projection": "command",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "plan",
+      "kind": "command",
+      "requires": [
+        "asset:definition-of-done",
+        "skill:using-agent-skills"
+      ],
+      "source": "commands/planning.toml"
+    },
+    {
+      "arguments": {
+        "mode": "freeform",
+        "placeholder": "$ARGUMENTS"
+      },
+      "bindings": [
+        {
+          "degradation": "codex-command-as-workflow-skill",
+          "invocation": "$review",
+          "mode": "degraded",
+          "name": "review",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "/review",
+          "mode": "native",
+          "name": "review",
+          "projection": "command",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "review",
+      "kind": "command",
+      "requires": [
+        "agent:code-reviewer",
+        "asset:definition-of-done",
+        "skill:using-agent-skills"
+      ],
+      "source": "commands/review.toml"
+    },
+    {
+      "arguments": {
+        "mode": "freeform",
+        "placeholder": "$ARGUMENTS"
+      },
+      "bindings": [
+        {
+          "degradation": "codex-command-as-workflow-skill",
+          "invocation": "$ship",
+          "mode": "degraded",
+          "name": "ship",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "/ship",
+          "mode": "native",
+          "name": "ship",
+          "projection": "command",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "ship",
+      "kind": "command",
+      "requires": [
+        "agent:code-reviewer",
+        "agent:security-auditor",
+        "agent:test-engineer",
+        "asset:definition-of-done",
+        "skill:using-agent-skills"
+      ],
+      "source": "commands/ship.toml"
+    },
+    {
+      "arguments": {
+        "mode": "freeform",
+        "placeholder": "$ARGUMENTS"
+      },
+      "bindings": [
+        {
+          "degradation": "codex-command-as-workflow-skill",
+          "invocation": "$spec",
+          "mode": "degraded",
+          "name": "spec",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "/spec",
+          "mode": "native",
+          "name": "spec",
+          "projection": "command",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "spec",
+      "kind": "command",
+      "requires": [
+        "asset:definition-of-done",
+        "skill:using-agent-skills"
+      ],
+      "source": "commands/spec.toml"
+    },
+    {
+      "arguments": {
+        "mode": "freeform",
+        "placeholder": "$ARGUMENTS"
+      },
+      "bindings": [
+        {
+          "degradation": "codex-command-as-workflow-skill",
+          "invocation": "$test",
+          "mode": "degraded",
+          "name": "test",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "/test",
+          "mode": "native",
+          "name": "test",
+          "projection": "command",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "test",
+      "kind": "command",
+      "requires": [
+        "agent:test-engineer",
+        "asset:definition-of-done",
+        "skill:using-agent-skills"
+      ],
+      "source": "commands/test.toml"
+    },
+    {
+      "arguments": {
+        "mode": "freeform",
+        "placeholder": "$ARGUMENTS"
+      },
+      "bindings": [
+        {
+          "degradation": "codex-command-as-workflow-skill",
+          "invocation": "$webperf",
+          "mode": "degraded",
+          "name": "webperf",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "/webperf",
+          "mode": "native",
+          "name": "webperf",
+          "projection": "command",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "webperf",
+      "kind": "command",
+      "requires": [
+        "agent:web-performance-auditor",
+        "asset:definition-of-done",
+        "skill:using-agent-skills"
+      ],
+      "source": "commands/webperf.toml"
+    },
+    {
+      "attribution": "Copyright 2025 Addy Osmani; synthetic Packy acceptance fixture derived from addyosmani/agent-skills",
+      "id": "mit",
+      "kind": "notice",
+      "license": "MIT",
+      "requires": [],
+      "source": "LICENSE"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$api-and-interface-design",
+          "mode": "native",
+          "name": "api-and-interface-design",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "api-and-interface-design",
+          "mode": "native",
+          "name": "api-and-interface-design",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "api-and-interface-design",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/api-and-interface-design"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$browser-testing-with-devtools",
+          "mode": "native",
+          "name": "browser-testing-with-devtools",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "browser-testing-with-devtools",
+          "mode": "native",
+          "name": "browser-testing-with-devtools",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "browser-testing-with-devtools",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/browser-testing-with-devtools"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$ci-cd-and-automation",
+          "mode": "native",
+          "name": "ci-cd-and-automation",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "ci-cd-and-automation",
+          "mode": "native",
+          "name": "ci-cd-and-automation",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "ci-cd-and-automation",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/ci-cd-and-automation"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$code-review-and-quality",
+          "mode": "native",
+          "name": "code-review-and-quality",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "code-review-and-quality",
+          "mode": "native",
+          "name": "code-review-and-quality",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "code-review-and-quality",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/code-review-and-quality"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$code-simplification",
+          "mode": "native",
+          "name": "code-simplification",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "code-simplification",
+          "mode": "native",
+          "name": "code-simplification",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "code-simplification",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/code-simplification"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$context-engineering",
+          "mode": "native",
+          "name": "context-engineering",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "context-engineering",
+          "mode": "native",
+          "name": "context-engineering",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "context-engineering",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/context-engineering"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$debugging-and-error-recovery",
+          "mode": "native",
+          "name": "debugging-and-error-recovery",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "debugging-and-error-recovery",
+          "mode": "native",
+          "name": "debugging-and-error-recovery",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "debugging-and-error-recovery",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/debugging-and-error-recovery"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$deprecation-and-migration",
+          "mode": "native",
+          "name": "deprecation-and-migration",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "deprecation-and-migration",
+          "mode": "native",
+          "name": "deprecation-and-migration",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "deprecation-and-migration",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/deprecation-and-migration"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$documentation-and-adrs",
+          "mode": "native",
+          "name": "documentation-and-adrs",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "documentation-and-adrs",
+          "mode": "native",
+          "name": "documentation-and-adrs",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "documentation-and-adrs",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/documentation-and-adrs"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$doubt-driven-development",
+          "mode": "native",
+          "name": "doubt-driven-development",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "doubt-driven-development",
+          "mode": "native",
+          "name": "doubt-driven-development",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "doubt-driven-development",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/doubt-driven-development"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$frontend-ui-engineering",
+          "mode": "native",
+          "name": "frontend-ui-engineering",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "frontend-ui-engineering",
+          "mode": "native",
+          "name": "frontend-ui-engineering",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "frontend-ui-engineering",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/frontend-ui-engineering"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$git-workflow-and-versioning",
+          "mode": "native",
+          "name": "git-workflow-and-versioning",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "git-workflow-and-versioning",
+          "mode": "native",
+          "name": "git-workflow-and-versioning",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "git-workflow-and-versioning",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/git-workflow-and-versioning"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$idea-refine",
+          "mode": "native",
+          "name": "idea-refine",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "idea-refine",
+          "mode": "native",
+          "name": "idea-refine",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "idea-refine",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/idea-refine"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$incremental-implementation",
+          "mode": "native",
+          "name": "incremental-implementation",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "incremental-implementation",
+          "mode": "native",
+          "name": "incremental-implementation",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "incremental-implementation",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/incremental-implementation"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$interview-me",
+          "mode": "native",
+          "name": "interview-me",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "interview-me",
+          "mode": "native",
+          "name": "interview-me",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "interview-me",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/interview-me"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$observability-and-instrumentation",
+          "mode": "native",
+          "name": "observability-and-instrumentation",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "observability-and-instrumentation",
+          "mode": "native",
+          "name": "observability-and-instrumentation",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "observability-and-instrumentation",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/observability-and-instrumentation"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$performance-optimization",
+          "mode": "native",
+          "name": "performance-optimization",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "performance-optimization",
+          "mode": "native",
+          "name": "performance-optimization",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "performance-optimization",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/performance-optimization"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$planning-and-task-breakdown",
+          "mode": "native",
+          "name": "planning-and-task-breakdown",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "planning-and-task-breakdown",
+          "mode": "native",
+          "name": "planning-and-task-breakdown",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "planning-and-task-breakdown",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/planning-and-task-breakdown"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$security-and-hardening",
+          "mode": "native",
+          "name": "security-and-hardening",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "security-and-hardening",
+          "mode": "native",
+          "name": "security-and-hardening",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "security-and-hardening",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/security-and-hardening"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$shipping-and-launch",
+          "mode": "native",
+          "name": "shipping-and-launch",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "shipping-and-launch",
+          "mode": "native",
+          "name": "shipping-and-launch",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "shipping-and-launch",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/shipping-and-launch"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$source-driven-development",
+          "mode": "native",
+          "name": "source-driven-development",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "source-driven-development",
+          "mode": "native",
+          "name": "source-driven-development",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "source-driven-development",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/source-driven-development"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$spec-driven-development",
+          "mode": "native",
+          "name": "spec-driven-development",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "spec-driven-development",
+          "mode": "native",
+          "name": "spec-driven-development",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "spec-driven-development",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/spec-driven-development"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$test-driven-development",
+          "mode": "native",
+          "name": "test-driven-development",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "test-driven-development",
+          "mode": "native",
+          "name": "test-driven-development",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "test-driven-development",
+      "kind": "skill",
+      "requires": [],
+      "source": "skills/test-driven-development"
+    },
+    {
+      "bindings": [
+        {
+          "invocation": "$using-agent-skills",
+          "mode": "native",
+          "name": "using-agent-skills",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        },
+        {
+          "invocation": "using-agent-skills",
+          "mode": "native",
+          "name": "using-agent-skills",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "opencode"
+        }
+      ],
+      "id": "using-agent-skills",
+      "kind": "skill",
+      "requires": [
+        "asset:accessibility-checklist",
+        "asset:definition-of-done",
+        "asset:observability-checklist",
+        "asset:orchestration-patterns",
+        "asset:performance-checklist",
+        "asset:security-checklist",
+        "asset:testing-patterns"
+      ],
+      "source": "skills/using-agent-skills"
+    }
+  ],
+  "schema_version": 2,
+  "version": "1.0.0"
+}

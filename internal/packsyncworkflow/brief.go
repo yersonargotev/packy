@@ -50,7 +50,8 @@ type ReviewBrief struct {
 }
 
 func (brief ReviewBrief) CanonicalJSON() ([]byte, error) {
-	if brief.SchemaVersion != 1 || brief.Request.Validate() != nil || brief.PlanID == "" || brief.Branch != "sync/"+brief.Request.SourceID || requireFullSHA("base", brief.BaseSHA) != nil || requireFullSHA("head", brief.HeadSHA) != nil || requireFullSHA("result tree", brief.ResultTreeSHA) != nil || len(brief.SelectedResources) == 0 || len(brief.PreviousSnapshotSHA256) != 64 || len(brief.ProposedSnapshotSHA256) != 64 || !brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired {
+	validPreviousSnapshot := len(brief.PreviousSnapshotSHA256) == 64 || (brief.Request.Operation == OperationRegister && brief.PreviousSnapshotSHA256 == "")
+	if brief.SchemaVersion != 1 || brief.Request.Validate() != nil || brief.PlanID == "" || brief.Branch != "sync/"+brief.Request.SourceID || requireFullSHA("base", brief.BaseSHA) != nil || requireFullSHA("head", brief.HeadSHA) != nil || requireFullSHA("result tree", brief.ResultTreeSHA) != nil || len(brief.SelectedResources) == 0 || !validPreviousSnapshot || len(brief.ProposedSnapshotSHA256) != 64 || !brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired {
 		return nil, fmt.Errorf("review brief is incomplete or contradicts synchronization policy")
 	}
 	data, err := json.Marshal(brief)

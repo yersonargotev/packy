@@ -257,7 +257,7 @@ func checkRequestForDispatch(repositoryRoot string, request packsyncworkflow.Dis
 		} else {
 			selector.Mode, selector.Ref = packsync.SelectorCommit, evidence.Candidate.Commit
 		}
-		return packsync.CheckRequest{RepositoryRoot: repositoryRoot, SourceID: request.SourceID, Selector: &selector}, nil
+		return packsync.CheckRequest{RepositoryRoot: repositoryRoot, SourceID: request.SourceID, Selector: &selector, Registration: request.Registration}, nil
 	}
 	switch request.Selector {
 	case packsyncworkflow.SelectorLatestStable:

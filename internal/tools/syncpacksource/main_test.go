@@ -424,6 +424,18 @@ func TestHumanEvidenceDispatchRechecksTheOriginalReleaseSelector(t *testing.T) {
 	}
 }
 
+func TestHumanEvidenceRegistrationRetainsTheSealedSourceProposal(t *testing.T) {
+	candidate := packsync.Candidate{Commit: strings.Repeat("a", 40), Release: &packsync.Release{Tag: "v1.2.0", Prerelease: false}}
+	evidence, _ := json.Marshal(packsync.ClassificationEvidenceSet{Candidate: candidate})
+	registration := packsync.SourceConfig{ID: "addy", Provider: "github", Repository: "addyosmani/agent-skills", Selector: packsync.Selector{Mode: packsync.SelectorStableRelease}, Resources: []packsync.Binding{}}
+	digest, _ := packsyncworkflow.CanonicalRegistrationSHA256(registration)
+	request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationRegister, SourceID: "addy", Selector: packsyncworkflow.SelectorCommit, SelectorRef: candidate.Commit, ClassificationMode: packsyncworkflow.ClassificationHuman, RequestReason: "evidence", ExpectedPlanID: "plan", ExpectedBaseSHA: strings.Repeat("b", 40), HumanEvidence: evidence, Registration: &registration, RegistrationSHA256: digest}
+	check, err := checkRequestForDispatch(t.TempDir(), request)
+	if err != nil || check.Registration == nil || !reflect.DeepEqual(*check.Registration, registration) {
+		t.Fatalf("human registration Check = %#v, %v", check, err)
+	}
+}
+
 func TestClassificationBoundaryProducesExactSafeArtifact(t *testing.T) {
 	artifact := packsyncworkflow.NewFailureArtifact(packsyncworkflow.FailureArtifactContext{SourceID: "source"}, classificationFailure(errors.New("Bearer secret model payload")))
 	if !strings.Contains(artifact.Blockers[0], "Classification evidence") || !strings.Contains(artifact.Recovery[0], "classifier mode") {

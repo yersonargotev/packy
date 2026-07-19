@@ -291,7 +291,7 @@ func materializeClassifiedVersions(staged string, plan Plan, set ClassificationE
 		if err != nil {
 			return err
 		}
-		if manifest["version"] != impact.CurrentVersion {
+		if manifest["version"] != impact.CurrentVersion && !(plan.Registration != nil && manifest["version"] == versions[impact.PackID]) {
 			return fmt.Errorf("affected pack manifest contradicts sealed classification impact %s", impact.PackID)
 		}
 		manifest["version"] = versions[impact.PackID]

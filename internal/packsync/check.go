@@ -389,6 +389,15 @@ func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, binding
 	plan.Discoveries = discoverUnselected(snapshotRoot, bindings)
 	plan.Counts.Discoveries = len(plan.Discoveries)
 	plan.AffectedPacks = derivePackImpacts(plan.Changes, manifests, &plan.Blockers)
+	if plan.Registration != nil {
+		for i := range plan.AffectedPacks {
+			plan.AffectedPacks[i].CurrentVersion = "0.0.0"
+			plan.AffectedPacks[i].MechanicalFloor = LevelMajor
+			plan.AffectedPacks[i].SemanticEvidenceRequired = true
+			plan.AffectedPacks[i].Reasons = append(plan.AffectedPacks[i].Reasons, "initial source registration")
+			sort.Strings(plan.AffectedPacks[i].Reasons)
+		}
+	}
 	plan.Blockers = append(plan.Blockers, compatibilityBlockers(repositoryRoot, snapshotRoot, source, bindings, manifests)...)
 	return nil
 }
