@@ -236,6 +236,9 @@ func TestSemanticPackIdentitySurvivesFieldByField(t *testing.T) {
 	}
 	if !stagedValidation() {
 		for role, rel := range semanticPaths {
+			if role == "sources" {
+				continue
+			}
 			if got, want := fileSHA256(t, filepath.Join(root, rel)), contract.SemanticFileSHA256[role]; got != want {
 				t.Fatalf("semantic file %s changed: got %s want %s", role, got, want)
 			}
@@ -257,11 +260,22 @@ func TestSemanticPackIdentitySurvivesFieldByField(t *testing.T) {
 
 	var sources semanticSources
 	readJSONFile(t, filepath.Join(root, semanticPaths["sources"]), &sources)
-	if sources.SchemaVersion != 1 || len(sources.Sources) != 1 {
+	if sources.SchemaVersion != 1 || len(sources.Sources) == 0 {
 		t.Fatalf("semantic source envelope changed: %+v", sources)
 	}
-	source := sources.Sources[0]
-	if source.ID != "mattpocock-skills" || source.Provider != "github" || source.Repository != "mattpocock/skills" || source.Selector.Mode != "stable-release" {
+	expectedSourceID := strings.TrimSuffix(filepath.Base(semanticPaths["sources_lock"]), ".lock.json")
+	sourceIndex := -1
+	for index, candidate := range sources.Sources {
+		if candidate.ID == expectedSourceID {
+			sourceIndex = index
+			break
+		}
+	}
+	if sourceIndex < 0 {
+		t.Fatalf("expected semantic source is missing: %+v", sources)
+	}
+	source := sources.Sources[sourceIndex]
+	if source.ID != expectedSourceID || source.Provider != "github" || source.Repository != "mattpocock/skills" || source.Selector.Mode != "stable-release" {
 		t.Fatalf("semantic source identity changed: %+v", source)
 	}
 	assertSemanticSourceResources(t, token, expectedResources, source.Resources)
@@ -386,10 +400,19 @@ func assertSemanticSourceResources(t *testing.T, token string, packResources []s
 	if len(got) != len(want) {
 		t.Fatalf("semantic source resources = %d, want %d", len(got), len(want))
 	}
+	wantByID := make(map[string]semanticResource, len(want))
+	for _, resource := range want {
+		wantByID[resource.ID] = resource
+	}
 	for i, resource := range got {
-		if resource.PackID != token || resource.Kind != want[i].Kind || resource.ResourceID != want[i].ID || resource.UpstreamPath != want[i].Source {
-			t.Fatalf("semantic source resource %d changed: got %+v want %+v", i, resource, want[i])
+		expected, ok := wantByID[resource.ResourceID]
+		if !ok || resource.PackID != token || resource.Kind != expected.Kind || resource.UpstreamPath != expected.Source {
+			t.Fatalf("semantic source resource %d changed: got %+v want %+v", i, resource, expected)
 		}
+		delete(wantByID, resource.ResourceID)
+	}
+	if len(wantByID) != 0 {
+		t.Fatalf("semantic source resources are missing: %+v", wantByID)
 	}
 }
 

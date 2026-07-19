@@ -557,6 +557,7 @@ type fakePR struct {
 }
 
 type fakeGitHubCommands struct {
+	sourceID                     string
 	baseHead                     string
 	branchHead                   string
 	pr                           *fakePR
@@ -582,6 +583,13 @@ type fakeGitHubCommands struct {
 	readyCalls                   int
 }
 
+func (fake *fakeGitHubCommands) branch() string {
+	if fake.sourceID == "" {
+		return "sync/mattpocock-skills"
+	}
+	return "sync/" + fake.sourceID
+}
+
 func (fake *fakeGitHubCommands) run(_ context.Context, directory string, name string, args ...string) (string, error) {
 	joined := name + " " + strings.Join(args, " ")
 	switch {
@@ -601,7 +609,7 @@ func (fake *fakeGitHubCommands) run(_ context.Context, directory string, name st
 		if fake.branchHead == "" {
 			return "", nil
 		}
-		return fake.branchHead + "\trefs/heads/sync/mattpocock-skills\n", nil
+		return fake.branchHead + "\trefs/heads/" + fake.branch() + "\n", nil
 	case strings.HasPrefix(joined, "gh pr list"):
 		if len(fake.prListErrs) > 0 {
 			err := fake.prListErrs[0]
@@ -621,7 +629,7 @@ func (fake *fakeGitHubCommands) run(_ context.Context, directory string, name st
 		if author == "" {
 			author = "app/github-actions"
 		}
-		data, _ := json.Marshal([]map[string]any{{"number": fake.pr.number, "state": state, "baseRefName": "main", "headRefName": "sync/mattpocock-skills", "headRefOid": fake.pr.head, "isDraft": fake.pr.draft, "autoMergeRequest": nil, "title": fake.pr.title, "body": fake.pr.body, "author": map[string]string{"login": author}}})
+		data, _ := json.Marshal([]map[string]any{{"number": fake.pr.number, "state": state, "baseRefName": "main", "headRefName": fake.branch(), "headRefOid": fake.pr.head, "isDraft": fake.pr.draft, "autoMergeRequest": nil, "title": fake.pr.title, "body": fake.pr.body, "author": map[string]string{"login": author}}})
 		return string(data), nil
 	case strings.Contains(joined, "/compare/"):
 		if fake.compareErr != nil {

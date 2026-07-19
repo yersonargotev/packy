@@ -101,6 +101,13 @@ printf validated > "${XDG_CONFIG_HOME}/proof"
 	if err := (commandValidator{}).ValidateBundle(context.Background(), repository, staged); err != nil {
 		t.Fatal(err)
 	}
+	productionScript := strings.Replace(script, `= "staged"`, `= "production"`, 1)
+	if err := os.WriteFile(filepath.Join(repository, "scripts", "validate-packy.sh"), []byte(productionScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := (commandValidator{}).ValidateBundle(context.Background(), repository, filepath.Join(repository, "bundle")); err != nil {
+		t.Fatalf("production bundle validation did not use a disposable checkout: %v", err)
+	}
 	for _, path := range []string{operatorHome, operatorXDG} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("staged validation wrote operator configuration path %s: %v", path, err)
@@ -262,7 +269,7 @@ func prepareInspectFixture(t *testing.T) (string, string, packsync.Lock) {
 		Sources []packsync.SourceConfig `json:"sources"`
 	}
 	readJSONForTest(t, filepath.Join(repository, "bundle", "sources.json"), &config)
-	for _, binding := range config.Sources[0].Resources {
+	for _, binding := range sourceResourcesForTest(t, config.Sources, "mattpocock-skills") {
 		copyTreeForTest(t, filepath.Join(repository, "bundle", filepath.FromSlash(binding.UpstreamPath)), filepath.Join(snapshot, filepath.FromSlash(binding.UpstreamPath)))
 	}
 	var lock packsync.Lock
@@ -314,6 +321,33 @@ func TestInspectNormalizesWorkflowEnvironmentThroughCanonicalDispatch(t *testing
 	got, check, err := inspectRequest(options{repositoryRoot: t.TempDir()})
 	if err != nil || got.SourceID != "source" || check.Selector == nil || check.Selector.Mode != packsync.SelectorCommit {
 		t.Fatalf("normalized request = %#v, %#v, %v", got, check, err)
+	}
+}
+
+func TestInspectCarriesStrictRegistrationIntoCheck(t *testing.T) {
+	registration := packsync.SourceConfig{ID: "addy", Provider: "github", Repository: "addyosmani/agent-skills", Selector: packsync.Selector{Mode: packsync.SelectorStableRelease}, Resources: []packsync.Binding{{PackID: "addy", Kind: "skill", ResourceID: "fixture", UpstreamPath: "skills/fixture"}}}
+	digest, err := packsyncworkflow.CanonicalRegistrationSHA256(registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(registration)
+	t.Setenv("PACKY_SOURCE_ID", "addy")
+	t.Setenv("PACKY_OPERATION", "register")
+	t.Setenv("PACKY_REGISTRATION_JSON", string(data))
+	t.Setenv("PACKY_REGISTRATION_SHA256", digest)
+	t.Setenv("PACKY_SELECTOR", "latest-stable")
+	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
+	t.Setenv("PACKY_REQUEST_REASON", "admit Addy")
+	request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationRegister, SourceID: "addy", Selector: packsyncworkflow.SelectorLatestStable, ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "admit Addy", Registration: &registration, RegistrationSHA256: digest}
+	requestDigest, _ := request.Digest()
+	t.Setenv("PACKY_REQUEST_DIGEST", requestDigest)
+
+	got, check, err := inspectRequest(options{repositoryRoot: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Operation != packsyncworkflow.OperationRegister || check.Registration == nil || !reflect.DeepEqual(*check.Registration, registration) {
+		t.Fatalf("registration dispatch lost authority: request=%#v check=%#v", got, check)
 	}
 }
 
@@ -394,6 +428,18 @@ func TestHumanEvidenceDispatchRechecksTheOriginalReleaseSelector(t *testing.T) {
 	check, err := checkRequestForDispatch(t.TempDir(), request)
 	if err != nil || check.Selector == nil || check.Selector.Mode != packsync.SelectorStableRelease {
 		t.Fatalf("human evidence Check = %#v, %v", check, err)
+	}
+}
+
+func TestHumanEvidenceRegistrationRetainsTheSealedSourceProposal(t *testing.T) {
+	candidate := packsync.Candidate{Commit: strings.Repeat("a", 40), Release: &packsync.Release{Tag: "v1.2.0", Prerelease: false}}
+	evidence, _ := json.Marshal(packsync.ClassificationEvidenceSet{Candidate: candidate})
+	registration := packsync.SourceConfig{ID: "addy", Provider: "github", Repository: "addyosmani/agent-skills", Selector: packsync.Selector{Mode: packsync.SelectorStableRelease}, Resources: []packsync.Binding{}}
+	digest, _ := packsyncworkflow.CanonicalRegistrationSHA256(registration)
+	request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationRegister, SourceID: "addy", Selector: packsyncworkflow.SelectorCommit, SelectorRef: candidate.Commit, ClassificationMode: packsyncworkflow.ClassificationHuman, RequestReason: "evidence", ExpectedPlanID: "plan", ExpectedBaseSHA: strings.Repeat("b", 40), HumanEvidence: evidence, Registration: &registration, RegistrationSHA256: digest}
+	check, err := checkRequestForDispatch(t.TempDir(), request)
+	if err != nil || check.Registration == nil || !reflect.DeepEqual(*check.Registration, registration) {
+		t.Fatalf("human registration Check = %#v, %v", check, err)
 	}
 }
 

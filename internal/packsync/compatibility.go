@@ -65,8 +65,15 @@ var acceptedCompatibilityContracts = []acceptedCompatibilityContract{
 
 func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, manifests map[string]packManifest) []string {
 	validated := map[string]bool{}
+	targetPacks := map[string]bool{}
+	for _, binding := range bindings {
+		targetPacks[binding.PackID] = true
+	}
 	var blockers []string
 	for _, contract := range acceptedCompatibilityContracts {
+		if !targetPacks[contract.PackID] {
+			continue
+		}
 		current, ok := manifests[contract.PackID]
 		if !ok || current.Version != contract.ToVersion {
 			continue
@@ -93,7 +100,7 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 			continue
 		}
 		current, ok := manifests[historical.ID]
-		if !ok || current.Version == historical.Version {
+		if !targetPacks[historical.ID] || !ok || current.Version == historical.Version {
 			continue
 		}
 		if validated[compatibilityKey(historical.ID, historical.Version, current.Version)] {

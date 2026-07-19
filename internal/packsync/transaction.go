@@ -48,6 +48,9 @@ func (engine Engine) Apply(ctx context.Context, request ApplyRequest) (ApplyResu
 	if !request.Plan.VerifySeal() {
 		return ApplyResult{}, errors.New("sealed plan identity is invalid")
 	}
+	if err := validateRegistrationRequest(request); err != nil {
+		return ApplyResult{}, err
+	}
 	if err := validateApplyClassification(request.Plan, request.ClassificationEvidence); err != nil {
 		return ApplyResult{}, fmt.Errorf("validate classification evidence: %w", err)
 	}
@@ -140,7 +143,7 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 	legacy := filepath.Join(request.RepositoryRoot, "skills-lock.json")
 	if converged, err := convergedBootstrap(bundle, legacy, plan); err != nil {
 		return ApplyResult{}, err
-	} else if converged {
+	} else if converged && plan.Registration == nil {
 		if ok, err := classifiedVersionsConverged(bundle, plan, request.ClassificationEvidence); err != nil {
 			return ApplyResult{}, err
 		} else if !ok {
@@ -154,7 +157,7 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 	if !engine.applicablePlan(plan) {
 		return ApplyResult{}, fmt.Errorf("plan status %q is not applicable", plan.Status)
 	}
-	if err := validatePreconditions(request.RepositoryRoot, plan.SourceID, plan.Preconditions, engine.allowBootstrap); err != nil {
+	if err := validatePreconditions(request.RepositoryRoot, plan.SourceID, plan.Preconditions, engine.allowBootstrap || plan.Registration != nil); err != nil {
 		return ApplyResult{}, err
 	}
 	if err := engine.Validate.ValidateBundle(ctx, request.RepositoryRoot, bundle); err != nil {
@@ -169,6 +172,11 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 	}
 	if err := copyTreeExact(bundle, staged); err != nil {
 		return ApplyResult{}, fmt.Errorf("stage complete bundle: %w", err)
+	}
+	if plan.Registration != nil {
+		if err := materializeRegistration(staged, *plan.Registration); err != nil {
+			return ApplyResult{}, err
+		}
 	}
 	cleanupStaged := true
 	defer func() {
@@ -283,7 +291,7 @@ func materializeClassifiedVersions(staged string, plan Plan, set ClassificationE
 		if err != nil {
 			return err
 		}
-		if manifest["version"] != impact.CurrentVersion {
+		if manifest["version"] != impact.CurrentVersion && !(plan.Registration != nil && manifest["version"] == versions[impact.PackID]) {
 			return fmt.Errorf("affected pack manifest contradicts sealed classification impact %s", impact.PackID)
 		}
 		manifest["version"] = versions[impact.PackID]
@@ -337,12 +345,26 @@ func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged,
 		return err
 	}
 	configBytes, err := os.ReadFile(filepath.Join(viewBundle, "sources.json"))
-	if err != nil || hashBytes(configBytes) != plan.Preconditions.ConfigSHA256 {
+	if err != nil {
 		return errors.New("staged source configuration changed from the sealed plan")
 	}
 	config, err := LoadConfig(bytes.NewReader(configBytes))
 	if err != nil {
 		return err
+	}
+	if plan.Registration == nil {
+		if hashBytes(configBytes) != plan.Preconditions.ConfigSHA256 {
+			return errors.New("staged source configuration changed from the sealed plan")
+		}
+	} else {
+		registered, err := selectSource(config, plan.SourceID)
+		if err != nil || !reflect.DeepEqual(registered, *plan.Registration) {
+			return errors.New("staged registration does not match the sealed plan")
+		}
+		_, digest, err := canonicalRegistration(registered)
+		if err != nil || digest != plan.RegistrationSHA256 {
+			return errors.New("staged registration digest does not match the sealed plan")
+		}
 	}
 	source, err := selectSource(config, plan.SourceID)
 	if err != nil {
@@ -359,7 +381,11 @@ func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged,
 		return errors.New("staged production provenance lock does not match the sealed plan")
 	}
 	stagedPlan := Plan{Candidate: plan.Candidate, Selector: plan.Selector}
-	if err := buildPlan(snapshotRoot, view, source, bindings, manifests, lock, true, &stagedPlan); err != nil {
+	existingPacks := map[string]bool{}
+	for _, impact := range plan.AffectedPacks {
+		existingPacks[impact.PackID] = impact.CurrentVersion != "0.0.0"
+	}
+	if err := buildPlan(snapshotRoot, view, source, bindings, manifests, lock, true, existingPacks, &stagedPlan); err != nil {
 		return err
 	}
 	blockers = append(blockers, stagedPlan.Blockers...)
@@ -501,6 +527,53 @@ func (engine Engine) applicablePlan(plan Plan) bool {
 		return true
 	}
 	return engine.allowBootstrap && plan.Status == "blocked" && !plan.Authoritative && len(plan.Changes) == 0 && len(plan.Blockers) == 1 && strings.Contains(plan.Blockers[0], "production provenance lock is absent")
+}
+
+func validateRegistrationRequest(request ApplyRequest) error {
+	plan := request.Plan
+	if plan.Registration == nil {
+		if request.Registration != nil {
+			return errors.New("synchronize plan forbids registration")
+		}
+		return nil
+	}
+	if request.Registration == nil {
+		return errors.New("registration plan requires the sealed registration")
+	}
+	_, digest, err := canonicalRegistration(*request.Registration)
+	if err != nil || digest != plan.RegistrationSHA256 {
+		return errors.New("registration changed after Check")
+	}
+	return nil
+}
+
+func materializeRegistration(staged string, registration SourceConfig) error {
+	name := filepath.Join(staged, "sources.json")
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	config, err := LoadConfig(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	if _, err := selectSource(config, registration.ID); err == nil {
+		return errors.New("stale plan: source appeared after Check")
+	}
+	config.Sources = append(config.Sources, registration)
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	config, err = LoadConfig(bytes.NewReader(encoded))
+	if err != nil {
+		return fmt.Errorf("staged registration conflicts with current configuration: %w", err)
+	}
+	encoded, err = canonicalConfig(config)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(name, encoded, 0o644)
 }
 
 func materializeSelectedResources(staged, snapshotRoot string, current Lock, currentPresent bool, next Lock) error {
