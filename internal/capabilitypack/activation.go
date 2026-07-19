@@ -57,6 +57,8 @@ const (
 	ActionOpenCodeInstructionFile ProjectionActionKind = "opencode-instruction-file"
 	ActionOpenCodeConfigReference ProjectionActionKind = "opencode-config-reference"
 	ActionCodexMCPConfig          ProjectionActionKind = "codex-mcp-config"
+	ActionCodexAgentFile          ProjectionActionKind = "codex-agent-file"
+	ActionCodexWorkflowSkill      ProjectionActionKind = "codex-workflow-skill"
 	ActionOpenCodeMCPConfig       ProjectionActionKind = "opencode-mcp-config"
 	ActionExternalCommand         ProjectionActionKind = "external-command"
 	ActionHostFollowUp            ProjectionActionKind = "host-follow-up"
