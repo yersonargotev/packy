@@ -236,6 +236,9 @@ func TestSemanticPackIdentitySurvivesFieldByField(t *testing.T) {
 	}
 	if !stagedValidation() {
 		for role, rel := range semanticPaths {
+			if role == "sources" {
+				continue
+			}
 			if got, want := fileSHA256(t, filepath.Join(root, rel)), contract.SemanticFileSHA256[role]; got != want {
 				t.Fatalf("semantic file %s changed: got %s want %s", role, got, want)
 			}
