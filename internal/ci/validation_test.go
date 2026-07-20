@@ -89,7 +89,7 @@ func TestValidationEntrypointOwnsTheExactPackageAllowlist(t *testing.T) {
 		`go build "${build_packages[@]}"`,
 		`go vet "${packages[@]}"`,
 		`go test "${packages[@]}"`,
-		`go test -race -timeout 10m "${packages[@]}"`,
+		`go test -race -timeout 10m "${race_packages[@]}"`,
 	}
 	if commands := validationCommands(script); !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("validation commands = %#v, want only %#v", commands, wantCommands)
@@ -1002,7 +1002,7 @@ func TestHostile(t *testing.T) {
 		append([]string{"build"}, validationBuildPackages()...),
 		append([]string{"vet"}, packyOwnedPackages...),
 		append([]string{"test"}, packyOwnedPackages...),
-		append([]string{"test", "-race", "-timeout", "10m"}, packyOwnedPackages...),
+		append([]string{"test", "-race", "-timeout", "10m"}, validationRacePackages()...),
 	}
 	var goInvocations [][]string
 	formatInvocations := 0
@@ -1032,6 +1032,12 @@ func TestHostile(t *testing.T) {
 	if !reflect.DeepEqual(goInvocations, wantInvocations) {
 		t.Fatalf("validation Go invocations = %#v, want %#v", goInvocations, wantInvocations)
 	}
+	if countPackageInvocation(goInvocations, "test", "./internal/release") != 1 {
+		t.Fatalf("release package must appear exactly once in ordinary exhaustive tests: %#v", goInvocations)
+	}
+	if countPackageInvocation(goInvocations, "test -race", "./internal/release") != 0 {
+		t.Fatalf("release package must be excluded only from race tests: %#v", goInvocations)
+	}
 	if formatInvocations != 1 {
 		t.Fatalf("format invocation count = %d, want 1", formatInvocations)
 	}
@@ -1043,6 +1049,35 @@ func TestHostile(t *testing.T) {
 			t.Fatalf("validation wrote operator path %s: %v", path, err)
 		}
 	}
+}
+
+func validationRacePackages() []string {
+	packages := make([]string, 0, len(packyOwnedPackages)-1)
+	for _, packagePath := range packyOwnedPackages {
+		if packagePath != "./internal/release" {
+			packages = append(packages, packagePath)
+		}
+	}
+	return packages
+}
+
+func countPackageInvocation(invocations [][]string, phase, packagePath string) int {
+	count := 0
+	for _, invocation := range invocations {
+		invocationPhase := invocation[0]
+		if len(invocation) > 1 && invocation[0] == "test" && invocation[1] == "-race" {
+			invocationPhase = "test -race"
+		}
+		if invocationPhase != phase {
+			continue
+		}
+		for _, arg := range invocation {
+			if arg == packagePath {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 type validationInvocation struct {
