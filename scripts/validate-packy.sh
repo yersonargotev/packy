@@ -39,11 +39,19 @@ readonly packages=(
 # remain in vet/test/race but have no production archive for `go build` to emit.
 go_dirs=()
 build_packages=()
+race_packages=()
 for package in "${packages[@]}"; do
   go_dirs+=("${package#./}")
   case "$package" in
     ./internal/ci | ./internal/release) ;;
     *) build_packages+=("$package") ;;
+  esac
+  # Release is a test-only subprocess, cross-platform, and package-install
+  # integration package. Its child commands are not race-instrumented, so the
+  # ordinary exhaustive test phase covers it while the race phase excludes it.
+  case "$package" in
+    ./internal/release) ;;
+    *) race_packages+=("$package") ;;
   esac
 done
 
@@ -92,4 +100,4 @@ echo "==> tests"
 go test "${packages[@]}"
 
 echo "==> race"
-go test -race -timeout 10m "${packages[@]}"
+go test -race -timeout 10m "${race_packages[@]}"
