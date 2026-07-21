@@ -37,6 +37,46 @@ func TestVersionCompatibilityMatrix(t *testing.T) {
 	}
 }
 
+func TestObserveSetupAggregatesStaticOwnershipAndPolicyWithBoundedVersion(t *testing.T) {
+	home := t.TempDir()
+	layout := NewCanonicalLayout(home)
+	source := filepath.Join(home, "source", "skill")
+	target := filepath.Join(layout.SkillsDir, "skill")
+	if err := os.MkdirAll(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("skill"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(source, target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.SettingsFile, []byte(`{"disableAllHooks":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.UserMCPFile, []byte(`{"mcpServers":{"memory":{"command":"engram","args":["mcp"]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{result: Result{Stdout: "2.1.203"}}
+	observation := ObserveSetup(context.Background(), layout, "/bin/claude", runner, NewOwnershipSnapshot(
+		OwnershipRecord{Kind: string(ActionSkillLink), Target: target, Skill: SkillIdentity{ExpectedSource: source}},
+		OwnershipRecord{Kind: string(ActionUserMCP), Target: "memory"},
+	))
+
+	if len(runner.calls) != 1 || runner.calls[0].Executable != "/bin/claude" || len(runner.calls[0].Args) != 1 || runner.calls[0].Args[0] != "--version" {
+		t.Fatalf("version calls = %#v", runner.calls)
+	}
+	if len(observation.Skills) != 1 || observation.Skills[0].Kind != PathSymlink || len(observation.MCP) != 1 || !observation.MCP[0].Present {
+		t.Fatalf("ownership observations = %#v", observation)
+	}
+	if !observation.Hooks.Parseable || !observation.Hooks.Disabled || !observation.Authorization.PolicyObserved || !observation.Authorization.Disabled {
+		t.Fatalf("policy observations = %#v", observation)
+	}
+}
+
 func TestUserMCPObservationIsStaticAndRedactedIdentity(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, ".claude.json")

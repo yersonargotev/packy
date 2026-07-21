@@ -272,7 +272,14 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 	openCodeLayout := opencode.NewCanonicalLayout(snapshot.ConfigurationHome())
 	engramLayout := engrambin.NewSetupLayout(snapshot.Home(), snapshot.HomebrewPrefix())
 	lifecycleObservation := corelifecycle.ObserveSetup(state, skills, sources.skills)
-	claudeObservation := observeClaudeSetup(ctx, opts, claudecode.NewCanonicalLayout(snapshot.Home()), lifecycleObservation.State().Ownership().ClaudeOwnership)
+	claudeExecutable, err := opts.ClaudeLookPath("claude")
+	if err != nil {
+		claudeExecutable = ""
+	}
+	claudeObservation := claudecode.ObserveSetup(
+		ctx, claudecode.NewCanonicalLayout(snapshot.Home()), claudeExecutable, opts.ClaudeRunner,
+		lifecycleObservation.State().ClaudeOwnershipSnapshot(),
+	)
 
 	return setuphealth.Diagnose(
 		snapshot.Home(),
@@ -283,26 +290,6 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 		opencode.ObserveSetup(openCodeLayout),
 		claudeObservation,
 	), nil
-}
-
-func observeClaudeSetup(ctx context.Context, opts Options, layout claudecode.CanonicalLayout, ownership []corelifecycle.ClaudeOwnership) claudecode.SetupObservation {
-	executable, err := opts.ClaudeLookPath("claude")
-	if err != nil {
-		executable = ""
-	}
-	observation := claudecode.SetupObservation{
-		Version:      claudecode.ObserveVersion(ctx, executable, opts.ClaudeRunner),
-		Instructions: claudecode.ObserveInstructions(layout.InstructionsFile),
-	}
-	for _, record := range ownership {
-		switch record.Kind {
-		case "skill":
-			observation.Skills = append(observation.Skills, claudecode.ObserveSkill(record.Target, record.SourcePath))
-		case "mcp":
-			observation.MCP = append(observation.MCP, claudecode.ObserveUserMCP(layout.UserMCPFile, record.Target))
-		}
-	}
-	return observation
 }
 
 func newUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {

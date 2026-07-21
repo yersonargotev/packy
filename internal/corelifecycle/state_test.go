@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/ownedcontainer"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 )
@@ -200,7 +201,7 @@ func TestObserveStateCopiesClaudeOwnershipDeeply(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	state := DesiredState(StateConfig{StateFile: path, AgentSkillsDir: "/skills"}, time.Unix(4, 0), nil)
 	state.ClaudeOwnership = []ClaudeOwnership{{
-		ID: "claude-mcp", Kind: "mcp", Target: "engram", Contributors: []string{"classic"},
+		ID: "claude-mcp", Kind: ClaudeOwnershipMCP, Target: "engram", Contributors: []string{"classic"},
 		Args: []string{"serve"}, EnvironmentKeys: []string{"TOKEN"},
 	}}
 	if err := SaveState(path, state); err != nil {
@@ -219,6 +220,10 @@ func TestObserveStateCopiesClaudeOwnershipDeeply(t *testing.T) {
 	again := observation.Ownership().ClaudeOwnership[0]
 	if again.Contributors[0] != "classic" || again.Args[0] != "serve" || again.EnvironmentKeys[0] != "TOKEN" {
 		t.Fatalf("observation exposed mutable Claude ownership: %#v", again)
+	}
+	snapshot := observation.ClaudeOwnershipSnapshot()
+	if len(snapshot.Records) != 1 || snapshot.Records[0].Kind != string(claudecode.ActionUserMCP) || snapshot.Records[0].Target != "engram" {
+		t.Fatalf("Claude ownership snapshot = %#v", snapshot)
 	}
 }
 

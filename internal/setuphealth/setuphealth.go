@@ -96,7 +96,7 @@ func claudeChecks(observation claudecode.SetupObservation, state corelifecycle.S
 		claudeInstructionCheck(observation.Instructions, ownership),
 		claudeHookCheck(observation.Hooks, ownership),
 		claudeMCPCheck(observation.MCP, ownership),
-		claudeReadinessCheck(observation, state, len(ownership) > 0),
+		claudeReadinessCheck(observation, state, hasSurface(state.DesiredSurfaces(), "claude")),
 	)
 	return checks
 }
@@ -123,7 +123,7 @@ func claudeVersionDetail(compatibility claudecode.Compatibility, observation cla
 }
 
 func claudeSkillCheck(observed []claudecode.SkillObservation, ownership []corelifecycle.ClaudeOwnership) Check {
-	wanted := claudeOwnershipKind(ownership, "skill")
+	wanted := claudeOwnershipKind(ownership, corelifecycle.ClaudeOwnershipSkill)
 	if len(wanted) == 0 {
 		for _, item := range observed {
 			if item.Err != nil {
@@ -150,7 +150,7 @@ func claudeSkillCheck(observed []claudecode.SkillObservation, ownership []coreli
 }
 
 func claudeInstructionCheck(observed claudecode.InstructionObservation, ownership []corelifecycle.ClaudeOwnership) Check {
-	wanted := claudeOwnershipKind(ownership, "instruction")
+	wanted := claudeOwnershipKind(ownership, corelifecycle.ClaudeOwnershipInstruction)
 	if len(wanted) == 0 && observed.Err != nil {
 		return Check{Severity: Warn, Name: "claude-instructions", Detail: "could not observe Claude instructions: " + observed.Err.Error() + "; inspect the shared document"}
 	}
@@ -173,7 +173,7 @@ func claudeInstructionCheck(observed claudecode.InstructionObservation, ownershi
 }
 
 func claudeHookCheck(observed claudecode.HookObservation, ownership []corelifecycle.ClaudeOwnership) Check {
-	wanted := claudeOwnershipKind(ownership, "hook")
+	wanted := claudeOwnershipKind(ownership, corelifecycle.ClaudeOwnershipHook)
 	if len(wanted) == 0 && observed.Err != nil {
 		return Check{Severity: Warn, Name: "claude-hooks", Detail: "could not observe Claude hooks: " + observed.Err.Error() + "; inspect Claude settings"}
 	}
@@ -192,7 +192,7 @@ func claudeHookCheck(observed claudecode.HookObservation, ownership []corelifecy
 }
 
 func claudeMCPCheck(observed []claudecode.MCPObservation, ownership []corelifecycle.ClaudeOwnership) Check {
-	wanted := claudeOwnershipKind(ownership, "mcp")
+	wanted := claudeOwnershipKind(ownership, corelifecycle.ClaudeOwnershipMCP)
 	if len(wanted) == 0 {
 		for _, item := range observed {
 			if item.Err != nil {

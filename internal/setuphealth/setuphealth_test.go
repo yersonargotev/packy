@@ -107,10 +107,10 @@ func TestClaudeChecksOwnPublicObservationBoundaries(t *testing.T) {
 	config := sandboxConfig(t)
 	state := desiredState(config, nil)
 	state.ClaudeOwnership = []corelifecycle.ClaudeOwnership{
-		{ID: "skill:x", Kind: "skill", Target: "/claude/skills/x", LinkTarget: "/source/x", Fingerprint: "skill-fp"},
-		{ID: "instruction:x", Kind: "instruction", Target: "/claude/CLAUDE.md", Contributors: []string{"classic"}, Fingerprint: "instruction-fp"},
-		{ID: "hook:x", Kind: "hook", Target: "/claude/settings.json", Fingerprint: "hook-fp"},
-		{ID: "mcp:x", Kind: "mcp", Target: "engram", Fingerprint: "mcp-fp"},
+		{ID: "skill:x", Kind: corelifecycle.ClaudeOwnershipSkill, Target: "/claude/skills/x", LinkTarget: "/source/x", Fingerprint: "skill-fp"},
+		{ID: "instruction:x", Kind: corelifecycle.ClaudeOwnershipInstruction, Target: "/claude/CLAUDE.md", Contributors: []string{"classic"}, Fingerprint: "instruction-fp"},
+		{ID: "hook:x", Kind: corelifecycle.ClaudeOwnershipHook, Target: "/claude/settings.json", Fingerprint: "hook-fp"},
+		{ID: "mcp:x", Kind: corelifecycle.ClaudeOwnershipMCP, Target: "engram", Fingerprint: "mcp-fp"},
 	}
 	saveState(t, config, state)
 	base := claudecode.SetupObservation{
@@ -137,6 +137,9 @@ func TestClaudeChecksOwnPublicObservationBoundaries(t *testing.T) {
 	disabled := base
 	disabled.Authorization = claudecode.AuthorizationObservation{PolicyObserved: true, Disabled: true}
 	assertCheck(t, diagnoseClaude(disabled), Fail, "claude-readiness", "disables")
+	authorizationFailure := base
+	authorizationFailure.Authorization = claudecode.AuthorizationObservation{Err: errors.New("policy unavailable")}
+	assertCheck(t, diagnoseClaude(authorizationFailure), Fail, "claude-readiness", "could not be observed")
 
 	for _, tt := range []struct {
 		name, check, detail string
@@ -202,6 +205,7 @@ func TestStateCheckReportsUninstallIncomplete(t *testing.T) {
 	saveState(t, config, state)
 	report := diagnoseWithoutEngram(t, config)
 	assertCheck(t, report, Fail, "packy-state", "uninstall is incomplete")
+	assertCheck(t, report, Fail, "claude-readiness", "cleanup is incomplete")
 }
 
 func TestClaudeVersionWarningMatrixAndCheckOrder(t *testing.T) {
@@ -258,6 +262,7 @@ func TestDiagnoseStateAndSkillSemanticMatrix(t *testing.T) {
 		saveState(t, config, state)
 		report := diagnoseWithoutEngram(t, config)
 		assertCheck(t, report, Fail, "packy-state", "installation was interrupted")
+		assertCheck(t, report, Fail, "claude-readiness", "recovery or cleanup is incomplete")
 		assertCheck(t, report, Pass, "skill-symlinks", "1 managed links")
 		if report.Context.StateStatus != "present" {
 			t.Fatalf("state status = %q", report.Context.StateStatus)

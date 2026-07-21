@@ -66,6 +66,36 @@ type SetupObservation struct {
 	Authorization   AuthorizationObservation
 	RuntimeEvidence []RuntimeEvidence
 }
+
+// ObserveSetup composes the detached Claude facts used by setup diagnosis. It
+// performs only static reads plus the bounded version observation.
+func ObserveSetup(ctx context.Context, layout CanonicalLayout, executable string, runner Runner, ownership OwnershipSnapshot) SetupObservation {
+	settings := ObserveSettings(layout.SettingsFile, nil)
+	observation := SetupObservation{
+		Version:      ObserveVersion(ctx, executable, runner),
+		Instructions: ObserveInstructions(layout.InstructionsFile),
+		Hooks: HookObservation{
+			Path: settings.Path, Revision: settings.Revision, Parseable: settings.Parseable,
+			Disabled: settings.Disabled, Shadowed: settings.Shadowed, Err: settings.Err,
+		},
+		Authorization: AuthorizationObservation{
+			PolicyObserved: settings.Parseable, Disabled: settings.Disabled,
+			Shadowed: settings.Shadowed, Err: settings.Err,
+		},
+	}
+	for _, record := range ownership.Records {
+		switch record.Kind {
+		case string(ActionSkillLink):
+			observation.Skills = append(observation.Skills, ObserveSkill(record.Target, record.Skill.ExpectedSource))
+		case string(ActionAgentFile):
+			observation.Agents = append(observation.Agents, ObserveAgent(record.Target))
+		case string(ActionUserMCP):
+			observation.MCP = append(observation.MCP, ObserveUserMCP(layout.UserMCPFile, record.Target))
+		}
+	}
+	return observation
+}
+
 type RuntimeEvidence struct{ Kind, ID, Signal, Revision string }
 type AuthorizationObservation struct {
 	PolicyObserved, ToolPermissionObserved bool
