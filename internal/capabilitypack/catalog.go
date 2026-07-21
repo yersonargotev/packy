@@ -125,15 +125,16 @@ type OptionalMode struct {
 }
 
 type Pack struct {
-	ID          string
-	Version     string
-	Description string
-	Surfaces    []Surface
-	Provides    []string
-	Requires    Requirements
-	Conflicts   []string
-	Resources   []Resource
-	Contract    Contract
+	manifestVersion int
+	ID              string
+	Version         string
+	Description     string
+	Surfaces        []Surface
+	Provides        []string
+	Requires        Requirements
+	Conflicts       []string
+	Resources       []Resource
+	Contract        Contract
 }
 
 type ResourceCounts struct {
@@ -179,6 +180,7 @@ type Catalog struct {
 	allowSyntheticHistory bool
 	deferSourceValidation bool
 	transactionHeld       bool
+	enforceUpdateRoutes   bool
 }
 
 type catalogEntry struct {
@@ -194,14 +196,20 @@ var initialCatalog = []catalogEntry{
 
 // Discover loads the strict initial catalog from a Packy-owned bundle root.
 func Discover(bundleRoot string) (Catalog, error) {
-	return discoverCatalog(bundleRoot, initialCatalog)
+	return discoverProductionCatalog(bundleRoot, true)
 }
 
 // DiscoverForDurableIntents loads catalog metadata while deferring current
 // source validation until a catalog-current pack is selected. This lets an
 // existing pinned intent be reproduced solely from its historical artifact.
 func DiscoverForDurableIntents(bundleRoot string) (Catalog, error) {
-	return discoverCatalogWithSourceValidation(bundleRoot, initialCatalog, false)
+	return discoverProductionCatalog(bundleRoot, false)
+}
+
+func discoverProductionCatalog(bundleRoot string, validateSources bool) (Catalog, error) {
+	catalog, err := discoverCatalogWithSourceValidation(bundleRoot, initialCatalog, validateSources)
+	catalog.enforceUpdateRoutes = true
+	return catalog, err
 }
 
 func discoverCatalog(bundleRoot string, entries []catalogEntry) (Catalog, error) {
@@ -257,6 +265,7 @@ func (c Catalog) refreshed() (Catalog, error) {
 		var err error
 		refreshed, err = discoverCatalogUnlocked(c.bundleRoot, c.entries, !c.deferSourceValidation)
 		refreshed.allowSyntheticHistory = c.allowSyntheticHistory
+		refreshed.enforceUpdateRoutes = c.enforceUpdateRoutes
 		refreshed.transactionHeld = locked.transactionHeld
 		return err
 	})
@@ -421,7 +430,7 @@ func decodeManifestWithSourceValidation(path, bundleRoot string, validateSources
 	if raw.SchemaVersion != manifestSchemaV3 && raw.Surfaces != nil {
 		return Pack{}, fmt.Errorf("invalid pack manifest %s: surfaces is forbidden before schema_version 3", path)
 	}
-	pack := Pack{ID: raw.ID, Version: raw.Version, Provides: raw.Provides, Requires: raw.Requires, Conflicts: raw.Conflicts}
+	pack := Pack{manifestVersion: raw.SchemaVersion, ID: raw.ID, Version: raw.Version, Provides: raw.Provides, Requires: raw.Requires, Conflicts: raw.Conflicts}
 	if raw.Surfaces != nil {
 		pack.Surfaces = append([]Surface(nil), (*raw.Surfaces)...)
 	}
@@ -707,6 +716,12 @@ func validateBindingWirePresence(data []byte) error {
 		var binding map[string]json.RawMessage
 		if err := json.Unmarshal(data, &binding); err != nil {
 			return err
+		}
+		if _, present := binding["agent_authority"]; present {
+			return fmt.Errorf("agent_authority is forbidden before schema_version 3")
+		}
+		if _, present := binding["hook"]; present {
+			return fmt.Errorf("hook is forbidden before schema_version 3")
 		}
 		var mode string
 		if err := json.Unmarshal(binding["mode"], &mode); err != nil {
@@ -1385,7 +1400,7 @@ func validateSurfaces(surfaces []Surface) error {
 	}
 	seen := map[Surface]bool{}
 	for _, surface := range surfaces {
-		if surface != SurfaceCodex && surface != SurfaceOpenCode {
+		if surface != SurfaceCodex && surface != SurfaceOpenCode && surface != SurfaceClaude {
 			return fmt.Errorf("unsupported CLI surface %q", surface)
 		}
 		if seen[surface] {

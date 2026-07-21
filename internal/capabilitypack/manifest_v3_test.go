@@ -26,6 +26,28 @@ func TestManifestV3DecodesExplicitSurfaceOutcomesAndTypedClaudeBindings(t *testi
 	_ = manifest
 }
 
+func TestDiscoverAcceptsManifestV3ClaudeSurface(t *testing.T) {
+	bundle, path, _ := writeManifestV3Fixture(t)
+	target := filepath.Join(bundle, "packs", "example", "pack.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path, target); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := discoverCatalog(bundle, []catalogEntry{{ID: "example", Description: "Example", Surfaces: []Surface{SurfaceCodex, SurfaceOpenCode}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, err := catalog.Show("example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pack.Surfaces; len(got) != 3 || got[0] != SurfaceClaude {
+		t.Fatalf("discovered surfaces = %#v", got)
+	}
+}
+
 func TestManifestV3FailsClosedOnInvalidSurfaceContracts(t *testing.T) {
 	tests := []struct {
 		name, want string
