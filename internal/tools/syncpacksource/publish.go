@@ -596,6 +596,9 @@ func (gateway *githubGateway) editPRWithReobserve(ctx context.Context, proposal 
 		if state.matchesPR(proposal, beforePR, targetRecord) {
 			return nil
 		}
+		if state.matchesPRHeadProjectionLag(proposal, beforePR, beforeRecord) {
+			return packsyncworkflow.Failure{Kind: packsyncworkflow.FailureTransient, Err: errors.New("pull request head projection is stale after branch update")}
+		}
 		if !state.matchesPR(proposal, beforePR, beforeRecord) {
 			return publicationCASFailure("branch or pull request state changed before an automation edit")
 		}
@@ -693,6 +696,16 @@ func (state mutationObservation) matchesPR(proposal packsyncworkflow.Proposal, e
 	owner := normalizedAutomationLogin(pr.Author.Login)
 	parsed, ok := packsyncworkflow.ParsePublicationRecord(pr.Body)
 	return ok && parsed == record && pr.Number == expected.Number && pr.State == "OPEN" && expected.Open && pr.BaseRefName == expected.BaseBranch && pr.HeadRefName == expected.HeadBranch && pr.HeadRefOID == proposal.HeadSHA && pr.IsDraft == expected.Draft && (pr.AutoMergeRequest != nil) == expected.AutoMerge && owner == packsyncworkflow.AutomationOwner && (state.LastEditor == "" || state.LastEditor == packsyncworkflow.AutomationOwner) && packsyncworkflow.ManagedMetadataHash(pr.Title, pr.Body) == record.MetadataHash
+}
+
+func (state mutationObservation) matchesPRHeadProjectionLag(proposal packsyncworkflow.Proposal, expected packsyncworkflow.PRState, record packsyncworkflow.PublicationRecord) bool {
+	if len(state.PRs) != 1 || record.HeadSHA == "" || record.HeadSHA == proposal.HeadSHA || state.PRs[0].HeadRefOID != record.HeadSHA {
+		return false
+	}
+	adjusted := state
+	adjusted.PRs = append([]ghPR(nil), state.PRs...)
+	adjusted.PRs[0].HeadRefOID = proposal.HeadSHA
+	return adjusted.matchesPR(proposal, expected, record)
 }
 
 func (state mutationObservation) matchesCreated(proposal packsyncworkflow.Proposal, record packsyncworkflow.PublicationRecord) (int, bool) {
