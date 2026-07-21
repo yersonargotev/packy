@@ -209,6 +209,39 @@ func TestCapabilityPackOwnershipProviderUsesAllActiveIntentsAndPersistedAliases(
 	}
 }
 
+func TestCapabilityPackRecoveryDoesNotClaimUnownedResourcesFromOtherIntents(t *testing.T) {
+	home := t.TempDir()
+	layout := NewCanonicalLayout(home)
+	command := func(id string) capabilitypack.Resource {
+		return capabilitypack.Resource{Kind: "command", ID: id, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: id}}}
+	}
+	for _, name := range []string{"recover", "foreign"} {
+		target := filepath.Join(layout.SkillsDir, name)
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	packs := map[string]capabilitypack.Pack{
+		"recovering": {ID: "recovering", Version: "1", Resources: []capabilitypack.Resource{command("recover")}},
+		"other":      {ID: "other", Version: "1", Resources: []capabilitypack.Resource{command("foreign")}},
+	}
+	state := capabilitypack.ActivationState{
+		Intent:  capabilitypack.ActivationIntent{PackID: "recovering", Version: "1", Surface: capabilitypack.SurfaceClaude, Active: true},
+		Intents: []capabilitypack.ActivationIntent{{PackID: "recovering", Version: "1", Surface: capabilitypack.SurfaceClaude, Active: true}, {PackID: "other", Version: "1", Surface: capabilitypack.SurfaceClaude, Active: true}},
+		Journal: &capabilitypack.ApplyingJournal{PackID: "recovering", Actions: []string{"command:recover"}},
+	}
+	snapshot, err := NewCapabilityPackOwnershipProvider(ownershipStore{state}, packs, layout, t.TempDir()).ObserveOwnership(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Records) != 1 || snapshot.Records[0].ID != "command:recover" {
+		t.Fatalf("recovery ownership=%+v", snapshot.Records)
+	}
+}
+
 func TestCompleteRuntimeEvidenceDoesNotRequestMoreRuntimeEvidence(t *testing.T) {
 	pack := capabilitypack.Pack{ID: "p", Version: "1", Resources: []capabilitypack.Resource{{Kind: "mcp_server", ID: "memory", Command: "engram", Args: []string{"mcp"}, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "mcp_server", Name: "memory"}}}}}
 	home := t.TempDir()
@@ -263,5 +296,58 @@ func TestMultipleTypedHooksShareOneSealedSettingsDocument(t *testing.T) {
 	settings := ObserveSettings(layout.SettingsFile, nil)
 	if settings.Err != nil || len(EnrichHookObservation(settings, fromBindingHook(pack.Resources[0].Bindings[0])).MatchingEntries) != 1 || len(EnrichHookObservation(settings, fromBindingHook(pack.Resources[1].Bindings[0])).MatchingEntries) != 1 {
 		t.Fatalf("settings = %#v", settings)
+	}
+}
+
+func TestTypedHookContainerProvenanceSurvivesCreatorFirstRemoval(t *testing.T) {
+	home := t.TempDir()
+	layout := NewCanonicalLayout(home)
+	if err := os.MkdirAll(layout.ConfigDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("{\n  \"permissions\": {}\n}\n")
+	if err := os.WriteFile(layout.SettingsFile, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hook := func(id, event string) capabilitypack.Resource {
+		return capabilitypack.Resource{Kind: "lifecycle", ID: id, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "command_hook", Name: id, Hook: &capabilitypack.CommandHook{Type: "command", Event: event, Command: "engram", Args: []string{id}, TimeoutSeconds: 5, Failure: "warn", Authorities: []string{}}}}}
+	}
+	start, stop := hook("start", "SessionStart"), hook("stop", "SessionEnd")
+	both := capabilitypack.Pack{ID: "p", Version: "1", Resources: []capabilitypack.Resource{start, stop}}
+	creator := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(NewOwnershipSnapshot()))
+	created, err := creator.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: both})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provenance := created.Projections[0].Action.Source
+	if provenance == "" || created.Projections[1].Action.Source != provenance {
+		t.Fatalf("creation provenance=%q projections=%+v", provenance, created.Projections)
+	}
+	if err := creator.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{created.Projections[0].Action, created.Projections[1].Action}); err != nil {
+		t.Fatal(err)
+	}
+	record := func(resource capabilitypack.Resource) OwnershipRecord {
+		binding := resource.Bindings[0]
+		return OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "p", Contributors: []string{"p"}, ID: "lifecycle:" + resource.ID, Kind: string(ActionCommandHook), Target: layout.SettingsFile, Fingerprint: fromBindingHook(binding).Fingerprint(), HookProvenance: provenance, DeletionAuthorized: true}
+	}
+	ownedBoth := NewOwnershipSnapshot(record(start), record(stop))
+	keepStop := capabilitypack.Pack{ID: "p", Version: "1", Resources: []capabilitypack.Resource{stop}}
+	removeCreator := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(ownedBoth))
+	firstRemoval, err := removeCreator.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: both, Desired: keepStop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range firstRemoval.Projections {
+		if err := removeCreator.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{projection.Action}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removeLast := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(NewOwnershipSnapshot(record(stop))))
+	lastRemoval, err := removeLast.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: keepStop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lastRemoval.Projections) != 1 || lastRemoval.Projections[0].Action.Content != string(original) {
+		t.Fatalf("last removal did not restore original settings: %+v", lastRemoval.Projections)
 	}
 }

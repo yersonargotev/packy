@@ -37,6 +37,12 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 	}
 	records := []OwnershipRecord{}
 	recorded := map[string]bool{}
+	recoveryActions := map[string]bool{}
+	if state.Journal != nil {
+		for _, id := range state.Journal.Actions {
+			recoveryActions[id] = true
+		}
+	}
 	for _, intent := range intents {
 		pack, ok := o.packs[intent.PackID]
 		if !ok || pack.Version != intent.Version {
@@ -65,7 +71,8 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 				continue
 			}
 			owner, retained := owners[id]
-			if !retained && state.Journal == nil {
+			recoverable := state.Journal != nil && state.Journal.PackID == intent.PackID && recoveryActions[id]
+			if !retained && !recoverable {
 				continue
 			}
 			contributors := append([]string(nil), owner.Contributors...)
@@ -139,7 +146,8 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 						continue
 					}
 					assetOwner, retained := owners[assetID]
-					if !retained && state.Journal == nil {
+					recoverable := state.Journal != nil && state.Journal.PackID == intent.PackID && recoveryActions[assetID]
+					if !retained && !recoverable {
 						continue
 					}
 					target := filepath.Join(o.layout.SkillsDir, name, filepath.Base(asset.Source))

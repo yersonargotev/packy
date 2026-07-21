@@ -71,6 +71,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	}
 	settingsOriginal := append([]byte(nil), settingsObservation.Raw...)
 	settingsDocument := append([]byte(nil), settingsOriginal...)
+	hooksContainerCreated := ownedHooksContainerCreated(ownership, a.layout.SettingsFile)
 	for _, r := range pack.Resources {
 		b, ok := claudeBinding(r)
 		if !ok {
@@ -197,10 +198,17 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			}
 			hook := fromBindingHook(b)
 			settings := settingsDocument
-			merged, provenance, err := MergeCommandHookWithProvenance(settings, hook, false, HookMergeProvenance{})
+			provenance := HookMergeProvenance{CreatedHooksContainer: hooksContainerCreated}
+			for _, record := range ownership.Records {
+				if record.ID == id && record.Kind == string(ActionCommandHook) {
+					provenance.CreatedEvent = ParseHookMergeProvenance(record.HookProvenance).CreatedEvent
+				}
+			}
+			merged, provenance, err := MergeCommandHookWithProvenance(settings, hook, false, provenance)
 			if err != nil {
 				return result, err
 			}
+			hooksContainerCreated = hooksContainerCreated || provenance.CreatedHooksContainer
 			settingsDocument = append([]byte(nil), merged...)
 			ho := EnrichHookObservation(settingsObservation, hook)
 			if ho.Err != nil {
@@ -324,6 +332,18 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	}
 	result.Readiness = capabilitypack.ReadinessObservation{AuthorizationObserved: authorizationObserved, Authorized: authorized, UsabilityObserved: usabilityObserved, Usable: authorized && usable, PendingHumanActions: pending, Evidence: append([]string{"filesystem and static user MCP definitions inspected; runtime use was not invoked"}, runtimeFacts...)}
 	return result, nil
+}
+
+func ownedHooksContainerCreated(snapshot OwnershipSnapshot, target string) bool {
+	for _, record := range snapshot.Records {
+		if record.Kind != string(ActionCommandHook) || filepath.Clean(record.Target) != filepath.Clean(target) || record.HookProvenance == "" {
+			continue
+		}
+		if ParseHookMergeProvenance(record.HookProvenance).CreatedHooksContainer {
+			return true
+		}
+	}
+	return false
 }
 
 func resourcePresent(pack capabilitypack.Pack, kind, id string) bool {
