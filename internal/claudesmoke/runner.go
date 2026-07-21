@@ -615,25 +615,45 @@ func ValidateEvidence(e Evidence) error {
 	if len(e.Commands) == 0 {
 		return errors.New("evidence has no commands")
 	}
-	want := [][]string{{"--version"}, {"version"}, {"init"}, {"install", "--dry-run"}, {"install"}, {"doctor"}, {"update", "--dry-run"}, {"update"}, {"uninstall", "--dry-run"}, {"uninstall"}, {"doctor"}}
+	want := []CommandEvidence{
+		{Name: "claude", Args: []string{"--version"}},
+		{Name: "packy", Args: []string{"version"}},
+		{Name: "packy", Args: []string{"init"}},
+		{Name: "packy", Args: []string{"install", "--dry-run"}},
+		{Name: "packy", Args: []string{"install"}},
+		{Name: "packy", Args: []string{"doctor"}},
+		{Name: "packy", Args: []string{"update", "--dry-run"}},
+		{Name: "packy", Args: []string{"update"}},
+		{Name: "packy", Args: []string{"uninstall", "--dry-run"}},
+		{Name: "packy", Args: []string{"uninstall"}},
+		{Name: "packy", Args: []string{"doctor"}},
+	}
 	if len(e.Commands) < len(want) {
 		return errors.New("evidence command sequence is incomplete")
 	}
-	for i, args := range want {
-		got := e.Commands[i].Args
+	for i, command := range want {
+		got := e.Commands[i]
+		if got.Name != command.Name {
+			return errors.New("evidence command sequence is malformed")
+		}
 		// init has confined path arguments; its operation is the stable part.
 		if i == 2 {
-			if len(got) != 9 || got[0] != "init" {
+			if len(got.Args) != 9 || got.Args[0] != "init" || got.Args[1] != "--home" || got.Args[2] == "" || got.Args[3] != "--source-root" || got.Args[4] == "" || got.Args[5] != "--repository-url" || got.Args[6] == "" || got.Args[7] != "--repository-ref" || got.Args[8] == "" {
 				return errors.New("evidence command sequence is malformed")
 			}
 			continue
 		}
-		if !reflect.DeepEqual(got, args) {
+		if !reflect.DeepEqual(got.Args, command.Args) {
 			return errors.New("evidence command sequence is malformed")
 		}
 	}
-	for _, c := range e.Commands[len(want):] {
-		if c.Name != "claude" || len(c.Args) != 1 || !map[string]bool{"version": true, "mcp-list": true, "mcp-get": true, "mcp-add": true, "mcp-remove": true}[c.Args[0]] {
+	wantClaude := []string{"version", "version", "version", "mcp-add", "version", "version", "version", "version", "version", "mcp-remove", "version"}
+	if len(e.Commands) != len(want)+len(wantClaude) {
+		return errors.New("evidence command sequence is incomplete")
+	}
+	for i, operation := range wantClaude {
+		c := e.Commands[len(want)+i]
+		if c.Name != "claude" || !reflect.DeepEqual(c.Args, []string{operation}) {
 			return errors.New("unsafe normalized Claude operation")
 		}
 	}
@@ -675,6 +695,9 @@ func validManifestEvidence(items []FileEvidence) bool {
 			return false
 		}
 		mode := os.FileMode(item.Mode)
+		if item.Size < 0 || mode&^(os.ModePerm|os.ModeDir|os.ModeSymlink) != 0 || (mode.Type() != 0 && mode.Type() != os.ModeDir && mode.Type() != os.ModeSymlink) {
+			return false
+		}
 		if mode.IsRegular() && item.SHA256 == "" {
 			return false
 		}

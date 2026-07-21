@@ -219,6 +219,10 @@ func validEvidence() Evidence {
 	for i := range args {
 		commands[i] = CommandEvidence{Name: "packy", Args: args[i], ExitCode: 0}
 	}
+	commands[0].Name = "claude"
+	for _, operation := range []string{"version", "version", "version", "mcp-add", "version", "version", "version", "version", "version", "mcp-remove", "version"} {
+		commands = append(commands, CommandEvidence{Name: "claude", Args: []string{operation}, ExitCode: 0})
+	}
 	sha := strings.Repeat("a", 40)
 	manifest := []FileEvidence{{Path: "fixture", SHA256: strings.Repeat("c", 64), Mode: 0o600, Size: 1}}
 	return Evidence{SchemaVersion: 1, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{ForeignContentPreserved: true, InstallCreatedManagedState: true, InstallCreatedManagedProjections: true, InstallProjectedClaudeMCP: true, DryRunsUnchanged: true, UninstallRemovedManagedState: true, UninstallRemovedManagedProjections: true, ResidualManagedArtifactsAbsent: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true, ForeignMCPExactAfterInstall: true, ForeignMCPExactAfterUpdate: true, ForeignMCPExactAfterUninstall: true}}
@@ -253,9 +257,24 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 		t.Fatal("accepted tampered lifecycle sequence")
 	}
 	e = validEvidence()
-	e.Commands = append(e.Commands, CommandEvidence{Name: "claude", Args: []string{"login"}, ExitCode: 0})
+	e.Commands[0].Name = "packy"
 	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted unsafe normalized Claude command")
+		t.Fatal("accepted tampered executable identity")
+	}
+	e = validEvidence()
+	e.Commands[2].Args[3] = "--unexpected"
+	if err := ValidateEvidence(e); err == nil {
+		t.Fatal("accepted tampered init flag")
+	}
+	e = validEvidence()
+	e.Commands = e.Commands[:11]
+	if err := ValidateEvidence(e); err == nil {
+		t.Fatal("accepted missing normalized Claude operations")
+	}
+	e = validEvidence()
+	e.Commands[14].Args[0] = "mcp-list"
+	if err := ValidateEvidence(e); err == nil {
+		t.Fatal("accepted tampered normalized Claude sequence")
 	}
 	e = validEvidence()
 	e.Assertions.InstallCreatedManagedProjections = false
@@ -276,6 +295,17 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 	e.After[0].SHA256 = ""
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted regular file without content digest")
+	}
+	e = validEvidence()
+	e.After[0].Size = -1
+	if err := ValidateEvidence(e); err == nil {
+		t.Fatal("accepted negative manifest size")
+	}
+	e = validEvidence()
+	e.After[0].Mode = uint32(os.ModeDevice | 0o600)
+	e.After[0].SHA256 = ""
+	if err := ValidateEvidence(e); err == nil {
+		t.Fatal("accepted unsupported manifest type")
 	}
 	e = validEvidence()
 	e.PackySHA = strings.Repeat("z", 40)
