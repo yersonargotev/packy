@@ -120,14 +120,10 @@ func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 		t.Fatalf("stale failure lifecycle facts = %#v", failure)
 	}
 	failureJSON, err := json.Marshal(failure)
-	if err != nil || !json.Valid(failureJSON) || !containsJSONFact(failureJSON, `"compatibility":"blocked"`) {
+	if err != nil || !json.Valid(failureJSON) || !strings.Contains(string(failureJSON), `"compatibility":"blocked"`) {
 		t.Fatalf("stale failure wire contract = %s, err=%v", failureJSON, err)
 	}
 	if !reflect.DeepEqual(got.Contributors["projection"], []string{"a", "z"}) || got.MandatoryActions[0].ID != "a" {
 		t.Fatalf("canonical facts = %#v", got)
 	}
-}
-
-func containsJSONFact(document []byte, fact string) bool {
-	return strings.Contains(string(document), fact)
 }
