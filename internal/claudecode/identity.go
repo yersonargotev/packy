@@ -74,6 +74,7 @@ type OwnershipRecord struct {
 	Contributors                                             []string
 	DeletionAuthorized                                       bool
 	HookProvenance                                           string
+	HookEvent                                                string
 	Skill                                                    SkillIdentity
 	Command                                                  string
 	Args, EnvironmentKeys                                    []string

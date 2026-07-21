@@ -206,7 +206,7 @@ func MergeCommandHookWithProvenance(settings []byte, hook CommandHookEntry, remo
 		arr := append([]byte{'['}, wantedBytes...)
 		arr = append(arr, ']')
 		result, err := insertObjectField(data, hookSpan, hook.Event, arr)
-		return result, HookMergeProvenance{CreatedEvent: true}, err
+		return result, HookMergeProvenance{CreatedHooksContainer: provenance.CreatedHooksContainer, CreatedEvent: true}, err
 	}
 	if remove {
 		result, err := removeMatchingArrayElement(data, eventSpan, canonicalFingerprint(wanted))
