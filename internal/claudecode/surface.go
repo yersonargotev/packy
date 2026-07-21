@@ -68,17 +68,29 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		switch b.Projection {
 		case "skill":
 			source := filepath.Join(a.bundleRoot, filepath.Clean(r.Source))
+			expectedSource, err := canonicalPath(source)
+			if err != nil {
+				return result, err
+			}
 			desired, err := localprojection.FingerprintTree(source)
 			if err != nil {
 				return result, err
 			}
 			target := filepath.Join(a.layout.SkillsDir, b.Name)
-			observed, exists, err := localprojection.FingerprintPath(target)
-			if err != nil {
-				return result, err
+			skill := ObserveSkill(target, expectedSource)
+			if skill.Err != nil {
+				return result, skill.Err
+			}
+			exists := skill.Kind != PathMissing
+			observed := "missing"
+			if exists {
+				observed = skill.TreeFingerprint
+				if observed == "" {
+					observed = string(skill.Kind)
+				}
 			}
 			action := capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillLink, Source: source, Target: target, Description: "link Claude Code skill " + b.Name}
-			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, ExternallyManaged: exists && !ownsExact(ownership, id, string(ActionSkillLink), target, observed), Action: action})
+			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, ExternallyManaged: exists && !ownsSkillExact(ownership, id, target, expectedSource, skill), Action: action})
 			revision = append(revision, id+observed)
 		case "instruction":
 			content, err := os.ReadFile(filepath.Join(a.bundleRoot, filepath.Clean(r.Source)))
@@ -295,6 +307,15 @@ func ownsExact(snapshot OwnershipSnapshot, id, kind, target, fingerprint string)
 	}
 	return matches == 1
 }
+func ownsSkillExact(snapshot OwnershipSnapshot, id, target, expectedSource string, o SkillObservation) bool {
+	matches := 0
+	for _, r := range snapshot.Records {
+		if r.StateOwner != "" && r.ContributorID != "" && slices.Contains(r.Contributors, r.ContributorID) && r.ID == id && r.Kind == string(ActionSkillLink) && filepath.Clean(r.Target) == filepath.Clean(target) && r.SymlinkType == "directory" && r.ResolvedTarget == o.ResolvedTarget && r.ExpectedSource == expectedSource && o.Kind == PathSymlink && o.ResolvedTarget == expectedSource && r.Fingerprint == o.TreeFingerprint {
+			matches++
+		}
+	}
+	return matches == 1
+}
 
 func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabilitypack.ProjectionAction) *capabilitypack.ProjectionActionError {
 	if err := a.validateActions(actions); err != nil {
@@ -419,15 +440,19 @@ func (a *SurfaceAdapter) apply(ctx context.Context, x capabilitypack.ProjectionA
 		if x.Mode == capabilitypack.ProjectionDeleteTarget {
 			return removeExact(x.Target)
 		}
-		sourceFP, err := localprojection.FingerprintTree(x.Source)
+		expected, err := canonicalPath(x.Source)
 		if err != nil {
 			return err
 		}
-		targetFP, exists, err := localprojection.FingerprintPath(x.Target)
+		sourceFP, err := localprojection.FingerprintTree(expected)
 		if err != nil {
 			return err
 		}
-		if exists && targetFP == sourceFP {
+		observed := ObserveSkill(x.Target, expected)
+		if observed.Err != nil {
+			return observed.Err
+		}
+		if observed.Kind == PathSymlink && observed.ResolvedTarget == expected && observed.TreeFingerprint == sourceFP {
 			return nil
 		}
 		return replaceSymlink(x.Source, x.Target)
@@ -534,6 +559,32 @@ func (a *SurfaceAdapter) validateFreshOwnership(x capabilitypack.ProjectionActio
 		}
 		return nil
 	}
+	if x.Kind == ActionSkillLink {
+		o := ObserveSkill(x.Target, "")
+		if o.Err != nil {
+			return o.Err
+		}
+		exists := o.Kind != PathMissing
+		if !exists {
+			return nil
+		}
+		if record == nil {
+			return errors.New("foreign Claude skill collision")
+		}
+		if record.SymlinkType != "directory" || o.Kind != PathSymlink || record.ResolvedTarget == "" || record.ExpectedSource == "" || o.ResolvedTarget != record.ResolvedTarget || record.ExpectedSource != record.ResolvedTarget || record.Fingerprint != o.TreeFingerprint {
+			return errors.New("owned Claude skill identity changed; preserving it")
+		}
+		if x.Mode == capabilitypack.ProjectionDeleteTarget {
+			if !record.DeletionAuthorized || len(record.Contributors) > 1 {
+				return errors.New("Claude skill deletion is not authorized")
+			}
+			return nil
+		}
+		if _, err := canonicalPath(x.Source); err != nil {
+			return err
+		}
+		return nil
+	}
 	fp, exists, err := localprojection.FingerprintPath(x.Target)
 	if err != nil {
 		return err
@@ -617,6 +668,17 @@ func (a *SurfaceAdapter) preflight(actions []capabilitypack.ProjectionAction, sn
 func fingerprintsEqual(a, b string) bool { return a == b || "sha256:"+a == b || a == "sha256:"+b }
 func directChild(path, root string) bool {
 	return filepath.Dir(filepath.Clean(path)) == filepath.Clean(root) && filepath.Base(path) != "." && filepath.Base(path) != ".."
+}
+func canonicalPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
 }
 func mcpActionName(args []string) (string, bool) {
 	if len(args) >= 3 && args[0] == "mcp" && (args[1] == "add" || args[1] == "remove") {

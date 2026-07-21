@@ -119,6 +119,7 @@ func ParseHookMergeProvenance(value string) HookMergeProvenance {
 }
 
 type JSONSpan struct{ Start, End int }
+type JSONMemberSpan struct{ Full, Value JSONSpan }
 
 func (h CommandHookEntry) Validate() error {
 	if h.Type != "command" || h.Event == "" || h.Command == "" || h.TimeoutSeconds <= 0 {
@@ -237,35 +238,40 @@ func hookJSON(h CommandHookEntry) map[string]any {
 }
 
 func jsonField(data []byte, object JSONSpan, key string) (JSONSpan, bool, error) {
+	member, found, err := jsonObjectMember(data, object, key)
+	return member.Value, found, err
+}
+func jsonObjectMember(data []byte, object JSONSpan, key string) (JSONMemberSpan, bool, error) {
 	i := skipSpace(data, object.Start)
 	if i >= object.End || data[i] != '{' {
-		return JSONSpan{}, false, errors.New("JSON value must be an object")
+		return JSONMemberSpan{}, false, errors.New("JSON value must be an object")
 	}
 	i++
 	for {
 		i = skipDelimiters(data, i)
 		if i >= object.End || data[i] == '}' {
-			return JSONSpan{}, false, nil
+			return JSONMemberSpan{}, false, nil
 		}
+		memberStart := i
 		ks, ke, err := scanString(data, i)
 		if err != nil {
-			return JSONSpan{}, false, err
+			return JSONMemberSpan{}, false, err
 		}
 		var name string
 		if err = json.Unmarshal(data[ks:ke], &name); err != nil {
-			return JSONSpan{}, false, err
+			return JSONMemberSpan{}, false, err
 		}
 		i = skipSpace(data, ke)
 		if i >= object.End || data[i] != ':' {
-			return JSONSpan{}, false, errors.New("invalid JSON object")
+			return JSONMemberSpan{}, false, errors.New("invalid JSON object")
 		}
 		vs := skipSpace(data, i+1)
 		ve, err := scanValue(data, vs)
 		if err != nil {
-			return JSONSpan{}, false, err
+			return JSONMemberSpan{}, false, err
 		}
 		if name == key {
-			return JSONSpan{vs, ve}, true, nil
+			return JSONMemberSpan{Full: JSONSpan{memberStart, ve}, Value: JSONSpan{vs, ve}}, true, nil
 		}
 		i = ve
 	}
@@ -411,22 +417,7 @@ func removeMatchingArrayElement(data []byte, array JSONSpan, want string) ([]byt
 	if len(spans) != 1 {
 		return nil, errors.New("duplicate or missing canonical Claude command hook")
 	}
-	s, e := spans[0].s, spans[0].e
-	left := s - 1
-	for left > array.Start && (data[left] == ' ' || data[left] == '\n' || data[left] == '\r' || data[left] == '\t') {
-		left--
-	}
-	if data[left] == ',' {
-		s = left
-	} else {
-		right := skipSpace(data, e)
-		if right < array.End && data[right] == ',' {
-			e = right + 1
-		}
-	}
-	out := append([]byte(nil), data[:s]...)
-	out = append(out, data[e:]...)
-	return out, nil
+	return spliceRemovingJSONItem(data, array, JSONSpan{spans[0].s, spans[0].e}), nil
 }
 func arrayEmpty(data []byte, start int) bool {
 	end, err := scanValue(data, start)
@@ -436,54 +427,26 @@ func objectEmpty(data []byte, object JSONSpan) bool {
 	return object.Start < len(data) && object.End <= len(data) && strings.TrimSpace(string(data[object.Start+1:object.End-1])) == ""
 }
 func removeObjectField(data []byte, object JSONSpan, key string) ([]byte, error) {
-	full, found, err := jsonFieldFull(data, object, key)
+	member, found, err := jsonObjectMember(data, object, key)
 	if err != nil || !found {
 		return data, err
 	}
-	s, e := full.Start, full.End
+	return spliceRemovingJSONItem(data, object, member.Full), nil
+}
+func spliceRemovingJSONItem(data []byte, container, item JSONSpan) []byte {
+	s, e := item.Start, item.End
 	left := s - 1
-	for left > object.Start && (data[left] == ' ' || data[left] == '\n' || data[left] == '\r' || data[left] == '\t') {
+	for left > container.Start && (data[left] == ' ' || data[left] == '\n' || data[left] == '\r' || data[left] == '\t') {
 		left--
 	}
-	if data[left] == ',' {
+	if left >= container.Start && data[left] == ',' {
 		s = left
 	} else {
 		right := skipSpace(data, e)
-		if right < object.End && data[right] == ',' {
+		if right < container.End && data[right] == ',' {
 			e = right + 1
 		}
 	}
 	out := append([]byte(nil), data[:s]...)
-	out = append(out, data[e:]...)
-	return out, nil
-}
-func jsonFieldFull(data []byte, object JSONSpan, key string) (JSONSpan, bool, error) {
-	i := skipSpace(data, object.Start) + 1
-	for {
-		i = skipDelimiters(data, i)
-		if i >= object.End || data[i] == '}' {
-			return JSONSpan{}, false, nil
-		}
-		ks, ke, err := scanString(data, i)
-		if err != nil {
-			return JSONSpan{}, false, err
-		}
-		var name string
-		if err = json.Unmarshal(data[ks:ke], &name); err != nil {
-			return JSONSpan{}, false, err
-		}
-		colon := skipSpace(data, ke)
-		if colon >= object.End || data[colon] != ':' {
-			return JSONSpan{}, false, errors.New("invalid JSON object")
-		}
-		vs := skipSpace(data, colon+1)
-		ve, err := scanValue(data, vs)
-		if err != nil {
-			return JSONSpan{}, false, err
-		}
-		if name == key {
-			return JSONSpan{ks, ve}, true, nil
-		}
-		i = ve
-	}
+	return append(out, data[e:]...)
 }

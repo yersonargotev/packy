@@ -60,6 +60,7 @@ type OwnershipRecord struct {
 	Contributors                                             []string
 	DeletionAuthorized                                       bool
 	HookProvenance                                           string
+	SymlinkType, ResolvedTarget, ExpectedSource              string
 }
 
 // OwnershipSnapshot is a read-only composite view of records retained by their authoritative owners.
