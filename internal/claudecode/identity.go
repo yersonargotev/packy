@@ -59,6 +59,7 @@ type OwnershipRecord struct {
 	StateOwner, ContributorID, ID, Kind, Target, Fingerprint string
 	Contributors                                             []string
 	DeletionAuthorized                                       bool
+	HookProvenance                                           string
 }
 
 // OwnershipSnapshot is a read-only composite view of records retained by their authoritative owners.

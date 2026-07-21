@@ -435,3 +435,209 @@ func TestStaleMCPRemovalPreservesEntryWithoutEffect(t *testing.T) {
 	}
 	mustFile(t, l.UserMCPFile, string(definition))
 }
+
+func TestHookCreationProvenanceRoundTripsWithoutGuessing(t *testing.T) {
+	hook := CommandHookEntry{Type: "command", Event: "SessionStart", Command: "owned", Args: []string{}, TimeoutSeconds: 1, Blocking: true, Failure: "block", Authorities: []string{}}
+	cases := []struct {
+		name     string
+		original []byte
+		want     HookMergeProvenance
+	}{{"absent hooks", []byte("{\n  \"foreign\" : true\n}\n"), HookMergeProvenance{CreatedHooksContainer: true, CreatedEvent: true}}, {"absent event", []byte("{\"hooks\":{\"Other\":[]},\"foreign\":1}"), HookMergeProvenance{CreatedEvent: true}}, {"foreign empty hooks", []byte("{ \"hooks\" : {}, \"foreign\" : true }"), HookMergeProvenance{CreatedEvent: true}}}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			added, provenance, err := MergeCommandHookWithProvenance(tc.original, hook, false, HookMergeProvenance{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if provenance != tc.want {
+				t.Fatalf("provenance=%+v want %+v", provenance, tc.want)
+			}
+			removed, _, err := MergeCommandHookWithProvenance(added, hook, true, provenance)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(removed) != string(tc.original) {
+				t.Fatalf("round trip changed bytes\nwant=%q\n got=%q", tc.original, removed)
+			}
+		})
+	}
+}
+
+func TestAuthorizationKnownNegativeAndUnknownSemantics(t *testing.T) {
+	home := t.TempDir()
+	l := NewCanonicalLayout(home)
+	supported := &recordingRunner{result: Result{Stdout: "2.1.203"}}
+	knownNegative := NewSurfaceAdapterWithAuthorization("", l, "", "claude", supported, StaticOwnershipSnapshot(OwnershipSnapshot{}), AuthorizationObserverFunc(func(context.Context) AuthorizationObservation {
+		return AuthorizationObservation{PolicyObserved: true, ToolPermissionObserved: true, Disabled: true}
+	}))
+	inspection, err := knownNegative.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "empty"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inspection.Readiness.AuthorizationObserved || inspection.Readiness.Authorized {
+		t.Fatalf("known negative=%+v", inspection.Readiness)
+	}
+	unsupported := NewSurfaceAdapterWithAuthorization("", l, "", "", supported, StaticOwnershipSnapshot(OwnershipSnapshot{}), AuthorizationObserverFunc(func(context.Context) AuthorizationObservation {
+		return AuthorizationObservation{PolicyObserved: true, ToolPermissionObserved: true}
+	}))
+	inspection, err = unsupported.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "empty"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inspection.Readiness.AuthorizationObserved || inspection.Readiness.Authorized {
+		t.Fatalf("known unsupported=%+v", inspection.Readiness)
+	}
+	unknown := NewSurfaceAdapterWithAuthorization("", l, "", "claude", supported, StaticOwnershipSnapshot(OwnershipSnapshot{}), AuthorizationObserverFunc(func(context.Context) AuthorizationObservation { return AuthorizationObservation{PolicyObserved: true} }))
+	inspection, err = unknown.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "empty"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Readiness.AuthorizationObserved || inspection.Readiness.Authorized {
+		t.Fatalf("unknown=%+v", inspection.Readiness)
+	}
+}
+
+func TestPresentOwnedHookApplyCleanupAndRepeatedFreshCleanup(t *testing.T) {
+	home := t.TempDir()
+	l := NewCanonicalLayout(home)
+	os.MkdirAll(l.ConfigDir, 0700)
+	hook := CommandHookEntry{Type: "command", Event: "SessionStart", Command: "owned", Args: []string{}, TimeoutSeconds: 1, Blocking: true, Failure: "block", Authorities: []string{}}
+	original := []byte(`{"foreign":true}`)
+	withHook, provenance, _ := MergeCommandHookWithProvenance(original, hook, false, HookMergeProvenance{})
+	os.WriteFile(l.SettingsFile, withHook, 0600)
+	record := OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "pack:p:h", ID: "lifecycle:h", Kind: string(ActionCommandHook), Target: l.SettingsFile, Fingerprint: hook.Fingerprint(), Contributors: []string{"pack:p:h"}, HookProvenance: provenance.Seal()}
+	a := NewSurfaceAdapter("", l, filepath.Join(home, "state"), "claude", &recordingRunner{}, StaticOwnershipSnapshot(NewOwnershipSnapshot(record)))
+	removed, _, _ := MergeCommandHookWithProvenance(withHook, hook, true, provenance)
+	action := capabilitypack.ProjectionAction{ID: record.ID, Kind: ActionCommandHook, Target: l.SettingsFile, Content: string(removed), Source: provenance.Seal(), Command: Fingerprint(withHook), Mode: capabilitypack.ProjectionRemoveContent}
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err != nil {
+		t.Fatal(err)
+	}
+	mustFile(t, l.SettingsFile, string(original))
+	action.Command = Fingerprint(original)
+	action.Content = string(original)
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err != nil {
+		t.Fatal("fresh repeated cleanup", err)
+	}
+	mustFile(t, l.SettingsFile, string(original))
+}
+
+func TestExactMCPAddIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	l := NewCanonicalLayout(home)
+	definition := []byte(`{"mcpServers":{"memory":{"command":"engram","args":["mcp"],"env":{}}}}`)
+	identity := NewMCPIdentity("memory", "engram", []string{"mcp"}, map[string]string{})
+	runner := &mcpStoreRunner{path: l.UserMCPFile, definition: definition}
+	record := OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "pack:p:m", ID: "mcp_server:memory", Kind: string(ActionUserMCP), Target: "memory", Fingerprint: canonicalFingerprint(identity), Contributors: []string{"pack:p:m"}}
+	a := NewSurfaceAdapter("", l, filepath.Join(home, "state"), "claude", runner, StaticOwnershipSnapshot(NewOwnershipSnapshot(record)))
+	add := capabilitypack.ProjectionAction{ID: record.ID, Kind: ActionUserMCP, Target: "memory", Command: "claude", Args: []string{"mcp", "add", "memory", "--scope", "user", "--", "engram", "mcp"}, Content: canonicalFingerprint(identity)}
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{add}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{add}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("MCP add effects=%d want 1", len(runner.calls))
+	}
+}
+
+func TestPresentOwnedInstructionApplyCleanupStaleAndRepeat(t *testing.T) {
+	home := t.TempDir()
+	l := NewCanonicalLayout(home)
+	os.MkdirAll(l.ConfigDir, 0700)
+	doc, _ := UpsertInstructionContribution("foreign\n", InstructionContribution{ContributorID: "pack:p:i", Content: "owned"})
+	os.WriteFile(l.InstructionsFile, []byte(doc), 0600)
+	record := OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "pack:p:i", ID: "instruction:i", Kind: string(ActionInstructionContribution), Target: l.InstructionsFile, Fingerprint: Fingerprint([]byte("owned")), Contributors: []string{"pack:p:i"}}
+	a := NewSurfaceAdapter("", l, filepath.Join(home, "state"), "claude", &recordingRunner{}, StaticOwnershipSnapshot(NewOwnershipSnapshot(record)))
+	removed, _ := RemoveInstructionContribution(doc, "pack:p:i")
+	stale := capabilitypack.ProjectionAction{ID: record.ID, Kind: ActionInstructionContribution, Target: l.InstructionsFile, Content: removed, Command: Fingerprint([]byte("stale")), Mode: capabilitypack.ProjectionRemoveContent}
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{stale}); err == nil {
+		t.Fatal("stale instruction cleanup accepted")
+	}
+	mustFile(t, l.InstructionsFile, doc)
+	stale.Command = Fingerprint([]byte(doc))
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{stale}); err != nil {
+		t.Fatal(err)
+	}
+	mustFile(t, l.InstructionsFile, removed)
+	stale.Command = Fingerprint([]byte(removed))
+	stale.Content = removed
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{stale}); err != nil {
+		t.Fatal("repeat", err)
+	}
+}
+
+func TestSkillInstallUpdateDriftAndRemovalLifecycle(t *testing.T) {
+	home := t.TempDir()
+	l := NewCanonicalLayout(home)
+	src := filepath.Join(home, "src")
+	os.MkdirAll(src, 0700)
+	os.WriteFile(filepath.Join(src, "SKILL.md"), []byte("v1"), 0600)
+	target := filepath.Join(l.SkillsDir, "skill")
+	snapshot := OwnershipSnapshot{}
+	provider := OwnershipSnapshotFunc(func(context.Context) (OwnershipSnapshot, error) { return snapshot, nil })
+	a := NewSurfaceAdapter("", l, filepath.Join(home, "state"), "claude", &recordingRunner{}, provider)
+	action := capabilitypack.ProjectionAction{ID: "skill:skill", Kind: ActionSkillLink, Source: src, Target: target}
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err != nil {
+		t.Fatal(err)
+	}
+	fp, _, _ := localprojection.FingerprintPath(target)
+	snapshot = NewOwnershipSnapshot(OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "pack:p:s", ID: action.ID, Kind: string(ActionSkillLink), Target: target, Fingerprint: fp, DeletionAuthorized: true, Contributors: []string{"pack:p:s"}})
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err != nil {
+		t.Fatal("idempotent install", err)
+	}
+	foreign := filepath.Join(home, "foreign")
+	os.Mkdir(foreign, 0700)
+	os.Remove(target)
+	os.Symlink(foreign, target)
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err == nil {
+		t.Fatal("drifted skill update accepted")
+	}
+	os.Remove(target)
+	os.Symlink(src, target)
+	remove := action
+	remove.Source = ""
+	remove.Mode = capabilitypack.ProjectionDeleteTarget
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{remove}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{remove}); err != nil {
+		t.Fatal("repeat removal", err)
+	}
+}
+
+func TestAgentInstallUpdateStaleAndRepeatedRemovalLifecycle(t *testing.T) {
+	home := t.TempDir()
+	l := NewCanonicalLayout(home)
+	target := filepath.Join(l.AgentsDir, "agent.md")
+	snapshot := OwnershipSnapshot{}
+	provider := OwnershipSnapshotFunc(func(context.Context) (OwnershipSnapshot, error) { return snapshot, nil })
+	a := NewSurfaceAdapter("", l, filepath.Join(home, "state"), "claude", &recordingRunner{}, provider)
+	action := capabilitypack.ProjectionAction{ID: "agent:agent", Kind: ActionAgentFile, Target: target, Content: "v1", Command: Fingerprint(nil)}
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err != nil {
+		t.Fatal(err)
+	}
+	fp, _, _ := localprojection.FingerprintPath(target)
+	snapshot = NewOwnershipSnapshot(OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "pack:p:a", ID: action.ID, Kind: string(ActionAgentFile), Target: target, Fingerprint: fp, DeletionAuthorized: true, Contributors: []string{"pack:p:a"}})
+	action.Content = "v2"
+	action.Command = Fingerprint([]byte("v1"))
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err != nil {
+		t.Fatal(err)
+	}
+	mustFile(t, target, "v2")
+	os.WriteFile(target, []byte("foreign"), 0600)
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err == nil {
+		t.Fatal("stale agent update accepted")
+	}
+	os.WriteFile(target, []byte("v2"), 0600)
+	snapshot = NewOwnershipSnapshot(OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "pack:p:a", ID: action.ID, Kind: string(ActionAgentFile), Target: target, Fingerprint: localprojection.FingerprintBytes([]byte("v2")), DeletionAuthorized: true, Contributors: []string{"pack:p:a"}})
+	remove := action
+	remove.Mode = capabilitypack.ProjectionDeleteTarget
+	remove.Command = Fingerprint([]byte("v2"))
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{remove}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{remove}); err != nil {
+		t.Fatal("repeat", err)
+	}
+}
