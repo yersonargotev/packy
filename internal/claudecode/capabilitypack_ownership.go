@@ -114,7 +114,7 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 				if observation.Err != nil {
 					return OwnershipSnapshot{}, observation.Err
 				}
-				record.Fingerprint = observation.EntryFingerprint
+				record.Fingerprint = HookOwnershipFingerprint(hook.Event, observation.EntryFingerprint)
 				record.HookProvenance = owner.AdapterProvenance
 				record.HookEvent = hook.Event
 			} else if resource.Kind == "mcp_server" {

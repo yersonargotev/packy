@@ -161,7 +161,7 @@ func TestCapabilityPackOwnershipProviderReturnsHookAndMCPIdentity(t *testing.T) 
 	for _, record := range snapshot.Records {
 		switch record.ID {
 		case "lifecycle:start":
-			if record.Kind != string(ActionCommandHook) || record.Fingerprint != entry.Fingerprint() || record.HookProvenance != (HookMergeProvenance{}).Seal() {
+			if record.Kind != string(ActionCommandHook) || record.Fingerprint != HookOwnershipFingerprint(entry.Event, entry.Fingerprint()) || record.HookProvenance != (HookMergeProvenance{}).Seal() {
 				t.Fatalf("hook=%+v", record)
 			}
 		case "mcp_server:memory":
@@ -328,7 +328,7 @@ func TestTypedHookContainerProvenanceSurvivesCreatorFirstRemoval(t *testing.T) {
 	}
 	record := func(resource capabilitypack.Resource) OwnershipRecord {
 		binding := resource.Bindings[0]
-		return OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "p", Contributors: []string{"p"}, ID: "lifecycle:" + resource.ID, Kind: string(ActionCommandHook), Target: layout.SettingsFile, Fingerprint: fromBindingHook(binding).Fingerprint(), HookProvenance: provenance, HookEvent: binding.Hook.Event, DeletionAuthorized: true}
+		return OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "p", Contributors: []string{"p"}, ID: "lifecycle:" + resource.ID, Kind: string(ActionCommandHook), Target: layout.SettingsFile, Fingerprint: HookOwnershipFingerprint(binding.Hook.Event, fromBindingHook(binding).Fingerprint()), HookProvenance: provenance, HookEvent: binding.Hook.Event, DeletionAuthorized: true}
 	}
 	ownedBoth := NewOwnershipSnapshot(record(start), record(stop))
 	keepStop := capabilitypack.Pack{ID: "p", Version: "1", Resources: []capabilitypack.Resource{stop}}

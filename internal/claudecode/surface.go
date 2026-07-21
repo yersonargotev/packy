@@ -218,9 +218,9 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			}
 			observed := "missing"
 			if len(ho.MatchingEntries) > 0 {
-				observed = ho.EntryFingerprint
+				observed = HookOwnershipFingerprint(hook.Event, ho.EntryFingerprint)
 			}
-			desired := canonicalFingerprint(hookJSON(hook))
+			desired := HookOwnershipFingerprint(hook.Event, canonicalFingerprint(hookJSON(hook)))
 			description := fmt.Sprintf("configure Claude Code command hook %s: event=%s matcher=%q command=%s %s timeout=%ds blocking=%t failure=%s authorities=%s", b.Name, b.Hook.Event, b.Hook.Matcher, b.Hook.Command, strings.Join(b.Hook.Args, " "), b.Hook.TimeoutSeconds, b.Hook.Blocking, b.Hook.Failure, strings.Join(b.Hook.Authorities, ","))
 			result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: len(ho.MatchingEntries) > 0, ObservedFingerprint: observed, DesiredFingerprint: desired, ExternallyManaged: ho.Disabled || ho.Shadowed, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionCommandHook, Target: a.layout.SettingsFile, Content: string(merged), Source: provenance.Seal(), Command: Fingerprint(settingsOriginal), Consent: capabilitypack.ConsentExecutableExternal, Description: description}})
 			revision = append(revision, "settings="+Fingerprint(settingsOriginal))
@@ -429,7 +429,7 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 		fp := "missing"
 		exists := len(o.MatchingEntries) > 0
 		if exists {
-			fp = o.EntryFingerprint
+			fp = HookOwnershipFingerprint(hook.Event, o.EntryFingerprint)
 		}
 		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionCommandHook, Target: a.layout.SettingsFile, Content: string(merged), Source: provenance.Seal(), Command: Fingerprint(settings), Mode: capabilitypack.ProjectionRemoveContent, Description: "remove Claude Code hook " + b.Name}}, id + fp, nil
 	case "mcp_server":
@@ -1068,13 +1068,9 @@ func settingsContainsFingerprint(path, fingerprint string) (bool, error) {
 	if len(settings.Raw) == 0 {
 		return false, nil
 	}
-	hooks, _ := settings.Root["hooks"].(map[string]any)
-	for _, raw := range hooks {
-		entries, _ := raw.([]any)
-		for _, entry := range entries {
-			if fingerprintsEqual(canonicalFingerprint(entry), fingerprint) {
-				return true, nil
-			}
+	for _, entry := range observedHookEntries(settings) {
+		if fingerprintsEqual(HookOwnershipFingerprint(entry.event, entry.fingerprint), fingerprint) {
+			return true, nil
 		}
 	}
 	return false, nil
