@@ -50,19 +50,23 @@
         "value"
       ],
       "properties": {
-        "state": {
-          "enum": [
-            "known",
-            "unknown"
-          ]
-        },
-        "value": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        }
+        "state": { "enum": ["known", "unknown"] },
+        "value": { "type": ["boolean", "null"] }
       },
+      "oneOf": [
+        {
+          "properties": {
+            "state": { "const": "known" },
+            "value": { "type": "boolean" }
+          }
+        },
+        {
+          "properties": {
+            "state": { "const": "unknown" },
+            "value": { "type": "null" }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "readiness": {

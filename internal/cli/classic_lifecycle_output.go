@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/corelifecycle"
+	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
 const classicLifecycleJSONSchemaVersion = 2
@@ -66,24 +67,24 @@ func renderClassicLifecyclePlanJSON(w io.Writer, operation corelifecycle.Operati
 	return json.NewEncoder(w).Encode(classicPlanJSON(operation, plan))
 }
 
-func renderClassicLifecycleResultJSON(w io.Writer, operation corelifecycle.Operation, plan corelifecycle.Plan, result corelifecycle.Result, committed bool) error {
+func renderClassicLifecycleResultJSON(w io.Writer, operation corelifecycle.Operation, plan corelifecycle.Plan, result corelifecycle.Result) error {
 	return json.NewEncoder(w).Encode(classicLifecycleResultJSON{
 		SchemaVersion: classicLifecycleJSONSchemaVersion, Report: "classic-lifecycle-result", Operation: operation,
 		Outcome: result.Outcome(), DesiredSurfaces: sortedStrings(plan.DesiredSurfaces()),
 		PendingPrerequisites: sortedStrings(plan.PendingPrerequisites()), Preserved: sortedStrings(plan.Preserved()),
 		Blockers: sortedStrings(plan.Blockers()), Recovery: sortedStrings(plan.RecoveryEvidence()),
-		StateTransition: stateTransitionJSON(plan.StateTransition()), Committed: committed,
+		StateTransition: stateTransitionJSON(result.StateTransition()), Committed: result.Committed(),
 		CompletedEffects: sequenceStrings(result.CompletedEffects()), FailedEffect: result.FailedEffect(),
 		NotStartedEffects: sequenceStrings(result.NotStartedEffects()), Warnings: sortedStrings(result.Warnings()),
 		ManagedSkillCount: result.ManagedSkillCount(),
 	})
 }
 
-func renderClassicLifecycleResultHuman(w io.Writer, plan corelifecycle.Plan, result corelifecycle.Result, committed bool) error {
-	transition := plan.StateTransition()
+func renderClassicLifecycleResultHuman(w io.Writer, plan corelifecycle.Plan, result corelifecycle.Result) error {
+	transition := result.StateTransition()
 	_, err := fmt.Fprintf(w, "Outcome: %s\nDesired surfaces: %s\nState transition: schema %d -> %d; status %s -> %s; committed=%t\nPending prerequisites: %s\nPreserved: %s\nLifecycle blockers: %s\nRecovery: %s\nCompleted effects: %s\nFailed effect: %s\nNot started effects: %s\n",
 		result.Outcome(), strings.Join(sortedStrings(plan.DesiredSurfaces()), ", "),
-		transition.FromSchemaVersion, transition.ToSchemaVersion, transition.FromStatus, transition.ToStatus, committed,
+		transition.FromSchemaVersion, transition.ToSchemaVersion, transition.FromStatus, transition.ToStatus, result.Committed(),
 		joinReportValues(sortedStrings(plan.PendingPrerequisites())), joinReportValues(sortedStrings(plan.Preserved())),
 		joinReportValues(sortedStrings(plan.Blockers())), joinReportValues(sortedStrings(plan.RecoveryEvidence())),
 		joinReportValues(sequenceStrings(result.CompletedEffects())), joinReportValue(result.FailedEffect()),
@@ -111,7 +112,7 @@ func classicPlanJSON(operation corelifecycle.Operation, plan corelifecycle.Plan)
 	for _, action := range actions {
 		outputActions = append(outputActions, classicActionJSON{
 			Kind: action.Kind, Description: action.Description, Path: action.Path, Target: action.Target,
-			Command: action.Command, Args: redactCLIEnvironmentArgs(action.Args),
+			Command: action.Command, Args: reportredaction.EnvironmentArguments(action.Args),
 		})
 	}
 	return classicLifecyclePlanJSON{
@@ -137,29 +138,3 @@ func sortedStrings(values []string) []string {
 }
 
 func sequenceStrings(values []string) []string { return append([]string{}, values...) }
-
-func redactCLIEnvironmentArgs(values []string) []string {
-	result := append([]string(nil), values...)
-	for i := range result {
-		if result[i] == "--env" || result[i] == "-e" {
-			if i+1 < len(result) {
-				result[i+1] = redactCLIEnvironmentValue(result[i+1])
-				i++
-			}
-			continue
-		}
-		for _, prefix := range []string{"--env=", "-e="} {
-			if strings.HasPrefix(result[i], prefix) {
-				result[i] = prefix + redactCLIEnvironmentValue(strings.TrimPrefix(result[i], prefix))
-			}
-		}
-	}
-	return result
-}
-
-func redactCLIEnvironmentValue(value string) string {
-	if key, _, ok := strings.Cut(value, "="); ok {
-		return key + "=<redacted>"
-	}
-	return "<redacted>"
-}

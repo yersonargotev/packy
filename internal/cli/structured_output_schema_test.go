@@ -91,6 +91,37 @@ func TestStructuredOutputV2SchemasRejectWrongVersionAndUnknownFields(t *testing.
 	}
 }
 
+func TestStructuredOutputV2SchemasRejectMismatchedReadinessState(t *testing.T) {
+	root, _ := filepath.Abs(filepath.Join("..", ".."))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v2", "pack-status.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(fixture, &document); err != nil {
+		t.Fatal(err)
+	}
+	entry := document["entries"].([]any)[0].(map[string]any)
+	readiness := entry["readiness"].(map[string]any)
+	for name, invalid := range map[string]map[string]any{
+		"unknown boolean": {"state": "unknown", "value": true},
+		"known null":      {"state": "known", "value": nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			original := readiness["configured"]
+			readiness["configured"] = invalid
+			defer func() { readiness["configured"] = original }()
+			encoded, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := validateStructuredOutput(t, root, "pack-status.schema.json", encoded); err == nil {
+				t.Fatalf("mismatched readiness passed: %s", encoded)
+			}
+		})
+	}
+}
+
 func assertStructuredOutput(t *testing.T, root, schemaName, document string) {
 	t.Helper()
 	if err := validateStructuredOutput(t, root, schemaName, []byte(document)); err != nil {

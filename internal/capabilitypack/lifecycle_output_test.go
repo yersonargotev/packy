@@ -2,6 +2,7 @@ package capabilitypack
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -158,5 +159,14 @@ func TestLifecycleReportRedactsSealedExternalHostContent(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "foreign-secret") || strings.Contains(string(encoded), "foreign-document") || strings.Contains(string(encoded), "TOKEN=secret") || strings.Contains(string(encoded), "OTHER=value") || !strings.Contains(string(encoded), "redacted") || !strings.Contains(string(encoded), "event=SessionStart command=engram") {
 		t.Fatalf("report = %s", encoded)
+	}
+	cause := errors.New("apply failed for TOKEN=secret, OTHER=value, and foreign-document")
+	safe := ReportSafeError(cause, &plan)
+	if !errors.Is(safe, cause) || strings.Contains(safe.Error(), "secret") || strings.Contains(safe.Error(), "value") || strings.Contains(safe.Error(), "foreign-document") {
+		t.Fatalf("safe error = %q", safe)
+	}
+	failure := JSONFailureFor("apply", cause, &plan, nil, nil)
+	if strings.Contains(failure.Error, "secret") || strings.Contains(failure.Error, "value") || strings.Contains(failure.Error, "foreign-document") {
+		t.Fatalf("failure = %#v", failure)
 	}
 }

@@ -201,6 +201,9 @@ func TestClassicPrototypeRecoveryRetryBuildsFreshPlanAndConverges(t *testing.T) 
 	if err == nil || result.Outcome() != OutcomeRecoveryRequired || result.FailedEffect() != "classic:mcp:engram" {
 		t.Fatalf("first attempt=%+v err=%v", result, err)
 	}
+	if !result.Committed() || result.StateTransition().ToSchemaVersion != SchemaVersion || result.StateTransition().ToStatus != InstallRecoveryRequired {
+		t.Fatalf("recovery publication = committed %t transition %+v", result.Committed(), result.StateTransition())
+	}
 	recovery, _, err := LoadState(config.State.StateFile())
 	if err != nil || !recovery.RecoveryRequired() || recovery.LatestAttempt == nil {
 		t.Fatalf("recovery=%+v err=%v", recovery, err)
@@ -245,6 +248,9 @@ func TestClassicExactLocalRollbackHasDistinctOutcomeAndAttempt(t *testing.T) {
 	if err == nil || result.Outcome() != OutcomeRolledBack || result.FailedEffect() != "classic:skill:ask-matt" {
 		t.Fatalf("rollback result=%+v err=%v", result, err)
 	}
+	if !result.Committed() || result.StateTransition().ToSchemaVersion != SchemaVersion || result.StateTransition().ToStatus != InstallConfirmed {
+		t.Fatalf("rollback publication = committed %t transition %+v", result.Committed(), result.StateTransition())
+	}
 	state, found, loadErr := LoadState(config.State.StateFile())
 	if loadErr != nil || !found || state.RecoveryRequired() || state.LatestAttempt == nil || state.LatestAttempt.Outcome != AttemptRolledBack {
 		t.Fatalf("rolled-back state=%+v found=%v err=%v", state, found, loadErr)
@@ -281,6 +287,9 @@ func TestClassicExactLocalRollbackKeepsV1Authoritative(t *testing.T) {
 	if err == nil || result.Outcome() != OutcomeRolledBack {
 		t.Fatalf("rollback result=%+v err=%v", result, err)
 	}
+	if result.Committed() || result.StateTransition().FromSchemaVersion != LegacySchemaVersion || result.StateTransition().ToSchemaVersion != LegacySchemaVersion {
+		t.Fatalf("legacy rollback publication = committed %t transition %+v", result.Committed(), result.StateTransition())
+	}
 	state, _, loadErr := LoadState(config.State.StateFile())
 	if loadErr != nil || !state.Legacy() {
 		t.Fatalf("legacy authority lost: %+v err=%v", state, loadErr)
@@ -314,6 +323,9 @@ func TestClassicPrototypeResidualSafeUninstallRetainsThenClearsAuthority(t *test
 	result, err := unavailable.Apply(context.Background(), uninstallPlan)
 	if err != nil || result.Outcome() != OutcomeUninstallIncomplete {
 		t.Fatalf("unavailable uninstall=%+v err=%v", result, err)
+	}
+	if !result.Committed() || result.StateTransition().ToSchemaVersion != SchemaVersion || result.StateTransition().ToStatus != InstallUninstallIncomplete {
+		t.Fatalf("residual publication = committed %t transition %+v", result.Committed(), result.StateTransition())
 	}
 	residual, found, err := LoadState(config.State.StateFile())
 	if err != nil || !found || !residual.UninstallIncomplete() {

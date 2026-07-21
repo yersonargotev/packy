@@ -3,7 +3,8 @@ package capabilitypack
 import (
 	"errors"
 	"sort"
-	"strings"
+
+	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
 const LifecycleJSONSchemaVersion = 2
@@ -322,34 +323,8 @@ func actionForReport(action ProjectionAction) ProjectionAction {
 	// the sealed plan. Structured reports disclose the ordered redacted effect,
 	// never raw owned or mixed-store content.
 	action.Content = ""
-	action.Args = redactedActionArgs(action.Args)
+	action.Args = reportredaction.EnvironmentArguments(action.Args)
 	return action
-}
-
-func redactedActionArgs(args []string) []string {
-	result := append([]string(nil), args...)
-	for i := range result {
-		if result[i] == "--env" || result[i] == "-e" {
-			if i+1 < len(result) {
-				result[i+1] = redactEnvironmentArgument(result[i+1])
-				i++
-			}
-			continue
-		}
-		for _, prefix := range []string{"--env=", "-e="} {
-			if strings.HasPrefix(result[i], prefix) {
-				result[i] = prefix + redactEnvironmentArgument(strings.TrimPrefix(result[i], prefix))
-			}
-		}
-	}
-	return result
-}
-
-func redactEnvironmentArgument(value string) string {
-	if key, _, ok := strings.Cut(value, "="); ok {
-		return key + "=<redacted>"
-	}
-	return "<redacted>"
 }
 
 func lifecycleContractDiff(before, after []Pack) JSONContractDiff {
@@ -409,6 +384,7 @@ type JSONLifecycleFailure struct {
 }
 
 func JSONFailureFor(stage string, err error, plan *ReconciliationPlan, approvalRequested *bool, actionsExecuted *int) JSONLifecycleFailure {
+	err = ReportSafeError(err, plan)
 	result := JSONLifecycleFailure{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-failure", Stage: stage, Error: err.Error()}
 	result.ApprovalRequested, result.ActionsExecuted = approvalRequested, actionsExecuted
 	if plan != nil {
@@ -419,6 +395,23 @@ func JSONFailureFor(stage string, err error, plan *ReconciliationPlan, approvalR
 		result.Plan = &report
 	}
 	return result
+}
+
+// ReportSafeError removes sealed action payloads and environment values from
+// lifecycle diagnostics without changing their errors.Is/As identity.
+func ReportSafeError(err error, plan *ReconciliationPlan) error {
+	if plan == nil {
+		return err
+	}
+	argumentSets := make([][]string, 0)
+	sealedPayloads := make([]string, 0)
+	for _, phase := range plan.phases {
+		for _, action := range phase.Actions {
+			argumentSets = append(argumentSets, action.Args)
+			sealedPayloads = append(sealedPayloads, action.Content)
+		}
+	}
+	return reportredaction.Error(err, argumentSets, sealedPayloads)
 }
 
 type JSONApplyResult struct {

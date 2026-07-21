@@ -16,6 +16,7 @@ import (
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
+	"github.com/yersonargotev/packy/internal/reportredaction"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -248,6 +249,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 }
 
 func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err error, plan *capabilitypack.ReconciliationPlan) error {
+	err = capabilitypack.ReportSafeError(err, plan)
 	if jsonOutput {
 		var approval *bool
 		var actions *int
@@ -501,7 +503,7 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		for _, action := range phase.Actions {
 			description := action.Description
 			if action.Kind == capabilitypack.ActionExternalCommand {
-				description = "run: " + strings.Join(append([]string{action.Command}, action.Args...), " ") + " (" + action.Description + ")"
+				description = "run: " + strings.Join(append([]string{action.Command}, reportredaction.EnvironmentArguments(action.Args)...), " ") + " (" + action.Description + ")"
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", description); err != nil {
 				return err

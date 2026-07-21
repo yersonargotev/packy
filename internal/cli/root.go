@@ -224,7 +224,7 @@ func newInstallCommand(opts Options, workstationResolver *workstation.Resolver) 
 			}
 			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
 			if jsonOutput {
-				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result, applyErr == nil); err != nil {
+				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
 					return err
 				}
 				if applyErr != nil {
@@ -232,7 +232,7 @@ func newInstallCommand(opts Options, workstationResolver *workstation.Resolver) 
 				}
 				return classicLifecycleOutcomeError(result.Outcome())
 			}
-			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result, applyErr == nil); err != nil {
+			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result); err != nil {
 				return err
 			}
 			if applyErr != nil {
@@ -363,7 +363,7 @@ func newUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *
 			}
 			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
 			if jsonOutput {
-				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result, applyErr == nil); err != nil {
+				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
 					return err
 				}
 				if applyErr != nil {
@@ -371,7 +371,7 @@ func newUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *
 				}
 				return classicLifecycleOutcomeError(result.Outcome())
 			}
-			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result, applyErr == nil); err != nil {
+			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result); err != nil {
 				return err
 			}
 			if applyErr != nil {
@@ -509,7 +509,7 @@ func newUninstallCommand(opts Options, workstationResolver *workstation.Resolver
 			}
 			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
 			if jsonOutput {
-				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result, applyErr == nil); err != nil {
+				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
 					return err
 				}
 				if applyErr != nil {
@@ -517,7 +517,7 @@ func newUninstallCommand(opts Options, workstationResolver *workstation.Resolver
 				}
 				return classicLifecycleOutcomeError(result.Outcome())
 			}
-			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result, applyErr == nil); err != nil {
+			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result); err != nil {
 				return err
 			}
 			if applyErr != nil {

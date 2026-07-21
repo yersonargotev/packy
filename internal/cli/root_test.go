@@ -1139,8 +1139,16 @@ func TestInterruptedInstallIsExplicitAndPersistsRecoveryState(t *testing.T) {
 	fixture := newCLITestFixture(t, opts)
 	runner.fail = map[string]error{fixture.engram.ExpectedPath() + " setup codex": errors.New("interrupted")}
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "install"); err == nil {
+	out, applyErr := executeCommand(t, NewRootCommand(opts), "install", "--json")
+	if applyErr == nil {
 		t.Fatalf("install unexpectedly succeeded:\n%s", out)
+	}
+	var report classicLifecycleResultJSON
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("invalid recovery result: %v\n%s", err, out)
+	}
+	if report.Outcome != corelifecycle.OutcomeRecoveryRequired || !report.Committed || report.StateTransition.ToStatus != corelifecycle.InstallRecoveryRequired {
+		t.Fatalf("recovery result = %#v", report)
 	}
 	state, found, err := corelifecycle.LoadState(fixture.classicState.StateFile())
 	if err != nil || !found {
