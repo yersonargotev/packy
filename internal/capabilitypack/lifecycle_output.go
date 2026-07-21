@@ -6,15 +6,25 @@ import "sort"
 // every lifecycle entry point. Renderers must not reconstruct these facts
 // from a manifest.
 type LifecycleContract struct {
-	Counts              ResourceCounts     `json:"logical_resource_counts"`
-	DependencyClosure   []string           `json:"dependency_closure"`
-	Bindings            []LifecycleBinding `json:"bindings"`
-	Exclusions          []Exclusion        `json:"exclusions"`
-	OptionalModes       []OptionalMode     `json:"optional_modes"`
-	PromptAuthorities   []string           `json:"prompt_authorities"`
-	Aliases             []SurfaceAlias     `json:"aliases"`
-	AuthorityDisclosure string             `json:"authority_disclosure"`
+	Compatibility         Compatibility      `json:"-"`
+	CompatibilityObserved bool               `json:"-"`
+	Counts                ResourceCounts     `json:"logical_resource_counts"`
+	DependencyClosure     []string           `json:"dependency_closure"`
+	Bindings              []LifecycleBinding `json:"bindings"`
+	Exclusions            []Exclusion        `json:"exclusions"`
+	OptionalModes         []OptionalMode     `json:"optional_modes"`
+	PromptAuthorities     []string           `json:"prompt_authorities"`
+	Aliases               []SurfaceAlias     `json:"aliases"`
+	AuthorityDisclosure   string             `json:"authority_disclosure"`
 }
+
+type Compatibility string
+
+const (
+	CompatibilityComplete Compatibility = "complete"
+	CompatibilityDegraded Compatibility = "degraded"
+	CompatibilityBlocked  Compatibility = "blocked"
+)
 
 type LifecycleBinding struct {
 	Kind        string `json:"kind"`
@@ -31,6 +41,7 @@ type LifecycleBinding struct {
 // surface. Every slice is allocated so JSON preserves [] rather than null.
 func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) LifecycleContract {
 	contract := LifecycleContract{
+		Compatibility: compatibilityFor(pack, surface), CompatibilityObserved: pack.manifestVersion >= manifestSchemaV3,
 		Counts: pack.ResourceCounts(), DependencyClosure: []string{}, Bindings: []LifecycleBinding{},
 		Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}, PromptAuthorities: []string{}, Aliases: []SurfaceAlias{},
 		AuthorityDisclosure: "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
@@ -87,6 +98,42 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 		return contract.Aliases[i].Name < contract.Aliases[j].Name
 	})
 	return contract
+}
+
+func compatibilityFor(pack Pack, surface Surface) Compatibility {
+	if pack.manifestVersion < manifestSchemaV3 {
+		return CompatibilityComplete
+	}
+	result := CompatibilityComplete
+	for _, resource := range pack.Resources {
+		if resource.Kind == "asset" || resource.Kind == "notice" {
+			continue
+		}
+		outcome := false
+		for _, binding := range resource.Bindings {
+			if binding.Surface != surface {
+				continue
+			}
+			outcome = true
+			if binding.Mode != "native" || binding.Degradation != "" {
+				result = CompatibilityDegraded
+			}
+		}
+		for _, exclusion := range resource.SurfaceExclusions {
+			if exclusion.Surface != surface {
+				continue
+			}
+			outcome = true
+			if exclusion.Mode == "mandatory" {
+				return CompatibilityBlocked
+			}
+			result = CompatibilityDegraded
+		}
+		if !outcome {
+			return CompatibilityBlocked
+		}
+	}
+	return result
 }
 
 func (p ReconciliationPlan) LifecycleContract() LifecycleContract {

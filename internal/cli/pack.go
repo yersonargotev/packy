@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
@@ -80,7 +83,7 @@ func newPackReconcileCommand(opts Options, workstationResolver *workstation.Reso
 			return applyPackPlan(cmd, opts, facade, plan, dryRun, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex or opencode)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
@@ -106,7 +109,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 		}
 		return applyPackPlan(cmd, opts, facade, plan, dryRun, jsonOutput)
 	}}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex or opencode)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	_ = cmd.MarkFlagRequired("surface")
@@ -139,7 +142,7 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 			return applyPackPlan(cmd, opts, facade, plan, dryRun, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex or opencode)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
@@ -232,7 +235,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 			return applyPackPlan(cmd, opts, facade, plan, dryRun, jsonOutput)
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex or opencode)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
@@ -263,6 +266,9 @@ func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err err
 }
 
 func surfaceName(surface capabilitypack.Surface) string {
+	if surface == capabilitypack.SurfaceClaude {
+		return "Claude Code"
+	}
 	if surface == capabilitypack.SurfaceOpenCode {
 		return "OpenCode"
 	}
@@ -302,20 +308,114 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 	}
 	codexAdapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
 	openCodeAdapter := opencode.NewSurfaceAdapter(composition.bundleRoot, composition.skills.Root(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+	store := capabilitypack.NewFileActivationStore(composition.state.File())
+	claudeLayout := composition.claude
+	claudeExecutable, _ := opts.Runner.LookPath("claude")
+	claudePacks := make(map[string]capabilitypack.Pack)
+	for _, pack := range composition.catalog.List() {
+		if slices.Contains(pack.Surfaces, capabilitypack.SurfaceClaude) {
+			claudePacks[pack.ID] = pack
+		}
+	}
+	claudeAdapter := claudecode.NewSurfaceAdapter(composition.bundleRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, claudeRunner{runner: opts.Runner}, claudeOwnershipObserver{store: store, packs: claudePacks, layout: claudeLayout, bundleRoot: composition.bundleRoot})
 	adapters := opts.SurfaceAdapters
 	if adapters == nil {
 		adapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
 			capabilitypack.SurfaceCodex:    codexAdapter,
 			capabilitypack.SurfaceOpenCode: openCodeAdapter,
+			capabilitypack.SurfaceClaude:   claudeAdapter,
 		}
 	}
 	return capabilitypack.NewFacade(composition.catalog,
-		capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), adapters),
+		capabilitypack.WithActivation(store, adapters),
 		capabilitypack.WithExternalEffects(
 			composition.engram,
 			runnerExternalExecutor{runner: opts.Runner},
 		),
 	), nil
+}
+
+type outputRunner interface {
+	RunOutput(context.Context, string, ...string) (string, string, int, error)
+}
+
+type claudeRunner struct{ runner Runner }
+
+func (r claudeRunner) Run(ctx context.Context, command claudecode.Command) claudecode.Result {
+	if runner, ok := r.runner.(outputRunner); ok {
+		stdout, stderr, exitCode, err := runner.RunOutput(ctx, command.Executable, command.Args...)
+		return claudecode.Result{Stdout: stdout, Stderr: stderr, ExitCode: exitCode, Err: err}
+	}
+	err := r.runner.Run(ctx, command.Executable, command.Args...)
+	return claudecode.Result{Err: err}
+}
+
+type claudeOwnershipObserver struct {
+	store      capabilitypack.ActivationStore
+	packs      map[string]capabilitypack.Pack
+	layout     claudecode.CanonicalLayout
+	bundleRoot string
+}
+
+func (o claudeOwnershipObserver) ObserveOwnership(ctx context.Context) (claudecode.OwnershipSnapshot, error) {
+	state, err := o.store.Load(ctx, capabilitypack.SurfaceClaude)
+	if err != nil {
+		return claudecode.OwnershipSnapshot{}, err
+	}
+	if !state.Intent.Active && state.Journal == nil {
+		return claudecode.NewOwnershipSnapshot(), nil
+	}
+	pack, ok := o.packs[state.Intent.PackID]
+	if !ok || pack.Version != state.Intent.Version {
+		return claudecode.OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract", state.Intent.PackID, state.Intent.Version)
+	}
+	owners := make(map[string]capabilitypack.ProjectionOwnership, len(state.Ownership))
+	for _, owner := range state.Ownership {
+		owners[owner.ID] = owner
+	}
+	records := make([]claudecode.OwnershipRecord, 0, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		if resource.Kind != "skill" && resource.Kind != "instruction" {
+			continue
+		}
+		name := resource.ID
+		for _, binding := range resource.Bindings {
+			if binding.Surface == capabilitypack.SurfaceClaude {
+				name = binding.Name
+				break
+			}
+		}
+		id := resource.Kind + ":" + name
+		owner, retained := owners[id]
+		if !retained && state.Journal == nil {
+			continue
+		}
+		contributors := append([]string(nil), owner.Contributors...)
+		if len(contributors) == 0 {
+			contributors = []string{state.Intent.PackID}
+		}
+		record := claudecode.OwnershipRecord{StateOwner: "capabilitypack", ContributorID: state.Intent.PackID, ID: id, Fingerprint: owner.Fingerprint, Contributors: contributors, DeletionAuthorized: len(contributors) == 1}
+		if resource.Kind == "instruction" {
+			record.Kind, record.Target = string(claudecode.ActionInstructionContribution), o.layout.InstructionsFile
+			observation := claudecode.ObserveInstructions(record.Target)
+			record.ContributorID = "pack:" + state.Intent.PackID + ":" + resource.ID
+			record.Contributors = []string{record.ContributorID}
+			record.Fingerprint = observation.Contributions[record.ContributorID]
+		} else {
+			record.Kind, record.Target = string(claudecode.ActionSkillLink), filepath.Join(o.layout.SkillsDir, name)
+			source := filepath.Join(o.bundleRoot, filepath.FromSlash(resource.Source))
+			expectedSource, err := filepath.EvalSymlinks(source)
+			if err != nil {
+				return claudecode.OwnershipSnapshot{}, fmt.Errorf("resolve Claude skill source %s: %w", resource.ID, err)
+			}
+			expectedSource = filepath.Clean(expectedSource)
+			observed := claudecode.ObserveSkill(record.Target, expectedSource)
+			record.Fingerprint = observed.TreeFingerprint
+			record.Skill = claudecode.SkillIdentity{Surface: "claude", ProjectionID: id, Path: record.Target, SymlinkType: "directory", ResolvedTarget: observed.ResolvedTarget, ExpectedSource: expectedSource, SourceTreeFingerprint: observed.TreeFingerprint}
+		}
+		records = append(records, record)
+	}
+	return claudecode.NewOwnershipSnapshot(records...), nil
 }
 
 func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.ReconciliationPlan, dryRun bool) error {
@@ -480,6 +580,11 @@ func renderActivationPlanOutput(cmd *cobra.Command, plan capabilitypack.Reconcil
 }
 
 func renderPackContract(cmd *cobra.Command, contract capabilitypack.LifecycleContract) error {
+	if contract.CompatibilityObserved {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Compatibility: %s\n", contract.Compatibility); err != nil {
+			return err
+		}
+	}
 	for _, binding := range contract.Bindings {
 		mode := binding.Mode
 		if binding.Degradation != "" {
@@ -555,7 +660,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex or opencode)")
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().StringVar(&require, "require", "", "Require a readiness dimension (usable)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	return cmd
@@ -674,6 +779,18 @@ func newPackShowCommand(opts Options, workstationResolver *workstation.Resolver)
 			counts := pack.ResourceCounts()
 			fmt.Fprintf(cmd.OutOrStdout(), "%s %s\nDescription: %s\nSupported CLI surfaces: %s\nProvides capabilities: %s\nRequires capabilities: %s\nRequires global tools: %s\nConflicts with capabilities: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle\n",
 				pack.ID, pack.Version, pack.Description, joinSurfaces(pack.Surfaces), joinOrNone(pack.Provides), joinOrNone(pack.Requires.Capabilities), joinOrNone(pack.Requires.Tools), joinOrNone(pack.Conflicts), counts.Skills, counts.Instructions, counts.MCPServers, counts.Lifecycles)
+			for _, surface := range pack.Surfaces {
+				contract := capabilitypack.LifecycleContractFor(pack, surface, nil)
+				if !contract.CompatibilityObserved {
+					continue
+				}
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Surface contract: %s\n", surface); err != nil {
+					return err
+				}
+				if err := renderPackContract(cmd, contract); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	}
@@ -686,6 +803,7 @@ type packComposition struct {
 	bundleRoot string
 	codex      codex.CanonicalLayout
 	openCode   opencode.CanonicalLayout
+	claude     claudecode.CanonicalLayout
 	engram     engrambin.Resolver
 }
 
@@ -713,6 +831,7 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 		bundleRoot: bundleRoot,
 		codex:      codex.NewCanonicalLayout(snapshot.Home()),
 		openCode:   opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
+		claude:     claudecode.NewCanonicalLayout(snapshot.Home()),
 		engram:     engrambin.NewResolver(snapshot.HomebrewPrefix(), opts.Runner.LookPath),
 	}, nil
 }

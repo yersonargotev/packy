@@ -1253,7 +1253,7 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if f.activation == nil || f.activation.store == nil {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("activation is not configured")
 	}
-	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode {
+	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("activation does not support CLI surface %q", request.Surface)
 	}
 	pack, err := f.catalog.catalogMetadata(request.PackID)

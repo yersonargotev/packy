@@ -57,6 +57,38 @@ func TestLifecycleOutputsEncodeCollectionsAsArrays(t *testing.T) {
 	}
 }
 
+func TestLifecycleCompatibilityIsIndependentFromReadinessAndIntent(t *testing.T) {
+	resource := func(binding *Binding, exclusion *SurfaceExclusion) Resource {
+		r := Resource{Kind: "instruction", ID: "guide"}
+		if binding != nil {
+			r.Bindings = []Binding{*binding}
+		}
+		if exclusion != nil {
+			r.SurfaceExclusions = []SurfaceExclusion{*exclusion}
+		}
+		return r
+	}
+	tests := []struct {
+		name string
+		pack Pack
+		want Compatibility
+	}{
+		{"complete", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{resource(&Binding{Surface: SurfaceClaude, Mode: "native"}, nil)}}, CompatibilityComplete},
+		{"degraded binding", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{resource(&Binding{Surface: SurfaceClaude, Mode: "degraded", Degradation: "fallback"}, nil)}}, CompatibilityDegraded},
+		{"optional exclusion", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{resource(nil, &SurfaceExclusion{Surface: SurfaceClaude, Mode: "optional"})}}, CompatibilityDegraded},
+		{"mandatory exclusion", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{resource(nil, &SurfaceExclusion{Surface: SurfaceClaude, Mode: "mandatory"})}}, CompatibilityBlocked},
+		{"missing outcome", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{{Kind: "instruction", ID: "guide"}}}, CompatibilityBlocked},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			contract := LifecycleContractFor(tt.pack, SurfaceClaude, nil)
+			if contract.Compatibility != tt.want {
+				t.Fatalf("compatibility = %q, want %q", contract.Compatibility, tt.want)
+			}
+		})
+	}
+}
+
 func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "addy", Version: "1.0.0"}, operation: OperationActivate,
 		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}}, recovery: true,

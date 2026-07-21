@@ -147,9 +147,21 @@ func captureIdentityEquivalenceTranscript(t *testing.T) identityEquivalenceTrans
 	for _, surface := range []string{"codex", "opencode"} {
 		terminal := &fakeTerminal{interactive: true, approve: true}
 		packOpts, packHome, repoRoot := packActivationOptions(t, terminal)
+		legacyBundle := filepath.Join(t.TempDir(), "bundle")
+		if err := os.CopyFS(legacyBundle, os.DirFS(filepath.Join(repoRoot, "bundle"))); err != nil {
+			t.Fatal(err)
+		}
+		legacyManifest, err := os.ReadFile(filepath.Join(legacyBundle, "history", "matty", "2.0.0", "pack.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(legacyBundle, "packs", "matty", "pack.json"), legacyManifest, 0o600); err != nil {
+			t.Fatal(err)
+		}
 		packOpts.Clock = opts.Clock
 		packEnv := packOpts.Env.(MapEnv)
-		packRoots := map[string]string{packHome: "$HOME", packEnv["XDG_CONFIG_HOME"]: "$XDG", repoRoot: "$REPOSITORY"}
+		packEnv["PACKY_SKILLS_SOURCE"] = filepath.Join(legacyBundle, "skills")
+		packRoots := map[string]string{packHome: "$HOME", packEnv["XDG_CONFIG_HOME"]: "$XDG", repoRoot: "$REPOSITORY", filepath.Dir(legacyBundle): "$REPOSITORY"}
 		seedIdentityEquivalenceOperatorContent(t, packHome, packEnv["XDG_CONFIG_HOME"])
 		packRunner := packOpts.Runner.(*fakeRunner)
 		packRecord := func(operation string, args ...string) {
