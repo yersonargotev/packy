@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -64,6 +65,18 @@ type OwnershipRecord struct {
 type OwnershipSnapshot struct {
 	Records  []OwnershipRecord
 	Revision string
+}
+
+type OwnershipSnapshotProvider interface {
+	ObserveOwnership(context.Context) (OwnershipSnapshot, error)
+}
+type OwnershipSnapshotFunc func(context.Context) (OwnershipSnapshot, error)
+
+func (f OwnershipSnapshotFunc) ObserveOwnership(ctx context.Context) (OwnershipSnapshot, error) {
+	return f(ctx)
+}
+func StaticOwnershipSnapshot(snapshot OwnershipSnapshot) OwnershipSnapshotProvider {
+	return OwnershipSnapshotFunc(func(context.Context) (OwnershipSnapshot, error) { return snapshot, nil })
 }
 
 func NewOwnershipSnapshot(records ...OwnershipRecord) OwnershipSnapshot {

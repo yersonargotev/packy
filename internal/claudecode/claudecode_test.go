@@ -69,7 +69,7 @@ func TestInstructionUpsertPreservesForeignAndOtherContributorBytes(t *testing.T)
 func TestApplyRejectsUnsealedAndStaleActions(t *testing.T) {
 	home := t.TempDir()
 	layout := NewCanonicalLayout(home)
-	a := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", &recordingRunner{}, NewOwnershipSnapshot(OwnershipRecord{ID: "hook:x", Fingerprint: Fingerprint([]byte("old")), DeletionAuthorized: true, Contributors: []string{"pack:p:r"}}))
+	a := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", &recordingRunner{}, StaticOwnershipSnapshot(OwnershipSnapshot{}))
 	if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{{ID: "x", Kind: "foreign", Target: layout.SettingsFile}}); err == nil {
 		t.Fatal("unsealed action accepted")
 	}

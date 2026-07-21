@@ -13,14 +13,14 @@ type InstructionContribution struct{ ContributorID, Content string }
 // UpsertInstructionContribution changes one contributor and retains every
 // unrelated byte, including other Packy contributors.
 func UpsertInstructionContribution(document string, contribution InstructionContribution) (string, error) {
-	if strings.Count(document, instructionStart) != strings.Count(document, instructionEnd) || strings.Count(document, instructionStart) > 1 {
-		return "", errors.New("invalid or duplicate Packy instruction markers")
+	if err := validateMarkerPair(document, instructionStart, instructionEnd, "Packy instruction"); err != nil {
+		return "", err
 	}
 	start := "<!-- contributor:" + contribution.ContributorID + " -->"
 	end := "<!-- /contributor:" + contribution.ContributorID + " -->"
 	block := start + "\n" + strings.TrimSpace(contribution.Content) + "\n" + end
-	if strings.Count(document, start) != strings.Count(document, end) || strings.Count(document, start) > 1 {
-		return "", errors.New("invalid or duplicate Packy contributor markers")
+	if err := validateMarkerPair(document, start, end, "Packy contributor"); err != nil {
+		return "", err
 	}
 	if i := strings.Index(document, start); i >= 0 {
 		j := strings.Index(document[i:], end)
@@ -37,9 +37,32 @@ func UpsertInstructionContribution(document string, contribution InstructionCont
 	return MergeInstructions(document, []InstructionContribution{contribution})
 }
 
+func RemoveInstructionContribution(document, contributorID string) (string, error) {
+	if err := validateMarkerPair(document, instructionStart, instructionEnd, "Packy instruction"); err != nil {
+		return "", err
+	}
+	start := "<!-- contributor:" + contributorID + " -->"
+	end := "<!-- /contributor:" + contributorID + " -->"
+	if err := validateMarkerPair(document, start, end, "Packy contributor"); err != nil {
+		return "", err
+	}
+	i := strings.Index(document, start)
+	if i < 0 {
+		return document, nil
+	}
+	j := strings.Index(document[i:], end)
+	result := document[:i] + document[i+j+len(end):]
+	insideStart := strings.Index(result, instructionStart)
+	insideEnd := strings.Index(result, instructionEnd)
+	if insideStart >= 0 && insideEnd >= 0 && strings.TrimSpace(result[insideStart+len(instructionStart):insideEnd]) == "" {
+		result = result[:insideStart] + result[insideEnd+len(instructionEnd):]
+	}
+	return result, nil
+}
+
 func MergeInstructions(document string, contributions []InstructionContribution) (string, error) {
-	if strings.Count(document, instructionStart) != strings.Count(document, instructionEnd) || strings.Count(document, instructionStart) > 1 {
-		return "", errors.New("invalid or duplicate Packy instruction markers")
+	if err := validateMarkerPair(document, instructionStart, instructionEnd, "Packy instruction"); err != nil {
+		return "", err
 	}
 	seen := map[string]bool{}
 	sort.Slice(contributions, func(i, j int) bool { return contributions[i].ContributorID < contributions[j].ContributorID })
@@ -60,6 +83,14 @@ func MergeInstructions(document string, contributions []InstructionContribution)
 		return block + "\n", nil
 	}
 	return strings.TrimRight(document, "\n") + "\n\n" + block + "\n", nil
+}
+
+func validateMarkerPair(document, start, end, label string) error {
+	starts, ends := strings.Count(document, start), strings.Count(document, end)
+	if starts != ends || starts > 1 {
+		return fmt.Errorf("invalid or duplicate %s markers", label)
+	}
+	return nil
 }
 
 type CommandHookEntry struct {
@@ -100,7 +131,10 @@ func MergeCommandHook(settings []byte, hook CommandHookEntry, remove bool) ([]by
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
-	entries, _ := hooks[hook.Event].([]any)
+	entries, ok := hooks[hook.Event].([]any)
+	if hooks[hook.Event] != nil && !ok {
+		return nil, errors.New("Claude hook event entries must be an array")
+	}
 	wanted := hookJSON(hook)
 	out := make([]any, 0, len(entries)+1)
 	matches := 0

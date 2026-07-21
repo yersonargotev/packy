@@ -121,8 +121,8 @@ func ObserveInstructions(path string) InstructionObservation {
 	s := string(b)
 	starts, ends := strings.Count(s, instructionStart), strings.Count(s, instructionEnd)
 	o := InstructionObservation{Path: path, Revision: Fingerprint(b), MarkerCardinality: starts, Contributions: map[string]string{}, ForeignContentPreserved: true}
-	if starts != ends || starts > 1 {
-		o.Err = fmt.Errorf("invalid Packy marker cardinality: start=%d end=%d", starts, ends)
+	if err := validateMarkerPair(s, instructionStart, instructionEnd, "Packy instruction"); err != nil {
+		o.Err = fmt.Errorf("%w: start=%d end=%d", err, starts, ends)
 		return o
 	}
 	if starts == 0 {
@@ -157,6 +157,29 @@ func ObserveInstructions(path string) InstructionObservation {
 		inside = inside[bodyEnd+len(endMarker):]
 	}
 	return o
+}
+
+func observeHookPolicy(path string) (HookObservation, error) {
+	o := HookObservation{Path: path}
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		o.Parseable = true
+		o.Revision = Fingerprint(nil)
+		return o, nil
+	}
+	if err != nil {
+		return o, err
+	}
+	o.Revision = Fingerprint(b)
+	var root map[string]any
+	if err = json.Unmarshal(b, &root); err != nil {
+		return o, fmt.Errorf("invalid Claude settings JSON: %w", err)
+	}
+	o.Parseable = true
+	if disabled, ok := root["disableAllHooks"].(bool); ok {
+		o.Disabled = disabled
+	}
+	return o, nil
 }
 
 // ObserveHooks statically classifies one exact typed hook. Policy may be
@@ -226,7 +249,10 @@ func ObserveUserMCP(path, name string) MCPObservation {
 	var servers map[string]json.RawMessage
 	for _, key := range []string{"mcpServers", "mcp_servers"} {
 		if raw := root[key]; raw != nil {
-			_ = json.Unmarshal(raw, &servers)
+			if err = json.Unmarshal(raw, &servers); err != nil {
+				o.Err = fmt.Errorf("invalid Claude user MCP registry: %w", err)
+				return o
+			}
 			break
 		}
 	}
