@@ -317,7 +317,7 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 			claudePacks[pack.ID] = pack
 		}
 	}
-	claudeAdapter := claudecode.NewSurfaceAdapter(composition.bundleRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, claudeRunner{runner: opts.Runner}, claudeOwnershipObserver{store: store, packs: claudePacks, layout: claudeLayout, bundleRoot: composition.bundleRoot})
+	claudeAdapter := claudecode.NewSurfaceAdapter(composition.bundleRoot, claudeLayout, filepath.Dir(composition.state.File()), claudeExecutable, claudeRunner{runner: opts.Runner}, claudecode.NewCapabilityPackOwnershipProvider(store, claudePacks, claudeLayout, composition.bundleRoot))
 	adapters := opts.SurfaceAdapters
 	if adapters == nil {
 		adapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
@@ -348,74 +348,6 @@ func (r claudeRunner) Run(ctx context.Context, command claudecode.Command) claud
 	}
 	err := r.runner.Run(ctx, command.Executable, command.Args...)
 	return claudecode.Result{Err: err}
-}
-
-type claudeOwnershipObserver struct {
-	store      capabilitypack.ActivationStore
-	packs      map[string]capabilitypack.Pack
-	layout     claudecode.CanonicalLayout
-	bundleRoot string
-}
-
-func (o claudeOwnershipObserver) ObserveOwnership(ctx context.Context) (claudecode.OwnershipSnapshot, error) {
-	state, err := o.store.Load(ctx, capabilitypack.SurfaceClaude)
-	if err != nil {
-		return claudecode.OwnershipSnapshot{}, err
-	}
-	if !state.Intent.Active && state.Journal == nil {
-		return claudecode.NewOwnershipSnapshot(), nil
-	}
-	pack, ok := o.packs[state.Intent.PackID]
-	if !ok || pack.Version != state.Intent.Version {
-		return claudecode.OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract", state.Intent.PackID, state.Intent.Version)
-	}
-	owners := make(map[string]capabilitypack.ProjectionOwnership, len(state.Ownership))
-	for _, owner := range state.Ownership {
-		owners[owner.ID] = owner
-	}
-	records := make([]claudecode.OwnershipRecord, 0, len(pack.Resources))
-	for _, resource := range pack.Resources {
-		if resource.Kind != "skill" && resource.Kind != "instruction" {
-			continue
-		}
-		name := resource.ID
-		for _, binding := range resource.Bindings {
-			if binding.Surface == capabilitypack.SurfaceClaude {
-				name = binding.Name
-				break
-			}
-		}
-		id := resource.Kind + ":" + name
-		owner, retained := owners[id]
-		if !retained && state.Journal == nil {
-			continue
-		}
-		contributors := append([]string(nil), owner.Contributors...)
-		if len(contributors) == 0 {
-			contributors = []string{state.Intent.PackID}
-		}
-		record := claudecode.OwnershipRecord{StateOwner: "capabilitypack", ContributorID: state.Intent.PackID, ID: id, Fingerprint: owner.Fingerprint, Contributors: contributors, DeletionAuthorized: len(contributors) == 1}
-		if resource.Kind == "instruction" {
-			record.Kind, record.Target = string(claudecode.ActionInstructionContribution), o.layout.InstructionsFile
-			observation := claudecode.ObserveInstructions(record.Target)
-			record.ContributorID = "pack:" + state.Intent.PackID + ":" + resource.ID
-			record.Contributors = []string{record.ContributorID}
-			record.Fingerprint = observation.Contributions[record.ContributorID]
-		} else {
-			record.Kind, record.Target = string(claudecode.ActionSkillLink), filepath.Join(o.layout.SkillsDir, name)
-			source := filepath.Join(o.bundleRoot, filepath.FromSlash(resource.Source))
-			expectedSource, err := filepath.EvalSymlinks(source)
-			if err != nil {
-				return claudecode.OwnershipSnapshot{}, fmt.Errorf("resolve Claude skill source %s: %w", resource.ID, err)
-			}
-			expectedSource = filepath.Clean(expectedSource)
-			observed := claudecode.ObserveSkill(record.Target, expectedSource)
-			record.Fingerprint = observed.TreeFingerprint
-			record.Skill = claudecode.SkillIdentity{Surface: "claude", ProjectionID: id, Path: record.Target, SymlinkType: "directory", ResolvedTarget: observed.ResolvedTarget, ExpectedSource: expectedSource, SourceTreeFingerprint: observed.TreeFingerprint}
-		}
-		records = append(records, record)
-	}
-	return claudecode.NewOwnershipSnapshot(records...), nil
 }
 
 func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.ReconciliationPlan, dryRun bool) error {
@@ -468,6 +400,10 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		}
 	}
 	if err := renderPackContract(cmd, plan.LifecycleContract()); err != nil {
+		return err
+	}
+	readiness, observed := plan.Readiness(), plan.ReadinessObserved()
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Expected readiness: configured=%s, authorized=%s, usable=%s\nPending evidence: %s\n", readinessValue(observed.Configured, readiness.Configured), readinessValue(observed.Authorization, readiness.Authorized), readinessValue(observed.Usability, readiness.Usable), renderPendingAction(plan.Evidence())); err != nil {
 		return err
 	}
 	structured := plan.JSONReport(dryRun)

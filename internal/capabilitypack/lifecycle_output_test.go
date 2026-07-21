@@ -90,8 +90,9 @@ func TestLifecycleCompatibilityIsIndependentFromReadinessAndIntent(t *testing.T)
 }
 
 func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
-	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "addy", Version: "1.0.0"}, operation: OperationActivate,
+	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "addy", Version: "1.0.0", manifestVersion: manifestSchemaV3}, operation: OperationActivate,
 		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}}, recovery: true,
+		readiness: ReadinessStatus{Configured: false}, readinessObserved: ReadinessObservationStatus{Configured: true}, evidence: []string{"z", "a"},
 		contributors: map[string][]string{"projection": {"z", "a"}}, blockers: []PlanBlocker{{Kind: BlockerAlias, Subject: "z", Detail: "collision"}},
 		pendingHumanActions: []string{"z", "a"}, phases: []PlanPhase{{Kind: ConsentReversibleLocal, Digest: "phase", ApprovalRequired: true,
 			Actions: []ProjectionAction{{ID: "z"}, {ID: "a"}}}}}
@@ -109,6 +110,9 @@ func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	got := plan.JSONReport(true)
 	if got.Disposition != PlanMixed || !got.Recovery || got.IntentRevision != 3 {
 		t.Fatalf("facts = %#v", got)
+	}
+	if got.Contract.Compatibility != CompatibilityBlocked || got.ExpectedReadiness.Configured || !got.ReadinessObserved.Configured || !reflect.DeepEqual(got.PendingEvidence, []string{"a", "z"}) {
+		t.Fatalf("planned lifecycle facts = %#v", got)
 	}
 	if !reflect.DeepEqual(got.Contributors["projection"], []string{"a", "z"}) || got.MandatoryActions[0].ID != "a" {
 		t.Fatalf("canonical facts = %#v", got)

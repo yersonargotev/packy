@@ -23,7 +23,7 @@ func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T)
 	beforePreview := snapshotTree(t, home)
 
 	preview, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "claude", "--dry-run")
-	if err != nil || !strings.Contains(preview, "skill:ask-matt") || !strings.Contains(preview, "instruction:matty-guidance") {
+	if err != nil || !strings.Contains(preview, "skill:ask-matt") || !strings.Contains(preview, "instruction:matty-guidance") || !strings.Contains(preview, "Expected readiness: configured=yes, authorized=unknown, usable=unknown") || !strings.Contains(preview, "Pending evidence:") {
 		t.Fatalf("Claude tracer preview: err=%v\n%s", err, preview)
 	}
 	if snapshotTree(t, home) != beforePreview {
@@ -76,7 +76,7 @@ func TestClaudeBlockedActivationExecutesZeroEffects(t *testing.T) {
 	}
 	before := snapshotTree(t, home)
 	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "claude")
-	if err == nil || !strings.Contains(out, "Cannot apply activation: 1 blockers") {
+	if err == nil || !strings.Contains(out, "Compatibility: blocked") || !strings.Contains(out, "Expected readiness: configured=no") || !strings.Contains(out, "Cannot apply activation: 1 blockers") {
 		t.Fatalf("blocked Claude activation: err=%v\n%s", err, out)
 	}
 	if terminal.calls != 0 || snapshotTree(t, home) != before {

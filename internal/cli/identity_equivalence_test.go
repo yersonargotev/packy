@@ -271,7 +271,7 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 	// Slice F intentionally deepens capability-pack lifecycle disclosure and
 	// preserves unobserved readiness as unknown. These are post-cutover product
 	// changes, not identity-cutover regressions covered by this frozen baseline.
-	value = regexp.MustCompile(`(?m)^(Binding|Exclusion|Optional mode|Invocation-time prompt authority|Activation grants only|Projection:|Contract diff:|Migration:)[^\n]*\n`).ReplaceAllString(value, "")
+	value = regexp.MustCompile(`(?m)^(Binding|Exclusion|Optional mode|Invocation-time prompt authority|Activation grants only|Projection:|Expected readiness:|Pending evidence:|Contract diff:|Migration:)[^\n]*\n`).ReplaceAllString(value, "")
 	value = strings.ReplaceAll(value, "authorized=unknown, usable=unknown", "authorized=no, usable=no")
 	value = strings.ReplaceAll(value, "authorized=yes, usable=unknown", "authorized=yes, usable=no")
 	value = strings.ReplaceAll(value, "authorized=no, usable=unknown", "authorized=no, usable=no")
@@ -286,6 +286,9 @@ func removeSliceFJSONFields(value any) {
 	case map[string]any:
 		delete(value, "contract")
 		delete(value, "projection_details")
+		delete(value, "expected_readiness")
+		delete(value, "readiness_observed")
+		delete(value, "pending_evidence")
 		for _, child := range value {
 			removeSliceFJSONFields(child)
 		}

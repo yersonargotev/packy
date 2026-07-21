@@ -137,7 +137,11 @@ func compatibilityFor(pack Pack, surface Surface) Compatibility {
 }
 
 func (p ReconciliationPlan) LifecycleContract() LifecycleContract {
-	return LifecycleContractFor(p.pack, p.surface, p.aliases)
+	contract := LifecycleContractFor(p.pack, p.surface, p.aliases)
+	if contract.CompatibilityObserved && len(p.blockers) > 0 {
+		contract.Compatibility = CompatibilityBlocked
+	}
+	return contract
 }
 
 func sortedUnique(values []string) []string {
@@ -161,29 +165,32 @@ type JSONLifecyclePhase struct {
 }
 
 type JSONLifecyclePlan struct {
-	SchemaVersion       int                  `json:"schema_version"`
-	Report              string               `json:"report"`
-	PlanID              string               `json:"plan_id"`
-	Operation           Operation            `json:"operation"`
-	Disposition         PlanDisposition      `json:"disposition"`
-	Digest              string               `json:"digest"`
-	Pack                string               `json:"pack"`
-	PackVersion         string               `json:"pack_version"`
-	Surface             Surface              `json:"surface"`
-	IntentRevision      int                  `json:"intent_revision"`
-	Contract            LifecycleContract    `json:"contract"`
-	Aliases             []SurfaceAlias       `json:"aliases"`
-	Contributors        map[string][]string  `json:"contributors"`
-	Blockers            []PlanBlocker        `json:"blockers"`
-	Phases              []JSONLifecyclePhase `json:"phases"`
-	PendingHumanActions []string             `json:"pending_human_actions"`
-	Recovery            bool                 `json:"recovery"`
-	MandatoryActions    []ProjectionAction   `json:"mandatory_actions"`
-	ContractDiff        JSONContractDiff     `json:"contract_diff"`
-	Migrations          []string             `json:"migrations"`
-	RetainedProjections []RetainedProjection `json:"retained_projections"`
-	RemovedContributors map[string]string    `json:"removed_contributors"`
-	DryRun              bool                 `json:"dry_run"`
+	SchemaVersion       int                        `json:"schema_version"`
+	Report              string                     `json:"report"`
+	PlanID              string                     `json:"plan_id"`
+	Operation           Operation                  `json:"operation"`
+	Disposition         PlanDisposition            `json:"disposition"`
+	Digest              string                     `json:"digest"`
+	Pack                string                     `json:"pack"`
+	PackVersion         string                     `json:"pack_version"`
+	Surface             Surface                    `json:"surface"`
+	IntentRevision      int                        `json:"intent_revision"`
+	Contract            LifecycleContract          `json:"contract"`
+	Aliases             []SurfaceAlias             `json:"aliases"`
+	Contributors        map[string][]string        `json:"contributors"`
+	Blockers            []PlanBlocker              `json:"blockers"`
+	Phases              []JSONLifecyclePhase       `json:"phases"`
+	PendingHumanActions []string                   `json:"pending_human_actions"`
+	ExpectedReadiness   ReadinessStatus            `json:"expected_readiness"`
+	ReadinessObserved   ReadinessObservationStatus `json:"readiness_observed"`
+	PendingEvidence     []string                   `json:"pending_evidence"`
+	Recovery            bool                       `json:"recovery"`
+	MandatoryActions    []ProjectionAction         `json:"mandatory_actions"`
+	ContractDiff        JSONContractDiff           `json:"contract_diff"`
+	Migrations          []string                   `json:"migrations"`
+	RetainedProjections []RetainedProjection       `json:"retained_projections"`
+	RemovedContributors map[string]string          `json:"removed_contributors"`
+	DryRun              bool                       `json:"dry_run"`
 }
 
 type JSONContractDiff struct {
@@ -218,8 +225,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		}
 		return blockers[i].Detail < blockers[j].Detail
 	})
-	aliases := p.Aliases()
-	contract := LifecycleContractFor(p.pack, p.surface, aliases)
+	contract := p.LifecycleContract()
 	diff := lifecycleContractDiff(p.beforeCompositionFacts, p.compositionFacts)
 	removed := p.RemovedContributors()
 	if removed == nil {
@@ -233,6 +239,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
 		Surface: p.surface, IntentRevision: p.intentRevision, Contract: contract, Aliases: contract.Aliases,
 		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
+		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, PendingEvidence: sortedCopy(p.evidence),
 		Recovery: p.recovery, MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
 		RetainedProjections: retained, RemovedContributors: removed, DryRun: dryRun}
 }
