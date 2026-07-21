@@ -34,7 +34,7 @@ jobs:
   claude-floor-smoke:
     name: Claude 2.1.203 package smoke
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - name: Check out repository

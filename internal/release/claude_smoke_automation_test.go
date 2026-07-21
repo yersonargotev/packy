@@ -13,6 +13,7 @@ func TestPullRequestsBlockOnExactClaudeFloorAndRetainEvidence(t *testing.T) {
 	for _, want := range []string{
 		"claude-floor-smoke:",
 		"if: github.event_name == 'pull_request'",
+		"runs-on: macos-15",
 		"--claude-version 2.1.203",
 		"--packy-ref \"$GITHUB_SHA\"",
 		"actions/upload-artifact@v4",

@@ -312,6 +312,9 @@ func TestClaudeInterposerBlocksForbiddenShapesBeforeRealBinary(t *testing.T) {
 }
 
 func TestPackyTriggeredClaudeInvocationIsRecorded(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-specific")
+	}
 	root := t.TempDir()
 	real := filepath.Join(root, "real-claude")
 	if err := writeStub(real, "#!/bin/sh\nexit 0\n"); err != nil {
@@ -342,6 +345,9 @@ func TestPackyTriggeredClaudeInvocationIsRecorded(t *testing.T) {
 }
 
 func TestPrepareInstallableSourceAdaptsFullSHAWithoutMutatingCheckout(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-specific")
+	}
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
 	gitHome, gitConfig := filepath.Join(root, "git-home"), filepath.Join(root, "git-config")
