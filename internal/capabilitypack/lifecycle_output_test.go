@@ -3,6 +3,7 @@ package capabilitypack
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -92,7 +93,7 @@ func TestLifecycleCompatibilityIsIndependentFromReadinessAndIntent(t *testing.T)
 func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "addy", Version: "1.0.0", manifestVersion: manifestSchemaV3}, operation: OperationActivate,
 		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}}, recovery: true,
-		readiness: ReadinessStatus{Configured: false}, readinessObserved: ReadinessObservationStatus{Configured: true}, evidence: []string{"z", "a"},
+		readiness: ReadinessStatus{Configured: false}, readinessObserved: ReadinessObservationStatus{Configured: true}, pendingEvidence: []string{"z", "a"},
 		contributors: map[string][]string{"projection": {"z", "a"}}, blockers: []PlanBlocker{{Kind: BlockerAlias, Subject: "z", Detail: "collision"}},
 		pendingHumanActions: []string{"z", "a"}, phases: []PlanPhase{{Kind: ConsentReversibleLocal, Digest: "phase", ApprovalRequired: true,
 			Actions: []ProjectionAction{{ID: "z"}, {ID: "a"}}}}}
@@ -118,7 +119,15 @@ func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	if failure.SchemaVersion != LifecycleJSONSchemaVersion || failure.Plan.Contract.Compatibility != CompatibilityBlocked {
 		t.Fatalf("stale failure lifecycle facts = %#v", failure)
 	}
+	failureJSON, err := json.Marshal(failure)
+	if err != nil || !json.Valid(failureJSON) || !containsJSONFact(failureJSON, `"compatibility":"blocked"`) {
+		t.Fatalf("stale failure wire contract = %s, err=%v", failureJSON, err)
+	}
 	if !reflect.DeepEqual(got.Contributors["projection"], []string{"a", "z"}) || got.MandatoryActions[0].ID != "a" {
 		t.Fatalf("canonical facts = %#v", got)
 	}
+}
+
+func containsJSONFact(document []byte, fact string) bool {
+	return strings.Contains(string(document), fact)
 }

@@ -286,6 +286,8 @@ func removeSliceFJSONFields(value any) {
 	case map[string]any:
 		if report, ok := value["report"].(string); ok && strings.HasPrefix(report, "pack-lifecycle-") {
 			delete(value, "evidence")
+		} else if ok && strings.HasPrefix(report, "pack-status") {
+			value["schema_version"] = float64(1)
 		}
 		delete(value, "contract")
 		delete(value, "projection_details")

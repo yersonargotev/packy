@@ -367,7 +367,7 @@ type ReconciliationPlan struct {
 	readiness              ReadinessStatus
 	readinessObserved      ReadinessObservationStatus
 	observedEvidence       []string
-	evidence               []string
+	pendingEvidence        []string
 	pendingHumanActions    []string
 	noOp                   bool
 	activations            []PlannedActivation
@@ -497,7 +497,7 @@ func (p ReconciliationPlan) ReadinessObserved() ReadinessObservationStatus {
 }
 func (p ReconciliationPlan) Evidence() []string { return append([]string(nil), p.observedEvidence...) }
 func (p ReconciliationPlan) PendingEvidence() []string {
-	return append([]string(nil), p.evidence...)
+	return append([]string(nil), p.pendingEvidence...)
 }
 func (p ReconciliationPlan) Recovery() bool { return p.recovery }
 func (p ReconciliationPlan) HistoricalAttempt() *ApplyingJournal {
@@ -746,22 +746,22 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	readinessObserved := ReadinessObservationStatus{Configured: true, Authorization: observation.Readiness.AuthorizationObserved, Usability: observation.Readiness.UsabilityObserved}
 	observedEvidence := append([]string(nil), observation.Readiness.Evidence...)
 	sort.Strings(observedEvidence)
-	evidence := []string{}
+	pendingEvidence := []string{}
 	for _, projection := range observation.Projections {
 		if projection.ObservedFingerprint != projection.DesiredFingerprint && !projection.ExternallyManaged {
-			evidence = append(evidence, projection.ID+": verification pending Apply")
+			pendingEvidence = append(pendingEvidence, projection.ID+": verification pending Apply")
 		}
 	}
 	if !observation.Readiness.AuthorizationObserved {
-		evidence = append(evidence, "authorization evidence pending a host observation")
+		pendingEvidence = append(pendingEvidence, "authorization evidence pending a host observation")
 	}
 	if !observation.Readiness.UsabilityObserved {
-		evidence = append(evidence, "usability evidence pending a host observation")
+		pendingEvidence = append(pendingEvidence, "usability evidence pending a host observation")
 	}
-	sort.Strings(evidence)
+	sort.Strings(pendingEvidence)
 	pendingHumanActions := append([]string(nil), observation.PendingHumanActions...)
 	sort.Strings(pendingHumanActions)
-	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, observationFingerprint: observationDigest(observation), resolutions: resolutions, readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, evidence: evidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts}
+	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, observationFingerprint: observationDigest(observation), resolutions: resolutions, readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts}
 	recovery := recoveryAttempt(state, operation, request.PackID, request.Surface)
 	plan.attachRecovery(state, recovery)
 	for _, resource := range pack.Resources {

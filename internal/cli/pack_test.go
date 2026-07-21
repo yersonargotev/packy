@@ -804,7 +804,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	if err := json.Unmarshal([]byte(overview), &report); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, overview)
 	}
-	if report.SchemaVersion != 1 || report.Report != "pack-status-overview" || len(report.Entries) != 5 {
+	if report.SchemaVersion != capabilitypack.StatusSchemaVersion || report.Report != "pack-status-overview" || len(report.Entries) != 5 {
 		t.Fatalf("report=%#v", report)
 	}
 	for i, entry := range report.Entries {

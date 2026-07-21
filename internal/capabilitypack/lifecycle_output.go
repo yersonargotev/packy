@@ -11,7 +11,7 @@ const LifecycleJSONSchemaVersion = 2
 // every lifecycle entry point. Renderers must not reconstruct these facts
 // from a manifest.
 type LifecycleContract struct {
-	Compatibility         Compatibility      `json:"-"`
+	Compatibility         Compatibility      `json:"compatibility,omitempty"`
 	CompatibilityObserved bool               `json:"-"`
 	Counts                ResourceCounts     `json:"logical_resource_counts"`
 	DependencyClosure     []string           `json:"dependency_closure"`
@@ -50,6 +50,9 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 		Counts: pack.ResourceCounts(), DependencyClosure: []string{}, Bindings: []LifecycleBinding{},
 		Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}, PromptAuthorities: []string{}, Aliases: []SurfaceAlias{},
 		AuthorityDisclosure: "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
+	}
+	if !contract.CompatibilityObserved {
+		contract.Compatibility = ""
 	}
 	contract.DependencyClosure = sortedUnique(pack.Requires.Capabilities)
 	authorities := []string{}
@@ -245,7 +248,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
 		Surface: p.surface, IntentRevision: p.intentRevision, Contract: contract, Aliases: contract.Aliases,
 		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
-		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.evidence),
+		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
 		Recovery: p.recovery, MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
 		RetainedProjections: retained, RemovedContributors: removed, DryRun: dryRun}
 }
