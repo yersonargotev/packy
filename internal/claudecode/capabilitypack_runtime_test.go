@@ -312,7 +312,7 @@ func TestTypedHookContainerProvenanceSurvivesCreatorFirstRemoval(t *testing.T) {
 	hook := func(id, event string) capabilitypack.Resource {
 		return capabilitypack.Resource{Kind: "lifecycle", ID: id, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "command_hook", Name: id, Hook: &capabilitypack.CommandHook{Type: "command", Event: event, Command: "engram", Args: []string{id}, TimeoutSeconds: 5, Failure: "warn", Authorities: []string{}}}}}
 	}
-	start, stop := hook("start", "SessionStart"), hook("stop", "SessionEnd")
+	start, stop := hook("start", "SessionStart"), hook("stop", "SessionStart")
 	both := capabilitypack.Pack{ID: "p", Version: "1", Resources: []capabilitypack.Resource{start, stop}}
 	creator := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(NewOwnershipSnapshot()))
 	created, err := creator.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: both})
@@ -328,7 +328,7 @@ func TestTypedHookContainerProvenanceSurvivesCreatorFirstRemoval(t *testing.T) {
 	}
 	record := func(resource capabilitypack.Resource) OwnershipRecord {
 		binding := resource.Bindings[0]
-		return OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "p", Contributors: []string{"p"}, ID: "lifecycle:" + resource.ID, Kind: string(ActionCommandHook), Target: layout.SettingsFile, Fingerprint: fromBindingHook(binding).Fingerprint(), HookProvenance: provenance, DeletionAuthorized: true}
+		return OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "p", Contributors: []string{"p"}, ID: "lifecycle:" + resource.ID, Kind: string(ActionCommandHook), Target: layout.SettingsFile, Fingerprint: fromBindingHook(binding).Fingerprint(), HookProvenance: provenance, HookEvent: binding.Hook.Event, DeletionAuthorized: true}
 	}
 	ownedBoth := NewOwnershipSnapshot(record(start), record(stop))
 	keepStop := capabilitypack.Pack{ID: "p", Version: "1", Resources: []capabilitypack.Resource{stop}}

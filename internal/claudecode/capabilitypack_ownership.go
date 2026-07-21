@@ -116,6 +116,7 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 				}
 				record.Fingerprint = observation.EntryFingerprint
 				record.HookProvenance = owner.AdapterProvenance
+				record.HookEvent = hook.Event
 			} else if resource.Kind == "mcp_server" {
 				record.Kind, record.Target = string(ActionUserMCP), name
 				observation := ObserveUserMCP(o.layout.UserMCPFile, name)
