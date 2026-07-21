@@ -1,6 +1,7 @@
 package corelifecycle
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -242,6 +243,37 @@ func TestClassicStateOwnershipUsesCanonicalPersistedKinds(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"kind":"hook"`) || !strings.Contains(string(data), `"args":["session"]`) {
 		t.Fatalf("hook wire contract = %s", data)
+	}
+}
+
+func TestPersistedHookOwnershipRoundTripsToSetupObservation(t *testing.T) {
+	home := t.TempDir()
+	layout := claudecode.NewCanonicalLayout(home)
+	if err := os.MkdirAll(layout.ConfigDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hook := claudecode.CommandHookEntry{Type: "command", Event: "SessionStart", Command: "engram", Args: []string{"session"}, TimeoutSeconds: 5, Blocking: true, Failure: "block"}
+	settings, err := claudecode.MergeCommandHook(nil, hook, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.SettingsFile, settings, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(home, ".packy", "config.json")
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := DesiredState(StateConfig{StateFile: statePath, AgentSkillsDir: filepath.Join(home, ".agents", "skills")}, time.Unix(4, 0), nil)
+	wantFingerprint := claudecode.HookOwnershipFingerprint(hook.Event, hook.Fingerprint())
+	state.ClaudeOwnership = []ClaudeOwnership{{ID: "hook", Kind: ClaudeOwnershipHook, Target: layout.SettingsFile, Fingerprint: wantFingerprint}}
+	if err := SaveState(statePath, state); err != nil {
+		t.Fatal(err)
+	}
+
+	setup := claudecode.ObserveSetup(context.Background(), layout, "", nil, ObserveState(statePath).ClaudeOwnershipSnapshot())
+	if len(setup.Hooks.MatchingEntries) != 1 || setup.Hooks.MatchingEntries[0] != wantFingerprint {
+		t.Fatalf("persisted hook setup observation = %#v", setup.Hooks)
 	}
 }
 
