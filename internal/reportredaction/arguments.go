@@ -7,7 +7,11 @@ type redactedError struct {
 	cause   error
 }
 
-type replacement struct{ raw, safe string }
+type environmentArgument struct {
+	index  int
+	prefix string
+	value  string
+}
 
 func (err redactedError) Error() string { return err.message }
 func (err redactedError) Unwrap() error { return err.cause }
@@ -16,19 +20,8 @@ func (err redactedError) Unwrap() error { return err.cause }
 // Values passed through the conventional --env/-e forms are never disclosed.
 func EnvironmentArguments(args []string) []string {
 	result := append([]string(nil), args...)
-	for i := range result {
-		if result[i] == "--env" || result[i] == "-e" {
-			if i+1 < len(result) {
-				result[i+1] = environmentValue(result[i+1])
-				i++
-			}
-			continue
-		}
-		for _, prefix := range []string{"--env=", "-e="} {
-			if strings.HasPrefix(result[i], prefix) {
-				result[i] = prefix + environmentValue(strings.TrimPrefix(result[i], prefix))
-			}
-		}
+	for _, argument := range environmentArguments(args) {
+		result[argument.index] = argument.prefix + environmentValue(argument.value)
 	}
 	return result
 }
@@ -48,8 +41,11 @@ func Error(err error, argumentSets [][]string, sealedPayloads []string) error {
 	}
 	message := err.Error()
 	for _, args := range argumentSets {
-		for _, value := range environmentValues(args) {
-			message = strings.ReplaceAll(message, value.raw, value.safe)
+		for _, argument := range environmentArguments(args) {
+			message = strings.ReplaceAll(message, argument.value, environmentValue(argument.value))
+			if _, value, ok := strings.Cut(argument.value, "="); ok && value != "" {
+				message = strings.ReplaceAll(message, value, "<redacted>")
+			}
 		}
 	}
 	for _, payload := range sealedPayloads {
@@ -60,20 +56,19 @@ func Error(err error, argumentSets [][]string, sealedPayloads []string) error {
 	return redactedError{message: message, cause: err}
 }
 
-func environmentValues(args []string) []replacement {
-	values := make([]replacement, 0)
+func environmentArguments(args []string) []environmentArgument {
+	values := make([]environmentArgument, 0)
 	for i := range args {
 		if args[i] == "--env" || args[i] == "-e" {
 			if i+1 < len(args) {
-				values = append(values, replacement{raw: args[i+1], safe: environmentValue(args[i+1])})
+				values = append(values, environmentArgument{index: i + 1, value: args[i+1]})
 				i++
 			}
 			continue
 		}
 		for _, prefix := range []string{"--env=", "-e="} {
 			if strings.HasPrefix(args[i], prefix) {
-				raw := strings.TrimPrefix(args[i], prefix)
-				values = append(values, replacement{raw: raw, safe: environmentValue(raw)})
+				values = append(values, environmentArgument{index: i, prefix: prefix, value: strings.TrimPrefix(args[i], prefix)})
 			}
 		}
 	}

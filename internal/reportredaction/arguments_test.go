@@ -7,7 +7,7 @@ import (
 )
 
 func TestErrorRedactsSealedEnvironmentValuesAndPreservesCause(t *testing.T) {
-	cause := errors.New("command --env TOKEN=secret and --env=OTHER=value failed with merged-document")
+	cause := errors.New("command --env TOKEN=secret and --env=OTHER=value failed: server rejected secret; merged-document")
 	got := Error(cause, [][]string{{"--env", "TOKEN=secret", "--env=OTHER=value"}}, []string{"merged-document"})
 	if !errors.Is(got, cause) {
 		t.Fatal("redacted error does not preserve its cause")

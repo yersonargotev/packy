@@ -223,6 +223,9 @@ func newInstallCommand(opts Options, workstationResolver *workstation.Resolver) 
 				return classicLifecycleOutcomeError(plan.Outcome())
 			}
 			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
+			if applyErr != nil && result.Outcome() == "" {
+				return applyErr
+			}
 			if jsonOutput {
 				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
 					return err
@@ -362,6 +365,9 @@ func newUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *
 				return classicLifecycleOutcomeError(plan.Outcome())
 			}
 			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
+			if applyErr != nil && result.Outcome() == "" {
+				return applyErr
+			}
 			if jsonOutput {
 				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
 					return err
@@ -508,6 +514,9 @@ func newUninstallCommand(opts Options, workstationResolver *workstation.Resolver
 				return classicLifecycleOutcomeError(plan.Outcome())
 			}
 			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
+			if applyErr != nil && result.Outcome() == "" {
+				return applyErr
+			}
 			if jsonOutput {
 				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
 					return err
