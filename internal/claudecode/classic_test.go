@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
 type classicRunner func(Command) Result
@@ -128,5 +130,43 @@ func TestApplyClassicReportsOrderedFailureJournalAndRejectsForeignPlan(t *testin
 	other := NewSurfaceAdapter("", l, "", "claude", runner, nil)
 	if _, err := other.ApplyClassic(context.Background(), p); !errors.Is(err, ErrForeignClassicPlan) {
 		t.Fatalf("foreign plan error=%v", err)
+	}
+}
+
+func TestApplyClassicRestoresExactPriorStateAfterLocalFailure(t *testing.T) {
+	home := t.TempDir()
+	source := filepath.Join(t.TempDir(), "skill")
+	_ = os.MkdirAll(source, 0o700)
+	_ = os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("x"), 0o600)
+	layout := NewCanonicalLayout(home)
+	a := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", classicRunner(func(command Command) Result {
+		return Result{Stdout: "2.1.203"}
+	}), StaticOwnershipSnapshot(OwnershipSnapshot{}))
+	plan, err := a.InspectClassic(context.Background(), ClassicRequest{Goal: ClassicPresent, Desired: ClassicDesired{
+		Skills:      []ClassicSkill{{ID: "classic:skill:x", Name: "x", SourcePath: source}},
+		Instruction: &ClassicInstruction{ID: "classic:instruction", Content: "instructions"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := applyClassicAction
+	calls := 0
+	applyClassicAction = func(adapter *SurfaceAdapter, ctx context.Context, action capabilitypack.ProjectionAction) error {
+		calls++
+		if calls == 2 {
+			return errors.New("injected local failure")
+		}
+		return adapter.apply(ctx, action)
+	}
+	t.Cleanup(func() { applyClassicAction = original })
+	result, err := a.ApplyClassic(context.Background(), plan)
+	if err == nil || !result.RolledBack || result.RollbackFailed || len(result.Completed) != 0 || result.Failed != "classic:instruction" {
+		t.Fatalf("rollback result=%+v err=%v", result, err)
+	}
+	if _, err := os.Lstat(filepath.Join(layout.SkillsDir, "x")); !os.IsNotExist(err) {
+		t.Fatalf("skill prior state not restored: %v", err)
+	}
+	if _, err := os.Stat(layout.InstructionsFile); !os.IsNotExist(err) {
+		t.Fatalf("instruction prior state not restored: %v", err)
 	}
 }

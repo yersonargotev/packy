@@ -17,7 +17,6 @@ import (
 	"github.com/yersonargotev/packy/internal/corelifecycle"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
-	"github.com/yersonargotev/packy/internal/prompt"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	packyversion "github.com/yersonargotev/packy/internal/version"
@@ -521,10 +520,6 @@ func resolveClassicLifecycle(opts Options, resolver *workstation.Resolver) (clas
 			InstalledSource: sources.installed,
 			RunningVersion:  packyversion.Value,
 			Claude:          claudeAdapter,
-			ClaudeDesired: claudecode.ClassicDesired{
-				Instruction: &claudecode.ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent() + "\n" + prompt.RulesContent()},
-				MCP:         &claudecode.ClassicMCP{ID: "classic:mcp:engram", Name: "engram", Command: "engram", Args: []string{"mcp", "--tools=agent"}},
-			},
 		},
 		skillSource:     sources.skills,
 		installedSource: sources.installed,

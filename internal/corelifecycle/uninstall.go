@@ -121,7 +121,7 @@ func uninstallFilePreconditions(config facadeConfig, stateFound, codexOwned bool
 	return records
 }
 
-func (facade *Facade) applyUninstall(plan Plan) (Result, error) {
+func (facade *Facade) applyUninstall(ctx context.Context, plan Plan) (Result, error) {
 	if err := plan.preconditions.Verify(); err != nil {
 		return Result{}, err
 	}
@@ -132,7 +132,7 @@ func (facade *Facade) applyUninstall(plan Plan) (Result, error) {
 		return Result{stateFile: facade.config.State.StateFile(), outcome: OutcomeConverged}, nil
 	}
 	if plan.hasClaudePlan {
-		result, err := facade.config.Claude.ApplyClassic(context.Background(), plan.claudePlan)
+		result, err := facade.config.Claude.ApplyClassic(ctx, plan.claudePlan)
 		if err != nil {
 			state := plan.desired
 			state.InstallStatus = InstallRecoveryRequired

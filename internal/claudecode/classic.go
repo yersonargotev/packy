@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -78,9 +79,15 @@ type ClassicApplyResult struct {
 	NotStarted        []string
 	VerifiedOwnership []OwnershipRecord
 	Attempted         bool
+	RolledBack        bool
+	RollbackFailed    bool
 }
 
 var ErrForeignClassicPlan = errors.New("classic Claude plan was not inspected by this adapter")
+
+var applyClassicAction = func(adapter *SurfaceAdapter, ctx context.Context, action capabilitypack.ProjectionAction) error {
+	return adapter.apply(ctx, action)
+}
 
 // InspectClassic is inert. It builds classic host projections without exposing
 // capability-pack lifecycle values and seals the resulting plan to this adapter.
@@ -315,11 +322,24 @@ func (a *SurfaceAdapter) ApplyClassic(ctx context.Context, p ClassicPlan) (Class
 	if _, err := a.preflight(p.actions, snapshot); err != nil {
 		return r, err
 	}
+	priors, err := captureClassicPriors(p.actions)
+	if err != nil {
+		return r, err
+	}
 	for i, action := range p.actions {
 		r.Attempted = true
-		if err := a.apply(ctx, action); err != nil {
+		if err := applyClassicAction(a, ctx, action); err != nil {
 			r.Failed = action.ID
 			r.NotStarted = actionIDs(p.actions[i+1:])
+			if action.Kind != ActionUserMCP {
+				if rollbackErr := restoreClassicPriors(p.actions[:i+1], priors[:i+1]); rollbackErr != nil {
+					r.RollbackFailed = true
+					return r, fmt.Errorf("%w; restore exact prior Claude local state: %v", err, rollbackErr)
+				}
+				r.RolledBack = true
+				r.Completed = nil
+				r.VerifiedOwnership = nil
+			}
 			return r, err
 		}
 		r.Completed = append(r.Completed, action.ID)
@@ -332,6 +352,70 @@ func (a *SurfaceAdapter) ApplyClassic(ctx context.Context, p ClassicPlan) (Class
 	r.NotStarted = nil
 	r.VerifiedOwnership = cloneOwnership(p.ownership)
 	return r, nil
+}
+
+type classicPrior struct {
+	exists     bool
+	linkTarget string
+	content    []byte
+	mode       os.FileMode
+}
+
+func captureClassicPriors(actions []capabilitypack.ProjectionAction) ([]classicPrior, error) {
+	priors := make([]classicPrior, len(actions))
+	for i, action := range actions {
+		if action.Kind == ActionUserMCP {
+			continue
+		}
+		info, err := os.Lstat(action.Target)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		priors[i].exists, priors[i].mode = true, info.Mode().Perm()
+		if action.Kind == ActionSkillLink {
+			if info.Mode()&os.ModeSymlink == 0 {
+				return nil, fmt.Errorf("capture Claude skill prior state: target is not a symlink")
+			}
+			priors[i].linkTarget, err = os.Readlink(action.Target)
+		} else {
+			priors[i].content, err = os.ReadFile(action.Target)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return priors, nil
+}
+
+func restoreClassicPriors(actions []capabilitypack.ProjectionAction, priors []classicPrior) error {
+	for i := len(actions) - 1; i >= 0; i-- {
+		action, prior := actions[i], priors[i]
+		if action.Kind == ActionUserMCP {
+			continue
+		}
+		if !prior.exists {
+			if err := os.Remove(action.Target); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			continue
+		}
+		if action.Kind == ActionSkillLink {
+			if err := os.Remove(action.Target); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			if err := os.Symlink(prior.linkTarget, action.Target); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := atomicWrite(action.Target, prior.content, prior.mode); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ownsClassicExact(snapshot OwnershipSnapshot, want OwnershipRecord) bool {

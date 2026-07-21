@@ -55,7 +55,7 @@ type State struct {
 	// in-memory model so older observers remain source compatible, but schema v2
 	// never writes it.
 	ConfiguredSurfaces []string                `json:"configured_surfaces,omitempty"`
-	DesiredSurfaces    []string                `json:"desired_surfaces,omitempty"`
+	DesiredSurfaces    []string                `json:"desired_surfaces"`
 	ClaudeOwnership    []ClaudeOwnership       `json:"claude_ownership"`
 	Paths              StatePaths              `json:"paths"`
 	LastInstallCheck   string                  `json:"last_install_check,omitempty"`
@@ -77,6 +77,31 @@ type ClaudeOwnership struct {
 	EnvironmentKeys        []string `json:"environment_keys,omitempty"`
 	EnvironmentFingerprint string   `json:"environment_fingerprint,omitempty"`
 	DeletionAuthorized     bool     `json:"deletion_authorized"`
+}
+
+func (ownership ClaudeOwnership) MarshalJSON() ([]byte, error) {
+	type wire struct {
+		ID                     string   `json:"id"`
+		Kind                   string   `json:"kind"`
+		Target                 string   `json:"target"`
+		Fingerprint            string   `json:"fingerprint"`
+		Contributors           []string `json:"contributors"`
+		SourcePath             string   `json:"source_path,omitempty"`
+		LinkTarget             string   `json:"link_target,omitempty"`
+		Command                string   `json:"command,omitempty"`
+		Args                   any      `json:"args,omitempty"`
+		EnvironmentKeys        any      `json:"environment_keys,omitempty"`
+		EnvironmentFingerprint string   `json:"environment_fingerprint,omitempty"`
+		DeletionAuthorized     bool     `json:"deletion_authorized"`
+	}
+	value := wire{ID: ownership.ID, Kind: ownership.Kind, Target: ownership.Target, Fingerprint: ownership.Fingerprint, Contributors: ownership.Contributors, SourcePath: ownership.SourcePath, LinkTarget: ownership.LinkTarget, Command: ownership.Command, EnvironmentFingerprint: ownership.EnvironmentFingerprint, DeletionAuthorized: ownership.DeletionAuthorized}
+	if ownership.Kind == "mcp" || ownership.Kind == "hook" {
+		value.Args = ownership.Args
+	}
+	if ownership.Kind == "mcp" {
+		value.EnvironmentKeys = ownership.EnvironmentKeys
+	}
+	return json.Marshal(value)
 }
 
 type AttemptOutcome string
@@ -150,8 +175,11 @@ func LoadState(path string) (State, bool, error) {
 		if err := validateDesiredSurfaces(state.DesiredSurfaces); err != nil {
 			return State{}, false, fmt.Errorf("read Packy state %s: %w", path, err)
 		}
-		if state.ManagedSkills == nil || state.ClaudeOwnership == nil {
+		if state.ManagedSkills == nil || state.ClaudeOwnership == nil || state.CreatedContainers == nil {
 			return State{}, false, fmt.Errorf("read Packy state %s: schema v2 required arrays must be non-null", path)
+		}
+		if err := validateStateV2Collections(state); err != nil {
+			return State{}, false, fmt.Errorf("read Packy state %s: %w", path, err)
 		}
 		return state, true, nil
 	default:
@@ -257,6 +285,23 @@ func canonicalizeState(state *State) error {
 	}
 	sort.Slice(state.ClaudeOwnership, func(i, j int) bool { return state.ClaudeOwnership[i].ID < state.ClaudeOwnership[j].ID })
 	for i := range state.ClaudeOwnership {
+		if state.ClaudeOwnership[i].Contributors == nil {
+			state.ClaudeOwnership[i].Contributors = []string{}
+		}
+		if state.ClaudeOwnership[i].Kind == "mcp" || state.ClaudeOwnership[i].Kind == "hook" {
+			if state.ClaudeOwnership[i].Args == nil {
+				state.ClaudeOwnership[i].Args = []string{}
+			}
+		} else {
+			state.ClaudeOwnership[i].Args = nil
+		}
+		if state.ClaudeOwnership[i].Kind == "mcp" {
+			if state.ClaudeOwnership[i].EnvironmentKeys == nil {
+				state.ClaudeOwnership[i].EnvironmentKeys = []string{}
+			}
+		} else {
+			state.ClaudeOwnership[i].EnvironmentKeys = nil
+		}
 		sort.Strings(state.ClaudeOwnership[i].Contributors)
 		sort.Strings(state.ClaudeOwnership[i].EnvironmentKeys)
 	}
@@ -269,6 +314,33 @@ func canonicalizeState(state *State) error {
 		if state.LatestAttempt.NotStartedEffects == nil {
 			state.LatestAttempt.NotStartedEffects = []string{}
 		}
+	}
+	return validateStateV2Collections(*state)
+}
+
+func validateStateV2Collections(state State) error {
+	for i, ownership := range state.ClaudeOwnership {
+		if i > 0 && state.ClaudeOwnership[i-1].ID > ownership.ID {
+			return fmt.Errorf("claude_ownership must be sorted by id")
+		}
+		if ownership.Contributors == nil {
+			return fmt.Errorf("claude_ownership contributors must be non-null")
+		}
+		if !sort.StringsAreSorted(ownership.Contributors) {
+			return fmt.Errorf("claude_ownership contributors must be sorted")
+		}
+		if (ownership.Kind == "mcp" || ownership.Kind == "hook") && ownership.Args == nil {
+			return fmt.Errorf("Claude command ownership args must be non-null")
+		}
+		if ownership.Kind == "mcp" && ownership.EnvironmentKeys == nil {
+			return fmt.Errorf("Claude MCP ownership arrays must be non-null")
+		}
+		if ownership.EnvironmentKeys != nil && !sort.StringsAreSorted(ownership.EnvironmentKeys) {
+			return fmt.Errorf("Claude MCP environment_keys must be sorted")
+		}
+	}
+	if state.LatestAttempt != nil && (state.LatestAttempt.CompletedEffects == nil || state.LatestAttempt.NotStartedEffects == nil) {
+		return fmt.Errorf("latest_attempt effect arrays must be non-null")
 	}
 	return nil
 }

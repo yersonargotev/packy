@@ -23,6 +23,19 @@ type classicMCPRunner struct {
 	calls    []claudecode.Command
 }
 
+type cancelAwareClassicRunner struct {
+	registry string
+	seenErr  error
+}
+
+func (runner *cancelAwareClassicRunner) Run(ctx context.Context, command claudecode.Command) claudecode.Result {
+	if len(command.Args) == 1 && command.Args[0] == "--version" {
+		return claudecode.Result{Stdout: "2.1.203"}
+	}
+	runner.seenErr = ctx.Err()
+	return claudecode.Result{Err: ctx.Err()}
+}
+
 func (runner *classicMCPRunner) Run(_ context.Context, command claudecode.Command) claudecode.Result {
 	runner.calls = append(runner.calls, command)
 	if len(command.Args) == 1 && command.Args[0] == "--version" {
@@ -257,5 +270,102 @@ func TestClassicPrototypeResidualSafeUninstallRetainsThenClearsAuthority(t *test
 	}
 	if _, found, err := LoadState(config.State.StateFile()); err != nil || found {
 		t.Fatalf("residual authority not cleared: found=%v err=%v", found, err)
+	}
+}
+
+func TestClassicPrototypeInertHealthPreviewPerformsNoEffects(t *testing.T) {
+	config := installTestConfig(t)
+	configureClassicClaude(&config, classicVersionRunner{})
+	commands := &installTestCommands{}
+	facade := newTestFacade(config, commands, time.Now)
+	home := installTestHome(config)
+	before := installTestSnapshot(t, home)
+	plan, err := facade.Preview(Install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := installTestSnapshot(t, home)
+	if before != after || len(commands.runs) != 0 {
+		t.Fatalf("inert preview mutated sandbox or ran effects: before=%q after=%q runs=%v", before, after, commands.runs)
+	}
+	if len(plan.PendingPrerequisites()) == 0 {
+		t.Fatalf("inert preview omitted compatibility evidence: %+v", plan)
+	}
+}
+
+func TestSchemaV2BlockedClaudeProjectionRetainsResidualOwnership(t *testing.T) {
+	config := installTestConfig(t)
+	home := installTestHome(config)
+	layout := claudecode.NewCanonicalLayout(home)
+	source := filepath.Join(t.TempDir(), "skill")
+	if err := os.MkdirAll(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("owned"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(layout.SkillsDir, "owned")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("foreign drift"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := DesiredState(StateConfig{StateFile: config.State.StateFile(), AgentSkillsDir: config.Skills.Root()}, time.Now(), nil)
+	state.ClaudeOwnership = []ClaudeOwnership{{ID: "classic:skill:owned", Kind: "skill", Target: target, Fingerprint: "sha256:prior", Contributors: []string{"classic"}, SourcePath: source, LinkTarget: source, DeletionAuthorized: true}}
+	if err := os.MkdirAll(config.State.PackyHome(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveState(config.State.StateFile(), state); err != nil {
+		t.Fatal(err)
+	}
+	config.Claude = claudecode.NewSurfaceAdapter("", layout, config.State.PackyHome(), "", classicVersionRunner{}, claudecode.OwnershipSnapshotFunc(func(context.Context) (claudecode.OwnershipSnapshot, error) {
+		return ObserveClaudeOwnershipSnapshot(config.State.StateFile())
+	}))
+	config.ClaudeDesired = claudecode.ClassicDesired{Skills: []claudecode.ClassicSkill{{ID: "classic:skill:owned", Name: "owned", SourcePath: source}}}
+	writeInstallTestExecutable(t, config.Engram.ExpectedPath())
+	facade := newTestFacade(config, &installTestCommands{}, time.Now)
+	plan, err := facade.Preview(Install)
+	if err != nil || plan.Outcome() != OutcomeBlocked {
+		t.Fatalf("plan outcome=%s blockers=%v err=%v", plan.Outcome(), plan.Blockers(), err)
+	}
+	if _, err := facade.Apply(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := LoadState(config.State.StateFile())
+	if err != nil || len(got.ClaudeOwnership) != 1 || got.ClaudeOwnership[0].ID != "classic:skill:owned" {
+		t.Fatalf("blocked ownership was lost: %+v err=%v", got.ClaudeOwnership, err)
+	}
+}
+
+func TestClaudeUninstallThreadsCallerCancellationToOfficialMCPRemoval(t *testing.T) {
+	config := installTestConfig(t)
+	layout := claudecode.NewCanonicalLayout(installTestHome(config))
+	installRunner := &classicMCPRunner{registry: layout.UserMCPFile}
+	configureClassicClaude(&config, installRunner)
+	writeInstallTestExecutable(t, config.Engram.ExpectedPath())
+	facade := newTestFacade(config, &installTestCommands{}, time.Now)
+	plan, err := facade.Preview(Install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := facade.Apply(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+
+	cancelRunner := &cancelAwareClassicRunner{registry: layout.UserMCPFile}
+	configureClassicClaude(&config, cancelRunner)
+	uninstall := newTestFacade(config, &installTestCommands{}, time.Now)
+	uninstallPlan, err := uninstall.Preview(Uninstall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := uninstall.Apply(ctx, uninstallPlan); err == nil {
+		t.Fatal("canceled MCP removal unexpectedly succeeded")
+	}
+	if !errors.Is(cancelRunner.seenErr, context.Canceled) {
+		t.Fatalf("MCP runner did not receive caller cancellation: %v", cancelRunner.seenErr)
 	}
 }

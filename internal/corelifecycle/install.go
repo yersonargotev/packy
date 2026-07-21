@@ -124,6 +124,10 @@ func NewFacade(owners FacadeConfig, commands Commands, now func() time.Time) *Fa
 		now = time.Now
 	}
 	state := NewLayout(owners.PackyHome)
+	claudeDesired := cloneClassicDesired(owners.ClaudeDesired)
+	if owners.Claude != nil && len(claudeDesired.Skills) == 0 && claudeDesired.Instruction == nil && claudeDesired.MCP == nil {
+		claudeDesired = defaultClaudeDesired()
+	}
 	config := facadeConfig{
 		State:           state,
 		Skills:          owners.Skills,
@@ -134,7 +138,7 @@ func NewFacade(owners FacadeConfig, commands Commands, now func() time.Time) *Fa
 		InstalledSource: owners.InstalledSource,
 		Engram:          owners.Engram,
 		Claude:          owners.Claude,
-		ClaudeDesired:   owners.ClaudeDesired,
+		ClaudeDesired:   claudeDesired,
 	}
 	return &Facade{config: config, commands: commands, now: now}
 }
@@ -353,7 +357,7 @@ var saveUpdateState = SaveState
 
 func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	if plan.owner == facade && plan.operation == Uninstall {
-		return facade.applyUninstall(plan)
+		return facade.applyUninstall(ctx, plan)
 	}
 	if plan.owner != facade || (plan.operation != Install && plan.operation != Update) {
 		return Result{}, ErrForeignPlan
@@ -455,6 +459,21 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	if plan.hasClaudePlan {
 		claudeResult, err = facade.config.Claude.ApplyClassic(ctx, plan.claudePlan)
 		if err != nil {
+			if claudeResult.RolledBack {
+				if legacyMigration {
+					return Result{outcome: OutcomePartiallyApplied, completedEffects: actionEffectIDs(plan.actions), failedEffect: claudeResult.Failed, notStartedEffects: claudeResult.NotStarted}, err
+				}
+				rolledBack := plan.desired
+				rolledBack.ManagedSkills = append([]ManagedSkill(nil), recovery.ManagedSkills...)
+				rolledBack.CreatedContainers = append([]ownedcontainer.Record(nil), recovery.CreatedContainers...)
+				rolledBack.ClaudeOwnership = append([]ClaudeOwnership(nil), previous.ClaudeOwnership...)
+				rolledBack.InstallStatus = InstallConfirmed
+				rolledBack.LatestAttempt = &LatestAttempt{Operation: plan.operation, Outcome: AttemptPartiallyApplied, CompletedEffects: actionEffectIDs(plan.actions), FailedEffect: claudeResult.Failed, NotStartedEffects: claudeResult.NotStarted}
+				if saveErr := saveState(facade.config.State.StateFile(), rolledBack); saveErr != nil {
+					return Result{}, fmt.Errorf("%w; publish exact-rollback attempt: %v", err, saveErr)
+				}
+				return Result{outcome: OutcomePartiallyApplied, completedEffects: actionEffectIDs(plan.actions), failedEffect: claudeResult.Failed, notStartedEffects: claudeResult.NotStarted}, err
+			}
 			if !claudeResult.Attempted {
 				if legacyMigration {
 					return Result{outcome: OutcomePartiallyApplied, completedEffects: actionEffectIDs(plan.actions), notStartedEffects: claudeResult.NotStarted}, err
@@ -482,7 +501,7 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 		if len(plan.pending) > 0 {
 			ownership = withoutPendingMCPOwnership(ownership)
 		}
-		plan.desired.ClaudeOwnership = classicStateOwnership(ownership)
+		plan.desired.ClaudeOwnership = mergeClaudeOwnership(previous.ClaudeOwnership, classicStateOwnership(ownership))
 	}
 	confirmed := plan.desired
 	if previous.RecoveryRequired() {
@@ -506,6 +525,13 @@ func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	}
 	completed := append(actionEffectIDs(plan.actions), claudeResult.Completed...)
 	return Result{warnings: warnings, managedSkillCount: len(plan.desired.ManagedSkills), stateFile: facade.config.State.StateFile(), hasWork: true, outcome: plan.outcome, completedEffects: completed}, nil
+}
+
+func defaultClaudeDesired() claudecode.ClassicDesired {
+	return claudecode.ClassicDesired{
+		Instruction: &claudecode.ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent() + "\n" + prompt.RulesContent()},
+		MCP:         &claudecode.ClassicMCP{ID: "classic:mcp:engram", Name: "engram", Command: "engram", Args: []string{"mcp", "--tools=agent"}},
+	}
 }
 
 func mergeClaudeOwnership(prior, verified []ClaudeOwnership) []ClaudeOwnership {
