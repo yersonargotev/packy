@@ -15,14 +15,18 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and publish release artifacts
+  build:
+    name: Validate and build release candidate
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
       - name: Resolve release tag
         id: release
         env:
@@ -41,6 +45,7 @@ jobs:
           fi
           git checkout --detach "$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -48,8 +53,119 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Validate exact tag commit
+        run: ./scripts/validate-packy.sh
+
       - name: Build release artifacts and checksums.txt
         run: scripts/build-release-artifacts.sh --version "${{ steps.release.outputs.tag }}" --out-dir dist
+
+      - name: Retain proved release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: packy-release-${{ steps.release.outputs.tag }}
+          path: dist
+          if-no-files-found: error
+
+  claude-smoke:
+    name: Claude ${{ matrix.claude }} smoke (${{ matrix.arch }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: amd64
+            claude: 2.1.203
+          - runner: macos-15-intel
+            arch: amd64
+            claude: stable
+          - runner: macos-15
+            arch: arm64
+            claude: 2.1.203
+          - runner: macos-15
+            arch: arm64
+            claude: stable
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.build.outputs.commit }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download proved release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: packy-release-${{ needs.build.outputs.tag }}
+          path: ${{ runner.temp }}/dist
+
+      - name: Restore executable mode
+        run: chmod +x "$RUNNER_TEMP/dist/packy_${{ needs.build.outputs.tag }}_darwin_${{ matrix.arch }}"
+
+      - name: Run release package smoke
+        run: |
+          ./scripts/run-claude-smoke.sh \
+            --claude-version "${{ matrix.claude }}" \
+            --packy-ref "${{ needs.build.outputs.commit }}" \
+            --packy-binary "$RUNNER_TEMP/dist/packy_${{ needs.build.outputs.tag }}_darwin_${{ matrix.arch }}" \
+            --evidence-dir "$RUNNER_TEMP/claude-release-evidence"
+
+      - name: Retain release smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-release-${{ matrix.claude }}-darwin-${{ matrix.arch }}
+          path: ${{ runner.temp }}/claude-release-evidence
+          if-no-files-found: error
+
+  release:
+    name: Build and publish release artifacts
+    needs: [build, claude-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.build.outputs.commit }}
+      - name: Verify release tag remains bound
+        id: release
+        run: |
+          set -euo pipefail
+          tag="${{ needs.build.outputs.tag }}"
+          candidate="${{ needs.build.outputs.commit }}"
+          git fetch --tags --force
+          current="$(git rev-parse "${tag}^{commit}")"
+          if [[ "$current" != "$candidate" ]]; then
+            echo "Release tag '$tag' moved after candidate validation: expected $candidate, got $current" >&2
+            exit 1
+          fi
+          git checkout --detach "$candidate"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go from proved commit
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download proved release artifacts and checksums.txt
+        uses: actions/download-artifact@v4
+        with:
+          name: packy-release-${{ steps.release.outputs.tag }}
+          path: dist
 
       - name: Require Homebrew tap token
         env:
@@ -102,6 +218,17 @@ jobs:
         run: |
           set -euo pipefail
           git push --dry-run origin HEAD:main
+
+      - name: Reverify release tag before publication
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          current="$(git rev-parse "${{ needs.build.outputs.tag }}^{commit}")"
+          candidate="${{ needs.build.outputs.commit }}"
+          if [[ "$current" != "$candidate" ]]; then
+            echo "Release tag moved before publication: expected $candidate, got $current" >&2
+            exit 1
+          fi
 
       - name: Create GitHub Release if needed
         env:

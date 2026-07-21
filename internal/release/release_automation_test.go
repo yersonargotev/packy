@@ -36,6 +36,7 @@ func TestReleaseWorkflowPublishesPackyArtifactsAndTapFormula(t *testing.T) {
 		"actions/setup-go@v6",
 		"go-version-file: go.mod",
 		"git checkout --detach \"$tag\"",
+		`echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"`,
 		"scripts/build-release-artifacts.sh",
 		"--out-dir dist",
 		"HOMEBREW_TAP_TOKEN",
@@ -76,15 +77,17 @@ func TestReleaseWorkflowProvesTapAccessBeforePublishingReleaseAssets(t *testing.
 	text := readReleaseWorkflow(t, root)
 	workflow := parseReleaseWorkflow(t, text)
 
-	resolveTagIndex := releaseWorkflowStepIndex(t, workflow, "Resolve release tag", []string{
-		"git checkout --detach \"$tag\"",
+	resolveTagIndex := releaseWorkflowStepIndex(t, workflow, "Verify release tag remains bound", []string{
+		`candidate="${{ needs.build.outputs.commit }}"`,
+		`current="$(git rev-parse "${tag}^{commit}")"`,
+		`git checkout --detach "$candidate"`,
 	})
-	setupGoIndex := releaseWorkflowStepIndex(t, workflow, "Set up Go", []string{
+	setupGoIndex := releaseWorkflowStepIndex(t, workflow, "Set up Go from proved commit", []string{
 		"uses: actions/setup-go@v6",
 		"go-version-file: go.mod",
 	})
-	buildIndex := releaseWorkflowStepIndex(t, workflow, "Build release artifacts and checksums.txt", []string{
-		"scripts/build-release-artifacts.sh", "--out-dir dist",
+	provedArtifactIndex := releaseWorkflowStepIndex(t, workflow, "Download proved release artifacts and checksums.txt", []string{
+		"uses: actions/download-artifact@v4", "path: dist",
 	})
 	requireTapTokenIndex := releaseWorkflowStepIndex(t, workflow, "Require Homebrew tap token", []string{
 		"HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}",
@@ -117,6 +120,10 @@ func TestReleaseWorkflowProvesTapAccessBeforePublishingReleaseAssets(t *testing.
 	tapPushAccessProofIndex := releaseWorkflowStepIndex(t, workflow, "Prove Homebrew tap push permission", []string{
 		"working-directory: homebrew-tap",
 		"git push --dry-run origin HEAD:main",
+	})
+	reverifyTagIndex := releaseWorkflowStepIndex(t, workflow, "Reverify release tag before publication", []string{
+		`current="$(git rev-parse "${{ needs.build.outputs.tag }}^{commit}")"`,
+		`candidate="${{ needs.build.outputs.commit }}"`,
 	})
 	createReleaseIndex := releaseWorkflowStepIndex(t, workflow, "Create GitHub Release if needed", []string{
 		"GH_TOKEN: ${{ github.token }}",
@@ -153,8 +160,8 @@ func TestReleaseWorkflowProvesTapAccessBeforePublishingReleaseAssets(t *testing.
 	}
 
 	assertReleaseWorkflowStepBefore(t, resolveTagIndex, setupGoIndex, "Go must be set up from the checked-out release tag, not the workflow dispatch ref")
-	assertReleaseWorkflowStepBefore(t, setupGoIndex, buildIndex, "release artifacts should build after the release tag checkout and Go setup")
-	assertReleaseWorkflowStepBefore(t, buildIndex, formulaIndex, "formula generation must consume freshly built artifacts and dist/checksums.txt")
+	assertReleaseWorkflowStepBefore(t, setupGoIndex, provedArtifactIndex, "proved artifacts should be downloaded after the release tag checkout and Go setup")
+	assertReleaseWorkflowStepBefore(t, provedArtifactIndex, formulaIndex, "formula generation must consume the exact proved artifacts and dist/checksums.txt")
 	assertReleaseWorkflowStepBefore(t, requireTapTokenIndex, tapCheckoutIndex, "the workflow must reject a missing HOMEBREW_TAP_TOKEN before falling back to anonymous tap checkout")
 	assertReleaseWorkflowStepBefore(t, requireTapTokenIndex, createReleaseIndex, "a missing HOMEBREW_TAP_TOKEN must fail before creating a GitHub Release")
 	assertReleaseWorkflowStepBefore(t, requireTapTokenIndex, uploadIndex, "a missing HOMEBREW_TAP_TOKEN must fail before re-uploading release assets")
@@ -162,6 +169,8 @@ func TestReleaseWorkflowProvesTapAccessBeforePublishingReleaseAssets(t *testing.
 	assertReleaseWorkflowStepBefore(t, formulaIndex, prepareTapIndex, "the generated formula must be staged before preparing a local tap commit")
 	assertReleaseWorkflowStepBefore(t, prepareTapIndex, tapPushAccessProofIndex, "the workflow must dry-run push the already-prepared local tap state, not the untouched checkout")
 	assertReleaseWorkflowStepBefore(t, tapPushAccessProofIndex, createReleaseIndex, "token-backed tap push permission must be proven before creating a GitHub Release")
+	assertReleaseWorkflowStepBefore(t, tapPushAccessProofIndex, reverifyTagIndex, "the candidate tag should be reverified only after every publication precondition passes")
+	assertReleaseWorkflowStepBefore(t, reverifyTagIndex, createReleaseIndex, "the immutable tag binding must be checked immediately before publication")
 	assertReleaseWorkflowStepBefore(t, tapPushAccessProofIndex, uploadIndex, "token-backed tap push permission must be proven before re-uploading release assets")
 	assertReleaseWorkflowStepBefore(t, uploadIndex, pushTapIndex, "the tap update must not be published until release assets exist")
 	assertReleaseWorkflowStepBefore(t, tapPushAccessProofIndex, pushTapIndex, "token-backed tap push permission must be proven before the mutating tap push")
