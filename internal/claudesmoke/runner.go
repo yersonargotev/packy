@@ -132,6 +132,7 @@ type Evidence struct {
 	PackyVersion           string            `json:"packy_version"`
 	PackyRef               string            `json:"packy_ref"`
 	PackySHA               string            `json:"packy_sha"`
+	InstalledSourceSHA     string            `json:"installed_source_sha"`
 	OS                     string            `json:"os"`
 	Arch                   string            `json:"arch"`
 	RequestedClaudeVersion string            `json:"requested_claude_version"`
@@ -384,6 +385,12 @@ func executeLifecycle(ctx context.Context, e Evidence, lc lifecycleContext) (Evi
 			e.Assertions.DryRunsUnchanged = (phase.Kind == phaseInstallPreview || e.Assertions.DryRunsUnchanged) && reflect.DeepEqual(dryBefore, dryAfter)
 		}
 		switch phase.Kind {
+		case phaseInit:
+			installedSHA, readErr := sandboxOutput(ctx, sandbox, filepath.Join(sandbox, "work"), env, "git", "-C", filepath.Join(sandbox, "installed-source"), "rev-parse", "HEAD")
+			if readErr != nil {
+				return e, readErr
+			}
+			e.InstalledSourceSHA = strings.TrimSpace(installedSHA)
 		case phaseInstall:
 			_, stateErr := os.Stat(filepath.Join(sandbox, "home", ".packy", "config.json"))
 			e.Assertions.InstallCreatedManagedState = stateErr == nil
@@ -590,7 +597,7 @@ func pathWithin(root, path string) bool {
 }
 
 func ValidateEvidence(e Evidence) error {
-	if e.SchemaVersion != 1 || e.PackyVersion == "" || e.PackyRef == "" || len(e.PackySHA) != 40 || e.ResolvedClaudeVersion == "" || e.ClaudeIntegrity == "" || len(e.ClaudeDigest) != 64 {
+	if e.SchemaVersion != 1 || e.PackyVersion == "" || e.PackyRef == "" || len(e.PackySHA) != 40 || e.InstalledSourceSHA != e.PackySHA || e.ResolvedClaudeVersion == "" || e.ClaudeIntegrity == "" || len(e.ClaudeDigest) != 64 {
 		return errors.New("missing or malformed canonical evidence")
 	}
 	s := e.Safety
