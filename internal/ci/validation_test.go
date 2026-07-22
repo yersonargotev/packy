@@ -288,6 +288,26 @@ func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
 	}
 }
 
+func TestGovernanceNormalizesExternalMetadataBeforeStrictValidation(t *testing.T) {
+	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
+	for _, projection := range []string{
+		"closingIssuesReferences: [$pr[0].closingIssuesReferences[] | {number, repository: {name: .repository.name, owner: {login: .repository.owner.login}}}]",
+		"issues: [$issues[0][] | {number, state, labels: [.labels[] | {name}]}]",
+	} {
+		if !strings.Contains(governance, projection) {
+			t.Fatalf("governance workflow does not normalize external metadata with %q", projection)
+		}
+	}
+	for _, raw := range []string{
+		"closingIssuesReferences: $pr[0].closingIssuesReferences",
+		"issues: $issues[0]",
+	} {
+		if strings.Contains(governance, raw) {
+			t.Fatalf("governance workflow passes raw external metadata with %q", raw)
+		}
+	}
+}
+
 func TestCodeownersMatchesAcceptedSensitivePathPolicy(t *testing.T) {
 	owners := readFile(t, filepath.Join(repositoryRoot(t), ".github", "CODEOWNERS"))
 	for _, path := range []string{
