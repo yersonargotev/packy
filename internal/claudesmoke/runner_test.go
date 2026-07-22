@@ -45,6 +45,9 @@ func TestAllowedCommandRejectsInteractiveClaudeAndUnknownPacky(t *testing.T) {
 }
 
 func TestRunAllowedUsesCanonicalConfiguredPackyIdentity(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-specific")
+	}
 	root := t.TempDir()
 	for _, name := range []string{"packy", "packy_v0.1.9_darwin_amd64"} {
 		configured := filepath.Join(root, name)
