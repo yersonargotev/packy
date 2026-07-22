@@ -71,18 +71,19 @@ func runCreate(args []string, stdout io.Writer) error {
 	if notesPath == "" || distDir == "" || outputDir == "" {
 		return errors.New("release-notes, dist, and output-dir are required")
 	}
-	if overlaps(distDir, outputDir) || overlaps(notesPath, outputDir) || overlaps(distDir, notesPath) {
-		return errors.New("release-notes, dist, and output-dir must not overlap")
+	canonicalNotes, canonicalDist, canonicalOutput, err := validateCreatePaths(notesPath, distDir, outputDir)
+	if err != nil {
+		return err
 	}
 	parsedPermissions, err := parsePermissions(permissions)
 	if err != nil {
 		return err
 	}
-	notes, err := readRegularFile(notesPath)
+	notes, err := readRegularFile(canonicalNotes)
 	if err != nil {
 		return fmt.Errorf("read release notes: %w", err)
 	}
-	subjects, contents, err := observeDist(distDir)
+	subjects, contents, err := observeDist(canonicalDist)
 	if err != nil {
 		return err
 	}
@@ -102,7 +103,7 @@ func runCreate(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := writePairAtomic(outputDir, candidateJSON, provenanceJSON); err != nil {
+	if err := writePairAtomic(canonicalOutput, candidateJSON, provenanceJSON); err != nil {
 		return err
 	}
 	_, err = stdout.Write(candidateJSON)
@@ -133,15 +134,17 @@ func runVerifyProvenance(args []string, stdout io.Writer) error {
 }
 
 type releaseState struct {
-	Version            string        `json:"version"`
-	Repository         string        `json:"repository"`
-	Ref                string        `json:"ref"`
-	TargetCommit       string        `json:"target_commit"`
-	Workflow           string        `json:"workflow"`
-	WorkflowSHA        string        `json:"workflow_sha"`
-	ReleaseNotesSHA256 string        `json:"release_notes_sha256"`
-	Draft              bool          `json:"draft"`
-	Assets             []serverAsset `json:"assets"`
+	CandidateID        string             `json:"candidate_id"`
+	Provenance         release.Provenance `json:"provenance"`
+	Version            string             `json:"version"`
+	Repository         string             `json:"repository"`
+	Ref                string             `json:"ref"`
+	TargetCommit       string             `json:"target_commit"`
+	Workflow           string             `json:"workflow"`
+	WorkflowSHA        string             `json:"workflow_sha"`
+	ReleaseNotesSHA256 string             `json:"release_notes_sha256"`
+	Draft              bool               `json:"draft"`
+	Assets             []serverAsset      `json:"assets"`
 }
 type serverAsset struct {
 	Name   string `json:"name"`
@@ -185,7 +188,7 @@ func runVerifyState(args []string, stdout io.Writer) error {
 		}
 		assets[i] = release.Subject{Name: asset.Name, SHA256: strings.TrimPrefix(asset.Digest, "sha256:")}
 	}
-	observed := release.Release{Version: state.Version, CandidateID: candidate.ID, Provenance: provenance,
+	observed := release.Release{Version: state.Version, CandidateID: state.CandidateID, Provenance: state.Provenance,
 		Repository: state.Repository, Ref: state.Ref, TargetCommit: state.TargetCommit, Workflow: state.Workflow,
 		WorkflowSHA: state.WorkflowSHA, ReleaseNotesSHA256: state.ReleaseNotesSHA256, Draft: state.Draft, Assets: assets}
 	var decision release.LifecycleDecision
@@ -291,6 +294,54 @@ func overlaps(a, b string) bool {
 	rel2, _ := filepath.Rel(bb, aa)
 	return rel1 == "." || (rel1 != ".." && !strings.HasPrefix(rel1, ".."+string(filepath.Separator))) || (rel2 != ".." && !strings.HasPrefix(rel2, ".."+string(filepath.Separator)))
 }
+func validateCreatePaths(notesPath, distPath, outputPath string) (string, string, string, error) {
+	notes, err := resolveExistingRoot(notesPath, false)
+	if err != nil {
+		return "", "", "", fmt.Errorf("release-notes: %w", err)
+	}
+	dist, err := resolveExistingRoot(distPath, true)
+	if err != nil {
+		return "", "", "", fmt.Errorf("dist: %w", err)
+	}
+	if _, err := os.Lstat(outputPath); err == nil {
+		return "", "", "", errors.New("output-dir already exists")
+	} else if !os.IsNotExist(err) {
+		return "", "", "", err
+	}
+	parent, err := resolveExistingRoot(filepath.Dir(outputPath), true)
+	if err != nil {
+		return "", "", "", fmt.Errorf("output-dir parent: %w", err)
+	}
+	output := filepath.Join(parent, filepath.Base(filepath.Clean(outputPath)))
+	if overlaps(dist, output) || overlaps(notes, output) || overlaps(dist, notes) {
+		return "", "", "", errors.New("release-notes, dist, and output-dir must not overlap")
+	}
+	return notes, dist, output, nil
+}
+func resolveExistingRoot(path string, directory bool) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("symlink roots are forbidden")
+	}
+	if directory && !info.IsDir() {
+		return "", errors.New("path is not a directory")
+	}
+	if !directory && !info.Mode().IsRegular() {
+		return "", errors.New("path is not a regular file")
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err = filepath.Abs(resolved)
+	if err != nil {
+		return "", err
+	}
+	return resolved, nil
+}
 func canonicalJSON(value any) ([]byte, error) {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
@@ -301,64 +352,43 @@ func canonicalJSON(value any) ([]byte, error) {
 	return b.Bytes(), nil
 }
 func writePairAtomic(dir string, candidate, provenance []byte) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if _, err := os.Lstat(dir); err == nil {
+		return errors.New("output-dir already exists")
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	targets := []string{filepath.Join(dir, "candidate.json"), filepath.Join(dir, "provenance.json")}
-	for _, target := range targets {
-		if _, err := os.Lstat(target); err == nil {
-			return fmt.Errorf("refusing to overwrite %s", target)
-		} else if !os.IsNotExist(err) {
+	parent, base := filepath.Dir(dir), filepath.Base(dir)
+	stage, err := os.MkdirTemp(parent, "."+base+".staging-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	for name, data := range map[string][]byte{"candidate.json": candidate, "provenance.json": provenance} {
+		if err := os.WriteFile(filepath.Join(stage, name), data, 0o600); err != nil {
 			return err
 		}
 	}
-	temps := make([]string, 2)
-	payloads := [][]byte{candidate, provenance}
-	defer func() {
-		for _, p := range temps {
-			if p != "" {
-				_ = os.Remove(p)
-			}
-		}
-	}()
-	for i := range temps {
-		f, err := os.CreateTemp(dir, ".releasecandidate-*")
-		if err != nil {
-			return err
-		}
-		temps[i] = f.Name()
-		if err = f.Chmod(0o600); err == nil {
-			_, err = f.Write(payloads[i])
-		}
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-	}
-	for i, target := range targets {
-		if err := os.Rename(temps[i], target); err != nil {
-			return err
-		}
+	if err := os.Rename(stage, dir); err != nil {
+		return fmt.Errorf("publish metadata directory: %w", err)
 	}
 	return nil
 }
 
 // jsonShape is a small exact-key/duplicate schema for adapter inputs.
 type jsonShape struct {
-	keys  map[string]jsonShape
-	array *jsonShape
+	keys       map[string]jsonShape
+	array      *jsonShape
+	scalarType string
 }
 
-var scalar = jsonShape{}
-var permissionShape = jsonShape{keys: map[string]jsonShape{"name": scalar, "access": scalar}}
-var subjectShape = jsonShape{keys: map[string]jsonShape{"name": scalar, "sha256": scalar}}
-var candidateSchema = jsonShape{keys: map[string]jsonShape{"id": scalar, "version": scalar, "repository": scalar, "ref": scalar, "commit": scalar, "workflow": scalar, "workflow_sha": scalar, "release_notes_sha256": scalar, "permissions": {array: &permissionShape}, "subjects": {array: &subjectShape}}}
-var provenanceSchema = jsonShape{keys: map[string]jsonShape{"candidate_id": scalar, "version": scalar, "repository": scalar, "ref": scalar, "commit": scalar, "workflow": scalar, "workflow_sha": scalar, "release_notes_sha256": scalar, "permissions": {array: &permissionShape}, "subjects": {array: &subjectShape}}}
-var assetShape = jsonShape{keys: map[string]jsonShape{"name": scalar, "digest": scalar}}
-var stateSchema = jsonShape{keys: map[string]jsonShape{"version": scalar, "repository": scalar, "ref": scalar, "target_commit": scalar, "workflow": scalar, "workflow_sha": scalar, "release_notes_sha256": scalar, "draft": scalar, "assets": {array: &assetShape}}}
+var stringScalar = jsonShape{scalarType: "string"}
+var boolScalar = jsonShape{scalarType: "bool"}
+var permissionShape = jsonShape{keys: map[string]jsonShape{"name": stringScalar, "access": stringScalar}}
+var subjectShape = jsonShape{keys: map[string]jsonShape{"name": stringScalar, "sha256": stringScalar}}
+var candidateSchema = jsonShape{keys: map[string]jsonShape{"id": stringScalar, "version": stringScalar, "repository": stringScalar, "ref": stringScalar, "commit": stringScalar, "workflow": stringScalar, "workflow_sha": stringScalar, "release_notes_sha256": stringScalar, "permissions": {array: &permissionShape}, "subjects": {array: &subjectShape}}}
+var provenanceSchema = jsonShape{keys: map[string]jsonShape{"candidate_id": stringScalar, "version": stringScalar, "repository": stringScalar, "ref": stringScalar, "commit": stringScalar, "workflow": stringScalar, "workflow_sha": stringScalar, "release_notes_sha256": stringScalar, "permissions": {array: &permissionShape}, "subjects": {array: &subjectShape}}}
+var assetShape = jsonShape{keys: map[string]jsonShape{"name": stringScalar, "digest": stringScalar}}
+var stateSchema = jsonShape{keys: map[string]jsonShape{"candidate_id": stringScalar, "provenance": provenanceSchema, "version": stringScalar, "repository": stringScalar, "ref": stringScalar, "target_commit": stringScalar, "workflow": stringScalar, "workflow_sha": stringScalar, "release_notes_sha256": stringScalar, "draft": boolScalar, "assets": {array: &assetShape}}}
 
 func strictReadJSON(path string, out any, schema jsonShape) error {
 	data, err := readRegularFile(path)
@@ -418,6 +448,9 @@ func walkJSON(dec *json.Decoder, s jsonShape) error {
 			}
 		}
 		_, err = dec.Token()
+		if err == nil && len(seen) != len(s.keys) {
+			return errors.New("object is missing required fields")
+		}
 		return err
 	}
 	if s.array != nil {
@@ -433,8 +466,18 @@ func walkJSON(dec *json.Decoder, s jsonShape) error {
 		_, err = dec.Token()
 		return err
 	}
-	if _, ok := tok.(json.Delim); ok {
-		return errors.New("expected scalar")
+	if _, ok := tok.(json.Delim); ok || tok == nil {
+		return errors.New("expected non-null scalar")
+	}
+	if s.scalarType == "string" {
+		if _, ok := tok.(string); !ok {
+			return errors.New("expected string")
+		}
+	}
+	if s.scalarType == "bool" {
+		if _, ok := tok.(bool); !ok {
+			return errors.New("expected boolean")
+		}
 	}
 	return nil
 }

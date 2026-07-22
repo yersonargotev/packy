@@ -41,7 +41,9 @@ func TestCreateAndVerifyLifecycleOffline(t *testing.T) {
 	var candidate release.Candidate
 	json.Unmarshal(mustRead(t, candidatePath), &candidate)
 	statePath := filepath.Join(root, "state.json")
-	state := releaseState{Version: candidate.Version, Repository: candidate.Repository, Ref: candidate.Ref, TargetCommit: candidate.Commit, Workflow: candidate.Workflow, WorkflowSHA: candidate.WorkflowSHA, ReleaseNotesSHA256: candidate.ReleaseNotesSHA256, Draft: true}
+	var provenance release.Provenance
+	json.Unmarshal(mustRead(t, provenancePath), &provenance)
+	state := releaseState{CandidateID: candidate.ID, Provenance: provenance, Version: candidate.Version, Repository: candidate.Repository, Ref: candidate.Ref, TargetCommit: candidate.Commit, Workflow: candidate.Workflow, WorkflowSHA: candidate.WorkflowSHA, ReleaseNotesSHA256: candidate.ReleaseNotesSHA256, Draft: true}
 	for _, subject := range candidate.Subjects {
 		state.Assets = append(state.Assets, serverAsset{Name: subject.Name, Digest: "sha256:" + subject.SHA256})
 	}
@@ -52,6 +54,17 @@ func TestCreateAndVerifyLifecycleOffline(t *testing.T) {
 	}
 	if stdout.String() != "{\"decision\":\"publish-draft\",\"missing_assets\":[]}\n" {
 		t.Fatalf("unexpected decision: %s", stdout.String())
+	}
+	state.Provenance.Repository = "attacker/fork"
+	writeJSON(t, statePath, state)
+	if err := run([]string{"verify-state", "--candidate", candidatePath, "--provenance", provenancePath, "--state", statePath, "--mode", "draft"}, ioDiscard{}); err == nil {
+		t.Fatal("divergent observed provenance accepted")
+	}
+	state.Provenance = provenance
+	state.CandidateID = strings.Repeat("e", 64)
+	writeJSON(t, statePath, state)
+	if err := run([]string{"verify-state", "--candidate", candidatePath, "--provenance", provenancePath, "--state", statePath, "--mode", "draft"}, ioDiscard{}); err == nil {
+		t.Fatal("divergent observed candidate ID accepted")
 	}
 }
 
@@ -69,8 +82,36 @@ func TestCreateRejectsUnsafeFilesystemAndOverlap(t *testing.T) {
 		t.Fatalf("symlink error = %v", err)
 	}
 	os.Remove(filepath.Join(dist, "linked"))
+	distAlias := filepath.Join(root, "dist-alias")
+	if err := os.Symlink(dist, distAlias); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(createArgs(notes, distAlias, filepath.Join(root, "alias-out")), ioDiscard{}); err == nil || !strings.Contains(err.Error(), "symlink roots") {
+		t.Fatalf("dist alias error = %v", err)
+	}
 	if err := run(createArgs(notes, dist, filepath.Join(dist, "metadata")), ioDiscard{}); err == nil || !strings.Contains(err.Error(), "overlap") {
 		t.Fatalf("overlap error = %v", err)
+	}
+	alias := filepath.Join(root, "output-alias")
+	if err := os.Symlink(dist, alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(createArgs(notes, dist, alias), ioDiscard{}); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Fatalf("output symlink error = %v", err)
+	}
+	preexisting := filepath.Join(root, "preexisting")
+	if err := os.Mkdir(preexisting, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(preexisting, "marker")
+	if err := os.WriteFile(marker, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(createArgs(notes, dist, preexisting), ioDiscard{}); err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Fatalf("preexisting output error = %v", err)
+	}
+	if string(mustRead(t, marker)) != "keep" {
+		t.Fatal("preexisting output was mutated")
 	}
 }
 
@@ -87,6 +128,24 @@ func TestStrictEvidenceAndStateJSONRejectDuplicateAndUnknownFields(t *testing.T)
 	var state releaseState
 	if err := strictReadJSON(statePath, &state, stateSchema); err == nil || !strings.Contains(err.Error(), "incorrectly cased") {
 		t.Fatalf("case error = %v", err)
+	}
+	if err := os.WriteFile(statePath, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := strictReadJSON(statePath, &state, stateSchema); err == nil || !strings.Contains(err.Error(), "missing required") {
+		t.Fatalf("missing error = %v", err)
+	}
+	minimal := releaseState{CandidateID: "id", Provenance: release.Provenance{CandidateID: "id", Permissions: []release.Permission{}, Subjects: []release.Subject{}}, Assets: []serverAsset{}}
+	data, err := canonicalJSON(minimal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte(`"draft":false`), []byte(`"draft":null`), 1)
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := strictReadJSON(statePath, &state, stateSchema); err == nil || !strings.Contains(err.Error(), "non-null") {
+		t.Fatalf("null draft error = %v", err)
 	}
 }
 
