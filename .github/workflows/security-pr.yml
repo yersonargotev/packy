@@ -1,0 +1,54 @@
+name: Security
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out pull-request code without credentials
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Initialize read-only CodeQL
+        uses: github/codeql-action/init@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4.37.2
+        with:
+          languages: go
+          build-mode: autobuild
+
+      - name: Autobuild with a read-only token
+        uses: github/codeql-action/autobuild@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4.37.2
+
+      - name: Analyze without uploading from pull-request code
+        uses: github/codeql-action/analyze@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4.37.2
+        with:
+          upload: false
+
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Review dependency changes in advisory mode
+        continue-on-error: true
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          warn-only: true
