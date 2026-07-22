@@ -213,6 +213,8 @@ func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
 		"name: Governance",
 		"pull_request_target:",
 		"issues:",
+		"- edited",
+		"issue_comment:",
 		"workflow_run:",
 		"name: Validate authorization metadata",
 		"cancel-in-progress: true",
@@ -223,9 +225,16 @@ func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
 		"go run ./internal/tools/governanceauth",
 		"--authorization \"$directory/authorization.json\"",
 		"--declaration",
+		"packy-canonical-automation",
 	} {
 		if !strings.Contains(governance, required) {
 			t.Fatalf("governance workflow missing %q", required)
+		}
+	}
+	syncWorkflow := readFile(t, filepath.Join(root, ".github", "workflows", "sync-pack-source.yml"))
+	for _, required := range []string{"packy-canonical-automation", "gh pr comment", "--body-file"} {
+		if !strings.Contains(syncWorkflow, required) {
+			t.Fatalf("synchronization workflow missing canonical proposal binding %q", required)
 		}
 	}
 	for _, forbidden := range []string{

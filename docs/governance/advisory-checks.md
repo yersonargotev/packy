@@ -31,8 +31,8 @@ The trusted workflow queries GitHub for the pull request's closing issues and
 passes the projected fields to `internal/governanceauth`. The validator fails
 closed unless the PR targets the default branch and every same-repository issue
 that closes it is open and carries exactly one approved delivery status. Issue
-label, close, and reopen events recompute affected open PRs so revoked evidence
-cannot leave a stale successful result.
+label, body-edit, close, and reopen events recompute affected open PRs so
+revoked evidence cannot leave a stale successful result.
 
 An ordinary PR uses GitHub-recognized closing references. A policy exception
 uses exactly these two lines in the PR body:
@@ -46,15 +46,21 @@ Authorization-Record: https://github.com/yersonargotev/packy/<canonical-record>
 GitHub Actions has no `repository_advisory` trigger, so accepting private
 advisories could leave a stale successful status after an advisory changes.
 Supporting that exception requires separately authorized external infrastructure
-that can recompute every affected PR immediately. `urgent-revert` accepts an
+that can recompute every affected PR immediately, as decided in
+[ADR 0013](../adr/0013-fail-closed-private-security-exceptions.md).
+`urgent-revert` accepts an
 open same-repository retrospective whose body links the PR and whose creation is
 no later than 24 hours after the PR. The protected adapter projects only the
 binding fact; it never persists the retrospective body.
 
 `automation` accepts the PR itself for a current `app/dependabot` proposal on a
 `dependabot/*` branch, or a successful completed `workflow_dispatch` run of the
-protected `Synchronize pack source`/`sync/*` or `Release`/`release/*` proposal
-path, initiated by `yersonargotev` and proposed by `app/github-actions`.
+protected `Synchronize pack source` workflow for a `sync/*` proposal, initiated
+by `yersonargotev` and proposed by `app/github-actions`. The protected proposal
+workflow must also create an exact machine-readable PR comment binding the
+declared run and proposal head to that PR, attributed to the stable
+`github-actions[bot]` identity. Comment creation, edit, and deletion all trigger recomputation. A
+qualifying run cannot therefore be reused by a different proposal.
 
 The validator rejects unknown or duplicate headers, mixed issue/exception
 evidence, cross-repository records, inaccessible records, noncanonical URLs,

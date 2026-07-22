@@ -6,16 +6,16 @@
       "default_branch": "main"
     },
     "pull_request": {
-      "number": 211,
+      "number": 219,
       "body": "Authorization-Exception: automation\nAuthorization-Record: https://github.com/yersonargotev/packy/actions/runs/123456789",
-      "base": {
-        "ref": "main",
-        "sha": "5555555555555555555555555555555555555555"
-      },
       "created_at": "2026-07-22T04:00:00Z",
       "author": "app/github-actions",
-      "head_ref": "sync/addy",
-      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "head_ref": "sync/other",
+      "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "base": {
+        "ref": "main",
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae"
+      }
     }
   },
   "metadata": {
@@ -28,7 +28,6 @@
       "repository": "yersonargotev/packy",
       "state": "completed",
       "conclusion": "success",
-      "accessible": true,
       "workflow": "Synchronize pack source",
       "path": ".github/workflows/sync-pack-source.yml",
       "event": "workflow_dispatch",
@@ -37,9 +36,10 @@
       "actor": "yersonargotev",
       "proposal_creator_id": 41898282,
       "proposal_head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "accessible": true,
       "pull_request_number": 211,
       "proposal_run_url": "https://github.com/yersonargotev/packy/actions/runs/123456789"
     }
   },
-  "want_error": ""
+  "want_error": "not bound to this exact proposal head"
 }

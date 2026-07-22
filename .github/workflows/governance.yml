@@ -11,12 +11,17 @@ on:
   issues:
     types:
       - closed
+      - edited
       - labeled
       - reopened
       - unlabeled
+  issue_comment:
+    types:
+      - created
+      - deleted
+      - edited
   workflow_run:
     workflows:
-      - Release
       - Synchronize pack source
     types:
       - completed
@@ -69,6 +74,13 @@ jobs:
               record_url="$(jq -r '.issue.html_url' "$GITHUB_EVENT_PATH")"
               targets="$closing_targets
               $(linked_by_body "$record_url")"
+              ;;
+            issue_comment)
+              if jq -e '.issue.pull_request != null' "$GITHUB_EVENT_PATH" >/dev/null; then
+                targets="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
+              else
+                targets=""
+              fi
               ;;
             workflow_run)
               record_url="$(jq -r '.workflow_run.html_url' "$GITHUB_EVENT_PATH")"
@@ -207,9 +219,19 @@ jobs:
                     gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
                       --jq '{state:.status,conclusion,workflow:.name,path,event,head_branch,head_sha,actor:.actor.login}' >"$directory/record.json" || result=$?
                     if ((result == 0)); then
-                      jq --arg type "$exception_type" --arg url "$record_url" --arg repository "$GITHUB_REPOSITORY" \
-                        '. + {type:$type,url:$url,kind:"actions-run",repository:$repository,accessible:true}' \
-                        "$directory/record.json" >"$directory/exception.json" || result=$?
+                      pr_head_sha="$(jq -r '.headRefOid' "$pr")"
+                      gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" \
+                        >"$directory/proposal-comments.json" || result=$?
+                    fi
+                    if ((result == 0)); then
+                      jq --arg run_url "$record_url" --arg head_sha "$pr_head_sha" --argjson pr "$PR_NUMBER" \
+                        'map(select(.body == ("<!-- packy-canonical-automation\nrun: " + $run_url + "\nhead: " + $head_sha + "\n-->") and .user.id == 41898282 and .user.login == "github-actions[bot]" and .user.type == "Bot")) | last // {} | {proposal_run_url:$run_url,proposal_head_sha:$head_sha,proposal_creator_id:.user.id,pull_request_number:$pr}' \
+                        "$directory/proposal-comments.json" >"$directory/proposal-binding.json" || result=$?
+                    fi
+                    if ((result == 0)); then
+                      jq -s --arg type "$exception_type" --arg url "$record_url" --arg repository "$GITHUB_REPOSITORY" \
+                        '.[0] + .[1] + {type:$type,url:$url,kind:"actions-run",repository:$repository,accessible:true}' \
+                        "$directory/record.json" "$directory/proposal-binding.json" >"$directory/exception.json" || result=$?
                     fi
                   elif [[ "$record_url" =~ $pr_pattern ]] && [[ "${BASH_REMATCH[1]}" == "$PR_NUMBER" ]]; then
                     jq -n --arg type "$exception_type" --arg url "$record_url" --arg repository "$GITHUB_REPOSITORY" --argjson pr "$PR_NUMBER" \
@@ -246,6 +268,7 @@ jobs:
                     created_at: $pr[0].createdAt,
                     author: $pr[0].author.login,
                     head_ref: $pr[0].headRefName,
+                    head_sha: $pr[0].headRefOid,
                     base: {ref: $pr[0].baseRefName, sha: $pr[0].baseRefOid}
                   }
                 },

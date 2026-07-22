@@ -34,6 +34,7 @@ type Event struct {
 		CreatedAt string `json:"created_at"`
 		Author    string `json:"author"`
 		HeadRef   string `json:"head_ref"`
+		HeadSHA   string `json:"head_sha"`
 		Base      struct {
 			Ref string `json:"ref"`
 			SHA string `json:"sha"`
@@ -41,8 +42,8 @@ type Event struct {
 	} `json:"pull_request"`
 }
 
-// Metadata contains only GitHub issue metadata collected with a read-only
-// token by the trusted base workflow.
+// Metadata contains only GitHub record metadata collected by the trusted base
+// workflow.
 type Metadata struct {
 	ClosingIssuesReferences []IssueReference `json:"closingIssuesReferences"`
 	Issues                  []Issue          `json:"issues"`
@@ -50,21 +51,24 @@ type Metadata struct {
 }
 
 type ExceptionRecord struct {
-	Type       string `json:"type"`
-	URL        string `json:"url"`
-	Kind       string `json:"kind"`
-	Repository string `json:"repository"`
-	State      string `json:"state"`
-	Conclusion string `json:"conclusion,omitempty"`
-	Accessible bool   `json:"accessible"`
-	CreatedAt  string `json:"created_at,omitempty"`
-	PRNumber   int    `json:"pull_request_number,omitempty"`
-	Workflow   string `json:"workflow,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Event      string `json:"event,omitempty"`
-	HeadBranch string `json:"head_branch,omitempty"`
-	HeadSHA    string `json:"head_sha,omitempty"`
-	Actor      string `json:"actor,omitempty"`
+	Type              string `json:"type"`
+	URL               string `json:"url"`
+	Kind              string `json:"kind"`
+	Repository        string `json:"repository"`
+	State             string `json:"state"`
+	Conclusion        string `json:"conclusion,omitempty"`
+	Accessible        bool   `json:"accessible"`
+	CreatedAt         string `json:"created_at,omitempty"`
+	PRNumber          int    `json:"pull_request_number,omitempty"`
+	Workflow          string `json:"workflow,omitempty"`
+	Path              string `json:"path,omitempty"`
+	Event             string `json:"event,omitempty"`
+	HeadBranch        string `json:"head_branch,omitempty"`
+	HeadSHA           string `json:"head_sha,omitempty"`
+	Actor             string `json:"actor,omitempty"`
+	ProposalRunURL    string `json:"proposal_run_url,omitempty"`
+	ProposalCreatorID int64  `json:"proposal_creator_id,omitempty"`
+	ProposalHeadSHA   string `json:"proposal_head_sha,omitempty"`
 }
 
 type ExceptionDeclaration struct {
@@ -249,11 +253,12 @@ func validateException(event Event, declaration ExceptionDeclaration, record *Ex
 			switch {
 			case record.Workflow == "Synchronize pack source" && record.Path == ".github/workflows/sync-pack-source.yml" && strings.HasPrefix(event.PullRequest.HeadRef, "sync/"):
 				allowed = true
-			case record.Workflow == "Release" && record.Path == ".github/workflows/release.yml" && strings.HasPrefix(event.PullRequest.HeadRef, "release/"):
-				allowed = true
 			}
 			if !allowed {
 				return errors.New("automation run is not an authorized proposal workflow for this branch")
+			}
+			if record.PRNumber != event.PullRequest.Number || record.ProposalRunURL != declaration.URL || record.ProposalCreatorID != 41898282 || record.ProposalHeadSHA == "" || record.ProposalHeadSHA != event.PullRequest.HeadSHA {
+				return errors.New("automation run is not bound to this exact proposal head")
 			}
 		default:
 			return errors.New("automation record kind is not authorized")
