@@ -31,6 +31,21 @@ type checkoutBoundary struct {
 	persistCredentials string
 }
 
+type errorReporter interface {
+	Helper()
+	Errorf(string, ...any)
+}
+
+type errorCollector struct {
+	errors []string
+}
+
+func (collector *errorCollector) Helper() {}
+
+func (collector *errorCollector) Errorf(format string, args ...any) {
+	collector.errors = append(collector.errors, strings.TrimSpace(format))
+}
+
 func TestWorkflowTrustBoundaries(t *testing.T) {
 	root := repositoryRoot(t)
 	paths, err := filepath.Glob(filepath.Join(root, ".github", "workflows", "*.yml"))
@@ -52,6 +67,100 @@ func TestWorkflowTrustBoundaries(t *testing.T) {
 			assertPullRequestTargetDoesNotExecutePRHead(t, workflow)
 			assertTrustedPrivilegedExecution(t, workflow)
 		})
+	}
+}
+
+func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
+	root := repositoryRoot(t)
+	tests := []struct {
+		name     string
+		workflow string
+		mutate   func(string) string
+		check    func(errorReporter, workflowDocument)
+	}{
+		{name: "mutable action", workflow: "ci.yml", mutate: func(text string) string {
+			return strings.Replace(text, "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0", "actions/checkout@v5", 1)
+		}, check: assertImmutableExternalUses},
+		{name: "missing version annotation", workflow: "ci.yml", mutate: func(text string) string { return strings.Replace(text, " # v5.1.0", "", 1) }, check: assertImmutableExternalUses},
+		{name: "broadened default permission", workflow: "ci.yml", mutate: func(text string) string {
+			return strings.Replace(text, "permissions: {}", "permissions:\n  contents: write", 1)
+		}, check: assertMinimumPermissions},
+		{name: "persisted pull request credential", workflow: "ci.yml", mutate: func(text string) string {
+			return strings.Replace(text, "persist-credentials: false", "persist-credentials: true", 1)
+		}, check: assertCheckoutCredentials},
+		{name: "pull request head execution", workflow: "governance.yml", mutate: func(text string) string { return text + "\n# ${{ github.event.pull_request.head.sha }}\n" }, check: assertPullRequestTargetDoesNotExecutePRHead},
+		{name: "manual branch privilege", workflow: "claude-canary.yml", mutate: func(text string) string {
+			return strings.Replace(text, "github.ref == 'refs/heads/main'", "github.ref != ''", 1)
+		}, check: assertTrustedPrivilegedExecution},
+		{name: "pull request CodeQL upload", workflow: "security-pr.yml", mutate: func(text string) string { return strings.Replace(text, "upload: false", "upload: true", 1) }, check: assertTrustedPrivilegedExecution},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(root, ".github", "workflows", test.workflow)
+			workflow := readWorkflowDocument(t, root, path)
+			workflow.content = test.mutate(workflow.content)
+			workflow.lines = strings.Split(workflow.content, "\n")
+			for job, lines := range workflow.jobs {
+				workflow.jobs[job] = strings.Split(test.mutate(strings.Join(lines, "\n")), "\n")
+			}
+			collector := &errorCollector{}
+			test.check(collector, workflow)
+			if len(collector.errors) == 0 {
+				t.Fatal("unsafe workflow mutation was accepted")
+			}
+		})
+	}
+}
+
+func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
+	root := repositoryRoot(t)
+	workflows := make(map[string]workflowDocument)
+	for _, name := range []string{"ci.yml", "claude-canary.yml", "governance.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
+		workflows[name] = readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
+	}
+
+	ci := workflows["ci.yml"]
+	if !strings.Contains(ci.content, "pull_request:") {
+		t.Fatal("fork and Dependabot contributions lack the read-only pull-request path")
+	}
+	for job, lines := range ci.jobs {
+		permissions, _ := permissionBlock(lines, 4)
+		if !reflect.DeepEqual(permissions, map[string]string{"contents": "read"}) || strings.Contains(strings.Join(lines, "\n"), "secrets:") || strings.Contains(strings.Join(lines, "\n"), "environment:") {
+			t.Fatalf("CI job %q does not keep fork and Dependabot work read-only and secretless", job)
+		}
+	}
+
+	for _, boundary := range []struct {
+		workflow string
+		job      string
+	}{
+		{workflow: "claude-canary.yml", job: "stable-smoke"},
+		{workflow: "sync-pack-source.yml", job: "inspect"},
+		{workflow: "sync-pack-source.yml", job: "publish"},
+	} {
+		block := strings.Join(workflows[boundary.workflow].jobs[boundary.job], "\n")
+		for _, marker := range []string{"github.repository == 'yersonargotev/packy'", "github.ref == 'refs/heads/main'"} {
+			if !strings.Contains(block, marker) {
+				t.Errorf("%s job %q does not fail closed outside %q", boundary.workflow, boundary.job, marker)
+			}
+		}
+		if strings.Contains(block, "github.actor ==") {
+			t.Errorf("%s job %q replaces workflow_dispatch's Owner/delegated-write authorization with a hard-coded actor", boundary.workflow, boundary.job)
+		}
+	}
+
+	for name, workflow := range workflows {
+		for _, forbidden := range []string{"pages: write", "id-token: write", "actions/deploy-pages"} {
+			if strings.Contains(workflow.content, forbidden) {
+				t.Errorf("%s grants unintegrated Pages authority %q", name, forbidden)
+			}
+		}
+	}
+
+	for _, fixture := range []string{"approved.json", "dependabot-exception.json", "automation-exception.json", "unapproved.json", "wrong-base.json", "cross-repository.json", "partial-exception.json"} {
+		if _, err := os.Stat(filepath.Join(root, "internal", "governanceauth", "testdata", fixture)); err != nil {
+			t.Errorf("actor/ref negative fixture %q is missing: %v", fixture, err)
+		}
 	}
 }
 
@@ -94,7 +203,7 @@ func readWorkflowDocument(t *testing.T, root, path string) workflowDocument {
 	}
 }
 
-func assertImmutableExternalUses(t *testing.T, workflow workflowDocument) {
+func assertImmutableExternalUses(t errorReporter, workflow workflowDocument) {
 	t.Helper()
 	for index, line := range workflow.lines {
 		matches := usesLinePattern.FindStringSubmatch(strings.TrimSpace(line))
@@ -116,7 +225,7 @@ func assertImmutableExternalUses(t *testing.T, workflow workflowDocument) {
 	}
 }
 
-func assertMinimumPermissions(t *testing.T, workflow workflowDocument) {
+func assertMinimumPermissions(t errorReporter, workflow workflowDocument) {
 	t.Helper()
 	permissions, declaration := permissionBlock(workflow.lines, 0)
 	wantReadOnly := map[string]string{"contents": "read"}
@@ -201,7 +310,10 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"release":                   {"contents": "write"},
 	},
 	".github/workflows/security.yml": {
-		"codeql":            {"contents": "read", "packages": "read", "security-events": "write"},
+		"codeql": {"contents": "read", "packages": "read", "security-events": "write"},
+	},
+	".github/workflows/security-pr.yml": {
+		"codeql":            {"contents": "read", "packages": "read"},
 		"dependency-review": {"contents": "read"},
 	},
 	".github/workflows/sync-pack-source.yml": {
@@ -212,7 +324,7 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 	},
 }
 
-func assertCheckoutCredentials(t *testing.T, workflow workflowDocument) {
+func assertCheckoutCredentials(t errorReporter, workflow workflowDocument) {
 	t.Helper()
 	for job, lines := range workflow.jobs {
 		for _, checkout := range checkoutBoundaries(job, lines) {
@@ -277,7 +389,7 @@ func checkoutRepository(repository string) string {
 	return repository
 }
 
-func assertPullRequestTargetDoesNotExecutePRHead(t *testing.T, workflow workflowDocument) {
+func assertPullRequestTargetDoesNotExecutePRHead(t errorReporter, workflow workflowDocument) {
 	t.Helper()
 	if !regexp.MustCompile(`(?m)^\s{2}pull_request_target:\s*$`).MatchString(workflow.content) {
 		return
@@ -295,7 +407,7 @@ func assertPullRequestTargetDoesNotExecutePRHead(t *testing.T, workflow workflow
 	}
 }
 
-func assertTrustedPrivilegedExecution(t *testing.T, workflow workflowDocument) {
+func assertTrustedPrivilegedExecution(t errorReporter, workflow workflowDocument) {
 	t.Helper()
 	for key, markers := range trustedExecutionMarkers {
 		parts := strings.SplitN(key, "|", 2)
@@ -311,6 +423,11 @@ func assertTrustedPrivilegedExecution(t *testing.T, workflow workflowDocument) {
 		for _, marker := range markers {
 			if !strings.Contains(block, marker) {
 				t.Errorf("%s privileged job %q lacks trusted execution gate %q", workflow.path, job, marker)
+			}
+		}
+		for _, marker := range forbiddenTrustedExecutionMarkers[key] {
+			if strings.Contains(block, marker) {
+				t.Errorf("%s privileged job %q contains forbidden execution boundary %q", workflow.path, job, marker)
 			}
 		}
 	}
@@ -334,10 +451,25 @@ var trustedExecutionMarkers = map[string][]string{
 		"refs/heads/main",
 		"refs/tags/v0.",
 	},
+	".github/workflows/security.yml|codeql": {
+		"github.repository == 'yersonargotev/packy'",
+		"refs/heads/main",
+		"build-mode: autobuild",
+		"Autobuild trusted main",
+		"persist-credentials: false",
+	},
+	".github/workflows/security-pr.yml|codeql": {
+		"upload: false",
+		"persist-credentials: false",
+	},
 	".github/workflows/sync-pack-source.yml|publish": {
 		"github.repository == 'yersonargotev/packy'",
 		"refs/heads/main",
 	},
+}
+
+var forbiddenTrustedExecutionMarkers = map[string][]string{
+	".github/workflows/security-pr.yml|codeql": {"upload: true", "security-events: write", "secrets:", "environment:"},
 }
 
 func leadingSpaces(line string) int {

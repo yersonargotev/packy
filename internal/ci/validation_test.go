@@ -251,19 +251,23 @@ func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
 	}
 
 	security := readFile(t, filepath.Join(root, ".github", "workflows", "security.yml"))
+	securityPR := readFile(t, filepath.Join(root, ".github", "workflows", "security-pr.yml"))
 	for _, required := range []string{
 		"name: Security",
 		"name: CodeQL",
-		"name: Dependency review",
 		"schedule:",
 		"security-events: write",
-		"warn-only: true",
 	} {
 		if !strings.Contains(security, required) {
 			t.Fatalf("security workflow missing %q", required)
 		}
 	}
-	if strings.Contains(security, "contents: write") || strings.Contains(security, "pull-requests: write") {
+	for _, required := range []string{"name: Security", "pull_request:", "name: CodeQL", "upload: false", "name: Dependency review", "warn-only: true"} {
+		if !strings.Contains(securityPR, required) {
+			t.Fatalf("pull-request security workflow missing %q", required)
+		}
+	}
+	if strings.Contains(security+securityPR, "contents: write") || strings.Contains(security+securityPR, "pull-requests: write") {
 		t.Fatal("advisory security workflow has repository write authority")
 	}
 
@@ -449,16 +453,6 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("synchronization workflow missing %q", required)
-		}
-	}
-	for _, line := range strings.Split(workflow, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "uses:") && !strings.HasPrefix(line, "- uses:") {
-			continue
-		}
-		at := strings.LastIndex(line, "@")
-		if at < 0 || len(strings.TrimSpace(line[at+1:])) != 40 {
-			t.Fatalf("action is not pinned by a full SHA: %q", line)
 		}
 	}
 	inspect := workflowSection(t, workflow, "  inspect:", "  classify:")
