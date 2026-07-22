@@ -275,8 +275,8 @@ jobs:
                   }
                 },
                 metadata: {
-                  closingIssuesReferences: $pr[0].closingIssuesReferences,
-                  issues: $issues[0],
+                  closingIssuesReferences: [$pr[0].closingIssuesReferences[] | {number, repository: {name: .repository.name, owner: {login: .repository.owner.login}}}],
+                  issues: [$issues[0][] | {number, state, labels: [.labels[] | {name}]}],
                   exception: $exception[0]
                 }
               }' >"$directory/authorization.json" || result=$?
