@@ -75,7 +75,9 @@ binaries are built once. Validation, Claude smoke, draft preparation,
 publication, and Homebrew consume those retained bytes without rebuilding.
 
 The default dry-run completes every safe, non-mutating check and read-only
-inspection available before stopping. It does not request an OIDC token or
+inspection available before stopping. If the version already has an attestation
+bundle, dry-run downloads and verifies it against the rebuilt candidate without
+requesting a new token. It does not request an OIDC token or
 create/change a tag, attestation, draft, release, asset, or tap commit.
 
 A real run creates a draft only when the version is absent. If an exact draft
@@ -123,7 +125,11 @@ The sealed candidate binds the version, protected-main commit/ref, repository,
 release workflow path and content digest, reviewed notes digest, exact subjects,
 and the reviewed union of effective GitHub permissions. Its deterministic
 provenance document and hidden draft-body metadata must round-trip exactly from
-GitHub before publication.
+GitHub before publication. After OIDC issuance, the final release-set identity
+also binds the exact attestation bundle digest and complete destination plan;
+that envelope is the body verified for draft recovery and publication. The
+bundle bytes are encoded in the hidden envelope so an interrupted draft can
+recover the identical bundle even when failure happened before asset upload.
 
 `scripts/generate-homebrew-formula.sh` accepts the complete manifest but derives
 URLs and hashes only for the four binaries. Packy v0 remains macOS-first. Darwin
@@ -204,7 +210,7 @@ separate jobs with separate authority:
 
 The OIDC bundle is verified against the exact repository, fully-qualified signer
 workflow, protected-main source ref, source commit, signer commit, and every
-subject named by `SHA256SUMS`. Verification uses the retained bundle and an
+retained candidate file, including `SHA256SUMS` itself. Verification uses the retained bundle and an
 explicit trusted-root document rather than fetching an arbitrary attestation.
 
 Before the draft becomes public, the workflow reads back the complete draft,
@@ -212,6 +218,9 @@ requires the exact body metadata and seven-asset inventory, compares every
 server-reported SHA-256 digest with the retained bytes, and asks the domain
 verifier for the one-time `publish-draft` decision. There is no clobber, delete,
 recreate, replacement, tag movement, or published-version mutation path.
+The tag and protected-main refs are peeled through the Git object API and
+rechecked against the retained commit immediately before draft creation and
+again immediately before publication.
 
 After publication, the Homebrew job independently reads the release again,
 checks its version, commit, body, exact inventory, server digests, and
@@ -254,7 +263,7 @@ packy doctor
       Darwin `amd64` and `arm64`.
 - [ ] `SHA256SUMS` binds exactly four binaries and `sbom.spdx.json`.
 - [ ] OIDC provenance verifies the exact protected-main commit, signer workflow,
-      signer digest, and five checksummed subjects.
+      signer digest, and all six retained candidate files.
 - [ ] The draft read-back exactly matches its candidate identity, notes,
       provenance, target commit, seven assets, and server hashes before publish.
 - [ ] The published release contains exactly four binaries, `SHA256SUMS`,

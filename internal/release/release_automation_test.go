@@ -62,9 +62,9 @@ func TestReleaseWorkflowSealsAndVerifiesProvenanceBeforePublishing(t *testing.T)
 		"--permission contents=write",
 		"--permission id-token=write",
 	})
-	attest := releaseWorkflowStepIndex(t, workflow, "Attest exact checksummed subjects", []string{
+	attest := releaseWorkflowStepIndex(t, workflow, "Attest exact retained candidate", []string{
 		"actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a",
-		"subject-checksums: dist/SHA256SUMS",
+		"subject-path: 'dist/*'",
 	})
 	verify := releaseWorkflowStepIndex(t, workflow, "Verify bundle offline against exact workflow and subjects", []string{
 		"gh attestation trusted-root",
@@ -75,7 +75,17 @@ func TestReleaseWorkflowSealsAndVerifiesProvenanceBeforePublishing(t *testing.T)
 		"--signer-digest \"${{ needs.build.outputs.commit }}\"",
 		"--custom-trusted-root",
 	})
+	envelope := releaseWorkflowStepIndex(t, workflow, "Bind attestation and destination plan into the immutable release set", []string{
+		"draft-base.json",
+		"attestation.bundle.jsonl",
+		"bundle_base64",
+		"release_set_id",
+		"release-body.md",
+	})
 	publish := releaseWorkflowStepIndex(t, workflow, "Create or verify draft, upload only missing assets, and publish once", []string{
+		"gh api graphql",
+		"release(tagName:$tag){id}",
+		`if [[ -z "$release_id" ]]`,
 		"gh release create",
 		"--draft",
 		"verify-state",
@@ -88,17 +98,30 @@ func TestReleaseWorkflowSealsAndVerifiesProvenanceBeforePublishing(t *testing.T)
 
 	assertReleaseWorkflowStepBefore(t, seal, attest, "the immutable candidate must be sealed before OIDC provenance is issued")
 	assertReleaseWorkflowStepBefore(t, attest, verify, "the generated bundle must be verified before publication")
-	assertReleaseWorkflowStepBefore(t, verify, publish, "the verified bundle must reach the exact draft before one-time publication")
+	assertReleaseWorkflowStepBefore(t, verify, envelope, "the verified bundle must be bound into the final release set")
+	assertReleaseWorkflowStepBefore(t, envelope, publish, "the complete release set must reach the exact draft before one-time publication")
 	for _, forbidden := range []string{"--clobber", "gh release delete", "git tag -", "git push origin refs/tags"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("immutable publication workflow must not contain %q", forbidden)
 		}
+	}
+	if strings.Contains(text, "if ! gh release view") || strings.Contains(text, "targetCommitish") {
+		t.Fatal("a failed release lookup is ambiguous; absence must be proved by a successful API query")
+	}
+	publishStep := releaseWorkflowStep(t, workflow, "Create or verify draft, upload only missing assets, and publish once").Text
+	firstRefCheck := strings.Index(publishStep, "assert_ref_identity >/dev/null")
+	create := strings.Index(publishStep, "gh release create")
+	finalRefCheck := strings.LastIndex(publishStep, "assert_ref_identity >/dev/null")
+	publishEdit := strings.Index(publishStep, "gh release edit")
+	if firstRefCheck < 0 || create < 0 || finalRefCheck < 0 || publishEdit < 0 || !(firstRefCheck < create && create < finalRefCheck && finalRefCheck < publishEdit) {
+		t.Fatal("tag and protected main must be revalidated immediately before draft creation and publication")
 	}
 }
 
 func TestReleaseWorkflowKeepsDryRunAndDestinationAuthoritySeparate(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 	dryRun := releaseWorkflowJob(t, text, "dry-run")
+	inspect := releaseWorkflowJob(t, text, "inspect-release")
 	attest := releaseWorkflowJob(t, text, "attest")
 	github := releaseWorkflowJob(t, text, "publish-github")
 	homebrew := releaseWorkflowJob(t, text, "homebrew")
@@ -118,6 +141,14 @@ func TestReleaseWorkflowKeepsDryRunAndDestinationAuthoritySeparate(t *testing.T)
 			t.Fatalf("dry-run job must stop before mutation authority %q", forbidden)
 		}
 	}
+	for _, want := range []string{"Download built candidate for read-only attestation checks", "gh attestation verify", "--custom-trusted-root"} {
+		if !strings.Contains(inspect, want) {
+			t.Fatalf("read-only inspection should verify an available existing bundle with %q", want)
+		}
+	}
+	if strings.Contains(inspect, "id-token: write") || strings.Contains(inspect, "attest-build-provenance") {
+		t.Fatal("read-only existing-bundle verification must not request or issue OIDC")
+	}
 	for _, want := range []string{"contents: read", "id-token: write", "attestations: write"} {
 		if !strings.Contains(attest, want) {
 			t.Fatalf("attestation job should have narrow permission %q", want)
@@ -136,6 +167,9 @@ func TestReleaseWorkflowKeepsDryRunAndDestinationAuthoritySeparate(t *testing.T)
 	}
 	if strings.Contains(homebrew, "id-token: write") || strings.Contains(homebrew, "contents: write") {
 		t.Fatal("Homebrew job must not receive GitHub release or attestation authority")
+	}
+	if got := strings.Count(homebrew, "HOMEBREW_TAP_TOKEN"); got != 1 {
+		t.Fatalf("Homebrew token must appear only in the post-readback tap checkout; got %d references", got)
 	}
 }
 
@@ -298,8 +332,9 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 		"needs: [build, validate-release-evidence, publish-github]",
 		"needs.publish-github.outputs.published == 'true'",
 		"Independently read back exact published GitHub assets",
-		".targetCommitish==$commit",
-		"cmp release-metadata/release-body.md",
+		`resolve_ref_commit "tags/$RELEASE_TAG"`,
+		"resolve_ref_commit heads/main",
+		"cmp attestation/release-body.md",
 		"attestation.bundle.jsonl",
 		"cmp \"$RUNNER_TEMP/expected-assets\" \"$RUNNER_TEMP/actual-assets\"",
 		"sha256sum --check SHA256SUMS",
