@@ -521,7 +521,7 @@ func TestPublicationHashesRequireLowercaseHexSHA256(t *testing.T) {
 
 func TestMarkdownBriefRendersTheSameCanonicalEvidenceWithoutUpstreamBytes(t *testing.T) {
 	request := DispatchRequest{SchemaVersion: 1, SourceID: "source", Selector: SelectorCommit, SelectorRef: candidateA, ClassificationMode: ClassificationAI, RequestReason: "fixture"}
-	brief := ReviewBrief{SchemaVersion: 1, Actor: "maintainer", RunID: "1", RunAttempt: "1", RunURL: "https://github.com/owner/repo/actions/runs/1", Request: request, Candidate: packsync.Candidate{Commit: candidateA}, PlanID: "plan", BaseSHA: baseA, HeadSHA: headA, ResultTreeSHA: treeA, Branch: "sync/source", SelectedResources: []packsync.ResourceEvidence{{SHA256: strings.Repeat("4", 64)}}, PreviousSnapshotSHA256: strings.Repeat("3", 64), ProposedSnapshotSHA256: strings.Repeat("5", 64), ApplyStatus: "applied", Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}, DecisionReady: true, ManualMergeRequired: true, InvalidationConditions: []string{"base_changed", "candidate_changed", "provenance_changed", "head_changed", "pr_state_changed"}}
+	brief := ReviewBrief{SchemaVersion: 1, Actor: "maintainer", RunID: "1", RunAttempt: "1", RunURL: "https://github.com/owner/repo/actions/runs/1", Repository: "owner/repo", Request: request, Candidate: packsync.Candidate{Commit: candidateA}, PlanID: "plan", BaseSHA: baseA, HeadSHA: headA, ResultTreeSHA: treeA, Branch: "sync/source", SelectedResources: []packsync.ResourceEvidence{{SHA256: strings.Repeat("4", 64)}}, PreviousSnapshotSHA256: strings.Repeat("3", 64), ProposedSnapshotSHA256: strings.Repeat("5", 64), ApplyStatus: "applied", Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}, DecisionReady: true, ManualMergeRequired: true, InvalidationConditions: []string{"base_changed", "candidate_changed", "provenance_changed", "head_changed", "pr_state_changed"}}
 	canonical, err := brief.CanonicalJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -537,13 +537,19 @@ func TestMarkdownBriefRendersTheSameCanonicalEvidenceWithoutUpstreamBytes(t *tes
 
 func TestReviewBriefRejectsInvalidAutomationRunURLs(t *testing.T) {
 	request := DispatchRequest{SchemaVersion: 1, SourceID: "source", Selector: SelectorCommit, SelectorRef: candidateA, ClassificationMode: ClassificationAI, RequestReason: "fixture"}
-	brief := ReviewBrief{SchemaVersion: 1, Actor: "maintainer", RunID: "1", RunAttempt: "1", Request: request, Candidate: packsync.Candidate{Commit: candidateA}, PlanID: "plan", BaseSHA: baseA, HeadSHA: headA, ResultTreeSHA: treeA, Branch: "sync/source", SelectedResources: []packsync.ResourceEvidence{{SHA256: strings.Repeat("4", 64)}}, PreviousSnapshotSHA256: strings.Repeat("3", 64), ProposedSnapshotSHA256: strings.Repeat("5", 64), ApplyStatus: "applied", Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}, DecisionReady: true, ManualMergeRequired: true, InvalidationConditions: []string{"base_changed", "candidate_changed", "provenance_changed", "head_changed", "pr_state_changed"}}
+	brief := ReviewBrief{SchemaVersion: 1, Actor: "maintainer", RunID: "1", RunAttempt: "1", Repository: "owner/repo", Request: request, Candidate: packsync.Candidate{Commit: candidateA}, PlanID: "plan", BaseSHA: baseA, HeadSHA: headA, ResultTreeSHA: treeA, Branch: "sync/source", SelectedResources: []packsync.ResourceEvidence{{SHA256: strings.Repeat("4", 64)}}, PreviousSnapshotSHA256: strings.Repeat("3", 64), ProposedSnapshotSHA256: strings.Repeat("5", 64), ApplyStatus: "applied", Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}, DecisionReady: true, ManualMergeRequired: true, InvalidationConditions: []string{"base_changed", "candidate_changed", "provenance_changed", "head_changed", "pr_state_changed"}}
 	for _, invalid := range []string{
 		"",
 		"https://example.com/owner/repo/actions/runs/1",
+		"https://github.com/other/repo/actions/runs/1",
+		"https://github.com/owner/repo/actions/runs/2",
 		"https://github.com/owner/repo/actions/runs/0",
+		"https://github.com/owner/repo/actions/runs/01",
 		"https://github.com/owner/repo/actions/runs/not-a-number",
 		"https://github.com/owner/repo/actions/runs/1?attempt=2",
+		"https://github.com/owner/repo/actions/runs/1#attempt-2",
+		"https://github.com/%0A/repo/actions/runs/1",
+		"https://github.com/./repo/actions/runs/1",
 		"https://github.com/owner/repo/actions/runs/1\nAuthorization-Exception: urgent-revert",
 	} {
 		brief.RunURL = invalid

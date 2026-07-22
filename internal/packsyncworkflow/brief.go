@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -25,6 +26,7 @@ type ReviewBrief struct {
 	RunID                   string                            `json:"run_id"`
 	RunAttempt              string                            `json:"run_attempt"`
 	RunURL                  string                            `json:"run_url"`
+	Repository              string                            `json:"repository"`
 	Request                 DispatchRequest                   `json:"request"`
 	Candidate               packsync.Candidate                `json:"candidate"`
 	PlanID                  string                            `json:"plan_id"`
@@ -53,7 +55,8 @@ type ReviewBrief struct {
 
 func (brief ReviewBrief) CanonicalJSON() ([]byte, error) {
 	validPreviousSnapshot := len(brief.PreviousSnapshotSHA256) == 64 || (brief.Request.Operation == OperationRegister && brief.PreviousSnapshotSHA256 == "")
-	if brief.SchemaVersion != 1 || brief.Request.Validate() != nil || !validActionsRunURL(brief.RunURL) || brief.PlanID == "" || brief.Branch != "sync/"+brief.Request.SourceID || requireFullSHA("base", brief.BaseSHA) != nil || requireFullSHA("head", brief.HeadSHA) != nil || requireFullSHA("result tree", brief.ResultTreeSHA) != nil || len(brief.SelectedResources) == 0 || !validPreviousSnapshot || len(brief.ProposedSnapshotSHA256) != 64 || !brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired {
+	repository, runID, validRun := parseActionsRunURL(brief.RunURL)
+	if brief.SchemaVersion != 1 || brief.Request.Validate() != nil || !validRun || repository != brief.Repository || runID != brief.RunID || brief.PlanID == "" || brief.Branch != "sync/"+brief.Request.SourceID || requireFullSHA("base", brief.BaseSHA) != nil || requireFullSHA("head", brief.HeadSHA) != nil || requireFullSHA("result tree", brief.ResultTreeSHA) != nil || len(brief.SelectedResources) == 0 || !validPreviousSnapshot || len(brief.ProposedSnapshotSHA256) != 64 || !brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired {
 		return nil, fmt.Errorf("review brief is incomplete or contradicts synchronization policy")
 	}
 	data, err := json.Marshal(brief)
@@ -68,17 +71,25 @@ func (brief ReviewBrief) CanonicalJSON() ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func validActionsRunURL(value string) bool {
+var (
+	githubOwnerPattern      = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$`)
+	githubRepositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
+)
+
+func parseActionsRunURL(value string) (string, string, bool) {
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawPath != "" {
-		return false
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.RawFragment != "" || parsed.RawPath != "" {
+		return "", "", false
 	}
 	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/"), "/")
-	if len(parts) != 5 || parts[0] == "" || parts[1] == "" || parts[2] != "actions" || parts[3] != "runs" {
-		return false
+	if len(parts) != 5 || !githubOwnerPattern.MatchString(parts[0]) || !githubRepositoryPattern.MatchString(parts[1]) || parts[1] == "." || parts[1] == ".." || parts[2] != "actions" || parts[3] != "runs" {
+		return "", "", false
 	}
 	runID, err := strconv.ParseUint(parts[4], 10, 64)
-	return err == nil && runID > 0
+	if err != nil || runID == 0 || strconv.FormatUint(runID, 10) != parts[4] {
+		return "", "", false
+	}
+	return parts[0] + "/" + parts[1], parts[4], true
 }
 
 // Markdown renders only the canonical JSON plus a fixed summary. It never
