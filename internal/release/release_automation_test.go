@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/release"
+	"golang.org/x/sys/unix"
 )
 
 var supportedReleasePlatforms = []string{
@@ -215,6 +216,36 @@ fi
 		t.Fatalf("release verifier accepted unexpected symlink: %v\n%s", err, output)
 	}
 	if err := os.Remove(unexpectedLink); err != nil {
+		t.Fatal(err)
+	}
+	unexpectedFIFO := filepath.Join(dist, "unexpected-fifo")
+	if err := unix.Mkfifo(unexpectedFIFO, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := run(false); err == nil || !strings.Contains(string(output), "incomplete or unexpected") {
+		t.Fatalf("release verifier accepted unexpected FIFO: %v\n%s", err, output)
+	}
+	if err := os.Remove(unexpectedFIFO); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(dist, releaseAssets(tag)[0])
+	victimBytes, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(victim); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dist, releaseAssets(tag)[1]), victim); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := run(false); err == nil || !strings.Contains(string(output), "not a regular non-symlink") {
+		t.Fatalf("release verifier accepted expected-name symlink: %v\n%s", err, output)
+	}
+	if err := os.Remove(victim); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(victim, victimBytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if output, err := run(true); err == nil {
