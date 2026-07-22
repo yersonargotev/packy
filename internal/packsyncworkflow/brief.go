@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/packsync"
@@ -51,7 +53,7 @@ type ReviewBrief struct {
 
 func (brief ReviewBrief) CanonicalJSON() ([]byte, error) {
 	validPreviousSnapshot := len(brief.PreviousSnapshotSHA256) == 64 || (brief.Request.Operation == OperationRegister && brief.PreviousSnapshotSHA256 == "")
-	if brief.SchemaVersion != 1 || brief.Request.Validate() != nil || brief.PlanID == "" || brief.Branch != "sync/"+brief.Request.SourceID || requireFullSHA("base", brief.BaseSHA) != nil || requireFullSHA("head", brief.HeadSHA) != nil || requireFullSHA("result tree", brief.ResultTreeSHA) != nil || len(brief.SelectedResources) == 0 || !validPreviousSnapshot || len(brief.ProposedSnapshotSHA256) != 64 || !brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired {
+	if brief.SchemaVersion != 1 || brief.Request.Validate() != nil || !validActionsRunURL(brief.RunURL) || brief.PlanID == "" || brief.Branch != "sync/"+brief.Request.SourceID || requireFullSHA("base", brief.BaseSHA) != nil || requireFullSHA("head", brief.HeadSHA) != nil || requireFullSHA("result tree", brief.ResultTreeSHA) != nil || len(brief.SelectedResources) == 0 || !validPreviousSnapshot || len(brief.ProposedSnapshotSHA256) != 64 || !brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired {
 		return nil, fmt.Errorf("review brief is incomplete or contradicts synchronization policy")
 	}
 	data, err := json.Marshal(brief)
@@ -64,6 +66,19 @@ func (brief ReviewBrief) CanonicalJSON() ([]byte, error) {
 	}
 	output.WriteByte('\n')
 	return output.Bytes(), nil
+}
+
+func validActionsRunURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawPath != "" {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/"), "/")
+	if len(parts) != 5 || parts[0] == "" || parts[1] == "" || parts[2] != "actions" || parts[3] != "runs" {
+		return false
+	}
+	runID, err := strconv.ParseUint(parts[4], 10, 64)
+	return err == nil && runID > 0
 }
 
 // Markdown renders only the canonical JSON plus a fixed summary. It never
