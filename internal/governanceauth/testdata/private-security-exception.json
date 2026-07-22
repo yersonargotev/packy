@@ -1,0 +1,24 @@
+{
+  "event": {
+    "action": "recompute",
+    "repository": {"full_name": "yersonargotev/packy", "default_branch": "main"},
+    "pull_request": {
+      "number": 209,
+      "body": "Authorization-Exception: private-security\nAuthorization-Record: https://github.com/yersonargotev/packy/security/advisories/GHSA-abcd-1234-5678",
+      "base": {"ref": "main", "sha": "3333333333333333333333333333333333333333"}
+    }
+  },
+  "metadata": {
+    "closingIssuesReferences": [],
+    "issues": [],
+    "exception": {
+      "type": "private-security",
+      "url": "https://github.com/yersonargotev/packy/security/advisories/GHSA-abcd-1234-5678",
+      "kind": "security-advisory",
+      "repository": "yersonargotev/packy",
+      "state": "draft",
+      "accessible": true
+    }
+  },
+  "want_error": ""
+}

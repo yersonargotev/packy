@@ -213,18 +213,22 @@ func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
 		"name: Governance",
 		"pull_request_target:",
 		"issues:",
-		"name: Recompute authorization",
+		"workflow_run:",
+		"name: Validate authorization metadata",
+		"cancel-in-progress: true",
 		"statuses: write",
-		"ref: ${{ github.event.pull_request.base.sha || github.sha }}",
+		"ref: ${{ github.sha }}",
 		"persist-credentials: false",
 		"context='Governance / Validate authorization'",
-		"go run ./internal/tools/governanceauth --authorization",
+		"go run ./internal/tools/governanceauth",
+		"--authorization \"$directory/authorization.json\"",
+		"--declaration",
 	} {
 		if !strings.Contains(governance, required) {
 			t.Fatalf("governance workflow missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{"pull_request:\n", "github.event.pull_request.head.sha", "contents: write", "issues: write", "pull-requests: write"} {
+	for _, forbidden := range []string{"pull_request:\n", "contents: write", "issues: write", "pull-requests: write"} {
 		if strings.Contains(governance, forbidden) {
 			t.Fatalf("governance workflow contains unsafe boundary %q", forbidden)
 		}
@@ -235,6 +239,7 @@ func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
 		"name: Security",
 		"name: CodeQL",
 		"name: Dependency review",
+		"schedule:",
 		"security-events: write",
 		"warn-only: true",
 	} {

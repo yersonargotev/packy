@@ -22,8 +22,9 @@ require it. A rename or source mismatch stops promotion.
 
 The Governance workflow uses `pull_request_target` only to read pull-request and
 issue metadata. It checks out the exact base SHA, never the proposed head, and
-grants `contents: read`, `issues: read`, `pull-requests: read`, plus the minimum
-`statuses: write` needed to bind its result to the current PR head. The checked-in
+grants read-only metadata access plus the minimum `statuses: write` needed to
+bind its result to the current PR head. Per-PR concurrency cancels stale runs so
+an older approved snapshot cannot overwrite a later revocation. The checked-in
 validator has no network or mutation capability.
 
 The trusted workflow queries GitHub for the pull request's closing issues and
@@ -32,6 +33,26 @@ closed unless the PR targets the default branch and every same-repository issue
 that closes it is open and carries exactly one approved delivery status. Issue
 label, close, and reopen events recompute affected open PRs so revoked evidence
 cannot leave a stale successful result.
+
+An ordinary PR uses GitHub-recognized closing references. A policy exception
+uses exactly these two lines in the PR body:
+
+```text
+Authorization-Exception: private-security|urgent-revert|automation
+Authorization-Record: https://github.com/yersonargotev/packy/<canonical-record>
+```
+
+`private-security` accepts an accessible active repository security advisory;
+`urgent-revert` accepts an open same-repository retrospective issue; and
+`automation` accepts a successful completed same-repository Actions run. The
+validator rejects unknown or duplicate headers, mixed issue/exception evidence,
+cross-repository records, inaccessible records, noncanonical URLs, and failed or
+stale record state. Completion of the two protected proposal workflows
+recomputes their associated PRs.
+
+CI and Security also run weekly. Dependency Review compares the current commit
+with its first parent outside pull-request events, so scheduled and `main` runs
+remain metadata-only and advisory.
 
 Positive and negative JSON fixtures live under
 `internal/governanceauth/testdata/`. Run them with:

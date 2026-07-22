@@ -1,0 +1,25 @@
+{
+  "event": {
+    "action": "recompute",
+    "repository": {"full_name": "yersonargotev/packy", "default_branch": "main"},
+    "pull_request": {
+      "number": 211,
+      "body": "Authorization-Exception: automation\nAuthorization-Record: https://github.com/yersonargotev/packy/actions/runs/123456789",
+      "base": {"ref": "main", "sha": "5555555555555555555555555555555555555555"}
+    }
+  },
+  "metadata": {
+    "closingIssuesReferences": [],
+    "issues": [],
+    "exception": {
+      "type": "automation",
+      "url": "https://github.com/yersonargotev/packy/actions/runs/123456789",
+      "kind": "actions-run",
+      "repository": "yersonargotev/packy",
+      "state": "completed",
+      "conclusion": "success",
+      "accessible": true
+    }
+  },
+  "want_error": ""
+}

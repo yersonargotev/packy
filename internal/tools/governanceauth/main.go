@@ -11,12 +11,37 @@ import (
 
 func main() {
 	var authorizationPath string
+	var declarationPath string
 	flag.StringVar(&authorizationPath, "authorization", "", "path to trusted pull-request and closing-issue metadata JSON")
+	flag.StringVar(&declarationPath, "declaration", "", "path to pull-request metadata whose exception declaration should be projected")
 	flag.Parse()
 
-	if authorizationPath == "" {
-		fmt.Fprintln(os.Stderr, "--authorization is required")
+	if (authorizationPath == "") == (declarationPath == "") {
+		fmt.Fprintln(os.Stderr, "exactly one of --authorization or --declaration is required")
 		os.Exit(2)
+	}
+	if declarationPath != "" {
+		var pullRequest struct {
+			Body string `json:"body"`
+		}
+		if err := decode(declarationPath, &pullRequest); err != nil {
+			fmt.Fprintf(os.Stderr, "read pull request: %v\n", err)
+			os.Exit(1)
+		}
+		declaration, present, err := governanceauth.ParseExceptionDeclaration(pullRequest.Body)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "authorization denied: %v\n", err)
+			os.Exit(1)
+		}
+		if !present {
+			fmt.Println("null")
+			return
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(map[string]string{"type": declaration.Type, "url": declaration.URL}); err != nil {
+			fmt.Fprintf(os.Stderr, "write declaration: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	var authorization struct {
