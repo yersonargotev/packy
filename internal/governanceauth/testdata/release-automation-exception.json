@@ -6,16 +6,16 @@
       "default_branch": "main"
     },
     "pull_request": {
-      "number": 211,
-      "body": "Authorization-Exception: automation\nAuthorization-Record: https://github.com/yersonargotev/packy/actions/runs/123456789",
+      "number": 220,
+      "body": "Authorization-Exception: automation\nAuthorization-Record: https://github.com/yersonargotev/packy/actions/runs/223456789",
       "base": {
         "ref": "main",
         "sha": "5555555555555555555555555555555555555555"
       },
       "created_at": "2026-07-22T04:00:00Z",
       "author": "app/github-actions",
-      "head_ref": "sync/addy",
-      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "head_ref": "release/v0.9.0",
+      "head_sha": "dddddddddddddddddddddddddddddddddddddddd"
     }
   },
   "metadata": {
@@ -23,21 +23,21 @@
     "issues": [],
     "exception": {
       "type": "automation",
-      "url": "https://github.com/yersonargotev/packy/actions/runs/123456789",
+      "url": "https://github.com/yersonargotev/packy/actions/runs/223456789",
       "kind": "actions-run",
       "repository": "yersonargotev/packy",
       "state": "completed",
       "conclusion": "success",
       "accessible": true,
-      "workflow": "Synchronize pack source",
-      "path": ".github/workflows/sync-pack-source.yml",
+      "workflow": "Release",
+      "path": ".github/workflows/release.yml",
       "event": "workflow_dispatch",
       "head_branch": "main",
       "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "actor": "yersonargotev",
-      "proposal_head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "pull_request_number": 211,
-      "proposal_run_url": "https://github.com/yersonargotev/packy/actions/runs/123456789",
+      "proposal_head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "pull_request_number": 220,
+      "proposal_run_url": "https://github.com/yersonargotev/packy/actions/runs/223456789",
       "binding_comment_author_id": 41898282
     }
   },

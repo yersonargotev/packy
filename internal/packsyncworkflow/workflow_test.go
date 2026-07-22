@@ -530,6 +530,9 @@ func TestMarkdownBriefRendersTheSameCanonicalEvidenceWithoutUpstreamBytes(t *tes
 	if err != nil || !strings.Contains(markdown, strings.TrimSpace(string(canonical))) {
 		t.Fatalf("Markdown did not render canonical JSON: %v\n%s", err, markdown)
 	}
+	if !strings.Contains(markdown, "Authorization-Exception: automation\nAuthorization-Record: "+brief.RunURL) {
+		t.Fatalf("Markdown did not declare its canonical automation record:\n%s", markdown)
+	}
 }
 
 func TestManagedPublicationRecordDetectsEditedMetadata(t *testing.T) {

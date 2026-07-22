@@ -56,8 +56,9 @@ binding fact; it never persists the retrospective body.
 `automation` accepts the PR itself for a current `app/dependabot` proposal on a
 `dependabot/*` branch, or a successful completed `workflow_dispatch` run of the
 protected `Synchronize pack source` workflow for a `sync/*` proposal, initiated
-by `yersonargotev` and proposed by `app/github-actions`. The protected proposal
-workflow must also create an exact machine-readable PR comment binding the
+by `yersonargotev` and proposed by `app/github-actions`; the same binding accepts
+a successful protected `Release` run for a `release/*` proposal. The protected
+proposal automation must also create an exact machine-readable PR comment binding the
 declared run and proposal head to that PR, attributed to the stable
 `github-actions[bot]` identity. Comment creation, edit, and deletion all trigger recomputation. A
 qualifying run cannot therefore be reused by a different proposal.

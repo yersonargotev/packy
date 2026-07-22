@@ -34,11 +34,11 @@
       "head_branch": "main",
       "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "actor": "yersonargotev",
-      "proposal_creator_id": 41898282,
       "proposal_head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "accessible": true,
       "pull_request_number": 211,
-      "proposal_run_url": "https://github.com/yersonargotev/packy/actions/runs/123456789"
+      "proposal_run_url": "https://github.com/yersonargotev/packy/actions/runs/123456789",
+      "binding_comment_author_id": 41898282
     }
   },
   "want_error": "not bound to this exact proposal head"

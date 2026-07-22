@@ -22,6 +22,7 @@ on:
       - edited
   workflow_run:
     workflows:
+      - Release
       - Synchronize pack source
     types:
       - completed
@@ -225,7 +226,7 @@ jobs:
                     fi
                     if ((result == 0)); then
                       jq --arg run_url "$record_url" --arg head_sha "$pr_head_sha" --argjson pr "$PR_NUMBER" \
-                        'map(select(.body == ("<!-- packy-canonical-automation\nrun: " + $run_url + "\nhead: " + $head_sha + "\n-->") and .user.id == 41898282 and .user.login == "github-actions[bot]" and .user.type == "Bot")) | last // {} | {proposal_run_url:$run_url,proposal_head_sha:$head_sha,proposal_creator_id:.user.id,pull_request_number:$pr}' \
+                        'map(select(.body == ("<!-- packy-canonical-automation\nrun: " + $run_url + "\nhead: " + $head_sha + "\n-->") and .user.id == 41898282 and .user.login == "github-actions[bot]" and .user.type == "Bot")) | last // {} | {proposal_run_url:$run_url,proposal_head_sha:$head_sha,binding_comment_author_id:.user.id,pull_request_number:$pr}' \
                         "$directory/proposal-comments.json" >"$directory/proposal-binding.json" || result=$?
                     fi
                     if ((result == 0)); then

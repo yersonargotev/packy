@@ -77,5 +77,5 @@ func (brief ReviewBrief) Markdown() (string, error) {
 	if brief.DecisionReady {
 		status = "decision-ready"
 	}
-	return fmt.Sprintf("## Packy pack synchronization\n\n- Source: `%s`\n- Candidate: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Auto-merge: disabled; manual merge required.\n\n<details><summary>Canonical synchronization evidence</summary>\n\n```json\n%s```\n</details>\n", brief.Request.SourceID, brief.Candidate.Commit, brief.PlanID, brief.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, strings.TrimSuffix(string(canonical), "\n")+"\n"), nil
+	return fmt.Sprintf("## Packy pack synchronization\n\n- Source: `%s`\n- Candidate: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Auto-merge: disabled; manual merge required.\n\nAuthorization-Exception: automation\nAuthorization-Record: %s\n\n<details><summary>Canonical synchronization evidence</summary>\n\n```json\n%s```\n</details>\n", brief.Request.SourceID, brief.Candidate.Commit, brief.PlanID, brief.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, strings.TrimSuffix(string(canonical), "\n")+"\n"), nil
 }
