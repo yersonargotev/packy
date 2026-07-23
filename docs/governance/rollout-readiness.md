@@ -73,18 +73,19 @@ tap queries:
   `homebrew` approvals.
 - [x] The Homebrew job updated `Formula/packy.rb` in tap commit
   [`803e0fd8557685eca0c8b046beb1627892a5781c`](https://github.com/yersonargotev/homebrew-tap/commit/803e0fd8557685eca0c8b046beb1627892a5781c).
-- [ ] The human Owner must revoke the predecessor GitHub CLI OAuth credential
-  and record a sanitized failed-authentication result. Repository metadata
-  cannot identify or prove revocation of that credential.
-- [ ] The human Owner must delete Packy's repository-level
-  `HOMEBREW_TAP_TOKEN`; as of this observation it still exists alongside the
-  protected environment secret.
+- [x] With explicit Owner authorization, the predecessor GitHub CLI OAuth
+  authorization was revoked on `2026-07-23`; the previously captured
+  credential then returned HTTP `401` from GitHub's authenticated-user
+  endpoint. No credential material or identifier was recorded.
+- [x] Packy's repository-level `HOMEBREW_TAP_TOKEN` was deleted on
+  `2026-07-23`. A sanitized re-query showed no repository Actions secrets while
+  the protected `homebrew` environment retained `HOMEBREW_TAP_TOKEN`.
 - [ ] The human Owner must record final #173 sign-off after independently
   verifying the sanitized final state.
 
-Until the three unchecked Owner-only gates are complete, this addendum does not
-authorize closing #173 or beginning #174. Credential values, fragments, hashes,
-recovery material, and provider-side identifiers remain prohibited evidence.
+Until the remaining Owner sign-off is recorded, this addendum does not authorize
+closing #173 or beginning #174. Credential values, fragments, hashes, recovery
+material, and provider-side identifiers remain prohibited evidence.
 
 ## Verified baseline
 
