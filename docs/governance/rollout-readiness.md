@@ -51,6 +51,41 @@ The remaining credential gap blocks #173 and any credential-consuming
 promotion. The absent/unproven checks block enforcement. Neither gap is treated
 as implied approval merely because repository prerequisite work may proceed.
 
+### Post-baseline #173 migration status
+
+This dated addendum preserves the issue-168 point-in-time baseline above while
+recording the later protected-environment rollout. It does not rewrite or
+invalidate the snapshot bound under `evidence/issue-168/`.
+
+Observed on `2026-07-23` through sanitized GitHub API, workflow, release, and
+tap queries:
+
+- [x] `release`, `homebrew`, and `github-pages` allow only `main`, require Owner
+  review, disable Admin bypass, and keep self-review available for the sole
+  Owner.
+- [x] Only `homebrew` contains the environment secret
+  `HOMEBREW_TAP_TOKEN`; `release` and `github-pages` contain no environment
+  secrets.
+- [x] Release run
+  [`29962496797`](https://github.com/yersonargotev/packy/actions/runs/29962496797)
+  published `v0.1.9` from commit
+  `1e67158641ad34e271e28297cb1af6d8645c16d3` after the separate `release` and
+  `homebrew` approvals.
+- [x] The Homebrew job updated `Formula/packy.rb` in tap commit
+  [`803e0fd8557685eca0c8b046beb1627892a5781c`](https://github.com/yersonargotev/homebrew-tap/commit/803e0fd8557685eca0c8b046beb1627892a5781c).
+- [ ] The human Owner must revoke the predecessor GitHub CLI OAuth credential
+  and record a sanitized failed-authentication result. Repository metadata
+  cannot identify or prove revocation of that credential.
+- [ ] The human Owner must delete Packy's repository-level
+  `HOMEBREW_TAP_TOKEN`; as of this observation it still exists alongside the
+  protected environment secret.
+- [ ] The human Owner must record final #173 sign-off after independently
+  verifying the sanitized final state.
+
+Until the three unchecked Owner-only gates are complete, this addendum does not
+authorize closing #173 or beginning #174. Credential values, fragments, hashes,
+recovery material, and provider-side identifiers remain prohibited evidence.
+
 ## Verified baseline
 
 | Surface | Current state | Independent evidence | Consequence |
