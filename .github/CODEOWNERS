@@ -8,9 +8,11 @@
 /go.mod @yersonargotev
 /go.sum @yersonargotev
 /bundle/sources.json @yersonargotev
+/docs/governance/ @yersonargotev
 /internal/ci/ @yersonargotev
 /internal/release/ @yersonargotev
 /internal/claudesmoke/ @yersonargotev
+/internal/governancedrift/ @yersonargotev
 /internal/packsync/ @yersonargotev
 /internal/packsyncworkflow/ @yersonargotev
 /internal/tools/ @yersonargotev

@@ -68,6 +68,19 @@ The Engram-backed persistence and recall behaviour Packy provides across support
 ### Delegation layer
 The subagent orchestration behaviour Packy exposes, including read-only exploration and bounded implementation workers where the host CLI supports them.
 
+### Governance expected-state contract
+The versioned, reviewable description of Packy's accepted repository and
+publication controls and the promotion or publication boundaries they protect.
+
+### Governance observation
+One read-only, sanitized projection of the effective controls bound to a
+repository, protected ref, commit, workflow definition, and UTC collection
+time.
+
+### Governance drift
+A confirmed, unclassifiable, missing, failed, or stale disagreement between the
+governance expected-state contract and a governance observation.
+
 ### Installer/configurator
 Packy's v0 product shape: a tool that installs and configures Codex/OpenCode with the right skills, Engram memory hooks, and delegation conventions, rather than an active runtime orchestrator present in every agent session.
 
