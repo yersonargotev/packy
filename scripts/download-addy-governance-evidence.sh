@@ -76,7 +76,7 @@ for ((attempt = 1; attempt <= attempts; attempt++)); do
       expected="$(printf '%s\n' blocking-issues.json canonical-issues.json evaluation.json gate.json observation.json)"
       if [[ "$valid" == true && "$actual" == "$expected" ]]; then
         mv "$stage" "$output_dir"
-        printf '%s\n' "$output_dir"
+        printf '%s\n' "$output_dir" >&2
         exit 0
       fi
     fi
