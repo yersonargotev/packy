@@ -18,7 +18,7 @@ jobs:
   addy-promotion-gate:
     name: Addy 1.1.0 promotion gate
     needs: claude-floor-smoke
-    if: github.event_name == 'pull_request'
+    if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -40,6 +40,7 @@ jobs:
           cache: true
 
       - name: Download exact-floor qualification
+        continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: claude-floor-qualification
@@ -47,6 +48,7 @@ jobs:
 
       - name: Validate Addy promotion evidence
         env:
+          CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |

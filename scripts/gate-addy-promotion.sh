@@ -56,6 +56,10 @@ fi
 if [[ "$promotion_change" == true ]]; then
   foundation_change=false
   if [[ "$generate" == true ]]; then
+    [[ "${CLAUDE_FLOOR_RESULT:-}" == "success" ]] || {
+      echo "exact-floor smoke did not complete successfully" >&2
+      exit 1
+    }
     [[ -f "$qualification" && ! -L "$qualification" ]] || {
       echo "production qualification must be a regular same-run artifact" >&2
       exit 1
@@ -66,8 +70,12 @@ if [[ "$promotion_change" == true ]]; then
     }
     work="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/addy-promotion-generation.XXXXXX")"
     trap 'rm -rf "$work"' EXIT
-    ./scripts/validate-addy-acceptance.sh >"$work/acceptance.log" 2>&1
-    [[ -s "$work/acceptance.log" ]] || { echo "acceptance validation produced no log" >&2; exit 1; }
+    ./scripts/validate-addy-acceptance.sh \
+      --report-output "$work/acceptance-report.json" \
+      --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
+      --commit "${GITHUB_SHA:?GITHUB_SHA is required}" \
+      --workflow-digest "$(if command -v sha256sum >/dev/null 2>&1; then sha256sum .github/workflows/ci.yml | awk '{print $1}'; else shasum -a 256 .github/workflows/ci.yml | awk '{print $1}'; fi)" \
+      --run-id "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
     ./scripts/gate-governance-drift.sh \
       --boundary promotion \
       --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
@@ -106,7 +114,7 @@ if [[ "$promotion_change" == true && "$generate" == true ]]; then
     --qualification="$qualification" \
     --governance-evaluation="$work/governance/evaluation.json" \
     --governance-gate="$work/governance/gate.json" \
-    --acceptance-log="$work/acceptance.log" \
+    --acceptance-report="$work/acceptance-report.json" \
     --output="$generated_evidence"
   args+=(--evidence="$generated_evidence")
 fi

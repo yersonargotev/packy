@@ -216,7 +216,7 @@ func TestAddyPromotionGateHasStableNonPublishingIdentity(t *testing.T) {
 	for _, required := range []string{
 		"name: Addy 1.1.0 promotion gate",
 		"needs: claude-floor-smoke",
-		"if: github.event_name == 'pull_request'",
+		"if: always() && github.event_name == 'pull_request'",
 		"actions: read",
 		"contents: read",
 		"deployments: read",
@@ -228,6 +228,7 @@ func TestAddyPromotionGateHasStableNonPublishingIdentity(t *testing.T) {
 		"GH_TOKEN: ${{ github.token }}",
 		"./scripts/gate-addy-promotion.sh",
 		"--generate",
+		"CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}",
 	} {
 		if !strings.Contains(gate, required) {
 			t.Fatalf("Addy promotion gate missing %q", required)

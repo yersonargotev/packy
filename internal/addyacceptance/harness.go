@@ -36,6 +36,7 @@ type ProductionPromotionAuthority struct {
 	runID                string
 	contextSHA256        string
 	acceptanceSHA256     string
+	acceptanceRowSHA256  map[int]string
 	qualificationSHA256  string
 	governanceSHA256     string
 	prepublicationSHA256 string
@@ -232,13 +233,14 @@ func (h PromotionHarness) runRow(row PromotionRow) PromotionHarnessRow {
 
 // NewProductionPromotionAuthority validates the independent evidence
 // authorities used by ProductionPromotionRowEvaluator.
-func NewProductionPromotionAuthority(context PromotionValidationContext, acceptanceSHA256, qualificationSHA256, governanceSHA256, prepublicationSHA256 string) (ProductionPromotionAuthority, error) {
+func NewProductionPromotionAuthority(context PromotionValidationContext, acceptanceRows []AcceptanceRunRow, acceptanceSHA256, qualificationSHA256, governanceSHA256, prepublicationSHA256 string) (ProductionPromotionAuthority, error) {
 	a := ProductionPromotionAuthority{
 		repository: context.Repository, commitSHA: contextCommit(context),
 		workflowDigest: context.WorkflowDigest, runID: context.RunID,
 		contextSHA256:    promotionAuthorityContextDigest(context),
 		acceptanceSHA256: acceptanceSHA256, qualificationSHA256: qualificationSHA256,
 		governanceSHA256: governanceSHA256, prepublicationSHA256: prepublicationSHA256,
+		acceptanceRowSHA256: map[int]string{},
 	}
 	if err := validatePromotionContext(context); err != nil {
 		return ProductionPromotionAuthority{}, err
@@ -256,6 +258,15 @@ func NewProductionPromotionAuthority(context PromotionValidationContext, accepta
 			return ProductionPromotionAuthority{}, fmt.Errorf("%s authority must be a lowercase SHA-256", name)
 		}
 	}
+	if len(acceptanceRows) != 14 {
+		return ProductionPromotionAuthority{}, errors.New("production authority requires every exact acceptance row")
+	}
+	for i, row := range acceptanceRows {
+		if row.ID != PromotionRows()[i].ID || !validAuthorityDigest(row.EvidenceSHA256) {
+			return ProductionPromotionAuthority{}, errors.New("production authority acceptance rows are incomplete or out of order")
+		}
+		a.acceptanceRowSHA256[i+1] = row.EvidenceSHA256
+	}
 	return a, nil
 }
 
@@ -263,15 +274,7 @@ func NewProductionPromotionAuthority(context PromotionValidationContext, accepta
 // independent authority for the exact evaluated candidate.
 func ProductionPromotionRowEvaluator(authority ProductionPromotionAuthority) PromotionRowEvaluator {
 	return func(row PromotionRow, _ string) (PromotionRowResult, error) {
-		name, sha := "acceptance", authority.acceptanceSHA256
-		switch row.Number {
-		case 11, 12:
-			name, sha = "production-qualification", authority.qualificationSHA256
-		case 13:
-			name, sha = "governance", authority.governanceSHA256
-		case 14:
-			name, sha = "prepublication", authority.prepublicationSHA256
-		}
+		name, sha := productionAuthorityForRow(row.Number, authority)
 		return PromotionRowResult{Evidence: productionPromotionRowProof{
 			RowID: row.ID, RowName: row.Name, Authority: name, AuthoritySHA256: sha,
 			Repository: authority.repository, CommitSHA: authority.commitSHA,
@@ -292,19 +295,26 @@ func validateProductionPromotionRowProof(row PromotionRow, evidence any, context
 		!validAuthorityDigest(proof.AuthoritySHA256) {
 		return errors.New("production row proof does not match its stable identity or trusted context")
 	}
-	want := "acceptance"
-	switch row.Number {
-	case 11, 12:
-		want = "production-qualification"
-	case 13:
-		want = "governance"
-	case 14:
-		want = "prepublication"
-	}
+	want, _ := productionAuthorityForRow(row.Number, ProductionPromotionAuthority{})
 	if proof.Authority != want {
 		return errors.New("production row proof uses the wrong authority")
 	}
 	return nil
+}
+
+func productionAuthorityForRow(number int, authority ProductionPromotionAuthority) (string, string) {
+	switch number {
+	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10:
+		return "acceptance", authority.acceptanceRowSHA256[number]
+	case 11, 12:
+		return "production-qualification", authority.qualificationSHA256
+	case 13:
+		return "governance", authority.governanceSHA256
+	case 14:
+		return "prepublication", authority.prepublicationSHA256
+	default:
+		return "", ""
+	}
 }
 
 func validAuthorityDigest(value string) bool {

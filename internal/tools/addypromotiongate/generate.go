@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -28,8 +27,10 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 	if err != nil {
 		return fmt.Errorf("read qualification: %w", err)
 	}
-	if err := claudesmoke.ValidateProductionAddyQualification(qualification); err != nil {
-		return fmt.Errorf("validate production qualification: %w", err)
+	var acceptance addyacceptance.AcceptanceRunReport
+	acceptanceBytes, err := readCanonicalRegular(acceptancePath, &acceptance)
+	if err != nil {
+		return fmt.Errorf("read acceptance report: %w", err)
 	}
 	var evaluation governancedrift.Evaluation
 	evaluationBytes, err := readCanonicalRegular(evaluationPath, &evaluation)
@@ -46,41 +47,13 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 		return fmt.Errorf("resolve evaluated workflow blob: %w", err)
 	}
 	workflowSHA := string(bytes.TrimSpace(workflowSHABytes))
-	if err := validateGenerationBindings(context, qualification, evaluation, gate, workflowSHA); err != nil {
-		return err
-	}
-
-	acceptanceBytes, err := readNonemptyRegular(acceptancePath)
-	if err != nil {
-		return fmt.Errorf("read acceptance log: %w", err)
-	}
 	acceptanceSHA := sha256Hex(acceptanceBytes)
 	qualificationSHA := sha256Hex(qualificationBytes)
 	governanceSHA := sha256Hex(append(append([]byte(nil), evaluationBytes...), gateBytes...))
-	prepublicationSHA := sha256Hex([]byte(acceptanceSHA + governanceSHA))
-	authority, err := addyacceptance.NewProductionPromotionAuthority(context, acceptanceSHA, qualificationSHA, governanceSHA, prepublicationSHA)
+	collectedAt, err := time.Parse(time.RFC3339Nano, qualification.CollectedAt)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse qualification collection time: %w", err)
 	}
-
-	root, err := os.MkdirTemp("", "packy-addy-production-harness.")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(root)
-	report, err := (addyacceptance.PromotionHarness{
-		Root: root, Context: context, Mode: addyacceptance.PromotionHarnessExactCandidate,
-		Evaluate: addyacceptance.ProductionPromotionRowEvaluator(authority),
-	}).Run()
-	if err != nil {
-		return err
-	}
-	claudeIdentities := []string{
-		"version:" + qualification.Smoke.ResolvedClaudeVersion,
-		"npm-integrity:" + qualification.Smoke.ClaudeIntegrity,
-		"executable-sha256:" + qualification.Smoke.ClaudeDigest,
-	}
-	sort.Strings(claudeIdentities)
 	atomicityMaterial, err := json.Marshal(struct {
 		Commands    any `json:"commands"`
 		Before      any `json:"before"`
@@ -91,10 +64,27 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 	if err != nil {
 		return err
 	}
-	evidence, err := report.BuildAggregate(context, addyacceptance.PromotionAggregateCandidate{
-		PackageCandidate: qualification.PackyExecutableDigest,
-		ClaudeIdentities: claudeIdentities,
-		AtomicitySHA256:  sha256Hex(atomicityMaterial),
+
+	root, err := os.MkdirTemp("", "packy-addy-production-harness.")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(root)
+	evidence, err := addyacceptance.BuildProductionPromotionEvidence(context, addyacceptance.ProductionPromotionInputs{
+		Acceptance: acceptance, AcceptanceSHA256: acceptanceSHA,
+		Qualification: addyacceptance.ProductionQualification{
+			Synthetic: qualification.Synthetic, Repository: qualification.Repository,
+			Workflow: qualification.Workflow, WorkflowDigest: qualification.WorkflowDigest,
+			RunID: qualification.RunID, Commit: qualification.Commit, CollectedAt: collectedAt,
+			PackySHA: qualification.Smoke.PackySHA, PackyExecutableDigest: qualification.PackyExecutableDigest,
+			RequestedClaudeVersion: qualification.Smoke.RequestedClaudeVersion,
+			ResolvedClaudeVersion:  qualification.Smoke.ResolvedClaudeVersion,
+			ClaudeIntegrity:        qualification.Smoke.ClaudeIntegrity, ClaudeDigest: qualification.Smoke.ClaudeDigest,
+			AtomicitySHA256: sha256Hex(atomicityMaterial),
+		},
+		QualificationSHA256:  qualificationSHA,
+		GovernanceEvaluation: evaluation, GovernanceDecision: gate, GovernanceSHA256: governanceSHA,
+		WorkflowBlobSHA: workflowSHA, DisposableHarnessRoot: root,
 	})
 	if err != nil {
 		return err
@@ -104,28 +94,6 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 		return err
 	}
 	return writeExclusive(outputPath, data)
-}
-
-func validateGenerationBindings(context addyacceptance.PromotionValidationContext, qualification claudesmoke.AddyQualification, evaluation governancedrift.Evaluation, gate governancedrift.GateDecision, workflowSHA string) error {
-	if qualification.Repository != context.Repository || qualification.Workflow != context.Workflow ||
-		qualification.WorkflowDigest != context.WorkflowDigest || qualification.RunID != context.RunID ||
-		qualification.Commit != context.EvaluatedMergeSHA || qualification.Smoke.PackySHA != context.EvaluatedMergeSHA ||
-		qualification.Smoke.RequestedClaudeVersion != claudesmoke.ExactFloor ||
-		qualification.Smoke.ResolvedClaudeVersion != claudesmoke.ExactFloor {
-		return errors.New("qualification does not match the exact trusted workflow run and evaluated merge")
-	}
-	if evaluation.State != governancedrift.StateClean || len(evaluation.Findings) != 0 || !gate.Allowed || len(gate.Reasons) != 0 {
-		return errors.New("governance evidence is dirty or gate decision is not allowed")
-	}
-	i := evaluation.Identity
-	if i.Repository != context.Repository || i.Ref != "refs/heads/main" ||
-		i.CommitSHA != context.EvaluatedMergeSHA || i.WorkflowSHA != workflowSHA {
-		return errors.New("governance evidence does not match repository, protected ref, evaluated merge, and workflow blob")
-	}
-	if i.CollectedAt.After(context.Now) || context.Now.Sub(i.CollectedAt) > time.Hour {
-		return errors.New("governance evidence is stale or future-dated")
-	}
-	return nil
 }
 
 func readCanonicalRegular(path string, target any) ([]byte, error) {

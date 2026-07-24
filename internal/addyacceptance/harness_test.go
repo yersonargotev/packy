@@ -2,6 +2,7 @@ package addyacceptance
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -172,9 +173,19 @@ func TestPromotionHarnessAggregateRequiresExactCandidate(t *testing.T) {
 	if exact.Qualified || exact.productionBound {
 		t.Fatal("synthetic evaluator was accepted in exact-candidate mode")
 	}
-	authority, err := NewProductionPromotionAuthority(ctx, strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64))
+	authority, err := NewProductionPromotionAuthority(ctx, harnessAcceptanceRows(), strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64))
 	if err != nil {
 		t.Fatal(err)
+	}
+	for i, row := range PromotionRows()[:10] {
+		result, err := ProductionPromotionRowEvaluator(authority)(row, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		proof := result.Evidence.(productionPromotionRowProof)
+		if proof.AuthoritySHA256 != fmt.Sprintf("%064x", i+1) {
+			t.Fatalf("row %d did not retain its exact acceptance evidence digest", i+1)
+		}
 	}
 	h := PromotionHarness{Root: t.TempDir(), Context: ctx, Mode: PromotionHarnessExactCandidate, Evaluate: ProductionPromotionRowEvaluator(authority)}
 	exact, err = h.Run()
@@ -216,7 +227,7 @@ func TestPromotionHarnessAggregateRequiresExactCandidate(t *testing.T) {
 	if _, err := tagReport.BuildAggregate(tagContext, facts); err == nil {
 		t.Fatal("PR production authority was reusable as tag authority")
 	}
-	tagAuthority, err := NewProductionPromotionAuthority(tagContext, strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64))
+	tagAuthority, err := NewProductionPromotionAuthority(tagContext, harnessAcceptanceRows(), strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,6 +238,14 @@ func TestPromotionHarnessAggregateRequiresExactCandidate(t *testing.T) {
 	if _, err := tagReport.BuildAggregate(tagContext, facts); err != nil {
 		t.Fatalf("exact-tag aggregate rejected: %v", err)
 	}
+}
+
+func harnessAcceptanceRows() []AcceptanceRunRow {
+	rows := make([]AcceptanceRunRow, len(PromotionRows()))
+	for i, row := range PromotionRows() {
+		rows[i] = AcceptanceRunRow{ID: row.ID, EvidenceSHA256: fmt.Sprintf("%064x", i+1)}
+	}
+	return rows
 }
 
 func harnessContext() PromotionValidationContext {

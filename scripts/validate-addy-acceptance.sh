@@ -5,8 +5,39 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+report_output=
+report_repository=
+report_commit=
+report_workflow_digest=
+report_run_id=
+while (($#)); do
+  case "$1" in
+    --report-output) report_output="${2:-}"; shift 2 ;;
+    --repository) report_repository="${2:-}"; shift 2 ;;
+    --commit) report_commit="${2:-}"; shift 2 ;;
+    --workflow-digest) report_workflow_digest="${2:-}"; shift 2 ;;
+    --run-id) report_run_id="${2:-}"; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+if [[ -n "$report_output" ]]; then
+  [[ "$report_output" = /* && ! -e "$report_output" ]] || {
+    echo "acceptance report output must be a new absolute path" >&2
+    exit 2
+  }
+  [[ -n "$report_repository" && "$report_commit" =~ ^[0-9a-f]{40}$ &&
+     "$report_workflow_digest" =~ ^[0-9a-f]{64}$ && -n "$report_run_id" ]] || {
+    echo "acceptance report requires repository, exact commit, workflow digest, and run ID" >&2
+    exit 2
+  }
+elif [[ -n "$report_repository$report_commit$report_workflow_digest$report_run_id" ]]; then
+  echo "acceptance report identity is not accepted without --report-output" >&2
+  exit 2
+fi
+
 declare -a mapping_rows=() mapping_packages=() mapping_tests=()
 declare -a promotion_rows=() promotion_packages=() promotion_tests=() packages=()
+declare -a evidence_packages=() evidence_outputs=()
 
 map_row() {
   local row="${1-}" package="${2-}"
@@ -138,6 +169,17 @@ promotion_rows_for_test() {
   printf '%s' "$result"
 }
 
+evidence_for_package() {
+  local package="$1" i
+  for ((i = 0; i < ${#evidence_packages[@]}; i++)); do
+    if [[ "${evidence_packages[i]}" == "$package" ]]; then
+      printf '%s' "${evidence_outputs[i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Prevalidate the complete mapping before any test execution. Only exact
 # top-level names emitted by -list count; go test status text is ignored.
 validation_failed=0
@@ -170,6 +212,8 @@ for package in "${packages[@]}"; do
   echo "==> Addy acceptance package $package (rows $(rows_for_package "$package"))"
   if output="$(go test "$package" -run "^(${tests})$" -count=1 2>&1)"; then
     printf '%s\n' "$output"
+    evidence_packages+=("$package")
+    evidence_outputs+=("$output")
     continue
   fi
   printf '%s\n' "$output" >&2
@@ -189,4 +233,25 @@ for package in "${packages[@]}"; do
   fi
   execution_failed=1
 done
-exit "$execution_failed"
+((execution_failed == 0)) || exit "$execution_failed"
+
+if [[ -n "$report_output" ]]; then
+  report_args=(
+    --write-acceptance-report
+    --output "$report_output"
+    --repository "$report_repository"
+    --acceptance-commit "$report_commit"
+    --workflow-digest "$report_workflow_digest"
+    --run-id "$report_run_id"
+  )
+  for ((i = 0; i < ${#promotion_rows[@]}; i++)); do
+    material="${promotion_rows[i]}"$'\t'"${promotion_packages[i]}"$'\t'"${promotion_tests[i]}"$'\t'"$(evidence_for_package "${promotion_packages[i]}")"
+    if command -v sha256sum >/dev/null 2>&1; then
+      evidence_digest="$(printf '%s' "$material" | sha256sum | awk '{print $1}')"
+    else
+      evidence_digest="$(printf '%s' "$material" | shasum -a 256 | awk '{print $1}')"
+    fi
+    report_args+=(--acceptance-row "${promotion_rows[i]}"$'\t'"${promotion_packages[i]}"$'\t'"${promotion_tests[i]}"$'\t'"passed"$'\t'"$evidence_digest")
+  done
+  go run ./internal/tools/addypromotiongate "${report_args[@]}"
+fi
