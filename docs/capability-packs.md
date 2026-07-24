@@ -8,11 +8,17 @@ status, and dry-run are inspection-only.
 | --- | --- | --- |
 | `matty` **3.0.0** | Workflow skills and guidance | **complete**: every skill and instruction has a native binding and no Claude exclusion. Projection does not prove runtime usability. |
 | `engram` **2.0.0** | Memory guidance and MCP | **degraded**, but activatable: its instruction and exact user MCP binding are native; `lifecycle:engram-memory` has the optional `generic-lifecycle-unsupported` exclusion because generic lifecycle translation is unsupported. Packy does not run `engram setup claude-code`. |
+| `addy` **1.1.0** | Addy agent skills | **complete**: its manifest-v3 resources have native Claude bindings and remain selectable on Claude, Codex, and OpenCode. |
 
 In plain release notation, the current contracts are **matty 3.0.0** and
 **engram 2.0.0**. Their Claude Code behavior is described in the table above.
+The selectable Addy contract is **addy 1.1.0**.
 
-`addy` 1.0.0 remains its exact manifest-v2 Codex/OpenCode contract. Historical
+Addy's immutable history retains its exact manifest-v2 1.0.0 contract and its
+manifest-v3 1.1.0 contract. Its sole update route is 1.0.0 to 1.1.0 for existing
+Codex or OpenCode intent; it never adds Claude intent.
+
+Historical
 `matty` 2.0.0 and `engram` 1.0.0 activations remain pinned to their recorded
 versions and surfaces. Updating can select v3 for already-active surfaces, but
 never adds Claude intent. Claude activation is a separate explicit choice.
