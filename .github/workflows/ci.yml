@@ -49,7 +49,7 @@ jobs:
       - name: Validate Addy promotion evidence
         env:
           CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}
-          GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           mkdir -p "$RUNNER_TEMP/addy-promotion"

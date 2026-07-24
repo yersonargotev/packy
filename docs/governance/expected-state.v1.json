@@ -249,6 +249,11 @@
       "id": "workflow-identities",
       "boundaries": ["promotion", "publication"],
       "expected": [
+        {
+          "name": "Addy trusted governance",
+          "path": ".github/workflows/addy-governance.yml",
+          "state": "active"
+        },
         {"name": "CI", "path": ".github/workflows/ci.yml", "state": "active"},
         {
           "name": "Claude stable canary",
