@@ -25,6 +25,9 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 	if err != nil {
 		return fmt.Errorf("read qualification: %w", err)
 	}
+	if err := claudesmoke.ValidateProductionAddyQualification(qualification); err != nil {
+		return fmt.Errorf("validate production qualification: %w", err)
+	}
 	var acceptance addyacceptance.AcceptanceRunReport
 	_, err = readCanonicalRegular(acceptancePath, &acceptance)
 	if err != nil {
@@ -49,14 +52,6 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 	if err != nil {
 		return fmt.Errorf("parse qualification collection time: %w", err)
 	}
-	atomicityMaterial := struct {
-		Commands    any `json:"commands"`
-		Before      any `json:"before"`
-		After       any `json:"after"`
-		Safety      any `json:"safety"`
-		Observation any `json:"qualification_observation"`
-	}{qualification.Smoke.Commands, qualification.Smoke.Before, qualification.Smoke.After, qualification.Smoke.Safety, qualification.Smoke.Qualification}
-
 	root, err := os.MkdirTemp("", "packy-addy-production-harness.")
 	if err != nil {
 		return err
@@ -72,7 +67,7 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 			RequestedClaudeVersion: qualification.Smoke.RequestedClaudeVersion,
 			ResolvedClaudeVersion:  qualification.Smoke.ResolvedClaudeVersion,
 			ClaudeIntegrity:        qualification.Smoke.ClaudeIntegrity, ClaudeDigest: qualification.Smoke.ClaudeDigest,
-			AtomicityMaterial: atomicityMaterial,
+			Sandbox: qualification.Sandbox, Atomicity: projectProductionAtomicity(qualification),
 		},
 		GovernanceEvaluation: evaluation, GovernanceDecision: gate,
 		WorkflowBlobSHA: workflowSHA, DisposableHarnessRoot: root,
@@ -85,6 +80,60 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 		return err
 	}
 	return writeExclusive(outputPath, data)
+}
+
+func projectProductionAtomicity(q claudesmoke.AddyQualification) addyacceptance.ProductionAtomicity {
+	commands := make([]addyacceptance.ProductionCommand, len(q.Smoke.Commands))
+	for i, command := range q.Smoke.Commands {
+		commands[i] = addyacceptance.ProductionCommand{Name: command.Name, Args: append([]string(nil), command.Args...), ExitCode: command.ExitCode, Stdout: command.Stdout, Stderr: command.Stderr}
+	}
+	projectFiles := func(files []claudesmoke.FileEvidence) []addyacceptance.ProductionFile {
+		out := make([]addyacceptance.ProductionFile, len(files))
+		for i, file := range files {
+			out[i] = addyacceptance.ProductionFile{Path: file.Path, SHA256: file.SHA256, Mode: file.Mode, Size: file.Size}
+		}
+		return out
+	}
+	s, x, o := q.Smoke.Safety, q.Smoke.Assertions, q.Smoke.Qualification
+	return addyacceptance.ProductionAtomicity{
+		Commands: commands, Before: projectFiles(q.Smoke.Before), After: projectFiles(q.Smoke.After),
+		Safety: addyacceptance.ProductionRunnerSafety{
+			DisposableSandbox: s.DisposableSandbox, AllowlistEnvironment: s.AllowlistEnvironment,
+			CredentialsScrubbed: s.CredentialsScrubbed, CommandAllowlist: s.CommandAllowlist,
+			CheckoutUnchanged: s.CheckoutUnchanged, ConfiguredWritableRootsConfined: s.ConfiguredWritableRootsConfined,
+			EvidencePathOutsideSandbox: s.EvidencePathOutsideSandbox, NoInteractiveClaude: s.NoInteractiveClaude,
+			WriteBoundaryEnforced: s.WriteBoundaryEnforced,
+		},
+		Assertions: addyacceptance.ProductionAssertions{
+			ForeignContentPreserved: x.ForeignContentPreserved, InstallCreatedManagedState: x.InstallCreatedManagedState,
+			InstallCreatedManagedProjections: x.InstallCreatedManagedProjections, InstallProjectedClaudeMCP: x.InstallProjectedClaudeMCP,
+			DryRunsUnchanged: x.DryRunsUnchanged, UninstallRemovedManagedState: x.UninstallRemovedManagedState,
+			UninstallRemovedManagedProjections: x.UninstallRemovedManagedProjections, ResidualManagedArtifactsAbsent: x.ResidualManagedArtifactsAbsent,
+			EngramStubProtocolVerified: x.EngramStubProtocolVerified, SensitiveFixtureRedacted: x.SensitiveFixtureRedacted,
+			ForeignMCPExactAfterInstall: x.ForeignMCPExactAfterInstall, ForeignMCPExactAfterUpdate: x.ForeignMCPExactAfterUpdate,
+			ForeignMCPExactAfterUninstall: x.ForeignMCPExactAfterUninstall,
+		},
+		Observation: addyacceptance.ProductionObservation{
+			InstalledSource: o.InstalledSource, InstalledSourceCommit: o.InstalledSourceCommit,
+			InstalledSourceClean: o.InstalledSourceClean,
+			WritableRoots: addyacceptance.ProductionWritableRoots{
+				Home: o.WritableRoots.Home, XDGConfig: o.WritableRoots.XDGConfig, ClaudeConfig: o.WritableRoots.ClaudeConfig,
+				State: o.WritableRoots.State, Package: o.WritableRoots.Package, Repository: o.WritableRoots.Repository, Acquisition: o.WritableRoots.Acquisition,
+			},
+			ProcessLogDigest: o.ProcessLogDigest, CollectedAt: mustParseProductionTime(o.CollectedAt),
+			Safety: addyacceptance.ProductionObservedSafety{
+				NoGoRun: o.Safety.NoGoRun, NoDevelopmentPath: o.Safety.NoDevelopmentPath, NoDirectFixture: o.Safety.NoDirectFixture,
+				NoUntrackedInput: o.Safety.NoUntrackedInput, NoAuthentication: o.Safety.NoAuthentication,
+				NoModelInvocation: o.Safety.NoModelInvocation, NoPrint: o.Safety.NoPrint, NoREPL: o.Safety.NoREPL,
+				NoUpstreamExecute: o.Safety.NoUpstreamExecute, NoCredentials: o.Safety.NoCredentials, NoOutsideWrite: o.Safety.NoOutsideWrite,
+			},
+		},
+	}
+}
+
+func mustParseProductionTime(value string) time.Time {
+	parsed, _ := time.Parse(time.RFC3339Nano, value)
+	return parsed
 }
 
 func readCanonicalRegular(path string, target any) ([]byte, error) {
