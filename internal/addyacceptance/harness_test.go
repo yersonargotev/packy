@@ -169,6 +169,18 @@ func TestPromotionHarnessAggregateRequiresExactCandidate(t *testing.T) {
 		t.Fatal("synthetic rows 11-14 authorized production")
 	}
 	exact := run(PromotionHarnessExactCandidate)
+	if exact.Qualified || exact.productionBound {
+		t.Fatal("synthetic evaluator was accepted in exact-candidate mode")
+	}
+	authority, err := NewProductionPromotionAuthority(ctx, strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := PromotionHarness{Root: t.TempDir(), Context: ctx, Mode: PromotionHarnessExactCandidate, Evaluate: ProductionPromotionRowEvaluator(authority)}
+	exact, err = h.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
 	evidence, err := exact.BuildAggregate(ctx, facts)
 	if err != nil {
 		t.Fatal(err)
@@ -186,11 +198,32 @@ func TestPromotionHarnessAggregateRequiresExactCandidate(t *testing.T) {
 	if !reflect.DeepEqual(exact.Rows[10].ID, PromotionRows()[10].ID) || !reflect.DeepEqual(exact.Rows[13].ID, PromotionRows()[13].ID) {
 		t.Fatal("production rows missing")
 	}
+	changed = ctx
+	changed.BaseSHA = strings.Repeat("f", 40)
+	if _, err := exact.BuildAggregate(changed, facts); err == nil {
+		t.Fatal("production report was reusable with different trusted reconstruction inputs")
+	}
+	changed = ctx
+	changed.Now = changed.Now.Add(time.Second)
+	if _, err := exact.BuildAggregate(changed, facts); err == nil {
+		t.Fatal("production report was reusable with a different collection time")
+	}
 
 	tagContext := ctx
 	tagContext.PullRequest, tagContext.EvaluatedMergeSHA, tagContext.Tag = 0, "", "v0.9.0"
 	tagReport := exact
 	tagReport.CommitSHA = tagContext.HeadSHA
+	if _, err := tagReport.BuildAggregate(tagContext, facts); err == nil {
+		t.Fatal("PR production authority was reusable as tag authority")
+	}
+	tagAuthority, err := NewProductionPromotionAuthority(tagContext, strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tagReport, err = (PromotionHarness{Root: t.TempDir(), Context: tagContext, Mode: PromotionHarnessExactCandidate, Evaluate: ProductionPromotionRowEvaluator(tagAuthority)}).Run()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := tagReport.BuildAggregate(tagContext, facts); err != nil {
 		t.Fatalf("exact-tag aggregate rejected: %v", err)
 	}

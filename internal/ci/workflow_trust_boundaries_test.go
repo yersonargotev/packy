@@ -125,7 +125,11 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	}
 	for job, lines := range ci.jobs {
 		permissions, _ := permissionBlock(lines, 4)
-		if !reflect.DeepEqual(permissions, map[string]string{"contents": "read"}) || strings.Contains(strings.Join(lines, "\n"), "secrets:") || strings.Contains(strings.Join(lines, "\n"), "environment:") {
+		want := map[string]string{"contents": "read"}
+		if job == "addy-promotion-gate" {
+			want = map[string]string{"actions": "read", "contents": "read", "deployments": "read", "issues": "read"}
+		}
+		if !reflect.DeepEqual(permissions, want) || strings.Contains(strings.Join(lines, "\n"), "secrets:") || strings.Contains(strings.Join(lines, "\n"), "environment:") {
 			t.Fatalf("CI job %q does not keep fork and Dependabot work read-only and secretless", job)
 		}
 	}
@@ -293,7 +297,7 @@ func permissionBlock(lines []string, indent int) (map[string]string, string) {
 
 var minimumJobPermissions = map[string]map[string]map[string]string{
 	".github/workflows/ci.yml": {
-		"addy-promotion-gate":        {"contents": "read"},
+		"addy-promotion-gate":        {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
 		"validate":                   {"contents": "read"},
 		"claude-floor-smoke":         {"contents": "read"},
 		"addy-promotion-main-replay": {"contents": "read"},

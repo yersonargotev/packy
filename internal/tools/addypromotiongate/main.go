@@ -13,6 +13,9 @@ import (
 func main() {
 	var context addyacceptance.PromotionValidationContext
 	var evidencePath string
+	var qualificationPath, governanceEvaluationPath, governanceGatePath, acceptanceLogPath, outputPath string
+	var generate bool
+	flag.BoolVar(&generate, "generate", false, "generate exact production evidence from independent same-run inputs")
 	flag.BoolVar(&context.PromotionChange, "promotion-change", false, "whether the evaluated diff changes Addy promotion state")
 	flag.BoolVar(&context.FoundationChange, "foundation-change", false, "whether the evaluated diff changes established Addy promotion authority")
 	flag.StringVar(&context.Repository, "repository", "", "trusted repository identity")
@@ -25,6 +28,11 @@ func main() {
 	flag.StringVar(&context.WorkflowDigest, "workflow-digest", "", "trusted workflow SHA-256")
 	flag.StringVar(&context.RunID, "run-id", "", "trusted workflow run ID")
 	flag.StringVar(&evidencePath, "evidence", "", "candidate promotion evidence JSON")
+	flag.StringVar(&qualificationPath, "qualification", "", "production Addy qualification JSON")
+	flag.StringVar(&governanceEvaluationPath, "governance-evaluation", "", "clean governance evaluation JSON")
+	flag.StringVar(&governanceGatePath, "governance-gate", "", "allowed governance gate decision JSON")
+	flag.StringVar(&acceptanceLogPath, "acceptance-log", "", "nonempty same-run acceptance log")
+	flag.StringVar(&outputPath, "output", "", "generated promotion evidence path")
 	flag.Parse()
 
 	context.MatrixVersion = addyacceptance.PromotionMatrixVersion
@@ -35,6 +43,12 @@ func main() {
 		fatalf("reconstruct trusted promotion inputs: %v", err)
 	}
 	context.Inputs = inputs
+	if generate {
+		if err := generatePromotionEvidence(context, qualificationPath, governanceEvaluationPath, governanceGatePath, acceptanceLogPath, outputPath); err != nil {
+			fatalf("generate promotion evidence: %v", err)
+		}
+		return
+	}
 
 	var evidence addyacceptance.PromotionEvidence
 	if context.PromotionChange {
