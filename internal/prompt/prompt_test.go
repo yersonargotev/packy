@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -70,18 +71,18 @@ func TestInspectRulesContractRecognizesOnlyExactDotsRules(t *testing.T) {
 	}
 
 	for name, tc := range map[string]struct {
-		content   string
-		wantDrift bool
-		wantBad   bool
+		content       string
+		wantDrift     bool
+		wantMalformed bool
 	}{
 		"exact-before-drift":     {content: external + "\n" + drifted, wantDrift: true},
 		"exact-after-drift":      {content: drifted + "\n" + external, wantDrift: true},
-		"exact-before-malformed": {content: external + "\n<!-- dots:rules -->\nUnclosed.", wantBad: true},
-		"exact-after-malformed":  {content: "<!-- dots:rules -->\nUnclosed.\n" + external, wantBad: true},
+		"exact-before-malformed": {content: external + "\n<!-- dots:rules -->\nUnclosed.", wantMalformed: true},
+		"exact-after-malformed":  {content: "<!-- dots:rules -->\nUnclosed.\n" + external, wantMalformed: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := InspectRulesContract(tc.content)
-			if got.Disposition != RulesExternallySatisfied || !got.Exact || got.Drift != tc.wantDrift || got.Malformed != tc.wantBad {
+			if got.Disposition != RulesExternallySatisfied || !got.Exact || got.Drift != tc.wantDrift || got.Malformed != tc.wantMalformed {
 				t.Fatalf("mixed observation = %#v", got)
 			}
 		})
@@ -185,26 +186,26 @@ func TestWriteCodexUsesExactDotsRulesWithoutDuplicatingOrTakingOwnership(t *test
 	}
 }
 
-func TestWriteCodexExactDotsRulesWinsOverSiblingDrift(t *testing.T) {
+func TestWriteCodexExactDotsRulesWinsOverDifferingOrMalformedSibling(t *testing.T) {
 	for name, tc := range map[string]struct {
-		external    string
-		warningText string
+		external      string
+		secondWarning string
 	}{
 		"exact-before-drift": {
-			external:    exactDotsRulesFixture() + "\n<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->",
-			warningText: "differs",
+			external:      exactDotsRulesFixture() + "\n<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->",
+			secondWarning: "Codex also contains dots:rules content that differs from the Packy baseline; an exact dots:rules block still satisfies the baseline and Packy preserved every external block; align the differing provider contract before retrying",
 		},
 		"exact-after-drift": {
-			external:    "<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->\n" + exactDotsRulesFixture(),
-			warningText: "differs",
+			external:      "<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->\n" + exactDotsRulesFixture(),
+			secondWarning: "Codex also contains dots:rules content that differs from the Packy baseline; an exact dots:rules block still satisfies the baseline and Packy preserved every external block; align the differing provider contract before retrying",
 		},
 		"exact-before-malformed": {
-			external:    exactDotsRulesFixture() + "\n<!-- dots:rules -->\nUnclosed.",
-			warningText: "malformed",
+			external:      exactDotsRulesFixture() + "\n<!-- dots:rules -->\nUnclosed.",
+			secondWarning: "Codex also contains malformed dots:rules markers; an exact dots:rules block still satisfies the baseline and Packy preserved the external content; repair the malformed provider markers before retrying",
 		},
 		"exact-after-malformed": {
-			external:    "<!-- dots:rules -->\nUnclosed.\n" + exactDotsRulesFixture(),
-			warningText: "malformed",
+			external:      "<!-- dots:rules -->\nUnclosed.\n" + exactDotsRulesFixture(),
+			secondWarning: "Codex also contains malformed dots:rules markers; an exact dots:rules block still satisfies the baseline and Packy preserved the external content; repair the malformed provider markers before retrying",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -221,13 +222,15 @@ func TestWriteCodexExactDotsRulesWinsOverSiblingDrift(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(string(updatedBytes), "<!-- packy:rules -->") {
-				t.Fatalf("exact external rules did not suppress Packy copy:\n%s", updatedBytes)
+			want := tc.external + "\n<!-- packy:skills-router -->\n" + CodexContent() + "<!-- /packy:skills-router -->"
+			if string(updatedBytes) != want {
+				t.Fatalf("updated content changed foreign bytes or retained Packy rules:\n got %q\nwant %q", updatedBytes, want)
 			}
-			if !strings.Contains(string(updatedBytes), tc.external) {
-				t.Fatalf("external content changed:\n%s", updatedBytes)
+			wantWarnings := []string{
+				"Codex baseline rules are externally satisfied by exact dots:rules; Packy preserved the external block and omitted its own rules contribution",
+				tc.secondWarning,
 			}
-			if len(result.Warnings) != 2 || !strings.Contains(result.Warnings[0], "externally satisfied") || !strings.Contains(result.Warnings[1], tc.warningText) {
+			if !slices.Equal(result.Warnings, wantWarnings) {
 				t.Fatalf("warnings = %#v", result.Warnings)
 			}
 		})
