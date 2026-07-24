@@ -106,22 +106,31 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 		"ref: ${{ github.event.pull_request.base.sha }}",
 		"GH_TOKEN: ${{ github.token }}",
 		"GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}",
-		"EVALUATED_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}",
-		`[[ "$EVALUATED_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]`,
-		`git/commits/$EVALUATED_MERGE_SHA`,
+		"PR_NUMBER: ${{ github.event.pull_request.number }}",
+		"EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+		"EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+		`pulls/$PR_NUMBER`,
+		`"$head_sha" == "$EVENT_HEAD_SHA"`,
+		`"$base_sha" == "$EVENT_BASE_SHA"`,
+		`git/commits/$merge_sha`,
 		`git/trees/$tree_sha?recursive=1`,
+		`printf 'merge-sha=%s\n' "$merge_sha" >> "$GITHUB_OUTPUT"`,
 		`printf 'workflow-sha=%s\n' "$workflow_sha" >> "$GITHUB_OUTPUT"`,
+		"EVALUATED_MERGE_SHA: ${{ steps.candidate.outputs.merge-sha }}",
 		"WORKFLOW_SHA: ${{ steps.candidate.outputs.workflow-sha }}",
 		"--workflow-sha \"$WORKFLOW_SHA\"",
-		"addy-governance-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.merge_commit_sha }}",
+		"addy-governance-pr-${{ github.event.pull_request.number }}-${{ steps.candidate.outputs.merge-sha }}",
 	} {
 		if !strings.Contains(addy, required) {
 			t.Fatalf("trusted Addy governance workflow missing %q", required)
 		}
 	}
 	for _, forbidden := range []string{
-		"github.event.pull_request.head.",
+		"ref: ${{ github.event.pull_request.head.sha }}",
+		"repository: ${{ github.event.pull_request.head.repo.full_name }}",
 		"refs/pull/",
+		"git fetch",
+		"gh pr checkout",
 		"gate-addy-promotion.sh",
 		"validate-addy-acceptance.sh",
 		"run-claude-smoke.sh",
