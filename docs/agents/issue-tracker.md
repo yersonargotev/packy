@@ -38,4 +38,25 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Blocking**: GitHub's **native issue dependencies** — the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only — the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
 - **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
 - **Claim**: `gh issue edit <n> --add-assignee @me` — the session's first write.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+- **Closure sweep**: during charting and after each resolution, before treating `Not yet specified` as empty, account for every known concern involving (1) external dependencies and authority or licensing; (2) source cardinality, ownership, provenance, and reproducibility; (3) domain or schema expressiveness and migrations; and (4) validation, acceptance, publication, and delivery prerequisites. Put each concern in exactly one place: an already resolved decision, a sharp live ticket, genuinely unphraseable fog, or Out of scope. Do not pre-slice unknown fog or turn implementation steps into Wayfinder decisions.
+
+### Resolve planning-only work without a repository asset
+
+1. Claim the open, unblocked child before work.
+2. Resolve it through its declared HITL or AFK mode.
+3. Post the complete resolution comment.
+4. Close the issue.
+5. Append one gist-and-link context pointer to the map's Decisions-so-far.
+
+### Resolve work that publishes a durable repository asset
+
+1. Claim the open, unblocked child before work.
+2. Complete the decision or research and obtain final human confirmation for HITL work.
+3. Apply `status:approved` only when executing an explicit Integrator decision.
+4. Use one short issue branch and one pull request with a GitHub-recognized closing keyword for exactly that child.
+5. Keep the child open through authorization checks and merge; never close it manually before the pull request integrates.
+6. After merge and GitHub closure, post or finalize the resolution comment with links that resolve on `main`.
+7. Append the map's one-line context pointer only after the issue is closed and the asset is durable.
+8. Verify the merged commit, closed issue, map entry, deleted branch, and clean local and remote state.
+
+The accepted [issue and Wayfinder governance contract](https://github.com/yersonargotev/packy/issues/128) defines the authorization policy. Follow the repository's [issue-delivery workflow](../../workflows/packy-issue-delivery.md) for the complete branch, review, validation, pull-request, merge, and cleanup loop.
