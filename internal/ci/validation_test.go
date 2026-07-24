@@ -227,14 +227,14 @@ func TestAddyPromotionGateHasStableNonPublishingIdentity(t *testing.T) {
 		"name: claude-floor-qualification",
 		"GH_TOKEN: ${{ github.token }}",
 		"./scripts/gate-addy-promotion.sh",
-		"--generate",
+		"            --generate-trusted \\",
 		"CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}",
 	} {
 		if !strings.Contains(gate, required) {
 			t.Fatalf("Addy promotion gate missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{"contents: write", "packages: write", "pull-requests: write", "id-token: write", "gh release", "git push", "npm publish", "go install"} {
+	for _, forbidden := range []string{"contents: write", "packages: write", "pull-requests: write", "id-token: write", "secrets.GOVERNANCE_READ_TOKEN", "            --generate \\", "gh release", "git push", "npm publish", "go install"} {
 		if strings.Contains(gate, forbidden) {
 			t.Fatalf("Addy promotion gate contains publishing authority %q", forbidden)
 		}
