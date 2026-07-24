@@ -1,6 +1,6 @@
 {
   "behavioral_equivalence": {
-    "pack_test_normalized_sha256": "7f69fbfd766e6ec9c1c4c4a360122295890548c05e54bbabceca87c540e2d05c",
+    "pack_test_normalized_sha256": "097b0a0608ebf4d67a92faa7c84c238d63c43330bbd19b38654f34744fd4b7e6",
     "root_test_functions": {
       "TestDoctorJSONHealthyWarningsAndFailures": "9e74a8b5ccb7271e932e7fc0722f8e6ccb2171de369164513b7734384ecbc061",
       "TestEndToEndSandboxLifecyclePreservesGentleAIAndRealHome": "ae2f64d73237efe006c4f6d4fce2fcea3c8044a21b1bbb9e6b211ed0bf76a8d8",
@@ -1637,13 +1637,13 @@
     },
     {
       "class": "semantic-pack",
-      "line_sha256": "62e28f51808c1a8c4a0eb302e797b6529ec6255699b4023269121e35fdd9ed6c",
+      "line_sha256": "20b03bb03814fec648fbdd6e5b7a94ebccaafba64c01b871fec6d6f65abdc5b3",
       "path_b64": "aW50ZXJuYWwvY2FwYWJpbGl0eXBhY2svY2F0YWxvZ190ZXN0Lmdv",
       "token_count": 2
     },
     {
       "class": "semantic-pack",
-      "line_sha256": "6fce59e180ad5746b69419017c4b00264cac5b24f959b8b4f7b58e5a57407258",
+      "line_sha256": "11dfd83f2fef6c8a99c6c20733cda5ae4134a837409269d93d442a10ebe71c6d",
       "path_b64": "aW50ZXJuYWwvY2FwYWJpbGl0eXBhY2svY2F0YWxvZ190ZXN0Lmdv",
       "token_count": 1
     },
@@ -1667,13 +1667,13 @@
     },
     {
       "class": "semantic-pack",
-      "line_sha256": "d7ddcb418ef3180238b64ca3daa415e9c7c2ec95d68e47cc3e30f201868d28e9",
+      "line_sha256": "20f3b49a17b4a23b552df3e15568c0942a6796ac17b04e5a0d7971823cacc55f",
       "path_b64": "aW50ZXJuYWwvY2FwYWJpbGl0eXBhY2svY2F0YWxvZ190ZXN0Lmdv",
       "token_count": 1
     },
     {
       "class": "semantic-pack",
-      "line_sha256": "dfc8820ba85fa0dd1c67abfc4822fce2df451037aa9896c5835206fef14155f1",
+      "line_sha256": "8bd29a176a37304183cf5324a8b02e0ff6c2c21a766f3ee36ede038bf82a6f03",
       "path_b64": "aW50ZXJuYWwvY2FwYWJpbGl0eXBhY2svY2F0YWxvZ190ZXN0Lmdv",
       "token_count": 1
     },
@@ -2645,18 +2645,6 @@
     },
     {
       "class": "semantic-pack",
-      "line_sha256": "603874aa2422c2859916377b1661ded00bc485c70b544b4e18124f740fb1faa5",
-      "path_b64": "aW50ZXJuYWwvY2xpL3BhY2tfdGVzdC5nbw",
-      "token_count": 1
-    },
-    {
-      "class": "semantic-pack",
-      "line_sha256": "603874aa2422c2859916377b1661ded00bc485c70b544b4e18124f740fb1faa5",
-      "path_b64": "aW50ZXJuYWwvY2xpL3BhY2tfdGVzdC5nbw",
-      "token_count": 1
-    },
-    {
-      "class": "semantic-pack",
       "line_sha256": "6367c041191c0656e52f39337e688370f76d18a60094ffb76f9fa32d4872bc16",
       "path_b64": "aW50ZXJuYWwvY2xpL3BhY2tfdGVzdC5nbw",
       "token_count": 1
@@ -2856,12 +2844,6 @@
     {
       "class": "semantic-pack",
       "line_sha256": "ba5c6479cf47b51081f7e9e2e60565c8696d3b036832b642dc6f356c7c27549e",
-      "path_b64": "aW50ZXJuYWwvY2xpL3BhY2tfdGVzdC5nbw",
-      "token_count": 1
-    },
-    {
-      "class": "semantic-pack",
-      "line_sha256": "badddb3de1879ad91bbf1d95743469f61307a26b8255903c0a07ebb92fa2d336",
       "path_b64": "aW50ZXJuYWwvY2xpL3BhY2tfdGVzdC5nbw",
       "token_count": 1
     },
@@ -4732,172 +4714,172 @@
       "token_count": 1
     },
     {
-  "class": "release-formula-removal",
-  "line_sha256": "b5fd7cad1667ee08986826e4750c74eb421a9039a9ecc121f353fbb7a307335d",
-  "path_b64": "LmdpdGh1Yi93b3JrZmxvd3MvcmVsZWFzZS55bWw",
-  "token_count": 1
-},
+      "class": "release-formula-removal",
+      "line_sha256": "b5fd7cad1667ee08986826e4750c74eb421a9039a9ecc121f353fbb7a307335d",
+      "path_b64": "LmdpdGh1Yi93b3JrZmxvd3MvcmVsZWFzZS55bWw",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "53fcd0766ca8e0bd7775cab93e28ff74a5ec82d34377c0028ea09764e33f1bf6",
-  "path_b64": "UkVBRE1FLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "53fcd0766ca8e0bd7775cab93e28ff74a5ec82d34377c0028ea09764e33f1bf6",
+      "path_b64": "UkVBRE1FLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "007fe87d1996f8309847868a58190549b07fee02bd1732243024abafe063dbb6",
-  "path_b64": "UkVBRE1FLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "007fe87d1996f8309847868a58190549b07fee02bd1732243024abafe063dbb6",
+      "path_b64": "UkVBRE1FLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "2d3c19669883a705ac2bf6a06924f8e63a43e4eece715784e407c742ef352fec",
-  "path_b64": "UkVBRE1FLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "2d3c19669883a705ac2bf6a06924f8e63a43e4eece715784e407c742ef352fec",
+      "path_b64": "UkVBRE1FLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "5e1afeacfeff655003a299b6227b6b1e6d4ec40164ebb514a21254b5965b6024",
-  "path_b64": "UkVBRE1FLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "5e1afeacfeff655003a299b6227b6b1e6d4ec40164ebb514a21254b5965b6024",
+      "path_b64": "UkVBRE1FLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "747ca12ffb11d143df5a756e78fe38299ca2872dedf04b427a0e869a00b5517f",
-  "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "747ca12ffb11d143df5a756e78fe38299ca2872dedf04b427a0e869a00b5517f",
+      "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "087fcc28519c1b704c5fc37a12161b3bdfb4ca59901ed2b245ce20bf017e8d37",
-  "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "087fcc28519c1b704c5fc37a12161b3bdfb4ca59901ed2b245ce20bf017e8d37",
+      "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "17c64e681d524752ad6a2198e680b95ba1df5d0a16ebc7197cb05d16a64a7dff",
-  "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "17c64e681d524752ad6a2198e680b95ba1df5d0a16ebc7197cb05d16a64a7dff",
+      "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "84a8085db9aed4770425d1d096718263099145c65c9b7536cd04bb0be0493ddf",
-  "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "84a8085db9aed4770425d1d096718263099145c65c9b7536cd04bb0be0493ddf",
+      "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "2d3c19669883a705ac2bf6a06924f8e63a43e4eece715784e407c742ef352fec",
-  "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "2d3c19669883a705ac2bf6a06924f8e63a43e4eece715784e407c742ef352fec",
+      "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "c4fa5967f012717d04d8dc94aba829197d5e460261887fcfff5fd983f7db7108",
-  "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "c4fa5967f012717d04d8dc94aba829197d5e460261887fcfff5fd983f7db7108",
+      "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "ddec408f01ad456aadfb1f2d024256c599f27f105c5dc57fb4d7ee72ae8fa7b6",
-  "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "ddec408f01ad456aadfb1f2d024256c599f27f105c5dc57fb4d7ee72ae8fa7b6",
+      "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "8c50784fb64cc0d8443f9499415434c729a270d7ee54201ec34a12bfebfed5a2",
-  "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "8c50784fb64cc0d8443f9499415434c729a270d7ee54201ec34a12bfebfed5a2",
+      "path_b64": "ZG9jcy9jYXBhYmlsaXR5LXBhY2tzLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "c4fa5967f012717d04d8dc94aba829197d5e460261887fcfff5fd983f7db7108",
-  "path_b64": "ZG9jcy9jbGF1ZGUtY29kZS5tZA",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "c4fa5967f012717d04d8dc94aba829197d5e460261887fcfff5fd983f7db7108",
+      "path_b64": "ZG9jcy9jbGF1ZGUtY29kZS5tZA",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "8237b1472ed78201cee3e2c8a761cd1f3bbe9845ec1abb00d04666ab9a6b7287",
-  "path_b64": "ZG9jcy9jbGF1ZGUtY29kZS5tZA",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "8237b1472ed78201cee3e2c8a761cd1f3bbe9845ec1abb00d04666ab9a6b7287",
+      "path_b64": "ZG9jcy9jbGF1ZGUtY29kZS5tZA",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "b5505aed314adc94aecc50975acb79ab07b17a0fed575aa2490ce8a2e92a9657",
-  "path_b64": "ZG9jcy9wcm9kdWN0L3BhY2t5LXYwLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "b5505aed314adc94aecc50975acb79ab07b17a0fed575aa2490ce8a2e92a9657",
+      "path_b64": "ZG9jcy9wcm9kdWN0L3BhY2t5LXYwLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "02c17331c4fe44bd4bdf108d0110fde743b87eefe5eaf4fb0b20c4b51c80b086",
-  "path_b64": "ZG9jcy9wcm9kdWN0L3BhY2t5LXYwLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "02c17331c4fe44bd4bdf108d0110fde743b87eefe5eaf4fb0b20c4b51c80b086",
+      "path_b64": "ZG9jcy9wcm9kdWN0L3BhY2t5LXYwLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "b4fb1ce13973fe71a37ba689b02081ca982112287b945bd1dcb464e967537b1a",
-  "path_b64": "ZG9jcy9yZWxlYXNlLW5vdGVzL25leHQubWQ",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "b4fb1ce13973fe71a37ba689b02081ca982112287b945bd1dcb464e967537b1a",
+      "path_b64": "ZG9jcy9yZWxlYXNlLW5vdGVzL25leHQubWQ",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "96066fb593cc8f13831bbe8a6cad902595aa2d476948f5181274a9ec698af144",
-  "path_b64": "ZG9jcy9yb2FkbWFwLm1k",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "96066fb593cc8f13831bbe8a6cad902595aa2d476948f5181274a9ec698af144",
+      "path_b64": "ZG9jcy9yb2FkbWFwLm1k",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "4498b2d7606f7d24790ed53f014e2e0c8cd8035e9fed2b85c43ed6ad2eab1d69",
-  "path_b64": "ZG9jcy9zdHJ1Y3R1cmVkLW91dHB1dC5tZA",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "4498b2d7606f7d24790ed53f014e2e0c8cd8035e9fed2b85c43ed6ad2eab1d69",
+      "path_b64": "ZG9jcy9zdHJ1Y3R1cmVkLW91dHB1dC5tZA",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "01358c48bad967d0fadd54631f43188615bd349f17b0b2879e64c15ed1bf4a24",
-  "path_b64": "aW50ZXJuYWwvY2kvY2xhdWRlX2RvY3VtZW50YXRpb25fdGVzdC5nbw",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "01358c48bad967d0fadd54631f43188615bd349f17b0b2879e64c15ed1bf4a24",
+      "path_b64": "aW50ZXJuYWwvY2kvY2xhdWRlX2RvY3VtZW50YXRpb25fdGVzdC5nbw",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "3cd118082776500259e4a746fa2cd7e0d152de973b1b009db3d02e5edb40e407",
-  "path_b64": "aW50ZXJuYWwvY2kvY2xhdWRlX2RvY3VtZW50YXRpb25fdGVzdC5nbw",
-  "token_count": 1
-},
+      "class": "semantic-pack",
+      "line_sha256": "3cd118082776500259e4a746fa2cd7e0d152de973b1b009db3d02e5edb40e407",
+      "path_b64": "aW50ZXJuYWwvY2kvY2xhdWRlX2RvY3VtZW50YXRpb25fdGVzdC5nbw",
+      "token_count": 1
+    },
     {
-  "class": "release-formula-removal",
-  "line_sha256": "643bea1e30ca3d9338cbfe034c824d65032267b2057cdf0c016a3f35adb449e5",
-  "path_b64": "aW50ZXJuYWwvcmVsZWFzZS9yZWxlYXNlX2F1dG9tYXRpb25fdGVzdC5nbw",
-  "token_count": 2
-},
+      "class": "release-formula-removal",
+      "line_sha256": "643bea1e30ca3d9338cbfe034c824d65032267b2057cdf0c016a3f35adb449e5",
+      "path_b64": "aW50ZXJuYWwvcmVsZWFzZS9yZWxlYXNlX2F1dG9tYXRpb25fdGVzdC5nbw",
+      "token_count": 2
+    },
     {
-  "class": "release-formula-removal",
-  "line_sha256": "4008a4ac457d4e725f4d02a8d15d2708f05fc1c773449bb163612b05e11bb244",
-  "path_b64": "aW50ZXJuYWwvcmVsZWFzZS9yZWxlYXNlX2F1dG9tYXRpb25fdGVzdC5nbw",
-  "token_count": 1
-},
+      "class": "release-formula-removal",
+      "line_sha256": "4008a4ac457d4e725f4d02a8d15d2708f05fc1c773449bb163612b05e11bb244",
+      "path_b64": "aW50ZXJuYWwvcmVsZWFzZS9yZWxlYXNlX2F1dG9tYXRpb25fdGVzdC5nbw",
+      "token_count": 1
+    },
     {
-  "class": "release-formula-removal",
-  "line_sha256": "649e588d9968236dfc1c466113c58b980953eda2da8a4244b578ab680ac776e1",
-  "path_b64": "c2NyaXB0cy9wbGFuLWhvbWVicmV3LWVmZmVjdHMuc2g",
-  "token_count": 1
-},
+      "class": "release-formula-removal",
+      "line_sha256": "649e588d9968236dfc1c466113c58b980953eda2da8a4244b578ab680ac776e1",
+      "path_b64": "c2NyaXB0cy9wbGFuLWhvbWVicmV3LWVmZmVjdHMuc2g",
+      "token_count": 1
+    },
     {
-  "class": "release-formula-removal",
-  "line_sha256": "10613bf3ba813b7f37d5d49db453ae36b1ef86056d147611cab291fcb2a4698e",
-  "path_b64": "c2NyaXB0cy9wbGFuLWhvbWVicmV3LWVmZmVjdHMuc2g",
-  "token_count": 1
-},
+      "class": "release-formula-removal",
+      "line_sha256": "10613bf3ba813b7f37d5d49db453ae36b1ef86056d147611cab291fcb2a4698e",
+      "path_b64": "c2NyaXB0cy9wbGFuLWhvbWVicmV3LWVmZmVjdHMuc2g",
+      "token_count": 1
+    },
     {
-  "class": "release-formula-removal",
-  "line_sha256": "8d0e52b9285667ed7b47f43e74404b5e03bf5ba01659e0e3deb1849b55ae277a",
-  "path_b64": "c2NyaXB0cy9wbGFuLWhvbWVicmV3LWVmZmVjdHMuc2g",
-  "token_count": 1
-},
+      "class": "release-formula-removal",
+      "line_sha256": "8d0e52b9285667ed7b47f43e74404b5e03bf5ba01659e0e3deb1849b55ae277a",
+      "path_b64": "c2NyaXB0cy9wbGFuLWhvbWVicmV3LWVmZmVjdHMuc2g",
+      "token_count": 1
+    },
     {
-  "class": "semantic-pack",
-  "line_sha256": "699d5a31d8d1018ec21832bdd6ca80ca650931326fcab4a8a3ce3c9882e235f0",
-  "path_b64": "c2NyaXB0cy92ZXJpZnktcmVsZWFzZS1ldmlkZW5jZS5zaA",
-  "token_count": 1
-}
+      "class": "semantic-pack",
+      "line_sha256": "699d5a31d8d1018ec21832bdd6ca80ca650931326fcab4a8a3ce3c9882e235f0",
+      "path_b64": "c2NyaXB0cy92ZXJpZnktcmVsZWFzZS1ldmlkZW5jZS5zaA",
+      "token_count": 1
+    }
   ]
 }

@@ -194,6 +194,9 @@ func removeConfiguredAddyForTracer(t *testing.T, bundleRoot string, fixture addy
 	if err := os.Remove(filepath.Join(bundleRoot, "sources", "addy.lock.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
 	}
+	if err := os.RemoveAll(filepath.Join(bundleRoot, "history", "addy")); err != nil {
+		t.Fatal(err)
+	}
 	for _, resource := range fixture.Manifest.Resources {
 		if err := os.RemoveAll(filepath.Join(bundleRoot, filepath.FromSlash(resource.Source))); err != nil {
 			t.Fatal(err)

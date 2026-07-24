@@ -152,12 +152,20 @@ func TestHistoricalArtifactRoundTripsManifestV2FileAndDirectoryResources(t *test
 	}
 	writeHistoricalArtifact(t, root, artifact)
 
+	trustKey := "addy@1.0.0"
+	productionTrust, hadProductionTrust := trustedHistoricalAggregates[trustKey]
+	delete(trustedHistoricalAggregates, trustKey)
 	if _, err := loadHistoricalArtifact(root, bundle, "addy", "1.0.0"); err == nil || !strings.Contains(err.Error(), "no trusted immutable aggregate") {
 		t.Fatalf("synthetic history was accepted without an explicit trust root: %v", err)
 	}
-	trustKey := "addy@1.0.0"
 	trustedHistoricalAggregates[trustKey] = artifact.AggregateSHA256
-	t.Cleanup(func() { delete(trustedHistoricalAggregates, trustKey) })
+	t.Cleanup(func() {
+		if hadProductionTrust {
+			trustedHistoricalAggregates[trustKey] = productionTrust
+			return
+		}
+		delete(trustedHistoricalAggregates, trustKey)
+	})
 
 	loaded, err := loadHistoricalArtifact(root, bundle, "addy", "1.0.0")
 	if err != nil {
@@ -236,8 +244,15 @@ func trustHistoricalFixture(t *testing.T, root, key string) {
 		t.Fatal(err)
 	}
 	writeHistoricalArtifact(t, root, artifact)
+	previous, hadPrevious := trustedHistoricalAggregates[key]
 	trustedHistoricalAggregates[key] = artifact.AggregateSHA256
-	t.Cleanup(func() { delete(trustedHistoricalAggregates, key) })
+	t.Cleanup(func() {
+		if hadPrevious {
+			trustedHistoricalAggregates[key] = previous
+			return
+		}
+		delete(trustedHistoricalAggregates, key)
+	})
 }
 
 func TestCheckedInMattyTwoPreservesWorkflowConventionsInOneOwnedInstruction(t *testing.T) {

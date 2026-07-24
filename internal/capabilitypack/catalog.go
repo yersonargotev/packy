@@ -214,6 +214,17 @@ type CatalogDetail struct {
 }
 
 var initialCatalog = []catalogEntry{
+	{
+		ID:                 "addy",
+		Description:        "Addy agent skills",
+		Surfaces:           []Surface{SurfaceCodex, SurfaceOpenCode},
+		HistoricalVersions: []string{"1.0.0", "1.1.0"},
+		UpdateRoutes: []UpdateRoute{{
+			FromVersion:      "1.0.0",
+			ToVersion:        "1.1.0",
+			ExistingSurfaces: []Surface{SurfaceCodex, SurfaceOpenCode},
+		}},
+	},
 	{ID: "engram", Description: "Persistent memory for agent work", Surfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
 	{ID: "matty", Description: "Matty workflow", Surfaces: []Surface{SurfaceCodex, SurfaceOpenCode}},
 }

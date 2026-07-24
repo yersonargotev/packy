@@ -17,6 +17,8 @@ import (
 const historicalArtifactSchemaVersion = 1
 
 var trustedHistoricalAggregates = map[string]string{
+	"addy@1.0.0":  "6002519f3380f904a66bd524af9032cc6b86d5a25ccc87f4bd04a249bc3c3ca2",
+	"addy@1.1.0":  "79677534a95efd23ceaae892a2b34b1208c4a37e8f264431b4daf0a5fa3c8f41",
 	"matty@1.0.0": "9f19a157532a3ee607938a4ec83a8f0bfc745d60d5fd0101b72c456988f800c0",
 }
 

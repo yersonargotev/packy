@@ -12,6 +12,38 @@ import (
 	"github.com/yersonargotev/packy/internal/bundletransaction"
 )
 
+func TestCheckedInAddyPromotionPublishesExactHistoryAndUpdateRoute(t *testing.T) {
+	bundleRoot := filepath.Join("..", "..", "bundle")
+	catalog, err := Discover(bundleRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := catalog.ShowDetail("addy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Pack.Version != "1.1.0" || detail.Pack.manifestVersion != manifestSchemaV3 ||
+		len(detail.Pack.Surfaces) != 3 || detail.Pack.Surfaces[0] != SurfaceClaude ||
+		detail.Pack.Surfaces[1] != SurfaceCodex || detail.Pack.Surfaces[2] != SurfaceOpenCode ||
+		strings.Join(detail.HistoricalVersions, ",") != "1.0.0,1.1.0" ||
+		len(detail.UpdateRoutes) != 1 {
+		t.Fatalf("Addy promotion contract = %#v", detail)
+	}
+	for _, version := range detail.HistoricalVersions {
+		if _, err := catalog.resolveIntentPack("addy", version); err != nil {
+			t.Fatalf("resolve Addy %s: %v", version, err)
+		}
+	}
+	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode} {
+		if err := catalog.validateUpdateRoute("addy", "1.0.0", "1.1.0", manifestSchemaV3, surface); err != nil {
+			t.Fatalf("Addy update route on %s: %v", surface, err)
+		}
+	}
+	if err := catalog.validateUpdateRoute("addy", "1.0.0", "1.1.0", manifestSchemaV3, SurfaceClaude); err == nil {
+		t.Fatal("Addy update route unexpectedly added a Claude intent")
+	}
+}
+
 func TestCheckedInEngramTwoPublishesExactThreeSurfaceContract(t *testing.T) {
 	bundleRoot := filepath.Join("..", "..", "bundle")
 	catalog, err := Discover(bundleRoot)
@@ -154,8 +186,10 @@ func TestDeferredCatalogRefreshesAfterBundleSwap(t *testing.T) {
 	repository := filepath.Dir(bundle)
 	stage := filepath.Join(repository, "bundle-stage")
 	for _, path := range []string{
+		"instructions/addy.md",
 		"instructions/engram.md",
 		"instructions/matty.md",
+		"packs/addy/pack.json",
 		"packs/engram/pack.json",
 		"packs/matty/pack.json",
 	} {
@@ -200,7 +234,7 @@ func TestDeferredCatalogRefreshesAfterBundleSwap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if packs[1].ID != "matty" || packs[1].Version != "2.0.0" {
+	if packs[2].ID != "matty" || packs[2].Version != "2.0.0" {
 		t.Fatalf("ListCurrent packs=%+v, want complete new generation", packs)
 	}
 }
@@ -212,7 +246,7 @@ func TestDiscoverLoadsInitialStrictCatalog(t *testing.T) {
 		t.Fatalf("Discover failed: %v", err)
 	}
 	packs := catalog.List()
-	if len(packs) != 2 || packs[0].ID != "engram" || packs[1].ID != "matty" {
+	if len(packs) != 3 || packs[0].ID != "addy" || packs[1].ID != "engram" || packs[2].ID != "matty" {
 		t.Fatalf("packs = %#v", packs)
 	}
 	engram, err := catalog.Show("engram")
@@ -283,7 +317,7 @@ func writeCatalogFixture(t *testing.T) string {
 	bundle := filepath.Join(t.TempDir(), "bundle")
 	skillRoot := filepath.Join(bundle, "skills")
 	instructionRoot := filepath.Join(bundle, "instructions")
-	for _, dir := range []string{skillRoot, instructionRoot, filepath.Join(bundle, "packs", "engram"), filepath.Join(bundle, "packs", "matty")} {
+	for _, dir := range []string{skillRoot, instructionRoot, filepath.Join(bundle, "packs", "addy"), filepath.Join(bundle, "packs", "engram"), filepath.Join(bundle, "packs", "matty")} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -291,12 +325,16 @@ func writeCatalogFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(instructionRoot, "engram.md"), []byte("engram"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(instructionRoot, "addy.md"), []byte("addy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(instructionRoot, "matty.md"), []byte("matty"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	addy := `{"schema_version":1,"id":"addy","version":"1.1.0","provides":["workflow:addy"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"addy-guidance","source":"instructions/addy.md"}]}`
 	engram := `{"schema_version":1,"id":"engram","version":"1.0.0","provides":["memory:persistent"],"requires":{"capabilities":[],"tools":["engram"]},"conflicts":[],"resources":[{"kind":"instruction","id":"engram-memory","source":"instructions/engram.md"},{"kind":"mcp_server","id":"engram","command":"engram","args":["mcp"]},{"kind":"lifecycle","id":"engram-memory"}]}`
 	matty := `{"schema_version":1,"id":"matty","version":"1.0.0","provides":["workflow:matty"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"matty-guidance","source":"instructions/matty.md"}]}`
-	for name, data := range map[string]string{"engram": engram, "matty": matty} {
+	for name, data := range map[string]string{"addy": addy, "engram": engram, "matty": matty} {
 		if err := os.WriteFile(filepath.Join(bundle, "packs", name, "pack.json"), []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
