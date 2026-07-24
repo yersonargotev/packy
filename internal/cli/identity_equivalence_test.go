@@ -352,6 +352,10 @@ func removeSliceFJSONFields(value any) {
 
 func normalizeSliceFJSONTranscript(transcript *identityEquivalenceTranscript) {
 	for i := range transcript.Scenarios {
+		transcript.Scenarios[i].State = strings.NewReplacer(
+			"## Dots Agent Rules", "## Agent Rules",
+			"## Packy Agent Rules", "## Agent Rules",
+		).Replace(transcript.Scenarios[i].State)
 		var document any
 		if json.Unmarshal([]byte(strings.TrimSpace(transcript.Scenarios[i].Output)), &document) != nil {
 			// Issue #205 makes status evidence path-portable. The frozen rename

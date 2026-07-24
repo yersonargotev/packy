@@ -43,6 +43,45 @@ func TestSectionInsertUpdateRemove(t *testing.T) {
 	}
 }
 
+func TestInspectRulesContractRecognizesOnlyExactDotsRules(t *testing.T) {
+	external := "<!-- dots:rules -->\n" +
+		strings.Replace(RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
+		"<!-- /dots:rules -->"
+
+	observation := InspectRulesContract(external)
+	if observation.Disposition != RulesExternallySatisfied {
+		t.Fatalf("disposition = %q, want %q", observation.Disposition, RulesExternallySatisfied)
+	}
+	if observation.Fingerprint != RulesFingerprint() {
+		t.Fatalf("fingerprint = %q, want %q", observation.Fingerprint, RulesFingerprint())
+	}
+
+	drifted := strings.Replace(external, "Keep diffs surgical", "Keep every diff surgical", 1)
+	if got := InspectRulesContract(drifted).Disposition; got != RulesExternalDrift {
+		t.Fatalf("drifted disposition = %q, want %q", got, RulesExternalDrift)
+	}
+
+	unmarked := strings.ReplaceAll(strings.ReplaceAll(external, "<!-- dots:rules -->\n", ""), "<!-- /dots:rules -->", "")
+	if got := InspectRulesContract(unmarked).Disposition; got != RulesNoExternalProvider {
+		t.Fatalf("unmarked disposition = %q, want %q", got, RulesNoExternalProvider)
+	}
+
+	malformed := strings.TrimSuffix(external, "<!-- /dots:rules -->")
+	if got := InspectRulesContract(malformed).Disposition; got != RulesMalformedExternalProvider {
+		t.Fatalf("malformed disposition = %q, want %q", got, RulesMalformedExternalProvider)
+	}
+}
+
+func TestRulesContentUsesPackyOwnershipTerminology(t *testing.T) {
+	content := RulesContent()
+	if !strings.HasPrefix(content, "## Packy Agent Rules\n") {
+		t.Fatalf("content does not use Packy ownership terminology:\n%s", content)
+	}
+	if strings.Contains(content, "Dots Agent Rules") {
+		t.Fatalf("Packy-owned content claims Dots ownership:\n%s", content)
+	}
+}
+
 func TestWriteCodexAddsAndRemovesRulesSection(t *testing.T) {
 	path := t.TempDir() + "/AGENTS.md"
 	original := "# User notes\n\nKeep this.\n"
@@ -76,6 +115,91 @@ func TestWriteCodexAddsAndRemovesRulesSection(t *testing.T) {
 	}
 	if removed := string(removedBytes); removed != original {
 		t.Fatalf("RemoveCodex should remove all Packy sections:\ngot:  %q\nwant: %q", removed, original)
+	}
+}
+
+func TestWriteCodexUsesExactDotsRulesWithoutDuplicatingOrTakingOwnership(t *testing.T) {
+	path := t.TempDir() + "/AGENTS.md"
+	external := "<!-- dots:rules -->\n" +
+		strings.Replace(RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
+		"<!-- /dots:rules -->"
+	duplicated := external + "\n<!-- packy:rules -->\nstale Packy copy\n<!-- /packy:rules -->"
+	if err := os.WriteFile(path, []byte(duplicated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := WriteCodex(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := string(updatedBytes)
+	if !strings.Contains(updated, external) {
+		t.Fatalf("external rules changed:\n%s", updated)
+	}
+	if strings.Contains(updated, "<!-- packy:rules -->") {
+		t.Fatalf("redundant Packy rules remain:\n%s", updated)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "externally satisfied") {
+		t.Fatalf("warnings = %#v", result.Warnings)
+	}
+
+	repeated, err := WriteCodex(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeatedBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(repeatedBytes) != updated || len(repeated.Warnings) != 1 {
+		t.Fatalf("repeated update changed result: warnings=%#v\n%s", repeated.Warnings, repeatedBytes)
+	}
+
+	if err := RemoveCodex(path); err != nil {
+		t.Fatal(err)
+	}
+	removedBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(removedBytes) != external+"\n" {
+		t.Fatalf("uninstall changed external rules:\n%s", removedBytes)
+	}
+}
+
+func TestWriteCodexPreservesDifferingAndMalformedDotsRules(t *testing.T) {
+	for name, external := range map[string]string{
+		"different": "<!-- dots:rules -->\n## Dots Agent Rules\n\nDifferent.\n<!-- /dots:rules -->",
+		"malformed": "<!-- dots:rules -->\n## Dots Agent Rules\n\nUnclosed.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := t.TempDir() + "/AGENTS.md"
+			if err := os.WriteFile(path, []byte(external), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			result, err := WriteCodex(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			updatedBytes, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			updated := string(updatedBytes)
+			if !strings.Contains(updated, external) {
+				t.Fatalf("external content changed:\n%s", updated)
+			}
+			if strings.Count(updated, "<!-- packy:rules -->") != 1 {
+				t.Fatalf("Packy baseline missing or duplicated:\n%s", updated)
+			}
+			if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "Packy projected") {
+				t.Fatalf("warnings = %#v", result.Warnings)
+			}
+		})
 	}
 }
 

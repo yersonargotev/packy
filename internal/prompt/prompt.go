@@ -1,6 +1,8 @@
 package prompt
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +12,23 @@ import (
 const (
 	codexPackySectionID = "skills-router"
 	packyRulesSectionID = "rules"
+	dotsRulesOpen       = "<!-- dots:rules -->"
+	dotsRulesClose      = "<!-- /dots:rules -->"
 )
+
+type RulesDisposition string
+
+const (
+	RulesNoExternalProvider        RulesDisposition = "packy-projected"
+	RulesExternallySatisfied       RulesDisposition = "externally-satisfied"
+	RulesExternalDrift             RulesDisposition = "external-drift"
+	RulesMalformedExternalProvider RulesDisposition = "malformed-external-provider"
+)
+
+type RulesObservation struct {
+	Disposition RulesDisposition
+	Fingerprint string
+}
 
 type WriteResult struct {
 	Warnings []string
@@ -30,7 +48,7 @@ func CodexContent() string {
 }
 
 func RulesContent() string {
-	return strings.TrimSpace(`## Dots Agent Rules
+	return strings.TrimSpace(`## Packy Agent Rules
 
 | Boundary | Rule |
 | --- | --- |
@@ -46,6 +64,48 @@ func RulesContent() string {
 For non-trivial work, load the delegation skill when available. Use it for Delegation Preflight, safe slice selection, skip reasons, and final reporting. Keep external project state in the main agent.`) + "\n"
 }
 
+func RulesFingerprint() string {
+	return rulesFingerprint(RulesContent())
+}
+
+func InspectRulesContract(content string) RulesObservation {
+	openCount := strings.Count(content, dotsRulesOpen)
+	closeCount := strings.Count(content, dotsRulesClose)
+	if openCount == 0 && closeCount == 0 {
+		return RulesObservation{Disposition: RulesNoExternalProvider}
+	}
+	if openCount == 0 || openCount != closeCount {
+		return RulesObservation{Disposition: RulesMalformedExternalProvider}
+	}
+
+	remaining := content
+	for range openCount {
+		openIndex := strings.Index(remaining, dotsRulesOpen)
+		closeIndex := strings.Index(remaining, dotsRulesClose)
+		if openIndex < 0 || closeIndex < openIndex {
+			return RulesObservation{Disposition: RulesMalformedExternalProvider}
+		}
+		bodyStart := openIndex + len(dotsRulesOpen)
+		body := remaining[bodyStart:closeIndex]
+		fingerprint := rulesFingerprint(body)
+		if fingerprint != RulesFingerprint() {
+			return RulesObservation{Disposition: RulesExternalDrift, Fingerprint: fingerprint}
+		}
+		remaining = remaining[closeIndex+len(dotsRulesClose):]
+	}
+	return RulesObservation{Disposition: RulesExternallySatisfied, Fingerprint: RulesFingerprint()}
+}
+
+func rulesFingerprint(content string) string {
+	normalized := strings.TrimSpace(strings.ReplaceAll(content, "\r\n", "\n"))
+	lines := strings.Split(normalized, "\n")
+	if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[0]), "## ") {
+		lines[0] = "## Agent Rules"
+	}
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:])
+}
+
 func RulesSectionContent() string {
 	return sectionBlock(openMarker(packyRulesSectionID), closeMarker(packyRulesSectionID), RulesContent())
 }
@@ -57,7 +117,11 @@ func WriteCodex(path string) (WriteResult, error) {
 	}
 	result := WriteResult{Warnings: DetectExternalManagedBlocks(existing)}
 	updated := upsertSection(existing, codexPackySectionID, CodexContent())
-	updated = upsertSection(updated, packyRulesSectionID, RulesContent())
+	if InspectRulesContract(existing).Disposition == RulesExternallySatisfied {
+		updated = removeSection(updated, packyRulesSectionID)
+	} else {
+		updated = upsertSection(updated, packyRulesSectionID, RulesContent())
+	}
 	if updated == existing {
 		return result, nil
 	}
@@ -96,6 +160,14 @@ func RemoveCodex(path string) error {
 
 func DetectExternalManagedBlocks(content string) []string {
 	var warnings []string
+	switch InspectRulesContract(content).Disposition {
+	case RulesExternallySatisfied:
+		warnings = append(warnings, "Codex baseline rules are externally satisfied by exact dots:rules; Packy preserved the external block and removed its redundant rules contribution")
+	case RulesExternalDrift:
+		warnings = append(warnings, "Codex dots:rules differs from the Packy baseline; Packy projected its baseline and preserved the external block; align the external provider contract before retrying")
+	case RulesMalformedExternalProvider:
+		warnings = append(warnings, "Codex dots:rules markers are malformed; Packy projected its baseline and preserved the external content; repair the external provider markers before retrying")
+	}
 	if strings.Contains(content, "<!-- gentle-ai:") || strings.Contains(content, "<!-- /gentle-ai:") {
 		warnings = append(warnings, "Codex prompt contains gentle-ai managed blocks; Packy preserved them and only updated Packy markers")
 	}
