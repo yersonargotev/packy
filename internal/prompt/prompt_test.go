@@ -69,13 +69,19 @@ func TestInspectRulesContractRecognizesOnlyExactDotsRules(t *testing.T) {
 		t.Fatalf("malformed disposition = %q, want %q", got, RulesMalformedExternalProvider)
 	}
 
-	for name, mixed := range map[string]string{
-		"exact-first": external + "\n" + drifted,
-		"exact-last":  drifted + "\n" + external,
+	for name, tc := range map[string]struct {
+		content   string
+		wantDrift bool
+		wantBad   bool
+	}{
+		"exact-before-drift":     {content: external + "\n" + drifted, wantDrift: true},
+		"exact-after-drift":      {content: drifted + "\n" + external, wantDrift: true},
+		"exact-before-malformed": {content: external + "\n<!-- dots:rules -->\nUnclosed.", wantBad: true},
+		"exact-after-malformed":  {content: "<!-- dots:rules -->\nUnclosed.\n" + external, wantBad: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := InspectRulesContract(mixed)
-			if got.Disposition != RulesExternallySatisfied || !got.Exact || !got.Drift {
+			got := InspectRulesContract(tc.content)
+			if got.Disposition != RulesExternallySatisfied || !got.Exact || got.Drift != tc.wantDrift || got.Malformed != tc.wantBad {
 				t.Fatalf("mixed observation = %#v", got)
 			}
 		})
@@ -180,12 +186,30 @@ func TestWriteCodexUsesExactDotsRulesWithoutDuplicatingOrTakingOwnership(t *test
 }
 
 func TestWriteCodexExactDotsRulesWinsOverSiblingDrift(t *testing.T) {
-	for name, existing := range map[string]string{
-		"exact-first": exactDotsRulesFixture() + "\n<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->",
-		"exact-last":  "<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->\n" + exactDotsRulesFixture(),
+	for name, tc := range map[string]struct {
+		external    string
+		warningText string
+	}{
+		"exact-before-drift": {
+			external:    exactDotsRulesFixture() + "\n<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->",
+			warningText: "differs",
+		},
+		"exact-after-drift": {
+			external:    "<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->\n" + exactDotsRulesFixture(),
+			warningText: "differs",
+		},
+		"exact-before-malformed": {
+			external:    exactDotsRulesFixture() + "\n<!-- dots:rules -->\nUnclosed.",
+			warningText: "malformed",
+		},
+		"exact-after-malformed": {
+			external:    "<!-- dots:rules -->\nUnclosed.\n" + exactDotsRulesFixture(),
+			warningText: "malformed",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := t.TempDir() + "/AGENTS.md"
+			existing := tc.external + "\n<!-- packy:rules -->\nstale Packy copy\n<!-- /packy:rules -->"
 			if err := os.WriteFile(path, []byte(existing), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +224,10 @@ func TestWriteCodexExactDotsRulesWinsOverSiblingDrift(t *testing.T) {
 			if strings.Contains(string(updatedBytes), "<!-- packy:rules -->") {
 				t.Fatalf("exact external rules did not suppress Packy copy:\n%s", updatedBytes)
 			}
-			if len(result.Warnings) != 2 || !strings.Contains(result.Warnings[0], "externally satisfied") || !strings.Contains(result.Warnings[1], "differs") {
+			if !strings.Contains(string(updatedBytes), tc.external) {
+				t.Fatalf("external content changed:\n%s", updatedBytes)
+			}
+			if len(result.Warnings) != 2 || !strings.Contains(result.Warnings[0], "externally satisfied") || !strings.Contains(result.Warnings[1], tc.warningText) {
 				t.Fatalf("warnings = %#v", result.Warnings)
 			}
 		})
