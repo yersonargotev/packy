@@ -225,7 +225,7 @@ func TestAddyPromotionGateHasStableNonPublishingIdentity(t *testing.T) {
 		"persist-credentials: false",
 		"actions/download-artifact@",
 		"name: claude-floor-qualification",
-		"GH_TOKEN: ${{ github.token }}",
+		"GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}",
 		"./scripts/gate-addy-promotion.sh",
 		"--generate",
 		"CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}",

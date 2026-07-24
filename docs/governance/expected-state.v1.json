@@ -38,8 +38,14 @@
           }
         ],
         "repository_actions": {
-          "secrets": [],
-          "total_count": 0
+          "secrets": [
+            {
+              "created_at": "2026-07-24T16:36:34Z",
+              "name": "GOVERNANCE_READ_TOKEN",
+              "updated_at": "2026-07-24T16:36:34Z"
+            }
+          ],
+          "total_count": 1
         }
       }
     },
