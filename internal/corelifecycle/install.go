@@ -146,7 +146,8 @@ func NewFacade(owners FacadeConfig, commands Commands, now func() time.Time) *Fa
 
 type plannedAction struct {
 	ActionView
-	skipReason SkillLinkCondition
+	skipReason   SkillLinkCondition
+	openCodePlan opencode.WritePlan
 }
 
 // Plan deliberately exposes behavior only through detached views. Its state,
@@ -268,11 +269,15 @@ func (facade *Facade) Preview(operation Operation) (Plan, error) {
 		}, actions...)
 	}
 	engram := facade.config.Engram.ExpectedPath()
+	openCodePlan, err := opencode.PreviewWrite(facade.config.OpenCode.ConfigFile(), facade.config.OpenCode.PromptFile())
+	if err != nil {
+		return Plan{}, err
+	}
 	actions = append(actions,
 		plannedAction{ActionView: ActionView{Kind: ActionRun, Command: engram, Args: []string{"setup", "codex"}, Description: "delegate Codex Engram setup through Homebrew binary"}},
 		plannedAction{ActionView: ActionView{Kind: ActionRun, Command: engram, Args: []string{"setup", "opencode"}, Description: "delegate OpenCode Engram setup through Homebrew binary"}},
 		plannedAction{ActionView: ActionView{Kind: ActionWriteCodexPrompt, Path: facade.config.Codex.PromptFile(), Description: "write Codex Packy prompt markers"}},
-		plannedAction{ActionView: ActionView{Kind: ActionWriteOpenCodePrompt, Path: facade.config.OpenCode.ConfigFile(), Target: facade.config.OpenCode.PromptFile(), Description: "write OpenCode Packy prompt reference"}},
+		plannedAction{ActionView: ActionView{Kind: ActionWriteOpenCodePrompt, Path: facade.config.OpenCode.ConfigFile(), Target: facade.config.OpenCode.PromptFile(), Description: "write OpenCode Packy prompt reference"}, openCodePlan: openCodePlan},
 	)
 	claudeDesired := cloneClassicDesired(facade.config.ClaudeDesired)
 	if len(claudeDesired.Skills) == 0 {
@@ -389,6 +394,13 @@ func (facade *Facade) applyInstall(ctx context.Context, plan Plan) (applyResult 
 	if plan.legacyMigration && len(plan.blockers) > 0 {
 		return Result{outcome: OutcomeBlocked, notStartedEffects: actionEffectIDs(plan.actions)}, fmt.Errorf("%w: legacy state remains authoritative", ErrBlockedPlan)
 	}
+	for _, action := range plan.actions {
+		if action.Kind == ActionWriteOpenCodePrompt {
+			if err := opencode.ValidateWritePlan(action.openCodePlan); err != nil {
+				return Result{}, err
+			}
+		}
+	}
 	saveState := saveInstallState
 	if plan.operation == Update {
 		saveState = saveUpdateState
@@ -460,7 +472,7 @@ func (facade *Facade) applyInstall(ctx context.Context, plan Plan) (applyResult 
 			}
 			warnings = append(warnings, result.Warnings...)
 		case ActionWriteOpenCodePrompt:
-			result, err := opencode.Write(action.Path, action.Target)
+			result, err := opencode.ApplyWrite(action.openCodePlan)
 			if err != nil {
 				return Result{}, err
 			}

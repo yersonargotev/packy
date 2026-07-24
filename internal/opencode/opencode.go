@@ -1,7 +1,9 @@
 package opencode
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,44 +18,235 @@ type WriteResult struct {
 	Warnings []string
 }
 
-type Inspection struct {
-	ConfigExists        bool
-	PromptExists        bool
-	HasPackyInstruction bool
-	Warnings            []string
+var ErrStaleWritePlan = errors.New("OpenCode rules observation changed after preview")
+
+type WritePlan struct {
+	configPath string
+	promptPath string
+	rulesSeal  string
+	rules      externalRulesObservation
 }
 
-func promptContent() string {
+type Inspection struct {
+	ConfigExists             bool
+	PromptExists             bool
+	HasPackyInstruction      bool
+	RulesExternallySatisfied bool
+	Warnings                 []string
+}
+
+type externalRulesObservation struct {
+	exactPaths     []string
+	driftPaths     []string
+	malformedPaths []string
+}
+
+func (observation externalRulesObservation) exact() bool {
+	return len(observation.exactPaths) > 0
+}
+
+func promptContent(rules externalRulesObservation) string {
 	workflow := strings.TrimSpace(`## Packy global workflow
 - Global skills live in ~/.agents/skills. When a task matches a skill, read that skill's SKILL.md before acting.
 - Use ask-matt at ~/.agents/skills/ask-matt as the router when you are unsure which skill or workflow applies.
 - Use Engram memory tools when available: search before past-work or project-sensitive tasks; save decisions, discoveries, bug fixes, and conventions; summarize sessions before finishing.
 - Apply host delegation rules when this OpenCode session exposes subagent/delegation tools. If unavailable, proceed inline and mention that delegation was unavailable.`)
+	if rules.exact() {
+		return workflow + "\n"
+	}
 	return workflow + "\n\n" + prompt.RulesSectionContent() + "\n"
 }
+
 func Write(configPath, promptPath string) (WriteResult, error) {
+	plan, err := PreviewWrite(configPath, promptPath)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	return ApplyWrite(plan)
+}
+
+func PreviewWrite(configPath, promptPath string) (WritePlan, error) {
 	existing, err := readOptionalFile(configPath)
 	if err != nil {
+		return WritePlan{}, err
+	}
+	rules, seal, err := observeInstructionRules(existing, configPath, promptPath)
+	if err != nil {
+		return WritePlan{}, err
+	}
+	if _, err := mergeInstruction(existing, configPath, promptPath); err != nil {
+		return WritePlan{}, err
+	}
+	return WritePlan{configPath: configPath, promptPath: promptPath, rulesSeal: seal, rules: rules}, nil
+}
+
+func ApplyWrite(plan WritePlan) (WriteResult, error) {
+	if err := ValidateWritePlan(plan); err != nil {
 		return WriteResult{}, err
 	}
-	result := WriteResult{Warnings: detectExternalManagedConfig(existing)}
-	config, err := mergeInstruction(existing, configPath, promptPath)
+	existing, err := readOptionalFile(plan.configPath)
 	if err != nil {
 		return WriteResult{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(promptPath), 0o700); err != nil {
-		return WriteResult{}, fmt.Errorf("create OpenCode config directory %s: %w", filepath.Dir(promptPath), err)
+	result := WriteResult{Warnings: append(rulesWarnings(plan.rules), detectExternalManagedConfig(existing)...)}
+	config, err := mergeInstruction(existing, plan.configPath, plan.promptPath)
+	if err != nil {
+		return WriteResult{}, err
 	}
-	if err := os.WriteFile(promptPath, []byte(promptContent()), 0o600); err != nil {
-		return WriteResult{}, fmt.Errorf("write OpenCode Packy prompt %s: %w", promptPath, err)
+	if err := os.MkdirAll(filepath.Dir(plan.promptPath), 0o700); err != nil {
+		return WriteResult{}, fmt.Errorf("create OpenCode config directory %s: %w", filepath.Dir(plan.promptPath), err)
+	}
+	if err := os.WriteFile(plan.promptPath, []byte(promptContent(plan.rules)), 0o600); err != nil {
+		return WriteResult{}, fmt.Errorf("write OpenCode Packy prompt %s: %w", plan.promptPath, err)
 	}
 	if config != existing {
-		if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
-			return WriteResult{}, fmt.Errorf("write OpenCode config %s: %w", configPath, err)
+		if err := os.WriteFile(plan.configPath, []byte(config), 0o600); err != nil {
+			return WriteResult{}, fmt.Errorf("write OpenCode config %s: %w", plan.configPath, err)
 		}
 	}
 	return result, nil
 }
+
+func ValidateWritePlan(plan WritePlan) error {
+	if plan.configPath == "" || plan.promptPath == "" {
+		return ErrStaleWritePlan
+	}
+	existing, err := readOptionalFile(plan.configPath)
+	if err != nil {
+		return err
+	}
+	_, seal, err := observeInstructionRules(existing, plan.configPath, plan.promptPath)
+	if err != nil {
+		return err
+	}
+	if seal != plan.rulesSeal {
+		return ErrStaleWritePlan
+	}
+	return nil
+}
+
+type instructionRuleSnapshot struct {
+	Reference   string `json:"reference"`
+	Path        string `json:"path,omitempty"`
+	State       string `json:"state"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+func observeInstructionRules(configContent, configPath, promptPath string) (externalRulesObservation, string, error) {
+	instructions, err := configuredInstructions(configContent, configPath)
+	if err != nil {
+		return externalRulesObservation{}, "", err
+	}
+	var observation externalRulesObservation
+	var snapshots []instructionRuleSnapshot
+	for _, instruction := range instructions {
+		paths := instructionPaths(configPath, instruction)
+		if len(paths) == 0 {
+			snapshots = append(snapshots, instructionRuleSnapshot{Reference: instruction, State: "opaque"})
+			continue
+		}
+		for _, path := range paths {
+			snapshot := instructionRuleSnapshot{Reference: instruction, Path: path}
+			if filepath.Clean(path) == filepath.Clean(promptPath) {
+				snapshot.State = "packy-owned"
+				snapshots = append(snapshots, snapshot)
+				continue
+			}
+			content, err := os.ReadFile(path)
+			if os.IsNotExist(err) {
+				snapshot.State = "missing"
+				snapshots = append(snapshots, snapshot)
+				continue
+			}
+			if err != nil {
+				return externalRulesObservation{}, "", fmt.Errorf("read OpenCode instruction %s: %w", path, err)
+			}
+			sum := sha256.Sum256(content)
+			snapshot.State = "read"
+			snapshot.Fingerprint = fmt.Sprintf("%x", sum)
+			snapshots = append(snapshots, snapshot)
+			rules := prompt.InspectRulesContract(string(content))
+			if rules.Exact {
+				observation.exactPaths = appendUniqueString(observation.exactPaths, path)
+			}
+			if rules.Drift {
+				observation.driftPaths = appendUniqueString(observation.driftPaths, path)
+			}
+			if rules.Malformed {
+				observation.malformedPaths = appendUniqueString(observation.malformedPaths, path)
+			}
+		}
+	}
+	data, _ := json.Marshal(snapshots)
+	sum := sha256.Sum256(data)
+	return observation, fmt.Sprintf("%x", sum), nil
+}
+
+func configuredInstructions(content, configPath string) ([]string, error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, nil
+	}
+	config := map[string]any{}
+	jsonData, err := jsoncToJSON(content)
+	if err != nil {
+		return nil, fmt.Errorf("read OpenCode config %s: invalid JSONC: %w", configPath, err)
+	}
+	if err := json.Unmarshal(jsonData, &config); err != nil {
+		return nil, fmt.Errorf("read OpenCode config %s: invalid JSONC: %w", configPath, err)
+	}
+	return instructionStrings(config["instructions"])
+}
+
+func instructionPaths(configPath, instruction string) []string {
+	if strings.Contains(instruction, "://") {
+		return nil
+	}
+	path := instruction
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(filepath.Dir(configPath), path)
+	}
+	path = filepath.Clean(path)
+	if !strings.ContainsAny(path, "*?[") {
+		return []string{path}
+	}
+	matches, err := filepath.Glob(path)
+	if err != nil || len(matches) == 0 {
+		return []string{path}
+	}
+	return matches
+}
+
+func appendUniqueString(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func rulesWarnings(rules externalRulesObservation) []string {
+	var warnings []string
+	if rules.exact() {
+		warnings = append(warnings, "OpenCode baseline rules are externally satisfied by exact dots:rules in "+strings.Join(rules.exactPaths, ", ")+"; Packy preserved the external instruction and omitted its own rules contribution")
+	}
+	if len(rules.driftPaths) > 0 {
+		action := "Packy projected its baseline and preserved the external instruction"
+		if rules.exact() {
+			action = "an exact dots:rules instruction still satisfies the baseline; Packy preserved the external instruction"
+		}
+		warnings = append(warnings, "OpenCode dots:rules in "+strings.Join(rules.driftPaths, ", ")+" differs from the Packy baseline; "+action+"; align the external provider contract before retrying")
+	}
+	if len(rules.malformedPaths) > 0 {
+		action := "Packy projected its baseline and preserved the external instruction"
+		if rules.exact() {
+			action = "an exact dots:rules instruction still satisfies the baseline; Packy preserved the external instruction"
+		}
+		warnings = append(warnings, "OpenCode dots:rules markers in "+strings.Join(rules.malformedPaths, ", ")+" are malformed; "+action+"; repair the external provider markers before retrying")
+	}
+	return warnings
+}
+
 func Remove(configPath, promptPath string) error {
 	existing, err := readOptionalFile(configPath)
 	if err != nil {
@@ -135,7 +328,15 @@ func Inspect(configPath, promptPath string) (Inspection, error) {
 	if err != nil {
 		return Inspection{}, err
 	}
-	inspection := Inspection{ConfigExists: strings.TrimSpace(existing) != "", Warnings: detectExternalManagedConfig(existing)}
+	rules, _, err := observeInstructionRules(existing, configPath, promptPath)
+	if err != nil {
+		return Inspection{}, err
+	}
+	inspection := Inspection{
+		ConfigExists:             strings.TrimSpace(existing) != "",
+		RulesExternallySatisfied: rules.exact(),
+		Warnings:                 append(rulesWarnings(rules), detectExternalManagedConfig(existing)...),
+	}
 	if _, err := os.Stat(promptPath); err == nil {
 		inspection.PromptExists = true
 	} else if err != nil && !os.IsNotExist(err) {
