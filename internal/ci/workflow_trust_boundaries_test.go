@@ -88,7 +88,7 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 		{name: "persisted pull request credential", workflow: "ci.yml", mutate: func(text string) string {
 			return strings.Replace(text, "persist-credentials: false", "persist-credentials: true", 1)
 		}, check: assertCheckoutCredentials},
-		{name: "pull request head execution", workflow: "governance.yml", mutate: func(text string) string { return text + "\n# ${{ github.event.pull_request.head.sha }}\n" }, check: assertPullRequestTargetDoesNotExecutePRHead},
+		{name: "pull request head execution", workflow: "governance.yml", mutate: func(text string) string { return text + "\n# ref: ${{ github.event.pull_request.head.sha }}\n" }, check: assertPullRequestTargetDoesNotExecutePRHead},
 		{name: "manual branch privilege", workflow: "claude-canary.yml", mutate: func(text string) string {
 			return strings.Replace(text, "github.ref == 'refs/heads/main'", "github.ref != ''", 1)
 		}, check: assertTrustedPrivilegedExecution},
@@ -115,7 +115,7 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	root := repositoryRoot(t)
 	workflows := make(map[string]workflowDocument)
-	for _, name := range []string{"ci.yml", "claude-canary.yml", "governance.yml", "governance-drift.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
+	for _, name := range []string{"addy-governance.yml", "ci.yml", "claude-canary.yml", "governance.yml", "governance-drift.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
 		workflows[name] = readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
 	}
 
@@ -296,6 +296,9 @@ func permissionBlock(lines []string, indent int) (map[string]string, string) {
 }
 
 var minimumJobPermissions = map[string]map[string]map[string]string{
+	".github/workflows/addy-governance.yml": {
+		"collect": {"actions": "read", "contents": "read", "deployments": "read", "issues": "read", "pull-requests": "read"},
+	},
 	".github/workflows/ci.yml": {
 		"addy-promotion-gate":        {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
 		"validate":                   {"contents": "read"},
@@ -411,11 +414,13 @@ func assertPullRequestTargetDoesNotExecutePRHead(t errorReporter, workflow workf
 		return
 	}
 	for _, forbidden := range []string{
-		"github.head_ref",
-		"github.event.pull_request.head.sha",
-		"github.event.pull_request.head.ref",
-		"github.event.pull_request.head.repo",
+		"ref: ${{ github.head_ref }}",
+		"ref: ${{ github.event.pull_request.head.sha }}",
+		"ref: ${{ github.event.pull_request.head.ref }}",
+		"repository: ${{ github.event.pull_request.head.repo.full_name }}",
 		"refs/pull/",
+		"git fetch",
+		"gh pr checkout",
 	} {
 		if strings.Contains(workflow.content, forbidden) {
 			t.Errorf("%s pull_request_target workflow references untrusted PR-head execution input %q", workflow.path, forbidden)
@@ -450,10 +455,17 @@ func assertTrustedPrivilegedExecution(t errorReporter, workflow workflowDocument
 }
 
 // Write-capable or secret-bearing jobs must name the trusted repository and a
-// protected ref boundary in their job-level gate. Governance is event-driven
-// from the protected base/default branch and additionally checks out github.sha,
-// never the proposed head. Release publication admits protected main only.
+// protected ref boundary in their job-level gate. Governance checks out only
+// the protected base/default branch; proposed-head identity may be compared as
+// data but is never fetched or executed. Release publication admits protected
+// main only.
 var trustedExecutionMarkers = map[string][]string{
+	".github/workflows/addy-governance.yml|collect": {
+		"github.repository == 'yersonargotev/packy'",
+		"github.event.pull_request.base.ref == 'main'",
+		"ref: ${{ github.event.pull_request.base.sha }}",
+		"GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}",
+	},
 	".github/workflows/claude-canary.yml|stable-smoke": {
 		"github.repository == 'yersonargotev/packy'",
 		"refs/heads/main",

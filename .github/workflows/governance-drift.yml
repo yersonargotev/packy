@@ -34,7 +34,8 @@ jobs:
 
       - name: Collect and evaluate sanitized read-only state
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
+          GH_METADATA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/governance-drift"
@@ -145,7 +146,7 @@ jobs:
             ' "$evaluation"
             echo
             echo '## Collection and ownership'
-            echo '- Commands/APIs: `scripts/collect-governance-drift.sh`, projected GitHub REST GETs, and `internal/tools/governancedrift`.'
+            echo '- Commands/APIs: `scripts/collect-governance-drift.sh`, projected GitHub REST/GraphQL reads, and `internal/tools/governancedrift`.'
             echo '- Classification: **unclassified**.'
             echo '- Owner: `yersonargotev`.'
             printf '%s\n' "- Blocking scope: \`${boundaries:-unknown}\`."

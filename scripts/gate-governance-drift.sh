@@ -7,6 +7,7 @@ repo=
 ref=
 commit=
 workflow=
+workflow_sha_override=
 output_dir=
 while (($#)); do
   case "$1" in
@@ -15,6 +16,7 @@ while (($#)); do
     --ref) ref="${2:-}"; shift 2 ;;
     --commit) commit="${2:-}"; shift 2 ;;
     --workflow) workflow="${2:-}"; shift 2 ;;
+    --workflow-sha) workflow_sha_override="${2:-}"; shift 2 ;;
     --output-dir) output_dir="${2:-}"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -30,7 +32,15 @@ done
 }
 
 mkdir -p "$output_dir"
-workflow_sha="$(git rev-parse "HEAD:$workflow")"
+if [[ -n "$workflow_sha_override" ]]; then
+  [[ "$workflow_sha_override" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "workflow-sha must be an exact Git blob SHA" >&2
+    exit 2
+  }
+  workflow_sha="$workflow_sha_override"
+else
+  workflow_sha="$(git rev-parse "HEAD:$workflow")"
+fi
 ./scripts/collect-governance-drift.sh \
   --repo "$repo" \
   --ref "$ref" \

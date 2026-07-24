@@ -56,7 +56,7 @@ jobs:
           ./scripts/gate-addy-promotion.sh \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.pull_request.head.sha }}" \
-            --generate \
+            --generate-trusted \
             "$RUNNER_TEMP/claude-floor-evidence/addy-qualification.json" \
             "$RUNNER_TEMP/addy-promotion/production-evidence.v1.json" \
             > "$RUNNER_TEMP/addy-promotion/addy-promotion-evidence.v1.json"

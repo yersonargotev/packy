@@ -83,5 +83,9 @@ go test ./internal/governanceauth ./internal/tools/governanceauth
 ```
 
 Secret Scanning and Push Protection remain GitHub platform controls. These
-workflows do not read secrets, approve pull requests, change issues, write
-repository contents, or alter repository settings.
+advisory jobs do not read secrets, approve pull requests, change issues, write
+repository contents, or alter repository settings. The separate Addy promotion
+governance job may consume only the repository-scoped
+`GOVERNANCE_READ_TOKEN` for privileged read-only projections and the built-in
+read-only token for public repository metadata. It fails closed when forks or
+other untrusted events cannot receive the dedicated secret.
