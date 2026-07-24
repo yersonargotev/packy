@@ -48,6 +48,25 @@ func TestDiscoverAcceptsManifestV3ClaudeSurface(t *testing.T) {
 	}
 }
 
+func TestManifestV3AcceptsMultiAuthorityOptionalModeDeclarations(t *testing.T) {
+	bundle, path, manifest := writeManifestV3Fixture(t)
+	addMultiAuthorityOptionalMode(manifest)
+	data, _ := json.Marshal(manifest)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack, err := LoadPortableManifest(path, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := pack.Resources[0].Bindings[0].AgentAuthority.Authorities
+	if len(records) != 2 ||
+		records[0].Declarations[0] != "optional-mode:browser-network:browser" ||
+		records[1].Declarations[0] != "optional-mode:browser-network:network" {
+		t.Fatalf("optional-mode authority records = %#v", records)
+	}
+}
+
 func TestManifestV3FailsClosedOnInvalidSurfaceContracts(t *testing.T) {
 	tests := []struct {
 		name, want string
@@ -84,9 +103,10 @@ func TestManifestV3FailsClosedOnInvalidSurfaceContracts(t *testing.T) {
 			hook := resource(m, "lifecycle", "memory")["bindings"].([]any)[0].(map[string]any)["hook"].(map[string]any)
 			delete(hook, "blocking")
 		}},
-		{"missing translation", "agent_authority tools", func(m map[string]any) {
+		{"missing declaration", "declaration \"tool:browser\" is missing", func(m map[string]any) {
 			a := resource(m, "agent", "helper")["bindings"].([]any)[0].(map[string]any)["agent_authority"].(map[string]any)
-			a["tools"] = []any{map[string]any{"portable": "browser"}}
+			record := a["authorities"].([]any)[0].(map[string]any)
+			record["declarations"] = []any{"permission:browser"}
 		}},
 		{"field from another resource kind", "unknown field", func(m map[string]any) {
 			resource(m, "instruction", "guide")["command"] = "not-legal-on-an-instruction"
@@ -108,6 +128,117 @@ func TestManifestV3FailsClosedOnInvalidSurfaceContracts(t *testing.T) {
 	}
 }
 
+func TestManifestV3FailsClosedOnInvalidAgentAuthorityContracts(t *testing.T) {
+	record := func(a map[string]any) map[string]any {
+		return a["authorities"].([]any)[0].(map[string]any)
+	}
+	authority := func(m map[string]any) map[string]any {
+		return resource(m, "agent", "helper")["bindings"].([]any)[0].(map[string]any)["agent_authority"].(map[string]any)
+	}
+	tests := []struct {
+		name, want string
+		edit       func(map[string]any)
+	}{
+		{"missing permission mode", "permission_mode must be default", func(m map[string]any) { delete(authority(m), "permission_mode") }},
+		{"null permission mode", "permission_mode must be default", func(m map[string]any) { authority(m)["permission_mode"] = nil }},
+		{"unknown permission mode", "permission_mode must be default", func(m map[string]any) { authority(m)["permission_mode"] = "bypassPermissions" }},
+		{"missing authorities", "authorities is a required non-null array", func(m map[string]any) { delete(authority(m), "authorities") }},
+		{"null authorities", "authorities is a required non-null array", func(m map[string]any) { authority(m)["authorities"] = nil }},
+		{"duplicate authority", "sorted by portable without duplicates", func(m map[string]any) {
+			a := authority(m)
+			a["authorities"] = append(a["authorities"].([]any), record(a))
+		}},
+		{"unsorted authorities", "sorted by portable without duplicates", func(m map[string]any) {
+			a := authority(m)
+			a["authorities"] = []any{
+				map[string]any{"portable": "filesystem", "declarations": []any{}, "outcome": "native", "claude_tools": []any{"Read"}, "fallback": "none"},
+				record(a),
+			}
+		}},
+		{"unknown portable", "portable authority", func(m map[string]any) { record(authority(m))["portable"] = "future" }},
+		{"missing declarations", "required non-null arrays", func(m map[string]any) { delete(record(authority(m)), "declarations") }},
+		{"null declarations", "required non-null arrays", func(m map[string]any) { record(authority(m))["declarations"] = nil }},
+		{"unsorted declarations", "declarations must be sorted", func(m map[string]any) {
+			record(authority(m))["declarations"] = []any{"tool:browser", "permission:browser"}
+		}},
+		{"duplicate declarations", "declarations must be sorted", func(m map[string]any) {
+			record(authority(m))["declarations"] = []any{"permission:browser", "permission:browser", "tool:browser"}
+		}},
+		{"dangling declaration", "dangling or unknown", func(m map[string]any) {
+			record(authority(m))["declarations"] = []any{"permission:browser", "tool:browser", "tool:future"}
+		}},
+		{"missing optional-mode authority declaration", "optional-mode:browser-network:network\" is missing", func(m map[string]any) {
+			addMultiAuthorityOptionalMode(m)
+			a := authority(m)
+			a["authorities"] = a["authorities"].([]any)[:1]
+		}},
+		{"dangling optional-mode authority declaration", "dangling or unknown", func(m map[string]any) {
+			r := record(authority(m))
+			r["declarations"] = []any{"optional-mode:missing:browser", "permission:browser", "tool:browser"}
+		}},
+		{"null claude tools", "required non-null arrays", func(m map[string]any) { record(authority(m))["claude_tools"] = nil }},
+		{"unsorted claude tools", "claude_tools must be sorted", func(m map[string]any) {
+			record(authority(m))["claude_tools"] = []any{"WebSearch", "Read"}
+		}},
+		{"duplicate claude tools", "claude_tools must be sorted", func(m map[string]any) {
+			record(authority(m))["claude_tools"] = []any{"WebSearch", "WebSearch"}
+		}},
+		{"unknown claude tool", "Claude tool", func(m map[string]any) { record(authority(m))["claude_tools"] = []any{"Future"} }},
+		{"unknown outcome", "outcome", func(m map[string]any) { record(authority(m))["outcome"] = "magic" }},
+		{"native without tools", "native outcome", func(m map[string]any) { record(authority(m))["claude_tools"] = []any{} }},
+		{"native with fallback", "native outcome", func(m map[string]any) { record(authority(m))["fallback"] = "Use a skill" }},
+		{"fallback with tools", "fallback outcome", func(m map[string]any) { record(authority(m))["outcome"] = "fallback" }},
+		{"fallback without fallback", "fallback outcome", func(m map[string]any) {
+			r := record(authority(m))
+			r["outcome"], r["claude_tools"] = "fallback", []any{}
+		}},
+		{"guarded without tools", "guarded outcome", func(m map[string]any) {
+			r := record(authority(m))
+			r["outcome"], r["claude_tools"] = "guarded", []any{}
+		}},
+		{"guarded with fallback", "guarded outcome", func(m map[string]any) {
+			r := record(authority(m))
+			r["outcome"], r["fallback"] = "guarded", "Ask first"
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bundle, path, manifest := writeManifestV3Fixture(t)
+			tt.edit(manifest)
+			data, _ := json.Marshal(manifest)
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadPortableManifest(path, bundle)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func addMultiAuthorityOptionalMode(manifest map[string]any) {
+	contract := manifest["contract"].(map[string]any)
+	contract["optional_modes"] = []any{map[string]any{
+		"id":          "browser-network",
+		"authorities": []any{"browser", "network"},
+		"fallback":    "Continue without browser research",
+	}}
+	authority := resource(manifest, "agent", "helper")["bindings"].([]any)[0].(map[string]any)["agent_authority"].(map[string]any)
+	browser := authority["authorities"].([]any)[0].(map[string]any)
+	browser["declarations"] = []any{"optional-mode:browser-network:browser", "permission:browser", "tool:browser"}
+	authority["authorities"] = []any{
+		browser,
+		map[string]any{
+			"portable":     "network",
+			"declarations": []any{"optional-mode:browser-network:network"},
+			"outcome":      "native",
+			"claude_tools": []any{"WebFetch"},
+			"fallback":     "none",
+		},
+	}
+}
+
 func writeManifestV3Fixture(t *testing.T) (string, string, map[string]any) {
 	t.Helper()
 	bundle := t.TempDir()
@@ -124,7 +255,7 @@ func writeManifestV3Fixture(t *testing.T) (string, string, map[string]any) {
 		return map[string]any{"surface": surface, "mode": "optional", "code": "unsupported-" + surface, "reason": "not projected on this surface"}
 	}
 	manifest := map[string]any{"schema_version": 3, "id": "example", "version": "3.0.0", "surfaces": []any{"claude", "codex", "opencode"}, "provides": []any{}, "requires": map[string]any{"capabilities": []any{}, "tools": []any{}}, "conflicts": []any{}, "contract": map[string]any{"exclusions": []any{}, "optional_modes": []any{}}, "resources": []any{
-		map[string]any{"kind": "agent", "id": "helper", "source": "agents/helper.md", "description": "Helps", "mode": "subagent", "tools": []any{"browser"}, "permissions": []any{"browser"}, "requires": []any{}, "bindings": []any{map[string]any{"surface": "claude", "projection": "agent", "name": "helper", "invocation": "@helper", "mode": "native", "sharing": "exclusive", "agent_authority": map[string]any{"tools": []any{map[string]any{"portable": "browser", "claude": "WebSearch"}}, "permissions": []any{map[string]any{"portable": "browser", "claude": "WebSearch"}}}}}, "surface_exclusions": []any{exclusion("codex"), exclusion("opencode")}},
+		map[string]any{"kind": "agent", "id": "helper", "source": "agents/helper.md", "description": "Helps", "mode": "subagent", "tools": []any{"browser"}, "permissions": []any{"browser"}, "requires": []any{}, "bindings": []any{map[string]any{"surface": "claude", "projection": "agent", "name": "helper", "invocation": "@helper", "mode": "native", "sharing": "exclusive", "agent_authority": map[string]any{"permission_mode": "default", "authorities": []any{map[string]any{"portable": "browser", "declarations": []any{"permission:browser", "tool:browser"}, "outcome": "native", "claude_tools": []any{"WebSearch"}, "fallback": "none"}}}}}, "surface_exclusions": []any{exclusion("codex"), exclusion("opencode")}},
 		map[string]any{"kind": "instruction", "id": "guide", "source": "instructions/guide.md", "requires": []any{}, "bindings": []any{}, "surface_exclusions": []any{map[string]any{"surface": "claude", "mode": "optional", "code": "unsupported-instruction", "reason": "test"}, exclusion("codex"), exclusion("opencode")}},
 		map[string]any{"kind": "lifecycle", "id": "memory", "requires": []any{}, "bindings": []any{map[string]any{"surface": "claude", "projection": "command_hook", "name": "memory", "invocation": "SessionStart", "mode": "native", "sharing": "exclusive", "hook": map[string]any{"type": "command", "event": "SessionStart", "matcher": "", "command": "engram", "args": []any{"session"}, "timeout_seconds": 5, "blocking": true, "failure": "block", "authorities": []any{"process"}}}}, "surface_exclusions": []any{exclusion("codex"), exclusion("opencode")}},
 	}}
