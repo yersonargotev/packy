@@ -601,6 +601,16 @@ func TestAddyAcceptanceValidationKeepsStableRowsAndBatchesFreshExactTests(t *tes
 	if promotionMappings := addyPromotionMappings(script); !reflect.DeepEqual(promotionMappings, wantPromotionMappings) {
 		t.Fatalf("Addy promotion mappings = %#v, want exact matrix %#v", promotionMappings, wantPromotionMappings)
 	}
+	for _, marker := range []string{
+		`go test "$package" -run "^${test}$" -count=1 -v`,
+		`grep -Fxc "=== RUN   $test"`,
+		`grep -Ec "^--- PASS: $test \\([0-9.]+s\\)$"`,
+		`$report_repository"$'\t'"$report_commit"$'\t'"$report_workflow_digest"$'\t'"$report_run_id`,
+	} {
+		if !strings.Contains(script, marker) {
+			t.Fatalf("Addy report mode lacks exact owning-test proof marker %q", marker)
+		}
+	}
 	if len(pairs) != 34 {
 		t.Fatalf("Addy acceptance unique package/test pairs = %d, want 34", len(pairs))
 	}

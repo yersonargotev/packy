@@ -63,16 +63,17 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 		rows[i] = AcceptanceRunRow{ID: row.ID, Package: "./internal/addyacceptance", OwningTest: row.OwningTest, Result: PromotionPassed, EvidenceSHA256: strings.Repeat("a", 64)}
 	}
 	input := ProductionPromotionInputs{
-		Acceptance:       NewAcceptanceRunReport(ctx.Repository, ctx.EvaluatedMergeSHA, ctx.WorkflowDigest, ctx.RunID, rows),
-		AcceptanceSHA256: strings.Repeat("1", 64), QualificationSHA256: strings.Repeat("2", 64),
-		GovernanceSHA256: strings.Repeat("3", 64), WorkflowBlobSHA: strings.Repeat("4", 40),
+		Acceptance:            NewAcceptanceRunReport(ctx.Repository, ctx.EvaluatedMergeSHA, ctx.WorkflowDigest, ctx.RunID, rows),
+		WorkflowBlobSHA:       strings.Repeat("4", 40),
 		DisposableHarnessRoot: t.TempDir(),
 		Qualification: ProductionQualification{
 			Repository: ctx.Repository, Workflow: ctx.Workflow, WorkflowDigest: ctx.WorkflowDigest,
 			RunID: ctx.RunID, Commit: ctx.EvaluatedMergeSHA, CollectedAt: ctx.Now.Add(-time.Minute),
 			PackySHA: ctx.EvaluatedMergeSHA, PackyExecutableDigest: strings.Repeat("5", 64),
 			RequestedClaudeVersion: "2.1.203", ResolvedClaudeVersion: "2.1.203",
-			ClaudeIntegrity: "sha512-integrity", ClaudeDigest: strings.Repeat("6", 64), AtomicitySHA256: strings.Repeat("7", 64),
+			ClaudeIntegrity: "sha512-integrity", ClaudeDigest: strings.Repeat("6", 64), AtomicityMaterial: struct {
+				Observation string `json:"observation"`
+			}{"safe"},
 		},
 		GovernanceEvaluation: governancedrift.Evaluation{
 			Identity: governancedrift.EvidenceIdentity{Repository: ctx.Repository, Ref: "refs/heads/main", CommitSHA: ctx.EvaluatedMergeSHA, WorkflowSHA: strings.Repeat("4", 40), CollectedAt: ctx.Now.Add(-time.Minute)},
@@ -80,8 +81,31 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 		},
 		GovernanceDecision: governancedrift.GateDecision{Allowed: true, Reasons: []string{}},
 	}
-	if _, err := BuildProductionPromotionEvidence(ctx, input); err != nil {
+	baseline, err := BuildProductionPromotionEvidence(ctx, input)
+	if err != nil {
 		t.Fatal(err)
+	}
+	changedAcceptance := input
+	changedAcceptance.DisposableHarnessRoot = t.TempDir()
+	changedAcceptance.Acceptance.Rows = append([]AcceptanceRunRow(nil), input.Acceptance.Rows...)
+	changedAcceptance.Acceptance.Rows[0].EvidenceSHA256 = strings.Repeat("8", 64)
+	acceptanceEvidence, err := BuildProductionPromotionEvidence(ctx, changedAcceptance)
+	if err != nil || acceptanceEvidence.Rows[0].EvidenceSHA256 == baseline.Rows[0].EvidenceSHA256 {
+		t.Fatal("changing admitted acceptance evidence did not change its derived row authority")
+	}
+	changedQualification := input
+	changedQualification.DisposableHarnessRoot = t.TempDir()
+	changedQualification.Qualification.ClaudeIntegrity = "sha512-other"
+	qualificationEvidence, err := BuildProductionPromotionEvidence(ctx, changedQualification)
+	if err != nil || qualificationEvidence.Rows[10].EvidenceSHA256 == baseline.Rows[10].EvidenceSHA256 {
+		t.Fatal("changing admitted qualification did not change its derived authority")
+	}
+	changedGovernance := input
+	changedGovernance.DisposableHarnessRoot = t.TempDir()
+	changedGovernance.GovernanceEvaluation.Identity.CollectedAt = ctx.Now.Add(-2 * time.Minute)
+	governanceEvidence, err := BuildProductionPromotionEvidence(ctx, changedGovernance)
+	if err != nil || governanceEvidence.Rows[12].EvidenceSHA256 == baseline.Rows[12].EvidenceSHA256 {
+		t.Fatal("changing admitted governance evidence did not change its derived authority")
 	}
 	tests := []struct {
 		name   string

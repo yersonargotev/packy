@@ -22,6 +22,13 @@ fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+workflow=.github/workflows/ci.yml
+if command -v sha256sum >/dev/null 2>&1; then
+  workflow_digest="$(sha256sum "$workflow" | awk '{print $1}')"
+else
+  workflow_digest="$(shasum -a 256 "$workflow" | awk '{print $1}')"
+fi
+
 base_sha="$(git rev-parse --verify "$1^{commit}")"
 head_sha="$(git rev-parse --verify "$2^{commit}")"
 promotion_change=false
@@ -74,7 +81,7 @@ if [[ "$promotion_change" == true ]]; then
       --report-output "$work/acceptance-report.json" \
       --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
       --commit "${GITHUB_SHA:?GITHUB_SHA is required}" \
-      --workflow-digest "$(if command -v sha256sum >/dev/null 2>&1; then sha256sum .github/workflows/ci.yml | awk '{print $1}'; else shasum -a 256 .github/workflows/ci.yml | awk '{print $1}'; fi)" \
+      --workflow-digest "$workflow_digest" \
       --run-id "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
     ./scripts/gate-governance-drift.sh \
       --boundary promotion \
@@ -86,13 +93,6 @@ if [[ "$promotion_change" == true ]]; then
   fi
 elif [[ "$foundation_change" == true ]]; then
   ./scripts/validate-addy-acceptance.sh
-fi
-
-workflow=.github/workflows/ci.yml
-if command -v sha256sum >/dev/null 2>&1; then
-  workflow_digest="$(sha256sum "$workflow" | awk '{print $1}')"
-else
-  workflow_digest="$(shasum -a 256 "$workflow" | awk '{print $1}')"
 fi
 
 args=(

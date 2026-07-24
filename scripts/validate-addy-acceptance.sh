@@ -37,7 +37,7 @@ fi
 
 declare -a mapping_rows=() mapping_packages=() mapping_tests=()
 declare -a promotion_rows=() promotion_packages=() promotion_tests=() packages=()
-declare -a evidence_packages=() evidence_outputs=()
+declare -a exact_packages=() exact_tests=() exact_outputs=()
 
 map_row() {
   local row="${1-}" package="${2-}"
@@ -169,11 +169,11 @@ promotion_rows_for_test() {
   printf '%s' "$result"
 }
 
-evidence_for_package() {
-  local package="$1" i
-  for ((i = 0; i < ${#evidence_packages[@]}; i++)); do
-    if [[ "${evidence_packages[i]}" == "$package" ]]; then
-      printf '%s' "${evidence_outputs[i]}"
+evidence_for_exact_test() {
+  local package="$1" test="$2" i
+  for ((i = 0; i < ${#exact_tests[@]}; i++)); do
+    if [[ "${exact_packages[i]}" == "$package" && "${exact_tests[i]}" == "$test" ]]; then
+      printf '%s' "${exact_outputs[i]}"
       return 0
     fi
   done
@@ -212,8 +212,6 @@ for package in "${packages[@]}"; do
   echo "==> Addy acceptance package $package (rows $(rows_for_package "$package"))"
   if output="$(go test "$package" -run "^(${tests})$" -count=1 2>&1)"; then
     printf '%s\n' "$output"
-    evidence_packages+=("$package")
-    evidence_outputs+=("$output")
     continue
   fi
   printf '%s\n' "$output" >&2
@@ -236,6 +234,29 @@ done
 ((execution_failed == 0)) || exit "$execution_failed"
 
 if [[ -n "$report_output" ]]; then
+  for ((i = 0; i < ${#promotion_tests[@]}; i++)); do
+    package="${promotion_packages[i]}"
+    test="${promotion_tests[i]}"
+    if evidence_for_exact_test "$package" "$test" >/dev/null 2>&1; then
+      continue
+    fi
+    if ! exact_output="$(go test "$package" -run "^${test}$" -count=1 -v 2>&1)"; then
+      printf '%s\n' "$exact_output" >&2
+      echo "Addy promotion exact owning test failed: $package/$test" >&2
+      exit 1
+    fi
+    if [[ "$(grep -Fxc "=== RUN   $test" <<<"$exact_output")" -ne 1 ||
+          "$(grep -Ec "^--- PASS: $test \\([0-9.]+s\\)$" <<<"$exact_output")" -ne 1 ]]; then
+      echo "Addy promotion exact owning test output is missing its unique RUN/PASS proof: $package/$test" >&2
+      exit 1
+    fi
+    sanitized="$(printf '%s\n' "$exact_output" |
+      sed -E '/^ok[[:space:]]/d; s/ \\([0-9.]+s\\)$/ (duration)/')"
+    exact_packages+=("$package")
+    exact_tests+=("$test")
+    exact_outputs+=("$sanitized")
+  done
+
   report_args=(
     --write-acceptance-report
     --output "$report_output"
@@ -245,7 +266,7 @@ if [[ -n "$report_output" ]]; then
     --run-id "$report_run_id"
   )
   for ((i = 0; i < ${#promotion_rows[@]}; i++)); do
-    material="${promotion_rows[i]}"$'\t'"${promotion_packages[i]}"$'\t'"${promotion_tests[i]}"$'\t'"$(evidence_for_package "${promotion_packages[i]}")"
+    material="${promotion_rows[i]}"$'\t'"${promotion_packages[i]}"$'\t'"${promotion_tests[i]}"$'\t'"$report_repository"$'\t'"$report_commit"$'\t'"$report_workflow_digest"$'\t'"$report_run_id"$'\t'"$(evidence_for_exact_test "${promotion_packages[i]}" "${promotion_tests[i]}")"
     if command -v sha256sum >/dev/null 2>&1; then
       evidence_digest="$(printf '%s' "$material" | sha256sum | awk '{print $1}')"
     else

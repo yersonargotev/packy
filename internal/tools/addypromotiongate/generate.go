@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,22 +21,22 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 		return errors.New("generation requires a promotion change and output path")
 	}
 	var qualification claudesmoke.AddyQualification
-	qualificationBytes, err := readCanonicalRegular(qualificationPath, &qualification)
+	_, err := readCanonicalRegular(qualificationPath, &qualification)
 	if err != nil {
 		return fmt.Errorf("read qualification: %w", err)
 	}
 	var acceptance addyacceptance.AcceptanceRunReport
-	acceptanceBytes, err := readCanonicalRegular(acceptancePath, &acceptance)
+	_, err = readCanonicalRegular(acceptancePath, &acceptance)
 	if err != nil {
 		return fmt.Errorf("read acceptance report: %w", err)
 	}
 	var evaluation governancedrift.Evaluation
-	evaluationBytes, err := readCanonicalRegular(evaluationPath, &evaluation)
+	_, err = readCanonicalRegular(evaluationPath, &evaluation)
 	if err != nil {
 		return fmt.Errorf("read governance evaluation: %w", err)
 	}
 	var gate governancedrift.GateDecision
-	gateBytes, err := readCanonicalRegular(gatePath, &gate)
+	_, err = readCanonicalRegular(gatePath, &gate)
 	if err != nil {
 		return fmt.Errorf("read governance gate: %w", err)
 	}
@@ -47,23 +45,17 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 		return fmt.Errorf("resolve evaluated workflow blob: %w", err)
 	}
 	workflowSHA := string(bytes.TrimSpace(workflowSHABytes))
-	acceptanceSHA := sha256Hex(acceptanceBytes)
-	qualificationSHA := sha256Hex(qualificationBytes)
-	governanceSHA := sha256Hex(append(append([]byte(nil), evaluationBytes...), gateBytes...))
 	collectedAt, err := time.Parse(time.RFC3339Nano, qualification.CollectedAt)
 	if err != nil {
 		return fmt.Errorf("parse qualification collection time: %w", err)
 	}
-	atomicityMaterial, err := json.Marshal(struct {
+	atomicityMaterial := struct {
 		Commands    any `json:"commands"`
 		Before      any `json:"before"`
 		After       any `json:"after"`
 		Safety      any `json:"safety"`
 		Observation any `json:"qualification_observation"`
-	}{qualification.Smoke.Commands, qualification.Smoke.Before, qualification.Smoke.After, qualification.Smoke.Safety, qualification.Smoke.Qualification})
-	if err != nil {
-		return err
-	}
+	}{qualification.Smoke.Commands, qualification.Smoke.Before, qualification.Smoke.After, qualification.Smoke.Safety, qualification.Smoke.Qualification}
 
 	root, err := os.MkdirTemp("", "packy-addy-production-harness.")
 	if err != nil {
@@ -71,7 +63,7 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 	}
 	defer os.RemoveAll(root)
 	evidence, err := addyacceptance.BuildProductionPromotionEvidence(context, addyacceptance.ProductionPromotionInputs{
-		Acceptance: acceptance, AcceptanceSHA256: acceptanceSHA,
+		Acceptance: acceptance,
 		Qualification: addyacceptance.ProductionQualification{
 			Synthetic: qualification.Synthetic, Repository: qualification.Repository,
 			Workflow: qualification.Workflow, WorkflowDigest: qualification.WorkflowDigest,
@@ -80,10 +72,9 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 			RequestedClaudeVersion: qualification.Smoke.RequestedClaudeVersion,
 			ResolvedClaudeVersion:  qualification.Smoke.ResolvedClaudeVersion,
 			ClaudeIntegrity:        qualification.Smoke.ClaudeIntegrity, ClaudeDigest: qualification.Smoke.ClaudeDigest,
-			AtomicitySHA256: sha256Hex(atomicityMaterial),
+			AtomicityMaterial: atomicityMaterial,
 		},
-		QualificationSHA256:  qualificationSHA,
-		GovernanceEvaluation: evaluation, GovernanceDecision: gate, GovernanceSHA256: governanceSHA,
+		GovernanceEvaluation: evaluation, GovernanceDecision: gate,
 		WorkflowBlobSHA: workflowSHA, DisposableHarnessRoot: root,
 	})
 	if err != nil {
@@ -152,9 +143,4 @@ func writeExclusive(path string, data []byte) error {
 		return err
 	}
 	return f.Close()
-}
-
-func sha256Hex(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
 }

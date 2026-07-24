@@ -72,31 +72,28 @@ func (r AcceptanceRunReport) CanonicalJSON(context PromotionValidationContext) (
 
 type ProductionPromotionInputs struct {
 	Acceptance            AcceptanceRunReport
-	AcceptanceSHA256      string
 	Qualification         ProductionQualification
-	QualificationSHA256   string
 	GovernanceEvaluation  governancedrift.Evaluation
 	GovernanceDecision    governancedrift.GateDecision
-	GovernanceSHA256      string
 	WorkflowBlobSHA       string
 	DisposableHarnessRoot string
 }
 
 type ProductionQualification struct {
-	Synthetic              bool
-	Repository             string
-	Workflow               string
-	WorkflowDigest         string
-	RunID                  string
-	Commit                 string
-	CollectedAt            time.Time
-	PackySHA               string
-	PackyExecutableDigest  string
-	RequestedClaudeVersion string
-	ResolvedClaudeVersion  string
-	ClaudeIntegrity        string
-	ClaudeDigest           string
-	AtomicitySHA256        string
+	Synthetic              bool      `json:"synthetic"`
+	Repository             string    `json:"repository"`
+	Workflow               string    `json:"workflow"`
+	WorkflowDigest         string    `json:"workflow_digest"`
+	RunID                  string    `json:"run_id"`
+	Commit                 string    `json:"commit"`
+	CollectedAt            time.Time `json:"collected_at"`
+	PackySHA               string    `json:"packy_sha"`
+	PackyExecutableDigest  string    `json:"packy_executable_sha256"`
+	RequestedClaudeVersion string    `json:"requested_claude_version"`
+	ResolvedClaudeVersion  string    `json:"resolved_claude_version"`
+	ClaudeIntegrity        string    `json:"claude_npm_integrity"`
+	ClaudeDigest           string    `json:"claude_executable_sha256"`
+	AtomicityMaterial      any       `json:"atomicity_material"`
 }
 
 // BuildProductionPromotionEvidence owns admission policy for all independent
@@ -111,7 +108,7 @@ func BuildProductionPromotionEvidence(context PromotionValidationContext, in Pro
 		q.Commit != contextCommit(context) || q.PackySHA != contextCommit(context) ||
 		q.RequestedClaudeVersion != "2.1.203" || q.ResolvedClaudeVersion != "2.1.203" ||
 		!validAuthorityDigest(q.PackyExecutableDigest) || !validAuthorityDigest(q.ClaudeDigest) ||
-		strings.TrimSpace(q.ClaudeIntegrity) == "" || !validAuthorityDigest(q.AtomicitySHA256) {
+		strings.TrimSpace(q.ClaudeIntegrity) == "" || q.AtomicityMaterial == nil {
 		return PromotionEvidence{}, errors.New("qualification does not match exact trusted run, commit, workflow, and Claude floor")
 	}
 	if q.CollectedAt.After(context.Now) || context.Now.Sub(q.CollectedAt) > 24*time.Hour {
@@ -129,16 +126,27 @@ func BuildProductionPromotionEvidence(context PromotionValidationContext, in Pro
 	if i.CollectedAt.After(context.Now) || context.Now.Sub(i.CollectedAt) > time.Hour {
 		return PromotionEvidence{}, errors.New("governance evidence is stale or future-dated")
 	}
-	for name, value := range map[string]string{
-		"acceptance": in.AcceptanceSHA256, "qualification": in.QualificationSHA256,
-		"governance": in.GovernanceSHA256,
-	} {
-		if !validAuthorityDigest(value) {
-			return PromotionEvidence{}, fmt.Errorf("%s evidence digest is invalid", name)
-		}
+	acceptanceSHA256, err := canonicalAuthorityDigest(in.Acceptance)
+	if err != nil {
+		return PromotionEvidence{}, err
 	}
-	prepublication := digestBytes([]byte(in.AcceptanceSHA256 + in.GovernanceSHA256))
-	authority, err := NewProductionPromotionAuthority(context, in.Acceptance.Rows, in.AcceptanceSHA256, in.QualificationSHA256, in.GovernanceSHA256, prepublication)
+	qualificationSHA256, err := canonicalAuthorityDigest(in.Qualification)
+	if err != nil {
+		return PromotionEvidence{}, err
+	}
+	governanceSHA256, err := canonicalAuthorityDigest(struct {
+		Evaluation governancedrift.Evaluation   `json:"evaluation"`
+		Decision   governancedrift.GateDecision `json:"decision"`
+	}{e, g})
+	if err != nil {
+		return PromotionEvidence{}, err
+	}
+	atomicitySHA256, err := canonicalAuthorityDigest(q.AtomicityMaterial)
+	if err != nil {
+		return PromotionEvidence{}, err
+	}
+	prepublication := digestBytes([]byte(acceptanceSHA256 + governanceSHA256))
+	authority, err := NewProductionPromotionAuthority(context, in.Acceptance.Rows, acceptanceSHA256, qualificationSHA256, governanceSHA256, prepublication)
 	if err != nil {
 		return PromotionEvidence{}, err
 	}
@@ -158,8 +166,16 @@ func BuildProductionPromotionEvidence(context PromotionValidationContext, in Pro
 	return report.BuildAggregate(context, PromotionAggregateCandidate{
 		PackageCandidate: q.PackyExecutableDigest,
 		ClaudeIdentities: claudeIdentities,
-		AtomicitySHA256:  q.AtomicitySHA256,
+		AtomicitySHA256:  atomicitySHA256,
 	})
+}
+
+func canonicalAuthorityDigest(value any) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return digestBytes(data), nil
 }
 
 func digestBytes(data []byte) string {
