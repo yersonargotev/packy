@@ -1,8 +1,10 @@
 package localprojection
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -83,6 +85,61 @@ func TestReplaceTreePublishesOneExactTreeAndPreservesTargetOnFailedVerification(
 	info, err := os.Stat(filepath.Join(target, "scripts", "inert.sh"))
 	if err != nil || info.Mode().Perm() != 0o755 {
 		t.Fatalf("executable mode = %v: %v", info.Mode().Perm(), err)
+	}
+}
+
+func TestReplaceTreesRollsBackEarlierPublicationWhenLaterPublicationFails(t *testing.T) {
+	root := t.TempDir()
+	targets := []string{filepath.Join(root, "skills", "one"), filepath.Join(root, "skills", "two")}
+	for i, target := range targets {
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte("old-"+string(rune('1'+i))), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	changes := make([]TreeChange, len(targets))
+	for i, target := range targets {
+		files := []TreeFile{{Path: "SKILL.md", Content: []byte("new-" + string(rune('1'+i))), Mode: 0o644}}
+		fingerprint, err := FingerprintTreeFiles(files)
+		if err != nil {
+			t.Fatal(err)
+		}
+		changes[i] = TreeChange{ID: "skill:" + string(rune('1'+i)), Target: target, Files: files, ExpectedFingerprint: fingerprint}
+	}
+
+	originalRename := renameTreePath
+	t.Cleanup(func() { renameTreePath = originalRename })
+	publications := 0
+	renameTreePath = func(oldPath, newPath string) error {
+		if strings.HasPrefix(filepath.Base(oldPath), ".packy-tree-stage-") && !strings.HasSuffix(oldPath, ".backup") {
+			publications++
+			if publications == 2 {
+				return errors.New("injected second publication failure")
+			}
+		}
+		return originalRename(oldPath, newPath)
+	}
+	err := ReplaceTrees(changes)
+	if err == nil || !strings.Contains(err.Error(), "skill:2") {
+		t.Fatalf("error = %v, want second tree identity", err)
+	}
+	for i, target := range targets {
+		data, readErr := os.ReadFile(filepath.Join(target, "SKILL.md"))
+		want := "old-" + string(rune('1'+i))
+		if readErr != nil || string(data) != want {
+			t.Fatalf("target %d after rollback = %q, want %q: %v", i, data, want, readErr)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Dir(targets[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".packy-tree-stage-") {
+			t.Fatalf("transaction artifact remains after rollback: %s", entry.Name())
+		}
 	}
 }
 
