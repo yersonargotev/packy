@@ -310,7 +310,7 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	writeFile(t, filepath.Join(root, "bundle", "packs", "addy", "pack.json"), `{"resources":[]}`+"\n")
 	writeFile(t, filepath.Join(root, "bundle", "sources", "addy.lock.json"), "{}\n")
 	writeFile(t, filepath.Join(root, "bundle", "sources.json"), "{}\n")
-	writeFile(t, filepath.Join(root, "scripts", "validate-addy-acceptance.sh"), "#!/bin/sh\nset -eu\nprintf 'foundation validation\\n' >&2\n")
+	writeFile(t, filepath.Join(root, "scripts", "validate-addy-acceptance.sh"), "#!/bin/sh\nset -eu\nprintf 'foundation validation\\n'\n")
 	if err := os.Chmod(filepath.Join(root, "scripts", "gate-addy-promotion.sh"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -368,23 +368,19 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("changed promotion authority failed foundation validation: err=%v\n%s", err, output)
 	}
-	jsonStart := bytes.IndexByte(output, '{')
-	if jsonStart < 0 {
-		t.Fatalf("foundation validation emitted no canonical decision:\n%s", output)
-	}
-	foundation, err := addyacceptance.DecodePromotionEvidence(output[jsonStart:])
+	foundation, err := addyacceptance.DecodePromotionEvidence(output)
 	if err != nil || foundation.Disposition != addyacceptance.PromotionFoundation {
 		t.Fatalf("foundation disposition = %q, err=%v\n%s", foundation.Disposition, err, output)
+	}
+	canonical, err = foundation.CanonicalJSON()
+	if err != nil || !bytes.Equal(output, canonical) {
+		t.Fatalf("foundation gate output is not canonical: %v\n%s", err, output)
 	}
 	output, err = runAddyGateWith(root, head, authorityHead, "--generate", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-evidence.json"))
 	if err != nil {
 		t.Fatalf("foundation generated path failed instead of remaining canonical: %v\n%s", err, output)
 	}
-	jsonStart = bytes.IndexByte(output, '{')
-	if jsonStart < 0 {
-		t.Fatalf("foundation generated path emitted no canonical decision:\n%s", output)
-	}
-	transported, err = addyacceptance.DecodePromotionEvidence(output[jsonStart:])
+	transported, err = addyacceptance.DecodePromotionEvidence(output)
 	if err != nil || transported.Disposition != addyacceptance.PromotionFoundation {
 		t.Fatalf("transported qualification changed foundation decision: disposition=%q err=%v\n%s", transported.Disposition, err, output)
 	}
@@ -428,7 +424,14 @@ func runAddyGateWith(root, base, head string, extra ...string) ([]byte, error) {
 		"GITHUB_SHA="+head,
 		"GITHUB_RUN_ID=12345",
 	)
-	return cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		return append(stdout.Bytes(), stderr.Bytes()...), err
+	}
+	return stdout.Bytes(), nil
 }
 
 func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {

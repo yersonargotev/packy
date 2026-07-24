@@ -24,6 +24,10 @@ fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+validate_acceptance() {
+  ./scripts/validate-addy-acceptance.sh "$@" >&2
+}
+
 workflow=.github/workflows/ci.yml
 if command -v sha256sum >/dev/null 2>&1; then
   workflow_digest="$(sha256sum "$workflow" | awk '{print $1}')"
@@ -84,7 +88,7 @@ if [[ "$promotion_change" == true ]]; then
     }
     work="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/addy-promotion-generation.XXXXXX")"
     trap 'rm -rf "$work"' EXIT
-    ./scripts/validate-addy-acceptance.sh \
+    validate_acceptance \
       --report-output "$work/acceptance-report.json" \
       --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
       --commit "${GITHUB_SHA:?GITHUB_SHA is required}" \
@@ -107,7 +111,7 @@ if [[ "$promotion_change" == true ]]; then
     fi
   fi
 elif [[ "$foundation_change" == true ]]; then
-  ./scripts/validate-addy-acceptance.sh
+  validate_acceptance
 fi
 
 args=(
