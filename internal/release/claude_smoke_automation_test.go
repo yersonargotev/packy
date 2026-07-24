@@ -19,7 +19,7 @@ func TestPullRequestsBlockOnExactClaudeFloorAndRetainEvidence(t *testing.T) {
 		"actions/upload-artifact@",
 		"if-no-files-found: error",
 		"retention-days: 90",
-		"--addy-qualification synthetic",
+		"--addy-qualification production",
 		"--addy-workflow .github/workflows/ci.yml",
 	} {
 		if !strings.Contains(text, want) {

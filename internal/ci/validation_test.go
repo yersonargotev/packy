@@ -215,11 +215,20 @@ func TestAddyPromotionGateHasStableNonPublishingIdentity(t *testing.T) {
 	gate := workflowSection(t, workflow, "  addy-promotion-gate:", "  validate:")
 	for _, required := range []string{
 		"name: Addy 1.1.0 promotion gate",
-		"if: github.event_name == 'pull_request'",
-		"permissions:\n      contents: read",
+		"needs: claude-floor-smoke",
+		"if: always() && github.event_name == 'pull_request'",
+		"actions: read",
+		"contents: read",
+		"deployments: read",
+		"issues: read",
 		"fetch-depth: 0",
 		"persist-credentials: false",
+		"actions/download-artifact@",
+		"name: claude-floor-qualification",
+		"GH_TOKEN: ${{ github.token }}",
 		"./scripts/gate-addy-promotion.sh",
+		"--generate",
+		"CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}",
 	} {
 		if !strings.Contains(gate, required) {
 			t.Fatalf("Addy promotion gate missing %q", required)
@@ -277,19 +286,22 @@ func TestAddyPromotionMainReplayIsEffectFreeAndRetained(t *testing.T) {
 func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	sourceRoot := repositoryRoot(t)
 	root := t.TempDir()
-	paths := []string{"go.mod", "go.sum", ".github/workflows/ci.yml", "scripts/gate-addy-promotion.sh", "internal/tools/addypromotiongate/main.go", "internal/tools/addypromotiongate/reconstruct.go", "internal/capabilitypack/catalog.go", "internal/addyacceptance/testdata/addy-0.6.4.tar.gz"}
-	acceptanceFiles, err := filepath.Glob(filepath.Join(sourceRoot, "internal", "addyacceptance", "*.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range acceptanceFiles {
-		if !strings.HasSuffix(path, "_test.go") {
+	paths := []string{"go.mod", "go.sum", ".github/workflows/ci.yml", "scripts/gate-addy-promotion.sh", "internal/tools/addypromotiongate/main.go", "internal/tools/addypromotiongate/reconstruct.go", "internal/tools/addypromotiongate/generate.go", "internal/capabilitypack/catalog.go", "internal/addyacceptance/testdata/addy-0.6.4.tar.gz"}
+	err := filepath.Walk(filepath.Join(sourceRoot, "internal"), func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
 			relative, relErr := filepath.Rel(sourceRoot, path)
 			if relErr != nil {
-				t.Fatal(relErr)
+				return relErr
 			}
 			paths = append(paths, relative)
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	for _, path := range paths {
 		destination := filepath.Join(root, path)
@@ -331,6 +343,14 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	if err != nil || !bytes.Equal(output, canonical) {
 		t.Fatalf("gate output is not canonical: %v\n%s", err, output)
 	}
+	output, err = runAddyGateWith(root, base, head, "--generate", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-evidence.json"))
+	if err != nil {
+		t.Fatalf("unrelated generated path failed instead of remaining not_applicable: %v\n%s", err, output)
+	}
+	transported, err := addyacceptance.DecodePromotionEvidence(output)
+	if err != nil || transported.Disposition != addyacceptance.PromotionNotApplicable {
+		t.Fatalf("transported qualification changed unrelated decision: disposition=%q err=%v\n%s", transported.Disposition, err, output)
+	}
 
 	fixtureSource := filepath.Join(root, "internal", "addyacceptance", "fixture.go")
 	writeFile(t, fixtureSource, readFile(t, fixtureSource)+"\n// changed canonical Addy fixture\n")
@@ -348,6 +368,18 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	foundation, err := addyacceptance.DecodePromotionEvidence(output[jsonStart:])
 	if err != nil || foundation.Disposition != addyacceptance.PromotionFoundation {
 		t.Fatalf("foundation disposition = %q, err=%v\n%s", foundation.Disposition, err, output)
+	}
+	output, err = runAddyGateWith(root, head, authorityHead, "--generate", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-evidence.json"))
+	if err != nil {
+		t.Fatalf("foundation generated path failed instead of remaining canonical: %v\n%s", err, output)
+	}
+	jsonStart = bytes.IndexByte(output, '{')
+	if jsonStart < 0 {
+		t.Fatalf("foundation generated path emitted no canonical decision:\n%s", output)
+	}
+	transported, err = addyacceptance.DecodePromotionEvidence(output[jsonStart:])
+	if err != nil || transported.Disposition != addyacceptance.PromotionFoundation {
+		t.Fatalf("transported qualification changed foundation decision: disposition=%q err=%v\n%s", transported.Disposition, err, output)
 	}
 
 	if err := os.MkdirAll(filepath.Join(root, "bundle", "history", "addy"), 0o755); err != nil {
@@ -371,7 +403,13 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 }
 
 func runAddyGate(root, base, head string) ([]byte, error) {
-	cmd := exec.Command("/bin/bash", filepath.Join(root, "scripts", "gate-addy-promotion.sh"), base, head)
+	return runAddyGateWith(root, base, head)
+}
+
+func runAddyGateWith(root, base, head string, extra ...string) ([]byte, error) {
+	args := []string{filepath.Join(root, "scripts", "gate-addy-promotion.sh"), base, head}
+	args = append(args, extra...)
+	cmd := exec.Command("/bin/bash", args...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),
 		"GITHUB_REPOSITORY=owner/repository",
@@ -562,6 +600,16 @@ func TestAddyAcceptanceValidationKeepsStableRowsAndBatchesFreshExactTests(t *tes
 	}
 	if promotionMappings := addyPromotionMappings(script); !reflect.DeepEqual(promotionMappings, wantPromotionMappings) {
 		t.Fatalf("Addy promotion mappings = %#v, want exact matrix %#v", promotionMappings, wantPromotionMappings)
+	}
+	for _, marker := range []string{
+		`go test "$package" -run "^${test}$" -count=1 -v`,
+		`grep -Fxc "=== RUN   $test"`,
+		`grep -Ec "^--- PASS: $test \\([0-9.]+s\\)$"`,
+		`$report_repository"$'\t'"$report_commit"$'\t'"$report_workflow_digest"$'\t'"$report_run_id`,
+	} {
+		if !strings.Contains(script, marker) {
+			t.Fatalf("Addy report mode lacks exact owning-test proof marker %q", marker)
+		}
 	}
 	if len(pairs) != 34 {
 		t.Fatalf("Addy acceptance unique package/test pairs = %d, want 34", len(pairs))
