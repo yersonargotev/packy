@@ -34,7 +34,7 @@ jobs:
 
       - name: Collect and evaluate sanitized read-only state
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/governance-drift"

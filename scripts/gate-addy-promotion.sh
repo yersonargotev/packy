@@ -3,15 +3,17 @@
 set -euo pipefail
 
 if (($# < 2 || $# > 5)); then
-  echo "usage: $0 <base-ref> <head-ref> [same-run-promotion-evidence | --generate <production-qualification> <output-evidence>]" >&2
+  echo "usage: $0 <base-ref> <head-ref> [same-run-promotion-evidence | --generate <production-qualification> <output-evidence> | --generate-trusted <production-qualification> <output-evidence>]" >&2
   exit 2
 fi
 generate=false
+trusted_governance=false
 qualification=
 generated_evidence=
-if [[ "${3:-}" == "--generate" ]]; then
-  (($# == 5)) || { echo "--generate requires qualification and output paths" >&2; exit 2; }
+if [[ "${3:-}" == "--generate" || "${3:-}" == "--generate-trusted" ]]; then
+  (($# == 5)) || { echo "${3:-} requires qualification and output paths" >&2; exit 2; }
   generate=true
+  [[ "$3" == "--generate-trusted" ]] && trusted_governance=true
   qualification="$4"
   generated_evidence="$5"
 elif (($# > 3)); then
@@ -43,7 +45,7 @@ while IFS= read -r path; do
     bundle/packs/addy/pack.json | bundle/sources/addy.lock.json | bundle/history/addy/*)
       promotion_change=true
       ;;
-    .github/workflows/ci.yml | internal/addyacceptance/* | internal/capabilitypack/* | internal/ci/* | internal/claudecode/* | internal/tools/addypromotiongate/* | scripts/gate-addy-promotion.sh | scripts/validate-addy-acceptance.sh)
+    .github/workflows/addy-governance.yml | .github/workflows/ci.yml | internal/addyacceptance/* | internal/capabilitypack/* | internal/ci/* | internal/claudecode/* | internal/tools/addypromotiongate/* | scripts/download-addy-governance-evidence.sh | scripts/gate-addy-promotion.sh | scripts/gate-governance-drift.sh | scripts/validate-addy-acceptance.sh)
       if [[ "$base_has_promotion_gate" == true ]]; then
         foundation_change=true
       fi
@@ -83,13 +85,21 @@ if [[ "$promotion_change" == true ]]; then
       --commit "${GITHUB_SHA:?GITHUB_SHA is required}" \
       --workflow-digest "$workflow_digest" \
       --run-id "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
-    ./scripts/gate-governance-drift.sh \
-      --boundary promotion \
-      --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
-      --ref refs/heads/main \
-      --commit "${GITHUB_SHA:?GITHUB_SHA is required}" \
-      --workflow .github/workflows/ci.yml \
-      --output-dir "$work/governance"
+    if [[ "$trusted_governance" == true ]]; then
+      ./scripts/download-addy-governance-evidence.sh \
+        --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
+        --pull-request "${GITHUB_PR_NUMBER:?GITHUB_PR_NUMBER is required}" \
+        --merge-sha "${GITHUB_SHA:?GITHUB_SHA is required}" \
+        --output-dir "$work/governance"
+    else
+      ./scripts/gate-governance-drift.sh \
+        --boundary promotion \
+        --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
+        --ref refs/heads/main \
+        --commit "${GITHUB_SHA:?GITHUB_SHA is required}" \
+        --workflow .github/workflows/ci.yml \
+        --output-dir "$work/governance"
+    fi
   fi
 elif [[ "$foundation_change" == true ]]; then
   ./scripts/validate-addy-acceptance.sh

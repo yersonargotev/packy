@@ -115,7 +115,7 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	root := repositoryRoot(t)
 	workflows := make(map[string]workflowDocument)
-	for _, name := range []string{"ci.yml", "claude-canary.yml", "governance.yml", "governance-drift.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
+	for _, name := range []string{"addy-governance.yml", "ci.yml", "claude-canary.yml", "governance.yml", "governance-drift.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
 		workflows[name] = readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
 	}
 
@@ -296,6 +296,9 @@ func permissionBlock(lines []string, indent int) (map[string]string, string) {
 }
 
 var minimumJobPermissions = map[string]map[string]map[string]string{
+	".github/workflows/addy-governance.yml": {
+		"collect": {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
+	},
 	".github/workflows/ci.yml": {
 		"addy-promotion-gate":        {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
 		"validate":                   {"contents": "read"},
@@ -454,6 +457,12 @@ func assertTrustedPrivilegedExecution(t errorReporter, workflow workflowDocument
 // from the protected base/default branch and additionally checks out github.sha,
 // never the proposed head. Release publication admits protected main only.
 var trustedExecutionMarkers = map[string][]string{
+	".github/workflows/addy-governance.yml|collect": {
+		"github.repository == 'yersonargotev/packy'",
+		"github.event.pull_request.base.ref == 'main'",
+		"ref: ${{ github.event.pull_request.base.sha }}",
+		"GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}",
+	},
 	".github/workflows/claude-canary.yml|stable-smoke": {
 		"github.repository == 'yersonargotev/packy'",
 		"refs/heads/main",

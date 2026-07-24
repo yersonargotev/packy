@@ -286,7 +286,7 @@ func TestAddyPromotionMainReplayIsEffectFreeAndRetained(t *testing.T) {
 func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	sourceRoot := repositoryRoot(t)
 	root := t.TempDir()
-	paths := []string{"go.mod", "go.sum", ".github/workflows/ci.yml", "scripts/gate-addy-promotion.sh", "internal/tools/addypromotiongate/main.go", "internal/tools/addypromotiongate/reconstruct.go", "internal/tools/addypromotiongate/generate.go", "internal/capabilitypack/catalog.go", "internal/addyacceptance/testdata/addy-0.6.4.tar.gz"}
+	paths := []string{"go.mod", "go.sum", ".github/workflows/ci.yml", "scripts/gate-addy-promotion.sh", "scripts/download-addy-governance-evidence.sh", "internal/tools/addypromotiongate/main.go", "internal/tools/addypromotiongate/reconstruct.go", "internal/tools/addypromotiongate/generate.go", "internal/capabilitypack/catalog.go", "internal/addyacceptance/testdata/addy-0.6.4.tar.gz"}
 	err := filepath.Walk(filepath.Join(sourceRoot, "internal"), func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -312,6 +312,9 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	writeFile(t, filepath.Join(root, "bundle", "sources.json"), "{}\n")
 	writeFile(t, filepath.Join(root, "scripts", "validate-addy-acceptance.sh"), "#!/bin/sh\nset -eu\nprintf 'foundation validation\\n' >&2\n")
 	if err := os.Chmod(filepath.Join(root, "scripts", "gate-addy-promotion.sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, "scripts", "download-addy-governance-evidence.sh"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(filepath.Join(root, "scripts", "validate-addy-acceptance.sh"), 0o755); err != nil {
@@ -351,6 +354,10 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	if err != nil || transported.Disposition != addyacceptance.PromotionNotApplicable {
 		t.Fatalf("transported qualification changed unrelated decision: disposition=%q err=%v\n%s", transported.Disposition, err, output)
 	}
+	output, err = runAddyGateWith(root, base, head, "--generate-trusted", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-trusted-evidence.json"))
+	if err != nil {
+		t.Fatalf("unrelated trusted generation path failed instead of remaining not_applicable: %v\n%s", err, output)
+	}
 
 	fixtureSource := filepath.Join(root, "internal", "addyacceptance", "fixture.go")
 	writeFile(t, fixtureSource, readFile(t, fixtureSource)+"\n// changed canonical Addy fixture\n")
@@ -381,6 +388,10 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	if err != nil || transported.Disposition != addyacceptance.PromotionFoundation {
 		t.Fatalf("transported qualification changed foundation decision: disposition=%q err=%v\n%s", transported.Disposition, err, output)
 	}
+	output, err = runAddyGateWith(root, head, authorityHead, "--generate-trusted", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-trusted-evidence.json"))
+	if err != nil {
+		t.Fatalf("foundation trusted generation path failed instead of remaining canonical: %v\n%s", err, output)
+	}
 
 	if err := os.MkdirAll(filepath.Join(root, "bundle", "history", "addy"), 0o755); err != nil {
 		t.Fatal(err)
@@ -395,7 +406,7 @@ func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	}
 
 	script := readFile(t, filepath.Join(root, "scripts", "gate-addy-promotion.sh"))
-	for _, classified := range []string{"bundle/packs/addy/pack.json", "bundle/history/addy/*", "bundle/sources/addy.lock.json", "internal/addyacceptance/*", "internal/capabilitypack/*", "internal/claudecode/*", `ID:[[:space:]]*"addy"`} {
+	for _, classified := range []string{"bundle/packs/addy/pack.json", "bundle/history/addy/*", "bundle/sources/addy.lock.json", ".github/workflows/addy-governance.yml", "internal/addyacceptance/*", "internal/capabilitypack/*", "internal/claudecode/*", "scripts/download-addy-governance-evidence.sh", "scripts/gate-governance-drift.sh", `ID:[[:space:]]*"addy"`} {
 		if !strings.Contains(script, classified) {
 			t.Fatalf("promotion classifier missing %q", classified)
 		}

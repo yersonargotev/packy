@@ -1,0 +1,84 @@
+name: Addy trusted governance
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions: {}
+
+concurrency:
+  group: addy-trusted-governance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  collect:
+    name: Collect sanitized Addy governance evidence
+    if: github.repository == 'yersonargotev/packy' && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+      issues: read
+    steps:
+      - name: Check out the exact protected base
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Resolve the exact candidate workflow identity
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVALUATED_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EVALUATED_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "exact evaluated merge SHA is unavailable" >&2
+            exit 1
+          }
+          tree_sha="$(
+            gh api "repos/$GITHUB_REPOSITORY/git/commits/$EVALUATED_MERGE_SHA" \
+              --jq .tree.sha
+          )"
+          workflow_sha="$(
+            gh api "repos/$GITHUB_REPOSITORY/git/trees/$tree_sha?recursive=1" \
+              --jq '[.tree[] | select(.path == ".github/workflows/ci.yml" and .type == "blob") | .sha] | if length == 1 then .[0] else error("exact CI workflow blob is unavailable") end'
+          )"
+          printf 'workflow-sha=%s\n' "$workflow_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Collect exact-merge governance without candidate execution
+        env:
+          GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
+          EVALUATED_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          WORKFLOW_SHA: ${{ steps.candidate.outputs.workflow-sha }}
+        run: |
+          set -euo pipefail
+          ./scripts/gate-governance-drift.sh \
+            --boundary promotion \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref refs/heads/main \
+            --commit "$EVALUATED_MERGE_SHA" \
+            --workflow .github/workflows/ci.yml \
+            --workflow-sha "$WORKFLOW_SHA" \
+            --output-dir "$RUNNER_TEMP/addy-governance"
+
+      - name: Retain sanitized exact-merge governance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: addy-governance-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.merge_commit_sha }}
+          path: ${{ runner.temp }}/addy-governance/
+          if-no-files-found: error
+          retention-days: 90

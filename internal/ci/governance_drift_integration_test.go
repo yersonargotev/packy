@@ -38,8 +38,33 @@ func TestGovernanceDriftContractAndSeededStates(t *testing.T) {
 	}
 	gotIDs := make([]string, 0, len(contract.Controls))
 	observed := make([]governancedrift.ObservedControl, 0, len(contract.Controls))
+	type credentialSecret struct {
+		Name      string `json:"name"`
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
+	}
 	for _, control := range contract.Controls {
 		gotIDs = append(gotIDs, control.ID)
+		if control.ID == "credential-metadata" {
+			var credentialMetadata struct {
+				RepositoryActions struct {
+					TotalCount int                `json:"total_count"`
+					Secrets    []credentialSecret `json:"secrets"`
+				} `json:"repository_actions"`
+			}
+			if err := json.Unmarshal([]byte(control.Expected), &credentialMetadata); err != nil {
+				t.Fatal(err)
+			}
+			want := []credentialSecret{{
+				Name:      "GOVERNANCE_READ_TOKEN",
+				CreatedAt: "2026-07-24T16:36:34Z",
+				UpdatedAt: "2026-07-24T16:36:34Z",
+			}}
+			if credentialMetadata.RepositoryActions.TotalCount != 1 ||
+				!reflect.DeepEqual(credentialMetadata.RepositoryActions.Secrets, want) {
+				t.Fatalf("repository governance credential metadata = %+v", credentialMetadata.RepositoryActions)
+			}
+		}
 		observed = append(observed, governancedrift.ObservedControl{
 			ID:     control.ID,
 			State:  governancedrift.ObservationObserved,
@@ -73,6 +98,43 @@ func TestGovernanceDriftContractAndSeededStates(t *testing.T) {
 func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing.T) {
 	root := repositoryRoot(t)
 	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "governance-drift.yml"))
+	addy := readFile(t, filepath.Join(root, ".github", "workflows", "addy-governance.yml"))
+	for _, required := range []string{
+		"name: Addy trusted governance",
+		"pull_request_target:",
+		"github.event.pull_request.base.ref == 'main'",
+		"ref: ${{ github.event.pull_request.base.sha }}",
+		"GH_TOKEN: ${{ github.token }}",
+		"GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}",
+		"EVALUATED_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}",
+		`[[ "$EVALUATED_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]`,
+		`git/commits/$EVALUATED_MERGE_SHA`,
+		`git/trees/$tree_sha?recursive=1`,
+		`printf 'workflow-sha=%s\n' "$workflow_sha" >> "$GITHUB_OUTPUT"`,
+		"WORKFLOW_SHA: ${{ steps.candidate.outputs.workflow-sha }}",
+		"--workflow-sha \"$WORKFLOW_SHA\"",
+		"addy-governance-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.merge_commit_sha }}",
+	} {
+		if !strings.Contains(addy, required) {
+			t.Fatalf("trusted Addy governance workflow missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"github.event.pull_request.head.",
+		"refs/pull/",
+		"gate-addy-promotion.sh",
+		"validate-addy-acceptance.sh",
+		"run-claude-smoke.sh",
+		"checks: write",
+		"contents: write",
+	} {
+		if strings.Contains(addy, forbidden) {
+			t.Fatalf("trusted Addy governance workflow contains candidate/write boundary %q", forbidden)
+		}
+	}
+	if count := strings.Count(addy, "secrets.GOVERNANCE_READ_TOKEN"); count != 1 {
+		t.Fatalf("trusted Addy governance credential references = %d, want exactly one collection boundary", count)
+	}
 	for _, required := range []string{
 		"name: Governance drift",
 		"schedule:",
@@ -97,6 +159,15 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 	if strings.Contains(observe, "issues: write") {
 		t.Fatal("read-only observer has issue mutation authority")
 	}
+	if !strings.Contains(observe, "GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}") ||
+		strings.Contains(observe, "GH_TOKEN: ${{ github.token }}") {
+		t.Fatal("read-only observer must use only the dedicated governance credential")
+	}
+	report := strings.Split(workflow, "\n  report:")[1]
+	if !strings.Contains(report, "GH_TOKEN: ${{ github.token }}") ||
+		strings.Contains(report, "secrets.GOVERNANCE_READ_TOKEN") {
+		t.Fatal("issue reporter must retain only its narrow built-in token")
+	}
 	for _, forbidden := range []string{
 		"contents: write",
 		"pull-requests: write",
@@ -116,16 +187,25 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 	for _, check := range []struct {
 		content  string
 		boundary string
-		blocked  string
 	}{
-		{content: release, boundary: "--boundary publication", blocked: "needs: governance-drift"},
-		{content: sync, boundary: "--boundary promotion", blocked: "needs: governance-drift"},
+		{
+			content:  workflowSection(t, release, "  governance-drift:", "  build:"),
+			boundary: "--boundary publication",
+		},
+		{
+			content:  workflowSection(t, sync, "  governance-drift:", "  inspect:"),
+			boundary: "--boundary promotion",
+		},
 	} {
 		if !strings.Contains(check.content, "gate-governance-drift.sh") ||
 			!strings.Contains(check.content, check.boundary) ||
-			!strings.Contains(check.content, check.blocked) {
+			!strings.Contains(check.content, "GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}") ||
+			strings.Contains(check.content, "GH_TOKEN: ${{ github.token }}") {
 			t.Fatalf("affected workflow lacks current fail-closed %s gate", check.boundary)
 		}
+	}
+	if !strings.Contains(release, "needs: governance-drift") || !strings.Contains(sync, "needs: governance-drift") {
+		t.Fatal("affected workflows do not block their first action on governance drift")
 	}
 }
 
