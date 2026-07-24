@@ -15,9 +15,10 @@ func TestGovernanceDriftCollectorIsReadOnlyAndSanitized(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "gh.log")
 	writeFile(t, fake, `#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >>"$GH_LOG"
+printf 'token=%s args=%s\n' "${GH_TOKEN:-}" "$*" >>"$GH_LOG"
 endpoint="$2"; filter="$4"
 case "$endpoint" in
+  graphql) raw='{"data":{"repository":{"visibility":"PUBLIC","defaultBranchRef":{"name":"main"},"isArchived":false,"mergeCommitAllowed":false,"squashMergeAllowed":true,"rebaseMergeAllowed":false,"autoMergeAllowed":true,"deleteBranchOnMerge":true,"webCommitSignoffRequired":true}}}' ;;
   repos/*/actions/permissions/workflow) raw='{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}' ;;
   repos/*/actions/permissions) [[ "${FAIL_ACTIONS:-}" == 1 ]] && exit 1; raw='{"enabled":true,"allowed_actions":"selected","sha_pinning_required":true,"selected_actions_url":"https://secret"}' ;;
   repos/*/actions/workflows*) raw='{"workflows":[{"id":99,"name":"CI","path":".github/workflows/ci.yml","state":"active","url":"https://secret"}]}' ;;
@@ -28,7 +29,7 @@ case "$endpoint" in
   repos/*/actions/secrets*) raw='{"total_count":1,"secrets":[{"name":"TOKEN","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","value":"raw-secret","url":"https://secret"}]}' ;;
   repos/*/immutable-releases) raw='{"enabled":true,"enforced_by_owner":true}' ;;
   repos/*/releases/latest) raw='{"id":7,"tag_name":"v1","draft":false,"prerelease":false,"immutable":true,"published_at":"2026-01-01T00:00:00Z","author":{"login":"owner","id":3,"avatar_url":"https://secret"},"assets":[{"id":8,"url":"https://secret"}]}' ;;
-  repos/*) raw='{"visibility":"public","default_branch":"main","archived":false,"allow_merge_commit":false,"allow_squash_merge":true,"allow_rebase_merge":false,"allow_auto_merge":true,"delete_branch_on_merge":true,"web_commit_signoff_required":true,"token":"raw-secret","owner":{"avatar_url":"https://secret"}}' ;;
+  repos/*) raw='{"visibility":"public","default_branch":"main","archived":false,"token":"raw-secret","owner":{"avatar_url":"https://secret"}}' ;;
   *) exit 1 ;;
 esac
 printf '%s\n' "$raw" | jq -c "$filter"
@@ -41,7 +42,7 @@ printf '%s\n' "$raw" | jq -c "$filter"
 		t.Helper()
 		out := filepath.Join(t.TempDir(), "observation.json")
 		cmd := exec.Command("/bin/bash", filepath.Join(root, "scripts", "collect-governance-drift.sh"), "--repo", "owner/repo", "--ref", "refs/heads/main", "--commit", strings.Repeat("a", 40), "--workflow-sha", strings.Repeat("b", 40), "--output", out)
-		cmd.Env = append(os.Environ(), "GH_BIN="+fake, "GH_LOG="+log)
+		cmd.Env = append(os.Environ(), "GH_BIN="+fake, "GH_LOG="+log, "GH_TOKEN=governance-token", "GH_METADATA_TOKEN=metadata-token")
 		if fail {
 			cmd.Env = append(cmd.Env, "FAIL_ACTIONS=1")
 		}
@@ -87,6 +88,12 @@ printf '%s\n' "$raw" | jq -c "$filter"
 	requests, err := os.ReadFile(log)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(requests), "token=metadata-token args=api graphql") {
+		t.Fatalf("repository metadata did not use its narrow token:\n%s", requests)
+	}
+	if !strings.Contains(string(requests), "token=governance-token args=api repos/owner/repo/actions/permissions") {
+		t.Fatalf("privileged governance projection did not use the dedicated token:\n%s", requests)
 	}
 	for _, forbidden := range []string{"--method", " -X ", "gh issue", "gh secret", "gh release", "PATCH", "POST", "PUT", "DELETE"} {
 		if strings.Contains(string(requests), forbidden) {

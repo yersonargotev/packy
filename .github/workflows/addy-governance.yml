@@ -74,6 +74,7 @@ jobs:
       - name: Collect exact-merge governance without candidate execution
         env:
           GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
+          GH_METADATA_TOKEN: ${{ github.token }}
           EVALUATED_MERGE_SHA: ${{ steps.candidate.outputs.merge-sha }}
           WORKFLOW_SHA: ${{ steps.candidate.outputs.workflow-sha }}
         run: |

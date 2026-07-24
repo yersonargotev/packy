@@ -106,6 +106,7 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 		"ref: ${{ github.event.pull_request.base.sha }}",
 		"GH_TOKEN: ${{ github.token }}",
 		"GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}",
+		"GH_METADATA_TOKEN: ${{ github.token }}",
 		"PR_NUMBER: ${{ github.event.pull_request.number }}",
 		"EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
 		"EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
@@ -144,6 +145,9 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 	if count := strings.Count(addy, "secrets.GOVERNANCE_READ_TOKEN"); count != 1 {
 		t.Fatalf("trusted Addy governance credential references = %d, want exactly one collection boundary", count)
 	}
+	if count := strings.Count(addy, "GH_METADATA_TOKEN: ${{ github.token }}"); count != 1 {
+		t.Fatalf("trusted Addy metadata credential references = %d, want exactly one collection boundary", count)
+	}
 	for _, required := range []string{
 		"name: Governance drift",
 		"schedule:",
@@ -169,8 +173,9 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 		t.Fatal("read-only observer has issue mutation authority")
 	}
 	if !strings.Contains(observe, "GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}") ||
+		!strings.Contains(observe, "GH_METADATA_TOKEN: ${{ github.token }}") ||
 		strings.Contains(observe, "GH_TOKEN: ${{ github.token }}") {
-		t.Fatal("read-only observer must use only the dedicated governance credential")
+		t.Fatal("read-only observer must separate dedicated governance and built-in metadata credentials")
 	}
 	report := strings.Split(workflow, "\n  report:")[1]
 	if !strings.Contains(report, "GH_TOKEN: ${{ github.token }}") ||
@@ -209,6 +214,7 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 		if !strings.Contains(check.content, "gate-governance-drift.sh") ||
 			!strings.Contains(check.content, check.boundary) ||
 			!strings.Contains(check.content, "GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}") ||
+			!strings.Contains(check.content, "GH_METADATA_TOKEN: ${{ github.token }}") ||
 			strings.Contains(check.content, "GH_TOKEN: ${{ github.token }}") {
 			t.Fatalf("affected workflow lacks current fail-closed %s gate", check.boundary)
 		}

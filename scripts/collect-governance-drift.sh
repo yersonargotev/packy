@@ -28,7 +28,8 @@ controls="$tmp/controls.jsonl"
 # request never contributes its response body to durable evidence.
 control() {
   local id="$1" endpoint="$2" projection="$3" result="$tmp/result.json"
-  if ! "$GH_BIN" api "$endpoint" --jq "$projection" >"$result" 2>/dev/null; then
+  shift 3
+  if ! "$GH_BIN" api "$endpoint" --jq "$projection" "$@" >"$result" 2>/dev/null; then
     jq -cn --arg id "$id" '{id:$id,state:"collection-failure",detail:"read-only collection failed"}' >>"$controls"
   elif ! jq -e 'type=="object" and (.valid|type=="boolean") and has("actual")' "$result" >/dev/null 2>&1; then
     jq -cn --arg id "$id" '{id:$id,state:"unclassifiable",detail:"required API shape was not recognized"}' >>"$controls"
@@ -48,7 +49,37 @@ project() {
   jq -e '. != null' "$destination" >/dev/null 2>&1 || return 2
 }
 
-control repository-settings "repos/$repo" 'if type=="object" and (.visibility|type)=="string" and (.default_branch|type)=="string" and (.archived|type)=="boolean" then {valid:true,actual:{visibility,default_branch,archived,allow_merge_commit,allow_squash_merge,allow_rebase_merge,allow_auto_merge,delete_branch_on_merge,web_commit_signoff_required}} else {valid:false,actual:null} end'
+owner="${repo%%/*}"
+name="${repo#*/}"
+GH_TOKEN="${GH_METADATA_TOKEN:-${GH_TOKEN:-}}" control repository-settings graphql '
+  if (.data.repository|type)=="object" and
+     (.data.repository.visibility|type)=="string" and
+     (.data.repository.defaultBranchRef.name|type)=="string" and
+     (.data.repository.isArchived|type)=="boolean" and
+     (.data.repository.mergeCommitAllowed|type)=="boolean" and
+     (.data.repository.squashMergeAllowed|type)=="boolean" and
+     (.data.repository.rebaseMergeAllowed|type)=="boolean" and
+     (.data.repository.autoMergeAllowed|type)=="boolean" and
+     (.data.repository.deleteBranchOnMerge|type)=="boolean" and
+     (.data.repository.webCommitSignoffRequired|type)=="boolean"
+  then {
+    valid:true,
+    actual:{
+      visibility:(.data.repository.visibility|ascii_downcase),
+      default_branch:.data.repository.defaultBranchRef.name,
+      archived:.data.repository.isArchived,
+      allow_merge_commit:.data.repository.mergeCommitAllowed,
+      allow_squash_merge:.data.repository.squashMergeAllowed,
+      allow_rebase_merge:.data.repository.rebaseMergeAllowed,
+      allow_auto_merge:.data.repository.autoMergeAllowed,
+      delete_branch_on_merge:.data.repository.deleteBranchOnMerge,
+      web_commit_signoff_required:.data.repository.webCommitSignoffRequired
+    }
+  } else {valid:false,actual:null} end
+' \
+  -f 'query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){visibility defaultBranchRef{name} isArchived mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed deleteBranchOnMerge webCommitSignoffRequired}}' \
+  -F owner="$owner" \
+  -F name="$name"
 
 control actions-policy "repos/$repo/actions/permissions" 'if type=="object" and (.enabled|type)=="boolean" and (.allowed_actions|type)=="string" then {valid:true,actual:{enabled,allowed_actions,sha_pinning_required}} else {valid:false,actual:null} end'
 control workflow-policy "repos/$repo/actions/permissions/workflow" 'if type=="object" and (.default_workflow_permissions|type)=="string" and (.can_approve_pull_request_reviews|type)=="boolean" then {valid:true,actual:{default_workflow_permissions,can_approve_pull_request_reviews}} else {valid:false,actual:null} end'
