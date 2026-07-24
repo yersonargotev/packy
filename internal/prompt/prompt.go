@@ -28,6 +28,9 @@ const (
 type RulesObservation struct {
 	Disposition RulesDisposition
 	Fingerprint string
+	Exact       bool
+	Drift       bool
+	Malformed   bool
 }
 
 type WriteResult struct {
@@ -69,31 +72,58 @@ func RulesFingerprint() string {
 }
 
 func InspectRulesContract(content string) RulesObservation {
-	openCount := strings.Count(content, dotsRulesOpen)
-	closeCount := strings.Count(content, dotsRulesClose)
-	if openCount == 0 && closeCount == 0 {
-		return RulesObservation{Disposition: RulesNoExternalProvider}
-	}
-	if openCount == 0 || openCount != closeCount {
-		return RulesObservation{Disposition: RulesMalformedExternalProvider}
-	}
-
+	var observation RulesObservation
 	remaining := content
-	for range openCount {
+	var bodyStart int
+	expectingClose := false
+	for {
 		openIndex := strings.Index(remaining, dotsRulesOpen)
 		closeIndex := strings.Index(remaining, dotsRulesClose)
-		if openIndex < 0 || closeIndex < openIndex {
-			return RulesObservation{Disposition: RulesMalformedExternalProvider}
+		if openIndex < 0 && closeIndex < 0 {
+			break
 		}
-		bodyStart := openIndex + len(dotsRulesOpen)
-		body := remaining[bodyStart:closeIndex]
-		fingerprint := rulesFingerprint(body)
-		if fingerprint != RulesFingerprint() {
-			return RulesObservation{Disposition: RulesExternalDrift, Fingerprint: fingerprint}
+		if closeIndex >= 0 && (openIndex < 0 || closeIndex < openIndex) {
+			if !expectingClose {
+				observation.Malformed = true
+				remaining = remaining[closeIndex+len(dotsRulesClose):]
+				continue
+			}
+			body := remaining[bodyStart:closeIndex]
+			fingerprint := rulesFingerprint(body)
+			if fingerprint == RulesFingerprint() {
+				observation.Exact = true
+			} else {
+				observation.Drift = true
+				if observation.Fingerprint == "" {
+					observation.Fingerprint = fingerprint
+				}
+			}
+			expectingClose = false
+			remaining = remaining[closeIndex+len(dotsRulesClose):]
+			continue
 		}
-		remaining = remaining[closeIndex+len(dotsRulesClose):]
+		if expectingClose {
+			observation.Malformed = true
+		}
+		bodyStart = 0
+		expectingClose = true
+		remaining = remaining[openIndex+len(dotsRulesOpen):]
 	}
-	return RulesObservation{Disposition: RulesExternallySatisfied, Fingerprint: RulesFingerprint()}
+	if expectingClose {
+		observation.Malformed = true
+	}
+	switch {
+	case observation.Exact:
+		observation.Disposition = RulesExternallySatisfied
+		observation.Fingerprint = RulesFingerprint()
+	case observation.Drift:
+		observation.Disposition = RulesExternalDrift
+	case observation.Malformed:
+		observation.Disposition = RulesMalformedExternalProvider
+	default:
+		observation.Disposition = RulesNoExternalProvider
+	}
+	return observation
 }
 
 func rulesFingerprint(content string) string {
@@ -160,13 +190,23 @@ func RemoveCodex(path string) error {
 
 func DetectExternalManagedBlocks(content string) []string {
 	var warnings []string
-	switch InspectRulesContract(content).Disposition {
-	case RulesExternallySatisfied:
-		warnings = append(warnings, "Codex baseline rules are externally satisfied by exact dots:rules; Packy preserved the external block and removed its redundant rules contribution")
-	case RulesExternalDrift:
-		warnings = append(warnings, "Codex dots:rules differs from the Packy baseline; Packy projected its baseline and preserved the external block; align the external provider contract before retrying")
-	case RulesMalformedExternalProvider:
-		warnings = append(warnings, "Codex dots:rules markers are malformed; Packy projected its baseline and preserved the external content; repair the external provider markers before retrying")
+	rules := InspectRulesContract(content)
+	if rules.Exact {
+		warnings = append(warnings, "Codex baseline rules are externally satisfied by exact dots:rules; Packy preserved the external block and omitted its own rules contribution")
+	}
+	if rules.Drift {
+		action := "Packy projected its baseline"
+		if rules.Exact {
+			action = "an exact dots:rules block still satisfies the baseline"
+		}
+		warnings = append(warnings, "Codex also contains dots:rules content that differs from the Packy baseline; "+action+" and Packy preserved every external block; align the differing provider contract before retrying")
+	}
+	if rules.Malformed {
+		action := "Packy projected its baseline"
+		if rules.Exact {
+			action = "an exact dots:rules block still satisfies the baseline"
+		}
+		warnings = append(warnings, "Codex also contains malformed dots:rules markers; "+action+" and Packy preserved the external content; repair the malformed provider markers before retrying")
 	}
 	if strings.Contains(content, "<!-- gentle-ai:") || strings.Contains(content, "<!-- /gentle-ai:") {
 		warnings = append(warnings, "Codex prompt contains gentle-ai managed blocks; Packy preserved them and only updated Packy markers")

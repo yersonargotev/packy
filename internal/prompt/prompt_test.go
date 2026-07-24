@@ -44,9 +44,7 @@ func TestSectionInsertUpdateRemove(t *testing.T) {
 }
 
 func TestInspectRulesContractRecognizesOnlyExactDotsRules(t *testing.T) {
-	external := "<!-- dots:rules -->\n" +
-		strings.Replace(RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
-		"<!-- /dots:rules -->"
+	external := exactDotsRulesFixture()
 
 	observation := InspectRulesContract(external)
 	if observation.Disposition != RulesExternallySatisfied {
@@ -69,6 +67,18 @@ func TestInspectRulesContractRecognizesOnlyExactDotsRules(t *testing.T) {
 	malformed := strings.TrimSuffix(external, "<!-- /dots:rules -->")
 	if got := InspectRulesContract(malformed).Disposition; got != RulesMalformedExternalProvider {
 		t.Fatalf("malformed disposition = %q, want %q", got, RulesMalformedExternalProvider)
+	}
+
+	for name, mixed := range map[string]string{
+		"exact-first": external + "\n" + drifted,
+		"exact-last":  drifted + "\n" + external,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := InspectRulesContract(mixed)
+			if got.Disposition != RulesExternallySatisfied || !got.Exact || !got.Drift {
+				t.Fatalf("mixed observation = %#v", got)
+			}
+		})
 	}
 }
 
@@ -120,9 +130,7 @@ func TestWriteCodexAddsAndRemovesRulesSection(t *testing.T) {
 
 func TestWriteCodexUsesExactDotsRulesWithoutDuplicatingOrTakingOwnership(t *testing.T) {
 	path := t.TempDir() + "/AGENTS.md"
-	external := "<!-- dots:rules -->\n" +
-		strings.Replace(RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
-		"<!-- /dots:rules -->"
+	external := exactDotsRulesFixture()
 	duplicated := external + "\n<!-- packy:rules -->\nstale Packy copy\n<!-- /packy:rules -->"
 	if err := os.WriteFile(path, []byte(duplicated), 0o600); err != nil {
 		t.Fatal(err)
@@ -169,6 +177,40 @@ func TestWriteCodexUsesExactDotsRulesWithoutDuplicatingOrTakingOwnership(t *test
 	if string(removedBytes) != external+"\n" {
 		t.Fatalf("uninstall changed external rules:\n%s", removedBytes)
 	}
+}
+
+func TestWriteCodexExactDotsRulesWinsOverSiblingDrift(t *testing.T) {
+	for name, existing := range map[string]string{
+		"exact-first": exactDotsRulesFixture() + "\n<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->",
+		"exact-last":  "<!-- dots:rules -->\nDifferent.\n<!-- /dots:rules -->\n" + exactDotsRulesFixture(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := t.TempDir() + "/AGENTS.md"
+			if err := os.WriteFile(path, []byte(existing), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			result, err := WriteCodex(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			updatedBytes, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(updatedBytes), "<!-- packy:rules -->") {
+				t.Fatalf("exact external rules did not suppress Packy copy:\n%s", updatedBytes)
+			}
+			if len(result.Warnings) != 2 || !strings.Contains(result.Warnings[0], "externally satisfied") || !strings.Contains(result.Warnings[1], "differs") {
+				t.Fatalf("warnings = %#v", result.Warnings)
+			}
+		})
+	}
+}
+
+func exactDotsRulesFixture() string {
+	return "<!-- dots:rules -->\n" +
+		strings.Replace(RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
+		"<!-- /dots:rules -->"
 }
 
 func TestWriteCodexPreservesDifferingAndMalformedDotsRules(t *testing.T) {
