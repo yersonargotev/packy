@@ -42,6 +42,7 @@ func TestSurfaceGatewayRejectsInvalidOptionalAuthorities(t *testing.T) {
 	}{
 		{name: "unsupported state", got: []OptionalAuthorityObservation{{ModeID: mode.ID, Authority: "browser", State: "future", Fallback: mode.Fallback}}, want: "unsupported optional authority state"},
 		{name: "duplicate", got: []OptionalAuthorityObservation{valid, valid}, want: "duplicate optional authority"},
+		{name: "missing", got: nil, want: "omitted optional authority"},
 		{name: "unknown authority", got: []OptionalAuthorityObservation{{ModeID: mode.ID, Authority: "network", State: OptionalAuthorityAvailable, Fallback: mode.Fallback}}, want: "malformed optional authority"},
 		{name: "altered fallback", got: []OptionalAuthorityObservation{{ModeID: mode.ID, Authority: "browser", State: OptionalAuthorityAvailable, Fallback: "different"}}, want: "malformed optional authority"},
 	} {

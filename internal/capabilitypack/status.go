@@ -78,6 +78,29 @@ type OptionalAuthorityObservation struct {
 	Fallback  string
 }
 
+// UnknownOptionalAuthorities returns one explicit unknown observation for every
+// optional authority declared by the Pack contract.
+func UnknownOptionalAuthorities(pack Pack) []OptionalAuthorityObservation {
+	result := []OptionalAuthorityObservation{}
+	for _, mode := range pack.Contract.OptionalModes {
+		for _, authority := range mode.Authorities {
+			result = append(result, OptionalAuthorityObservation{
+				ModeID:    mode.ID,
+				Authority: authority,
+				State:     OptionalAuthorityUnknown,
+				Fallback:  mode.Fallback,
+			})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ModeID != result[j].ModeID {
+			return result[i].ModeID < result[j].ModeID
+		}
+		return result[i].Authority < result[j].Authority
+	})
+	return result
+}
+
 type StatusEntry struct {
 	Pack                Pack
 	Surface             Surface

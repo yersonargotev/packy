@@ -185,7 +185,7 @@ func TestCompleteAddyReadinessKeepsUnknownPendingOptionalAndExcludedDistinct(t *
 	pack, _ := catalog.Show("addy")
 	projection := completeAddyObservation(pack, SurfaceCodex, "desired")
 	projection.PendingHumanActions = []string{"authenticate Codex host"}
-	projection.Readiness = ReadinessObservation{AuthorizationObserved: true, Authorized: true}
+	projection.Readiness = ReadinessObservation{AuthorizationObserved: true, Authorized: true, OptionalAuthorities: UnknownOptionalAuthorities(pack)}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{projection}}
 	store := &fakeActivationStore{state: ActivationState{Intent: ActivationIntent{PackID: "addy", Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 3}}}
 	for _, observed := range projection.Projections {
@@ -313,6 +313,7 @@ func completeAddyCatalog(t *testing.T) Catalog {
 
 func completeAddyObservation(pack Pack, surface Surface, observed string) SurfaceInspection {
 	inspection := SurfaceInspection{Revision: "host-stable"}
+	inspection.Readiness.OptionalAuthorities = UnknownOptionalAuthorities(pack)
 	for _, resource := range pack.Resources {
 		for _, binding := range resource.Bindings {
 			if binding.Surface != surface {

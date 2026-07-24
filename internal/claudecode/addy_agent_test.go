@@ -150,9 +150,13 @@ func TestOptionalAuthorityReadinessIsCompleteCanonicalAndSeparate(t *testing.T) 
 	}
 }
 
-func TestRuntimeEvidenceInvalidatesOnHostPrecedencePolicyAndOptionalAuthorityChanges(t *testing.T) {
+func TestRuntimeEvidenceInvalidatesOnHostPrecedencePolicyAndPortableIdentityChanges(t *testing.T) {
 	pack := capabilitypack.Pack{
 		ID: "addy", Version: "1.1.0",
+		Resources: []capabilitypack.Resource{{
+			Kind: "agent", ID: "code-reviewer",
+			Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "agent", Name: "code-reviewer"}},
+		}},
 		Contract: capabilitypack.Contract{OptionalModes: []capabilitypack.OptionalMode{{
 			ID: "browser-network", Authorities: []string{"browser"}, Fallback: "static evidence-only analysis",
 		}}},
@@ -195,13 +199,6 @@ func TestRuntimeEvidenceInvalidatesOnHostPrecedencePolicyAndOptionalAuthorityCha
 			changed.ToolPermissionObserved = false
 			return changed
 		}()},
-		{name: "optional authority", projection: projection, auth: func() AuthorizationObservation {
-			changed := auth
-			changed.OptionalAuthorities = []OptionalAuthorityAvailability{{
-				ModeID: "browser-network", Authority: "browser", State: capabilitypack.OptionalAuthorityAvailable,
-			}}
-			return changed
-		}()},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -209,6 +206,19 @@ func TestRuntimeEvidenceInvalidatesOnHostPrecedencePolicyAndOptionalAuthorityCha
 				t.Fatal("stale runtime evidence remained valid")
 			}
 		})
+	}
+	changedAuthority := auth
+	changedAuthority.OptionalAuthorities = []OptionalAuthorityAvailability{{
+		ModeID: "browser-network", Authority: "browser", State: capabilitypack.OptionalAuthorityAvailable,
+	}}
+	if usable, observed, _ := adapter.runtimeReadiness(context.Background(), pack, []capabilitypack.ObservedProjection{projection}, VersionObservation{Version: "2.1.203"}, changedAuthority); !usable || !observed {
+		t.Fatal("optional-authority availability incorrectly invalidated required readiness evidence")
+	}
+	renamed := pack
+	renamed.Resources = append([]capabilitypack.Resource(nil), pack.Resources...)
+	renamed.Resources[0].ID = "portable-reviewer"
+	if usable, observed, _ := adapter.runtimeReadiness(context.Background(), renamed, []capabilitypack.ObservedProjection{projection}, VersionObservation{Version: "2.1.203"}, auth); usable || observed {
+		t.Fatal("portable resource identity change did not invalidate runtime evidence")
 	}
 }
 

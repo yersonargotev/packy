@@ -983,7 +983,7 @@ func (a *SurfaceAdapter) runtimeReadiness(ctx context.Context, pack capabilitypa
 }
 
 func runtimeEvidenceRevision(pack capabilitypack.Pack, projection capabilitypack.ObservedProjection, hostVersion, policy string) string {
-	return canonicalFingerprint(struct{ PackID, PackVersion, ProjectionID, Projection, Definition, Target, Kind, HostVersion, Policy string }{pack.ID, pack.Version, projection.ID, projection.ObservedFingerprint, projection.DesiredFingerprint, projection.Action.Target, string(projection.Action.Kind), hostVersion, policy})
+	return canonicalFingerprint(struct{ PackID, PackVersion, ResourceID, ProjectionID, Projection, Definition, Target, Kind, HostVersion, Policy string }{pack.ID, pack.Version, portableProjectionIdentity(pack, projection.ID), projection.ID, projection.ObservedFingerprint, projection.DesiredFingerprint, projection.Action.Target, string(projection.Action.Kind), hostVersion, policy})
 }
 
 func NewRuntimeEvidence(pack capabilitypack.Pack, projection capabilitypack.ObservedProjection, hostVersion string, auth AuthorizationObservation, signal string) RuntimeEvidence {
@@ -991,14 +991,19 @@ func NewRuntimeEvidence(pack capabilitypack.Pack, projection capabilitypack.Obse
 }
 
 func RuntimeEvidencePolicyFingerprint(pack capabilitypack.Pack, auth AuthorizationObservation) string {
-	optional, err := optionalAuthorityReadiness(pack, auth)
-	if err != nil {
-		return canonicalFingerprint(struct{ Error string }{err.Error()})
-	}
 	return canonicalFingerprint(struct {
 		Disabled, Shadowed, Policy, Tools bool
-		Optional                          []capabilitypack.OptionalAuthorityObservation
-	}{auth.Disabled, auth.Shadowed, auth.PolicyObserved, auth.ToolPermissionObserved, optional})
+	}{auth.Disabled, auth.Shadowed, auth.PolicyObserved, auth.ToolPermissionObserved})
+}
+
+func portableProjectionIdentity(pack capabilitypack.Pack, projectionID string) string {
+	for _, resource := range pack.Resources {
+		binding, ok := claudeBinding(resource)
+		if ok && resource.Kind+":"+binding.Name == projectionID {
+			return resource.Kind + ":" + resource.ID
+		}
+	}
+	return ""
 }
 
 func optionalAuthorityReadiness(pack capabilitypack.Pack, auth AuthorizationObservation) ([]capabilitypack.OptionalAuthorityObservation, error) {

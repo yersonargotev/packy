@@ -1909,12 +1909,23 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		occupied[key] = struct{}{}
 	}
 	optionalModes := make(map[string]OptionalMode)
+	declaredOptionalAuthorities := make(map[string]struct{})
 	contract := transition.Desired.Contract
 	if transition.Desired.ID == "" {
 		contract = transition.Prior.Contract
 	}
 	for _, mode := range contract.OptionalModes {
+		if _, duplicate := optionalModes[mode.ID]; duplicate {
+			return SurfaceInspection{}, fmt.Errorf("surface transition declared duplicate optional mode %q", mode.ID)
+		}
 		optionalModes[mode.ID] = mode
+		for _, authority := range mode.Authorities {
+			key := mode.ID + ":" + authority
+			if _, duplicate := declaredOptionalAuthorities[key]; duplicate {
+				return SurfaceInspection{}, fmt.Errorf("surface transition declared duplicate optional authority %q", key)
+			}
+			declaredOptionalAuthorities[key] = struct{}{}
+		}
 	}
 	optionalAuthorities := make(map[string]struct{}, len(observation.Readiness.OptionalAuthorities))
 	for _, authority := range observation.Readiness.OptionalAuthorities {
@@ -1932,6 +1943,11 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			return SurfaceInspection{}, fmt.Errorf("surface adapter returned duplicate optional authority %q", key)
 		}
 		optionalAuthorities[key] = struct{}{}
+	}
+	for key := range declaredOptionalAuthorities {
+		if _, observed := optionalAuthorities[key]; !observed {
+			return SurfaceInspection{}, fmt.Errorf("surface adapter omitted optional authority %q", key)
+		}
 	}
 	sort.Slice(observation.Projections, func(i, j int) bool { return observation.Projections[i].ID < observation.Projections[j].ID })
 	sort.Slice(observation.OccupiedNames, func(i, j int) bool {
