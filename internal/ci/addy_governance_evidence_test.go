@@ -1,6 +1,7 @@
 package ci_test
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,7 @@ fi
 		t.Fatal(err)
 	}
 
-	run := func(t *testing.T, extra ...string) ([]byte, error) {
+	run := func(t *testing.T, extra ...string) ([]byte, []byte, error) {
 		t.Helper()
 		output := filepath.Join(t.TempDir(), "governance")
 		cmd := exec.Command("/bin/bash",
@@ -58,19 +59,27 @@ fi
 			"ADDY_GOVERNANCE_POLL_INTERVAL=0",
 		)
 		cmd.Env = append(cmd.Env, extra...)
-		return cmd.CombinedOutput()
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		return stdout.Bytes(), stderr.Bytes(), err
 	}
 
-	if output, err := run(t); err != nil {
+	stdout, stderr, err := run(t)
+	if err != nil {
 		requests, _ := os.ReadFile(log)
-		t.Fatalf("trusted artifact was rejected: %v\n%s\nrequests:\n%s", err, output, requests)
+		t.Fatalf("trusted artifact was rejected: %v\n%s\nrequests:\n%s", err, stderr, requests)
 	}
-	if output, err := run(t, "WRONG_WORKFLOW=1"); err == nil ||
-		!strings.Contains(string(output), "trusted Addy governance evidence was not available") {
-		t.Fatalf("wrong workflow artifact was admitted: err=%v\n%s", err, output)
+	if len(stdout) != 0 {
+		t.Fatalf("trusted artifact downloader contaminated gate stdout: %q", stdout)
 	}
-	if output, err := run(t, "EXTRA_FILE=1"); err == nil ||
-		!strings.Contains(string(output), "trusted Addy governance evidence was not available") {
-		t.Fatalf("artifact with an extra file was admitted: err=%v\n%s", err, output)
+	if _, stderr, err := run(t, "WRONG_WORKFLOW=1"); err == nil ||
+		!strings.Contains(string(stderr), "trusted Addy governance evidence was not available") {
+		t.Fatalf("wrong workflow artifact was admitted: err=%v\n%s", err, stderr)
+	}
+	if _, stderr, err := run(t, "EXTRA_FILE=1"); err == nil ||
+		!strings.Contains(string(stderr), "trusted Addy governance evidence was not available") {
+		t.Fatalf("artifact with an extra file was admitted: err=%v\n%s", err, stderr)
 	}
 }

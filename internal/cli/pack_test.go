@@ -343,11 +343,7 @@ func TestCapabilityPackRolloutMatrixStaysInsideSandbox(t *testing.T) {
 				root := t.TempDir()
 				home := filepath.Join(root, "home")
 				source := filepath.Join(root, "source")
-				for _, dir := range []string{"skills", "instructions", "packs"} {
-					if err := os.CopyFS(filepath.Join(source, dir), os.DirFS(filepath.Join("..", "..", "bundle", dir))); err != nil {
-						t.Fatal(err)
-					}
-				}
+				copyProductionCatalogBundle(t, source, filepath.Join("..", ".."))
 				terminal := &fakeTerminal{interactive: true, approve: true}
 				runner := &fakeRunner{}
 				env := MapEnv{
@@ -793,7 +789,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	if err := json.Unmarshal([]byte(overview), &report); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, overview)
 	}
-	if report.SchemaVersion != capabilitypack.StatusSchemaVersion || report.Report != "pack-status-overview" || len(report.Entries) != 6 {
+	if report.SchemaVersion != capabilitypack.StatusSchemaVersion || report.Report != "pack-status-overview" || len(report.Entries) != 9 {
 		t.Fatalf("report=%#v", report)
 	}
 	for i, entry := range report.Entries {
@@ -1402,25 +1398,24 @@ func TestPackUpdateExternalCancellationHasNoEffects(t *testing.T) {
 func copyPackBundleForUpdate(t *testing.T, repoRoot string) string {
 	t.Helper()
 	root := t.TempDir()
-	for _, dir := range []string{"skills", "instructions"} {
-		if err := os.CopyFS(filepath.Join(root, dir), os.DirFS(filepath.Join(repoRoot, "bundle", dir))); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, pack := range []string{"matty", "engram"} {
-		dir := filepath.Join(root, "packs", pack)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(filepath.Join(repoRoot, "bundle", "packs", pack, "pack.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "pack.json"), data, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	copyProductionCatalogBundle(t, root, repoRoot)
 	return root
+}
+
+func copyProductionCatalogBundle(t *testing.T, target, repoRoot string) {
+	t.Helper()
+	for _, dir := range []string{"skills", "instructions", "agents", "commands", "references", "packs"} {
+		if err := os.CopyFS(filepath.Join(target, dir), os.DirFS(filepath.Join(repoRoot, "bundle", dir))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(repoRoot, "bundle", "LICENSE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "LICENSE"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRuntimePackCompositionCanLoadHistoryWhenCurrentResourceIsMissing(t *testing.T) {
@@ -1455,13 +1450,11 @@ func TestRuntimePackCompositionCanLoadHistoryWhenCurrentResourceIsMissing(t *tes
 
 func writeUpdateBundle(t *testing.T, version string) string {
 	t.Helper()
-	root := t.TempDir()
-	for _, dir := range []string{"skills", "packs/matty", "packs/engram", "instructions"} {
-		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
-			t.Fatal(err)
-		}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
 	}
-	createSkillSourceAt(t, filepath.Join(root, "skills"))
+	root := copyPackBundleForUpdate(t, repoRoot)
 	if err := os.WriteFile(filepath.Join(root, "instructions/shared.md"), []byte("shared\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -1483,13 +1476,11 @@ func writeUpdateManifest(t *testing.T, root, version string) {
 
 func writeCompositionBundle(t *testing.T, blocked bool) string {
 	t.Helper()
-	root := t.TempDir()
-	for _, dir := range []string{"skills", "packs/matty", "packs/engram", "instructions"} {
-		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
-			t.Fatal(err)
-		}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
 	}
-	createSkillSourceAt(t, filepath.Join(root, "skills"))
+	root := copyPackBundleForUpdate(t, repoRoot)
 	if err := os.WriteFile(filepath.Join(root, "instructions/app.md"), []byte("app\n"), 0600); err != nil {
 		t.Fatal(err)
 	}

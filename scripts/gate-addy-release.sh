@@ -34,9 +34,14 @@ while IFS= read -r path; do
 done < <(git diff --name-only "$base" "$commit" --)
 
 catalog_has_addy() {
-  git show "$1:internal/capabilitypack/catalog.go" |
-    awk '/^var initialCatalog = / { catalog=1 } catalog { print } catalog && /^}/ { exit }' |
-    grep -Eq 'ID:[[:space:]]*"addy"([,}])'
+  local catalog
+  catalog="$(git show "$1:internal/capabilitypack/catalog.go")" || return 1
+  awk '
+    /^var initialCatalog = / { catalog=1 }
+    catalog && /ID:[[:space:]]*"addy"([,}])/ { found=1 }
+    catalog && /^}/ { exit }
+    END { exit(found ? 0 : 1) }
+  ' <<<"$catalog"
 }
 if [[ "$promotion_change" == false ]] && ! catalog_has_addy "$base" && catalog_has_addy "$commit"; then
   promotion_change=true
