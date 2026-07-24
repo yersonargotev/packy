@@ -42,15 +42,19 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		return capabilitypack.SurfaceInspection{}, err
 	}
 	applyRecordedOccupancyOwnership(&observation, transition.CurrentOwnership)
-	observation.Readiness, err = a.inspectReadiness(ctx, transition.Desired, observation, transition.ResolvedExecutables)
+	readinessPack := transition.Desired
+	if readinessPack.ID == "" {
+		readinessPack = transition.Prior
+	}
+	observation.Readiness, err = a.inspectReadiness(ctx, readinessPack, observation, transition.ResolvedExecutables)
 	return observation, err
 }
 
 func (a *SurfaceAdapter) inspectReadiness(_ context.Context, pack capabilitypack.Pack, observation capabilitypack.SurfaceInspection, _ []capabilitypack.ExecutableResolution) (capabilitypack.ReadinessObservation, error) {
 	if pack.ID != "matty" {
-		return capabilitypack.ReadinessObservation{AuthorizationObserved: true, PendingHumanActions: observation.PendingHumanActions, Evidence: []string{"OpenCode permissions and runtime loading are not yet observed"}}, nil
+		return capabilitypack.ReadinessObservation{AuthorizationObserved: true, OptionalAuthorities: capabilitypack.UnknownOptionalAuthorities(pack), PendingHumanActions: observation.PendingHumanActions, Evidence: []string{"OpenCode permissions and runtime loading are not yet observed"}}, nil
 	}
-	return capabilitypack.ReadinessObservation{AuthorizationObserved: true, Authorized: true, PendingHumanActions: []string{"reload OpenCode and verify the capability in a new runtime session"}, Evidence: []string{"OpenCode filesystem and config discovery paths inspected; runtime loading is not observable without a host signal"}}, nil
+	return capabilitypack.ReadinessObservation{AuthorizationObserved: true, Authorized: true, OptionalAuthorities: capabilitypack.UnknownOptionalAuthorities(pack), PendingHumanActions: []string{"reload OpenCode and verify the capability in a new runtime session"}, Evidence: []string{"OpenCode filesystem and config discovery paths inspected; runtime loading is not observable without a host signal"}}, nil
 }
 
 func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
