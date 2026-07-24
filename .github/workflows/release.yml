@@ -39,6 +39,7 @@ jobs:
       - name: Fail closed on current affected drift
         env:
           GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
+          GH_METADATA_TOKEN: ${{ github.token }}
         run: |
           ./scripts/gate-governance-drift.sh \
             --boundary publication \

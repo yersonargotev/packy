@@ -17,6 +17,11 @@ retains:
 - the deterministic evaluation: `clean`, `confirmed-drift`,
   `unclassifiable-drift`, or `collection-failure`.
 
+The observer separates its authorities: `GOVERNANCE_READ_TOKEN` reads
+Administration, Actions, Issues, Secrets, and Environments projections, while
+the built-in read-only token queries GraphQL repository metadata that GitHub's
+REST projection withholds from a fine-grained read-only credential.
+
 A separate reporter has `issues: write` and may mutate only the canonical
 `Packy governance drift detected` issue. It creates, updates, deduplicates, or
 resolves that signal; it has no control-repair authority.
