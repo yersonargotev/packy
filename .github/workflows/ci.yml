@@ -17,11 +17,15 @@ concurrency:
 jobs:
   addy-promotion-gate:
     name: Addy 1.1.0 promotion gate
-    if: github.event_name == 'pull_request'
+    needs: claude-floor-smoke
+    if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: read
       contents: read
+      deployments: read
+      issues: read
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -35,14 +39,26 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Download exact-floor qualification
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claude-floor-qualification
+          path: ${{ runner.temp }}/claude-floor-evidence
+
       - name: Validate Addy promotion evidence
         env:
+          CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}
+          GH_TOKEN: ${{ github.token }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           mkdir -p "$RUNNER_TEMP/addy-promotion"
           ./scripts/gate-addy-promotion.sh \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.pull_request.head.sha }}" \
+            --generate \
+            "$RUNNER_TEMP/claude-floor-evidence/addy-qualification.json" \
+            "$RUNNER_TEMP/addy-promotion/production-evidence.v1.json" \
             > "$RUNNER_TEMP/addy-promotion/addy-promotion-evidence.v1.json"
 
       - name: Retain exact promotion decision
@@ -114,14 +130,14 @@ jobs:
             --claude-version 2.1.203 \
             --packy-ref "$GITHUB_SHA" \
             --evidence-dir "$RUNNER_TEMP/claude-floor-evidence" \
-            --addy-qualification synthetic \
+            --addy-qualification production \
             --addy-workflow .github/workflows/ci.yml
 
       - name: Retain exact-floor evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: claude-floor-${{ runner.os }}-${{ runner.arch }}
+          name: claude-floor-qualification
           path: ${{ runner.temp }}/claude-floor-evidence
           if-no-files-found: error
           retention-days: 90

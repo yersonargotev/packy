@@ -13,6 +13,13 @@ import (
 func main() {
 	var context addyacceptance.PromotionValidationContext
 	var evidencePath string
+	var qualificationPath, governanceEvaluationPath, governanceGatePath, acceptanceReportPath, outputPath string
+	var generate bool
+	var writeAcceptance bool
+	var acceptanceRows acceptanceRowsFlag
+	var acceptanceCommit string
+	flag.BoolVar(&generate, "generate", false, "generate exact production evidence from independent same-run inputs")
+	flag.BoolVar(&writeAcceptance, "write-acceptance-report", false, "write a canonical exact acceptance report")
 	flag.BoolVar(&context.PromotionChange, "promotion-change", false, "whether the evaluated diff changes Addy promotion state")
 	flag.BoolVar(&context.FoundationChange, "foundation-change", false, "whether the evaluated diff changes established Addy promotion authority")
 	flag.StringVar(&context.Repository, "repository", "", "trusted repository identity")
@@ -25,7 +32,20 @@ func main() {
 	flag.StringVar(&context.WorkflowDigest, "workflow-digest", "", "trusted workflow SHA-256")
 	flag.StringVar(&context.RunID, "run-id", "", "trusted workflow run ID")
 	flag.StringVar(&evidencePath, "evidence", "", "candidate promotion evidence JSON")
+	flag.StringVar(&qualificationPath, "qualification", "", "production Addy qualification JSON")
+	flag.StringVar(&governanceEvaluationPath, "governance-evaluation", "", "clean governance evaluation JSON")
+	flag.StringVar(&governanceGatePath, "governance-gate", "", "allowed governance gate decision JSON")
+	flag.StringVar(&acceptanceReportPath, "acceptance-report", "", "canonical same-run acceptance report")
+	flag.StringVar(&outputPath, "output", "", "generated promotion evidence path")
+	flag.StringVar(&acceptanceCommit, "acceptance-commit", "", "exact acceptance report commit")
+	flag.Var(&acceptanceRows, "acceptance-row", "tab-separated acceptance row identity")
 	flag.Parse()
+	if writeAcceptance {
+		if err := writeAcceptanceReport(outputPath, context.Repository, acceptanceCommit, context.WorkflowDigest, context.RunID, acceptanceRows); err != nil {
+			fatalf("write acceptance report: %v", err)
+		}
+		return
+	}
 
 	context.MatrixVersion = addyacceptance.PromotionMatrixVersion
 	context.Now = time.Now().UTC()
@@ -35,6 +55,12 @@ func main() {
 		fatalf("reconstruct trusted promotion inputs: %v", err)
 	}
 	context.Inputs = inputs
+	if generate {
+		if err := generatePromotionEvidence(context, qualificationPath, governanceEvaluationPath, governanceGatePath, acceptanceReportPath, outputPath); err != nil {
+			fatalf("generate promotion evidence: %v", err)
+		}
+		return
+	}
 
 	var evidence addyacceptance.PromotionEvidence
 	if context.PromotionChange {

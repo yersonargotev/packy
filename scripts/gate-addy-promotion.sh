@@ -2,13 +2,32 @@
 
 set -euo pipefail
 
-if (($# < 2 || $# > 3)); then
-  echo "usage: $0 <base-ref> <head-ref> [same-run-promotion-evidence]" >&2
+if (($# < 2 || $# > 5)); then
+  echo "usage: $0 <base-ref> <head-ref> [same-run-promotion-evidence | --generate <production-qualification> <output-evidence>]" >&2
+  exit 2
+fi
+generate=false
+qualification=
+generated_evidence=
+if [[ "${3:-}" == "--generate" ]]; then
+  (($# == 5)) || { echo "--generate requires qualification and output paths" >&2; exit 2; }
+  generate=true
+  qualification="$4"
+  generated_evidence="$5"
+elif (($# > 3)); then
+  echo "unexpected arguments" >&2
   exit 2
 fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
+
+workflow=.github/workflows/ci.yml
+if command -v sha256sum >/dev/null 2>&1; then
+  workflow_digest="$(sha256sum "$workflow" | awk '{print $1}')"
+else
+  workflow_digest="$(shasum -a 256 "$workflow" | awk '{print $1}')"
+fi
 
 base_sha="$(git rev-parse --verify "$1^{commit}")"
 head_sha="$(git rev-parse --verify "$2^{commit}")"
@@ -48,15 +67,37 @@ if [[ "$promotion_change" == false ]] && ! catalog_has_addy "$base_sha" && catal
 fi
 if [[ "$promotion_change" == true ]]; then
   foundation_change=false
+  if [[ "$generate" == true ]]; then
+    [[ "${CLAUDE_FLOOR_RESULT:-}" == "success" ]] || {
+      echo "exact-floor smoke did not complete successfully" >&2
+      exit 1
+    }
+    [[ -f "$qualification" && ! -L "$qualification" ]] || {
+      echo "production qualification must be a regular same-run artifact" >&2
+      exit 1
+    }
+    [[ "$generated_evidence" = /* && ! -e "$generated_evidence" ]] || {
+      echo "generated promotion evidence must be a new absolute out-of-tree path" >&2
+      exit 1
+    }
+    work="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/addy-promotion-generation.XXXXXX")"
+    trap 'rm -rf "$work"' EXIT
+    ./scripts/validate-addy-acceptance.sh \
+      --report-output "$work/acceptance-report.json" \
+      --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
+      --commit "${GITHUB_SHA:?GITHUB_SHA is required}" \
+      --workflow-digest "$workflow_digest" \
+      --run-id "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
+    ./scripts/gate-governance-drift.sh \
+      --boundary promotion \
+      --repo "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" \
+      --ref refs/heads/main \
+      --commit "${GITHUB_SHA:?GITHUB_SHA is required}" \
+      --workflow .github/workflows/ci.yml \
+      --output-dir "$work/governance"
+  fi
 elif [[ "$foundation_change" == true ]]; then
   ./scripts/validate-addy-acceptance.sh
-fi
-
-workflow=.github/workflows/ci.yml
-if command -v sha256sum >/dev/null 2>&1; then
-  workflow_digest="$(sha256sum "$workflow" | awk '{print $1}')"
-else
-  workflow_digest="$(shasum -a 256 "$workflow" | awk '{print $1}')"
 fi
 
 args=(
@@ -71,13 +112,27 @@ args=(
   --workflow-digest="$workflow_digest"
   --run-id="${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
 )
+if [[ "$promotion_change" == true && "$generate" == true ]]; then
+  go run ./internal/tools/addypromotiongate \
+    "${args[@]}" \
+    --generate \
+    --qualification="$qualification" \
+    --governance-evaluation="$work/governance/evaluation.json" \
+    --governance-gate="$work/governance/gate.json" \
+    --acceptance-report="$work/acceptance-report.json" \
+    --output="$generated_evidence"
+  args+=(--evidence="$generated_evidence")
+fi
 if [[ "$promotion_change" == true && -n "${3:-}" ]]; then
-  [[ -f "$3" && ! -L "$3" ]] || {
+  if [[ "$generate" == true ]]; then
+    :
+  elif [[ -f "$3" && ! -L "$3" ]]; then
+    args+=(--evidence="$3")
+  else
     echo "promotion evidence must be a regular same-run artifact" >&2
     exit 1
-  }
-  args+=(--evidence="$3")
-elif [[ "$promotion_change" == false && -n "${3:-}" ]]; then
+  fi
+elif [[ "$promotion_change" == false && -n "${3:-}" && "$generate" == false ]]; then
   echo "candidate evidence is not accepted for a non-promotion change" >&2
   exit 1
 fi

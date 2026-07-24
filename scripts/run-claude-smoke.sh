@@ -12,7 +12,7 @@ Usage:
     --packy-ref <tag-or-full-sha> \
     --evidence-dir <directory> \
     [--packy-binary <corresponding-release-artifact>] \
-    [--addy-qualification synthetic --addy-workflow <path> [--addy-tag <v0.x.y>]]
+    [--addy-qualification <synthetic|production> --addy-workflow <path> [--addy-tag <v0.x.y>]]
 
 The runner acquires Claude before entering its restricted environment. It never
 uses operator credentials, authenticates, starts a model session, or writes to
@@ -77,8 +77,8 @@ if [[ -z "$packy_ref" || -z "$evidence_dir" ]]; then
   echo "--packy-ref and --evidence-dir are required" >&2
   exit 2
 fi
-if [[ -n "$addy_qualification" && "$addy_qualification" != "synthetic" ]]; then
-  echo "--addy-qualification currently accepts only synthetic" >&2
+if [[ -n "$addy_qualification" && "$addy_qualification" != "synthetic" && "$addy_qualification" != "production" ]]; then
+  echo "--addy-qualification must be synthetic or production" >&2
   exit 2
 fi
 if [[ -n "$addy_qualification" && -z "$addy_workflow" || -z "$addy_qualification" && -n "$addy_workflow" ]]; then
@@ -137,7 +137,7 @@ fi
     --evidence "$evidence_dir/evidence.json"
 )
 
-if [[ "$addy_qualification" == "synthetic" ]]; then
+if [[ -n "$addy_qualification" ]]; then
   [[ "$addy_workflow" != /* && -f "$root/$addy_workflow" ]] || {
     echo "--addy-workflow must name a repository workflow" >&2
     exit 2
@@ -149,7 +149,6 @@ if [[ "$addy_qualification" == "synthetic" ]]; then
   fi
   qualify_args=(
     qualify-addy \
-    --synthetic \
     --evidence "$evidence_dir/evidence.json" \
     --output "$evidence_dir/addy-qualification.json" \
     --repository "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required for Addy qualification}" \
@@ -159,6 +158,9 @@ if [[ "$addy_qualification" == "synthetic" ]]; then
     --checkout "$root" \
     --packy "$packy_binary"
   )
+  if [[ "$addy_qualification" == "synthetic" ]]; then
+    qualify_args+=(--synthetic)
+  fi
   if [[ -n "$addy_tag" ]]; then
     qualify_args+=(--tag "$addy_tag")
   fi
