@@ -12,6 +12,7 @@ import (
 func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 	root := repositoryRoot(t)
 	documents := map[string][]string{
+		"CONTEXT.md":                 {"### CLI surface", "### Supported CLI surface", "### Target CLI surface", "The supported CLI surfaces are Codex, OpenCode, and Claude Code;", "Antigravity and GitHub Copilot CLI remain future candidates."},
 		"README.md":                  {"Claude Code", "docs/claude-code.md", claudecode.MinimumSupportedVersion},
 		"docs/claude-code.md":        {"Prerequisite", "Global projections", "migration", "Preservation", "recovery", "readiness", "cleanup", "No authentication or model calls", claudecode.MinimumSupportedVersion},
 		"docs/product/packy-v0.md":   {"Claude Code", claudecode.MinimumSupportedVersion},
@@ -22,7 +23,7 @@ func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 		"docs/release-notes/next.md": {"{{TAG}}", claudecode.MinimumSupportedVersion, "state schema v2", "matty 3.0.0", "engram 2.0.0", "degraded"},
 	}
 
-	staleTwoSurface := regexp.MustCompile(`(?is)(?:supports? only.{0,80}(?:codex.{0,30}opencode|opencode.{0,30}codex)|both supported surfaces|two[- ]surface support|cli surfaces\s*\|\s*codex and opencode only)`)
+	staleSupportClaim := regexp.MustCompile(`(?is)(?:supports? only.{0,80}(?:codex.{0,30}opencode|opencode.{0,30}codex)|both supported surfaces|two[- ]surface support|cli surfaces\s*\|\s*codex and opencode only|initial supported cli surfaces are codex and opencode|claude code,\s*antigravity,\s*and github copilot cli are future candidates)`)
 	versionLiteral := regexp.MustCompile(`\d+\.\d+\.\d+`)
 	for path, required := range documents {
 		text := readFile(t, filepath.Join(root, path))
@@ -31,8 +32,8 @@ func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 				t.Errorf("%s missing documentation contract text %q", path, want)
 			}
 		}
-		if staleTwoSurface.MatchString(text) {
-			t.Errorf("%s retains a stale two-surface support claim: %q", path, staleTwoSurface.FindString(text))
+		if staleSupportClaim.MatchString(text) {
+			t.Errorf("%s retains a stale CLI-surface support claim: %q", path, staleSupportClaim.FindString(text))
 		}
 		for _, line := range strings.Split(text, "\n") {
 			lower := strings.ToLower(line)

@@ -12,7 +12,13 @@ The always-available installer/configurator that manages capability packs and th
 The install, update, and uninstall behavior that reconciles Packy-managed global workflow artifacts. It excludes Installed Source initialization, setup health diagnosis, and capability-pack lifecycle operations.
 
 ### CLI surface
-An AI coding CLI that Packy can configure or integrate with. The initial supported CLI surfaces are Codex and OpenCode; Claude Code, Antigravity, and GitHub Copilot CLI are future candidates.
+An AI coding host that Packy can integrate with.
+
+### Supported CLI surface
+A CLI surface whose Packy-owned integration is shipped, documented, and covered by current validation and release evidence. The supported CLI surfaces are Codex, OpenCode, and Claude Code; a capability pack may target any declared subset of them.
+
+### Target CLI surface
+A CLI surface named by planning or a capability pack contract but not yet established as generally supported; target status alone never authorizes a support claim. Antigravity and GitHub Copilot CLI remain future candidates.
 
 ### Skill bundle
 The curated set of agent skills Packy installs or exposes for a workflow. The current candidate bundle is based on Matt Pocock's engineering skills rather than Gentle AI's SDD stack.
