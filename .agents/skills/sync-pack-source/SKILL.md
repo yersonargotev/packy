@@ -1,6 +1,6 @@
 ---
 name: sync-pack-source
-description: Synchronize one configured Packy pack source through the canonical manual workflow. Use when a Packy maintainer asks to update, retry, or monitor pack-source synchronization.
+description: Synchronize one configured Packy Pack Source or atomically register an approved Composite Pack Source Bundle through the canonical manual workflow. Use when a Packy maintainer asks to update, register, retry, or monitor Pack Source synchronization.
 ---
 
 # Synchronize Pack Source
@@ -18,10 +18,11 @@ that it belongs to `yersonargotev/packy` and the canonical workflow, then go
 directly to **Monitor and conclude** using its owner-produced request and
 artifacts. Recovery or retry continues through normalization below.
 
-Follow [REQUESTS.md](REQUESTS.md). Resolve a configured source, or an explicitly
-requested absent-source registration, and its selector exclusively from remote
-`main`; render the exact canonical JSON request and reject every ambiguity or
-forbidden override before any write.
+Follow [REQUESTS.md](REQUESTS.md). Resolve a configured source, an explicitly
+requested absent-source registration, or an approved initial composite
+registration and its exact member set exclusively from remote `main`; render
+the exact canonical JSON request and reject every ambiguity or forbidden
+override before any write.
 
 **Complete when:** one schema-valid request is shown verbatim, or the operation
 is explicitly blocked with the missing decision named.

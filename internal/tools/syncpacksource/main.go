@@ -69,21 +69,45 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	if flags.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
 	}
+	bundle, dispatchErr := isBundleDispatch(option)
+	if dispatchErr != nil {
+		return dispatchErr
+	}
 	var err error
 	switch option.phase {
 	case "inspect":
-		err = inspect(ctx, option, output)
+		if bundle {
+			err = inspectBundle(ctx, option, output)
+		} else {
+			err = inspect(ctx, option, output)
+		}
 	case "classify":
-		err = classify(ctx, option, output)
+		if bundle {
+			err = classifyBundle(ctx, option, output)
+		} else {
+			err = classify(ctx, option, output)
+		}
 	case "validate":
-		err = validateSandbox(ctx, option, output)
+		if bundle {
+			err = validateBundle(ctx, option, output)
+		} else {
+			err = validateSandbox(ctx, option, output)
+		}
 	case "publish":
-		err = publish(ctx, option, output)
+		if bundle {
+			err = publishBundle(ctx, option, output)
+		} else {
+			err = publish(ctx, option, output)
+		}
 	default:
 		err = fmt.Errorf("unsupported phase %q", option.phase)
 	}
 	if err != nil && option.outputDir != "" {
-		_ = writeFailureArtifact(option, err)
+		if bundle {
+			_ = writeBundleFailureArtifact(option, err)
+		} else {
+			_ = writeFailureArtifact(option, err)
+		}
 	}
 	return err
 }

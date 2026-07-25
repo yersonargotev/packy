@@ -248,7 +248,8 @@ func (builder *publicationBuilder) Build(ctx context.Context, repositoryRoot str
 	title := fmt.Sprintf("sync(%s): %s", builder.dispatch.SourceID, builder.plan.Candidate.Commit[:12])
 	proposal := packsyncworkflow.Proposal{SourceID: builder.dispatch.SourceID, PlanID: builder.plan.PlanID, BaseSHA: builder.plan.Preconditions.BaseCommit, CandidateSHA: builder.plan.Candidate.Commit, HeadSHA: head, ProvenanceSHA256: provenance, ManagedTitle: title}
 	builder.proposal, builder.brief, builder.provenance = proposal, brief, provenance
-	builder.github.title, builder.github.brief = title, brief
+	builder.github.title = title
+	builder.github.brief = singleSourcePublicationBrief{brief: &builder.brief}
 	return proposal, nil
 }
 
@@ -364,15 +365,47 @@ func copyPath(source, destination string) error {
 }
 
 type githubGateway struct {
-	repositoryRoot string
-	repository     string
-	plan           packsync.Plan
-	title          string
-	bodyPrefix     string
-	brief          packsyncworkflow.ReviewBrief
-	last           packsyncworkflow.PublicationState
-	retry          packsyncworkflow.RetryPolicy
-	run            func(context.Context, string, string, ...string) (string, error)
+	repositoryRoot    string
+	repository        string
+	plan              packsync.Plan
+	title             string
+	bodyPrefix        string
+	brief             publicationBrief
+	last              packsyncworkflow.PublicationState
+	retry             packsyncworkflow.RetryPolicy
+	run               func(context.Context, string, string, ...string) (string, error)
+	candidateRelation func(string) packsyncworkflow.CandidateRelation
+}
+
+type publicationBrief interface {
+	PreparePublication(packsyncworkflow.Proposal)
+	FinalizePublication(packsyncworkflow.Proposal, packsyncworkflow.PRState)
+	Markdown() (string, error)
+}
+
+type singleSourcePublicationBrief struct {
+	brief *packsyncworkflow.ReviewBrief
+}
+
+func (single singleSourcePublicationBrief) PreparePublication(proposal packsyncworkflow.Proposal) {
+	single.brief.ResultTreeSHA = proposal.ResultTreeSHA
+	single.brief.Validation = proposal.Validation
+	single.brief.DecisionReady = false
+	single.brief.Blockers = []string{"Publication remains blocked until the exact post-write pull request identity is reobserved."}
+	single.brief.InvalidationConditions = proposal.InvalidationConditions
+}
+
+func (single singleSourcePublicationBrief) FinalizePublication(proposal packsyncworkflow.Proposal, observed packsyncworkflow.PRState) {
+	single.brief.PullRequest = observed.Number
+	single.brief.HeadSHA = observed.HeadSHA
+	single.brief.Validation = proposal.Validation
+	single.brief.Blockers = nil
+	single.brief.DecisionReady = true
+	single.brief.InvalidationConditions = proposal.InvalidationConditions
+}
+
+func (single singleSourcePublicationBrief) Markdown() (string, error) {
+	return single.brief.Markdown()
 }
 
 func newGitHubGateway(repositoryRoot string, plan packsync.Plan) *githubGateway {
@@ -380,19 +413,16 @@ func newGitHubGateway(repositoryRoot string, plan packsync.Plan) *githubGateway 
 }
 
 func (gateway *githubGateway) Prepare(proposal packsyncworkflow.Proposal) (packsyncworkflow.Proposal, error) {
-	gateway.brief.ResultTreeSHA = proposal.ResultTreeSHA
-	gateway.brief.Validation = proposal.Validation
-	gateway.brief.DecisionReady = false
-	gateway.brief.Blockers = []string{"Publication remains blocked until the exact post-write pull request identity is reobserved."}
-	gateway.brief.InvalidationConditions = proposal.InvalidationConditions
+	if gateway.brief == nil {
+		return packsyncworkflow.Proposal{}, errors.New("publication review evidence is required")
+	}
+	gateway.brief.PreparePublication(proposal)
 	prefix, err := gateway.brief.Markdown()
 	if err != nil {
 		return packsyncworkflow.Proposal{}, err
 	}
 	proposal.ManagedMetadataHash = packsyncworkflow.ManagedMetadataHash(proposal.ManagedTitle, prefix)
 	gateway.title, gateway.bodyPrefix = proposal.ManagedTitle, prefix
-	gateway.brief.Validation = proposal.Validation
-	gateway.brief.InvalidationConditions = proposal.InvalidationConditions
 	return proposal, nil
 }
 
@@ -469,6 +499,8 @@ func (gateway *githubGateway) Observe(ctx context.Context, sourceID string) (pac
 		state.Branch.HumanCommits = true
 	}
 	switch {
+	case gateway.candidateRelation != nil:
+		state.CandidateRelation = gateway.candidateRelation(state.Record.CandidateSHA)
 	case state.Record.CandidateSHA == "" || state.Record.CandidateSHA == gateway.plan.Candidate.Commit:
 		state.CandidateRelation = packsyncworkflow.CandidateSame
 	default:
@@ -558,12 +590,7 @@ func (gateway *githubGateway) Finalize(ctx context.Context, proposal packsyncwor
 			return "", err
 		}
 	}
-	gateway.brief.PullRequest = observed.Number
-	gateway.brief.HeadSHA = observed.HeadSHA
-	gateway.brief.Validation = proposal.Validation
-	gateway.brief.Blockers = nil
-	gateway.brief.DecisionReady = true
-	gateway.brief.InvalidationConditions = proposal.InvalidationConditions
+	gateway.brief.FinalizePublication(proposal, observed)
 	finalPrefix, err := gateway.brief.Markdown()
 	if err != nil {
 		return "", err

@@ -17,10 +17,14 @@ owned by `internal/packsync` and `internal/packclassification` under ADR 0007
 and ADR 0008.
 
 The complete immutable schema suites are checked in under
-`schemas/pack-source/v1.0.0/` and `schemas/pack-source/v2.0.0/`. Each consists
+`schemas/pack-source/v1.0.0/`, `schemas/pack-source/v2.0.0/`, and
+`schemas/pack-source/v3.0.0/`. Each consists
 of the dispatch, validation, no-op, operational-artifact, and publication
 schema files. Version 1 remains the synchronization contract; version 2 adds
-sealed source registration and source-scoped provenance. Repository validation
+sealed source registration and source-scoped provenance. Version 3 is the
+distinct Pack-scoped `register_bundle` contract for atomic initial admission of
+two or more exact-commit sources and cannot consume or emit v1/v2 artifacts.
+Repository validation
 registers every schema locally by its canonical GitHub Pages ID. Packy runtime
 validates domain values directly and never resolves schemas over the network.
 
@@ -30,9 +34,9 @@ Every request conforms to the dispatch schema for its declared version. A
 version 1 request synchronizes one configured `source_id`. A version 2 request
 also names an explicit `synchronize` or `register` operation. Registration is
 allowed only when the source is absent and seals the complete strict source
-configuration plus its canonical SHA-256. Every request carries an explicit
-candidate selector, an explicit `ai` or `human` classification mode, and an
-operator reason. There are no automatic triggers.
+configuration plus its canonical SHA-256. Every v1/v2 request carries an
+explicit candidate selector. Every request carries an explicit `ai` or `human`
+classification mode and an operator reason. There are no automatic triggers.
 
 The workflow transport additionally requires `request_digest`, the lowercase
 SHA-256 of the sorted compact canonical request JSON including its trailing
@@ -41,6 +45,18 @@ It is exposed with `source_id` in the run name so the repository-local
 maintainer skill can identify an identical pending run without exposing the
 reason or human evidence. Inspect recomputes and verifies it before admitting
 the request; a started run's `request.json` remains the owner-produced proof.
+
+A version 3 request names one absent `pack_id`, at least two complete source
+registrations ordered by source ID, and `registration_bundle_sha256`. Each
+member binds only that Pack, uses an exact full-commit selector, and carries a
+durable digest-bound redistributable legal disposition. It has no member
+selector or independently reusable source subrequest. The request also carries
+the canonical initial `proposed_manifest`, its exact digest, and its proposed
+version; no Pack manifest is pre-created outside the atomic result. Every later
+v3 artifact
+preserves the ordered source/member identity, legal evidence, plan, base,
+resulting configuration/manifests, source-lock set, result tree, and
+secret/upstream-byte attestations.
 
 `latest-stable` has no selector reference. `prerelease` carries one exact
 published prerelease tag. `commit` carries one full lowercase commit SHA. An
@@ -54,9 +70,16 @@ Human classification is inspection-first and evidence-second:
    exact candidate commit and supplies canonical evidence bound to the exact
    inspection plan ID and base SHA. Missing or stale bindings block.
 
+For v3, every member is already exact-commit in both dispatches, so the second
+human dispatch repeats the complete identical ordered registration and proposed
+generation seals instead of carrying a single selector. Its
+`human_evidence` is one complete Pack-level composite classification bound to
+the exact plan, Pack, and base; it grants no member-level authority.
+
 ## Concurrency and freshness
 
-The concurrency group is `sync-pack-source-<source-id>` with
+The concurrency group is `sync-pack-source-<source-id>` for v1/v2 and
+`sync-pack-source-<pack-id>` for v3, with
 `cancel-in-progress: false`. GitHub therefore leaves the one active run alone,
 admits at most one pending run for that source, and a newer request replaces
 only the older pending request. No run resumes another run's plan. Every run
@@ -83,14 +106,16 @@ The private adapter supplies the job-scoped `GITHUB_TOKEN` to an authenticated
 read-only client that adds authorization only for the exact GitHub API origin;
 redirected archive origins and deterministic domain modules never receive it.
 
-The adapter validates the dispatch, creates an isolated acquisition directory,
-and calls canonical `packsync.Check`. Its output is a sealed, immutable
+The adapter validates the dispatch, creates isolated acquisition directories,
+and calls canonical `packsync.Check` or complete-set
+`packsync.CheckComposite`. Its output is a sealed, immutable
 inspection artifact. It contains identities, reasons, changes, blockers and
 digests, not copied upstream resources or credentials.
 
-An exact Check-level no-op emits
-`schemas/pack-source/v1.0.0/pack-source-noop.schema.json` from Inspect and stops
-before classification, validation, or publication permissions.
+An exact single-source Check-level no-op emits the matching v1/v2
+`pack-source-noop.schema.json` contract from Inspect and stops before
+classification, validation, or publication permissions. Initial v3 composite
+registration has no no-op or partial-convergence state.
 
 ### Classify — `contents: read`, `models: read`
 
@@ -102,14 +127,17 @@ go run ./internal/tools/syncpacksource --phase classify ...
 
 It passes the sealed plan to `packclassification`. AI mode retries only model
 transport failures according to the retry policy below. Human mode accepts
-only the separately dispatched, inspection-bound evidence. The classifier has
-no publication authority. It emits a classified-plan artifact, never a branch
-or pull-request write.
+only the separately dispatched, inspection-bound evidence. V3 emits one
+Pack-level composite classification plus an artifact that seals the exact
+evidence digest and complete plan identity; neither member evidence nor a
+member subplan carries authority. The classifier has no publication authority
+and never writes a branch or pull request.
 
 ### Validate — `contents: read`
 
 Validate downloads the exact inspection and classification artifacts, invokes
-`--phase validate`, reacquires and Applies the sealed candidate in its disposable
+`--phase validate`, reacquires and Applies the sealed candidate or every sealed
+composite member in its disposable
 checkout, and runs the complete Packy-owned validation authority. Its canonical
 proof contains identities and booleans only, never upstream bytes.
 
@@ -123,7 +151,8 @@ go run ./internal/tools/syncpacksource --phase publish ...
 ```
 
 Before the first Git or GitHub write, the adapter uses an isolated checkout to
-reacquire the exact candidate, calls canonical Apply (and Recover if canonical
+reacquire the exact candidate or complete ordered member set, calls canonical
+Apply or ApplyComposite (and Recover if canonical
 transaction evidence requires it), renders the diff, runs the complete
 Packy-owned validation suite again, evaluates ownership, and freshly reobserves
 the repository and GitHub state. Only a proposal whose exact identity passes
@@ -166,7 +195,8 @@ days and does not publish an issue.
 
 ## Publication ownership and fail-closed checks
 
-The operation owns exactly `sync/<source-id>` and at most one open PR from that
+The operation owns exactly `sync/<source-id>` for v1/v2 or `sync/<pack-id>` for
+v3 and at most one open PR from that
 branch to `main`. The automation identity is `github-actions[bot]`. A pristine
 first publication may create both. A pristine advancing candidate may update
 the same branch and PR. An exact already-published identity is a no-op.

@@ -1,5 +1,5 @@
 name: Synchronize pack source
-run-name: sync-pack-source / ${{ inputs.source_id }} / ${{ inputs.request_digest }}
+run-name: sync-pack-source / ${{ inputs.pack_id || inputs.source_id }} / ${{ inputs.request_digest }}
 
 on:
   workflow_dispatch:
@@ -8,20 +8,45 @@ on:
         description: Configured source identifier
         required: true
         type: string
+      pack_id:
+        description: V3 register_bundle target Pack identifier
+        required: false
+        type: string
       operation:
-        description: Synchronize an existing source or register an absent source
+        description: Synchronize/register one source or atomically register a source bundle
         required: true
         type: choice
         default: synchronize
         options:
           - synchronize
           - register
+          - register_bundle
       registration_json:
         description: Register only; complete strict SourceConfig JSON
         required: false
         type: string
       registration_sha256:
         description: Register only; canonical SourceConfig SHA-256
+        required: false
+        type: string
+      registrations_json:
+        description: Register bundle only; ordered registrations and legal evidence JSON
+        required: false
+        type: string
+      registration_bundle_sha256:
+        description: Register bundle only; canonical ordered registration bundle SHA-256
+        required: false
+        type: string
+      proposed_version:
+        description: Register bundle only; initial Pack generation version
+        required: false
+        type: string
+      proposed_manifest_json:
+        description: Register bundle only; canonical initial Pack manifest JSON
+        required: false
+        type: string
+      proposed_manifest_sha256:
+        description: Register bundle only; canonical initial Pack manifest SHA-256
         required: false
         type: string
       request_digest:
@@ -74,7 +99,7 @@ permissions: {}
 # and replaces only an older pending run. A promoted run starts at Inspect and
 # therefore performs a fresh Check rather than consuming the superseded plan.
 concurrency:
-  group: sync-pack-source-${{ inputs.source_id }}
+  group: sync-pack-source-${{ inputs.pack_id || inputs.source_id }}
   cancel-in-progress: false
 
 jobs:
@@ -133,8 +158,36 @@ jobs:
       - name: Initialize fail-closed operational artifact
         env:
           PACKY_SOURCE_ID: ${{ inputs.source_id }}
+          PACKY_OPERATION: ${{ inputs.operation }}
+          PACKY_PACK_ID: ${{ inputs.pack_id }}
+          PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}
+          PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
+          PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
+          PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
         run: |
           mkdir -p "$RUNNER_TEMP/packy-sync/inspect"
+          if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
+            members="$(jq -c '[.[] | {
+              source_id: .registration.id,
+              candidate_sha: .registration.selector.ref,
+              legal_evidence_ref: .legal_admission.evidence_reference,
+              legal_evidence_sha256: .legal_admission.evidence_sha256
+            }]' <<<"$PACKY_REGISTRATIONS_JSON")"
+            source_ids="$(jq -c '[.[].source_id]' <<<"$members")"
+            jq -n --arg pack_id "$PACKY_PACK_ID" --argjson source_ids "$source_ids" \
+              --arg registration_bundle_sha256 "$PACKY_REGISTRATION_BUNDLE_SHA256" \
+              --arg proposed_version "$PACKY_PROPOSED_VERSION" \
+              --arg proposed_manifest_sha256 "$PACKY_PROPOSED_MANIFEST_SHA256" \
+              --argjson members "$members" \
+              '{schema_version:3,state:"blocked",pack_id:$pack_id,source_ids:$source_ids,
+                registration_bundle_sha256:$registration_bundle_sha256,
+                proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,
+                members:$members,blockers:["The Inspect job ended before a canonical result was produced."],
+                recovery:["Start a fresh complete bundle dispatch after checking the failed job."],
+                contains_secrets:false,contains_upstream_bytes:false}' \
+              > "$RUNNER_TEMP/packy-sync/inspect/operational-artifact.json"
+            exit 0
+          fi
           source_id="$PACKY_SOURCE_ID"
           [[ "$source_id" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || source_id=unknown
           jq -n --arg source_id "$source_id" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Inspect job ended before a canonical result was produced."],recovery:["Start a fresh manual dispatch after checking the failed job."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/inspect/operational-artifact.json"
@@ -149,9 +202,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PACKY_SOURCE_ID: ${{ inputs.source_id }}
+          PACKY_PACK_ID: ${{ inputs.pack_id }}
           PACKY_OPERATION: ${{ inputs.operation }}
           PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}
           PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}
+          PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}
+          PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
+          PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
+          PACKY_PROPOSED_MANIFEST_JSON: ${{ inputs.proposed_manifest_json }}
+          PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
           PACKY_SELECTOR: ${{ inputs.selector }}
           PACKY_SELECTOR_REF: ${{ inputs.selector_ref }}
           PACKY_CLASSIFICATION_MODE: ${{ inputs.classification_mode }}
@@ -220,8 +279,21 @@ jobs:
       - name: Initialize fail-closed operational artifact
         env:
           PACKY_SOURCE_ID: ${{ inputs.source_id }}
+          PACKY_OPERATION: ${{ inputs.operation }}
+          PACKY_PACK_ID: ${{ inputs.pack_id }}
+          PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}
+          PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
+          PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
+          PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
         run: |
           mkdir -p "$RUNNER_TEMP/packy-sync/classification"
+          if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
+            members="$(jq -c '[.[] | {source_id:.registration.id,candidate_sha:.registration.selector.ref,legal_evidence_ref:.legal_admission.evidence_reference,legal_evidence_sha256:.legal_admission.evidence_sha256}]' <<<"$PACKY_REGISTRATIONS_JSON")"
+            source_ids="$(jq -c '[.[].source_id]' <<<"$members")"
+            jq -n --arg pack_id "$PACKY_PACK_ID" --argjson source_ids "$source_ids" --arg registration_bundle_sha256 "$PACKY_REGISTRATION_BUNDLE_SHA256" --arg proposed_version "$PACKY_PROPOSED_VERSION" --arg proposed_manifest_sha256 "$PACKY_PROPOSED_MANIFEST_SHA256" --argjson members "$members" \
+              '{schema_version:3,state:"blocked",pack_id:$pack_id,source_ids:$source_ids,registration_bundle_sha256:$registration_bundle_sha256,proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,members:$members,blockers:["The Classify job ended before canonical evidence was produced."],recovery:["Start a fresh complete bundle dispatch; do not reuse partial or member-level classification."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/classification/operational-artifact.json"
+            exit 0
+          fi
           jq -n --arg source_id "$PACKY_SOURCE_ID" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Classify job ended before canonical evidence was produced."],recovery:["Start a fresh dispatch for the exact sealed candidate; do not fall back between AI and human classification."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/classification/operational-artifact.json"
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -273,8 +345,21 @@ jobs:
       - name: Initialize fail-closed operational artifact
         env:
           PACKY_SOURCE_ID: ${{ inputs.source_id }}
+          PACKY_OPERATION: ${{ inputs.operation }}
+          PACKY_PACK_ID: ${{ inputs.pack_id }}
+          PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}
+          PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
+          PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
+          PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
         run: |
           mkdir -p "$RUNNER_TEMP/packy-sync/validation"
+          if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
+            members="$(jq -c '[.[] | {source_id:.registration.id,candidate_sha:.registration.selector.ref,legal_evidence_ref:.legal_admission.evidence_reference,legal_evidence_sha256:.legal_admission.evidence_sha256}]' <<<"$PACKY_REGISTRATIONS_JSON")"
+            source_ids="$(jq -c '[.[].source_id]' <<<"$members")"
+            jq -n --arg pack_id "$PACKY_PACK_ID" --argjson source_ids "$source_ids" --arg registration_bundle_sha256 "$PACKY_REGISTRATION_BUNDLE_SHA256" --arg proposed_version "$PACKY_PROPOSED_VERSION" --arg proposed_manifest_sha256 "$PACKY_PROPOSED_MANIFEST_SHA256" --argjson members "$members" \
+              '{schema_version:3,state:"blocked",pack_id:$pack_id,source_ids:$source_ids,registration_bundle_sha256:$registration_bundle_sha256,proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,members:$members,blockers:["The complete-set Apply or Packy validation suite did not finish."],recovery:["Inspect the validation evidence, correct the complete bundle, and start a fresh Inspect."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/validation/operational-artifact.json"
+            exit 0
+          fi
           jq -n --arg source_id "$PACKY_SOURCE_ID" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The sandbox Apply or complete Packy-owned validation suite did not finish."],recovery:["Inspect the validation logs, correct the implementation separately if needed, and start a fresh dispatch."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/validation/operational-artifact.json"
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -298,11 +383,15 @@ jobs:
           export HOME="$RUNNER_TEMP/packy-home"
           export XDG_CONFIG_HOME="$RUNNER_TEMP/packy-xdg"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+          evidence="$RUNNER_TEMP/packy-sync/classification/classification.json"
+          if jq -e '.schema_version == 3' "$RUNNER_TEMP/packy-sync/inspect/request.json" >/dev/null; then
+            evidence="$RUNNER_TEMP/packy-sync/classification/classification-evidence.json"
+          fi
           go run ./internal/tools/syncpacksource --phase validate \
             --repository-root "$GITHUB_WORKSPACE" \
             --request "$RUNNER_TEMP/packy-sync/inspect/request.json" \
             --plan "$RUNNER_TEMP/packy-sync/inspect/plan.json" \
-            --evidence "$RUNNER_TEMP/packy-sync/classification/classification.json" \
+            --evidence "$evidence" \
             --output "$RUNNER_TEMP/packy-sync/validation"
       - name: Upload sandbox validation proof
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -332,8 +421,21 @@ jobs:
       - name: Initialize fail-closed operational artifact
         env:
           PACKY_SOURCE_ID: ${{ inputs.source_id }}
+          PACKY_OPERATION: ${{ inputs.operation }}
+          PACKY_PACK_ID: ${{ inputs.pack_id }}
+          PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}
+          PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
+          PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
+          PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
         run: |
           mkdir -p "$RUNNER_TEMP/packy-sync/publication"
+          if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
+            members="$(jq -c '[.[] | {source_id:.registration.id,candidate_sha:.registration.selector.ref,legal_evidence_ref:.legal_admission.evidence_reference,legal_evidence_sha256:.legal_admission.evidence_sha256}]' <<<"$PACKY_REGISTRATIONS_JSON")"
+            source_ids="$(jq -c '[.[].source_id]' <<<"$members")"
+            jq -n --arg pack_id "$PACKY_PACK_ID" --argjson source_ids "$source_ids" --arg registration_bundle_sha256 "$PACKY_REGISTRATION_BUNDLE_SHA256" --arg proposed_version "$PACKY_PROPOSED_VERSION" --arg proposed_manifest_sha256 "$PACKY_PROPOSED_MANIFEST_SHA256" --argjson members "$members" \
+              '{schema_version:3,state:"blocked",pack_id:$pack_id,source_ids:$source_ids,registration_bundle_sha256:$registration_bundle_sha256,proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,members:$members,blockers:["The Publish job ended before exact Pack-scoped publication state was established."],recovery:["Inspect the stable Pack branch and pull request; preserve reviewer work and start a fresh Inspect."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/publication/operational-artifact.json"
+            exit 0
+          fi
           jq -n --arg source_id "$PACKY_SOURCE_ID" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Publish job ended before exact publication state was established."],recovery:["Inspect the stable branch and pull request; preserve reviewer work and start a fresh Check."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/publication/operational-artifact.json"
       # This reviewed publication checkout persists only the job-scoped token
       # used after the ownership and exact-state admission checks pass.
@@ -364,11 +466,15 @@ jobs:
           export HOME="$RUNNER_TEMP/packy-home"
           export XDG_CONFIG_HOME="$RUNNER_TEMP/packy-xdg"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+          evidence="$RUNNER_TEMP/packy-sync/classification/classification.json"
+          if jq -e '.schema_version == 3' "$RUNNER_TEMP/packy-sync/inspect/request.json" >/dev/null; then
+            evidence="$RUNNER_TEMP/packy-sync/classification/classification-evidence.json"
+          fi
           go run ./internal/tools/syncpacksource --phase publish \
             --repository-root "$GITHUB_WORKSPACE" \
             --request "$RUNNER_TEMP/packy-sync/inspect/request.json" \
             --plan "$RUNNER_TEMP/packy-sync/inspect/plan.json" \
-            --evidence "$RUNNER_TEMP/packy-sync/classification/classification.json" \
+            --evidence "$evidence" \
             --validation "$RUNNER_TEMP/packy-sync/validation/validation.json" \
             --output "$RUNNER_TEMP/packy-sync/publication"
       - name: Bind the canonical automation run to the exact proposal

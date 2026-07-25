@@ -22,20 +22,23 @@ var ErrRecoveryEvidence = errors.New("bundle recovery evidence is absent or inva
 const recoveryMarkerSchema = 1
 
 type recoveryMarker struct {
-	SchemaVersion    int    `json:"schema_version"`
-	PlanID           string `json:"plan_id"`
-	Phase            string `json:"phase"`
-	Bundle           string `json:"bundle"`
-	Backup           string `json:"backup"`
-	Staged           string `json:"staged"`
-	OldSHA256        string `json:"old_sha256"`
-	NewSHA256        string `json:"new_sha256"`
-	SourceID         string `json:"source_id"`
-	SourceLockSHA256 string `json:"source_lock_sha256"`
-	LockSetSHA256    string `json:"lock_set_sha256"`
-	Legacy           string `json:"legacy,omitempty"`
-	LegacySHA256     string `json:"legacy_sha256,omitempty"`
-	Seal             string `json:"seal"`
+	SchemaVersion            int      `json:"schema_version"`
+	PlanID                   string   `json:"plan_id"`
+	Phase                    string   `json:"phase"`
+	Bundle                   string   `json:"bundle"`
+	Backup                   string   `json:"backup"`
+	Staged                   string   `json:"staged"`
+	OldSHA256                string   `json:"old_sha256"`
+	NewSHA256                string   `json:"new_sha256"`
+	SourceID                 string   `json:"source_id"`
+	SourceLockSHA256         string   `json:"source_lock_sha256"`
+	LockSetSHA256            string   `json:"lock_set_sha256"`
+	Operation                string   `json:"operation,omitempty"`
+	SourceIDs                []string `json:"source_ids,omitempty"`
+	RegistrationBundleSHA256 string   `json:"registration_bundle_sha256,omitempty"`
+	Legacy                   string   `json:"legacy,omitempty"`
+	LegacySHA256             string   `json:"legacy_sha256,omitempty"`
+	Seal                     string   `json:"seal"`
 }
 
 func (engine Engine) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
@@ -785,6 +788,18 @@ func readRecoveryMarker(path string) (recoveryMarker, error) {
 	}
 	if marker.SchemaVersion != recoveryMarkerSchema || !canonicalSourceIDPattern.MatchString(marker.SourceID) || !fullDigest(marker.SourceLockSHA256) || !fullDigest(marker.LockSetSHA256) || marker.PlanID == "" || marker.Seal == "" || marker.Seal != markerSeal(marker) || !fullDigest(marker.OldSHA256) || !fullDigest(marker.NewSHA256) {
 		return recoveryMarker{}, fmt.Errorf("%w: marker identity or seal is invalid", ErrRecoveryEvidence)
+	}
+	if marker.Operation == "register_bundle" {
+		if len(marker.SourceIDs) < 2 || !fullDigest(marker.RegistrationBundleSHA256) || marker.SourceID != marker.SourceIDs[0] {
+			return recoveryMarker{}, fmt.Errorf("%w: composite marker identity is incomplete", ErrRecoveryEvidence)
+		}
+		for i, sourceID := range marker.SourceIDs {
+			if !canonicalSourceIDPattern.MatchString(sourceID) || (i > 0 && marker.SourceIDs[i-1] >= sourceID) {
+				return recoveryMarker{}, fmt.Errorf("%w: composite marker source set is invalid", ErrRecoveryEvidence)
+			}
+		}
+	} else if marker.Operation != "" || len(marker.SourceIDs) != 0 || marker.RegistrationBundleSHA256 != "" {
+		return recoveryMarker{}, fmt.Errorf("%w: marker operation diagnosis is invalid", ErrRecoveryEvidence)
 	}
 	return marker, nil
 }
