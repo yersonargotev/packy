@@ -66,7 +66,47 @@ func TestLoadPortableManifestV4ExposesCanonicalRuntimeModes(t *testing.T) {
 	}
 }
 
+func TestEncodePortableManifestV4IsDeterministicAndRoundTrips(t *testing.T) {
+	pack, err := LoadPortableManifest(writeManifestV4(t, validManifestV4), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := EncodePortableManifestV4(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := EncodePortableManifestV4(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) || len(first) == 0 || first[len(first)-1] != '\n' || strings.HasSuffix(string(first), "\n\n") {
+		t.Fatalf("producer output is not canonical and deterministic:\n%s", first)
+	}
+	path := writeManifestV4(t, string(first))
+	roundTrip, err := LoadPortableManifest(path, t.TempDir())
+	if err != nil {
+		t.Fatalf("producer emitted a manifest rejected by the runtime validator: %v", err)
+	}
+	if roundTrip.Resources[0].RuntimeModes[0].Role != RuntimeModePrimary {
+		t.Fatalf("round-trip changed runtime mode: %#v", roundTrip.Resources[0].RuntimeModes[0])
+	}
+	if strings.Contains(string(first), "optional_modes") {
+		t.Fatal("v4 producer dual-wrote optional_modes")
+	}
+}
+
 func TestLoadPortableManifestV4AcceptsResourceLocalVerifiedFallback(t *testing.T) {
+	manifest := validFallbackManifestV4()
+	pack, err := LoadPortableManifest(writeManifestV4(t, manifest), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pack.Resources[0].RuntimeModes[0].Fallback.Mode; got != "local-fallback" {
+		t.Fatalf("fallback = %q", got)
+	}
+}
+
+func validFallbackManifestV4() string {
 	manifest := strings.Replace(validManifestV4,
 		`"fallback": {"kind": "none"},`,
 		`"fallback": {"kind": "mode", "mode": "local-fallback"},`,
@@ -87,12 +127,44 @@ func TestLoadPortableManifestV4AcceptsResourceLocalVerifiedFallback(t *testing.T
   }],`,
 		1,
 	)
-	pack, err := LoadPortableManifest(writeManifestV4(t, manifest), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
+	return manifest
+}
+
+func TestLoadPortableManifestV4RejectsInvalidFallbackGraphsAndModeOrder(t *testing.T) {
+	mutate := func(edit func([]any)) string {
+		var manifest map[string]any
+		if err := json.Unmarshal([]byte(validFallbackManifestV4()), &manifest); err != nil {
+			t.Fatal(err)
+		}
+		modes := manifest["resources"].([]any)[0].(map[string]any)["runtime_modes"].([]any)
+		edit(modes)
+		encoded, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(encoded)
 	}
-	if got := pack.Resources[0].RuntimeModes[0].Fallback.Mode; got != "local-fallback" {
-		t.Fatalf("fallback = %q", got)
+	unsorted := mutate(func(modes []any) { modes[0], modes[1] = modes[1], modes[0] })
+	invalidRoleEdge := mutate(func(modes []any) {
+		modes[1].(map[string]any)["role"] = "primary"
+	})
+	cycle := mutate(func(modes []any) {
+		modes[1].(map[string]any)["fallback"] = map[string]any{"kind": "mode", "mode": "local"}
+	})
+
+	for name, test := range map[string]struct {
+		manifest string
+		want     string
+	}{
+		"unsorted modes":    {unsorted, "runtime_modes must be sorted"},
+		"invalid role edge": {invalidRoleEdge, "from a primary mode"},
+		"fallback cycle":    {cycle, "must be acyclic"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := LoadPortableManifest(writeManifestV4(t, test.manifest), t.TempDir()); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
 
@@ -106,10 +178,13 @@ func TestLoadPortableManifestV4RejectsOneFactNegativeTwins(t *testing.T) {
 		"unnormalized version":         strings.Replace(validManifestV4, `">=20.0.0"`, `">= 20.0.0"`, 1),
 		"null tool version":            strings.Replace(validManifestV4, `">=20.0.0"`, `null`, 1),
 		"duplicate requirement":        strings.Replace(validManifestV4, `[{"kind": "tool", "id": "node", "version": ">=20.0.0"}]`, `[{"kind": "tool", "id": "node", "version": ">=20.0.0"},{"kind": "tool", "id": "node", "version": ">=20.0.0"}]`, 1),
+		"unsorted requirements":        strings.Replace(validManifestV4, `[{"kind": "tool", "id": "node", "version": ">=20.0.0"}]`, `[{"kind": "tool", "id": "node", "version": ">=20.0.0"},{"kind": "authentication", "id": "vercel"}]`, 1),
 		"unknown authority":            strings.Replace(validManifestV4, `"filesystem_read"`, `"shell"`, 1),
+		"duplicate authority":          strings.Replace(validManifestV4, `[{"kind": "filesystem_read", "scope": "consumer_project"}]`, `[{"kind": "filesystem_read", "scope": "consumer_project"},{"kind": "filesystem_read", "scope": "consumer_project"}]`, 1),
 		"wrong authority scope":        strings.Replace(validManifestV4, `"consumer_project"`, `"planet"`, 1),
 		"known but illegal scope":      strings.Replace(validManifestV4, `"consumer_project"`, `"remote_git"`, 1),
 		"unknown effect":               strings.Replace(validManifestV4, `"effects": []`, `"effects": [{"kind":"shell","scope":"workstation"}]`, 1),
+		"duplicate effect":             strings.Replace(validManifestV4, `"effects": []`, `"effects": [{"kind":"upload","scope":"deployment_payload"},{"kind":"upload","scope":"deployment_payload"}]`, 1),
 		"known effect wrong scope":     strings.Replace(validManifestV4, `"effects": []`, `"effects": [{"kind":"upload","scope":"consumer_project"}]`, 1),
 		"fallback mode with no target": strings.Replace(validManifestV4, `{"kind": "none"}`, `{"kind": "mode", "mode": "missing"}`, 1),
 		"unsafe unavailable policy":    strings.Replace(validManifestV4, `"fail_before_effects"`, `"continue"`, 1),
@@ -143,6 +218,17 @@ func TestLoadPortableManifestV4PreservesV3ResourceShapes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	encoded, err := EncodePortableManifestV4(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack, err = LoadPortableManifest(path, bundle)
+	if err != nil {
+		t.Fatalf("canonical producer lost a v3 resource field: %v", err)
+	}
 	for _, candidate := range pack.Resources {
 		if candidate.Kind == "lifecycle" && candidate.Bindings[0].Hook != nil {
 			return
@@ -159,16 +245,23 @@ func TestLoadPortableManifestV3StillForbidsRuntimeModes(t *testing.T) {
 }
 
 func TestRuntimeEvidenceIsTriStateDeterministicAndSecretSafe(t *testing.T) {
-	valid := `{"requirements":[{"kind":"authentication","id":"vercel","state":"unavailable","reason":"not_found","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"},{"kind":"tool","id":"node","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}],"authorities":[{"kind":"network","scope":"vercel_project","state":"unverified","reason":"stale","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}]}`
+	valid := `{"requirements":[{"kind":"authentication","id":"vercel","state":"unavailable","reason":"not_found","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1","redacted_identity":"vercel-user"},{"kind":"tool","id":"node","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}],"authorities":[{"kind":"network","scope":"vercel_project","state":"unverified","reason":"stale","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}]}`
 	if _, err := DecodeRuntimeEvidence([]byte(valid)); err != nil {
 		t.Fatal(err)
 	}
+	secretAuthority := `{"requirements":[],"authorities":[{"kind":"secret_use","scope":"vercel_account","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1","redacted_identity":"vercel-token"}]}`
+	if _, err := DecodeRuntimeEvidence([]byte(secretAuthority)); err != nil {
+		t.Fatalf("sanitized secret authority identity must be admissible: %v", err)
+	}
 	for name, encoded := range map[string]string{
-		"unknown state":   strings.Replace(valid, `"available"`, `"maybe"`, 1),
-		"unknown reason":  strings.Replace(valid, `"verified"`, `"present"`, 1),
-		"bad time":        strings.Replace(valid, `"2026-07-25T12:00:00Z"`, `"today"`, 1),
-		"sensitive field": strings.Replace(valid, `"observer_revision":"observer-v1"`, `"observer_revision":"observer-v1","token":"secret"`, 1),
-		"duplicate fact":  strings.Replace(valid, `],"authorities"`, `,{"kind":"tool","id":"node","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}],"authorities"`, 1),
+		"unknown state":             strings.Replace(valid, `"available"`, `"maybe"`, 1),
+		"unknown reason":            strings.Replace(valid, `"verified"`, `"present"`, 1),
+		"bad time":                  strings.Replace(valid, `"2026-07-25T12:00:00Z"`, `"today"`, 1),
+		"sensitive field":           strings.Replace(valid, `"observer_revision":"observer-v1"`, `"observer_revision":"observer-v1","token":"secret"`, 1),
+		"fingerprint field":         strings.Replace(valid, `"observer_revision":"observer-v1"`, `"observer_revision":"observer-v1","fingerprint":"recoverable"`, 1),
+		"legacy identity":           strings.Replace(valid, `"redacted_identity":"vercel-user"`, `"identity":"vercel-user"`, 1),
+		"invalid redacted identity": strings.Replace(valid, `"redacted_identity":"vercel-user"`, `"redacted_identity":"Vercel User"`, 1),
+		"duplicate fact":            strings.Replace(valid, `],"authorities"`, `,{"kind":"tool","id":"node","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}],"authorities"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeRuntimeEvidence([]byte(encoded)); err == nil {

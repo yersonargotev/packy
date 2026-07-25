@@ -64,35 +64,103 @@ type Resource struct {
 	RuntimeModes      []RuntimeMode
 }
 
+type RuntimeModeRole string
+type RuntimeRequirementKind string
+type RuntimeAuthorityKind string
+type RuntimeEffectKind string
+type RuntimeScope string
+type RuntimeFallbackKind string
+type RuntimeUnavailablePolicy string
+
+const (
+	RuntimeModePrimary      RuntimeModeRole = "primary"
+	RuntimeModeFallbackOnly RuntimeModeRole = "fallback_only"
+
+	RuntimeRequirementTool           RuntimeRequirementKind = "tool"
+	RuntimeRequirementAuthentication RuntimeRequirementKind = "authentication"
+	RuntimeRequirementProjectLink    RuntimeRequirementKind = "project_link"
+	RuntimeRequirementEntitlement    RuntimeRequirementKind = "entitlement"
+	RuntimeRequirementServiceData    RuntimeRequirementKind = "service_data"
+
+	RuntimeScopeConsumerProject   RuntimeScope = "consumer_project"
+	RuntimeScopePackResource      RuntimeScope = "pack_resource"
+	RuntimeScopeWorkstation       RuntimeScope = "workstation"
+	RuntimeScopeLocalGit          RuntimeScope = "local_git"
+	RuntimeScopeRemoteGit         RuntimeScope = "remote_git"
+	RuntimeScopeVercelAccount     RuntimeScope = "vercel_account"
+	RuntimeScopeVercelProject     RuntimeScope = "vercel_project"
+	RuntimeScopeDeploymentPayload RuntimeScope = "deployment_payload"
+
+	RuntimeFallbackNone RuntimeFallbackKind = "none"
+	RuntimeFallbackMode RuntimeFallbackKind = "mode"
+
+	RuntimeFailBeforeEffects RuntimeUnavailablePolicy = "fail_before_effects"
+)
+
+const (
+	RuntimeAuthorityFilesystemRead          RuntimeAuthorityKind = "filesystem_read"
+	RuntimeAuthorityFilesystemWrite         RuntimeAuthorityKind = "filesystem_write"
+	RuntimeAuthorityProcessExecute          RuntimeAuthorityKind = "process_execute"
+	RuntimeAuthorityNetwork                 RuntimeAuthorityKind = "network"
+	RuntimeAuthorityEnvironmentInspect      RuntimeAuthorityKind = "environment_inspect"
+	RuntimeAuthoritySecretUse               RuntimeAuthorityKind = "secret_use"
+	RuntimeAuthorityPackageManagerExecute   RuntimeAuthorityKind = "package_manager_execute"
+	RuntimeAuthorityGitInspect              RuntimeAuthorityKind = "git_inspect"
+	RuntimeAuthorityGitCommit               RuntimeAuthorityKind = "git_commit"
+	RuntimeAuthorityGitPush                 RuntimeAuthorityKind = "git_push"
+	RuntimeAuthorityVercelProjectMutate     RuntimeAuthorityKind = "vercel_project_mutate"
+	RuntimeAuthorityVercelEnvironmentMutate RuntimeAuthorityKind = "vercel_environment_mutate"
+	RuntimeAuthorityVercelDomainMutate      RuntimeAuthorityKind = "vercel_domain_mutate"
+	RuntimeAuthorityPreviewDeploy           RuntimeAuthorityKind = "preview_deploy"
+	RuntimeAuthorityProductionDeploy        RuntimeAuthorityKind = "production_deploy"
+	RuntimeAuthorityUpload                  RuntimeAuthorityKind = "upload"
+	RuntimeAuthoritySubagentDelegate        RuntimeAuthorityKind = "subagent_delegate"
+)
+
+const (
+	RuntimeEffectAuthenticationStateChange       RuntimeEffectKind = "authentication_state_change"
+	RuntimeEffectConsumerProjectFileChange       RuntimeEffectKind = "consumer_project_file_change"
+	RuntimeEffectConsumerProjectDependencyChange RuntimeEffectKind = "consumer_project_dependency_change"
+	RuntimeEffectLocalGitChange                  RuntimeEffectKind = "local_git_change"
+	RuntimeEffectRemoteGitChange                 RuntimeEffectKind = "remote_git_change"
+	RuntimeEffectToolInstallation                RuntimeEffectKind = "tool_installation"
+	RuntimeEffectVercelProjectChange             RuntimeEffectKind = "vercel_project_change"
+	RuntimeEffectVercelEnvironmentChange         RuntimeEffectKind = "vercel_environment_change"
+	RuntimeEffectVercelDomainChange              RuntimeEffectKind = "vercel_domain_change"
+	RuntimeEffectUpload                          RuntimeEffectKind = "upload"
+	RuntimeEffectPreviewDeployment               RuntimeEffectKind = "preview_deployment"
+	RuntimeEffectProductionDeployment            RuntimeEffectKind = "production_deployment"
+)
+
 type RuntimeMode struct {
-	ID            string               `json:"id"`
-	Role          string               `json:"role"`
-	Requirements  []RuntimeRequirement `json:"requirements"`
-	Authorities   []RuntimeAuthority   `json:"authorities"`
-	Effects       []RuntimeEffect      `json:"effects"`
-	Fallback      RuntimeFallback      `json:"fallback"`
-	OnUnavailable string               `json:"on_unavailable"`
+	ID            string                   `json:"id"`
+	Role          RuntimeModeRole          `json:"role"`
+	Requirements  []RuntimeRequirement     `json:"requirements"`
+	Authorities   []RuntimeAuthority       `json:"authorities"`
+	Effects       []RuntimeEffect          `json:"effects"`
+	Fallback      RuntimeFallback          `json:"fallback"`
+	OnUnavailable RuntimeUnavailablePolicy `json:"on_unavailable"`
 }
 
 type RuntimeRequirement struct {
-	Kind    string `json:"kind"`
-	ID      string `json:"id"`
-	Version string `json:"version,omitempty"`
+	Kind    RuntimeRequirementKind `json:"kind"`
+	ID      string                 `json:"id"`
+	Version string                 `json:"version,omitempty"`
 }
 
 type RuntimeAuthority struct {
-	Kind  string `json:"kind"`
-	Scope string `json:"scope,omitempty"`
+	Kind  RuntimeAuthorityKind `json:"kind"`
+	Scope RuntimeScope         `json:"scope,omitempty"`
 }
 
 type RuntimeEffect struct {
-	Kind  string `json:"kind"`
-	Scope string `json:"scope,omitempty"`
+	Kind  RuntimeEffectKind `json:"kind"`
+	Scope RuntimeScope      `json:"scope,omitempty"`
 }
 
 type RuntimeFallback struct {
-	Kind string `json:"kind"`
-	Mode string `json:"mode,omitempty"`
+	Kind RuntimeFallbackKind `json:"kind"`
+	Mode string              `json:"mode,omitempty"`
 }
 
 type ObservationState string
@@ -108,21 +176,21 @@ type RuntimeObservation struct {
 	Reason           string           `json:"reason"`
 	ObservedAt       string           `json:"observed_at"`
 	ObserverRevision string           `json:"observer_revision"`
-	Identity         string           `json:"identity,omitempty"`
+	RedactedIdentity string           `json:"redacted_identity,omitempty"`
 }
 
 // RuntimeRequirementObservation and RuntimeAuthorityObservation identify only
 // declared portable facts. Their wire shapes cannot carry probe output,
 // credential values, commands, or secret fingerprints.
 type RuntimeRequirementObservation struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
+	Kind RuntimeRequirementKind `json:"kind"`
+	ID   string                 `json:"id"`
 	RuntimeObservation
 }
 
 type RuntimeAuthorityObservation struct {
-	Kind  string `json:"kind"`
-	Scope string `json:"scope"`
+	Kind  RuntimeAuthorityKind `json:"kind"`
+	Scope RuntimeScope         `json:"scope"`
 	RuntimeObservation
 }
 
@@ -742,6 +810,73 @@ func LoadPortableManifest(path, bundleRoot string) (Pack, error) {
 	return decodeManifestWithSourceValidation(path, bundleRoot, false)
 }
 
+// EncodePortableManifestV4 is the canonical producer seam for Manifest v4.
+// Its output is accepted by LoadPortableManifest without a weaker producer-only
+// interpretation of the contract.
+func EncodePortableManifestV4(pack Pack) ([]byte, error) {
+	if pack.Contract.OptionalModes != nil {
+		return nil, fmt.Errorf("contract.optional_modes is forbidden for schema_version 4")
+	}
+	if err := validatePackMetadataWithContract(pack, manifestSchemaV4, true); err != nil {
+		return nil, fmt.Errorf("invalid pack manifest: %w", err)
+	}
+	resources := make([]map[string]any, 0, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		wire := map[string]any{
+			"kind": resource.Kind, "id": resource.ID, "requires": resource.Requires,
+			"bindings": resource.Bindings, "surface_exclusions": resource.SurfaceExclusions,
+		}
+		switch resource.Kind {
+		case "skill", "instruction", "asset":
+			wire["source"] = resource.Source
+		case "mcp_server":
+			wire["command"], wire["args"] = resource.Command, resource.Args
+		case "lifecycle":
+		case "agent":
+			wire["source"], wire["description"], wire["mode"] = resource.Source, resource.Description, resource.Mode
+			wire["tools"], wire["permissions"] = resource.Tools, resource.Permissions
+		case "command":
+			wire["source"], wire["arguments"] = resource.Source, resource.Arguments
+		case "notice":
+			wire["source"], wire["license"], wire["attribution"] = resource.Source, resource.License, resource.Attribution
+		default:
+			return nil, fmt.Errorf("unsupported resource kind %q", resource.Kind)
+		}
+		if resource.Kind == "skill" || resource.Kind == "agent" || resource.Kind == "command" {
+			wire["runtime_modes"] = resource.RuntimeModes
+		}
+		resources = append(resources, wire)
+	}
+	wire := struct {
+		SchemaVersion int              `json:"schema_version"`
+		ID            string           `json:"id"`
+		Version       string           `json:"version"`
+		Surfaces      []Surface        `json:"surfaces"`
+		Provides      []string         `json:"provides"`
+		Requires      Requirements     `json:"requires"`
+		Conflicts     []string         `json:"conflicts"`
+		Resources     []map[string]any `json:"resources"`
+		Contract      struct {
+			Exclusions []Exclusion `json:"exclusions"`
+		} `json:"contract"`
+	}{
+		SchemaVersion: manifestSchemaV4,
+		ID:            pack.ID,
+		Version:       pack.Version,
+		Surfaces:      pack.Surfaces,
+		Provides:      pack.Provides,
+		Requires:      pack.Requires,
+		Conflicts:     pack.Conflicts,
+		Resources:     resources,
+	}
+	wire.Contract.Exclusions = pack.Contract.Exclusions
+	encoded, err := json.MarshalIndent(wire, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(encoded, '\n'), nil
+}
+
 func decodeManifestWithSourceValidation(path, bundleRoot string, validateSources bool) (Pack, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -859,7 +994,7 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 	if err := validateRuntimeModeWirePresence(data, kind == "skill" || kind == "agent" || kind == "command"); err != nil {
 		return Resource{}, err
 	}
-	type outcomes struct {
+	type resourceWireV4 struct {
 		Kind              string             `json:"kind"`
 		ID                string             `json:"id"`
 		Requires          []string           `json:"requires"`
@@ -868,10 +1003,10 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 		RuntimeModes      []RuntimeMode      `json:"runtime_modes"`
 	}
 	type sourced struct {
-		outcomes
+		resourceWireV4
 		Source string `json:"source"`
 	}
-	toResource := func(raw outcomes) Resource {
+	toResource := func(raw resourceWireV4) Resource {
 		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes}
 	}
 	switch kind {
@@ -880,23 +1015,23 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 		if err := strictDecode(data, &raw); err != nil {
 			return Resource{}, err
 		}
-		resource := toResource(raw.outcomes)
+		resource := toResource(raw.resourceWireV4)
 		resource.Source = raw.Source
 		return resource, nil
 	case "mcp_server":
 		var raw struct {
-			outcomes
+			resourceWireV4
 			Command string   `json:"command"`
 			Args    []string `json:"args"`
 		}
 		if err := strictDecode(data, &raw); err != nil {
 			return Resource{}, err
 		}
-		resource := toResource(raw.outcomes)
+		resource := toResource(raw.resourceWireV4)
 		resource.Command, resource.Args = raw.Command, raw.Args
 		return resource, nil
 	case "lifecycle":
-		var raw outcomes
+		var raw resourceWireV4
 		if err := strictDecode(data, &raw); err != nil {
 			return Resource{}, err
 		}
@@ -918,7 +1053,7 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 		if err := validateTypedBindingWirePresence(data); err != nil {
 			return Resource{}, err
 		}
-		resource := toResource(raw.outcomes)
+		resource := toResource(raw.resourceWireV4)
 		resource.Source, resource.Description, resource.Mode = raw.Source, raw.Description, raw.Mode
 		resource.Tools, resource.Permissions = raw.Tools, raw.Permissions
 		return resource, nil
@@ -930,7 +1065,7 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 		if err := strictDecode(data, &raw); err != nil {
 			return Resource{}, err
 		}
-		resource := toResource(raw.outcomes)
+		resource := toResource(raw.resourceWireV4)
 		resource.Source, resource.Arguments = raw.Source, raw.Arguments
 		return resource, nil
 	case "notice":
@@ -942,7 +1077,7 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 		if err := strictDecode(data, &raw); err != nil {
 			return Resource{}, err
 		}
-		resource := toResource(raw.outcomes)
+		resource := toResource(raw.resourceWireV4)
 		resource.Source, resource.License, resource.Attribution = raw.Source, raw.License, raw.Attribution
 		return resource, nil
 	default:
@@ -1373,11 +1508,11 @@ func validateV3Surfaces(surfaces []Surface) error {
 	return nil
 }
 
-var runtimeRequirementKinds = map[string]bool{
+var runtimeRequirementKinds = map[RuntimeRequirementKind]bool{
 	"tool": true, "authentication": true, "project_link": true, "entitlement": true, "service_data": true,
 }
 
-var runtimeAuthorityScopes = map[string]map[string]bool{
+var runtimeAuthorityScopes = map[RuntimeAuthorityKind]map[RuntimeScope]bool{
 	"filesystem_read":           {"consumer_project": true, "pack_resource": true},
 	"filesystem_write":          {"consumer_project": true},
 	"process_execute":           {"consumer_project": true, "local_git": true},
@@ -1397,7 +1532,7 @@ var runtimeAuthorityScopes = map[string]map[string]bool{
 	"subagent_delegate":         {"consumer_project": true},
 }
 
-var runtimeEffectScopes = map[string]map[string]bool{
+var runtimeEffectScopes = map[RuntimeEffectKind]map[RuntimeScope]bool{
 	"authentication_state_change":        {"vercel_account": true},
 	"consumer_project_file_change":       {"consumer_project": true},
 	"consumer_project_dependency_change": {"consumer_project": true},
@@ -1480,15 +1615,14 @@ func validateRuntimeModes(resource Resource) error {
 		modes[mode.ID] = mode
 	}
 	for _, mode := range resource.RuntimeModes {
-		if mode.Fallback.Kind != "mode" {
+		if mode.Fallback.Kind != RuntimeFallbackMode {
 			continue
 		}
-		target, exists := modes[mode.Fallback.Mode]
-		if !exists || mode.Role != "primary" || target.Role != "fallback_only" {
-			return fmt.Errorf("runtime mode %q fallback must reference a fallback_only mode in the same resource", mode.ID)
+		if _, exists := modes[mode.Fallback.Mode]; !exists {
+			return fmt.Errorf("runtime mode %q fallback must reference a mode in the same resource", mode.ID)
 		}
 		seen := map[string]bool{}
-		for current := mode; current.Fallback.Kind == "mode"; {
+		for current := mode; current.Fallback.Kind == RuntimeFallbackMode; {
 			if seen[current.ID] {
 				return fmt.Errorf("runtime mode fallback graph must be acyclic")
 			}
@@ -1496,14 +1630,25 @@ func validateRuntimeModes(resource Resource) error {
 			current = modes[current.Fallback.Mode]
 		}
 	}
+	for _, mode := range resource.RuntimeModes {
+		if mode.Fallback.Kind != RuntimeFallbackMode {
+			continue
+		}
+		target := modes[mode.Fallback.Mode]
+		if mode.Role != RuntimeModePrimary || target.Role != RuntimeModeFallbackOnly {
+			return fmt.Errorf("runtime mode %q fallback must reference a fallback_only mode from a primary mode", mode.ID)
+		}
+	}
 	return nil
 }
 
 func runtimeRequirementKey(value RuntimeRequirement) string {
-	return value.Kind + "\x00" + value.ID + "\x00" + value.Version
+	return string(value.Kind) + "\x00" + value.ID + "\x00" + value.Version
 }
 
-func runtimeScopedKey(kind, scope string) string { return kind + "\x00" + scope }
+func runtimeScopedKey[K ~string, S ~string](kind K, scope S) string {
+	return string(kind) + "\x00" + string(scope)
+}
 
 var observationReasons = map[string]map[string]bool{
 	string(ObservationAvailable):   {"verified": true},
@@ -1511,7 +1656,7 @@ var observationReasons = map[string]map[string]bool{
 	string(ObservationUnverified):  {"observer_error": true, "stale": true},
 }
 
-func validateRuntimeObservation(observation RuntimeObservation, sensitive bool) error {
+func validateRuntimeObservation(observation RuntimeObservation) error {
 	if !observationReasons[string(observation.State)][observation.Reason] {
 		return fmt.Errorf("observation state or reason is invalid")
 	}
@@ -1521,8 +1666,8 @@ func validateRuntimeObservation(observation RuntimeObservation, sensitive bool) 
 	if strings.TrimSpace(observation.ObserverRevision) == "" {
 		return fmt.Errorf("observation observer_revision is required")
 	}
-	if observation.Identity != "" && (!idPattern.MatchString(observation.Identity) || sensitive) {
-		return fmt.Errorf("observation identity must be a non-sensitive redacted identity")
+	if observation.RedactedIdentity != "" && !idPattern.MatchString(observation.RedactedIdentity) {
+		return fmt.Errorf("observation redacted_identity must be portable kebab-case")
 	}
 	return nil
 }
@@ -1531,14 +1676,14 @@ func ValidateRuntimeRequirementObservation(observation RuntimeRequirementObserva
 	if !runtimeRequirementKinds[observation.Kind] || !idPattern.MatchString(observation.ID) {
 		return fmt.Errorf("requirement observation identity is invalid")
 	}
-	return validateRuntimeObservation(observation.RuntimeObservation, observation.Kind == "authentication")
+	return validateRuntimeObservation(observation.RuntimeObservation)
 }
 
 func ValidateRuntimeAuthorityObservation(observation RuntimeAuthorityObservation) error {
 	if !runtimeAuthorityScopes[observation.Kind][observation.Scope] {
 		return fmt.Errorf("authority observation kind or scope is invalid")
 	}
-	return validateRuntimeObservation(observation.RuntimeObservation, observation.Kind == "secret_use")
+	return validateRuntimeObservation(observation.RuntimeObservation)
 }
 
 func ValidateRuntimeEvidence(evidence RuntimeEvidence) error {
