@@ -10,9 +10,10 @@ linked decision asset or accepted ADR, that source remains authoritative.
 
 The map plans the integration. This specification does not authorize Pack
 implementation, source registration, synchronization, activation, publication,
-or release. The exact `vercel` Pack remains inadmissible until the primary
-`vercel-labs/agent-skills` source has exact, durable redistribution authority.
-The two secondary MIT grants do not cure that blocker.
+or release. The exact `vercel` Pack is not authorized for implementation or publication by
+this specification. Issue 254 separately admits the pinned primary candidate
+for redistribution from its root README `## License` / `MIT` declaration; the
+digest-bound evidence is [`vercel-agent-skills-legal-admission.json`](evidence/vercel-agent-skills-legal-admission.json).
 
 Acceptance requires all six sequential gates in
 [Decide the Vercel validation and acceptance matrix](https://github.com/yersonargotev/packy/issues/233).
@@ -23,7 +24,7 @@ success on Codex, OpenCode, or Claude Code never compensates for another.
 
 | Decision | Contract carried into implementation |
 | --- | --- |
-| [Upstream inventory](vercel-upstream-inventory.md) | The primary basis is commit `7c180d9044c9ae2b442b567aad4e42a28dd5ed62`, tree `0557b732b3907e51bed3fd7898095f8097a0834e`: nine complete non-ZIP skill trees, six excluded duplicate archives, inert acquisition, and incomplete primary redistribution authority. |
+| [Upstream inventory](vercel-upstream-inventory.md) | The primary basis is commit `7c180d9044c9ae2b442b567aad4e42a28dd5ed62`, tree `0557b732b3907e51bed3fd7898095f8097a0834e`: nine complete non-ZIP skill trees, six excluded duplicate archives, inert acquisition, and the primary legal admission recorded by issue 254. |
 | [Capability mapping](vercel-capability-surface-mapping.md) | All nine skills use native complete-tree projections on Codex, OpenCode, and Claude Code; no Vercel-specific projection kind or adapter policy is allowed. |
 | [Observable contract](vercel-observable-contract.md) | All nine skills and all 27 native bindings are mandatory; every surface is atomic and independent; invocation requirements never become pack-wide activation prerequisites. |
 | [Source, versioning, licensing, and compatibility](vercel-source-versioning-policy.md) | Pack `1.0.0` requires one exact, license-authorized three-source candidate; Pack SemVer follows observable compatibility; all admission remains manual and inert. |
@@ -50,7 +51,7 @@ frontmatter version, or catalog value is not synchronization authority.
 
 | Source ID | Repository and exact commit | Exclusive contribution | Legal disposition |
 | --- | --- | --- | --- |
-| `vercel-agent-skills` | `vercel-labs/agent-skills@7c180d9044c9ae2b442b567aad4e42a28dd5ed62` | Nine complete skill trees after the six ZIP exclusions and two explicit loader adaptations | **Blocked.** Requires exact-candidate license/notices or archived first-party written authorization covering redistribution, adaptation, and publication of every selected byte. |
+| `vercel-agent-skills` | `vercel-labs/agent-skills@7c180d9044c9ae2b442b567aad4e42a28dd5ed62` | Nine complete skill trees after the six ZIP exclusions and two explicit loader adaptations | **Redistributable.** Issue 254 accepts the pinned root README declaration `## License` / `MIT` for this exact scope. No standalone license text, copyright notice, or holder text was supplied; Packy retains any supplied MIT notice and fabricates none. |
 | `vercel-web-interface-guidelines` | `vercel-labs/web-interface-guidelines@4e799d45c17aec1498c269287a83b9dba22b966b` | `command.md` as `asset:web-interface-guidelines-rules`; `LICENSE` as `notice:web-interface-guidelines-mit` | MIT, with the source-specific Vercel Labs notice retained. |
 | `vercel-writing-guidelines` | `vercel-labs/writing-guidelines@83e2316b034cf572400513538e4e4da01c4cc742` | `command.md` as `asset:writing-guidelines-rules`; `LICENSE` as `notice:writing-guidelines-mit` | MIT, with the source-specific Vercel Labs notice retained. |
 
@@ -63,10 +64,10 @@ The writing rule blob is Git blob
 The complete notice identities and candidate provenance remain in the guideline
 evidence asset and are exact acceptance inputs.
 
-A later primary licensing commit is a new candidate; it does not retroactively
-authorize `7c180d9`. If written permission is used, its archived bytes, digest,
-issuer/rights-holder identity, covered repositories and material, granted
-rights, obligations, and validity must be sealed as legal-admission evidence.
+The admission is valid only for the exact candidate, README blob and digest,
+selected roots, and exclusions sealed in the evidence. Any change invalidates
+it and requires a fresh maintainer decision; a later licensing commit is a new
+candidate rather than retroactive authority.
 
 ### Portable inventory and source ownership
 
@@ -514,7 +515,7 @@ Proven existing, Implementation target, or Blocked by prerequisite.
 The six gates are:
 
 1. Admission: exact three-source identity, locks, legal evidence, and complete
-   lock-set reproduction. Primary legal authority is currently blocked.
+   lock-set reproduction. Primary legal authority is admitted only by the exact issue 254 evidence binding.
 2. Contract closure: exactly nine skill trees, 13 resources, 27 native bindings,
    28 runtime-mode rows, complete auxiliary closure, two adapted local
    guideline loaders, notices, six ZIP exclusions, and no moving or undeclared

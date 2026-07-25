@@ -112,11 +112,11 @@ GitHub's licensing guidance says that absent a license the default copyright rul
 
 | Package(s) | Evidence | Redistribution conclusion |
 |---|---|---|
-| `composition-patterns`, `react-best-practices`, `react-native-skills`, `react-view-transitions` | `SKILL.md` frontmatter says `license: MIT` ([example](https://github.com/vercel-labs/agent-skills/blob/7c180d9044c9ae2b442b567aad4e42a28dd5ed62/skills/react-best-practices/SKILL.md#L1-L8)). | Stronger package-specific intent, but no MIT license text or copyright notice is supplied to retain. Scope over auxiliary rules/references/aggregates is not expressly defined. Obtain or supply first-party clarification before redistribution. |
-| `deploy-to-vercel`, `vercel-cli-with-tokens`, `vercel-optimize`, `web-design-guidelines`, `writing-guidelines` | No license frontmatter or local license artifact. Root README says only `## License` / `MIT` ([README](https://github.com/vercel-labs/agent-skills/blob/7c180d9044c9ae2b442b567aad4e42a28dd5ed62/README.md#L176-L178)). GitHub detects no license. | Insufficient authority for Packy publication. “MIT” names a license but does not contain the permission grant and notice normally required for a reliable redistribution chain. Do not publish until upstream adds a license/notice or otherwise provides authoritative terms. |
+| `composition-patterns`, `react-best-practices`, `react-native-skills`, `react-view-transitions` | `SKILL.md` frontmatter says `license: MIT` ([example](https://github.com/vercel-labs/agent-skills/blob/7c180d9044c9ae2b442b567aad4e42a28dd5ed62/skills/react-best-practices/SKILL.md#L1-L8)). | Issue 254 accepts the pinned root README MIT declaration for the complete selected roots. No standalone text or copyright notice was supplied; retain any supplied notice and fabricate none. |
+| `deploy-to-vercel`, `vercel-cli-with-tokens`, `vercel-optimize`, `web-design-guidelines`, `writing-guidelines` | No license frontmatter or local license artifact. Root README says only `## License` / `MIT` ([README](https://github.com/vercel-labs/agent-skills/blob/7c180d9044c9ae2b442b567aad4e42a28dd5ed62/README.md#L176-L178)). GitHub detects no license. | Issue 254 accepts this declaration for the exact selected candidate and records redistribution, adaptation, and publication rights in digest-bound legal-admission evidence. |
 | Root ZIPs and nested archive | No independent license/notice; they duplicate the packages above, sometimes stale. | They add no authority and should be excluded. |
 
-This is a source-evidence conclusion, not legal advice. The safe operational result for Wayfinder is: **inventory and pin now; do not implement or publish the pack until licensing authority is resolved.** Also, licenses of live content later fetched by the two guideline loaders must be assessed at the separately pinned source commits if Packy chooses to vendor them.
+This is a source-evidence conclusion, not legal advice. Packy’s maintainer decision and exact validity boundary are recorded in [`vercel-agent-skills-legal-admission.json`](evidence/vercel-agent-skills-legal-admission.json); it does not itself authorize Pack implementation or publication. Also, licenses of live content later fetched by the two guideline loaders must be assessed at the separately pinned source commits if Packy chooses to vendor them.
 
 ## Compatible-set conclusion for Codex, OpenCode, and Claude Code
 
@@ -134,8 +134,8 @@ This establishes inventory only. It does not claim host behavioral equivalence, 
 
 ## Risks and unresolved questions
 
-1. **Blocking license gap:** no repository license text and five packages have no package license field. First-party clarification is required before redistribution.
-2. **Ambiguous MIT scope:** the four `license: MIT` fields do not say whether the declaration covers only `SKILL.md` or the entire same-directory package, and no required notice text exists.
+1. **Exact admission boundary:** issue 254 admits only the pinned README bytes and selected scope; any changed binding requires fresh admission.
+2. **Missing standalone materials:** no standalone MIT text, copyright notice, or holder text was supplied; Packy must disclose this and must not fabricate them.
 3. **Moving transitive prompts:** the web-design and writing skills fetch `main`; exact behavior is not pinned by this SHA.
 4. **Stale archives:** three root ZIPs and the nested archive differ from source. Any consumer preferring ZIPs can silently install old behavior.
 5. **Catalog drift:** README, directory, frontmatter, and `skills.sh.json` names/coverage disagree; `writing-guidelines` is absent from the catalog.

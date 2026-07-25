@@ -58,31 +58,20 @@ being normalized.
 
 ## Redistribution disposition
 
-The inspected primary commit is not redistributable by Packy under the
-available evidence. Four skills declare `license: MIT` in frontmatter, while
-five do not; the root README's one-word `MIT` statement supplies neither a
-complete permission text nor a clear notice and scope for every auxiliary
-file. Public GitHub provenance and forkability are not a redistribution grant.
+For the exact primary candidate, Packy maintainers accept the pinned root README
+declaration `## License` / `MIT` as authority for redistribution, adaptation, and
+publication of the nine selected non-ZIP skill trees. The durable binding is
+[`vercel-agent-skills-legal-admission.json`](evidence/vercel-agent-skills-legal-admission.json).
+It records that no standalone license text, copyright notice, or holder text was
+supplied. Packy adopts MIT notice retention for any notice actually supplied and
+never fabricates notice or holder text.
 
-Implementation and publication therefore fail closed until authoritative
-first-party terms cover:
-
-- all nine selected skill trees;
-- every selected script, rule, reference, library, schema, playbook, metadata,
-  generated package-local aggregate, and other auxiliary file;
-- the packaged bytes from both guideline repositories; and
-- exact copyright, license, notice, attribution, and source-offer obligations.
-
-There is no partial four-skill distribution: the observable contract requires
-all nine skills atomically. Legal authority is bound to the exact selected
-commits and bytes. A later upstream licensing commit triggers fresh candidate
-selection and inspection; it is not applied retroactively to an earlier
-candidate. External written permission must likewise identify its covered
-repositories, material, versions, rights, and obligations.
-
-License and notice material is retained as inert provenance and user-visible
-legal metadata. It is validated and displayed where required but never becomes
-a host capability or grants runtime authority.
+This disposition is exact-candidate evidence, not a floating repository policy.
+A changed commit, README blob, README length or digest, selected root, exclusion,
+scope, disposition, or evidence digest invalidates admission and requires a new
+maintainer decision. The two guideline repositories retain their independent MIT
+notice obligations. License material remains inert provenance and user-visible
+legal metadata; it grants no runtime authority.
 
 ## Pack SemVer and compatibility floors
 

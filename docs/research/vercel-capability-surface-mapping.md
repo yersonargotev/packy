@@ -152,12 +152,12 @@ gain Vercel-specific policy.
 
 ### Blocking before implementation or publication
 
-1. **Redistribution authority:** publication remains blocked until Vercel
-   supplies an authoritative license/notice or explicit permission covering
-   the complete nine-package contract and its auxiliary files. Four
-   frontmatter `license: MIT` fields and a root README that only says `MIT` do
-   not supply a complete notice-bearing grant; five packages have no local
-   license declaration.
+1. **Redistribution authority:** issue 254 accepts the pinned root README
+   `## License` / `MIT` declaration for the exact nine selected roots and their
+   auxiliary files. The digest-bound evidence discloses that no standalone
+   license text, copyright notice, or holder text was supplied; Packy retains
+   any supplied MIT notice and fabricates none. Any binding change requires
+   fresh admission.
 2. **Transitive guideline disposition:** source/version policy must choose
    whether the two guideline loaders remain explicitly moving runtime
    authorities or whether their rule repositories are independently pinned,
