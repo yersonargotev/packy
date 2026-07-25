@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/bundletransaction"
 )
@@ -20,6 +21,7 @@ const (
 	manifestSchemaV1 = 1
 	manifestSchemaV2 = 2
 	manifestSchemaV3 = 3
+	manifestSchemaV4 = 4
 	// schemaVersion remains the current state/history manifest version used by
 	// the original capability-pack lifecycle documents.
 	schemaVersion = manifestSchemaV1
@@ -59,6 +61,74 @@ type Resource struct {
 	Arguments         CommandArguments
 	License           string
 	Attribution       string
+	RuntimeModes      []RuntimeMode
+}
+
+type RuntimeMode struct {
+	ID            string               `json:"id"`
+	Role          string               `json:"role"`
+	Requirements  []RuntimeRequirement `json:"requirements"`
+	Authorities   []RuntimeAuthority   `json:"authorities"`
+	Effects       []RuntimeEffect      `json:"effects"`
+	Fallback      RuntimeFallback      `json:"fallback"`
+	OnUnavailable string               `json:"on_unavailable"`
+}
+
+type RuntimeRequirement struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Version string `json:"version,omitempty"`
+}
+
+type RuntimeAuthority struct {
+	Kind  string `json:"kind"`
+	Scope string `json:"scope,omitempty"`
+}
+
+type RuntimeEffect struct {
+	Kind  string `json:"kind"`
+	Scope string `json:"scope,omitempty"`
+}
+
+type RuntimeFallback struct {
+	Kind string `json:"kind"`
+	Mode string `json:"mode,omitempty"`
+}
+
+type ObservationState string
+
+const (
+	ObservationAvailable   ObservationState = "available"
+	ObservationUnavailable ObservationState = "unavailable"
+	ObservationUnverified  ObservationState = "unverified"
+)
+
+type RuntimeObservation struct {
+	State            ObservationState `json:"state"`
+	Reason           string           `json:"reason"`
+	ObservedAt       string           `json:"observed_at"`
+	ObserverRevision string           `json:"observer_revision"`
+	Identity         string           `json:"identity,omitempty"`
+}
+
+// RuntimeRequirementObservation and RuntimeAuthorityObservation identify only
+// declared portable facts. Their wire shapes cannot carry probe output,
+// credential values, commands, or secret fingerprints.
+type RuntimeRequirementObservation struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	RuntimeObservation
+}
+
+type RuntimeAuthorityObservation struct {
+	Kind  string `json:"kind"`
+	Scope string `json:"scope"`
+	RuntimeObservation
+}
+
+type RuntimeEvidence struct {
+	Requirements []RuntimeRequirementObservation `json:"requirements"`
+	Authorities  []RuntimeAuthorityObservation   `json:"authorities"`
 }
 
 type Binding struct {
@@ -681,11 +751,22 @@ func decodeManifestWithSourceValidation(path, bundleRoot string, validateSources
 	if err := strictDecode(data, &raw); err != nil {
 		return Pack{}, fmt.Errorf("decode pack manifest %s: %w", path, err)
 	}
-	if raw.SchemaVersion == manifestSchemaV3 && raw.Surfaces == nil {
-		return Pack{}, fmt.Errorf("invalid pack manifest %s: surfaces is a required non-null array for schema_version 3", path)
+	if (raw.SchemaVersion == manifestSchemaV3 || raw.SchemaVersion == manifestSchemaV4) && raw.Surfaces == nil {
+		return Pack{}, fmt.Errorf("invalid pack manifest %s: surfaces is a required non-null array for schema_version %d", path, raw.SchemaVersion)
 	}
-	if raw.SchemaVersion != manifestSchemaV3 && raw.Surfaces != nil {
+	if raw.SchemaVersion != manifestSchemaV3 && raw.SchemaVersion != manifestSchemaV4 && raw.Surfaces != nil {
 		return Pack{}, fmt.Errorf("invalid pack manifest %s: surfaces is forbidden before schema_version 3", path)
+	}
+	if raw.SchemaVersion == manifestSchemaV4 && raw.Contract != nil {
+		var wire struct {
+			Contract map[string]json.RawMessage `json:"contract"`
+		}
+		if err := json.Unmarshal(data, &wire); err != nil {
+			return Pack{}, err
+		}
+		if _, present := wire.Contract["optional_modes"]; present {
+			return Pack{}, fmt.Errorf("invalid pack manifest %s: contract.optional_modes is forbidden for schema_version 4", path)
+		}
 	}
 	pack := Pack{manifestVersion: raw.SchemaVersion, ID: raw.ID, Version: raw.Version, Provides: raw.Provides, Requires: raw.Requires, Conflicts: raw.Conflicts}
 	if raw.Surfaces != nil {
@@ -741,8 +822,11 @@ func decodeResource(data []byte, version int) (Resource, error) {
 	if version == manifestSchemaV3 {
 		return decodeResourceV3(data, discriminator.Kind)
 	}
+	if version == manifestSchemaV4 {
+		return decodeResourceV4(data, discriminator.Kind)
+	}
 	if version != manifestSchemaV1 {
-		return Resource{}, fmt.Errorf("schema_version must be %d or %d", manifestSchemaV1, manifestSchemaV2)
+		return Resource{}, fmt.Errorf("schema_version must be %d, %d, %d, or %d", manifestSchemaV1, manifestSchemaV2, manifestSchemaV3, manifestSchemaV4)
 	}
 	switch discriminator.Kind {
 	case "skill", "instruction":
@@ -769,6 +853,154 @@ func decodeResource(data []byte, version int) (Resource, error) {
 	default:
 		return Resource{}, fmt.Errorf("unsupported resource kind %q", discriminator.Kind)
 	}
+}
+
+func decodeResourceV4(data []byte, kind string) (Resource, error) {
+	if err := validateRuntimeModeWirePresence(data, kind == "skill" || kind == "agent" || kind == "command"); err != nil {
+		return Resource{}, err
+	}
+	type outcomes struct {
+		Kind              string             `json:"kind"`
+		ID                string             `json:"id"`
+		Requires          []string           `json:"requires"`
+		Bindings          []Binding          `json:"bindings"`
+		SurfaceExclusions []SurfaceExclusion `json:"surface_exclusions"`
+		RuntimeModes      []RuntimeMode      `json:"runtime_modes"`
+	}
+	type sourced struct {
+		outcomes
+		Source string `json:"source"`
+	}
+	toResource := func(raw outcomes) Resource {
+		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes}
+	}
+	switch kind {
+	case "skill", "instruction", "asset":
+		var raw sourced
+		if err := strictDecode(data, &raw); err != nil {
+			return Resource{}, err
+		}
+		resource := toResource(raw.outcomes)
+		resource.Source = raw.Source
+		return resource, nil
+	case "mcp_server":
+		var raw struct {
+			outcomes
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		}
+		if err := strictDecode(data, &raw); err != nil {
+			return Resource{}, err
+		}
+		resource := toResource(raw.outcomes)
+		resource.Command, resource.Args = raw.Command, raw.Args
+		return resource, nil
+	case "lifecycle":
+		var raw outcomes
+		if err := strictDecode(data, &raw); err != nil {
+			return Resource{}, err
+		}
+		if err := validateTypedBindingWirePresence(data); err != nil {
+			return Resource{}, err
+		}
+		return toResource(raw), nil
+	case "agent":
+		var raw struct {
+			sourced
+			Description string   `json:"description"`
+			Mode        string   `json:"mode"`
+			Tools       []string `json:"tools"`
+			Permissions []string `json:"permissions"`
+		}
+		if err := strictDecode(data, &raw); err != nil {
+			return Resource{}, err
+		}
+		if err := validateTypedBindingWirePresence(data); err != nil {
+			return Resource{}, err
+		}
+		resource := toResource(raw.outcomes)
+		resource.Source, resource.Description, resource.Mode = raw.Source, raw.Description, raw.Mode
+		resource.Tools, resource.Permissions = raw.Tools, raw.Permissions
+		return resource, nil
+	case "command":
+		var raw struct {
+			sourced
+			Arguments CommandArguments `json:"arguments"`
+		}
+		if err := strictDecode(data, &raw); err != nil {
+			return Resource{}, err
+		}
+		resource := toResource(raw.outcomes)
+		resource.Source, resource.Arguments = raw.Source, raw.Arguments
+		return resource, nil
+	case "notice":
+		var raw struct {
+			sourced
+			License     string `json:"license"`
+			Attribution string `json:"attribution"`
+		}
+		if err := strictDecode(data, &raw); err != nil {
+			return Resource{}, err
+		}
+		resource := toResource(raw.outcomes)
+		resource.Source, resource.License, resource.Attribution = raw.Source, raw.License, raw.Attribution
+		return resource, nil
+	default:
+		return Resource{}, fmt.Errorf("unsupported resource kind %q", kind)
+	}
+}
+
+func validateRuntimeModeWirePresence(data []byte, executable bool) error {
+	var resource map[string]json.RawMessage
+	if err := json.Unmarshal(data, &resource); err != nil {
+		return err
+	}
+	encoded, present := resource["runtime_modes"]
+	if executable && (!present || bytes.Equal(bytes.TrimSpace(encoded), []byte("null"))) {
+		return fmt.Errorf("runtime_modes is a required non-null array for executable resources")
+	}
+	if !executable && present {
+		return fmt.Errorf("runtime_modes is forbidden for non-executable resources")
+	}
+	if !present {
+		return nil
+	}
+	var modes []struct {
+		Requirements []map[string]json.RawMessage `json:"requirements"`
+		Fallback     map[string]json.RawMessage   `json:"fallback"`
+	}
+	if err := json.Unmarshal(encoded, &modes); err != nil {
+		return err
+	}
+	for _, mode := range modes {
+		var fallbackKind string
+		if err := json.Unmarshal(mode.Fallback["kind"], &fallbackKind); err != nil {
+			return err
+		}
+		_, hasMode := mode.Fallback["mode"]
+		if fallbackKind == "none" && hasMode {
+			return fmt.Errorf("fallback none forbids mode")
+		}
+		if fallbackKind == "mode" && !hasMode {
+			return fmt.Errorf("fallback mode requires mode")
+		}
+		for _, requirement := range mode.Requirements {
+			var kind string
+			if err := json.Unmarshal(requirement["kind"], &kind); err != nil {
+				return err
+			}
+			if encodedVersion, hasVersion := requirement["version"]; hasVersion {
+				if kind != "tool" {
+					return fmt.Errorf("requirement kind %q forbids version", kind)
+				}
+				var version string
+				if err := json.Unmarshal(encodedVersion, &version); err != nil || version == "" {
+					return fmt.Errorf("tool requirement version must be a non-null normalized SemVer predicate when present")
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func decodeResourceV3(data []byte, kind string) (Resource, error) {
@@ -1005,16 +1237,16 @@ func validatePackMetadata(pack Pack, version int) error {
 }
 
 func validatePackMetadataWithContract(pack Pack, version int, contractPresent bool) error {
-	if version != manifestSchemaV1 && version != manifestSchemaV2 && version != manifestSchemaV3 {
-		return fmt.Errorf("schema_version must be %d, %d, or %d", manifestSchemaV1, manifestSchemaV2, manifestSchemaV3)
+	if version != manifestSchemaV1 && version != manifestSchemaV2 && version != manifestSchemaV3 && version != manifestSchemaV4 {
+		return fmt.Errorf("schema_version must be %d, %d, %d, or %d", manifestSchemaV1, manifestSchemaV2, manifestSchemaV3, manifestSchemaV4)
 	}
-	if (version == manifestSchemaV2 || version == manifestSchemaV3) && !contractPresent {
+	if (version == manifestSchemaV2 || version == manifestSchemaV3 || version == manifestSchemaV4) && !contractPresent {
 		return fmt.Errorf("contract is required for schema_version %d", version)
 	}
 	if version == manifestSchemaV1 && contractPresent {
 		return fmt.Errorf("contract is forbidden for schema_version 1")
 	}
-	if version == manifestSchemaV3 {
+	if version == manifestSchemaV3 || version == manifestSchemaV4 {
 		if err := validateV3Surfaces(pack.Surfaces); err != nil {
 			return err
 		}
@@ -1068,10 +1300,15 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 		if _, duplicate := seenCapabilities[identity]; duplicate {
 			return fmt.Errorf("resource capability %q must not be declared at top level", identity)
 		}
-		if version == manifestSchemaV2 || version == manifestSchemaV3 {
-			if version == manifestSchemaV3 {
+		if version == manifestSchemaV2 || version == manifestSchemaV3 || version == manifestSchemaV4 {
+			if version == manifestSchemaV3 || version == manifestSchemaV4 {
 				if err := validateResourceV3(resource, pack.Surfaces, pack.Contract.OptionalModes); err != nil {
 					return fmt.Errorf("resource %q: %w", identity, err)
+				}
+				if version == manifestSchemaV4 {
+					if err := validateRuntimeModes(resource); err != nil {
+						return fmt.Errorf("resource %q: %w", identity, err)
+					}
 				}
 				continue
 			}
@@ -1097,7 +1334,7 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 			return fmt.Errorf("unsupported resource kind %q", resource.Kind)
 		}
 	}
-	if version == manifestSchemaV2 || version == manifestSchemaV3 {
+	if version == manifestSchemaV2 || version == manifestSchemaV3 || version == manifestSchemaV4 {
 		if !sortedPortableSet(pack.Provides, validCapabilityIdentity) || !sortedPortableSet(pack.Requires.Capabilities, validCapabilityIdentity) || !sortedPortableSet(pack.Requires.Tools, idPattern.MatchString) || !sortedPortableSet(pack.Conflicts, validCapabilityIdentity) {
 			return fmt.Errorf("provides, requires, and conflicts arrays must be sorted sets")
 		}
@@ -1107,7 +1344,14 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 		if err := validateDependencies(pack.Resources, seenResources); err != nil {
 			return err
 		}
-		if err := validateContract(pack.Contract, pack.Resources); err != nil {
+		contract := pack.Contract
+		if version == manifestSchemaV4 {
+			if contract.Exclusions == nil {
+				return fmt.Errorf("contract exclusions is a required non-null array")
+			}
+			contract.OptionalModes = []OptionalMode{}
+		}
+		if err := validateContract(contract, pack.Resources); err != nil {
 			return err
 		}
 	}
@@ -1127,6 +1371,208 @@ func validateV3Surfaces(surfaces []Surface) error {
 		}
 	}
 	return nil
+}
+
+var runtimeRequirementKinds = map[string]bool{
+	"tool": true, "authentication": true, "project_link": true, "entitlement": true, "service_data": true,
+}
+
+var runtimeAuthorityScopes = map[string]map[string]bool{
+	"filesystem_read":           {"consumer_project": true, "pack_resource": true},
+	"filesystem_write":          {"consumer_project": true},
+	"process_execute":           {"consumer_project": true, "local_git": true},
+	"network":                   {"remote_git": true, "vercel_account": true, "vercel_project": true},
+	"environment_inspect":       {"consumer_project": true},
+	"secret_use":                {"vercel_account": true},
+	"package_manager_execute":   {"workstation": true},
+	"git_inspect":               {"local_git": true},
+	"git_commit":                {"local_git": true},
+	"git_push":                  {"remote_git": true},
+	"vercel_project_mutate":     {"vercel_project": true},
+	"vercel_environment_mutate": {"vercel_project": true},
+	"vercel_domain_mutate":      {"vercel_project": true},
+	"preview_deploy":            {"vercel_project": true},
+	"production_deploy":         {"vercel_project": true},
+	"upload":                    {"deployment_payload": true},
+	"subagent_delegate":         {"consumer_project": true},
+}
+
+var runtimeEffectScopes = map[string]map[string]bool{
+	"authentication_state_change":        {"vercel_account": true},
+	"consumer_project_file_change":       {"consumer_project": true},
+	"consumer_project_dependency_change": {"consumer_project": true},
+	"local_git_change":                   {"local_git": true},
+	"remote_git_change":                  {"remote_git": true},
+	"tool_installation":                  {"workstation": true},
+	"vercel_project_change":              {"vercel_project": true},
+	"vercel_environment_change":          {"vercel_project": true},
+	"vercel_domain_change":               {"vercel_project": true},
+	"upload":                             {"deployment_payload": true},
+	"preview_deployment":                 {"vercel_project": true},
+	"production_deployment":              {"vercel_project": true},
+}
+
+var semverPredicatePattern = regexp.MustCompile(`^>=(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
+
+func validateRuntimeModes(resource Resource) error {
+	executable := resource.Kind == "skill" || resource.Kind == "agent" || resource.Kind == "command"
+	if executable && resource.RuntimeModes == nil {
+		return fmt.Errorf("runtime_modes is a required non-null array for executable resources")
+	}
+	if !executable && resource.RuntimeModes != nil {
+		return fmt.Errorf("runtime_modes is forbidden for non-executable resources")
+	}
+	modes := make(map[string]RuntimeMode, len(resource.RuntimeModes))
+	for i, mode := range resource.RuntimeModes {
+		if !idPattern.MatchString(mode.ID) {
+			return fmt.Errorf("runtime mode id %q must be lowercase kebab-case", mode.ID)
+		}
+		if i > 0 && resource.RuntimeModes[i-1].ID >= mode.ID {
+			return fmt.Errorf("runtime_modes must be sorted by id without duplicates")
+		}
+		if mode.Role != "primary" && mode.Role != "fallback_only" {
+			return fmt.Errorf("runtime mode %q role must be primary or fallback_only", mode.ID)
+		}
+		if mode.Requirements == nil || mode.Authorities == nil || mode.Effects == nil {
+			return fmt.Errorf("runtime mode %q arrays are required and non-null", mode.ID)
+		}
+		for j, requirement := range mode.Requirements {
+			if !runtimeRequirementKinds[requirement.Kind] || !idPattern.MatchString(requirement.ID) {
+				return fmt.Errorf("runtime mode %q has invalid requirement %q:%q", mode.ID, requirement.Kind, requirement.ID)
+			}
+			if requirement.Kind == "tool" {
+				if requirement.Version != "" && !semverPredicatePattern.MatchString(requirement.Version) {
+					return fmt.Errorf("runtime mode %q tool requirement version %q must be a normalized SemVer predicate", mode.ID, requirement.Version)
+				}
+			} else if requirement.Version != "" {
+				return fmt.Errorf("runtime mode %q requirement kind %q forbids version", mode.ID, requirement.Kind)
+			}
+			if j > 0 && runtimeRequirementKey(mode.Requirements[j-1]) >= runtimeRequirementKey(requirement) {
+				return fmt.Errorf("runtime mode %q requirements must be a sorted set", mode.ID)
+			}
+		}
+		for j, authority := range mode.Authorities {
+			if !runtimeAuthorityScopes[authority.Kind][authority.Scope] {
+				return fmt.Errorf("runtime mode %q has invalid authority kind or scope %q:%q", mode.ID, authority.Kind, authority.Scope)
+			}
+			if j > 0 && runtimeScopedKey(mode.Authorities[j-1].Kind, mode.Authorities[j-1].Scope) >= runtimeScopedKey(authority.Kind, authority.Scope) {
+				return fmt.Errorf("runtime mode %q authorities must be a sorted set", mode.ID)
+			}
+		}
+		for j, effect := range mode.Effects {
+			if !runtimeEffectScopes[effect.Kind][effect.Scope] {
+				return fmt.Errorf("runtime mode %q has invalid effect kind or scope %q:%q", mode.ID, effect.Kind, effect.Scope)
+			}
+			if j > 0 && runtimeScopedKey(mode.Effects[j-1].Kind, mode.Effects[j-1].Scope) >= runtimeScopedKey(effect.Kind, effect.Scope) {
+				return fmt.Errorf("runtime mode %q effects must be a sorted set", mode.ID)
+			}
+		}
+		if mode.OnUnavailable != "fail_before_effects" {
+			return fmt.Errorf("runtime mode %q on_unavailable must be fail_before_effects", mode.ID)
+		}
+		if mode.Fallback.Kind == "none" {
+			if mode.Fallback.Mode != "" {
+				return fmt.Errorf("runtime mode %q fallback none forbids mode", mode.ID)
+			}
+		} else if mode.Fallback.Kind != "mode" || !idPattern.MatchString(mode.Fallback.Mode) {
+			return fmt.Errorf("runtime mode %q fallback must be none or a valid mode reference", mode.ID)
+		}
+		modes[mode.ID] = mode
+	}
+	for _, mode := range resource.RuntimeModes {
+		if mode.Fallback.Kind != "mode" {
+			continue
+		}
+		target, exists := modes[mode.Fallback.Mode]
+		if !exists || mode.Role != "primary" || target.Role != "fallback_only" {
+			return fmt.Errorf("runtime mode %q fallback must reference a fallback_only mode in the same resource", mode.ID)
+		}
+		seen := map[string]bool{}
+		for current := mode; current.Fallback.Kind == "mode"; {
+			if seen[current.ID] {
+				return fmt.Errorf("runtime mode fallback graph must be acyclic")
+			}
+			seen[current.ID] = true
+			current = modes[current.Fallback.Mode]
+		}
+	}
+	return nil
+}
+
+func runtimeRequirementKey(value RuntimeRequirement) string {
+	return value.Kind + "\x00" + value.ID + "\x00" + value.Version
+}
+
+func runtimeScopedKey(kind, scope string) string { return kind + "\x00" + scope }
+
+var observationReasons = map[string]map[string]bool{
+	string(ObservationAvailable):   {"verified": true},
+	string(ObservationUnavailable): {"not_found": true, "permission_denied": true, "version_mismatch": true},
+	string(ObservationUnverified):  {"observer_error": true, "stale": true},
+}
+
+func validateRuntimeObservation(observation RuntimeObservation, sensitive bool) error {
+	if !observationReasons[string(observation.State)][observation.Reason] {
+		return fmt.Errorf("observation state or reason is invalid")
+	}
+	if _, err := time.Parse(time.RFC3339, observation.ObservedAt); err != nil {
+		return fmt.Errorf("observation observed_at must be RFC3339")
+	}
+	if strings.TrimSpace(observation.ObserverRevision) == "" {
+		return fmt.Errorf("observation observer_revision is required")
+	}
+	if observation.Identity != "" && (!idPattern.MatchString(observation.Identity) || sensitive) {
+		return fmt.Errorf("observation identity must be a non-sensitive redacted identity")
+	}
+	return nil
+}
+
+func ValidateRuntimeRequirementObservation(observation RuntimeRequirementObservation) error {
+	if !runtimeRequirementKinds[observation.Kind] || !idPattern.MatchString(observation.ID) {
+		return fmt.Errorf("requirement observation identity is invalid")
+	}
+	return validateRuntimeObservation(observation.RuntimeObservation, observation.Kind == "authentication")
+}
+
+func ValidateRuntimeAuthorityObservation(observation RuntimeAuthorityObservation) error {
+	if !runtimeAuthorityScopes[observation.Kind][observation.Scope] {
+		return fmt.Errorf("authority observation kind or scope is invalid")
+	}
+	return validateRuntimeObservation(observation.RuntimeObservation, observation.Kind == "secret_use")
+}
+
+func ValidateRuntimeEvidence(evidence RuntimeEvidence) error {
+	if evidence.Requirements == nil || evidence.Authorities == nil {
+		return fmt.Errorf("runtime evidence arrays are required and non-null")
+	}
+	for i, observation := range evidence.Requirements {
+		if err := ValidateRuntimeRequirementObservation(observation); err != nil {
+			return err
+		}
+		if i > 0 && runtimeScopedKey(evidence.Requirements[i-1].Kind, evidence.Requirements[i-1].ID) >= runtimeScopedKey(observation.Kind, observation.ID) {
+			return fmt.Errorf("runtime requirement observations must be sorted without duplicates")
+		}
+	}
+	for i, observation := range evidence.Authorities {
+		if err := ValidateRuntimeAuthorityObservation(observation); err != nil {
+			return err
+		}
+		if i > 0 && runtimeScopedKey(evidence.Authorities[i-1].Kind, evidence.Authorities[i-1].Scope) >= runtimeScopedKey(observation.Kind, observation.Scope) {
+			return fmt.Errorf("runtime authority observations must be sorted without duplicates")
+		}
+	}
+	return nil
+}
+
+func DecodeRuntimeEvidence(data []byte) (RuntimeEvidence, error) {
+	var evidence RuntimeEvidence
+	if err := strictDecode(data, &evidence); err != nil {
+		return RuntimeEvidence{}, err
+	}
+	if err := ValidateRuntimeEvidence(evidence); err != nil {
+		return RuntimeEvidence{}, err
+	}
+	return evidence, nil
 }
 
 func validateResourceV3(resource Resource, surfaces []Surface, optionalModes []OptionalMode) error {
