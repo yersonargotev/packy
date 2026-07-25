@@ -38,6 +38,7 @@ type classicLifecyclePlanJSON struct {
 	PendingPrerequisites []string                   `json:"pending_prerequisites"`
 	Preserved            []string                   `json:"preserved"`
 	Blockers             []string                   `json:"blockers"`
+	Warnings             []string                   `json:"warnings"`
 	Recovery             []string                   `json:"recovery"`
 	StateTransition      classicStateTransitionJSON `json:"state_transition"`
 	Actions              []classicActionJSON        `json:"actions"`
@@ -119,7 +120,7 @@ func classicPlanJSON(operation corelifecycle.Operation, plan corelifecycle.Plan)
 		SchemaVersion: classicLifecycleJSONSchemaVersion, Report: "classic-lifecycle-preview", Operation: operation,
 		Outcome: plan.Outcome(), DesiredSurfaces: sortedStrings(plan.DesiredSurfaces()),
 		PendingPrerequisites: sortedStrings(plan.PendingPrerequisites()), Preserved: sortedStrings(plan.Preserved()),
-		Blockers: sortedStrings(plan.Blockers()), Recovery: sortedStrings(plan.RecoveryEvidence()),
+		Blockers: sortedStrings(plan.Blockers()), Warnings: sortedStrings(plan.Warnings()), Recovery: sortedStrings(plan.RecoveryEvidence()),
 		StateTransition: stateTransitionJSON(plan.StateTransition()), Actions: outputActions, DryRun: true,
 	}
 }

@@ -29,7 +29,7 @@
     },
     "common": {
       "type": "object",
-      "required": ["schema_version", "report", "operation", "outcome", "desired_surfaces", "pending_prerequisites", "preserved", "blockers", "recovery", "state_transition"],
+      "required": ["schema_version", "report", "operation", "outcome", "desired_surfaces", "pending_prerequisites", "preserved", "blockers", "warnings", "recovery", "state_transition"],
       "properties": {
         "schema_version": {"const": 2},
         "report": {"enum": ["classic-lifecycle-preview", "classic-lifecycle-result"]},
@@ -39,6 +39,7 @@
         "pending_prerequisites": {"type": "array", "items": {"type": "string"}},
         "preserved": {"type": "array", "items": {"type": "string"}},
         "blockers": {"type": "array", "items": {"type": "string"}},
+        "warnings": {"type": "array", "items": {"type": "string"}},
         "recovery": {"type": "array", "items": {"type": "string"}},
         "state_transition": {"$ref": "#/$defs/transition"}
       }
@@ -53,14 +54,13 @@
     },
     {
       "allOf": [{"$ref": "#/$defs/common"}],
-      "required": ["committed", "completed_effects", "not_started_effects", "warnings", "managed_skill_count"],
+      "required": ["committed", "completed_effects", "not_started_effects", "managed_skill_count"],
       "properties": {
         "report": {"const": "classic-lifecycle-result"},
         "committed": {"type": "boolean"},
         "completed_effects": {"type": "array", "items": {"type": "string"}},
         "failed_effect": {"type": "string"},
         "not_started_effects": {"type": "array", "items": {"type": "string"}},
-        "warnings": {"type": "array", "items": {"type": "string"}},
         "managed_skill_count": {"type": "integer", "minimum": 0}
       },
       "unevaluatedProperties": false

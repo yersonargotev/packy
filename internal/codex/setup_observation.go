@@ -13,6 +13,9 @@ type SetupObservation struct {
 	promptFile      string
 	exists          bool
 	hasPackyMarkers bool
+	hasPackyRules   bool
+	hasGentleAI     bool
+	rules           prompt.RulesObservation
 	warnings        []string
 	err             error
 }
@@ -29,6 +32,9 @@ func ObserveSetup(layout CanonicalLayout) SetupObservation {
 	content := string(data)
 	observation.exists = true
 	observation.hasPackyMarkers = strings.Contains(content, "<!-- packy:skills-router -->") && strings.Contains(content, "<!-- /packy:skills-router -->")
+	observation.hasPackyRules = prompt.HasExactPackyRules(content)
+	observation.hasGentleAI = strings.Contains(content, "<!-- gentle-ai:") || strings.Contains(content, "<!-- /gentle-ai:")
+	observation.rules = prompt.InspectRulesContract(content)
 	observation.warnings = prompt.DetectExternalManagedBlocks(content)
 	return observation
 }
@@ -36,5 +42,12 @@ func ObserveSetup(layout CanonicalLayout) SetupObservation {
 func (o SetupObservation) PromptFile() string    { return o.promptFile }
 func (o SetupObservation) Exists() bool          { return o.exists }
 func (o SetupObservation) HasPackyMarkers() bool { return o.hasPackyMarkers }
-func (o SetupObservation) Err() error            { return o.err }
-func (o SetupObservation) Warnings() []string    { return append([]string(nil), o.warnings...) }
+func (o SetupObservation) HasPackyRules() bool   { return o.hasPackyRules }
+func (o SetupObservation) HasGentleAI() bool     { return o.hasGentleAI }
+func (o SetupObservation) RulesExternallySatisfied() bool {
+	return o.rules.Exact
+}
+func (o SetupObservation) RulesExternalDrift() bool { return o.rules.Drift }
+func (o SetupObservation) RulesMalformed() bool     { return o.rules.Malformed }
+func (o SetupObservation) Err() error               { return o.err }
+func (o SetupObservation) Warnings() []string       { return append([]string(nil), o.warnings...) }

@@ -2,13 +2,27 @@ package opencode
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	packyprompt "github.com/yersonargotev/packy/internal/prompt"
 )
+
+func quoted(value string) string {
+	data, _ := json.Marshal(value)
+	return string(data)
+}
+
+func exactDotsRulesFixture() string {
+	return "<!-- dots:rules -->\n" +
+		strings.Replace(packyprompt.RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
+		"<!-- /dots:rules -->"
+}
 
 func TestWriteCreatesPromptAndConfigInstruction(t *testing.T) {
 	dir := t.TempDir()
@@ -32,6 +46,245 @@ func TestWriteCreatesPromptAndConfigInstruction(t *testing.T) {
 	instructions := stringSlice(t, config["instructions"])
 	if len(instructions) != 1 || instructions[0] != promptPath {
 		t.Fatalf("instructions = %#v, want only %q", instructions, promptPath)
+	}
+}
+
+func TestWriteUsesExactReferencedDotsRulesWithoutDuplicatingOrTakingOwnership(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+	promptPath := filepath.Join(dir, "packy.md")
+	externalPath := filepath.Join(dir, "dots.md")
+	external := exactDotsRulesFixture()
+	if err := os.WriteFile(externalPath, []byte(external), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := `{"instructions":[` + quoted(externalPath) + `]}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(promptPath, []byte(packyprompt.RulesSectionContent()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := PreviewWrite(configPath, promptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ApplyWrite(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedPrompt := readString(t, promptPath)
+	if strings.Contains(updatedPrompt, "<!-- packy:rules -->") {
+		t.Fatalf("Packy prompt retained redundant rules:\n%s", updatedPrompt)
+	}
+	if !strings.Contains(updatedPrompt, "## Packy global workflow") {
+		t.Fatalf("Packy workflow missing:\n%s", updatedPrompt)
+	}
+	if got := readString(t, externalPath); got != external {
+		t.Fatalf("external rules changed:\n got %q\nwant %q", got, external)
+	}
+	wantWarnings := []string{"OpenCode baseline rules are externally satisfied by exact dots:rules in " + externalPath + "; Packy preserved the external instruction and omitted its own rules contribution"}
+	if !slices.Equal(result.Warnings, wantWarnings) {
+		t.Fatalf("warnings = %#v, want %#v", result.Warnings, wantWarnings)
+	}
+
+	repeatedPlan, err := PreviewWrite(configPath, promptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := ApplyWrite(repeatedPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readString(t, promptPath) != updatedPrompt || !slices.Equal(repeated.Warnings, wantWarnings) {
+		t.Fatalf("repeated write changed result: warnings=%#v", repeated.Warnings)
+	}
+
+	if err := Remove(configPath, promptPath); err != nil {
+		t.Fatal(err)
+	}
+	if got := readString(t, externalPath); got != external {
+		t.Fatalf("uninstall changed external rules:\n got %q\nwant %q", got, external)
+	}
+	instructions := stringSlice(t, readJSON(t, configPath)["instructions"])
+	if !slices.Equal(instructions, []string{externalPath}) {
+		t.Fatalf("instructions = %#v", instructions)
+	}
+	if _, err := os.Stat(promptPath); !os.IsNotExist(err) {
+		t.Fatalf("Packy prompt still exists: %v", err)
+	}
+}
+
+func TestWriteResolvesRelativeAndGlobInstructionReferencesWithoutAddingDuplicates(t *testing.T) {
+	t.Run("relative Packy prompt", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "opencode.json")
+		promptPath := filepath.Join(dir, "packy.md")
+		config := `{"instructions":["packy.md"]}`
+		if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := Write(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := readString(t, configPath); got != config {
+			t.Fatalf("relative reference was duplicated:\n got %q\nwant %q", got, config)
+		}
+		inspection, err := Inspect(configPath, promptPath)
+		if err != nil || !inspection.HasPackyInstruction {
+			t.Fatalf("inspection = %#v, err = %v", inspection, err)
+		}
+		if err := Remove(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := readString(t, configPath); got != config {
+			t.Fatalf("uninstall changed foreign relative reference:\n got %q\nwant %q", got, config)
+		}
+	})
+
+	t.Run("glob covers Packy prompt and exact external rules", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "opencode.json")
+		promptPath := filepath.Join(dir, "packy.md")
+		externalPath := filepath.Join(dir, "dots.md")
+		config := `{"instructions":["*.md"]}`
+		external := exactDotsRulesFixture()
+		if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(externalPath, []byte(external), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := Write(configPath, promptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readString(t, configPath); got != config {
+			t.Fatalf("glob reference was duplicated:\n got %q\nwant %q", got, config)
+		}
+		if strings.Contains(readString(t, promptPath), "<!-- packy:rules -->") {
+			t.Fatal("exact rules reached through glob did not suppress Packy rules")
+		}
+		if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], externalPath) {
+			t.Fatalf("warnings = %#v", result.Warnings)
+		}
+		inspection, err := Inspect(configPath, promptPath)
+		if err != nil || !inspection.HasPackyInstruction || !inspection.RulesExternallySatisfied {
+			t.Fatalf("inspection = %#v, err = %v", inspection, err)
+		}
+		if err := Remove(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := readString(t, configPath); got != config {
+			t.Fatalf("uninstall changed foreign glob reference:\n got %q\nwant %q", got, config)
+		}
+		if got := readString(t, externalPath); got != external {
+			t.Fatalf("uninstall changed external rules:\n got %q\nwant %q", got, external)
+		}
+	})
+
+	t.Run("opaque reference is preserved", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "opencode.json")
+		promptPath := filepath.Join(dir, "packy.md")
+		opaque := "https://example.test/instructions.md"
+		if err := os.WriteFile(configPath, []byte(`{"instructions":[`+quoted(opaque)+`]}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := Write(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := stringSlice(t, readJSON(t, configPath)["instructions"]); !slices.Equal(got, []string{opaque, promptPath}) {
+			t.Fatalf("instructions = %#v", got)
+		}
+		if err := Remove(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := stringSlice(t, readJSON(t, configPath)["instructions"]); !slices.Equal(got, []string{opaque}) {
+			t.Fatalf("instructions after uninstall = %#v", got)
+		}
+	})
+}
+
+func TestWritePreservesDifferingAndMalformedReferencedDotsRules(t *testing.T) {
+	for name, tc := range map[string]struct {
+		external string
+		warning  string
+	}{
+		"different": {
+			external: "<!-- dots:rules -->\n## Dots Agent Rules\n\nDifferent.\n<!-- /dots:rules -->",
+			warning:  "OpenCode dots:rules in %s differs from the Packy baseline; Packy projected its baseline and preserved the external instruction; align the external provider contract before retrying",
+		},
+		"malformed": {
+			external: "<!-- dots:rules -->\n## Dots Agent Rules\n\nUnclosed.",
+			warning:  "OpenCode dots:rules markers in %s are malformed; Packy projected its baseline and preserved the external instruction; repair the external provider markers before retrying",
+		},
+		"unknown": {
+			external: "<!-- other:rules -->\nSame-looking but foreign.\n<!-- /other:rules -->",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			configPath := filepath.Join(dir, "opencode.json")
+			promptPath := filepath.Join(dir, "packy.md")
+			externalPath := filepath.Join(dir, "external.md")
+			if err := os.WriteFile(externalPath, []byte(tc.external), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(configPath, []byte(`{"instructions":[`+quoted(externalPath)+`]}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			result, err := Write(configPath, promptPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := readString(t, externalPath); got != tc.external {
+				t.Fatalf("external instruction changed:\n got %q\nwant %q", got, tc.external)
+			}
+			if count := strings.Count(readString(t, promptPath), "<!-- packy:rules -->"); count != 1 {
+				t.Fatalf("Packy rules count = %d", count)
+			}
+			var wantWarnings []string
+			if tc.warning != "" {
+				wantWarnings = []string{fmt.Sprintf(tc.warning, externalPath)}
+			}
+			if !slices.Equal(result.Warnings, wantWarnings) {
+				t.Fatalf("warnings = %#v, want %#v", result.Warnings, wantWarnings)
+			}
+		})
+	}
+}
+
+func TestApplyWriteRejectsExternalRulesThatChangedAfterPreview(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "opencode.json")
+	promptPath := filepath.Join(dir, "packy.md")
+	externalPath := filepath.Join(dir, "external.md")
+	config := `{"instructions":[` + quoted(externalPath) + `]}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := PreviewWrite(configPath, promptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(externalPath, []byte(exactDotsRulesFixture()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ApplyWrite(plan); !errors.Is(err, ErrStaleWritePlan) {
+		t.Fatalf("ApplyWrite error = %v, want %v", err, ErrStaleWritePlan)
+	}
+	if got := readString(t, configPath); got != config {
+		t.Fatalf("stale apply changed config:\n got %q\nwant %q", got, config)
+	}
+	if _, err := os.Stat(promptPath); !os.IsNotExist(err) {
+		t.Fatalf("stale apply wrote Packy prompt: %v", err)
 	}
 }
 

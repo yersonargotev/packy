@@ -1,14 +1,17 @@
 package corelifecycle
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/yersonargotev/packy/internal/claudecode"
+	"github.com/yersonargotev/packy/internal/prompt"
 )
 
 type classicVersionRunner struct{ result claudecode.Result }
@@ -66,6 +69,48 @@ func configureClassicClaude(config *facadeConfig, runner claudecode.Runner) {
 	config.ClaudeDesired = claudecode.ClassicDesired{
 		Instruction: &claudecode.ClassicInstruction{ID: "classic:instruction", Content: "Use Packy skills when relevant."},
 		MCP:         &claudecode.ClassicMCP{ID: "classic:mcp:engram", Name: "engram", Command: "engram", Args: []string{"mcp", "--tools=agent"}},
+	}
+}
+
+func TestInstallApplyRejectsClaudeRulesChangedAfterPreviewBeforeEffects(t *testing.T) {
+	config := installTestConfig(t)
+	home := installTestHome(config)
+	layout := claudecode.NewCanonicalLayout(home)
+	if err := os.MkdirAll(filepath.Dir(layout.InstructionsFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	if err := os.WriteFile(layout.InstructionsFile, []byte(external), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config.Claude = claudecode.NewSurfaceAdapter("", layout, config.State.PackyHome(), "", classicVersionRunner{}, claudecode.StaticOwnershipSnapshot(claudecode.OwnershipSnapshot{}))
+	config.ClaudeDesired = claudecode.ClassicDesired{Instruction: &claudecode.ClassicInstruction{
+		ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent(),
+	}}
+	commands := &installTestCommands{}
+	facade := newTestFacade(config, commands, time.Now)
+	plan, err := facade.Preview(Install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := external + "changed after preview\n"
+	if err := os.WriteFile(layout.InstructionsFile, []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := facade.Apply(context.Background(), plan); !errors.Is(err, claudecode.ErrStaleClassicPlan) {
+		t.Fatalf("Apply error = %v, want %v", err, claudecode.ErrStaleClassicPlan)
+	}
+	if len(commands.runs) != 0 {
+		t.Fatalf("stale plan executed commands: %#v", commands.runs)
+	}
+	for _, path := range []string{config.State.StateFile(), config.OpenCode.PromptFile(), config.Codex.PromptFile()} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale plan wrote %s: %v", path, err)
+		}
+	}
+	if got, err := os.ReadFile(layout.InstructionsFile); err != nil || string(got) != changed {
+		t.Fatalf("stale plan changed Claude instructions: got=%q err=%v", got, err)
 	}
 }
 
@@ -195,6 +240,14 @@ func TestClassicPrototypeRecoveryRetryBuildsFreshPlanAndConverges(t *testing.T) 
 	layout := claudecode.NewCanonicalLayout(installTestHome(config))
 	failing := &classicMCPRunner{registry: layout.UserMCPFile, failAdd: true}
 	configureClassicClaude(&config, failing)
+	if err := os.MkdirAll(filepath.Dir(layout.InstructionsFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	if err := os.WriteFile(layout.InstructionsFile, []byte(external), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config.ClaudeDesired.Instruction = &claudecode.ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent()}
 	writeInstallTestExecutable(t, config.Engram.ExpectedPath())
 	facade := newTestFacade(config, &installTestCommands{}, time.Now)
 	plan, err := facade.Preview(Install)
@@ -204,6 +257,9 @@ func TestClassicPrototypeRecoveryRetryBuildsFreshPlanAndConverges(t *testing.T) 
 	result, err := facade.Apply(context.Background(), plan)
 	if err == nil || result.Outcome() != OutcomeRecoveryRequired || result.FailedEffect() != "classic:mcp:engram" {
 		t.Fatalf("first attempt=%+v err=%v", result, err)
+	}
+	if len(result.Warnings()) != 1 || !strings.Contains(result.Warnings()[0], "externally satisfied") {
+		t.Fatalf("recovery warnings=%v", result.Warnings())
 	}
 	if !result.Committed() || result.StateTransition().ToSchemaVersion != SchemaVersion || result.StateTransition().ToStatus != InstallRecoveryRequired {
 		t.Fatalf("recovery publication = committed %t transition %+v", result.Committed(), result.StateTransition())
@@ -215,6 +271,7 @@ func TestClassicPrototypeRecoveryRetryBuildsFreshPlanAndConverges(t *testing.T) 
 
 	succeeding := &classicMCPRunner{registry: layout.UserMCPFile}
 	configureClassicClaude(&config, succeeding)
+	config.ClaudeDesired.Instruction = &claudecode.ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent()}
 	retry := newTestFacade(config, &installTestCommands{}, time.Now)
 	fresh, err := retry.Preview(Install)
 	if err != nil || len(fresh.Actions()) == 0 {
@@ -226,6 +283,61 @@ func TestClassicPrototypeRecoveryRetryBuildsFreshPlanAndConverges(t *testing.T) 
 	confirmed, _, err := LoadState(config.State.StateFile())
 	if err != nil || confirmed.RecoveryRequired() || confirmed.LatestAttempt == nil || confirmed.LatestAttempt.Outcome != AttemptVerified {
 		t.Fatalf("confirmed=%+v err=%v", confirmed, err)
+	}
+}
+
+func TestUninstallRejectsStaleClaudeInstructionsBeforeEffects(t *testing.T) {
+	config := installTestConfig(t)
+	layout := claudecode.NewCanonicalLayout(installTestHome(config))
+	runner := &classicMCPRunner{registry: layout.UserMCPFile}
+	configureClassicClaude(&config, runner)
+	config.ClaudeDesired.Instruction = &claudecode.ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent()}
+	if err := os.MkdirAll(filepath.Dir(layout.InstructionsFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	if err := os.WriteFile(layout.InstructionsFile, []byte(external), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeInstallTestExecutable(t, config.Engram.ExpectedPath())
+	commands := &installTestCommands{}
+	facade := newTestFacade(config, commands, time.Now)
+	installPlan, err := facade.Preview(Install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := facade.Apply(context.Background(), installPlan); err != nil {
+		t.Fatal(err)
+	}
+	uninstallPlan, err := facade.Preview(Uninstall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateBefore, err := os.ReadFile(config.State.StateFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(layout.InstructionsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := append(append([]byte(nil), current...), []byte("changed after preview\n")...)
+	if err := os.WriteFile(layout.InstructionsFile, changed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	commands.runs = nil
+
+	if _, err := facade.Apply(context.Background(), uninstallPlan); !errors.Is(err, claudecode.ErrStaleClassicPlan) {
+		t.Fatalf("Apply error=%v, want %v", err, claudecode.ErrStaleClassicPlan)
+	}
+	if len(commands.runs) != 0 {
+		t.Fatalf("stale uninstall executed commands: %v", commands.runs)
+	}
+	if got, err := os.ReadFile(config.State.StateFile()); err != nil || !bytes.Equal(got, stateBefore) {
+		t.Fatalf("stale uninstall changed state: got=%q err=%v", got, err)
+	}
+	if got, err := os.ReadFile(layout.InstructionsFile); err != nil || !bytes.Equal(got, changed) {
+		t.Fatalf("stale uninstall changed Claude instructions: got=%q err=%v", got, err)
 	}
 }
 

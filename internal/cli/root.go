@@ -238,11 +238,11 @@ func newInstallCommand(opts Options, workstationResolver *workstation.Resolver) 
 			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result); err != nil {
 				return err
 			}
-			if applyErr != nil {
-				return applyErr
-			}
 			if err := printWarnings(cmd.OutOrStdout(), result.Warnings()); err != nil {
 				return err
+			}
+			if applyErr != nil {
+				return applyErr
 			}
 			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "packy install: synced %d managed skills and wrote state %s (outcome: %s)\n", result.ManagedSkillCount(), result.StateFile(), result.Outcome()); err != nil {
 				return err
@@ -374,11 +374,11 @@ func newUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *
 			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result); err != nil {
 				return err
 			}
-			if applyErr != nil {
-				return applyErr
-			}
 			if err := printWarnings(cmd.OutOrStdout(), result.Warnings()); err != nil {
 				return err
+			}
+			if applyErr != nil {
+				return applyErr
 			}
 			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "packy update: synced %d managed skills and wrote state %s (outcome: %s)\n", result.ManagedSkillCount(), result.StateFile(), result.Outcome()); err != nil {
 				return err
@@ -439,6 +439,11 @@ func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.
 	}
 	for _, value := range plan.Blockers() {
 		if _, err := fmt.Fprintf(out, "Blocker: %s\n", value); err != nil {
+			return err
+		}
+	}
+	for _, value := range plan.Warnings() {
+		if _, err := fmt.Fprintf(out, "warning: %s\n", value); err != nil {
 			return err
 		}
 	}

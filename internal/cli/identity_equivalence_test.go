@@ -283,6 +283,10 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 	value = regexp.MustCompile(`(?m)^(Outcome:|Desired surfaces:|State transition:|Pending prerequisite:|Pending prerequisites:|Preserved:|Blocker:|Lifecycle blockers:|Recovery:|Completed effects:|Failed effect:|Not started effects:)[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^- claude-[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^(?:PASS|WARN|FAIL) claude-[^\n]*\n`).ReplaceAllString(value, "")
+	// Issue #245 adds explicit baseline-source health checks. Dedicated setup
+	// health tests own this new disclosure; keep the frozen rename gate focused
+	// on the pre-existing checks and Claude instruction ownership result.
+	value = regexp.MustCompile(`(?m)^(?:PASS|WARN|FAIL) (?:codex|opencode)-rules:[^\n]*\n`).ReplaceAllString(value, "")
 	// Issue #152 adds the human equivalent of the structured doctor summary.
 	// The dedicated doctor contract tests own that new output; the frozen
 	// rename baseline predates it and remains focused on pre-Claude behavior.
@@ -311,7 +315,7 @@ func removeSliceFJSONFields(value any) {
 			for _, item := range checks {
 				check, _ := item.(map[string]any)
 				name, _ := check["name"].(string)
-				if strings.HasPrefix(name, "claude-") {
+				if strings.HasPrefix(name, "claude-") || name == "codex-rules" || name == "opencode-rules" {
 					continue
 				}
 				filtered = append(filtered, item)
@@ -352,6 +356,10 @@ func removeSliceFJSONFields(value any) {
 
 func normalizeSliceFJSONTranscript(transcript *identityEquivalenceTranscript) {
 	for i := range transcript.Scenarios {
+		transcript.Scenarios[i].State = strings.NewReplacer(
+			"## Dots Agent Rules", "## Agent Rules",
+			"## Packy Agent Rules", "## Agent Rules",
+		).Replace(transcript.Scenarios[i].State)
 		var document any
 		if json.Unmarshal([]byte(strings.TrimSpace(transcript.Scenarios[i].Output)), &document) != nil {
 			// Issue #205 makes status evidence path-portable. The frozen rename

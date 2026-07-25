@@ -15,8 +15,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/bootstrap"
+	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/corelifecycle"
 	"github.com/yersonargotev/packy/internal/engrambin"
+	"github.com/yersonargotev/packy/internal/prompt"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	packyversion "github.com/yersonargotev/packy/internal/version"
@@ -99,7 +101,7 @@ func TestClassicLifecycleJSONV2PreviewAndResults(t *testing.T) {
 			if err := json.Unmarshal([]byte(out), &report); err != nil {
 				t.Fatalf("invalid JSON: %v\n%s", err, out)
 			}
-			if report.SchemaVersion != 2 || report.Report != "classic-lifecycle-preview" || string(report.Operation) != operation || !report.DryRun || report.DesiredSurfaces == nil || report.PendingPrerequisites == nil || report.Preserved == nil || report.Blockers == nil || report.Recovery == nil || report.Actions == nil {
+			if report.SchemaVersion != 2 || report.Report != "classic-lifecycle-preview" || string(report.Operation) != operation || !report.DryRun || report.DesiredSurfaces == nil || report.PendingPrerequisites == nil || report.Preserved == nil || report.Blockers == nil || report.Warnings == nil || report.Recovery == nil || report.Actions == nil {
 				t.Fatalf("preview contract = %#v", report)
 			}
 			if strings.Contains(out, "Skill source:") || strings.Contains(out, "planned actions") {
@@ -120,6 +122,93 @@ func TestClassicLifecycleJSONV2PreviewAndResults(t *testing.T) {
 			}
 			if report.SchemaVersion != 2 || report.Report != "classic-lifecycle-result" || string(report.Operation) != operation || !report.Committed || report.DesiredSurfaces == nil || report.PendingPrerequisites == nil || report.Preserved == nil || report.Blockers == nil || report.Recovery == nil || report.CompletedEffects == nil || report.NotStartedEffects == nil || report.Warnings == nil {
 				t.Fatalf("result contract = %#v", report)
+			}
+		})
+	}
+}
+
+func TestClassicLifecyclePreviewReportsExternallySatisfiedRulesInHumanAndJSON(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	fixture := newCLITestFixture(t, opts)
+	layout := claudecode.NewCanonicalLayout(fixture.workstation.Home())
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	openCodeExternal := filepath.Join(filepath.Dir(fixture.opencode.ConfigFile()), "external.md")
+	for _, path := range []string{layout.InstructionsFile, fixture.codex.PromptFile(), openCodeExternal} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(external), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	openCodeConfig, err := json.Marshal(map[string]any{"instructions": []string{openCodeExternal}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.opencode.ConfigFile(), openCodeConfig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	human, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
+	if err != nil {
+		t.Fatalf("human preview: %v\n%s", err, human)
+	}
+	for _, surface := range []string{"Codex", "OpenCode", "Claude"} {
+		if !strings.Contains(human, "warning: "+surface+" baseline rules are externally satisfied") {
+			t.Fatalf("human preview omitted %s rules warning:\n%s", surface, human)
+		}
+	}
+
+	output, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("JSON preview: %v\n%s", err, output)
+	}
+	var report classicLifecyclePlanJSON
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Warnings) != 3 {
+		t.Fatalf("JSON warnings=%v", report.Warnings)
+	}
+	for _, path := range []string{layout.InstructionsFile, fixture.codex.PromptFile(), openCodeExternal} {
+		if got, err := os.ReadFile(path); err != nil || string(got) != external {
+			t.Fatalf("preview changed external content %s: got=%q err=%v", path, got, err)
+		}
+	}
+}
+
+func TestClassicLifecycleFailureRetainsClaudeRulesWarningsInHumanAndJSON(t *testing.T) {
+	for _, jsonOutput := range []bool{false, true} {
+		t.Run(fmt.Sprintf("json=%t", jsonOutput), func(t *testing.T) {
+			opts, runner, home := sandboxOptions(t)
+			runner.path["claude"] = filepath.Join(home, "claude")
+			opts.ClaudeRunner = failingClassicClaudeRunner{}
+			layout := claudecode.NewCanonicalLayout(home)
+			if err := os.MkdirAll(filepath.Dir(layout.InstructionsFile), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+			if err := os.WriteFile(layout.InstructionsFile, []byte(external), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"install"}
+			if jsonOutput {
+				args = append(args, "--json")
+			}
+			output, err := executeCommand(t, NewRootCommand(opts), args...)
+			if err == nil {
+				t.Fatalf("expected Claude failure:\n%s", output)
+			}
+			if jsonOutput {
+				var report classicLifecycleResultJSON
+				if decodeErr := json.Unmarshal([]byte(output), &report); decodeErr != nil {
+					t.Fatalf("invalid JSON: %v\n%s", decodeErr, output)
+				}
+				if len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "externally satisfied") {
+					t.Fatalf("JSON warnings=%v", report.Warnings)
+				}
+			} else if !strings.Contains(output, "warning: Claude baseline rules are externally satisfied") {
+				t.Fatalf("human failure omitted warning:\n%s", output)
 			}
 		})
 	}
@@ -183,6 +272,18 @@ type fakeRunner struct {
 	path  map[string]string
 	fail  map[string]error
 	after map[string]func()
+}
+
+type failingClassicClaudeRunner struct{}
+
+func (failingClassicClaudeRunner) Run(_ context.Context, command claudecode.Command) claudecode.Result {
+	if len(command.Args) == 1 && command.Args[0] == "--version" {
+		return claudecode.Result{Stdout: claudecode.MinimumSupportedVersion}
+	}
+	if len(command.Args) >= 2 && command.Args[0] == "mcp" && command.Args[1] == "add" {
+		return claudecode.Result{Err: errors.New("injected Claude MCP failure")}
+	}
+	return claudecode.Result{}
 }
 
 type fakeCall struct {

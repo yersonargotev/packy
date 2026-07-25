@@ -11,6 +11,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/prompt"
 )
 
 type ClassicProjectionKind string
@@ -22,7 +23,7 @@ const (
 )
 
 type ClassicSkill struct{ ID, Name, SourcePath string }
-type ClassicInstruction struct{ ID, Content string }
+type ClassicInstruction struct{ ID, Content, Rules string }
 type ClassicMCP struct {
 	ID, Name, Command string
 	Args              []string
@@ -57,7 +58,9 @@ type ClassicPlan struct {
 	actions                      []capabilitypack.ProjectionAction
 	compatibility                Compatibility
 	blockers, preserved, pending []string
+	warnings                     []string
 	ownership                    []OwnershipRecord
+	instructionSeal              string
 }
 
 func (p ClassicPlan) Compatibility() Compatibility { return p.compatibility }
@@ -71,6 +74,7 @@ func (p ClassicPlan) Actions() []ClassicActionView {
 func (p ClassicPlan) Blockers() []string                  { return append([]string(nil), p.blockers...) }
 func (p ClassicPlan) Preserved() []string                 { return append([]string(nil), p.preserved...) }
 func (p ClassicPlan) PendingPrerequisites() []string      { return append([]string(nil), p.pending...) }
+func (p ClassicPlan) Warnings() []string                  { return append([]string(nil), p.warnings...) }
 func (p ClassicPlan) DesiredOwnership() []OwnershipRecord { return cloneOwnership(p.ownership) }
 
 type ClassicApplyResult struct {
@@ -84,6 +88,7 @@ type ClassicApplyResult struct {
 }
 
 var ErrForeignClassicPlan = errors.New("classic Claude plan was not inspected by this adapter")
+var ErrStaleClassicPlan = errors.New("classic Claude plan is stale")
 
 var applyClassicAction = func(adapter *SurfaceAdapter, ctx context.Context, action capabilitypack.ProjectionAction) error {
 	return adapter.apply(ctx, action)
@@ -154,26 +159,40 @@ func (a *SurfaceAdapter) InspectClassic(ctx context.Context, request ClassicRequ
 		if err != nil {
 			return ClassicPlan{}, err
 		}
-		merged, err := UpsertInstructionContribution(string(current), InstructionContribution{ContributorID: "classic", Content: d.Content})
+		p.instructionSeal = Fingerprint(current)
+		content := d.Content
+		var rules prompt.RulesObservation
+		if d.Rules != "" {
+			rules = prompt.InspectRulesContract(string(current))
+			if !rules.Exact {
+				content += "\n" + d.Rules
+			}
+		}
+		merged, err := UpsertInstructionContribution(string(current), InstructionContribution{ContributorID: "classic", Content: content})
 		if err != nil {
 			p.blockers = append(p.blockers, err.Error())
 			p.preserved = append(p.preserved, a.layout.InstructionsFile)
 		} else {
-			fp := Fingerprint([]byte(strings.TrimSpace(d.Content)))
+			fp := Fingerprint([]byte(strings.TrimSpace(content)))
 			o := ObserveInstructions(a.layout.InstructionsFile)
 			if o.Err != nil {
 				return ClassicPlan{}, o.Err
 			}
 			record := OwnershipRecord{StateOwner: "classic", ContributorID: "classic", ID: id, Kind: string(ActionInstructionContribution), Target: a.layout.InstructionsFile, Fingerprint: fp, Contributors: []string{"classic"}, DeletionAuthorized: true}
 			observed, exists := o.Contributions["classic"]
-			if exists && !ownsClassicFingerprint(snapshot, record, observed) {
+			ownsExisting := exists && ownsClassicFingerprint(snapshot, record, observed)
+			canManage := !exists || ownsExisting
+			if !canManage {
 				p.blockers = append(p.blockers, "foreign or drifted classic Claude instruction contribution")
 				p.preserved = append(p.preserved, a.layout.InstructionsFile)
 			} else {
 				p.ownership = append(p.ownership, record)
 			}
-			if !exists || (ownsClassicFingerprint(snapshot, record, observed) && !fingerprintsEqual(observed, fp)) {
+			if !exists || (ownsExisting && !fingerprintsEqual(observed, fp)) {
 				p.actions = append(p.actions, capabilitypack.ProjectionAction{ID: id, Kind: ActionInstructionContribution, Target: a.layout.InstructionsFile, Content: merged, Command: Fingerprint(current), Description: "merge classic Claude instructions"})
+			}
+			if d.Rules != "" {
+				p.warnings = append(p.warnings, classicRulesWarnings(rules, canManage)...)
 			}
 		}
 	}
@@ -213,6 +232,53 @@ func (a *SurfaceAdapter) InspectClassic(ctx context.Context, request ClassicRequ
 	return p, nil
 }
 
+func (a *SurfaceAdapter) ValidateClassicPlan(p ClassicPlan) error {
+	if p.owner != a {
+		return ErrForeignClassicPlan
+	}
+	if p.instructionSeal == "" {
+		return nil
+	}
+	current, err := readOptional(a.layout.InstructionsFile)
+	if err != nil {
+		return err
+	}
+	if !fingerprintsEqual(Fingerprint(current), p.instructionSeal) {
+		return ErrStaleClassicPlan
+	}
+	return nil
+}
+
+func classicRulesWarnings(rules prompt.RulesObservation, contributionManageable bool) []string {
+	var warnings []string
+	if rules.Exact {
+		action := "Packy preserved the external block and omitted its own rules contribution"
+		if !contributionManageable {
+			action = "Packy preserved the external block, but a foreign or drifted classic contribution prevented duplicate reconciliation"
+		}
+		warnings = append(warnings, "Claude baseline rules are externally satisfied by exact dots:rules; "+action)
+	}
+	if rules.Drift {
+		action := "Packy projected its baseline"
+		if rules.Exact {
+			action = "an exact dots:rules block still satisfies the baseline"
+		} else if !contributionManageable {
+			action = "Packy could not project its baseline because the classic contribution is foreign or drifted"
+		}
+		warnings = append(warnings, "Claude also contains dots:rules content that differs from the Packy baseline; "+action+" and Packy preserved every external block; align the differing provider contract before retrying")
+	}
+	if rules.Malformed {
+		action := "Packy projected its baseline"
+		if rules.Exact {
+			action = "an exact dots:rules block still satisfies the baseline"
+		} else if !contributionManageable {
+			action = "Packy could not project its baseline because the classic contribution is foreign or drifted"
+		}
+		warnings = append(warnings, "Claude also contains malformed dots:rules markers; "+action+" and Packy preserved the external content; repair the malformed provider markers before retrying")
+	}
+	return warnings
+}
+
 func (a *SurfaceAdapter) inspectClassicAbsent(desired ClassicDesired, s OwnershipSnapshot, p ClassicPlan) (ClassicPlan, error) {
 	wanted := map[string]bool{}
 	for _, x := range desired.Skills {
@@ -245,6 +311,13 @@ func (a *SurfaceAdapter) inspectClassicAbsent(desired ClassicDesired, s Ownershi
 			}
 			x = capabilitypack.ProjectionAction{ID: r.ID, Kind: ActionSkillLink, Target: r.Target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove classic Claude skill"}
 		case string(ActionInstructionContribution):
+			current, readErr := readOptional(r.Target)
+			if readErr != nil {
+				p.blockers = append(p.blockers, "owned Claude instructions unreadable; preserving them")
+				p.preserved = append(p.preserved, r.Target)
+				continue
+			}
+			p.instructionSeal = Fingerprint(current)
 			o := ObserveInstructions(r.Target)
 			if o.Err != nil {
 				p.blockers = append(p.blockers, "owned Claude instructions unreadable; preserving them")
@@ -260,7 +333,6 @@ func (a *SurfaceAdapter) inspectClassicAbsent(desired ClassicDesired, s Ownershi
 				p.preserved = append(p.preserved, r.Target)
 				continue
 			}
-			current, _ := readOptional(r.Target)
 			merged, err := RemoveInstructionContribution(string(current), "classic")
 			if err != nil {
 				return p, err
@@ -297,8 +369,8 @@ func (a *SurfaceAdapter) inspectClassicAbsent(desired ClassicDesired, s Ownershi
 }
 
 func (a *SurfaceAdapter) ApplyClassic(ctx context.Context, p ClassicPlan) (ClassicApplyResult, error) {
-	if p.owner != a {
-		return ClassicApplyResult{}, ErrForeignClassicPlan
+	if err := a.ValidateClassicPlan(p); err != nil {
+		return ClassicApplyResult{}, err
 	}
 	r := ClassicApplyResult{NotStarted: actionIDs(p.actions)}
 	if len(p.actions) == 0 {

@@ -149,6 +149,52 @@ func claudeSkillCheck(observed []claudecode.SkillObservation, ownership []coreli
 	return Check{Severity: Pass, Name: "claude-skills", Detail: fmt.Sprintf("%d recorded Claude skill projections match", len(wanted))}
 }
 
+type rulesSource int
+
+const (
+	rulesAbsent rulesSource = iota
+	rulesExternallySatisfied
+	rulesPackyProjected
+	rulesDuplicated
+)
+
+func classifyRulesSource(external, packy bool) rulesSource {
+	switch {
+	case external && packy:
+		return rulesDuplicated
+	case external:
+		return rulesExternallySatisfied
+	case packy:
+		return rulesPackyProjected
+	default:
+		return rulesAbsent
+	}
+}
+
+func rulesSourceDetail(source rulesSource) string {
+	switch source {
+	case rulesExternallySatisfied:
+		return "externally satisfied by exact dots:rules"
+	case rulesPackyProjected:
+		return "Packy-projected"
+	case rulesDuplicated:
+		return "duplicated between exact dots:rules and Packy"
+	default:
+		return "absent"
+	}
+}
+
+func rulesSourceCheck(name string, external, packy bool) Check {
+	source := classifyRulesSource(external, packy)
+	severity := Pass
+	detail := "baseline rules are " + rulesSourceDetail(source)
+	if source == rulesAbsent || source == rulesDuplicated {
+		severity = Warn
+		detail += "; run packy update"
+	}
+	return Check{Severity: severity, Name: name, Detail: detail}
+}
+
 func claudeInstructionCheck(observed claudecode.InstructionObservation, ownership []corelifecycle.ClaudeOwnership) Check {
 	wanted := claudeOwnershipKind(ownership, corelifecycle.ClaudeOwnershipInstruction)
 	if len(wanted) == 0 && observed.Err != nil {
@@ -169,7 +215,21 @@ func claudeInstructionCheck(observed claudecode.InstructionObservation, ownershi
 			return Check{Severity: Fail, Name: "claude-instructions", Detail: "recorded Claude instruction contribution is missing or drifted at " + owner.Target + "; inspect the collision, then run packy update"}
 		}
 	}
-	return Check{Severity: Pass, Name: "claude-instructions", Detail: fmt.Sprintf("%d recorded Claude instruction projections match", len(wanted))}
+	if len(wanted) > 0 {
+		source := classifyRulesSource(observed.RulesExternallySatisfied, observed.RulesPackyProjected)
+		if observed.RulesExternalDrift || observed.RulesMalformed {
+			condition := "differing dots:rules content"
+			if observed.RulesMalformed {
+				condition = "malformed dots:rules markers"
+			}
+			return Check{Severity: Warn, Name: "claude-instructions", Detail: fmt.Sprintf("%d recorded Claude instruction projections match; baseline rules are %s; preserved %s requires repair; run packy update", len(wanted), rulesSourceDetail(source), condition)}
+		}
+		if source == rulesAbsent || source == rulesDuplicated {
+			return Check{Severity: Fail, Name: "claude-instructions", Detail: "recorded Claude instructions do not match baseline rules satisfaction; run packy update"}
+		}
+		return Check{Severity: Pass, Name: "claude-instructions", Detail: fmt.Sprintf("%d recorded Claude instruction projections match; baseline rules are %s", len(wanted), rulesSourceDetail(source))}
+	}
+	return Check{Severity: Pass, Name: "claude-instructions", Detail: "0 recorded Claude instruction projections match"}
 }
 
 func claudeHookCheck(observed claudecode.HookObservation, ownership []corelifecycle.ClaudeOwnership) Check {
@@ -469,10 +529,15 @@ func codexChecks(observation codex.SetupObservation) []Check {
 	} else {
 		checks = append(checks, Check{Severity: Warn, Name: "codex-config", Detail: "Packy prompt markers are missing; run packy install"})
 	}
-	for _, warning := range observation.Warnings() {
-		if strings.Contains(warning, "gentle-ai") {
-			checks = append(checks, Check{Severity: Warn, Name: "codex-conflict", Detail: warning + "; inspect duplicate global instructions"})
-		}
+	checks = append(checks, rulesSourceCheck("codex-rules", observation.RulesExternallySatisfied(), observation.HasPackyRules()))
+	if observation.RulesExternalDrift() {
+		checks = append(checks, Check{Severity: Warn, Name: "codex-conflict", Detail: "Codex contains dots:rules content that differs from the Packy baseline; Packy preserved the external block; align the provider contract, then run packy update"})
+	}
+	if observation.RulesMalformed() {
+		checks = append(checks, Check{Severity: Warn, Name: "codex-conflict", Detail: "Codex contains malformed dots:rules markers; Packy preserved the external content; repair the provider markers, then run packy update"})
+	}
+	if observation.HasGentleAI() {
+		checks = append(checks, Check{Severity: Warn, Name: "codex-conflict", Detail: "Codex prompt contains gentle-ai managed blocks; Packy preserved them and only updated Packy markers; inspect duplicate global instructions"})
 	}
 	return checks
 }
@@ -493,7 +558,10 @@ func openCodeChecks(observation opencode.SetupObservation) []Check {
 	default:
 		checks = append(checks, Check{Severity: Warn, Name: "opencode-config", Detail: "Packy prompt file is missing; run packy update"})
 	}
-	for _, warning := range inspection.Warnings {
+	if inspection.HasPackyInstruction && inspection.PromptExists {
+		checks = append(checks, rulesSourceCheck("opencode-rules", inspection.RulesExternallySatisfied, inspection.RulesPackyProjected))
+	}
+	for _, warning := range inspection.Conflicts {
 		checks = append(checks, Check{Severity: Warn, Name: "opencode-conflict", Detail: warning + "; inspect duplicate OpenCode overlays"})
 	}
 	return checks

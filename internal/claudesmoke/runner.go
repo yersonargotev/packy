@@ -292,7 +292,9 @@ esac
 	}
 	env := restrictedEnv(sandbox, filepath.Dir(claude), filepath.Dir(npmExecutable))
 	foreignInstructionPath := filepath.Join(sandbox, "home", ".claude", "CLAUDE.md")
-	foreignInstruction := []byte("FOREIGN-BYTE-EXACT-INSTRUCTION\n")
+	foreignInstruction := []byte("FOREIGN-BYTE-EXACT-INSTRUCTION\n<!-- dots:rules -->\n" +
+		strings.Replace(prompt.RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
+		"<!-- /dots:rules -->\n")
 	foreignMCPPath := filepath.Join(sandbox, "home", ".claude.json")
 	foreignMCPMarker := "FOREIGN-BYTE-EXACT-MCP"
 	foreignMCP := []byte("{\"mcpServers\":{\"foreign\":{\"type\":\"stdio\",\"command\":\"/bin/echo\",\"args\":[\"FOREIGN-BYTE-EXACT-MCP\"],\"env\":{\"SMOKE_SECRET\":\"" + sensitiveFixtureValue + "\"}}}}\n")
@@ -829,7 +831,7 @@ func classicSkillTopologyExact(home, source string) bool {
 }
 func exactClaudeClassicProjections(home string) bool {
 	instructions := claudecode.ObserveInstructions(filepath.Join(home, ".claude", "CLAUDE.md"))
-	wantInstruction := prompt.CodexContent() + "\n" + prompt.RulesContent()
+	wantInstruction := prompt.CodexContent()
 	if instructions.Err != nil || instructions.MarkerCardinality != 1 || instructions.Contributions["classic"] != claudecode.Fingerprint([]byte(strings.TrimSpace(wantInstruction))) {
 		return false
 	}

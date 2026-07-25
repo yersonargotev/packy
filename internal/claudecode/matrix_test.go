@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/prompt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,33 @@ func TestVersionRunnerFailureMatrix(t *testing.T) {
 		if got := ClassifyVersion(tc.o); got != tc.want {
 			t.Errorf("%+v=%s want %s", tc.o, got, tc.want)
 		}
+	}
+}
+
+func TestInstructionObservationReportsRulesSource(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "CLAUDE.md")
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	document, err := UpsertInstructionContribution(external, InstructionContribution{ContributorID: "classic", Content: prompt.CodexContent()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observation := ObserveInstructions(path)
+	if observation.Err != nil || !observation.RulesExternallySatisfied || observation.RulesPackyProjected {
+		t.Fatalf("external observation=%+v", observation)
+	}
+	document, err = UpsertInstructionContribution("", InstructionContribution{ContributorID: "classic", Content: prompt.CodexContent() + "\n" + prompt.RulesContent()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observation = ObserveInstructions(path)
+	if observation.Err != nil || observation.RulesExternallySatisfied || !observation.RulesPackyProjected {
+		t.Fatalf("Packy observation=%+v", observation)
 	}
 }
 

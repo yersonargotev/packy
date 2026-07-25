@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
+	"github.com/yersonargotev/packy/internal/prompt"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 )
 
@@ -48,6 +50,79 @@ func TestInstallPreviewIsReadOnlyAndItsActionViewCannotMutateThePlan(t *testing.
 	}
 	if len(commands.runs) != 0 {
 		t.Fatalf("Preview(Install) executed commands: %#v", commands.runs)
+	}
+}
+
+func TestInstallApplyRejectsOpenCodeRulesChangedAfterPreviewBeforeEffects(t *testing.T) {
+	config := installTestConfig(t)
+	externalPath := filepath.Join(filepath.Dir(config.OpenCode.ConfigFile()), "external.md")
+	if err := os.MkdirAll(filepath.Dir(config.OpenCode.ConfigFile()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configContent := `{"instructions":[` + strconv.Quote(externalPath) + `]}`
+	if err := os.WriteFile(config.OpenCode.ConfigFile(), []byte(configContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	commands := &installTestCommands{}
+	facade := newTestFacade(config, commands, time.Now)
+	plan, err := facade.Preview(Install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	external := "<!-- dots:rules -->\n" +
+		strings.Replace(prompt.RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
+		"<!-- /dots:rules -->"
+	if err := os.WriteFile(externalPath, []byte(external), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := facade.Apply(context.Background(), plan); !errors.Is(err, opencode.ErrStaleWritePlan) {
+		t.Fatalf("Apply error = %v, want %v", err, opencode.ErrStaleWritePlan)
+	}
+	if len(commands.runs) != 0 {
+		t.Fatalf("stale plan executed commands: %#v", commands.runs)
+	}
+	for _, path := range []string{config.State.StateFile(), config.OpenCode.PromptFile(), config.Codex.PromptFile()} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale plan wrote %s: %v", path, err)
+		}
+	}
+	if got, err := os.ReadFile(config.OpenCode.ConfigFile()); err != nil || string(got) != configContent {
+		t.Fatalf("stale plan changed OpenCode config: got=%q err=%v", got, err)
+	}
+}
+
+func TestInstallApplyRejectsCodexRulesChangedAfterPreviewBeforeEffects(t *testing.T) {
+	config := installTestConfig(t)
+	commands := &installTestCommands{}
+	facade := newTestFacade(config, commands, time.Now)
+	plan, err := facade.Preview(Install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	external := "<!-- dots:rules -->\n" +
+		strings.Replace(prompt.RulesContent(), "## Packy Agent Rules", "## Dots Agent Rules", 1) +
+		"<!-- /dots:rules -->\n"
+	if err := os.MkdirAll(filepath.Dir(config.Codex.PromptFile()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.Codex.PromptFile(), []byte(external), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := facade.Apply(context.Background(), plan); !errors.Is(err, prompt.ErrStaleCodexPlan) {
+		t.Fatalf("Apply error = %v, want %v", err, prompt.ErrStaleCodexPlan)
+	}
+	if len(commands.runs) != 0 {
+		t.Fatalf("stale plan executed commands: %#v", commands.runs)
+	}
+	for _, path := range []string{config.State.StateFile(), config.OpenCode.PromptFile()} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale plan wrote %s: %v", path, err)
+		}
+	}
+	if got, err := os.ReadFile(config.Codex.PromptFile()); err != nil || string(got) != external {
+		t.Fatalf("stale plan changed Codex prompt: got=%q err=%v", got, err)
 	}
 }
 
@@ -529,8 +604,8 @@ func TestInstallPersistenceFailuresPreserveTruthfulRecovery(t *testing.T) {
 
 func TestInstallPartialContainerCreationKeepsRecoveryEvidence(t *testing.T) {
 	config := installTestConfig(t)
-	conflict := filepath.Dir(config.Codex.PromptFile())
-	if err := os.WriteFile(conflict, []byte("contributor"), 0o600); err != nil {
+	conflict := config.OpenCode.PromptFile()
+	if err := os.MkdirAll(conflict, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	facade := newTestFacade(config, &installTestCommands{}, time.Now)
@@ -545,9 +620,9 @@ func TestInstallPartialContainerCreationKeepsRecoveryEvidence(t *testing.T) {
 	if err != nil || !found || !state.RecoveryRequired() {
 		t.Fatalf("state = %#v found %v err %v", state, found, err)
 	}
-	data, err := os.ReadFile(conflict)
-	if err != nil || string(data) != "contributor" {
-		t.Fatalf("container conflict changed: %q, %v", data, err)
+	info, err := os.Stat(conflict)
+	if err != nil || !info.IsDir() {
+		t.Fatalf("container conflict changed: %#v, %v", info, err)
 	}
 }
 
