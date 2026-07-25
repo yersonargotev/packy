@@ -75,16 +75,34 @@ an obligation cannot be classified safely, appears in more than one section, or
 has no owner when deferred, produce the existing decision-ready qualification
 exception. Never turn ambiguity into silent deferral.
 
+Before branch creation or edits, derive a complete **acceptance-evidence
+matrix** from the immutable issue snapshot. Every acceptance criterion has one
+traceable row containing:
+
+- its criterion text or a stable row ID;
+- the owning production seam, artifact, or documented boundary;
+- the positive evidence that will prove the behavior;
+- the required negative, failure, or mutation evidence;
+- compatibility, preservation, migration, or a concise reason why that evidence
+  is not applicable; and
+- its current state: `planned`, `implemented`, or `proved`.
+
+Rows may name the same implementation seam, but distinct acceptance obligations
+must not be silently collapsed. Needs-review and approved issues use the same
+matrix contract. An incomplete, ambiguous, contradictory, or unowned row enters
+the existing decision-ready exception boundary.
+
 Inspect `main`, `origin/main`, and the working tree. Use the normal checkout when
 it is clean and synchronized; otherwise prepare a temporary clean worktree from
 the fetched `origin/main` commit without changing operator state.
 
 **Complete when:** the issue is valid, its type and acceptance evidence are
-recorded, the qualified scope ledger is complete, mutually exclusive, and
-evidence-linked, any approval mutation is deferred, the immutable starting
-`origin/main` commit is known, no exception boundary is active, and the chosen
-workspace is isolated from unrelated changes. Failed validation produces an
-exception brief and stops before branch creation or code edits.
+recorded in a complete matrix with every row `planned`, the qualified scope
+ledger is complete, mutually exclusive, and evidence-linked, any approval
+mutation is deferred, the immutable starting `origin/main` commit is known, no
+exception boundary is active, and the chosen workspace is isolated from
+unrelated changes. Failed validation produces an exception brief and stops
+before branch creation or code edits.
 
 ### 2. LOCAL — Implement-review loop
 
@@ -95,8 +113,9 @@ needs architecture, symbol, call-flow, or impact analysis.
 Run these steps for every iteration:
 
 1. Record `iteration-base-sha = HEAD` and an **iteration brief** that states the
-   exact behavior or review repair this iteration must deliver. Carry the
-   qualified scope ledger and every prior scope adjudication into the brief.
+   exact behavior or review repair this iteration must deliver and names the
+   exact matrix rows it advances or repairs. Carry the qualified scope ledger
+   and every prior scope adjudication into the brief.
 2. Run Delegation Preflight. Delegate only a bounded local implementation slice
    with explicit file or module ownership. Keep small, cross-cutting,
    architectural, decision-dependent, or overlapping work inline. The primary
@@ -106,7 +125,9 @@ Run these steps for every iteration:
    seam, apply `tdd`; for a feature, advance one vertical tracer bullet with
    public-seam tests where behavior is testable; for non-code work, use targeted
    artifact verification. Keep the delta surgical, run the required checks, and
-   create one coherent local commit. Do not push it.
+   update the affected matrix rows with implementation and focused-check
+   evidence without rewriting the immutable issue snapshot. Then create one
+   coherent local commit. Do not push it.
 4. Apply `code-review` with independent Standards and Spec axes against exactly
    `iteration-base-sha...HEAD`. Give the Spec review the immutable issue and the
    iteration brief, including the ledger and prior adjudications; it judges the
@@ -118,27 +139,30 @@ Run these steps for every iteration:
    behavior as scope creep; and apply each unsatisfied **External prerequisite**
    according to its recorded exception boundary. Do not modify, vendor, or fork
    the shared `code-review` skill to supply these semantics.
-5. Adjudicate every finding. Preserve scope adjudications in later iteration
-   briefs. Rejected findings retain concise evidence and are not raised again
-   without new evidence. Each accepted finding becomes a new iteration brief and
-   returns to step 1, so its repair receives its own implementation commit and
-   review delta; a finding cannot waive or silently reclassify an **Owned now**
+5. Adjudicate every finding and update the affected matrix rows with the review
+   evidence. Preserve scope adjudications in later iteration briefs. Rejected
+   findings retain concise evidence and are not raised again without new
+   evidence. Each accepted finding becomes a new iteration brief and returns to
+   step 1, so its repair receives its own implementation commit and review
+   delta; a finding cannot waive or silently reclassify an **Owned now**
    obligation.
 
-Maintain cumulative evidence that maps every issue acceptance criterion and
-**Owned now** obligation to its implementation and focused check, while
-preserving the evidence and disposition of every other ledger entry. Once the
-latest iteration has zero actionable
+Maintain cumulative evidence in the matrix for every issue acceptance criterion
+and **Owned now** obligation, advancing rows from `planned` to `implemented` to
+`proved` as their implementation, focused checks, and review evidence become
+complete, while preserving the evidence and disposition of every other ledger
+entry. Once the latest iteration has zero actionable
 findings, run the final local gate on the unchanged `HEAD`: all acceptance
-checks, `./scripts/validate-packy.sh`, `git diff --check`, and relevant sandboxed
-real-boundary checks. Do not add a cumulative code review; every committed delta
-has already received its paired review.
+checks, `./scripts/validate-packy.sh`, `git diff --check`, relevant sandboxed
+real-boundary checks, and confirmation that every matrix row is `proved`. Any
+unproved row fails the gate. Do not add a cumulative code review; every
+committed delta has already received its paired review.
 
 **Complete when:** every implementation commit has a paired review of exactly
 its preceding `iteration-base-sha...HEAD` delta, every finding is adjudicated,
 the latest review has zero actionable findings, every acceptance criterion has
-cumulative evidence, the issue branch contains only intended commits, and every
-local gate passes on its unchanged final `HEAD`.
+a `proved` matrix row, the issue branch contains only intended commits, and
+every local gate passes on its unchanged final `HEAD`.
 
 ### 3. NON-LOCAL — Deliver
 
@@ -186,8 +210,9 @@ Stop only when acceptance criteria conflict or permit materially different
 behavior; no deterministic reproduction or valid regression seam exists;
 implementation requires a material scope, architecture, or real-user
 configuration change; the issue or its authoritative specification changes
-materially before the first mutation and cannot be requalified safely; or a
-review finding needs an unstated product decision.
+materially before the first mutation and cannot be requalified safely; an
+acceptance-evidence row is incomplete, ambiguous, contradictory, or unowned; or
+a review finding needs an unstated product decision.
 
 Failed qualification leaves issue labels and state unchanged. Every exception
 presents one decision-ready brief before the workflow continues.
@@ -195,14 +220,15 @@ presents one decision-ready brief before the workflow continues.
 ## Briefs
 
 The success brief links the issue and PR; names the merge commit; summarizes the
-change; maps evidence to acceptance criteria; summarizes relevant scope
+change and the completed acceptance-evidence matrix; summarizes relevant scope
 decisions and preserved deferrals; reports local validation, every iteration
 review, and CI; confirms cleanup; and notes preserved local state.
 
-An exception brief presents evidence, summarizes the relevant scope decisions,
-external-prerequisite dispositions, and preserved deferrals, explains why the
-workflow cannot choose safely, lists concrete options, recommends one, and asks
-for exactly one decision. Briefs link artifacts and omit raw logs.
+An exception brief consumes the affected matrix rows directly, presents their
+evidence, summarizes the relevant scope decisions, external-prerequisite
+dispositions, and preserved deferrals, explains why the workflow cannot choose
+safely, lists concrete options, recommends one, and asks for exactly one
+decision. Briefs link artifacts and omit raw logs.
 
 ## Definition of done
 
