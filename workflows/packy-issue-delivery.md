@@ -54,12 +54,34 @@ For a needs-review issue, gather enough evidence to approve or reject it, but
 record approval only as deferred intent. LOCAL performs no label or other GitHub
 mutation. For an approved issue, perform the lighter currency check.
 
+From the immutable issue, accepted ADRs or specification, dependency graph, and
+qualification evidence, record a complete **qualified scope ledger**. Classify
+each distinct obligation into exactly one of these mutually exclusive sections:
+
+- **Owned now** — behavior this issue must implement and prove. Link every entry
+  to an issue criterion, exact specification section, or accepted decision.
+- **Deferred** — real behavior intentionally assigned elsewhere. Link the
+  evidence and name a concrete owning issue, delivery-graph slice, prerequisite,
+  or exact specification section; "future work" without an owner is invalid.
+- **Forbidden** — behavior this issue must not introduce, including explicit
+  exclusions, architecture boundaries, real-user mutations, publication or
+  release effects, and premature product content.
+- **External prerequisites** — human authority, legal evidence, credentials,
+  infrastructure, or other facts the local implementation cannot produce.
+  Record each prerequisite's current disposition and exception boundary.
+
+Use Packy's accepted domain vocabulary and evidence-link every ledger entry. If
+an obligation cannot be classified safely, appears in more than one section, or
+has no owner when deferred, produce the existing decision-ready qualification
+exception. Never turn ambiguity into silent deferral.
+
 Inspect `main`, `origin/main`, and the working tree. Use the normal checkout when
 it is clean and synchronized; otherwise prepare a temporary clean worktree from
 the fetched `origin/main` commit without changing operator state.
 
 **Complete when:** the issue is valid, its type and acceptance evidence are
-recorded, any approval mutation is deferred, the immutable starting
+recorded, the qualified scope ledger is complete, mutually exclusive, and
+evidence-linked, any approval mutation is deferred, the immutable starting
 `origin/main` commit is known, no exception boundary is active, and the chosen
 workspace is isolated from unrelated changes. Failed validation produces an
 exception brief and stops before branch creation or code edits.
@@ -73,7 +95,8 @@ needs architecture, symbol, call-flow, or impact analysis.
 Run these steps for every iteration:
 
 1. Record `iteration-base-sha = HEAD` and an **iteration brief** that states the
-   exact behavior or review repair this iteration must deliver.
+   exact behavior or review repair this iteration must deliver. Carry the
+   qualified scope ledger and every prior scope adjudication into the brief.
 2. Run Delegation Preflight. Delegate only a bounded local implementation slice
    with explicit file or module ownership. Keep small, cross-cutting,
    architectural, decision-dependent, or overlapping work inline. The primary
@@ -86,14 +109,26 @@ Run these steps for every iteration:
    create one coherent local commit. Do not push it.
 4. Apply `code-review` with independent Standards and Spec axes against exactly
    `iteration-base-sha...HEAD`. Give the Spec review the immutable issue and the
-   iteration brief; it judges the obligations of this delta rather than treating
-   earlier out-of-delta work as missing.
-5. Adjudicate every finding. Rejected findings retain concise evidence. Each
-   accepted finding becomes a new iteration brief and returns to step 1, so its
-   repair receives its own implementation commit and review delta.
+   iteration brief, including the ledger and prior adjudications; it judges the
+   obligations of this delta rather than treating earlier out-of-delta work as
+   missing. Through this caller-owned context, instruct the Spec axis to report
+   missing or wrong **Owned now** obligations assigned to the iteration; not
+   report **Deferred** obligations as missing unless the delta contradicts,
+   prematurely implements, or invalidates their named owner; treat **Forbidden**
+   behavior as scope creep; and apply each unsatisfied **External prerequisite**
+   according to its recorded exception boundary. Do not modify, vendor, or fork
+   the shared `code-review` skill to supply these semantics.
+5. Adjudicate every finding. Preserve scope adjudications in later iteration
+   briefs. Rejected findings retain concise evidence and are not raised again
+   without new evidence. Each accepted finding becomes a new iteration brief and
+   returns to step 1, so its repair receives its own implementation commit and
+   review delta; a finding cannot waive or silently reclassify an **Owned now**
+   obligation.
 
-Maintain cumulative evidence that maps every issue acceptance criterion to its
-implementation and focused check. Once the latest iteration has zero actionable
+Maintain cumulative evidence that maps every issue acceptance criterion and
+**Owned now** obligation to its implementation and focused check, while
+preserving the evidence and disposition of every other ledger entry. Once the
+latest iteration has zero actionable
 findings, run the final local gate on the unchanged `HEAD`: all acceptance
 checks, `./scripts/validate-packy.sh`, `git diff --check`, and relevant sandboxed
 real-boundary checks. Do not add a cumulative code review; every committed delta
@@ -107,10 +142,13 @@ local gate passes on its unchanged final `HEAD`.
 
 ### 3. NON-LOCAL — Deliver
 
-Re-read the issue before its first mutation. If a needs-review issue still
-matches the qualified snapshot, replace `status:needs-review` with
-`status:approved`; if it changed materially or the mutation fails, stop before
-the PR with an exception brief.
+Re-read the issue and its authoritative specification before the first
+mutation. If either changed materially, return to LOCAL qualification and
+replace the active ledger from the new immutable evidence; do not patch the
+qualified ledger forward. If a needs-review issue still matches the qualified
+snapshot, replace `status:needs-review` with `status:approved`. If safe
+requalification is impossible or the mutation fails, stop before the PR with an
+exception brief. Preserve the prior ledger and adjudication history as evidence.
 
 Push the issue branch and create a PR to `main` with `Closes #N`, the change
 summary, and validation evidence. Wait for every required CI check on the exact
@@ -147,8 +185,9 @@ failures, failing tests, review repairs, and red CI remain autonomous loop work.
 Stop only when acceptance criteria conflict or permit materially different
 behavior; no deterministic reproduction or valid regression seam exists;
 implementation requires a material scope, architecture, or real-user
-configuration change; the issue changes materially before its first mutation;
-or a review finding needs an unstated product decision.
+configuration change; the issue or its authoritative specification changes
+materially before the first mutation and cannot be requalified safely; or a
+review finding needs an unstated product decision.
 
 Failed qualification leaves issue labels and state unchanged. Every exception
 presents one decision-ready brief before the workflow continues.
@@ -156,12 +195,14 @@ presents one decision-ready brief before the workflow continues.
 ## Briefs
 
 The success brief links the issue and PR; names the merge commit; summarizes the
-change; maps evidence to acceptance criteria; reports local validation, every
-iteration review, and CI; confirms cleanup; and notes preserved local state.
+change; maps evidence to acceptance criteria; summarizes relevant scope
+decisions and preserved deferrals; reports local validation, every iteration
+review, and CI; confirms cleanup; and notes preserved local state.
 
-An exception brief presents evidence, explains why the workflow cannot choose
-safely, lists concrete options, recommends one, and asks for exactly one
-decision. Briefs link artifacts and omit raw logs.
+An exception brief presents evidence, summarizes the relevant scope decisions,
+external-prerequisite dispositions, and preserved deferrals, explains why the
+workflow cannot choose safely, lists concrete options, recommends one, and asks
+for exactly one decision. Briefs link artifacts and omit raw logs.
 
 ## Definition of done
 
