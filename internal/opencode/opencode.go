@@ -70,7 +70,11 @@ func PreviewWrite(configPath, promptPath string) (WritePlan, error) {
 	if err != nil {
 		return WritePlan{}, err
 	}
-	rules, seal, err := observeInstructionRules(existing, configPath, promptPath)
+	instructions, err := configuredInstructions(existing, configPath)
+	if err != nil {
+		return WritePlan{}, err
+	}
+	rules, seal, err := observeInstructionRules(instructions, configPath, promptPath)
 	if err != nil {
 		return WritePlan{}, err
 	}
@@ -115,7 +119,11 @@ func ValidateWritePlan(plan WritePlan) error {
 	if err != nil {
 		return err
 	}
-	_, seal, err := observeInstructionRules(existing, plan.configPath, plan.promptPath)
+	instructions, err := configuredInstructions(existing, plan.configPath)
+	if err != nil {
+		return err
+	}
+	_, seal, err := observeInstructionRules(instructions, plan.configPath, plan.promptPath)
 	if err != nil {
 		return err
 	}
@@ -132,14 +140,14 @@ type instructionRuleSnapshot struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
-func observeInstructionRules(configContent, configPath, promptPath string) (externalRulesObservation, string, error) {
-	instructions, err := configuredInstructions(configContent, configPath)
-	if err != nil {
-		return externalRulesObservation{}, "", err
-	}
+func observeInstructionRules(instructions []string, configPath, promptPath string) (externalRulesObservation, string, error) {
 	var observation externalRulesObservation
 	var snapshots []instructionRuleSnapshot
 	for _, instruction := range instructions {
+		referencesPrompt := instructionReferencesPath(configPath, instruction, promptPath)
+		if referencesPrompt {
+			snapshots = append(snapshots, instructionRuleSnapshot{Reference: instruction, Path: promptPath, State: "packy-owned"})
+		}
 		paths := instructionPaths(configPath, instruction)
 		if len(paths) == 0 {
 			snapshots = append(snapshots, instructionRuleSnapshot{Reference: instruction, State: "opaque"})
@@ -148,8 +156,10 @@ func observeInstructionRules(configContent, configPath, promptPath string) (exte
 		for _, path := range paths {
 			snapshot := instructionRuleSnapshot{Reference: instruction, Path: path}
 			if filepath.Clean(path) == filepath.Clean(promptPath) {
-				snapshot.State = "packy-owned"
-				snapshots = append(snapshots, snapshot)
+				if !referencesPrompt {
+					snapshot.State = "packy-owned"
+					snapshots = append(snapshots, snapshot)
+				}
 				continue
 			}
 			content, err := os.ReadFile(path)
@@ -214,6 +224,32 @@ func instructionPaths(configPath, instruction string) []string {
 		return []string{path}
 	}
 	return matches
+}
+
+func instructionReferencesPath(configPath, instruction, target string) bool {
+	if strings.Contains(instruction, "://") {
+		return false
+	}
+	pattern := instruction
+	if !filepath.IsAbs(pattern) {
+		pattern = filepath.Join(filepath.Dir(configPath), pattern)
+	}
+	pattern = filepath.Clean(pattern)
+	target = filepath.Clean(target)
+	if !strings.ContainsAny(pattern, "*?[") {
+		return pattern == target
+	}
+	matches, err := filepath.Match(pattern, target)
+	return err == nil && matches
+}
+
+func instructionsReferencePath(configPath string, instructions []string, target string) bool {
+	for _, instruction := range instructions {
+		if instructionReferencesPath(configPath, instruction, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func appendUniqueString(values []string, value string) []string {
@@ -328,7 +364,11 @@ func Inspect(configPath, promptPath string) (Inspection, error) {
 	if err != nil {
 		return Inspection{}, err
 	}
-	rules, _, err := observeInstructionRules(existing, configPath, promptPath)
+	instructions, err := configuredInstructions(existing, configPath)
+	if err != nil {
+		return Inspection{}, err
+	}
+	rules, _, err := observeInstructionRules(instructions, configPath, promptPath)
 	if err != nil {
 		return Inspection{}, err
 	}
@@ -345,24 +385,7 @@ func Inspect(configPath, promptPath string) (Inspection, error) {
 	if strings.TrimSpace(existing) == "" {
 		return inspection, nil
 	}
-	config := map[string]any{}
-	jsonData, err := jsoncToJSON(existing)
-	if err != nil {
-		return Inspection{}, fmt.Errorf("read OpenCode config %s: invalid JSONC: %w", configPath, err)
-	}
-	if err := json.Unmarshal(jsonData, &config); err != nil {
-		return Inspection{}, fmt.Errorf("read OpenCode config %s: invalid JSONC: %w", configPath, err)
-	}
-	instructions, err := instructionStrings(config["instructions"])
-	if err != nil {
-		return Inspection{}, err
-	}
-	for _, instruction := range instructions {
-		if instruction == promptPath {
-			inspection.HasPackyInstruction = true
-			break
-		}
-	}
+	inspection.HasPackyInstruction = instructionsReferencePath(configPath, instructions, promptPath)
 	return inspection, nil
 }
 func mergeInstruction(existing, configPath, promptPath string) (string, error) {
@@ -402,6 +425,9 @@ func updateInstructions(existing, configPath, promptPath string, operation instr
 		return marshalConfigWithInstructions(config, instructions)
 	}
 	if operation == instructionMerge {
+		if instructionsReferencePath(configPath, instructions, promptPath) {
+			return existing, nil
+		}
 		return patchInstructionMerge(existing, promptPath)
 	}
 	return patchInstructionRemove(existing, promptPath)

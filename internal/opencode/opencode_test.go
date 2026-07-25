@@ -116,6 +116,100 @@ func TestWriteUsesExactReferencedDotsRulesWithoutDuplicatingOrTakingOwnership(t 
 	}
 }
 
+func TestWriteResolvesRelativeAndGlobInstructionReferencesWithoutAddingDuplicates(t *testing.T) {
+	t.Run("relative Packy prompt", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "opencode.json")
+		promptPath := filepath.Join(dir, "packy.md")
+		config := `{"instructions":["packy.md"]}`
+		if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := Write(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := readString(t, configPath); got != config {
+			t.Fatalf("relative reference was duplicated:\n got %q\nwant %q", got, config)
+		}
+		inspection, err := Inspect(configPath, promptPath)
+		if err != nil || !inspection.HasPackyInstruction {
+			t.Fatalf("inspection = %#v, err = %v", inspection, err)
+		}
+		if err := Remove(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := readString(t, configPath); got != config {
+			t.Fatalf("uninstall changed foreign relative reference:\n got %q\nwant %q", got, config)
+		}
+	})
+
+	t.Run("glob covers Packy prompt and exact external rules", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "opencode.json")
+		promptPath := filepath.Join(dir, "packy.md")
+		externalPath := filepath.Join(dir, "dots.md")
+		config := `{"instructions":["*.md"]}`
+		external := exactDotsRulesFixture()
+		if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(externalPath, []byte(external), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := Write(configPath, promptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readString(t, configPath); got != config {
+			t.Fatalf("glob reference was duplicated:\n got %q\nwant %q", got, config)
+		}
+		if strings.Contains(readString(t, promptPath), "<!-- packy:rules -->") {
+			t.Fatal("exact rules reached through glob did not suppress Packy rules")
+		}
+		if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], externalPath) {
+			t.Fatalf("warnings = %#v", result.Warnings)
+		}
+		inspection, err := Inspect(configPath, promptPath)
+		if err != nil || !inspection.HasPackyInstruction || !inspection.RulesExternallySatisfied {
+			t.Fatalf("inspection = %#v, err = %v", inspection, err)
+		}
+		if err := Remove(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := readString(t, configPath); got != config {
+			t.Fatalf("uninstall changed foreign glob reference:\n got %q\nwant %q", got, config)
+		}
+		if got := readString(t, externalPath); got != external {
+			t.Fatalf("uninstall changed external rules:\n got %q\nwant %q", got, external)
+		}
+	})
+
+	t.Run("opaque reference is preserved", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "opencode.json")
+		promptPath := filepath.Join(dir, "packy.md")
+		opaque := "https://example.test/instructions.md"
+		if err := os.WriteFile(configPath, []byte(`{"instructions":[`+quoted(opaque)+`]}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := Write(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := stringSlice(t, readJSON(t, configPath)["instructions"]); !slices.Equal(got, []string{opaque, promptPath}) {
+			t.Fatalf("instructions = %#v", got)
+		}
+		if err := Remove(configPath, promptPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := stringSlice(t, readJSON(t, configPath)["instructions"]); !slices.Equal(got, []string{opaque}) {
+			t.Fatalf("instructions after uninstall = %#v", got)
+		}
+	})
+}
+
 func TestWritePreservesDifferingAndMalformedReferencedDotsRules(t *testing.T) {
 	for name, tc := range map[string]struct {
 		external string
