@@ -52,6 +52,7 @@ var packyOwnedPackages = []string{
 	"./internal/tools/governanceauth",
 	"./internal/tools/governancedrift",
 	"./internal/tools/syncpacksource",
+	"./internal/vercelacceptance",
 	"./internal/version",
 	"./internal/workstation",
 }

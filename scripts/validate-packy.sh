@@ -37,6 +37,7 @@ readonly packages=(
   ./internal/tools/governanceauth
   ./internal/tools/governancedrift
   ./internal/tools/syncpacksource
+  ./internal/vercelacceptance
   ./internal/version
   ./internal/workstation
 )
