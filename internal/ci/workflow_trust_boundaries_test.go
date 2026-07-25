@@ -303,6 +303,7 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"addy-promotion-gate":        {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
 		"validate":                   {"contents": "read"},
 		"claude-floor-smoke":         {"contents": "read"},
+		"codex-floor-smoke":          {"contents": "read"},
 		"addy-promotion-main-replay": {"contents": "read"},
 	},
 	".github/workflows/claude-canary.yml": {

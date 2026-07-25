@@ -17,6 +17,7 @@ readonly packages=(
   ./internal/cli
   ./internal/claudesmoke
   ./internal/codex
+  ./internal/codexsmoke
   ./internal/corelifecycle
   ./internal/engrambin
   ./internal/governanceauth
@@ -34,6 +35,7 @@ readonly packages=(
   ./internal/skillbundle
   ./internal/tools/addypromotiongate
   ./internal/tools/claudesmoke
+  ./internal/tools/codexsmoke
   ./internal/tools/governanceauth
   ./internal/tools/governancedrift
   ./internal/tools/syncpacksource
