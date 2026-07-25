@@ -382,8 +382,89 @@ func (p compositeProvenance) RevalidateComposite(ctx context.Context, plan packs
 }
 
 type bundleProposalBuilder struct {
-	plan    packsync.CompositePlan
-	gateway *githubGateway
+	plan                 packsync.CompositePlan
+	request              packsyncworkflow.BundleDispatchRequest
+	classificationSHA256 string
+	gateway              *githubGateway
+}
+
+type bundleReviewBrief struct {
+	SchemaVersion           int                                     `json:"schema_version"`
+	Actor                   string                                  `json:"actor"`
+	RunID                   string                                  `json:"run_id"`
+	RunAttempt              string                                  `json:"run_attempt"`
+	RunURL                  string                                  `json:"run_url"`
+	Repository              string                                  `json:"repository"`
+	Request                 packsyncworkflow.BundleDispatchRequest  `json:"request"`
+	Identity                packsyncworkflow.BundleArtifactIdentity `json:"identity"`
+	ClassificationSHA256    string                                  `json:"classification_sha256"`
+	HeadSHA                 string                                  `json:"head_sha"`
+	ResultTreeSHA           string                                  `json:"result_tree_sha"`
+	Branch                  string                                  `json:"branch"`
+	PullRequest             int                                     `json:"pull_request,omitempty"`
+	SelectedResources       []packsync.ResourceEvidence             `json:"selected_resources"`
+	PreviousSnapshotSHA256  string                                  `json:"previous_snapshot_sha256"`
+	ProposedSnapshotSHA256  string                                  `json:"proposed_snapshot_sha256"`
+	ApplyStatus             string                                  `json:"apply_status"`
+	Validation              packsyncworkflow.ValidationGates        `json:"validation"`
+	UpstreamContentExecuted bool                                    `json:"upstream_content_executed"`
+	Blockers                []string                                `json:"blockers"`
+	DecisionReady           bool                                    `json:"decision_ready"`
+	AutoMerge               bool                                    `json:"auto_merge"`
+	ManualMergeRequired     bool                                    `json:"manual_merge_required"`
+	InvalidationConditions  []string                                `json:"invalidation_conditions"`
+	Recovery                []string                                `json:"recovery"`
+}
+
+func (brief *bundleReviewBrief) PreparePublication(proposal packsyncworkflow.Proposal) {
+	brief.ResultTreeSHA = proposal.ResultTreeSHA
+	brief.Validation = proposal.Validation
+	brief.DecisionReady = false
+	brief.Blockers = []string{"Publication remains blocked until the exact post-write pull request identity is reobserved."}
+	brief.InvalidationConditions = proposal.InvalidationConditions
+}
+
+func (brief *bundleReviewBrief) FinalizePublication(proposal packsyncworkflow.Proposal, observed packsyncworkflow.PRState) {
+	brief.PullRequest = observed.Number
+	brief.HeadSHA = observed.HeadSHA
+	brief.Validation = proposal.Validation
+	brief.Blockers = nil
+	brief.DecisionReady = true
+	brief.InvalidationConditions = proposal.InvalidationConditions
+}
+
+func (brief *bundleReviewBrief) Markdown() (string, error) {
+	if brief.SchemaVersion != 3 || brief.Request.Validate() != nil || brief.Identity.Validate() != nil ||
+		brief.Request.PackID != brief.Identity.PackID ||
+		brief.Request.RegistrationBundleSHA256 != brief.Identity.RegistrationBundleSHA256 ||
+		brief.Request.ProposedVersion != brief.Identity.ProposedVersion ||
+		brief.Request.ProposedManifestSHA256 != brief.Identity.ProposedManifestSHA256 ||
+		!validLowerHex(brief.ClassificationSHA256, 64) ||
+		!validLowerHex(brief.HeadSHA, 40) || !validLowerHex(brief.ResultTreeSHA, 40) ||
+		brief.Branch != "sync/"+brief.Identity.PackID || len(brief.SelectedResources) == 0 ||
+		!validLowerHex(brief.PreviousSnapshotSHA256, 64) || !validLowerHex(brief.ProposedSnapshotSHA256, 64) ||
+		!brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired ||
+		brief.RunURL == "" || brief.Repository == "" || brief.RunID == "" {
+		return "", errors.New("v3 bundle review brief is incomplete or contradictory")
+	}
+	canonical, err := json.MarshalIndent(brief, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	canonical = append(canonical, '\n')
+	status := "blocked"
+	if brief.DecisionReady {
+		status = "decision-ready"
+	}
+	return fmt.Sprintf("## Packy composite Pack registration\n\n- Pack: `%s`\n- Members: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Auto-merge: disabled; manual merge required.\n\nAuthorization-Exception: automation\nAuthorization-Record: %s\n\n<details><summary>Canonical v3 composite admission evidence</summary>\n\n```json\n%s```\n</details>\n", brief.Identity.PackID, strings.Join(brief.Identity.SourceIDs, ", "), brief.Identity.PlanID, brief.Identity.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, string(canonical)), nil
+}
+
+func validLowerHex(value string, length int) bool {
+	if len(value) != length {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil && value == strings.ToLower(value)
 }
 
 func compositeCandidateSHA(plan packsync.CompositePlan) string {
@@ -417,21 +498,26 @@ func (b *bundleProposalBuilder) Build(ctx context.Context, root string, result p
 	if err != nil {
 		return packsyncworkflow.Proposal{}, err
 	}
-	candidate := b.plan.Members[0].Candidate
-	candidate.Commit = completeCandidate
-	candidate.Repository = ""
 	selected := []packsync.ResourceEvidence{}
 	for _, member := range b.plan.Members {
 		selected = append(selected, member.ProposedLock.Resources...)
 	}
-	dispatch := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationSynchronize, SourceID: b.plan.PackID, Selector: packsyncworkflow.SelectorCommit, SelectorRef: candidate.Commit, ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "composite Pack registration"}
-	b.gateway.brief = packsyncworkflow.ReviewBrief{SchemaVersion: 1, Actor: os.Getenv("GITHUB_ACTOR"), RunID: os.Getenv("GITHUB_RUN_ID"), RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"), RunURL: actionsRunURL(), Repository: os.Getenv("GITHUB_REPOSITORY"), Request: dispatch, Candidate: candidate, PlanID: b.plan.PlanID, BaseSHA: b.plan.Preconditions.BaseCommit, HeadSHA: strings.TrimSpace(head), Branch: "sync/" + b.plan.PackID, Changes: []packsync.Change{}, Discoveries: []string{}, SelectedResources: selected, PreviousSnapshotSHA256: b.plan.Preconditions.BundleSHA256, ProposedSnapshotSHA256: b.plan.ResultBundleSHA256, Classification: []packsync.ClassificationEvidence{}, ApplyStatus: result.Status, Validation: completeBundleGates(), UpstreamContentExecuted: false, Blockers: []string{"Publication remains blocked until exact reobservation."}, AutoMerge: false, ManualMergeRequired: true, Recovery: []string{"Repeat Inspect when any sealed bundle fact changes."}}
-	title := fmt.Sprintf("sync(%s): composite registration", b.plan.PackID)
 	tree, err := command(ctx, root, "git", "write-tree")
 	if err != nil {
 		return packsyncworkflow.Proposal{}, err
 	}
-	proposal := packsyncworkflow.Proposal{SourceID: b.plan.PackID, PlanID: b.plan.PlanID, BaseSHA: b.plan.Preconditions.BaseCommit, CandidateSHA: candidate.Commit, ResultTreeSHA: strings.TrimSpace(tree), HeadSHA: strings.TrimSpace(head), ProvenanceSHA256: b.plan.RegistrationBundleSHA256, ManagedTitle: title}
+	b.gateway.brief = &bundleReviewBrief{
+		SchemaVersion: 3, Actor: os.Getenv("GITHUB_ACTOR"), RunID: os.Getenv("GITHUB_RUN_ID"),
+		RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"), RunURL: actionsRunURL(), Repository: os.Getenv("GITHUB_REPOSITORY"),
+		Request: b.request, Identity: bundleIdentity(b.plan), ClassificationSHA256: b.classificationSHA256,
+		HeadSHA: strings.TrimSpace(head), ResultTreeSHA: strings.TrimSpace(tree), Branch: "sync/" + b.plan.PackID,
+		SelectedResources: selected, PreviousSnapshotSHA256: b.plan.Preconditions.BundleSHA256,
+		ProposedSnapshotSHA256: b.plan.ResultBundleSHA256, ApplyStatus: result.Status, Validation: completeBundleGates(),
+		UpstreamContentExecuted: false, Blockers: []string{"Publication remains blocked until exact reobservation."},
+		AutoMerge: false, ManualMergeRequired: true, Recovery: []string{"Repeat Inspect when any sealed bundle fact changes."},
+	}
+	title := fmt.Sprintf("sync(%s): composite registration", b.plan.PackID)
+	proposal := packsyncworkflow.Proposal{SourceID: b.plan.PackID, PlanID: b.plan.PlanID, BaseSHA: b.plan.Preconditions.BaseCommit, CandidateSHA: completeCandidate, ResultTreeSHA: strings.TrimSpace(tree), HeadSHA: strings.TrimSpace(head), ProvenanceSHA256: b.plan.RegistrationBundleSHA256, ManagedTitle: title}
 	b.gateway.title = title
 	return proposal, nil
 }
@@ -461,6 +547,10 @@ func publishBundle(ctx context.Context, option options, output io.Writer) error 
 	if err := matchBundleClassification(option.evidencePath, bundleIdentity(plan)); err != nil {
 		return errors.New("v3 classification artifact is stale or mixed")
 	}
+	var classification packsyncworkflow.BundleClassificationArtifact
+	if err := readJSON(filepath.Join(filepath.Dir(option.evidencePath), "classification.json"), &classification); err != nil {
+		return err
+	}
 	manifest, version := bundleGeneration(request)
 	acquisition, err := os.MkdirTemp("", "packy-bundle-publish-")
 	if err != nil {
@@ -478,7 +568,7 @@ func publishBundle(ctx context.Context, option options, output io.Writer) error 
 		}
 		return packsyncworkflow.CandidateRegressive
 	}
-	builder := &bundleProposalBuilder{plan: plan, gateway: gateway}
+	builder := &bundleProposalBuilder{plan: plan, request: request, classificationSHA256: classification.ClassificationSHA256, gateway: gateway}
 	publisher := packsyncworkflow.BundlePublisher{Applier: engine, Validator: validator, Builder: builder, Diff: gitDiffVerifier{}, Provenance: compositeProvenance{engine: engine}, GitHub: gateway}
 	result, err := publisher.Run(ctx, packsyncworkflow.BundlePublishRequest{
 		RepositoryRoot:        option.repositoryRoot,

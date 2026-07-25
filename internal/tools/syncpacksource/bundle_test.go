@@ -50,10 +50,12 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	hash := strings.Repeat("c", 64)
 	members := []packsyncworkflow.BundleRegistration{
-		{Registration: packsync.SourceConfig{ID: "source-a", Provider: "github", Repository: lock.Candidate.Repository, Selector: packsync.Selector{Mode: packsync.SelectorCommit, Ref: shaA}, Resources: []packsync.Binding{{PackID: "adapter-composite", Kind: "skill", ResourceID: "one", UpstreamPath: "skill"}}}, LegalAdmission: packsync.CompositeLegalAdmission{EvidenceReference: "evidence/a", EvidenceSHA256: hash, Disposition: packsync.RedistributableDisposition}},
-		{Registration: packsync.SourceConfig{ID: "source-b", Provider: "github", Repository: lock.Candidate.Repository, Selector: packsync.Selector{Mode: packsync.SelectorCommit, Ref: shaB}, Resources: []packsync.Binding{{PackID: "adapter-composite", Kind: "reference", ResourceID: "two", UpstreamPath: "notice.md"}}}, LegalAdmission: packsync.CompositeLegalAdmission{EvidenceReference: "evidence/b", EvidenceSHA256: hash, Disposition: packsync.RedistributableDisposition}},
+		{Registration: packsync.SourceConfig{ID: "source-a", Provider: "github", Repository: lock.Candidate.Repository, Selector: packsync.Selector{Mode: packsync.SelectorCommit, Ref: shaA}, Resources: []packsync.Binding{{PackID: "adapter-composite", Kind: "skill", ResourceID: "one", UpstreamPath: "skill"}}}, LegalAdmission: packsync.CompositeLegalAdmission{EvidenceReference: "evidence/a.json", Disposition: packsync.RedistributableDisposition}},
+		{Registration: packsync.SourceConfig{ID: "source-b", Provider: "github", Repository: lock.Candidate.Repository, Selector: packsync.Selector{Mode: packsync.SelectorCommit, Ref: shaB}, Resources: []packsync.Binding{{PackID: "adapter-composite", Kind: "reference", ResourceID: "two", UpstreamPath: "notice.md"}}}, LegalAdmission: packsync.CompositeLegalAdmission{EvidenceReference: "evidence/b.json", Disposition: packsync.RedistributableDisposition}},
+	}
+	for i := range members {
+		members[i].LegalAdmission.EvidenceSHA256 = writeAdapterLegalEvidence(t, base, members[i])
 	}
 	digest, err := packsyncworkflow.CanonicalRegistrationBundleSHA256("adapter-composite", members)
 	if err != nil {
@@ -117,6 +119,11 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	if !publication.DecisionReady || publication.BranchName != "sync/adapter-composite" || publication.ResultTreeSHA == "" || fakeGitHub.createCalls != 1 {
 		t.Fatalf("composite publication = %#v, creates=%d", publication, fakeGitHub.createCalls)
 	}
+	if fakeGitHub.pr == nil || !strings.Contains(fakeGitHub.pr.body, `"schema_version": 3`) ||
+		!strings.Contains(fakeGitHub.pr.body, `"pack_id": "adapter-composite"`) ||
+		strings.Contains(fakeGitHub.pr.body, `"operation": "synchronize"`) {
+		t.Fatalf("composite PR evidence is not v3-native: %#v", fakeGitHub.pr)
+	}
 
 	evidencePath := filepath.Join(classifyDir, "classification-evidence.json")
 	artifactPath := filepath.Join(classifyDir, "classification.json")
@@ -170,6 +177,58 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	if fakeGitHub.pushCalls != pushesBefore {
 		t.Fatal("moved member reached GitHub mutation")
 	}
+}
+
+type compositeAdapterLegalEvidence struct {
+	SchemaVersion    int                              `json:"schema_version"`
+	EvidenceID       string                           `json:"evidence_id"`
+	DurableReference string                           `json:"durable_reference"`
+	Issuer           string                           `json:"issuer"`
+	EvidenceOrigin   string                           `json:"evidence_origin"`
+	Decision         string                           `json:"decision"`
+	Candidate        packsync.LegalAdmissionCandidate `json:"candidate"`
+	Disposition      string                           `json:"disposition"`
+	Rights           []string                         `json:"rights"`
+	Obligations      []string                         `json:"obligations"`
+	Disclosures      []string                         `json:"disclosures"`
+	Scope            packsync.LegalAdmissionScope     `json:"scope"`
+	Validity         string                           `json:"validity"`
+	Invalidation     string                           `json:"invalidation"`
+}
+
+func writeAdapterLegalEvidence(t *testing.T, repository string, member packsyncworkflow.BundleRegistration) string {
+	t.Helper()
+	selected := make([]string, 0, len(member.Registration.Resources))
+	for _, binding := range member.Registration.Resources {
+		selected = append(selected, binding.UpstreamPath)
+	}
+	evidence := compositeAdapterLegalEvidence{
+		SchemaVersion: 1, EvidenceID: "synthetic-" + member.Registration.ID,
+		DurableReference: member.LegalAdmission.EvidenceReference,
+		Issuer:           "Packy synthetic fixture", EvidenceOrigin: "issue-256 adapter tracer",
+		Decision: "synthetic redistribution admitted",
+		Candidate: packsync.LegalAdmissionCandidate{
+			Repository: member.Registration.Repository, Commit: member.Registration.Selector.Ref,
+			READMEBlob: strings.Repeat("c", 40), READMELength: 1, READMESHA256: strings.Repeat("d", 64),
+		},
+		Disposition: packsync.RedistributableDisposition,
+		Rights:      []string{"copy"}, Obligations: []string{"preserve notice"}, Disclosures: []string{"synthetic fixture only"},
+		Scope:    packsync.LegalAdmissionScope{SelectedRoots: selected, Exclusions: []string{}},
+		Validity: "exact candidate and selected roots", Invalidation: "candidate, scope, or evidence digest changes",
+	}
+	raw, err := json.MarshalIndent(evidence, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, '\n')
+	target := filepath.Join(repository, filepath.FromSlash(member.LegalAdmission.EvidenceReference))
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return sha256Text(string(raw))
 }
 
 type compositeAdapterSource struct {

@@ -85,6 +85,11 @@ V3 has no top-level selector. A human evidence dispatch repeats the exact
 ordered registrations and proposed-generation seals, then binds one composite
 classification through `expected_plan_id`, `expected_base_sha`, and
 `human_evidence`.
+The remote request renderer alone mirrors the first ordered member's
+`source_id`, exact `commit` selector, and selector ref into GitHub's legacy
+required workflow-dispatch inputs. This preserves the published v1/v2
+submission boundary; those transport-only values are not part of the v3
+request, are not decoded by the v3 adapter, and carry no member-wise authority.
 
 Default classification is `ai`. Preserve the maintainer's reason faithfully in
 `request_reason`; do not embellish it. A retry is exact only after validating

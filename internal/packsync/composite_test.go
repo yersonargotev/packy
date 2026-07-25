@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -342,8 +343,102 @@ func compositeFixture(t *testing.T) (string, *compositeFixtureSource, CompositeC
 		roots:      map[string]string{"example/a": first, "example/b": second},
 		candidates: map[string]Candidate{"source-a": acceptedCandidateFor("example/a"), "source-b": acceptedCandidateFor("example/b")},
 	}
+	for i := range members {
+		candidate := provider.candidates[members[i].Registration.ID]
+		candidate.Commit = members[i].Registration.Selector.Ref
+		members[i].LegalAdmission.EvidenceSHA256 = writeCompositeLegalEvidence(t, repository, members[i], candidate)
+	}
 	manifest := json.RawMessage(`{"schema_version":1,"id":"composite","version":"1.0.0","resources":[{"kind":"skill","id":"first","source":"skills/first"},{"kind":"notice","id":"second","source":"notices/second.md"}]}`)
 	return repository, provider, CompositeCheckRequest{RepositoryRoot: repository, AcquisitionDir: t.TempDir(), PackID: "composite", ProposedVersion: "1.0.0", ProposedManifest: manifest, Members: members}
+}
+
+func writeCompositeLegalEvidence(t *testing.T, repository string, member CompositeRegistrationMember, candidate Candidate) string {
+	t.Helper()
+	selectedRoots := make([]string, 0, len(member.Registration.Resources))
+	for _, binding := range member.Registration.Resources {
+		selectedRoots = append(selectedRoots, binding.UpstreamPath)
+	}
+	sort.Strings(selectedRoots)
+	evidence := legalAdmissionEvidence{
+		SchemaVersion: 1, EvidenceID: "synthetic-" + member.Registration.ID,
+		DurableReference: member.LegalAdmission.EvidenceReference,
+		Issuer:           "Packy synthetic fixture", EvidenceOrigin: "issue-256 synthetic fixture",
+		Decision: "synthetic redistribution admitted", Candidate: LegalAdmissionCandidate{
+			Repository: candidate.Repository, Commit: candidate.Commit,
+			READMEBlob: strings.Repeat("c", 40), READMELength: 1, READMESHA256: strings.Repeat("d", 64),
+		},
+		Disposition: RedistributableDisposition,
+		Rights:      []string{"copy"}, Obligations: []string{"preserve notice"}, Disclosures: []string{"synthetic fixture only"},
+		Scope:    LegalAdmissionScope{SelectedRoots: selectedRoots, Exclusions: []string{}},
+		Validity: "exact candidate and selected roots", Invalidation: "candidate, scope, or evidence digest changes",
+	}
+	raw, err := json.MarshalIndent(evidence, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, '\n')
+	writeFile(t, filepath.Join(repository, filepath.FromSlash(member.LegalAdmission.EvidenceReference)), string(raw))
+	return hashBytes(raw)
+}
+
+func TestCompositeLegalAdmissionRequiresDurableExactEvidence(t *testing.T) {
+	repository, provider, request := compositeFixture(t)
+	engine := Engine{Source: provider, Validate: acceptingBundleValidator()}
+	evidencePath := filepath.Join(repository, filepath.FromSlash(request.Members[0].LegalAdmission.EvidenceReference))
+	original, err := os.ReadFile(evidencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(evidencePath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.CheckComposite(context.Background(), request); err == nil || !strings.Contains(err.Error(), "durable evidence") {
+		t.Fatalf("missing evidence error = %v", err)
+	}
+	if err := os.WriteFile(evidencePath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wrongDigest := request
+	wrongDigest.Members = append([]CompositeRegistrationMember(nil), request.Members...)
+	wrongDigest.Members[0].LegalAdmission.EvidenceSHA256 = strings.Repeat("f", 64)
+	if _, err := engine.CheckComposite(context.Background(), wrongDigest); !errors.Is(err, ErrLegalAdmissionDigest) {
+		t.Fatalf("wrong evidence digest error = %v", err)
+	}
+	var mismatched legalAdmissionEvidence
+	if err := json.Unmarshal(original, &mismatched); err != nil {
+		t.Fatal(err)
+	}
+	mismatched.Candidate.Repository = "example/other"
+	mismatchedRaw, err := json.MarshalIndent(mismatched, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatchedRaw = append(mismatchedRaw, '\n')
+	if err := os.WriteFile(evidencePath, mismatchedRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mismatchedRequest := request
+	mismatchedRequest.Members = append([]CompositeRegistrationMember(nil), request.Members...)
+	mismatchedRequest.Members[0].LegalAdmission.EvidenceSHA256 = hashBytes(mismatchedRaw)
+	if _, err := engine.CheckComposite(context.Background(), mismatchedRequest); !errors.Is(err, ErrLegalAdmissionBinding) {
+		t.Fatalf("candidate-mismatched evidence error = %v", err)
+	}
+	if err := os.WriteFile(evidencePath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := engine.CheckComposite(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(evidencePath, append(original, ' '), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.ApplyComposite(context.Background(), CompositeApplyRequest{CompositeCheckRequest: request, Plan: plan, ClassificationEvidence: compositeClassification(plan)}); !errors.Is(err, ErrLegalAdmissionDigest) {
+		t.Fatalf("changed durable evidence error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repository, "bundle", "packs", "composite")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("changed evidence wrote target Pack: %v", err)
+	}
 }
 
 func compositeClassification(plan CompositePlan) CompositeClassificationEvidence {

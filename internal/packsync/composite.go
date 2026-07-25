@@ -195,6 +195,9 @@ func (engine Engine) CheckComposite(ctx context.Context, request CompositeCheckR
 			if blockers := validateCandidate(member.Registration, candidates[i], member.Registration.Selector); len(blockers) != 0 {
 				return fmt.Errorf("source %s candidate is invalid: %v", member.Registration.ID, blockers)
 			}
+			if err := validateCompositeLegalAdmission(request.RepositoryRoot, member, candidates[i]); err != nil {
+				return fmt.Errorf("source %s legal admission: %w", member.Registration.ID, err)
+			}
 			bindings, blockers := deriveDestinations(member.Registration.Resources, manifests)
 			if len(blockers) != 0 {
 				return fmt.Errorf("source %s bindings are invalid: %v", member.Registration.ID, blockers)
@@ -262,6 +265,57 @@ func (engine Engine) CheckComposite(ctx context.Context, request CompositeCheckR
 		return CompositePlan{}, fmt.Errorf("acquisition did not clean caller-supplied directory: %w", err)
 	}
 	return initial.plan, nil
+}
+
+func validateCompositeLegalAdmission(repositoryRoot string, member CompositeRegistrationMember, candidate Candidate) error {
+	reference := member.LegalAdmission.EvidenceReference
+	if !safeSlashPath(reference) {
+		return errors.New("durable evidence reference is unsafe")
+	}
+	root, err := filepath.EvalSymlinks(repositoryRoot)
+	if err != nil {
+		return err
+	}
+	target, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(reference)))
+	if err != nil {
+		return fmt.Errorf("resolve durable evidence: %w", err)
+	}
+	relative, err := filepath.Rel(root, target)
+	if err != nil || !safeSlashPath(filepath.ToSlash(relative)) {
+		return errors.New("durable evidence resolves outside repository")
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil {
+		return fmt.Errorf("read durable evidence: %w", err)
+	}
+	var evidence legalAdmissionEvidence
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&evidence); err != nil || ensureEOF(decoder) != nil {
+		return ErrLegalAdmissionShape
+	}
+	selectedRoots := make([]string, 0, len(member.Registration.Resources))
+	for _, binding := range member.Registration.Resources {
+		selectedRoots = append(selectedRoots, binding.UpstreamPath)
+	}
+	sort.Strings(selectedRoots)
+	expected := LegalAdmissionExpected{
+		EvidenceReference: reference,
+		EvidenceSHA256:    member.LegalAdmission.EvidenceSHA256,
+		EvidenceID:        evidence.EvidenceID,
+		Candidate:         evidence.Candidate,
+		Scope:             LegalAdmissionScope{SelectedRoots: selectedRoots, Exclusions: append([]string(nil), evidence.Scope.Exclusions...)},
+	}
+	expected.Candidate.Repository = member.Registration.Repository
+	expected.Candidate.Commit = candidate.Commit
+	admission, err := ValidateLegalAdmission(raw, expected)
+	if err != nil {
+		return err
+	}
+	if admission.Disposition != member.LegalAdmission.Disposition {
+		return ErrLegalAdmissionDisposition
+	}
+	return nil
 }
 
 type compositeLocal struct {
@@ -577,6 +631,11 @@ func (engine Engine) ApplyComposite(ctx context.Context, request CompositeApplyR
 			return err
 		}
 		defer guard.Release()
+		for i, member := range members {
+			if err := validateCompositeLegalAdmission(request.RepositoryRoot, member, candidates[i]); err != nil {
+				return fmt.Errorf("source %s legal admission changed after Check: %w", member.Registration.ID, err)
+			}
+		}
 		result, err = engine.applyCompositeLocked(ctx, request, members, roots)
 		return err
 	})

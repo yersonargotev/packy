@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
     inputs:
       source_id:
-        description: V1/v2 configured or absent source identifier
-        required: false
+        description: Configured source identifier
+        required: true
         type: string
       pack_id:
         description: V3 register_bundle target Pack identifier
@@ -54,8 +54,8 @@ on:
         required: true
         type: string
       selector:
-        description: V1/v2 candidate selector
-        required: false
+        description: Candidate selector
+        required: true
         type: choice
         options:
           - latest-stable

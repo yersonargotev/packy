@@ -9,7 +9,12 @@ workflow_inputs() {
   local digest
   digest="$(request_digest "$request")"
   jq --arg request_digest "$digest" '
-    del(.schema_version)
+    if .schema_version == 3 then
+      .source_id = .registrations[0].registration.id
+      | .selector = "commit"
+      | .selector_ref = .registrations[0].registration.selector.ref
+    else . end
+    | del(.schema_version)
     | with_entries(.value |= if type == "object" or type == "array" then tojson else tostring end)
     | if has("human_evidence") then .human_evidence_json=.human_evidence | del(.human_evidence) else . end
     | if has("registration") then .registration_json=.registration | del(.registration) else . end

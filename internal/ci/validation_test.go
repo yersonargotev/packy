@@ -761,6 +761,11 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 			t.Fatalf("synchronization workflow missing %q", required)
 		}
 	}
+	sourceInput := workflowSection(t, workflow, "      source_id:", "      pack_id:")
+	selectorInput := workflowSection(t, workflow, "      selector:", "      selector_ref:")
+	if !strings.Contains(sourceInput, "required: true") || !strings.Contains(selectorInput, "required: true") {
+		t.Fatal("v3 transport weakened the published v1/v2 workflow-dispatch boundary")
+	}
 	inspect := workflowSection(t, workflow, "  inspect:", "  classify:")
 	classify := workflowSection(t, workflow, "  classify:", "  validate:")
 	validate := workflowSection(t, workflow, "  validate:", "  publish:")

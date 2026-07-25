@@ -652,7 +652,8 @@ func managedFakePR(t *testing.T, proposal packsyncworkflow.Proposal, title, pref
 
 func lifecycleGateway(t *testing.T, fake *fakeGitHubCommands) *githubGateway {
 	t.Helper()
-	return &githubGateway{repositoryRoot: t.TempDir(), repository: "owner/repo", plan: packsync.Plan{Candidate: packsync.Candidate{Repository: "owner/upstream", Commit: candidateA}}, retry: packsyncworkflow.RetryPolicy{MaxAttempts: 3, InitialBackoff: time.Nanosecond, Sleeper: noWaitSleeper{}}, run: fake.run, brief: lifecycleBrief()}
+	brief := lifecycleBrief()
+	return &githubGateway{repositoryRoot: t.TempDir(), repository: "owner/repo", plan: packsync.Plan{Candidate: packsync.Candidate{Repository: "owner/upstream", Commit: candidateA}}, retry: packsyncworkflow.RetryPolicy{MaxAttempts: 3, InitialBackoff: time.Nanosecond, Sleeper: noWaitSleeper{}}, run: fake.run, brief: singleSourcePublicationBrief{brief: &brief}}
 }
 
 func lifecycleProposal() packsyncworkflow.Proposal {
