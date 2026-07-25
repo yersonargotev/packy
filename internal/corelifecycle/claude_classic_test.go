@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yersonargotev/packy/internal/claudecode"
+	"github.com/yersonargotev/packy/internal/prompt"
 )
 
 type classicVersionRunner struct{ result claudecode.Result }
@@ -66,6 +67,48 @@ func configureClassicClaude(config *facadeConfig, runner claudecode.Runner) {
 	config.ClaudeDesired = claudecode.ClassicDesired{
 		Instruction: &claudecode.ClassicInstruction{ID: "classic:instruction", Content: "Use Packy skills when relevant."},
 		MCP:         &claudecode.ClassicMCP{ID: "classic:mcp:engram", Name: "engram", Command: "engram", Args: []string{"mcp", "--tools=agent"}},
+	}
+}
+
+func TestInstallApplyRejectsClaudeRulesChangedAfterPreviewBeforeEffects(t *testing.T) {
+	config := installTestConfig(t)
+	home := installTestHome(config)
+	layout := claudecode.NewCanonicalLayout(home)
+	if err := os.MkdirAll(filepath.Dir(layout.InstructionsFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	if err := os.WriteFile(layout.InstructionsFile, []byte(external), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config.Claude = claudecode.NewSurfaceAdapter("", layout, config.State.PackyHome(), "", classicVersionRunner{}, claudecode.StaticOwnershipSnapshot(claudecode.OwnershipSnapshot{}))
+	config.ClaudeDesired = claudecode.ClassicDesired{Instruction: &claudecode.ClassicInstruction{
+		ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent(),
+	}}
+	commands := &installTestCommands{}
+	facade := newTestFacade(config, commands, time.Now)
+	plan, err := facade.Preview(Install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := external + "changed after preview\n"
+	if err := os.WriteFile(layout.InstructionsFile, []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := facade.Apply(context.Background(), plan); !errors.Is(err, claudecode.ErrStaleClassicPlan) {
+		t.Fatalf("Apply error = %v, want %v", err, claudecode.ErrStaleClassicPlan)
+	}
+	if len(commands.runs) != 0 {
+		t.Fatalf("stale plan executed commands: %#v", commands.runs)
+	}
+	for _, path := range []string{config.State.StateFile(), config.OpenCode.PromptFile(), config.Codex.PromptFile()} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale plan wrote %s: %v", path, err)
+		}
+	}
+	if got, err := os.ReadFile(layout.InstructionsFile); err != nil || string(got) != changed {
+		t.Fatalf("stale plan changed Claude instructions: got=%q err=%v", got, err)
 	}
 }
 

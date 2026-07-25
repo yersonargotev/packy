@@ -442,6 +442,11 @@ func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.
 			return err
 		}
 	}
+	for _, value := range plan.Warnings() {
+		if _, err := fmt.Fprintf(out, "warning: %s\n", value); err != nil {
+			return err
+		}
+	}
 	for _, value := range plan.RecoveryEvidence() {
 		if _, err := fmt.Fprintf(out, "Recovery: %s\n", value); err != nil {
 			return err

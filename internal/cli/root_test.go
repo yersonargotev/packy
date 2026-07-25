@@ -15,8 +15,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/bootstrap"
+	"github.com/yersonargotev/packy/internal/claudecode"
 	"github.com/yersonargotev/packy/internal/corelifecycle"
 	"github.com/yersonargotev/packy/internal/engrambin"
+	"github.com/yersonargotev/packy/internal/prompt"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	packyversion "github.com/yersonargotev/packy/internal/version"
@@ -99,7 +101,7 @@ func TestClassicLifecycleJSONV2PreviewAndResults(t *testing.T) {
 			if err := json.Unmarshal([]byte(out), &report); err != nil {
 				t.Fatalf("invalid JSON: %v\n%s", err, out)
 			}
-			if report.SchemaVersion != 2 || report.Report != "classic-lifecycle-preview" || string(report.Operation) != operation || !report.DryRun || report.DesiredSurfaces == nil || report.PendingPrerequisites == nil || report.Preserved == nil || report.Blockers == nil || report.Recovery == nil || report.Actions == nil {
+			if report.SchemaVersion != 2 || report.Report != "classic-lifecycle-preview" || string(report.Operation) != operation || !report.DryRun || report.DesiredSurfaces == nil || report.PendingPrerequisites == nil || report.Preserved == nil || report.Blockers == nil || report.Warnings == nil || report.Recovery == nil || report.Actions == nil {
 				t.Fatalf("preview contract = %#v", report)
 			}
 			if strings.Contains(out, "Skill source:") || strings.Contains(out, "planned actions") {
@@ -122,6 +124,42 @@ func TestClassicLifecycleJSONV2PreviewAndResults(t *testing.T) {
 				t.Fatalf("result contract = %#v", report)
 			}
 		})
+	}
+}
+
+func TestClassicLifecyclePreviewReportsExternallySatisfiedClaudeRulesInHumanAndJSON(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	fixture := newCLITestFixture(t, opts)
+	layout := claudecode.NewCanonicalLayout(fixture.workstation.Home())
+	if err := os.MkdirAll(filepath.Dir(layout.InstructionsFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	if err := os.WriteFile(layout.InstructionsFile, []byte(external), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	human, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
+	if err != nil {
+		t.Fatalf("human preview: %v\n%s", err, human)
+	}
+	if !strings.Contains(human, "warning: Claude baseline rules are externally satisfied") {
+		t.Fatalf("human preview omitted Claude rules warning:\n%s", human)
+	}
+
+	output, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("JSON preview: %v\n%s", err, output)
+	}
+	var report classicLifecyclePlanJSON
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "Claude baseline rules are externally satisfied") {
+		t.Fatalf("JSON warnings=%v", report.Warnings)
+	}
+	if got, err := os.ReadFile(layout.InstructionsFile); err != nil || string(got) != external {
+		t.Fatalf("preview changed external Claude content: got=%q err=%v", got, err)
 	}
 }
 

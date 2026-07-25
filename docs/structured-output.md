@@ -25,10 +25,9 @@ producer examples.
 
 Preview and result reports carry the operation and outcome plus these common
 facts: `desired_surfaces`, `pending_prerequisites`, `preserved`, `blockers`,
-`recovery`, and `state_transition`. Preview adds the ordered redacted `actions`
+sorted `warnings`, `recovery`, and `state_transition`. Preview adds the ordered redacted `actions`
 and `dry_run: true`. Result adds `committed`, ordered `completed_effects` and
-`not_started_effects`, the optional `failed_effect`, sorted `warnings`, and the
-managed skill count.
+`not_started_effects`, the optional `failed_effect`, and the managed skill count.
 
 `desired_surfaces` is the canonical ordered set `codex`, `opencode`, `claude`.
 A dry-run or

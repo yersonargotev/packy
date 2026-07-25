@@ -5,14 +5,35 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/prompt"
 )
 
 type classicRunner func(Command) Result
 
 func (f classicRunner) Run(_ context.Context, c Command) Result { return f(c) }
+
+func readClassicString(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(content)
+}
+
+func writeClassicString(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestInspectClassicIsInertAndLeavesUnsupportedMCPPending(t *testing.T) {
 	home := t.TempDir()
@@ -94,6 +115,118 @@ func TestInspectClassicNeverAdoptsExactPreexistingFragments(t *testing.T) {
 	}
 	if len(plan.Blockers()) != 3 || len(plan.Actions()) != 0 || len(plan.DesiredOwnership()) != 0 {
 		t.Fatalf("exact foreign fragments were adopted: blockers=%v actions=%v ownership=%v", plan.Blockers(), plan.Actions(), plan.DesiredOwnership())
+	}
+}
+
+func TestClassicInstructionsUseExactExternalRulesWithoutDuplicatingThem(t *testing.T) {
+	home := t.TempDir()
+	layout := NewCanonicalLayout(home)
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	oldContent := prompt.CodexContent() + "\n" + prompt.RulesContent()
+	document, err := UpsertInstructionContribution(external, InstructionContribution{ContributorID: "classic", Content: oldContent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeClassicString(t, layout.InstructionsFile, document)
+	observed := ObserveInstructions(layout.InstructionsFile).Contributions["classic"]
+	ownership := OwnershipRecord{
+		StateOwner: "classic", ContributorID: "classic", ID: "classic:instruction",
+		Kind: string(ActionInstructionContribution), Target: layout.InstructionsFile,
+		Fingerprint: observed, Contributors: []string{"classic"}, DeletionAuthorized: true,
+	}
+	adapter := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "", nil, StaticOwnershipSnapshot(OwnershipSnapshot{Records: []OwnershipRecord{ownership}}))
+	desired := ClassicDesired{Instruction: &ClassicInstruction{
+		ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent(),
+	}}
+
+	plan, err := adapter.InspectClassic(context.Background(), ClassicRequest{Goal: ClassicPresent, Desired: desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions()) != 1 || len(plan.Warnings()) != 1 || !strings.Contains(plan.Warnings()[0], "externally satisfied") {
+		t.Fatalf("actions=%v warnings=%v", plan.Actions(), plan.Warnings())
+	}
+	result, err := adapter.ApplyClassic(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := UpsertInstructionContribution(external, InstructionContribution{ContributorID: "classic", Content: prompt.CodexContent()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readClassicString(t, layout.InstructionsFile); got != want {
+		t.Fatalf("reconciled document:\n%s\nwant:\n%s", got, want)
+	}
+
+	fresh := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "", nil, StaticOwnershipSnapshot(OwnershipSnapshot{Records: result.VerifiedOwnership}))
+	next, err := fresh.InspectClassic(context.Background(), ClassicRequest{Goal: ClassicPresent, Desired: desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(next.Actions()) != 0 || len(next.Warnings()) != 1 {
+		t.Fatalf("idempotent plan actions=%v warnings=%v", next.Actions(), next.Warnings())
+	}
+}
+
+func TestClassicInstructionsPreserveDifferingMalformedAndUnknownExternalContent(t *testing.T) {
+	for name, tc := range map[string]struct {
+		external     string
+		warningCount int
+	}{
+		"drift":     {"<!-- dots:rules -->\n## Different\n<!-- /dots:rules -->\n", 1},
+		"malformed": {"<!-- dots:rules -->\nunterminated\n", 1},
+		"unknown":   {"<!-- other:rules -->\nforeign\n<!-- /other:rules -->\n", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			layout := NewCanonicalLayout(home)
+			writeClassicString(t, layout.InstructionsFile, tc.external)
+			adapter := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "", nil, nil)
+			plan, err := adapter.InspectClassic(context.Background(), ClassicRequest{Goal: ClassicPresent, Desired: ClassicDesired{
+				Instruction: &ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent()},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Warnings()) != tc.warningCount {
+				t.Fatalf("warnings=%v", plan.Warnings())
+			}
+			if _, err := adapter.ApplyClassic(context.Background(), plan); err != nil {
+				t.Fatal(err)
+			}
+			got := readClassicString(t, layout.InstructionsFile)
+			want, err := UpsertInstructionContribution(tc.external, InstructionContribution{
+				ContributorID: "classic", Content: prompt.CodexContent() + "\n" + prompt.RulesContent(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("reconciled document:\n%s\nwant:\n%s", got, want)
+			}
+		})
+	}
+}
+
+func TestClassicInstructionPlanRejectsStaleExternalRulesBeforeMutation(t *testing.T) {
+	home := t.TempDir()
+	layout := NewCanonicalLayout(home)
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	writeClassicString(t, layout.InstructionsFile, external)
+	adapter := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "", nil, nil)
+	plan, err := adapter.InspectClassic(context.Background(), ClassicRequest{Goal: ClassicPresent, Desired: ClassicDesired{
+		Instruction: &ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent()},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := external + "changed after preview\n"
+	writeClassicString(t, layout.InstructionsFile, changed)
+	if _, err := adapter.ApplyClassic(context.Background(), plan); !errors.Is(err, ErrStaleClassicPlan) {
+		t.Fatalf("error=%v", err)
+	}
+	if got := readClassicString(t, layout.InstructionsFile); got != changed {
+		t.Fatalf("stale apply mutated document:\n%s", got)
 	}
 }
 

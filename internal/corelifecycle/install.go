@@ -164,6 +164,7 @@ type Plan struct {
 	blockers        []string
 	pending         []string
 	preserved       []string
+	warnings        []string
 	recovery        []string
 	transition      StateTransitionView
 	legacyMigration bool
@@ -218,6 +219,7 @@ func (plan Plan) Outcome() Outcome                     { return plan.outcome }
 func (plan Plan) Blockers() []string                   { return append([]string(nil), plan.blockers...) }
 func (plan Plan) PendingPrerequisites() []string       { return append([]string(nil), plan.pending...) }
 func (plan Plan) Preserved() []string                  { return append([]string(nil), plan.preserved...) }
+func (plan Plan) Warnings() []string                   { return append([]string(nil), plan.warnings...) }
 func (plan Plan) RecoveryEvidence() []string           { return append([]string(nil), plan.recovery...) }
 func (plan Plan) StateTransition() StateTransitionView { return plan.transition }
 func (plan Plan) DesiredSurfaces() []string {
@@ -312,12 +314,13 @@ func (facade *Facade) Preview(operation Operation) (Plan, error) {
 	if len(actions) == 1 {
 		outcome = OutcomeConverged
 	}
-	var blockers, preserved []string
+	var blockers, preserved, warnings []string
 	var pending []string
 	if hasClaudePlan {
 		blockers = append(blockers, claudePlan.Blockers()...)
 		preserved = append(preserved, claudePlan.Preserved()...)
 		pending = append(pending, claudePlan.PendingPrerequisites()...)
+		warnings = append(warnings, claudePlan.Warnings()...)
 		if len(claudePlan.Blockers()) > 0 {
 			outcome = OutcomeBlocked
 		}
@@ -334,6 +337,7 @@ func (facade *Facade) Preview(operation Operation) (Plan, error) {
 		blockers:        blockers,
 		preserved:       preserved,
 		pending:         pending,
+		warnings:        warnings,
 		transition:      StateTransitionView{FromSchemaVersion: fromSchema, ToSchemaVersion: SchemaVersion, FromStatus: fromStatus, ToStatus: InstallConfirmed},
 		legacyMigration: priorFound && prior.Legacy(),
 		claudePlan:      claudePlan,
@@ -370,6 +374,11 @@ var saveUpdateState = SaveState
 func (facade *Facade) Apply(ctx context.Context, plan Plan) (Result, error) {
 	if plan.owner != facade {
 		return Result{}, ErrForeignPlan
+	}
+	if plan.hasClaudePlan {
+		if err := facade.config.Claude.ValidateClassicPlan(plan.claudePlan); err != nil {
+			return Result{}, err
+		}
 	}
 	var result Result
 	var err error
@@ -446,7 +455,7 @@ func (facade *Facade) applyInstall(ctx context.Context, plan Plan) (applyResult 
 	if err := os.MkdirAll(facade.config.Skills.Root(), 0o700); err != nil {
 		return Result{}, fmt.Errorf("create agent skills directory %s: %w", facade.config.Skills.Root(), err)
 	}
-	var warnings []string
+	warnings := plan.Warnings()
 	for _, action := range plan.actions {
 		if strings.HasPrefix(string(action.Kind), "claude-") {
 			continue
@@ -604,7 +613,7 @@ func (plan Plan) withPublicationFacts(result Result) Result {
 
 func defaultClaudeDesired() claudecode.ClassicDesired {
 	return claudecode.ClassicDesired{
-		Instruction: &claudecode.ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent() + "\n" + prompt.RulesContent()},
+		Instruction: &claudecode.ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent()},
 		MCP:         &claudecode.ClassicMCP{ID: "classic:mcp:engram", Name: "engram", Command: "engram", Args: []string{"mcp", "--tools=agent"}},
 	}
 }
