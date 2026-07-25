@@ -89,10 +89,10 @@ Packy's current canonical inventory treats each selected file as relative path
 
 | Source | Resource | Canonical resource SHA-256 | Source snapshot SHA-256 |
 |---|---|---|---|
-| `vercel-web-interface-guidelines` | rule asset | `f2ec96bb9ea37f4d87ea11e7812d52dede708e01d85010e379ce44a21ff33c97` | `d3ddb5a5ec331b3795e824bc89bc3ded943ae0d8379e6c5db129836874860839` |
-| `vercel-web-interface-guidelines` | MIT notice | `d543fb0cc0f907a2838a3345b63abcf4291e85806661546e7c3a45922e7596b7` | same complete-source snapshot above |
-| `vercel-writing-guidelines` | rule asset | `e851548f39d1f4b0372a3eebc4b7e3a501a5e7365735a1a292449889dbd4e703` | `07833fb9fa16b3b49c986c2c8750fe8a1c8cccbc482b62ab154e052553d34d77` |
-| `vercel-writing-guidelines` | MIT notice | `d57e3f466cbefd132ef14d1a9638302228018d2c7b446b322a51b26d3200b348` | same complete-source snapshot above |
+| `vercel-web-interface-guidelines` | rule asset | `c47e6618324200909058a31baf80f635514642b002a5f33c8ed160e49964dc58` | `8ce0f339a11367f84b3365def38180c0a25f10cdf58e82ef5f3029bd1b1ef929` |
+| `vercel-web-interface-guidelines` | MIT notice | `b13b16d4b633f4b7c53e9a7dfb459b9a7e18c29e8f1be9f71695a66a724e675e` | same complete-source snapshot above |
+| `vercel-writing-guidelines` | rule asset | `62eeb0e26b97a5d4c0333f704dc6a756bf68715280b194a0bb8f8e46d303550b` | `175af48506eca897adff389c5c2426b84946c288401c8da41497b2f2941a16b3` |
+| `vercel-writing-guidelines` | MIT notice | `983d8c49f6696ca264472f4e7a2f33ce770ea9cdf88c5f379db75e40718624c8` | same complete-source snapshot above |
 
 The selected web commit is a merge whose parent
 [`d0a657bfe87e86dd3a4753d7ec28c7e7dd7a88fe`](https://github.com/vercel-labs/web-interface-guidelines/commit/d0a657bfe87e86dd3a4753d7ec28c7e7dd7a88fe)
