@@ -1,0 +1,2035 @@
+{
+  "schema_version": 4,
+  "id": "vercel",
+  "version": "1.0.0",
+  "surfaces": [
+    "claude",
+    "codex",
+    "opencode"
+  ],
+  "provides": [
+    "workflow:vercel"
+  ],
+  "requires": {
+    "capabilities": [],
+    "tools": []
+  },
+  "conflicts": [],
+  "resources": [
+    {
+      "bindings": [],
+      "id": "web-interface-guidelines-rules",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/vercel-web-interface-guidelines-command.md",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [],
+      "id": "writing-guidelines-rules",
+      "kind": "asset",
+      "requires": [],
+      "source": "references/vercel-writing-guidelines-command.md",
+      "surface_exclusions": []
+    },
+    {
+      "attribution": "Copyright (c) 2025 Vercel Labs",
+      "bindings": [],
+      "id": "web-interface-guidelines-mit",
+      "kind": "notice",
+      "license": "MIT",
+      "requires": [],
+      "source": "notices/vercel-web-interface-guidelines-MIT.txt",
+      "surface_exclusions": []
+    },
+    {
+      "attribution": "Copyright (c) 2026 Vercel Labs",
+      "bindings": [],
+      "id": "writing-guidelines-mit",
+      "kind": "notice",
+      "license": "MIT",
+      "requires": [],
+      "source": "notices/vercel-writing-guidelines-MIT.txt",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "vercel-cli-with-tokens",
+          "invocation": "/vercel-cli-with-tokens",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "vercel-cli-with-tokens",
+          "invocation": "$vercel-cli-with-tokens",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "vercel-cli-with-tokens",
+          "invocation": "vercel-cli-with-tokens",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-cli-with-tokens",
+      "kind": "skill",
+      "requires": [],
+      "runtime_modes": [
+        {
+          "id": "deploy-preview",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "preview_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "preview_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "deploy-production",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "production_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "production_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "domain-read",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            }
+          ],
+          "effects": [],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "domain-write",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "vercel_domain_mutate",
+              "scope": "vercel_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "vercel_domain_change",
+              "scope": "vercel_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "environment-read",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            }
+          ],
+          "effects": [],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "environment-write",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "vercel_environment_mutate",
+              "scope": "vercel_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "vercel_environment_change",
+              "scope": "vercel_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "git-push-preview",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "git-provider"
+            },
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "git"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "git_commit",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_inspect",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_push",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "network",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "preview_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "local_git"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "local_git_change",
+              "scope": "local_git"
+            },
+            {
+              "kind": "preview_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "remote_git_change",
+              "scope": "remote_git"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "git-push-production",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "git-provider"
+            },
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "git"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "git_commit",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_inspect",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_push",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "network",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "local_git"
+            },
+            {
+              "kind": "production_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "local_git_change",
+              "scope": "local_git"
+            },
+            {
+              "kind": "production_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "remote_git_change",
+              "scope": "remote_git"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "inspect",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            }
+          ],
+          "effects": [],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "link-project",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-token"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "vercel_project_mutate",
+              "scope": "vercel_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "vercel_project_change",
+              "scope": "vercel_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-cli-with-tokens",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "vercel-composition-patterns",
+          "invocation": "/vercel-composition-patterns",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "vercel-composition-patterns",
+          "invocation": "$vercel-composition-patterns",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "vercel-composition-patterns",
+          "invocation": "vercel-composition-patterns",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-composition-patterns",
+      "kind": "skill",
+      "requires": [],
+      "runtime_modes": [
+        {
+          "id": "guidance-edit",
+          "role": "primary",
+          "requirements": [],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_dependency_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-composition-patterns",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "deploy-to-vercel",
+          "invocation": "/deploy-to-vercel",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "deploy-to-vercel",
+          "invocation": "$deploy-to-vercel",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "deploy-to-vercel",
+          "invocation": "deploy-to-vercel",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-deploy-to-vercel",
+      "kind": "skill",
+      "requires": [],
+      "runtime_modes": [
+        {
+          "id": "claimable-preview",
+          "role": "fallback_only",
+          "requirements": [
+            {
+              "kind": "tool",
+              "id": "basename"
+            },
+            {
+              "kind": "tool",
+              "id": "bash"
+            },
+            {
+              "kind": "tool",
+              "id": "cat"
+            },
+            {
+              "kind": "tool",
+              "id": "curl"
+            },
+            {
+              "kind": "tool",
+              "id": "cut"
+            },
+            {
+              "kind": "tool",
+              "id": "find"
+            },
+            {
+              "kind": "tool",
+              "id": "grep"
+            },
+            {
+              "kind": "tool",
+              "id": "head"
+            },
+            {
+              "kind": "tool",
+              "id": "mkdir"
+            },
+            {
+              "kind": "tool",
+              "id": "mktemp"
+            },
+            {
+              "kind": "tool",
+              "id": "mv"
+            },
+            {
+              "kind": "tool",
+              "id": "rm"
+            },
+            {
+              "kind": "tool",
+              "id": "sed"
+            },
+            {
+              "kind": "tool",
+              "id": "sleep"
+            },
+            {
+              "kind": "tool",
+              "id": "tar"
+            },
+            {
+              "kind": "tool",
+              "id": "tr"
+            },
+            {
+              "kind": "tool",
+              "id": "wc"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "preview_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "preview_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "cli-preview",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "preview_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "preview_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "fallback": {
+            "kind": "mode",
+            "mode": "claimable-preview"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "cli-production",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "production_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "production_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "git-push-preview",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "git-provider"
+            },
+            {
+              "kind": "tool",
+              "id": "git"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "git_commit",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_inspect",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_push",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "network",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "preview_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "local_git"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "local_git_change",
+              "scope": "local_git"
+            },
+            {
+              "kind": "preview_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "remote_git_change",
+              "scope": "remote_git"
+            }
+          ],
+          "fallback": {
+            "kind": "mode",
+            "mode": "claimable-preview"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "git-push-production",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "git-provider"
+            },
+            {
+              "kind": "tool",
+              "id": "git"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "git_commit",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_inspect",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_push",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "network",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "local_git"
+            },
+            {
+              "kind": "production_deploy",
+              "scope": "vercel_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "local_git_change",
+              "scope": "local_git"
+            },
+            {
+              "kind": "production_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "remote_git_change",
+              "scope": "remote_git"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "link-cli-preview",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "preview_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            },
+            {
+              "kind": "vercel_project_mutate",
+              "scope": "vercel_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "authentication_state_change",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "preview_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            },
+            {
+              "kind": "vercel_project_change",
+              "scope": "vercel_project"
+            }
+          ],
+          "fallback": {
+            "kind": "mode",
+            "mode": "claimable-preview"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "link-git-preview",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "git-provider"
+            },
+            {
+              "kind": "authentication",
+              "id": "vercel"
+            },
+            {
+              "kind": "tool",
+              "id": "git"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "git_commit",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_inspect",
+              "scope": "local_git"
+            },
+            {
+              "kind": "git_push",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "network",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "preview_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "local_git"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "vercel_project_mutate",
+              "scope": "vercel_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "local_git_change",
+              "scope": "local_git"
+            },
+            {
+              "kind": "preview_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "remote_git_change",
+              "scope": "remote_git"
+            },
+            {
+              "kind": "vercel_project_change",
+              "scope": "vercel_project"
+            }
+          ],
+          "fallback": {
+            "kind": "mode",
+            "mode": "claimable-preview"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "setup-link-preview",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel-interactive"
+            },
+            {
+              "kind": "tool",
+              "id": "npm"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "package_manager_execute",
+              "scope": "workstation"
+            },
+            {
+              "kind": "preview_deploy",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            },
+            {
+              "kind": "vercel_project_mutate",
+              "scope": "vercel_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "authentication_state_change",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "preview_deployment",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "tool_installation",
+              "scope": "workstation"
+            },
+            {
+              "kind": "upload",
+              "scope": "deployment_payload"
+            },
+            {
+              "kind": "vercel_project_change",
+              "scope": "vercel_project"
+            }
+          ],
+          "fallback": {
+            "kind": "mode",
+            "mode": "claimable-preview"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-deploy-to-vercel",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "vercel-optimize",
+          "invocation": "/vercel-optimize",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "vercel-optimize",
+          "invocation": "$vercel-optimize",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "vercel-optimize",
+          "invocation": "vercel-optimize",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-optimize",
+      "kind": "skill",
+      "requires": [],
+      "runtime_modes": [
+        {
+          "id": "sequential-investigation",
+          "role": "fallback_only",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "service_data",
+              "id": "vercel-project-metrics"
+            },
+            {
+              "kind": "tool",
+              "id": "node",
+              "version": "\u003e=20.0.0"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli",
+              "version": "\u003e=53.0.0"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "pack_resource"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "sequential-observability-plus",
+          "role": "fallback_only",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel"
+            },
+            {
+              "kind": "entitlement",
+              "id": "observability-plus"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "service_data",
+              "id": "vercel-project-metrics"
+            },
+            {
+              "kind": "tool",
+              "id": "node",
+              "version": "\u003e=20.0.0"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli",
+              "version": "\u003e=53.0.0"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "pack_resource"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "subagent-investigation",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "service_data",
+              "id": "vercel-project-metrics"
+            },
+            {
+              "kind": "tool",
+              "id": "node",
+              "version": "\u003e=20.0.0"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli",
+              "version": "\u003e=53.0.0"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "pack_resource"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "subagent_delegate",
+              "scope": "consumer_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            }
+          ],
+          "fallback": {
+            "kind": "mode",
+            "mode": "sequential-investigation"
+          },
+          "on_unavailable": "fail_before_effects"
+        },
+        {
+          "id": "subagent-observability-plus",
+          "role": "primary",
+          "requirements": [
+            {
+              "kind": "authentication",
+              "id": "vercel"
+            },
+            {
+              "kind": "entitlement",
+              "id": "observability-plus"
+            },
+            {
+              "kind": "project_link",
+              "id": "vercel-project"
+            },
+            {
+              "kind": "service_data",
+              "id": "vercel-project-metrics"
+            },
+            {
+              "kind": "tool",
+              "id": "node",
+              "version": "\u003e=20.0.0"
+            },
+            {
+              "kind": "tool",
+              "id": "vercel-cli",
+              "version": "\u003e=53.0.0"
+            }
+          ],
+          "authorities": [
+            {
+              "kind": "environment_inspect",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "pack_resource"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "network",
+              "scope": "vercel_project"
+            },
+            {
+              "kind": "process_execute",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "secret_use",
+              "scope": "vercel_account"
+            },
+            {
+              "kind": "subagent_delegate",
+              "scope": "consumer_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            }
+          ],
+          "fallback": {
+            "kind": "mode",
+            "mode": "sequential-observability-plus"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-optimize",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "vercel-react-best-practices",
+          "invocation": "/vercel-react-best-practices",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "vercel-react-best-practices",
+          "invocation": "$vercel-react-best-practices",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "vercel-react-best-practices",
+          "invocation": "vercel-react-best-practices",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-react-best-practices",
+      "kind": "skill",
+      "requires": [],
+      "runtime_modes": [
+        {
+          "id": "guidance-edit",
+          "role": "primary",
+          "requirements": [],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_dependency_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-react-best-practices",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "vercel-react-native-skills",
+          "invocation": "/vercel-react-native-skills",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "vercel-react-native-skills",
+          "invocation": "$vercel-react-native-skills",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "vercel-react-native-skills",
+          "invocation": "vercel-react-native-skills",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-react-native-skills",
+      "kind": "skill",
+      "requires": [],
+      "runtime_modes": [
+        {
+          "id": "guidance-edit",
+          "role": "primary",
+          "requirements": [],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_dependency_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-react-native-skills",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "vercel-react-view-transitions",
+          "invocation": "/vercel-react-view-transitions",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "vercel-react-view-transitions",
+          "invocation": "$vercel-react-view-transitions",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "vercel-react-view-transitions",
+          "invocation": "vercel-react-view-transitions",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-react-view-transitions",
+      "kind": "skill",
+      "requires": [],
+      "runtime_modes": [
+        {
+          "id": "guidance-edit",
+          "role": "primary",
+          "requirements": [],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_write",
+              "scope": "consumer_project"
+            }
+          ],
+          "effects": [
+            {
+              "kind": "consumer_project_dependency_change",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "consumer_project_file_change",
+              "scope": "consumer_project"
+            }
+          ],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-react-view-transitions",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "web-design-guidelines",
+          "invocation": "/web-design-guidelines",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "web-design-guidelines",
+          "invocation": "$web-design-guidelines",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "web-design-guidelines",
+          "invocation": "web-design-guidelines",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-web-design-guidelines",
+      "kind": "skill",
+      "requires": [
+        "asset:web-interface-guidelines-rules"
+      ],
+      "runtime_modes": [
+        {
+          "id": "local-review",
+          "role": "primary",
+          "requirements": [],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "pack_resource"
+            }
+          ],
+          "effects": [],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-web-design-guidelines",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "writing-guidelines",
+          "invocation": "/writing-guidelines",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "writing-guidelines",
+          "invocation": "$writing-guidelines",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "writing-guidelines",
+          "invocation": "writing-guidelines",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "id": "vercel-writing-guidelines",
+      "kind": "skill",
+      "requires": [
+        "asset:writing-guidelines-rules"
+      ],
+      "runtime_modes": [
+        {
+          "id": "local-review",
+          "role": "primary",
+          "requirements": [],
+          "authorities": [
+            {
+              "kind": "filesystem_read",
+              "scope": "consumer_project"
+            },
+            {
+              "kind": "filesystem_read",
+              "scope": "pack_resource"
+            }
+          ],
+          "effects": [],
+          "fallback": {
+            "kind": "none"
+          },
+          "on_unavailable": "fail_before_effects"
+        }
+      ],
+      "source": "skills/vercel-writing-guidelines",
+      "surface_exclusions": []
+    }
+  ],
+  "contract": {
+    "exclusions": [
+      {
+        "id": "excluded-upstream-archives",
+        "source_paths": [
+          "react-best-practices.zip",
+          "react-native-skills.zip",
+          "skills/deploy-to-vercel/Archive.zip",
+          "vercel-composition-patterns.zip",
+          "vercel-deploy-claimable.zip",
+          "vercel-react-best-practices.zip"
+        ],
+        "reason": "duplicate archive content is outside the selected complete trees"
+      }
+    ]
+  }
+}

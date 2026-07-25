@@ -42,6 +42,13 @@ func TestCanonicalExactClosureAndV4RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	golden, err := os.ReadFile(filepath.Join("testdata", "vercel-pack-v4.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(bytes.TrimSpace(b), bytes.TrimSpace(golden)) {
+		t.Fatal("detached canonical manifest golden changed")
+	}
 	root := t.TempDir()
 	path := filepath.Join(root, "pack.json")
 	if err := os.WriteFile(path, b, 0600); err != nil {

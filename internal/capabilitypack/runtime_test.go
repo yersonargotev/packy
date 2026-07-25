@@ -35,6 +35,12 @@ func TestEvaluateRuntimeModesTriStateStaleFallbackAndDeterminism(t *testing.T) {
 	if got := []RuntimeModeState{first[0].State, first[1].State, first[2].State}; !reflect.DeepEqual(got, []RuntimeModeState{RuntimeModeAvailable, RuntimeModeUnverified, RuntimeModeUnavailable}) {
 		t.Fatalf("states = %v", got)
 	}
+	if got := first[2].Affected; !reflect.DeepEqual(got, []string{
+		"authority:secret_use:vercel_account",
+		"requirement:authentication:service",
+	}) {
+		t.Fatalf("mixed unavailable/unverified affected identities = %v", got)
+	}
 	if first[1].FallbackState == nil || *first[1].FallbackState != RuntimeModeAvailable {
 		t.Fatalf("fallback truth = %#v", first[1].FallbackState)
 	}

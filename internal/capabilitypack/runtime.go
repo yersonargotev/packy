@@ -254,12 +254,12 @@ func deriveRuntimeModeState(evidence RuntimeEvidence) (RuntimeModeState, []strin
 		}
 	}
 	for _, observation := range evidence.Requirements {
-		if observation.State == state && state != RuntimeModeAvailable {
+		if observation.State != ObservationAvailable {
 			affected = append(affected, portableRequirementIdentity(observation.Kind, observation.ID))
 		}
 	}
 	for _, observation := range evidence.Authorities {
-		if observation.State == state && state != RuntimeModeAvailable {
+		if observation.State != ObservationAvailable {
 			affected = append(affected, portableAuthorityIdentity(observation.Kind, observation.Scope))
 		}
 	}
