@@ -37,6 +37,7 @@ type Inspection struct {
 	PromptExists             bool
 	HasPackyInstruction      bool
 	RulesExternallySatisfied bool
+	RulesPackyProjected      bool
 	Warnings                 []string
 }
 
@@ -86,7 +87,7 @@ func PreviewWrite(configPath, promptPath string) (WritePlan, error) {
 	if _, err := mergeInstruction(existing, configPath, promptPath); err != nil {
 		return WritePlan{}, err
 	}
-	warnings := append(rulesWarnings(rules), detectExternalManagedConfig(existing)...)
+	warnings := rulesWarnings(rules)
 	return WritePlan{configPath: configPath, promptPath: promptPath, rulesSeal: seal, rules: rules, warnings: warnings}, nil
 }
 
@@ -383,8 +384,10 @@ func Inspect(configPath, promptPath string) (Inspection, error) {
 		RulesExternallySatisfied: rules.exact(),
 		Warnings:                 append(rulesWarnings(rules), detectExternalManagedConfig(existing)...),
 	}
-	if _, err := os.Stat(promptPath); err == nil {
+	if promptContent, err := os.ReadFile(promptPath); err == nil {
 		inspection.PromptExists = true
+		inspection.RulesPackyProjected = strings.Contains(string(promptContent), "<!-- packy:rules -->") &&
+			strings.Contains(string(promptContent), "<!-- /packy:rules -->")
 	} else if err != nil && !os.IsNotExist(err) {
 		return Inspection{}, fmt.Errorf("inspect OpenCode Packy prompt %s: %w", promptPath, err)
 	}

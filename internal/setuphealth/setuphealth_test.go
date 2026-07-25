@@ -15,6 +15,7 @@ import (
 	"github.com/yersonargotev/packy/internal/corelifecycle"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
+	"github.com/yersonargotev/packy/internal/prompt"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -81,16 +82,16 @@ func TestDiagnoseHealthySetupReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	saveState(t, config, desiredState(config, []corelifecycle.ManagedSkill{{Name: "skill", SourcePath: source, LinkPath: link}}))
-	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->")
-	writeFile(t, config.OpenCodePromptFile, "prompt")
+	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n<!-- packy:rules -->\nrules\n<!-- /packy:rules -->")
+	writeFile(t, config.OpenCodePromptFile, "<!-- packy:rules -->\nrules\n<!-- /packy:rules -->")
 	writeFile(t, config.OpenCodeConfigFile, fmt.Sprintf(`{"instructions":[%q]}`, config.OpenCodePromptFile))
 
 	report := diagnose(config, &lookupStub{path: canonical}, facts("1.19.0", nil, nil))
 
-	if report.Summary != (Summary{Status: "warnings", Passes: 14, Warnings: 1}) {
+	if report.Summary != (Summary{Status: "warnings", Passes: 16, Warnings: 1}) {
 		t.Fatalf("summary = %#v", report.Summary)
 	}
-	wantNames := []string{"packy-state", "skill-symlinks", "engram-binary", "engram-local-bin", "engram-runtime", "engram-setup", "codex-config", "opencode-config", "claude-binary", "claude-version", "claude-skills", "claude-instructions", "claude-hooks", "claude-mcp", "claude-readiness"}
+	wantNames := []string{"packy-state", "skill-symlinks", "engram-binary", "engram-local-bin", "engram-runtime", "engram-setup", "codex-config", "codex-rules", "opencode-config", "opencode-rules", "claude-binary", "claude-version", "claude-skills", "claude-instructions", "claude-hooks", "claude-mcp", "claude-readiness"}
 	gotNames := make([]string, 0, len(report.Checks))
 	for _, check := range report.Checks {
 		gotNames = append(gotNames, check.Name)
@@ -116,7 +117,7 @@ func TestClaudeChecksOwnPublicObservationBoundaries(t *testing.T) {
 	base := claudecode.SetupObservation{
 		Version:      claudecode.VersionObservation{Executable: "/bin/claude", Version: "2.1.203"},
 		Skills:       []claudecode.SkillObservation{{Path: "/claude/skills/x", Kind: claudecode.PathSymlink, ResolvedTarget: "/source/x", TreeFingerprint: "skill-fp"}},
-		Instructions: claudecode.InstructionObservation{Contributions: map[string]string{"classic": "instruction-fp"}},
+		Instructions: claudecode.InstructionObservation{Contributions: map[string]string{"classic": "instruction-fp"}, RulesPackyProjected: true},
 		Hooks:        claudecode.HookObservation{Parseable: true, MatchingEntries: []string{"hook-fp"}, EntryFingerprint: "hook-fp"},
 		MCP:          []claudecode.MCPObservation{{Name: "engram", Present: true, DefinitionFingerprint: "mcp-fp"}},
 	}
@@ -426,14 +427,16 @@ func TestDiagnoseDelegatedSetupCodexAndOpenCodeMatrix(t *testing.T) {
 	config := sandboxConfig(t)
 	state := desiredState(config, nil)
 	saveState(t, config, state)
-	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n<!-- gentle-ai:persona -->x<!-- /gentle-ai:persona -->")
-	writeFile(t, config.OpenCodePromptFile, "prompt")
+	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n<!-- packy:rules -->\nrules\n<!-- /packy:rules -->\n<!-- gentle-ai:persona -->x<!-- /gentle-ai:persona -->")
+	writeFile(t, config.OpenCodePromptFile, "<!-- packy:rules -->\nrules\n<!-- /packy:rules -->")
 	writeFile(t, config.OpenCodeConfigFile, fmt.Sprintf(`{"instructions":[%q],"plugin":["gentle-ai"]}`, config.OpenCodePromptFile))
 	report := diagnoseWithoutEngram(t, config)
 	assertCheck(t, report, Pass, "engram-setup", "records Codex and OpenCode")
 	assertCheck(t, report, Pass, "codex-config", "markers are present")
+	assertCheck(t, report, Pass, "codex-rules", "Packy-projected")
 	assertCheck(t, report, Warn, "codex-conflict", "gentle-ai")
 	assertCheck(t, report, Pass, "opencode-config", "reference and prompt file are present")
+	assertCheck(t, report, Pass, "opencode-rules", "Packy-projected")
 	assertCheck(t, report, Warn, "opencode-conflict", "gentle-ai")
 
 	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->")
@@ -476,6 +479,58 @@ func TestDiagnoseDelegatedSetupCodexAndOpenCodeMatrix(t *testing.T) {
 		}
 		assertCheck(t, diagnoseWithoutEngram(t, c), Fail, "opencode-config", "is a directory; inspect the config or run packy install")
 	})
+}
+
+func TestDiagnoseReportsExternallySatisfiedRulesAcrossAllSurfaces(t *testing.T) {
+	config := sandboxConfig(t)
+	state := desiredState(config, nil)
+	state.ClaudeOwnership = []corelifecycle.ClaudeOwnership{{
+		ID: "classic:instruction", Kind: corelifecycle.ClaudeOwnershipInstruction,
+		Target:       filepath.Join(config.HomeDir, ".claude", "CLAUDE.md"),
+		Contributors: []string{"classic"}, Fingerprint: "workflow-only",
+	}}
+	saveState(t, config, state)
+	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
+	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n"+external)
+	openCodeExternal := filepath.Join(filepath.Dir(config.OpenCodeConfigFile), "external.md")
+	writeFile(t, openCodeExternal, external)
+	writeFile(t, config.OpenCodePromptFile, "workflow only")
+	writeFile(t, config.OpenCodeConfigFile, fmt.Sprintf(`{"instructions":[%q,%q]}`, openCodeExternal, config.OpenCodePromptFile))
+	report := Diagnose(
+		config.HomeDir,
+		config.ConfigHome,
+		corelifecycle.ObserveSetup(config.state, config.skills, config.source),
+		missingEngramObservation(config),
+		codex.ObserveSetup(config.codex),
+		opencode.ObserveSetup(config.openCode),
+		claudecode.SetupObservation{
+			Instructions: claudecode.InstructionObservation{
+				Contributions:            map[string]string{"classic": "workflow-only"},
+				RulesExternallySatisfied: true,
+			},
+		},
+	)
+	assertCheck(t, report, Pass, "codex-rules", "externally satisfied")
+	assertCheck(t, report, Pass, "opencode-rules", "externally satisfied")
+	assertCheck(t, report, Pass, "claude-instructions", "externally satisfied")
+
+	state.ClaudeOwnership[0].Fingerprint = "workflow-and-rules"
+	saveState(t, config, state)
+	report = Diagnose(
+		config.HomeDir,
+		config.ConfigHome,
+		corelifecycle.ObserveSetup(config.state, config.skills, config.source),
+		missingEngramObservation(config),
+		codex.ObserveSetup(config.codex),
+		opencode.ObserveSetup(config.openCode),
+		claudecode.SetupObservation{
+			Instructions: claudecode.InstructionObservation{
+				Contributions:       map[string]string{"classic": "workflow-and-rules"},
+				RulesPackyProjected: true, RulesExternalDrift: true,
+			},
+		},
+	)
+	assertCheck(t, report, Warn, "claude-instructions", "baseline rules are Packy-projected")
 }
 
 type lookupStub struct {

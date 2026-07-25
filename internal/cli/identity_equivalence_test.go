@@ -283,6 +283,10 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 	value = regexp.MustCompile(`(?m)^(Outcome:|Desired surfaces:|State transition:|Pending prerequisite:|Pending prerequisites:|Preserved:|Blocker:|Lifecycle blockers:|Recovery:|Completed effects:|Failed effect:|Not started effects:)[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^- claude-[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^(?:PASS|WARN|FAIL) claude-[^\n]*\n`).ReplaceAllString(value, "")
+	// Issue #245 adds explicit baseline-source health checks. Dedicated setup
+	// health tests own this new disclosure; keep the frozen rename gate focused
+	// on the pre-existing checks and Claude instruction ownership result.
+	value = regexp.MustCompile(`(?m)^(?:PASS|WARN|FAIL) (?:codex|opencode)-rules:[^\n]*\n`).ReplaceAllString(value, "")
 	// Issue #152 adds the human equivalent of the structured doctor summary.
 	// The dedicated doctor contract tests own that new output; the frozen
 	// rename baseline predates it and remains focused on pre-Claude behavior.
@@ -311,7 +315,7 @@ func removeSliceFJSONFields(value any) {
 			for _, item := range checks {
 				check, _ := item.(map[string]any)
 				name, _ := check["name"].(string)
-				if strings.HasPrefix(name, "claude-") {
+				if strings.HasPrefix(name, "claude-") || name == "codex-rules" || name == "opencode-rules" {
 					continue
 				}
 				filtered = append(filtered, item)
@@ -363,11 +367,6 @@ func normalizeSliceFJSONTranscript(transcript *identityEquivalenceTranscript) {
 			// behavioral facts without either absolute or portable targets.
 			transcript.Scenarios[i].Output = regexp.MustCompile(` target=[^,;\s]*`).ReplaceAllString(transcript.Scenarios[i].Output, "")
 			transcript.Scenarios[i].Output = regexp.MustCompile(`(?:\$HOME|\$XDG|\$REPOSITORY|<host-path>)/[^,;\s]+`).ReplaceAllString(transcript.Scenarios[i].Output, "<portable-path>")
-			// Issue #245 intentionally exposes provider-specific baseline
-			// reconciliation warnings during dry-run. Dedicated lifecycle tests
-			// own that new behavior; the frozen rename gate ignores only those
-			// newly disclosed provider warning lines.
-			transcript.Scenarios[i].Output = regexp.MustCompile(`(?m)^warning: (?:Codex|OpenCode|Claude) [^\n]*\n`).ReplaceAllString(transcript.Scenarios[i].Output, "")
 			continue
 		}
 		removeSliceFJSONFields(document)

@@ -169,7 +169,28 @@ func claudeInstructionCheck(observed claudecode.InstructionObservation, ownershi
 			return Check{Severity: Fail, Name: "claude-instructions", Detail: "recorded Claude instruction contribution is missing or drifted at " + owner.Target + "; inspect the collision, then run packy update"}
 		}
 	}
-	return Check{Severity: Pass, Name: "claude-instructions", Detail: fmt.Sprintf("%d recorded Claude instruction projections match", len(wanted))}
+	if len(wanted) > 0 {
+		if observed.RulesExternalDrift || observed.RulesMalformed {
+			source := "Packy-projected"
+			if observed.RulesExternallySatisfied && !observed.RulesPackyProjected {
+				source = "externally satisfied by exact dots:rules"
+			}
+			condition := "differing dots:rules content"
+			if observed.RulesMalformed {
+				condition = "malformed dots:rules markers"
+			}
+			return Check{Severity: Warn, Name: "claude-instructions", Detail: fmt.Sprintf("%d recorded Claude instruction projections match; baseline rules are %s; preserved %s requires repair", len(wanted), source, condition)}
+		}
+		switch {
+		case observed.RulesExternallySatisfied && !observed.RulesPackyProjected:
+			return Check{Severity: Pass, Name: "claude-instructions", Detail: fmt.Sprintf("%d recorded Claude instruction projections match; baseline rules are externally satisfied by exact dots:rules", len(wanted))}
+		case !observed.RulesExternallySatisfied && observed.RulesPackyProjected:
+			return Check{Severity: Pass, Name: "claude-instructions", Detail: fmt.Sprintf("%d recorded Claude instruction projections match; baseline rules are Packy-projected", len(wanted))}
+		default:
+			return Check{Severity: Fail, Name: "claude-instructions", Detail: "recorded Claude instructions do not match baseline rules satisfaction; run packy update"}
+		}
+	}
+	return Check{Severity: Pass, Name: "claude-instructions", Detail: "0 recorded Claude instruction projections match"}
 }
 
 func claudeHookCheck(observed claudecode.HookObservation, ownership []corelifecycle.ClaudeOwnership) Check {
@@ -469,8 +490,16 @@ func codexChecks(observation codex.SetupObservation) []Check {
 	} else {
 		checks = append(checks, Check{Severity: Warn, Name: "codex-config", Detail: "Packy prompt markers are missing; run packy install"})
 	}
+	switch {
+	case observation.RulesExternallySatisfied() && !observation.HasPackyRules():
+		checks = append(checks, Check{Severity: Pass, Name: "codex-rules", Detail: "baseline rules are externally satisfied by exact dots:rules"})
+	case !observation.RulesExternallySatisfied() && observation.HasPackyRules():
+		checks = append(checks, Check{Severity: Pass, Name: "codex-rules", Detail: "baseline rules are Packy-projected"})
+	default:
+		checks = append(checks, Check{Severity: Warn, Name: "codex-rules", Detail: "baseline rules projection does not match external satisfaction; run packy update"})
+	}
 	for _, warning := range observation.Warnings() {
-		if strings.Contains(warning, "gentle-ai") {
+		if strings.Contains(warning, "gentle-ai") || strings.Contains(warning, "differs from the Packy baseline") || strings.Contains(warning, "malformed dots:rules") {
 			checks = append(checks, Check{Severity: Warn, Name: "codex-conflict", Detail: warning + "; inspect duplicate global instructions"})
 		}
 	}
@@ -493,7 +522,20 @@ func openCodeChecks(observation opencode.SetupObservation) []Check {
 	default:
 		checks = append(checks, Check{Severity: Warn, Name: "opencode-config", Detail: "Packy prompt file is missing; run packy update"})
 	}
+	if inspection.HasPackyInstruction && inspection.PromptExists {
+		switch {
+		case inspection.RulesExternallySatisfied && !inspection.RulesPackyProjected:
+			checks = append(checks, Check{Severity: Pass, Name: "opencode-rules", Detail: "baseline rules are externally satisfied by exact dots:rules"})
+		case !inspection.RulesExternallySatisfied && inspection.RulesPackyProjected:
+			checks = append(checks, Check{Severity: Pass, Name: "opencode-rules", Detail: "baseline rules are Packy-projected"})
+		default:
+			checks = append(checks, Check{Severity: Warn, Name: "opencode-rules", Detail: "baseline rules projection does not match external satisfaction; run packy update"})
+		}
+	}
 	for _, warning := range inspection.Warnings {
+		if strings.Contains(warning, "externally satisfied by exact dots:rules") {
+			continue
+		}
 		checks = append(checks, Check{Severity: Warn, Name: "opencode-conflict", Detail: warning + "; inspect duplicate OpenCode overlays"})
 	}
 	return checks

@@ -12,6 +12,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
+	"github.com/yersonargotev/packy/internal/prompt"
 )
 
 type PathKind string
@@ -31,11 +32,15 @@ type SkillObservation struct {
 	Err                                                     error
 }
 type InstructionObservation struct {
-	Path, Revision          string
-	MarkerCardinality       int
-	Contributions           map[string]string
-	ForeignContentPreserved bool
-	Err                     error
+	Path, Revision           string
+	MarkerCardinality        int
+	Contributions            map[string]string
+	ForeignContentPreserved  bool
+	RulesExternallySatisfied bool
+	RulesPackyProjected      bool
+	RulesExternalDrift       bool
+	RulesMalformed           bool
+	Err                      error
 }
 type AgentObservation struct {
 	Path        string
@@ -222,7 +227,12 @@ func ObserveInstructions(path string) InstructionObservation {
 	}
 	s := string(b)
 	starts, ends := strings.Count(s, instructionStart), strings.Count(s, instructionEnd)
-	o := InstructionObservation{Path: path, Revision: Fingerprint(b), MarkerCardinality: starts, Contributions: map[string]string{}, ForeignContentPreserved: true}
+	rules := prompt.InspectRulesContract(s)
+	o := InstructionObservation{
+		Path: path, Revision: Fingerprint(b), MarkerCardinality: starts,
+		Contributions: map[string]string{}, ForeignContentPreserved: true,
+		RulesExternallySatisfied: rules.Exact, RulesExternalDrift: rules.Drift, RulesMalformed: rules.Malformed,
+	}
 	if err := validateMarkerPair(s, instructionStart, instructionEnd, "Packy instruction"); err != nil {
 		o.Err = fmt.Errorf("%w: start=%d end=%d", err, starts, ends)
 		return o
@@ -255,7 +265,11 @@ func ObserveInstructions(path string) InstructionObservation {
 			return o
 		}
 		bodyEnd := bodyStart + bodyEndRel
-		o.Contributions[id] = Fingerprint([]byte(strings.TrimSpace(inside[bodyStart:bodyEnd])))
+		body := strings.TrimSpace(inside[bodyStart:bodyEnd])
+		o.Contributions[id] = Fingerprint([]byte(body))
+		if id == "classic" {
+			o.RulesPackyProjected = strings.Contains(body, strings.TrimSpace(prompt.RulesContent()))
+		}
 		inside = inside[bodyEnd+len(endMarker):]
 	}
 	return o

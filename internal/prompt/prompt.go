@@ -166,7 +166,7 @@ func PreviewCodex(path string) (CodexPlan, error) {
 	if err != nil {
 		return CodexPlan{}, err
 	}
-	return CodexPlan{path: path, rulesSeal: rulesContractSeal(existing), warnings: DetectExternalManagedBlocks(existing)}, nil
+	return CodexPlan{path: path, rulesSeal: rulesContractSeal(existing), warnings: detectCodexRulesWarnings(existing)}, nil
 }
 
 func ValidateCodexPlan(plan CodexPlan) error {
@@ -264,6 +264,17 @@ func RemoveCodex(path string) error {
 }
 
 func DetectExternalManagedBlocks(content string) []string {
+	warnings := detectCodexRulesWarnings(content)
+	if strings.Contains(content, "<!-- gentle-ai:") || strings.Contains(content, "<!-- /gentle-ai:") {
+		warnings = append(warnings, "Codex prompt contains gentle-ai managed blocks; Packy preserved them and only updated Packy markers")
+	}
+	if containsEngramMarker(content) {
+		warnings = append(warnings, "Codex prompt contains Engram managed instructions; Packy preserved them and only updated Packy markers")
+	}
+	return warnings
+}
+
+func detectCodexRulesWarnings(content string) []string {
 	var warnings []string
 	rules := InspectRulesContract(content)
 	if rules.Exact {
@@ -282,12 +293,6 @@ func DetectExternalManagedBlocks(content string) []string {
 			action = "an exact dots:rules block still satisfies the baseline"
 		}
 		warnings = append(warnings, "Codex also contains malformed dots:rules markers; "+action+" and Packy preserved the external content; repair the malformed provider markers before retrying")
-	}
-	if strings.Contains(content, "<!-- gentle-ai:") || strings.Contains(content, "<!-- /gentle-ai:") {
-		warnings = append(warnings, "Codex prompt contains gentle-ai managed blocks; Packy preserved them and only updated Packy markers")
-	}
-	if containsEngramMarker(content) {
-		warnings = append(warnings, "Codex prompt contains Engram managed instructions; Packy preserved them and only updated Packy markers")
 	}
 	return warnings
 }
