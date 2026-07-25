@@ -38,6 +38,9 @@ The Packy-owned set of current capability-pack versions advertised by `packy pac
 ### Pack resource
 One host-independent intent contributed by a capability pack. A CLI-surface adapter may realize one pack resource as multiple host-specific artifacts; host-native schemas, paths, and package formats are projections rather than pack resources.
 
+### Composite Pack Source Bundle
+The complete ordered set of two or more Pack Sources admitted together as the initial provenance of one previously absent capability pack. It is one sealed transactional value, not an additional persistent source identity.
+
 ### Pack requirement
 A global prerequisite a capability pack consumes but does not contribute to a CLI surface. External tools such as the Engram executable are requirements; platform-specific acquisition remains Packy core behavior rather than part of the portable pack manifest.
 
