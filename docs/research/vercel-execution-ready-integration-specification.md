@@ -17,7 +17,7 @@ The two secondary MIT grants do not cure that blocker.
 Acceptance requires all six sequential gates in
 [Decide the Vercel validation and acceptance matrix](https://github.com/yersonargotev/packy/issues/233).
 A failed, unknown, stale, or blocked row stops its gate and every later gate;
-one of Codex, OpenCode, or Claude Code can compensate for another.
+success on Codex, OpenCode, or Claude Code never compensates for another.
 
 ## Immutable decision inputs
 
@@ -160,13 +160,13 @@ A v4 mode has this exact shape:
   "authorities": [
     {
       "kind": "filesystem_read | filesystem_write | process_execute | network | environment_inspect | secret_use | package_manager_execute | git_inspect | git_commit | git_push | vercel_project_mutate | vercel_environment_mutate | vercel_domain_mutate | preview_deploy | production_deploy | upload | subagent_delegate",
-      "scope": "consumer_project | pack_resource | local_git | remote_git | vercel_account | vercel_project | deployment_payload"
+      "scope": "consumer_project | pack_resource | workstation | local_git | remote_git | vercel_account | vercel_project | deployment_payload"
     }
   ],
   "effects": [
     {
-      "kind": "consumer_project_file_change | consumer_project_dependency_change | local_git_change | remote_git_change | vercel_project_change | vercel_environment_change | vercel_domain_change | upload | preview_deployment | production_deployment",
-      "scope": "consumer_project | local_git | remote_git | vercel_project | deployment_payload"
+      "kind": "authentication_state_change | consumer_project_file_change | consumer_project_dependency_change | local_git_change | remote_git_change | tool_installation | vercel_project_change | vercel_environment_change | vercel_domain_change | upload | preview_deployment | production_deployment",
+      "scope": "consumer_project | workstation | local_git | remote_git | vercel_account | vercel_project | deployment_payload"
     }
   ],
   "fallback": {"kind": "none"},
@@ -198,27 +198,120 @@ recoverable secret fingerprints in manifests, observations, status, previews,
 plans, logs, errors, workflow artifacts, or acceptance evidence. Only presence,
 absence, or redacted identity is admissible.
 
-### Exact runtime-mode families
+### Exact runtime-mode rows
 
-The immutable candidate determines the complete row inventory; a producer may
-not merge source-distinct routes merely because they share authorities. The v4
-manifest must contain at least the following exact families and must preserve
-every source-defined route within them:
+The first manifest contains exactly the rows below. IDs are stable and local to
+their resource. `R`, `A`, and `E` refer to the closed profiles defined after the
+table. A dash means the required empty array. `none` means
+`{"kind":"none"}`; `mode:<id>` means
+`{"kind":"mode","mode":"<id>"}`. Every row uses
+`on_unavailable: "fail_before_effects"`.
 
-| Resource cohort | Required mode contract |
+| Resource | Mode ID | Role | R | A | E | Fallback |
+| --- | --- | --- | --- | --- | --- | --- |
+| `vercel-composition-patterns` | `guidance-edit` | primary | — | `guidance-edit` | `guidance-edit` | none |
+| `vercel-react-best-practices` | `guidance-edit` | primary | — | `guidance-edit` | `guidance-edit` | none |
+| `vercel-react-native-skills` | `guidance-edit` | primary | — | `guidance-edit` | `guidance-edit` | none |
+| `vercel-react-view-transitions` | `guidance-edit` | primary | — | `guidance-edit` | `guidance-edit` | none |
+| `vercel-web-design-guidelines` | `local-review` | primary | — | `local-review` | — | none |
+| `vercel-writing-guidelines` | `local-review` | primary | — | `local-review` | — | none |
+| `vercel-deploy-to-vercel` | `git-push-preview` | primary | `git-push` | `git-push-preview` | `git-push-preview` | mode:`claimable-preview` |
+| `vercel-deploy-to-vercel` | `git-push-production` | primary | `git-push` | `git-push-production` | `git-push-production` | none |
+| `vercel-deploy-to-vercel` | `cli-preview` | primary | `vercel-cli-linked` | `cli-preview` | `cli-preview` | mode:`claimable-preview` |
+| `vercel-deploy-to-vercel` | `cli-production` | primary | `vercel-cli-linked` | `cli-production` | `cli-production` | none |
+| `vercel-deploy-to-vercel` | `link-cli-preview` | primary | `vercel-cli-authenticated` | `link-cli-preview` | `link-cli-preview` | mode:`claimable-preview` |
+| `vercel-deploy-to-vercel` | `link-git-preview` | primary | `vercel-cli-git-authenticated` | `link-git-preview` | `link-git-preview` | mode:`claimable-preview` |
+| `vercel-deploy-to-vercel` | `setup-link-preview` | primary | `setup-link` | `setup-link-preview` | `setup-link-preview` | mode:`claimable-preview` |
+| `vercel-deploy-to-vercel` | `claimable-preview` | fallback_only | `claimable` | `claimable-preview` | `claimable-preview` | none |
+| `vercel-cli-with-tokens` | `inspect` | primary | `token-cli` | `token-inspect` | — | none |
+| `vercel-cli-with-tokens` | `deploy-preview` | primary | `token-cli-linked` | `token-cli-preview` | `cli-preview` | none |
+| `vercel-cli-with-tokens` | `deploy-production` | primary | `token-cli-linked` | `token-cli-production` | `cli-production` | none |
+| `vercel-cli-with-tokens` | `link-project` | primary | `token-cli` | `token-link` | `token-link` | none |
+| `vercel-cli-with-tokens` | `environment-read` | primary | `token-cli-linked` | `token-inspect` | — | none |
+| `vercel-cli-with-tokens` | `environment-write` | primary | `token-cli-linked` | `token-environment-write` | `token-environment-write` | none |
+| `vercel-cli-with-tokens` | `domain-read` | primary | `token-cli-linked` | `token-inspect` | — | none |
+| `vercel-cli-with-tokens` | `domain-write` | primary | `token-cli-linked` | `token-domain-write` | `token-domain-write` | none |
+| `vercel-cli-with-tokens` | `git-push-preview` | primary | `token-git-push` | `token-git-push-preview` | `git-push-preview` | none |
+| `vercel-cli-with-tokens` | `git-push-production` | primary | `token-git-push` | `token-git-push-production` | `git-push-production` | none |
+| `vercel-optimize` | `subagent-investigation` | primary | `optimize` | `optimize-subagent` | `optimize` | mode:`sequential-investigation` |
+| `vercel-optimize` | `sequential-investigation` | fallback_only | `optimize` | `optimize-sequential` | `optimize` | none |
+| `vercel-optimize` | `subagent-observability-plus` | primary | `optimize-observability-plus` | `optimize-subagent` | `optimize` | mode:`sequential-observability-plus` |
+| `vercel-optimize` | `sequential-observability-plus` | fallback_only | `optimize-observability-plus` | `optimize-sequential` | `optimize` | none |
+
+Requirement profiles expand exactly as follows:
+
+| R profile | Required entries |
 | --- | --- |
-| `vercel-composition-patterns`, `vercel-react-best-practices`, `vercel-react-native-skills`, `vercel-react-view-transitions` | One primary guidance mode per skill. It may read and modify consumer-project source. Its possible effect is consumer-project file/dependency change where the source directs implementation. It has no activation-time tool requirement and no network, Git, deployment, authentication, or secret authority unless an exact source-defined sub-route declares one. |
-| `vercel-web-design-guidelines`, `vercel-writing-guidelines` | One primary local-review mode per skill. It requires its sealed package-local asset, may read consumer files, emits review output, performs no runtime network fetch, and has no consumer-project mutation effect in the fixed first contract. No fallback exists. |
-| `vercel-deploy-to-vercel` | Distinct primary routes for Git-push deployment, linked Vercel CLI deployment, link-then-deploy, and install/auth/link/deploy; distinct fallback-only claimable-deployment routes for the general/Claude and Codex scripts. Requirements, Git/process/network/package-manager/auth/link facts, preview-vs-production authority, upload, project mutation, and local/remote Git effects stay route-specific. Preview is the default requested outcome; production authority/effect is present only when the user explicitly selects production. No-auth claimable deployment is a real fallback, not simulated CLI success. |
-| `vercel-cli-with-tokens` | Distinct primary operation modes for inspect/list, deploy, link, environment mutation, domain mutation, and Git-push deployment. Every token-using route requires Vercel token authentication and declares secret use without exposing the token. Vercel CLI, linkage, Git, network, environment inspection, project/environment/domain mutation, upload, and preview/production effects remain operation-specific. No invented no-token fallback exists. |
-| `vercel-optimize` | A primary subagent-investigation mode and a fallback-only sequential-investigation mode with the same logical objective and output contract. Both require Node.js `>=20.0.0`, Vercel CLI `>=53.0.0`, Vercel authentication, intended project linkage/scope, and the service data needed by the selected audit. Entitlement requirements such as Observability Plus are declared only for the route that consumes them. Both may read project source, execute the packaged pipeline, query Vercel services, and write local audit artifacts; only the primary mode declares subagent delegation. The fallback edge is admissible only with exact-contract acceptance evidence. |
+| `git-push` | `tool:git`; `authentication:git-provider` |
+| `vercel-cli-authenticated` | `tool:vercel-cli`; `authentication:vercel` |
+| `vercel-cli-linked` | `tool:vercel-cli`; `authentication:vercel`; `project_link:vercel-project` |
+| `vercel-cli-git-authenticated` | `tool:git`; `tool:vercel-cli`; `authentication:git-provider`; `authentication:vercel` |
+| `setup-link` | `tool:npm`; `authentication:vercel-interactive` |
+| `claimable` | `tool:bash` |
+| `token-cli` | `tool:vercel-cli`; `authentication:vercel-token` |
+| `token-cli-linked` | `tool:vercel-cli`; `authentication:vercel-token`; `project_link:vercel-project` |
+| `token-git-push` | `tool:git`; `tool:vercel-cli`; `authentication:git-provider`; `authentication:vercel-token`; `project_link:vercel-project` |
+| `optimize` | `tool:node@>=20.0.0`; `tool:vercel-cli@>=53.0.0`; `authentication:vercel`; `project_link:vercel-project`; `service_data:vercel-project-metrics` |
+| `optimize-observability-plus` | all `optimize` entries plus `entitlement:observability-plus` |
 
-The authoritative mode-row fixture is generated by static inventory of the
-exact selected `SKILL.md` and package dependencies. It is a deterministic
-candidate fact, not an opportunity to choose weaker behavior. Any source route
-that cannot be represented by the closed v4 vocabulary is a contract-closure
-failure and stops implementation for a new decision; it is not silently
-collapsed into a broader mode.
+Requirement notation maps text before `:` to `kind`, text after it to `id`,
+and `@` to the tool `version`. These are portable Packy-owned observer
+identities; manifests contain no probe command.
+
+Authority profiles expand to these exact sorted `(kind, scope)` sets:
+
+| A profile | Authority entries |
+| --- | --- |
+| `guidance-edit` | `filesystem_read:consumer_project`; `filesystem_write:consumer_project` |
+| `local-review` | `filesystem_read:consumer_project`; `filesystem_read:pack_resource` |
+| `git-push-preview` | `filesystem_read:consumer_project`; `git_commit:local_git`; `git_inspect:local_git`; `git_push:remote_git`; `network:remote_git`; `preview_deploy:vercel_project`; `process_execute:local_git` |
+| `git-push-production` | same as `git-push-preview`, replacing `preview_deploy` with `production_deploy:vercel_project` |
+| `cli-preview` | `filesystem_read:consumer_project`; `network:vercel_project`; `preview_deploy:vercel_project`; `process_execute:consumer_project`; `secret_use:vercel_account`; `upload:deployment_payload` |
+| `cli-production` | same as `cli-preview`, replacing `preview_deploy` with `production_deploy:vercel_project` |
+| `link-cli-preview` | all `cli-preview` entries plus `filesystem_write:consumer_project`; `vercel_project_mutate:vercel_project` |
+| `link-git-preview` | all `git-push-preview` entries plus `filesystem_write:consumer_project`; `network:vercel_project`; `secret_use:vercel_account`; `vercel_project_mutate:vercel_project` |
+| `setup-link-preview` | all `link-cli-preview` entries plus `package_manager_execute:workstation` |
+| `claimable-preview` | `filesystem_read:consumer_project`; `network:vercel_project`; `preview_deploy:vercel_project`; `process_execute:consumer_project`; `upload:deployment_payload` |
+| `token-inspect` | `environment_inspect:consumer_project`; `filesystem_read:consumer_project`; `network:vercel_account`; `process_execute:consumer_project`; `secret_use:vercel_account` |
+| `token-cli-preview` | `filesystem_read:consumer_project`; `network:vercel_project`; `preview_deploy:vercel_project`; `process_execute:consumer_project`; `secret_use:vercel_account`; `upload:deployment_payload` |
+| `token-cli-production` | same as `token-cli-preview`, replacing `preview_deploy` with `production_deploy:vercel_project` |
+| `token-link` | `environment_inspect:consumer_project`; `filesystem_read:consumer_project`; `filesystem_write:consumer_project`; `network:vercel_project`; `process_execute:consumer_project`; `secret_use:vercel_account`; `vercel_project_mutate:vercel_project` |
+| `token-environment-write` | all `token-inspect` entries plus `filesystem_write:consumer_project`; `vercel_environment_mutate:vercel_project` |
+| `token-domain-write` | all `token-inspect` entries plus `vercel_domain_mutate:vercel_project` |
+| `token-git-push-preview` | all `git-push-preview` entries plus `environment_inspect:consumer_project`; `network:vercel_account`; `secret_use:vercel_account` |
+| `token-git-push-production` | same as `token-git-push-preview`, replacing `preview_deploy` with `production_deploy:vercel_project` |
+| `optimize-sequential` | `environment_inspect:consumer_project`; `filesystem_read:consumer_project`; `filesystem_read:pack_resource`; `filesystem_write:consumer_project`; `network:vercel_project`; `process_execute:consumer_project`; `secret_use:vercel_account` |
+| `optimize-subagent` | all `optimize-sequential` entries plus `subagent_delegate:consumer_project` |
+
+Effect profiles expand to these exact sorted `(kind, scope)` sets:
+
+| E profile | Effect entries |
+| --- | --- |
+| `guidance-edit` | `consumer_project_dependency_change:consumer_project`; `consumer_project_file_change:consumer_project` |
+| `git-push-preview` | `local_git_change:local_git`; `preview_deployment:vercel_project`; `remote_git_change:remote_git` |
+| `git-push-production` | `local_git_change:local_git`; `production_deployment:vercel_project`; `remote_git_change:remote_git` |
+| `cli-preview` | `preview_deployment:vercel_project`; `upload:deployment_payload` |
+| `cli-production` | `production_deployment:vercel_project`; `upload:deployment_payload` |
+| `link-cli-preview` | `authentication_state_change:vercel_account`; `consumer_project_file_change:consumer_project`; `preview_deployment:vercel_project`; `upload:deployment_payload`; `vercel_project_change:vercel_project` |
+| `link-git-preview` | `consumer_project_file_change:consumer_project`; `local_git_change:local_git`; `preview_deployment:vercel_project`; `remote_git_change:remote_git`; `vercel_project_change:vercel_project` |
+| `setup-link-preview` | all `link-cli-preview` entries plus `tool_installation:workstation` |
+| `claimable-preview` | `preview_deployment:vercel_project`; `upload:deployment_payload` |
+| `token-link` | `consumer_project_file_change:consumer_project`; `vercel_project_change:vercel_project` |
+| `token-environment-write` | `consumer_project_file_change:consumer_project`; `vercel_environment_change:vercel_project` |
+| `token-domain-write` | `vercel_domain_change:vercel_project` |
+| `optimize` | `consumer_project_file_change:consumer_project` |
+
+The closed effect enumeration therefore also includes
+`authentication_state_change` and `tool_installation`, with the exact scopes
+shown above. They are source-observable consequences and cannot be collapsed
+truthfully into an authority.
+
+The adapted guideline assets are package dependencies, not runtime requirement
+rows. Production modes have no preview fallback because production is an
+explicitly different authority and effect. Token modes have no invented
+no-token fallback. Claimable-preview and sequential-optimization fallback edges
+remain blocked until exact-contract acceptance evidence proves the same logical
+outcome.
 
 ### Compatibility
 
@@ -423,8 +516,9 @@ The six gates are:
 1. Admission: exact three-source identity, locks, legal evidence, and complete
    lock-set reproduction. Primary legal authority is currently blocked.
 2. Contract closure: exactly nine skill trees, 13 resources, 27 native bindings,
-   complete auxiliary closure, two adapted local guideline loaders, v4 modes,
-   notices, six ZIP exclusions, and no moving or undeclared input.
+   28 runtime-mode rows, complete auxiliary closure, two adapted local
+   guideline loaders, notices, six ZIP exclusions, and no moving or undeclared
+   input.
 3. Lifecycle safety: per-surface activation, pure preview, stale rejection,
    collisions/aliases, atomic update, no-op, write-boundary failure/recovery,
    deactivation, foreign/drift/symlink preservation, and cross-surface isolation.
