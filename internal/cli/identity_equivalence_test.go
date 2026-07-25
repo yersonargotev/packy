@@ -363,6 +363,11 @@ func normalizeSliceFJSONTranscript(transcript *identityEquivalenceTranscript) {
 			// behavioral facts without either absolute or portable targets.
 			transcript.Scenarios[i].Output = regexp.MustCompile(` target=[^,;\s]*`).ReplaceAllString(transcript.Scenarios[i].Output, "")
 			transcript.Scenarios[i].Output = regexp.MustCompile(`(?:\$HOME|\$XDG|\$REPOSITORY|<host-path>)/[^,;\s]+`).ReplaceAllString(transcript.Scenarios[i].Output, "<portable-path>")
+			// Issue #245 intentionally exposes provider-specific baseline
+			// reconciliation warnings during dry-run. Dedicated lifecycle tests
+			// own that new behavior; the frozen rename gate ignores only those
+			// newly disclosed provider warning lines.
+			transcript.Scenarios[i].Output = regexp.MustCompile(`(?m)^warning: (?:Codex|OpenCode|Claude) [^\n]*\n`).ReplaceAllString(transcript.Scenarios[i].Output, "")
 			continue
 		}
 		removeSliceFJSONFields(document)

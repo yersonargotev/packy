@@ -1,11 +1,54 @@
 package prompt
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestCodexPlanSealsOnlyRecognizedRulesInputs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "AGENTS.md")
+	initial := "# User notes\n"
+	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := PreviewCodex(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exact := initial + exactDotsRulesFixture()
+	if err := os.WriteFile(path, []byte(exact), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyCodex(plan); !errors.Is(err, ErrStaleCodexPlan) {
+		t.Fatalf("ApplyCodex error=%v, want %v", err, ErrStaleCodexPlan)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != exact {
+		t.Fatalf("stale apply changed prompt: got=%q err=%v", got, err)
+	}
+
+	plan, err = PreviewCodex(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withEngram := exact + "<!-- engram:memory -->\nkeep\n<!-- /engram:memory -->\n"
+	if err := os.WriteFile(path, []byte(withEngram), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyCodex(plan); err != nil {
+		t.Fatalf("unrelated managed content should not stale the rules plan: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "<!-- engram:memory -->\nkeep\n<!-- /engram:memory -->") {
+		t.Fatalf("Engram content was not preserved:\n%s", got)
+	}
+}
 
 func TestSectionInsertUpdateRemove(t *testing.T) {
 	existing := "# User notes\n\nKeep this.\n"

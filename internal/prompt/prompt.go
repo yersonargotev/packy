@@ -3,6 +3,7 @@ package prompt
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,18 @@ type RulesObservation struct {
 
 type WriteResult struct {
 	Warnings []string
+}
+
+var ErrStaleCodexPlan = errors.New("Codex rules observation changed after preview")
+
+type CodexPlan struct {
+	path      string
+	rulesSeal string
+	warnings  []string
+}
+
+func (plan CodexPlan) Warnings() []string {
+	return append([]string(nil), plan.warnings...)
 }
 
 type Inspection struct {
@@ -141,7 +154,40 @@ func RulesSectionContent() string {
 }
 
 func WriteCodex(path string) (WriteResult, error) {
+	plan, err := PreviewCodex(path)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	return ApplyCodex(plan)
+}
+
+func PreviewCodex(path string) (CodexPlan, error) {
 	existing, err := readOptionalFile(path)
+	if err != nil {
+		return CodexPlan{}, err
+	}
+	return CodexPlan{path: path, rulesSeal: rulesContractSeal(existing), warnings: DetectExternalManagedBlocks(existing)}, nil
+}
+
+func ValidateCodexPlan(plan CodexPlan) error {
+	if plan.path == "" {
+		return ErrStaleCodexPlan
+	}
+	existing, err := readOptionalFile(plan.path)
+	if err != nil {
+		return err
+	}
+	if rulesContractSeal(existing) != plan.rulesSeal {
+		return ErrStaleCodexPlan
+	}
+	return nil
+}
+
+func ApplyCodex(plan CodexPlan) (WriteResult, error) {
+	if err := ValidateCodexPlan(plan); err != nil {
+		return WriteResult{}, err
+	}
+	existing, err := readOptionalFile(plan.path)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -155,13 +201,42 @@ func WriteCodex(path string) (WriteResult, error) {
 	if updated == existing {
 		return result, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return WriteResult{}, fmt.Errorf("create Codex config directory %s: %w", filepath.Dir(path), err)
+	if err := os.MkdirAll(filepath.Dir(plan.path), 0o700); err != nil {
+		return WriteResult{}, fmt.Errorf("create Codex config directory %s: %w", filepath.Dir(plan.path), err)
 	}
-	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
-		return WriteResult{}, fmt.Errorf("write Codex Packy prompt %s: %w", path, err)
+	if err := os.WriteFile(plan.path, []byte(updated), 0o600); err != nil {
+		return WriteResult{}, fmt.Errorf("write Codex Packy prompt %s: %w", plan.path, err)
 	}
 	return result, nil
+}
+
+func rulesContractSeal(content string) string {
+	var recognized strings.Builder
+	for len(content) > 0 {
+		openIndex := strings.Index(content, dotsRulesOpen)
+		closeIndex := strings.Index(content, dotsRulesClose)
+		switch {
+		case openIndex < 0 && closeIndex < 0:
+			content = ""
+		case closeIndex >= 0 && (openIndex < 0 || closeIndex < openIndex):
+			recognized.WriteString(dotsRulesClose)
+			content = content[closeIndex+len(dotsRulesClose):]
+		default:
+			recognized.WriteString(dotsRulesOpen)
+			content = content[openIndex+len(dotsRulesOpen):]
+			closeIndex = strings.Index(content, dotsRulesClose)
+			if closeIndex < 0 {
+				recognized.WriteString(content)
+				content = ""
+				continue
+			}
+			recognized.WriteString(content[:closeIndex])
+			recognized.WriteString(dotsRulesClose)
+			content = content[closeIndex+len(dotsRulesClose):]
+		}
+	}
+	sum := sha256.Sum256([]byte(recognized.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 func InspectCodex(path string) (Inspection, error) {

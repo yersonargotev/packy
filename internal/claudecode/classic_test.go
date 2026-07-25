@@ -208,6 +208,36 @@ func TestClassicInstructionsPreserveDifferingMalformedAndUnknownExternalContent(
 	}
 }
 
+func TestClassicRulesWarningsDoNotClaimProjectionWhenContributionIsForeign(t *testing.T) {
+	for name, external := range map[string]string{
+		"drift":     "<!-- dots:rules -->\n## Different\n<!-- /dots:rules -->\n",
+		"malformed": "<!-- dots:rules -->\nunterminated\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			layout := NewCanonicalLayout(home)
+			document, err := UpsertInstructionContribution(external, InstructionContribution{ContributorID: "classic", Content: "foreign contribution"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeClassicString(t, layout.InstructionsFile, document)
+			adapter := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "", nil, StaticOwnershipSnapshot(OwnershipSnapshot{}))
+			plan, err := adapter.InspectClassic(context.Background(), ClassicRequest{Goal: ClassicPresent, Desired: ClassicDesired{
+				Instruction: &ClassicInstruction{ID: "classic:instruction", Content: prompt.CodexContent(), Rules: prompt.RulesContent()},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Actions()) != 0 || len(plan.Blockers()) != 1 || len(plan.Warnings()) != 1 {
+				t.Fatalf("actions=%v blockers=%v warnings=%v", plan.Actions(), plan.Blockers(), plan.Warnings())
+			}
+			if strings.Contains(plan.Warnings()[0], "Packy projected") || !strings.Contains(plan.Warnings()[0], "could not project") {
+				t.Fatalf("warning falsely claimed projection: %q", plan.Warnings()[0])
+			}
+		})
+	}
+}
+
 func TestClassicInstructionPlanRejectsStaleExternalRulesBeforeMutation(t *testing.T) {
 	home := t.TempDir()
 	layout := NewCanonicalLayout(home)

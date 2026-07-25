@@ -161,9 +161,9 @@ func (a *SurfaceAdapter) InspectClassic(ctx context.Context, request ClassicRequ
 		}
 		p.instructionSeal = Fingerprint(current)
 		content := d.Content
+		var rules prompt.RulesObservation
 		if d.Rules != "" {
-			rules := prompt.InspectRulesContract(string(current))
-			p.warnings = append(p.warnings, classicRulesWarnings(rules)...)
+			rules = prompt.InspectRulesContract(string(current))
 			if !rules.Exact {
 				content += "\n" + d.Rules
 			}
@@ -180,14 +180,19 @@ func (a *SurfaceAdapter) InspectClassic(ctx context.Context, request ClassicRequ
 			}
 			record := OwnershipRecord{StateOwner: "classic", ContributorID: "classic", ID: id, Kind: string(ActionInstructionContribution), Target: a.layout.InstructionsFile, Fingerprint: fp, Contributors: []string{"classic"}, DeletionAuthorized: true}
 			observed, exists := o.Contributions["classic"]
-			if exists && !ownsClassicFingerprint(snapshot, record, observed) {
+			ownsExisting := exists && ownsClassicFingerprint(snapshot, record, observed)
+			canManage := !exists || ownsExisting
+			if !canManage {
 				p.blockers = append(p.blockers, "foreign or drifted classic Claude instruction contribution")
 				p.preserved = append(p.preserved, a.layout.InstructionsFile)
 			} else {
 				p.ownership = append(p.ownership, record)
 			}
-			if !exists || (ownsClassicFingerprint(snapshot, record, observed) && !fingerprintsEqual(observed, fp)) {
+			if !exists || (ownsExisting && !fingerprintsEqual(observed, fp)) {
 				p.actions = append(p.actions, capabilitypack.ProjectionAction{ID: id, Kind: ActionInstructionContribution, Target: a.layout.InstructionsFile, Content: merged, Command: Fingerprint(current), Description: "merge classic Claude instructions"})
+			}
+			if d.Rules != "" {
+				p.warnings = append(p.warnings, classicRulesWarnings(rules, canManage)...)
 			}
 		}
 	}
@@ -244,15 +249,21 @@ func (a *SurfaceAdapter) ValidateClassicPlan(p ClassicPlan) error {
 	return nil
 }
 
-func classicRulesWarnings(rules prompt.RulesObservation) []string {
+func classicRulesWarnings(rules prompt.RulesObservation, contributionManageable bool) []string {
 	var warnings []string
 	if rules.Exact {
-		warnings = append(warnings, "Claude baseline rules are externally satisfied by exact dots:rules; Packy preserved the external block and omitted its own rules contribution")
+		action := "Packy preserved the external block and omitted its own rules contribution"
+		if !contributionManageable {
+			action = "Packy preserved the external block, but a foreign or drifted classic contribution prevented duplicate reconciliation"
+		}
+		warnings = append(warnings, "Claude baseline rules are externally satisfied by exact dots:rules; "+action)
 	}
 	if rules.Drift {
 		action := "Packy projected its baseline"
 		if rules.Exact {
 			action = "an exact dots:rules block still satisfies the baseline"
+		} else if !contributionManageable {
+			action = "Packy could not project its baseline because the classic contribution is foreign or drifted"
 		}
 		warnings = append(warnings, "Claude also contains dots:rules content that differs from the Packy baseline; "+action+" and Packy preserved every external block; align the differing provider contract before retrying")
 	}
@@ -260,6 +271,8 @@ func classicRulesWarnings(rules prompt.RulesObservation) []string {
 		action := "Packy projected its baseline"
 		if rules.Exact {
 			action = "an exact dots:rules block still satisfies the baseline"
+		} else if !contributionManageable {
+			action = "Packy could not project its baseline because the classic contribution is foreign or drifted"
 		}
 		warnings = append(warnings, "Claude also contains malformed dots:rules markers; "+action+" and Packy preserved the external content; repair the malformed provider markers before retrying")
 	}
@@ -298,6 +311,13 @@ func (a *SurfaceAdapter) inspectClassicAbsent(desired ClassicDesired, s Ownershi
 			}
 			x = capabilitypack.ProjectionAction{ID: r.ID, Kind: ActionSkillLink, Target: r.Target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove classic Claude skill"}
 		case string(ActionInstructionContribution):
+			current, readErr := readOptional(r.Target)
+			if readErr != nil {
+				p.blockers = append(p.blockers, "owned Claude instructions unreadable; preserving them")
+				p.preserved = append(p.preserved, r.Target)
+				continue
+			}
+			p.instructionSeal = Fingerprint(current)
 			o := ObserveInstructions(r.Target)
 			if o.Err != nil {
 				p.blockers = append(p.blockers, "owned Claude instructions unreadable; preserving them")
@@ -313,7 +333,6 @@ func (a *SurfaceAdapter) inspectClassicAbsent(desired ClassicDesired, s Ownershi
 				p.preserved = append(p.preserved, r.Target)
 				continue
 			}
-			current, _ := readOptional(r.Target)
 			merged, err := RemoveInstructionContribution(string(current), "classic")
 			if err != nil {
 				return p, err

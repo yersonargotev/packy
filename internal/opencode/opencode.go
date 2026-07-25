@@ -25,6 +25,11 @@ type WritePlan struct {
 	promptPath string
 	rulesSeal  string
 	rules      externalRulesObservation
+	warnings   []string
+}
+
+func (plan WritePlan) Warnings() []string {
+	return append([]string(nil), plan.warnings...)
 }
 
 type Inspection struct {
@@ -81,7 +86,8 @@ func PreviewWrite(configPath, promptPath string) (WritePlan, error) {
 	if _, err := mergeInstruction(existing, configPath, promptPath); err != nil {
 		return WritePlan{}, err
 	}
-	return WritePlan{configPath: configPath, promptPath: promptPath, rulesSeal: seal, rules: rules}, nil
+	warnings := append(rulesWarnings(rules), detectExternalManagedConfig(existing)...)
+	return WritePlan{configPath: configPath, promptPath: promptPath, rulesSeal: seal, rules: rules, warnings: warnings}, nil
 }
 
 func ApplyWrite(plan WritePlan) (WriteResult, error) {
