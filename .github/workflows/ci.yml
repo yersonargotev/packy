@@ -142,6 +142,47 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  codex-floor-smoke:
+    name: Codex 0.145.0 package smoke
+    if: github.event_name == 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Run exact-floor Codex package smoke
+        run: |
+          ./scripts/run-codex-smoke.sh \
+            --codex-version 0.145.0 \
+            --packy-ref "$GITHUB_SHA" \
+            --evidence-dir "$RUNNER_TEMP/codex-floor-evidence"
+
+      - name: Retain exact-floor Codex evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codex-floor-qualification
+          path: ${{ runner.temp }}/codex-floor-evidence
+          if-no-files-found: error
+          retention-days: 90
+
   addy-promotion-main-replay:
     name: Replay Addy promotion gate effect-free
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
