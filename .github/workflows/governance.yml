@@ -94,7 +94,7 @@ jobs:
               exit 1
               ;;
           esac
-          matrix="$(printf '%s\n' "$targets" | jq -Rsc 'split("\n") | map(select(length > 0) | tonumber) | unique')"
+          matrix="$(printf '%s\n' "$targets" | jq -Rsc 'split("\n") | map(gsub("^\\s+|\\s+$"; "") | select(length > 0) | tonumber) | unique')"
           echo "matrix=$matrix" >>"$GITHUB_OUTPUT"
 
   validate-authorization:
