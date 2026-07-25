@@ -185,9 +185,9 @@ host cannot discover or load any mandatory skill, the complete projection may
 remain configured but the surface cannot be reported usable; Packy does not
 hide that failure by reporting a partially loaded subset.
 
-Implementation and publication remain blocked until authoritative
-redistribution terms cover the complete contract. Publication is stricter than
-one-surface activation: the first selectable pack additionally requires the two
+Issue 254 admits the exact primary candidate for redistribution under its pinned
+README MIT declaration and digest-bound evidence. This resolves only that legal
+gate. Publication remains stricter than one-surface activation: the first selectable pack additionally requires the two
 external guideline rule sets to be reproducible and licensed and independent
 acceptance evidence to prove the mandatory contract on Codex, OpenCode, and
 Claude Code.
