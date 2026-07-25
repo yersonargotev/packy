@@ -388,85 +388,6 @@ type bundleProposalBuilder struct {
 	gateway              *githubGateway
 }
 
-type bundleReviewBrief struct {
-	SchemaVersion           int                                     `json:"schema_version"`
-	Actor                   string                                  `json:"actor"`
-	RunID                   string                                  `json:"run_id"`
-	RunAttempt              string                                  `json:"run_attempt"`
-	RunURL                  string                                  `json:"run_url"`
-	Repository              string                                  `json:"repository"`
-	Request                 packsyncworkflow.BundleDispatchRequest  `json:"request"`
-	Identity                packsyncworkflow.BundleArtifactIdentity `json:"identity"`
-	ClassificationSHA256    string                                  `json:"classification_sha256"`
-	HeadSHA                 string                                  `json:"head_sha"`
-	ResultTreeSHA           string                                  `json:"result_tree_sha"`
-	Branch                  string                                  `json:"branch"`
-	PullRequest             int                                     `json:"pull_request,omitempty"`
-	SelectedResources       []packsync.ResourceEvidence             `json:"selected_resources"`
-	PreviousSnapshotSHA256  string                                  `json:"previous_snapshot_sha256"`
-	ProposedSnapshotSHA256  string                                  `json:"proposed_snapshot_sha256"`
-	ApplyStatus             string                                  `json:"apply_status"`
-	Validation              packsyncworkflow.ValidationGates        `json:"validation"`
-	UpstreamContentExecuted bool                                    `json:"upstream_content_executed"`
-	Blockers                []string                                `json:"blockers"`
-	DecisionReady           bool                                    `json:"decision_ready"`
-	AutoMerge               bool                                    `json:"auto_merge"`
-	ManualMergeRequired     bool                                    `json:"manual_merge_required"`
-	InvalidationConditions  []string                                `json:"invalidation_conditions"`
-	Recovery                []string                                `json:"recovery"`
-}
-
-func (brief *bundleReviewBrief) PreparePublication(proposal packsyncworkflow.Proposal) {
-	brief.ResultTreeSHA = proposal.ResultTreeSHA
-	brief.Validation = proposal.Validation
-	brief.DecisionReady = false
-	brief.Blockers = []string{"Publication remains blocked until the exact post-write pull request identity is reobserved."}
-	brief.InvalidationConditions = proposal.InvalidationConditions
-}
-
-func (brief *bundleReviewBrief) FinalizePublication(proposal packsyncworkflow.Proposal, observed packsyncworkflow.PRState) {
-	brief.PullRequest = observed.Number
-	brief.HeadSHA = observed.HeadSHA
-	brief.Validation = proposal.Validation
-	brief.Blockers = nil
-	brief.DecisionReady = true
-	brief.InvalidationConditions = proposal.InvalidationConditions
-}
-
-func (brief *bundleReviewBrief) Markdown() (string, error) {
-	if brief.SchemaVersion != 3 || brief.Request.Validate() != nil || brief.Identity.Validate() != nil ||
-		brief.Request.PackID != brief.Identity.PackID ||
-		brief.Request.RegistrationBundleSHA256 != brief.Identity.RegistrationBundleSHA256 ||
-		brief.Request.ProposedVersion != brief.Identity.ProposedVersion ||
-		brief.Request.ProposedManifestSHA256 != brief.Identity.ProposedManifestSHA256 ||
-		!validLowerHex(brief.ClassificationSHA256, 64) ||
-		!validLowerHex(brief.HeadSHA, 40) || !validLowerHex(brief.ResultTreeSHA, 40) ||
-		brief.Branch != "sync/"+brief.Identity.PackID || len(brief.SelectedResources) == 0 ||
-		!validLowerHex(brief.PreviousSnapshotSHA256, 64) || !validLowerHex(brief.ProposedSnapshotSHA256, 64) ||
-		!brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired ||
-		brief.RunURL == "" || brief.Repository == "" || brief.RunID == "" {
-		return "", errors.New("v3 bundle review brief is incomplete or contradictory")
-	}
-	canonical, err := json.MarshalIndent(brief, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	canonical = append(canonical, '\n')
-	status := "blocked"
-	if brief.DecisionReady {
-		status = "decision-ready"
-	}
-	return fmt.Sprintf("## Packy composite Pack registration\n\n- Pack: `%s`\n- Members: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Auto-merge: disabled; manual merge required.\n\nAuthorization-Exception: automation\nAuthorization-Record: %s\n\n<details><summary>Canonical v3 composite admission evidence</summary>\n\n```json\n%s```\n</details>\n", brief.Identity.PackID, strings.Join(brief.Identity.SourceIDs, ", "), brief.Identity.PlanID, brief.Identity.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, string(canonical)), nil
-}
-
-func validLowerHex(value string, length int) bool {
-	if len(value) != length {
-		return false
-	}
-	_, err := hex.DecodeString(value)
-	return err == nil && value == strings.ToLower(value)
-}
-
 func compositeCandidateSHA(plan packsync.CompositePlan) string {
 	var sealed strings.Builder
 	sealed.WriteString(plan.RegistrationBundleSHA256)
@@ -506,7 +427,7 @@ func (b *bundleProposalBuilder) Build(ctx context.Context, root string, result p
 	if err != nil {
 		return packsyncworkflow.Proposal{}, err
 	}
-	b.gateway.brief = &bundleReviewBrief{
+	b.gateway.brief = &packsyncworkflow.BundleReviewBrief{
 		SchemaVersion: 3, Actor: os.Getenv("GITHUB_ACTOR"), RunID: os.Getenv("GITHUB_RUN_ID"),
 		RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"), RunURL: actionsRunURL(), Repository: os.Getenv("GITHUB_REPOSITORY"),
 		Request: b.request, Identity: bundleIdentity(b.plan), ClassificationSHA256: b.classificationSHA256,
