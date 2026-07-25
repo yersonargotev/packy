@@ -247,7 +247,7 @@ Requirement profiles expand exactly as follows:
 | `vercel-cli-linked` | `tool:vercel-cli`; `authentication:vercel`; `project_link:vercel-project` |
 | `vercel-cli-git-authenticated` | `tool:git`; `tool:vercel-cli`; `authentication:git-provider`; `authentication:vercel` |
 | `setup-link` | `tool:npm`; `authentication:vercel-interactive` |
-| `claimable` | `tool:bash` |
+| `claimable` | `tool:bash`; `tool:basename`; `tool:cat`; `tool:curl`; `tool:cut`; `tool:find`; `tool:grep`; `tool:head`; `tool:mkdir`; `tool:mktemp`; `tool:mv`; `tool:rm`; `tool:sed`; `tool:sleep`; `tool:tar`; `tool:tr`; `tool:wc` |
 | `token-cli` | `tool:vercel-cli`; `authentication:vercel-token` |
 | `token-cli-linked` | `tool:vercel-cli`; `authentication:vercel-token`; `project_link:vercel-project` |
 | `token-git-push` | `tool:git`; `tool:vercel-cli`; `authentication:git-provider`; `authentication:vercel-token`; `project_link:vercel-project` |
