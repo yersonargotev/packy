@@ -536,6 +536,30 @@ func TestGovernanceNormalizesExternalMetadataBeforeStrictValidation(t *testing.T
 	}
 }
 
+func TestGovernanceTargetMatrixRejectsWhitespaceOnlyRecords(t *testing.T) {
+	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
+	const marker = "jq -Rsc '"
+	start := strings.Index(governance, marker)
+	if start == -1 {
+		t.Fatal("governance workflow target matrix jq filter is missing")
+	}
+	start += len(marker)
+	end := strings.Index(governance[start:], "'")
+	if end == -1 {
+		t.Fatal("governance workflow target matrix jq filter is unterminated")
+	}
+
+	cmd := exec.Command("jq", "-Rsc", governance[start:start+end])
+	cmd.Stdin = strings.NewReader("42\n    \n7\n42\n")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("normalize governance target matrix: %v\n%s", err, output)
+	}
+	if got := strings.TrimSpace(string(output)); got != "[7,42]" {
+		t.Fatalf("normalized governance target matrix = %s; want [7,42]", got)
+	}
+}
+
 func TestCodeownersMatchesAcceptedSensitivePathPolicy(t *testing.T) {
 	owners := readFile(t, filepath.Join(repositoryRoot(t), ".github", "CODEOWNERS"))
 	for _, path := range []string{
