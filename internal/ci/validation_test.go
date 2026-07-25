@@ -61,7 +61,7 @@ type packSourceSchemaSuite struct {
 	major   int
 }
 
-var packSourceSchemaSuites = []packSourceSchemaSuite{{version: "v1.0.0", major: 1}, {version: "v2.0.0", major: 2}}
+var packSourceSchemaSuites = []packSourceSchemaSuite{{version: "v1.0.0", major: 1}, {version: "v2.0.0", major: 2}, {version: "v3.0.0", major: 3}}
 
 var packSourceSchemaNames = []string{
 	"pack-source-dispatch.schema.json",
@@ -748,9 +748,12 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 		}
 	}
 	for _, required := range []string{
-		"workflow_dispatch:", "permissions: {}", "group: sync-pack-source-${{ inputs.source_id }}", "cancel-in-progress: false",
-		"run-name: sync-pack-source / ${{ inputs.source_id }} / ${{ inputs.request_digest }}", "PACKY_REQUEST_DIGEST: ${{ inputs.request_digest }}",
-		"operation:", "registration_json:", "registration_sha256:", "PACKY_OPERATION: ${{ inputs.operation }}", "PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}", "PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}",
+		"workflow_dispatch:", "permissions: {}", "group: sync-pack-source-${{ inputs.pack_id || inputs.source_id }}", "cancel-in-progress: false",
+		"run-name: sync-pack-source / ${{ inputs.pack_id || inputs.source_id }} / ${{ inputs.request_digest }}", "PACKY_REQUEST_DIGEST: ${{ inputs.request_digest }}",
+		"operation:", "register_bundle", "pack_id:", "registrations_json:", "registration_bundle_sha256:", "proposed_version:", "proposed_manifest_json:", "proposed_manifest_sha256:",
+		"registration_json:", "registration_sha256:", "PACKY_OPERATION: ${{ inputs.operation }}", "PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}", "PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}",
+		"PACKY_PACK_ID: ${{ inputs.pack_id }}", "PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}", "PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}",
+		"PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}", "PACKY_PROPOSED_MANIFEST_JSON: ${{ inputs.proposed_manifest_json }}", "PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}",
 		"inspect:", "classify:", "validate:", "publish:", "needs: [inspect, classify, validate]", "contents: write", "pull-requests: write",
 		"--phase validate", "steps.route.outputs.noop", "packy-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
 	} {
@@ -905,6 +908,317 @@ func TestPackSourceV1SchemaBytesRemainImmutable(t *testing.T) {
 			t.Fatalf("immutable v1 schema %s digest = %s, want %s", name, got, digest)
 		}
 	}
+}
+
+func TestPackSourceV2SchemaBytesRemainImmutable(t *testing.T) {
+	want := map[string]string{
+		"pack-source-dispatch.schema.json":             "342f05f0c2052f9b1798cc29e645d987926e47eea9cc0236c4a1ee9a5d03582f",
+		"pack-source-noop.schema.json":                 "d5445d865a492fa1255f5a970cc9f5969f3b3675737a32341f7a9008ab2efba1",
+		"pack-source-operational-artifact.schema.json": "677faa4c1592df4b4ffda8be7d6f2c36d9c21d5867d88f1f51d0f0af9647e380",
+		"pack-source-publication.schema.json":          "b41b44f6f4d4110261ed71ed4319be1c1065bdf0e6a44ecc4a416fac4f5f0be2",
+		"pack-source-validation.schema.json":           "c5e895954c164155535363fd2ffaa87a2bbf2531fa090a4c24fb058e24bb8465",
+	}
+	root := filepath.Join(repositoryRoot(t), "schemas", "pack-source", "v2.0.0")
+	for name, digest := range want {
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != digest {
+			t.Fatalf("immutable v2 schema %s digest = %s, want %s", name, got, digest)
+		}
+	}
+}
+
+func TestPackSourceV3SchemasAcceptCompleteBundleArtifacts(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	head := strings.Repeat("c", 40)
+	hash := strings.Repeat("b", 64)
+	legal := map[string]any{"evidence_reference": "https://example.com/license", "evidence_sha256": hash, "disposition": "redistributable"}
+	member := func(sourceID string) map[string]any {
+		return map[string]any{"source_id": sourceID, "candidate_sha": sha, "source_lock_sha256": hash, "legal_evidence_ref": "https://example.com/" + sourceID, "legal_evidence_sha256": hash}
+	}
+	sourceIDs := []any{"vercel-runtime", "vercel-skills"}
+	members := []any{member("vercel-runtime"), member("vercel-skills")}
+	common := map[string]any{
+		"schema_version": 3, "pack_id": "vercel", "source_ids": sourceIDs,
+		"registration_bundle_sha256": hash, "proposed_version": "1.0.0", "proposed_manifest_sha256": hash,
+		"members": members, "plan_id": "plan",
+		"base_sha": sha, "config_sha256": hash, "manifests_sha256": hash,
+		"lock_set_sha256": hash, "result_bundle_sha256": hash,
+		"contains_secrets": false, "contains_upstream_bytes": false,
+	}
+	validation := cloneJSONMap(t, common)
+	validation["result_tree_sha"] = sha
+	validation["validation"] = completeV3ValidationGates()
+	assertV3SchemaAccepts(t, "pack-source-validation.schema.json", validation)
+
+	publication := cloneJSONMap(t, common)
+	for key, value := range map[string]any{
+		"head_sha": head, "result_tree_sha": sha, "branch_name": "sync/vercel",
+		"pr_number": 7, "pr_state_sha256": hash, "provenance_sha256": hash,
+		"managed_title": "managed", "managed_metadata_hash": hash, "decision_ready": true, "auto_merge": false,
+		"manual_merge_required": true, "upstream_content_executed": false,
+		"invalidation_conditions": []any{"base_changed", "candidate_changed", "provenance_changed", "head_changed", "pr_state_changed"}, "contains_secrets": false, "contains_upstream_bytes": false,
+		"validation": completeV3ValidationGates(),
+	} {
+		publication[key] = value
+	}
+	assertV3SchemaAccepts(t, "pack-source-publication.schema.json", publication)
+
+	blocked := map[string]any{
+		"schema_version": 3, "state": "blocked", "pack_id": "vercel",
+		"proposed_version": "1.0.0", "proposed_manifest_sha256": hash,
+		"source_ids": sourceIDs, "registration_bundle_sha256": hash,
+		"members": []any{
+			map[string]any{"source_id": "vercel-runtime", "candidate_sha": sha, "legal_evidence_ref": "https://example.com/vercel-runtime", "legal_evidence_sha256": hash},
+			map[string]any{"source_id": "vercel-skills", "candidate_sha": sha, "legal_evidence_ref": "https://example.com/vercel-skills", "legal_evidence_sha256": hash},
+		},
+		"contains_secrets": false, "contains_upstream_bytes": false,
+		"blockers": []any{"candidate unavailable"}, "recovery": []any{"repeat Inspect"},
+	}
+	assertV3SchemaAccepts(t, "pack-source-operational-artifact.schema.json", blocked)
+
+	registration := func(sourceID string) map[string]any {
+		return map[string]any{
+			"legal_admission": legal,
+			"registration": map[string]any{
+				"id": sourceID, "provider": "github", "repository": "vercel/" + sourceID,
+				"selector":  map[string]any{"mode": "commit", "ref": sha},
+				"resources": []any{map[string]any{"pack_id": "vercel", "kind": "skill", "resource_id": sourceID, "upstream_path": "skills/" + sourceID}},
+			},
+		}
+	}
+	dispatch := map[string]any{
+		"schema_version": 3, "operation": "register_bundle", "pack_id": "vercel",
+		"proposed_version": "1.0.0", "proposed_manifest": map[string]any{"schema_version": 4, "id": "vercel", "version": "1.0.0"},
+		"proposed_manifest_sha256":   hash,
+		"registrations":              []any{registration("vercel-runtime"), registration("vercel-skills")},
+		"registration_bundle_sha256": hash, "classification_mode": "ai", "request_reason": "register composite source bundle",
+	}
+	assertV3SchemaAccepts(t, "pack-source-dispatch.schema.json", dispatch)
+	if err := validateSchemaInstanceForSuite(t, "v3.0.0", "pack-source-noop.schema.json", []byte(`{"schema_version":3,"state":"no-op"}`)); err == nil {
+		t.Fatal("v3 schema accepted forbidden initial bundle no-op")
+	}
+}
+
+func TestPackSourceV3SchemasRejectMixedStaleAndSensitiveBundleShapes(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	hash := strings.Repeat("b", 64)
+	base := map[string]any{
+		"schema_version": 3, "pack_id": "vercel",
+		"source_ids":                 []any{"vercel-runtime", "vercel-skills"},
+		"registration_bundle_sha256": hash,
+		"proposed_version":           "1.0.0",
+		"proposed_manifest_sha256":   hash,
+		"members": []any{
+			map[string]any{"source_id": "vercel-runtime", "candidate_sha": sha, "source_lock_sha256": hash, "legal_evidence_ref": "https://example.com/a", "legal_evidence_sha256": hash},
+			map[string]any{"source_id": "vercel-skills", "candidate_sha": sha, "source_lock_sha256": hash, "legal_evidence_ref": "https://example.com/b", "legal_evidence_sha256": hash},
+		},
+		"plan_id": "plan", "base_sha": sha, "config_sha256": hash, "manifests_sha256": hash,
+		"lock_set_sha256": hash, "result_bundle_sha256": hash, "result_tree_sha": sha, "validation": completeV3ValidationGates(),
+		"contains_secrets": false, "contains_upstream_bytes": false,
+	}
+	cases := map[string]map[string]any{
+		"mixed schema major": cloneJSONMap(t, base),
+		"stale missing base": cloneJSONMap(t, base),
+		"secret payload":     cloneJSONMap(t, base),
+		"upstream bytes":     cloneJSONMap(t, base),
+		"partial members":    cloneJSONMap(t, base),
+		"malformed seal":     cloneJSONMap(t, base),
+	}
+	cases["mixed schema major"]["schema_version"] = 2
+	delete(cases["stale missing base"], "base_sha")
+	cases["secret payload"]["secret"] = "credential"
+	cases["upstream bytes"]["upstream_bytes"] = "retained content"
+	cases["partial members"]["members"] = cases["partial members"]["members"].([]any)[:1]
+	cases["malformed seal"]["registration_bundle_sha256"] = strings.Repeat("b", 63)
+	for name, artifact := range cases {
+		t.Run(name, func(t *testing.T) {
+			data, err := json.Marshal(artifact)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := validateSchemaInstanceForSuite(t, "v3.0.0", "pack-source-validation.schema.json", data); err == nil {
+				t.Fatalf("v3 validation schema accepted %s", name)
+			}
+		})
+	}
+
+	preCheckFailure := map[string]any{
+		"schema_version": 3, "state": "blocked", "pack_id": "vercel",
+		"proposed_version": "1.0.0", "proposed_manifest_sha256": hash,
+		"source_ids": []any{"vercel-runtime", "vercel-skills"}, "registration_bundle_sha256": hash,
+		"members": []any{
+			map[string]any{"source_id": "vercel-runtime", "candidate_sha": sha, "legal_evidence_ref": "evidence/runtime.json", "legal_evidence_sha256": hash},
+			map[string]any{"source_id": "vercel-skills", "candidate_sha": sha, "legal_evidence_ref": "evidence/skills.json", "legal_evidence_sha256": hash},
+		},
+		"contains_secrets": false, "contains_upstream_bytes": false,
+		"blockers": []any{"Check failed"}, "recovery": []any{"repeat Inspect"},
+	}
+	assertV3SchemaAccepts(t, "pack-source-operational-artifact.schema.json", preCheckFailure)
+	partialPlan := cloneJSONMap(t, preCheckFailure)
+	partialPlan["plan"] = map[string]any{"plan_id": "plan", "base_sha": sha}
+	data, err := json.Marshal(partialPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSchemaInstanceForSuite(t, "v3.0.0", "pack-source-operational-artifact.schema.json", data); err == nil {
+		t.Fatal("v3 operational schema accepted a partial nested plan identity")
+	}
+}
+
+func TestPackSourceV3SchemasMatchCanonicalRuntimeContracts(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	hash := strings.Repeat("b", 64)
+	registration := func(id string) packsyncworkflow.BundleRegistration {
+		return packsyncworkflow.BundleRegistration{
+			Registration: packsync.SourceConfig{
+				ID: id, Provider: "github", Repository: "vercel/" + id,
+				Selector:  packsync.Selector{Mode: packsync.SelectorCommit, Ref: sha},
+				Resources: []packsync.Binding{{PackID: "vercel", Kind: "skill", ResourceID: id, UpstreamPath: "skills/" + id}},
+			},
+			LegalAdmission: packsync.CompositeLegalAdmission{EvidenceReference: "https://example.com/" + id, EvidenceSHA256: hash, Disposition: packsync.RedistributableDisposition},
+		}
+	}
+	registrations := []packsyncworkflow.BundleRegistration{registration("vercel-runtime"), registration("vercel-skills")}
+	digest, err := packsyncworkflow.CanonicalRegistrationBundleSHA256("vercel", registrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := json.RawMessage("{\n  \"id\": \"vercel\",\n  \"schema_version\": 4,\n  \"version\": \"1.0.0\"\n}\n")
+	manifestSum := sha256.Sum256(manifest)
+	manifestDigest := fmt.Sprintf("%x", manifestSum)
+	dispatch := packsyncworkflow.BundleDispatchRequest{
+		SchemaVersion: 3, Operation: packsyncworkflow.OperationRegisterBundle, PackID: "vercel",
+		ProposedVersion: "1.0.0", ProposedManifest: manifest, ProposedManifestSHA256: manifestDigest,
+		Registrations: registrations, RegistrationBundleSHA256: digest,
+		ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "register bundle",
+	}
+	assertV3RuntimeSchemaParity(t, "pack-source-dispatch.schema.json", dispatch, dispatch.Validate())
+	nonCanonicalManifest := dispatch
+	nonCanonicalManifest.ProposedManifest = json.RawMessage(`{"schema_version":4,"id":"vercel","version":"1.0.0"}`)
+	nonCanonicalSum := sha256.Sum256(nonCanonicalManifest.ProposedManifest)
+	nonCanonicalManifest.ProposedManifestSHA256 = fmt.Sprintf("%x", nonCanonicalSum)
+	if err := nonCanonicalManifest.Validate(); err == nil {
+		t.Fatal("v3 runtime accepted non-canonical proposed manifest bytes")
+	}
+	nonCanonicalData, err := json.Marshal(nonCanonicalManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSchemaInstanceForSuite(t, "v3.0.0", "pack-source-dispatch.schema.json", nonCanonicalData); err != nil {
+		t.Fatalf("v3 structural schema rejected representable non-canonical manifest: %v", err)
+	}
+	humanInspect := dispatch
+	humanInspect.ClassificationMode = packsyncworkflow.ClassificationHuman
+	assertV3RuntimeSchemaParity(t, "pack-source-dispatch.schema.json", humanInspect, humanInspect.Validate())
+	humanEvidence := humanInspect
+	humanEvidence.ExpectedPlanID = "plan"
+	humanEvidence.ExpectedBaseSHA = sha
+	humanEvidence.HumanEvidence = json.RawMessage(`{"schema_version":1,"plan_id":"plan","pack_id":"vercel","evidence":{}}`)
+	assertV3RuntimeSchemaParity(t, "pack-source-dispatch.schema.json", humanEvidence, humanEvidence.Validate())
+	for name, mutate := range map[string]func(*packsyncworkflow.BundleDispatchRequest){
+		"partial plan":     func(value *packsyncworkflow.BundleDispatchRequest) { value.ExpectedBaseSHA = "" },
+		"partial base":     func(value *packsyncworkflow.BundleDispatchRequest) { value.ExpectedPlanID = "" },
+		"missing evidence": func(value *packsyncworkflow.BundleDispatchRequest) { value.HumanEvidence = nil },
+		"AI with evidence": func(value *packsyncworkflow.BundleDispatchRequest) {
+			value.ClassificationMode = packsyncworkflow.ClassificationAI
+		},
+	} {
+		t.Run("dispatch "+name, func(t *testing.T) {
+			invalid := humanEvidence
+			mutate(&invalid)
+			assertV3RuntimeSchemaParity(t, "pack-source-dispatch.schema.json", invalid, invalid.Validate())
+			if invalid.Validate() == nil {
+				t.Fatalf("v3 runtime accepted %s", name)
+			}
+		})
+	}
+
+	identity := packsyncworkflow.BundleArtifactIdentity{
+		PackID: "vercel", SourceIDs: []string{"vercel-runtime", "vercel-skills"}, RegistrationBundleSHA256: digest,
+		ProposedVersion: "1.0.0", ProposedManifestSHA256: manifestDigest,
+		Members: []packsyncworkflow.BundleArtifactMember{
+			{SourceID: "vercel-runtime", CandidateSHA: sha, SourceLockSHA256: hash, LegalEvidenceRef: "https://example.com/vercel-runtime", LegalEvidenceSHA256: hash},
+			{SourceID: "vercel-skills", CandidateSHA: sha, SourceLockSHA256: hash, LegalEvidenceRef: "https://example.com/vercel-skills", LegalEvidenceSHA256: hash},
+		},
+		PlanID: "plan", BaseSHA: sha, ConfigSHA256: hash, ManifestsSHA256: hash,
+		LockSetSHA256: hash, ResultBundleSHA256: hash,
+	}
+	gates := packsyncworkflow.ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}
+	inspection := packsyncworkflow.BundleInspectionArtifact{SchemaVersion: 3, BundleArtifactIdentity: identity}
+	assertV3RuntimeSchemaParity(t, "pack-source-operational-artifact.schema.json", inspection, inspection.Validate())
+	classification := packsyncworkflow.BundleClassificationArtifact{SchemaVersion: 3, BundleArtifactIdentity: identity, ClassificationSHA256: hash}
+	assertV3RuntimeSchemaParity(t, "pack-source-operational-artifact.schema.json", classification, classification.Validate())
+	failureIdentity := packsyncworkflow.BundleFailureIdentity{
+		PackID: "vercel", ProposedVersion: "1.0.0", ProposedManifestSHA256: manifestDigest,
+		SourceIDs: []string{"vercel-runtime", "vercel-skills"}, RegistrationBundleSHA256: digest,
+		Members: []packsyncworkflow.BundleFailureMember{
+			{SourceID: "vercel-runtime", CandidateSHA: sha, LegalEvidenceRef: "https://example.com/vercel-runtime", LegalEvidenceSHA256: hash},
+			{SourceID: "vercel-skills", CandidateSHA: sha, LegalEvidenceRef: "https://example.com/vercel-skills", LegalEvidenceSHA256: hash},
+		},
+	}
+	failure := packsyncworkflow.BundleFailureArtifact{SchemaVersion: 3, State: "blocked", BundleFailureIdentity: failureIdentity, Blockers: []string{"blocked"}, Recovery: []string{"repeat Inspect"}}
+	assertV3RuntimeSchemaParity(t, "pack-source-operational-artifact.schema.json", failure, failure.Validate())
+	plannedFailure := failure
+	plannedFailure.Plan = &packsyncworkflow.BundleFailurePlanIdentity{
+		PlanID: identity.PlanID, BaseSHA: identity.BaseSHA, ConfigSHA256: identity.ConfigSHA256,
+		ManifestsSHA256: identity.ManifestsSHA256, LockSetSHA256: identity.LockSetSHA256,
+		ResultBundleSHA256: identity.ResultBundleSHA256, Members: identity.Members,
+	}
+	assertV3RuntimeSchemaParity(t, "pack-source-operational-artifact.schema.json", plannedFailure, plannedFailure.Validate())
+	partialFailure := failure
+	partialFailure.Plan = &packsyncworkflow.BundleFailurePlanIdentity{PlanID: "plan", BaseSHA: sha}
+	assertV3RuntimeSchemaParity(t, "pack-source-operational-artifact.schema.json", partialFailure, partialFailure.Validate())
+	validation := packsyncworkflow.BundleValidationArtifact{SchemaVersion: 3, BundleArtifactIdentity: identity, ResultTreeSHA: sha, Validation: gates}
+	assertV3RuntimeSchemaParity(t, "pack-source-validation.schema.json", validation, validation.Validate())
+	publication := packsyncworkflow.BundlePublicationArtifact{
+		SchemaVersion: 3, BundleArtifactIdentity: identity, HeadSHA: sha, ResultTreeSHA: sha, BranchName: "sync/vercel",
+		PRNumber: 7, PRStateSHA256: hash, ProvenanceSHA256: hash, ManagedTitle: "managed", ManagedMetadataHash: hash,
+		Validation: gates, DecisionReady: true, ManualMergeRequired: true, InvalidationConditions: packsyncworkflow.DecisionReadyInvalidationConditions(),
+	}
+	assertV3RuntimeSchemaParity(t, "pack-source-publication.schema.json", publication, publication.Validate())
+}
+
+func assertV3RuntimeSchemaParity(t *testing.T, name string, value any, runtimeErr error) {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaErr := validateSchemaInstanceForSuite(t, "v3.0.0", name, data)
+	if (runtimeErr == nil) != (schemaErr == nil) {
+		t.Fatalf("v3 runtime/schema disagreement for %s: runtime=%v schema=%v document=%s", name, runtimeErr, schemaErr, data)
+	}
+}
+
+func completeV3ValidationGates() map[string]any {
+	return map[string]any{"provenance": true, "classification": true, "reacquisition": true, "apply": true, "diff": true, "ownership": true, "packy_suite": true}
+}
+
+func assertV3SchemaAccepts(t *testing.T, name string, value any) {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSchemaInstanceForSuite(t, "v3.0.0", name, data); err != nil {
+		t.Fatalf("v3 schema %s rejected canonical bundle artifact: %v\ndocument=%s", name, err, data)
+	}
+}
+
+func cloneJSONMap(t *testing.T, value map[string]any) map[string]any {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clone map[string]any
+	if err := json.Unmarshal(data, &clone); err != nil {
+		t.Fatal(err)
+	}
+	return clone
 }
 
 func TestPackSourceV2SchemasAcceptCanonicalRuntimeContracts(t *testing.T) {

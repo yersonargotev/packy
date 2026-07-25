@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/pack-source/v3.0.0/pack-source-dispatch.schema.json",
+  "title": "Composite pack source bundle registration dispatch",
+  "$comment": "Packy runtime additionally requires proposed_manifest canonical indented bytes with one trailing newline; its id/version to equal pack_id/proposed_version; both digests to match their canonical inputs; registrations to be canonically ordered; and human_evidence plan_id/pack_id to equal expected_plan_id/pack_id. Draft 2020-12 cannot express those byte and cross-property equalities.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "pack_id",
+    "proposed_version",
+    "proposed_manifest",
+    "proposed_manifest_sha256",
+    "registrations",
+    "registration_bundle_sha256",
+    "classification_mode",
+    "request_reason"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "operation": {
+      "const": "register_bundle"
+    },
+    "pack_id": {
+      "$ref": "#/$defs/source_id"
+    },
+    "registrations": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/registration"
+      }
+    },
+    "registration_bundle_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "classification_mode": {
+      "enum": [
+        "ai",
+        "human"
+      ]
+    },
+    "request_reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "\\S"
+    },
+    "proposed_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proposed_manifest": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/source_id"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        }
+      }
+    },
+    "proposed_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "expected_plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected_base_sha": {
+      "$ref": "#/$defs/full_sha"
+    },
+    "human_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "plan_id",
+        "pack_id",
+        "evidence"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "plan_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pack_id": {
+          "$ref": "#/$defs/source_id"
+        },
+        "evidence": {}
+      }
+    }
+  },
+  "$defs": {
+    "source_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "full_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "candidate_sha",
+        "source_lock_sha256",
+        "legal_evidence_ref",
+        "legal_evidence_sha256"
+      ],
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/source_id"
+        },
+        "candidate_sha": {
+          "$ref": "#/$defs/full_sha"
+        },
+        "source_lock_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "legal_evidence_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "legal_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "slash_path": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^/|/$|\\\\"
+          }
+        },
+        {
+          "not": {
+            "pattern": "(^|/)\\.{1,2}(/|$)"
+          }
+        },
+        {
+          "not": {
+            "pattern": "//"
+          }
+        }
+      ]
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pack_id",
+        "kind",
+        "resource_id",
+        "upstream_path"
+      ],
+      "properties": {
+        "pack_id": {
+          "$ref": "#/$defs/source_id"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upstream_path": {
+          "$ref": "#/$defs/slash_path"
+        },
+        "vendored_path": {
+          "type": "string"
+        }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "ref"
+      ],
+      "properties": {
+        "mode": {
+          "const": "commit"
+        },
+        "ref": {
+          "$ref": "#/$defs/full_sha"
+        }
+      }
+    },
+    "source_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "provider",
+        "repository",
+        "selector",
+        "resources"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/source_id"
+        },
+        "provider": {
+          "const": "github"
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/]+/[^/]+$"
+        },
+        "selector": {
+          "$ref": "#/$defs/selector"
+        },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/binding"
+          }
+        }
+      }
+    },
+    "legal_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_reference",
+        "evidence_sha256",
+        "disposition"
+      ],
+      "properties": {
+        "evidence_reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "disposition": {
+          "const": "redistributable"
+        }
+      }
+    },
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registration",
+        "legal_admission"
+      ],
+      "properties": {
+        "registration": {
+          "$ref": "#/$defs/source_config"
+        },
+        "legal_admission": {
+          "$ref": "#/$defs/legal_evidence"
+        }
+      }
+    }
+  },
+  "dependentRequired": {
+    "expected_plan_id": [
+      "expected_base_sha",
+      "human_evidence"
+    ],
+    "expected_base_sha": [
+      "expected_plan_id",
+      "human_evidence"
+    ],
+    "human_evidence": [
+      "expected_plan_id",
+      "expected_base_sha"
+    ]
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "classification_mode": {
+            "const": "ai"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "expected_plan_id"
+              ]
+            },
+            {
+              "required": [
+                "expected_base_sha"
+              ]
+            },
+            {
+              "required": [
+                "human_evidence"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "human_evidence"
+        ]
+      },
+      "then": {
+        "properties": {
+          "classification_mode": {
+            "const": "human"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -35,7 +35,8 @@ state, and non-draft state all match the artifact.
   from a conclusion, log line, branch, or PR alone.
 
 Direct output contains the normalized request; preflight; current state and
-links; source/selector/candidate; plan/base/head; per-pack version, mechanical
+links; source/selector/candidate or Pack/ordered composite members;
+plan/base/head; per-pack version, mechanical
 floor, classification and classifier; blockers; next action; and terminal
 conclusion. Link full provenance, hashes, inventory/diff, canonical JSON, model
 evidence, validation logs, brief, and artifacts rather than reproducing them.

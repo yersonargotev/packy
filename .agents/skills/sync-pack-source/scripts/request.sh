@@ -13,6 +13,8 @@ workflow_inputs() {
     | with_entries(.value |= if type == "object" or type == "array" then tojson else tostring end)
     | if has("human_evidence") then .human_evidence_json=.human_evidence | del(.human_evidence) else . end
     | if has("registration") then .registration_json=.registration | del(.registration) else . end
+    | if has("registrations") then .registrations_json=.registrations | del(.registrations) else . end
+    | if has("proposed_manifest") then .proposed_manifest_json=.proposed_manifest | del(.proposed_manifest) else . end
     | .request_digest=$request_digest
   ' "$request"
 }

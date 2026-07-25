@@ -364,15 +364,16 @@ func copyPath(source, destination string) error {
 }
 
 type githubGateway struct {
-	repositoryRoot string
-	repository     string
-	plan           packsync.Plan
-	title          string
-	bodyPrefix     string
-	brief          packsyncworkflow.ReviewBrief
-	last           packsyncworkflow.PublicationState
-	retry          packsyncworkflow.RetryPolicy
-	run            func(context.Context, string, string, ...string) (string, error)
+	repositoryRoot    string
+	repository        string
+	plan              packsync.Plan
+	title             string
+	bodyPrefix        string
+	brief             packsyncworkflow.ReviewBrief
+	last              packsyncworkflow.PublicationState
+	retry             packsyncworkflow.RetryPolicy
+	run               func(context.Context, string, string, ...string) (string, error)
+	candidateRelation func(string) packsyncworkflow.CandidateRelation
 }
 
 func newGitHubGateway(repositoryRoot string, plan packsync.Plan) *githubGateway {
@@ -469,6 +470,8 @@ func (gateway *githubGateway) Observe(ctx context.Context, sourceID string) (pac
 		state.Branch.HumanCommits = true
 	}
 	switch {
+	case gateway.candidateRelation != nil:
+		state.CandidateRelation = gateway.candidateRelation(state.Record.CandidateSHA)
 	case state.Record.CandidateSHA == "" || state.Record.CandidateSHA == gateway.plan.Candidate.Commit:
 		state.CandidateRelation = packsyncworkflow.CandidateSame
 	default:
