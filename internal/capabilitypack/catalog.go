@@ -164,19 +164,27 @@ type RuntimeFallback struct {
 }
 
 type ObservationState string
+type ObservationReason string
 
 const (
 	ObservationAvailable   ObservationState = "available"
 	ObservationUnavailable ObservationState = "unavailable"
 	ObservationUnverified  ObservationState = "unverified"
+
+	ObservationReasonVerified         ObservationReason = "verified"
+	ObservationReasonNotFound         ObservationReason = "not_found"
+	ObservationReasonPermissionDenied ObservationReason = "permission_denied"
+	ObservationReasonVersionMismatch  ObservationReason = "version_mismatch"
+	ObservationReasonObserverError    ObservationReason = "observer_error"
+	ObservationReasonStale            ObservationReason = "stale"
 )
 
 type RuntimeObservation struct {
-	State            ObservationState `json:"state"`
-	Reason           string           `json:"reason"`
-	ObservedAt       string           `json:"observed_at"`
-	ObserverRevision string           `json:"observer_revision"`
-	RedactedIdentity string           `json:"redacted_identity,omitempty"`
+	State            ObservationState  `json:"state"`
+	Reason           ObservationReason `json:"reason"`
+	ObservedAt       string            `json:"observed_at"`
+	ObserverRevision string            `json:"observer_revision"`
+	RedactedIdentity string            `json:"redacted_identity,omitempty"`
 }
 
 // RuntimeRequirementObservation and RuntimeAuthorityObservation identify only
@@ -1509,42 +1517,46 @@ func validateV3Surfaces(surfaces []Surface) error {
 }
 
 var runtimeRequirementKinds = map[RuntimeRequirementKind]bool{
-	"tool": true, "authentication": true, "project_link": true, "entitlement": true, "service_data": true,
+	RuntimeRequirementTool:           true,
+	RuntimeRequirementAuthentication: true,
+	RuntimeRequirementProjectLink:    true,
+	RuntimeRequirementEntitlement:    true,
+	RuntimeRequirementServiceData:    true,
 }
 
 var runtimeAuthorityScopes = map[RuntimeAuthorityKind]map[RuntimeScope]bool{
-	"filesystem_read":           {"consumer_project": true, "pack_resource": true},
-	"filesystem_write":          {"consumer_project": true},
-	"process_execute":           {"consumer_project": true, "local_git": true},
-	"network":                   {"remote_git": true, "vercel_account": true, "vercel_project": true},
-	"environment_inspect":       {"consumer_project": true},
-	"secret_use":                {"vercel_account": true},
-	"package_manager_execute":   {"workstation": true},
-	"git_inspect":               {"local_git": true},
-	"git_commit":                {"local_git": true},
-	"git_push":                  {"remote_git": true},
-	"vercel_project_mutate":     {"vercel_project": true},
-	"vercel_environment_mutate": {"vercel_project": true},
-	"vercel_domain_mutate":      {"vercel_project": true},
-	"preview_deploy":            {"vercel_project": true},
-	"production_deploy":         {"vercel_project": true},
-	"upload":                    {"deployment_payload": true},
-	"subagent_delegate":         {"consumer_project": true},
+	RuntimeAuthorityFilesystemRead:          {RuntimeScopeConsumerProject: true, RuntimeScopePackResource: true},
+	RuntimeAuthorityFilesystemWrite:         {RuntimeScopeConsumerProject: true},
+	RuntimeAuthorityProcessExecute:          {RuntimeScopeConsumerProject: true, RuntimeScopeLocalGit: true},
+	RuntimeAuthorityNetwork:                 {RuntimeScopeRemoteGit: true, RuntimeScopeVercelAccount: true, RuntimeScopeVercelProject: true},
+	RuntimeAuthorityEnvironmentInspect:      {RuntimeScopeConsumerProject: true},
+	RuntimeAuthoritySecretUse:               {RuntimeScopeVercelAccount: true},
+	RuntimeAuthorityPackageManagerExecute:   {RuntimeScopeWorkstation: true},
+	RuntimeAuthorityGitInspect:              {RuntimeScopeLocalGit: true},
+	RuntimeAuthorityGitCommit:               {RuntimeScopeLocalGit: true},
+	RuntimeAuthorityGitPush:                 {RuntimeScopeRemoteGit: true},
+	RuntimeAuthorityVercelProjectMutate:     {RuntimeScopeVercelProject: true},
+	RuntimeAuthorityVercelEnvironmentMutate: {RuntimeScopeVercelProject: true},
+	RuntimeAuthorityVercelDomainMutate:      {RuntimeScopeVercelProject: true},
+	RuntimeAuthorityPreviewDeploy:           {RuntimeScopeVercelProject: true},
+	RuntimeAuthorityProductionDeploy:        {RuntimeScopeVercelProject: true},
+	RuntimeAuthorityUpload:                  {RuntimeScopeDeploymentPayload: true},
+	RuntimeAuthoritySubagentDelegate:        {RuntimeScopeConsumerProject: true},
 }
 
 var runtimeEffectScopes = map[RuntimeEffectKind]map[RuntimeScope]bool{
-	"authentication_state_change":        {"vercel_account": true},
-	"consumer_project_file_change":       {"consumer_project": true},
-	"consumer_project_dependency_change": {"consumer_project": true},
-	"local_git_change":                   {"local_git": true},
-	"remote_git_change":                  {"remote_git": true},
-	"tool_installation":                  {"workstation": true},
-	"vercel_project_change":              {"vercel_project": true},
-	"vercel_environment_change":          {"vercel_project": true},
-	"vercel_domain_change":               {"vercel_project": true},
-	"upload":                             {"deployment_payload": true},
-	"preview_deployment":                 {"vercel_project": true},
-	"production_deployment":              {"vercel_project": true},
+	RuntimeEffectAuthenticationStateChange:       {RuntimeScopeVercelAccount: true},
+	RuntimeEffectConsumerProjectFileChange:       {RuntimeScopeConsumerProject: true},
+	RuntimeEffectConsumerProjectDependencyChange: {RuntimeScopeConsumerProject: true},
+	RuntimeEffectLocalGitChange:                  {RuntimeScopeLocalGit: true},
+	RuntimeEffectRemoteGitChange:                 {RuntimeScopeRemoteGit: true},
+	RuntimeEffectToolInstallation:                {RuntimeScopeWorkstation: true},
+	RuntimeEffectVercelProjectChange:             {RuntimeScopeVercelProject: true},
+	RuntimeEffectVercelEnvironmentChange:         {RuntimeScopeVercelProject: true},
+	RuntimeEffectVercelDomainChange:              {RuntimeScopeVercelProject: true},
+	RuntimeEffectUpload:                          {RuntimeScopeDeploymentPayload: true},
+	RuntimeEffectPreviewDeployment:               {RuntimeScopeVercelProject: true},
+	RuntimeEffectProductionDeployment:            {RuntimeScopeVercelProject: true},
 }
 
 var semverPredicatePattern = regexp.MustCompile(`^>=(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
@@ -1565,7 +1577,7 @@ func validateRuntimeModes(resource Resource) error {
 		if i > 0 && resource.RuntimeModes[i-1].ID >= mode.ID {
 			return fmt.Errorf("runtime_modes must be sorted by id without duplicates")
 		}
-		if mode.Role != "primary" && mode.Role != "fallback_only" {
+		if mode.Role != RuntimeModePrimary && mode.Role != RuntimeModeFallbackOnly {
 			return fmt.Errorf("runtime mode %q role must be primary or fallback_only", mode.ID)
 		}
 		if mode.Requirements == nil || mode.Authorities == nil || mode.Effects == nil {
@@ -1575,7 +1587,7 @@ func validateRuntimeModes(resource Resource) error {
 			if !runtimeRequirementKinds[requirement.Kind] || !idPattern.MatchString(requirement.ID) {
 				return fmt.Errorf("runtime mode %q has invalid requirement %q:%q", mode.ID, requirement.Kind, requirement.ID)
 			}
-			if requirement.Kind == "tool" {
+			if requirement.Kind == RuntimeRequirementTool {
 				if requirement.Version != "" && !semverPredicatePattern.MatchString(requirement.Version) {
 					return fmt.Errorf("runtime mode %q tool requirement version %q must be a normalized SemVer predicate", mode.ID, requirement.Version)
 				}
@@ -1602,14 +1614,14 @@ func validateRuntimeModes(resource Resource) error {
 				return fmt.Errorf("runtime mode %q effects must be a sorted set", mode.ID)
 			}
 		}
-		if mode.OnUnavailable != "fail_before_effects" {
+		if mode.OnUnavailable != RuntimeFailBeforeEffects {
 			return fmt.Errorf("runtime mode %q on_unavailable must be fail_before_effects", mode.ID)
 		}
-		if mode.Fallback.Kind == "none" {
+		if mode.Fallback.Kind == RuntimeFallbackNone {
 			if mode.Fallback.Mode != "" {
 				return fmt.Errorf("runtime mode %q fallback none forbids mode", mode.ID)
 			}
-		} else if mode.Fallback.Kind != "mode" || !idPattern.MatchString(mode.Fallback.Mode) {
+		} else if mode.Fallback.Kind != RuntimeFallbackMode || !idPattern.MatchString(mode.Fallback.Mode) {
 			return fmt.Errorf("runtime mode %q fallback must be none or a valid mode reference", mode.ID)
 		}
 		modes[mode.ID] = mode
@@ -1650,14 +1662,14 @@ func runtimeScopedKey[K ~string, S ~string](kind K, scope S) string {
 	return string(kind) + "\x00" + string(scope)
 }
 
-var observationReasons = map[string]map[string]bool{
-	string(ObservationAvailable):   {"verified": true},
-	string(ObservationUnavailable): {"not_found": true, "permission_denied": true, "version_mismatch": true},
-	string(ObservationUnverified):  {"observer_error": true, "stale": true},
+var observationReasons = map[ObservationState]map[ObservationReason]bool{
+	ObservationAvailable:   {ObservationReasonVerified: true},
+	ObservationUnavailable: {ObservationReasonNotFound: true, ObservationReasonPermissionDenied: true, ObservationReasonVersionMismatch: true},
+	ObservationUnverified:  {ObservationReasonObserverError: true, ObservationReasonStale: true},
 }
 
 func validateRuntimeObservation(observation RuntimeObservation) error {
-	if !observationReasons[string(observation.State)][observation.Reason] {
+	if !observationReasons[observation.State][observation.Reason] {
 		return fmt.Errorf("observation state or reason is invalid")
 	}
 	if _, err := time.Parse(time.RFC3339, observation.ObservedAt); err != nil {

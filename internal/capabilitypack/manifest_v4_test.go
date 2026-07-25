@@ -181,10 +181,12 @@ func TestLoadPortableManifestV4RejectsOneFactNegativeTwins(t *testing.T) {
 		"unsorted requirements":        strings.Replace(validManifestV4, `[{"kind": "tool", "id": "node", "version": ">=20.0.0"}]`, `[{"kind": "tool", "id": "node", "version": ">=20.0.0"},{"kind": "authentication", "id": "vercel"}]`, 1),
 		"unknown authority":            strings.Replace(validManifestV4, `"filesystem_read"`, `"shell"`, 1),
 		"duplicate authority":          strings.Replace(validManifestV4, `[{"kind": "filesystem_read", "scope": "consumer_project"}]`, `[{"kind": "filesystem_read", "scope": "consumer_project"},{"kind": "filesystem_read", "scope": "consumer_project"}]`, 1),
+		"unsorted authorities":         strings.Replace(validManifestV4, `[{"kind": "filesystem_read", "scope": "consumer_project"}]`, `[{"kind":"network","scope":"vercel_project"},{"kind":"filesystem_read","scope":"consumer_project"}]`, 1),
 		"wrong authority scope":        strings.Replace(validManifestV4, `"consumer_project"`, `"planet"`, 1),
 		"known but illegal scope":      strings.Replace(validManifestV4, `"consumer_project"`, `"remote_git"`, 1),
 		"unknown effect":               strings.Replace(validManifestV4, `"effects": []`, `"effects": [{"kind":"shell","scope":"workstation"}]`, 1),
 		"duplicate effect":             strings.Replace(validManifestV4, `"effects": []`, `"effects": [{"kind":"upload","scope":"deployment_payload"},{"kind":"upload","scope":"deployment_payload"}]`, 1),
+		"unsorted effects":             strings.Replace(validManifestV4, `"effects": []`, `"effects": [{"kind":"upload","scope":"deployment_payload"},{"kind":"preview_deployment","scope":"vercel_project"}]`, 1),
 		"known effect wrong scope":     strings.Replace(validManifestV4, `"effects": []`, `"effects": [{"kind":"upload","scope":"consumer_project"}]`, 1),
 		"fallback mode with no target": strings.Replace(validManifestV4, `{"kind": "none"}`, `{"kind": "mode", "mode": "missing"}`, 1),
 		"unsafe unavailable policy":    strings.Replace(validManifestV4, `"fail_before_effects"`, `"continue"`, 1),
@@ -262,6 +264,8 @@ func TestRuntimeEvidenceIsTriStateDeterministicAndSecretSafe(t *testing.T) {
 		"legacy identity":           strings.Replace(valid, `"redacted_identity":"vercel-user"`, `"identity":"vercel-user"`, 1),
 		"invalid redacted identity": strings.Replace(valid, `"redacted_identity":"vercel-user"`, `"redacted_identity":"Vercel User"`, 1),
 		"duplicate fact":            strings.Replace(valid, `],"authorities"`, `,{"kind":"tool","id":"node","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}],"authorities"`, 1),
+		"unsorted requirements":     strings.Replace(valid, `{"kind":"authentication","id":"vercel","state":"unavailable","reason":"not_found","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1","redacted_identity":"vercel-user"},{"kind":"tool","id":"node","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}`, `{"kind":"tool","id":"node","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"},{"kind":"authentication","id":"vercel","state":"unavailable","reason":"not_found","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1","redacted_identity":"vercel-user"}`, 1),
+		"unsorted authorities":      strings.Replace(valid, `{"kind":"network","scope":"vercel_project","state":"unverified","reason":"stale","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}`, `{"kind":"network","scope":"vercel_project","state":"unverified","reason":"stale","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"},{"kind":"filesystem_read","scope":"consumer_project","state":"available","reason":"verified","observed_at":"2026-07-25T12:00:00Z","observer_revision":"observer-v1"}`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeRuntimeEvidence([]byte(encoded)); err == nil {
