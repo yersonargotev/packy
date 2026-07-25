@@ -39,6 +39,7 @@ type Inspection struct {
 	RulesExternallySatisfied bool
 	RulesPackyProjected      bool
 	Warnings                 []string
+	Conflicts                []string
 }
 
 type externalRulesObservation struct {
@@ -273,6 +274,11 @@ func rulesWarnings(rules externalRulesObservation) []string {
 	if rules.exact() {
 		warnings = append(warnings, "OpenCode baseline rules are externally satisfied by exact dots:rules in "+strings.Join(rules.exactPaths, ", ")+"; Packy preserved the external instruction and omitted its own rules contribution")
 	}
+	return append(warnings, rulesConflictWarnings(rules)...)
+}
+
+func rulesConflictWarnings(rules externalRulesObservation) []string {
+	var warnings []string
 	if len(rules.driftPaths) > 0 {
 		action := "Packy projected its baseline and preserved the external instruction"
 		if rules.exact() {
@@ -383,11 +389,11 @@ func Inspect(configPath, promptPath string) (Inspection, error) {
 		ConfigExists:             strings.TrimSpace(existing) != "",
 		RulesExternallySatisfied: rules.exact(),
 		Warnings:                 append(rulesWarnings(rules), detectExternalManagedConfig(existing)...),
+		Conflicts:                append(rulesConflictWarnings(rules), detectExternalManagedConfig(existing)...),
 	}
 	if promptContent, err := os.ReadFile(promptPath); err == nil {
 		inspection.PromptExists = true
-		inspection.RulesPackyProjected = strings.Contains(string(promptContent), "<!-- packy:rules -->") &&
-			strings.Contains(string(promptContent), "<!-- /packy:rules -->")
+		inspection.RulesPackyProjected = prompt.HasExactPackyRules(string(promptContent))
 	} else if err != nil && !os.IsNotExist(err) {
 		return Inspection{}, fmt.Errorf("inspect OpenCode Packy prompt %s: %w", promptPath, err)
 	}

@@ -153,6 +153,21 @@ func RulesSectionContent() string {
 	return sectionBlock(openMarker(packyRulesSectionID), closeMarker(packyRulesSectionID), RulesContent())
 }
 
+func HasExactPackyRules(content string) bool {
+	open := openMarker(packyRulesSectionID)
+	close := closeMarker(packyRulesSectionID)
+	if strings.Count(content, open) != 1 || strings.Count(content, close) != 1 {
+		return false
+	}
+	openIndex := strings.Index(content, open)
+	closeIndex := strings.Index(content, close)
+	if closeIndex < openIndex+len(open) {
+		return false
+	}
+	body := content[openIndex+len(open) : closeIndex]
+	return rulesFingerprint(body) == RulesFingerprint()
+}
+
 func WriteCodex(path string) (WriteResult, error) {
 	plan, err := PreviewCodex(path)
 	if err != nil {

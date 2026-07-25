@@ -142,6 +142,25 @@ func TestRulesContentUsesPackyOwnershipTerminology(t *testing.T) {
 	}
 }
 
+func TestHasExactPackyRulesRequiresOneCanonicalOwnedSection(t *testing.T) {
+	exact := RulesSectionContent()
+	if !HasExactPackyRules(exact) {
+		t.Fatal("canonical Packy rules section was not recognized")
+	}
+	for name, content := range map[string]string{
+		"marker-only": "<!-- packy:rules -->\nrules\n<!-- /packy:rules -->",
+		"drifted":     strings.Replace(exact, "Keep diffs surgical", "Keep every diff surgical", 1),
+		"duplicated":  exact + "\n" + exact,
+		"malformed":   strings.TrimSuffix(exact, "<!-- /packy:rules -->"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if HasExactPackyRules(content) {
+				t.Fatalf("non-canonical Packy rules were recognized:\n%s", content)
+			}
+		})
+	}
+}
+
 func TestWriteCodexAddsAndRemovesRulesSection(t *testing.T) {
 	path := t.TempDir() + "/AGENTS.md"
 	original := "# User notes\n\nKeep this.\n"

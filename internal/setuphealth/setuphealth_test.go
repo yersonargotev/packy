@@ -82,8 +82,8 @@ func TestDiagnoseHealthySetupReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	saveState(t, config, desiredState(config, []corelifecycle.ManagedSkill{{Name: "skill", SourcePath: source, LinkPath: link}}))
-	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n<!-- packy:rules -->\nrules\n<!-- /packy:rules -->")
-	writeFile(t, config.OpenCodePromptFile, "<!-- packy:rules -->\nrules\n<!-- /packy:rules -->")
+	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n"+prompt.RulesSectionContent())
+	writeFile(t, config.OpenCodePromptFile, prompt.RulesSectionContent())
 	writeFile(t, config.OpenCodeConfigFile, fmt.Sprintf(`{"instructions":[%q]}`, config.OpenCodePromptFile))
 
 	report := diagnose(config, &lookupStub{path: canonical}, facts("1.19.0", nil, nil))
@@ -427,8 +427,8 @@ func TestDiagnoseDelegatedSetupCodexAndOpenCodeMatrix(t *testing.T) {
 	config := sandboxConfig(t)
 	state := desiredState(config, nil)
 	saveState(t, config, state)
-	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n<!-- packy:rules -->\nrules\n<!-- /packy:rules -->\n<!-- gentle-ai:persona -->x<!-- /gentle-ai:persona -->")
-	writeFile(t, config.OpenCodePromptFile, "<!-- packy:rules -->\nrules\n<!-- /packy:rules -->")
+	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n"+prompt.RulesSectionContent()+"\n<!-- gentle-ai:persona -->x<!-- /gentle-ai:persona -->")
+	writeFile(t, config.OpenCodePromptFile, prompt.RulesSectionContent())
 	writeFile(t, config.OpenCodeConfigFile, fmt.Sprintf(`{"instructions":[%q],"plugin":["gentle-ai"]}`, config.OpenCodePromptFile))
 	report := diagnoseWithoutEngram(t, config)
 	assertCheck(t, report, Pass, "engram-setup", "records Codex and OpenCode")
@@ -481,6 +481,20 @@ func TestDiagnoseDelegatedSetupCodexAndOpenCodeMatrix(t *testing.T) {
 	})
 }
 
+func TestDiagnoseRejectsMarkerOnlyPackyRules(t *testing.T) {
+	config := sandboxConfig(t)
+	saveState(t, config, desiredState(config, nil))
+	markerOnly := "<!-- packy:rules -->\nrules\n<!-- /packy:rules -->"
+	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n"+markerOnly)
+	writeFile(t, config.OpenCodePromptFile, markerOnly)
+	writeFile(t, config.OpenCodeConfigFile, fmt.Sprintf(`{"instructions":[%q]}`, config.OpenCodePromptFile))
+
+	report := diagnoseWithoutEngram(t, config)
+
+	assertCheck(t, report, Warn, "codex-rules", "baseline rules are absent")
+	assertCheck(t, report, Warn, "opencode-rules", "baseline rules are absent")
+}
+
 func TestDiagnoseReportsExternallySatisfiedRulesAcrossAllSurfaces(t *testing.T) {
 	config := sandboxConfig(t)
 	state := desiredState(config, nil)
@@ -516,6 +530,27 @@ func TestDiagnoseReportsExternallySatisfiedRulesAcrossAllSurfaces(t *testing.T) 
 
 	state.ClaudeOwnership[0].Fingerprint = "workflow-and-rules"
 	saveState(t, config, state)
+	writeFile(t, config.CodexPromptFile, "<!-- packy:skills-router -->\n<!-- /packy:skills-router -->\n"+external+"\n"+prompt.RulesSectionContent())
+	writeFile(t, config.OpenCodePromptFile, prompt.RulesSectionContent())
+	report = Diagnose(
+		config.HomeDir,
+		config.ConfigHome,
+		corelifecycle.ObserveSetup(config.state, config.skills, config.source),
+		missingEngramObservation(config),
+		codex.ObserveSetup(config.codex),
+		opencode.ObserveSetup(config.openCode),
+		claudecode.SetupObservation{
+			Instructions: claudecode.InstructionObservation{
+				Contributions:            map[string]string{"classic": "workflow-and-rules"},
+				RulesExternallySatisfied: true,
+				RulesPackyProjected:      true,
+			},
+		},
+	)
+	assertCheck(t, report, Warn, "codex-rules", "duplicated between exact dots:rules and Packy")
+	assertCheck(t, report, Warn, "opencode-rules", "duplicated between exact dots:rules and Packy")
+	assertCheck(t, report, Fail, "claude-instructions", "do not match baseline rules satisfaction")
+
 	report = Diagnose(
 		config.HomeDir,
 		config.ConfigHome,
@@ -531,6 +566,22 @@ func TestDiagnoseReportsExternallySatisfiedRulesAcrossAllSurfaces(t *testing.T) 
 		},
 	)
 	assertCheck(t, report, Warn, "claude-instructions", "baseline rules are Packy-projected")
+
+	report = Diagnose(
+		config.HomeDir,
+		config.ConfigHome,
+		corelifecycle.ObserveSetup(config.state, config.skills, config.source),
+		missingEngramObservation(config),
+		codex.ObserveSetup(config.codex),
+		opencode.ObserveSetup(config.openCode),
+		claudecode.SetupObservation{
+			Instructions: claudecode.InstructionObservation{
+				Contributions:      map[string]string{"classic": "workflow-and-rules"},
+				RulesExternalDrift: true,
+			},
+		},
+	)
+	assertCheck(t, report, Warn, "claude-instructions", "baseline rules are absent")
 }
 
 type lookupStub struct {
