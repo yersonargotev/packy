@@ -8,7 +8,12 @@ import (
 	"fmt"
 )
 
-const RedistributableDisposition = "redistributable"
+const (
+	RedistributableDisposition = "redistributable"
+
+	VercelAgentSkillsLegalAdmissionEvidenceReference = "docs/research/evidence/vercel-agent-skills-legal-admission.json"
+	VercelAgentSkillsLegalAdmissionEvidenceSHA256    = "e98ea93b2fc7ee5e4b49364ab0fc4e13fe4b0801d6439bd7e07180a7751e6dc3"
+)
 
 var (
 	ErrLegalAdmissionShape       = errors.New("legal admission evidence has invalid shape")
@@ -43,6 +48,45 @@ type LegalAdmission struct {
 	SHA256      string
 	Disposition string
 	Scope       LegalAdmissionScope
+}
+
+// VercelAgentSkillsLegalAdmissionExpected returns the immutable issue-254
+// admission anchor. Each call owns its scope slices so callers cannot mutate
+// the production binding observed by later callers.
+func VercelAgentSkillsLegalAdmissionExpected() LegalAdmissionExpected {
+	return LegalAdmissionExpected{
+		EvidenceReference: VercelAgentSkillsLegalAdmissionEvidenceReference,
+		EvidenceSHA256:    VercelAgentSkillsLegalAdmissionEvidenceSHA256,
+		EvidenceID:        "vercel-agent-skills-7c180d9-readme-mit",
+		Candidate: LegalAdmissionCandidate{
+			Repository:   "vercel-labs/agent-skills",
+			Commit:       "7c180d9044c9ae2b442b567aad4e42a28dd5ed62",
+			READMEBlob:   "daecfea1e60f8f045a3d711c605d70edcdf9d92a",
+			READMELength: 7538,
+			READMESHA256: "c0a05286fc2a9d52ec2480bf070867665b9357beef37c9c2812e5b2ece571b6a",
+		},
+		Scope: LegalAdmissionScope{
+			SelectedRoots: []string{
+				"skills/composition-patterns",
+				"skills/deploy-to-vercel",
+				"skills/react-best-practices",
+				"skills/react-native-skills",
+				"skills/react-view-transitions",
+				"skills/vercel-cli-with-tokens",
+				"skills/vercel-optimize",
+				"skills/web-design-guidelines",
+				"skills/writing-guidelines",
+			},
+			Exclusions: []string{
+				"react-best-practices.zip",
+				"react-native-skills.zip",
+				"vercel-composition-patterns.zip",
+				"vercel-deploy-claimable.zip",
+				"vercel-react-best-practices.zip",
+				"skills/deploy-to-vercel/Archive.zip",
+			},
+		},
+	}
 }
 
 type legalAdmissionEvidence struct {
