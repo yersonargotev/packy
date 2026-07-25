@@ -33,6 +33,13 @@ type Compatibility struct {
 	Introduction, ProvenanceOnly               string
 	PatchPreserves, MinorAllows, MajorIncludes []string
 }
+type AliasPolicy struct {
+	InitialAliases           []string
+	Selection                string
+	SuggestedPattern         string
+	UnmanagedCollision       string
+	PreservesLogicalIdentity bool
+}
 type Fixture struct {
 	Pack              capabilitypack.Pack `json:"-"`
 	Sources           packsync.Config     `json:"sources"`
@@ -40,6 +47,8 @@ type Fixture struct {
 	Loaders           []LoaderAdaptation  `json:"loaders"`
 	Legal             []LegalEvidence     `json:"legal"`
 	Compatibility     Compatibility       `json:"compatibility"`
+	Aliases           AliasPolicy         `json:"aliases"`
+	SnapshotSHA256    string              `json:"snapshot_sha256"`
 	CatalogSelectable bool                `json:"catalog_selectable"`
 }
 
@@ -87,8 +96,22 @@ func Canonical() Fixture {
 		{"vercel-web-interface-guidelines", "LICENSE", "4e799d45c17aec1498c269287a83b9dba22b966b", "b3575a3c1358eac4b9ee36a4c851872d81417760", 1068, "6cd1609c9c12233507cdd2ce0d32e9a721e3c27494951be06b90090deeeb7af2"},
 		{"vercel-writing-guidelines", "command.md", "83e2316b034cf572400513538e4e4da01c4cc742", "8452139a442bef9c25abdd19ed9d4b0ef93aab02", 14228, "fb638d7821bb4472e4492aedcfb51f2636c7d31d34ff9f01cca5bcdce9b1841f"},
 		{"vercel-writing-guidelines", "LICENSE", "83e2316b034cf572400513538e4e4da01c4cc742", "094e15e1beb5b639309cc5a920e9b85d2be725ce", 1068, "7ecf613390251c6a08d66982519db39f2ae7fc2e474c65630adea78e84dc4445"}}, Loaders: loaders,
-		Legal:         []LegalEvidence{{"vercel-agent-skills", "redistributable", "vercel-agent-skills-7c180d9-readme-mit", "e98ea93b2fc7ee5e4b49364ab0fc4e13fe4b0801d6439bd7e07180a7751e6dc3"}, {"vercel-web-interface-guidelines", "MIT", "LICENSE", "6cd1609c9c12233507cdd2ce0d32e9a721e3c27494951be06b90090deeeb7af2"}, {"vercel-writing-guidelines", "MIT", "LICENSE", "7ecf613390251c6a08d66982519db39f2ae7fc2e474c65630adea78e84dc4445"}},
-		Compatibility: Compatibility{Introduction: "absent->1.0.0", ProvenanceOnly: "no-op when selected bytes and legal obligations are identical", PatchPreserves: []string{"resources", "bindings", "runtime modes", "legal obligations"}, MinorAllows: []string{"compatible independent mode", "relaxed requirement", "verified fallback", "reduced authority or effect"}, MajorIncludes: []string{"removal or rename", "stronger requirement", "broader authority or effect", "removed fallback", "legal incompatibility", "migration or mandatory action"}}, CatalogSelectable: false}
+		Legal: []LegalEvidence{{"vercel-agent-skills", "redistributable", "vercel-agent-skills-7c180d9-readme-mit", "e98ea93b2fc7ee5e4b49364ab0fc4e13fe4b0801d6439bd7e07180a7751e6dc3"}, {"vercel-web-interface-guidelines", "MIT", "LICENSE", "6cd1609c9c12233507cdd2ce0d32e9a721e3c27494951be06b90090deeeb7af2"}, {"vercel-writing-guidelines", "MIT", "LICENSE", "7ecf613390251c6a08d66982519db39f2ae7fc2e474c65630adea78e84dc4445"}},
+		Compatibility: Compatibility{
+			Introduction:   "absent->1.0.0 initial registration, not a migration",
+			ProvenanceOnly: "no-op when selected bytes and legal obligations are identical",
+			PatchPreserves: []string{"resources", "names", "invocations", "projections", "requirements", "authorities", "effects", "availability semantics", "fallbacks", "exclusions", "legal obligations", "mandatory actions"},
+			MinorAllows:    []string{"compatible independent modes", "relaxed requirements", "verified fallbacks", "reduced authority or effects while preserving the logical result", "no migration", "no mandatory action"},
+			MajorIncludes:  []string{"resource removal or rename", "strengthened requirements or versions", "broadened authority or effects", "removed fallback", "weakened redaction or fail-before-effects safety", "incompatible legal change", "migration", "mandatory action"},
+		},
+		Aliases: AliasPolicy{
+			InitialAliases:           []string{},
+			Selection:                "explicit and surface-local",
+			SuggestedPattern:         "vercel-pack-<public-name>",
+			UnmanagedCollision:       "block without adoption, overwrite, precedence, or silent rename",
+			PreservesLogicalIdentity: true,
+		},
+		SnapshotSHA256: ExactArchiveSHA256, CatalogSelectable: false}
 }
 
 func bindings(name string) []capabilitypack.Binding {
@@ -122,8 +145,10 @@ func CanonicalJSON() ([]byte, error) {
 		Loaders           []LoaderAdaptation `json:"loaders"`
 		Legal             []LegalEvidence    `json:"legal"`
 		Compatibility     Compatibility      `json:"compatibility"`
+		Aliases           AliasPolicy        `json:"aliases"`
+		SnapshotSHA256    string             `json:"snapshot_sha256"`
 		CatalogSelectable bool               `json:"catalog_selectable"`
-	}{m, f.Sources, f.Blobs, f.Loaders, f.Legal, f.Compatibility, f.CatalogSelectable}
+	}{m, f.Sources, f.Blobs, f.Loaders, f.Legal, f.Compatibility, f.Aliases, f.SnapshotSHA256, f.CatalogSelectable}
 	b, err := json.MarshalIndent(wire, "", "  ")
 	return append(b, '\n'), err
 }
@@ -148,7 +173,7 @@ func NegativeTwin(fact string) (Fixture, error) {
 	case "unauthorized":
 		f.Legal[0].Disposition = "blocked"
 	case "moving":
-		f.Sources.Sources[1].Selector = packsync.Selector{Mode: packsync.SelectorStableRelease, Ref: "main"}
+		f.Sources.Sources[1].Selector.Ref = "main"
 	case "undeclared":
 		for i := range f.Pack.Resources {
 			if f.Pack.Resources[i].ID == "vercel-web-design-guidelines" {
@@ -165,25 +190,41 @@ func NegativeTwin(fact string) (Fixture, error) {
 // then requires the complete fixed Vercel candidate. It is pure and returns
 // stable acceptance diagnostics.
 func Validate(f Fixture) error {
+	canonical := Canonical()
 	sourceJSON, err := json.Marshal(f.Sources)
 	if err != nil {
 		return errors.New("VERCEL-CONTRACT-SOURCES-BLOCKED")
 	}
 	if _, err := packsync.LoadConfig(bytes.NewReader(sourceJSON)); err != nil ||
-		!reflect.DeepEqual(f.Sources, Canonical().Sources) {
+		!reflect.DeepEqual(f.Sources, canonical.Sources) {
 		return errors.New("VERCEL-CONTRACT-SOURCES-BLOCKED")
 	}
 	if _, err := capabilitypack.EncodePortableManifestV4(f.Pack); err != nil ||
-		!reflect.DeepEqual(f.Pack, Canonical().Pack) {
+		!reflect.DeepEqual(f.Pack, canonical.Pack) {
 		return errors.New("VERCEL-CONTRACT-MANIFEST-BLOCKED")
 	}
-	if !reflect.DeepEqual(f.Legal, Canonical().Legal) {
+	if !reflect.DeepEqual(f.Legal, canonical.Legal) {
 		return errors.New("VERCEL-CONTRACT-LEGAL-BLOCKED")
+	}
+	if !reflect.DeepEqual(f.Blobs, canonical.Blobs) ||
+		!reflect.DeepEqual(f.Loaders, canonical.Loaders) ||
+		!reflect.DeepEqual(f.Compatibility, canonical.Compatibility) ||
+		!reflect.DeepEqual(f.Aliases, canonical.Aliases) ||
+		f.SnapshotSHA256 != ExactArchiveSHA256 ||
+		f.CatalogSelectable {
+		return errors.New("VERCEL-CONTRACT-EVIDENCE-BLOCKED")
+	}
+	if _, err := InspectExactArchive(); err != nil {
+		return errors.New("VERCEL-CONTRACT-SNAPSHOT-BLOCKED")
 	}
 	return nil
 }
 
-type modeRow struct{ id, role, r, a, e, f string }
+type modeRow struct {
+	id, role                  string
+	requirements, authorities string
+	effects, fallback         string
+}
 
 func modes(resource string) []capabilitypack.RuntimeMode {
 	rows := map[string][]modeRow{
@@ -193,12 +234,12 @@ func modes(resource string) []capabilitypack.RuntimeMode {
 		"vercel-cli-with-tokens":  {{"deploy-preview", "primary", "token-cli-linked", "token-cli-preview", "cli-preview", ""}, {"deploy-production", "primary", "token-cli-linked", "token-cli-production", "cli-production", ""}, {"domain-read", "primary", "token-cli-linked", "token-inspect", "", ""}, {"domain-write", "primary", "token-cli-linked", "token-domain-write", "token-domain-write", ""}, {"environment-read", "primary", "token-cli-linked", "token-inspect", "", ""}, {"environment-write", "primary", "token-cli-linked", "token-environment-write", "token-environment-write", ""}, {"git-push-preview", "primary", "token-git-push", "token-git-push-preview", "git-push-preview", ""}, {"git-push-production", "primary", "token-git-push", "token-git-push-production", "git-push-production", ""}, {"inspect", "primary", "token-cli", "token-inspect", "", ""}, {"link-project", "primary", "token-cli", "token-link", "token-link", ""}},
 		"vercel-optimize":         {{"sequential-investigation", "fallback_only", "optimize", "optimize-sequential", "optimize", ""}, {"sequential-observability-plus", "fallback_only", "optimize-observability-plus", "optimize-sequential", "optimize", ""}, {"subagent-investigation", "primary", "optimize", "optimize-subagent", "optimize", "sequential-investigation"}, {"subagent-observability-plus", "primary", "optimize-observability-plus", "optimize-subagent", "optimize", "sequential-observability-plus"}}}
 	out := []capabilitypack.RuntimeMode{}
-	for _, x := range rows[resource] {
-		fb := capabilitypack.RuntimeFallback{Kind: capabilitypack.RuntimeFallbackNone}
-		if x.f != "" {
-			fb = capabilitypack.RuntimeFallback{Kind: capabilitypack.RuntimeFallbackMode, Mode: x.f}
+	for _, row := range rows[resource] {
+		fallback := capabilitypack.RuntimeFallback{Kind: capabilitypack.RuntimeFallbackNone}
+		if row.fallback != "" {
+			fallback = capabilitypack.RuntimeFallback{Kind: capabilitypack.RuntimeFallbackMode, Mode: row.fallback}
 		}
-		out = append(out, capabilitypack.RuntimeMode{ID: x.id, Role: capabilitypack.RuntimeModeRole(x.role), Requirements: reqProfile(x.r), Authorities: authorityProfile(x.a), Effects: effectProfile(x.e), Fallback: fb, OnUnavailable: capabilitypack.RuntimeFailBeforeEffects})
+		out = append(out, capabilitypack.RuntimeMode{ID: row.id, Role: capabilitypack.RuntimeModeRole(row.role), Requirements: reqProfile(row.requirements), Authorities: authorityProfile(row.authorities), Effects: effectProfile(row.effects), Fallback: fallback, OnUnavailable: capabilitypack.RuntimeFailBeforeEffects})
 	}
 	return out
 }

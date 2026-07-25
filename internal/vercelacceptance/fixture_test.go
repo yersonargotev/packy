@@ -79,6 +79,22 @@ func TestCanonicalDeterminismAndDetachedCopies(t *testing.T) {
 	}
 }
 
+func TestCompatibilityAndAliasPolicyMatchTheFirstContract(t *testing.T) {
+	f := Canonical()
+	if len(f.Compatibility.PatchPreserves) != 12 ||
+		len(f.Compatibility.MinorAllows) != 6 ||
+		len(f.Compatibility.MajorIncludes) != 8 ||
+		!contains(f.Compatibility.MajorIncludes, "weakened redaction or fail-before-effects safety") {
+		t.Fatalf("compatibility contract is incomplete: %+v", f.Compatibility)
+	}
+	if len(f.Aliases.InitialAliases) != 0 ||
+		f.Aliases.Selection != "explicit and surface-local" ||
+		f.Aliases.SuggestedPattern != "vercel-pack-<public-name>" ||
+		!f.Aliases.PreservesLogicalIdentity {
+		t.Fatalf("alias policy changed: %+v", f.Aliases)
+	}
+}
+
 func TestGuidelineAdaptationsAndSealedIdentities(t *testing.T) {
 	f := Canonical()
 	if len(f.Blobs) != 5 || len(f.Loaders) != 2 {
@@ -176,6 +192,11 @@ func TestNegativeTwinsFailDeterministicallyWithoutMutation(t *testing.T) {
 			if diff != 1 {
 				t.Fatalf("changed %d fact groups, want one", diff)
 			}
+			if name == "moving" &&
+				(tw.Sources.Sources[1].Selector.Mode != base.Sources.Sources[1].Selector.Mode ||
+					tw.Sources.Sources[1].Selector.Ref == base.Sources.Sources[1].Selector.Ref) {
+				t.Fatalf("moving twin changed more than the exact selector ref: %+v", tw.Sources.Sources[1].Selector)
+			}
 			first, second := Validate(tw), Validate(tw)
 			if first == nil || second == nil || first.Error() != second.Error() ||
 				!strings.HasPrefix(first.Error(), "VERCEL-CONTRACT-") {
@@ -189,6 +210,27 @@ func TestNegativeTwinsFailDeterministicallyWithoutMutation(t *testing.T) {
 	after, err := os.ReadDir(root)
 	if err != nil || len(after) != len(before) {
 		t.Fatalf("negative validation mutated disposable root: before=%d after=%d err=%v", len(before), len(after), err)
+	}
+}
+
+func TestValidateRejectsEverySealedFixtureGroup(t *testing.T) {
+	tests := map[string]func(*Fixture){
+		"blob identity": func(f *Fixture) { f.Blobs[0].SHA256 = strings.Repeat("0", 64) },
+		"loader":        func(f *Fixture) { f.Loaders[0].AdaptedSHA256 = strings.Repeat("0", 64) },
+		"compatibility": func(f *Fixture) { f.Compatibility.PatchPreserves = f.Compatibility.PatchPreserves[1:] },
+		"alias policy":  func(f *Fixture) { f.Aliases.Selection = "implicit" },
+		"snapshot":      func(f *Fixture) { f.SnapshotSHA256 = strings.Repeat("0", 64) },
+		"selectability": func(f *Fixture) { f.CatalogSelectable = true },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			fixture := Canonical()
+			mutate(&fixture)
+			first, second := Validate(fixture), Validate(fixture)
+			if first == nil || second == nil || first.Error() != "VERCEL-CONTRACT-EVIDENCE-BLOCKED" || first.Error() != second.Error() {
+				t.Fatalf("unstable evidence validation: first=%v second=%v", first, second)
+			}
+		})
 	}
 }
 
@@ -207,4 +249,13 @@ func TestFixtureIsNotSelectableCatalogMaterial(t *testing.T) {
 			t.Fatal("detached fixture entered selectable catalog")
 		}
 	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
