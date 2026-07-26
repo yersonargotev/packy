@@ -18,12 +18,6 @@ import (
 	"time"
 )
 
-type acpSelection struct {
-	Invocation   string
-	ModeID       string
-	SkillContent string
-}
-
 // observeACPSelections proves the exact host advertises every skill as a native
 // slash command and expands each preflighted selection before a local-only,
 // deterministic OpenAI-compatible responder accepts it.
