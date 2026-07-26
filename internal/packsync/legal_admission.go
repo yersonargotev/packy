@@ -13,6 +13,12 @@ const (
 
 	VercelAgentSkillsLegalAdmissionEvidenceReference = "docs/research/evidence/vercel-agent-skills-legal-admission.json"
 	VercelAgentSkillsLegalAdmissionEvidenceSHA256    = "e98ea93b2fc7ee5e4b49364ab0fc4e13fe4b0801d6439bd7e07180a7751e6dc3"
+
+	VercelWebInterfaceGuidelinesLegalAdmissionEvidenceReference = "docs/research/evidence/vercel-web-interface-guidelines-legal-admission.json"
+	VercelWebInterfaceGuidelinesLegalAdmissionEvidenceSHA256    = "f53f20a752db7bcb91f3ed1044fe1c4a49603599d9c25936994761994fcc8cc4"
+
+	VercelWritingGuidelinesLegalAdmissionEvidenceReference = "docs/research/evidence/vercel-writing-guidelines-legal-admission.json"
+	VercelWritingGuidelinesLegalAdmissionEvidenceSHA256    = "0e6e060ab7a7b4980d671de99a2516f713ea3584be175af3bb28e9773aeb9966"
 )
 
 var (
@@ -85,6 +91,48 @@ func VercelAgentSkillsLegalAdmissionExpected() LegalAdmissionExpected {
 				"vercel-react-best-practices.zip",
 				"skills/deploy-to-vercel/Archive.zip",
 			},
+		},
+	}
+}
+
+// VercelWebInterfaceGuidelinesLegalAdmissionExpected returns the immutable
+// secondary-source admission anchor recorded by the accepted Vercel evidence.
+func VercelWebInterfaceGuidelinesLegalAdmissionExpected() LegalAdmissionExpected {
+	return LegalAdmissionExpected{
+		EvidenceReference: VercelWebInterfaceGuidelinesLegalAdmissionEvidenceReference,
+		EvidenceSHA256:    VercelWebInterfaceGuidelinesLegalAdmissionEvidenceSHA256,
+		EvidenceID:        "vercel-web-interface-guidelines-4e799d4-license-mit",
+		Candidate: LegalAdmissionCandidate{
+			Repository:   "vercel-labs/web-interface-guidelines",
+			Commit:       "4e799d45c17aec1498c269287a83b9dba22b966b",
+			READMEBlob:   "b3575a3c1358eac4b9ee36a4c851872d81417760",
+			READMELength: 1068,
+			READMESHA256: "6cd1609c9c12233507cdd2ce0d32e9a721e3c27494951be06b90090deeeb7af2",
+		},
+		Scope: LegalAdmissionScope{
+			SelectedRoots: []string{"LICENSE", "command.md"},
+			Exclusions:    []string{},
+		},
+	}
+}
+
+// VercelWritingGuidelinesLegalAdmissionExpected returns the immutable
+// secondary-source admission anchor recorded by the accepted Vercel evidence.
+func VercelWritingGuidelinesLegalAdmissionExpected() LegalAdmissionExpected {
+	return LegalAdmissionExpected{
+		EvidenceReference: VercelWritingGuidelinesLegalAdmissionEvidenceReference,
+		EvidenceSHA256:    VercelWritingGuidelinesLegalAdmissionEvidenceSHA256,
+		EvidenceID:        "vercel-writing-guidelines-83e2316-license-mit",
+		Candidate: LegalAdmissionCandidate{
+			Repository:   "vercel-labs/writing-guidelines",
+			Commit:       "83e2316b034cf572400513538e4e4da01c4cc742",
+			READMEBlob:   "094e15e1beb5b639309cc5a920e9b85d2be725ce",
+			READMELength: 1068,
+			READMESHA256: "7ecf613390251c6a08d66982519db39f2ae7fc2e474c65630adea78e84dc4445",
+		},
+		Scope: LegalAdmissionScope{
+			SelectedRoots: []string{"LICENSE", "command.md"},
+			Exclusions:    []string{},
 		},
 	}
 }

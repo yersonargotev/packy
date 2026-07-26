@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "evidence_id": "vercel-writing-guidelines-83e2316-license-mit",
+  "durable_reference": "docs/research/evidence/vercel-writing-guidelines-legal-admission.json",
+  "issuer": "Vercel Labs LICENSE",
+  "evidence_origin": "LICENSE at pinned Git blob 094e15e1beb5b639309cc5a920e9b85d2be725ce",
+  "decision": "Packy source-evidence conclusion in docs/research/vercel-guideline-rule-source-evidence.md",
+  "candidate": {
+    "repository": "vercel-labs/writing-guidelines",
+    "commit": "83e2316b034cf572400513538e4e4da01c4cc742",
+    "readme_blob": "094e15e1beb5b639309cc5a920e9b85d2be725ce",
+    "readme_length": 1068,
+    "readme_sha256": "7ecf613390251c6a08d66982519db39f2ae7fc2e474c65630adea78e84dc4445"
+  },
+  "disposition": "redistributable",
+  "rights": [
+    "adaptation",
+    "publication",
+    "redistribution"
+  ],
+  "obligations": [
+    "retain supplied MIT copyright and permission notice"
+  ],
+  "disclosures": [
+    "source-specific 2026 Vercel Labs MIT notice supplied",
+    "source-evidence conclusion, not legal advice"
+  ],
+  "scope": {
+    "selected_roots": [
+      "LICENSE",
+      "command.md"
+    ],
+    "exclusions": []
+  },
+  "validity": "valid only for the exact candidate and selected scope",
+  "invalidation": "any candidate, LICENSE identity or bytes, selected root, disposition, rights, obligation, disclosure, issuer, origin, decision, or evidence byte change requires fresh maintainer admission"
+}
