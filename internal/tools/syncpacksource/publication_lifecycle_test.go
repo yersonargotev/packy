@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -25,6 +26,8 @@ const (
 func TestGitHubGatewayPristineCreateFinalizesOnlyAfterExactReobservation(t *testing.T) {
 	fake := &fakeGitHubCommands{}
 	gateway := lifecycleGateway(t, fake)
+	largePrefix := strings.Repeat("large proposal evidence\n", 100_000)
+	gateway.brief = fixedPublicationBrief{markdown: largePrefix}
 	proposal := lifecycleProposal()
 	prepared, err := gateway.Prepare(proposal)
 	if err != nil {
@@ -43,6 +46,7 @@ func TestGitHubGatewayPristineCreateFinalizesOnlyAfterExactReobservation(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertBodyFileRemoved(t, fake.lastBodyFile)
 	draft, err := gateway.Observe(context.Background(), proposal.SourceID)
 	if err != nil {
 		t.Fatal(err)
@@ -61,9 +65,42 @@ func TestGitHubGatewayPristineCreateFinalizesOnlyAfterExactReobservation(t *test
 	if returned.Number != 7 || final.PR.Draft || final.PR.MetadataHash != finalHash || fake.readyCalls != 1 || fake.createCalls != 1 {
 		t.Fatalf("final state = %#v create=%d ready=%d", final.PR, fake.createCalls, fake.readyCalls)
 	}
+	if !strings.HasPrefix(fake.pr.body, largePrefix) {
+		t.Fatalf("created PR body lost large proposal prefix: got %d bytes", len(fake.pr.body))
+	}
+	assertBodyFileRemoved(t, fake.lastBodyFile)
 	identity := packsyncworkflow.ReadinessIdentity{PlanID: prepared.PlanID, BaseSHA: prepared.BaseSHA, HeadSHA: final.PR.HeadSHA, CandidateSHA: prepared.CandidateSHA, ProvenanceSHA256: prepared.ProvenanceSHA256, PRNumber: final.PR.Number, PRStateSHA256: final.PR.MetadataHash}
 	if ready, err := packsyncworkflow.MarkDecisionReady(identity, prepared.Validation, final.PR.Draft, final.PR.AutoMerge); err != nil || !ready.DecisionReady {
 		t.Fatalf("readiness = %#v, %v", ready, err)
+	}
+}
+
+func TestTemporaryPRBodySupportsBodiesLargerThanArgv(t *testing.T) {
+	body := strings.Repeat("large proposal evidence\n", 100_000)
+	name, cleanup, err := temporaryPRBody(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+
+	info, err := os.Stat(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("body file permissions = %o, want 600", got)
+	}
+	contents, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != body {
+		t.Fatalf("body file length = %d, want %d", len(contents), len(body))
+	}
+
+	cleanup()
+	if _, err := os.Stat(name); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("body file remains after cleanup: %v", err)
 	}
 }
 
@@ -304,6 +341,7 @@ func TestGitHubGatewayFailedFirstPRCreationReportsExactOrphanRecovery(t *testing
 	if err == nil || !strings.Contains(artifact.Blockers[0], "stable branch was pushed") || !strings.Contains(artifact.Recovery[0], "delete only that exact orphan branch") {
 		t.Fatalf("orphan recovery = %#v err=%v", artifact, err)
 	}
+	assertBodyFileRemoved(t, fake.lastBodyFile)
 }
 
 func TestGitHubGatewayFirstPRRetryNeverCompetesWithClosedPR(t *testing.T) {
@@ -385,6 +423,8 @@ func TestGitHubGatewayPristineUpdateUsesStableBranchAndSamePR(t *testing.T) {
 	pr := managedFakePR(t, old, "old managed", "old evidence", false)
 	fake := &fakeGitHubCommands{branchHead: headA, pr: pr}
 	gateway := lifecycleGateway(t, fake)
+	largePrefix := strings.Repeat("large proposal evidence\n", 100_000)
+	gateway.brief = fixedPublicationBrief{markdown: largePrefix}
 	prepared, err := gateway.Prepare(proposal)
 	if err != nil {
 		t.Fatal(err)
@@ -404,6 +444,10 @@ func TestGitHubGatewayPristineUpdateUsesStableBranchAndSamePR(t *testing.T) {
 	if fake.createCalls != 0 || fake.pushCalls != 1 || fake.editCalls != 1 || fake.pr.number != 7 {
 		t.Fatalf("update did not preserve one branch/PR: %#v", fake)
 	}
+	if !strings.HasPrefix(fake.pr.body, largePrefix) {
+		t.Fatalf("edited PR body lost large proposal prefix: got %d bytes", len(fake.pr.body))
+	}
+	assertBodyFileRemoved(t, fake.lastBodyFile)
 }
 
 func TestGitHubGatewayRestoredSameCandidateOnOldBaseUpdatesAfterFreshBase(t *testing.T) {
@@ -599,6 +643,7 @@ func TestGitHubGatewayEditRetryStopsAfterReviewerBranchPush(t *testing.T) {
 	if _, err := gateway.Publish(context.Background(), prepared, decision); err == nil || fake.editCalls != 1 {
 		t.Fatalf("edit retry crossed reviewer branch push: edits=%d err=%v", fake.editCalls, err)
 	}
+	assertBodyFileRemoved(t, fake.lastBodyFile)
 }
 
 func TestGitHubGatewayLifecycleBlockersNeverWrite(t *testing.T) {
@@ -668,6 +713,19 @@ type noWaitSleeper struct{}
 
 func (noWaitSleeper) Sleep(context.Context, time.Duration) error { return nil }
 
+type fixedPublicationBrief struct {
+	markdown string
+}
+
+func (fixedPublicationBrief) PreparePublication(packsyncworkflow.Proposal) {}
+
+func (fixedPublicationBrief) FinalizePublication(packsyncworkflow.Proposal, packsyncworkflow.PRState) {
+}
+
+func (brief fixedPublicationBrief) Markdown() (string, error) {
+	return brief.markdown, nil
+}
+
 type fakePR struct {
 	number int
 	open   bool
@@ -708,6 +766,7 @@ type fakeGitHubCommands struct {
 	createCalls                  int
 	editCalls                    int
 	readyCalls                   int
+	lastBodyFile                 string
 }
 
 func (fake *fakeGitHubCommands) branch() string {
@@ -824,26 +883,36 @@ func (fake *fakeGitHubCommands) run(_ context.Context, directory string, name st
 		return "", nil
 	case strings.HasPrefix(joined, "gh pr create"):
 		fake.createCalls++
+		fake.lastBodyFile = argumentAfter(args, "--body-file")
 		if fake.createErr != nil {
 			if fake.closedPRAfterCreateFailure {
 				fake.pr = &fakePR{number: 7, open: false, head: fake.branchHead, title: "closed", body: "closed"}
 			}
 			return "", fake.createErr
 		}
-		fake.pr = &fakePR{number: 7, open: true, head: fake.branchHead, title: argumentAfter(args, "--title"), body: argumentAfter(args, "--body"), draft: true}
+		body, err := bodyArgument(args)
+		if err != nil {
+			return "", err
+		}
+		fake.pr = &fakePR{number: 7, open: true, head: fake.branchHead, title: argumentAfter(args, "--title"), body: body, draft: true}
 		return "https://github.com/owner/repo/pull/7", nil
 	case strings.HasPrefix(joined, "gh pr edit"):
 		if fake.pr == nil {
 			return "", errors.New("missing PR")
 		}
 		fake.editCalls++
+		fake.lastBodyFile = argumentAfter(args, "--body-file")
 		if fake.editErr != nil {
 			if fake.mutateBranchAfterEditFailure {
 				fake.branchHead, fake.pr.head = baseB, baseB
 			}
 			return "", fake.editErr
 		}
-		fake.pr.title, fake.pr.body = argumentAfter(args, "--title"), argumentAfter(args, "--body")
+		body, err := bodyArgument(args)
+		if err != nil {
+			return "", err
+		}
+		fake.pr.title, fake.pr.body = argumentAfter(args, "--title"), body
 		return "", nil
 	case strings.HasPrefix(joined, "gh pr ready"):
 		fake.readyCalls++
@@ -872,4 +941,28 @@ func argumentAfter(args []string, name string) string {
 		}
 	}
 	return ""
+}
+
+func bodyArgument(args []string) (string, error) {
+	for _, arg := range args {
+		if arg == "--body" {
+			return "", errors.New("pull-request body must not be passed through argv")
+		}
+	}
+	bodyFile := argumentAfter(args, "--body-file")
+	if bodyFile == "" {
+		return "", errors.New("missing pull-request body")
+	}
+	body, err := os.ReadFile(bodyFile)
+	return string(body), err
+}
+
+func assertBodyFileRemoved(t *testing.T, name string) {
+	t.Helper()
+	if name == "" {
+		t.Fatal("pull-request body file was not provided")
+	}
+	if _, err := os.Stat(name); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pull-request body file remains after publication: %v", err)
+	}
 }
