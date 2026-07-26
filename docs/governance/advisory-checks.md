@@ -1,8 +1,9 @@
 # Advisory governance and security checks
 
-Issue [#169](https://github.com/yersonargotev/packy/issues/169) introduces the
-repository policy surface and five check identities below. They are informative
-only: no branch protection or repository ruleset requires them in this stage.
+Issue [#169](https://github.com/yersonargotev/packy/issues/169) introduced the
+repository policy surface and five check identities below. ADR 0018 now makes
+Packy validation, the Claude floor, Governance authorization, and CodeQL
+universal merge requirements. Dependency review remains advisory.
 
 ## Stable identity and source registry
 
@@ -83,9 +84,5 @@ go test ./internal/governanceauth ./internal/tools/governanceauth
 ```
 
 Secret Scanning and Push Protection remain GitHub platform controls. These
-advisory jobs do not read secrets, approve pull requests, change issues, write
-repository contents, or alter repository settings. The separate Addy promotion
-governance job may consume only the repository-scoped
-`GOVERNANCE_READ_TOKEN` for privileged read-only projections and the built-in
-read-only token for public repository metadata. It fails closed when forks or
-other untrusted events cannot receive the dedicated secret.
+checks do not read secrets, approve pull requests, change issues, write
+repository contents, or alter repository settings.

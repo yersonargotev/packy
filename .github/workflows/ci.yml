@@ -15,61 +15,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  addy-promotion-gate:
-    name: Addy 1.1.0 promotion gate
-    needs: claude-floor-smoke
-    if: always() && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-      deployments: read
-      issues: read
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download exact-floor qualification
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: claude-floor-qualification
-          path: ${{ runner.temp }}/claude-floor-evidence
-
-      - name: Validate Addy promotion evidence
-        env:
-          CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/addy-promotion"
-          ./scripts/gate-addy-promotion.sh \
-            "${{ github.event.pull_request.base.sha }}" \
-            "${{ github.event.pull_request.head.sha }}" \
-            --generate-trusted \
-            "$RUNNER_TEMP/claude-floor-evidence/addy-qualification.json" \
-            "$RUNNER_TEMP/addy-promotion/production-evidence.v1.json" \
-            > "$RUNNER_TEMP/addy-promotion/addy-promotion-evidence.v1.json"
-
-      - name: Retain exact promotion decision
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: addy-promotion-pr-${{ github.run_id }}
-          path: ${{ runner.temp }}/addy-promotion
-          if-no-files-found: error
-          retention-days: 90
-
   validate:
     name: Validate Packy-owned code
     runs-on: ubuntu-latest
@@ -353,41 +298,5 @@ jobs:
         with:
           name: vercel-acceptance-pr-${{ github.run_id }}
           path: ${{ runner.temp }}/vercel-acceptance
-          if-no-files-found: error
-          retention-days: 90
-
-  addy-promotion-main-replay:
-    name: Replay Addy promotion gate effect-free
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - name: Check out protected main
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Replay exact main evidence without effects
-        run: |
-          ./scripts/replay-addy-promotion.sh \
-            "${{ github.event.before }}" \
-            "${{ github.sha }}" \
-            "$RUNNER_TEMP/addy-promotion-main"
-
-      - name: Retain exact main replay
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: addy-promotion-main-${{ github.run_id }}
-          path: ${{ runner.temp }}/addy-promotion-main
           if-no-files-found: error
           retention-days: 90

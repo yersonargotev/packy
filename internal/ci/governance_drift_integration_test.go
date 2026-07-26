@@ -98,56 +98,6 @@ func TestGovernanceDriftContractAndSeededStates(t *testing.T) {
 func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing.T) {
 	root := repositoryRoot(t)
 	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "governance-drift.yml"))
-	addy := readFile(t, filepath.Join(root, ".github", "workflows", "addy-governance.yml"))
-	for _, required := range []string{
-		"name: Addy trusted governance",
-		"pull_request_target:",
-		"github.event.pull_request.base.ref == 'main'",
-		"ref: ${{ github.event.pull_request.base.sha }}",
-		"GH_TOKEN: ${{ github.token }}",
-		"GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}",
-		"GH_METADATA_TOKEN: ${{ github.token }}",
-		"PR_NUMBER: ${{ github.event.pull_request.number }}",
-		"EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
-		"EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
-		`pulls/$PR_NUMBER`,
-		`"$head_sha" == "$EVENT_HEAD_SHA"`,
-		`"$base_sha" == "$EVENT_BASE_SHA"`,
-		`git/commits/$merge_sha`,
-		`git/trees/$tree_sha?recursive=1`,
-		`printf 'merge-sha=%s\n' "$merge_sha" >> "$GITHUB_OUTPUT"`,
-		`printf 'workflow-sha=%s\n' "$workflow_sha" >> "$GITHUB_OUTPUT"`,
-		"EVALUATED_MERGE_SHA: ${{ steps.candidate.outputs.merge-sha }}",
-		"WORKFLOW_SHA: ${{ steps.candidate.outputs.workflow-sha }}",
-		"--workflow-sha \"$WORKFLOW_SHA\"",
-		"addy-governance-pr-${{ github.event.pull_request.number }}-${{ steps.candidate.outputs.merge-sha }}",
-	} {
-		if !strings.Contains(addy, required) {
-			t.Fatalf("trusted Addy governance workflow missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{
-		"ref: ${{ github.event.pull_request.head.sha }}",
-		"repository: ${{ github.event.pull_request.head.repo.full_name }}",
-		"refs/pull/",
-		"git fetch",
-		"gh pr checkout",
-		"gate-addy-promotion.sh",
-		"validate-addy-acceptance.sh",
-		"run-claude-smoke.sh",
-		"checks: write",
-		"contents: write",
-	} {
-		if strings.Contains(addy, forbidden) {
-			t.Fatalf("trusted Addy governance workflow contains candidate/write boundary %q", forbidden)
-		}
-	}
-	if count := strings.Count(addy, "secrets.GOVERNANCE_READ_TOKEN"); count != 1 {
-		t.Fatalf("trusted Addy governance credential references = %d, want exactly one collection boundary", count)
-	}
-	if count := strings.Count(addy, "GH_METADATA_TOKEN: ${{ github.token }}"); count != 1 {
-		t.Fatalf("trusted Addy metadata credential references = %d, want exactly one collection boundary", count)
-	}
 	for _, required := range []string{
 		"name: Governance drift",
 		"schedule:",

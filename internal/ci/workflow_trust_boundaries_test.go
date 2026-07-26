@@ -115,7 +115,7 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	root := repositoryRoot(t)
 	workflows := make(map[string]workflowDocument)
-	for _, name := range []string{"addy-governance.yml", "ci.yml", "claude-canary.yml", "governance.yml", "governance-drift.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
+	for _, name := range []string{"ci.yml", "claude-canary.yml", "governance.yml", "governance-drift.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
 		workflows[name] = readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
 	}
 
@@ -126,9 +126,6 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	for job, lines := range ci.jobs {
 		permissions, _ := permissionBlock(lines, 4)
 		want := map[string]string{"contents": "read"}
-		if job == "addy-promotion-gate" {
-			want = map[string]string{"actions": "read", "contents": "read", "deployments": "read", "issues": "read"}
-		}
 		if job == "vercel-acceptance-gate" {
 			want = map[string]string{"actions": "read", "contents": "read"}
 		}
@@ -311,18 +308,13 @@ func permissionBlock(lines []string, indent int) (map[string]string, string) {
 }
 
 var minimumJobPermissions = map[string]map[string]map[string]string{
-	".github/workflows/addy-governance.yml": {
-		"collect": {"actions": "read", "contents": "read", "deployments": "read", "issues": "read", "pull-requests": "read"},
-	},
 	".github/workflows/ci.yml": {
-		"addy-promotion-gate":        {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
-		"validate":                   {"contents": "read"},
-		"claude-floor-smoke":         {"contents": "read"},
-		"claude-vercel-floor-smoke":  {"contents": "read"},
-		"codex-floor-smoke":          {"contents": "read"},
-		"opencode-floor-smoke":       {"contents": "read"},
-		"vercel-acceptance-gate":     {"actions": "read", "contents": "read"},
-		"addy-promotion-main-replay": {"contents": "read"},
+		"validate":                  {"contents": "read"},
+		"claude-floor-smoke":        {"contents": "read"},
+		"claude-vercel-floor-smoke": {"contents": "read"},
+		"codex-floor-smoke":         {"contents": "read"},
+		"opencode-floor-smoke":      {"contents": "read"},
+		"vercel-acceptance-gate":    {"actions": "read", "contents": "read"},
 	},
 	".github/workflows/claude-canary.yml": {
 		"stable-smoke": {"contents": "read", "issues": "write"},
@@ -481,12 +473,6 @@ func assertTrustedPrivilegedExecution(t errorReporter, workflow workflowDocument
 // data but is never fetched or executed. Release publication admits protected
 // main only.
 var trustedExecutionMarkers = map[string][]string{
-	".github/workflows/addy-governance.yml|collect": {
-		"github.repository == 'yersonargotev/packy'",
-		"github.event.pull_request.base.ref == 'main'",
-		"ref: ${{ github.event.pull_request.base.sha }}",
-		"GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}",
-	},
 	".github/workflows/claude-canary.yml|stable-smoke": {
 		"github.repository == 'yersonargotev/packy'",
 		"refs/heads/main",

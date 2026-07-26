@@ -114,19 +114,11 @@
           "checks": [
             {
               "app_id": 15368,
-              "context": "Addy 1.1.0 promotion gate"
-            },
-            {
-              "app_id": 15368,
               "context": "Claude 2.1.203 package smoke"
             },
             {
               "app_id": 15368,
               "context": "CodeQL"
-            },
-            {
-              "app_id": 15368,
-              "context": "Dependency review"
             },
             {
               "app_id": 15368,
@@ -154,13 +146,7 @@
             "protected_branches": false
           },
           "name": "github-pages",
-          "reviewers": [
-            {
-              "login": "yersonargotev",
-              "prevent_self_review": false,
-              "type": "User"
-            }
-          ]
+          "reviewers": []
         },
         {
           "branch_policies": [{"name": "main", "type": "branch"}],
@@ -249,11 +235,6 @@
       "id": "workflow-identities",
       "boundaries": ["promotion", "publication"],
       "expected": [
-        {
-          "name": "Addy trusted governance",
-          "path": ".github/workflows/addy-governance.yml",
-          "state": "active"
-        },
         {"name": "CI", "path": ".github/workflows/ci.yml", "state": "active"},
         {
           "name": "Claude stable canary",
@@ -288,7 +269,7 @@
         {
           "name": "Synchronize pack source",
           "path": ".github/workflows/sync-pack-source.yml",
-          "state": "active"
+          "state": "disabled_manually"
         },
         {
           "name": "pages-build-deployment",

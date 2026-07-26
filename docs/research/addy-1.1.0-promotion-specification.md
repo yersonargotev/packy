@@ -1,5 +1,11 @@
 # Addy 1.1.0 promotion specification
 
+> **Historical promotion record:** ADR 0018 retired the universal Addy PR
+> promotion context, trusted collector, and `main` replay after Addy 1.1.0 was
+> promoted. The Addy acceptance and release-evidence requirements below remain
+> authoritative; references to the former universal gate describe the delivery
+> mechanism used for that promotion, not current branch protection.
+
 ## Purpose and authority
 
 This is the decision-complete implementation handoff for promoting the exact

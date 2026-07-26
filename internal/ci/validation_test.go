@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
-	"github.com/yersonargotev/packy/internal/addyacceptance"
 	"github.com/yersonargotev/packy/internal/packsync"
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
 	"github.com/yersonargotev/packy/internal/vercelacceptance"
@@ -218,75 +217,28 @@ func TestCIUsesOnlyTheValidationEntrypoint(t *testing.T) {
 	}
 }
 
-func TestAddyPromotionGateHasStableNonPublishingIdentity(t *testing.T) {
-	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
-	gate := workflowSection(t, workflow, "  addy-promotion-gate:", "  validate:")
-	for _, required := range []string{
-		"name: Addy 1.1.0 promotion gate",
-		"needs: claude-floor-smoke",
-		"if: always() && github.event_name == 'pull_request'",
-		"actions: read",
-		"contents: read",
-		"deployments: read",
-		"issues: read",
-		"fetch-depth: 0",
-		"persist-credentials: false",
-		"actions/download-artifact@",
-		"name: claude-floor-qualification",
-		"GH_TOKEN: ${{ github.token }}",
-		"./scripts/gate-addy-promotion.sh",
-		"            --generate-trusted \\",
-		"CLAUDE_FLOOR_RESULT: ${{ needs.claude-floor-smoke.result }}",
-	} {
-		if !strings.Contains(gate, required) {
-			t.Fatalf("Addy promotion gate missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{"contents: write", "packages: write", "pull-requests: write", "id-token: write", "secrets.GOVERNANCE_READ_TOKEN", "            --generate \\", "gh release", "git push", "npm publish", "go install"} {
-		if strings.Contains(gate, forbidden) {
-			t.Fatalf("Addy promotion gate contains publishing authority %q", forbidden)
-		}
-	}
-}
-
-func TestAddyPromotionMainReplayIsEffectFreeAndRetained(t *testing.T) {
+func TestCIKeepsCapabilityPromotionOutOfUniversalGates(t *testing.T) {
 	root := repositoryRoot(t)
 	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
-	start := strings.Index(workflow, "  addy-promotion-main-replay:")
-	if start < 0 {
-		t.Fatal("Addy main replay job is missing")
-	}
-	replay := workflow[start:]
-	for _, required := range []string{
-		"name: Replay Addy promotion gate effect-free",
-		"if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
-		"permissions:\n      contents: read",
-		"fetch-depth: 0",
-		"persist-credentials: false",
-		"./scripts/replay-addy-promotion.sh",
-		"retention-days: 90",
+	for _, retired := range []string{
+		"Addy 1.1.0 promotion gate",
+		"addy-promotion-gate:",
+		"addy-promotion-main-replay:",
+		"gate-addy-promotion.sh",
+		"replay-addy-promotion.sh",
 	} {
-		if !strings.Contains(replay, required) {
-			t.Fatalf("Addy main replay missing %q", required)
+		if strings.Contains(workflow, retired) {
+			t.Fatalf("CI restored retired capability-specific gate %q", retired)
 		}
 	}
-	scriptPath := filepath.Join(root, "scripts", "replay-addy-promotion.sh")
-	if output, err := exec.Command("bash", "-n", scriptPath).CombinedOutput(); err != nil {
-		t.Fatalf("bash -n replay: %v\n%s", err, output)
-	}
-	script := readFile(t, scriptPath)
-	for _, required := range []string{
-		"internal/addyacceptance/harness.go", "GITHUB_REPOSITORY", "GITHUB_RUN_ID",
-		"zero_checkout_mutation", "production_admissible:false",
-		"./scripts/validate-addy-acceptance.sh",
+	for _, retired := range []string{
+		".github/workflows/addy-governance.yml",
+		"scripts/download-addy-governance-evidence.sh",
+		"scripts/gate-addy-promotion.sh",
+		"scripts/replay-addy-promotion.sh",
 	} {
-		if !strings.Contains(script, required) {
-			t.Fatalf("Addy replay script missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{"git push", "gh release", "contents: write", "id-token: write"} {
-		if strings.Contains(replay+script, forbidden) {
-			t.Fatalf("Addy replay contains publishing authority %q", forbidden)
+		if _, err := os.Stat(filepath.Join(root, retired)); !os.IsNotExist(err) {
+			t.Fatalf("retired universal Addy surface still exists: %s", retired)
 		}
 	}
 }
@@ -294,7 +246,7 @@ func TestAddyPromotionMainReplayIsEffectFreeAndRetained(t *testing.T) {
 func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *testing.T) {
 	root := repositoryRoot(t)
 	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
-	gate := workflowSection(t, workflow, "  vercel-acceptance-gate:", "  addy-promotion-main-replay:")
+	gate := workflowSection(t, workflow, "  vercel-acceptance-gate:", "")
 	for _, required := range []string{
 		"name: Vercel six-gate acceptance cohort",
 		"needs: [validate, codex-floor-smoke, opencode-floor-smoke, claude-vercel-floor-smoke]",
@@ -418,157 +370,6 @@ func TestVercelAcceptanceFoundationNormalizationExcludesOnlyGoDownloadNoise(t *t
 	if changed := run(strings.Replace(proof, "proof detail", "changed detail", 1)); changed == warm {
 		t.Fatal("substantive proof differences were normalized away")
 	}
-}
-
-func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
-	sourceRoot := repositoryRoot(t)
-	root := t.TempDir()
-	paths := []string{"go.mod", "go.sum", ".github/workflows/ci.yml", "scripts/gate-addy-promotion.sh", "scripts/download-addy-governance-evidence.sh", "internal/tools/addypromotiongate/main.go", "internal/tools/addypromotiongate/reconstruct.go", "internal/tools/addypromotiongate/generate.go", "internal/capabilitypack/catalog.go", "internal/addyacceptance/testdata/addy-0.6.4.tar.gz", "internal/vercelacceptance/testdata/vercel-1.0.0.tar.gz"}
-	err := filepath.Walk(filepath.Join(sourceRoot, "internal"), func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !info.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-			relative, relErr := filepath.Rel(sourceRoot, path)
-			if relErr != nil {
-				return relErr
-			}
-			paths = append(paths, relative)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range paths {
-		destination := filepath.Join(root, path)
-		writeFile(t, destination, readFile(t, filepath.Join(sourceRoot, path)))
-	}
-	writeFile(t, filepath.Join(root, "bundle", "packs", "addy", "pack.json"), `{"resources":[]}`+"\n")
-	writeFile(t, filepath.Join(root, "bundle", "sources", "addy.lock.json"), "{}\n")
-	writeFile(t, filepath.Join(root, "bundle", "sources.json"), "{}\n")
-	writeFile(t, filepath.Join(root, "scripts", "validate-addy-acceptance.sh"), "#!/bin/sh\nset -eu\nprintf 'foundation validation\\n'\n")
-	if err := os.Chmod(filepath.Join(root, "scripts", "gate-addy-promotion.sh"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(filepath.Join(root, "scripts", "download-addy-governance-evidence.sh"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(filepath.Join(root, "scripts", "validate-addy-acceptance.sh"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, root, "init", "-q")
-	runGit(t, root, "config", "user.email", "fixture@example.test")
-	runGit(t, root, "config", "user.name", "Fixture")
-	runGit(t, root, "add", ".")
-	runGit(t, root, "commit", "-qm", "base")
-	base := strings.TrimSpace(gitOutput(t, root, "rev-parse", "HEAD"))
-	writeFile(t, filepath.Join(root, "README.md"), "foundation-only\n")
-	runGit(t, root, "add", "README.md")
-	runGit(t, root, "commit", "-qm", "unrelated")
-	head := strings.TrimSpace(gitOutput(t, root, "rev-parse", "HEAD"))
-
-	output, err := runAddyGate(root, base, head)
-	if err != nil {
-		t.Fatalf("unrelated gate failed: %v\n%s", err, output)
-	}
-	evidence, err := addyacceptance.DecodePromotionEvidence(output)
-	if err != nil {
-		t.Fatalf("decode not_applicable evidence: %v\n%s", err, output)
-	}
-	if evidence.Disposition != addyacceptance.PromotionNotApplicable {
-		t.Fatalf("disposition = %q, want not_applicable", evidence.Disposition)
-	}
-	canonical, err := evidence.CanonicalJSON()
-	if err != nil || !bytes.Equal(output, canonical) {
-		t.Fatalf("gate output is not canonical: %v\n%s", err, output)
-	}
-	output, err = runAddyGateWith(root, base, head, "--generate", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-evidence.json"))
-	if err != nil {
-		t.Fatalf("unrelated generated path failed instead of remaining not_applicable: %v\n%s", err, output)
-	}
-	transported, err := addyacceptance.DecodePromotionEvidence(output)
-	if err != nil || transported.Disposition != addyacceptance.PromotionNotApplicable {
-		t.Fatalf("transported qualification changed unrelated decision: disposition=%q err=%v\n%s", transported.Disposition, err, output)
-	}
-	output, err = runAddyGateWith(root, base, head, "--generate-trusted", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-trusted-evidence.json"))
-	if err != nil {
-		t.Fatalf("unrelated trusted generation path failed instead of remaining not_applicable: %v\n%s", err, output)
-	}
-
-	fixtureSource := filepath.Join(root, "internal", "addyacceptance", "fixture.go")
-	writeFile(t, fixtureSource, readFile(t, fixtureSource)+"\n// changed canonical Addy fixture\n")
-	runGit(t, root, "add", fixtureSource)
-	runGit(t, root, "commit", "-qm", "change Addy fixture authority")
-	authorityHead := strings.TrimSpace(gitOutput(t, root, "rev-parse", "HEAD"))
-	output, err = runAddyGate(root, head, authorityHead)
-	if err != nil {
-		t.Fatalf("changed promotion authority failed foundation validation: err=%v\n%s", err, output)
-	}
-	foundation, err := addyacceptance.DecodePromotionEvidence(output)
-	if err != nil || foundation.Disposition != addyacceptance.PromotionFoundation {
-		t.Fatalf("foundation disposition = %q, err=%v\n%s", foundation.Disposition, err, output)
-	}
-	canonical, err = foundation.CanonicalJSON()
-	if err != nil || !bytes.Equal(output, canonical) {
-		t.Fatalf("foundation gate output is not canonical: %v\n%s", err, output)
-	}
-	output, err = runAddyGateWith(root, head, authorityHead, "--generate", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-evidence.json"))
-	if err != nil {
-		t.Fatalf("foundation generated path failed instead of remaining canonical: %v\n%s", err, output)
-	}
-	transported, err = addyacceptance.DecodePromotionEvidence(output)
-	if err != nil || transported.Disposition != addyacceptance.PromotionFoundation {
-		t.Fatalf("transported qualification changed foundation decision: disposition=%q err=%v\n%s", transported.Disposition, err, output)
-	}
-	output, err = runAddyGateWith(root, head, authorityHead, "--generate-trusted", filepath.Join(root, "unused-qualification.json"), filepath.Join(t.TempDir(), "unused-trusted-evidence.json"))
-	if err != nil {
-		t.Fatalf("foundation trusted generation path failed instead of remaining canonical: %v\n%s", err, output)
-	}
-
-	if err := os.MkdirAll(filepath.Join(root, "bundle", "history", "addy"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(root, "bundle", "history", "addy", "1.1.0.json"), "{}\n")
-	runGit(t, root, "add", "bundle")
-	runGit(t, root, "commit", "-qm", "promotion")
-	promotionHead := strings.TrimSpace(gitOutput(t, root, "rev-parse", "HEAD"))
-	output, err = runAddyGate(root, authorityHead, promotionHead)
-	if err == nil || !strings.Contains(string(output), "promotion change requires evidence") {
-		t.Fatalf("promotion without evidence did not fail closed: err=%v\n%s", err, output)
-	}
-
-	script := readFile(t, filepath.Join(root, "scripts", "gate-addy-promotion.sh"))
-	for _, classified := range []string{"bundle/packs/addy/pack.json", "bundle/history/addy/*", "bundle/sources/addy.lock.json", ".github/workflows/addy-governance.yml", "internal/addyacceptance/*", "internal/capabilitypack/*", "internal/claudecode/*", "scripts/download-addy-governance-evidence.sh", "scripts/gate-governance-drift.sh", `ID:[[:space:]]*"addy"`} {
-		if !strings.Contains(script, classified) {
-			t.Fatalf("promotion classifier missing %q", classified)
-		}
-	}
-}
-
-func runAddyGate(root, base, head string) ([]byte, error) {
-	return runAddyGateWith(root, base, head)
-}
-
-func runAddyGateWith(root, base, head string, extra ...string) ([]byte, error) {
-	args := []string{filepath.Join(root, "scripts", "gate-addy-promotion.sh"), base, head}
-	args = append(args, extra...)
-	cmd := exec.Command("/bin/bash", args...)
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(),
-		"GITHUB_REPOSITORY=owner/repository",
-		"GITHUB_PR_NUMBER=201",
-		"GITHUB_SHA="+head,
-		"GITHUB_RUN_ID=12345",
-	)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		return append(stdout.Bytes(), stderr.Bytes()...), err
-	}
-	return stdout.Bytes(), nil
 }
 
 func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
@@ -1929,7 +1730,10 @@ func packSourceSchemaRoot(t *testing.T) string {
 func workflowSection(t *testing.T, workflow, start, end string) string {
 	t.Helper()
 	startIndex := strings.Index(workflow, start)
-	endIndex := strings.Index(workflow, end)
+	endIndex := len(workflow)
+	if end != "" {
+		endIndex = strings.Index(workflow, end)
+	}
 	if startIndex < 0 || endIndex <= startIndex {
 		t.Fatalf("workflow sections %q..%q not found", start, end)
 	}

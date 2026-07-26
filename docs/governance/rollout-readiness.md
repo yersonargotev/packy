@@ -96,9 +96,10 @@ then agreed on the effective state:
 - [x] Every `main` update must use a pull request, including updates performed
   by Admins; the branch must be current with its base and all conversations
   must be resolved.
-- [x] `Validate Packy-owned code`, `Claude 2.1.203 package smoke`,
-  `Governance / Validate authorization`, `CodeQL`, and `Dependency review` are
-  required from GitHub Actions App ID `15368` on the current head.
+- [x] Under ADR 0018, `Validate Packy-owned code`,
+  `Claude 2.1.203 package smoke`, `Governance / Validate authorization`, and
+  `CodeQL` are the universal required contexts from GitHub Actions App ID
+  `15368`. Dependency review remains advisory.
 - [x] Force pushes and branch deletion are disabled, and there is no push
   restriction or standing bypass actor.
 - [x] Native CODEOWNER approval remains disabled and the provisional sole-Admin
