@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 var (
@@ -191,6 +192,8 @@ type SurfaceInspection struct {
 	Revision            string
 	Projections         []ObservedProjection
 	OccupiedNames       []OccupiedName
+	RuntimeModeEvidence []RuntimeModeEvidence
+	RuntimeModeResults  []RuntimeModeResult
 	Readiness           ReadinessObservation
 	PendingHumanActions []string
 }
@@ -367,6 +370,7 @@ type ReconciliationPlan struct {
 	desired                []projectionExpectation
 	portable               []PortableOutcome
 	resolutions            []ExecutableResolution
+	runtimeModeResults     []RuntimeModeResult
 	readiness              ReadinessStatus
 	readinessObserved      ReadinessObservationStatus
 	observedEvidence       []string
@@ -469,6 +473,9 @@ func (p ReconciliationPlan) RemovedContributors() map[string]string {
 }
 func (p ReconciliationPlan) PortableOutcomes() []PortableOutcome {
 	return append([]PortableOutcome(nil), p.portable...)
+}
+func (p ReconciliationPlan) RuntimeModeResults() []RuntimeModeResult {
+	return cloneRuntimeModeResults(p.runtimeModeResults)
 }
 func (p ReconciliationPlan) Phases() []PlanPhase {
 	result := make([]PlanPhase, len(p.phases))
@@ -606,7 +613,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
 	}
-	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, observationFingerprint: observationDigest(observation), resolutions: resolutions, contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: map[string]string{}}
+	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: map[string]string{}}
 	for id, contributors := range before.contributors {
 		for _, contributor := range contributors {
 			if contributor == requested.ID {
@@ -772,7 +779,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	sort.Strings(pendingEvidence)
 	pendingHumanActions := append([]string(nil), observation.PendingHumanActions...)
 	sort.Strings(pendingHumanActions)
-	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, observationFingerprint: observationDigest(observation), resolutions: resolutions, readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts}
+	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts}
 	recovery := recoveryAttempt(state, operation, request.PackID, request.Surface)
 	plan.attachRecovery(state, recovery)
 	for _, resource := range pack.Resources {
@@ -1423,6 +1430,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		Desired         []projectionExpectation
 		Portable        []PortableOutcome
 		Resolutions     []ExecutableResolution
+		RuntimeModes    []RuntimeModeResult
 		Readiness       ReadinessStatus
 		Pending         []string
 		NoOp            bool
@@ -1441,7 +1449,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		PreviousAliases []SurfaceAlias
 		Recovery        bool
 		Historical      *ApplyingJournal
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.recovery, p.historicalAttempt}
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.recovery, p.historicalAttempt}
 }
 
 func ownershipByID(values []ProjectionOwnership, id string) (ProjectionOwnership, bool) {
@@ -1587,10 +1595,44 @@ func observationDigest(o SurfaceInspection) string {
 	return digestJSON(struct {
 		Revision                        string
 		Projections                     []fingerprintProjection
+		RuntimeModes                    []runtimeModeFingerprint `json:",omitempty"`
 		Readiness                       ReadinessStatus
 		PendingHumanActions             []string
 		LegacyEmptyProjectionDigestSlot []fingerprintProjection `json:"RemovalCandidates"`
-	}{Revision: o.Revision, Projections: projections, PendingHumanActions: pending})
+	}{Revision: o.Revision, Projections: projections, RuntimeModes: runtimeModeFingerprints(o.RuntimeModeResults), PendingHumanActions: pending})
+}
+
+type runtimeObservationFingerprint struct {
+	State            ObservationState
+	Reason           ObservationReason
+	ObserverRevision string
+	RedactedIdentity string
+}
+
+type runtimeModeFingerprint struct {
+	ResourceID   string
+	ModeID       string
+	State        RuntimeModeState
+	Requirements []runtimeObservationFingerprint
+	Authorities  []runtimeObservationFingerprint
+}
+
+// runtimeModeFingerprints deliberately omits ObservedAt. A refreshed probe
+// with the same semantic facts and observer revision must not stale a sealed
+// plan merely because the adapter stamped a later wall-clock instant.
+func runtimeModeFingerprints(values []RuntimeModeResult) []runtimeModeFingerprint {
+	result := make([]runtimeModeFingerprint, 0, len(values))
+	for _, value := range values {
+		item := runtimeModeFingerprint{ResourceID: value.ResourceID, ModeID: value.ModeID, State: value.State, Requirements: []runtimeObservationFingerprint{}, Authorities: []runtimeObservationFingerprint{}}
+		for _, fact := range value.Evidence.Requirements {
+			item.Requirements = append(item.Requirements, runtimeObservationFingerprint{fact.State, fact.Reason, fact.ObserverRevision, fact.RedactedIdentity})
+		}
+		for _, fact := range value.Evidence.Authorities {
+			item.Authorities = append(item.Authorities, runtimeObservationFingerprint{fact.State, fact.Reason, fact.ObserverRevision, fact.RedactedIdentity})
+		}
+		result = append(result, item)
+	}
+	return result
 }
 func flattenActions(phases []PlanPhase) []ProjectionAction {
 	var actions []ProjectionAction
@@ -1949,6 +1991,15 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			return SurfaceInspection{}, fmt.Errorf("surface adapter omitted optional authority %q", key)
 		}
 	}
+	relevantPack := transition.Desired
+	if transition.Prior.ID != "" {
+		relevantPack = transition.Prior
+	}
+	results, err := EvaluateRuntimeModes(relevantPack, observation.RuntimeModeEvidence, time.Now().UTC().Truncate(time.Second), runtimeEvidenceFreshness)
+	if err != nil {
+		return SurfaceInspection{}, err
+	}
+	observation.RuntimeModeResults = results
 	sort.Slice(observation.Projections, func(i, j int) bool { return observation.Projections[i].ID < observation.Projections[j].ID })
 	sort.Slice(observation.OccupiedNames, func(i, j int) bool {
 		if observation.OccupiedNames[i].Namespace != observation.OccupiedNames[j].Namespace {
@@ -1964,6 +2015,10 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			return observation.Readiness.OptionalAuthorities[i].ModeID < observation.Readiness.OptionalAuthorities[j].ModeID
 		}
 		return observation.Readiness.OptionalAuthorities[i].Authority < observation.Readiness.OptionalAuthorities[j].Authority
+	})
+	sort.Slice(observation.RuntimeModeEvidence, func(i, j int) bool {
+		return runtimeModeEvidenceKey(observation.RuntimeModeEvidence[i].ResourceID, observation.RuntimeModeEvidence[i].ModeID) <
+			runtimeModeEvidenceKey(observation.RuntimeModeEvidence[j].ResourceID, observation.RuntimeModeEvidence[j].ModeID)
 	})
 	return observation, nil
 }
@@ -1991,6 +2046,8 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
 	value.Projections = append([]ObservedProjection(nil), value.Projections...)
 	value.OccupiedNames = append([]OccupiedName(nil), value.OccupiedNames...)
+	value.RuntimeModeEvidence = cloneRuntimeModeEvidence(value.RuntimeModeEvidence)
+	value.RuntimeModeResults = cloneRuntimeModeResults(value.RuntimeModeResults)
 	for i := range value.Projections {
 		value.Projections[i].Action.Args = append([]string(nil), value.Projections[i].Action.Args...)
 	}

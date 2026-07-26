@@ -148,3 +148,64 @@ func runtimeAuthorityObservation(state ObservationState, reason ObservationReaso
 		RuntimeObservation: RuntimeObservation{State: state, Reason: reason, ObservedAt: observedAt.Format(time.RFC3339), ObserverRevision: "observer-v1", RedactedIdentity: "top-secret"},
 	}
 }
+
+func TestUnverifiedRuntimeModeEvidenceBuildsExactPortableSkeleton(t *testing.T) {
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.FixedZone("test", -5*60*60))
+	pack := runtimeTestPack()
+	records, err := UnverifiedRuntimeModeEvidence(pack, now, "adapter-v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := EvaluateRuntimeModes(pack, records, now.UTC(), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("results = %#v", results)
+	}
+	for _, result := range results {
+		if result.ModeID == "primary" && (result.Role != RuntimeModePrimary || result.OnUnavailable != RuntimeFailBeforeEffects) {
+			t.Fatalf("complete mode policy not preserved: %#v", result)
+		}
+		if len(result.Requirements) == 0 && len(result.Authorities) == 0 {
+			if result.State != RuntimeModeAvailable {
+				t.Fatalf("%s:%s state = %s", result.ResourceID, result.ModeID, result.State)
+			}
+			continue
+		}
+		if result.State != RuntimeModeUnverified {
+			t.Fatalf("%s:%s state = %s", result.ResourceID, result.ModeID, result.State)
+		}
+		for _, fact := range result.Evidence.Requirements {
+			if fact.ObservedAt != "2026-07-25T17:00:00Z" || fact.ObserverRevision != "adapter-v1" || fact.Reason != ObservationReasonObserverError {
+				t.Fatalf("requirement fact = %#v", fact)
+			}
+		}
+	}
+}
+
+func TestRuntimeModeFingerprintIgnoresFreshTimestampButSealsSemanticChanges(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	pack := runtimeTestPack()
+	firstEvidence, _ := UnverifiedRuntimeModeEvidence(pack, now, "adapter-v1")
+	secondEvidence, _ := UnverifiedRuntimeModeEvidence(pack, now.Add(time.Second), "adapter-v1")
+	first, err := EvaluateRuntimeModes(pack, firstEvidence, now.Add(2*time.Second), runtimeEvidenceFreshness)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := EvaluateRuntimeModes(pack, secondEvidence, now.Add(2*time.Second), runtimeEvidenceFreshness)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digestJSON(runtimeModeFingerprints(first)) != digestJSON(runtimeModeFingerprints(second)) {
+		t.Fatal("fresh timestamp alone changed sealed runtime semantics")
+	}
+	changedEvidence, _ := UnverifiedRuntimeModeEvidence(pack, now.Add(time.Second), "adapter-v2")
+	changed, err := EvaluateRuntimeModes(pack, changedEvidence, now.Add(2*time.Second), runtimeEvidenceFreshness)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digestJSON(runtimeModeFingerprints(first)) == digestJSON(runtimeModeFingerprints(changed)) {
+		t.Fatal("observer revision change did not change sealed runtime semantics")
+	}
+}

@@ -112,6 +112,7 @@ type StatusEntry struct {
 	Readiness           ReadinessStatus
 	ReadinessObserved   ReadinessObservationStatus
 	OptionalAuthorities []OptionalAuthorityObservation
+	RuntimeModes        []RuntimeModeResult
 	Projections         ProjectionSummary
 	ProjectionDetails   []ProjectionStatus
 	Blockers            []string
@@ -246,6 +247,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 		return StatusEntry{}, inspectErr
 	}
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)
+	entry.RuntimeModes = cloneRuntimeModeResults(observation.RuntimeModeResults)
 	entry.Readiness.Configured = entry.Projections.Verified == len(observation.Projections) && len(observation.Projections) > 0
 	entry.ReadinessObserved.Configured = true
 	for _, detail := range entry.ProjectionDetails {

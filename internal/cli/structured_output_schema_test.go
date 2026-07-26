@@ -126,6 +126,38 @@ func TestStructuredOutputV2SchemasRejectMismatchedReadinessState(t *testing.T) {
 	}
 }
 
+func TestRuntimeModeV2SchemaAcceptsSanitizedFactsAndRejectsUnknownProbeData(t *testing.T) {
+	root, _ := filepath.Abs(filepath.Join("..", ".."))
+	valid := []byte(`{
+		"resource_id":"vercel-deploy","mode_id":"preview","role":"primary","state":"unavailable",
+		"requirements":[{"kind":"tool","id":"vercel","version":">=53.0.0"}],
+		"authorities":[{"kind":"network","scope":"vercel_account"}],
+		"effects":[{"kind":"preview_deployment","scope":"deployment_payload"}],
+		"fallback":{"kind":"mode","mode":"local"},"fallback_state":"unverified",
+		"on_unavailable":"fail_before_effects",
+		"evidence":{
+			"requirements":[{"kind":"tool","id":"vercel","state":"unavailable","reason":"not_found","observed_at":"2026-07-25T12:00:00Z","observer_revision":"codex-v1","redacted_identity":"vercel"}],
+			"authorities":[{"kind":"network","scope":"vercel_account","state":"unverified","reason":"observer_error","observed_at":"2026-07-25T12:00:00Z","observer_revision":"codex-v1"}]
+		},
+		"affected":["requirement:tool:vercel"]
+	}`)
+	if err := validateStructuredOutput(t, root, "runtime-mode.schema.json", valid); err != nil {
+		t.Fatalf("valid runtime mode: %v", err)
+	}
+	var invalid map[string]any
+	if err := json.Unmarshal(valid, &invalid); err != nil {
+		t.Fatal(err)
+	}
+	invalid["probe_output"] = "TOKEN=secret"
+	encoded, err := json.Marshal(invalid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateStructuredOutput(t, root, "runtime-mode.schema.json", encoded); err == nil {
+		t.Fatal("runtime mode schema accepted secret-bearing probe output")
+	}
+}
+
 func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
 	fixtureRoot := filepath.Join("testdata", "structured-output", "v2")
@@ -276,6 +308,34 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 		}
 		return nil
 	}
+	validateRuntimeModes := func(name string, modes []any) error {
+		if err := requireOrdered(name, modes, objectKey("resource_id", "mode_id")); err != nil {
+			return err
+		}
+		for _, value := range modes {
+			mode := value.(map[string]any)
+			for field, key := range map[string]func(any) string{
+				"requirements": objectKey("kind", "id"),
+				"authorities":  objectKey("kind", "scope"),
+				"effects":      objectKey("kind", "scope"),
+			} {
+				if err := requireOrdered(name+"."+field, mode[field].([]any), key); err != nil {
+					return err
+				}
+			}
+			evidence := mode["evidence"].(map[string]any)
+			if err := requireOrdered(name+".evidence.requirements", evidence["requirements"].([]any), objectKey("kind", "id")); err != nil {
+				return err
+			}
+			if err := requireOrdered(name+".evidence.authorities", evidence["authorities"].([]any), objectKey("kind", "scope")); err != nil {
+				return err
+			}
+			if err := requireStrings(name+".affected", mode["affected"].([]any)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	switch document["report"] {
 	case "pack-show":
 		for _, field := range []string{"historical_versions", "surfaces", "provides", "conflicts"} {
@@ -323,6 +383,11 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 			if err := validateContract("entries.contract", entry["contract"].(map[string]any)); err != nil {
 				return err
 			}
+			if modes, ok := entry["runtime_modes"].([]any); ok {
+				if err := validateRuntimeModes("entries.runtime_modes", modes); err != nil {
+					return err
+				}
+			}
 			projections := entry["projection_details"].([]any)
 			if err := requireOrdered("projection_details", projections, objectKey("id")); err != nil {
 				return err
@@ -341,6 +406,13 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 					return err
 				}
 			}
+		}
+	case "pack-lifecycle-preview":
+		if err := validateContract("contract", document["contract"].(map[string]any)); err != nil {
+			return err
+		}
+		if modes, ok := document["runtime_modes"].([]any); ok {
+			return validateRuntimeModes("runtime_modes", modes)
 		}
 	}
 	return nil

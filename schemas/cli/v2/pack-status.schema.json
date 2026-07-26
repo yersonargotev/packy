@@ -244,6 +244,13 @@
         "contract": {
           "$ref": "lifecycle-contract.schema.json"
         },
+        "runtime_modes": {
+          "type": "array",
+          "items": {
+            "$ref": "runtime-mode.schema.json"
+          },
+          "uniqueItems": true
+        },
         "readiness": {
           "$ref": "#/$defs/readiness"
         },

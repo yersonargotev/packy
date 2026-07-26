@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
@@ -374,7 +375,10 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		pending = append(pending, "supply explicit current Claude Code runtime evidence for every included resource")
 	}
 	result.Readiness = capabilitypack.ReadinessObservation{AuthorizationObserved: authorizationObserved, Authorized: authorized, UsabilityObserved: usabilityObserved, Usable: authorized && usable, OptionalAuthorities: optionalAuthorities, PendingHumanActions: pending, Evidence: append([]string{"filesystem and static user MCP definitions inspected; runtime use was not invoked"}, runtimeFacts...)}
-	return result, nil
+	result.RuntimeModeEvidence, err = capabilitypack.UnverifiedRuntimeModeEvidence(
+		readinessPack, time.Now().UTC(), result.Revision,
+	)
+	return result, err
 }
 
 func ownedHooksContainerCreated(snapshot OwnershipSnapshot, target string) bool {

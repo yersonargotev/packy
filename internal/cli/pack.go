@@ -419,6 +419,9 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 	if err := renderPackContract(cmd, plan.LifecycleContract()); err != nil {
 		return err
 	}
+	if err := renderRuntimeModes(cmd, plan.RuntimeModeResults()); err != nil {
+		return err
+	}
 	readiness, observed := plan.Readiness(), plan.ReadinessObserved()
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Expected readiness: configured=%s, authorized=%s, usable=%s\nObserved evidence: %s\nPending evidence: %s\n", readinessValue(observed.Configured, readiness.Configured), readinessValue(observed.Authorization, readiness.Authorized), readinessValue(observed.Usability, readiness.Usable), renderPendingAction(plan.Evidence()), renderPendingAction(plan.PendingEvidence())); err != nil {
 		return err
@@ -639,7 +642,63 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 			return err
 		}
 	}
-	return renderPackContract(cmd, entry.Contract)
+	if err := renderPackContract(cmd, entry.Contract); err != nil {
+		return err
+	}
+	return renderRuntimeModes(cmd, entry.RuntimeModes)
+}
+
+func renderRuntimeModes(cmd *cobra.Command, modes []capabilitypack.RuntimeModeResult) error {
+	for _, mode := range modes {
+		fallbackState := "none"
+		if mode.FallbackState != nil {
+			fallbackState = string(*mode.FallbackState)
+		}
+		if _, err := fmt.Fprintf(
+			cmd.OutOrStdout(),
+			"Runtime mode: resource=%s mode=%s role=%s state=%s on_unavailable=%s fallback=%s fallback_mode=%s fallback_state=%s affected=%s\n",
+			mode.ResourceID, mode.ModeID, mode.Role, mode.State, mode.OnUnavailable,
+			mode.Fallback.Kind, factOrNone(mode.Fallback.Mode), fallbackState, joinFacts(mode.Affected),
+		); err != nil {
+			return err
+		}
+		for _, requirement := range mode.Requirements {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Requirement: kind=%s id=%s version=%s\n", requirement.Kind, requirement.ID, factOrNone(requirement.Version)); err != nil {
+				return err
+			}
+		}
+		for _, authority := range mode.Authorities {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Authority: kind=%s scope=%s\n", authority.Kind, factOrNone(string(authority.Scope))); err != nil {
+				return err
+			}
+		}
+		for _, effect := range mode.Effects {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Effect: kind=%s scope=%s\n", effect.Kind, factOrNone(string(effect.Scope))); err != nil {
+				return err
+			}
+		}
+		for _, observation := range mode.Evidence.Requirements {
+			if _, err := fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"  Requirement evidence: kind=%s id=%s state=%s reason=%s observed_at=%s observer_revision=%s redacted_identity=%s\n",
+				observation.Kind, observation.ID, observation.State, observation.Reason, observation.ObservedAt,
+				observation.ObserverRevision, factOrNone(observation.RedactedIdentity),
+			); err != nil {
+				return err
+			}
+		}
+		for _, observation := range mode.Evidence.Authorities {
+			if _, err := fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"  Authority evidence: kind=%s scope=%s state=%s reason=%s observed_at=%s observer_revision=%s redacted_identity=%s\n",
+				observation.Kind, observation.Scope, observation.State, observation.Reason, observation.ObservedAt,
+				observation.ObserverRevision, factOrNone(observation.RedactedIdentity),
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func renderStatusAction(entry capabilitypack.StatusEntry) string {

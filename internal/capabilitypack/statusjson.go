@@ -64,6 +64,7 @@ type JSONStatusEntry struct {
 	Contract            LifecycleContract       `json:"contract"`
 	Readiness           JSONReadiness           `json:"readiness"`
 	OptionalAuthorities []JSONOptionalAuthority `json:"optional_authorities"`
+	RuntimeModes        []RuntimeModeResult     `json:"runtime_modes,omitempty"`
 	Blockers            []string                `json:"blockers"`
 	Evidence            []string                `json:"evidence"`
 	PendingHumanActions []string                `json:"pending_human_actions"`
@@ -102,6 +103,7 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			Intent: intent, UpdateAvailable: entry.UpdateAvailable, LatestAttempt: attempt, Projections: JSONProjectionSummary{Verified: entry.Projections.Verified, Missing: entry.Projections.Missing, Drifted: entry.Projections.Drifted, Ambiguous: entry.Projections.Ambiguous, Unmanaged: entry.Projections.Unmanaged},
 			Readiness:           JSONReadiness{optionalBool(entry.ReadinessObserved.Configured, entry.Readiness.Configured), optionalBool(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized), optionalBool(entry.ReadinessObserved.Usability, entry.Readiness.Usable)},
 			OptionalAuthorities: jsonOptionalAuthorities(entry.OptionalAuthorities),
+			RuntimeModes:        sortedRuntimeModeResults(entry.RuntimeModes),
 			ProjectionDetails:   jsonProjectionDetails(entry.ProjectionDetails), Contract: entry.Contract,
 			Blockers: sortedCopy(entry.Blockers), Evidence: sortedCopy(entry.Evidence), PendingHumanActions: sortedCopy(entry.PendingHumanActions),
 		})

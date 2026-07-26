@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
@@ -49,6 +50,12 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		readinessPack = transition.Prior
 	}
 	observation.Readiness, err = a.inspectReadiness(ctx, readinessPack, observation, transition.ResolvedExecutables)
+	if err != nil {
+		return capabilitypack.SurfaceInspection{}, err
+	}
+	observation.RuntimeModeEvidence, err = capabilitypack.UnverifiedRuntimeModeEvidence(
+		readinessPack, time.Now().UTC(), observation.Revision,
+	)
 	return observation, err
 }
 

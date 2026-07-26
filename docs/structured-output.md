@@ -64,9 +64,13 @@ does not claim observed readiness.
 
 Lifecycle preview publishes the sealed ordered phases and actions, contract,
 compatibility, consent, preservation, blockers, expected readiness, observed
-evidence, pending evidence, and recovery. Apply and failure reports retain that
-redacted plan. Status publishes intent, projection health, compatibility,
-readiness, evidence, and pending actions. Each readiness dimension remains
+evidence, pending evidence, evaluated runtime modes, and recovery. Apply and
+failure reports retain that redacted plan. Status publishes intent, projection
+health, compatibility, readiness, evaluated runtime modes, evidence, and
+pending actions. Each runtime-mode result keeps its declared role,
+requirements, authorities, effects, fallback, fail-before-effects policy, and
+sanitized observation facts together; unobservable facts remain `unverified`
+and do not reduce whole-pack readiness. Each readiness dimension remains
 explicitly `{state:"known",value:true|false}` or
 `{state:"unknown",value:null}`. `--require usable` writes the complete status
 report before preserving the readiness-gate exit result.

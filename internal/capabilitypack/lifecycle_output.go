@@ -256,6 +256,7 @@ type JSONLifecyclePlan struct {
 	ReadinessObserved   ReadinessObservationStatus `json:"readiness_observed"`
 	Evidence            []string                   `json:"evidence"`
 	PendingEvidence     []string                   `json:"pending_evidence"`
+	RuntimeModes        []RuntimeModeResult        `json:"runtime_modes,omitempty"`
 	Recovery            bool                       `json:"recovery"`
 	MandatoryActions    []ProjectionAction         `json:"mandatory_actions"`
 	ContractDiff        JSONContractDiff           `json:"contract_diff"`
@@ -315,7 +316,8 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		Surface: p.surface, IntentRevision: p.intentRevision, Contract: contract, Aliases: contract.Aliases,
 		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
-		Recovery: p.recovery, MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
+		RuntimeModes: sortedRuntimeModeResults(p.runtimeModeResults),
+		Recovery:     p.recovery, MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
 		RetainedProjections: retained, RemovedContributors: removed, DryRun: dryRun}
 }
 
