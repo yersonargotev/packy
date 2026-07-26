@@ -47,7 +47,7 @@ if [[ -z "$capture_dir" ]]; then
 fi
 
 normalize() {
-  sed -E '/^ok[[:space:]]/d; s/ \([0-9.]+s\)$/ (duration)/' | LC_ALL=C sort
+  sed -E '/^go: downloading /d; /^ok[[:space:]]/d; s/ \([0-9.]+s\)$/ (duration)/' | LC_ALL=C sort
 }
 
 observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

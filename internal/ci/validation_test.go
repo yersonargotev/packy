@@ -382,6 +382,44 @@ func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testi
 	}
 }
 
+func TestVercelAcceptanceFoundationNormalizationExcludesOnlyGoDownloadNoise(t *testing.T) {
+	script := readFile(t, filepath.Join(repositoryRoot(t), "scripts", "validate-vercel-acceptance.sh"))
+	start := strings.Index(script, "normalize() {")
+	if start == -1 {
+		t.Fatal("Vercel foundation normalize function is missing")
+	}
+	end := strings.Index(script[start:], "\n}\n")
+	if end == -1 {
+		t.Fatal("Vercel foundation normalize function is unterminated")
+	}
+	normalize := script[start:start+end+2] + "\nnormalize\n"
+	run := func(input string) string {
+		t.Helper()
+		command := exec.Command("bash", "-c", normalize)
+		command.Stdin = strings.NewReader(input)
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("normalize Vercel foundation output: %v\n%s", err, output)
+		}
+		return string(output)
+	}
+
+	const proof = "=== RUN   TestProof\nproof detail\n--- PASS: TestProof (0.01s)\nPASS\nok  \texample.test/proof\t0.02s\n"
+	cold := run("go: downloading example.test/module v1.0.0\n" + proof)
+	warm := run(proof)
+	if cold != warm {
+		t.Fatalf("cold-cache diagnostics changed normalized proof:\n--- cold ---\n%s--- warm ---\n%s", cold, warm)
+	}
+	for _, required := range []string{"=== RUN   TestProof\n", "proof detail\n", "--- PASS: TestProof (duration)\n", "PASS\n"} {
+		if !strings.Contains(cold, required) {
+			t.Fatalf("normalized proof lost %q:\n%s", required, cold)
+		}
+	}
+	if changed := run(strings.Replace(proof, "proof detail", "changed detail", 1)); changed == warm {
+		t.Fatal("substantive proof differences were normalized away")
+	}
+}
+
 func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	sourceRoot := repositoryRoot(t)
 	root := t.TempDir()
