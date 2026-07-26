@@ -68,8 +68,11 @@ func testVercelCollisionRequiresExplicitAliasBeforeMutation(t *testing.T, surfac
 	}
 
 	prefix := "$"
-	if surface == SurfaceClaude {
+	switch surface {
+	case SurfaceClaude:
 		prefix = "/"
+	case SurfaceOpenCode:
+		prefix = ""
 	}
 	requested := Pack{ID: "vercel", Version: "1.0.0", manifestVersion: manifestSchemaV4, Surfaces: []Surface{surface}, Resources: []Resource{{
 		Kind: "skill", ID: resourceID, Bindings: []Binding{{
