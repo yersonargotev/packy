@@ -11,18 +11,108 @@ import (
 )
 
 func TestVercelLegalAdmissionEvidence(t *testing.T) {
-	raw, err := os.ReadFile("../../docs/research/evidence/vercel-agent-skills-legal-admission.json")
-	if err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		name     string
+		expected LegalAdmissionExpected
+	}{
+		{"agent skills", VercelAgentSkillsLegalAdmissionExpected()},
+		{"web interface guidelines", VercelWebInterfaceGuidelinesLegalAdmissionExpected()},
+		{"writing guidelines", VercelWritingGuidelinesLegalAdmissionExpected()},
 	}
-	expected := VercelAgentSkillsLegalAdmissionExpected()
-	got, err := ValidateLegalAdmission(raw, expected)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			raw, err := os.ReadFile("../../" + test.expected.EvidenceReference)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := ValidateLegalAdmission(raw, test.expected)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.EvidenceID != test.expected.EvidenceID || got.SHA256 != test.expected.EvidenceSHA256 ||
+				got.Disposition != RedistributableDisposition {
+				t.Fatalf("admission = %#v", got)
+			}
+
+			t.Run("changed bytes", func(t *testing.T) {
+				changed := append(append([]byte(nil), raw...), '\n')
+				if _, err := ValidateLegalAdmission(changed, test.expected); !errors.Is(err, ErrLegalAdmissionDigest) {
+					t.Fatalf("error = %v, want %v", err, ErrLegalAdmissionDigest)
+				}
+			})
+			t.Run("changed candidate binding", func(t *testing.T) {
+				changed := test.expected
+				changed.Candidate.Commit = strings.Repeat("0", 40)
+				if _, err := ValidateLegalAdmission(raw, changed); !errors.Is(err, ErrLegalAdmissionBinding) {
+					t.Fatalf("error = %v, want %v", err, ErrLegalAdmissionBinding)
+				}
+			})
+			t.Run("changed scope binding", func(t *testing.T) {
+				changed := test.expected
+				changed.Scope.SelectedRoots = append([]string(nil), test.expected.Scope.SelectedRoots...)
+				changed.Scope.SelectedRoots[0] = "other"
+				if _, err := ValidateLegalAdmission(raw, changed); !errors.Is(err, ErrLegalAdmissionBinding) {
+					t.Fatalf("error = %v, want %v", err, ErrLegalAdmissionBinding)
+				}
+			})
+		})
 	}
-	if got.EvidenceID != expected.EvidenceID || got.SHA256 != expected.EvidenceSHA256 ||
-		got.Disposition != RedistributableDisposition {
-		t.Fatalf("admission = %#v", got)
+}
+
+func TestVercelGuidelineEvidenceIsConsumableByCompositeAdmission(t *testing.T) {
+	cases := []struct {
+		name         string
+		expected     LegalAdmissionExpected
+		registration SourceConfig
+	}{
+		{
+			name:     "web interface guidelines",
+			expected: VercelWebInterfaceGuidelinesLegalAdmissionExpected(),
+			registration: SourceConfig{
+				ID:         "vercel-web-interface-guidelines",
+				Provider:   "github",
+				Repository: "vercel-labs/web-interface-guidelines",
+				Selector:   Selector{Mode: SelectorCommit, Ref: "4e799d45c17aec1498c269287a83b9dba22b966b"},
+				Resources: []Binding{
+					{PackID: "vercel", Kind: "asset", ResourceID: "web-interface-guidelines-rules", UpstreamPath: "command.md"},
+					{PackID: "vercel", Kind: "notice", ResourceID: "web-interface-guidelines-mit", UpstreamPath: "LICENSE"},
+				},
+			},
+		},
+		{
+			name:     "writing guidelines",
+			expected: VercelWritingGuidelinesLegalAdmissionExpected(),
+			registration: SourceConfig{
+				ID:         "vercel-writing-guidelines",
+				Provider:   "github",
+				Repository: "vercel-labs/writing-guidelines",
+				Selector:   Selector{Mode: SelectorCommit, Ref: "83e2316b034cf572400513538e4e4da01c4cc742"},
+				Resources: []Binding{
+					{PackID: "vercel", Kind: "asset", ResourceID: "writing-guidelines-rules", UpstreamPath: "command.md"},
+					{PackID: "vercel", Kind: "notice", ResourceID: "writing-guidelines-mit", UpstreamPath: "LICENSE"},
+				},
+			},
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			member := CompositeRegistrationMember{
+				Registration: test.registration,
+				LegalAdmission: CompositeLegalAdmission{
+					EvidenceReference: test.expected.EvidenceReference,
+					EvidenceSHA256:    test.expected.EvidenceSHA256,
+					Disposition:       RedistributableDisposition,
+				},
+			}
+			if err := validateCompositeLegalAdmission("../..", member, Candidate{Commit: test.expected.Candidate.Commit}); err != nil {
+				t.Fatal(err)
+			}
+
+			member.LegalAdmission.EvidenceSHA256 = strings.Repeat("0", 64)
+			if err := validateCompositeLegalAdmission("../..", member, Candidate{Commit: test.expected.Candidate.Commit}); !errors.Is(err, ErrLegalAdmissionDigest) {
+				t.Fatalf("error = %v, want %v", err, ErrLegalAdmissionDigest)
+			}
+		})
 	}
 }
 
