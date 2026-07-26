@@ -47,6 +47,12 @@ type RuntimeModeEvidence struct {
 	InvocationAvailable   bool                                `json:"invocation_available"`
 	FailBeforeHostEffects bool                                `json:"fail_before_host_effects"`
 }
+type readinessObservation struct {
+	Skills                  []SkillEvidence       `json:"skills"`
+	RuntimeModes            []RuntimeModeEvidence `json:"runtime_modes"`
+	MissingOneNegativeTwin  string                `json:"missing_one_negative_twin"`
+	MissingOneObservedCount int                   `json:"missing_one_observed_count"`
+}
 type Evidence struct {
 	SchemaVersion            int                                    `json:"schema_version"`
 	RunID                    string                                 `json:"run_id"`
@@ -98,7 +104,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err := materialize(bundle); err != nil {
 		return Evidence{}, err
 	}
-	bundleBefore, err := localprojection.FingerprintTree(bundle)
+	bundleBefore, err := localprojection.FingerprintExactTree(bundle)
 	if err != nil {
 		return Evidence{}, err
 	}
@@ -147,26 +153,6 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, err
 	}
-	firstSemantic, err := openCodeDiscoveryDigest(listed, expected, sandbox)
-	if err != nil {
-		return Evidence{}, err
-	}
-	rawRerun, err := runHost(ctx, cfg, home, xdg, work, "debug", "skill", "--pure")
-	if err != nil {
-		return Evidence{}, err
-	}
-	listedRerun, err := parseSkills(rawRerun)
-	if err != nil {
-		return Evidence{}, err
-	}
-	secondSemantic, err := openCodeDiscoveryDigest(listedRerun, expected, sandbox)
-	if err != nil {
-		return Evidence{}, err
-	}
-	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
-	if !semanticRerun.Valid() {
-		return Evidence{}, errors.New("OpenCode semantic discovery rerun differed")
-	}
 	skills := make([]SkillEvidence, 0, 9)
 	for _, want := range expected {
 		got, ok := listed[want.name]
@@ -213,15 +199,32 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if twinCount != 8 {
 		return Evidence{}, fmt.Errorf("missing-one twin discovered %d Vercel skills, want 8", twinCount)
 	}
+	firstReadiness := readinessObservation{skills, modes, missing, twinCount}
+	firstSemantic, err := semanticSHA256(firstReadiness)
+	if err != nil {
+		return Evidence{}, err
+	}
+	secondReadiness, err := observeOpenCodeReadiness(ctx, cfg, home, xdg, xdgData, cache, state, work, sandbox, expected, fixture.Pack)
+	if err != nil {
+		return Evidence{}, err
+	}
+	secondSemantic, err := semanticSHA256(secondReadiness)
+	if err != nil {
+		return Evidence{}, err
+	}
+	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
+	if !semanticRerun.Valid() {
+		return Evidence{}, errors.New("OpenCode complete readiness rerun differed")
+	}
 	executableSHA, err := fileSHA(cfg.OpenCode)
 	if err != nil {
 		return Evidence{}, err
 	}
-	bundleAfter, err := localprojection.FingerprintTree(bundle)
+	bundleAfter, err := localprojection.FingerprintExactTree(bundle)
 	if err != nil {
 		return Evidence{}, err
 	}
-	mutation := vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: bundleBefore, AfterSHA256: bundleAfter, AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: bundleBefore == bundleAfter}
+	mutation := vercelacceptance.NewMutationObservation("$SANDBOX/bundle", bundleBefore, bundleAfter)
 	if !mutation.Valid() {
 		return Evidence{}, errors.New("OpenCode host mutated the immutable fixture bundle")
 	}
@@ -243,23 +246,72 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	return ev, nil
 }
 
-func openCodeDiscoveryDigest(listed map[string]discoveredSkill, expected []expectedSkill, sandbox string) (string, error) {
-	type row struct{ Name, Location, Content string }
-	rows := make([]row, 0, len(expected))
-	for _, want := range expected {
-		got, ok := listed[want.name]
-		if !ok {
-			return "", fmt.Errorf("OpenCode semantic discovery omitted %s", want.name)
-		}
-		rows = append(rows, row{want.name, sanitize(got.location, sandbox), got.content})
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
-	data, err := json.Marshal(rows)
+func semanticSHA256(value any) (string, error) {
+	data, err := json.Marshal(value)
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func observeOpenCodeReadiness(ctx context.Context, cfg Config, home, xdg, data, cache, state, work, sandbox string, expected []expectedSkill, pack capabilitypack.Pack) (readinessObservation, error) {
+	if err := os.Symlink(expected[0].source, expected[0].target); err != nil {
+		return readinessObservation{}, err
+	}
+	modes, err := preflightEveryMode(pack)
+	if err != nil {
+		return readinessObservation{}, err
+	}
+	raw, err := runHost(ctx, cfg, home, xdg, work, "debug", "skill", "--pure")
+	if err != nil {
+		return readinessObservation{}, err
+	}
+	listed, err := parseSkills(raw)
+	if err != nil {
+		return readinessObservation{}, err
+	}
+	skills := make([]SkillEvidence, 0, len(expected))
+	for _, want := range expected {
+		got, ok := listed[want.name]
+		if !ok || !strings.Contains(got.content, strings.TrimSpace(want.content)) {
+			return readinessObservation{}, fmt.Errorf("OpenCode rerun did not load %s exactly", want.name)
+		}
+		fp, fingerprintErr := localprojection.FingerprintTree(want.source)
+		if fingerprintErr != nil {
+			return readinessObservation{}, fingerprintErr
+		}
+		skills = append(skills, SkillEvidence{want.name, sanitize(got.location, sandbox), fp, true})
+	}
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	if err := observeACPSelections(ctx, cfg, home, xdg, data, cache, state, work, expected, modes); err != nil {
+		return readinessObservation{}, err
+	}
+	missing := expected[0].name
+	if err := os.Remove(expected[0].target); err != nil {
+		return readinessObservation{}, err
+	}
+	rawTwin, err := runHost(ctx, cfg, home, xdg, work, "debug", "skill", "--pure")
+	if err != nil {
+		return readinessObservation{}, err
+	}
+	listedTwin, err := parseSkills(rawTwin)
+	if err != nil {
+		return readinessObservation{}, err
+	}
+	if _, ok := listedTwin[missing]; ok {
+		return readinessObservation{}, fmt.Errorf("OpenCode rerun missing-one twin still discovered %s", missing)
+	}
+	count := 0
+	for _, want := range expected[1:] {
+		if _, ok := listedTwin[want.name]; ok {
+			count++
+		}
+	}
+	if count != 8 {
+		return readinessObservation{}, fmt.Errorf("OpenCode rerun missing-one twin discovered %d Vercel skills", count)
+	}
+	return readinessObservation{skills, modes, missing, count}, nil
 }
 
 func validateArtifactIdentity(runID string, observedAt time.Time) error {

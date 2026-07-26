@@ -108,6 +108,18 @@ func TestVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.
 	}
 }
 
+func TestCodexVercelLifecycleWriteBoundaryAndExactDiff(t *testing.T) {
+	testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t, SurfaceCodex)
+}
+
+func TestOpenCodeVercelLifecycleWriteBoundaryAndExactDiff(t *testing.T) {
+	testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t, SurfaceOpenCode)
+}
+
+func TestClaudeVercelLifecycleWriteBoundaryAndExactDiff(t *testing.T) {
+	testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t, SurfaceClaude)
+}
+
 func TestVercelRuntimeEvidenceIsNormalizedAndSemanticChangesStaleBeforeEffects(t *testing.T) {
 	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
 		t.Run(string(surface), func(t *testing.T) {

@@ -33,6 +33,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "--validate-foundation" {
+		if err := validateFoundation(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -41,8 +48,9 @@ func main() {
 
 func listFoundation(writer io.Writer) {
 	for _, row := range vercelacceptance.FoundationRows() {
-		proofs := row.FoundationProofs()
-		fmt.Fprintf(writer, "%s|%s|%s|%s\n", row.ID, proofs[0].Seam, proofs[1].Seam, proofs[2].Seam)
+		for _, proof := range row.FoundationProofs() {
+			fmt.Fprintf(writer, "%s|%s|%s\n", row.ID, proof.Kind, proof.Seam)
+		}
 	}
 }
 
@@ -78,6 +86,25 @@ func writeFoundationManifest(args []string, reader io.Reader, writer io.Writer) 
 		return err
 	}
 	_, err = writer.Write(manifest)
+	return err
+}
+
+func validateFoundation(args []string) error {
+	flags := flag.NewFlagSet("validate-foundation", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var candidate, runID, collected, root string
+	flags.StringVar(&candidate, "candidate-sha", "", "")
+	flags.StringVar(&runID, "run-id", "", "")
+	flags.StringVar(&collected, "collected-at", "", "")
+	flags.StringVar(&root, "foundation-evidence", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
+		return errors.New("invalid foundation validation arguments")
+	}
+	now, err := time.Parse(time.RFC3339, collected)
+	if err != nil {
+		return errors.New("foundation validation requires an RFC3339 collection time")
+	}
+	_, err = loadFoundation(root, candidate, runID, now)
 	return err
 }
 

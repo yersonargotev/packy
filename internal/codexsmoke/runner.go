@@ -54,6 +54,12 @@ type RuntimeModeEvidence struct {
 	SelectionObserved bool                                `json:"selection_observed"`
 	FailBeforeEffects bool                                `json:"fail_before_effects"`
 }
+type readinessObservation struct {
+	Skills                  []SkillEvidence       `json:"skills"`
+	RuntimeModes            []RuntimeModeEvidence `json:"runtime_modes"`
+	MissingOneNegativeTwin  string                `json:"missing_one_negative_twin"`
+	MissingOneObservedCount int                   `json:"missing_one_observed_count"`
+}
 type Evidence struct {
 	SchemaVersion          int                                    `json:"schema_version"`
 	RunID                  string                                 `json:"run_id"`
@@ -145,7 +151,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err := materializeCodexSkillLinks(projections); err != nil {
 		return Evidence{}, err
 	}
-	bundleBefore, err := localprojection.FingerprintTree(bundle)
+	bundleBefore, err := localprojection.FingerprintExactTree(bundle)
 	if err != nil {
 		return Evidence{}, err
 	}
@@ -187,22 +193,6 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		skills = append(skills, SkillEvidence{Name: name, Path: s.Path, SHA256: fp, Invocation: invocations[name], Enabled: s.Enabled})
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
-	firstSemantic, err := codexDiscoveryDigest(listed, invocations, sandbox)
-	if err != nil {
-		return Evidence{}, err
-	}
-	rerunListed, rerunCommand, err := listSkills(ctx, cfg.Codex, cfg.SearchPath, home, work)
-	if err != nil {
-		return Evidence{}, err
-	}
-	secondSemantic, err := codexDiscoveryDigest(rerunListed, invocations, sandbox)
-	if err != nil {
-		return Evidence{}, err
-	}
-	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
-	if !semanticRerun.Valid() {
-		return Evidence{}, errors.New("Codex semantic discovery rerun differed")
-	}
 	var promptCommands []CommandEvidence
 	for i := range skills {
 		command, err := verifyPromptInvocation(ctx, cfg.Codex, cfg.SearchPath, home, work, skills[i].Name, skills[i].Invocation)
@@ -238,15 +228,33 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if count != 8 {
 		return Evidence{}, fmt.Errorf("missing-one twin loaded %d Vercel skills", count)
 	}
-	commands := []CommandEvidence{cmd1, cmd2, rerunCommand}
-	commands = append(commands, promptCommands...)
-	commands = append(commands, modeCommands...)
-	commands = append(commands, cmd3)
-	bundleAfter, err := localprojection.FingerprintTree(bundle)
+	firstReadiness := readinessObservation{sanitizeSkills(skills, sandbox), runtimeModes, missing, count}
+	firstSemantic, err := semanticSHA256(firstReadiness)
 	if err != nil {
 		return Evidence{}, err
 	}
-	mutation := vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: bundleBefore, AfterSHA256: bundleAfter, AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: bundleBefore == bundleAfter}
+	secondReadiness, rerunCommands, err := observeCodexReadiness(ctx, cfg, home, work, sandbox, fixture.Pack, projections, missing, invocations, resourceInvocations)
+	if err != nil {
+		return Evidence{}, err
+	}
+	secondSemantic, err := semanticSHA256(secondReadiness)
+	if err != nil {
+		return Evidence{}, err
+	}
+	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
+	if !semanticRerun.Valid() {
+		return Evidence{}, errors.New("Codex complete readiness rerun differed")
+	}
+	commands := []CommandEvidence{cmd1, cmd2}
+	commands = append(commands, promptCommands...)
+	commands = append(commands, modeCommands...)
+	commands = append(commands, cmd3)
+	commands = append(commands, rerunCommands...)
+	bundleAfter, err := localprojection.FingerprintExactTree(bundle)
+	if err != nil {
+		return Evidence{}, err
+	}
+	mutation := vercelacceptance.NewMutationObservation("$SANDBOX/bundle", bundleBefore, bundleAfter)
 	if !mutation.Valid() {
 		return Evidence{}, errors.New("Codex host mutated the immutable fixture bundle")
 	}
@@ -279,27 +287,84 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	return e, nil
 }
 
-func codexDiscoveryDigest(listed []listedSkill, invocations map[string]string, sandbox string) (string, error) {
-	type row struct {
-		Name, Path string
-		Enabled    bool
-	}
-	rows := make([]row, 0, len(invocations))
-	for _, skill := range listed {
-		if _, ok := invocations[skill.Name]; ok {
-			rows = append(rows, row{skill.Name, sanitizePath(skill.Path, sandbox), skill.Enabled})
-		}
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
-	if len(rows) != len(invocations) {
-		return "", fmt.Errorf("Codex semantic discovery contains %d Vercel skills, want %d", len(rows), len(invocations))
-	}
-	data, err := json.Marshal(rows)
+func semanticSHA256(value any) (string, error) {
+	data, err := json.Marshal(value)
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func observeCodexReadiness(ctx context.Context, cfg Config, home, work, sandbox string, pack capabilitypack.Pack, projections []skillProjection, removed string, invocations, resourceInvocations map[string]string) (readinessObservation, []CommandEvidence, error) {
+	var removedProjection []skillProjection
+	for _, projection := range projections {
+		if projection.Name == removed {
+			removedProjection = append(removedProjection, projection)
+		}
+	}
+	if len(removedProjection) != 1 {
+		return readinessObservation{}, nil, fmt.Errorf("Codex rerun cannot restore removed skill %s", removed)
+	}
+	if err := materializeCodexSkillLinks(removedProjection); err != nil {
+		return readinessObservation{}, nil, err
+	}
+	listed, listCommand, err := listSkills(ctx, cfg.Codex, cfg.SearchPath, home, work)
+	if err != nil {
+		return readinessObservation{}, nil, err
+	}
+	byName := map[string]listedSkill{}
+	for _, skill := range listed {
+		byName[skill.Name] = skill
+	}
+	skills := make([]SkillEvidence, 0, len(projections))
+	commands := []CommandEvidence{listCommand}
+	for _, projection := range projections {
+		skill, ok := byName[projection.Name]
+		if !ok || !skill.Enabled {
+			return readinessObservation{}, nil, fmt.Errorf("Codex rerun did not load enabled skill %s", projection.Name)
+		}
+		fp, fingerprintErr := localprojection.FingerprintTree(projection.Source)
+		if fingerprintErr != nil {
+			return readinessObservation{}, nil, fingerprintErr
+		}
+		evidence := SkillEvidence{Name: projection.Name, Path: skill.Path, SHA256: fp, Invocation: invocations[projection.Name], Enabled: true}
+		command, invocationErr := verifyPromptInvocation(ctx, cfg.Codex, cfg.SearchPath, home, work, evidence.Name, evidence.Invocation)
+		if invocationErr != nil {
+			return readinessObservation{}, nil, invocationErr
+		}
+		evidence.InvocationAvailable = true
+		skills = append(skills, evidence)
+		commands = append(commands, command)
+	}
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	modes, modeCommands, err := verifyRuntimeModes(ctx, cfg.Codex, cfg.SearchPath, home, work, pack, resourceInvocations)
+	if err != nil {
+		return readinessObservation{}, nil, err
+	}
+	commands = append(commands, modeCommands...)
+	missing := skills[0].Name
+	if err := os.Remove(filepath.Join(home, ".agents", "skills", missing)); err != nil {
+		return readinessObservation{}, nil, err
+	}
+	twin, twinCommand, err := listSkills(ctx, cfg.Codex, cfg.SearchPath, home, work)
+	if err != nil {
+		return readinessObservation{}, nil, err
+	}
+	commands = append(commands, twinCommand)
+	count := 0
+	for _, skill := range twin {
+		if _, ok := invocations[skill.Name]; ok {
+			if skill.Name == missing {
+				return readinessObservation{}, nil, errors.New("Codex rerun missing-one twin loaded removed skill")
+			}
+			count++
+		}
+	}
+	if count != 8 {
+		return readinessObservation{}, nil, fmt.Errorf("Codex rerun missing-one twin loaded %d Vercel skills", count)
+	}
+	return readinessObservation{sanitizeSkills(skills, sandbox), modes, missing, count}, commands, nil
 }
 
 func validateArtifactIdentity(runID string, observedAt time.Time) error {

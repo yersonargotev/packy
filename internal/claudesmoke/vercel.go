@@ -68,6 +68,14 @@ type VercelSafetyFacts struct {
 	NoDeployment        bool `json:"no_deployment"`
 	NoUpstreamExecution bool `json:"no_upstream_execution"`
 }
+type vercelReadinessObservation struct {
+	Skills                       []VercelSkillEvidence `json:"skills"`
+	Positive                     VercelHostObservation `json:"positive_host_observation"`
+	MissingOne                   VercelHostObservation `json:"missing_one_host_observation"`
+	RuntimeModes                 []VercelRuntimeRow    `json:"runtime_modes"`
+	TypedFailBeforeEffects       bool                  `json:"typed_fail_before_effects_preflight"`
+	PreflightBeforeHostSelection bool                  `json:"preflight_before_host_selection"`
+}
 type VercelEvidence struct {
 	SchemaVersion                   int                                    `json:"schema_version"`
 	RunID                           string                                 `json:"run_id"`
@@ -139,7 +147,7 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	if err := materializeVercelFixture(bundle); err != nil {
 		return VercelEvidence{}, err
 	}
-	bundleBefore, err := localprojection.FingerprintTree(bundle)
+	bundleBefore, err := localprojection.FingerprintExactTree(bundle)
 	if err != nil {
 		return VercelEvidence{}, err
 	}
@@ -170,22 +178,6 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	if err != nil {
 		return VercelEvidence{}, err
 	}
-	positiveRerun, err := observeClaudeStartup(ctx, cfg.Claude, cfg.SearchPath, positiveHome, skills)
-	if err != nil {
-		return VercelEvidence{}, err
-	}
-	firstSemantic, err := semanticSHA256(positive)
-	if err != nil {
-		return VercelEvidence{}, err
-	}
-	secondSemantic, err := semanticSHA256(positiveRerun)
-	if err != nil {
-		return VercelEvidence{}, err
-	}
-	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
-	if !semanticRerun.ExactMatch {
-		return VercelEvidence{}, errors.New("Claude semantic startup rerun differed")
-	}
 	negativeHome := filepath.Join(root, "negative-home")
 	if err := copySkillTrees(skillsRoot, filepath.Join(negativeHome, ".claude", "skills"), skills[1:]); err != nil {
 		return VercelEvidence{}, err
@@ -213,12 +205,29 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	for i := range runtimeRows {
 		runtimeRows[i].SelectionObserved = selections[runtimeRows[i].ResourceID+":"+runtimeRows[i].ModeID]
 	}
-	bundleAfter, err := localprojection.FingerprintTree(bundle)
+	firstReadiness := vercelReadinessObservation{skills, positive, negative, runtimeRows, preflight, preflightBeforeSelection}
+	firstSemantic, err := semanticSHA256(firstReadiness)
 	if err != nil {
 		return VercelEvidence{}, err
 	}
-	mutation := vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: bundleBefore, AfterSHA256: bundleAfter, AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: bundleBefore == bundleAfter}
-	if !mutation.ZeroMutationExact {
+	secondReadiness, err := observeClaudeReadiness(ctx, cfg, root, bundle, fixture.Pack)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
+	secondSemantic, err := semanticSHA256(secondReadiness)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
+	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
+	if !semanticRerun.Valid() {
+		return VercelEvidence{}, errors.New("Claude complete readiness rerun differed")
+	}
+	bundleAfter, err := localprojection.FingerprintExactTree(bundle)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
+	mutation := vercelacceptance.NewMutationObservation("$SANDBOX/bundle", bundleBefore, bundleAfter)
+	if !mutation.Valid() {
 		return VercelEvidence{}, errors.New("Claude host mutated the immutable fixture bundle")
 	}
 	e := VercelEvidence{SchemaVersion: 1, RunID: cfg.RunID, ObservedAt: time.Now().UTC(), PackySHA: head, FixtureSHA256: fixtureDigest, ClaudeVersion: ExactVercelClaudeVersion, ClaudeVersionOutput: version,
@@ -294,6 +303,49 @@ func semanticSHA256(value any) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func observeClaudeReadiness(ctx context.Context, cfg VercelConfig, root, bundle string, pack capabilitypack.Pack) (vercelReadinessObservation, error) {
+	positiveHome := filepath.Join(root, "rerun-positive-home")
+	skillsRoot := filepath.Join(positiveHome, ".claude", "skills")
+	if err := materializeClaudeVercelSkills(pack, bundle, skillsRoot); err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	skills, err := projectedSkillEvidence(pack, skillsRoot)
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	positive, err := observeClaudeStartup(ctx, cfg.Claude, cfg.SearchPath, positiveHome, skills)
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	negativeHome := filepath.Join(root, "rerun-negative-home")
+	if err := copySkillTrees(skillsRoot, filepath.Join(negativeHome, ".claude", "skills"), skills[1:]); err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	negative, err := observeClaudeStartup(ctx, cfg.Claude, cfg.SearchPath, negativeHome, skills[1:])
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	if positive.UserSkillDirCommands != 9 || negative.UserSkillDirCommands != 8 {
+		return vercelReadinessObservation{}, errors.New("Claude rerun did not distinguish nine skills from missing-one twin")
+	}
+	rows, preflight, err := evaluateSafeRuntimeModes(pack, nil)
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	preflightBeforeSelection := preflight && allRuntimeRowsFailBeforeEffects(rows)
+	if !preflightBeforeSelection {
+		return vercelReadinessObservation{}, errors.New("Claude rerun runtime preflight did not fail safely before selection")
+	}
+	selections, err := observeClaudeSelections(ctx, cfg.Claude, cfg.SearchPath, positiveHome, pack, skillsRoot)
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	for i := range rows {
+		rows[i].SelectionObserved = selections[rows[i].ResourceID+":"+rows[i].ModeID]
+	}
+	return vercelReadinessObservation{skills, positive, negative, rows, preflight, preflightBeforeSelection}, nil
 }
 
 func allRuntimeRowsFailBeforeEffects(rows []VercelRuntimeRow) bool {

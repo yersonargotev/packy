@@ -38,6 +38,17 @@ type MutationObservation struct {
 	ZeroMutationExact bool     `json:"zero_mutation_exact"`
 }
 
+func NewMutationObservation(root, beforeSHA256, afterSHA256 string) MutationObservation {
+	changed := []string{}
+	if beforeSHA256 != afterSHA256 {
+		changed = []string{root}
+	}
+	return MutationObservation{
+		Root: root, BeforeSHA256: beforeSHA256, AfterSHA256: afterSHA256,
+		AllowedChanges: []string{}, ChangedPaths: changed, ZeroMutationExact: len(changed) == 0,
+	}
+}
+
 func (e MutationObservation) Valid() bool {
 	return e.Root == "$SANDBOX/bundle" && e.ZeroMutationExact && lowerHexDigest(e.BeforeSHA256) &&
 		e.BeforeSHA256 == e.AfterSHA256 && len(e.AllowedChanges) == 0 && len(e.ChangedPaths) == 0

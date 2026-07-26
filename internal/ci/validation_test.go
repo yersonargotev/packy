@@ -359,15 +359,19 @@ func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testi
 	for _, required := range []string{
 		`go run ./internal/tools/vercelacceptance --list-foundation`,
 		`git status --porcelain --untracked-files=normal`,
+		`while IFS='|' read -r row kind seam`,
 		`for rerun in first second`, `go test "$package" -run "^${test}$" -count=1 -v`,
-		`cmp -s "$work/$row.$proof.first.txt" "$work/$row.$proof.second.txt"`,
 		`--foundation-manifest`,
+		`--validate-foundation`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("Vercel foundation missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{vercelacceptance.AcceptanceMatrixVersion, vercelacceptance.ExactArchiveSHA256} {
+	for _, forbidden := range []string{
+		vercelacceptance.AcceptanceMatrixVersion, vercelacceptance.ExactArchiveSHA256,
+		"positive", "negative", "oracle", "grep -Fxc", "cmp -s",
+	} {
 		if strings.Contains(script, forbidden) {
 			t.Fatalf("foundation script duplicates domain identity %q", forbidden)
 		}

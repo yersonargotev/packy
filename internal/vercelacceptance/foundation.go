@@ -101,16 +101,40 @@ func CanonicalFoundationManifest(ctx FoundationContext, rows []FoundationDigestR
 
 func ParseFoundationDigestRows(data []byte) ([]FoundationDigestRow, error) {
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != len(FoundationRows()) {
-		return nil, errors.New("foundation digest rows are incomplete")
+	if len(lines) != len(FoundationRows())*3 {
+		return nil, errors.New("foundation proof digests are incomplete")
 	}
-	rows := make([]FoundationDigestRow, 0, len(lines))
+	byID := make(map[string]FoundationDigestRow, len(FoundationRows()))
+	seen := make(map[string]bool, len(lines))
 	for _, line := range lines {
 		parts := strings.Split(line, "\t")
-		if len(parts) != 5 || parts[0] != "row" {
-			return nil, errors.New("malformed foundation digest row")
+		if len(parts) != 4 || parts[0] != "proof" {
+			return nil, errors.New("malformed foundation proof digest")
 		}
-		rows = append(rows, FoundationDigestRow{RowID: parts[1], Digests: [3]string{parts[2], parts[3], parts[4]}})
+		kind := ProofKind(parts[2])
+		index, ok := proofIndex(kind)
+		key := parts[1] + "\x00" + parts[2]
+		if !ok || !foundationRowID(parts[1]) || seen[key] || !lowerHexDigest(parts[3]) {
+			return nil, errors.New("invalid or duplicate foundation proof digest")
+		}
+		seen[key] = true
+		row := byID[parts[1]]
+		row.RowID = parts[1]
+		row.Digests[index] = parts[3]
+		byID[parts[1]] = row
+	}
+	rows := make([]FoundationDigestRow, 0, len(FoundationRows()))
+	for _, expected := range FoundationRows() {
+		row, ok := byID[expected.ID]
+		if !ok {
+			return nil, fmt.Errorf("%s foundation proof digests are absent", expected.ID)
+		}
+		for _, digest := range row.Digests {
+			if !lowerHexDigest(digest) {
+				return nil, fmt.Errorf("%s foundation proof digests are incomplete", expected.ID)
+			}
+		}
+		rows = append(rows, row)
 	}
 	return rows, nil
 }
@@ -190,24 +214,22 @@ func parseFoundationManifest(candidateSHA, runID string, now time.Time, maxAge t
 	if err := validateFoundationContext(ctx); err != nil {
 		return ctx, nil, err
 	}
-	rows, err := ParseFoundationDigestRows([]byte(strings.Join(lines[6:], "\n")))
-	if err != nil {
-		return ctx, nil, err
-	}
-	byID := make(map[string][3]string, len(rows))
-	for _, row := range rows {
-		if !foundationRowID(row.RowID) {
-			return ctx, nil, fmt.Errorf("unknown foundation row %s", row.RowID)
+	byID := make(map[string][3]string, len(FoundationRows()))
+	for _, line := range lines[6:] {
+		parts := strings.Split(line, "\t")
+		if len(parts) != 5 || parts[0] != "row" || !foundationRowID(parts[1]) {
+			return ctx, nil, errors.New("malformed or unknown foundation manifest row")
 		}
-		if _, duplicate := byID[row.RowID]; duplicate {
-			return ctx, nil, fmt.Errorf("duplicate foundation row %s", row.RowID)
+		if _, duplicate := byID[parts[1]]; duplicate {
+			return ctx, nil, fmt.Errorf("duplicate foundation row %s", parts[1])
 		}
-		for _, value := range row.Digests {
+		digests := [3]string{parts[2], parts[3], parts[4]}
+		for _, value := range digests {
 			if !lowerHexDigest(value) {
-				return ctx, nil, fmt.Errorf("%s has invalid proof digest", row.RowID)
+				return ctx, nil, fmt.Errorf("%s has invalid proof digest", parts[1])
 			}
 		}
-		byID[row.RowID] = row.Digests
+		byID[parts[1]] = digests
 	}
 	for _, row := range FoundationRows() {
 		if _, ok := byID[row.ID]; !ok {
@@ -282,6 +304,19 @@ func foundationRowID(id string) bool {
 
 func validProofKind(kind ProofKind) bool {
 	return kind == ProofPositive || kind == ProofNegative || kind == ProofOracle
+}
+
+func proofIndex(kind ProofKind) (int, bool) {
+	switch kind {
+	case ProofPositive:
+		return 0, true
+	case ProofNegative:
+		return 1, true
+	case ProofOracle:
+		return 2, true
+	default:
+		return 0, false
+	}
 }
 
 func rawDigest(data []byte) string {

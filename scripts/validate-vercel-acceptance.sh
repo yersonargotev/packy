@@ -38,6 +38,13 @@ fi
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/packy-vercel-foundation.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
+capture_dir="$evidence_dir"
+if [[ -z "$capture_dir" ]]; then
+  capture_dir="$work/evidence"
+  candidate_sha="$(git rev-parse HEAD)"
+  run_id="local-validation"
+  mkdir -p "$capture_dir"
+fi
 
 normalize() {
   sed -E '/^ok[[:space:]]/d; s/ \([0-9.]+s\)$/ (duration)/' | LC_ALL=C sort
@@ -45,55 +52,38 @@ normalize() {
 
 observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 go run ./internal/tools/vercelacceptance --list-foundation >"$work/mappings"
-while IFS='|' read -r row positive negative oracle; do
-  for proof_and_seam in "positive|$positive" "negative|$negative" "oracle|$oracle"; do
-    IFS='|' read -r proof seam <<<"$proof_and_seam"
-    package="${seam%/*}"
-    test="${seam##*/}"
-    for rerun in first second; do
-      raw="$work/$row.$proof.$rerun.raw"
-      normalized="$work/$row.$proof.$rerun.txt"
-      if ! go test "$package" -run "^${test}$" -count=1 -v >"$raw" 2>&1; then
-        cat "$raw" >&2
-        echo "Vercel acceptance foundation failed: $row $proof $package/$test" >&2
-        exit 1
-      fi
-      if [[ "$(grep -Fxc "=== RUN   $test" "$raw")" -ne 1 ||
-            "$(grep -Ec "^--- PASS: $test \\([0-9.]+s\\)$" "$raw")" -ne 1 ]]; then
-        echo "Vercel acceptance foundation lacks unique RUN/PASS proof: $row $proof $package/$test" >&2
-        exit 1
-      fi
-      normalize <"$raw" >"$normalized"
-    done
-    if ! cmp -s "$work/$row.$proof.first.txt" "$work/$row.$proof.second.txt"; then
-      echo "Vercel acceptance foundation rerun changed: $row $proof $package/$test" >&2
+while IFS='|' read -r row kind seam; do
+  package="${seam%/*}"
+  test="${seam##*/}"
+  for rerun in first second; do
+    raw="$work/$row.$kind.$rerun.raw"
+    normalized="$work/$row.$kind.$rerun.txt"
+    if ! go test "$package" -run "^${test}$" -count=1 -v >"$raw" 2>&1; then
+      cat "$raw" >&2
+      echo "Vercel acceptance foundation failed: $row $kind $package/$test" >&2
       exit 1
     fi
-    if [[ -n "$evidence_dir" ]]; then
-      for rerun in first second; do
-        {
-          printf '@identity\t%s\t%s\t%s\t%s\n' "$candidate_sha" "$run_id" "$observed_at" "$seam"
-          cat "$work/$row.$proof.$rerun.txt"
-        } >"$evidence_dir/$row.$proof.$rerun.txt"
-      done
-    fi
+    normalize <"$raw" >"$normalized"
+    {
+      printf '@identity\t%s\t%s\t%s\t%s\n' "$candidate_sha" "$run_id" "$observed_at" "$seam"
+      cat "$normalized"
+    } >"$capture_dir/$row.$kind.$rerun.txt"
   done
-  if [[ -n "$evidence_dir" ]]; then
-    printf 'row\t%s\t%s\t%s\t%s\n' \
-      "$row" \
-      "$(shasum -a 256 "$evidence_dir/$row.positive.first.txt" | awk '{print $1}')" \
-      "$(shasum -a 256 "$evidence_dir/$row.negative.first.txt" | awk '{print $1}')" \
-      "$(shasum -a 256 "$evidence_dir/$row.oracle.first.txt" | awk '{print $1}')" \
-      >>"$work/manifest.rows"
-  fi
+  printf 'proof\t%s\t%s\t%s\n' "$row" "$kind" \
+    "$(shasum -a 256 "$capture_dir/$row.$kind.first.txt" | awk '{print $1}')" \
+    >>"$work/manifest.proofs"
 done <"$work/mappings"
 
-if [[ -n "$evidence_dir" ]]; then
-  go run ./internal/tools/vercelacceptance \
-    --foundation-manifest \
-    --candidate-sha "$candidate_sha" \
-    --run-id "$run_id" \
-    --observed-at "$observed_at" \
-    <"$work/manifest.rows" \
-    >"$evidence_dir/manifest.tsv"
-fi
+go run ./internal/tools/vercelacceptance \
+  --foundation-manifest \
+  --candidate-sha "$candidate_sha" \
+  --run-id "$run_id" \
+  --observed-at "$observed_at" \
+  <"$work/manifest.proofs" \
+  >"$capture_dir/manifest.tsv"
+go run ./internal/tools/vercelacceptance \
+  --validate-foundation \
+  --candidate-sha "$candidate_sha" \
+  --run-id "$run_id" \
+  --collected-at "$observed_at" \
+  --foundation-evidence "$capture_dir"
