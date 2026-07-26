@@ -58,8 +58,44 @@ func TestVercelLifecycleExercisesEveryOpenCodeWriteBoundaryAndExactDiff(t *testi
 			}
 			assertExactOpenCodeDiff(t, home, before, actions)
 			assertOpenCodeCommitRollbackAndRecovery(t, adapter, home, actions, failed)
+			assertOpenCodeDeletionRollbackAndRecovery(t, adapter, home, vercelacceptance.Canonical().Pack, failed)
 		})
 	}
+}
+
+func assertOpenCodeDeletionRollbackAndRecovery(t *testing.T, adapter *SurfaceAdapter, home string, pack capabilitypack.Pack, failed int) {
+	t.Helper()
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := projectionActions(inspection.Projections)
+	if len(actions) != 11 {
+		t.Fatalf("OpenCode deletion boundaries = %d, want 11", len(actions))
+	}
+	baseline := filesystemFacts(t, home)
+	action := actions[failed]
+	stage := filepath.Join(filepath.Dir(action.Target), ".packy-stage-"+localprojection.FingerprintBytes([]byte(string(action.Kind) + ":" + action.ID))[:12])
+	blocker := stage + ".backup"
+	if err := os.MkdirAll(blocker, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocker, "operator"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err == nil || err.ID != action.ID {
+		t.Fatalf("OpenCode deletion boundary %s failure = %v", action.ID, err)
+	}
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if got := filesystemFacts(t, home); !reflect.DeepEqual(got, baseline) {
+		t.Fatalf("OpenCode deletion boundary %s did not roll back", action.ID)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
+		t.Fatalf("OpenCode deletion boundary %s recovery: %v", action.ID, err)
+	}
+	assertExactDeletionDiff(t, home, baseline, actions)
 }
 
 func TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly(t *testing.T) {
@@ -293,6 +329,29 @@ func addExpectedDirectories(t *testing.T, root, dir string, facts map[string]str
 			t.Fatalf("target parent %s escapes %s: %v", current, root, err)
 		}
 		facts[filepath.ToSlash(relative)] = "directory:-rwx------"
+	}
+}
+
+func assertExactDeletionDiff(t *testing.T, root string, before map[string]string, actions []capabilitypack.ProjectionAction) {
+	t.Helper()
+	want := make(map[string]string, len(before))
+	for path, fact := range before {
+		want[path] = fact
+	}
+	for _, action := range actions {
+		relative, err := filepath.Rel(root, action.Target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prefix := filepath.ToSlash(relative)
+		for path := range want {
+			if path == prefix || strings.HasPrefix(path, prefix+"/") {
+				delete(want, path)
+			}
+		}
+	}
+	if got := filesystemFacts(t, root); !reflect.DeepEqual(got, want) {
+		t.Fatalf("deactivation exact diff:\n got %#v\nwant %#v", got, want)
 	}
 }
 

@@ -53,8 +53,44 @@ func TestVercelLifecycleExercisesEveryClaudeWriteBoundaryAndExactDiff(t *testing
 			assertExactClaudeDiff(t, home, before, actions)
 			owned := vercelOwnedAdapter(t, bundle, layout, filepath.Join(root, "state"), inspection)
 			assertClaudeCommitRollbackAndRecovery(t, owned, home, actions, failed)
+			assertClaudeDeletionRollbackAndRecovery(t, owned, home, vercelacceptance.Canonical().Pack, failed)
 		})
 	}
+}
+
+func assertClaudeDeletionRollbackAndRecovery(t *testing.T, adapter *SurfaceAdapter, home string, pack capabilitypack.Pack, failed int) {
+	t.Helper()
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := projectionActions(inspection)
+	if len(actions) != 9 {
+		t.Fatalf("Claude deletion boundaries = %d, want 9", len(actions))
+	}
+	baseline := filesystemFacts(t, home)
+	action := actions[failed]
+	suffix := localprojection.FingerprintBytes([]byte(action.ID + "\x00" + filepath.Clean(action.Target)))[:12]
+	blocker := filepath.Join(filepath.Dir(action.Target), ".packy-batch-stage-"+suffix+".backup")
+	if err := os.MkdirAll(blocker, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocker, "operator"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err == nil || err.ID != action.ID {
+		t.Fatalf("Claude deletion boundary %s failure = %v", action.ID, err)
+	}
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if got := filesystemFacts(t, home); !reflect.DeepEqual(got, baseline) {
+		t.Fatalf("Claude deletion boundary %s did not roll back", action.ID)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
+		t.Fatalf("Claude deletion boundary %s recovery: %v", action.ID, err)
+	}
+	assertExactDeletionDiff(t, home, baseline, actions)
 }
 
 func TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly(t *testing.T) {
@@ -349,6 +385,29 @@ func filesystemFacts(t *testing.T, root string) map[string]string {
 
 func twoDigit(value int) string {
 	return string([]byte{'0' + byte(value/10), '0' + byte(value%10)})
+}
+
+func assertExactDeletionDiff(t *testing.T, root string, before map[string]string, actions []capabilitypack.ProjectionAction) {
+	t.Helper()
+	want := make(map[string]string, len(before))
+	for path, fact := range before {
+		want[path] = fact
+	}
+	for _, action := range actions {
+		relative, err := filepath.Rel(root, action.Target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prefix := filepath.ToSlash(relative)
+		for path := range want {
+			if path == prefix || strings.HasPrefix(path, prefix+"/") {
+				delete(want, path)
+			}
+		}
+	}
+	if got := filesystemFacts(t, root); !reflect.DeepEqual(got, want) {
+		t.Fatalf("deactivation exact diff:\n got %#v\nwant %#v", got, want)
+	}
 }
 
 func materializeClaudeVercelFixture(t *testing.T, root string) {

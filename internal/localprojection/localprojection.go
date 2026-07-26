@@ -20,12 +20,6 @@ type Executor struct {
 	FileKinds    map[capabilitypack.ProjectionActionKind]bool
 }
 
-type stagedAction struct {
-	action       capabilitypack.ProjectionAction
-	temp, backup string
-	hadTarget    bool
-}
-
 // TreeFile is one inert regular file in a staged local projection tree.
 type TreeFile struct {
 	Path    string
@@ -50,107 +44,31 @@ type ExactTreeSnapshot struct {
 // Apply stages all supported local projections before committing them and
 // restores already-committed targets if a later commit fails.
 func (e Executor) Apply(actions []capabilitypack.ProjectionAction) error {
-	items := make([]stagedAction, 0, len(actions))
-	succeeded := false
-	cleanupCreatedDirs := true
-	var createdDirs []string
-	createdSet := map[string]bool{}
-	defer func() {
-		for _, item := range items {
-			_ = os.RemoveAll(item.temp)
-			if succeeded {
-				_ = os.RemoveAll(item.backup)
-			}
-		}
-		if !succeeded && cleanupCreatedDirs {
-			for i := len(createdDirs) - 1; i >= 0; i-- {
-				_ = os.Remove(createdDirs[i])
-			}
-		}
-	}()
+	changes := make([]FilesystemChange, 0, len(actions))
+	targets := map[string]int{}
 	for _, action := range actions {
-		dirs, err := ensureDir(filepath.Dir(action.Target))
-		if err != nil {
-			return capabilitypack.ProjectionActionError{ID: action.ID, Err: err}
-		}
-		for _, dir := range dirs {
-			if !createdSet[dir] {
-				createdSet[dir] = true
-				createdDirs = append(createdDirs, dir)
+		change := FilesystemChange{ID: action.ID, Target: action.Target, Delete: action.Mode == capabilitypack.ProjectionDeleteTarget, stagePrefix: ".packy-stage-", stageKey: string(action.Kind) + ":" + action.ID, errorVerb: "commit"}
+		if !change.Delete {
+			switch {
+			case e.SymlinkKinds[action.Kind]:
+				change.SymlinkSource = action.Source
+			case e.FileKinds[action.Kind]:
+				change.RegularFile = true
+				change.FileContent = []byte(action.Content)
+				change.FileMode = 0o600
+			default:
+				return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("unsupported %s projection action %q", e.Host, action.Kind)}
 			}
 		}
-		temp := filepath.Join(filepath.Dir(action.Target), ".packy-stage-"+FingerprintBytes([]byte(string(action.Kind) + ":" + action.ID))[:12])
-		_ = os.RemoveAll(temp)
-		items = append(items, stagedAction{action: action, temp: temp, backup: temp + ".backup"})
-		if action.Mode == capabilitypack.ProjectionDeleteTarget {
-			_, err := os.Lstat(action.Target)
-			items[len(items)-1].hadTarget = err == nil
-			if err != nil && !os.IsNotExist(err) {
-				return capabilitypack.ProjectionActionError{ID: action.ID, Err: err}
-			}
+		target := filepath.Clean(action.Target)
+		if index, ok := targets[target]; ok {
+			changes[index] = change
 			continue
 		}
-		switch {
-		case e.SymlinkKinds[action.Kind]:
-			if err := os.Symlink(action.Source, temp); err != nil {
-				return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("stage: %w", err)}
-			}
-			if _, err := filepath.EvalSymlinks(temp); err != nil {
-				return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("validate staged: %w", err)}
-			}
-		case e.FileKinds[action.Kind]:
-			if err := os.WriteFile(temp, []byte(action.Content), 0o600); err != nil {
-				return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("stage: %w", err)}
-			}
-			staged, err := os.ReadFile(temp)
-			if err != nil {
-				return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("validate staged: %w", err)}
-			}
-			if string(staged) != action.Content {
-				return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("validate staged: content mismatch")}
-			}
-		default:
-			return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("unsupported %s projection action %q", e.Host, action.Kind)}
-		}
-		_, err = os.Lstat(action.Target)
-		items[len(items)-1].hadTarget = err == nil
+		targets[target] = len(changes)
+		changes = append(changes, change)
 	}
-	committed := 0
-	for i := range items {
-		item := &items[i]
-		if item.hadTarget {
-			if err := os.Rename(item.action.Target, item.backup); err != nil {
-				if rollbackErr := rollback(items[:committed]); rollbackErr != nil {
-					cleanupCreatedDirs = false
-					return capabilitypack.ProjectionActionError{ID: item.action.ID, Err: fmt.Errorf("commit: %v; rollback failed: %w", err, rollbackErr)}
-				}
-				return capabilitypack.ProjectionActionError{ID: items[i].action.ID, Err: err}
-			}
-		}
-		if item.action.Mode == capabilitypack.ProjectionDeleteTarget {
-			committed++
-			continue
-		}
-		if err := os.Rename(item.temp, item.action.Target); err != nil {
-			if item.hadTarget {
-				if restoreErr := os.Rename(item.backup, item.action.Target); restoreErr != nil {
-					cleanupCreatedDirs = false
-					if rollbackErr := rollback(items[:committed]); rollbackErr != nil {
-						return capabilitypack.ProjectionActionError{ID: item.action.ID, Err: fmt.Errorf("commit: %v; restore current target failed: %v; rollback failed: %w", err, restoreErr, rollbackErr)}
-					}
-					return capabilitypack.ProjectionActionError{ID: item.action.ID, Err: fmt.Errorf("commit: %v; restore current target failed: %w", err, restoreErr)}
-				}
-			}
-			if rollbackErr := rollback(items[:committed]); rollbackErr != nil {
-				cleanupCreatedDirs = false
-				return capabilitypack.ProjectionActionError{ID: item.action.ID, Err: fmt.Errorf("commit: %v; rollback failed: %w", err, rollbackErr)}
-			}
-			return err
-		}
-		committed++
-	}
-	succeeded = true
-	return nil
+	return ApplyFilesystemChanges(changes)
 }
 
 func ensureDir(dir string) ([]string, error) {
@@ -174,20 +92,6 @@ func ensureDir(dir string) ([]string, error) {
 		missing[i], missing[j] = missing[j], missing[i]
 	}
 	return missing, nil
-}
-
-func rollback(items []stagedAction) error {
-	for i := len(items) - 1; i >= 0; i-- {
-		if err := os.RemoveAll(items[i].action.Target); err != nil {
-			return err
-		}
-		if items[i].hadTarget {
-			if err := os.Rename(items[i].backup, items[i].action.Target); err != nil {
-				return capabilitypack.ProjectionActionError{ID: items[i].action.ID, Err: err}
-			}
-		}
-	}
-	return nil
 }
 
 func FingerprintBytes(data []byte) string {
@@ -380,7 +284,13 @@ type FilesystemChange struct {
 	SymlinkSource           string
 	TreeFiles               []TreeFile
 	ExpectedTreeFingerprint string
+	RegularFile             bool
+	FileContent             []byte
+	FileMode                fs.FileMode
 	Delete                  bool
+	stagePrefix             string
+	stageKey                string
+	errorVerb               string
 }
 
 type stagedFilesystemChange struct {
@@ -418,12 +328,13 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 		}
 		targets[target] = true
 		tree := len(change.TreeFiles) > 0 || change.ExpectedTreeFingerprint != ""
+		file := change.RegularFile
 		if change.Delete {
-			if tree || change.SymlinkSource != "" {
+			if tree || file || change.SymlinkSource != "" {
 				return capabilitypack.ProjectionActionError{ID: change.ID, Err: errors.New("filesystem deletion must not contain replacement payload")}
 			}
-		} else if tree == (change.SymlinkSource != "") {
-			return capabilitypack.ProjectionActionError{ID: change.ID, Err: errors.New("filesystem change must contain exactly one symlink or tree payload")}
+		} else if boolCount(tree, file, change.SymlinkSource != "") != 1 {
+			return capabilitypack.ProjectionActionError{ID: change.ID, Err: errors.New("filesystem change must contain exactly one symlink, regular-file, or tree payload")}
 		}
 		dirs, err := ensureDir(filepath.Dir(target))
 		if err != nil {
@@ -435,8 +346,16 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 				createdDirs = append(createdDirs, dir)
 			}
 		}
-		suffix := FingerprintBytes([]byte(change.ID + "\x00" + target))[:12]
-		stage := filepath.Join(filepath.Dir(target), ".packy-batch-stage-"+suffix)
+		prefix := change.stagePrefix
+		if prefix == "" {
+			prefix = ".packy-batch-stage-"
+		}
+		key := change.stageKey
+		if key == "" {
+			key = change.ID + "\x00" + target
+		}
+		suffix := FingerprintBytes([]byte(key))[:12]
+		stage := filepath.Join(filepath.Dir(target), prefix+suffix)
 		_ = os.RemoveAll(stage)
 		item := stagedFilesystemChange{change: change, stage: stage, backup: stage + ".backup"}
 		item.change.Target = target
@@ -445,8 +364,8 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 		} else if !os.IsNotExist(err) {
 			return capabilitypack.ProjectionActionError{ID: change.ID, Err: err}
 		}
+		items = append(items, item)
 		if change.Delete {
-			items = append(items, item)
 			continue
 		} else if change.SymlinkSource != "" {
 			if err := os.Symlink(change.SymlinkSource, stage); err != nil {
@@ -454,6 +373,18 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 			}
 			if _, err := filepath.EvalSymlinks(stage); err != nil {
 				return capabilitypack.ProjectionActionError{ID: change.ID, Err: fmt.Errorf("validate staged symlink: %w", err)}
+			}
+		} else if file {
+			mode := change.FileMode
+			if mode == 0 {
+				mode = 0o600
+			}
+			if err := os.WriteFile(stage, change.FileContent, mode); err != nil {
+				return capabilitypack.ProjectionActionError{ID: change.ID, Err: fmt.Errorf("stage: %w", err)}
+			}
+			staged, err := os.ReadFile(stage)
+			if err != nil || string(staged) != string(change.FileContent) {
+				return capabilitypack.ProjectionActionError{ID: change.ID, Err: errors.New("validate staged: content mismatch")}
 			}
 		} else {
 			normalized, err := normalizedTreeFiles(change.TreeFiles)
@@ -468,26 +399,29 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 				return capabilitypack.ProjectionActionError{ID: change.ID, Err: err}
 			}
 		}
-		items = append(items, item)
 	}
 	committed := 0
 	for i := range items {
 		item := &items[i]
+		verb := item.change.errorVerb
+		if verb == "" {
+			verb = "backup"
+		}
 		if item.hadTarget {
-			if err := os.Rename(item.change.Target, item.backup); err != nil {
+			if err := renameTreePath(item.change.Target, item.backup); err != nil {
 				if rollbackErr := rollbackFilesystemChanges(items[:committed]); rollbackErr != nil {
-					return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("backup: %v; rollback failed: %w", err, rollbackErr)}
+					return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("%s: %v; rollback failed: %w", verb, err, rollbackErr)}
 				}
-				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("backup: %w", err)}
+				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("%s: %w", verb, err)}
 			}
 		}
 		if item.change.Delete {
 			committed++
 			continue
 		}
-		if err := os.Rename(item.stage, item.change.Target); err != nil {
+		if err := renameTreePath(item.stage, item.change.Target); err != nil {
 			if item.hadTarget {
-				if restoreErr := os.Rename(item.backup, item.change.Target); restoreErr != nil {
+				if restoreErr := renameTreePath(item.backup, item.change.Target); restoreErr != nil {
 					if rollbackErr := rollbackFilesystemChanges(items[:committed]); rollbackErr != nil {
 						return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("publish: %v; restore current target failed: %v; rollback failed: %w", err, restoreErr, rollbackErr)}
 					}
@@ -511,7 +445,7 @@ func rollbackFilesystemChanges(items []stagedFilesystemChange) error {
 			return err
 		}
 		if items[i].hadTarget {
-			if err := os.Rename(items[i].backup, items[i].change.Target); err != nil {
+			if err := renameTreePath(items[i].backup, items[i].change.Target); err != nil {
 				return capabilitypack.ProjectionActionError{ID: items[i].change.ID, Err: err}
 			}
 		}
@@ -519,10 +453,14 @@ func rollbackFilesystemChanges(items []stagedFilesystemChange) error {
 	return nil
 }
 
-type stagedTreeChange struct {
-	change        TreeChange
-	stage, backup string
-	hadTarget     bool
+func boolCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
 }
 
 var renameTreePath = os.Rename
@@ -531,114 +469,20 @@ var renameTreePath = os.Rename
 // host-visible target, then rolls the complete batch back if a later commit
 // fails.
 func ReplaceTrees(changes []TreeChange) error {
-	if len(changes) == 0 {
-		return nil
-	}
-	items := make([]stagedTreeChange, 0, len(changes))
-	createdSet := map[string]bool{}
-	var createdDirs []string
-	targets := map[string]bool{}
-	succeeded := false
-	defer func() {
-		for _, item := range items {
-			_ = os.RemoveAll(item.stage)
-			if succeeded {
-				_ = os.RemoveAll(item.backup)
-			}
-		}
-		if !succeeded {
-			for i := len(createdDirs) - 1; i >= 0; i-- {
-				_ = os.Remove(createdDirs[i])
-			}
-		}
-	}()
+	filesystemChanges := make([]FilesystemChange, 0, len(changes))
 	for _, change := range changes {
 		if change.ID == "" || change.Target == "" {
 			return errors.New("composite tree change requires identity and target")
 		}
-		target := filepath.Clean(change.Target)
-		if targets[target] {
-			return capabilitypack.ProjectionActionError{ID: change.ID, Err: errors.New("duplicate composite tree target")}
-		}
-		targets[target] = true
-		dirs, err := ensureDir(filepath.Dir(target))
-		if err != nil {
-			return capabilitypack.ProjectionActionError{ID: change.ID, Err: err}
-		}
-		for _, dir := range dirs {
-			if !createdSet[dir] {
-				createdSet[dir] = true
-				createdDirs = append(createdDirs, dir)
-			}
-		}
-		suffix := FingerprintBytes([]byte(change.ID + "\x00" + target))[:12]
-		stage := filepath.Join(filepath.Dir(target), ".packy-tree-stage-"+suffix)
-		backup := stage + ".backup"
-		_ = os.RemoveAll(stage)
-		_ = os.RemoveAll(backup)
-		change.Target = target
-		item := stagedTreeChange{change: change, stage: stage, backup: backup}
-		items = append(items, item)
-		_, statErr := os.Lstat(target)
-		items[len(items)-1].hadTarget = statErr == nil
-		if statErr != nil && !os.IsNotExist(statErr) {
-			return capabilitypack.ProjectionActionError{ID: change.ID, Err: statErr}
-		}
-		if !change.Delete {
-			normalized, err := normalizedTreeFiles(change.Files)
-			if err != nil {
-				return capabilitypack.ProjectionActionError{ID: change.ID, Err: err}
-			}
-			fingerprint, err := FingerprintTreeFiles(normalized)
-			if err != nil {
-				return capabilitypack.ProjectionActionError{ID: change.ID, Err: err}
-			}
-			if change.ExpectedFingerprint == "" || fingerprint != change.ExpectedFingerprint {
-				return capabilitypack.ProjectionActionError{ID: change.ID, Err: errors.New("composite tree fingerprint does not match sealed projection")}
-			}
-			if err := stageTree(stage, normalized, change.ExpectedFingerprint); err != nil {
-				return capabilitypack.ProjectionActionError{ID: change.ID, Err: err}
-			}
-		} else if len(change.Files) != 0 || change.ExpectedFingerprint != "" {
-			return capabilitypack.ProjectionActionError{ID: change.ID, Err: errors.New("composite tree deletion must not carry replacement facts")}
-		}
+		filesystemChanges = append(filesystemChanges, FilesystemChange{
+			ID: change.ID, Target: change.Target, TreeFiles: change.Files,
+			ExpectedTreeFingerprint: change.ExpectedFingerprint, Delete: change.Delete,
+			stagePrefix: ".packy-tree-stage-", stageKey: change.ID + "\x00" + filepath.Clean(change.Target),
+		})
 	}
-	committed := 0
-	for i := range items {
-		item := &items[i]
-		if item.hadTarget {
-			if err := renameTreePath(item.change.Target, item.backup); err != nil {
-				if rollbackErr := rollbackTreeChanges(items[:committed]); rollbackErr != nil {
-					return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("backup: %v; rollback failed: %w", err, rollbackErr)}
-				}
-				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("backup: %w", err)}
-			}
-		}
-		if item.change.Delete {
-			committed++
-			continue
-		}
-		if err := renameTreePath(item.stage, item.change.Target); err != nil {
-			if item.hadTarget {
-				if restoreErr := renameTreePath(item.backup, item.change.Target); restoreErr != nil {
-					if rollbackErr := rollbackTreeChanges(items[:committed]); rollbackErr != nil {
-						return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("publish: %v; restore current target failed: %v; rollback failed: %w", err, restoreErr, rollbackErr)}
-					}
-					return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("publish: %v; restore current target failed: %w", err, restoreErr)}
-				}
-			}
-			if rollbackErr := rollbackTreeChanges(items[:committed]); rollbackErr != nil {
-				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("publish: %v; rollback failed: %w", err, rollbackErr)}
-			}
-			return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("publish: %w", err)}
-		}
-		committed++
-	}
-	succeeded = true
-	return nil
+	return ApplyFilesystemChanges(filesystemChanges)
 }
 
-// ReplaceTree is the single-target convenience form of ReplaceTrees.
 func ReplaceTree(target string, files []TreeFile, expectedFingerprint string) error {
 	return ReplaceTrees([]TreeChange{{ID: target, Target: target, Files: files, ExpectedFingerprint: expectedFingerprint}})
 }
@@ -665,21 +509,6 @@ func stageTree(stage string, files []TreeFile, expectedFingerprint string) error
 	}
 	if fingerprint != expectedFingerprint {
 		return errors.New("staged composite tree fingerprint mismatch")
-	}
-	return nil
-}
-
-func rollbackTreeChanges(items []stagedTreeChange) error {
-	for i := len(items) - 1; i >= 0; i-- {
-		item := items[i]
-		if err := os.RemoveAll(item.change.Target); err != nil {
-			return err
-		}
-		if item.hadTarget {
-			if err := renameTreePath(item.backup, item.change.Target); err != nil {
-				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: err}
-			}
-		}
 	}
 	return nil
 }
