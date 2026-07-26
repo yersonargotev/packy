@@ -617,6 +617,11 @@ func (gateway *githubGateway) Finalize(ctx context.Context, proposal packsyncwor
 }
 
 func (gateway *githubGateway) editPRWithReobserve(ctx context.Context, proposal packsyncworkflow.Proposal, beforePR packsyncworkflow.PRState, beforeRecord, targetRecord packsyncworkflow.PublicationRecord, body string) error {
+	bodyFile, cleanup, err := temporaryPRBody(body)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	return gateway.retry.Do(ctx, func() error {
 		state, err := gateway.observeMutationBeforeEdit(ctx, proposal, beforePR, beforeRecord)
 		if err != nil {
@@ -628,7 +633,7 @@ func (gateway *githubGateway) editPRWithReobserve(ctx context.Context, proposal 
 		if !state.matchesPR(proposal, beforePR, beforeRecord) {
 			return publicationCASFailure("branch or pull request state changed before an automation edit")
 		}
-		_, editErr := gateway.run(ctx, gateway.repositoryRoot, "gh", "pr", "edit", fmt.Sprint(beforePR.Number), "--repo", gateway.repository, "--title", gateway.title, "--body", body)
+		_, editErr := gateway.run(ctx, gateway.repositoryRoot, "gh", "pr", "edit", fmt.Sprint(beforePR.Number), "--repo", gateway.repository, "--title", gateway.title, "--body-file", bodyFile)
 		if editErr == nil {
 			return nil
 		}
@@ -861,6 +866,11 @@ func (gateway *githubGateway) pushOnce(ctx context.Context, lease, branch, local
 
 func (gateway *githubGateway) createPRWithRetry(ctx context.Context, proposal packsyncworkflow.Proposal, body string, record packsyncworkflow.PublicationRecord) (number int, err error) {
 	branch := "sync/" + proposal.SourceID
+	bodyFile, cleanup, err := temporaryPRBody(body)
+	if err != nil {
+		return 0, err
+	}
+	defer cleanup()
 	err = gateway.retry.Do(ctx, func() error {
 		before, observeErr := gateway.observeMutationOnce(ctx, proposal)
 		if observeErr != nil {
@@ -876,7 +886,7 @@ func (gateway *githubGateway) createPRWithRetry(ctx context.Context, proposal pa
 			}
 			return publicationCASFailure("stable branch identity changed before pull-request creation")
 		}
-		_, createErr := gateway.run(ctx, gateway.repositoryRoot, "gh", "pr", "create", "--repo", gateway.repository, "--base", "main", "--head", branch, "--title", gateway.title, "--body", body, "--draft")
+		_, createErr := gateway.run(ctx, gateway.repositoryRoot, "gh", "pr", "create", "--repo", gateway.repository, "--base", "main", "--head", branch, "--title", gateway.title, "--body-file", bodyFile, "--draft")
 		after, observeErr := gateway.observeMutationOnce(ctx, proposal)
 		if observeErr != nil {
 			return packsyncworkflow.ClassifyNetworkFailure(observeErr)
@@ -894,6 +904,25 @@ func (gateway *githubGateway) createPRWithRetry(ctx context.Context, proposal pa
 		return packsyncworkflow.ClassifyNetworkFailure(createErr)
 	})
 	return number, err
+}
+
+func temporaryPRBody(body string) (string, func(), error) {
+	file, err := os.CreateTemp("", "packy-pr-body-*.md")
+	if err != nil {
+		return "", nil, err
+	}
+	name := file.Name()
+	cleanup := func() { _ = os.Remove(name) }
+	if _, err := file.WriteString(body); err != nil {
+		_ = file.Close()
+		cleanup()
+		return "", nil, err
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return name, cleanup, nil
 }
 
 func competingPRFailure(prs []ghPR) error {
