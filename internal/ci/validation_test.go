@@ -893,7 +893,7 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 		"PACKY_PACK_ID: ${{ inputs.pack_id }}", "PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}", "PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}",
 		"PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}", "PACKY_PROPOSED_MANIFEST_JSON: ${{ inputs.proposed_manifest_json }}", "PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}",
 		"inspect:", "classify:", "validate:", "prepare:", "publish:", "needs: [inspect, classify, validate]", "contents: write", "pull-requests: write",
-		"--phase validate", "--phase prepare", "pack-source-preparation-${{ github.run_id }}", "steps.route.outputs.proceed", "needs.inspect.outputs.proceed == 'true'", "steps.route.outputs.noop", "packy-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
+		"--phase validate", "--phase prepare", "pack-source-preparation-${{ github.run_id }}", "steps.route.outputs.continue", "always() && needs.inspect.result == 'success' && needs.inspect.outputs.continue == 'true'", "steps.route.outputs.noop", "packy-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("synchronization workflow missing %q", required)
