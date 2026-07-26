@@ -132,7 +132,7 @@ jobs:
   governance-drift:
     name: Verify governance promotion boundary
     needs: admit
-    if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch'
+    if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.prepare_only == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -141,19 +141,16 @@ jobs:
       issues: read
     steps:
       - name: Check out protected main
-        if: github.ref == 'refs/heads/main' && inputs.prepare_only == false
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Go
-        if: github.ref == 'refs/heads/main' && inputs.prepare_only == false
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: false
       - name: Fail closed on current affected drift
-        if: github.ref == 'refs/heads/main' && inputs.prepare_only == false
         env:
           GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
           GH_METADATA_TOKEN: ${{ github.token }}
@@ -166,7 +163,7 @@ jobs:
             --workflow .github/workflows/sync-pack-source.yml \
             --output-dir "$RUNNER_TEMP/governance-drift"
       - name: Retain promotion gate evidence
-        if: github.ref == 'refs/heads/main' && inputs.prepare_only == false && always()
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sync-governance-drift-${{ github.run_id }}
@@ -176,8 +173,8 @@ jobs:
 
   inspect:
     name: Inspect
-    needs: governance-drift
-    if: ${{ always() && github.repository == 'yersonargotev/packy' && needs.governance-drift.result == 'success' && ((inputs.prepare_only == true && github.ref != 'refs/heads/main') || (inputs.prepare_only == false && github.ref == 'refs/heads/main')) }}
+    needs: [admit, governance-drift]
+    if: ${{ always() && github.repository == 'yersonargotev/packy' && needs.admit.result == 'success' && ((inputs.prepare_only == true && github.ref != 'refs/heads/main' && needs.governance-drift.result == 'skipped') || (inputs.prepare_only == false && github.ref == 'refs/heads/main' && needs.governance-drift.result == 'success')) }}
     runs-on: ubuntu-latest
     outputs:
       continue: ${{ steps.route.outputs.continue }}

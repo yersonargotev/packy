@@ -33,6 +33,11 @@ type githubModel struct {
 	traces []packsyncworkflow.ClassifierTrace
 }
 
+var (
+	classificationEvidenceRequiredFields = []string{"pack_id", "classifier", "rationale", "current_version", "proposed_version", "changed_aspects", "mechanical_floor", "final_level", "migration", "required_actions"}
+	classifierIdentityRequiredFields     = []string{"type", "id"}
+)
+
 func newGitHubModel() (*githubModel, error) {
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
@@ -120,7 +125,7 @@ func hasRequiredClassificationFields(content string) bool {
 	if json.Unmarshal([]byte(content), &fields) != nil {
 		return false
 	}
-	for _, name := range []string{"pack_id", "classifier", "rationale", "current_version", "proposed_version", "changed_aspects", "mechanical_floor", "final_level", "migration", "required_actions"} {
+	for _, name := range classificationEvidenceRequiredFields {
 		value, ok := fields[name]
 		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			return false
@@ -130,7 +135,7 @@ func hasRequiredClassificationFields(content string) bool {
 	if json.Unmarshal(fields["classifier"], &classifier) != nil {
 		return false
 	}
-	for _, name := range []string{"type", "id"} {
+	for _, name := range classifierIdentityRequiredFields {
 		value, ok := classifier[name]
 		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			return false
@@ -164,7 +169,7 @@ func classificationResponseFormat(request packclassification.Request, model stri
 							"type": map[string]any{"type": "string", "enum": []string{string(packsync.ClassifierAI)}},
 							"id":   map[string]any{"type": "string", "enum": []string{model}},
 						},
-						"required": []string{"type", "id"},
+						"required": classifierIdentityRequiredFields,
 					},
 					"rationale":        map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
 					"current_version":  map[string]any{"type": "string", "enum": []string{request.CurrentVersion}},
@@ -175,7 +180,7 @@ func classificationResponseFormat(request packclassification.Request, model stri
 					"migration":        map[string]any{"type": "string"},
 					"required_actions": stringArray(0),
 				},
-				"required": []string{"pack_id", "classifier", "rationale", "current_version", "proposed_version", "changed_aspects", "mechanical_floor", "final_level", "migration", "required_actions"},
+				"required": classificationEvidenceRequiredFields,
 			},
 		},
 	}
