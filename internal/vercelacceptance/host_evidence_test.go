@@ -8,7 +8,7 @@ import (
 
 func TestCanonicalIndependentHostEvidence(t *testing.T) {
 	now, set := canonicalHosts()
-	if err := ValidateHostEvidence(strings.Repeat("a", 40), now, time.Hour, set); err != nil {
+	if err := ValidateHostEvidence(strings.Repeat("a", 40), "run-1", now, time.Hour, set); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -30,6 +30,7 @@ func TestHostEvidenceRejectsEveryIndependentNegative(t *testing.T) {
 		{"duplicate", func(s *HostEvidenceSet) { s.Codex.Skills[8] = s.Codex.Skills[0] }},
 		{"missing one", func(s *HostEvidenceSet) { s.OpenCode.MissingOneObservedCount = 9 }},
 		{"fresh", func(s *HostEvidenceSet) { s.Claude.ObservedAt = now.Add(-2 * time.Hour) }},
+		{"same run", func(s *HostEvidenceSet) { s.Claude.RunID = "other-run" }},
 		{"sandbox", func(s *HostEvidenceSet) { s.Codex.DisposableSandbox = false }},
 		{"no secret", func(s *HostEvidenceSet) { s.OpenCode.NoSecrets = false }},
 		{"no deploy", func(s *HostEvidenceSet) { s.Claude.NoDeploy = false }},
@@ -39,7 +40,7 @@ func TestHostEvidenceRejectsEveryIndependentNegative(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			set := cloneHosts(good)
 			tt.edit(&set)
-			if err := ValidateHostEvidence(strings.Repeat("a", 40), now, time.Hour, set); err == nil {
+			if err := ValidateHostEvidence(strings.Repeat("a", 40), "run-1", now, time.Hour, set); err == nil {
 				t.Fatal("expected rejection")
 			}
 		})
@@ -49,12 +50,12 @@ func TestHostEvidenceRejectsEveryIndependentNegative(t *testing.T) {
 func canonicalHosts() (time.Time, HostEvidenceSet) {
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 	skills, modes := expectedHostInventory()
-	makeHost := func(host, version string) HostEvidence {
-		e := HostEvidence{Host: host, Version: version, CandidateSHA: strings.Repeat("a", 40), FixtureSHA256: ExactArchiveSHA256, ObservedAt: now.Add(-time.Minute), Skills: append([]string(nil), skills...), RuntimeModes: append([]string(nil), modes...), MissingOne: skills[0], MissingOneObservedCount: 8, DisposableSandbox: true, NoSecrets: true, NoDeploy: true, NoUpstreamEffects: true}
+	makeHost := func(host Host, version string) HostEvidence {
+		e := HostEvidence{Host: host, Version: version, CandidateSHA: strings.Repeat("a", 40), FixtureSHA256: ExactArchiveSHA256, RunID: "run-1", ObservedAt: now.Add(-time.Minute), Skills: append([]string(nil), skills...), RuntimeModes: append([]string(nil), modes...), MissingOne: skills[0], MissingOneObservedCount: 8, DisposableSandbox: true, NoSecrets: true, NoDeploy: true, NoUpstreamEffects: true}
 		e.EvidenceFingerprint = FingerprintHostEvidence(e)
 		return e
 	}
-	return now, HostEvidenceSet{Codex: makeHost("codex", ExactCodexVersion), OpenCode: makeHost("opencode", ExactOpenCodeVersion), Claude: makeHost("claude", ExactClaudeVersion)}
+	return now, HostEvidenceSet{Codex: makeHost(HostCodex, ExactCodexVersion), OpenCode: makeHost(HostOpenCode, ExactOpenCodeVersion), Claude: makeHost(HostClaude, ExactClaudeVersion)}
 }
 
 func cloneHosts(in HostEvidenceSet) HostEvidenceSet {

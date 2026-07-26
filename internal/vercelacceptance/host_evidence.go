@@ -22,10 +22,11 @@ type HostEvidenceSet struct {
 // HostEvidence is the intentionally narrow, portable projection of a host
 // smoke artifact. Each adapter must populate it from that host's own artifact.
 type HostEvidence struct {
-	Host                    string    `json:"host"`
+	Host                    Host      `json:"host"`
 	Version                 string    `json:"version"`
 	CandidateSHA            string    `json:"candidate_sha"`
 	FixtureSHA256           string    `json:"fixture_sha256"`
+	RunID                   string    `json:"run_id"`
 	ObservedAt              time.Time `json:"observed_at"`
 	Skills                  []string  `json:"skills"`
 	RuntimeModes            []string  `json:"runtime_modes"`
@@ -43,24 +44,26 @@ func FingerprintHostEvidence(e HostEvidence) string {
 	return digest(e)
 }
 
-func ValidateHostEvidence(candidateSHA string, now time.Time, maxAge time.Duration, set HostEvidenceSet) error {
-	if candidateSHA == "" || now.IsZero() || maxAge <= 0 {
-		return errors.New("candidate, current time, and positive freshness window are required")
+func ValidateHostEvidence(candidateSHA, runID string, now time.Time, maxAge time.Duration, set HostEvidenceSet) error {
+	if candidateSHA == "" || runID == "" || now.IsZero() || maxAge <= 0 {
+		return errors.New("candidate, run ID, current time, and positive freshness window are required")
 	}
 	checks := []struct {
-		name, version string
-		value         HostEvidence
-	}{{"codex", ExactCodexVersion, set.Codex}, {"opencode", ExactOpenCodeVersion, set.OpenCode}, {"claude", ExactClaudeVersion, set.Claude}}
+		name    Host
+		version string
+		value   HostEvidence
+	}{{HostCodex, ExactCodexVersion, set.Codex}, {HostOpenCode, ExactOpenCodeVersion, set.OpenCode}, {HostClaude, ExactClaudeVersion, set.Claude}}
 	for _, check := range checks {
-		if err := validateHost(candidateSHA, now, maxAge, check.name, check.version, check.value); err != nil {
+		if err := validateHost(candidateSHA, runID, now, maxAge, check.name, check.version, check.value); err != nil {
 			return fmt.Errorf("%s evidence: %w", check.name, err)
 		}
 	}
 	return nil
 }
 
-func validateHost(candidate string, now time.Time, maxAge time.Duration, host, version string, e HostEvidence) error {
-	if e.Host != host || e.Version != version || e.CandidateSHA != candidate || e.FixtureSHA256 != ExactArchiveSHA256 {
+func validateHost(candidate, runID string, now time.Time, maxAge time.Duration, host Host, version string, e HostEvidence) error {
+	if e.Host != host || e.Version != version || e.CandidateSHA != candidate ||
+		e.FixtureSHA256 != ExactArchiveSHA256 || e.RunID != runID {
 		return errors.New("identity mismatch")
 	}
 	age := now.Sub(e.ObservedAt)
@@ -95,7 +98,7 @@ func expectedHostInventory() ([]string, []string) {
 			continue
 		}
 		for _, binding := range resource.Bindings {
-			if string(binding.Surface) == "codex" {
+			if binding.Surface == "codex" {
 				skills = append(skills, binding.Name)
 			}
 		}

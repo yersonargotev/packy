@@ -91,6 +91,23 @@ jobs:
       - name: Validate allowlisted Packy-owned code
         run: ./scripts/validate-packy.sh
 
+      - name: Retain exact Vercel foundation evidence
+        if: github.event_name == 'pull_request'
+        run: |
+          ./scripts/validate-vercel-acceptance.sh \
+            --evidence-dir "$RUNNER_TEMP/vercel-foundation-evidence" \
+            --candidate-sha "$GITHUB_SHA" \
+            --run-id "${{ github.run_id }}"
+
+      - name: Upload exact Vercel foundation evidence
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vercel-foundation-qualification
+          path: ${{ runner.temp }}/vercel-foundation-evidence
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Scan Packy-owned Go code for known vulnerabilities
         continue-on-error: true
         uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
@@ -172,6 +189,7 @@ jobs:
           ./scripts/run-claude-vercel-smoke.sh \
             --claude-version 2.1.203 \
             --packy-ref "$GITHUB_SHA" \
+            --run-id "${{ github.run_id }}" \
             --evidence-dir "$RUNNER_TEMP/claude-vercel-floor-evidence"
 
       - name: Retain exact-floor Claude Vercel evidence
@@ -213,6 +231,7 @@ jobs:
           ./scripts/run-codex-smoke.sh \
             --codex-version 0.145.0 \
             --packy-ref "$GITHUB_SHA" \
+            --run-id "${{ github.run_id }}" \
             --evidence-dir "$RUNNER_TEMP/codex-floor-evidence"
 
       - name: Retain exact-floor Codex evidence
@@ -249,6 +268,7 @@ jobs:
           ./scripts/run-opencode-smoke.sh \
             --opencode-version 1.18.5 \
             --packy-ref "$GITHUB_SHA" \
+            --run-id "${{ github.run_id }}" \
             --evidence-dir "$RUNNER_TEMP/opencode-floor-evidence"
 
       - name: Retain exact OpenCode evidence
@@ -289,6 +309,13 @@ jobs:
           name: codex-floor-qualification
           path: ${{ runner.temp }}/codex-floor-evidence
 
+      - name: Download exact foundation evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: vercel-foundation-qualification
+          path: ${{ runner.temp }}/vercel-foundation-evidence
+
       - name: Download exact OpenCode evidence
         continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -312,8 +339,9 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/vercel-acceptance"
           ./scripts/gate-vercel-acceptance.sh \
-            --candidate-sha "${{ github.event.pull_request.head.sha }}" \
+            --candidate-sha "$GITHUB_SHA" \
             --run-id "${{ github.run_id }}" \
+            --foundation-evidence "$RUNNER_TEMP/vercel-foundation-evidence" \
             --codex-evidence "$RUNNER_TEMP/codex-floor-evidence/evidence.json" \
             --opencode-evidence "$RUNNER_TEMP/opencode-floor-evidence/evidence.json" \
             --claude-evidence "$RUNNER_TEMP/claude-vercel-floor-evidence/vercel-evidence.json" \

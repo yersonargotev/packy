@@ -14,6 +14,13 @@ import (
 const AcceptanceMatrixVersion = "vercel-acceptance-v1"
 
 type Gate uint8
+type Host string
+
+const (
+	HostCodex    Host = "codex"
+	HostOpenCode Host = "opencode"
+	HostClaude   Host = "claude"
+)
 
 const (
 	GateAdmission Gate = iota + 1
@@ -27,7 +34,7 @@ const (
 type AcceptanceRow struct {
 	ID           string `json:"id"`
 	Gate         Gate   `json:"gate"`
-	Surface      string `json:"surface,omitempty"`
+	Surface      Host   `json:"surface,omitempty"`
 	Name         string `json:"name"`
 	EvidenceSeam string `json:"evidence_seam"`
 	NegativeFact string `json:"negative_fact"`
@@ -35,30 +42,30 @@ type AcceptanceRow struct {
 }
 
 var acceptanceRows = []AcceptanceRow{
-	{"VERCEL-ACCEPTANCE-01", Gate(1), "", "exact-composite-candidate", "composite acquisition evidence", "one source identity differs", "zero candidate-byte diff"},
-	{"VERCEL-ACCEPTANCE-02", Gate(1), "", "source-provenance-and-locks", "source lock evidence", "one provenance fact differs", "exact lock-set digest"},
-	{"VERCEL-ACCEPTANCE-03", Gate(1), "", "primary-legal-admission", "legal admission evidence", "primary authority is absent or stale", "exact documentary digest"},
-	{"VERCEL-ACCEPTANCE-04", Gate(1), "", "secondary-notices", "guideline source evidence", "one MIT notice is absent", "exact notice bytes"},
-	{"VERCEL-ACCEPTANCE-05", Gate(2), "", "complete-skill-inventory", "canonical fixture", "one selected skill tree is absent", "exact nine-tree inventory"},
-	{"VERCEL-ACCEPTANCE-06", Gate(2), "", "native-three-surface-bindings", "manifest contract", "one native binding is absent", "exact 27-binding set"},
-	{"VERCEL-ACCEPTANCE-07", Gate(2), "", "sealed-loader-closure", "package loader fixtures", "one loader uses a moving reference", "zero runtime network reads"},
-	{"VERCEL-ACCEPTANCE-08", Gate(2), "", "runtime-mode-contract", "manifest runtime modes", "one mode fact is omitted", "exact 28-mode set"},
-	{"VERCEL-ACCEPTANCE-09", Gate(3), "codex", "codex-lifecycle-safety", "Codex lifecycle evidence", "one write boundary fails", "exact permitted Codex diff"},
-	{"VERCEL-ACCEPTANCE-10", Gate(3), "opencode", "opencode-lifecycle-safety", "OpenCode lifecycle evidence", "one write boundary fails", "exact permitted OpenCode diff"},
-	{"VERCEL-ACCEPTANCE-11", Gate(3), "claude", "claude-lifecycle-safety", "Claude lifecycle evidence", "one write boundary fails", "exact permitted Claude diff"},
-	{"VERCEL-ACCEPTANCE-12", Gate(3), "", "ownership-and-cross-surface-isolation", "shared lifecycle evidence", "foreign content or another surface changes", "zero foreign/cross-surface mutation"},
-	{"VERCEL-ACCEPTANCE-13", Gate(4), "codex", "codex-disclosure-and-preflight", "Codex conformance evidence", "one indispensable input is missing", "fail before effects"},
-	{"VERCEL-ACCEPTANCE-14", Gate(4), "opencode", "opencode-disclosure-and-preflight", "OpenCode conformance evidence", "one indispensable input is missing", "fail before effects"},
-	{"VERCEL-ACCEPTANCE-15", Gate(4), "claude", "claude-disclosure-and-preflight", "Claude conformance evidence", "one indispensable input is missing", "fail before effects"},
-	{"VERCEL-ACCEPTANCE-16", Gate(4), "", "secret-free-tristate-contract", "structured conformance evidence", "one sensitive value is present", "zero secret-bearing fields"},
-	{"VERCEL-ACCEPTANCE-17", Gate(5), "codex", "codex-exact-host-readiness", "Codex 0.145.0 smoke artifact", "one skill is removed", "nine skills and 28 modes"},
-	{"VERCEL-ACCEPTANCE-18", Gate(5), "opencode", "opencode-exact-host-readiness", "OpenCode 1.18.5 smoke artifact", "one skill is removed", "nine skills and 28 modes"},
-	{"VERCEL-ACCEPTANCE-19", Gate(5), "claude", "claude-exact-host-readiness", "Claude 2.1.203 smoke artifact", "one skill is removed", "nine skills and 28 modes"},
-	{"VERCEL-ACCEPTANCE-20", Gate(5), "", "compatibility-classification", "compatibility fixture", "one observable contract fact changes", "maximum impact classification"},
-	{"VERCEL-ACCEPTANCE-21", Gate(6), "", "independent-reacquisition", "publication repository fake", "one acquired byte differs", "identical candidate digest"},
-	{"VERCEL-ACCEPTANCE-22", Gate(6), "", "publication-reproduction", "publication workflow evidence", "one plan or bundle byte differs", "identical plan and bundle"},
-	{"VERCEL-ACCEPTANCE-23", Gate(6), "", "proposal-safety", "GitHub publication fake", "proposal state or privilege broadens", "least privilege and one proposal"},
-	{"VERCEL-ACCEPTANCE-24", Gate(6), "", "complete-fresh-cohort", "consolidated cohort report", "one prior row is stale", "all 24 fresh fingerprints"},
+	{"VERCEL-ACCEPTANCE-01", Gate(1), "", "exact-composite-candidate", "./internal/packsync/TestVercelLegalAdmissionEvidence", "one source identity differs", "zero candidate-byte diff"},
+	{"VERCEL-ACCEPTANCE-02", Gate(1), "", "source-provenance-and-locks", "./internal/tools/syncpacksource/TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope", "one provenance fact differs", "exact lock-set digest"},
+	{"VERCEL-ACCEPTANCE-03", Gate(1), "", "primary-legal-admission", "./internal/packsync/TestVercelLegalAdmissionEvidence", "primary authority is absent or stale", "exact documentary digest"},
+	{"VERCEL-ACCEPTANCE-04", Gate(1), "", "secondary-notices", "./internal/vercelacceptance/TestExactSelectedTreesAreCompleteInertAndSealed", "one MIT notice is absent", "exact notice bytes"},
+	{"VERCEL-ACCEPTANCE-05", Gate(2), "", "complete-skill-inventory", "./internal/vercelacceptance/TestExactSelectedTreesAreCompleteInertAndSealed", "one selected skill tree is absent", "exact nine-tree inventory"},
+	{"VERCEL-ACCEPTANCE-06", Gate(2), "", "native-three-surface-bindings", "./internal/vercelacceptance/TestExactSelectedTreesAreCompleteInertAndSealed", "one native binding is absent", "exact 27-binding set"},
+	{"VERCEL-ACCEPTANCE-07", Gate(2), "", "sealed-loader-closure", "./internal/vercelacceptance/TestExactSelectedTreesAreCompleteInertAndSealed", "one loader uses a moving reference", "zero runtime network reads"},
+	{"VERCEL-ACCEPTANCE-08", Gate(2), "", "runtime-mode-contract", "./internal/vercelacceptance/TestCanonicalRuntimeContractHasFreshExactCodexPreflight", "one mode fact is omitted", "exact 28-mode set"},
+	{"VERCEL-ACCEPTANCE-09", Gate(3), HostCodex, "codex-lifecycle-safety", "./internal/codex/TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly", "one write boundary fails", "exact permitted Codex diff"},
+	{"VERCEL-ACCEPTANCE-10", Gate(3), HostOpenCode, "opencode-lifecycle-safety", "./internal/opencode/TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly", "one write boundary fails", "exact permitted OpenCode diff"},
+	{"VERCEL-ACCEPTANCE-11", Gate(3), HostClaude, "claude-lifecycle-safety", "./internal/claudecode/TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly", "one write boundary fails", "exact permitted Claude diff"},
+	{"VERCEL-ACCEPTANCE-12", Gate(3), "", "ownership-and-cross-surface-isolation", "./internal/capabilitypack/TestVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe", "foreign content or another surface changes", "zero foreign/cross-surface mutation"},
+	{"VERCEL-ACCEPTANCE-13", Gate(4), HostCodex, "codex-disclosure-and-preflight", "./internal/vercelacceptance/TestCanonicalRuntimeContractHasFreshExactCodexPreflight", "one indispensable input is missing", "fail before effects"},
+	{"VERCEL-ACCEPTANCE-14", Gate(4), HostOpenCode, "opencode-disclosure-and-preflight", "./internal/opencodesmoke/TestPreflightEveryVercelModeFailsBeforeHostEffects", "one indispensable input is missing", "fail before effects"},
+	{"VERCEL-ACCEPTANCE-15", Gate(4), HostClaude, "claude-disclosure-and-preflight", "./internal/claudesmoke/TestVercelRuntimeEvidenceCoversExactTwentyEightModesSafely", "one indispensable input is missing", "fail before effects"},
+	{"VERCEL-ACCEPTANCE-16", Gate(4), "", "secret-free-tristate-contract", "./internal/capabilitypack/TestRuntimeEvidenceIsTriStateDeterministicAndSecretSafe", "one sensitive value is present", "zero secret-bearing fields"},
+	{"VERCEL-ACCEPTANCE-17", Gate(5), HostCodex, "codex-exact-host-readiness", "host-artifact/codex-0.145.0", "one skill is removed", "nine skills and 28 modes"},
+	{"VERCEL-ACCEPTANCE-18", Gate(5), HostOpenCode, "opencode-exact-host-readiness", "host-artifact/opencode-1.18.5", "one skill is removed", "nine skills and 28 modes"},
+	{"VERCEL-ACCEPTANCE-19", Gate(5), HostClaude, "claude-exact-host-readiness", "host-artifact/claude-2.1.203", "one skill is removed", "nine skills and 28 modes"},
+	{"VERCEL-ACCEPTANCE-20", Gate(5), "", "compatibility-classification", "./internal/vercelacceptance/TestExactSelectedTreesAreCompleteInertAndSealed", "one observable contract fact changes", "maximum impact classification"},
+	{"VERCEL-ACCEPTANCE-21", Gate(6), "", "independent-reacquisition", "./internal/tools/syncpacksource/TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope", "one acquired byte differs", "identical candidate digest"},
+	{"VERCEL-ACCEPTANCE-22", Gate(6), "", "publication-reproduction", "./internal/tools/syncpacksource/TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope", "one plan or bundle byte differs", "identical plan and bundle"},
+	{"VERCEL-ACCEPTANCE-23", Gate(6), "", "proposal-safety", "./internal/ci/TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated", "proposal state or privilege broadens", "least privilege and one proposal"},
+	{"VERCEL-ACCEPTANCE-24", Gate(6), "", "complete-fresh-cohort", "./internal/vercelacceptance/TestCanonicalCohortReportAndDeterministicRerun", "one prior row is stale", "all 24 fresh fingerprints"},
 }
 
 func Rows() []AcceptanceRow { return append([]AcceptanceRow(nil), acceptanceRows...) }

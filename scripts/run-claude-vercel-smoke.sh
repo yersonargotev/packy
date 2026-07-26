@@ -4,17 +4,19 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage: scripts/run-claude-vercel-smoke.sh \
-  --claude-version 2.1.203 --packy-ref <ref-at-HEAD> --evidence-dir <directory>
+  --claude-version 2.1.203 --packy-ref <ref-at-HEAD> --run-id <run-id> --evidence-dir <directory>
 EOF
 }
 
 claude_version=""
 packy_ref=""
+run_id=""
 evidence_dir=""
 while (($#)); do
   case "$1" in
     --claude-version) claude_version="${2:-}"; shift 2 ;;
     --packy-ref) packy_ref="${2:-}"; shift 2 ;;
+    --run-id) run_id="${2:-}"; shift 2 ;;
     --evidence-dir) evidence_dir="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -24,8 +26,8 @@ if [[ "$claude_version" != "2.1.203" ]]; then
   echo "--claude-version must be exactly 2.1.203" >&2
   exit 2
 fi
-if [[ -z "$packy_ref" || -z "$evidence_dir" ]]; then
-  echo "--packy-ref and --evidence-dir are required" >&2
+if [[ -z "$packy_ref" || -z "$run_id" || -z "$evidence_dir" ]]; then
+  echo "--packy-ref, --run-id, and --evidence-dir are required" >&2
   exit 2
 fi
 
@@ -67,4 +69,5 @@ restricted_path="$(dirname "$claude"):$(dirname "$(command -v node)"):/usr/bin:/
 "$sandbox/build/claudevercelsmoke" \
   --claude "$claude" --search-path "$restricted_path" --claude-integrity "$integrity" \
   --packy-repo "$root" --packy-ref "$packy_ref" \
+  --run-id "$run_id" \
   --evidence "$evidence_dir/vercel-evidence.json"

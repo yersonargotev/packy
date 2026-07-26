@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-version=""; packy_ref=""; evidence_dir=""
-while (($#)); do case "$1" in --opencode-version) version="${2:-}";shift 2;;--packy-ref) packy_ref="${2:-}";shift 2;;--evidence-dir) evidence_dir="${2:-}";shift 2;;*) echo "unknown argument: $1" >&2;exit 2;;esac;done
+version=""; packy_ref=""; run_id=""; evidence_dir=""
+while (($#)); do case "$1" in --opencode-version) version="${2:-}";shift 2;;--packy-ref) packy_ref="${2:-}";shift 2;;--run-id) run_id="${2:-}";shift 2;;--evidence-dir) evidence_dir="${2:-}";shift 2;;*) echo "unknown argument: $1" >&2;exit 2;;esac;done
 [[ "$version" == "1.18.5" ]] || { echo "--opencode-version must be exactly 1.18.5" >&2;exit 2; }
-[[ -n "$packy_ref" && -n "$evidence_dir" ]] || { echo "--packy-ref and --evidence-dir are required" >&2;exit 2; }
+[[ -n "$packy_ref" && -n "$run_id" && -n "$evidence_dir" ]] || { echo "--packy-ref, --run-id, and --evidence-dir are required" >&2;exit 2; }
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; sha="$(git -C "$root" rev-parse --verify "${packy_ref}^{commit}")"; [[ "$sha" == "$(git -C "$root" rev-parse HEAD)" ]] || { echo "ref must resolve to checkout HEAD" >&2;exit 1; }
 evidence_dir="$(mkdir -p "$evidence_dir" && cd "$evidence_dir" && pwd)"; build="$(mktemp -d "${TMPDIR:-/tmp}/packy-opencode-smoke.XXXXXX")"; trap 'chmod -R u+w "$build" 2>/dev/null || true; rm -rf "$build"' EXIT
 export HOME="$build/acquire-home" XDG_CONFIG_HOME="$build/acquire-config"; mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$build/host"
@@ -18,4 +18,4 @@ case "$archive" in *.zip) unzip -q "$build/$archive" -d "$build/host";; *) tar -
 opencode="$(find "$build/host" -type f -name opencode -perm -u+x -print -quit)"; [[ -n "$opencode" ]] || { echo "archive lacks executable opencode" >&2;exit 1; }
 (cd "$root" && go build -trimpath -o "$build/opencodesmoke" ./internal/tools/opencodesmoke)
 restricted_path="$(dirname "$opencode"):/usr/bin:/bin"
-env -i PATH="$restricted_path" TMPDIR="${TMPDIR:-/tmp}" "$build/opencodesmoke" --opencode "$opencode" --search-path "$restricted_path" --opencode-version "$version" --opencode-integrity "$integrity" --packy-ref "$packy_ref" --packy-sha "$sha" --evidence "$evidence_dir/evidence.json"
+env -i PATH="$restricted_path" TMPDIR="${TMPDIR:-/tmp}" "$build/opencodesmoke" --opencode "$opencode" --search-path "$restricted_path" --opencode-version "$version" --opencode-integrity "$integrity" --packy-ref "$packy_ref" --packy-sha "$sha" --run-id "$run_id" --evidence "$evidence_dir/evidence.json"

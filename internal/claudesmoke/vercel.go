@@ -29,7 +29,7 @@ import (
 const ExactVercelClaudeVersion = "2.1.203"
 
 type VercelConfig struct {
-	Claude, SearchPath, PackyRepo, PackyRef, EvidencePath, ClaudeIntegrity string
+	Claude, SearchPath, PackyRepo, PackyRef, RunID, EvidencePath, ClaudeIntegrity string
 }
 
 type VercelSkillEvidence struct {
@@ -70,6 +70,8 @@ type VercelSafetyFacts struct {
 
 type VercelEvidence struct {
 	SchemaVersion                   int                   `json:"schema_version"`
+	RunID                           string                `json:"run_id"`
+	ObservedAt                      time.Time             `json:"observed_at"`
 	PackySHA                        string                `json:"packy_sha"`
 	FixtureSHA256                   string                `json:"fixture_sha256"`
 	ClaudeVersion                   string                `json:"claude_version"`
@@ -107,8 +109,8 @@ func ParseClaudeSkillDebug(debug string) (int, string, error) {
 }
 
 func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
-	if cfg.Claude == "" || cfg.SearchPath == "" || cfg.PackyRepo == "" || cfg.PackyRef == "" || cfg.EvidencePath == "" || cfg.ClaudeIntegrity == "" {
-		return VercelEvidence{}, errors.New("Claude executable, restricted search path, npm integrity, Packy repo/ref, and evidence path are required")
+	if cfg.Claude == "" || cfg.SearchPath == "" || cfg.PackyRepo == "" || cfg.PackyRef == "" || strings.TrimSpace(cfg.RunID) == "" || cfg.EvidencePath == "" || cfg.ClaudeIntegrity == "" {
+		return VercelEvidence{}, errors.New("Claude executable, restricted search path, npm integrity, Packy repo/ref, run ID, and evidence path are required")
 	}
 	repo, err := filepath.Abs(cfg.PackyRepo)
 	if err != nil {
@@ -188,7 +190,7 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	for i := range runtimeRows {
 		runtimeRows[i].SelectionObserved = selections[runtimeRows[i].ResourceID+":"+runtimeRows[i].ModeID]
 	}
-	e := VercelEvidence{SchemaVersion: 1, PackySHA: head, FixtureSHA256: fixtureDigest, ClaudeVersion: ExactVercelClaudeVersion,
+	e := VercelEvidence{SchemaVersion: 1, RunID: cfg.RunID, ObservedAt: time.Now().UTC(), PackySHA: head, FixtureSHA256: fixtureDigest, ClaudeVersion: ExactVercelClaudeVersion,
 		ClaudeNPMIntegrity: cfg.ClaudeIntegrity, ClaudeExecutableSHA256: claudeDigest, Skills: skills, Positive: positive, MissingOne: negative,
 		RuntimeModes: runtimeRows, TypedFailBeforeEffectsPreflight: preflight, PreflightBeforeHostSelection: preflightBeforeSelection,
 		AllowedCommands: []string{"git rev-parse", "claude --version", "claude startup with --debug-file", "claude --setting-sources user --tools '' --no-session-persistence --print /name mode"},
@@ -211,7 +213,7 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 }
 
 func ValidateVercelEvidence(e VercelEvidence) error {
-	if e.SchemaVersion != 1 || len(e.PackySHA) != 40 || e.FixtureSHA256 != vercelacceptance.ExactArchiveSHA256 || e.ClaudeVersion != ExactVercelClaudeVersion || !strings.HasPrefix(e.ClaudeNPMIntegrity, "sha512-") || len(e.ClaudeExecutableSHA256) != 64 {
+	if e.SchemaVersion != 1 || strings.TrimSpace(e.RunID) == "" || e.ObservedAt.IsZero() || e.ObservedAt.Location() != time.UTC || len(e.PackySHA) != 40 || e.FixtureSHA256 != vercelacceptance.ExactArchiveSHA256 || e.ClaudeVersion != ExactVercelClaudeVersion || !strings.HasPrefix(e.ClaudeNPMIntegrity, "sha512-") || len(e.ClaudeExecutableSHA256) != 64 {
 		return errors.New("invalid Vercel smoke identity")
 	}
 	if len(e.Skills) != 9 || len(e.RuntimeModes) != 28 || e.Positive.UserSkillDirCommands != 9 || e.MissingOne.UserSkillDirCommands != 8 ||

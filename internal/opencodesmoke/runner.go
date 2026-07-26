@@ -25,7 +25,7 @@ import (
 
 const ExactVersion = "1.18.5"
 
-type Config struct{ OpenCode, SearchPath, Version, Integrity, PackyRef, PackySHA, EvidencePath string }
+type Config struct{ OpenCode, SearchPath, Version, Integrity, PackyRef, PackySHA, RunID, EvidencePath string }
 type SkillEvidence struct {
 	Name          string `json:"name"`
 	Location      string `json:"location"`
@@ -49,6 +49,8 @@ type RuntimeModeEvidence struct {
 }
 type Evidence struct {
 	SchemaVersion            int                   `json:"schema_version"`
+	RunID                    string                `json:"run_id"`
+	ObservedAt               time.Time             `json:"observed_at"`
 	PackyRef                 string                `json:"packy_ref"`
 	PackySHA                 string                `json:"packy_sha"`
 	VercelFixtureSHA256      string                `json:"vercel_fixture_sha256"`
@@ -70,8 +72,8 @@ type Evidence struct {
 type expectedSkill struct{ name, source, target, content string }
 
 func Run(ctx context.Context, cfg Config) (Evidence, error) {
-	if cfg.OpenCode == "" || cfg.SearchPath == "" || cfg.Version != ExactVersion || cfg.Integrity == "" || cfg.PackyRef == "" || cfg.PackySHA == "" || cfg.EvidencePath == "" {
-		return Evidence{}, errors.New("exact OpenCode acquisition, Packy identity, and evidence path are required")
+	if cfg.OpenCode == "" || cfg.SearchPath == "" || cfg.Version != ExactVersion || cfg.Integrity == "" || cfg.PackyRef == "" || cfg.PackySHA == "" || strings.TrimSpace(cfg.RunID) == "" || cfg.EvidencePath == "" {
+		return Evidence{}, errors.New("exact OpenCode acquisition, Packy identity, run ID, and evidence path are required")
 	}
 	evidenceAbs, err := filepath.Abs(cfg.EvidencePath)
 	if err != nil {
@@ -189,7 +191,10 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, err
 	}
-	ev := Evidence{SchemaVersion: 2, PackyRef: cfg.PackyRef, PackySHA: cfg.PackySHA, VercelFixtureSHA256: vercelacceptance.ExactArchiveSHA256, OpenCodeVersion: strings.TrimSpace(string(versionOut)), OpenCodeArchiveSHA256: cfg.Integrity, OpenCodeExecutableSHA256: executableSHA, SandboxRoots: []string{"$SANDBOX/home", "$SANDBOX/xdg", "$SANDBOX/data", "$SANDBOX/cache", "$SANDBOX/state", "$SANDBOX/bundle", "$SANDBOX/work"}, CommandAllowlist: []string{"opencode --version", "opencode debug skill --pure", "opencode acp --cwd $SANDBOX/work --pure"}, Skills: skills, RuntimeModes: modes, MissingOneNegativeTwin: missing, NoAuthentication: true, NoExternalModelNetwork: true, NoDeploy: true, NativeSkillToolObserved: true, NoUpstreamEffects: true}
+	ev := Evidence{SchemaVersion: 2, RunID: cfg.RunID, ObservedAt: time.Now().UTC(), PackyRef: cfg.PackyRef, PackySHA: cfg.PackySHA, VercelFixtureSHA256: vercelacceptance.ExactArchiveSHA256, OpenCodeVersion: strings.TrimSpace(string(versionOut)), OpenCodeArchiveSHA256: cfg.Integrity, OpenCodeExecutableSHA256: executableSHA, SandboxRoots: []string{"$SANDBOX/home", "$SANDBOX/xdg", "$SANDBOX/data", "$SANDBOX/cache", "$SANDBOX/state", "$SANDBOX/bundle", "$SANDBOX/work"}, CommandAllowlist: []string{"opencode --version", "opencode debug skill --pure", "opencode acp --cwd $SANDBOX/work --pure"}, Skills: skills, RuntimeModes: modes, MissingOneNegativeTwin: missing, NoAuthentication: true, NoExternalModelNetwork: true, NoDeploy: true, NativeSkillToolObserved: true, NoUpstreamEffects: true}
+	if err := validateArtifactIdentity(ev.RunID, ev.ObservedAt); err != nil {
+		return Evidence{}, err
+	}
 	data, err := json.MarshalIndent(ev, "", "  ")
 	if err != nil {
 		return Evidence{}, err
@@ -202,6 +207,13 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		return Evidence{}, err
 	}
 	return ev, nil
+}
+
+func validateArtifactIdentity(runID string, observedAt time.Time) error {
+	if strings.TrimSpace(runID) == "" || observedAt.IsZero() || observedAt.Location() != time.UTC {
+		return errors.New("evidence requires a nonempty run ID and nonzero UTC observation time")
+	}
+	return nil
 }
 
 type discoveredSkill struct{ location, content string }

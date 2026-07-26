@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,10 +40,54 @@ func TestDecodeEvidenceRejectsUnknownAndTrailingJSON(t *testing.T) {
 	}
 }
 
+func TestLoadFoundationRequiresEveryExactDeterministicOwningProof(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	candidate := strings.Repeat("a", 40)
+	identity := foundationIdentity{
+		SchemaVersion: 1, MatrixVersion: vercelacceptance.AcceptanceMatrixVersion,
+		CandidateSHA: candidate, FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
+		RunID: "run-1", ObservedAt: now.Add(-time.Minute),
+	}
+	data, err := json.Marshal(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "identity.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range vercelacceptance.Rows() {
+		if row.ID == "VERCEL-ACCEPTANCE-17" || row.ID == "VERCEL-ACCEPTANCE-18" || row.ID == "VERCEL-ACCEPTANCE-19" {
+			continue
+		}
+		test := row.EvidenceSeam[strings.LastIndex(row.EvidenceSeam, "/")+1:]
+		output := []byte("=== RUN   " + test + "\n--- PASS: " + test + " (duration)\n")
+		for _, rerun := range []string{"first", "second"} {
+			if err := os.WriteFile(filepath.Join(root, row.ID+"."+rerun+".txt"), output, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	evidence, err := loadFoundation(root, candidate, "run-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evidence) != 21 {
+		t.Fatalf("foundation rows = %d, want 21", len(evidence))
+	}
+	if err := os.WriteFile(filepath.Join(root, "VERCEL-ACCEPTANCE-01.second.txt"), []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadFoundation(root, candidate, "run-1", now); err == nil {
+		t.Fatal("changed rerun passed")
+	}
+}
+
 func TestNormalizeCodexBindsExactCandidateInventoryAndSafety(t *testing.T) {
 	candidate := strings.Repeat("a", 40)
 	raw := codexsmoke.Evidence{
 		SchemaVersion: 1, PackyRef: candidate, PackySHA: candidate,
+		RunID: "run-1", ObservedAt: time.Now().UTC(),
 		VercelFixtureSHA256: vercelacceptance.ExactArchiveSHA256,
 		CodexVersion:        "codex-cli " + vercelacceptance.ExactCodexVersion,
 		CodexNPMIntegrity:   "sha512-exact", CodexExecutableSHA256: strings.Repeat("b", 64),
@@ -71,15 +116,20 @@ func TestNormalizeCodexBindsExactCandidateInventoryAndSafety(t *testing.T) {
 			})
 		}
 	}
-	got, err := normalizeCodex(candidate, time.Now().UTC(), raw)
+	got, err := normalizeCodex(candidate, "run-1", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Host != "codex" || len(got.Skills) != 9 || len(got.RuntimeModes) != 28 || got.EvidenceFingerprint == "" {
 		t.Fatalf("normalized Codex evidence = %#v", got)
 	}
+	raw.CodexVersion = "codex-cli " + vercelacceptance.ExactCodexVersion + "-dev"
+	if _, err := normalizeCodex(candidate, "run-1", raw); err == nil {
+		t.Fatal("non-exact Codex version passed")
+	}
+	raw.CodexVersion = "codex-cli " + vercelacceptance.ExactCodexVersion
 	raw.NoDeploy = false
-	if _, err := normalizeCodex(candidate, time.Now().UTC(), raw); err == nil {
+	if _, err := normalizeCodex(candidate, "run-1", raw); err == nil {
 		t.Fatal("unsafe Codex evidence passed")
 	}
 }
@@ -88,6 +138,7 @@ func TestNormalizeOpenCodeBindsExactCandidateInventoryAndSafety(t *testing.T) {
 	candidate := strings.Repeat("a", 40)
 	raw := opencodesmoke.Evidence{
 		SchemaVersion: 2, PackyRef: candidate, PackySHA: candidate,
+		RunID: "run-1", ObservedAt: time.Now().UTC(),
 		VercelFixtureSHA256:   vercelacceptance.ExactArchiveSHA256,
 		OpenCodeVersion:       vercelacceptance.ExactOpenCodeVersion,
 		OpenCodeArchiveSHA256: strings.Repeat("b", 64), OpenCodeExecutableSHA256: strings.Repeat("c", 64),
@@ -116,15 +167,20 @@ func TestNormalizeOpenCodeBindsExactCandidateInventoryAndSafety(t *testing.T) {
 			})
 		}
 	}
-	got, err := normalizeOpenCode(candidate, time.Now().UTC(), raw)
+	got, err := normalizeOpenCode(candidate, "run-1", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Host != "opencode" || len(got.Skills) != 9 || len(got.RuntimeModes) != 28 || got.EvidenceFingerprint == "" {
 		t.Fatalf("normalized OpenCode evidence = %#v", got)
 	}
+	raw.OpenCodeVersion = vercelacceptance.ExactOpenCodeVersion + "-dev"
+	if _, err := normalizeOpenCode(candidate, "run-1", raw); err == nil {
+		t.Fatal("non-exact OpenCode version passed")
+	}
+	raw.OpenCodeVersion = vercelacceptance.ExactOpenCodeVersion
 	raw.NativeSkillToolObserved = false
-	if _, err := normalizeOpenCode(candidate, time.Now().UTC(), raw); err == nil {
+	if _, err := normalizeOpenCode(candidate, "run-1", raw); err == nil {
 		t.Fatal("non-native OpenCode evidence passed")
 	}
 }

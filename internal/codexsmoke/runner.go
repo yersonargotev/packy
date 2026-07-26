@@ -26,7 +26,7 @@ import (
 
 const ExactFloor = "0.145.0"
 
-type Config struct{ Codex, SearchPath, Version, Integrity, PackyRef, PackySHA, EvidencePath string }
+type Config struct{ Codex, SearchPath, Version, Integrity, PackyRef, PackySHA, RunID, EvidencePath string }
 type SkillEvidence struct {
 	Name                string `json:"name"`
 	Path                string `json:"path"`
@@ -56,6 +56,8 @@ type RuntimeModeEvidence struct {
 }
 type Evidence struct {
 	SchemaVersion          int                   `json:"schema_version"`
+	RunID                  string                `json:"run_id"`
+	ObservedAt             time.Time             `json:"observed_at"`
 	PackyRef               string                `json:"packy_ref"`
 	PackySHA               string                `json:"packy_sha"`
 	VercelFixtureSHA256    string                `json:"vercel_fixture_sha256"`
@@ -92,8 +94,8 @@ func ResolveSelector(selector, output string) (string, string, error) {
 }
 
 func Run(ctx context.Context, cfg Config) (Evidence, error) {
-	if cfg.Codex == "" || cfg.SearchPath == "" || cfg.Version != ExactFloor || cfg.Integrity == "" || cfg.PackyRef == "" || cfg.PackySHA == "" || cfg.EvidencePath == "" {
-		return Evidence{}, errors.New("exact Codex acquisition, Packy identity, and evidence path are required")
+	if cfg.Codex == "" || cfg.SearchPath == "" || cfg.Version != ExactFloor || cfg.Integrity == "" || cfg.PackyRef == "" || cfg.PackySHA == "" || strings.TrimSpace(cfg.RunID) == "" || cfg.EvidencePath == "" {
+		return Evidence{}, errors.New("exact Codex acquisition, Packy identity, run ID, and evidence path are required")
 	}
 	evidenceAbs, err := filepath.Abs(cfg.EvidencePath)
 	if err != nil {
@@ -219,7 +221,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	commands = append(commands, modeCommands...)
 	commands = append(commands, cmd3)
 	e := Evidence{
-		SchemaVersion: 1, PackyRef: cfg.PackyRef, PackySHA: cfg.PackySHA,
+		SchemaVersion: 1, RunID: cfg.RunID, ObservedAt: time.Now().UTC(), PackyRef: cfg.PackyRef, PackySHA: cfg.PackySHA,
 		VercelFixtureSHA256: vercelacceptance.ExactArchiveSHA256,
 		CodexVersion:        strings.TrimSpace(versionOut), CodexNPMIntegrity: cfg.Integrity,
 		CodexExecutableSHA256: digest,
@@ -228,6 +230,9 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		Commands:              commands, Skills: sanitizeSkills(skills, sandbox), RuntimeModes: runtimeModes,
 		MissingOneNegativeTwin: missing,
 		NoAuthentication:       true, NoModelInvocation: true, NoDeploy: true, NoUpstreamExecution: true,
+	}
+	if err := validateArtifactIdentity(e.RunID, e.ObservedAt); err != nil {
+		return Evidence{}, err
 	}
 	data, err := json.MarshalIndent(e, "", "  ")
 	if err != nil {
@@ -241,6 +246,13 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		return Evidence{}, err
 	}
 	return e, nil
+}
+
+func validateArtifactIdentity(runID string, observedAt time.Time) error {
+	if strings.TrimSpace(runID) == "" || observedAt.IsZero() || observedAt.Location() != time.UTC {
+		return errors.New("evidence requires a nonempty run ID and nonzero UTC observation time")
+	}
+	return nil
 }
 
 func materialize(root string) error {

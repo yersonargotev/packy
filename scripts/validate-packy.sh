@@ -83,6 +83,7 @@ export GOMODCACHE="$go_mod_cache"
 export GOPATH="$go_path"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 
+./scripts/validate-vercel-acceptance.sh
 ./scripts/validate-addy-acceptance.sh
 
 shopt -s nullglob

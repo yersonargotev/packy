@@ -305,12 +305,14 @@ func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *t
 		"name: codex-floor-qualification",
 		"name: opencode-floor-qualification",
 		"name: claude-vercel-floor-qualification",
+		"name: vercel-foundation-qualification",
 		"VALIDATE_RESULT: ${{ needs.validate.result }}",
 		"CODEX_RESULT: ${{ needs.codex-floor-smoke.result }}",
 		"OPENCODE_RESULT: ${{ needs.opencode-floor-smoke.result }}",
 		"CLAUDE_RESULT: ${{ needs.claude-vercel-floor-smoke.result }}",
 		"./scripts/gate-vercel-acceptance.sh",
-		"--candidate-sha \"${{ github.event.pull_request.head.sha }}\"",
+		"--candidate-sha \"$GITHUB_SHA\"",
+		"--foundation-evidence \"$RUNNER_TEMP/vercel-foundation-evidence\"",
 		"retention-days: 90",
 	} {
 		if !strings.Contains(gate, required) {
@@ -328,6 +330,41 @@ func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *t
 	script := filepath.Join(root, "scripts", "gate-vercel-acceptance.sh")
 	if output, err := exec.Command("bash", "-n", script).CombinedOutput(); err != nil {
 		t.Fatalf("bash -n Vercel gate: %v\n%s", err, output)
+	}
+}
+
+func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testing.T) {
+	root := repositoryRoot(t)
+	scriptPath := filepath.Join(root, "scripts", "validate-vercel-acceptance.sh")
+	if output, err := exec.Command("bash", "-n", scriptPath).CombinedOutput(); err != nil {
+		t.Fatalf("bash -n Vercel foundation: %v\n%s", err, output)
+	}
+	script := readFile(t, scriptPath)
+	for row := 1; row <= 24; row++ {
+		id := fmt.Sprintf("VERCEL-ACCEPTANCE-%02d", row)
+		count := strings.Count(script, `"`+id+`|`)
+		if row >= 17 && row <= 19 {
+			if count != 0 {
+				t.Fatalf("host-native row %s must come from an independent artifact", id)
+			}
+			continue
+		}
+		if count != 1 {
+			t.Fatalf("foundation row %s appears %d times", id, count)
+		}
+	}
+	for _, required := range []string{
+		`for rerun in first second`, `go test "$package" -run "^${test}$" -count=1 -v`,
+		`cmp -s "$work/$row.first.txt" "$work/$row.second.txt"`,
+		`"matrix_version":"vercel-acceptance-v1"`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("Vercel foundation missing %q", required)
+		}
+	}
+	authority := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
+	if strings.Count(authority, "./scripts/validate-vercel-acceptance.sh") != 1 {
+		t.Fatal("repository validation authority must run the Vercel foundation exactly once")
 	}
 }
 
@@ -1834,9 +1871,10 @@ func TestHostile(t *testing.T) {
 		}
 		writeExecutable(t, filepath.Join(shimRoot, command), contents)
 	}
-	// Addy acceptance owns its own execution contract; this tracer is scoped to
-	// the repository entrypoint's package selection and validation classes.
+	// Acceptance cohorts own their own execution contracts; this tracer is
+	// scoped to the repository entrypoint's package selection and validation classes.
 	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-addy-acceptance.sh"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-vercel-acceptance.sh"), "#!/bin/sh\nexit 0\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

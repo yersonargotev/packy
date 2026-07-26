@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/vercelacceptance"
@@ -50,7 +51,8 @@ func TestValidateVercelEvidenceExactNamesCountsAndSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := VercelEvidence{
-		SchemaVersion: 1, PackySHA: strings.Repeat("a", 40), FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
+		SchemaVersion: 1, RunID: "run-262", ObservedAt: time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC),
+		PackySHA: strings.Repeat("a", 40), FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
 		ClaudeVersion: ExactVercelClaudeVersion, ClaudeNPMIntegrity: "sha512-redacted",
 		ClaudeExecutableSHA256: strings.Repeat("c", 64), RuntimeModes: rows,
 		TypedFailBeforeEffectsPreflight: preflight,
@@ -76,6 +78,16 @@ func TestValidateVercelEvidenceExactNamesCountsAndSafety(t *testing.T) {
 	if err := ValidateVercelEvidence(e); err != nil {
 		t.Fatal(err)
 	}
+	e.RunID = ""
+	if err := ValidateVercelEvidence(e); err == nil {
+		t.Fatal("accepted empty run ID")
+	}
+	e.RunID = "run-262"
+	e.ObservedAt = time.Time{}
+	if err := ValidateVercelEvidence(e); err == nil {
+		t.Fatal("accepted zero observation time")
+	}
+	e.ObservedAt = time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 	e.Skills = e.Skills[:8]
 	if err := ValidateVercelEvidence(e); err == nil {
 		t.Fatal("accepted eight positive skills")
