@@ -169,6 +169,13 @@
         "contract": {
           "$ref": "lifecycle-contract.schema.json"
         },
+        "runtime_modes": {
+          "type": "array",
+          "items": {
+            "$ref": "runtime-mode.schema.json"
+          },
+          "uniqueItems": true
+        },
         "aliases": {
           "type": "array"
         },

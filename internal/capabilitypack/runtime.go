@@ -31,16 +31,95 @@ const (
 // evidence. A fallback's truth is reported, but fallback selection is left to
 // the caller.
 type RuntimeModeResult struct {
-	ResourceID    string
-	ModeID        string
-	State         RuntimeModeState
-	Requirements  []RuntimeRequirement
-	Authorities   []RuntimeAuthority
-	Effects       []RuntimeEffect
-	Fallback      RuntimeFallback
-	FallbackState *RuntimeModeState
-	Evidence      RuntimeEvidence
-	Affected      []string
+	ResourceID    string                   `json:"resource_id"`
+	ModeID        string                   `json:"mode_id"`
+	Role          RuntimeModeRole          `json:"role"`
+	State         RuntimeModeState         `json:"state"`
+	Requirements  []RuntimeRequirement     `json:"requirements"`
+	Authorities   []RuntimeAuthority       `json:"authorities"`
+	Effects       []RuntimeEffect          `json:"effects"`
+	Fallback      RuntimeFallback          `json:"fallback"`
+	OnUnavailable RuntimeUnavailablePolicy `json:"on_unavailable"`
+	FallbackState *RuntimeModeState        `json:"fallback_state,omitempty"`
+	Evidence      RuntimeEvidence          `json:"evidence"`
+	Affected      []string                 `json:"affected"`
+}
+
+const runtimeEvidenceFreshness = 5 * time.Minute
+
+// UnverifiedRuntimeModeEvidence gives adapters the exact portable evidence
+// skeleton for every declared mode. It is a safe default for observers that
+// cannot establish runtime facts; no adapter needs to duplicate mode-policy
+// iteration.
+func UnverifiedRuntimeModeEvidence(pack Pack, observedAt time.Time, observerRevision string) ([]RuntimeModeEvidence, error) {
+	if observedAt.IsZero() || observerRevision == "" {
+		return nil, RuntimeEvidenceError{Problem: "an observation time and observer revision are required"}
+	}
+	stamp := observedAt.UTC().Format(time.RFC3339)
+	records := make([]RuntimeModeEvidence, 0)
+	for _, resource := range pack.Resources {
+		for _, mode := range resource.RuntimeModes {
+			evidence := RuntimeEvidence{Requirements: []RuntimeRequirementObservation{}, Authorities: []RuntimeAuthorityObservation{}}
+			for _, requirement := range mode.Requirements {
+				evidence.Requirements = append(evidence.Requirements, RuntimeRequirementObservation{
+					Kind: requirement.Kind, ID: requirement.ID,
+					RuntimeObservation: RuntimeObservation{State: ObservationUnverified, Reason: ObservationReasonObserverError, ObservedAt: stamp, ObserverRevision: observerRevision},
+				})
+			}
+			for _, authority := range mode.Authorities {
+				evidence.Authorities = append(evidence.Authorities, RuntimeAuthorityObservation{
+					Kind: authority.Kind, Scope: authority.Scope,
+					RuntimeObservation: RuntimeObservation{State: ObservationUnverified, Reason: ObservationReasonObserverError, ObservedAt: stamp, ObserverRevision: observerRevision},
+				})
+			}
+			records = append(records, RuntimeModeEvidence{ResourceID: resource.ID, ModeID: mode.ID, Evidence: evidence})
+		}
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return runtimeModeEvidenceKey(records[i].ResourceID, records[i].ModeID) < runtimeModeEvidenceKey(records[j].ResourceID, records[j].ModeID)
+	})
+	return records, nil
+}
+
+func cloneRuntimeModeEvidence(values []RuntimeModeEvidence) []RuntimeModeEvidence {
+	result := make([]RuntimeModeEvidence, len(values))
+	copy(result, values)
+	for i := range result {
+		result[i].Evidence = cloneRuntimeEvidence(result[i].Evidence)
+	}
+	return result
+}
+
+func cloneRuntimeModeResults(values []RuntimeModeResult) []RuntimeModeResult {
+	result := make([]RuntimeModeResult, len(values))
+	copy(result, values)
+	for i := range result {
+		result[i].Requirements = append([]RuntimeRequirement{}, result[i].Requirements...)
+		result[i].Authorities = append([]RuntimeAuthority{}, result[i].Authorities...)
+		result[i].Effects = append([]RuntimeEffect{}, result[i].Effects...)
+		result[i].Evidence = cloneRuntimeEvidence(result[i].Evidence)
+		result[i].Affected = append([]string{}, result[i].Affected...)
+		if result[i].FallbackState != nil {
+			state := *result[i].FallbackState
+			result[i].FallbackState = &state
+		}
+	}
+	return result
+}
+
+func sortedRuntimeModeResults(values []RuntimeModeResult) []RuntimeModeResult {
+	result := cloneRuntimeModeResults(values)
+	sort.Slice(result, func(i, j int) bool {
+		return runtimeModeEvidenceKey(result[i].ResourceID, result[i].ModeID) <
+			runtimeModeEvidenceKey(result[j].ResourceID, result[j].ModeID)
+	})
+	return result
+}
+
+func cloneRuntimeEvidence(value RuntimeEvidence) RuntimeEvidence {
+	value.Requirements = append([]RuntimeRequirementObservation{}, value.Requirements...)
+	value.Authorities = append([]RuntimeAuthorityObservation{}, value.Authorities...)
+	return value
 }
 
 // RuntimeEvidenceError reports only portable declared identities.
@@ -102,7 +181,7 @@ func EvaluateRuntimeModes(pack Pack, records []RuntimeModeEvidence, now time.Tim
 			return nil, RuntimeEvidenceError{Problem: "extra or mismatched mode evidence", Affected: []string{identity}}
 		}
 		if err := ValidateRuntimeEvidence(record.Evidence); err != nil {
-			return nil, RuntimeEvidenceError{Problem: "invalid evidence for " + identity}
+			return nil, RuntimeEvidenceError{Problem: "invalid evidence for " + identity + ": " + err.Error()}
 		}
 		provided[key] = record.Evidence
 	}
@@ -130,11 +209,11 @@ func EvaluateRuntimeModes(pack Pack, records []RuntimeModeEvidence, now time.Tim
 		state, affected := deriveRuntimeModeState(evidence)
 		resultIndex[key] = len(results)
 		results = append(results, RuntimeModeResult{
-			ResourceID: resourceID, ModeID: modeID, State: state,
+			ResourceID: resourceID, ModeID: modeID, Role: mode.Role, State: state,
 			Requirements: append([]RuntimeRequirement(nil), mode.Requirements...),
 			Authorities:  append([]RuntimeAuthority(nil), mode.Authorities...),
 			Effects:      append([]RuntimeEffect(nil), mode.Effects...),
-			Fallback:     mode.Fallback, Evidence: evidence, Affected: affected,
+			Fallback:     mode.Fallback, OnUnavailable: mode.OnUnavailable, Evidence: evidence, Affected: affected,
 		})
 	}
 	for i := range results {

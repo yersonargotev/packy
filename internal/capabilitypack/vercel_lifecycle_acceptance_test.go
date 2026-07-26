@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVercelCollisionRequiresExplicitAliasBeforeMutation(t *testing.T) {
@@ -25,7 +26,7 @@ func testVercelCollisionRequiresExplicitAliasBeforeMutation(t *testing.T, surfac
 	catalog := completeVercelCatalog(t)
 	const resourceID = "vercel-composition-patterns"
 	adapter := &fakeSurfaceAdapter{inspect: func(transition SurfaceTransition) SurfaceInspection {
-		inspection := completeVercelObservation(transition.Desired, "missing", surface)
+		inspection := completeVercelObservation(t, transition.Desired, "missing", surface)
 		inspection.OccupiedNames = []OccupiedName{{
 			Namespace: "skill", Name: resourceID, OwnerType: "unmanaged", Fingerprint: "operator",
 		}}
@@ -107,14 +108,61 @@ func TestVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.
 	}
 }
 
+func TestVercelRuntimeEvidenceIsNormalizedAndSemanticChangesStaleBeforeEffects(t *testing.T) {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
+		t.Run(string(surface), func(t *testing.T) {
+			catalog := completeVercelCatalog(t)
+			pack, err := catalog.Show("vercel")
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := completeVercelObservation(t, pack, "missing", surface)
+			changed := cloneSurfaceInspection(first)
+			for i := range changed.RuntimeModeEvidence {
+				for j := range changed.RuntimeModeEvidence[i].Evidence.Requirements {
+					changed.RuntimeModeEvidence[i].Evidence.Requirements[j].ObserverRevision = "changed-observer"
+				}
+				for j := range changed.RuntimeModeEvidence[i].Evidence.Authorities {
+					changed.RuntimeModeEvidence[i].Evidence.Authorities[j].ObserverRevision = "changed-observer"
+				}
+			}
+			adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{first, changed}}
+			store := &fakeActivationStore{}
+			facade := NewFacade(catalog, WithActivation(store, map[Surface]SurfaceAdapter{surface: adapter}))
+			plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: surface})
+			if err != nil {
+				t.Fatal(err)
+			}
+			modes := plan.JSONReport(true).RuntimeModes
+			if len(modes) != 28 {
+				t.Fatalf("normalized runtime modes = %d, want 28", len(modes))
+			}
+			for i, mode := range modes {
+				if i > 0 && runtimeModeEvidenceKey(modes[i-1].ResourceID, modes[i-1].ModeID) >= runtimeModeEvidenceKey(mode.ResourceID, mode.ModeID) {
+					t.Fatalf("runtime modes are not canonical: %#v", modes)
+				}
+				if mode.OnUnavailable != RuntimeFailBeforeEffects {
+					t.Fatalf("runtime mode lost fail-before-effects policy: %#v", mode)
+				}
+			}
+			_, err = facade.Apply(context.Background(), ApplyRequest{
+				Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true,
+			})
+			if !errors.Is(err, ErrStalePlan) || len(adapter.actions) != 0 || len(store.saves) != 0 {
+				t.Fatalf("runtime evidence change crossed stale boundary: err=%v actions=%d saves=%d", err, len(adapter.actions), len(store.saves))
+			}
+		})
+	}
+}
+
 func testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.T, surface Surface) {
 	catalog := completeVercelCatalog(t)
 	pack, err := catalog.Show("vercel")
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending := completeVercelObservation(pack, "missing", surface)
-	changed := completeVercelObservation(pack, "operator-change", surface)
+	pending := completeVercelObservation(t, pack, "missing", surface)
+	changed := completeVercelObservation(t, pack, "operator-change", surface)
 
 	t.Run("stale-preflight-zero-effects", func(t *testing.T) {
 		adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{pending, changed}}
@@ -151,7 +199,10 @@ func testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.
 		firstAttempt := cloneJournal(*store.state.Journal)
 		adapter.applyErr = nil
 		adapter.inspectCalls = 0
-		verified := completeVercelObservation(pack, "desired", surface)
+		verified := completeVercelObservation(t, pack, "desired", surface)
+		verified.Readiness = ReadinessObservation{
+			AuthorizationObserved: true, Authorized: true, UsabilityObserved: true, Usable: true,
+		}
 		adapter.observations = []SurfaceInspection{pending, pending, verified}
 		recovery, err := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: surface})
 		if err != nil {
@@ -181,8 +232,18 @@ func testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.
 		if !update.NoOp() || len(update.Phases()) != 0 || !reflect.DeepEqual(store.state, before) {
 			t.Fatalf("exact Vercel update changed lifecycle state: %+v", update.JSONReport(true))
 		}
+		adapter.inspectCalls = 0
+		adapter.observations = []SurfaceInspection{verified}
+		status, err := facade.Status(context.Background(), StatusRequest{PackID: "vercel", Surface: surface})
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry := status.Entries[0]
+		if !entry.Readiness.Configured || !entry.Readiness.Authorized || !entry.Readiness.Usable || len(entry.RuntimeModes) != 28 {
+			t.Fatalf("runtime availability altered pack readiness: readiness=%+v runtime_modes=%d", entry.Readiness, len(entry.RuntimeModes))
+		}
 
-		drifted := completeVercelObservation(pack, "desired", surface)
+		drifted := completeVercelObservation(t, pack, "desired", surface)
 		drifted.Projections[0].ObservedFingerprint = "operator-drift"
 		adapter.inspectCalls = 0
 		adapter.actions = nil
@@ -201,7 +262,7 @@ func testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.
 			t.Fatal("Vercel reconcile changed durable intent")
 		}
 
-		driftedRemoval := completeVercelRemovalObservation(store.state.Ownership, "desired")
+		driftedRemoval := completeVercelRemovalObservation(t, pack, store.state.Ownership, "desired", surface)
 		driftedRemoval.Projections[0].ObservedFingerprint = "operator-drift"
 		adapter.inspectCalls = 0
 		adapter.actions = nil
@@ -290,7 +351,8 @@ func materializeVercelAcceptanceArchive(t *testing.T, bundle string) {
 	}
 }
 
-func completeVercelObservation(pack Pack, observed string, surface Surface) SurfaceInspection {
+func completeVercelObservation(t *testing.T, pack Pack, observed string, surface Surface) SurfaceInspection {
+	t.Helper()
 	inspection := SurfaceInspection{Revision: "vercel-" + string(surface) + "-host"}
 	actionKind := ActionSkillLink
 	if surface == SurfaceOpenCode {
@@ -308,17 +370,36 @@ func completeVercelObservation(pack Pack, observed string, surface Surface) Surf
 			})
 		}
 	}
+	var err error
+	inspection.RuntimeModeEvidence, err = UnverifiedRuntimeModeEvidence(pack, time.Now().UTC(), inspection.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range inspection.RuntimeModeEvidence {
+		if err := ValidateRuntimeEvidence(record.Evidence); err != nil {
+			t.Fatalf("generated Vercel runtime evidence for %s:%s: %v", record.ResourceID, record.ModeID, err)
+		}
+	}
+	if _, err := EvaluateRuntimeModes(pack, inspection.RuntimeModeEvidence, time.Now().UTC(), runtimeEvidenceFreshness); err != nil {
+		t.Fatalf("evaluate generated Vercel runtime evidence: %v", err)
+	}
 	return inspection
 }
 
-func completeVercelRemovalObservation(ownership []ProjectionOwnership, observed string) SurfaceInspection {
-	inspection := SurfaceInspection{Revision: "vercel-codex-removal"}
+func completeVercelRemovalObservation(t *testing.T, pack Pack, ownership []ProjectionOwnership, observed string, surface Surface) SurfaceInspection {
+	t.Helper()
+	inspection := SurfaceInspection{Revision: "vercel-" + string(surface) + "-removal"}
 	for _, owner := range ownership {
 		inspection.Projections = append(inspection.Projections, ObservedProjection{
 			ID: owner.ID, Goal: ProjectionAbsent, Exists: true,
 			ObservedFingerprint: observed,
 			Action:              ProjectionAction{ID: owner.ID, Kind: ActionSkillLink, Mode: ProjectionDeleteTarget, Description: "remove " + owner.ID},
 		})
+	}
+	var err error
+	inspection.RuntimeModeEvidence, err = UnverifiedRuntimeModeEvidence(pack, time.Now().UTC(), inspection.Revision)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return inspection
 }
