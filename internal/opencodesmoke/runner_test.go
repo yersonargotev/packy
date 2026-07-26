@@ -29,6 +29,22 @@ func TestEvidenceIdentityRequiresRunIDAndUTCObservation(t *testing.T) {
 	}
 }
 
+func TestArtifactOwnsSemanticRerunAndExactZeroMutation(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	if !(vercelacceptance.SemanticRerunEvidence{FirstSHA256: digest, SecondSHA256: digest, ExactMatch: true}).Valid() {
+		t.Fatal("rejected exact semantic rerun")
+	}
+	if (vercelacceptance.SemanticRerunEvidence{FirstSHA256: digest, SecondSHA256: strings.Repeat("b", 64), ExactMatch: true}).Valid() {
+		t.Fatal("accepted differing semantic rerun digests")
+	}
+	if !(vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: digest, AfterSHA256: digest, AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: true}).Valid() {
+		t.Fatal("rejected exact zero-mutation observation")
+	}
+	if (vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: digest, AfterSHA256: digest, AllowedChanges: []string{"anything"}, ZeroMutationExact: true}).Valid() {
+		t.Fatal("accepted an allowed mutation in a zero-mutation observation")
+	}
+}
+
 func TestPreflightEveryVercelModeFailsBeforeHostEffects(t *testing.T) {
 	modes, err := preflightEveryMode(vercelacceptance.Canonical().Pack)
 	if err != nil {

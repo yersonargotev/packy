@@ -89,13 +89,11 @@ while IFS='|' read -r row positive negative oracle; do
 done <"$work/mappings"
 
 if [[ -n "$evidence_dir" ]]; then
-  {
-    printf 'schema_version\t1\n'
-    printf 'matrix_version\tvercel-acceptance-v1\n'
-    printf 'candidate_sha\t%s\n' "$candidate_sha"
-    printf 'fixture_sha256\t%s\n' "6914589e3899ae238c30a0d87c297ef101c87a01d63e160efc3dcfab27676ab7"
-    printf 'run_id\t%s\n' "$run_id"
-    printf 'observed_at\t%s\n' "$observed_at"
-    cat "$work/manifest.rows"
-  } >"$evidence_dir/manifest.tsv"
+  go run ./internal/tools/vercelacceptance \
+    --foundation-manifest \
+    --candidate-sha "$candidate_sha" \
+    --run-id "$run_id" \
+    --observed-at "$observed_at" \
+    <"$work/manifest.rows" \
+    >"$evidence_dir/manifest.tsv"
 fi

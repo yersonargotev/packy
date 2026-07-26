@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,29 +45,36 @@ func TestLoadFoundationRequiresEveryExactDeterministicOwningProof(t *testing.T) 
 	now := time.Now().UTC().Truncate(time.Second)
 	candidate := strings.Repeat("a", 40)
 	observedAt := now.Add(-time.Minute)
-	var manifest bytes.Buffer
-	fmt.Fprintf(&manifest, "schema_version\t1\nmatrix_version\t%s\ncandidate_sha\t%s\nfixture_sha256\t%s\nrun_id\trun-1\nobserved_at\t%s\n",
-		vercelacceptance.AcceptanceMatrixVersion, candidate, vercelacceptance.ExactArchiveSHA256, observedAt.Format(time.RFC3339))
-	for _, row := range vercelacceptance.Rows() {
-		if row.ID == "VERCEL-ACCEPTANCE-17" || row.ID == "VERCEL-ACCEPTANCE-18" || row.ID == "VERCEL-ACCEPTANCE-19" {
-			continue
-		}
+	var manifestRows []vercelacceptance.FoundationDigestRow
+	for _, row := range vercelacceptance.FoundationRows() {
 		var rowDigests []string
-		for i, proof := range []string{"positive", "negative", "oracle"} {
-			seam := []string{row.EvidenceSeam, row.NegativeSeam, row.OracleSeam}[i]
+		for _, proof := range row.FoundationProofs() {
+			seam := proof.Seam
 			test := seam[strings.LastIndex(seam, "/")+1:]
 			output := []byte(fmt.Sprintf("@identity\t%s\trun-1\t%s\t%s\n=== RUN   %s\n--- PASS: %s (duration)\n",
 				candidate, observedAt.Format(time.RFC3339), seam, test, test))
 			rowDigests = append(rowDigests, digestBytes(output))
 			for _, rerun := range []string{"first", "second"} {
-				if err := os.WriteFile(filepath.Join(root, row.ID+"."+proof+"."+rerun+".txt"), output, 0o600); err != nil {
+				name, err := vercelacceptance.FoundationProofFilename(row.ID, proof.Kind, rerun)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, name), output, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}
 		}
-		fmt.Fprintf(&manifest, "row\t%s\t%s\t%s\t%s\n", row.ID, rowDigests[0], rowDigests[1], rowDigests[2])
+		manifestRows = append(manifestRows, vercelacceptance.FoundationDigestRow{
+			RowID: row.ID, Digests: [3]string{rowDigests[0], rowDigests[1], rowDigests[2]},
+		})
 	}
-	if err := os.WriteFile(filepath.Join(root, "manifest.tsv"), manifest.Bytes(), 0o600); err != nil {
+	manifest, err := vercelacceptance.CanonicalFoundationManifest(vercelacceptance.FoundationContext{
+		CandidateSHA: candidate, RunID: "run-1", ObservedAt: observedAt, Now: now, MaxAge: 15 * time.Minute,
+	}, manifestRows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.tsv"), manifest, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	evidence, err := loadFoundation(root, candidate, "run-1", now)
@@ -95,6 +101,8 @@ func TestNormalizeCodexBindsExactCandidateInventoryAndSafety(t *testing.T) {
 		CodexVersion:        "codex-cli " + vercelacceptance.ExactCodexVersion,
 		CodexNPMIntegrity:   "sha512-exact", CodexExecutableSHA256: strings.Repeat("b", 64),
 		SandboxRoots:           []string{"$SANDBOX/home", "$SANDBOX/bundle", "$SANDBOX/work"},
+		SemanticRerun:          vercelacceptance.SemanticRerunEvidence{FirstSHA256: strings.Repeat("d", 64), SecondSHA256: strings.Repeat("d", 64), ExactMatch: true},
+		Mutation:               vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: strings.Repeat("e", 64), AfterSHA256: strings.Repeat("e", 64), AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: true},
 		MissingOneNegativeTwin: "deploy-to-vercel",
 		NoAuthentication:       true, NoModelInvocation: true, NoDeploy: true, NoUpstreamExecution: true,
 	}
@@ -123,7 +131,8 @@ func TestNormalizeCodexBindsExactCandidateInventoryAndSafety(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Host != "codex" || len(got.Skills) != 9 || len(got.RuntimeModes) != 28 || got.EvidenceFingerprint == "" {
+	if got.Host != "codex" || len(got.Skills) != 9 || len(got.RuntimeModes) != 28 ||
+		!got.SemanticRerun.Valid() || !got.Mutation.Valid() || got.EvidenceFingerprint == "" {
 		t.Fatalf("normalized Codex evidence = %#v", got)
 	}
 	raw.CodexVersion = "codex-cli " + vercelacceptance.ExactCodexVersion + "-dev"
@@ -150,6 +159,8 @@ func TestNormalizeOpenCodeBindsExactCandidateInventoryAndSafety(t *testing.T) {
 		OpenCodeVersion:       vercelacceptance.ExactOpenCodeVersion,
 		OpenCodeArchiveSHA256: strings.Repeat("b", 64), OpenCodeExecutableSHA256: strings.Repeat("c", 64),
 		SandboxRoots:           []string{"home", "xdg", "data", "cache", "state", "bundle", "work"},
+		SemanticRerun:          vercelacceptance.SemanticRerunEvidence{FirstSHA256: strings.Repeat("e", 64), SecondSHA256: strings.Repeat("e", 64), ExactMatch: true},
+		Mutation:               vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: strings.Repeat("f", 64), AfterSHA256: strings.Repeat("f", 64), AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: true},
 		MissingOneNegativeTwin: "deploy-to-vercel",
 		NoAuthentication:       true, NoExternalModelNetwork: true, NoDeploy: true,
 		NativeSkillToolObserved: true, NoUpstreamEffects: true,
@@ -178,7 +189,8 @@ func TestNormalizeOpenCodeBindsExactCandidateInventoryAndSafety(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Host != "opencode" || len(got.Skills) != 9 || len(got.RuntimeModes) != 28 || got.EvidenceFingerprint == "" {
+	if got.Host != "opencode" || len(got.Skills) != 9 || len(got.RuntimeModes) != 28 ||
+		!got.SemanticRerun.Valid() || !got.Mutation.Valid() || got.EvidenceFingerprint == "" {
 		t.Fatalf("normalized OpenCode evidence = %#v", got)
 	}
 	raw.OpenCodeVersion = vercelacceptance.ExactOpenCodeVersion + "-dev"

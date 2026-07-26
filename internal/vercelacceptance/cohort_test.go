@@ -16,9 +16,20 @@ func TestAcceptanceRegistryOrderAndCopySafety(t *testing.T) {
 		if row.ID != "VERCEL-ACCEPTANCE-"+twoDigits(i+1) || row.Gate != Gate(i/4+1) {
 			t.Fatalf("row %d = %#v", i, row)
 		}
-		if row.Name == "" || row.EvidenceSeam == "" || row.NegativeFact == "" || row.Oracle == "" {
+		if row.Name == "" || row.EvidenceSeam == "" || row.NegativeSeam == "" || row.OracleSeam == "" ||
+			row.NegativeFact == "" || row.Oracle == "" {
 			t.Fatalf("row %d lacks auditable semantics: %#v", i, row)
 		}
+		wantSource := EvidenceFoundation
+		if i >= 16 && i <= 18 {
+			wantSource = EvidenceHost
+		}
+		if row.Source != wantSource {
+			t.Fatalf("row %d source = %d, want %d", i, row.Source, wantSource)
+		}
+	}
+	if len(FoundationRows()) != 21 || len(HostRows()) != 3 {
+		t.Fatalf("source partition = %d foundation, %d host", len(FoundationRows()), len(HostRows()))
 	}
 	if rows[16].Name != "codex-exact-host-readiness" || rows[16].Oracle != "nine skills and 28 modes" {
 		t.Fatalf("representative readiness row = %#v", rows[16])

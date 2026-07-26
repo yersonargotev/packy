@@ -52,6 +52,10 @@ if [[ "$(git -C "$root" rev-parse HEAD)" != "$candidate_sha" ]]; then
   echo "candidate SHA does not match checkout HEAD" >&2
   exit 1
 fi
+if [[ -n "$(git -C "$root" status --porcelain --untracked-files=normal)" ]]; then
+  echo "Vercel acceptance requires a clean checkout of the candidate SHA" >&2
+  exit 1
+fi
 
 sandbox="$(mktemp -d "${TMPDIR:-/tmp}/packy-vercel-acceptance.XXXXXX")"
 trap 'chmod -R u+w "$sandbox" 2>/dev/null || true; rm -rf "$sandbox"' EXIT

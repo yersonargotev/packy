@@ -55,25 +55,27 @@ type RuntimeModeEvidence struct {
 	FailBeforeEffects bool                                `json:"fail_before_effects"`
 }
 type Evidence struct {
-	SchemaVersion          int                   `json:"schema_version"`
-	RunID                  string                `json:"run_id"`
-	ObservedAt             time.Time             `json:"observed_at"`
-	PackyRef               string                `json:"packy_ref"`
-	PackySHA               string                `json:"packy_sha"`
-	VercelFixtureSHA256    string                `json:"vercel_fixture_sha256"`
-	CodexVersion           string                `json:"codex_version"`
-	CodexNPMIntegrity      string                `json:"codex_npm_integrity"`
-	CodexExecutableSHA256  string                `json:"codex_executable_sha256"`
-	SandboxRoots           []string              `json:"sandbox_roots"`
-	CommandAllowlist       []string              `json:"command_allowlist"`
-	Commands               []CommandEvidence     `json:"commands"`
-	Skills                 []SkillEvidence       `json:"skills"`
-	RuntimeModes           []RuntimeModeEvidence `json:"runtime_modes"`
-	MissingOneNegativeTwin string                `json:"missing_one_negative_twin"`
-	NoAuthentication       bool                  `json:"no_authentication"`
-	NoModelInvocation      bool                  `json:"no_model_invocation"`
-	NoDeploy               bool                  `json:"no_deploy"`
-	NoUpstreamExecution    bool                  `json:"no_upstream_execution"`
+	SchemaVersion          int                                    `json:"schema_version"`
+	RunID                  string                                 `json:"run_id"`
+	ObservedAt             time.Time                              `json:"observed_at"`
+	PackyRef               string                                 `json:"packy_ref"`
+	PackySHA               string                                 `json:"packy_sha"`
+	VercelFixtureSHA256    string                                 `json:"vercel_fixture_sha256"`
+	CodexVersion           string                                 `json:"codex_version"`
+	CodexNPMIntegrity      string                                 `json:"codex_npm_integrity"`
+	CodexExecutableSHA256  string                                 `json:"codex_executable_sha256"`
+	SandboxRoots           []string                               `json:"sandbox_roots"`
+	CommandAllowlist       []string                               `json:"command_allowlist"`
+	Commands               []CommandEvidence                      `json:"commands"`
+	Skills                 []SkillEvidence                        `json:"skills"`
+	RuntimeModes           []RuntimeModeEvidence                  `json:"runtime_modes"`
+	SemanticRerun          vercelacceptance.SemanticRerunEvidence `json:"semantic_rerun"`
+	Mutation               vercelacceptance.MutationObservation   `json:"mutation_observation"`
+	MissingOneNegativeTwin string                                 `json:"missing_one_negative_twin"`
+	NoAuthentication       bool                                   `json:"no_authentication"`
+	NoModelInvocation      bool                                   `json:"no_model_invocation"`
+	NoDeploy               bool                                   `json:"no_deploy"`
+	NoUpstreamExecution    bool                                   `json:"no_upstream_execution"`
 }
 
 func ResolveSelector(selector, output string) (string, string, error) {
@@ -143,6 +145,10 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err := materializeCodexSkillLinks(projections); err != nil {
 		return Evidence{}, err
 	}
+	bundleBefore, err := localprojection.FingerprintTree(bundle)
+	if err != nil {
+		return Evidence{}, err
+	}
 	versionOut, cmd1, err := runVersion(ctx, cfg.Codex, cfg.SearchPath, home, work)
 	if err != nil {
 		return Evidence{}, err
@@ -181,6 +187,22 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		skills = append(skills, SkillEvidence{Name: name, Path: s.Path, SHA256: fp, Invocation: invocations[name], Enabled: s.Enabled})
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	firstSemantic, err := codexDiscoveryDigest(listed, invocations, sandbox)
+	if err != nil {
+		return Evidence{}, err
+	}
+	rerunListed, rerunCommand, err := listSkills(ctx, cfg.Codex, cfg.SearchPath, home, work)
+	if err != nil {
+		return Evidence{}, err
+	}
+	secondSemantic, err := codexDiscoveryDigest(rerunListed, invocations, sandbox)
+	if err != nil {
+		return Evidence{}, err
+	}
+	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
+	if !semanticRerun.Valid() {
+		return Evidence{}, errors.New("Codex semantic discovery rerun differed")
+	}
 	var promptCommands []CommandEvidence
 	for i := range skills {
 		command, err := verifyPromptInvocation(ctx, cfg.Codex, cfg.SearchPath, home, work, skills[i].Name, skills[i].Invocation)
@@ -216,10 +238,18 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if count != 8 {
 		return Evidence{}, fmt.Errorf("missing-one twin loaded %d Vercel skills", count)
 	}
-	commands := []CommandEvidence{cmd1, cmd2}
+	commands := []CommandEvidence{cmd1, cmd2, rerunCommand}
 	commands = append(commands, promptCommands...)
 	commands = append(commands, modeCommands...)
 	commands = append(commands, cmd3)
+	bundleAfter, err := localprojection.FingerprintTree(bundle)
+	if err != nil {
+		return Evidence{}, err
+	}
+	mutation := vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: bundleBefore, AfterSHA256: bundleAfter, AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: bundleBefore == bundleAfter}
+	if !mutation.Valid() {
+		return Evidence{}, errors.New("Codex host mutated the immutable fixture bundle")
+	}
 	e := Evidence{
 		SchemaVersion: 1, RunID: cfg.RunID, ObservedAt: time.Now().UTC(), PackyRef: cfg.PackyRef, PackySHA: cfg.PackySHA,
 		VercelFixtureSHA256: vercelacceptance.ExactArchiveSHA256,
@@ -228,6 +258,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		SandboxRoots:          []string{"$SANDBOX/home", "$SANDBOX/bundle", "$SANDBOX/work"},
 		CommandAllowlist:      []string{"codex --version", "codex app-server", "codex debug prompt-input"},
 		Commands:              commands, Skills: sanitizeSkills(skills, sandbox), RuntimeModes: runtimeModes,
+		SemanticRerun: semanticRerun, Mutation: mutation,
 		MissingOneNegativeTwin: missing,
 		NoAuthentication:       true, NoModelInvocation: true, NoDeploy: true, NoUpstreamExecution: true,
 	}
@@ -246,6 +277,29 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		return Evidence{}, err
 	}
 	return e, nil
+}
+
+func codexDiscoveryDigest(listed []listedSkill, invocations map[string]string, sandbox string) (string, error) {
+	type row struct {
+		Name, Path string
+		Enabled    bool
+	}
+	rows := make([]row, 0, len(invocations))
+	for _, skill := range listed {
+		if _, ok := invocations[skill.Name]; ok {
+			rows = append(rows, row{skill.Name, sanitizePath(skill.Path, sandbox), skill.Enabled})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+	if len(rows) != len(invocations) {
+		return "", fmt.Errorf("Codex semantic discovery contains %d Vercel skills, want %d", len(rows), len(invocations))
+	}
+	data, err := json.Marshal(rows)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func validateArtifactIdentity(runID string, observedAt time.Time) error {
@@ -540,4 +594,11 @@ func sanitizeSkills(skills []SkillEvidence, sandbox string) []SkillEvidence {
 		}
 	}
 	return out
+}
+
+func sanitizePath(path, sandbox string) string {
+	if rel, err := filepath.Rel(sandbox, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(filepath.Join("$SANDBOX", rel))
+	}
+	return path
 }

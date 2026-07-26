@@ -48,25 +48,27 @@ type RuntimeModeEvidence struct {
 	FailBeforeHostEffects bool                                `json:"fail_before_host_effects"`
 }
 type Evidence struct {
-	SchemaVersion            int                   `json:"schema_version"`
-	RunID                    string                `json:"run_id"`
-	ObservedAt               time.Time             `json:"observed_at"`
-	PackyRef                 string                `json:"packy_ref"`
-	PackySHA                 string                `json:"packy_sha"`
-	VercelFixtureSHA256      string                `json:"vercel_fixture_sha256"`
-	OpenCodeVersion          string                `json:"opencode_version"`
-	OpenCodeArchiveSHA256    string                `json:"opencode_archive_sha256"`
-	OpenCodeExecutableSHA256 string                `json:"opencode_executable_sha256"`
-	SandboxRoots             []string              `json:"sandbox_roots"`
-	CommandAllowlist         []string              `json:"command_allowlist"`
-	Skills                   []SkillEvidence       `json:"skills"`
-	RuntimeModes             []RuntimeModeEvidence `json:"runtime_modes"`
-	MissingOneNegativeTwin   string                `json:"missing_one_negative_twin"`
-	NoAuthentication         bool                  `json:"no_authentication"`
-	NoExternalModelNetwork   bool                  `json:"no_external_model_network"`
-	NoDeploy                 bool                  `json:"no_deploy"`
-	NativeSkillToolObserved  bool                  `json:"native_skill_tool_observed"`
-	NoUpstreamEffects        bool                  `json:"no_upstream_effects"`
+	SchemaVersion            int                                    `json:"schema_version"`
+	RunID                    string                                 `json:"run_id"`
+	ObservedAt               time.Time                              `json:"observed_at"`
+	PackyRef                 string                                 `json:"packy_ref"`
+	PackySHA                 string                                 `json:"packy_sha"`
+	VercelFixtureSHA256      string                                 `json:"vercel_fixture_sha256"`
+	OpenCodeVersion          string                                 `json:"opencode_version"`
+	OpenCodeArchiveSHA256    string                                 `json:"opencode_archive_sha256"`
+	OpenCodeExecutableSHA256 string                                 `json:"opencode_executable_sha256"`
+	SandboxRoots             []string                               `json:"sandbox_roots"`
+	CommandAllowlist         []string                               `json:"command_allowlist"`
+	Skills                   []SkillEvidence                        `json:"skills"`
+	RuntimeModes             []RuntimeModeEvidence                  `json:"runtime_modes"`
+	SemanticRerun            vercelacceptance.SemanticRerunEvidence `json:"semantic_rerun"`
+	Mutation                 vercelacceptance.MutationObservation   `json:"mutation_observation"`
+	MissingOneNegativeTwin   string                                 `json:"missing_one_negative_twin"`
+	NoAuthentication         bool                                   `json:"no_authentication"`
+	NoExternalModelNetwork   bool                                   `json:"no_external_model_network"`
+	NoDeploy                 bool                                   `json:"no_deploy"`
+	NativeSkillToolObserved  bool                                   `json:"native_skill_tool_observed"`
+	NoUpstreamEffects        bool                                   `json:"no_upstream_effects"`
 }
 
 type expectedSkill struct{ name, source, target, content string }
@@ -94,6 +96,10 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		}
 	}
 	if err := materialize(bundle); err != nil {
+		return Evidence{}, err
+	}
+	bundleBefore, err := localprojection.FingerprintTree(bundle)
+	if err != nil {
 		return Evidence{}, err
 	}
 	fixture := vercelacceptance.Canonical()
@@ -140,6 +146,26 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	listed, err := parseSkills(raw)
 	if err != nil {
 		return Evidence{}, err
+	}
+	firstSemantic, err := openCodeDiscoveryDigest(listed, expected, sandbox)
+	if err != nil {
+		return Evidence{}, err
+	}
+	rawRerun, err := runHost(ctx, cfg, home, xdg, work, "debug", "skill", "--pure")
+	if err != nil {
+		return Evidence{}, err
+	}
+	listedRerun, err := parseSkills(rawRerun)
+	if err != nil {
+		return Evidence{}, err
+	}
+	secondSemantic, err := openCodeDiscoveryDigest(listedRerun, expected, sandbox)
+	if err != nil {
+		return Evidence{}, err
+	}
+	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
+	if !semanticRerun.Valid() {
+		return Evidence{}, errors.New("OpenCode semantic discovery rerun differed")
 	}
 	skills := make([]SkillEvidence, 0, 9)
 	for _, want := range expected {
@@ -191,7 +217,15 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, err
 	}
-	ev := Evidence{SchemaVersion: 2, RunID: cfg.RunID, ObservedAt: time.Now().UTC(), PackyRef: cfg.PackyRef, PackySHA: cfg.PackySHA, VercelFixtureSHA256: vercelacceptance.ExactArchiveSHA256, OpenCodeVersion: strings.TrimSpace(string(versionOut)), OpenCodeArchiveSHA256: cfg.Integrity, OpenCodeExecutableSHA256: executableSHA, SandboxRoots: []string{"$SANDBOX/home", "$SANDBOX/xdg", "$SANDBOX/data", "$SANDBOX/cache", "$SANDBOX/state", "$SANDBOX/bundle", "$SANDBOX/work"}, CommandAllowlist: []string{"opencode --version", "opencode debug skill --pure", "opencode acp --cwd $SANDBOX/work --pure"}, Skills: skills, RuntimeModes: modes, MissingOneNegativeTwin: missing, NoAuthentication: true, NoExternalModelNetwork: true, NoDeploy: true, NativeSkillToolObserved: true, NoUpstreamEffects: true}
+	bundleAfter, err := localprojection.FingerprintTree(bundle)
+	if err != nil {
+		return Evidence{}, err
+	}
+	mutation := vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: bundleBefore, AfterSHA256: bundleAfter, AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: bundleBefore == bundleAfter}
+	if !mutation.Valid() {
+		return Evidence{}, errors.New("OpenCode host mutated the immutable fixture bundle")
+	}
+	ev := Evidence{SchemaVersion: 2, RunID: cfg.RunID, ObservedAt: time.Now().UTC(), PackyRef: cfg.PackyRef, PackySHA: cfg.PackySHA, VercelFixtureSHA256: vercelacceptance.ExactArchiveSHA256, OpenCodeVersion: strings.TrimSpace(string(versionOut)), OpenCodeArchiveSHA256: cfg.Integrity, OpenCodeExecutableSHA256: executableSHA, SandboxRoots: []string{"$SANDBOX/home", "$SANDBOX/xdg", "$SANDBOX/data", "$SANDBOX/cache", "$SANDBOX/state", "$SANDBOX/bundle", "$SANDBOX/work"}, CommandAllowlist: []string{"opencode --version", "opencode debug skill --pure", "opencode acp --cwd $SANDBOX/work --pure"}, Skills: skills, RuntimeModes: modes, SemanticRerun: semanticRerun, Mutation: mutation, MissingOneNegativeTwin: missing, NoAuthentication: true, NoExternalModelNetwork: true, NoDeploy: true, NativeSkillToolObserved: true, NoUpstreamEffects: true}
 	if err := validateArtifactIdentity(ev.RunID, ev.ObservedAt); err != nil {
 		return Evidence{}, err
 	}
@@ -207,6 +241,25 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		return Evidence{}, err
 	}
 	return ev, nil
+}
+
+func openCodeDiscoveryDigest(listed map[string]discoveredSkill, expected []expectedSkill, sandbox string) (string, error) {
+	type row struct{ Name, Location, Content string }
+	rows := make([]row, 0, len(expected))
+	for _, want := range expected {
+		got, ok := listed[want.name]
+		if !ok {
+			return "", fmt.Errorf("OpenCode semantic discovery omitted %s", want.name)
+		}
+		rows = append(rows, row{want.name, sanitize(got.location, sandbox), got.content})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+	data, err := json.Marshal(rows)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func validateArtifactIdentity(runID string, observedAt time.Time) error {

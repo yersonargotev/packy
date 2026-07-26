@@ -329,6 +329,9 @@ func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *t
 		}
 	}
 	script := filepath.Join(root, "scripts", "gate-vercel-acceptance.sh")
+	if !strings.Contains(readFile(t, script), "status --porcelain --untracked-files=normal") {
+		t.Fatal("Vercel gate must bind execution to a clean exact-candidate checkout")
+	}
 	if output, err := exec.Command("bash", "-n", script).CombinedOutput(); err != nil {
 		t.Fatalf("bash -n Vercel gate: %v\n%s", err, output)
 	}
@@ -358,10 +361,15 @@ func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testi
 		`git status --porcelain --untracked-files=normal`,
 		`for rerun in first second`, `go test "$package" -run "^${test}$" -count=1 -v`,
 		`cmp -s "$work/$row.$proof.first.txt" "$work/$row.$proof.second.txt"`,
-		`printf 'matrix_version\tvercel-acceptance-v1\n'`,
+		`--foundation-manifest`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("Vercel foundation missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{vercelacceptance.AcceptanceMatrixVersion, vercelacceptance.ExactArchiveSHA256} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("foundation script duplicates domain identity %q", forbidden)
 		}
 	}
 	authority := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))

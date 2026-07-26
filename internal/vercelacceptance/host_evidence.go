@@ -19,24 +19,50 @@ type HostEvidenceSet struct {
 	Claude   HostEvidence `json:"claude"`
 }
 
+type SemanticRerunEvidence struct {
+	FirstSHA256  string `json:"first_sha256"`
+	SecondSHA256 string `json:"second_sha256"`
+	ExactMatch   bool   `json:"exact_match"`
+}
+
+func (e SemanticRerunEvidence) Valid() bool {
+	return e.ExactMatch && lowerHexDigest(e.FirstSHA256) && e.FirstSHA256 == e.SecondSHA256
+}
+
+type MutationObservation struct {
+	Root              string   `json:"root"`
+	BeforeSHA256      string   `json:"before_sha256"`
+	AfterSHA256       string   `json:"after_sha256"`
+	AllowedChanges    []string `json:"allowed_changes"`
+	ChangedPaths      []string `json:"changed_paths"`
+	ZeroMutationExact bool     `json:"zero_mutation_exact"`
+}
+
+func (e MutationObservation) Valid() bool {
+	return e.Root == "$SANDBOX/bundle" && e.ZeroMutationExact && lowerHexDigest(e.BeforeSHA256) &&
+		e.BeforeSHA256 == e.AfterSHA256 && len(e.AllowedChanges) == 0 && len(e.ChangedPaths) == 0
+}
+
 // HostEvidence is the intentionally narrow, portable projection of a host
 // smoke artifact. Each adapter must populate it from that host's own artifact.
 type HostEvidence struct {
-	Host                    Host      `json:"host"`
-	Version                 string    `json:"version"`
-	CandidateSHA            string    `json:"candidate_sha"`
-	FixtureSHA256           string    `json:"fixture_sha256"`
-	RunID                   string    `json:"run_id"`
-	ObservedAt              time.Time `json:"observed_at"`
-	Skills                  []string  `json:"skills"`
-	RuntimeModes            []string  `json:"runtime_modes"`
-	MissingOne              string    `json:"missing_one_negative_twin"`
-	MissingOneObservedCount int       `json:"missing_one_observed_count"`
-	DisposableSandbox       bool      `json:"disposable_sandbox"`
-	NoSecrets               bool      `json:"no_secrets"`
-	NoDeploy                bool      `json:"no_deploy"`
-	NoUpstreamEffects       bool      `json:"no_upstream_effects"`
-	EvidenceFingerprint     string    `json:"evidence_fingerprint"`
+	Host                    Host                  `json:"host"`
+	Version                 string                `json:"version"`
+	CandidateSHA            string                `json:"candidate_sha"`
+	FixtureSHA256           string                `json:"fixture_sha256"`
+	RunID                   string                `json:"run_id"`
+	ObservedAt              time.Time             `json:"observed_at"`
+	Skills                  []string              `json:"skills"`
+	RuntimeModes            []string              `json:"runtime_modes"`
+	MissingOne              string                `json:"missing_one_negative_twin"`
+	MissingOneObservedCount int                   `json:"missing_one_observed_count"`
+	SemanticRerun           SemanticRerunEvidence `json:"semantic_rerun"`
+	Mutation                MutationObservation   `json:"mutation_observation"`
+	DisposableSandbox       bool                  `json:"disposable_sandbox"`
+	NoSecrets               bool                  `json:"no_secrets"`
+	NoDeploy                bool                  `json:"no_deploy"`
+	NoUpstreamEffects       bool                  `json:"no_upstream_effects"`
+	EvidenceFingerprint     string                `json:"evidence_fingerprint"`
 }
 
 func FingerprintHostEvidence(e HostEvidence) string {
@@ -87,7 +113,38 @@ func validateHost(candidate, runID string, now time.Time, maxAge time.Duration, 
 	if !found || e.MissingOneObservedCount != len(wantSkills)-1 {
 		return errors.New("invalid missing-one negative twin")
 	}
+	if !e.SemanticRerun.Valid() {
+		return errors.New("invalid semantic rerun evidence")
+	}
+	if !e.Mutation.Valid() {
+		return errors.New("invalid zero-mutation observation")
+	}
 	return nil
+}
+
+func HostRowEvidence(candidateSHA, runID string, set HostEvidenceSet, artifactDigests map[Host]string) ([]RowEvidence, error) {
+	byHost := map[Host]HostEvidence{
+		HostCodex: set.Codex, HostOpenCode: set.OpenCode, HostClaude: set.Claude,
+	}
+	var result []RowEvidence
+	for _, row := range HostRows() {
+		host, ok := byHost[row.Surface]
+		digest, hasDigest := artifactDigests[row.Surface]
+		if !ok || !hasDigest || !lowerHexDigest(digest) || host.CandidateSHA != candidateSHA || host.RunID != runID {
+			return nil, fmt.Errorf("%s host row evidence is incomplete", row.ID)
+		}
+		item := RowEvidence{
+			RowID: row.ID, CandidateSHA: candidateSHA, FixtureSHA256: ExactArchiveSHA256,
+			RunID: runID, ObservedAt: host.ObservedAt, Passed: true,
+			NegativeTwin:   host.MissingOne != "" && host.MissingOneObservedCount == len(host.Skills)-1,
+			Deterministic:  host.SemanticRerun.Valid(),
+			ZeroMutation:   host.Mutation.Valid(),
+			EvidenceSHA256: digest,
+		}
+		item.EvidenceFingerprint = FingerprintRowEvidence(item)
+		result = append(result, item)
+	}
+	return result, nil
 }
 
 func expectedHostInventory() ([]string, []string) {

@@ -26,6 +26,13 @@ func main() {
 		listFoundation(os.Stdout)
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "--foundation-manifest" {
+		if err := writeFoundationManifest(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -33,12 +40,45 @@ func main() {
 }
 
 func listFoundation(writer io.Writer) {
-	for _, row := range vercelacceptance.Rows() {
-		if row.ID == "VERCEL-ACCEPTANCE-17" || row.ID == "VERCEL-ACCEPTANCE-18" || row.ID == "VERCEL-ACCEPTANCE-19" {
-			continue
-		}
-		fmt.Fprintf(writer, "%s|%s|%s|%s\n", row.ID, row.EvidenceSeam, row.NegativeSeam, row.OracleSeam)
+	for _, row := range vercelacceptance.FoundationRows() {
+		proofs := row.FoundationProofs()
+		fmt.Fprintf(writer, "%s|%s|%s|%s\n", row.ID, proofs[0].Seam, proofs[1].Seam, proofs[2].Seam)
 	}
+}
+
+func writeFoundationManifest(args []string, reader io.Reader, writer io.Writer) error {
+	flags := flag.NewFlagSet("foundation-manifest", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var candidate, runID, observed string
+	flags.StringVar(&candidate, "candidate-sha", "", "")
+	flags.StringVar(&runID, "run-id", "", "")
+	flags.StringVar(&observed, "observed-at", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
+		return errors.New("invalid foundation manifest arguments")
+	}
+	observedAt, err := time.Parse(time.RFC3339, observed)
+	if err != nil {
+		return errors.New("foundation manifest requires an RFC3339 observation time")
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, evidenceLimit+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > evidenceLimit {
+		return errors.New("foundation digest rows exceed size limit")
+	}
+	rows, err := vercelacceptance.ParseFoundationDigestRows(data)
+	if err != nil {
+		return err
+	}
+	manifest, err := vercelacceptance.CanonicalFoundationManifest(vercelacceptance.FoundationContext{
+		CandidateSHA: candidate, RunID: runID, ObservedAt: observedAt, Now: observedAt, MaxAge: time.Minute,
+	}, rows)
+	if err != nil {
+		return err
+	}
+	_, err = writer.Write(manifest)
+	return err
 }
 
 func run(args []string) error {
@@ -102,29 +142,16 @@ func run(args []string) error {
 		vercelacceptance.HostOpenCode: digestBytes(openCodeBytes),
 		vercelacceptance.HostClaude:   digestBytes(claudeBytes),
 	}
-	hostObserved := map[vercelacceptance.Host]time.Time{
-		vercelacceptance.HostCodex:    codex.ObservedAt,
-		vercelacceptance.HostOpenCode: openCode.ObservedAt,
-		vercelacceptance.HostClaude:   claude.ObservedAt,
-	}
 	ctx := vercelacceptance.CohortContext{
 		CandidateSHA: candidate, FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
 		RunID: runID, Now: observedAt, MaxAge: 15 * time.Minute,
 	}
-	rows := vercelacceptance.Rows()
 	evidence := append([]vercelacceptance.RowEvidence(nil), foundation...)
-	for _, row := range rows {
-		if row.ID != "VERCEL-ACCEPTANCE-17" && row.ID != "VERCEL-ACCEPTANCE-18" && row.ID != "VERCEL-ACCEPTANCE-19" {
-			continue
-		}
-		item := vercelacceptance.RowEvidence{
-			RowID: row.ID, CandidateSHA: candidate, FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
-			RunID: runID, ObservedAt: hostObserved[row.Surface], Passed: true, NegativeTwin: true,
-			Deterministic: true, ZeroMutation: true, EvidenceSHA256: hostDigests[row.Surface],
-		}
-		item.EvidenceFingerprint = vercelacceptance.FingerprintRowEvidence(item)
-		evidence = append(evidence, item)
+	hostRows, err := vercelacceptance.HostRowEvidence(candidate, runID, set, hostDigests)
+	if err != nil {
+		return err
 	}
+	evidence = append(evidence, hostRows...)
 	report, err := vercelacceptance.Evaluate(ctx, evidence)
 	if err != nil {
 		return err
@@ -181,95 +208,33 @@ func loadFoundation(root, candidate, runID string, now time.Time) ([]vercelaccep
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(strings.TrimSpace(string(manifest)), "\n")
-	if len(lines) != 27 {
-		return nil, errors.New("manifest must contain six identity facts and 21 rows")
-	}
-	wantIdentity := []string{
-		"schema_version\t1",
-		"matrix_version\t" + vercelacceptance.AcceptanceMatrixVersion,
-		"candidate_sha\t" + candidate,
-		"fixture_sha256\t" + vercelacceptance.ExactArchiveSHA256,
-		"run_id\t" + runID,
-	}
-	for i, want := range wantIdentity {
-		if lines[i] != want {
-			return nil, errors.New("manifest identity is mixed")
-		}
-	}
-	observedParts := strings.Split(lines[5], "\t")
-	if len(observedParts) != 2 || observedParts[0] != "observed_at" {
-		return nil, errors.New("manifest observation time is absent")
-	}
-	observedAt, err := time.Parse(time.RFC3339, observedParts[1])
-	if err != nil || observedAt.After(now) || now.Sub(observedAt) > 15*time.Minute {
-		return nil, errors.New("identity is mixed or stale")
-	}
-	digests := make(map[string][3]string, 21)
-	for _, line := range lines[6:] {
-		parts := strings.Split(line, "\t")
-		if len(parts) != 5 || parts[0] != "row" {
-			return nil, errors.New("malformed foundation manifest row")
-		}
-		if _, duplicate := digests[parts[1]]; duplicate {
-			return nil, errors.New("duplicate foundation manifest row")
-		}
-		digests[parts[1]] = [3]string{parts[2], parts[3], parts[4]}
-	}
-	var result []vercelacceptance.RowEvidence
-	for _, row := range vercelacceptance.Rows() {
-		if row.ID == "VERCEL-ACCEPTANCE-17" || row.ID == "VERCEL-ACCEPTANCE-18" || row.ID == "VERCEL-ACCEPTANCE-19" {
-			continue
-		}
-		rowDigests, ok := digests[row.ID]
-		if !ok {
-			return nil, fmt.Errorf("%s manifest row is absent", row.ID)
-		}
-		seams := []string{row.EvidenceSeam, row.NegativeSeam, row.OracleSeam}
-		proofs := []string{"positive", "negative", "oracle"}
-		var proofBytes []byte
-		for i, proof := range proofs {
-			first, err := readEvidenceFile(filepath.Join(root, row.ID+"."+proof+".first.txt"))
+	var artifacts []vercelacceptance.FoundationRowProofs
+	for _, row := range vercelacceptance.FoundationRows() {
+		artifact := vercelacceptance.FoundationRowProofs{RowID: row.ID}
+		for _, proof := range row.FoundationProofs() {
+			firstName, err := vercelacceptance.FoundationProofFilename(row.ID, proof.Kind, "first")
 			if err != nil {
 				return nil, err
 			}
-			second, err := readEvidenceFile(filepath.Join(root, row.ID+"."+proof+".second.txt"))
+			secondName, err := vercelacceptance.FoundationProofFilename(row.ID, proof.Kind, "second")
 			if err != nil {
 				return nil, err
 			}
-			if string(first) != string(second) {
-				return nil, fmt.Errorf("%s %s deterministic rerun changed", row.ID, proof)
+			first, err := readEvidenceFile(filepath.Join(root, firstName))
+			if err != nil {
+				return nil, err
 			}
-			if digestBytes(first) != rowDigests[i] {
-				return nil, fmt.Errorf("%s %s digest does not match manifest", row.ID, proof)
+			second, err := readEvidenceFile(filepath.Join(root, secondName))
+			if err != nil {
+				return nil, err
 			}
-			seam := seams[i]
-			slash := strings.LastIndex(seam, "/")
-			if slash < 0 || !strings.HasPrefix(seam, "./internal/") {
-				return nil, fmt.Errorf("%s has invalid owning seam", row.ID)
-			}
-			identity := "@identity\t" + candidate + "\t" + runID + "\t" + observedAt.Format(time.RFC3339) + "\t" + seam + "\n"
-			if !strings.HasPrefix(string(first), identity) {
-				return nil, fmt.Errorf("%s %s proof identity is mixed", row.ID, proof)
-			}
-			test := seam[slash+1:]
-			text := strings.TrimPrefix(string(first), identity)
-			if strings.Count(text, "=== RUN   "+test+"\n") != 1 ||
-				strings.Count(text, "--- PASS: "+test+" (duration)\n") != 1 {
-				return nil, fmt.Errorf("%s lacks exact %s RUN/PASS proof", row.ID, proof)
-			}
-			proofBytes = append(proofBytes, first...)
-			proofBytes = append(proofBytes, 0)
+			artifact.Proofs = append(artifact.Proofs, vercelacceptance.FoundationProofRuns{
+				Kind: proof.Kind, First: first, Second: second,
+			})
 		}
-		item := vercelacceptance.RowEvidence{
-			RowID: row.ID, CandidateSHA: candidate, FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
-			RunID: runID, ObservedAt: observedAt, Passed: true, NegativeTwin: true,
-			Deterministic: true, ZeroMutation: true, EvidenceSHA256: digestBytes(proofBytes),
-		}
-		item.EvidenceFingerprint = vercelacceptance.FingerprintRowEvidence(item)
-		result = append(result, item)
+		artifacts = append(artifacts, artifact)
 	}
-	return result, nil
+	return vercelacceptance.ValidateFoundationEvidence(candidate, runID, now, 15*time.Minute, manifest, artifacts)
 }
 
 func readEvidenceFile(path string) ([]byte, error) {
@@ -302,6 +267,7 @@ func normalizeCodex(candidate, runID string, raw codexsmoke.Evidence) (vercelacc
 		Host: vercelacceptance.HostCodex, Version: vercelacceptance.ExactCodexVersion, CandidateSHA: candidate,
 		FixtureSHA256: raw.VercelFixtureSHA256, RunID: raw.RunID, ObservedAt: raw.ObservedAt,
 		MissingOne: raw.MissingOneNegativeTwin, MissingOneObservedCount: 8,
+		SemanticRerun: raw.SemanticRerun, Mutation: raw.Mutation,
 		DisposableSandbox: true, NoSecrets: true, NoDeploy: true, NoUpstreamEffects: true,
 	}
 	for _, skill := range raw.Skills {
@@ -335,6 +301,7 @@ func normalizeOpenCode(candidate, runID string, raw opencodesmoke.Evidence) (ver
 		Host: vercelacceptance.HostOpenCode, Version: vercelacceptance.ExactOpenCodeVersion, CandidateSHA: candidate,
 		FixtureSHA256: raw.VercelFixtureSHA256, RunID: raw.RunID, ObservedAt: raw.ObservedAt,
 		MissingOne: raw.MissingOneNegativeTwin, MissingOneObservedCount: 8,
+		SemanticRerun: raw.SemanticRerun, Mutation: raw.Mutation,
 		DisposableSandbox: true, NoSecrets: true, NoDeploy: true, NoUpstreamEffects: true,
 	}
 	for _, skill := range raw.Skills {
@@ -364,6 +331,7 @@ func normalizeClaude(candidate, runID string, raw claudesmoke.VercelEvidence) (v
 		Host: vercelacceptance.HostClaude, Version: vercelacceptance.ExactClaudeVersion, CandidateSHA: candidate,
 		FixtureSHA256: raw.FixtureSHA256, RunID: raw.RunID, ObservedAt: raw.ObservedAt,
 		MissingOne: raw.Skills[0].Name, MissingOneObservedCount: raw.MissingOne.UserSkillDirCommands,
+		SemanticRerun: raw.SemanticRerun, Mutation: raw.Mutation,
 		DisposableSandbox: true, NoSecrets: true, NoDeploy: true, NoUpstreamEffects: true,
 	}
 	for _, skill := range raw.Skills {
