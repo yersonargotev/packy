@@ -14,7 +14,7 @@ import (
 )
 
 func TestVercelCollisionRequiresExplicitAliasBeforeMutation(t *testing.T) {
-	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
 		t.Run(string(surface), func(t *testing.T) {
 			testVercelCollisionRequiresExplicitAliasBeforeMutation(t, surface)
 		})
@@ -97,7 +97,7 @@ func testVercelCollisionRequiresExplicitAliasBeforeMutation(t *testing.T, surfac
 }
 
 func TestVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.T) {
-	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
 		t.Run(string(surface), func(t *testing.T) {
 			testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t, surface)
 		})
@@ -289,6 +289,10 @@ func materializeVercelAcceptanceArchive(t *testing.T, bundle string) {
 
 func completeVercelObservation(pack Pack, observed string, surface Surface) SurfaceInspection {
 	inspection := SurfaceInspection{Revision: "vercel-" + string(surface) + "-host"}
+	actionKind := ActionSkillLink
+	if surface == SurfaceOpenCode {
+		actionKind = ActionOpenCodeSkillLink
+	}
 	for _, resource := range pack.Resources {
 		for _, binding := range resource.Bindings {
 			if binding.Surface != surface {
@@ -297,7 +301,7 @@ func completeVercelObservation(pack Pack, observed string, surface Surface) Surf
 			inspection.Projections = append(inspection.Projections, ObservedProjection{
 				ID: "skill:" + binding.Name, Goal: ProjectionPresent,
 				Exists: observed == "desired", ObservedFingerprint: observed, DesiredFingerprint: "desired",
-				Action: ProjectionAction{ID: "skill:" + binding.Name, Kind: ActionSkillLink, Description: "project " + resource.ID},
+				Action: ProjectionAction{ID: "skill:" + binding.Name, Kind: actionKind, Description: "project " + resource.ID},
 			})
 		}
 	}

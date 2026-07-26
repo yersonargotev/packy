@@ -24,6 +24,7 @@ readonly packages=(
   ./internal/governancedrift
   ./internal/localprojection
   ./internal/opencode
+  ./internal/opencodesmoke
   ./internal/ownedcontainer
   ./internal/packclassification
   ./internal/packsync
@@ -37,6 +38,7 @@ readonly packages=(
   ./internal/tools/claudesmoke
   ./internal/tools/claudevercelsmoke
   ./internal/tools/codexsmoke
+  ./internal/tools/opencodesmoke
   ./internal/tools/governanceauth
   ./internal/tools/governancedrift
   ./internal/tools/syncpacksource

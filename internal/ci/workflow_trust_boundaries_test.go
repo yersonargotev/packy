@@ -305,6 +305,7 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"claude-floor-smoke":         {"contents": "read"},
 		"claude-vercel-floor-smoke":  {"contents": "read"},
 		"codex-floor-smoke":          {"contents": "read"},
+		"opencode-floor-smoke":       {"contents": "read"},
 		"addy-promotion-main-replay": {"contents": "read"},
 	},
 	".github/workflows/claude-canary.yml": {
