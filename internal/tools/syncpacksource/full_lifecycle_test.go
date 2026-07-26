@@ -66,6 +66,10 @@ func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t 
 	validateRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "publish")
 	gitForTest(t, filepath.Dir(validateRepo), "clone", "-q", base, validateRepo)
 	gitForTest(t, filepath.Dir(publishRepo), "clone", "-q", base, publishRepo)
+	for _, repository := range []string{validateRepo, publishRepo} {
+		gitForTest(t, repository, "config", "gc.auto", "0")
+		gitForTest(t, repository, "config", "maintenance.auto", "false")
+	}
 
 	oldSourceFactory, oldValidatorFactory, oldGatewayFactory := workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory
 	workflowSourceFactory = func() packsync.Source { return source }
