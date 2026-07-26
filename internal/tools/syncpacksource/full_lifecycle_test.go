@@ -16,6 +16,7 @@ import (
 )
 
 func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t *testing.T) {
+	clearPackyEnvironment(t)
 	root := repositoryRootForTest(t)
 	base := t.TempDir()
 	copyTreeForTest(t, filepath.Join(root, "bundle"), filepath.Join(base, "bundle"))
