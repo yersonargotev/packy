@@ -266,7 +266,7 @@ func (validator commandValidator) ValidateBundle(ctx context.Context, repository
 	}
 	defer os.RemoveAll(sandbox)
 	checkout := filepath.Join(sandbox, "repo")
-	if err := copyForValidation(repositoryRoot, checkout, bundleRoot); err != nil {
+	if err := copyForValidation(ctx, repositoryRoot, checkout, bundleRoot); err != nil {
 		return err
 	}
 	return validator.validate(ctx, checkout, true)
@@ -315,9 +315,11 @@ func withoutStagedValidationMarker(environment []string) []string {
 	return filtered
 }
 
-func copyForValidation(repositoryRoot, checkout, bundleRoot string) error {
-	if err := os.MkdirAll(checkout, 0o755); err != nil {
-		return err
+func copyForValidation(ctx context.Context, repositoryRoot, checkout, bundleRoot string) error {
+	clone := exec.CommandContext(ctx, "git", "-c", "init.templateDir=", "clone", "--quiet", "--shared", "--no-checkout", "--", repositoryRoot, checkout)
+	clone.Env = withoutCredentials(os.Environ())
+	if output, err := clone.CombinedOutput(); err != nil {
+		return fmt.Errorf("clone disposable validation checkout: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	entries, err := os.ReadDir(repositoryRoot)
 	if err != nil {

@@ -77,7 +77,9 @@ func TestCommandValidatorRunsStagedBundleFromCopiedRepositoryWithSandboxedConfig
 	}
 	script := `#!/usr/bin/env bash
 set -euo pipefail
-test "$(cat bundle/identity)" = "staged"
+test "$(git rev-parse --verify HEAD)" = "${EXPECTED_HEAD}"
+test "${PWD}" != "${SOURCE_REPOSITORY}"
+test "$(cat bundle/identity)" = "${EXPECTED_BUNDLE}"
 test "${PACKY_VALIDATION_STAGED:-}" = "1"
 test "${HOME}" != "${OPERATOR_HOME}"
 test "${XDG_CONFIG_HOME}" != "${OPERATOR_XDG}"
@@ -89,6 +91,14 @@ printf validated > "${XDG_CONFIG_HOME}/proof"
 	if err := os.WriteFile(filepath.Join(repository, "scripts", "validate-packy.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	gitForTest(t, repository, "init", "-q")
+	gitForTest(t, repository, "config", "user.name", "fixture")
+	gitForTest(t, repository, "config", "user.email", "fixture@example.com")
+	gitForTest(t, repository, "add", ".")
+	gitForTest(t, repository, "commit", "-qm", "base")
+	sourceHead := strings.TrimSpace(gitForTest(t, repository, "rev-parse", "HEAD"))
+	sourceTree := strings.TrimSpace(gitForTest(t, repository, "rev-parse", "HEAD^{tree}"))
+	sourceStatus := gitForTest(t, repository, "status", "--porcelain")
 
 	operatorHome := filepath.Join(t.TempDir(), "operator-home")
 	operatorXDG := filepath.Join(t.TempDir(), "operator-xdg")
@@ -98,16 +108,28 @@ printf validated > "${XDG_CONFIG_HOME}/proof"
 	t.Setenv("OPERATOR_XDG", operatorXDG)
 	t.Setenv("GITHUB_TOKEN", "must-not-reach-validator")
 	t.Setenv("PACKY_VALIDATION_STAGED", "hostile-inherited-value")
+	t.Setenv("EXPECTED_HEAD", sourceHead)
+	t.Setenv("SOURCE_REPOSITORY", repository)
+	t.Setenv("EXPECTED_BUNDLE", "staged")
 
 	if err := (commandValidator{}).ValidateBundle(context.Background(), repository, staged); err != nil {
 		t.Fatal(err)
 	}
-	productionScript := strings.Replace(script, `= "staged"`, `= "production"`, 1)
-	if err := os.WriteFile(filepath.Join(repository, "scripts", "validate-packy.sh"), []byte(productionScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("EXPECTED_BUNDLE", "production")
 	if err := (commandValidator{}).ValidateBundle(context.Background(), repository, filepath.Join(repository, "bundle")); err != nil {
 		t.Fatalf("production bundle validation did not use a disposable checkout: %v", err)
+	}
+	if got := strings.TrimSpace(gitForTest(t, repository, "rev-parse", "HEAD")); got != sourceHead {
+		t.Fatalf("source HEAD changed: got %s want %s", got, sourceHead)
+	}
+	if got := strings.TrimSpace(gitForTest(t, repository, "rev-parse", "HEAD^{tree}")); got != sourceTree {
+		t.Fatalf("source tree changed: got %s want %s", got, sourceTree)
+	}
+	if got := gitForTest(t, repository, "status", "--porcelain"); got != sourceStatus {
+		t.Fatalf("source status changed: got %q want %q", got, sourceStatus)
+	}
+	if got, err := os.ReadFile(filepath.Join(repository, "bundle", "identity")); err != nil || string(got) != "production\n" {
+		t.Fatalf("production bundle changed: %q, %v", got, err)
 	}
 	for _, path := range []string{operatorHome, operatorXDG} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
@@ -182,8 +204,13 @@ func TestCopyForValidationExcludesOnlyPackyTransactionArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(selectedBundle, "identity"), []byte("selected"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	gitForTest(t, repository, "init", "-q")
+	gitForTest(t, repository, "config", "user.name", "fixture")
+	gitForTest(t, repository, "config", "user.email", "fixture@example.com")
+	gitForTest(t, repository, "add", ".")
+	gitForTest(t, repository, "commit", "-qm", "base")
 
-	if err := copyForValidation(repository, checkout, selectedBundle); err != nil {
+	if err := copyForValidation(context.Background(), repository, checkout, selectedBundle); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{".ordinary-hidden", ".packy-bundle-marker-example.tmp", "bundle/identity"} {
