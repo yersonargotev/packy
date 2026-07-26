@@ -92,7 +92,7 @@ printf validated > "${XDG_CONFIG_HOME}/proof"
 	if err := os.WriteFile(filepath.Join(repository, "scripts", "validate-packy.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitForTest(t, repository, "init", "-q")
+	initForTest(t, repository)
 	gitForTest(t, repository, "config", "user.name", "fixture")
 	gitForTest(t, repository, "config", "user.email", "fixture@example.com")
 	gitForTest(t, repository, "add", ".")
@@ -206,7 +206,7 @@ func TestCopyForValidationExcludesOnlyPackyTransactionArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(selectedBundle, "identity"), []byte("selected"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitForTest(t, repository, "init", "-q")
+	initForTest(t, repository)
 	gitForTest(t, repository, "config", "user.name", "fixture")
 	gitForTest(t, repository, "config", "user.email", "fixture@example.com")
 	gitForTest(t, repository, "add", ".")
@@ -394,7 +394,7 @@ func prepareInspectFixture(t *testing.T) (string, string, packsync.Lock) {
 	}
 	var lock packsync.Lock
 	readJSONForTest(t, filepath.Join(repository, "bundle", "sources/mattpocock-skills.lock.json"), &lock)
-	gitForTest(t, repository, "init", "-q")
+	initForTest(t, repository)
 	gitForTest(t, repository, "config", "user.name", "fixture")
 	gitForTest(t, repository, "config", "user.email", "fixture@example.com")
 	gitForTest(t, repository, "add", ".")

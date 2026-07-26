@@ -63,7 +63,7 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 		t.Fatal(err)
 	}
 	encodedMembers, _ := json.Marshal(members)
-	gitForTest(t, base, "init", "-q")
+	initForTest(t, base)
 	gitForTest(t, base, "config", "user.name", "fixture")
 	gitForTest(t, base, "config", "user.email", "fixture@example.com")
 	gitForTest(t, base, "config", "maintenance.auto", "false")

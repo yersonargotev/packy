@@ -57,7 +57,7 @@ func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t 
 	candidate.TagObjects = []packsync.TagObject{{SHA: candidate.TagRefSHA, Name: release.Tag, TargetSHA: candidate.Commit, TargetType: "commit", Verification: packsync.Verification{Reason: "unsigned"}}}
 	source := &sandboxSource{root: snapshot, oldRoot: oldSnapshot, oldCandidate: lock.Candidate, candidate: candidate}
 
-	gitForTest(t, base, "init", "-q")
+	initForTest(t, base)
 	gitForTest(t, base, "config", "user.name", "fixture")
 	gitForTest(t, base, "config", "user.email", "fixture@example.com")
 	gitForTest(t, base, "add", ".")
@@ -254,7 +254,14 @@ func gitForTest(t *testing.T, directory string, args ...string) string {
 
 func cloneForTest(t *testing.T, source, destination string) {
 	t.Helper()
-	gitForTest(t, filepath.Dir(destination), "clone", "-q", source, destination)
+	gitForTest(t, filepath.Dir(destination), "clone", "-q", "--no-hardlinks", source, destination)
 	gitForTest(t, destination, "config", "gc.auto", "0")
 	gitForTest(t, destination, "config", "maintenance.auto", "false")
+}
+
+func initForTest(t *testing.T, repository string) {
+	t.Helper()
+	gitForTest(t, repository, "init", "-q")
+	gitForTest(t, repository, "config", "gc.auto", "0")
+	gitForTest(t, repository, "config", "maintenance.auto", "false")
 }

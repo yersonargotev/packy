@@ -62,7 +62,7 @@ func TestAddyRegistrationTracerProvesExactEndToEndAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gitForTest(t, base, "init", "-q")
+	initForTest(t, base)
 	gitForTest(t, base, "config", "user.name", "fixture")
 	gitForTest(t, base, "config", "user.email", "fixture@example.com")
 	gitForTest(t, base, "add", ".")
