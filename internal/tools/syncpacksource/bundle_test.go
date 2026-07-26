@@ -65,6 +65,10 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	gitForTest(t, base, "init", "-q")
 	gitForTest(t, base, "config", "user.name", "fixture")
 	gitForTest(t, base, "config", "user.email", "fixture@example.com")
+	gitForTest(t, base, "config", "maintenance.auto", "false")
+	if got := strings.TrimSpace(gitForTest(t, base, "config", "--get", "maintenance.auto")); got != "false" {
+		t.Fatalf("automatic Git maintenance remains enabled: %q", got)
+	}
 	gitForTest(t, base, "add", ".")
 	gitForTest(t, base, "commit", "-qm", "base")
 	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
