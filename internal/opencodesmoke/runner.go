@@ -43,6 +43,8 @@ type RuntimeModeEvidence struct {
 	Fallback              capabilitypack.RuntimeFallback      `json:"fallback"`
 	FallbackState         *capabilitypack.RuntimeModeState    `json:"fallback_state,omitempty"`
 	Affected              []string                            `json:"affected"`
+	SelectionObserved     bool                                `json:"selection_observed"`
+	InvocationAvailable   bool                                `json:"invocation_available"`
 	FailBeforeHostEffects bool                                `json:"fail_before_host_effects"`
 }
 type Evidence struct {
@@ -59,9 +61,10 @@ type Evidence struct {
 	RuntimeModes             []RuntimeModeEvidence `json:"runtime_modes"`
 	MissingOneNegativeTwin   string                `json:"missing_one_negative_twin"`
 	NoAuthentication         bool                  `json:"no_authentication"`
-	NoModelInvocation        bool                  `json:"no_model_invocation"`
+	NoExternalModelNetwork   bool                  `json:"no_external_model_network"`
 	NoDeploy                 bool                  `json:"no_deploy"`
-	NoSkillExecution         bool                  `json:"no_skill_execution"`
+	NativeSkillToolObserved  bool                  `json:"native_skill_tool_observed"`
+	NoUpstreamEffects        bool                  `json:"no_upstream_effects"`
 }
 
 type expectedSkill struct{ name, source, target, content string }
@@ -82,8 +85,8 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if within(sandbox, evidenceAbs) {
 		return Evidence{}, errors.New("evidence must be outside disposable sandbox")
 	}
-	home, xdg, bundle, work := filepath.Join(sandbox, "home"), filepath.Join(sandbox, "xdg"), filepath.Join(sandbox, "bundle"), filepath.Join(sandbox, "work")
-	for _, dir := range []string{home, xdg, bundle, work, filepath.Join(work, ".opencode", "skills")} {
+	home, xdg, xdgData, cache, state, bundle, work := filepath.Join(sandbox, "home"), filepath.Join(sandbox, "xdg"), filepath.Join(sandbox, "data"), filepath.Join(sandbox, "cache"), filepath.Join(sandbox, "state"), filepath.Join(sandbox, "bundle"), filepath.Join(sandbox, "work")
+	for _, dir := range []string{home, xdg, xdgData, cache, state, bundle, work, filepath.Join(work, ".opencode", "skills")} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return Evidence{}, err
 		}
@@ -155,6 +158,9 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 		skills = append(skills, SkillEvidence{want.name, sanitize(got.location, sandbox), fp, true})
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	if err := observeACPSelections(ctx, cfg, home, xdg, xdgData, cache, state, work, expected, modes); err != nil {
+		return Evidence{}, err
+	}
 	missing := expected[0].name
 	if err := os.Remove(expected[0].target); err != nil {
 		return Evidence{}, err
@@ -183,7 +189,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, err
 	}
-	ev := Evidence{1, cfg.PackyRef, cfg.PackySHA, vercelacceptance.ExactArchiveSHA256, strings.TrimSpace(string(versionOut)), cfg.Integrity, executableSHA, []string{"$SANDBOX/home", "$SANDBOX/xdg", "$SANDBOX/bundle", "$SANDBOX/work"}, []string{"opencode --version", "opencode debug skill --pure"}, skills, modes, missing, true, true, true, true}
+	ev := Evidence{SchemaVersion: 2, PackyRef: cfg.PackyRef, PackySHA: cfg.PackySHA, VercelFixtureSHA256: vercelacceptance.ExactArchiveSHA256, OpenCodeVersion: strings.TrimSpace(string(versionOut)), OpenCodeArchiveSHA256: cfg.Integrity, OpenCodeExecutableSHA256: executableSHA, SandboxRoots: []string{"$SANDBOX/home", "$SANDBOX/xdg", "$SANDBOX/data", "$SANDBOX/cache", "$SANDBOX/state", "$SANDBOX/bundle", "$SANDBOX/work"}, CommandAllowlist: []string{"opencode --version", "opencode debug skill --pure", "opencode acp --cwd $SANDBOX/work --pure"}, Skills: skills, RuntimeModes: modes, MissingOneNegativeTwin: missing, NoAuthentication: true, NoExternalModelNetwork: true, NoDeploy: true, NativeSkillToolObserved: true, NoUpstreamEffects: true}
 	data, err := json.MarshalIndent(ev, "", "  ")
 	if err != nil {
 		return Evidence{}, err
@@ -309,7 +315,7 @@ func openCodeInvocation(pack capabilitypack.Pack, resourceID string) string {
 func runHost(ctx context.Context, cfg Config, home, xdg, work string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, cfg.OpenCode, args...)
 	cmd.Dir = work
-	cmd.Env = []string{"HOME=" + home, "XDG_CONFIG_HOME=" + xdg, "PATH=" + cfg.SearchPath, "NO_COLOR=1", "OPENCODE_DISABLE_DEFAULT_SKILLS=true", "OPENCODE_DISABLE_EXTERNAL_SKILLS=true"}
+	cmd.Env = hostEnv(cfg.SearchPath, home, xdg, filepath.Join(home, ".local", "share"), filepath.Join(home, ".cache"), filepath.Join(home, ".local", "state"))
 	outFile, err := os.CreateTemp(work, "opencode-output-")
 	if err != nil {
 		return nil, err
@@ -379,4 +385,8 @@ func sanitize(path, sandbox string) string {
 		}
 	}
 	return filepath.Base(path)
+}
+
+func hostEnv(searchPath, home, xdg, data, cache, state string) []string {
+	return []string{"HOME=" + home, "XDG_CONFIG_HOME=" + xdg, "XDG_DATA_HOME=" + data, "XDG_CACHE_HOME=" + cache, "XDG_STATE_HOME=" + state, "PATH=" + searchPath, "NO_COLOR=1", "OPENCODE_DISABLE_DEFAULT_SKILLS=true", "OPENCODE_DISABLE_EXTERNAL_SKILLS=true"}
 }

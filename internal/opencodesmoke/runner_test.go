@@ -51,3 +51,13 @@ func TestSkillBodyMatchesOpenCodeLoadedContent(t *testing.T) {
 		t.Fatal("frontmatter leaked into the expected loaded body")
 	}
 }
+
+func TestCollectAvailableCommandsReadsACPUpdate(t *testing.T) {
+	got := map[string]bool{}
+	collectAvailableCommands(map[string]any{"method": "session/update", "params": map[string]any{"update": map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []any{map[string]any{"name": "/vercel-deploy"}, map[string]any{"name": "vercel-logs"}}}}}, got)
+	for _, name := range []string{"vercel-deploy", "vercel-logs"} {
+		if !got[name] {
+			t.Fatalf("ACP command %q not collected: %#v", name, got)
+		}
+	}
+}
