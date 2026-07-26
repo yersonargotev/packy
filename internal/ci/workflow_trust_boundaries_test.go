@@ -156,6 +156,18 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 		}
 	}
 
+	prepare := strings.Join(workflows["sync-pack-source.yml"].jobs["prepare"], "\n")
+	for _, marker := range []string{"inputs.prepare_only == true", "github.ref != 'refs/heads/main'", "contents: read", "pull-requests: read", "persist-credentials: false"} {
+		if !strings.Contains(prepare, marker) {
+			t.Errorf("sync-pack-source.yml job %q lacks read-only branch preparation boundary %q", "prepare", marker)
+		}
+	}
+	for _, forbidden := range []string{"contents: write", "pull-requests: write", "gh pr create", "gh pr edit", "gh pr ready", "git push", "gh pr comment"} {
+		if strings.Contains(prepare, forbidden) {
+			t.Errorf("sync-pack-source.yml job %q contains forbidden mutation capability %q", "prepare", forbidden)
+		}
+	}
+
 	for name, workflow := range workflows {
 		for _, forbidden := range []string{"pages: write", "actions/deploy-pages"} {
 			if strings.Contains(workflow.content, forbidden) {
@@ -342,10 +354,12 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"dependency-review": {"contents": "read"},
 	},
 	".github/workflows/sync-pack-source.yml": {
+		"admit":            {"contents": "read"},
 		"governance-drift": {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
 		"inspect":          {"contents": "read"},
 		"classify":         {"contents": "read", "models": "read"},
 		"validate":         {"contents": "read"},
+		"prepare":          {"contents": "read", "pull-requests": "read"},
 		"publish":          {"contents": "write", "pull-requests": "write"},
 	},
 }

@@ -276,6 +276,25 @@ type BundlePublicationArtifact struct {
 	InvalidationConditions  []string        `json:"invalidation_conditions"`
 }
 
+// BundlePreparationArtifact proves the complete read-only prefix of v3
+// publication without carrying pull-request or decision-readiness authority.
+type BundlePreparationArtifact struct {
+	SchemaVersion int `json:"schema_version"`
+	BundleArtifactIdentity
+	HeadSHA                 string          `json:"head_sha"`
+	ResultTreeSHA           string          `json:"result_tree_sha"`
+	BranchName              string          `json:"branch_name"`
+	ProvenanceSHA256        string          `json:"provenance_sha256"`
+	ManagedTitle            string          `json:"managed_title"`
+	ManagedMetadataHash     string          `json:"managed_metadata_hash"`
+	ObservedBaseSHA         string          `json:"observed_base_sha"`
+	Validation              ValidationGates `json:"validation"`
+	ObservationsStable      bool            `json:"observations_stable"`
+	RepositoryMutated       bool            `json:"repository_mutated"`
+	DecisionReady           bool            `json:"decision_ready"`
+	UpstreamContentExecuted bool            `json:"upstream_content_executed"`
+}
+
 func validateV3(schema int, identity BundleArtifactIdentity) error {
 	if schema != 3 {
 		return errors.New("bundle artifact requires schema version 3")
@@ -310,6 +329,20 @@ func (a BundleFailureArtifact) Validate() error {
 	}
 	if a.State != "blocked" || !validUniqueStrings(a.Blockers) || !validUniqueStrings(a.Recovery) {
 		return errors.New("v3 bundle failure is incomplete")
+	}
+	return nil
+}
+
+func (a BundlePreparationArtifact) Validate() error {
+	if err := validateV3(a.SchemaVersion, a.BundleArtifactIdentity); err != nil {
+		return err
+	}
+	if requireFullSHA("head", a.HeadSHA) != nil || requireFullSHA("result tree", a.ResultTreeSHA) != nil ||
+		a.BranchName != "sync/"+a.PackID || requireSHA256("provenance", a.ProvenanceSHA256) != nil ||
+		a.ManagedTitle == "" || requireSHA256("managed metadata", a.ManagedMetadataHash) != nil ||
+		a.ObservedBaseSHA != a.BaseSHA || !a.Validation.Complete() || !a.ObservationsStable ||
+		a.RepositoryMutated || a.DecisionReady || a.UpstreamContentExecuted {
+		return errors.New("v3 bundle preparation is incomplete or claims publication authority")
 	}
 	return nil
 }

@@ -92,6 +92,11 @@ on:
         description: Human evidence dispatch only; canonical bound evidence JSON
         required: false
         type: string
+      prepare_only:
+        description: V3 branch proof only; run through read-only publication preparation without repository writes
+        required: false
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -99,13 +104,35 @@ permissions: {}
 # and replaces only an older pending run. A promoted run starts at Inspect and
 # therefore performs a fresh Check rather than consuming the superseded plan.
 concurrency:
-  group: sync-pack-source-${{ inputs.pack_id || inputs.source_id }}
+  group: ${{ inputs.prepare_only && format('sync-pack-source-prepare-{0}-{1}', github.ref_name, inputs.pack_id || inputs.source_id) || format('sync-pack-source-{0}', inputs.pack_id || inputs.source_id) }}
   cancel-in-progress: false
 
 jobs:
+  admit:
+    name: Admit protected publication or read-only preparation
+    if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Enforce the ref, mode, and operation boundary
+        env:
+          PACKY_OPERATION: ${{ inputs.operation }}
+          PACKY_PREPARE_ONLY: ${{ inputs.prepare_only }}
+        run: |
+          set -euo pipefail
+          if [[ "$PACKY_PREPARE_ONLY" == "true" ]]; then
+            [[ "$GITHUB_REF" != "refs/heads/main" ]]
+            [[ "$GITHUB_REF" =~ ^refs/heads/(feat|fix|chore)/issue-[0-9]+-[a-z0-9-]+$ ]]
+            [[ "$PACKY_OPERATION" == "register_bundle" ]]
+          else
+            [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          fi
+
   governance-drift:
     name: Verify governance promotion boundary
-    if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: admit
+    if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.prepare_only == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -146,8 +173,8 @@ jobs:
 
   inspect:
     name: Inspect
-    needs: governance-drift
-    if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: [admit, governance-drift]
+    if: ${{ always() && github.repository == 'yersonargotev/packy' && needs.admit.result == 'success' && ((inputs.prepare_only == true && github.ref != 'refs/heads/main' && needs.governance-drift.result == 'skipped') || (inputs.prepare_only == false && github.ref == 'refs/heads/main' && needs.governance-drift.result == 'success')) }}
     runs-on: ubuntu-latest
     outputs:
       continue: ${{ steps.route.outputs.continue }}
@@ -198,6 +225,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Check out protected main as the preparation sandbox
+        if: inputs.prepare_only == true
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: main
+          path: packy-main
+          fetch-depth: 0
+          persist-credentials: false
       - name: Inspect with a fresh canonical Check
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -220,12 +255,20 @@ jobs:
           PACKY_EXPECTED_PLAN_ID: ${{ inputs.expected_plan_id }}
           PACKY_EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
           PACKY_HUMAN_EVIDENCE_JSON: ${{ inputs.human_evidence_json }}
+          PACKY_PREPARE_ONLY: ${{ inputs.prepare_only }}
         run: |
           export HOME="$RUNNER_TEMP/packy-home"
           export XDG_CONFIG_HOME="$RUNNER_TEMP/packy-xdg"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$RUNNER_TEMP/packy-sync/inspect"
-          go run ./internal/tools/syncpacksource --phase inspect \
-            --repository-root "$GITHUB_WORKSPACE" \
+          repository_root="$GITHUB_WORKSPACE"
+          syncpacksource=(go run ./internal/tools/syncpacksource)
+          if [[ "$PACKY_PREPARE_ONLY" == "true" ]]; then
+            go build -o "$RUNNER_TEMP/syncpacksource" ./internal/tools/syncpacksource
+            syncpacksource=("$RUNNER_TEMP/syncpacksource")
+            repository_root="$GITHUB_WORKSPACE/packy-main"
+          fi
+          "${syncpacksource[@]}" --phase inspect \
+            --repository-root "$repository_root" \
             --output "$RUNNER_TEMP/packy-sync/inspect"
       - name: Route the sealed inspection result
         id: route
@@ -249,7 +292,7 @@ jobs:
           name: pack-source-inspection-${{ github.run_id }}
           path: ${{ runner.temp }}/packy-sync/inspect/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: ${{ inputs.prepare_only && 30 || 1 }}
       - name: Upload canonical no-op result
         if: ${{ steps.route.outputs.noop == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -270,7 +313,7 @@ jobs:
   classify:
     name: Classify
     needs: inspect
-    if: ${{ needs.inspect.outputs.continue == 'true' }}
+    if: ${{ always() && needs.inspect.result == 'success' && needs.inspect.outputs.continue == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -302,6 +345,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Check out protected main as the preparation sandbox
+        if: inputs.prepare_only == true
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: main
+          path: packy-main
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: pack-source-inspection-${{ github.run_id }}
@@ -310,12 +361,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PACKY_CLASSIFICATION_MODE: ${{ inputs.classification_mode }}
+          PACKY_PREPARE_ONLY: ${{ inputs.prepare_only }}
         run: |
           export HOME="$RUNNER_TEMP/packy-home"
           export XDG_CONFIG_HOME="$RUNNER_TEMP/packy-xdg"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME"
-          go run ./internal/tools/syncpacksource --phase classify \
-            --repository-root "$GITHUB_WORKSPACE" \
+          repository_root="$GITHUB_WORKSPACE"
+          syncpacksource=(go run ./internal/tools/syncpacksource)
+          if [[ "$PACKY_PREPARE_ONLY" == "true" ]]; then
+            go build -o "$RUNNER_TEMP/syncpacksource" ./internal/tools/syncpacksource
+            syncpacksource=("$RUNNER_TEMP/syncpacksource")
+            repository_root="$GITHUB_WORKSPACE/packy-main"
+          fi
+          "${syncpacksource[@]}" --phase classify \
+            --repository-root "$repository_root" \
             --request "$RUNNER_TEMP/packy-sync/inspect/request.json" \
             --plan "$RUNNER_TEMP/packy-sync/inspect/plan.json" \
             --output "$RUNNER_TEMP/packy-sync/classification"
@@ -325,7 +384,7 @@ jobs:
           name: pack-source-classification-${{ github.run_id }}
           path: ${{ runner.temp }}/packy-sync/classification/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: ${{ inputs.prepare_only && 30 || 1 }}
       - name: Upload pre-publication operational artifact
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -338,6 +397,7 @@ jobs:
   validate:
     name: Validate sandbox
     needs: [inspect, classify]
+    if: ${{ always() && needs.inspect.result == 'success' && needs.classify.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -368,6 +428,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Check out protected main as the preparation sandbox
+        if: inputs.prepare_only == true
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: main
+          path: packy-main
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: pack-source-inspection-${{ github.run_id }}
@@ -379,16 +447,24 @@ jobs:
       - name: Apply in sandbox and run the complete Packy-owned suite
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PACKY_PREPARE_ONLY: ${{ inputs.prepare_only }}
         run: |
           export HOME="$RUNNER_TEMP/packy-home"
           export XDG_CONFIG_HOME="$RUNNER_TEMP/packy-xdg"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+          repository_root="$GITHUB_WORKSPACE"
+          syncpacksource=(go run ./internal/tools/syncpacksource)
+          if [[ "$PACKY_PREPARE_ONLY" == "true" ]]; then
+            go build -o "$RUNNER_TEMP/syncpacksource" ./internal/tools/syncpacksource
+            syncpacksource=("$RUNNER_TEMP/syncpacksource")
+            repository_root="$GITHUB_WORKSPACE/packy-main"
+          fi
           evidence="$RUNNER_TEMP/packy-sync/classification/classification.json"
           if jq -e '.schema_version == 3' "$RUNNER_TEMP/packy-sync/inspect/request.json" >/dev/null; then
             evidence="$RUNNER_TEMP/packy-sync/classification/classification-evidence.json"
           fi
-          go run ./internal/tools/syncpacksource --phase validate \
-            --repository-root "$GITHUB_WORKSPACE" \
+          "${syncpacksource[@]}" --phase validate \
+            --repository-root "$repository_root" \
             --request "$RUNNER_TEMP/packy-sync/inspect/request.json" \
             --plan "$RUNNER_TEMP/packy-sync/inspect/plan.json" \
             --evidence "$evidence" \
@@ -399,7 +475,7 @@ jobs:
           name: pack-source-validation-${{ github.run_id }}
           path: ${{ runner.temp }}/packy-sync/validation/validation.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: ${{ inputs.prepare_only && 30 || 1 }}
       - name: Upload validation failure artifact
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -409,10 +485,103 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  prepare:
+    name: Prepare publication without writes
+    needs: [inspect, classify, validate]
+    if: ${{ always() && inputs.prepare_only == true && github.ref != 'refs/heads/main' && needs.inspect.result == 'success' && needs.classify.result == 'success' && needs.validate.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Initialize fail-closed preparation artifact
+        env:
+          PACKY_PACK_ID: ${{ inputs.pack_id }}
+          PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}
+          PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
+          PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
+          PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/packy-sync/preparation"
+          members="$(jq -c '[.[] | {source_id:.registration.id,candidate_sha:.registration.selector.ref,legal_evidence_ref:.legal_admission.evidence_reference,legal_evidence_sha256:.legal_admission.evidence_sha256}]' <<<"$PACKY_REGISTRATIONS_JSON")"
+          source_ids="$(jq -c '[.[].source_id]' <<<"$members")"
+          jq -n --arg pack_id "$PACKY_PACK_ID" --argjson source_ids "$source_ids" \
+            --arg registration_bundle_sha256 "$PACKY_REGISTRATION_BUNDLE_SHA256" \
+            --arg proposed_version "$PACKY_PROPOSED_VERSION" \
+            --arg proposed_manifest_sha256 "$PACKY_PROPOSED_MANIFEST_SHA256" --argjson members "$members" \
+            '{schema_version:3,state:"blocked",pack_id:$pack_id,source_ids:$source_ids,
+              registration_bundle_sha256:$registration_bundle_sha256,
+              proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,
+              members:$members,blockers:["Read-only publication preparation did not finish."],
+              recovery:["Correct the branch implementation before merge, then start a fresh preparation-only dispatch."],
+              contains_secrets:false,contains_upstream_bytes:false}' \
+            > "$RUNNER_TEMP/packy-sync/preparation/operational-artifact.json"
+      - name: Check out issue-branch tool bytes
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Check out protected main as the preparation sandbox
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: main
+          path: packy-main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pack-source-inspection-${{ github.run_id }}
+          path: ${{ runner.temp }}/packy-sync/inspect
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pack-source-classification-${{ github.run_id }}
+          path: ${{ runner.temp }}/packy-sync/classification
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pack-source-validation-${{ github.run_id }}
+          path: ${{ runner.temp }}/packy-sync/validation
+      - name: Reacquire, Apply, validate, construct, and observe without writing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/packy-home"
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/packy-xdg"
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+          go build -o "$RUNNER_TEMP/syncpacksource" ./internal/tools/syncpacksource
+          "$RUNNER_TEMP/syncpacksource" --phase prepare \
+            --repository-root "$GITHUB_WORKSPACE/packy-main" \
+            --request "$RUNNER_TEMP/packy-sync/inspect/request.json" \
+            --plan "$RUNNER_TEMP/packy-sync/inspect/plan.json" \
+            --evidence "$RUNNER_TEMP/packy-sync/classification/classification-evidence.json" \
+            --validation "$RUNNER_TEMP/packy-sync/validation/validation.json" \
+            --output "$RUNNER_TEMP/packy-sync/preparation"
+      - name: Upload read-only preparation proof
+        if: ${{ success() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pack-source-preparation-${{ github.run_id }}
+          path: ${{ runner.temp }}/packy-sync/preparation/preparation.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload preparation failure artifact
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pack-source-failure-${{ github.run_id }}
+          path: ${{ runner.temp }}/packy-sync/preparation/operational-artifact.json
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     name: Publish
     needs: [inspect, classify, validate]
-    if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.prepare_only == false
     runs-on: ubuntu-latest
     permissions:
       contents: write

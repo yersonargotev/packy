@@ -46,6 +46,12 @@ maintainer skill can identify an identical pending run without exposing the
 reason or human evidence. Inspect recomputes and verifies it before admitting
 the request; a started run's `request.json` remains the owner-produced proof.
 
+The boolean `prepare_only` input is also transport-only. It is never part of a
+canonical synchronization request or its digest. `false` admits only protected
+`main` publication flow; `true` admits only a non-main approved issue branch,
+only for v3 `register_bundle`, and never enters production concurrency or
+publication authority.
+
 A version 3 request names one absent `pack_id`, at least two complete source
 registrations ordered by source ID, and `registration_bundle_sha256`. Each
 member binds only that Pack, uses an exact full-commit selector, and carries a
@@ -88,6 +94,8 @@ that actually starts begins at Inspect and executes a fresh canonical Check.
 The concurrency key is serialization, not freshness proof. Inspect seals the
 candidate, base, plan ID, provenance, configuration and selection observation.
 Publish must reobserve them immediately before its first write.
+Preparation-only runs use a separate branch-scoped concurrency group and can
+neither block nor supersede a production operation for the same Pack.
 
 ## Phases and permission boundary
 
@@ -165,6 +173,26 @@ around Packy-owned domain behavior.
 All phases set sandboxed `HOME` and `XDG_CONFIG_HOME`. Acquisitions, staged
 checkouts, generated state and filesystem writes remain under runner-owned
 temporary or checkout paths.
+
+### Premerge preparation — `contents: read`, `pull-requests: read`
+
+A preparation-only branch dispatch uses the issue branch's reviewed workflow
+and adapter bytes but performs every repository operation in a disposable
+checkout of the current protected `main`. It runs the exact v3 request through
+Inspect, real GitHub Models Classify, Validate, and a distinct Prepare job.
+Prepare independently reacquires every exact member, Applies, reruns the
+complete Packy-owned validation suite, seals and verifies the result tree,
+constructs the local proposal commit and managed metadata, revalidates
+provenance, and requires two identical read-only observations of live
+publication state.
+
+Prepare stops before the `PublicationGateway.Publish` and `Finalize` mutation
+methods. Its artifact records stable observation, proposal/tree identity,
+complete validation gates, `repository_mutated: false`, and
+`decision_ready: false`; it is proof that the pre-publication path executed, not
+a synchronization result or review authority. The branch job cannot push,
+create, edit, ready, or comment on a pull request, or share production
+concurrency. The write-capable Publish job remains protected-main-only.
 
 ## Retries and failures
 

@@ -196,6 +196,33 @@ func TestV3PublicationIdentityIsPackScoped(t *testing.T) {
 	}
 }
 
+func TestV3PreparationProvesReadOnlyNonAuthoritativeState(t *testing.T) {
+	artifact := BundlePreparationArtifact{
+		SchemaVersion: 3, BundleArtifactIdentity: bundleArtifactIdentity(),
+		HeadSHA: headA, ResultTreeSHA: treeA, BranchName: "sync/vercel",
+		ProvenanceSHA256: strings.Repeat("9", 64), ManagedTitle: "sync(vercel): composite registration",
+		ManagedMetadataHash: strings.Repeat("a", 64), ObservedBaseSHA: baseA,
+		Validation: completeValidationGates(), ObservationsStable: true,
+	}
+	if err := artifact.Validate(); err != nil {
+		t.Fatalf("valid preparation: %v", err)
+	}
+	for name, mutate := range map[string]func(*BundlePreparationArtifact){
+		"mutated repository": func(a *BundlePreparationArtifact) { a.RepositoryMutated = true },
+		"decision ready":     func(a *BundlePreparationArtifact) { a.DecisionReady = true },
+		"stale base":         func(a *BundlePreparationArtifact) { a.ObservedBaseSHA = candidateA },
+		"unstable state":     func(a *BundlePreparationArtifact) { a.ObservationsStable = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := artifact
+			mutate(&invalid)
+			if err := invalid.Validate(); err == nil {
+				t.Fatal("invalid preparation claimed read-only proof")
+			}
+		})
+	}
+}
+
 func bundleRegistrations() []BundleRegistration {
 	return []BundleRegistration{
 		{

@@ -63,7 +63,7 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 		t.Fatal(err)
 	}
 	encodedMembers, _ := json.Marshal(members)
-	gitForTest(t, base, "init", "-q")
+	initForTest(t, base)
 	gitForTest(t, base, "config", "user.name", "fixture")
 	gitForTest(t, base, "config", "user.email", "fixture@example.com")
 	gitForTest(t, base, "config", "maintenance.auto", "false")
@@ -73,9 +73,10 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	gitForTest(t, base, "add", ".")
 	gitForTest(t, base, "commit", "-qm", "base")
 	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
-	validateRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "publish")
-	gitForTest(t, filepath.Dir(validateRepo), "clone", "-q", base, validateRepo)
-	gitForTest(t, filepath.Dir(publishRepo), "clone", "-q", base, publishRepo)
+	validateRepo, prepareRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "prepare"), filepath.Join(t.TempDir(), "publish")
+	cloneForTest(t, base, validateRepo)
+	cloneForTest(t, base, prepareRepo)
+	cloneForTest(t, base, publishRepo)
 
 	oldSource, oldValidator, oldGateway, oldClassifier := workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory, bundleClassificationAttempt
 	workflowSourceFactory = func() packsync.Source { return source }
@@ -112,11 +113,21 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	if err := run(context.Background(), []string{"--phase", "validate", "--repository-root", validateRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--output", validateDir}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
+	prepareDir := filepath.Join(artifacts, "prepare")
+	if err := run(context.Background(), []string{"--phase", "prepare", "--repository-root", prepareRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--validation", filepath.Join(validateDir, "validation.json"), "--output", prepareDir}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("prepare: %#v fake=%#v", err, fakeGitHub)
+	}
+	var preparation packsyncworkflow.BundlePreparationArtifact
+	readJSONForTest(t, filepath.Join(prepareDir, "preparation.json"), &preparation)
+	if !preparation.ObservationsStable || preparation.RepositoryMutated || preparation.DecisionReady ||
+		preparation.BranchName != "sync/adapter-composite" || fakeGitHub.pushCalls != 0 || fakeGitHub.createCalls != 0 {
+		t.Fatalf("read-only preparation = %#v fake=%#v", preparation, fakeGitHub)
+	}
 	publishDir := filepath.Join(artifacts, "publish")
 	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--validation", filepath.Join(validateDir, "validation.json"), "--output", publishDir}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("%#v fake=%#v", err, fakeGitHub)
 	}
-	if source.resolves["source-a"] < 3 || source.resolves["source-b"] < 3 {
+	if source.resolves["source-a"] < 4 || source.resolves["source-b"] < 4 {
 		t.Fatalf("each phase did not independently reacquire all members: %#v", source.resolves)
 	}
 	var publication packsyncworkflow.BundlePublicationArtifact
@@ -137,7 +148,7 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	assertRejectedWithoutWrite := func(name string, invoke func(string) error, want string) {
 		t.Helper()
 		repository := filepath.Join(t.TempDir(), name)
-		gitForTest(t, filepath.Dir(repository), "clone", "-q", base, repository)
+		cloneForTest(t, base, repository)
 		before := strings.TrimSpace(gitForTest(t, repository, "rev-parse", "HEAD^{tree}"))
 		err := invoke(repository)
 		if err == nil || !strings.Contains(err.Error(), want) {

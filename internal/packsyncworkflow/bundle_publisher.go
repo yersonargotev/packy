@@ -39,32 +39,61 @@ type BundlePublisher struct {
 	GitHub     PublicationGateway
 }
 
+// Prepare proves the complete Pack-scoped proposal through stable read-only
+// publication observation without publishing or finalizing it.
+func (publisher BundlePublisher) Prepare(ctx context.Context, request BundlePublishRequest) (PublicationPreparation, error) {
+	delegate, err := publisher.delegate(request)
+	if err != nil {
+		return PublicationPreparation{}, err
+	}
+	preparation, err := delegate.Prepare(ctx, bundlePublishRequest(request))
+	if err != nil {
+		return preparation, err
+	}
+	if preparation.Proposal.SourceID != request.Apply.Plan.PackID {
+		return PublicationPreparation{}, errors.New("bundle publication proposal is not Pack-scoped")
+	}
+	return preparation, nil
+}
+
 func (publisher BundlePublisher) Run(ctx context.Context, request BundlePublishRequest) (PublishResult, error) {
+	delegate, err := publisher.delegate(request)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	result, err := delegate.Run(ctx, bundlePublishRequest(request))
+	if err != nil {
+		return result, err
+	}
+	if result.Proposal.SourceID != request.Apply.Plan.PackID {
+		return PublishResult{}, errors.New("bundle publication proposal is not Pack-scoped")
+	}
+	return result, nil
+}
+
+func (publisher BundlePublisher) delegate(request BundlePublishRequest) (Publisher, error) {
 	if publisher.Applier == nil || publisher.Provenance == nil {
-		return PublishResult{}, errors.New("bundle publish requires complete-set Apply and provenance revalidation")
+		return Publisher{}, errors.New("bundle publish requires complete-set Apply and provenance revalidation")
 	}
 	plan := request.Apply.Plan
 	if request.RepositoryRoot == "" || plan.PlanID == "" || !ValidSourceID(plan.PackID) || requireFullSHA("expected result tree", request.ExpectedResultTreeSHA) != nil {
-		return PublishResult{}, errors.New("bundle publish requires one sealed Pack plan, expected result tree, and sandbox repository")
+		return Publisher{}, errors.New("bundle publish requires one sealed Pack plan, expected result tree, and sandbox repository")
 	}
-	result, err := (Publisher{
+	return Publisher{
 		Applier:    boundCompositeApplier{delegate: publisher.Applier, request: request.Apply},
 		Validator:  publisher.Validator,
 		Builder:    packScopedProposalBuilder{delegate: publisher.Builder, packID: plan.PackID},
 		Diff:       expectedBundleDiff{delegate: publisher.Diff, expectedResultTreeSHA: request.ExpectedResultTreeSHA},
 		Provenance: boundCompositeProvenance{delegate: publisher.Provenance, plan: plan},
 		GitHub:     publisher.GitHub,
-	}).Run(ctx, PublishRequest{
+	}, nil
+}
+
+func bundlePublishRequest(request BundlePublishRequest) PublishRequest {
+	return PublishRequest{
 		RepositoryRoot: request.RepositoryRoot,
-		Apply:          packsync.ApplyRequest{Plan: packsync.Plan{PlanID: plan.PlanID}},
-	})
-	if err != nil {
-		return result, err
+		Apply:          packsync.ApplyRequest{Plan: packsync.Plan{PlanID: request.Apply.Plan.PlanID}},
 	}
-	if result.Proposal.SourceID != plan.PackID {
-		return PublishResult{}, errors.New("bundle publication proposal is not Pack-scoped")
-	}
-	return result, nil
 }
 
 // expectedBundleDiff binds the Publish sandbox to the exact tree already

@@ -57,15 +57,15 @@ func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t 
 	candidate.TagObjects = []packsync.TagObject{{SHA: candidate.TagRefSHA, Name: release.Tag, TargetSHA: candidate.Commit, TargetType: "commit", Verification: packsync.Verification{Reason: "unsigned"}}}
 	source := &sandboxSource{root: snapshot, oldRoot: oldSnapshot, oldCandidate: lock.Candidate, candidate: candidate}
 
-	gitForTest(t, base, "init", "-q")
+	initForTest(t, base)
 	gitForTest(t, base, "config", "user.name", "fixture")
 	gitForTest(t, base, "config", "user.email", "fixture@example.com")
 	gitForTest(t, base, "add", ".")
 	gitForTest(t, base, "commit", "-qm", "base")
 	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
 	validateRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "publish")
-	gitForTest(t, filepath.Dir(validateRepo), "clone", "-q", base, validateRepo)
-	gitForTest(t, filepath.Dir(publishRepo), "clone", "-q", base, publishRepo)
+	cloneForTest(t, base, validateRepo)
+	cloneForTest(t, base, publishRepo)
 
 	oldSourceFactory, oldValidatorFactory, oldGatewayFactory := workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory
 	workflowSourceFactory = func() packsync.Source { return source }
@@ -250,4 +250,18 @@ func gitForTest(t *testing.T, directory string, args ...string) string {
 		t.Fatalf("git %v: %v: %s", args, err, output)
 	}
 	return string(output)
+}
+
+func cloneForTest(t *testing.T, source, destination string) {
+	t.Helper()
+	gitForTest(t, filepath.Dir(destination), "clone", "-q", "--no-hardlinks", source, destination)
+	gitForTest(t, destination, "config", "gc.auto", "0")
+	gitForTest(t, destination, "config", "maintenance.auto", "false")
+}
+
+func initForTest(t *testing.T, repository string) {
+	t.Helper()
+	gitForTest(t, repository, "init", "-q")
+	gitForTest(t, repository, "config", "gc.auto", "0")
+	gitForTest(t, repository, "config", "maintenance.auto", "false")
 }

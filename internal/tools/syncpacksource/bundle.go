@@ -443,41 +443,47 @@ func (b *bundleProposalBuilder) Build(ctx context.Context, root string, result p
 	return proposal, nil
 }
 
-func publishBundle(ctx context.Context, option options, output io.Writer) error {
+type bundlePublicationRuntime struct {
+	plan      packsync.CompositePlan
+	publisher packsyncworkflow.BundlePublisher
+	request   packsyncworkflow.BundlePublishRequest
+	cleanup   func()
+}
+
+func newBundlePublicationRuntime(option options) (bundlePublicationRuntime, error) {
 	if option.requestPath == "" || option.planPath == "" || option.evidencePath == "" || option.validationPath == "" || option.outputDir == "" {
-		return errors.New("register_bundle Publish requires request, plan, evidence, validation proof, and output paths")
+		return bundlePublicationRuntime{}, errors.New("register_bundle publication requires request, plan, evidence, validation proof, and output paths")
 	}
 	request, plan, err := readBundleInputs(option)
 	if err != nil {
-		return err
+		return bundlePublicationRuntime{}, err
 	}
 	var proof packsyncworkflow.BundleValidationArtifact
 	if err := readJSON(option.validationPath, &proof); err != nil {
-		return err
+		return bundlePublicationRuntime{}, err
 	}
 	if err := proof.Validate(); err != nil {
-		return err
+		return bundlePublicationRuntime{}, err
 	}
 	if err := proof.BundleArtifactIdentity.Matches(bundleIdentity(plan)); err != nil {
-		return errors.New("v3 validation proof is stale or mixed")
+		return bundlePublicationRuntime{}, errors.New("v3 validation proof is stale or mixed")
 	}
 	evidence, err := readBundleEvidence(option.evidencePath)
 	if err != nil {
-		return err
+		return bundlePublicationRuntime{}, err
 	}
 	if err := matchBundleClassification(option.evidencePath, bundleIdentity(plan)); err != nil {
-		return errors.New("v3 classification artifact is stale or mixed")
+		return bundlePublicationRuntime{}, errors.New("v3 classification artifact is stale or mixed")
 	}
 	var classification packsyncworkflow.BundleClassificationArtifact
 	if err := readJSON(filepath.Join(filepath.Dir(option.evidencePath), "classification.json"), &classification); err != nil {
-		return err
+		return bundlePublicationRuntime{}, err
 	}
 	manifest, version := bundleGeneration(request)
 	acquisition, err := os.MkdirTemp("", "packy-bundle-publish-")
 	if err != nil {
-		return err
+		return bundlePublicationRuntime{}, err
 	}
-	defer os.RemoveAll(acquisition)
 	validator := workflowValidatorFactory()
 	engine := packsync.Engine{Source: workflowSourceFactory(), Validate: validator}
 	apply := packsync.CompositeApplyRequest{CompositeCheckRequest: packsync.CompositeCheckRequest{RepositoryRoot: option.repositoryRoot, AcquisitionDir: acquisition, PackID: request.PackID, ProposedVersion: version, ProposedManifest: manifest, Members: request.Registrations}, Plan: plan, ClassificationEvidence: evidence}
@@ -491,16 +497,62 @@ func publishBundle(ctx context.Context, option options, output io.Writer) error 
 	}
 	builder := &bundleProposalBuilder{plan: plan, request: request, classificationSHA256: classification.ClassificationSHA256, gateway: gateway}
 	publisher := packsyncworkflow.BundlePublisher{Applier: engine, Validator: validator, Builder: builder, Diff: gitDiffVerifier{}, Provenance: compositeProvenance{engine: engine}, GitHub: gateway}
-	result, err := publisher.Run(ctx, packsyncworkflow.BundlePublishRequest{
-		RepositoryRoot:        option.repositoryRoot,
-		Apply:                 apply,
-		ExpectedResultTreeSHA: proof.ResultTreeSHA,
-	})
+	return bundlePublicationRuntime{
+		plan: plan, publisher: publisher,
+		request: packsyncworkflow.BundlePublishRequest{
+			RepositoryRoot:        option.repositoryRoot,
+			Apply:                 apply,
+			ExpectedResultTreeSHA: proof.ResultTreeSHA,
+		},
+		cleanup: func() { _ = os.RemoveAll(acquisition) },
+	}, nil
+}
+
+func prepareBundle(ctx context.Context, option options, output io.Writer) error {
+	runtime, err := newBundlePublicationRuntime(option)
+	if err != nil {
+		return err
+	}
+	defer runtime.cleanup()
+	result, err := runtime.publisher.Prepare(ctx, runtime.request)
+	if err != nil {
+		return err
+	}
+	artifact := packsyncworkflow.BundlePreparationArtifact{
+		SchemaVersion: 3, BundleArtifactIdentity: bundleIdentity(runtime.plan),
+		HeadSHA: result.Proposal.HeadSHA, ResultTreeSHA: result.Proposal.ResultTreeSHA,
+		BranchName: "sync/" + runtime.plan.PackID, ProvenanceSHA256: result.Proposal.ProvenanceSHA256,
+		ManagedTitle: result.Proposal.ManagedTitle, ManagedMetadataHash: result.Proposal.ManagedMetadataHash,
+		ObservedBaseSHA: result.ObservedState.BaseSHA, Validation: result.Proposal.Validation,
+		ObservationsStable: true, RepositoryMutated: false, DecisionReady: false,
+		UpstreamContentExecuted: false,
+	}
+	if err := artifact.Validate(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(option.outputDir, 0o755); err != nil {
+		return err
+	}
+	name := filepath.Join(option.outputDir, "preparation.json")
+	if err := writeCanonical(name, artifact); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(output, name)
+	return err
+}
+
+func publishBundle(ctx context.Context, option options, output io.Writer) error {
+	runtime, err := newBundlePublicationRuntime(option)
+	if err != nil {
+		return err
+	}
+	defer runtime.cleanup()
+	result, err := runtime.publisher.Run(ctx, runtime.request)
 	if err != nil {
 		return err
 	}
 	artifact := packsyncworkflow.BundlePublicationArtifact{
-		SchemaVersion: 3, BundleArtifactIdentity: bundleIdentity(plan),
+		SchemaVersion: 3, BundleArtifactIdentity: bundleIdentity(runtime.plan),
 		HeadSHA: result.Proposal.HeadSHA, ResultTreeSHA: result.Proposal.ResultTreeSHA,
 		BranchName: result.Decision.Branch, PRNumber: result.PullRequest.Number, PRStateSHA256: result.PullRequest.MetadataHash,
 		ProvenanceSHA256: result.Proposal.ProvenanceSHA256, ManagedTitle: result.Proposal.ManagedTitle,
