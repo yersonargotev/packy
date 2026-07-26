@@ -397,6 +397,7 @@ jobs:
   validate:
     name: Validate sandbox
     needs: [inspect, classify]
+    if: ${{ always() && needs.inspect.result == 'success' && needs.classify.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -487,7 +488,7 @@ jobs:
   prepare:
     name: Prepare publication without writes
     needs: [inspect, classify, validate]
-    if: inputs.prepare_only == true && github.ref != 'refs/heads/main'
+    if: ${{ always() && inputs.prepare_only == true && github.ref != 'refs/heads/main' && needs.inspect.result == 'success' && needs.classify.result == 'success' && needs.validate.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
