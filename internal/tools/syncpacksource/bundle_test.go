@@ -16,6 +16,7 @@ import (
 )
 
 func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *testing.T) {
+	clearPackyEnvironment(t)
 	root := repositoryRootForTest(t)
 	base := t.TempDir()
 	copyTreeForTest(t, filepath.Join(root, "bundle"), filepath.Join(base, "bundle"))
@@ -265,6 +266,7 @@ func (s *compositeAdapterSource) WithSnapshot(_ context.Context, candidate packs
 }
 
 func TestBundleDispatchDecodesV3EnvironmentWithoutCrossDecoding(t *testing.T) {
+	clearPackyEnvironment(t)
 	sha, hash := strings.Repeat("a", 40), strings.Repeat("b", 64)
 	var manifestValue any
 	if err := json.Unmarshal([]byte(`{"schema_version":1,"id":"composite","version":"1.0.0","resources":[{"kind":"skill","id":"one","source":"skills/one"},{"kind":"reference","id":"two","source":"references/two.md"}]}`), &manifestValue); err != nil {

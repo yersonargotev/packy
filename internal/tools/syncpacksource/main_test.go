@@ -58,6 +58,7 @@ func TestValidationSubprocessEnvironmentDropsCredentials(t *testing.T) {
 }
 
 func TestCommandValidatorRunsStagedBundleFromCopiedRepositoryWithSandboxedConfiguration(t *testing.T) {
+	clearPackyEnvironment(t)
 	repository := t.TempDir()
 	staged := filepath.Join(t.TempDir(), "bundle")
 	if err := os.MkdirAll(filepath.Join(repository, "scripts"), 0o755); err != nil {
@@ -139,6 +140,7 @@ printf validated > "${XDG_CONFIG_HOME}/proof"
 }
 
 func TestCommandValidatorScopesAppliedValidationMarker(t *testing.T) {
+	clearPackyEnvironment(t)
 	t.Setenv("PACKY_VALIDATION_STAGED", "hostile-inherited-value")
 	markerCount := func(cmd *exec.Cmd) int {
 		count := 0
@@ -266,6 +268,7 @@ func TestPublicSourceDoesNotRetryNonTransientFailures(t *testing.T) {
 }
 
 func TestInspectBoundaryReportsNonRateLimit403AsSecretFreeAccessFailure(t *testing.T) {
+	clearPackyEnvironment(t)
 	repository := t.TempDir()
 	copyTreeForTest(t, filepath.Join(repositoryRootForTest(t), "bundle"), filepath.Join(repository, "bundle"))
 	underlying := &sourceFailureFixture{failures: []error{githubsource.HTTPError{Operation: "read GitHub API", StatusCode: http.StatusForbidden, Status: "403 Forbidden", RateLimitRemaining: "4999"}}}
@@ -401,6 +404,7 @@ func prepareInspectFixture(t *testing.T) (string, string, packsync.Lock) {
 
 func setInspectEnvironment(t *testing.T, reason string) {
 	t.Helper()
+	clearPackyEnvironment(t)
 	t.Setenv("PACKY_SOURCE_ID", "mattpocock-skills")
 	t.Setenv("PACKY_SELECTOR", "latest-stable")
 	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
@@ -424,6 +428,7 @@ func TestWorkflowAcceptsOnlyEmptyEvidenceWhenNoPackIsAffected(t *testing.T) {
 }
 
 func TestInspectNormalizesWorkflowEnvironmentThroughCanonicalDispatch(t *testing.T) {
+	clearPackyEnvironment(t)
 	t.Setenv("PACKY_SOURCE_ID", "source")
 	t.Setenv("PACKY_SELECTOR", "commit")
 	t.Setenv("PACKY_SELECTOR_REF", strings.Repeat("a", 40))
@@ -442,6 +447,7 @@ func TestInspectNormalizesWorkflowEnvironmentThroughCanonicalDispatch(t *testing
 }
 
 func TestInspectCarriesStrictRegistrationIntoCheck(t *testing.T) {
+	clearPackyEnvironment(t)
 	registration := packsync.SourceConfig{ID: "addy", Provider: "github", Repository: "addyosmani/agent-skills", Selector: packsync.Selector{Mode: packsync.SelectorStableRelease}, Resources: []packsync.Binding{{PackID: "addy", Kind: "skill", ResourceID: "fixture", UpstreamPath: "skills/fixture"}}}
 	digest, err := packsyncworkflow.CanonicalRegistrationSHA256(registration)
 	if err != nil {
@@ -469,6 +475,7 @@ func TestInspectCarriesStrictRegistrationIntoCheck(t *testing.T) {
 }
 
 func TestInspectDoesNotAdoptLegacyMattyWorkflowEnvironment(t *testing.T) {
+	clearPackyEnvironment(t)
 	t.Setenv("PACKY_SOURCE_ID", "")
 	t.Setenv("MATTY_SOURCE_ID", "legacy-source")
 	t.Setenv("MATTY_SELECTOR", "commit")
@@ -484,6 +491,7 @@ func TestInspectDoesNotAdoptLegacyMattyWorkflowEnvironment(t *testing.T) {
 }
 
 func TestInspectRejectsMismatchedWorkflowRequestDigest(t *testing.T) {
+	clearPackyEnvironment(t)
 	t.Setenv("PACKY_SOURCE_ID", "source")
 	t.Setenv("PACKY_SELECTOR", "latest-stable")
 	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
@@ -495,6 +503,7 @@ func TestInspectRejectsMismatchedWorkflowRequestDigest(t *testing.T) {
 }
 
 func TestInvalidDispatchStillEmitsCanonicalFailureArtifact(t *testing.T) {
+	clearPackyEnvironment(t)
 	output := t.TempDir()
 	t.Setenv("PACKY_SOURCE_ID", "../source")
 	t.Setenv("PACKY_SELECTOR", "latest-stable")
