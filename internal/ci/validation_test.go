@@ -57,6 +57,7 @@ var packyOwnedPackages = []string{
 	"./internal/tools/governanceauth",
 	"./internal/tools/governancedrift",
 	"./internal/tools/syncpacksource",
+	"./internal/tools/vercelacceptance",
 	"./internal/vercelacceptance",
 	"./internal/version",
 	"./internal/workstation",
@@ -286,6 +287,47 @@ func TestAddyPromotionMainReplayIsEffectFreeAndRetained(t *testing.T) {
 		if strings.Contains(replay+script, forbidden) {
 			t.Fatalf("Addy replay contains publishing authority %q", forbidden)
 		}
+	}
+}
+
+func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *testing.T) {
+	root := repositoryRoot(t)
+	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	gate := workflowSection(t, workflow, "  vercel-acceptance-gate:", "  addy-promotion-main-replay:")
+	for _, required := range []string{
+		"name: Vercel six-gate acceptance cohort",
+		"needs: [validate, codex-floor-smoke, opencode-floor-smoke, claude-vercel-floor-smoke]",
+		"if: always() && github.event_name == 'pull_request'",
+		"actions: read",
+		"contents: read",
+		"fetch-depth: 0",
+		"persist-credentials: false",
+		"name: codex-floor-qualification",
+		"name: opencode-floor-qualification",
+		"name: claude-vercel-floor-qualification",
+		"VALIDATE_RESULT: ${{ needs.validate.result }}",
+		"CODEX_RESULT: ${{ needs.codex-floor-smoke.result }}",
+		"OPENCODE_RESULT: ${{ needs.opencode-floor-smoke.result }}",
+		"CLAUDE_RESULT: ${{ needs.claude-vercel-floor-smoke.result }}",
+		"./scripts/gate-vercel-acceptance.sh",
+		"--candidate-sha \"${{ github.event.pull_request.head.sha }}\"",
+		"retention-days: 90",
+	} {
+		if !strings.Contains(gate, required) {
+			t.Fatalf("Vercel acceptance gate missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"contents: write", "packages: write", "pull-requests: write", "id-token: write",
+		"VERCEL_TOKEN", "git push", "gh pr", "gh release", "npm publish", "deploy",
+	} {
+		if strings.Contains(gate, forbidden) {
+			t.Fatalf("Vercel acceptance gate contains forbidden authority or effect %q", forbidden)
+		}
+	}
+	script := filepath.Join(root, "scripts", "gate-vercel-acceptance.sh")
+	if output, err := exec.Command("bash", "-n", script).CombinedOutput(); err != nil {
+		t.Fatalf("bash -n Vercel gate: %v\n%s", err, output)
 	}
 }
 

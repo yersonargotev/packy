@@ -260,6 +260,74 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  vercel-acceptance-gate:
+    name: Vercel six-gate acceptance cohort
+    needs: [validate, codex-floor-smoke, opencode-floor-smoke, claude-vercel-floor-smoke]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download exact Codex evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: codex-floor-qualification
+          path: ${{ runner.temp }}/codex-floor-evidence
+
+      - name: Download exact OpenCode evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: opencode-floor-qualification
+          path: ${{ runner.temp }}/opencode-floor-evidence
+
+      - name: Download exact Claude evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claude-vercel-floor-qualification
+          path: ${{ runner.temp }}/claude-vercel-floor-evidence
+
+      - name: Close the exact six-gate cohort
+        env:
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          CODEX_RESULT: ${{ needs.codex-floor-smoke.result }}
+          OPENCODE_RESULT: ${{ needs.opencode-floor-smoke.result }}
+          CLAUDE_RESULT: ${{ needs.claude-vercel-floor-smoke.result }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/vercel-acceptance"
+          ./scripts/gate-vercel-acceptance.sh \
+            --candidate-sha "${{ github.event.pull_request.head.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --codex-evidence "$RUNNER_TEMP/codex-floor-evidence/evidence.json" \
+            --opencode-evidence "$RUNNER_TEMP/opencode-floor-evidence/evidence.json" \
+            --claude-evidence "$RUNNER_TEMP/claude-vercel-floor-evidence/vercel-evidence.json" \
+            --output "$RUNNER_TEMP/vercel-acceptance/cohort.json"
+
+      - name: Retain exact Vercel cohort
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vercel-acceptance-pr-${{ github.run_id }}
+          path: ${{ runner.temp }}/vercel-acceptance
+          if-no-files-found: error
+          retention-days: 90
+
   addy-promotion-main-replay:
     name: Replay Addy promotion gate effect-free
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
