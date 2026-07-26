@@ -47,11 +47,27 @@ type compositeSkill struct {
 	Ownership             compositeOwnership
 }
 
-func claudeCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
-	if pack.ID == "vercel" && pack.Version == "1.0.0" {
-		return vercelCompositeSkill(pack, resource, binding, bundleRoot)
+type compositeSkillBuilder func(capabilitypack.Pack, capabilitypack.Resource, capabilitypack.Binding, string) (compositeSkill, error)
+
+func claudeCompositeSkillBuilder(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding) compositeSkillBuilder {
+	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" {
+		return nil
 	}
-	return addyCompositeSkill(pack, resource, binding, bundleRoot)
+	if pack.ID == "addy" && pack.Version == "1.1.0" && (resource.Kind == "skill" || resource.Kind == "command") {
+		return addyCompositeSkill
+	}
+	if pack.ID == "vercel" && pack.Version == "1.0.0" && resource.Kind == "skill" && len(dependencyAssets(pack, resource)) > 0 {
+		return vercelCompositeSkill
+	}
+	return nil
+}
+
+func claudeCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
+	builder := claudeCompositeSkillBuilder(pack, resource, binding)
+	if builder == nil {
+		return compositeSkill{}, errors.New("resource has no Claude composite skill translation")
+	}
+	return builder(pack, resource, binding, bundleRoot)
 }
 
 // vercelCompositeSkill translates a Vercel guideline skill plus its sealed

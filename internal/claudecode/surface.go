@@ -1310,13 +1310,7 @@ func freshCompositeTreeFingerprint(path string) (string, bool, error) {
 }
 
 func isClaudeCompositeProjection(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding) bool {
-	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" {
-		return false
-	}
-	if pack.ID == "addy" && pack.Version == "1.1.0" && (resource.Kind == "skill" || resource.Kind == "command") {
-		return true
-	}
-	return pack.ID == "vercel" && pack.Version == "1.0.0" && resource.Kind == "skill" && len(dependencyAssets(pack, resource)) > 0
+	return claudeCompositeSkillBuilder(pack, resource, binding) != nil
 }
 
 func exclusiveSkillTargetConflict(targets map[string]capabilitypack.ProjectionAction, action capabilitypack.ProjectionAction) bool {

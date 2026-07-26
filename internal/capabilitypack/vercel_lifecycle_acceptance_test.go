@@ -66,6 +66,34 @@ func testVercelCollisionRequiresExplicitAliasBeforeMutation(t *testing.T, surfac
 	if len(adapter.actions) != 0 || len(store.saves) != 0 {
 		t.Fatal("collision and alias previews crossed the mutation boundary")
 	}
+
+	prefix := "$"
+	if surface == SurfaceClaude {
+		prefix = "/"
+	}
+	requested := Pack{ID: "vercel", Version: "1.0.0", manifestVersion: manifestSchemaV4, Surfaces: []Surface{surface}, Resources: []Resource{{
+		Kind: "skill", ID: resourceID, Bindings: []Binding{{
+			Surface: surface, Projection: "skill", Name: resourceID, Invocation: prefix + resourceID, Mode: "native", Sharing: "exclusive",
+		}},
+	}}}
+	other := Pack{ID: "other-pack", Version: "1.0.0", manifestVersion: manifestSchemaV4, Surfaces: []Surface{surface}, Resources: []Resource{{
+		Kind: "skill", ID: "other-skill", Source: "skills/other", Bindings: []Binding{{
+			Surface: surface, Projection: "skill", Name: resourceID, Invocation: prefix + resourceID, Mode: "native", Sharing: "exclusive",
+		}},
+	}}}
+	otherIntent := ActivationIntent{PackID: other.ID, Version: other.Version, Surface: surface, Active: true}
+	incompatible, err := NewFacade(Catalog{packs: []Pack{requested, other}}).compose(
+		requested,
+		ActivationState{Intent: otherIntent, Intents: []ActivationIntent{otherIntent}},
+		surface,
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incompatible.blockers) != 1 || incompatible.blockers[0].Kind != BlockerAlias || incompatible.blockers[0].Subject != "personal-skill:"+resourceID {
+		t.Fatalf("incompatible exclusive Vercel collision blockers = %+v", incompatible.blockers)
+	}
 }
 
 func TestVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.T) {

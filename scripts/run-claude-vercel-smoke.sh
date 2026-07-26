@@ -38,7 +38,7 @@ if [[ "$resolved_ref" != "$head" ]]; then
 fi
 evidence_dir="$(mkdir -p "$evidence_dir" && cd "$evidence_dir" && pwd)"
 sandbox="$(mktemp -d "${TMPDIR:-/tmp}/packy-claude-vercel.XXXXXX")"
-trap 'rm -rf "$sandbox"' EXIT
+trap 'chmod -R u+w "$sandbox" 2>/dev/null || true; rm -rf "$sandbox"' EXIT
 mkdir -p "$sandbox"/{home,config,cache,tmp,npm,build}
 touch "$sandbox/npmrc"
 export HOME="$sandbox/home"

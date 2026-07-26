@@ -1,6 +1,7 @@
 package claudesmoke
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -21,7 +22,8 @@ func TestParseClaudeSkillDebugRequiresCorroboratingExactCount(t *testing.T) {
 }
 
 func TestVercelRuntimeEvidenceCoversExactTwentyEightModesSafely(t *testing.T) {
-	rows, preflight, err := evaluateSafeRuntimeModes(vercelacceptance.Canonical().Pack)
+	pack := vercelacceptance.Canonical().Pack
+	rows, preflight, err := evaluateSafeRuntimeModes(pack, allSelections(pack))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +33,7 @@ func TestVercelRuntimeEvidenceCoversExactTwentyEightModesSafely(t *testing.T) {
 	seen := map[string]bool{}
 	for _, row := range rows {
 		key := row.ResourceID + ":" + row.ModeID
-		if seen[key] || !row.FailBeforeEffects {
+		if seen[key] || !row.FailBeforeEffects || !row.SelectionObserved || row.Invocation == "" {
 			t.Fatalf("bad runtime row %#v", row)
 		}
 		seen[key] = true
@@ -43,7 +45,7 @@ func TestVercelRuntimeEvidenceCoversExactTwentyEightModesSafely(t *testing.T) {
 
 func TestValidateVercelEvidenceExactNamesCountsAndSafety(t *testing.T) {
 	pack := vercelacceptance.Canonical().Pack
-	rows, preflight, err := evaluateSafeRuntimeModes(pack)
+	rows, preflight, err := evaluateSafeRuntimeModes(pack, allSelections(pack))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +54,7 @@ func TestValidateVercelEvidenceExactNamesCountsAndSafety(t *testing.T) {
 		ClaudeVersion: ExactVercelClaudeVersion, ClaudeNPMIntegrity: "sha512-redacted",
 		ClaudeExecutableSHA256: strings.Repeat("c", 64), RuntimeModes: rows,
 		TypedFailBeforeEffectsPreflight: preflight,
+		PreflightBeforeHostSelection:    true,
 		Positive:                        VercelHostObservation{UserSkillDirCommands: 9},
 		MissingOne:                      VercelHostObservation{UserSkillDirCommands: 8},
 		Safety:                          VercelSafetyFacts{true, true, true, true},
@@ -77,4 +80,58 @@ func TestValidateVercelEvidenceExactNamesCountsAndSafety(t *testing.T) {
 	if err := ValidateVercelEvidence(e); err == nil {
 		t.Fatal("accepted eight positive skills")
 	}
+}
+
+func TestValidateClaudeSelectionRequestRequiresInvocationAndCompleteSkillBody(t *testing.T) {
+	invocation := "/deploy production"
+	skill := "---\nname: deploy\n---\nComplete instructions.\n"
+	request, err := json.Marshal(map[string]any{
+		"messages": []any{map[string]any{"role": "user", "content": "<command-name>/deploy</command-name>\n<command-args>production</command-args>"}},
+		"system":   []any{map[string]any{"type": "text", "text": "prefix\n" + skill + "\nsuffix"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateClaudeSelectionRequest(request, invocation, skill); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateClaudeSelectionRequest(request, "/deploy preview", skill); err == nil {
+		t.Fatal("accepted request without selected invocation")
+	}
+	if err := validateClaudeSelectionRequest(request, invocation, skill+"missing"); err == nil {
+		t.Fatal("accepted request without complete SKILL.md body")
+	}
+	if err := validateClaudeSelectionRequest([]byte("{"), invocation, skill); err == nil {
+		t.Fatal("accepted malformed request JSON")
+	}
+}
+
+func TestEvaluateSafeRuntimeModesDoesNotHardcodeSelectionOrTypedFailure(t *testing.T) {
+	pack := vercelacceptance.Canonical().Pack
+	rows, preflight, err := evaluateSafeRuntimeModes(pack, map[string]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preflight {
+		t.Fatal("typed fail-before-effects preflight was not derived")
+	}
+	for _, row := range rows {
+		if row.SelectionObserved {
+			t.Fatalf("selection was hardcoded true: %#v", row)
+		}
+		if !row.FailBeforeEffects || len(row.Evidence.Requirements) != len(row.Requirements) ||
+			len(row.Evidence.Authorities) != len(row.Authorities) {
+			t.Fatalf("incomplete per-row runtime evidence: %#v", row)
+		}
+	}
+}
+
+func allSelections(pack capabilitypack.Pack) map[string]bool {
+	out := map[string]bool{}
+	for _, resource := range pack.Resources {
+		for _, mode := range resource.RuntimeModes {
+			out[resource.ID+":"+mode.ID] = true
+		}
+	}
+	return out
 }

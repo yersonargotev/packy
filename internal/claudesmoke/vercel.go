@@ -9,9 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -43,10 +46,19 @@ type VercelHostObservation struct {
 }
 
 type VercelRuntimeRow struct {
-	ResourceID        string                          `json:"resource_id"`
-	ModeID            string                          `json:"mode_id"`
-	State             capabilitypack.RuntimeModeState `json:"state"`
-	FailBeforeEffects bool                            `json:"fail_before_effects"`
+	ResourceID        string                              `json:"resource_id"`
+	ModeID            string                              `json:"mode_id"`
+	Invocation        string                              `json:"invocation"`
+	State             capabilitypack.RuntimeModeState     `json:"state"`
+	Requirements      []capabilitypack.RuntimeRequirement `json:"requirements"`
+	Authorities       []capabilitypack.RuntimeAuthority   `json:"authorities"`
+	Effects           []capabilitypack.RuntimeEffect      `json:"effects"`
+	Fallback          capabilitypack.RuntimeFallback      `json:"fallback"`
+	FallbackState     *capabilitypack.RuntimeModeState    `json:"fallback_state,omitempty"`
+	Affected          []string                            `json:"affected"`
+	Evidence          capabilitypack.RuntimeEvidence      `json:"normalized_evidence"`
+	SelectionObserved bool                                `json:"selection_observed"`
+	FailBeforeEffects bool                                `json:"fail_before_effects"`
 }
 
 type VercelSafetyFacts struct {
@@ -68,6 +80,7 @@ type VercelEvidence struct {
 	MissingOne                      VercelHostObservation `json:"missing_one_host_observation"`
 	RuntimeModes                    []VercelRuntimeRow    `json:"runtime_modes"`
 	TypedFailBeforeEffectsPreflight bool                  `json:"typed_fail_before_effects_preflight"`
+	PreflightBeforeHostSelection    bool                  `json:"preflight_before_host_selection"`
 	AllowedCommands                 []string              `json:"allowed_commands"`
 	Safety                          VercelSafetyFacts     `json:"safety"`
 }
@@ -160,14 +173,25 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 		return VercelEvidence{}, errors.New("fresh Claude startup did not distinguish nine skills from missing-one twin")
 	}
 
-	runtimeRows, preflight, err := evaluateSafeRuntimeModes(fixture.Pack)
+	runtimeRows, preflight, err := evaluateSafeRuntimeModes(fixture.Pack, nil)
 	if err != nil {
 		return VercelEvidence{}, err
 	}
+	preflightBeforeSelection := preflight && allRuntimeRowsFailBeforeEffects(runtimeRows)
+	if !preflightBeforeSelection {
+		return VercelEvidence{}, errors.New("runtime preflight did not fail safely before Claude selection")
+	}
+	selections, err := observeClaudeSelections(ctx, cfg.Claude, cfg.SearchPath, positiveHome, fixture.Pack, skillsRoot)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
+	for i := range runtimeRows {
+		runtimeRows[i].SelectionObserved = selections[runtimeRows[i].ResourceID+":"+runtimeRows[i].ModeID]
+	}
 	e := VercelEvidence{SchemaVersion: 1, PackySHA: head, FixtureSHA256: fixtureDigest, ClaudeVersion: ExactVercelClaudeVersion,
 		ClaudeNPMIntegrity: cfg.ClaudeIntegrity, ClaudeExecutableSHA256: claudeDigest, Skills: skills, Positive: positive, MissingOne: negative,
-		RuntimeModes: runtimeRows, TypedFailBeforeEffectsPreflight: preflight,
-		AllowedCommands: []string{"git rev-parse", "claude --version", "claude startup with --debug-file"},
+		RuntimeModes: runtimeRows, TypedFailBeforeEffectsPreflight: preflight, PreflightBeforeHostSelection: preflightBeforeSelection,
+		AllowedCommands: []string{"git rev-parse", "claude --version", "claude startup with --debug-file", "claude --setting-sources user --tools '' --no-session-persistence --print /name mode"},
 		Safety:          VercelSafetyFacts{true, true, true, true}}
 	if err := ValidateVercelEvidence(e); err != nil {
 		return VercelEvidence{}, err
@@ -190,7 +214,8 @@ func ValidateVercelEvidence(e VercelEvidence) error {
 	if e.SchemaVersion != 1 || len(e.PackySHA) != 40 || e.FixtureSHA256 != vercelacceptance.ExactArchiveSHA256 || e.ClaudeVersion != ExactVercelClaudeVersion || !strings.HasPrefix(e.ClaudeNPMIntegrity, "sha512-") || len(e.ClaudeExecutableSHA256) != 64 {
 		return errors.New("invalid Vercel smoke identity")
 	}
-	if len(e.Skills) != 9 || len(e.RuntimeModes) != 28 || e.Positive.UserSkillDirCommands != 9 || e.MissingOne.UserSkillDirCommands != 8 || !e.TypedFailBeforeEffectsPreflight {
+	if len(e.Skills) != 9 || len(e.RuntimeModes) != 28 || e.Positive.UserSkillDirCommands != 9 || e.MissingOne.UserSkillDirCommands != 8 ||
+		!e.TypedFailBeforeEffectsPreflight || !e.PreflightBeforeHostSelection {
 		return errors.New("incomplete Vercel smoke evidence")
 	}
 	want := vercelacceptance.Canonical().Pack
@@ -213,15 +238,42 @@ func ValidateVercelEvidence(e VercelEvidence) error {
 		!e.Safety.NoAuthentication || !e.Safety.NoModelExecution || !e.Safety.NoDeployment || !e.Safety.NoUpstreamExecution {
 		return errors.New("unsafe or incomplete Vercel smoke evidence")
 	}
+	expectedRows, expectedPreflight, err := evaluateSafeRuntimeModes(want, allRuntimeSelections(want))
+	if err != nil || !expectedPreflight || !reflect.DeepEqual(e.RuntimeModes, expectedRows) {
+		return errors.New("runtime-mode rows do not match complete normalized declarations and observations")
+	}
 	for _, r := range e.RuntimeModes {
 		if r.State != capabilitypack.RuntimeModeUnverified && r.State != capabilitypack.RuntimeModeAvailable {
 			return errors.New("unsafe runtime-mode claim")
 		}
-		if !r.FailBeforeEffects {
-			return errors.New("runtime mode omitted fail-before-effects")
+		if !r.SelectionObserved || !r.FailBeforeEffects || r.Invocation == "" ||
+			len(r.Evidence.Requirements) != len(r.Requirements) || len(r.Evidence.Authorities) != len(r.Authorities) {
+			return errors.New("runtime mode omitted host selection or fail-before-effects evidence")
 		}
 	}
 	return nil
+}
+
+func allRuntimeRowsFailBeforeEffects(rows []VercelRuntimeRow) bool {
+	if len(rows) == 0 {
+		return false
+	}
+	for _, row := range rows {
+		if !row.FailBeforeEffects {
+			return false
+		}
+	}
+	return true
+}
+
+func allRuntimeSelections(pack capabilitypack.Pack) map[string]bool {
+	out := make(map[string]bool, 28)
+	for _, resource := range pack.Resources {
+		for _, mode := range resource.RuntimeModes {
+			out[resource.ID+":"+mode.ID] = true
+		}
+	}
+	return out
 }
 
 func sameNames(names []string, skills []VercelSkillEvidence) bool {
@@ -420,7 +472,7 @@ func copySkillTrees(from, to string, skills []VercelSkillEvidence) error {
 	return nil
 }
 
-func evaluateSafeRuntimeModes(pack capabilitypack.Pack) ([]VercelRuntimeRow, bool, error) {
+func evaluateSafeRuntimeModes(pack capabilitypack.Pack, selections map[string]bool) ([]VercelRuntimeRow, bool, error) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	records := []capabilitypack.RuntimeModeEvidence{}
 	for _, r := range pack.Resources {
@@ -443,16 +495,150 @@ func evaluateSafeRuntimeModes(pack capabilitypack.Pack) ([]VercelRuntimeRow, boo
 		return nil, false, err
 	}
 	rows := make([]VercelRuntimeRow, 0, len(results))
-	preflight := false
+	preflight := len(results) > 0
 	for _, result := range results {
 		_, pfErr := capabilitypack.PreflightRuntimeMode(pack, result.ResourceID, result.ModeID, records, now, time.Hour)
 		var typed capabilitypack.RuntimePreflightError
-		if result.State == capabilitypack.RuntimeModeUnverified && errors.As(pfErr, &typed) {
-			preflight = true
+		failBeforeEffects := result.State != capabilitypack.RuntimeModeAvailable && errors.As(pfErr, &typed)
+		if !failBeforeEffects {
+			preflight = false
 		}
-		rows = append(rows, VercelRuntimeRow{result.ResourceID, result.ModeID, result.State, true})
+		invocation := claudeInvocation(pack, result.ResourceID) + " " + result.ModeID
+		rows = append(rows, VercelRuntimeRow{
+			ResourceID: result.ResourceID, ModeID: result.ModeID, Invocation: invocation, State: result.State,
+			Requirements: result.Requirements, Authorities: result.Authorities, Effects: result.Effects,
+			Fallback: result.Fallback, FallbackState: result.FallbackState, Affected: result.Affected,
+			Evidence: result.Evidence, SelectionObserved: selections[result.ResourceID+":"+result.ModeID],
+			FailBeforeEffects: failBeforeEffects,
+		})
 	}
 	return rows, preflight, nil
+}
+
+func claudeInvocation(pack capabilitypack.Pack, resourceID string) string {
+	for _, resource := range pack.Resources {
+		if resource.ID != resourceID {
+			continue
+		}
+		for _, binding := range resource.Bindings {
+			if binding.Surface == capabilitypack.SurfaceClaude {
+				return binding.Invocation
+			}
+		}
+	}
+	return ""
+}
+
+func observeClaudeSelections(ctx context.Context, claude, searchPath, home string, pack capabilitypack.Pack, skillsRoot string) (map[string]bool, error) {
+	observed := make(map[string]bool, 28)
+	for _, resource := range pack.Resources {
+		invocation := claudeInvocation(pack, resource.ID)
+		if invocation == "" || len(resource.RuntimeModes) == 0 {
+			continue
+		}
+		skillBody, err := os.ReadFile(filepath.Join(skillsRoot, strings.TrimPrefix(invocation, "/"), "SKILL.md"))
+		if err != nil {
+			return nil, err
+		}
+		for _, mode := range resource.RuntimeModes {
+			selection := invocation + " " + mode.ID
+			if err := observeClaudeSelection(ctx, claude, searchPath, home, selection, string(skillBody)); err != nil {
+				return nil, fmt.Errorf("%s: %w", selection, err)
+			}
+			observed[resource.ID+":"+mode.ID] = true
+		}
+	}
+	return observed, nil
+}
+
+func observeClaudeSelection(ctx context.Context, claude, searchPath, home, invocation, skillBody string) error {
+	var requests [][]byte
+	var requestPaths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests = append(requests, body)
+		requestPaths = append(requestPaths, r.URL.Path)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_packy_smoke\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"packy-smoke\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n"+
+			"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"+
+			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"inert Packy smoke response\"}}\n\n"+
+			"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"+
+			"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":1}}\n\n"+
+			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	}))
+	env := append(isolatedClaudeEnv(home, searchPath),
+		"ANTHROPIC_API_KEY=packy-smoke-dummy-key",
+		"ANTHROPIC_BASE_URL="+server.URL,
+	)
+	cmd := exec.CommandContext(ctx, claude, "--setting-sources", "user", "--tools", "", "--no-session-persistence", "--print", invocation)
+	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = home, env, bytes.NewReader(nil), io.Discard, io.Discard
+	runErr := cmd.Run()
+	server.Close()
+	if runErr != nil {
+		return fmt.Errorf("run Claude against inert endpoint: %w", runErr)
+	}
+	var matching int
+	var diagnostics []string
+	for i, request := range requests {
+		err := validateClaudeSelectionRequest(request, invocation, skillBody)
+		diagnostics = append(diagnostics, fmt.Sprintf("%s:%v", requestPaths[i], err))
+		if err == nil {
+			matching++
+		}
+	}
+	if matching != 1 {
+		return fmt.Errorf("captured %d matching local requests, want exactly one (%s)", matching, strings.Join(diagnostics, "; "))
+	}
+	return nil
+}
+
+func validateClaudeSelectionRequest(data []byte, invocation, skillBody string) error {
+	var wire any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return fmt.Errorf("decode Claude request: %w", err)
+	}
+	var stringsSeen []string
+	var visit func(any)
+	visit = func(value any) {
+		switch value := value.(type) {
+		case string:
+			stringsSeen = append(stringsSeen, value)
+		case []any:
+			for _, item := range value {
+				visit(item)
+			}
+		case map[string]any:
+			for _, item := range value {
+				visit(item)
+			}
+		}
+	}
+	visit(wire)
+	joined := strings.Join(stringsSeen, "\n")
+	commandName, commandArgs, ok := strings.Cut(invocation, " ")
+	if !ok || !strings.Contains(joined, "<command-name>"+commandName+"</command-name>") ||
+		!strings.Contains(joined, "<command-args>"+commandArgs+"</command-args>") {
+		return errors.New("Claude request omitted selected slash command or mode arguments")
+	}
+	loadedBody := claudeLoadedSkillBody(skillBody)
+	if len(loadedBody) > 4096 {
+		loadedBody = loadedBody[:4096]
+	}
+	if !strings.Contains(joined, loadedBody) {
+		return errors.New("Claude request omitted the required exact loaded SKILL.md instruction prefix")
+	}
+	return nil
+}
+
+func claudeLoadedSkillBody(skillBody string) string {
+	const delimiter = "\n---\n"
+	if !strings.HasPrefix(skillBody, "---\n") {
+		return skillBody
+	}
+	if end := strings.Index(skillBody[len("---\n"):], delimiter); end >= 0 {
+		return skillBody[len("---\n")+end+len(delimiter):]
+	}
+	return skillBody
 }
 
 func commandOutput(ctx context.Context, dir string, env []string, name string, args ...string) (string, error) {
