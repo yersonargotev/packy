@@ -42,6 +42,7 @@ readonly packages=(
   ./internal/tools/governanceauth
   ./internal/tools/governancedrift
   ./internal/tools/syncpacksource
+  ./internal/tools/vercelacceptance
   ./internal/vercelacceptance
   ./internal/version
   ./internal/workstation
@@ -82,6 +83,7 @@ export GOMODCACHE="$go_mod_cache"
 export GOPATH="$go_path"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 
+./scripts/validate-vercel-acceptance.sh
 ./scripts/validate-addy-acceptance.sh
 
 shopt -s nullglob

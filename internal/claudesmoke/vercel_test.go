@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/vercelacceptance"
@@ -50,9 +51,12 @@ func TestValidateVercelEvidenceExactNamesCountsAndSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := VercelEvidence{
-		SchemaVersion: 1, PackySHA: strings.Repeat("a", 40), FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
-		ClaudeVersion: ExactVercelClaudeVersion, ClaudeNPMIntegrity: "sha512-redacted",
+		SchemaVersion: 1, RunID: "run-262", ObservedAt: time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC),
+		PackySHA: strings.Repeat("a", 40), FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
+		ClaudeVersion: ExactVercelClaudeVersion, ClaudeVersionOutput: ExactVercelClaudeVersionOutput, ClaudeNPMIntegrity: "sha512-redacted",
 		ClaudeExecutableSHA256: strings.Repeat("c", 64), RuntimeModes: rows,
+		SemanticRerun:                   vercelacceptance.SemanticRerunEvidence{FirstSHA256: strings.Repeat("e", 64), SecondSHA256: strings.Repeat("e", 64), ExactMatch: true},
+		Mutation:                        vercelacceptance.MutationObservation{Root: "$SANDBOX/bundle", BeforeSHA256: strings.Repeat("f", 64), AfterSHA256: strings.Repeat("f", 64), AllowedChanges: []string{}, ChangedPaths: []string{}, ZeroMutationExact: true},
 		TypedFailBeforeEffectsPreflight: preflight,
 		PreflightBeforeHostSelection:    true,
 		Positive:                        VercelHostObservation{UserSkillDirCommands: 9},
@@ -76,6 +80,33 @@ func TestValidateVercelEvidenceExactNamesCountsAndSafety(t *testing.T) {
 	if err := ValidateVercelEvidence(e); err != nil {
 		t.Fatal(err)
 	}
+	for _, impostor := range []string{"2.1.203", "v2.1.203 (Claude Code)", "2.1.203 (Claude Code) extra", "prefix 2.1.203 (Claude Code)"} {
+		e.ClaudeVersionOutput = impostor
+		if err := ValidateVercelEvidence(e); err == nil {
+			t.Fatalf("accepted Claude version-output impostor %q", impostor)
+		}
+	}
+	e.ClaudeVersionOutput = ExactVercelClaudeVersionOutput
+	e.SemanticRerun.SecondSHA256 = strings.Repeat("0", 64)
+	if err := ValidateVercelEvidence(e); err == nil {
+		t.Fatal("accepted differing semantic rerun")
+	}
+	e.SemanticRerun.SecondSHA256 = e.SemanticRerun.FirstSHA256
+	e.Mutation.ChangedPaths = []string{"SKILL.md"}
+	if err := ValidateVercelEvidence(e); err == nil {
+		t.Fatal("accepted changed path as zero mutation")
+	}
+	e.Mutation.ChangedPaths = []string{}
+	e.RunID = ""
+	if err := ValidateVercelEvidence(e); err == nil {
+		t.Fatal("accepted empty run ID")
+	}
+	e.RunID = "run-262"
+	e.ObservedAt = time.Time{}
+	if err := ValidateVercelEvidence(e); err == nil {
+		t.Fatal("accepted zero observation time")
+	}
+	e.ObservedAt = time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 	e.Skills = e.Skills[:8]
 	if err := ValidateVercelEvidence(e); err == nil {
 		t.Fatal("accepted eight positive skills")

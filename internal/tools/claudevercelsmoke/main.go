@@ -17,6 +17,7 @@ func main() {
 	flag.StringVar(&cfg.ClaudeIntegrity, "claude-integrity", "", "npm dist.integrity for exact Claude package")
 	flag.StringVar(&cfg.PackyRepo, "packy-repo", "", "Packy checkout")
 	flag.StringVar(&cfg.PackyRef, "packy-ref", "", "Packy ref resolving to checkout HEAD")
+	flag.StringVar(&cfg.RunID, "run-id", "", "trusted workflow run ID")
 	flag.StringVar(&cfg.EvidencePath, "evidence", "", "deterministic redacted JSON evidence")
 	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

@@ -129,6 +129,9 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 		if job == "addy-promotion-gate" {
 			want = map[string]string{"actions": "read", "contents": "read", "deployments": "read", "issues": "read"}
 		}
+		if job == "vercel-acceptance-gate" {
+			want = map[string]string{"actions": "read", "contents": "read"}
+		}
 		if !reflect.DeepEqual(permissions, want) || strings.Contains(strings.Join(lines, "\n"), "secrets:") || strings.Contains(strings.Join(lines, "\n"), "environment:") {
 			t.Fatalf("CI job %q does not keep fork and Dependabot work read-only and secretless", job)
 		}
@@ -306,6 +309,7 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"claude-vercel-floor-smoke":  {"contents": "read"},
 		"codex-floor-smoke":          {"contents": "read"},
 		"opencode-floor-smoke":       {"contents": "read"},
+		"vercel-acceptance-gate":     {"actions": "read", "contents": "read"},
 		"addy-promotion-main-replay": {"contents": "read"},
 	},
 	".github/workflows/claude-canary.yml": {

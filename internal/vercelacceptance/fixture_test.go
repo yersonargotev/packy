@@ -220,6 +220,40 @@ func TestNegativeTwinsFailDeterministicallyWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestMissingNoticeTwinFailsWithoutMutation(t *testing.T) {
+	testContractTwinFailsWithoutMutation(t, "missing-notice")
+}
+
+func TestMissingBindingTwinFailsWithoutMutation(t *testing.T) {
+	testContractTwinFailsWithoutMutation(t, "missing-binding")
+}
+
+func testContractTwinFailsWithoutMutation(t *testing.T, fact string) {
+	t.Helper()
+	base := Canonical()
+	root := t.TempDir()
+	before, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	twin, err := NegativeTwin(fact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflect.DeepEqual(base.Pack, twin.Pack) || !reflect.DeepEqual(base.Sources, twin.Sources) || !reflect.DeepEqual(base.Legal, twin.Legal) {
+		t.Fatalf("%s twin did not change exactly one Pack contract fact", fact)
+	}
+	first, second := Validate(twin), Validate(twin)
+	if first == nil || second == nil || first.Error() != second.Error() ||
+		!strings.HasPrefix(first.Error(), "VERCEL-CONTRACT-") {
+		t.Fatalf("unstable %s rejection: first=%v second=%v", fact, first, second)
+	}
+	after, err := os.ReadDir(root)
+	if err != nil || len(after) != len(before) {
+		t.Fatalf("negative validation mutated disposable root: before=%d after=%d err=%v", len(before), len(after), err)
+	}
+}
+
 func TestValidateRejectsEverySealedFixtureGroup(t *testing.T) {
 	tests := map[string]func(*Fixture){
 		"blob identity": func(f *Fixture) { f.Blobs[0].SHA256 = strings.Repeat("0", 64) },

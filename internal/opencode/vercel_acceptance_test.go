@@ -2,6 +2,8 @@ package opencode
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,8 +12,91 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/localprojection"
 	"github.com/yersonargotev/packy/internal/vercelacceptance"
 )
+
+func TestVercelLifecycleExercisesEveryOpenCodeWriteBoundaryAndExactDiff(t *testing.T) {
+	for failed := 0; failed < 11; failed++ {
+		t.Run(twoDigit(failed+1), func(t *testing.T) {
+			root := t.TempDir()
+			bundle := filepath.Join(root, "bundle")
+			home := filepath.Join(root, "home")
+			skills := filepath.Join(home, ".agents", "skills")
+			materializeVercelFixture(t, bundle)
+			adapter := NewSurfaceAdapter(bundle, skills, filepath.Join(home, ".config", "opencode", "opencode.json"), filepath.Join(home, ".config", "opencode", "AGENTS.md"))
+			inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: vercelacceptance.Canonical().Pack})
+			if err != nil {
+				t.Fatal(err)
+			}
+			actions := projectionActions(inspection.Projections)
+			if len(actions) != 11 {
+				t.Fatalf("OpenCode write boundaries = %d, want 11", len(actions))
+			}
+			broken := append([]capabilitypack.ProjectionAction(nil), actions...)
+			if broken[failed].Kind == capabilitypack.ActionOpenCodeSkillLink {
+				broken[failed].Source = filepath.Join(root, "missing-source")
+			} else {
+				blocker := filepath.Join(home, "blocked-"+twoDigit(failed+1))
+				if err := os.MkdirAll(filepath.Dir(blocker), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(blocker, []byte("operator"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				broken[failed].Target = filepath.Join(blocker, "child")
+			}
+			before := filesystemFacts(t, home)
+			if err := adapter.ApplyProjections(context.Background(), broken); err == nil || err.ID != broken[failed].ID {
+				t.Fatalf("boundary %s failure = %v", broken[failed].ID, err)
+			}
+			if got := filesystemFacts(t, home); !reflect.DeepEqual(got, before) {
+				t.Fatalf("boundary %s left mutations:\n got %#v\nwant %#v", broken[failed].ID, got, before)
+			}
+			if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
+				t.Fatalf("boundary %s recovery: %v", broken[failed].ID, err)
+			}
+			assertExactOpenCodeDiff(t, home, before, actions)
+			assertOpenCodeCommitRollbackAndRecovery(t, adapter, home, actions, failed)
+			assertOpenCodeDeletionRollbackAndRecovery(t, adapter, home, vercelacceptance.Canonical().Pack, failed)
+		})
+	}
+}
+
+func assertOpenCodeDeletionRollbackAndRecovery(t *testing.T, adapter *SurfaceAdapter, home string, pack capabilitypack.Pack, failed int) {
+	t.Helper()
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := projectionActions(inspection.Projections)
+	if len(actions) != 11 {
+		t.Fatalf("OpenCode deletion boundaries = %d, want 11", len(actions))
+	}
+	baseline := filesystemFacts(t, home)
+	action := actions[failed]
+	stage := filepath.Join(filepath.Dir(action.Target), ".packy-stage-"+localprojection.FingerprintBytes([]byte(string(action.Kind) + ":" + action.ID))[:12])
+	blocker := stage + ".backup"
+	if err := os.MkdirAll(blocker, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocker, "operator"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err == nil || err.ID != action.ID {
+		t.Fatalf("OpenCode deletion boundary %s failure = %v", action.ID, err)
+	}
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if got := filesystemFacts(t, home); !reflect.DeepEqual(got, baseline) {
+		t.Fatalf("OpenCode deletion boundary %s did not roll back", action.ID)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
+		t.Fatalf("OpenCode deletion boundary %s recovery: %v", action.ID, err)
+	}
+	assertExactDeletionDiff(t, home, baseline, actions)
+}
 
 func TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly(t *testing.T) {
 	root := t.TempDir()
@@ -119,6 +204,159 @@ func TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly(t *testing.
 			t.Fatalf("OpenCode projection %s survived deactivation: %v", projection.ID, err)
 		}
 	}
+}
+
+func assertExactOpenCodeDiff(t *testing.T, home string, before map[string]string, actions []capabilitypack.ProjectionAction) {
+	t.Helper()
+	got := filesystemFacts(t, home)
+	want := make(map[string]string, len(before)+len(actions))
+	for path, fact := range before {
+		want[path] = fact
+	}
+	for _, action := range actions {
+		addExpectedDirectories(t, home, filepath.Dir(action.Target), want)
+		relative, err := filepath.Rel(home, action.Target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fact := symlinkFact(t, action.Target, action.Source)
+		if action.Kind != capabilitypack.ActionOpenCodeSkillLink {
+			sum := sha256.Sum256([]byte(action.Content))
+			fact = "file:-rw-------:" + hex.EncodeToString(sum[:])
+		}
+		want[filepath.ToSlash(relative)] = fact
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("OpenCode filesystem diff:\n got %#v\nwant %#v", got, want)
+	}
+}
+
+func assertOpenCodeCommitRollbackAndRecovery(t *testing.T, adapter *SurfaceAdapter, home string, actions []capabilitypack.ProjectionAction, failed int) {
+	t.Helper()
+	baseline := filesystemFacts(t, home)
+	action := actions[failed]
+	stage := filepath.Join(filepath.Dir(action.Target), ".packy-stage-"+localprojection.FingerprintBytes([]byte(string(action.Kind) + ":" + action.ID))[:12])
+	blocker := stage + ".backup"
+	if err := os.MkdirAll(blocker, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocker, "operator"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err == nil || err.ID != action.ID {
+		t.Fatalf("commit boundary %s failure = %v", action.ID, err)
+	}
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if got := filesystemFacts(t, home); !reflect.DeepEqual(got, baseline) {
+		t.Fatalf("commit boundary %s did not roll back exactly:\n got %#v\nwant %#v", action.ID, got, baseline)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
+		t.Fatalf("commit boundary %s recovery: %v", action.ID, err)
+	}
+	if got := filesystemFacts(t, home); !reflect.DeepEqual(got, baseline) {
+		t.Fatalf("commit boundary %s recovery changed exact facts", action.ID)
+	}
+}
+
+func filesystemFacts(t *testing.T, root string) map[string]string {
+	t.Helper()
+	facts := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(relative)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			facts[key] = "directory:" + info.Mode().Perm().String()
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			info, err = os.Lstat(path)
+			if err != nil {
+				return err
+			}
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			facts[key] = "symlink:" + info.Mode().Perm().String() + ":" + target
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		facts[key] = "file:" + info.Mode().Perm().String() + ":" + hex.EncodeToString(sum[:])
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return facts
+}
+
+func symlinkFact(t *testing.T, target, source string) string {
+	t.Helper()
+	info, err := os.Lstat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "symlink:" + info.Mode().Perm().String() + ":" + source
+}
+
+func addExpectedDirectories(t *testing.T, root, dir string, facts map[string]string) {
+	t.Helper()
+	for current := dir; current != root; current = filepath.Dir(current) {
+		relative, err := filepath.Rel(root, current)
+		if err != nil || strings.HasPrefix(relative, "..") {
+			t.Fatalf("target parent %s escapes %s: %v", current, root, err)
+		}
+		facts[filepath.ToSlash(relative)] = "directory:-rwx------"
+	}
+}
+
+func assertExactDeletionDiff(t *testing.T, root string, before map[string]string, actions []capabilitypack.ProjectionAction) {
+	t.Helper()
+	want := make(map[string]string, len(before))
+	for path, fact := range before {
+		want[path] = fact
+	}
+	for _, action := range actions {
+		relative, err := filepath.Rel(root, action.Target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prefix := filepath.ToSlash(relative)
+		for path := range want {
+			if path == prefix || strings.HasPrefix(path, prefix+"/") {
+				delete(want, path)
+			}
+		}
+	}
+	if got := filesystemFacts(t, root); !reflect.DeepEqual(got, want) {
+		t.Fatalf("deactivation exact diff:\n got %#v\nwant %#v", got, want)
+	}
+}
+
+func twoDigit(value int) string {
+	return string([]byte{'0' + byte(value/10), '0' + byte(value%10)})
 }
 
 func materializeVercelFixture(t *testing.T, root string) {

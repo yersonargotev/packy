@@ -20,6 +20,7 @@ import (
 	"github.com/yersonargotev/packy/internal/addyacceptance"
 	"github.com/yersonargotev/packy/internal/packsync"
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
+	"github.com/yersonargotev/packy/internal/vercelacceptance"
 )
 
 var packyOwnedPackages = []string{
@@ -57,6 +58,7 @@ var packyOwnedPackages = []string{
 	"./internal/tools/governanceauth",
 	"./internal/tools/governancedrift",
 	"./internal/tools/syncpacksource",
+	"./internal/tools/vercelacceptance",
 	"./internal/vercelacceptance",
 	"./internal/version",
 	"./internal/workstation",
@@ -286,6 +288,97 @@ func TestAddyPromotionMainReplayIsEffectFreeAndRetained(t *testing.T) {
 		if strings.Contains(replay+script, forbidden) {
 			t.Fatalf("Addy replay contains publishing authority %q", forbidden)
 		}
+	}
+}
+
+func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *testing.T) {
+	root := repositoryRoot(t)
+	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	gate := workflowSection(t, workflow, "  vercel-acceptance-gate:", "  addy-promotion-main-replay:")
+	for _, required := range []string{
+		"name: Vercel six-gate acceptance cohort",
+		"needs: [validate, codex-floor-smoke, opencode-floor-smoke, claude-vercel-floor-smoke]",
+		"if: always() && github.event_name == 'pull_request'",
+		"actions: read",
+		"contents: read",
+		"fetch-depth: 0",
+		"persist-credentials: false",
+		"name: codex-floor-qualification",
+		"name: opencode-floor-qualification",
+		"name: claude-vercel-floor-qualification",
+		"name: vercel-foundation-qualification",
+		"VALIDATE_RESULT: ${{ needs.validate.result }}",
+		"CODEX_RESULT: ${{ needs.codex-floor-smoke.result }}",
+		"OPENCODE_RESULT: ${{ needs.opencode-floor-smoke.result }}",
+		"CLAUDE_RESULT: ${{ needs.claude-vercel-floor-smoke.result }}",
+		"./scripts/gate-vercel-acceptance.sh",
+		"--candidate-sha \"$GITHUB_SHA\"",
+		"--foundation-evidence \"$RUNNER_TEMP/vercel-foundation-evidence\"",
+		"retention-days: 90",
+	} {
+		if !strings.Contains(gate, required) {
+			t.Fatalf("Vercel acceptance gate missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"contents: write", "packages: write", "pull-requests: write", "id-token: write",
+		"VERCEL_TOKEN", "git push", "gh pr", "gh release", "npm publish", "deploy",
+	} {
+		if strings.Contains(gate, forbidden) {
+			t.Fatalf("Vercel acceptance gate contains forbidden authority or effect %q", forbidden)
+		}
+	}
+	script := filepath.Join(root, "scripts", "gate-vercel-acceptance.sh")
+	if !strings.Contains(readFile(t, script), "status --porcelain --untracked-files=normal") {
+		t.Fatal("Vercel gate must bind execution to a clean exact-candidate checkout")
+	}
+	if output, err := exec.Command("bash", "-n", script).CombinedOutput(); err != nil {
+		t.Fatalf("bash -n Vercel gate: %v\n%s", err, output)
+	}
+}
+
+func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testing.T) {
+	root := repositoryRoot(t)
+	scriptPath := filepath.Join(root, "scripts", "validate-vercel-acceptance.sh")
+	if output, err := exec.Command("bash", "-n", scriptPath).CombinedOutput(); err != nil {
+		t.Fatalf("bash -n Vercel foundation: %v\n%s", err, output)
+	}
+	script := readFile(t, scriptPath)
+	if strings.Contains(script, "VERCEL-ACCEPTANCE-") {
+		t.Fatal("foundation script must consume the domain-owned row registry")
+	}
+	rows := vercelacceptance.Rows()
+	if len(rows) != 24 {
+		t.Fatalf("domain-owned acceptance rows = %d, want 24", len(rows))
+	}
+	for _, row := range rows {
+		if row.EvidenceSeam == "" || row.NegativeSeam == "" || row.OracleSeam == "" {
+			t.Fatalf("acceptance row %s lacks a positive, negative, or oracle seam", row.ID)
+		}
+	}
+	for _, required := range []string{
+		`go run ./internal/tools/vercelacceptance --list-foundation`,
+		`git status --porcelain --untracked-files=normal`,
+		`while IFS='|' read -r row kind seam`,
+		`for rerun in first second`, `go test "$package" -run "^${test}$" -count=1 -v`,
+		`--foundation-manifest`,
+		`--validate-foundation`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("Vercel foundation missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		vercelacceptance.AcceptanceMatrixVersion, vercelacceptance.ExactArchiveSHA256,
+		"positive", "negative", "oracle", "grep -Fxc", "cmp -s",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("foundation script duplicates domain identity %q", forbidden)
+		}
+	}
+	authority := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
+	if strings.Count(authority, "./scripts/validate-vercel-acceptance.sh") != 1 {
+		t.Fatal("repository validation authority must run the Vercel foundation exactly once")
 	}
 }
 
@@ -1792,9 +1885,10 @@ func TestHostile(t *testing.T) {
 		}
 		writeExecutable(t, filepath.Join(shimRoot, command), contents)
 	}
-	// Addy acceptance owns its own execution contract; this tracer is scoped to
-	// the repository entrypoint's package selection and validation classes.
+	// Acceptance cohorts own their own execution contracts; this tracer is
+	// scoped to the repository entrypoint's package selection and validation classes.
 	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-addy-acceptance.sh"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-vercel-acceptance.sh"), "#!/bin/sh\nexit 0\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

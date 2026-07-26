@@ -180,6 +180,20 @@ func NegativeTwin(fact string) (Fixture, error) {
 				f.Pack.Resources[i].Requires = []string{}
 			}
 		}
+	case "missing-notice":
+		for i, resource := range f.Pack.Resources {
+			if resource.Kind == "notice" {
+				f.Pack.Resources = append(f.Pack.Resources[:i], f.Pack.Resources[i+1:]...)
+				break
+			}
+		}
+	case "missing-binding":
+		for i := range f.Pack.Resources {
+			if len(f.Pack.Resources[i].Bindings) > 0 {
+				f.Pack.Resources[i].Bindings = f.Pack.Resources[i].Bindings[1:]
+				break
+			}
+		}
 	default:
 		return Fixture{}, fmt.Errorf("unknown negative fact %q", fact)
 	}

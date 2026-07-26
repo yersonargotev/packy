@@ -27,9 +27,10 @@ import (
 )
 
 const ExactVercelClaudeVersion = "2.1.203"
+const ExactVercelClaudeVersionOutput = "2.1.203 (Claude Code)"
 
 type VercelConfig struct {
-	Claude, SearchPath, PackyRepo, PackyRef, EvidencePath, ClaudeIntegrity string
+	Claude, SearchPath, PackyRepo, PackyRef, RunID, EvidencePath, ClaudeIntegrity string
 }
 
 type VercelSkillEvidence struct {
@@ -67,22 +68,34 @@ type VercelSafetyFacts struct {
 	NoDeployment        bool `json:"no_deployment"`
 	NoUpstreamExecution bool `json:"no_upstream_execution"`
 }
-
+type vercelReadinessObservation struct {
+	Skills                       []VercelSkillEvidence `json:"skills"`
+	Positive                     VercelHostObservation `json:"positive_host_observation"`
+	MissingOne                   VercelHostObservation `json:"missing_one_host_observation"`
+	RuntimeModes                 []VercelRuntimeRow    `json:"runtime_modes"`
+	TypedFailBeforeEffects       bool                  `json:"typed_fail_before_effects_preflight"`
+	PreflightBeforeHostSelection bool                  `json:"preflight_before_host_selection"`
+}
 type VercelEvidence struct {
-	SchemaVersion                   int                   `json:"schema_version"`
-	PackySHA                        string                `json:"packy_sha"`
-	FixtureSHA256                   string                `json:"fixture_sha256"`
-	ClaudeVersion                   string                `json:"claude_version"`
-	ClaudeNPMIntegrity              string                `json:"claude_npm_integrity"`
-	ClaudeExecutableSHA256          string                `json:"claude_executable_sha256"`
-	Skills                          []VercelSkillEvidence `json:"skills"`
-	Positive                        VercelHostObservation `json:"positive_host_observation"`
-	MissingOne                      VercelHostObservation `json:"missing_one_host_observation"`
-	RuntimeModes                    []VercelRuntimeRow    `json:"runtime_modes"`
-	TypedFailBeforeEffectsPreflight bool                  `json:"typed_fail_before_effects_preflight"`
-	PreflightBeforeHostSelection    bool                  `json:"preflight_before_host_selection"`
-	AllowedCommands                 []string              `json:"allowed_commands"`
-	Safety                          VercelSafetyFacts     `json:"safety"`
+	SchemaVersion                   int                                    `json:"schema_version"`
+	RunID                           string                                 `json:"run_id"`
+	ObservedAt                      time.Time                              `json:"observed_at"`
+	PackySHA                        string                                 `json:"packy_sha"`
+	FixtureSHA256                   string                                 `json:"fixture_sha256"`
+	ClaudeVersion                   string                                 `json:"claude_version"`
+	ClaudeVersionOutput             string                                 `json:"claude_version_output"`
+	ClaudeNPMIntegrity              string                                 `json:"claude_npm_integrity"`
+	ClaudeExecutableSHA256          string                                 `json:"claude_executable_sha256"`
+	Skills                          []VercelSkillEvidence                  `json:"skills"`
+	Positive                        VercelHostObservation                  `json:"positive_host_observation"`
+	MissingOne                      VercelHostObservation                  `json:"missing_one_host_observation"`
+	RuntimeModes                    []VercelRuntimeRow                     `json:"runtime_modes"`
+	SemanticRerun                   vercelacceptance.SemanticRerunEvidence `json:"semantic_rerun"`
+	Mutation                        vercelacceptance.MutationObservation   `json:"mutation_observation"`
+	TypedFailBeforeEffectsPreflight bool                                   `json:"typed_fail_before_effects_preflight"`
+	PreflightBeforeHostSelection    bool                                   `json:"preflight_before_host_selection"`
+	AllowedCommands                 []string                               `json:"allowed_commands"`
+	Safety                          VercelSafetyFacts                      `json:"safety"`
 }
 
 var hostSkillSummary = regexp.MustCompile(`Loaded ([0-9]+) unique skills \(([0-9]+) unconditional, ([0-9]+) conditional, managed: ([0-9]+), user: ([0-9]+), project: ([0-9]+), additional: ([0-9]+), legacy commands: ([0-9]+)\)`)
@@ -107,8 +120,8 @@ func ParseClaudeSkillDebug(debug string) (int, string, error) {
 }
 
 func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
-	if cfg.Claude == "" || cfg.SearchPath == "" || cfg.PackyRepo == "" || cfg.PackyRef == "" || cfg.EvidencePath == "" || cfg.ClaudeIntegrity == "" {
-		return VercelEvidence{}, errors.New("Claude executable, restricted search path, npm integrity, Packy repo/ref, and evidence path are required")
+	if cfg.Claude == "" || cfg.SearchPath == "" || cfg.PackyRepo == "" || cfg.PackyRef == "" || strings.TrimSpace(cfg.RunID) == "" || cfg.EvidencePath == "" || cfg.ClaudeIntegrity == "" {
+		return VercelEvidence{}, errors.New("Claude executable, restricted search path, npm integrity, Packy repo/ref, run ID, and evidence path are required")
 	}
 	repo, err := filepath.Abs(cfg.PackyRepo)
 	if err != nil {
@@ -134,6 +147,10 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	if err := materializeVercelFixture(bundle); err != nil {
 		return VercelEvidence{}, err
 	}
+	bundleBefore, err := localprojection.SnapshotExactTree(bundle)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
 	fixtureDigest := vercelacceptance.ExactArchiveSHA256
 	claudeDigest, err := digestFile(cfg.Claude)
 	if err != nil {
@@ -143,8 +160,8 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	if err != nil {
 		return VercelEvidence{}, err
 	}
-	if !strings.Contains(version, ExactVercelClaudeVersion) {
-		return VercelEvidence{}, fmt.Errorf("Claude version = %q, want %s", version, ExactVercelClaudeVersion)
+	if version != ExactVercelClaudeVersionOutput {
+		return VercelEvidence{}, fmt.Errorf("Claude version output = %q, want %q", version, ExactVercelClaudeVersionOutput)
 	}
 
 	positiveHome := filepath.Join(root, "positive-home")
@@ -188,9 +205,34 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	for i := range runtimeRows {
 		runtimeRows[i].SelectionObserved = selections[runtimeRows[i].ResourceID+":"+runtimeRows[i].ModeID]
 	}
-	e := VercelEvidence{SchemaVersion: 1, PackySHA: head, FixtureSHA256: fixtureDigest, ClaudeVersion: ExactVercelClaudeVersion,
+	firstReadiness := vercelReadinessObservation{skills, positive, negative, runtimeRows, preflight, preflightBeforeSelection}
+	firstSemantic, err := semanticSHA256(firstReadiness)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
+	secondReadiness, err := observeClaudeReadiness(ctx, cfg, root, bundle, fixture.Pack)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
+	secondSemantic, err := semanticSHA256(secondReadiness)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
+	semanticRerun := vercelacceptance.SemanticRerunEvidence{FirstSHA256: firstSemantic, SecondSHA256: secondSemantic, ExactMatch: firstSemantic == secondSemantic}
+	if !semanticRerun.Valid() {
+		return VercelEvidence{}, errors.New("Claude complete readiness rerun differed")
+	}
+	bundleAfter, err := localprojection.SnapshotExactTree(bundle)
+	if err != nil {
+		return VercelEvidence{}, err
+	}
+	mutation := vercelacceptance.NewMutationObservation("$SANDBOX/bundle", bundleBefore, bundleAfter)
+	if !mutation.Valid() {
+		return VercelEvidence{}, errors.New("Claude host mutated the immutable fixture bundle")
+	}
+	e := VercelEvidence{SchemaVersion: 1, RunID: cfg.RunID, ObservedAt: time.Now().UTC(), PackySHA: head, FixtureSHA256: fixtureDigest, ClaudeVersion: ExactVercelClaudeVersion, ClaudeVersionOutput: version,
 		ClaudeNPMIntegrity: cfg.ClaudeIntegrity, ClaudeExecutableSHA256: claudeDigest, Skills: skills, Positive: positive, MissingOne: negative,
-		RuntimeModes: runtimeRows, TypedFailBeforeEffectsPreflight: preflight, PreflightBeforeHostSelection: preflightBeforeSelection,
+		RuntimeModes: runtimeRows, SemanticRerun: semanticRerun, Mutation: mutation, TypedFailBeforeEffectsPreflight: preflight, PreflightBeforeHostSelection: preflightBeforeSelection,
 		AllowedCommands: []string{"git rev-parse", "claude --version", "claude startup with --debug-file", "claude --setting-sources user --tools '' --no-session-persistence --print /name mode"},
 		Safety:          VercelSafetyFacts{true, true, true, true}}
 	if err := ValidateVercelEvidence(e); err != nil {
@@ -211,11 +253,11 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 }
 
 func ValidateVercelEvidence(e VercelEvidence) error {
-	if e.SchemaVersion != 1 || len(e.PackySHA) != 40 || e.FixtureSHA256 != vercelacceptance.ExactArchiveSHA256 || e.ClaudeVersion != ExactVercelClaudeVersion || !strings.HasPrefix(e.ClaudeNPMIntegrity, "sha512-") || len(e.ClaudeExecutableSHA256) != 64 {
+	if e.SchemaVersion != 1 || strings.TrimSpace(e.RunID) == "" || e.ObservedAt.IsZero() || e.ObservedAt.Location() != time.UTC || len(e.PackySHA) != 40 || e.FixtureSHA256 != vercelacceptance.ExactArchiveSHA256 || e.ClaudeVersion != ExactVercelClaudeVersion || e.ClaudeVersionOutput != ExactVercelClaudeVersionOutput || !strings.HasPrefix(e.ClaudeNPMIntegrity, "sha512-") || len(e.ClaudeExecutableSHA256) != 64 {
 		return errors.New("invalid Vercel smoke identity")
 	}
 	if len(e.Skills) != 9 || len(e.RuntimeModes) != 28 || e.Positive.UserSkillDirCommands != 9 || e.MissingOne.UserSkillDirCommands != 8 ||
-		!e.TypedFailBeforeEffectsPreflight || !e.PreflightBeforeHostSelection {
+		!e.TypedFailBeforeEffectsPreflight || !e.PreflightBeforeHostSelection || !e.SemanticRerun.Valid() || !e.Mutation.Valid() {
 		return errors.New("incomplete Vercel smoke evidence")
 	}
 	want := vercelacceptance.Canonical().Pack
@@ -252,6 +294,58 @@ func ValidateVercelEvidence(e VercelEvidence) error {
 		}
 	}
 	return nil
+}
+
+func semanticSHA256(value any) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func observeClaudeReadiness(ctx context.Context, cfg VercelConfig, root, bundle string, pack capabilitypack.Pack) (vercelReadinessObservation, error) {
+	positiveHome := filepath.Join(root, "rerun-positive-home")
+	skillsRoot := filepath.Join(positiveHome, ".claude", "skills")
+	if err := materializeClaudeVercelSkills(pack, bundle, skillsRoot); err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	skills, err := projectedSkillEvidence(pack, skillsRoot)
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	positive, err := observeClaudeStartup(ctx, cfg.Claude, cfg.SearchPath, positiveHome, skills)
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	negativeHome := filepath.Join(root, "rerun-negative-home")
+	if err := copySkillTrees(skillsRoot, filepath.Join(negativeHome, ".claude", "skills"), skills[1:]); err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	negative, err := observeClaudeStartup(ctx, cfg.Claude, cfg.SearchPath, negativeHome, skills[1:])
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	if positive.UserSkillDirCommands != 9 || negative.UserSkillDirCommands != 8 {
+		return vercelReadinessObservation{}, errors.New("Claude rerun did not distinguish nine skills from missing-one twin")
+	}
+	rows, preflight, err := evaluateSafeRuntimeModes(pack, nil)
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	preflightBeforeSelection := preflight && allRuntimeRowsFailBeforeEffects(rows)
+	if !preflightBeforeSelection {
+		return vercelReadinessObservation{}, errors.New("Claude rerun runtime preflight did not fail safely before selection")
+	}
+	selections, err := observeClaudeSelections(ctx, cfg.Claude, cfg.SearchPath, positiveHome, pack, skillsRoot)
+	if err != nil {
+		return vercelReadinessObservation{}, err
+	}
+	for i := range rows {
+		rows[i].SelectionObserved = selections[rows[i].ResourceID+":"+rows[i].ModeID]
+	}
+	return vercelReadinessObservation{skills, positive, negative, rows, preflight, preflightBeforeSelection}, nil
 }
 
 func allRuntimeRowsFailBeforeEffects(rows []VercelRuntimeRow) bool {
