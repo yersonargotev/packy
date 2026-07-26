@@ -73,8 +73,9 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	gitForTest(t, base, "add", ".")
 	gitForTest(t, base, "commit", "-qm", "base")
 	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
-	validateRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "publish")
+	validateRepo, prepareRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "prepare"), filepath.Join(t.TempDir(), "publish")
 	gitForTest(t, filepath.Dir(validateRepo), "clone", "-q", base, validateRepo)
+	gitForTest(t, filepath.Dir(prepareRepo), "clone", "-q", base, prepareRepo)
 	gitForTest(t, filepath.Dir(publishRepo), "clone", "-q", base, publishRepo)
 
 	oldSource, oldValidator, oldGateway, oldClassifier := workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory, bundleClassificationAttempt
@@ -112,11 +113,21 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	if err := run(context.Background(), []string{"--phase", "validate", "--repository-root", validateRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--output", validateDir}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
+	prepareDir := filepath.Join(artifacts, "prepare")
+	if err := run(context.Background(), []string{"--phase", "prepare", "--repository-root", prepareRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--validation", filepath.Join(validateDir, "validation.json"), "--output", prepareDir}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("prepare: %#v fake=%#v", err, fakeGitHub)
+	}
+	var preparation packsyncworkflow.BundlePreparationArtifact
+	readJSONForTest(t, filepath.Join(prepareDir, "preparation.json"), &preparation)
+	if !preparation.ObservationsStable || preparation.RepositoryMutated || preparation.DecisionReady ||
+		preparation.BranchName != "sync/adapter-composite" || fakeGitHub.pushCalls != 0 || fakeGitHub.createCalls != 0 {
+		t.Fatalf("read-only preparation = %#v fake=%#v", preparation, fakeGitHub)
+	}
 	publishDir := filepath.Join(artifacts, "publish")
 	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--validation", filepath.Join(validateDir, "validation.json"), "--output", publishDir}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("%#v fake=%#v", err, fakeGitHub)
 	}
-	if source.resolves["source-a"] < 3 || source.resolves["source-b"] < 3 {
+	if source.resolves["source-a"] < 4 || source.resolves["source-b"] < 4 {
 		t.Fatalf("each phase did not independently reacquire all members: %#v", source.resolves)
 	}
 	var publication packsyncworkflow.BundlePublicationArtifact

@@ -885,14 +885,15 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 		}
 	}
 	for _, required := range []string{
-		"workflow_dispatch:", "permissions: {}", "group: sync-pack-source-${{ inputs.pack_id || inputs.source_id }}", "cancel-in-progress: false",
+		"workflow_dispatch:", "permissions: {}", "sync-pack-source-prepare-{0}-{1}", "format('sync-pack-source-{0}'", "cancel-in-progress: false",
 		"run-name: sync-pack-source / ${{ inputs.pack_id || inputs.source_id }} / ${{ inputs.request_digest }}", "PACKY_REQUEST_DIGEST: ${{ inputs.request_digest }}",
+		"prepare_only:", "Admit protected publication or read-only preparation", "Enforce the ref, mode, and operation boundary",
 		"operation:", "register_bundle", "pack_id:", "registrations_json:", "registration_bundle_sha256:", "proposed_version:", "proposed_manifest_json:", "proposed_manifest_sha256:",
 		"registration_json:", "registration_sha256:", "PACKY_OPERATION: ${{ inputs.operation }}", "PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}", "PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}",
 		"PACKY_PACK_ID: ${{ inputs.pack_id }}", "PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}", "PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}",
 		"PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}", "PACKY_PROPOSED_MANIFEST_JSON: ${{ inputs.proposed_manifest_json }}", "PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}",
-		"inspect:", "classify:", "validate:", "publish:", "needs: [inspect, classify, validate]", "contents: write", "pull-requests: write",
-		"--phase validate", "steps.route.outputs.noop", "packy-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
+		"inspect:", "classify:", "validate:", "prepare:", "publish:", "needs: [inspect, classify, validate]", "contents: write", "pull-requests: write",
+		"--phase validate", "--phase prepare", "pack-source-preparation-${{ github.run_id }}", "steps.route.outputs.noop", "packy-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("synchronization workflow missing %q", required)
@@ -905,17 +906,21 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 	}
 	inspect := workflowSection(t, workflow, "  inspect:", "  classify:")
 	classify := workflowSection(t, workflow, "  classify:", "  validate:")
-	validate := workflowSection(t, workflow, "  validate:", "  publish:")
+	validate := workflowSection(t, workflow, "  validate:", "  prepare:")
+	prepare := workflowSection(t, workflow, "  prepare:", "  publish:")
 	publish := workflow[strings.Index(workflow, "  publish:"):]
-	for name, section := range map[string]string{"inspect": inspect, "validate": validate, "publish": publish} {
+	for name, section := range map[string]string{"inspect": inspect, "validate": validate, "prepare": prepare, "publish": publish} {
 		if !strings.Contains(section, "GITHUB_TOKEN: ${{ github.token }}") {
 			t.Fatalf("%s acquisition does not receive the job-scoped GitHub token", name)
 		}
 	}
-	if strings.Contains(inspect, "contents: write") || strings.Contains(inspect, "pull-requests: write") || strings.Contains(classify, "contents: write") || strings.Contains(classify, "pull-requests: write") || strings.Contains(validate, "contents: write") || strings.Contains(validate, "pull-requests: write") {
-		t.Fatal("Inspect, Classify, or Validate has publication permission")
+	if strings.Contains(inspect, "contents: write") || strings.Contains(inspect, "pull-requests: write") || strings.Contains(classify, "contents: write") || strings.Contains(classify, "pull-requests: write") || strings.Contains(validate, "contents: write") || strings.Contains(validate, "pull-requests: write") || strings.Contains(prepare, "contents: write") || strings.Contains(prepare, "pull-requests: write") {
+		t.Fatal("Inspect, Classify, Validate, or Prepare has publication permission")
 	}
-	if !strings.Contains(classify, "models: read") || !strings.Contains(publish, "contents: write") || !strings.Contains(publish, "pull-requests: write") {
+	if !strings.Contains(classify, "models: read") || !strings.Contains(prepare, "pull-requests: read") ||
+		!strings.Contains(prepare, "inputs.prepare_only == true") || !strings.Contains(prepare, "github.ref != 'refs/heads/main'") ||
+		!strings.Contains(publish, "contents: write") || !strings.Contains(publish, "pull-requests: write") ||
+		!strings.Contains(publish, "github.ref == 'refs/heads/main'") || !strings.Contains(publish, "inputs.prepare_only == false") {
 		t.Fatal("phase permissions do not match the accepted minimum")
 	}
 }
@@ -1694,6 +1699,57 @@ echo https://github.com/yersonargotev/packy/actions/runs/42
 	}
 	if _, present := inputs["schema_version"]; present {
 		t.Fatal("workflow transport contains schema_version")
+	}
+}
+
+func TestMaintainerPreparationRendererIsBranchScopedAndTransportOnly(t *testing.T) {
+	root := repositoryRoot(t)
+	workspace := t.TempDir()
+	requestPath := filepath.Join(workspace, "request.json")
+	request := `{"schema_version":3,"operation":"register_bundle","pack_id":"vercel","registrations":[{"registration":{"id":"source-a","selector":{"ref":"` + strings.Repeat("a", 40) + `"}}}],"classification_mode":"ai","request_reason":"proof"}`
+	writeFile(t, requestPath, request)
+	bin := filepath.Join(workspace, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argsPath, stdinPath := filepath.Join(workspace, "args"), filepath.Join(workspace, "stdin")
+	fake := `#!/bin/sh
+printf '%s\n' "$*" > "$FAKE_GH_ARGS"
+cat > "$FAKE_GH_STDIN"
+echo https://github.com/yersonargotev/packy/actions/runs/43
+`
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(root, ".agents", "skills", "sync-pack-source", "scripts", "prepare.sh")
+	cmd := exec.Command(script, "feat/issue-312-premerge-pack-sync-proof", requestPath)
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "FAKE_GH_ARGS="+argsPath, "FAKE_GH_STDIN="+stdinPath)
+	if output, err := cmd.CombinedOutput(); err != nil || !strings.Contains(string(output), "/actions/runs/43") {
+		t.Fatalf("preparation dispatch = %v: %s", err, output)
+	}
+	wantArgs := "workflow run .github/workflows/sync-pack-source.yml --repo yersonargotev/packy --ref feat/issue-312-premerge-pack-sync-proof --json"
+	if got := strings.TrimSpace(readFile(t, argsPath)); got != wantArgs {
+		t.Fatalf("gh args = %q, want %q", got, wantArgs)
+	}
+	var inputs map[string]string
+	if err := json.Unmarshal([]byte(readFile(t, stdinPath)), &inputs); err != nil {
+		t.Fatal(err)
+	}
+	if inputs["prepare_only"] != "true" || inputs["request_digest"] == "" || inputs["pack_id"] != "vercel" {
+		t.Fatalf("preparation inputs = %#v", inputs)
+	}
+	var canonical map[string]any
+	if err := json.Unmarshal([]byte(request), &canonical); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := canonical["prepare_only"]; present {
+		t.Fatal("transport-only preparation flag entered canonical request")
+	}
+
+	for _, branch := range []string{"main", "feature/unapproved"} {
+		if err := exec.Command(script, branch, requestPath).Run(); err == nil {
+			t.Fatalf("unsafe preparation ref %q accepted", branch)
+		}
 	}
 }
 

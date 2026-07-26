@@ -64,6 +64,15 @@ type PublishResult struct {
 	Readiness   Readiness
 }
 
+// PublicationPreparation is evidence that all owner-controlled local work and
+// stable, read-only publication observation completed. It deliberately carries
+// neither a publication decision nor decision-readiness authority.
+type PublicationPreparation struct {
+	Apply         packsync.ApplyResult
+	Proposal      Proposal
+	ObservedState PublicationState
+}
+
 type Publisher struct {
 	Applier    Applier
 	Validator  Validator
@@ -73,87 +82,21 @@ type Publisher struct {
 	GitHub     PublicationGateway
 }
 
+// Prepare completes the reusable read-only prefix of publication. It never
+// calls Publish or Finalize.
+func (publisher Publisher) Prepare(ctx context.Context, request PublishRequest) (PublicationPreparation, error) {
+	preparation, _, err := publisher.prepare(ctx, request)
+	return preparation, err
+}
+
 // Run completes sandbox Apply and the full validation gate before observing
 // or writing GitHub state. GitHub state is then observed twice so a last-moment
 // reviewer edit, base movement, or ownership change fails before Publish.
 func (publisher Publisher) Run(ctx context.Context, request PublishRequest) (PublishResult, error) {
-	if publisher.Applier == nil || publisher.Validator == nil || publisher.Builder == nil || publisher.Diff == nil || publisher.Provenance == nil || publisher.GitHub == nil || request.RepositoryRoot == "" {
-		return PublishResult{}, errors.New("publish requires Apply, validation, proposal construction, provenance revalidation, GitHub, and a sandbox repository")
-	}
-	recovered, pending, err := publisher.Applier.RecoverPending(ctx, request.RepositoryRoot)
-	if err != nil {
-		return PublishResult{}, err
-	}
-	var result packsync.ApplyResult
-	if pending && recovered.Status == "completed" {
-		if recovered.PlanID != request.Apply.Plan.PlanID {
-			return PublishResult{}, Failure{Kind: FailureIntegrity, Err: errors.New("recovered transaction belongs to a different sealed plan")}
-		}
-		result = recovered
-	} else {
-		result, err = publisher.Applier.Apply(ctx, request.Apply)
-		if err != nil {
-			return PublishResult{}, err
-		}
-	}
-	diffSeal, err := publisher.Diff.Seal(ctx, request.RepositoryRoot)
-	if err != nil {
-		return PublishResult{}, Failure{Kind: FailureIntegrity, Err: err}
-	}
-	var validationErr error
-	if validator, ok := publisher.Validator.(AppliedValidator); ok {
-		validationErr = validator.ValidateApplied(ctx, request.RepositoryRoot)
-	} else {
-		validationErr = publisher.Validator.Validate(ctx, request.RepositoryRoot)
-	}
-	if validationErr != nil {
-		return PublishResult{}, Failure{Kind: FailureValidation, Err: validationErr}
-	}
-	if err := publisher.Diff.VerifyWorkspace(ctx, request.RepositoryRoot, diffSeal); err != nil {
-		return PublishResult{}, Failure{Kind: FailureValidation, Err: errors.New("validation changed the sealed Apply diff")}
-	}
-	proposal, err := publisher.Builder.Build(ctx, request.RepositoryRoot, result)
-	if err != nil {
-		return PublishResult{}, err
-	}
-	proposal.ResultTreeSHA = diffSeal
-	if err := publisher.Diff.VerifyCommit(ctx, request.RepositoryRoot, diffSeal, proposal.HeadSHA); err != nil {
-		return PublishResult{}, Failure{Kind: FailureIntegrity, Err: errors.New("publication commit does not match the sealed Apply diff")}
-	}
-	// These gates are derived here from the completed owner-controlled sequence,
-	// never asserted by the workflow adapter. Ownership is admitted only if the
-	// fail-closed state evaluation below succeeds.
-	proposal.Validation = ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}
-	proposal.InvalidationConditions = DecisionReadyInvalidationConditions()
-	proposal, err = publisher.GitHub.Prepare(proposal)
-	if err != nil {
-		return PublishResult{}, err
-	}
-	if err := validateProposal(proposal); err != nil {
-		return PublishResult{}, err
-	}
-	if err := publisher.Provenance.RevalidateCandidate(ctx, request.Apply.Plan); err != nil {
-		return PublishResult{}, Failure{Kind: FailureProvenance, Err: errors.New("candidate provenance changed after sandbox validation")}
-	}
-	first, err := publisher.GitHub.Observe(ctx, proposal.SourceID)
-	if err != nil {
-		return PublishResult{}, err
-	}
-	first.ProvenanceCurrent = true
-	decision, err := EvaluatePublication(proposal, first)
+	preparation, decision, err := publisher.prepare(ctx, request)
+	result, proposal, second := preparation.Apply, preparation.Proposal, preparation.ObservedState
 	if err != nil {
 		return PublishResult{Apply: result, Decision: decision}, err
-	}
-	if err := publisher.Provenance.RevalidateCandidate(ctx, request.Apply.Plan); err != nil {
-		return PublishResult{}, Failure{Kind: FailureProvenance, Err: errors.New("candidate provenance changed during final publication revalidation")}
-	}
-	second, err := publisher.GitHub.Observe(ctx, proposal.SourceID)
-	if err != nil {
-		return PublishResult{}, err
-	}
-	second.ProvenanceCurrent = true
-	if !reflect.DeepEqual(first, second) {
-		return PublishResult{Apply: result, Decision: PublicationDecision{Action: PublicationBlock, Branch: "sync/" + proposal.SourceID, Blockers: []string{"publication state changed during final revalidation"}}}, Failure{Kind: FailureDivergence, Err: errors.New("publication state changed during final revalidation")}
 	}
 	if decision.Action == PublicationNoop {
 		ready, err := readinessFor(proposal, second.PR)
@@ -195,6 +138,89 @@ func (publisher Publisher) Run(ctx context.Context, request PublishRequest) (Pub
 		return PublishResult{}, err
 	}
 	return PublishResult{Apply: result, Proposal: proposal, Decision: decision, PullRequest: final.PR, Readiness: ready}, nil
+}
+
+func (publisher Publisher) prepare(ctx context.Context, request PublishRequest) (PublicationPreparation, PublicationDecision, error) {
+	if publisher.Applier == nil || publisher.Validator == nil || publisher.Builder == nil || publisher.Diff == nil || publisher.Provenance == nil || publisher.GitHub == nil || request.RepositoryRoot == "" {
+		return PublicationPreparation{}, PublicationDecision{}, errors.New("publish requires Apply, validation, proposal construction, provenance revalidation, GitHub, and a sandbox repository")
+	}
+	recovered, pending, err := publisher.Applier.RecoverPending(ctx, request.RepositoryRoot)
+	if err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, err
+	}
+	var result packsync.ApplyResult
+	if pending && recovered.Status == "completed" {
+		if recovered.PlanID != request.Apply.Plan.PlanID {
+			return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureIntegrity, Err: errors.New("recovered transaction belongs to a different sealed plan")}
+		}
+		result = recovered
+	} else {
+		result, err = publisher.Applier.Apply(ctx, request.Apply)
+		if err != nil {
+			return PublicationPreparation{}, PublicationDecision{}, err
+		}
+	}
+	diffSeal, err := publisher.Diff.Seal(ctx, request.RepositoryRoot)
+	if err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureIntegrity, Err: err}
+	}
+	var validationErr error
+	if validator, ok := publisher.Validator.(AppliedValidator); ok {
+		validationErr = validator.ValidateApplied(ctx, request.RepositoryRoot)
+	} else {
+		validationErr = publisher.Validator.Validate(ctx, request.RepositoryRoot)
+	}
+	if validationErr != nil {
+		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureValidation, Err: validationErr}
+	}
+	if err := publisher.Diff.VerifyWorkspace(ctx, request.RepositoryRoot, diffSeal); err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureValidation, Err: errors.New("validation changed the sealed Apply diff")}
+	}
+	proposal, err := publisher.Builder.Build(ctx, request.RepositoryRoot, result)
+	if err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, err
+	}
+	proposal.ResultTreeSHA = diffSeal
+	if err := publisher.Diff.VerifyCommit(ctx, request.RepositoryRoot, diffSeal, proposal.HeadSHA); err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureIntegrity, Err: errors.New("publication commit does not match the sealed Apply diff")}
+	}
+	// These gates are derived here from the completed owner-controlled sequence,
+	// never asserted by the workflow adapter. Ownership is admitted only if the
+	// fail-closed state evaluation below succeeds.
+	proposal.Validation = ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}
+	proposal.InvalidationConditions = DecisionReadyInvalidationConditions()
+	proposal, err = publisher.GitHub.Prepare(proposal)
+	if err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, err
+	}
+	if err := validateProposal(proposal); err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, err
+	}
+	if err := publisher.Provenance.RevalidateCandidate(ctx, request.Apply.Plan); err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureProvenance, Err: errors.New("candidate provenance changed after sandbox validation")}
+	}
+	first, err := publisher.GitHub.Observe(ctx, proposal.SourceID)
+	if err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, err
+	}
+	first.ProvenanceCurrent = true
+	decision, err := EvaluatePublication(proposal, first)
+	if err != nil {
+		return PublicationPreparation{Apply: result, Proposal: proposal, ObservedState: first}, decision, err
+	}
+	if err := publisher.Provenance.RevalidateCandidate(ctx, request.Apply.Plan); err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureProvenance, Err: errors.New("candidate provenance changed during final publication revalidation")}
+	}
+	second, err := publisher.GitHub.Observe(ctx, proposal.SourceID)
+	if err != nil {
+		return PublicationPreparation{}, PublicationDecision{}, err
+	}
+	second.ProvenanceCurrent = true
+	if !reflect.DeepEqual(first, second) {
+		blocked := PublicationDecision{Action: PublicationBlock, Branch: "sync/" + proposal.SourceID, Blockers: []string{"publication state changed during final revalidation"}}
+		return PublicationPreparation{Apply: result, Proposal: proposal, ObservedState: second}, blocked, Failure{Kind: FailureDivergence, Err: errors.New("publication state changed during final revalidation")}
+	}
+	return PublicationPreparation{Apply: result, Proposal: proposal, ObservedState: second}, decision, nil
 }
 
 func validatePublishedState(proposal Proposal, decision PublicationDecision, returned PRState, state PublicationState) error {

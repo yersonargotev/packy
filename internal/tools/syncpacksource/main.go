@@ -52,7 +52,7 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("syncpacksource", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var option options
-	flags.StringVar(&option.phase, "phase", "inspect", "inspect, classify, validate, or publish")
+	flags.StringVar(&option.phase, "phase", "inspect", "inspect, classify, validate, prepare, or publish")
 	flags.StringVar(&option.repositoryRoot, "repository-root", ".", "sandbox Packy repository root")
 	flags.StringVar(&option.requestPath, "request", "", "canonical dispatch request JSON")
 	flags.StringVar(&option.planPath, "plan", "", "canonical sealed plan JSON")
@@ -92,6 +92,12 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 			err = validateBundle(ctx, option, output)
 		} else {
 			err = validateSandbox(ctx, option, output)
+		}
+	case "prepare":
+		if !bundle {
+			err = errors.New("preparation is available only for register_bundle")
+		} else {
+			err = prepareBundle(ctx, option, output)
 		}
 	case "publish":
 		if bundle {

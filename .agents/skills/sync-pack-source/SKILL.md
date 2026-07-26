@@ -11,6 +11,11 @@ acting. The workflow and its artifacts own synchronization semantics; this
 skill only translates intent, performs remote preflight, dispatches, monitors,
 and presents evidence.
 
+When an approved delivery issue changes the v3 workflow's external seams and
+requires proof before merge, follow [PREMERGE.md](PREMERGE.md). That read-only
+branch run is development evidence only and never replaces the protected-main
+operation below.
+
 ## 1. Normalize
 
 If the maintainer supplied an existing run ID/URL only for monitoring, validate
