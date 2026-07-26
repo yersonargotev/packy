@@ -64,12 +64,8 @@ func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t 
 	gitForTest(t, base, "commit", "-qm", "base")
 	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
 	validateRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "publish")
-	gitForTest(t, filepath.Dir(validateRepo), "clone", "-q", base, validateRepo)
-	gitForTest(t, filepath.Dir(publishRepo), "clone", "-q", base, publishRepo)
-	for _, repository := range []string{validateRepo, publishRepo} {
-		gitForTest(t, repository, "config", "gc.auto", "0")
-		gitForTest(t, repository, "config", "maintenance.auto", "false")
-	}
+	cloneForTest(t, base, validateRepo)
+	cloneForTest(t, base, publishRepo)
 
 	oldSourceFactory, oldValidatorFactory, oldGatewayFactory := workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory
 	workflowSourceFactory = func() packsync.Source { return source }
@@ -254,4 +250,11 @@ func gitForTest(t *testing.T, directory string, args ...string) string {
 		t.Fatalf("git %v: %v: %s", args, err, output)
 	}
 	return string(output)
+}
+
+func cloneForTest(t *testing.T, source, destination string) {
+	t.Helper()
+	gitForTest(t, filepath.Dir(destination), "clone", "-q", source, destination)
+	gitForTest(t, destination, "config", "gc.auto", "0")
+	gitForTest(t, destination, "config", "maintenance.auto", "false")
 }

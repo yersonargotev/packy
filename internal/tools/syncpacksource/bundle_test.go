@@ -74,9 +74,9 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	gitForTest(t, base, "commit", "-qm", "base")
 	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
 	validateRepo, prepareRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "prepare"), filepath.Join(t.TempDir(), "publish")
-	gitForTest(t, filepath.Dir(validateRepo), "clone", "-q", base, validateRepo)
-	gitForTest(t, filepath.Dir(prepareRepo), "clone", "-q", base, prepareRepo)
-	gitForTest(t, filepath.Dir(publishRepo), "clone", "-q", base, publishRepo)
+	cloneForTest(t, base, validateRepo)
+	cloneForTest(t, base, prepareRepo)
+	cloneForTest(t, base, publishRepo)
 
 	oldSource, oldValidator, oldGateway, oldClassifier := workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory, bundleClassificationAttempt
 	workflowSourceFactory = func() packsync.Source { return source }
@@ -148,7 +148,7 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	assertRejectedWithoutWrite := func(name string, invoke func(string) error, want string) {
 		t.Helper()
 		repository := filepath.Join(t.TempDir(), name)
-		gitForTest(t, filepath.Dir(repository), "clone", "-q", base, repository)
+		cloneForTest(t, base, repository)
 		before := strings.TrimSpace(gitForTest(t, repository, "rev-parse", "HEAD^{tree}"))
 		err := invoke(repository)
 		if err == nil || !strings.Contains(err.Error(), want) {

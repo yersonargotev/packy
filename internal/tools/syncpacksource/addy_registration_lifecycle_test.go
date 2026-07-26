@@ -126,8 +126,8 @@ func TestAddyRegistrationTracerProvesExactEndToEndAdmission(t *testing.T) {
 	}
 
 	validateRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "publish")
-	gitForTest(t, filepath.Dir(validateRepo), "clone", "-q", base, validateRepo)
-	gitForTest(t, filepath.Dir(publishRepo), "clone", "-q", base, publishRepo)
+	cloneForTest(t, base, validateRepo)
+	cloneForTest(t, base, publishRepo)
 	validationDir := filepath.Join(artifacts, "validation")
 	if err := run(context.Background(), []string{"--phase", "validate", "--repository-root", validateRepo, "--request", secondRequest, "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classificationDir, "classification.json"), "--output", validationDir}, io.Discard); err != nil {
 		t.Fatal(err)
@@ -151,7 +151,7 @@ func TestAddyRegistrationTracerProvesExactEndToEndAdmission(t *testing.T) {
 
 	t.Run("failure-before-validation-gate-does-not-write", func(t *testing.T) {
 		failedRepo := filepath.Join(t.TempDir(), "failed")
-		gitForTest(t, filepath.Dir(failedRepo), "clone", "-q", base, failedRepo)
+		cloneForTest(t, base, failedRepo)
 		bad := evidence
 		bad.Evidence = nil
 		badPath := filepath.Join(t.TempDir(), "bad.json")
