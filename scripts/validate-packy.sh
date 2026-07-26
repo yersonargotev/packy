@@ -36,6 +36,7 @@ readonly packages=(
   ./internal/skillbundle
   ./internal/tools/addypromotiongate
   ./internal/tools/claudesmoke
+  ./internal/tools/claudevercelsmoke
   ./internal/tools/codexsmoke
   ./internal/tools/opencodesmoke
   ./internal/tools/governanceauth

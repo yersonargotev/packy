@@ -51,6 +51,7 @@ var packyOwnedPackages = []string{
 	"./internal/skillbundle",
 	"./internal/tools/addypromotiongate",
 	"./internal/tools/claudesmoke",
+	"./internal/tools/claudevercelsmoke",
 	"./internal/tools/codexsmoke",
 	"./internal/tools/opencodesmoke",
 	"./internal/tools/governanceauth",
@@ -291,7 +292,7 @@ func TestAddyPromotionMainReplayIsEffectFreeAndRetained(t *testing.T) {
 func TestAddyPromotionGateClassifiesAndFailsClosed(t *testing.T) {
 	sourceRoot := repositoryRoot(t)
 	root := t.TempDir()
-	paths := []string{"go.mod", "go.sum", ".github/workflows/ci.yml", "scripts/gate-addy-promotion.sh", "scripts/download-addy-governance-evidence.sh", "internal/tools/addypromotiongate/main.go", "internal/tools/addypromotiongate/reconstruct.go", "internal/tools/addypromotiongate/generate.go", "internal/capabilitypack/catalog.go", "internal/addyacceptance/testdata/addy-0.6.4.tar.gz"}
+	paths := []string{"go.mod", "go.sum", ".github/workflows/ci.yml", "scripts/gate-addy-promotion.sh", "scripts/download-addy-governance-evidence.sh", "internal/tools/addypromotiongate/main.go", "internal/tools/addypromotiongate/reconstruct.go", "internal/tools/addypromotiongate/generate.go", "internal/capabilitypack/catalog.go", "internal/addyacceptance/testdata/addy-0.6.4.tar.gz", "internal/vercelacceptance/testdata/vercel-1.0.0.tar.gz"}
 	err := filepath.Walk(filepath.Join(sourceRoot, "internal"), func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

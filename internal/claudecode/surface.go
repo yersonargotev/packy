@@ -82,8 +82,8 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		id := r.Kind + ":" + b.Name
 		switch b.Projection {
 		case "skill":
-			if isAddyCompositeProjection(pack, r, b) {
-				composite, err := addyCompositeSkill(pack, r, b, a.bundleRoot)
+			if isClaudeCompositeProjection(pack, r, b) {
+				composite, err := claudeCompositeSkill(pack, r, b, a.bundleRoot)
 				if err != nil {
 					return result, err
 				}
@@ -100,7 +100,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				if err != nil {
 					return result, err
 				}
-				action := capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Content: string(payload), AdapterProvenance: provenance, Description: "write exact Addy Claude composite skill " + b.Name}
+				action := capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Content: string(payload), AdapterProvenance: provenance, Description: "write exact Claude composite skill " + b.Name}
 				result.Projections = append(result.Projections, capabilitypack.ObservedProjection{ID: id, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: composite.TreeFingerprint, Action: action})
 				revision = append(revision, id+observed)
 				continue
@@ -297,7 +297,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			}
 			result.Projections = append(result.Projections, projection)
 			revision = append(revision, part)
-			if r.Kind == "command" && b.Projection == "skill" && !isAddyCompositeProjection(transition.Prior, r, b) {
+			if r.Kind == "command" && b.Projection == "skill" && !isClaudeCompositeProjection(transition.Prior, r, b) {
 				assets, err := a.consumerAssets(transition.Prior, r, projection.ID, filepath.Join(a.layout.SkillsDir, b.Name))
 				if err != nil {
 					return result, err
@@ -412,10 +412,10 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 	id := r.Kind + ":" + b.Name
 	switch b.Projection {
 	case "skill":
-		if isAddyCompositeProjection(pack, r, b) {
+		if isClaudeCompositeProjection(pack, r, b) {
 			target := filepath.Join(a.layout.SkillsDir, b.Name)
 			fp, exists, err := observeCompositeTree(target)
-			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove exact Addy Claude composite skill " + b.Name}}, id + fp, err
+			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove exact Claude composite skill " + b.Name}}, id + fp, err
 		}
 		if r.Kind == "command" {
 			target := filepath.Join(a.layout.SkillsDir, b.Name, "SKILL.md")
@@ -1309,8 +1309,8 @@ func freshCompositeTreeFingerprint(path string) (string, bool, error) {
 	return fingerprint, true, err
 }
 
-func isAddyCompositeProjection(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding) bool {
-	return pack.ID == "addy" && pack.Version == "1.1.0" && (resource.Kind == "skill" || resource.Kind == "command") && binding.Surface == capabilitypack.SurfaceClaude && binding.Projection == "skill"
+func isClaudeCompositeProjection(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding) bool {
+	return claudeCompositeSkillBuilder(pack, resource, binding) != nil
 }
 
 func exclusiveSkillTargetConflict(targets map[string]capabilitypack.ProjectionAction, action capabilitypack.ProjectionAction) bool {

@@ -47,6 +47,107 @@ type compositeSkill struct {
 	Ownership             compositeOwnership
 }
 
+type compositeSkillBuilder func(capabilitypack.Pack, capabilitypack.Resource, capabilitypack.Binding, string) (compositeSkill, error)
+
+func claudeCompositeSkillBuilder(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding) compositeSkillBuilder {
+	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" {
+		return nil
+	}
+	if pack.ID == "addy" && pack.Version == "1.1.0" && (resource.Kind == "skill" || resource.Kind == "command") {
+		return addyCompositeSkill
+	}
+	if pack.ID == "vercel" && pack.Version == "1.0.0" && resource.Kind == "skill" && len(dependencyAssets(pack, resource)) > 0 {
+		return vercelCompositeSkill
+	}
+	return nil
+}
+
+func claudeCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
+	builder := claudeCompositeSkillBuilder(pack, resource, binding)
+	if builder == nil {
+		return compositeSkill{}, errors.New("resource has no Claude composite skill translation")
+	}
+	return builder(pack, resource, binding, bundleRoot)
+}
+
+// vercelCompositeSkill translates a Vercel guideline skill plus its sealed
+// package-local rule asset into one Claude-owned tree. Claude personal skills
+// cannot safely depend on the bundle-relative path used by symlink surfaces,
+// so the rule asset is copied beneath the skill and the exact relative
+// reference in SKILL.md is rewritten without interpreting or executing it.
+func vercelCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
+	if resource.Kind != "skill" || binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" || binding.Name == "" {
+		return compositeSkill{}, errors.New("invalid Vercel Claude composite skill binding")
+	}
+	assets := dependencyAssets(pack, resource)
+	if len(assets) != 1 {
+		return compositeSkill{}, fmt.Errorf("Vercel Claude composite skill %s requires exactly one dependency asset", resource.ID)
+	}
+	source, err := safeBundlePath(bundleRoot, resource.Source)
+	if err != nil {
+		return compositeSkill{}, err
+	}
+	files, err := readCompositeTree(source)
+	if err != nil {
+		return compositeSkill{}, err
+	}
+	asset := assets[0]
+	assetPath, err := safeBundlePath(bundleRoot, asset.Source)
+	if err != nil {
+		return compositeSkill{}, err
+	}
+	assetInfo, err := os.Lstat(assetPath)
+	if err != nil || !assetInfo.Mode().IsRegular() || assetInfo.Mode()&os.ModeSymlink != 0 {
+		return compositeSkill{}, fmt.Errorf("Vercel dependency asset %s is not a regular file", asset.ID)
+	}
+	assetContent, err := os.ReadFile(assetPath)
+	if err != nil {
+		return compositeSkill{}, err
+	}
+	oldReference := "../../references/" + filepath.Base(asset.Source)
+	newReference := "references/" + filepath.Base(asset.Source)
+	rewritten := false
+	for i := range files {
+		if files[i].Path != "SKILL.md" {
+			continue
+		}
+		if !bytes.Contains(files[i].Content, []byte(oldReference)) {
+			return compositeSkill{}, fmt.Errorf("Vercel skill %s omitted its sealed dependency reference", resource.ID)
+		}
+		files[i].Content = bytes.ReplaceAll(files[i].Content, []byte(oldReference), []byte(newReference))
+		rewritten = true
+	}
+	if !rewritten {
+		return compositeSkill{}, fmt.Errorf("Vercel skill %s omitted SKILL.md", resource.ID)
+	}
+	files = append(files, compositeFile{Path: newReference, Content: assetContent, Mode: normalizedMode(assetInfo.Mode())})
+	if err := canonicalizeCompositeFiles(files); err != nil {
+		return compositeSkill{}, err
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	sourceTreeFingerprint, err := sourceFingerprint(source)
+	if err != nil {
+		return compositeSkill{}, err
+	}
+	sourceFP := localprojection.FingerprintBytes([]byte(sourceTreeFingerprint + "\n" + asset.ID + "=" + localprojection.FingerprintBytes(assetContent)))
+	definition, err := json.Marshal(struct {
+		PackID, Version string
+		Resource        capabilitypack.Resource
+		Binding         capabilitypack.Binding
+		Asset           capabilitypack.Resource
+	}{pack.ID, pack.Version, resource, binding, asset})
+	if err != nil {
+		return compositeSkill{}, err
+	}
+	treeFP, err := fingerprintCompositeFiles(files)
+	if err != nil {
+		return compositeSkill{}, err
+	}
+	result := compositeSkill{Files: files, TreeFingerprint: treeFP, SourceFingerprint: sourceFP, DefinitionFingerprint: localprojection.FingerprintBytes(definition)}
+	result.Ownership = compositeOwnership{PackID: pack.ID, PackVersion: pack.Version, PortableKind: resource.Kind, PortableID: resource.ID, EffectiveName: binding.Name, TargetType: "claude-personal-skill", SourceFingerprint: result.SourceFingerprint, TreeFingerprint: result.TreeFingerprint, DefinitionFingerprint: result.DefinitionFingerprint}
+	return result, nil
+}
+
 // addyCompositeSkill is a pure translation: it reads selected bundle bytes but
 // never interprets or executes skill content.
 func addyCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
