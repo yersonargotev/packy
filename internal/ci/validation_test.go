@@ -20,6 +20,7 @@ import (
 	"github.com/yersonargotev/packy/internal/addyacceptance"
 	"github.com/yersonargotev/packy/internal/packsync"
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
+	"github.com/yersonargotev/packy/internal/vercelacceptance"
 )
 
 var packyOwnedPackages = []string{
@@ -340,23 +341,24 @@ func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testi
 		t.Fatalf("bash -n Vercel foundation: %v\n%s", err, output)
 	}
 	script := readFile(t, scriptPath)
-	for row := 1; row <= 24; row++ {
-		id := fmt.Sprintf("VERCEL-ACCEPTANCE-%02d", row)
-		count := strings.Count(script, `"`+id+`|`)
-		if row >= 17 && row <= 19 {
-			if count != 0 {
-				t.Fatalf("host-native row %s must come from an independent artifact", id)
-			}
-			continue
-		}
-		if count != 1 {
-			t.Fatalf("foundation row %s appears %d times", id, count)
+	if strings.Contains(script, "VERCEL-ACCEPTANCE-") {
+		t.Fatal("foundation script must consume the domain-owned row registry")
+	}
+	rows := vercelacceptance.Rows()
+	if len(rows) != 24 {
+		t.Fatalf("domain-owned acceptance rows = %d, want 24", len(rows))
+	}
+	for _, row := range rows {
+		if row.EvidenceSeam == "" || row.NegativeSeam == "" || row.OracleSeam == "" {
+			t.Fatalf("acceptance row %s lacks a positive, negative, or oracle seam", row.ID)
 		}
 	}
 	for _, required := range []string{
+		`go run ./internal/tools/vercelacceptance --list-foundation`,
+		`git status --porcelain --untracked-files=normal`,
 		`for rerun in first second`, `go test "$package" -run "^${test}$" -count=1 -v`,
-		`cmp -s "$work/$row.first.txt" "$work/$row.second.txt"`,
-		`"matrix_version":"vercel-acceptance-v1"`,
+		`cmp -s "$work/$row.$proof.first.txt" "$work/$row.$proof.second.txt"`,
+		`printf 'matrix_version\tvercel-acceptance-v1\n'`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("Vercel foundation missing %q", required)

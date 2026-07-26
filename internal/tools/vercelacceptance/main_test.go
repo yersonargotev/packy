@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,29 +45,31 @@ func TestLoadFoundationRequiresEveryExactDeterministicOwningProof(t *testing.T) 
 	root := t.TempDir()
 	now := time.Now().UTC().Truncate(time.Second)
 	candidate := strings.Repeat("a", 40)
-	identity := foundationIdentity{
-		SchemaVersion: 1, MatrixVersion: vercelacceptance.AcceptanceMatrixVersion,
-		CandidateSHA: candidate, FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
-		RunID: "run-1", ObservedAt: now.Add(-time.Minute),
-	}
-	data, err := json.Marshal(identity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "identity.json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	observedAt := now.Add(-time.Minute)
+	var manifest bytes.Buffer
+	fmt.Fprintf(&manifest, "schema_version\t1\nmatrix_version\t%s\ncandidate_sha\t%s\nfixture_sha256\t%s\nrun_id\trun-1\nobserved_at\t%s\n",
+		vercelacceptance.AcceptanceMatrixVersion, candidate, vercelacceptance.ExactArchiveSHA256, observedAt.Format(time.RFC3339))
 	for _, row := range vercelacceptance.Rows() {
 		if row.ID == "VERCEL-ACCEPTANCE-17" || row.ID == "VERCEL-ACCEPTANCE-18" || row.ID == "VERCEL-ACCEPTANCE-19" {
 			continue
 		}
-		test := row.EvidenceSeam[strings.LastIndex(row.EvidenceSeam, "/")+1:]
-		output := []byte("=== RUN   " + test + "\n--- PASS: " + test + " (duration)\n")
-		for _, rerun := range []string{"first", "second"} {
-			if err := os.WriteFile(filepath.Join(root, row.ID+"."+rerun+".txt"), output, 0o600); err != nil {
-				t.Fatal(err)
+		var rowDigests []string
+		for i, proof := range []string{"positive", "negative", "oracle"} {
+			seam := []string{row.EvidenceSeam, row.NegativeSeam, row.OracleSeam}[i]
+			test := seam[strings.LastIndex(seam, "/")+1:]
+			output := []byte(fmt.Sprintf("@identity\t%s\trun-1\t%s\t%s\n=== RUN   %s\n--- PASS: %s (duration)\n",
+				candidate, observedAt.Format(time.RFC3339), seam, test, test))
+			rowDigests = append(rowDigests, digestBytes(output))
+			for _, rerun := range []string{"first", "second"} {
+				if err := os.WriteFile(filepath.Join(root, row.ID+"."+proof+"."+rerun+".txt"), output, 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
+		fmt.Fprintf(&manifest, "row\t%s\t%s\t%s\t%s\n", row.ID, rowDigests[0], rowDigests[1], rowDigests[2])
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.tsv"), manifest.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	evidence, err := loadFoundation(root, candidate, "run-1", now)
 	if err != nil {
@@ -75,7 +78,7 @@ func TestLoadFoundationRequiresEveryExactDeterministicOwningProof(t *testing.T) 
 	if len(evidence) != 21 {
 		t.Fatalf("foundation rows = %d, want 21", len(evidence))
 	}
-	if err := os.WriteFile(filepath.Join(root, "VERCEL-ACCEPTANCE-01.second.txt"), []byte("changed\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "VERCEL-ACCEPTANCE-01.positive.second.txt"), []byte("changed\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := loadFoundation(root, candidate, "run-1", now); err == nil {
@@ -127,6 +130,10 @@ func TestNormalizeCodexBindsExactCandidateInventoryAndSafety(t *testing.T) {
 	if _, err := normalizeCodex(candidate, "run-1", raw); err == nil {
 		t.Fatal("non-exact Codex version passed")
 	}
+	raw.CodexVersion = "codex-cli 9.9.9 " + vercelacceptance.ExactCodexVersion
+	if _, err := normalizeCodex(candidate, "run-1", raw); err == nil {
+		t.Fatal("Codex version suffix passed")
+	}
 	raw.CodexVersion = "codex-cli " + vercelacceptance.ExactCodexVersion
 	raw.NoDeploy = false
 	if _, err := normalizeCodex(candidate, "run-1", raw); err == nil {
@@ -177,6 +184,10 @@ func TestNormalizeOpenCodeBindsExactCandidateInventoryAndSafety(t *testing.T) {
 	raw.OpenCodeVersion = vercelacceptance.ExactOpenCodeVersion + "-dev"
 	if _, err := normalizeOpenCode(candidate, "run-1", raw); err == nil {
 		t.Fatal("non-exact OpenCode version passed")
+	}
+	raw.OpenCodeVersion = "opencode-dev " + vercelacceptance.ExactOpenCodeVersion
+	if _, err := normalizeOpenCode(candidate, "run-1", raw); err == nil {
+		t.Fatal("OpenCode version suffix passed")
 	}
 	raw.OpenCodeVersion = vercelacceptance.ExactOpenCodeVersion
 	raw.NativeSkillToolObserved = false

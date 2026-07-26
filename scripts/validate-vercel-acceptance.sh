@@ -22,6 +22,14 @@ if [[ -n "$evidence_dir" ]]; then
     echo "foundation evidence requires a new absolute directory, exact candidate SHA, and safe run ID" >&2
     exit 2
   fi
+  if [[ "$(git rev-parse HEAD)" != "$candidate_sha" ]]; then
+    echo "foundation candidate SHA does not match tested checkout HEAD" >&2
+    exit 1
+  fi
+  if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+    echo "foundation evidence requires a clean checkout of the candidate SHA" >&2
+    exit 1
+  fi
   mkdir -p "$evidence_dir"
 elif [[ -n "$candidate_sha$run_id" ]]; then
   echo "foundation identity is not accepted without --evidence-dir" >&2
@@ -31,69 +39,63 @@ fi
 work="$(mktemp -d "${TMPDIR:-/tmp}/packy-vercel-foundation.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
-# Host-native readiness rows 17-19 are intentionally absent: the PR cohort
-# gate binds their independent exact-version artifacts after this foundation.
-readonly mappings=(
-  "VERCEL-ACCEPTANCE-01|./internal/packsync|TestVercelLegalAdmissionEvidence"
-  "VERCEL-ACCEPTANCE-02|./internal/tools/syncpacksource|TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope"
-  "VERCEL-ACCEPTANCE-03|./internal/packsync|TestVercelLegalAdmissionEvidence"
-  "VERCEL-ACCEPTANCE-04|./internal/vercelacceptance|TestExactSelectedTreesAreCompleteInertAndSealed"
-  "VERCEL-ACCEPTANCE-05|./internal/vercelacceptance|TestExactSelectedTreesAreCompleteInertAndSealed"
-  "VERCEL-ACCEPTANCE-06|./internal/vercelacceptance|TestExactSelectedTreesAreCompleteInertAndSealed"
-  "VERCEL-ACCEPTANCE-07|./internal/vercelacceptance|TestExactSelectedTreesAreCompleteInertAndSealed"
-  "VERCEL-ACCEPTANCE-08|./internal/vercelacceptance|TestCanonicalRuntimeContractHasFreshExactCodexPreflight"
-  "VERCEL-ACCEPTANCE-09|./internal/codex|TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly"
-  "VERCEL-ACCEPTANCE-10|./internal/opencode|TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly"
-  "VERCEL-ACCEPTANCE-11|./internal/claudecode|TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly"
-  "VERCEL-ACCEPTANCE-12|./internal/capabilitypack|TestVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe"
-  "VERCEL-ACCEPTANCE-13|./internal/vercelacceptance|TestCanonicalRuntimeContractHasFreshExactCodexPreflight"
-  "VERCEL-ACCEPTANCE-14|./internal/opencodesmoke|TestPreflightEveryVercelModeFailsBeforeHostEffects"
-  "VERCEL-ACCEPTANCE-15|./internal/claudesmoke|TestVercelRuntimeEvidenceCoversExactTwentyEightModesSafely"
-  "VERCEL-ACCEPTANCE-16|./internal/capabilitypack|TestRuntimeEvidenceIsTriStateDeterministicAndSecretSafe"
-  "VERCEL-ACCEPTANCE-20|./internal/vercelacceptance|TestExactSelectedTreesAreCompleteInertAndSealed"
-  "VERCEL-ACCEPTANCE-21|./internal/tools/syncpacksource|TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope"
-  "VERCEL-ACCEPTANCE-22|./internal/tools/syncpacksource|TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope"
-  "VERCEL-ACCEPTANCE-23|./internal/ci|TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated"
-  "VERCEL-ACCEPTANCE-24|./internal/vercelacceptance|TestCanonicalCohortReportAndDeterministicRerun"
-)
-
 normalize() {
   sed -E '/^ok[[:space:]]/d; s/ \([0-9.]+s\)$/ (duration)/' | LC_ALL=C sort
 }
 
-for mapping in "${mappings[@]}"; do
-  IFS='|' read -r row package test <<<"$mapping"
-  for rerun in first second; do
-    raw="$work/$row.$rerun.raw"
-    normalized="$work/$row.$rerun.txt"
-    if ! go test "$package" -run "^${test}$" -count=1 -v >"$raw" 2>&1; then
-      cat "$raw" >&2
-      echo "Vercel acceptance foundation failed: $row $package/$test" >&2
+observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+go run ./internal/tools/vercelacceptance --list-foundation >"$work/mappings"
+while IFS='|' read -r row positive negative oracle; do
+  for proof_and_seam in "positive|$positive" "negative|$negative" "oracle|$oracle"; do
+    IFS='|' read -r proof seam <<<"$proof_and_seam"
+    package="${seam%/*}"
+    test="${seam##*/}"
+    for rerun in first second; do
+      raw="$work/$row.$proof.$rerun.raw"
+      normalized="$work/$row.$proof.$rerun.txt"
+      if ! go test "$package" -run "^${test}$" -count=1 -v >"$raw" 2>&1; then
+        cat "$raw" >&2
+        echo "Vercel acceptance foundation failed: $row $proof $package/$test" >&2
+        exit 1
+      fi
+      if [[ "$(grep -Fxc "=== RUN   $test" "$raw")" -ne 1 ||
+            "$(grep -Ec "^--- PASS: $test \\([0-9.]+s\\)$" "$raw")" -ne 1 ]]; then
+        echo "Vercel acceptance foundation lacks unique RUN/PASS proof: $row $proof $package/$test" >&2
+        exit 1
+      fi
+      normalize <"$raw" >"$normalized"
+    done
+    if ! cmp -s "$work/$row.$proof.first.txt" "$work/$row.$proof.second.txt"; then
+      echo "Vercel acceptance foundation rerun changed: $row $proof $package/$test" >&2
       exit 1
     fi
-    if [[ "$(grep -Fxc "=== RUN   $test" "$raw")" -ne 1 ||
-          "$(grep -Ec "^--- PASS: $test \\([0-9.]+s\\)$" "$raw")" -ne 1 ]]; then
-      echo "Vercel acceptance foundation lacks unique RUN/PASS proof: $row $package/$test" >&2
-      exit 1
+    if [[ -n "$evidence_dir" ]]; then
+      for rerun in first second; do
+        {
+          printf '@identity\t%s\t%s\t%s\t%s\n' "$candidate_sha" "$run_id" "$observed_at" "$seam"
+          cat "$work/$row.$proof.$rerun.txt"
+        } >"$evidence_dir/$row.$proof.$rerun.txt"
+      done
     fi
-    normalize <"$raw" >"$normalized"
   done
-  if ! cmp -s "$work/$row.first.txt" "$work/$row.second.txt"; then
-    echo "Vercel acceptance foundation rerun changed: $row $package/$test" >&2
-    exit 1
-  fi
   if [[ -n "$evidence_dir" ]]; then
-    cp "$work/$row.first.txt" "$evidence_dir/$row.first.txt"
-    cp "$work/$row.second.txt" "$evidence_dir/$row.second.txt"
+    printf 'row\t%s\t%s\t%s\t%s\n' \
+      "$row" \
+      "$(shasum -a 256 "$evidence_dir/$row.positive.first.txt" | awk '{print $1}')" \
+      "$(shasum -a 256 "$evidence_dir/$row.negative.first.txt" | awk '{print $1}')" \
+      "$(shasum -a 256 "$evidence_dir/$row.oracle.first.txt" | awk '{print $1}')" \
+      >>"$work/manifest.rows"
   fi
-done
+done <"$work/mappings"
 
 if [[ -n "$evidence_dir" ]]; then
-  observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '{"schema_version":1,"matrix_version":"vercel-acceptance-v1","candidate_sha":"%s","fixture_sha256":"%s","run_id":"%s","observed_at":"%s"}\n' \
-    "$candidate_sha" \
-    "6914589e3899ae238c30a0d87c297ef101c87a01d63e160efc3dcfab27676ab7" \
-    "$run_id" \
-    "$observed_at" \
-    >"$evidence_dir/identity.json"
+  {
+    printf 'schema_version\t1\n'
+    printf 'matrix_version\tvercel-acceptance-v1\n'
+    printf 'candidate_sha\t%s\n' "$candidate_sha"
+    printf 'fixture_sha256\t%s\n' "6914589e3899ae238c30a0d87c297ef101c87a01d63e160efc3dcfab27676ab7"
+    printf 'run_id\t%s\n' "$run_id"
+    printf 'observed_at\t%s\n' "$observed_at"
+    cat "$work/manifest.rows"
+  } >"$evidence_dir/manifest.tsv"
 fi

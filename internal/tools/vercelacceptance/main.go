@@ -22,9 +22,22 @@ import (
 const evidenceLimit = 8 << 20
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--list-foundation" {
+		listFoundation(os.Stdout)
+		return
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+func listFoundation(writer io.Writer) {
+	for _, row := range vercelacceptance.Rows() {
+		if row.ID == "VERCEL-ACCEPTANCE-17" || row.ID == "VERCEL-ACCEPTANCE-18" || row.ID == "VERCEL-ACCEPTANCE-19" {
+			continue
+		}
+		fmt.Fprintf(writer, "%s|%s|%s|%s\n", row.ID, row.EvidenceSeam, row.NegativeSeam, row.OracleSeam)
 	}
 }
 
@@ -160,59 +173,98 @@ func decodeEvidence[T any](path string) (T, []byte, error) {
 	return value, data, nil
 }
 
-type foundationIdentity struct {
-	SchemaVersion int       `json:"schema_version"`
-	MatrixVersion string    `json:"matrix_version"`
-	CandidateSHA  string    `json:"candidate_sha"`
-	FixtureSHA256 string    `json:"fixture_sha256"`
-	RunID         string    `json:"run_id"`
-	ObservedAt    time.Time `json:"observed_at"`
-}
-
 func loadFoundation(root, candidate, runID string, now time.Time) ([]vercelacceptance.RowEvidence, error) {
 	if !filepath.IsAbs(root) {
 		return nil, errors.New("directory must be absolute")
 	}
-	identity, _, err := decodeEvidence[foundationIdentity](filepath.Join(root, "identity.json"))
+	manifest, err := readEvidenceFile(filepath.Join(root, "manifest.tsv"))
 	if err != nil {
 		return nil, err
 	}
-	if identity.SchemaVersion != 1 || identity.MatrixVersion != vercelacceptance.AcceptanceMatrixVersion ||
-		identity.CandidateSHA != candidate || identity.FixtureSHA256 != vercelacceptance.ExactArchiveSHA256 ||
-		identity.RunID != runID || identity.ObservedAt.IsZero() ||
-		identity.ObservedAt.After(now) || now.Sub(identity.ObservedAt) > 15*time.Minute {
+	lines := strings.Split(strings.TrimSpace(string(manifest)), "\n")
+	if len(lines) != 27 {
+		return nil, errors.New("manifest must contain six identity facts and 21 rows")
+	}
+	wantIdentity := []string{
+		"schema_version\t1",
+		"matrix_version\t" + vercelacceptance.AcceptanceMatrixVersion,
+		"candidate_sha\t" + candidate,
+		"fixture_sha256\t" + vercelacceptance.ExactArchiveSHA256,
+		"run_id\t" + runID,
+	}
+	for i, want := range wantIdentity {
+		if lines[i] != want {
+			return nil, errors.New("manifest identity is mixed")
+		}
+	}
+	observedParts := strings.Split(lines[5], "\t")
+	if len(observedParts) != 2 || observedParts[0] != "observed_at" {
+		return nil, errors.New("manifest observation time is absent")
+	}
+	observedAt, err := time.Parse(time.RFC3339, observedParts[1])
+	if err != nil || observedAt.After(now) || now.Sub(observedAt) > 15*time.Minute {
 		return nil, errors.New("identity is mixed or stale")
+	}
+	digests := make(map[string][3]string, 21)
+	for _, line := range lines[6:] {
+		parts := strings.Split(line, "\t")
+		if len(parts) != 5 || parts[0] != "row" {
+			return nil, errors.New("malformed foundation manifest row")
+		}
+		if _, duplicate := digests[parts[1]]; duplicate {
+			return nil, errors.New("duplicate foundation manifest row")
+		}
+		digests[parts[1]] = [3]string{parts[2], parts[3], parts[4]}
 	}
 	var result []vercelacceptance.RowEvidence
 	for _, row := range vercelacceptance.Rows() {
 		if row.ID == "VERCEL-ACCEPTANCE-17" || row.ID == "VERCEL-ACCEPTANCE-18" || row.ID == "VERCEL-ACCEPTANCE-19" {
 			continue
 		}
-		first, err := readEvidenceFile(filepath.Join(root, row.ID+".first.txt"))
-		if err != nil {
-			return nil, err
+		rowDigests, ok := digests[row.ID]
+		if !ok {
+			return nil, fmt.Errorf("%s manifest row is absent", row.ID)
 		}
-		second, err := readEvidenceFile(filepath.Join(root, row.ID+".second.txt"))
-		if err != nil {
-			return nil, err
-		}
-		if string(first) != string(second) {
-			return nil, fmt.Errorf("%s deterministic rerun changed", row.ID)
-		}
-		slash := strings.LastIndex(row.EvidenceSeam, "/")
-		if slash < 0 || !strings.HasPrefix(row.EvidenceSeam, "./internal/") {
-			return nil, fmt.Errorf("%s has invalid owning seam", row.ID)
-		}
-		test := row.EvidenceSeam[slash+1:]
-		text := string(first)
-		if strings.Count(text, "=== RUN   "+test+"\n") != 1 ||
-			strings.Count(text, "--- PASS: "+test+" (duration)\n") != 1 {
-			return nil, fmt.Errorf("%s lacks exact owning RUN/PASS proof", row.ID)
+		seams := []string{row.EvidenceSeam, row.NegativeSeam, row.OracleSeam}
+		proofs := []string{"positive", "negative", "oracle"}
+		var proofBytes []byte
+		for i, proof := range proofs {
+			first, err := readEvidenceFile(filepath.Join(root, row.ID+"."+proof+".first.txt"))
+			if err != nil {
+				return nil, err
+			}
+			second, err := readEvidenceFile(filepath.Join(root, row.ID+"."+proof+".second.txt"))
+			if err != nil {
+				return nil, err
+			}
+			if string(first) != string(second) {
+				return nil, fmt.Errorf("%s %s deterministic rerun changed", row.ID, proof)
+			}
+			if digestBytes(first) != rowDigests[i] {
+				return nil, fmt.Errorf("%s %s digest does not match manifest", row.ID, proof)
+			}
+			seam := seams[i]
+			slash := strings.LastIndex(seam, "/")
+			if slash < 0 || !strings.HasPrefix(seam, "./internal/") {
+				return nil, fmt.Errorf("%s has invalid owning seam", row.ID)
+			}
+			identity := "@identity\t" + candidate + "\t" + runID + "\t" + observedAt.Format(time.RFC3339) + "\t" + seam + "\n"
+			if !strings.HasPrefix(string(first), identity) {
+				return nil, fmt.Errorf("%s %s proof identity is mixed", row.ID, proof)
+			}
+			test := seam[slash+1:]
+			text := strings.TrimPrefix(string(first), identity)
+			if strings.Count(text, "=== RUN   "+test+"\n") != 1 ||
+				strings.Count(text, "--- PASS: "+test+" (duration)\n") != 1 {
+				return nil, fmt.Errorf("%s lacks exact %s RUN/PASS proof", row.ID, proof)
+			}
+			proofBytes = append(proofBytes, first...)
+			proofBytes = append(proofBytes, 0)
 		}
 		item := vercelacceptance.RowEvidence{
-			RowID: row.ID, CandidateSHA: candidate, FixtureSHA256: identity.FixtureSHA256,
-			RunID: runID, ObservedAt: identity.ObservedAt, Passed: true, NegativeTwin: true,
-			Deterministic: true, ZeroMutation: true, EvidenceSHA256: digestBytes(first),
+			RowID: row.ID, CandidateSHA: candidate, FixtureSHA256: vercelacceptance.ExactArchiveSHA256,
+			RunID: runID, ObservedAt: observedAt, Passed: true, NegativeTwin: true,
+			Deterministic: true, ZeroMutation: true, EvidenceSHA256: digestBytes(proofBytes),
 		}
 		item.EvidenceFingerprint = vercelacceptance.FingerprintRowEvidence(item)
 		result = append(result, item)
@@ -240,7 +292,7 @@ func normalizeCodex(candidate, runID string, raw codexsmoke.Evidence) (vercelacc
 	if raw.SchemaVersion != 1 || raw.PackyRef != candidate || raw.PackySHA != candidate ||
 		raw.RunID != runID || raw.ObservedAt.IsZero() ||
 		raw.VercelFixtureSHA256 != vercelacceptance.ExactArchiveSHA256 ||
-		exactVersion(raw.CodexVersion) != vercelacceptance.ExactCodexVersion ||
+		raw.CodexVersion != "codex-cli "+vercelacceptance.ExactCodexVersion ||
 		!strings.HasPrefix(raw.CodexNPMIntegrity, "sha512-") || len(raw.CodexExecutableSHA256) != 64 ||
 		len(raw.SandboxRoots) < 3 || len(raw.Skills) != 9 || len(raw.RuntimeModes) != 28 ||
 		!raw.NoAuthentication || !raw.NoModelInvocation || !raw.NoDeploy || !raw.NoUpstreamExecution {
@@ -272,7 +324,7 @@ func normalizeOpenCode(candidate, runID string, raw opencodesmoke.Evidence) (ver
 	if raw.SchemaVersion != 2 || raw.PackyRef != candidate || raw.PackySHA != candidate ||
 		raw.RunID != runID || raw.ObservedAt.IsZero() ||
 		raw.VercelFixtureSHA256 != vercelacceptance.ExactArchiveSHA256 ||
-		exactVersion(raw.OpenCodeVersion) != vercelacceptance.ExactOpenCodeVersion ||
+		raw.OpenCodeVersion != vercelacceptance.ExactOpenCodeVersion ||
 		len(raw.OpenCodeArchiveSHA256) != 64 || len(raw.OpenCodeExecutableSHA256) != 64 ||
 		len(raw.SandboxRoots) < 7 || len(raw.Skills) != 9 || len(raw.RuntimeModes) != 28 ||
 		!raw.NoAuthentication || !raw.NoExternalModelNetwork || !raw.NoDeploy ||
@@ -330,14 +382,6 @@ func fullSHA(value string) bool {
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil && value == strings.ToLower(value)
-}
-
-func exactVersion(value string) string {
-	fields := strings.Fields(value)
-	if len(fields) == 0 {
-		return ""
-	}
-	return fields[len(fields)-1]
 }
 
 func digestBytes(value []byte) string {
