@@ -511,23 +511,34 @@ func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabil
 	if id, err := a.preflight(actions, snapshot); err != nil {
 		return &capabilitypack.ProjectionActionError{ID: id, Err: err}
 	}
-	treeChanges := make([]localprojection.TreeChange, 0)
+	filesystemChanges := make([]localprojection.FilesystemChange, 0)
 	for _, action := range actions {
+		if action.Kind == ActionSkillLink {
+			filesystemChanges = append(filesystemChanges, localprojection.FilesystemChange{
+				ID: action.ID, Target: action.Target, SymlinkSource: action.Source,
+				Delete: action.Mode == capabilitypack.ProjectionDeleteTarget,
+			})
+			continue
+		}
 		if action.Kind != ActionSkillTree {
 			continue
 		}
-		change := localprojection.TreeChange{ID: action.ID, Target: action.Target, Delete: action.Mode == capabilitypack.ProjectionDeleteTarget}
-		if !change.Delete {
-			composite, err := decodeCompositeSkillPayload([]byte(action.Content))
-			if err != nil {
-				return &capabilitypack.ProjectionActionError{ID: action.ID, Err: err}
-			}
-			change.Files = compositeTreeFiles(composite)
-			change.ExpectedFingerprint = composite.TreeFingerprint
+		if action.Mode == capabilitypack.ProjectionDeleteTarget {
+			filesystemChanges = append(filesystemChanges, localprojection.FilesystemChange{
+				ID: action.ID, Target: action.Target, Delete: true,
+			})
+			continue
 		}
-		treeChanges = append(treeChanges, change)
+		composite, err := decodeCompositeSkillPayload([]byte(action.Content))
+		if err != nil {
+			return &capabilitypack.ProjectionActionError{ID: action.ID, Err: err}
+		}
+		filesystemChanges = append(filesystemChanges, localprojection.FilesystemChange{
+			ID: action.ID, Target: action.Target, TreeFiles: compositeTreeFiles(composite),
+			ExpectedTreeFingerprint: composite.TreeFingerprint,
+		})
 	}
-	if err := localprojection.ReplaceTrees(treeChanges); err != nil {
+	if err := localprojection.ApplyFilesystemChanges(filesystemChanges); err != nil {
 		var actionErr capabilitypack.ProjectionActionError
 		if errors.As(err, &actionErr) {
 			return &actionErr
@@ -536,7 +547,7 @@ func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabil
 	}
 	appliedShared := map[string]string{}
 	for _, action := range actions {
-		if action.Kind == ActionSkillTree {
+		if action.Kind == ActionSkillTree || action.Kind == ActionSkillLink {
 			continue
 		}
 		if action.Kind == ActionInstructionContribution || action.Kind == ActionCommandHook {

@@ -1,9 +1,13 @@
 package vercelacceptance
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
 func TestCanonicalIndependentHostEvidence(t *testing.T) {
@@ -61,6 +65,42 @@ func TestHostEvidenceRejectsSealedInvalidRerunAndMutationProofs(t *testing.T) {
 		if err := ValidateHostEvidence(strings.Repeat("a", 40), "run-1", now, time.Hour, set); err == nil {
 			t.Fatal("sealed invalid host proof passed")
 		}
+	}
+}
+
+func TestMutationObservationDerivesConcreteExactTreeChanges(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "nested", "SKILL.md")
+	if err := os.WriteFile(path, []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := localprojection.SnapshotExactTree(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("after\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "empty"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	after, err := localprojection.SnapshotExactTree(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation := NewMutationObservation("$SANDBOX/bundle", before, after)
+	if got, want := strings.Join(observation.ChangedPaths, ","), "empty,nested/SKILL.md"; got != want {
+		t.Fatalf("changed paths = %q, want %q", got, want)
+	}
+	if observation.ZeroMutationExact || observation.Valid() {
+		t.Fatal("changed exact tree was reported as zero mutation")
+	}
+	unchanged := NewMutationObservation("$SANDBOX/bundle", before, before)
+	if !unchanged.Valid() {
+		t.Fatal("identical exact snapshots did not prove zero mutation")
 	}
 }
 

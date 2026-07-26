@@ -151,7 +151,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err := materializeCodexSkillLinks(projections); err != nil {
 		return Evidence{}, err
 	}
-	bundleBefore, err := localprojection.FingerprintExactTree(bundle)
+	bundleBefore, err := localprojection.SnapshotExactTree(bundle)
 	if err != nil {
 		return Evidence{}, err
 	}
@@ -250,7 +250,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	commands = append(commands, modeCommands...)
 	commands = append(commands, cmd3)
 	commands = append(commands, rerunCommands...)
-	bundleAfter, err := localprojection.FingerprintExactTree(bundle)
+	bundleAfter, err := localprojection.SnapshotExactTree(bundle)
 	if err != nil {
 		return Evidence{}, err
 	}

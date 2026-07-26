@@ -3,6 +3,8 @@ package claudecode
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,8 +13,49 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/localprojection"
 	"github.com/yersonargotev/packy/internal/vercelacceptance"
 )
+
+func TestVercelLifecycleExercisesEveryClaudeWriteBoundaryAndExactDiff(t *testing.T) {
+	for failed := 0; failed < 9; failed++ {
+		t.Run(twoDigit(failed+1), func(t *testing.T) {
+			root := t.TempDir()
+			bundle := filepath.Join(root, "bundle")
+			home := filepath.Join(root, "home")
+			layout := NewCanonicalLayout(home)
+			materializeClaudeVercelFixture(t, bundle)
+			adapter := NewSurfaceAdapter(bundle, layout, filepath.Join(root, "state"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(NewOwnershipSnapshot()))
+			inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: vercelacceptance.Canonical().Pack})
+			if err != nil {
+				t.Fatal(err)
+			}
+			actions := projectionActions(inspection)
+			if len(actions) != 9 {
+				t.Fatalf("Claude write boundaries = %d, want 9", len(actions))
+			}
+			before := filesystemFacts(t, home)
+			broken := append([]capabilitypack.ProjectionAction(nil), actions...)
+			if broken[failed].Kind == ActionSkillTree {
+				broken[failed].Content = "{}"
+			} else {
+				broken[failed].Source = filepath.Join(root, "missing-source")
+			}
+			if err := adapter.ApplyProjections(context.Background(), broken); err == nil {
+				t.Fatalf("boundary %s failure = %v", broken[failed].ID, err)
+			}
+			if got := filesystemFacts(t, home); !reflect.DeepEqual(got, before) {
+				t.Fatalf("boundary %s left mutations:\n got %#v\nwant %#v", broken[failed].ID, got, before)
+			}
+			if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
+				t.Fatalf("boundary %s recovery: %v", broken[failed].ID, err)
+			}
+			assertExactClaudeDiff(t, home, before, actions)
+			owned := vercelOwnedAdapter(t, bundle, layout, filepath.Join(root, "state"), inspection)
+			assertClaudeCommitRollbackAndRecovery(t, owned, home, actions, failed)
+		})
+	}
+}
 
 func TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly(t *testing.T) {
 	root := t.TempDir()
@@ -147,6 +190,165 @@ func TestVercelFixtureProjectsNineCompleteNativeSkillTreesReversibly(t *testing.
 			t.Fatalf("Claude skill %s survived deactivation: %v", name, err)
 		}
 	}
+}
+
+func projectionActions(inspection capabilitypack.SurfaceInspection) []capabilitypack.ProjectionAction {
+	actions := make([]capabilitypack.ProjectionAction, 0, len(inspection.Projections))
+	for _, projection := range inspection.Projections {
+		actions = append(actions, projection.Action)
+	}
+	return actions
+}
+
+func assertExactClaudeDiff(t *testing.T, home string, before map[string]string, actions []capabilitypack.ProjectionAction) {
+	t.Helper()
+	got := filesystemFacts(t, home)
+	for path, fact := range before {
+		if got[path] != fact {
+			t.Fatalf("Claude changed pre-existing path %s", path)
+		}
+		delete(got, path)
+	}
+	seen := make(map[string]bool, len(actions))
+	for path := range got {
+		absolute := filepath.Join(home, filepath.FromSlash(path))
+		matched := false
+		for _, action := range actions {
+			if absolute == action.Target ||
+				strings.HasPrefix(absolute, action.Target+string(filepath.Separator)) ||
+				strings.HasPrefix(action.Target, absolute+string(filepath.Separator)) {
+				seen[action.ID] = true
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Fatalf("Claude wrote outside exact action targets: %s", path)
+		}
+	}
+	for _, action := range actions {
+		if !seen[action.ID] {
+			t.Fatalf("Claude action %s produced no exact filesystem diff", action.ID)
+		}
+	}
+}
+
+func vercelOwnedAdapter(t *testing.T, bundle string, layout CanonicalLayout, stateRoot string, inspection capabilitypack.SurfaceInspection) *SurfaceAdapter {
+	t.Helper()
+	records := make([]OwnershipRecord, 0, len(inspection.Projections))
+	for _, projection := range inspection.Projections {
+		name := strings.TrimPrefix(projection.ID, "skill:")
+		contributor := "pack:vercel:" + name
+		record := OwnershipRecord{
+			StateOwner: "capabilitypack", ContributorID: contributor, Contributors: []string{contributor},
+			ID: projection.ID, Kind: string(projection.Action.Kind), Target: projection.Action.Target,
+			Fingerprint: projection.DesiredFingerprint, DeletionAuthorized: true,
+		}
+		if projection.Action.Kind == ActionSkillTree {
+			provenance, err := decodeCompositeOwnership(projection.Action.AdapterProvenance)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.Composite = provenance
+		} else {
+			expected, err := canonicalPath(projection.Action.Source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record.Skill = SkillIdentity{
+				Surface: "claude", ProjectionID: projection.ID, Path: projection.Action.Target,
+				SymlinkType: "directory", ResolvedTarget: expected, ExpectedSource: expected,
+				SourceTreeFingerprint: projection.DesiredFingerprint,
+			}
+		}
+		records = append(records, record)
+	}
+	return NewSurfaceAdapter(bundle, layout, stateRoot, "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(NewOwnershipSnapshot(records...)))
+}
+
+func assertClaudeCommitRollbackAndRecovery(t *testing.T, adapter *SurfaceAdapter, home string, actions []capabilitypack.ProjectionAction, failed int) {
+	t.Helper()
+	action := actions[failed]
+	baseline := filesystemFacts(t, home)
+	suffix := localprojection.FingerprintBytes([]byte(action.ID + "\x00" + filepath.Clean(action.Target)))[:12]
+	blocker := filepath.Join(filepath.Dir(action.Target), ".packy-batch-stage-"+suffix+".backup")
+	if err := os.MkdirAll(blocker, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocker, "operator"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err == nil {
+		t.Fatalf("Claude commit boundary %s unexpectedly succeeded", action.ID)
+	}
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if got := filesystemFacts(t, home); !reflect.DeepEqual(got, baseline) {
+		t.Fatalf("Claude commit boundary %s did not roll back exact facts", action.ID)
+	}
+	if err := adapter.ApplyProjections(context.Background(), actions); err != nil {
+		t.Fatalf("Claude commit boundary %s recovery: %v", action.ID, err)
+	}
+	if got := filesystemFacts(t, home); !reflect.DeepEqual(got, baseline) {
+		t.Fatalf("Claude commit boundary %s recovery changed exact facts", action.ID)
+	}
+}
+
+func filesystemFacts(t *testing.T, root string) map[string]string {
+	t.Helper()
+	facts := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(relative)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			facts[key] = "directory:" + info.Mode().Perm().String()
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			info, err = os.Lstat(path)
+			if err != nil {
+				return err
+			}
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			facts[key] = "symlink:" + info.Mode().Perm().String() + ":" + target
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		facts[key] = "file:" + info.Mode().Perm().String() + ":" + hex.EncodeToString(sum[:])
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return facts
+}
+
+func twoDigit(value int) string {
+	return string([]byte{'0' + byte(value/10), '0' + byte(value%10)})
 }
 
 func materializeClaudeVercelFixture(t *testing.T, root string) {

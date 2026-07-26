@@ -40,6 +40,31 @@ func TestAcceptanceRegistryOrderAndCopySafety(t *testing.T) {
 	}
 }
 
+func TestLifecycleRowsUseUniqueSurfaceOwnedWriteBoundaryProofs(t *testing.T) {
+	want := map[string]string{
+		"VERCEL-ACCEPTANCE-09": "./internal/codex/TestVercelLifecycleExercisesEveryCodexWriteBoundaryAndExactDiff",
+		"VERCEL-ACCEPTANCE-10": "./internal/opencode/TestVercelLifecycleExercisesEveryOpenCodeWriteBoundaryAndExactDiff",
+		"VERCEL-ACCEPTANCE-11": "./internal/claudecode/TestVercelLifecycleExercisesEveryClaudeWriteBoundaryAndExactDiff",
+	}
+	seen := map[string]bool{}
+	for _, row := range Rows() {
+		seam, ok := want[row.ID]
+		if !ok {
+			continue
+		}
+		if row.NegativeSeam != seam || row.OracleSeam != seam {
+			t.Fatalf("%s lifecycle seams = %q / %q, want %q", row.ID, row.NegativeSeam, row.OracleSeam, seam)
+		}
+		if seen[seam] {
+			t.Fatalf("lifecycle seam reused: %s", seam)
+		}
+		seen[seam] = true
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("surface lifecycle seams = %v, want %v", seen, want)
+	}
+}
+
 func TestCanonicalCohortReportAndDeterministicRerun(t *testing.T) {
 	ctx, evidence := canonicalCohort(t)
 	first, err := Evaluate(ctx, evidence)

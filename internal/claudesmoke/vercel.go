@@ -147,7 +147,7 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	if err := materializeVercelFixture(bundle); err != nil {
 		return VercelEvidence{}, err
 	}
-	bundleBefore, err := localprojection.FingerprintExactTree(bundle)
+	bundleBefore, err := localprojection.SnapshotExactTree(bundle)
 	if err != nil {
 		return VercelEvidence{}, err
 	}
@@ -222,7 +222,7 @@ func RunVercel(ctx context.Context, cfg VercelConfig) (VercelEvidence, error) {
 	if !semanticRerun.Valid() {
 		return VercelEvidence{}, errors.New("Claude complete readiness rerun differed")
 	}
-	bundleAfter, err := localprojection.FingerprintExactTree(bundle)
+	bundleAfter, err := localprojection.SnapshotExactTree(bundle)
 	if err != nil {
 		return VercelEvidence{}, err
 	}

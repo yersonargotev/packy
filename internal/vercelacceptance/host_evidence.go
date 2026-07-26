@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
 const (
@@ -38,13 +40,10 @@ type MutationObservation struct {
 	ZeroMutationExact bool     `json:"zero_mutation_exact"`
 }
 
-func NewMutationObservation(root, beforeSHA256, afterSHA256 string) MutationObservation {
-	changed := []string{}
-	if beforeSHA256 != afterSHA256 {
-		changed = []string{root}
-	}
+func NewMutationObservation(root string, before, after localprojection.ExactTreeSnapshot) MutationObservation {
+	changed := localprojection.ChangedExactTreePaths(before, after)
 	return MutationObservation{
-		Root: root, BeforeSHA256: beforeSHA256, AfterSHA256: afterSHA256,
+		Root: root, BeforeSHA256: before.SHA256, AfterSHA256: after.SHA256,
 		AllowedChanges: []string{}, ChangedPaths: changed, ZeroMutationExact: len(changed) == 0,
 	}
 }

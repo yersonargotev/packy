@@ -104,7 +104,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err := materialize(bundle); err != nil {
 		return Evidence{}, err
 	}
-	bundleBefore, err := localprojection.FingerprintExactTree(bundle)
+	bundleBefore, err := localprojection.SnapshotExactTree(bundle)
 	if err != nil {
 		return Evidence{}, err
 	}
@@ -220,7 +220,7 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, err
 	}
-	bundleAfter, err := localprojection.FingerprintExactTree(bundle)
+	bundleAfter, err := localprojection.SnapshotExactTree(bundle)
 	if err != nil {
 		return Evidence{}, err
 	}
