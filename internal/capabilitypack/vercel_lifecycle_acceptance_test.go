@@ -13,11 +13,19 @@ import (
 	"testing"
 )
 
-func TestVercelCodexCollisionRequiresExplicitAliasBeforeMutation(t *testing.T) {
+func TestVercelCollisionRequiresExplicitAliasBeforeMutation(t *testing.T) {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
+		t.Run(string(surface), func(t *testing.T) {
+			testVercelCollisionRequiresExplicitAliasBeforeMutation(t, surface)
+		})
+	}
+}
+
+func testVercelCollisionRequiresExplicitAliasBeforeMutation(t *testing.T, surface Surface) {
 	catalog := completeVercelCatalog(t)
 	const resourceID = "vercel-composition-patterns"
 	adapter := &fakeSurfaceAdapter{inspect: func(transition SurfaceTransition) SurfaceInspection {
-		inspection := completeVercelObservation(transition.Desired, "missing")
+		inspection := completeVercelObservation(transition.Desired, "missing", surface)
 		inspection.OccupiedNames = []OccupiedName{{
 			Namespace: "skill", Name: resourceID, OwnerType: "unmanaged", Fingerprint: "operator",
 		}}
@@ -30,9 +38,9 @@ func TestVercelCodexCollisionRequiresExplicitAliasBeforeMutation(t *testing.T) {
 		return inspection
 	}}
 	store := &fakeActivationStore{}
-	facade := NewFacade(catalog, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	facade := NewFacade(catalog, WithActivation(store, map[Surface]SurfaceAdapter{surface: adapter}))
 
-	blocked, err := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: SurfaceCodex})
+	blocked, err := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: surface})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +53,7 @@ func TestVercelCodexCollisionRequiresExplicitAliasBeforeMutation(t *testing.T) {
 
 	alias := SurfaceAlias{Kind: "skill", ID: resourceID, Name: "vercel-pack-" + resourceID}
 	replanned, err := facade.Preview(context.Background(), ActivationRequest{
-		PackID: "vercel", Surface: SurfaceCodex, Aliases: []SurfaceAlias{alias},
+		PackID: "vercel", Surface: surface, Aliases: []SurfaceAlias{alias},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,20 +68,28 @@ func TestVercelCodexCollisionRequiresExplicitAliasBeforeMutation(t *testing.T) {
 	}
 }
 
-func TestVercelCodexLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.T) {
+func TestVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.T) {
+	for _, surface := range []Surface{SurfaceCodex, SurfaceClaude} {
+		t.Run(string(surface), func(t *testing.T) {
+			testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t, surface)
+		})
+	}
+}
+
+func testVercelLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *testing.T, surface Surface) {
 	catalog := completeVercelCatalog(t)
 	pack, err := catalog.Show("vercel")
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending := completeVercelObservation(pack, "missing")
-	changed := completeVercelObservation(pack, "operator-change")
+	pending := completeVercelObservation(pack, "missing", surface)
+	changed := completeVercelObservation(pack, "operator-change", surface)
 
 	t.Run("stale-preflight-zero-effects", func(t *testing.T) {
 		adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{pending, changed}}
 		store := &fakeActivationStore{}
-		facade := NewFacade(catalog, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
-		plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: SurfaceCodex})
+		facade := NewFacade(catalog, WithActivation(store, map[Surface]SurfaceAdapter{surface: adapter}))
+		plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: surface})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,8 +107,8 @@ func TestVercelCodexLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *tes
 			applyErr:     errors.New("atomic adapter interruption"),
 		}
 		store := &fakeActivationStore{}
-		facade := NewFacade(catalog, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
-		plan, _ := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: SurfaceCodex})
+		facade := NewFacade(catalog, WithActivation(store, map[Surface]SurfaceAdapter{surface: adapter}))
+		plan, _ := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: surface})
 		if _, err := facade.Apply(context.Background(), ApplyRequest{
 			Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true,
 		}); err == nil {
@@ -104,9 +120,9 @@ func TestVercelCodexLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *tes
 		firstAttempt := cloneJournal(*store.state.Journal)
 		adapter.applyErr = nil
 		adapter.inspectCalls = 0
-		verified := completeVercelObservation(pack, "desired")
+		verified := completeVercelObservation(pack, "desired", surface)
 		adapter.observations = []SurfaceInspection{pending, pending, verified}
-		recovery, err := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: SurfaceCodex})
+		recovery, err := facade.Preview(context.Background(), ActivationRequest{PackID: "vercel", Surface: surface})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +143,7 @@ func TestVercelCodexLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *tes
 		before := cloneActivationState(store.state)
 		adapter.inspectCalls = 0
 		adapter.observations = []SurfaceInspection{verified}
-		update, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "vercel", Surface: SurfaceCodex})
+		update, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "vercel", Surface: surface})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,12 +151,12 @@ func TestVercelCodexLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *tes
 			t.Fatalf("exact Vercel update changed lifecycle state: %+v", update.JSONReport(true))
 		}
 
-		drifted := completeVercelObservation(pack, "desired")
+		drifted := completeVercelObservation(pack, "desired", surface)
 		drifted.Projections[0].ObservedFingerprint = "operator-drift"
 		adapter.inspectCalls = 0
 		adapter.actions = nil
 		adapter.observations = []SurfaceInspection{drifted, drifted, verified}
-		reconcile, err := facade.PreviewReconcile(context.Background(), ReconcileRequest{PackID: "vercel", Surface: SurfaceCodex})
+		reconcile, err := facade.PreviewReconcile(context.Background(), ReconcileRequest{PackID: "vercel", Surface: surface})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -159,7 +175,7 @@ func TestVercelCodexLifecycleIsAtomicStaleSafeRecoverableAndOwnershipSafe(t *tes
 		adapter.inspectCalls = 0
 		adapter.actions = nil
 		adapter.observations = []SurfaceInspection{driftedRemoval}
-		deactivate, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "vercel", Surface: SurfaceCodex})
+		deactivate, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "vercel", Surface: surface})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -243,11 +259,11 @@ func materializeVercelAcceptanceArchive(t *testing.T, bundle string) {
 	}
 }
 
-func completeVercelObservation(pack Pack, observed string) SurfaceInspection {
-	inspection := SurfaceInspection{Revision: "vercel-codex-host"}
+func completeVercelObservation(pack Pack, observed string, surface Surface) SurfaceInspection {
+	inspection := SurfaceInspection{Revision: "vercel-" + string(surface) + "-host"}
 	for _, resource := range pack.Resources {
 		for _, binding := range resource.Bindings {
-			if binding.Surface != SurfaceCodex {
+			if binding.Surface != surface {
 				continue
 			}
 			inspection.Projections = append(inspection.Projections, ObservedProjection{
