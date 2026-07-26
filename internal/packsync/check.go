@@ -703,7 +703,7 @@ func loadManifests(root string) (map[string]packManifest, string, error) {
 		if err := json.Unmarshal(data, &manifest); err != nil {
 			return nil, "", fmt.Errorf("decode runtime manifest %s: %w", name, err)
 		}
-		if (manifest.SchemaVersion < 1 || manifest.SchemaVersion > 3) || manifest.ID == "" || result[manifest.ID].ID != "" {
+		if (manifest.SchemaVersion < 1 || manifest.SchemaVersion > 4) || manifest.ID == "" || result[manifest.ID].ID != "" {
 			return nil, "", fmt.Errorf("invalid or duplicate runtime manifest %s", name)
 		}
 		if manifest.SchemaVersion >= 2 {
