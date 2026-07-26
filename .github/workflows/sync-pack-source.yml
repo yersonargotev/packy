@@ -177,7 +177,7 @@ jobs:
     if: ${{ always() && github.repository == 'yersonargotev/packy' && needs.admit.result == 'success' && ((inputs.prepare_only == true && github.ref != 'refs/heads/main' && needs.governance-drift.result == 'skipped') || (inputs.prepare_only == false && github.ref == 'refs/heads/main' && needs.governance-drift.result == 'success')) }}
     runs-on: ubuntu-latest
     outputs:
-      continue: ${{ steps.route.outputs.continue }}
+      proceed: ${{ steps.route.outputs.proceed }}
       noop: ${{ steps.route.outputs.noop }}
     permissions:
       contents: read
@@ -277,9 +277,9 @@ jobs:
           mode="$(jq -r .classification_mode "$RUNNER_TEMP/packy-sync/inspect/request.json")"
           human_evidence="$(jq -r 'has("human_evidence")' "$RUNNER_TEMP/packy-sync/inspect/request.json")"
           if [[ "$status" == "review-required" && ( "$mode" != "human" || "$human_evidence" == "true" ) ]]; then
-            echo "continue=true" >> "$GITHUB_OUTPUT"
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "continue=false" >> "$GITHUB_OUTPUT"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
           fi
           if [[ "$status" == "no-op" ]]; then
             echo "noop=true" >> "$GITHUB_OUTPUT"
@@ -313,7 +313,7 @@ jobs:
   classify:
     name: Classify
     needs: inspect
-    if: ${{ needs.inspect.outputs.continue == 'true' }}
+    if: ${{ needs.inspect.outputs.proceed == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
