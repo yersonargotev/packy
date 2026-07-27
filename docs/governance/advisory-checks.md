@@ -1,8 +1,9 @@
 # Advisory governance and security checks
 
-Issue [#169](https://github.com/yersonargotev/packy/issues/169) introduces the
-repository policy surface and five check identities below. They are informative
-only: no branch protection or repository ruleset requires them in this stage.
+Issue [#169](https://github.com/yersonargotev/packy/issues/169) introduced the
+repository policy surface and five check identities below. ADR 0018 now makes
+Packy validation, the Claude floor, Governance authorization, and CodeQL
+universal merge requirements. Dependency review remains advisory.
 
 ## Stable identity and source registry
 
@@ -11,7 +12,7 @@ only: no branch protection or repository ruleset requires them in this stage.
 | `CI / Validate Packy-owned code` | `CI` / `Validate Packy-owned code` | GitHub Actions; App ID `15368`, slug `github-actions` | Runs repository validation, the complete Go test suite (through validation), and advisory `govulncheck`; vulnerability findings remain visible without becoming required in this stage. |
 | `CI / Claude 2.1.203 package smoke` | `CI` / `Claude 2.1.203 package smoke` | GitHub Actions; App ID `15368`, slug `github-actions` | Runs the exact supported Claude floor on pull requests. |
 | `Governance / Validate authorization` | Protected `Governance` workflow commit status | GitHub Actions; App ID `15368`, slug `github-actions` | Accepts open, same-repository closing issues with exactly `status:approved`; every absent, ambiguous, stale, or cross-repository state is denied. |
-| `Security / CodeQL` | `Security` / `CodeQL` | GitHub Actions; App ID `15368`, slug `github-actions` | Uploads Go analysis without becoming a merge requirement. |
+| `Security / CodeQL` | `Security` / `CodeQL` | GitHub Actions; App ID `15368`, slug `github-actions` | Uploads Go analysis as a universal merge requirement. |
 | `Security / Dependency review` | `Security` / `Dependency review` | GitHub Actions; App ID `15368`, slug `github-actions` | Reports dependency risk with warning semantics; operational errors remain visible in the step result. |
 
 The expected source is a policy binding, not proof. Issue #172 must observe each
@@ -83,9 +84,5 @@ go test ./internal/governanceauth ./internal/tools/governanceauth
 ```
 
 Secret Scanning and Push Protection remain GitHub platform controls. These
-advisory jobs do not read secrets, approve pull requests, change issues, write
-repository contents, or alter repository settings. The separate Addy promotion
-governance job may consume only the repository-scoped
-`GOVERNANCE_READ_TOKEN` for privileged read-only projections and the built-in
-read-only token for public repository metadata. It fails closed when forks or
-other untrusted events cannot receive the dedicated secret.
+checks do not read secrets, approve pull requests, change issues, write
+repository contents, or alter repository settings.

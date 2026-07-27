@@ -47,24 +47,20 @@ readonly names=(
   'Validate Packy-owned code'
   'Claude 2.1.203 package smoke'
   'CodeQL'
-  'Dependency review'
 )
 readonly qualified_names=(
   'CI / Validate Packy-owned code'
   'CI / Claude 2.1.203 package smoke'
   'Security / CodeQL'
-  'Security / Dependency review'
 )
 readonly workflow_names=(
   'CI'
   'CI'
   'Security'
-  'Security'
 )
 readonly paths=(
   '.github/workflows/ci.yml'
   '.github/workflows/ci.yml'
-  '.github/workflows/security-pr.yml'
   '.github/workflows/security-pr.yml'
 )
 

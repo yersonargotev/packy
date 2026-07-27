@@ -114,7 +114,7 @@ case "$endpoint" in
       exit 0
     fi
     cat <<JSON
-[{"name":"Validate Packy-owned code","status":"completed","conclusion":"success","details_url":"https://github.com/x/actions/runs/101/job/1","app":{"id":15368,"slug":"$slug"}},{"name":"Claude 2.1.203 package smoke","status":"completed","conclusion":"success","details_url":"https://github.com/x/actions/runs/102/job/2","app":{"id":15368,"slug":"github-actions"}},{"name":"CodeQL","status":"completed","conclusion":"success","details_url":"https://github.com/x/actions/runs/104/job/4","app":{"id":15368,"slug":"github-actions"}},{"name":"Dependency review","status":"completed","conclusion":"success","details_url":"https://github.com/x/actions/runs/105/job/5","app":{"id":15368,"slug":"github-actions"}}]
+[{"name":"Validate Packy-owned code","status":"completed","conclusion":"success","details_url":"https://github.com/x/actions/runs/101/job/1","app":{"id":15368,"slug":"$slug"}},{"name":"Claude 2.1.203 package smoke","status":"completed","conclusion":"success","details_url":"https://github.com/x/actions/runs/102/job/2","app":{"id":15368,"slug":"github-actions"}},{"name":"CodeQL","status":"completed","conclusion":"success","details_url":"https://github.com/x/actions/runs/104/job/4","app":{"id":15368,"slug":"github-actions"}}]
 JSON
     ;;
   *commits/*/statuses*)
@@ -132,7 +132,7 @@ JSON
     conclusion=success
     [[ "${FIXTURE_MODE:-valid}" == failed-run ]] && conclusion=failure
     printf '{"id":103,"name":"Governance","path":".github/workflows/governance.yml","head_sha":"` + qualificationHead + `","status":"completed","conclusion":"%s","check_suite_id":999}\n' "$conclusion" ;;
-  */actions/runs/104|*/actions/runs/105) printf '{"id":%s,"name":"Security","path":".github/workflows/security-pr.yml","head_sha":"` + qualificationHead + `","status":"completed","conclusion":"success"}\n' "${endpoint##*/}" ;;
+  */actions/runs/104) printf '{"id":104,"name":"Security","path":".github/workflows/security-pr.yml","head_sha":"` + qualificationHead + `","status":"completed","conclusion":"success"}\n' ;;
   */check-suites/999/check-runs*)
     slug=github-actions
     [[ "${FIXTURE_MODE:-valid}" == wrong-governance-source ]] && slug=untrusted
