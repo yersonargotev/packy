@@ -475,6 +475,36 @@ func TestGovernanceNormalizesExternalMetadataBeforeStrictValidation(t *testing.T
 	}
 }
 
+func TestGovernanceCollectsCanonicalWorkflowIdentityForAutomationRuns(t *testing.T) {
+	root := repositoryRoot(t)
+	governance := readFile(t, filepath.Join(root, ".github", "workflows", "governance.yml"))
+	syncWorkflow := readFile(t, filepath.Join(root, ".github", "workflows", "sync-pack-source.yml"))
+	for _, required := range []string{
+		"workflow_id:.workflow_id",
+		"jq -er '.workflow_id | numbers | select(. > 0)'",
+		"actions/workflows/$workflow_id",
+		"--jq '{workflow:.name,path:.path}'",
+		"del(.workflow_id)",
+		`("<!-- packy-canonical-automation\nrun: " + $run_url + "\nhead: " + $head_sha + "\n-->\n")`,
+	} {
+		if !strings.Contains(governance, required) {
+			t.Fatalf("governance workflow does not collect canonical workflow identity with %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"workflow:.name,path,event,head_branch",
+		"workflow_id:.workflow_id,path,event,head_branch",
+	} {
+		if strings.Contains(governance, forbidden) {
+			t.Fatalf("governance workflow trusts run-level workflow identity with %q", forbidden)
+		}
+	}
+	const publishedBinding = `printf '<!-- packy-canonical-automation\nrun: %s\nhead: %s\n-->\n'`
+	if !strings.Contains(syncWorkflow, publishedBinding) {
+		t.Fatal("synchronization workflow does not publish the byte-exact canonical binding")
+	}
+}
+
 func TestGovernanceTargetMatrixRejectsWhitespaceOnlyRecords(t *testing.T) {
 	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
 	const marker = "jq -Rsc '"
