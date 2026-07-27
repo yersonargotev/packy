@@ -257,17 +257,17 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if issue.Number != q.IssueNumber || spec.Number != q.SpecNumber || issue.ID == "" || spec.ID == "" {
 		return errors.New("foreign issue or spec identity")
 	}
-	if !strings.EqualFold(issue.State, "OPEN") || !strings.EqualFold(spec.State, "OPEN") {
-		return errors.New("issue and accepted spec must be open")
-	}
-	labels := labelNames(issue.Labels)
-	if !hasLabel(labels, "status:approved") && !hasLabel(labels, "status:needs-review") {
-		return errors.New("issue is not eligible: approved or needs-review status is required")
-	}
-	specLabels := labelNames(spec.Labels)
-	if !hasLabel(specLabels, "status:accepted") && !hasLabel(specLabels, "status:approved") {
+	if !eligibleIssueObservation(issue) || !eligibleSpecObservation(spec) {
+		if !strings.EqualFold(issue.State, "OPEN") || !strings.EqualFold(spec.State, "OPEN") {
+			return errors.New("issue and accepted spec must be open")
+		}
+		labels := labelNames(issue.Labels)
+		if !hasLabel(labels, "status:approved") && !hasLabel(labels, "status:needs-review") {
+			return errors.New("issue is not eligible: approved or needs-review status is required")
+		}
 		return errors.New("spec authority is not accepted")
 	}
+	labels := labelNames(issue.Labels)
 	if err = matchDependencies(q.DependencyDisposition, issue.BlockedBy.Nodes); err != nil {
 		return err
 	}
@@ -361,6 +361,16 @@ func hasLabel(labels []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func eligibleIssueObservation(issue issueObservation) bool {
+	labels := labelNames(issue.Labels)
+	return strings.EqualFold(issue.State, "OPEN") && (hasLabel(labels, "status:approved") || hasLabel(labels, "status:needs-review"))
+}
+
+func eligibleSpecObservation(spec issueObservation) bool {
+	labels := labelNames(spec.Labels)
+	return strings.EqualFold(spec.State, "OPEN") && (hasLabel(labels, "status:approved") || hasLabel(labels, "status:accepted"))
 }
 
 type canonicalIssue struct {
@@ -704,7 +714,9 @@ func (c command) localGate(ctx context.Context, args []string, stdout io.Writer)
 	}
 	bundle, _, err := deliveryevidence.Load(values.bundlePath)
 	if err != nil {
-		return &deliveryevidence.LocalGateError{Code: deliveryevidence.LocalGateQualificationInvalid, Detail: err.Error()}
+		gateErr := &deliveryevidence.LocalGateError{Code: deliveryevidence.LocalGateQualificationInvalid, Detail: err.Error()}
+		_, _ = io.WriteString(stdout, deliveryevidence.RenderLocalGateFailureReport(gateErr))
+		return gateErr
 	}
 	slug := bundle.Repository.Owner + "/" + bundle.Repository.Name
 	observeIssue := func(number int) (issueObservation, error) {
@@ -738,7 +750,9 @@ func (c command) localGate(ctx context.Context, args []string, stdout io.Writer)
 		if strings.Contains(err.Error(), "repository") {
 			code = deliveryevidence.LocalGateForeignEvidence
 		}
-		return &deliveryevidence.LocalGateError{Code: code, Detail: err.Error()}
+		gateErr := &deliveryevidence.LocalGateError{Code: code, Detail: err.Error()}
+		_, _ = io.WriteString(stdout, deliveryevidence.RenderLocalGateFailureReport(gateErr))
+		return gateErr
 	}
 	branchRaw, err := c.Git.Output(ctx, "git", "-C", values.repository, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
@@ -755,8 +769,8 @@ func (c command) localGate(ctx context.Context, args []string, stdout io.Writer)
 		Spec:           deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID},
 		IssueSHA256:    issueHash,
 		SpecSHA256:     specHash,
-		IssueEligible:  strings.EqualFold(issue.State, "OPEN") && (hasLabel(labelNames(issue.Labels), "status:approved") || hasLabel(labelNames(issue.Labels), "status:needs-review")),
-		SpecEligible:   strings.EqualFold(spec.State, "OPEN") && (hasLabel(labelNames(spec.Labels), "status:approved") || hasLabel(labelNames(spec.Labels), "status:accepted")),
+		IssueEligible:  eligibleIssueObservation(issue),
+		SpecEligible:   eligibleSpecObservation(spec),
 		ExpectedBranch: branch,
 		CurrentBranch:  strings.TrimSpace(string(branchRaw)),
 		HeadSHA:        validation.CommitSHA,
@@ -766,6 +780,7 @@ func (c command) localGate(ctx context.Context, args []string, stdout io.Writer)
 		ObservedAt:     c.now().Format(time.RFC3339Nano),
 	})
 	if err != nil {
+		_, _ = io.WriteString(stdout, deliveryevidence.RenderLocalGateFailureReport(err))
 		return err
 	}
 	_, err = io.WriteString(stdout, deliveryevidence.RenderLocalGateReport(report))

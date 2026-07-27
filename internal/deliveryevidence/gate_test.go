@@ -31,7 +31,7 @@ func gateFixture(t *testing.T, multi bool) (de.Bundle, de.LocalGateObservation) 
 	}
 	validation := de.ValidationObservation{Repository: repo, CheckoutSHA256: strings.Repeat("e", 64), CommitSHA: finalHead, TreeSHA: finalTree, WorkspaceClean: true, ValidatorIdentity: "validate-packy-v1", ValidatorSHA256: strings.Repeat("f", 64), ValidatorIdentityExpiresAt: "2030-01-01T00:00:00Z", RequiredCommand: "./scripts/validate-packy.sh", Sandbox: de.SandboxFacts{HomeRoot: "/tmp/home", ConfigHomeRoot: "/tmp/config", Sandboxed: true}}
 	b.ValidationReceipts = append(b.ValidationReceipts, de.ValidationReceipt{Schema: de.ValidationReceiptV1, ValidationObservation: validation, CompletedAt: "2026-07-27T12:00:00Z", Succeeded: true, Completed: true})
-	o := de.LocalGateObservation{Repository: repo, Issue: issue, Spec: spec, IssueSHA256: b.Authority.IssueSHA256, SpecSHA256: b.Authority.SpecSHA256, IssueEligible: true, SpecEligible: true, ExpectedBranch: "feat/issue-279", CurrentBranch: "feat/issue-279", HeadSHA: finalHead, TreeSHA: finalTree, OrderedCommits: commits, Validation: validation, ObservedAt: "2026-07-27T12:01:00Z"}
+	o := de.LocalGateObservation{Repository: repo, Issue: issue, Spec: spec, IssueSHA256: b.Authority.IssueSHA256, SpecSHA256: b.Authority.SpecSHA256, IssueEligible: true, SpecEligible: true, ExpectedBranch: "feat/issue-279-local-gate", CurrentBranch: "feat/issue-279-local-gate", HeadSHA: finalHead, TreeSHA: finalTree, OrderedCommits: commits, Validation: validation, ObservedAt: "2026-07-27T12:01:00Z"}
 	if err := de.Validate(b); err != nil {
 		t.Fatalf("fixture invalid: %v", err)
 	}
@@ -81,6 +81,10 @@ func TestEvaluateLocalGateFailureClasses(t *testing.T) {
 			_, err := de.EvaluateLocalGate(b, o)
 			if !de.IsLocalGateError(err, tt.code) {
 				t.Fatalf("want %s, got %v", tt.code, err)
+			}
+			failure := de.RenderLocalGateFailureReport(err)
+			if !strings.Contains(failure, "LOCAL delivery gate: FAIL") || !strings.Contains(failure, "Code: "+string(tt.code)) || !strings.Contains(failure, "Issue: #279") {
+				t.Fatalf("incomplete failure report: %q", failure)
 			}
 		})
 	}

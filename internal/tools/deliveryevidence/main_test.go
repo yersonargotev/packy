@@ -515,10 +515,18 @@ func newLocalGateFixture(t *testing.T, iterations int) localGateFixture {
 	t.Helper()
 	root := t.TempDir()
 	repository := filepath.Join(root, "checkout")
+	operatorHome := filepath.Join(root, "operator-home")
+	operatorConfig := filepath.Join(root, "operator-config")
 	run := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = repository
+		cmd.Env = replacedEnvironment(os.Environ(), map[string]string{
+			"HOME":                operatorHome,
+			"XDG_CONFIG_HOME":     operatorConfig,
+			"GIT_CONFIG_GLOBAL":   filepath.Join(root, "empty-gitconfig"),
+			"GIT_CONFIG_NOSYSTEM": "1",
+		})
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", strings.Join(args, " "), err, out)
@@ -625,6 +633,11 @@ func (f localGateFixture) run(t *testing.T, issue issueObservation, expectedBran
 	args = append(args, extra...)
 	var stdout bytes.Buffer
 	err := (command{Git: execRunner{}, GitHub: github, Now: func() time.Time { return time.Date(2026, 7, 27, 13, 0, 0, 0, time.UTC) }}).run(context.Background(), args, &stdout)
+	for _, call := range github.calls {
+		if !strings.HasPrefix(call, "gh issue view ") && !strings.HasPrefix(call, "gh repo view ") {
+			t.Fatalf("LOCAL gate used mutating or foreign GitHub authority: %s", call)
+		}
+	}
 	return stdout.String(), err
 }
 
@@ -660,18 +673,18 @@ func TestLocalGateCommandFailureClasses(t *testing.T) {
 		if err = os.WriteFile(f.bundlePath, raw, 0600); err != nil {
 			t.Fatal(err)
 		}
-		_, err = f.run(t, f.issue, f.branch)
-		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateQualificationInvalid)) || !strings.Contains(err.Error(), "missing acceptance matrix row AC-01") {
-			t.Fatalf("unexpected error: %v", err)
+		output, err := f.run(t, f.issue, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateQualificationInvalid)) || !strings.Contains(err.Error(), "missing acceptance matrix row AC-01") || !strings.Contains(output, "LOCAL delivery gate: FAIL") {
+			t.Fatalf("unexpected result: %q %v", output, err)
 		}
 	})
 	t.Run("tracker-authority-changed", func(t *testing.T) {
 		f := newLocalGateFixture(t, 1)
 		changed := f.issue
 		changed.Body = "changed"
-		_, err := f.run(t, changed, f.branch)
-		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateTrackerAuthorityChanged)) {
-			t.Fatalf("unexpected error: %v", err)
+		output, err := f.run(t, changed, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateTrackerAuthorityChanged)) || !strings.Contains(output, "Issue: #279") {
+			t.Fatalf("unexpected result: %q %v", output, err)
 		}
 	})
 	t.Run("acceptance-unproved", func(t *testing.T) {
@@ -737,6 +750,13 @@ func TestLocalGateCommandFailureClasses(t *testing.T) {
 	t.Run("wrong-branch", func(t *testing.T) {
 		f := newLocalGateFixture(t, 1)
 		_, err := f.run(t, f.issue, "feat/issue-279-other")
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateWrongBranch)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("self-asserted-main", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		_, err := f.run(t, f.issue, "main")
 		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateWrongBranch)) {
 			t.Fatalf("unexpected error: %v", err)
 		}
