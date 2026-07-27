@@ -393,6 +393,46 @@ func normalizeV3PackTestCutover(data []byte) []byte {
 	for _, replacement := range replacements {
 		data = bytes.Replace(data, []byte(replacement[0]), []byte(replacement[1]), 1)
 	}
+	return omitPostCutoverPackTestFunctions(data,
+		"TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle",
+		"TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects",
+		"rewriteManifestAsV4",
+	)
+}
+
+func omitPostCutoverPackTestFunctions(data []byte, names ...string) []byte {
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "pack_test.go", data, 0)
+	if err != nil {
+		return data
+	}
+	omitted := make(map[string]bool, len(names))
+	for _, name := range names {
+		omitted[name] = true
+	}
+	type span struct{ start, end int }
+	var spans []span
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || !omitted[function.Name.Name] {
+			continue
+		}
+		start := fset.Position(function.Pos()).Offset
+		end := fset.Position(function.End()).Offset
+		if start > 0 && data[start-1] == '\n' {
+			start--
+		}
+		if end < len(data) && data[end] == '\n' {
+			end++
+		}
+		spans = append(spans, span{
+			start: start,
+			end:   end,
+		})
+	}
+	for i := len(spans) - 1; i >= 0; i-- {
+		data = append(data[:spans[i].start], data[spans[i].end:]...)
+	}
 	return data
 }
 

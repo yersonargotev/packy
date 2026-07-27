@@ -8,7 +8,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 2
+const LifecycleJSONSchemaVersion = 3
 
 // LifecycleContract is the canonical, host-neutral description rendered by
 // every lifecycle entry point. Renderers must not reconstruct these facts
@@ -246,6 +246,7 @@ type JSONLifecyclePlan struct {
 	PackVersion         string                     `json:"pack_version"`
 	Surface             Surface                    `json:"surface"`
 	IntentRevision      int                        `json:"intent_revision"`
+	Selection           ResourceSelection          `json:"selection"`
 	Contract            LifecycleContract          `json:"contract"`
 	Aliases             []SurfaceAlias             `json:"aliases"`
 	Contributors        map[string][]string        `json:"contributors"`
@@ -311,9 +312,10 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	if retained == nil {
 		retained = []RetainedProjection{}
 	}
+	selection, _ := canonicalSelection(p.selection)
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
-		Surface: p.surface, IntentRevision: p.intentRevision, Contract: contract, Aliases: contract.Aliases,
+		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, Contract: contract, Aliases: contract.Aliases,
 		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
 		RuntimeModes: sortedRuntimeModeResults(p.runtimeModeResults),

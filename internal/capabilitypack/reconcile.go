@@ -29,6 +29,7 @@ func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) 
 		if _, err := f.catalog.resolveIntentPack(request.PackID, intent.Version); err != nil {
 			return ReconciliationPlan{}, err
 		}
+		activation.Selection = intent.Selection
 		plan, err := f.preview(ctx, activation, OperationReconcile, "")
 		if err != nil {
 			return ReconciliationPlan{}, err
@@ -53,19 +54,21 @@ func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) 
 		return ReconciliationPlan{}, err
 	}
 	ids := make([]string, 0)
+	selections := map[string]ResourceSelection{}
 	for _, intent := range activeIntents(state) {
 		if intent.Active && intent.Surface == request.Surface {
 			if _, showErr := f.catalog.resolveIntentPack(intent.PackID, intent.Version); showErr != nil {
 				return ReconciliationPlan{}, showErr
 			}
 			ids = append(ids, intent.PackID)
+			selections[intent.PackID] = intent.Selection
 		}
 	}
 	sort.Strings(ids)
 	if len(ids) == 0 {
 		return ReconciliationPlan{}, fmt.Errorf("no active capability packs on %s; reconcile does not activate packs", request.Surface)
 	}
-	plan, err := f.preview(ctx, ActivationRequest{PackID: ids[0], Surface: request.Surface}, OperationReconcile, "")
+	plan, err := f.preview(ctx, ActivationRequest{PackID: ids[0], Surface: request.Surface, Selection: selections[ids[0]]}, OperationReconcile, "")
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}

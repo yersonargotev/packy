@@ -291,6 +291,10 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 	// The dedicated doctor contract tests own that new output; the frozen
 	// rename baseline predates it and remains focused on pre-Claude behavior.
 	value = regexp.MustCompile(`(?m)^SUMMARY status=[^\n]*\n`).ReplaceAllString(value, "")
+	// Issue #284 adds explicit selection disclosure to lifecycle previews.
+	// The granular lifecycle tests own it; remove it from legacy all-mode
+	// comparisons against the frozen pre-selection product.
+	value = regexp.MustCompile(`(?m)^Selection (?:mode|root):[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^(\$PRODUCT (?:install|update): synced[^\n]+) \(outcome: [^)]+\)$`).ReplaceAllString(value, "$1")
 	value = regexp.MustCompile(`(?m)^(\$PRODUCT uninstall): [^;\n]+; processed \$Product-managed artifacts for state`).ReplaceAllString(value, "$1: removed $$Product-managed artifacts and state")
 	value = identityPlanRE.ReplaceAllString(value, "plan-<ID>")
@@ -302,11 +306,36 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 func removeSliceFJSONFields(value any) {
 	switch value := value.(type) {
 	case map[string]any:
+		if _, ok := value["activations"]; ok {
+			// Issue #284 advances the activation-state document to v4 solely
+			// to persist explicit all/custom selection.
+			value["schema_version"] = float64(2)
+		}
+		if _, ok := value["intents"]; ok {
+			value["schema_version"] = float64(1)
+		}
+		if _, ok := value["pack_id"]; ok {
+			if _, hasActive := value["active"]; hasActive {
+				delete(value, "selection")
+			}
+		}
 		if report, ok := value["report"].(string); ok && strings.HasPrefix(report, "pack-lifecycle-") {
+			// Issue #284 adds explicit all/custom selection to versioned
+			// lifecycle evidence. Dedicated granular-activation tests own the
+			// new contract; the frozen rename gate compares legacy all behavior.
+			value["schema_version"] = float64(2)
+			delete(value, "selection")
 			delete(value, "evidence")
 		} else if ok && strings.HasPrefix(report, "pack-status") {
 			value["schema_version"] = float64(1)
 			delete(value, "evidence")
+			for _, raw := range value["entries"].([]any) {
+				entry := raw.(map[string]any)
+				delete(entry, "resource_selections")
+				if intent, ok := entry["intent"].(map[string]any); ok {
+					delete(intent, "selection")
+				}
+			}
 		} else if ok && report == "doctor" {
 			value["schema_version"] = float64(1)
 			checks, _ := value["checks"].([]any)
@@ -360,6 +389,26 @@ func normalizeSliceFJSONTranscript(transcript *identityEquivalenceTranscript) {
 			"## Dots Agent Rules", "## Agent Rules",
 			"## Packy Agent Rules", "## Agent Rules",
 		).Replace(transcript.Scenarios[i].State)
+		var snapshot []map[string]any
+		if json.Unmarshal([]byte(transcript.Scenarios[i].State), &snapshot) == nil {
+			for _, item := range snapshot {
+				content, ok := item["content"].(string)
+				if !ok {
+					continue
+				}
+				var stateDocument any
+				if json.Unmarshal([]byte(content), &stateDocument) != nil {
+					continue
+				}
+				removeSliceFJSONFields(stateDocument)
+				if normalized, err := json.MarshalIndent(stateDocument, "", "  "); err == nil {
+					item["content"] = string(normalized) + "\n"
+				}
+			}
+			if normalized, err := json.Marshal(snapshot); err == nil {
+				transcript.Scenarios[i].State = string(normalized)
+			}
+		}
 		var document any
 		if json.Unmarshal([]byte(strings.TrimSpace(transcript.Scenarios[i].Output)), &document) != nil {
 			// Issue #205 makes status evidence path-portable. The frozen rename

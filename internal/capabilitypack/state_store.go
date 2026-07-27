@@ -61,7 +61,7 @@ func (s *FileActivationStore) Save(_ context.Context, surface Surface, expectedR
 	if current.Intent.Revision != expectedRevision {
 		return StalePlanError{Precondition: fmt.Sprintf("activation intent revision changed from %d to %d before persistence; rerun activation to preview a fresh plan", expectedRevision, current.Intent.Revision)}
 	}
-	state.SchemaVersion = 2
+	state.SchemaVersion = 3
 	state.Intent.Surface = surface
 	if err := canonicalizeActivationState(&state); err != nil {
 		return err
@@ -80,7 +80,7 @@ func (s *FileActivationStore) Save(_ context.Context, surface Surface, expectedR
 	sort.Slice(document.Activations, func(i, j int) bool {
 		return document.Activations[i].Intent.Surface < document.Activations[j].Intent.Surface
 	})
-	document.SchemaVersion = 3
+	document.SchemaVersion = 4
 	data, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode capability-pack state: %w", err)
@@ -117,7 +117,8 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 		if err := json.Unmarshal(data, &legacy); err != nil {
 			return activationDocument{}, err
 		}
-		document := activationDocument{SchemaVersion: 3, Activations: []ActivationState{legacy}}
+		document := activationDocument{SchemaVersion: 4, Activations: []ActivationState{legacy}}
+		defaultLegacySelections(&document)
 		if err := canonicalizeActivationDocument(&document); err != nil {
 			return activationDocument{}, err
 		}
@@ -132,6 +133,7 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 				return activationDocument{}, fmt.Errorf("read capability-pack state %s: document v2 contains unsupported activation schema_version %d", s.path, state.SchemaVersion)
 			}
 		}
+		defaultLegacySelections(&document)
 		if err := canonicalizeActivationDocument(&document); err != nil {
 			return activationDocument{}, err
 		}
@@ -146,6 +148,24 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 				return activationDocument{}, fmt.Errorf("read capability-pack state %s: document v3 contains unsupported activation schema_version %d", s.path, state.SchemaVersion)
 			}
 		}
+		defaultLegacySelections(&document)
+		if err := canonicalizeActivationDocument(&document); err != nil {
+			return activationDocument{}, err
+		}
+		return document, nil
+	case 4:
+		var document activationDocument
+		if err := strictDecode(data, &document); err != nil {
+			return activationDocument{}, fmt.Errorf("read capability-pack state %s: invalid document v4: %w", s.path, err)
+		}
+		for _, state := range document.Activations {
+			if state.SchemaVersion != 3 {
+				return activationDocument{}, fmt.Errorf("read capability-pack state %s: document v4 contains unsupported activation schema_version %d", s.path, state.SchemaVersion)
+			}
+			if err := validateExplicitSelections(state); err != nil {
+				return activationDocument{}, fmt.Errorf("read capability-pack state %s: %w", s.path, err)
+			}
+		}
 		if err := canonicalizeActivationDocument(&document); err != nil {
 			return activationDocument{}, err
 		}
@@ -156,7 +176,7 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 }
 
 func canonicalizeActivationDocument(document *activationDocument) error {
-	document.SchemaVersion = 3
+	document.SchemaVersion = 4
 	for i := range document.Activations {
 		if err := canonicalizeActivationState(&document.Activations[i]); err != nil {
 			return err
@@ -166,13 +186,45 @@ func canonicalizeActivationDocument(document *activationDocument) error {
 }
 
 func canonicalizeActivationState(state *ActivationState) error {
-	state.SchemaVersion = 2
+	state.SchemaVersion = 3
+	var err error
+	state.Intent.Selection, err = canonicalSelection(state.Intent.Selection)
+	if err != nil {
+		return err
+	}
 	if err := canonicalizeAliases(&state.Intent.Aliases); err != nil {
 		return err
 	}
 	for i := range state.Intents {
+		state.Intents[i].Selection, err = canonicalSelection(state.Intents[i].Selection)
+		if err != nil {
+			return err
+		}
 		if err := canonicalizeAliases(&state.Intents[i].Aliases); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func defaultLegacySelections(document *activationDocument) {
+	all := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+	for i := range document.Activations {
+		document.Activations[i].Intent.Selection = all
+		for j := range document.Activations[i].Intents {
+			document.Activations[i].Intents[j].Selection = all
+		}
+	}
+}
+
+func validateExplicitSelections(state ActivationState) error {
+	intents := append([]ActivationIntent{state.Intent}, state.Intents...)
+	for _, intent := range intents {
+		if intent.Selection.Mode == "" {
+			return fmt.Errorf("activation intent for pack %q is missing explicit resource selection", intent.PackID)
+		}
+		if _, err := canonicalSelection(intent.Selection); err != nil {
+			return fmt.Errorf("activation intent for pack %q has invalid resource selection: %w", intent.PackID, err)
 		}
 	}
 	return nil

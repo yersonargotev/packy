@@ -13,9 +13,10 @@ type StatusRequest struct {
 }
 
 type IntentStatus struct {
-	Active   bool
-	Revision int
-	Version  string
+	Active    bool
+	Revision  int
+	Version   string
+	Selection ResourceSelection
 }
 
 type AttemptStatus struct {
@@ -48,6 +49,11 @@ type ProjectionStatus struct {
 
 type ProjectionSummary struct {
 	Verified, Missing, Drifted, Ambiguous, Unmanaged int
+}
+
+type ResourceSelectionStatus struct {
+	Resource ResourceIdentity
+	Selected bool
 }
 
 // ReadinessObservation is fresh host-owned evidence. Observed distinguishes a
@@ -115,6 +121,7 @@ type StatusEntry struct {
 	RuntimeModes        []RuntimeModeResult
 	Projections         ProjectionSummary
 	ProjectionDetails   []ProjectionStatus
+	ResourceSelections  []ResourceSelectionStatus
 	Blockers            []string
 	PendingHumanActions []string
 	Evidence            []string
@@ -201,9 +208,14 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	}
 	entry := StatusEntry{Pack: pack, Surface: surface}
 	evidencePack := pack
+	selection := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
 	if intent, ok := intentForPack(state, pack.ID, surface); ok {
+		selection, err = canonicalSelection(intent.Selection)
+		if err != nil {
+			return StatusEntry{}, err
+		}
 		entry.Contract = LifecycleContractFor(pack, surface, intent.Aliases)
-		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version}
+		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection}
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
 		if intent.Active {
@@ -220,12 +232,17 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	if entry.Contract.DependencyClosure == nil {
 		entry.Contract = LifecycleContractFor(pack, surface, nil)
 	}
+	entry.ResourceSelections = resourceSelectionFacts(evidencePack, selection, entry.Intent.Active)
 	entry.LatestAttempt = latestAttemptStatus(state, pack.ID, surface)
 	surfaceComposition, err := f.compose(evidencePack, state, surface, true)
 	if err != nil {
 		return StatusEntry{}, err
 	}
-	relevantPack, err := f.statusEvidencePack(evidencePack, surface)
+	selectedEvidencePack, err := selectPackResources(evidencePack, selection)
+	if err != nil {
+		return StatusEntry{}, err
+	}
+	relevantPack, err := f.statusEvidencePack(selectedEvidencePack, surface)
 	if err != nil {
 		return StatusEntry{}, err
 	}

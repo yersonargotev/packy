@@ -22,7 +22,7 @@ func TestFileActivationStoreMigratesLegacyDocumentsToCanonicalAliases(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.SchemaVersion != 2 || state.Intent.Aliases == nil || len(state.Intent.Aliases) != 0 {
+	if state.SchemaVersion != 3 || state.Intent.Aliases == nil || len(state.Intent.Aliases) != 0 || state.Intent.Selection.Mode != SelectionAll || state.Intent.Selection.Roots == nil {
 		t.Fatalf("migrated state = %+v", state)
 	}
 	if err := store.Save(context.Background(), SurfaceCodex, 1, state); err != nil {
@@ -36,7 +36,7 @@ func TestFileActivationStoreMigratesLegacyDocumentsToCanonicalAliases(t *testing
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document["schema_version"] != float64(3) || !strings.Contains(string(data), `"aliases": []`) {
+	if document["schema_version"] != float64(4) || !strings.Contains(string(data), `"aliases": []`) || !strings.Contains(string(data), `"mode": "all"`) {
 		t.Fatalf("document = %s", data)
 	}
 }

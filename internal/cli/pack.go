@@ -43,6 +43,7 @@ automatically.`,
   packy pack status engram --surface codex
   packy pack status engram --surface codex --require usable
   packy pack activate matty --surface codex --dry-run
+  packy pack activate example-pack --surface codex --resource skill:ask-matt --dry-run
   packy pack activate engram --surface claude --dry-run --json
   packy pack activate matty --surface codex
   packy pack update matty --surface codex
@@ -220,6 +221,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	var surface string
 	var dryRun bool
 	var aliasValues []string
+	var resourceValues []string
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Args: cobra.ExactArgs(1),
@@ -228,11 +230,22 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 			if err != nil {
 				return err
 			}
+			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}
+			if len(resourceValues) > 0 {
+				selection.Mode = capabilitypack.SelectionCustom
+				for _, value := range resourceValues {
+					resource, err := capabilitypack.ParseResourceIdentity(value)
+					if err != nil {
+						return err
+					}
+					selection.Roots = append(selection.Roots, resource)
+				}
+			}
 			facade, err := activationFacade(opts, workstationResolver)
 			if err != nil {
 				return err
 			}
-			plan, err := facade.Preview(cmd.Context(), capabilitypack.ActivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Aliases: aliases})
+			plan, err := facade.Preview(cmd.Context(), capabilitypack.ActivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Aliases: aliases, Selection: selection})
 			if err != nil {
 				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 			}
@@ -245,6 +258,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
+	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one manifest-v4 operational resource (<kind>:<id>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd
@@ -405,6 +419,15 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		}
 	} else if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Version: %s\nIntent revision: %d\n", plan.Pack().Version, plan.IntentRevision()); err != nil {
 		return err
+	}
+	selection := plan.Selection()
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Selection mode: %s\n", selection.Mode); err != nil {
+		return err
+	}
+	for _, root := range selection.Roots {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Selection root: %s\n", root); err != nil {
+			return err
+		}
 	}
 	for _, activation := range plan.Activations() {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Activation: %s %s %s\n", activation.Role, activation.Pack.ID, activation.Pack.Version); err != nil {
@@ -624,6 +647,23 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry) error {
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nUpdate available: %s\nLatest attempt: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), renderUpdateAvailability(entry), renderAttempt(entry.LatestAttempt), readinessValue(entry.ReadinessObserved.Configured, entry.Readiness.Configured), readinessValue(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized), readinessValue(entry.ReadinessObserved.Usability, entry.Readiness.Usable), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
+	}
+	if entry.Intent.Active {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Selection mode: %s\n", entry.Intent.Selection.Mode); err != nil {
+			return err
+		}
+		for _, selection := range entry.ResourceSelections {
+			state := "unselected"
+			if selection.Selected {
+				state = "selected-root"
+				if entry.Intent.Selection.Mode == capabilitypack.SelectionAll {
+					state = "selected-all"
+				}
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Resource selection: %s state=%s\n", selection.Resource, state); err != nil {
+				return err
+			}
+		}
 	}
 	optionalAuthorities := append([]capabilitypack.OptionalAuthorityObservation(nil), entry.OptionalAuthorities...)
 	sort.Slice(optionalAuthorities, func(i, j int) bool {

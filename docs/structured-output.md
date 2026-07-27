@@ -1,8 +1,9 @@
 # Structured CLI output
 
-Packy emits versioned JSON when `--json` is present. The Claude Code cutover uses
-`schema_version: 2` for every report below; version 1 is not extended with
-Claude fields.
+Packy emits versioned JSON when `--json` is present. Classic lifecycle, doctor,
+and Pack show retain `schema_version: 2`. Capability-Pack lifecycle and status
+use `schema_version: 3` so selection intent is explicit rather than being added
+silently to v2.
 
 | Command | `report` |
 | --- | --- |
@@ -16,10 +17,11 @@ Claude fields.
 | `packy pack status --json` | `pack-status-overview` |
 | targeted `packy pack status PACK --surface SURFACE --json` | `pack-status` |
 
-The exact offline schemas are under `schemas/cli/v2/`. Canonical redacted
-fixtures are under `internal/cli/testdata/structured-output/v2/`; repository
-validation compiles every schema and validates both the fixtures and live
-producer examples.
+The exact offline schemas are under `schemas/cli/v2/` and `schemas/cli/v3/`.
+Canonical redacted fixtures use the matching directories under
+`internal/cli/testdata/structured-output/`; repository validation compiles the
+schema selected by each document's `schema_version` and validates both the
+fixtures and live producer examples.
 
 ## Classic lifecycle
 
@@ -64,10 +66,12 @@ does not claim observed readiness.
 
 Lifecycle preview publishes the sealed ordered phases and actions, contract,
 compatibility, consent, preservation, blockers, expected readiness, observed
-evidence, pending evidence, evaluated runtime modes, and recovery. Apply and
-failure reports retain that redacted plan. Status publishes intent, projection
-health, compatibility, readiness, evaluated runtime modes, evidence, and
-pending actions. Each runtime-mode result keeps its declared role,
+evidence, pending evidence, evaluated runtime modes, recovery, and exact
+`all`/`custom` resource selection. Apply and failure reports retain that
+redacted plan. Status publishes intent, canonical selected roots, selected or
+unselected resource identities, projection health, compatibility, readiness,
+evaluated runtime modes, evidence, and pending actions. Each runtime-mode result
+keeps its declared role,
 requirements, authorities, effects, fallback, fail-before-effects policy, and
 sanitized observation facts together; unobservable facts remain `unverified`
 and do not reduce whole-pack readiness. Each readiness dimension remains

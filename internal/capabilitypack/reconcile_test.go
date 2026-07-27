@@ -52,6 +52,8 @@ func TestTargetedReconcileRepairsActivePackInsideCompleteSurfaceDesiredStateWith
 		t.Fatalf("targeted phases = %+v", phases)
 	}
 	before := cloneActivationState(store.state)
+	before.Intent.Selection = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+	before.Intents[0].Selection = before.Intent.Selection
 	result, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
 	if err != nil || !result.Verified {
 		t.Fatalf("result=%+v err=%v", result, err)
