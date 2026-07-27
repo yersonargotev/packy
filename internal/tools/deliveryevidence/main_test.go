@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -832,5 +833,100 @@ func reviewBundleFixture(base string) deliveryevidence.Bundle {
 		Adjudications:      []deliveryevidence.Adjudication{},
 		ValidationReceipts: []deliveryevidence.ValidationReceipt{},
 		FocusedValidation:  []deliveryevidence.FocusedValidationEvidence{},
+	}
+}
+
+func TestNonLocalCommandsReadOnlyGreenAndRed(t *testing.T) {
+	root := t.TempDir()
+	base, head, tree := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
+	bundle := reviewBundleFixture(base)
+	bundle.AcceptanceMatrix[0].State = deliveryevidence.AcceptanceProved
+	bundle.Iterations = []deliveryevidence.Iteration{{Sequence: 1, Identity: "iteration-1", BaseSHA: base, HeadSHA: head, EvidenceSHA256: strings.Repeat("1", 64)}}
+	bundlePath := filepath.Join(root, "bundle.json")
+	if err := deliveryevidence.StoreAtomic(bundlePath, bundle); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := deliveryevidence.Digest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string, value any) string {
+		t.Helper()
+		path := filepath.Join(root, name+".json")
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	local := deliveryevidence.LocalGateReport{
+		Repository: bundle.Repository, Issue: bundle.Issue, Spec: bundle.Spec,
+		Branch: "feat/issue-277-non-local", StartingBaseSHA: base, HeadSHA: head,
+		TreeSHA: tree, AcceptanceProved: 1, ValidationCompletedAt: "2026-07-27T11:59:00Z",
+		BundleSHA256: digest,
+	}
+	pr := deliveryevidence.PullRequestObservation{
+		Repository: bundle.Repository, Issue: bundle.Issue, Spec: bundle.Spec,
+		IssueSHA256: bundle.Authority.IssueSHA256, SpecSHA256: bundle.Authority.SpecSHA256,
+		IssueEligible: true, SpecEligible: true, Branch: local.Branch, Number: 7,
+		URL: "https://github.com/yersonargotev/packy/pull/7", HeadSHA: head, BaseSHA: base,
+		Mergeability: "mergeable", Required: []deliveryevidence.RequiredCheck{{Identity: "validate", Conclusion: "success", HeadSHA: head}},
+		ObservedAt: "2026-07-27T12:00:00Z", Available: true,
+	}
+	before, _ := os.ReadFile(bundlePath)
+	var stdout bytes.Buffer
+	args := []string{"non-local-readiness", "--bundle", bundlePath, "--local-report", write("local", local), "--observation", write("pr", pr), "--required-checks", "validate"}
+	if err := (command{}).run(context.Background(), args, &stdout); err != nil || !strings.Contains(stdout.String(), `"ready": true`) {
+		t.Fatalf("green readiness: %s %v", stdout.String(), err)
+	}
+	var readiness deliveryevidence.ReadinessReport
+	if err := json.Unmarshal(stdout.Bytes(), &readiness); err != nil {
+		t.Fatal(err)
+	}
+	readinessPath := write("readiness", readiness)
+	pr.HeadSHA = strings.Repeat("d", 40)
+	stdout.Reset()
+	args[6] = write("stale-pr", pr)
+	err = (command{}).run(context.Background(), args, &stdout)
+	var readinessErr *deliveryevidence.ReadinessError
+	if !errors.As(err, &readinessErr) || readinessErr.Code != deliveryevidence.ReadinessStaleHead {
+		t.Fatalf("stale readiness classification: %v", err)
+	}
+	outcome := deliveryevidence.FinalOutcomeObservation{
+		Repository: bundle.Repository, Issue: bundle.Issue, PullRequest: 7,
+		PullRequestURL: "https://github.com/yersonargotev/packy/pull/7", PullRequestHeadSHA: head, MergeCommitSHA: head,
+		Merged: true, MergeContainedOnMain: true, IssueClosed: true, RemoteBranchAbsent: true,
+		LocalMainSHA: head, OriginMainSHA: head, LocalBranchAbsent: true, WorktreeClean: true,
+		PreservedStateBefore: strings.Repeat("2", 64), PreservedStateAfter: strings.Repeat("2", 64),
+		ObservedAt: "2026-07-27T12:05:00Z", MatrixURL: "https://e/matrix", ReviewsURL: "https://e/reviews",
+		ValidationURL: "https://e/validation", CIURL: "https://e/ci", CleanupURL: "https://e/cleanup",
+	}
+	var receipts []deliveryevidence.PhaseReceipt
+	for _, phase := range []string{"qualification", "implementation", "review", "validation", "ci", "merge", "cleanup"} {
+		receipts = append(receipts, deliveryevidence.PhaseReceipt{Phase: phase, StartedAt: "2026-07-27T12:00:00Z", CompletedAt: "2026-07-27T12:05:00Z"})
+	}
+	stdout.Reset()
+	if err = (command{}).run(context.Background(), []string{"final-outcome", "--bundle", bundlePath, "--readiness-report", readinessPath, "--observation", write("outcome", outcome), "--phase-receipts", write("receipts", receipts)}, &stdout); err != nil || !strings.Contains(stdout.String(), `"successful": true`) {
+		t.Fatalf("green outcome: %s %v", stdout.String(), err)
+	}
+	staleReadiness := readiness
+	staleReadiness.HeadSHA = strings.Repeat("f", 40)
+	err = (command{}).run(context.Background(), []string{"final-outcome", "--bundle", bundlePath, "--readiness-report", write("stale-readiness", staleReadiness), "--observation", write("outcome-stale", outcome), "--phase-receipts", write("receipts-stale", receipts)}, io.Discard)
+	var staleOutcome *deliveryevidence.OutcomeError
+	if !errors.As(err, &staleOutcome) || staleOutcome.Code != deliveryevidence.OutcomeUnavailable {
+		t.Fatalf("stale readiness outcome classification: %v", err)
+	}
+	outcome.WorktreeClean = false
+	err = (command{}).run(context.Background(), []string{"final-outcome", "--bundle", bundlePath, "--readiness-report", readinessPath, "--observation", write("dirty", outcome), "--phase-receipts", write("receipts-2", receipts)}, io.Discard)
+	var outcomeErr *deliveryevidence.OutcomeError
+	if !errors.As(err, &outcomeErr) || outcomeErr.Code != deliveryevidence.OutcomeDirty {
+		t.Fatalf("dirty outcome classification: %v", err)
+	}
+	after, _ := os.ReadFile(bundlePath)
+	if !bytes.Equal(before, after) {
+		t.Fatal("read-only NON-LOCAL commands changed canonical evidence")
 	}
 }

@@ -142,9 +142,96 @@ func (c command) run(ctx context.Context, args []string, stdout io.Writer) error
 		return c.recordFocusedValidation(args[1:], stdout)
 	case "local-gate":
 		return c.localGate(ctx, args[1:], stdout)
+	case "non-local-readiness":
+		return c.nonLocalReadiness(args[1:], stdout)
+	case "final-outcome":
+		return c.finalOutcome(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func (c command) nonLocalReadiness(args []string, stdout io.Writer) error {
+	f := flag.NewFlagSet("deliveryevidence non-local-readiness", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	var bundlePath, localPath, observationPath, checks, expectedSkips string
+	f.StringVar(&bundlePath, "bundle", "", "canonical evidence bundle")
+	f.StringVar(&localPath, "local-report", "", "successful LOCAL gate report")
+	f.StringVar(&observationPath, "observation", "", "read-only pull request observation")
+	f.StringVar(&checks, "required-checks", "", "comma-separated required check identities")
+	f.StringVar(&expectedSkips, "expected-skips", "", "comma-separated required checks allowed to conclude skipped")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if bundlePath == "" || localPath == "" || observationPath == "" || checks == "" || f.NArg() != 0 {
+		return errors.New("bundle, local-report, observation, and required-checks are required")
+	}
+	bundle, _, err := deliveryevidence.Load(bundlePath)
+	if err != nil {
+		return err
+	}
+	var local deliveryevidence.LocalGateReport
+	if err = decodeFile(localPath, &local); err != nil {
+		return err
+	}
+	var observation deliveryevidence.PullRequestObservation
+	if err = decodeFile(observationPath, &observation); err != nil {
+		return err
+	}
+	var skips []string
+	if expectedSkips != "" {
+		skips = strings.Split(expectedSkips, ",")
+	}
+	report, evaluateErr := deliveryevidence.EvaluateReadiness(bundle, local, observation, strings.Split(checks, ","), skips)
+	raw, marshalErr := deliveryevidence.CanonicalReport(report)
+	if marshalErr != nil {
+		return marshalErr
+	}
+	if _, err = stdout.Write(raw); err != nil {
+		return err
+	}
+	return evaluateErr
+}
+
+func (c command) finalOutcome(args []string, stdout io.Writer) error {
+	f := flag.NewFlagSet("deliveryevidence final-outcome", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	var bundlePath, readinessPath, observationPath, receiptsPath string
+	f.StringVar(&bundlePath, "bundle", "", "canonical evidence bundle")
+	f.StringVar(&readinessPath, "readiness-report", "", "successful exact-head NON-LOCAL readiness report")
+	f.StringVar(&observationPath, "observation", "", "read-only final observation")
+	f.StringVar(&receiptsPath, "phase-receipts", "", "canonical lifecycle phase receipts")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if bundlePath == "" || readinessPath == "" || observationPath == "" || receiptsPath == "" || f.NArg() != 0 {
+		return errors.New("bundle, readiness-report, observation, and phase-receipts are required")
+	}
+	bundle, _, err := deliveryevidence.Load(bundlePath)
+	if err != nil {
+		return err
+	}
+	var observation deliveryevidence.FinalOutcomeObservation
+	if err = decodeFile(observationPath, &observation); err != nil {
+		return err
+	}
+	var receipts []deliveryevidence.PhaseReceipt
+	if err = decodeFile(receiptsPath, &receipts); err != nil {
+		return err
+	}
+	var readiness deliveryevidence.ReadinessReport
+	if err = decodeFile(readinessPath, &readiness); err != nil {
+		return err
+	}
+	outcome, evaluateErr := deliveryevidence.EvaluateFinalOutcome(bundle, readiness, observation, receipts)
+	raw, marshalErr := deliveryevidence.CanonicalReport(outcome)
+	if marshalErr != nil {
+		return marshalErr
+	}
+	if _, err = stdout.Write(raw); err != nil {
+		return err
+	}
+	return evaluateErr
 }
 
 func (c command) initialize(ctx context.Context, args []string, stdout io.Writer) error {
