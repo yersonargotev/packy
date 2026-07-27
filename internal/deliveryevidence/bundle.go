@@ -113,6 +113,8 @@ type Bundle struct {
 	AcceptanceMatrix []AcceptanceRow    `json:"acceptance_matrix"`
 	StartingBaseSHA  string             `json:"starting_base_sha"`
 	Iterations       []Iteration        `json:"iterations"`
+	ReviewReceipts   []ReviewReceipt    `json:"review_receipts"`
+	Adjudications    []Adjudication     `json:"adjudications"`
 }
 
 // TypedObservationHash binds a kind and identity to canonical transient facts.
@@ -145,6 +147,11 @@ func CanonicalJSON(bundle Bundle) ([]byte, error) {
 	bundle.Scope.Prerequisites = clone(bundle.Scope.Prerequisites)
 	bundle.AcceptanceMatrix = clone(bundle.AcceptanceMatrix)
 	bundle.Iterations = clone(bundle.Iterations)
+	bundle.ReviewReceipts = clone(bundle.ReviewReceipts)
+	for i := range bundle.ReviewReceipts {
+		bundle.ReviewReceipts[i].Findings = clone(bundle.ReviewReceipts[i].Findings)
+	}
+	bundle.Adjudications = clone(bundle.Adjudications)
 	canonicalize(&bundle)
 	if err := Validate(bundle); err != nil {
 		return nil, err
@@ -358,6 +365,9 @@ func Validate(b Bundle) error {
 		}
 		previous = it.HeadSHA
 	}
+	if err := validateReviews(b); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -373,6 +383,17 @@ func canonicalize(b *Bundle) {
 	sort.Slice(b.Scope.Prerequisites, func(i, j int) bool { return b.Scope.Prerequisites[i].Identity < b.Scope.Prerequisites[j].Identity })
 	sort.Slice(b.AcceptanceMatrix, func(i, j int) bool { return b.AcceptanceMatrix[i].Identity < b.AcceptanceMatrix[j].Identity })
 	sort.Slice(b.Iterations, func(i, j int) bool { return b.Iterations[i].Sequence < b.Iterations[j].Sequence })
+	sort.Slice(b.ReviewReceipts, func(i, j int) bool {
+		if b.ReviewReceipts[i].Iteration == b.ReviewReceipts[j].Iteration {
+			return b.ReviewReceipts[i].Axis < b.ReviewReceipts[j].Axis
+		}
+		return b.ReviewReceipts[i].Iteration < b.ReviewReceipts[j].Iteration
+	})
+	for i := range b.ReviewReceipts {
+		sort.Slice(b.ReviewReceipts[i].Findings, func(j, k int) bool {
+			return b.ReviewReceipts[i].Findings[j].ID < b.ReviewReceipts[i].Findings[k].ID
+		})
+	}
 }
 func blank(s string) bool { return strings.TrimSpace(s) == "" }
 func slug(s string) bool {
