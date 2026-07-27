@@ -1482,7 +1482,7 @@ func TestMaintainerSkillFixturesCoverCanonicalRequestsAndMonitoring(t *testing.T
 	}
 }
 
-func TestMaintainerRuntimeMaterializationPreservesExactScriptBytes(t *testing.T) {
+func TestMaintainerRuntimeMaterializationUsesExactRawMediaType(t *testing.T) {
 	root := repositoryRoot(t)
 	requests := readFile(t, filepath.Join(root, ".agents", "skills", "sync-pack-source", "REQUESTS.md"))
 	if !strings.Contains(requests, "Accept: application/vnd.github.raw'") {
