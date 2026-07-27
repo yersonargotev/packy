@@ -148,6 +148,7 @@ func TestActivateAllowsNewSelectionAfterPriorIntentIsInactive(t *testing.T) {
 			Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}},
 		},
 	}}
+	original.Intents = []ActivationIntent{original.Intent}
 	adapter := &fakeSurfaceAdapter{}
 	store := &fakeActivationStore{state: original}
 	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
