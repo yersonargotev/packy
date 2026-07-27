@@ -140,6 +140,8 @@ func (c command) run(ctx context.Context, args []string, stdout io.Writer) error
 		return c.validationStatus(ctx, args[1:], stdout)
 	case "record-focused-validation":
 		return c.recordFocusedValidation(args[1:], stdout)
+	case "local-gate":
+		return c.localGate(ctx, args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -676,6 +678,97 @@ func (c command) validationStatus(ctx context.Context, args []string, stdout io.
 		return err
 	}
 	_, err = fmt.Fprintf(stdout, "reusable exhaustive validation completed at %s\n", receipt.CompletedAt)
+	return err
+}
+
+func (c command) localGate(ctx context.Context, args []string, stdout io.Writer) error {
+	f := flag.NewFlagSet("deliveryevidence local-gate", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	var values validationFlags
+	var branch string
+	f.StringVar(&values.bundlePath, "bundle", "", "canonical evidence bundle")
+	f.StringVar(&values.repository, "repository", ".", "repository to observe")
+	f.StringVar(&values.sandboxHome, "sandbox-home", "", "absolute disposable HOME used by validation")
+	f.StringVar(&values.sandboxConfig, "sandbox-config-home", "", "absolute disposable configuration root used by validation")
+	f.StringVar(&values.identityExpires, "validator-identity-expires-at", "", "canonical RFC3339 validator identity expiry")
+	f.StringVar(&values.requiredCommand, "required-command", exhaustiveValidationCommand, "exact validation authority command to observe")
+	f.StringVar(&branch, "delivery-branch", "", "exact intended issue-delivery branch")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if values.bundlePath == "" || values.sandboxHome == "" || values.sandboxConfig == "" || values.identityExpires == "" || branch == "" || f.NArg() != 0 {
+		return errors.New("bundle, delivery-branch, sandbox-home, sandbox-config-home, and validator-identity-expires-at are required")
+	}
+	if c.Git == nil || c.GitHub == nil {
+		return errors.New("Git and GitHub read-only runners are required")
+	}
+	bundle, _, err := deliveryevidence.Load(values.bundlePath)
+	if err != nil {
+		return &deliveryevidence.LocalGateError{Code: deliveryevidence.LocalGateQualificationInvalid, Detail: err.Error()}
+	}
+	slug := bundle.Repository.Owner + "/" + bundle.Repository.Name
+	observeIssue := func(number int) (issueObservation, error) {
+		raw, observeErr := c.GitHub.Output(ctx, "gh", "issue", "view", fmt.Sprint(number), "--repo", slug, "--json", "number,id,title,body,state,labels,blockedBy")
+		if observeErr != nil {
+			return issueObservation{}, observeErr
+		}
+		var observed issueObservation
+		observeErr = json.Unmarshal(raw, &observed)
+		return observed, observeErr
+	}
+	issue, err := observeIssue(bundle.Issue.Number)
+	if err != nil {
+		return fmt.Errorf("observe current issue authority: %w", err)
+	}
+	spec, err := observeIssue(bundle.Spec.Number)
+	if err != nil {
+		return fmt.Errorf("observe current specification authority: %w", err)
+	}
+	issueHash, err := deliveryevidence.TypedObservationHash("github-issue", fmt.Sprintf("%s#%d:%s", slug, issue.Number, issue.ID), normalizedIssue(issue))
+	if err != nil {
+		return err
+	}
+	specHash, err := deliveryevidence.TypedObservationHash("github-spec", fmt.Sprintf("%s#%d:%s", slug, spec.Number, spec.ID), normalizedIssue(spec))
+	if err != nil {
+		return err
+	}
+	validation, err := c.validationObservation(ctx, bundle, values)
+	if err != nil {
+		code := deliveryevidence.LocalGateStaleValidation
+		if strings.Contains(err.Error(), "repository") {
+			code = deliveryevidence.LocalGateForeignEvidence
+		}
+		return &deliveryevidence.LocalGateError{Code: code, Detail: err.Error()}
+	}
+	branchRaw, err := c.Git.Output(ctx, "git", "-C", values.repository, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return fmt.Errorf("observe delivery branch: %w", err)
+	}
+	commitsRaw, err := c.Git.Output(ctx, "git", "-C", values.repository, "rev-list", "--reverse", "--ancestry-path", bundle.StartingBaseSHA+".."+validation.CommitSHA)
+	if err != nil {
+		return fmt.Errorf("observe delivery commits: %w", err)
+	}
+	commits := append([]string{bundle.StartingBaseSHA}, strings.Fields(string(commitsRaw))...)
+	report, err := deliveryevidence.EvaluateLocalGate(bundle, deliveryevidence.LocalGateObservation{
+		Repository:     validation.Repository,
+		Issue:          deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID},
+		Spec:           deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID},
+		IssueSHA256:    issueHash,
+		SpecSHA256:     specHash,
+		IssueEligible:  strings.EqualFold(issue.State, "OPEN") && (hasLabel(labelNames(issue.Labels), "status:approved") || hasLabel(labelNames(issue.Labels), "status:needs-review")),
+		SpecEligible:   strings.EqualFold(spec.State, "OPEN") && (hasLabel(labelNames(spec.Labels), "status:approved") || hasLabel(labelNames(spec.Labels), "status:accepted")),
+		ExpectedBranch: branch,
+		CurrentBranch:  strings.TrimSpace(string(branchRaw)),
+		HeadSHA:        validation.CommitSHA,
+		TreeSHA:        validation.TreeSHA,
+		OrderedCommits: commits,
+		Validation:     validation,
+		ObservedAt:     c.now().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(stdout, deliveryevidence.RenderLocalGateReport(report))
 	return err
 }
 
