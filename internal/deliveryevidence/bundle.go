@@ -11,8 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 const SchemaV1 = "packy.issue-delivery/v1"
@@ -38,9 +41,16 @@ type Authority struct {
 	AcceptanceCriteria    []string                `json:"acceptance_criteria"`
 }
 type DependencyDisposition struct {
-	Identity    string `json:"identity"`
-	Disposition string `json:"disposition"`
+	Identity    string                     `json:"identity"`
+	Disposition DependencyDispositionState `json:"disposition"`
 }
+type DependencyDispositionState string
+
+const (
+	DependencyBlocking  DependencyDispositionState = "blocking"
+	DependencySatisfied DependencyDispositionState = "satisfied"
+)
+
 type LedgerEntry struct {
 	Identity     string `json:"identity"`
 	Requirement  string `json:"requirement"`
@@ -66,19 +76,28 @@ type ScopeLedger struct {
 	Prerequisites []PrerequisiteEntry `json:"prerequisites"`
 }
 type AcceptanceRow struct {
-	Identity              string `json:"identity"`
-	Criterion             string `json:"criterion"`
-	OwningSeam            string `json:"owning_seam"`
-	PositiveEvidence      string `json:"positive_evidence"`
-	NegativeEvidence      string `json:"negative_evidence"`
-	FailureEvidence       string `json:"failure_evidence"`
-	MutationEvidence      string `json:"mutation_evidence"`
-	CompatibilityEvidence string `json:"compatibility_evidence"`
-	PreservationEvidence  string `json:"preservation_evidence"`
-	MigrationEvidence     string `json:"migration_evidence"`
-	State                 string `json:"state"`
+	Identity              string          `json:"identity"`
+	Criterion             string          `json:"criterion"`
+	OwningSeam            string          `json:"owning_seam"`
+	PositiveEvidence      string          `json:"positive_evidence"`
+	NegativeEvidence      string          `json:"negative_evidence"`
+	FailureEvidence       string          `json:"failure_evidence"`
+	MutationEvidence      string          `json:"mutation_evidence"`
+	CompatibilityEvidence string          `json:"compatibility_evidence"`
+	PreservationEvidence  string          `json:"preservation_evidence"`
+	MigrationEvidence     string          `json:"migration_evidence"`
+	State                 AcceptanceState `json:"state"`
 }
+type AcceptanceState string
+
+const (
+	AcceptancePlanned     AcceptanceState = "planned"
+	AcceptanceImplemented AcceptanceState = "implemented"
+	AcceptanceProved      AcceptanceState = "proved"
+)
+
 type Iteration struct {
+	Sequence       int    `json:"sequence"`
 	Identity       string `json:"identity"`
 	BaseSHA        string `json:"base_sha"`
 	HeadSHA        string `json:"head_sha"`
@@ -203,20 +222,40 @@ func Validate(b Bundle) error {
 	if err := uniqueStrings("acceptance criteria", b.Authority.AcceptanceCriteria, true); err != nil {
 		return err
 	}
+	for _, criterion := range b.Authority.AcceptanceCriteria {
+		if err := safeText("acceptance criterion identity", criterion); err != nil {
+			return err
+		}
+	}
 	if len(b.Authority.AcceptanceCriteria) == 0 {
 		return errors.New("acceptance criteria must not be empty")
 	}
 	seen := map[string]string{}
 	for _, d := range b.Authority.DependencyDisposition {
-		if blank(d.Identity) || blank(d.Disposition) {
+		if err := safeText("dependency identity", d.Identity); err != nil {
+			return err
+		}
+		if blank(string(d.Disposition)) {
 			return errors.New("dependency identity and disposition are required")
+		}
+		if d.Disposition != DependencyBlocking && d.Disposition != DependencySatisfied {
+			return fmt.Errorf("dependency %q has invalid disposition", d.Identity)
 		}
 		if _, ok := seen[d.Identity]; ok {
 			return fmt.Errorf("duplicate dependency identity %q", d.Identity)
 		}
-		seen[d.Identity] = d.Disposition
+		seen[d.Identity] = string(d.Disposition)
 	}
 	check := func(name, id, requirement, link string) error {
+		if err := safeText(name+" identity", id); err != nil {
+			return err
+		}
+		if err := safeText(name+" requirement", requirement); err != nil {
+			return err
+		}
+		if err := safeText(name+" evidence link", link); err != nil {
+			return err
+		}
 		if blank(id) || blank(requirement) || blank(link) {
 			return fmt.Errorf("scope ledger %s requires identity, requirement, and evidence link", name)
 		}
@@ -243,12 +282,21 @@ func Validate(b Bundle) error {
 		if err := check("deferred", e.Identity, e.Requirement, e.EvidenceLink); err != nil {
 			return err
 		}
+		if err := safeText("deferred owner", e.Owner); err != nil {
+			return err
+		}
 		if blank(e.Owner) {
 			return fmt.Errorf("deferred identity %q requires concrete owner", e.Identity)
 		}
 	}
 	for _, e := range b.Scope.Prerequisites {
 		if err := check("prerequisites", e.Identity, e.Requirement, e.EvidenceLink); err != nil {
+			return err
+		}
+		if err := safeText("prerequisite disposition", e.Disposition); err != nil {
+			return err
+		}
+		if err := safeText("prerequisite exception boundary", e.ExceptionBoundary); err != nil {
 			return err
 		}
 		if blank(e.Disposition) || blank(e.ExceptionBoundary) {
@@ -260,10 +308,15 @@ func Validate(b Bundle) error {
 	}
 	rows := map[string]bool{}
 	for _, r := range b.AcceptanceMatrix {
+		for name, value := range map[string]string{"identity": r.Identity, "criterion": r.Criterion, "owning seam": r.OwningSeam, "positive": r.PositiveEvidence, "negative": r.NegativeEvidence, "failure": r.FailureEvidence, "mutation": r.MutationEvidence, "compatibility": r.CompatibilityEvidence, "preservation": r.PreservationEvidence, "migration": r.MigrationEvidence} {
+			if err := safeText("acceptance "+name, value); err != nil {
+				return err
+			}
+		}
 		if blank(r.Identity) || blank(r.Criterion) || blank(r.OwningSeam) || blank(r.PositiveEvidence) || blank(r.NegativeEvidence) || blank(r.FailureEvidence) || blank(r.MutationEvidence) || blank(r.CompatibilityEvidence) || blank(r.PreservationEvidence) || blank(r.MigrationEvidence) {
 			return errors.New("acceptance row requires criterion, seam, positive, negative, failure, mutation, compatibility, preservation, and migration evidence")
 		}
-		if r.State != "planned" && r.State != "implemented" && r.State != "proved" {
+		if r.State != AcceptancePlanned && r.State != AcceptanceImplemented && r.State != AcceptanceProved {
 			return fmt.Errorf("acceptance row %q has invalid state", r.Identity)
 		}
 		if rows[r.Identity] {
@@ -280,7 +333,14 @@ func Validate(b Bundle) error {
 		return errors.New("acceptance matrix contains foreign identity")
 	}
 	seen = map[string]string{}
-	for _, it := range b.Iterations {
+	previous := b.StartingBaseSHA
+	for i, it := range b.Iterations {
+		if err := safeText("iteration identity", it.Identity); err != nil {
+			return err
+		}
+		if it.Sequence != i+1 {
+			return errors.New("iteration sequences must be contiguous from 1")
+		}
 		if blank(it.Identity) || !gitSHA(it.BaseSHA) || !gitSHA(it.HeadSHA) || !digest(it.EvidenceSHA256) {
 			return errors.New("iteration identity, base SHA, head SHA, and evidence digest are required")
 		}
@@ -288,6 +348,10 @@ func Validate(b Bundle) error {
 			return fmt.Errorf("duplicate iteration identity %q", it.Identity)
 		}
 		seen[it.Identity] = "iteration"
+		if it.BaseSHA != previous {
+			return fmt.Errorf("iteration %q is disconnected", it.Identity)
+		}
+		previous = it.HeadSHA
 	}
 	return nil
 }
@@ -303,7 +367,7 @@ func canonicalize(b *Bundle) {
 	sort.Slice(b.Scope.Forbidden, func(i, j int) bool { return b.Scope.Forbidden[i].Identity < b.Scope.Forbidden[j].Identity })
 	sort.Slice(b.Scope.Prerequisites, func(i, j int) bool { return b.Scope.Prerequisites[i].Identity < b.Scope.Prerequisites[j].Identity })
 	sort.Slice(b.AcceptanceMatrix, func(i, j int) bool { return b.AcceptanceMatrix[i].Identity < b.AcceptanceMatrix[j].Identity })
-	sort.Slice(b.Iterations, func(i, j int) bool { return b.Iterations[i].Identity < b.Iterations[j].Identity })
+	sort.Slice(b.Iterations, func(i, j int) bool { return b.Iterations[i].Sequence < b.Iterations[j].Sequence })
 }
 func blank(s string) bool { return strings.TrimSpace(s) == "" }
 func slug(s string) bool {
@@ -339,4 +403,21 @@ func clone[T any](in []T) []T {
 		return nil
 	}
 	return append(make([]T, 0, len(in)), in...)
+}
+
+var unsafeTextPattern = regexp.MustCompile(`(?i)(-----BEGIN [A-Z ]*PRIVATE KEY-----|\bgh[pousr]_[A-Za-z0-9_]+|\bgithub_pat_[A-Za-z0-9_]+|\bsk-[A-Za-z0-9_-]+|\bbearer\s+\S+|\bauthorization\s*:|\b(secret|password|token)\s*[:=]|\b(HOME|XDG_CONFIG_HOME|GITHUB_TOKEN|UPSTREAM_PAYLOAD)\s*=)`)
+
+func safeText(name, value string) error {
+	if blank(value) || len(value) > 4096 || !utf8.ValidString(value) {
+		return fmt.Errorf("%s must be bounded UTF-8 text", name)
+	}
+	for _, r := range value {
+		if r == '\n' || r == '\r' || unicode.IsControl(r) {
+			return fmt.Errorf("%s must be single-line printable text", name)
+		}
+	}
+	if unsafeTextPattern.MatchString(value) {
+		return fmt.Errorf("%s contains forbidden secret or environment material", name)
+	}
+	return nil
 }

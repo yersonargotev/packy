@@ -7,7 +7,28 @@ import (
 	"path/filepath"
 )
 
-type RenameFunc func(string, string) error
+type atomicFile interface {
+	Name() string
+	Chmod(os.FileMode) error
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
+}
+type atomicDirectory interface {
+	Sync() error
+	Close() error
+}
+type atomicOps struct {
+	MkdirAll      func(string, os.FileMode) error
+	CreateTemp    func(string, string) (atomicFile, error)
+	Rename        func(string, string) error
+	OpenDirectory func(string) (atomicDirectory, error)
+	Remove        func(string) error
+}
+
+func defaultAtomicOps() atomicOps {
+	return atomicOps{os.MkdirAll, func(d, p string) (atomicFile, error) { return os.CreateTemp(d, p) }, os.Rename, func(p string) (atomicDirectory, error) { return os.Open(p) }, os.Remove}
+}
 
 // ResolvePath uses Git's common directory so linked worktrees share authority.
 func ResolvePath(commonDir, override string, issue int) (string, error) {
@@ -36,18 +57,18 @@ func Load(path string) (Bundle, []byte, error) {
 }
 
 func StoreAtomic(path string, bundle Bundle) error {
-	return StoreAtomicWithRename(path, bundle, os.Rename)
+	return storeAtomicWithOps(path, bundle, defaultAtomicOps())
 }
-func StoreAtomicWithRename(path string, bundle Bundle, rename RenameFunc) error {
+func storeAtomicWithOps(path string, bundle Bundle, ops atomicOps) error {
 	data, err := CanonicalJSON(bundle)
 	if err != nil {
 		return err
 	}
 	dir := filepath.Dir(path)
-	if err = os.MkdirAll(dir, 0700); err != nil {
+	if err = ops.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, ".issue-delivery-*")
+	f, err := ops.CreateTemp(dir, ".issue-delivery-*")
 	if err != nil {
 		return err
 	}
@@ -55,7 +76,7 @@ func StoreAtomicWithRename(path string, bundle Bundle, rename RenameFunc) error 
 	ok := false
 	defer func() {
 		if !ok {
-			_ = os.Remove(tmp)
+			_ = ops.Remove(tmp)
 		}
 	}()
 	if err = f.Chmod(0600); err == nil {
@@ -71,16 +92,20 @@ func StoreAtomicWithRename(path string, bundle Bundle, rename RenameFunc) error 
 	if err != nil {
 		return err
 	}
-	if rename == nil {
-		rename = os.Rename
-	}
-	if err = rename(tmp, path); err != nil {
+	if err = ops.Rename(tmp, path); err != nil {
 		return err
 	}
 	ok = true
-	if d, e := os.Open(dir); e == nil {
-		_ = d.Sync()
+	d, e := ops.OpenDirectory(dir)
+	if e != nil {
+		return e
+	}
+	if e = d.Sync(); e != nil {
 		_ = d.Close()
+		return e
+	}
+	if e = d.Close(); e != nil {
+		return e
 	}
 	return nil
 }

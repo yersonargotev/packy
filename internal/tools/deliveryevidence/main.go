@@ -139,7 +139,40 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err != nil {
 		return err
 	}
+	topRaw, err := c.Git.Output(ctx, "git", "-C", repo, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return fmt.Errorf("observe Git worktree: %w", err)
+	}
+	worktree, err := filepath.Abs(strings.TrimSpace(string(topRaw)))
+	if err != nil {
+		return err
+	}
+	originRaw, err := c.Git.Output(ctx, "git", "-C", repo, "remote", "get-url", "origin")
+	if err != nil {
+		return fmt.Errorf("observe origin: %w", err)
+	}
+	baseRaw, err := c.Git.Output(ctx, "git", "-C", repo, "rev-parse", "origin/main^{commit}")
+	if err != nil {
+		return fmt.Errorf("observe exact origin/main: %w", err)
+	}
+	if strings.TrimSpace(string(baseRaw)) != q.StartingBaseSHA {
+		return errors.New("qualification starting base does not match origin/main")
+	}
+	for _, iteration := range q.Iterations {
+		for _, sha := range []string{iteration.BaseSHA, iteration.HeadSHA} {
+			if _, err = c.Git.Output(ctx, "git", "-C", repo, "cat-file", "-e", sha+"^{commit}"); err != nil {
+				return fmt.Errorf("iteration %d references a foreign or missing commit: %w", iteration.Sequence, err)
+			}
+		}
+	}
 	slug := q.Repository.Owner + "/" + q.Repository.Name
+	localSlug, err := githubSlug(strings.TrimSpace(string(originRaw)))
+	if err != nil {
+		return err
+	}
+	if localSlug != slug {
+		return errors.New("qualification repository does not match local origin")
+	}
 	repoRaw, err := c.GitHub.Output(ctx, "gh", "repo", "view", slug, "--json", "nameWithOwner,id")
 	if err != nil {
 		return fmt.Errorf("observe GitHub repository: %w", err)
@@ -198,12 +231,66 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err != nil {
 		return err
 	}
+	if output != "" {
+		inside, err := pathWithin(path, worktree)
+		if err != nil {
+			return err
+		}
+		if inside {
+			return errors.New("delivery evidence override must be outside the worktree")
+		}
+	}
 	result, err := deliveryevidence.InitializeOrResume(path, bundle)
 	if err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(stdout, "%s %s\n", result.State, result.Path)
 	return err
+}
+
+func githubSlug(origin string) (string, error) {
+	s := strings.TrimSuffix(origin, ".git")
+	if strings.HasPrefix(s, "git@github.com:") {
+		s = strings.TrimPrefix(s, "git@github.com:")
+	} else if strings.HasPrefix(s, "ssh://git@github.com/") {
+		s = strings.TrimPrefix(s, "ssh://git@github.com/")
+	} else if strings.HasPrefix(s, "https://github.com/") {
+		s = strings.TrimPrefix(s, "https://github.com/")
+	} else {
+		return "", errors.New("origin is not a canonical GitHub SSH/HTTPS URL")
+	}
+	parts := strings.Split(s, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", errors.New("origin does not identify one GitHub repository")
+	}
+	return s, nil
+}
+func pathWithin(path, root string) (bool, error) {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false, err
+	}
+	parent := filepath.Dir(path)
+	suffix := []string{}
+	for {
+		resolved, err := filepath.EvalSymlinks(parent)
+		if err == nil {
+			parent = resolved
+			break
+		}
+		next := filepath.Dir(parent)
+		if next == parent {
+			return false, err
+		}
+		suffix = append([]string{filepath.Base(parent)}, suffix...)
+		parent = next
+	}
+	candidate := filepath.Join(append([]string{parent}, append(suffix, filepath.Base(path))...)...)
+	rel, err := filepath.Rel(resolvedRoot, candidate)
+	if err != nil {
+		return false, err
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)), nil
 }
 
 func labelNames(in []labelObservation) []string {
@@ -247,7 +334,7 @@ func normalizedIssue(o issueObservation) canonicalIssue {
 func matchDependencies(qualified []deliveryevidence.DependencyDisposition, observed []blockedObservation) error {
 	want := map[string]string{}
 	for _, d := range qualified {
-		want[d.Identity] = d.Disposition
+		want[d.Identity] = string(d.Disposition)
 	}
 	if len(want) != len(observed) {
 		return errors.New("dependency disposition changed")

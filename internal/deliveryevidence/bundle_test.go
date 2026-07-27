@@ -10,6 +10,56 @@ import (
 	"testing"
 )
 
+type faultFile struct {
+	atomicFile
+	stage string
+}
+
+func (f faultFile) Chmod(m os.FileMode) error {
+	if f.stage == "chmod" {
+		return errors.New("fault")
+	}
+	return f.atomicFile.Chmod(m)
+}
+func (f faultFile) Write(b []byte) (int, error) {
+	if f.stage == "write" {
+		return 0, errors.New("fault")
+	}
+	return f.atomicFile.Write(b)
+}
+func (f faultFile) Sync() error {
+	if f.stage == "file-sync" {
+		return errors.New("fault")
+	}
+	return f.atomicFile.Sync()
+}
+func (f faultFile) Close() error {
+	if f.stage == "file-close" {
+		_ = f.atomicFile.Close()
+		return errors.New("fault")
+	}
+	return f.atomicFile.Close()
+}
+
+type faultDirectory struct {
+	atomicDirectory
+	stage string
+}
+
+func (f faultDirectory) Sync() error {
+	if f.stage == "directory-sync" {
+		return errors.New("fault")
+	}
+	return f.atomicDirectory.Sync()
+}
+func (f faultDirectory) Close() error {
+	if f.stage == "directory-close" {
+		_ = f.atomicDirectory.Close()
+		return errors.New("fault")
+	}
+	return f.atomicDirectory.Close()
+}
+
 func fixture() Bundle {
 	criteria := []string{"AC-a", "AC-b"}
 	rows := make([]AcceptanceRow, 0, len(criteria))
@@ -80,7 +130,7 @@ func TestCriteriaAndIterationIdentitiesAreStrict(t *testing.T) {
 		t.Fatal("foreign row accepted")
 	}
 	b = fixture()
-	b.Iterations = []Iteration{{Identity: "iteration-1", BaseSHA: strings.Repeat("1", 40), HeadSHA: "", EvidenceSHA256: strings.Repeat("2", 64)}}
+	b.Iterations = []Iteration{{Sequence: 1, Identity: "iteration-1", BaseSHA: b.StartingBaseSHA, HeadSHA: "", EvidenceSHA256: strings.Repeat("2", 64)}}
 	if err := Validate(b); err == nil {
 		t.Fatal("missing iteration head accepted")
 	}
@@ -114,6 +164,42 @@ func TestTypedLedgerAndMatrixFieldsAreRequired(t *testing.T) {
 	b.AcceptanceMatrix[0].NegativeEvidence = ""
 	if err := Validate(b); err == nil {
 		t.Fatal("missing negative evidence accepted")
+	}
+}
+
+func TestIterationChainAndSafeText(t *testing.T) {
+	b := fixture()
+	head := strings.Repeat("d", 40)
+	b.Iterations = []Iteration{{Sequence: 2, Identity: "second", BaseSHA: head, HeadSHA: strings.Repeat("e", 40), EvidenceSHA256: strings.Repeat("2", 64)}, {Sequence: 1, Identity: "first", BaseSHA: b.StartingBaseSHA, HeadSHA: head, EvidenceSHA256: strings.Repeat("1", 64)}}
+	data, err := CanonicalJSON(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Decode(data)
+	if err != nil || got.Iterations[0].Sequence != 1 {
+		t.Fatalf("iteration order: %v %#v", err, got.Iterations)
+	}
+	b = fixture()
+	b.Iterations = []Iteration{{Sequence: 1, Identity: "first", BaseSHA: strings.Repeat("f", 40), HeadSHA: head, EvidenceSHA256: strings.Repeat("1", 64)}}
+	if err := Validate(b); err == nil {
+		t.Fatal("disconnected chain accepted")
+	}
+	for _, unsafe := range []string{"line\nbreak", "-----BEGIN PRIVATE KEY-----", "ghp_abcdefghijklmnopqrstuvwxyz", "Authorization: Bearer x", "GITHUB_TOKEN=secret", "UPSTREAM_PAYLOAD=bytes", "password=hunter2"} {
+		b = fixture()
+		b.Scope.OwnedNow[0].Requirement = unsafe
+		if err := Validate(b); err == nil {
+			t.Fatalf("unsafe text accepted: %q", unsafe)
+		}
+	}
+	b = fixture()
+	b.Scope.OwnedNow[0].Requirement = "Must reject password assignment patterns without retaining them"
+	if err := Validate(b); err != nil {
+		t.Fatalf("neutral prose rejected: %v", err)
+	}
+	b = fixture()
+	b.Authority.DependencyDisposition[0].Disposition = "unknown"
+	if err := Validate(b); err == nil {
+		t.Fatal("unknown dependency state accepted")
 	}
 }
 
@@ -152,7 +238,9 @@ func TestInitializeResumeStaleAndAtomicFailure(t *testing.T) {
 		t.Fatal("atomic replacement did not install new evidence")
 	}
 	old = newBytes
-	err = StoreAtomicWithRename(path, changed, func(string, string) error { return errors.New("fault") })
+	ops := defaultAtomicOps()
+	ops.Rename = func(string, string) error { return errors.New("fault") }
+	err = storeAtomicWithOps(path, changed, ops)
 	if err == nil {
 		t.Fatal("fault accepted")
 	}
@@ -191,5 +279,61 @@ func TestResolvePathAndStatusAreSanitized(t *testing.T) {
 		if strings.Contains(s, forbidden) {
 			t.Fatalf("status leaked %s", forbidden)
 		}
+	}
+}
+
+func TestAtomicFaultBoundariesLeaveCompleteEvidence(t *testing.T) {
+	for _, stage := range []string{"create", "chmod", "write", "file-sync", "file-close", "rename", "directory-sync", "directory-close"} {
+		t.Run(stage, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "evidence.json")
+			old := fixture()
+			if err := StoreAtomic(path, old); err != nil {
+				t.Fatal(err)
+			}
+			oldBytes, _ := CanonicalJSON(old)
+			next := fixture()
+			next.Authority.IssueSHA256 = strings.Repeat("f", 64)
+			newBytes, _ := CanonicalJSON(next)
+			ops := defaultAtomicOps()
+			create := ops.CreateTemp
+			ops.CreateTemp = func(d, p string) (atomicFile, error) {
+				if stage == "create" {
+					return nil, errors.New("fault")
+				}
+				f, e := create(d, p)
+				if e != nil {
+					return nil, e
+				}
+				return faultFile{f, stage}, nil
+			}
+			if stage == "rename" {
+				ops.Rename = func(string, string) error { return errors.New("fault") }
+			}
+			open := ops.OpenDirectory
+			ops.OpenDirectory = func(p string) (atomicDirectory, error) {
+				d, e := open(p)
+				if e != nil {
+					return nil, e
+				}
+				return faultDirectory{d, stage}, nil
+			}
+			if err := storeAtomicWithOps(path, next, ops); err == nil {
+				t.Fatal("fault was ignored")
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, oldBytes) && !bytes.Equal(got, newBytes) {
+				t.Fatal("partial evidence visible")
+			}
+			entries, _ := os.ReadDir(dir)
+			for _, e := range entries {
+				if strings.HasPrefix(e.Name(), ".issue-delivery-") {
+					t.Fatalf("temporary remains: %s", e.Name())
+				}
+			}
+		})
 	}
 }
