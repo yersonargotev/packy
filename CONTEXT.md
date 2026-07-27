@@ -110,3 +110,10 @@ The single workstation root reserved for Packy-owned state. Domains may own sepa
 
 ### Workstation snapshot
 The immutable, normalized view of ambient workstation facts used by one Packy command invocation. It is created only when an operation needs workstation access, and every participant in that operation observes the same snapshot.
+
+### Issue Delivery Evidence Bundle
+The canonical, repository-and-issue-scoped record that binds qualified issue and
+specification observations, scope, acceptance obligations, starting base, and
+iteration evidence. It is delivery authority, while its human status projection
+is only a view; changed qualification facts make the bundle stale rather than
+authorizing an in-place repair.
