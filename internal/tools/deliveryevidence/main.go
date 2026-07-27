@@ -143,28 +143,30 @@ func (c command) run(ctx context.Context, args []string, stdout io.Writer) error
 	case "local-gate":
 		return c.localGate(ctx, args[1:], stdout)
 	case "non-local-readiness":
-		return c.nonLocalReadiness(args[1:], stdout)
+		return c.nonLocalReadiness(ctx, args[1:], stdout)
 	case "final-outcome":
-		return c.finalOutcome(args[1:], stdout)
+		return c.finalOutcome(ctx, args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
-func (c command) nonLocalReadiness(args []string, stdout io.Writer) error {
+func (c command) nonLocalReadiness(ctx context.Context, args []string, stdout io.Writer) error {
 	f := flag.NewFlagSet("deliveryevidence non-local-readiness", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
-	var bundlePath, localPath, observationPath, checks, expectedSkips string
+	var bundlePath, localPath, repository, checks, expectedSkips string
+	var pullRequest int
 	f.StringVar(&bundlePath, "bundle", "", "canonical evidence bundle")
 	f.StringVar(&localPath, "local-report", "", "successful LOCAL gate report")
-	f.StringVar(&observationPath, "observation", "", "read-only pull request observation")
+	f.StringVar(&repository, "repository", ".", "repository to observe")
+	f.IntVar(&pullRequest, "pull-request", 0, "pull request number to observe")
 	f.StringVar(&checks, "required-checks", "", "comma-separated required check identities")
 	f.StringVar(&expectedSkips, "expected-skips", "", "comma-separated required checks allowed to conclude skipped")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	if bundlePath == "" || localPath == "" || observationPath == "" || checks == "" || f.NArg() != 0 {
-		return errors.New("bundle, local-report, observation, and required-checks are required")
+	if bundlePath == "" || localPath == "" || pullRequest <= 0 || checks == "" || f.NArg() != 0 {
+		return errors.New("bundle, local-report, pull-request, and required-checks are required")
 	}
 	bundle, _, err := deliveryevidence.Load(bundlePath)
 	if err != nil {
@@ -174,15 +176,95 @@ func (c command) nonLocalReadiness(args []string, stdout io.Writer) error {
 	if err = decodeFile(localPath, &local); err != nil {
 		return err
 	}
-	var observation deliveryevidence.PullRequestObservation
-	if err = decodeFile(observationPath, &observation); err != nil {
-		return err
+	if c.GitHub == nil {
+		return errors.New("GitHub read-only runner is required")
+	}
+	slug := bundle.Repository.Owner + "/" + bundle.Repository.Name
+	var pr struct {
+		Number      int    `json:"number"`
+		URL         string `json:"url"`
+		HeadRefName string `json:"headRefName"`
+		HeadRefOid  string `json:"headRefOid"`
+		BaseRefOid  string `json:"baseRefOid"`
+		Mergeable   string `json:"mergeable"`
+	}
+	raw, err := c.GitHub.Output(ctx, "gh", "pr", "view", fmt.Sprint(pullRequest), "--repo", slug, "--json", "number,url,headRefName,headRefOid,baseRefOid,mergeable")
+	if err != nil || json.Unmarshal(raw, &pr) != nil {
+		return &deliveryevidence.ReadinessError{Code: deliveryevidence.ReadinessUnavailable, Detail: "pull request observation is unavailable"}
+	}
+	var checkRuns struct {
+		CheckRuns []struct {
+			Name       string `json:"name"`
+			HeadSHA    string `json:"head_sha"`
+			Conclusion string `json:"conclusion"`
+			Status     string `json:"status"`
+		} `json:"check_runs"`
+	}
+	checkRunsRaw, checkRunsErr := c.GitHub.Output(ctx, "gh", "api", "repos/"+slug+"/commits/"+pr.HeadRefOid+"/check-runs")
+	if checkRunsErr == nil {
+		checkRunsErr = json.Unmarshal(checkRunsRaw, &checkRuns)
+	}
+	var combinedStatus struct {
+		SHA      string `json:"sha"`
+		Statuses []struct {
+			Context string `json:"context"`
+			State   string `json:"state"`
+		} `json:"statuses"`
+	}
+	statusRaw, statusErr := c.GitHub.Output(ctx, "gh", "api", "repos/"+slug+"/commits/"+pr.HeadRefOid+"/status")
+	if statusErr == nil {
+		statusErr = json.Unmarshal(statusRaw, &combinedStatus)
+	}
+	observeIssue := func(number int) (issueObservation, error) {
+		raw, observeErr := c.GitHub.Output(ctx, "gh", "issue", "view", fmt.Sprint(number), "--repo", slug, "--json", "number,id,title,body,state,labels,blockedBy")
+		var observed issueObservation
+		if observeErr == nil {
+			observeErr = json.Unmarshal(raw, &observed)
+		}
+		return observed, observeErr
+	}
+	issue, issueErr := observeIssue(bundle.Issue.Number)
+	spec, specErr := observeIssue(bundle.Spec.Number)
+	observation := deliveryevidence.PullRequestObservation{Repository: bundle.Repository, Issue: deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID}, Spec: deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID}, IssueEligible: eligibleIssueObservation(issue), SpecEligible: eligibleSpecObservation(spec), Branch: pr.HeadRefName, Number: pr.Number, URL: pr.URL, HeadSHA: pr.HeadRefOid, BaseSHA: pr.BaseRefOid, Mergeability: strings.ToLower(pr.Mergeable), ObservedAt: c.now().Format(time.RFC3339Nano), Available: err == nil && checkRunsErr == nil && statusErr == nil && combinedStatus.SHA == pr.HeadRefOid && issueErr == nil && specErr == nil}
+	if issueErr == nil {
+		observation.IssueSHA256, _ = deliveryevidence.TypedObservationHash("github-issue", fmt.Sprintf("%s#%d:%s", slug, issue.Number, issue.ID), normalizedIssue(issue))
+	}
+	if specErr == nil {
+		observation.SpecSHA256, _ = deliveryevidence.TypedObservationHash("github-spec", fmt.Sprintf("%s#%d:%s", slug, spec.Number, spec.ID), normalizedIssue(spec))
+	}
+	requiredChecks := strings.Split(checks, ",")
+	requiredIdentities := make(map[string]bool, len(requiredChecks))
+	for _, identity := range requiredChecks {
+		requiredIdentities[identity] = true
+	}
+	for _, got := range checkRuns.CheckRuns {
+		if !requiredIdentities[got.Name] {
+			continue
+		}
+		conclusion := strings.ToLower(got.Conclusion)
+		if conclusion == "" && strings.ToLower(got.Status) != "completed" {
+			conclusion = ""
+		}
+		observation.Required = append(observation.Required, deliveryevidence.RequiredCheck{Identity: got.Name, Conclusion: conclusion, HeadSHA: got.HeadSHA})
+	}
+	for _, got := range combinedStatus.Statuses {
+		if !requiredIdentities[got.Context] {
+			continue
+		}
+		conclusion := strings.ToLower(got.State)
+		switch conclusion {
+		case "pending":
+			conclusion = ""
+		case "error":
+			conclusion = "failure"
+		}
+		observation.Required = append(observation.Required, deliveryevidence.RequiredCheck{Identity: got.Context, Conclusion: conclusion, HeadSHA: combinedStatus.SHA})
 	}
 	var skips []string
 	if expectedSkips != "" {
 		skips = strings.Split(expectedSkips, ",")
 	}
-	report, evaluateErr := deliveryevidence.EvaluateReadiness(bundle, local, observation, strings.Split(checks, ","), skips)
+	report, evaluateErr := deliveryevidence.EvaluateReadiness(bundle, local, observation, requiredChecks, skips)
 	raw, marshalErr := deliveryevidence.CanonicalReport(report)
 	if marshalErr != nil {
 		return marshalErr
@@ -193,26 +275,31 @@ func (c command) nonLocalReadiness(args []string, stdout io.Writer) error {
 	return evaluateErr
 }
 
-func (c command) finalOutcome(args []string, stdout io.Writer) error {
+func (c command) finalOutcome(ctx context.Context, args []string, stdout io.Writer) error {
 	f := flag.NewFlagSet("deliveryevidence final-outcome", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
-	var bundlePath, readinessPath, observationPath, receiptsPath string
+	var bundlePath, readinessPath, receiptsPath, repository, preservedBefore, preservedAfter string
+	var matrixURL, reviewsURL, validationURL, ciURL, cleanupURL string
 	f.StringVar(&bundlePath, "bundle", "", "canonical evidence bundle")
 	f.StringVar(&readinessPath, "readiness-report", "", "successful exact-head NON-LOCAL readiness report")
-	f.StringVar(&observationPath, "observation", "", "read-only final observation")
 	f.StringVar(&receiptsPath, "phase-receipts", "", "canonical lifecycle phase receipts")
+	f.StringVar(&repository, "repository", ".", "repository to observe")
+	f.StringVar(&preservedBefore, "preserved-state-before", "", "declared pre-delivery preservation digest")
+	f.StringVar(&preservedAfter, "preserved-state-after", "", "observed post-delivery preservation digest")
+	f.StringVar(&matrixURL, "matrix-url", "", "acceptance matrix evidence URL")
+	f.StringVar(&reviewsURL, "reviews-url", "", "review evidence URL")
+	f.StringVar(&validationURL, "validation-url", "", "validation evidence URL")
+	f.StringVar(&ciURL, "ci-url", "", "CI evidence URL")
+	f.StringVar(&cleanupURL, "cleanup-url", "", "cleanup evidence URL")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	if bundlePath == "" || readinessPath == "" || observationPath == "" || receiptsPath == "" || f.NArg() != 0 {
-		return errors.New("bundle, readiness-report, observation, and phase-receipts are required")
+	if bundlePath == "" || readinessPath == "" || receiptsPath == "" || preservedBefore == "" || preservedAfter == "" ||
+		matrixURL == "" || reviewsURL == "" || validationURL == "" || ciURL == "" || cleanupURL == "" || f.NArg() != 0 {
+		return errors.New("bundle, readiness-report, phase-receipts, preservation digests, and evidence URLs are required")
 	}
 	bundle, _, err := deliveryevidence.Load(bundlePath)
 	if err != nil {
-		return err
-	}
-	var observation deliveryevidence.FinalOutcomeObservation
-	if err = decodeFile(observationPath, &observation); err != nil {
 		return err
 	}
 	var receipts []deliveryevidence.PhaseReceipt
@@ -223,6 +310,58 @@ func (c command) finalOutcome(args []string, stdout io.Writer) error {
 	if err = decodeFile(readinessPath, &readiness); err != nil {
 		return err
 	}
+	if c.Git == nil || c.GitHub == nil {
+		return errors.New("Git and GitHub read-only runners are required")
+	}
+	slug := bundle.Repository.Owner + "/" + bundle.Repository.Name
+	var pr struct {
+		Number      int     `json:"number"`
+		URL         string  `json:"url"`
+		HeadRefOid  string  `json:"headRefOid"`
+		MergedAt    *string `json:"mergedAt"`
+		MergeCommit struct {
+			Oid string `json:"oid"`
+		} `json:"mergeCommit"`
+	}
+	prRaw, prErr := c.GitHub.Output(ctx, "gh", "pr", "view", fmt.Sprint(readiness.PullRequest), "--repo", slug, "--json", "number,url,headRefOid,mergedAt,mergeCommit")
+	if prErr == nil {
+		prErr = json.Unmarshal(prRaw, &pr)
+	}
+	var issue struct {
+		Number int    `json:"number"`
+		ID     string `json:"id"`
+		State  string `json:"state"`
+	}
+	issueRaw, issueErr := c.GitHub.Output(ctx, "gh", "issue", "view", fmt.Sprint(bundle.Issue.Number), "--repo", slug, "--json", "number,id,state")
+	if issueErr == nil {
+		issueErr = json.Unmarshal(issueRaw, &issue)
+	}
+	output := func(args ...string) string {
+		raw, outputErr := c.Git.Output(ctx, "git", append([]string{"-C", repository}, args...)...)
+		if outputErr != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(raw))
+	}
+	localMain := output("rev-parse", "main")
+	originMain := output("rev-parse", "origin/main")
+	containedRaw, containedErr := c.Git.Output(ctx, "git", "-C", repository, "merge-base", "--is-ancestor", pr.MergeCommit.Oid, "origin/main")
+	remoteRaw, remoteErr := c.Git.Output(ctx, "git", "-C", repository, "ls-remote", "--heads", "origin", readiness.Branch)
+	localBranchRaw, localBranchErr := c.Git.Output(ctx, "git", "-C", repository, "branch", "--list", readiness.Branch)
+	statusRaw, statusErr := c.Git.Output(ctx, "git", "-C", repository, "status", "--porcelain")
+	observation := deliveryevidence.FinalOutcomeObservation{
+		Repository: bundle.Repository, Issue: deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID},
+		PullRequest: pr.Number, PullRequestURL: pr.URL, PullRequestHeadSHA: pr.HeadRefOid, MergeCommitSHA: pr.MergeCommit.Oid,
+		Merged: pr.MergedAt != nil, MergeContainedOnMain: containedErr == nil && len(containedRaw) == 0,
+		IssueClosed: strings.EqualFold(issue.State, "closed"), RemoteBranchAbsent: remoteErr == nil && len(strings.TrimSpace(string(remoteRaw))) == 0,
+		LocalMainSHA: localMain, OriginMainSHA: originMain, LocalBranchAbsent: localBranchErr == nil && len(strings.TrimSpace(string(localBranchRaw))) == 0,
+		WorktreeClean:        statusErr == nil && len(strings.TrimSpace(string(statusRaw))) == 0,
+		PreservedStateBefore: preservedBefore, PreservedStateAfter: preservedAfter, ObservedAt: c.now().Format(time.RFC3339Nano),
+		MatrixURL: matrixURL, ReviewsURL: reviewsURL, ValidationURL: validationURL, CIURL: ciURL, CleanupURL: cleanupURL,
+	}
+	if prErr != nil || issueErr != nil {
+		observation.ObservedAt = ""
+	}
 	outcome, evaluateErr := deliveryevidence.EvaluateFinalOutcome(bundle, readiness, observation, receipts)
 	raw, marshalErr := deliveryevidence.CanonicalReport(outcome)
 	if marshalErr != nil {
@@ -231,7 +370,15 @@ func (c command) finalOutcome(args []string, stdout io.Writer) error {
 	if _, err = stdout.Write(raw); err != nil {
 		return err
 	}
-	return evaluateErr
+	if evaluateErr != nil {
+		return evaluateErr
+	}
+	brief, err := deliveryevidence.RenderSuccessBrief(outcome)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(stdout, brief)
+	return err
 }
 
 func (c command) initialize(ctx context.Context, args []string, stdout io.Writer) error {

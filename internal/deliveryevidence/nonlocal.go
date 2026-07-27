@@ -24,6 +24,20 @@ const (
 	CheckUnavailable     CheckClassification = "unavailable"
 )
 
+type LifecyclePhase string
+
+const (
+	PhaseQualification  LifecyclePhase = "qualification"
+	PhaseImplementation LifecyclePhase = "implementation"
+	PhaseReview         LifecyclePhase = "review"
+	PhaseValidation     LifecyclePhase = "validation"
+	PhaseCI             LifecyclePhase = "ci"
+	PhaseMerge          LifecyclePhase = "merge"
+	PhaseCleanup        LifecyclePhase = "cleanup"
+)
+
+var lifecyclePhases = []LifecyclePhase{PhaseQualification, PhaseImplementation, PhaseReview, PhaseValidation, PhaseCI, PhaseMerge, PhaseCleanup}
+
 type RequiredCheck struct {
 	Identity       string              `json:"identity"`
 	Conclusion     string              `json:"conclusion,omitempty"`
@@ -102,6 +116,8 @@ func ClassifyRequiredChecks(expected []string, expectedSkips map[string]bool, ob
 		if len(items) == 1 {
 			item = items[0]
 			switch {
+			case (item.Conclusion == "success" || (expectedSkips[item.Identity] && item.Conclusion == "skipped")) && item.HeadSHA == "":
+				item.Classification = CheckUnavailable
 			case item.HeadSHA != "" && item.HeadSHA != prHead:
 				item.Classification = CheckStaleHead
 			case item.Conclusion == "":
@@ -177,6 +193,9 @@ func EvaluateReadiness(bundle Bundle, local LocalGateReport, observation PullReq
 		!gitSHA(local.StartingBaseSHA) || local.StartingBaseSHA != bundle.StartingBaseSHA || !gitSHA(local.HeadSHA) || !gitSHA(local.TreeSHA) ||
 		local.AcceptanceProved != len(bundle.AcceptanceMatrix) || !digest(local.BundleSHA256) {
 		return fail(ReadinessLocalGate, "successful LOCAL gate report is incomplete or does not seal the current delivery facts")
+	}
+	if len(bundle.Iterations) == 0 || local.HeadSHA != bundle.Iterations[len(bundle.Iterations)-1].HeadSHA {
+		return fail(ReadinessLocalGate, "LOCAL gate head does not equal the final recorded Bundle iteration")
 	}
 	if _, err := parseTimestamp("LOCAL validation completion", local.ValidationCompletedAt); err != nil {
 		return fail(ReadinessLocalGate, err.Error())
@@ -267,10 +286,10 @@ const (
 )
 
 type PhaseReceipt struct {
-	Phase        string `json:"phase"`
-	StartedAt    string `json:"started_at"`
-	CompletedAt  string `json:"completed_at"`
-	FindingCount int    `json:"finding_count,omitempty"`
+	Phase        LifecyclePhase `json:"phase"`
+	StartedAt    string         `json:"started_at"`
+	CompletedAt  string         `json:"completed_at"`
+	FindingCount int            `json:"finding_count,omitempty"`
 }
 type OutcomeTelemetry struct {
 	PhaseDurationsSeconds   map[string]int64 `json:"phase_durations_seconds"`
@@ -298,7 +317,10 @@ func (e *OutcomeError) Error() string {
 
 func DeriveTelemetry(bundle Bundle, receipts []PhaseReceipt) (OutcomeTelemetry, error) {
 	t := OutcomeTelemetry{PhaseDurationsSeconds: map[string]int64{}, Iterations: len(bundle.Iterations)}
-	required := map[string]bool{"qualification": true, "implementation": true, "review": true, "validation": true, "ci": true, "merge": true, "cleanup": true}
+	required := map[LifecyclePhase]bool{}
+	for _, phase := range lifecyclePhases {
+		required[phase] = true
+	}
 	for _, review := range bundle.ReviewReceipts {
 		if review.Axis == ReviewStandards {
 			t.StandardsFindings += len(review.Findings)
@@ -308,28 +330,34 @@ func DeriveTelemetry(bundle Bundle, receipts []PhaseReceipt) (OutcomeTelemetry, 
 		}
 	}
 	for _, receipt := range receipts {
-		if !required[receipt.Phase] || receipt.FindingCount < 0 || safeText("telemetry phase", receipt.Phase) != nil {
-			return t, errors.New("telemetry phase identity is invalid")
+		if !required[receipt.Phase] || receipt.FindingCount < 0 || safeText("telemetry phase", string(receipt.Phase)) != nil {
+			return t, errors.New("lifecycle phase identity is invalid")
 		}
-		start, a := parseTimestamp("telemetry phase start", receipt.StartedAt)
-		end, b := parseTimestamp("telemetry phase completion", receipt.CompletedAt)
-		if a != nil || b != nil || end.Before(start) {
+		start, startErr := parseTimestamp(fmt.Sprintf("%s phase start", receipt.Phase), receipt.StartedAt)
+		end, endErr := parseTimestamp(fmt.Sprintf("%s phase completion", receipt.Phase), receipt.CompletedAt)
+		if startErr != nil {
+			return t, startErr
+		}
+		if endErr != nil {
+			return t, endErr
+		}
+		if end.Before(start) {
 			return t, fmt.Errorf("telemetry receipt %q has invalid time ordering", receipt.Phase)
 		}
-		if _, exists := t.PhaseDurationsSeconds[receipt.Phase]; exists {
+		if _, exists := t.PhaseDurationsSeconds[string(receipt.Phase)]; exists {
 			return t, fmt.Errorf("duplicate telemetry phase %q", receipt.Phase)
 		}
-		t.PhaseDurationsSeconds[receipt.Phase] = int64(end.Sub(start) / time.Second)
+		t.PhaseDurationsSeconds[string(receipt.Phase)] = int64(end.Sub(start) / time.Second)
 		switch receipt.Phase {
-		case "validation":
+		case PhaseValidation:
 			t.LocalValidationFindings = receipt.FindingCount
-		case "ci":
+		case PhaseCI:
 			t.CIFindings = receipt.FindingCount
 		}
 	}
 	for phase := range required {
-		if _, exists := t.PhaseDurationsSeconds[phase]; !exists {
-			return t, fmt.Errorf("telemetry phase %q is required", phase)
+		if _, exists := t.PhaseDurationsSeconds[string(phase)]; !exists {
+			return t, fmt.Errorf("lifecycle phase %q is required", phase)
 		}
 	}
 	return t, nil

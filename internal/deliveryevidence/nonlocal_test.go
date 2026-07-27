@@ -65,6 +65,16 @@ func TestReadinessBindsPassingExactLocalGate(t *testing.T) {
 	if _, err := EvaluateReadiness(changed, local, observation, []string{"validate"}, nil); err == nil {
 		t.Fatal("changed authority passed")
 	}
+	staleLocal := local
+	staleLocal.HeadSHA = strings.Repeat("f", 40)
+	if _, err := EvaluateReadiness(bundle, staleLocal, observation, []string{"validate"}, nil); err == nil {
+		t.Fatal("LOCAL report not sealing the final iteration passed")
+	}
+	headless := observation
+	headless.Required = []RequiredCheck{{Identity: "validate", Conclusion: "success"}}
+	if _, err := EvaluateReadiness(bundle, local, headless, []string{"validate"}, nil); err == nil {
+		t.Fatal("headless successful required check passed")
+	}
 }
 
 func TestFinalOutcomeTelemetryAndBrief(t *testing.T) {
@@ -76,7 +86,7 @@ func TestFinalOutcomeTelemetryAndBrief(t *testing.T) {
 	phases := []string{"qualification", "implementation", "review", "validation", "ci", "merge", "cleanup"}
 	var receipts []PhaseReceipt
 	for _, phase := range phases {
-		receipts = append(receipts, PhaseReceipt{Phase: phase, StartedAt: "2026-07-27T11:58:00Z", CompletedAt: "2026-07-27T12:00:00Z"})
+		receipts = append(receipts, PhaseReceipt{Phase: LifecyclePhase(phase), StartedAt: "2026-07-27T11:58:00Z", CompletedAt: "2026-07-27T12:00:00Z"})
 	}
 	receipts[3].FindingCount, receipts[4].FindingCount = 3, 4
 	out, err := EvaluateFinalOutcome(bundle, readiness, o, receipts)
