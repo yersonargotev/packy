@@ -23,7 +23,10 @@ type ValidationGates struct {
 	Apply          bool `json:"apply"`
 	Diff           bool `json:"diff"`
 	Ownership      bool `json:"ownership"`
-	PackySuite     bool `json:"packy_suite"`
+	// PackySuite keeps the immutable wire name. In operational proposals it
+	// records the Pack-content authority; exhaustive repository validation is
+	// owned by ordinary pull-request CI under ADR 0019.
+	PackySuite bool `json:"packy_suite"`
 }
 
 func (gates ValidationGates) Complete() bool {

@@ -26,8 +26,9 @@ const (
 func TestGitHubGatewayPristineCreateFinalizesOnlyAfterExactReobservation(t *testing.T) {
 	fake := &fakeGitHubCommands{}
 	gateway := lifecycleGateway(t, fake)
-	largePrefix := strings.Repeat("large proposal evidence\n", 100_000)
-	gateway.brief = fixedPublicationBrief{markdown: largePrefix}
+	largeEvidence := strings.Repeat("large proposal evidence\n", 100_000)
+	managedPrefix := "concise managed evidence"
+	gateway.brief = fixedPublicationBrief{markdown: largeEvidence, managedMarkdown: managedPrefix}
 	proposal := lifecycleProposal()
 	prepared, err := gateway.Prepare(proposal)
 	if err != nil {
@@ -65,8 +66,8 @@ func TestGitHubGatewayPristineCreateFinalizesOnlyAfterExactReobservation(t *test
 	if returned.Number != 7 || final.PR.Draft || final.PR.MetadataHash != finalHash || fake.readyCalls != 1 || fake.createCalls != 1 {
 		t.Fatalf("final state = %#v create=%d ready=%d", final.PR, fake.createCalls, fake.readyCalls)
 	}
-	if !strings.HasPrefix(fake.pr.body, largePrefix) {
-		t.Fatalf("created PR body lost large proposal prefix: got %d bytes", len(fake.pr.body))
+	if !strings.HasPrefix(fake.pr.body, managedPrefix) || strings.Contains(fake.pr.body, largeEvidence) {
+		t.Fatalf("created PR body did not use concise managed evidence: got %d bytes", len(fake.pr.body))
 	}
 	assertBodyFileRemoved(t, fake.lastBodyFile)
 	identity := packsyncworkflow.ReadinessIdentity{PlanID: prepared.PlanID, BaseSHA: prepared.BaseSHA, HeadSHA: final.PR.HeadSHA, CandidateSHA: prepared.CandidateSHA, ProvenanceSHA256: prepared.ProvenanceSHA256, PRNumber: final.PR.Number, PRStateSHA256: final.PR.MetadataHash}
@@ -75,8 +76,8 @@ func TestGitHubGatewayPristineCreateFinalizesOnlyAfterExactReobservation(t *test
 	}
 }
 
-func TestTemporaryPRBodySupportsBodiesLargerThanArgv(t *testing.T) {
-	body := strings.Repeat("large proposal evidence\n", 100_000)
+func TestTemporaryPRBodySupportsBoundedBodiesLargerThanOrdinaryArgv(t *testing.T) {
+	body := strings.Repeat("bounded proposal evidence\n", 2_000)
 	name, cleanup, err := temporaryPRBody(body)
 	if err != nil {
 		t.Fatal(err)
@@ -101,6 +102,12 @@ func TestTemporaryPRBodySupportsBodiesLargerThanArgv(t *testing.T) {
 	cleanup()
 	if _, err := os.Stat(name); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("body file remains after cleanup: %v", err)
+	}
+}
+
+func TestTemporaryPRBodyRejectsGitHubOversizeBeforeCreatingAFile(t *testing.T) {
+	if _, _, err := temporaryPRBody(strings.Repeat("x", maxManagedPRBodyBytes+1)); err == nil {
+		t.Fatal("oversize managed body was admitted")
 	}
 }
 
@@ -256,7 +263,7 @@ func TestGitHubGatewayFailedUndraftKeepsBlockedMetadata(t *testing.T) {
 	if _, err := gateway.Finalize(context.Background(), proposal, decision, draft.PR); err == nil {
 		t.Fatal("failed undraft finalized readiness")
 	}
-	if pr.Number != 7 || fake.readyCalls != 3 || !fake.pr.draft || fake.pr.body != before || !strings.Contains(fake.pr.body, `"decision_ready": false`) {
+	if pr.Number != 7 || fake.readyCalls != 3 || !fake.pr.draft || fake.pr.body != before {
 		t.Fatalf("failed undraft changed blocked metadata: %#v", fake.pr)
 	}
 }
@@ -423,8 +430,9 @@ func TestGitHubGatewayPristineUpdateUsesStableBranchAndSamePR(t *testing.T) {
 	pr := managedFakePR(t, old, "old managed", "old evidence", false)
 	fake := &fakeGitHubCommands{branchHead: headA, pr: pr}
 	gateway := lifecycleGateway(t, fake)
-	largePrefix := strings.Repeat("large proposal evidence\n", 100_000)
-	gateway.brief = fixedPublicationBrief{markdown: largePrefix}
+	largeEvidence := strings.Repeat("large proposal evidence\n", 100_000)
+	managedPrefix := "concise managed evidence"
+	gateway.brief = fixedPublicationBrief{markdown: largeEvidence, managedMarkdown: managedPrefix}
 	prepared, err := gateway.Prepare(proposal)
 	if err != nil {
 		t.Fatal(err)
@@ -444,8 +452,8 @@ func TestGitHubGatewayPristineUpdateUsesStableBranchAndSamePR(t *testing.T) {
 	if fake.createCalls != 0 || fake.pushCalls != 1 || fake.editCalls != 1 || fake.pr.number != 7 {
 		t.Fatalf("update did not preserve one branch/PR: %#v", fake)
 	}
-	if !strings.HasPrefix(fake.pr.body, largePrefix) {
-		t.Fatalf("edited PR body lost large proposal prefix: got %d bytes", len(fake.pr.body))
+	if !strings.HasPrefix(fake.pr.body, managedPrefix) || strings.Contains(fake.pr.body, largeEvidence) {
+		t.Fatalf("edited PR body did not use concise managed evidence: got %d bytes", len(fake.pr.body))
 	}
 	assertBodyFileRemoved(t, fake.lastBodyFile)
 }
@@ -714,7 +722,8 @@ type noWaitSleeper struct{}
 func (noWaitSleeper) Sleep(context.Context, time.Duration) error { return nil }
 
 type fixedPublicationBrief struct {
-	markdown string
+	markdown        string
+	managedMarkdown string
 }
 
 func (fixedPublicationBrief) PreparePublication(packsyncworkflow.Proposal) {}
@@ -723,6 +732,13 @@ func (fixedPublicationBrief) FinalizePublication(packsyncworkflow.Proposal, pack
 }
 
 func (brief fixedPublicationBrief) Markdown() (string, error) {
+	return brief.markdown, nil
+}
+
+func (brief fixedPublicationBrief) ManagedMarkdown() (string, error) {
+	if brief.managedMarkdown != "" {
+		return brief.managedMarkdown, nil
+	}
 	return brief.markdown, nil
 }
 

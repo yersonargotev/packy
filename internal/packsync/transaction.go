@@ -163,9 +163,6 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 	if err := validatePreconditions(request.RepositoryRoot, plan.SourceID, plan.Preconditions, engine.allowBootstrap || plan.Registration != nil); err != nil {
 		return ApplyResult{}, err
 	}
-	if err := engine.Validate.ValidateBundle(ctx, request.RepositoryRoot, bundle); err != nil {
-		return ApplyResult{}, fmt.Errorf("fresh Packy-owned validation: %w", err)
-	}
 	staged, backup := transactionPaths(request.RepositoryRoot, plan.PlanID)
 	markerPath := recoveryMarkerPath(request.RepositoryRoot)
 	for _, path := range []string{staged, backup, markerPath} {

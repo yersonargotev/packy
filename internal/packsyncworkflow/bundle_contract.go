@@ -288,11 +288,29 @@ type BundlePreparationArtifact struct {
 	ManagedTitle            string          `json:"managed_title"`
 	ManagedMetadataHash     string          `json:"managed_metadata_hash"`
 	ObservedBaseSHA         string          `json:"observed_base_sha"`
+	Transport               TransportProof  `json:"transport"`
 	Validation              ValidationGates `json:"validation"`
 	ObservationsStable      bool            `json:"observations_stable"`
 	RepositoryMutated       bool            `json:"repository_mutated"`
 	DecisionReady           bool            `json:"decision_ready"`
 	UpstreamContentExecuted bool            `json:"upstream_content_executed"`
+}
+
+// TransportProof binds an effect-free exercise of the exact create/edit
+// command builders used by the write-capable GitHub adapter.
+type TransportProof struct {
+	CreateBodyFile bool   `json:"create_body_file"`
+	EditBodyFile   bool   `json:"edit_body_file"`
+	BodyBytes      int    `json:"body_bytes"`
+	SHA256         string `json:"sha256"`
+}
+
+func (proof TransportProof) Validate() error {
+	if !proof.CreateBodyFile || !proof.EditBodyFile || proof.BodyBytes <= 0 ||
+		proof.BodyBytes > 60*1024 || requireSHA256("transport", proof.SHA256) != nil {
+		return errors.New("publication transport proof is incomplete or exceeds its bound")
+	}
+	return nil
 }
 
 func validateV3(schema int, identity BundleArtifactIdentity) error {
@@ -340,7 +358,7 @@ func (a BundlePreparationArtifact) Validate() error {
 	if requireFullSHA("head", a.HeadSHA) != nil || requireFullSHA("result tree", a.ResultTreeSHA) != nil ||
 		a.BranchName != "sync/"+a.PackID || requireSHA256("provenance", a.ProvenanceSHA256) != nil ||
 		a.ManagedTitle == "" || requireSHA256("managed metadata", a.ManagedMetadataHash) != nil ||
-		a.ObservedBaseSHA != a.BaseSHA || !a.Validation.Complete() || !a.ObservationsStable ||
+		a.ObservedBaseSHA != a.BaseSHA || a.Transport.Validate() != nil || !a.Validation.Complete() || !a.ObservationsStable ||
 		a.RepositoryMutated || a.DecisionReady || a.UpstreamContentExecuted {
 		return errors.New("v3 bundle preparation is incomplete or claims publication authority")
 	}

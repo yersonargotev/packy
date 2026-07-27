@@ -202,6 +202,7 @@ func TestV3PreparationProvesReadOnlyNonAuthoritativeState(t *testing.T) {
 		HeadSHA: headA, ResultTreeSHA: treeA, BranchName: "sync/vercel",
 		ProvenanceSHA256: strings.Repeat("9", 64), ManagedTitle: "sync(vercel): composite registration",
 		ManagedMetadataHash: strings.Repeat("a", 64), ObservedBaseSHA: baseA,
+		Transport:  TransportProof{CreateBodyFile: true, EditBodyFile: true, BodyBytes: 1024, SHA256: strings.Repeat("b", 64)},
 		Validation: completeValidationGates(), ObservationsStable: true,
 	}
 	if err := artifact.Validate(); err != nil {
@@ -212,6 +213,7 @@ func TestV3PreparationProvesReadOnlyNonAuthoritativeState(t *testing.T) {
 		"decision ready":     func(a *BundlePreparationArtifact) { a.DecisionReady = true },
 		"stale base":         func(a *BundlePreparationArtifact) { a.ObservedBaseSHA = candidateA },
 		"unstable state":     func(a *BundlePreparationArtifact) { a.ObservationsStable = false },
+		"transport absent":   func(a *BundlePreparationArtifact) { a.Transport = TransportProof{} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			invalid := artifact

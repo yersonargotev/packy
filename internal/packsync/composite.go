@@ -703,9 +703,6 @@ func (engine Engine) applyCompositeLocked(ctx context.Context, request Composite
 	if hash, err := treeHash(bundle); err != nil || hash != plan.Preconditions.BundleSHA256 {
 		return ApplyResult{}, errors.New("stale composite plan: complete bundle changed after Check")
 	}
-	if err := engine.Validate.ValidateBundle(ctx, request.RepositoryRoot, bundle); err != nil {
-		return ApplyResult{}, fmt.Errorf("fresh Packy-owned validation: %w", err)
-	}
 	staged, backup := transactionPaths(request.RepositoryRoot, plan.PlanID)
 	markerPath := recoveryMarkerPath(request.RepositoryRoot)
 	for _, path := range []string{staged, backup, markerPath} {

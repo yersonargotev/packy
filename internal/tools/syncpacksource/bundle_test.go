@@ -73,8 +73,7 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	gitForTest(t, base, "add", ".")
 	gitForTest(t, base, "commit", "-qm", "base")
 	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
-	validateRepo, prepareRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "prepare"), filepath.Join(t.TempDir(), "publish")
-	cloneForTest(t, base, validateRepo)
+	prepareRepo, publishRepo := filepath.Join(t.TempDir(), "prepare"), filepath.Join(t.TempDir(), "publish")
 	cloneForTest(t, base, prepareRepo)
 	cloneForTest(t, base, publishRepo)
 
@@ -109,36 +108,40 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	if err := run(context.Background(), []string{"--phase", "classify", "--repository-root", base, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--output", classifyDir}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	validateDir := filepath.Join(artifacts, "validate")
-	if err := run(context.Background(), []string{"--phase", "validate", "--repository-root", validateRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--output", validateDir}, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
 	prepareDir := filepath.Join(artifacts, "prepare")
-	if err := run(context.Background(), []string{"--phase", "prepare", "--repository-root", prepareRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--validation", filepath.Join(validateDir, "validation.json"), "--output", prepareDir}, &bytes.Buffer{}); err != nil {
+	if err := run(context.Background(), []string{"--phase", "prepare", "--repository-root", prepareRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--output", prepareDir}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("prepare: %#v fake=%#v", err, fakeGitHub)
 	}
 	var preparation packsyncworkflow.BundlePreparationArtifact
 	readJSONForTest(t, filepath.Join(prepareDir, "preparation.json"), &preparation)
 	if !preparation.ObservationsStable || preparation.RepositoryMutated || preparation.DecisionReady ||
-		preparation.BranchName != "sync/adapter-composite" || fakeGitHub.pushCalls != 0 || fakeGitHub.createCalls != 0 {
+		preparation.BranchName != "sync/adapter-composite" || !preparation.Transport.CreateBodyFile ||
+		!preparation.Transport.EditBodyFile || fakeGitHub.pushCalls != 0 || fakeGitHub.createCalls != 0 {
 		t.Fatalf("read-only preparation = %#v fake=%#v", preparation, fakeGitHub)
 	}
 	publishDir := filepath.Join(artifacts, "publish")
-	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--validation", filepath.Join(validateDir, "validation.json"), "--output", publishDir}, &bytes.Buffer{}); err != nil {
+	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classifyDir, "classification-evidence.json"), "--output", publishDir}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("%#v fake=%#v", err, fakeGitHub)
 	}
-	if source.resolves["source-a"] < 4 || source.resolves["source-b"] < 4 {
+	if source.resolves["source-a"] < 3 || source.resolves["source-b"] < 3 {
 		t.Fatalf("each phase did not independently reacquire all members: %#v", source.resolves)
+	}
+	if validator.bundleCalls != 3 || validator.suiteCalls != 0 {
+		t.Fatalf("Inspect plus each alternative final path must use at most two Pack-content validations: bundle=%d suite=%d", validator.bundleCalls, validator.suiteCalls)
 	}
 	var publication packsyncworkflow.BundlePublicationArtifact
 	readJSONForTest(t, filepath.Join(publishDir, "publication.json"), &publication)
 	if !publication.DecisionReady || publication.BranchName != "sync/adapter-composite" || publication.ResultTreeSHA == "" || fakeGitHub.createCalls != 1 {
 		t.Fatalf("composite publication = %#v, creates=%d", publication, fakeGitHub.createCalls)
 	}
-	if fakeGitHub.pr == nil || !strings.Contains(fakeGitHub.pr.body, `"schema_version": 3`) ||
-		!strings.Contains(fakeGitHub.pr.body, `"pack_id": "adapter-composite"`) ||
-		strings.Contains(fakeGitHub.pr.body, `"operation": "synchronize"`) {
-		t.Fatalf("composite PR evidence is not v3-native: %#v", fakeGitHub.pr)
+	fullBrief, err := os.ReadFile(filepath.Join(publishDir, "proposal-brief.md"))
+	if err != nil || fakeGitHub.pr == nil ||
+		!strings.Contains(string(fullBrief), `"schema_version": 3`) ||
+		!strings.Contains(string(fullBrief), `"pack_id": "adapter-composite"`) ||
+		strings.Contains(string(fullBrief), `"operation": "synchronize"`) ||
+		strings.Contains(fakeGitHub.pr.body, `"schema_version": 3`) ||
+		!strings.Contains(fakeGitHub.pr.body, "Complete canonical evidence") {
+		t.Fatalf("composite evidence split is not v3-native and bounded: pr=%#v full=%q err=%v", fakeGitHub.pr, fullBrief, err)
 	}
 
 	evidencePath := filepath.Join(classifyDir, "classification-evidence.json")
@@ -164,7 +167,7 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 		t.Fatal(err)
 	}
 	assertRejectedWithoutWrite("stale-digest", func(repository string) error {
-		return run(context.Background(), []string{"--phase", "validate", "--repository-root", repository, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", evidencePath, "--output", filepath.Join(artifacts, "stale-output")}, &bytes.Buffer{})
+		return run(context.Background(), []string{"--phase", "prepare", "--repository-root", repository, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", evidencePath, "--output", filepath.Join(artifacts, "stale-output")}, &bytes.Buffer{})
 	}, "digest")
 	if err := os.WriteFile(evidencePath, originalEvidence, 0o600); err != nil {
 		t.Fatal(err)
@@ -178,7 +181,7 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 		t.Fatal(err)
 	}
 	assertRejectedWithoutWrite("mixed-member", func(repository string) error {
-		return run(context.Background(), []string{"--phase", "validate", "--repository-root", repository, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", evidencePath, "--output", filepath.Join(artifacts, "mixed-output")}, &bytes.Buffer{})
+		return run(context.Background(), []string{"--phase", "prepare", "--repository-root", repository, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", evidencePath, "--output", filepath.Join(artifacts, "mixed-output")}, &bytes.Buffer{})
 	}, "stale or mixed")
 	if err := os.WriteFile(artifactPath, originalArtifact, 0o600); err != nil {
 		t.Fatal(err)
@@ -188,7 +191,7 @@ func TestCompositeBundleTracerReacquiresEveryMemberAndPublishesPackScope(t *test
 	source.candidates["source-b"] = moved
 	pushesBefore := fakeGitHub.pushCalls
 	assertRejectedWithoutWrite("moved-member", func(repository string) error {
-		return run(context.Background(), []string{"--phase", "publish", "--repository-root", repository, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", evidencePath, "--validation", filepath.Join(validateDir, "validation.json"), "--output", filepath.Join(artifacts, "moved-output")}, &bytes.Buffer{})
+		return run(context.Background(), []string{"--phase", "publish", "--repository-root", repository, "--request", filepath.Join(inspectDir, "request.json"), "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", evidencePath, "--output", filepath.Join(artifacts, "moved-output")}, &bytes.Buffer{})
 	}, "changed after Check")
 	if fakeGitHub.pushCalls != pushesBefore {
 		t.Fatal("moved member reached GitHub mutation")

@@ -15,7 +15,7 @@ import (
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
 )
 
-func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t *testing.T) {
+func TestSandboxTracerRunsInspectClassifyPublishWithOnePackContentValidation(t *testing.T) {
 	clearPackyEnvironment(t)
 	root := repositoryRootForTest(t)
 	base := t.TempDir()
@@ -63,8 +63,7 @@ func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t 
 	gitForTest(t, base, "add", ".")
 	gitForTest(t, base, "commit", "-qm", "base")
 	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
-	validateRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "publish")
-	cloneForTest(t, base, validateRepo)
+	publishRepo := filepath.Join(t.TempDir(), "publish")
 	cloneForTest(t, base, publishRepo)
 
 	oldSourceFactory, oldValidatorFactory, oldGatewayFactory := workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory
@@ -106,15 +105,11 @@ func TestSandboxTracerRunsInspectClassifyValidatePublishWithoutExternalWrites(t 
 	if err := run(context.Background(), []string{"--phase", "classify", "--repository-root", base, "--request", filepath.Join(inspect, "request.json"), "--plan", filepath.Join(inspect, "plan.json"), "--output", classification}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	validation := filepath.Join(artifacts, "validation")
-	if err := run(context.Background(), []string{"--phase", "validate", "--repository-root", validateRepo, "--request", filepath.Join(inspect, "request.json"), "--plan", filepath.Join(inspect, "plan.json"), "--evidence", filepath.Join(classification, "classification.json"), "--output", validation}, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
 	publication := filepath.Join(artifacts, "publication")
-	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", filepath.Join(inspect, "request.json"), "--plan", filepath.Join(inspect, "plan.json"), "--evidence", filepath.Join(classification, "classification.json"), "--validation", filepath.Join(validation, "validation.json"), "--output", publication}, &bytes.Buffer{}); err != nil {
+	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", filepath.Join(inspect, "request.json"), "--plan", filepath.Join(inspect, "plan.json"), "--evidence", filepath.Join(classification, "classification.json"), "--output", publication}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	if validator.bundleCalls < 2 || validator.suiteCalls < 2 || fakeGitHub.createCalls != 1 || fakeGitHub.pushCalls != 1 {
+	if validator.bundleCalls != 1 || validator.suiteCalls != 0 || fakeGitHub.createCalls != 1 || fakeGitHub.pushCalls != 1 {
 		t.Fatalf("tracer gates/writes = bundle:%d suite:%d create:%d push:%d", validator.bundleCalls, validator.suiteCalls, fakeGitHub.createCalls, fakeGitHub.pushCalls)
 	}
 	var result map[string]any

@@ -30,7 +30,7 @@ func TestInitialApplyBootstrapsTruthfulProvenanceWithoutSelectedContentChange(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status != "applied" || !result.Changed || validated != 2 {
+	if result.Status != "applied" || !result.Changed || validated != 1 {
 		t.Fatalf("result=%#v validations=%d", result, validated)
 	}
 	if got := hashSelectedResources(t, repository, plan.ProposedLock); got != selectedBefore {
@@ -213,7 +213,7 @@ func TestApplyRejectsEverySealedFreshnessBoundary(t *testing.T) {
 		{name: "production-lock", want: "source lock mattpocock-skills", mutate: func(t *testing.T, repository string, _ *fixtureSource, _ *Plan, _ *Engine) {
 			writeFile(t, filepath.Join(repository, "bundle", "sources/mattpocock-skills.lock.json"), "{}\n")
 		}},
-		{name: "Packy-owned-suite", want: "fresh Packy-owned validation", mutate: func(_ *testing.T, _ string, _ *fixtureSource, _ *Plan, engine *Engine) {
+		{name: "Packy-owned-suite", want: "validate staged bundle", mutate: func(_ *testing.T, _ string, _ *fixtureSource, _ *Plan, engine *Engine) {
 			engine.Validate = BundleValidatorFunc(func(context.Context, string, string) error { return errors.New("suite rejected hostile content") })
 		}},
 	}
@@ -376,7 +376,7 @@ func TestStagedSuiteFailureLeavesRepositoryUntouched(t *testing.T) {
 	validations := 0
 	engine := Engine{allowBootstrap: true, Source: provider, Validate: BundleValidatorFunc(func(context.Context, string, string) error {
 		validations++
-		if validations == 2 {
+		if validations == 1 {
 			return errors.New("staged suite failed")
 		}
 		return nil

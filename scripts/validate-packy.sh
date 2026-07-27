@@ -39,6 +39,7 @@ readonly packages=(
   ./internal/tools/claudevercelsmoke
   ./internal/tools/codexsmoke
   ./internal/tools/opencodesmoke
+  ./internal/tools/packcontentvalidate
   ./internal/tools/governanceauth
   ./internal/tools/governancedrift
   ./internal/tools/syncpacksource

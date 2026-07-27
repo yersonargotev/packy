@@ -3,7 +3,6 @@ package packsyncworkflow
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/yersonargotev/packy/internal/packsync"
 )
@@ -22,9 +21,8 @@ type CompositeProvenanceVerifier interface {
 }
 
 type BundlePublishRequest struct {
-	RepositoryRoot        string
-	Apply                 packsync.CompositeApplyRequest
-	ExpectedResultTreeSHA string
+	RepositoryRoot string
+	Apply          packsync.CompositeApplyRequest
 }
 
 // BundlePublisher applies the existing ADR 0009 publication policy to one
@@ -32,7 +30,6 @@ type BundlePublishRequest struct {
 // so existing ownership evaluation uses sync/<pack-id>.
 type BundlePublisher struct {
 	Applier    CompositeApplier
-	Validator  Validator
 	Builder    ProposalBuilder
 	Diff       DiffVerifier
 	Provenance CompositeProvenanceVerifier
@@ -76,14 +73,13 @@ func (publisher BundlePublisher) delegate(request BundlePublishRequest) (Publish
 		return Publisher{}, errors.New("bundle publish requires complete-set Apply and provenance revalidation")
 	}
 	plan := request.Apply.Plan
-	if request.RepositoryRoot == "" || plan.PlanID == "" || !ValidSourceID(plan.PackID) || requireFullSHA("expected result tree", request.ExpectedResultTreeSHA) != nil {
-		return Publisher{}, errors.New("bundle publish requires one sealed Pack plan, expected result tree, and sandbox repository")
+	if request.RepositoryRoot == "" || plan.PlanID == "" || !ValidSourceID(plan.PackID) {
+		return Publisher{}, errors.New("bundle publish requires one sealed Pack plan and sandbox repository")
 	}
 	return Publisher{
 		Applier:    boundCompositeApplier{delegate: publisher.Applier, request: request.Apply},
-		Validator:  publisher.Validator,
 		Builder:    packScopedProposalBuilder{delegate: publisher.Builder, packID: plan.PackID},
-		Diff:       expectedBundleDiff{delegate: publisher.Diff, expectedResultTreeSHA: request.ExpectedResultTreeSHA},
+		Diff:       publisher.Diff,
 		Provenance: boundCompositeProvenance{delegate: publisher.Provenance, plan: plan},
 		GitHub:     publisher.GitHub,
 	}, nil
@@ -94,33 +90,6 @@ func bundlePublishRequest(request BundlePublishRequest) PublishRequest {
 		RepositoryRoot: request.RepositoryRoot,
 		Apply:          packsync.ApplyRequest{Plan: packsync.Plan{PlanID: request.Apply.Plan.PlanID}},
 	}
-}
-
-// expectedBundleDiff binds the Publish sandbox to the exact tree already
-// reproduced by Validate. Seal runs before proposal construction or any
-// publication-state observation, so a changed complete result cannot write.
-type expectedBundleDiff struct {
-	delegate              DiffVerifier
-	expectedResultTreeSHA string
-}
-
-func (diff expectedBundleDiff) Seal(ctx context.Context, root string) (string, error) {
-	sealed, err := diff.delegate.Seal(ctx, root)
-	if err != nil {
-		return "", err
-	}
-	if sealed != diff.expectedResultTreeSHA {
-		return "", fmt.Errorf("Publish result tree %s does not reproduce sealed Validation result %s", sealed, diff.expectedResultTreeSHA)
-	}
-	return sealed, nil
-}
-
-func (diff expectedBundleDiff) VerifyWorkspace(ctx context.Context, root, seal string) error {
-	return diff.delegate.VerifyWorkspace(ctx, root, seal)
-}
-
-func (diff expectedBundleDiff) VerifyCommit(ctx context.Context, root, seal, head string) error {
-	return diff.delegate.VerifyCommit(ctx, root, seal, head)
 }
 
 type boundCompositeApplier struct {

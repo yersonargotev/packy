@@ -124,8 +124,8 @@ func TestClassifiedFixtureAppliesInSandboxAndRunsPackyOwnedValidation(t *testing
 	if err != nil || result.Status != "applied" {
 		t.Fatalf("Apply = %#v, %v", result, err)
 	}
-	if len(validated) != 4 {
-		t.Fatalf("Packy-owned validation calls = %d, want current and staged bundle for two packs", len(validated))
+	if len(validated) != 2 {
+		t.Fatalf("Pack-content validation calls = %d, want the staged result for two packs", len(validated))
 	}
 	for _, pack := range []string{"alpha", "beta"} {
 		data, err := os.ReadFile(filepath.Join(fixture.repository, "bundle", "packs", pack, "pack.json"))

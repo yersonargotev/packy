@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,19 +17,25 @@ import (
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
 )
 
+const (
+	maxManagedPRBodyBytes  = 60 * 1024
+	maxManagedPRTitleBytes = 200
+	maxGitHubCommandBytes  = 16 * 1024
+)
+
 type phaseValidator interface {
 	packsync.BundleValidator
 	packsyncworkflow.Validator
 }
 
 var (
-	workflowValidatorFactory = func() phaseValidator { return commandValidator{} }
+	workflowValidatorFactory = func() phaseValidator { return contentValidator{} }
 	workflowGatewayFactory   = newGitHubGateway
 )
 
 func publish(ctx context.Context, option options, output io.Writer) error {
-	if option.requestPath == "" || option.planPath == "" || option.evidencePath == "" || option.validationPath == "" || option.outputDir == "" {
-		return errors.New("publish requires request, plan, evidence, validation proof, and output paths")
+	if option.requestPath == "" || option.planPath == "" || option.evidencePath == "" || option.outputDir == "" {
+		return errors.New("publish requires request, plan, evidence, and output paths")
 	}
 	var dispatch packsyncworkflow.DispatchRequest
 	var plan packsync.Plan
@@ -50,13 +57,6 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	}
 	if err := validateWorkflowEvidence(plan, evidence); err != nil {
 		return packsyncworkflow.Failure{Kind: packsyncworkflow.FailureClassification, Err: err}
-	}
-	var validation packsyncworkflow.ValidationArtifact
-	if err := readJSON(option.validationPath, &validation); err != nil {
-		return err
-	}
-	if err := validation.Validate(); err != nil || validation.SourceID != dispatch.SourceID || validation.PlanID != plan.PlanID || validation.BaseSHA != plan.Preconditions.BaseCommit || validation.CandidateSHA != plan.Candidate.Commit {
-		return packsyncworkflow.Failure{Kind: packsyncworkflow.FailureValidation, Err: errors.New("sandbox validation proof is missing, invalid, or stale")}
 	}
 	acquisition, err := os.MkdirTemp("", "packy-pack-publish-")
 	if err != nil {
@@ -81,7 +81,7 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	}
 	github := workflowGatewayFactory(option.repositoryRoot, plan)
 	builder := &publicationBuilder{dispatch: dispatch, plan: plan, evidence: evidence, evidencePath: option.evidencePath, github: github}
-	publisher := packsyncworkflow.Publisher{Applier: engine, Validator: validator, Builder: builder, Diff: gitDiffVerifier{}, Provenance: engine, GitHub: github}
+	publisher := packsyncworkflow.Publisher{Applier: engine, Builder: builder, Diff: gitDiffVerifier{}, Provenance: engine, GitHub: github}
 	result, err := publisher.Run(ctx, packsyncworkflow.PublishRequest{RepositoryRoot: option.repositoryRoot, Apply: apply})
 	if err != nil {
 		return err
@@ -253,117 +253,21 @@ func (builder *publicationBuilder) Build(ctx context.Context, repositoryRoot str
 	return proposal, nil
 }
 
-type commandValidator struct {
-	run func(*exec.Cmd) ([]byte, error)
-}
+type contentValidator struct{}
 
-const stagedValidationEnvironment = "PACKY_VALIDATION_STAGED=1"
-
-func (validator commandValidator) ValidateBundle(ctx context.Context, repositoryRoot, bundleRoot string) error {
-	sandbox, err := os.MkdirTemp("", "packy-staged-validation-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(sandbox)
-	checkout := filepath.Join(sandbox, "repo")
-	if err := copyForValidation(ctx, repositoryRoot, checkout, bundleRoot); err != nil {
-		return err
-	}
-	return validator.validate(ctx, checkout, true)
-}
-
-func (validator commandValidator) Validate(ctx context.Context, repositoryRoot string) error {
-	return validator.validate(ctx, repositoryRoot, false)
-}
-
-func (validator commandValidator) ValidateApplied(ctx context.Context, repositoryRoot string) error {
-	return validator.validate(ctx, repositoryRoot, true)
-}
-
-func (validator commandValidator) validate(ctx context.Context, repositoryRoot string, staged bool) error {
-	home, err := os.MkdirTemp("", "packy-validation-home-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(home)
-	cmd := exec.CommandContext(ctx, "bash", "./scripts/validate-packy.sh")
-	cmd.Dir = repositoryRoot
-	environment := withoutStagedValidationMarker(withoutCredentials(os.Environ()))
-	environment = append(environment, "HOME="+filepath.Join(home, "home"), "XDG_CONFIG_HOME="+filepath.Join(home, "xdg"))
-	if staged {
-		environment = append(environment, stagedValidationEnvironment)
-	}
-	cmd.Env = environment
-	run := validator.run
-	if run == nil {
-		run = func(cmd *exec.Cmd) ([]byte, error) { return cmd.CombinedOutput() }
-	}
-	output, err := run(cmd)
-	if err != nil {
-		return fmt.Errorf("Packy-owned validation failed: %w: %s", err, strings.TrimSpace(string(output)))
+func (contentValidator) ValidateBundle(_ context.Context, _, bundleRoot string) error {
+	if err := packsync.ValidateContent(bundleRoot); err != nil {
+		return fmt.Errorf("Pack-content validation failed: %w", err)
 	}
 	return nil
 }
 
-func withoutStagedValidationMarker(environment []string) []string {
-	filtered := make([]string, 0, len(environment))
-	for _, variable := range environment {
-		if !strings.HasPrefix(variable, "PACKY_VALIDATION_STAGED=") {
-			filtered = append(filtered, variable)
-		}
-	}
-	return filtered
+func (contentValidator) Validate(ctx context.Context, repositoryRoot string) error {
+	return contentValidator{}.ValidateBundle(ctx, repositoryRoot, filepath.Join(repositoryRoot, "bundle"))
 }
 
-func copyForValidation(ctx context.Context, repositoryRoot, checkout, bundleRoot string) error {
-	clone := exec.CommandContext(ctx, "git", "-c", "init.templateDir=", "clone", "--quiet", "--shared", "--no-checkout", "--", repositoryRoot, checkout)
-	clone.Env = withoutCredentials(os.Environ())
-	if output, err := clone.CombinedOutput(); err != nil {
-		return fmt.Errorf("clone disposable validation checkout: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	entries, err := os.ReadDir(repositoryRoot)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.Name() == ".git" || entry.Name() == ".codegraph" || entry.Name() == ".scratch" || entry.Name() == "bundle" || isPackyTransactionArtifact(entry.Name()) {
-			continue
-		}
-		if err := copyPath(filepath.Join(repositoryRoot, entry.Name()), filepath.Join(checkout, entry.Name())); err != nil {
-			return err
-		}
-	}
-	return copyPath(bundleRoot, filepath.Join(checkout, "bundle"))
-}
-
-func isPackyTransactionArtifact(name string) bool {
-	return name == ".packy-bundle-recovery.json" ||
-		strings.HasPrefix(name, ".packy-bundle-validation-") ||
-		strings.HasPrefix(name, ".packy-bundle-") && (strings.HasSuffix(name, ".staged") || strings.HasSuffix(name, ".backup"))
-}
-
-func copyPath(source, destination string) error {
-	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(destination, relative)
-		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode().Perm())
-		}
-		if !info.Mode().IsRegular() {
-			return errors.New("validation copy encountered a non-regular path")
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, info.Mode().Perm())
-	})
+func (contentValidator) ValidateApplied(ctx context.Context, repositoryRoot string) error {
+	return contentValidator{}.Validate(ctx, repositoryRoot)
 }
 
 type githubGateway struct {
@@ -383,6 +287,7 @@ type publicationBrief interface {
 	PreparePublication(packsyncworkflow.Proposal)
 	FinalizePublication(packsyncworkflow.Proposal, packsyncworkflow.PRState)
 	Markdown() (string, error)
+	ManagedMarkdown() (string, error)
 }
 
 type singleSourcePublicationBrief struct {
@@ -410,6 +315,10 @@ func (single singleSourcePublicationBrief) Markdown() (string, error) {
 	return single.brief.Markdown()
 }
 
+func (single singleSourcePublicationBrief) ManagedMarkdown() (string, error) {
+	return single.brief.ManagedMarkdown()
+}
+
 func newGitHubGateway(repositoryRoot string, plan packsync.Plan) *githubGateway {
 	return &githubGateway{repositoryRoot: repositoryRoot, repository: os.Getenv("GITHUB_REPOSITORY"), plan: plan, retry: packsyncworkflow.RetryPolicy{MaxAttempts: 3, InitialBackoff: time.Second}, run: command}
 }
@@ -419,13 +328,85 @@ func (gateway *githubGateway) Prepare(proposal packsyncworkflow.Proposal) (packs
 		return packsyncworkflow.Proposal{}, errors.New("publication review evidence is required")
 	}
 	gateway.brief.PreparePublication(proposal)
-	prefix, err := gateway.brief.Markdown()
+	prefix, err := gateway.brief.ManagedMarkdown()
 	if err != nil {
 		return packsyncworkflow.Proposal{}, err
 	}
 	proposal.ManagedMetadataHash = packsyncworkflow.ManagedMetadataHash(proposal.ManagedTitle, prefix)
+	if len(proposal.ManagedTitle) == 0 || len(proposal.ManagedTitle) > maxManagedPRTitleBytes {
+		return packsyncworkflow.Proposal{}, errors.New("managed pull-request title exceeds the transport bound")
+	}
 	gateway.title, gateway.bodyPrefix = proposal.ManagedTitle, prefix
 	return proposal, nil
+}
+
+func (gateway *githubGateway) exerciseTransport(proposal packsyncworkflow.Proposal) (packsyncworkflow.TransportProof, error) {
+	record := packsyncworkflow.NewPublicationRecord(proposal, proposal.HeadSHA, proposal.ManagedMetadataHash)
+	body, err := packsyncworkflow.ManagedBody(gateway.bodyPrefix, record)
+	if err != nil {
+		return packsyncworkflow.TransportProof{}, err
+	}
+	bodyFile, cleanup, err := temporaryPRBody(body)
+	if err != nil {
+		return packsyncworkflow.TransportProof{}, err
+	}
+	defer cleanup()
+	create := gateway.createPRArgs(proposal, bodyFile)
+	edit := gateway.editPRArgs(1, bodyFile)
+	if err := validateEffectFreePRCommand(create, bodyFile); err != nil {
+		return packsyncworkflow.TransportProof{}, err
+	}
+	if err := validateEffectFreePRCommand(edit, bodyFile); err != nil {
+		return packsyncworkflow.TransportProof{}, err
+	}
+	stat, err := os.Stat(bodyFile)
+	if err != nil || stat.Mode().Perm() != 0o600 {
+		return packsyncworkflow.TransportProof{}, errors.New("managed pull-request body file is not private")
+	}
+	seal := sha256.Sum256([]byte(strings.Join(normalizeBodyFileArg(create, bodyFile), "\x00") + "\n" +
+		strings.Join(normalizeBodyFileArg(edit, bodyFile), "\x00") + "\n" + body))
+	return packsyncworkflow.TransportProof{
+		CreateBodyFile: true,
+		EditBodyFile:   true,
+		BodyBytes:      len(body),
+		SHA256:         fmt.Sprintf("%x", seal[:]),
+	}, nil
+}
+
+func (gateway *githubGateway) createPRArgs(proposal packsyncworkflow.Proposal, bodyFile string) []string {
+	return []string{"pr", "create", "--repo", gateway.repository, "--base", "main", "--head", "sync/" + proposal.SourceID, "--title", gateway.title, "--body-file", bodyFile, "--draft"}
+}
+
+func (gateway *githubGateway) editPRArgs(number int, bodyFile string) []string {
+	return []string{"pr", "edit", fmt.Sprint(number), "--repo", gateway.repository, "--title", gateway.title, "--body-file", bodyFile}
+}
+
+func validateEffectFreePRCommand(args []string, bodyFile string) error {
+	total := 0
+	bodyFiles := 0
+	for index, arg := range args {
+		total += len(arg) + 1
+		if arg == "--body" {
+			return errors.New("managed pull-request body entered argv")
+		}
+		if arg == "--body-file" && index+1 < len(args) && args[index+1] == bodyFile {
+			bodyFiles++
+		}
+	}
+	if total > maxGitHubCommandBytes || bodyFiles != 1 {
+		return errors.New("managed pull-request command exceeds its effect-free transport contract")
+	}
+	return nil
+}
+
+func normalizeBodyFileArg(args []string, bodyFile string) []string {
+	result := append([]string(nil), args...)
+	for index := range result {
+		if result[index] == bodyFile {
+			result[index] = "<body-file>"
+		}
+	}
+	return result
 }
 
 func (gateway *githubGateway) Observe(ctx context.Context, sourceID string) (packsyncworkflow.PublicationState, error) {
@@ -593,7 +574,7 @@ func (gateway *githubGateway) Finalize(ctx context.Context, proposal packsyncwor
 		}
 	}
 	gateway.brief.FinalizePublication(proposal, observed)
-	finalPrefix, err := gateway.brief.Markdown()
+	finalPrefix, err := gateway.brief.ManagedMarkdown()
 	if err != nil {
 		return "", err
 	}
@@ -633,7 +614,7 @@ func (gateway *githubGateway) editPRWithReobserve(ctx context.Context, proposal 
 		if !state.matchesPR(proposal, beforePR, beforeRecord) {
 			return publicationCASFailure("branch or pull request state changed before an automation edit")
 		}
-		_, editErr := gateway.run(ctx, gateway.repositoryRoot, "gh", "pr", "edit", fmt.Sprint(beforePR.Number), "--repo", gateway.repository, "--title", gateway.title, "--body-file", bodyFile)
+		_, editErr := gateway.run(ctx, gateway.repositoryRoot, "gh", gateway.editPRArgs(beforePR.Number, bodyFile)...)
 		if editErr == nil {
 			return nil
 		}
@@ -865,7 +846,6 @@ func (gateway *githubGateway) pushOnce(ctx context.Context, lease, branch, local
 }
 
 func (gateway *githubGateway) createPRWithRetry(ctx context.Context, proposal packsyncworkflow.Proposal, body string, record packsyncworkflow.PublicationRecord) (number int, err error) {
-	branch := "sync/" + proposal.SourceID
 	bodyFile, cleanup, err := temporaryPRBody(body)
 	if err != nil {
 		return 0, err
@@ -886,7 +866,7 @@ func (gateway *githubGateway) createPRWithRetry(ctx context.Context, proposal pa
 			}
 			return publicationCASFailure("stable branch identity changed before pull-request creation")
 		}
-		_, createErr := gateway.run(ctx, gateway.repositoryRoot, "gh", "pr", "create", "--repo", gateway.repository, "--base", "main", "--head", branch, "--title", gateway.title, "--body-file", bodyFile, "--draft")
+		_, createErr := gateway.run(ctx, gateway.repositoryRoot, "gh", gateway.createPRArgs(proposal, bodyFile)...)
 		after, observeErr := gateway.observeMutationOnce(ctx, proposal)
 		if observeErr != nil {
 			return packsyncworkflow.ClassifyNetworkFailure(observeErr)
@@ -907,6 +887,9 @@ func (gateway *githubGateway) createPRWithRetry(ctx context.Context, proposal pa
 }
 
 func temporaryPRBody(body string) (string, func(), error) {
+	if len(body) == 0 || len(body) > maxManagedPRBodyBytes {
+		return "", nil, errors.New("managed pull-request body exceeds the 60 KiB transport bound")
+	}
 	file, err := os.CreateTemp("", "packy-pr-body-*.md")
 	if err != nil {
 		return "", nil, err

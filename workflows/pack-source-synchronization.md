@@ -100,7 +100,11 @@ neither block nor supersede a production operation for the same Pack.
 ## Phases and permission boundary
 
 The workflow starts with `permissions: {}`. Every external action is pinned by
-one full commit SHA.
+one full commit SHA. Admit rejects transport above the ADR 0019 bounds before
+checkout, acquisition, or model use. Every job has a timeout, Go dependency
+caching is enabled, and the normal critical-path timeout budget is ten minutes.
+Ordinary pull-request CI, not this operational workflow, runs the exhaustive
+`validate-packy.sh` repository suite.
 
 ### Inspect — `contents: read`
 
@@ -120,9 +124,11 @@ and calls canonical `packsync.Check` or complete-set
 inspection artifact. It contains identities, reasons, changes, blockers and
 digests, not copied upstream resources or credentials.
 
-An exact single-source Check-level no-op emits the matching v1/v2
+For a composite request, Check validates the complete prospective result with
+the narrow Pack-content authority. An exact single-source Check-level no-op
+emits the matching v1/v2
 `pack-source-noop.schema.json` contract from Inspect and stops before
-classification, validation, or publication permissions. Initial v3 composite
+classification or publication permissions. Initial v3 composite
 registration has no no-op or partial-convergence state.
 
 ### Classify — `contents: read`, `models: read`
@@ -141,17 +147,9 @@ evidence digest and complete plan identity; neither member evidence nor a
 member subplan carries authority. The classifier has no publication authority
 and never writes a branch or pull request.
 
-### Validate — `contents: read`
-
-Validate downloads the exact inspection and classification artifacts, invokes
-`--phase validate`, reacquires and Applies the sealed candidate or every sealed
-composite member in its disposable
-checkout, and runs the complete Packy-owned validation authority. Its canonical
-proof contains identities and booleans only, never upstream bytes.
-
 ### Publish — `contents: write`, `pull-requests: write`
 
-Publish is gated by all three prior jobs. It downloads only their sealed artifacts
+Publish is gated by Inspect and Classify. It downloads only their sealed artifacts
 and invokes:
 
 ```text
@@ -162,13 +160,20 @@ Before the first Git or GitHub write, the adapter uses an isolated checkout to
 reacquire the exact candidate or complete ordered member set, calls canonical
 Apply or ApplyComposite (and Recover if canonical
 transaction evidence requires it), renders the diff, runs the complete
-Packy-owned validation suite again, evaluates ownership, and freshly reobserves
+Pack-content validation authority on the staged result, evaluates ownership,
+and freshly reobserves
 the repository and GitHub state. Only a proposal whose exact identity passes
 all gates can reach the write operation. A first PR is created as a blocked
 draft, reobserved, converted to ready, finalized with decision-ready metadata,
-and reobserved again before readiness is recorded. Validation and publication
-permission are separated by job, and publication logic remains a narrow adapter
-around Packy-owned domain behavior.
+and reobserved again before readiness is recorded. The operational path never
+runs the exhaustive repository suite; its final Apply owns the staged-content
+validation and exact sealed result-tree comparison.
+
+A normal operation performs no more than two independent Pack-content
+validations. Composite Inspect validates its complete prospective result and
+the final Apply validates the staged result. A single-source operation needs
+only the final staged validation. A matching sealed base hash makes another
+validation of the unchanged current bundle redundant.
 
 All phases set sandboxed `HOME` and `XDG_CONFIG_HOME`. Acquisitions, staged
 checkouts, generated state and filesystem writes remain under runner-owned
@@ -179,9 +184,9 @@ temporary or checkout paths.
 A preparation-only branch dispatch uses the issue branch's reviewed workflow
 and adapter bytes but performs every repository operation in a disposable
 checkout of the current protected `main`. It runs the exact v3 request through
-Inspect, real GitHub Models Classify, Validate, and a distinct Prepare job.
-Prepare independently reacquires every exact member, Applies, reruns the
-complete Packy-owned validation suite, seals and verifies the result tree,
+Inspect, real GitHub Models Classify, and a distinct Prepare job. Prepare
+independently reacquires every exact member, Applies, runs the narrow
+Pack-content validation on the staged result, seals and verifies the result tree,
 constructs the local proposal commit and managed metadata, revalidates
 provenance, and requires two identical read-only observations of live
 publication state.
@@ -193,6 +198,11 @@ complete validation gates, `repository_mutated: false`, and
 a synchronization result or review authority. The branch job cannot push,
 create, edit, ready, or comment on a pull request, or share production
 concurrency. The write-capable Publish job remains protected-main-only.
+
+Prepare also invokes the exact final create/edit argument builders without
+running them. It requires private `--body-file` transport for both operations
+and records the bounded body length and SHA-256. This proves the final GitHub
+adapter without using `gh pr create --dry-run`, which may still push.
 
 ## Retries and failures
 
@@ -264,7 +274,7 @@ The record binds `result_tree_sha` as the validated content identity and
 4. canonical Apply;
 5. expected diff;
 6. automation ownership; and
-7. the complete Packy-owned validation suite.
+7. the Pack-content validation authority.
 
 Auto-merge is false and manual merge remains required. A later change to base,
 candidate, provenance, head, managed PR state, or the PR's open identity makes
@@ -274,7 +284,9 @@ Inspect; readiness is not patched forward.
 ## Canonical proposal brief
 
 Publish renders one canonical JSON proposal into Markdown without recomputing
-domain facts. The JSON and brief carry the same information:
+domain facts. Full JSON and Markdown remain run artifacts. The managed PR body
+contains only the bounded identity summary and a link to that exact workflow
+run, avoiding GitHub's body-size ceiling. The canonical artifacts carry:
 
 1. request actor and reason, source, selector, workflow run and attempt,
    candidate, plan ID, base, commit head, validated result tree and branch/PR
@@ -292,8 +304,9 @@ domain facts. The JSON and brief carry the same information:
    retry or recovery instructions.
 
 The managed title/body markers and their canonical hash form part of ownership
-revalidation. Logs are not the operational record, and the Markdown renderer
-cannot add authority absent from the sealed JSON inputs.
+revalidation. The title is bounded to 200 bytes, the body to 60 KiB, and the
+constructed command to 16 KiB. Logs are not the operational record, and the
+Markdown renderer cannot add authority absent from the sealed JSON inputs.
 
 Successful publication uploads `publication.json`, `proposal-brief.json`, and
 the rendered brief as one 30-day run artifact. The maintainer skill validates
@@ -309,8 +322,9 @@ ambiguous ownership; closed PR; unexpected identity; human inspection then
 evidence; unavailable AI; three-attempt exponential backoff; `Retry-After`;
 non-retryable blockers; secret-free and upstream-byte-free failure artifacts;
 active-run preservation and pending supersession; fresh Check when the promoted
-pending run starts; valid readiness and later invalidation; and the permission
-boundary between validation and publication.
+pending run starts; valid readiness and later invalidation; bounded input/body
+transport; effect-free create/edit command construction; and the permission
+boundary between read-only preparation and publication.
 
 The tracer uses no GitHub Models request, workflow dispatch, real source branch,
 real synchronization PR, real merge, real refresh, or real bundle update. It

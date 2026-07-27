@@ -112,9 +112,27 @@ jobs:
     name: Admit protected publication or read-only preparation
     if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 1
     permissions:
       contents: read
     steps:
+      - name: Enforce input and transport bounds before acquisition
+        env:
+          PACKY_OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          inputs_bytes="$(jq -c '.inputs // {}' "$GITHUB_EVENT_PATH" | wc -c | tr -d ' ')"
+          (( inputs_bytes <= 61440 )) || { echo "workflow inputs exceed the 60 KiB Packy admission bound" >&2; exit 1; }
+          input_bytes() { jq -r --arg key "$1" '(.inputs[$key] // "") | if type == "string" then utf8bytelength else (tostring | utf8bytelength) end' "$GITHUB_EVENT_PATH"; }
+          (( $(input_bytes registration_json) <= 16384 )) || { echo "registration_json exceeds 16 KiB" >&2; exit 1; }
+          (( $(input_bytes registrations_json) <= 16384 )) || { echo "registrations_json exceeds 16 KiB" >&2; exit 1; }
+          (( $(input_bytes proposed_manifest_json) <= 49152 )) || { echo "proposed_manifest_json exceeds 48 KiB" >&2; exit 1; }
+          (( $(input_bytes human_evidence_json) <= 16384 )) || { echo "human_evidence_json exceeds 16 KiB" >&2; exit 1; }
+          (( $(input_bytes request_reason) <= 2048 )) || { echo "request_reason exceeds 2 KiB" >&2; exit 1; }
+          if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
+            member_count="$(jq -er '.inputs.registrations_json | fromjson | length' "$GITHUB_EVENT_PATH")"
+            (( member_count >= 2 && member_count <= 8 )) || { echo "register_bundle requires 2..8 members" >&2; exit 1; }
+          fi
       - name: Enforce the ref, mode, and operation boundary
         env:
           PACKY_OPERATION: ${{ inputs.operation }}
@@ -134,6 +152,7 @@ jobs:
     needs: admit
     if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.prepare_only == false
     runs-on: ubuntu-latest
+    timeout-minutes: 1
     permissions:
       actions: read
       contents: read
@@ -149,7 +168,7 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
       - name: Fail closed on current affected drift
         env:
           GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
@@ -176,6 +195,7 @@ jobs:
     needs: [admit, governance-drift]
     if: ${{ always() && github.repository == 'yersonargotev/packy' && needs.admit.result == 'success' && ((inputs.prepare_only == true && github.ref != 'refs/heads/main' && needs.governance-drift.result == 'skipped') || (inputs.prepare_only == false && github.ref == 'refs/heads/main' && needs.governance-drift.result == 'success')) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     outputs:
       continue: ${{ steps.route.outputs.continue }}
       noop: ${{ steps.route.outputs.noop }}
@@ -224,7 +244,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
       - name: Check out protected main as the preparation sandbox
         if: inputs.prepare_only == true
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -315,6 +335,7 @@ jobs:
     needs: inspect
     if: ${{ always() && needs.inspect.result == 'success' && needs.inspect.outputs.continue == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions:
       contents: read
       models: read
@@ -344,7 +365,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
       - name: Check out protected main as the preparation sandbox
         if: inputs.prepare_only == true
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -394,102 +415,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  validate:
-    name: Validate sandbox
-    needs: [inspect, classify]
-    if: ${{ always() && needs.inspect.result == 'success' && needs.classify.result == 'success' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Initialize fail-closed operational artifact
-        env:
-          PACKY_SOURCE_ID: ${{ inputs.source_id }}
-          PACKY_OPERATION: ${{ inputs.operation }}
-          PACKY_PACK_ID: ${{ inputs.pack_id }}
-          PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}
-          PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
-          PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
-          PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/packy-sync/validation"
-          if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
-            members="$(jq -c '[.[] | {source_id:.registration.id,candidate_sha:.registration.selector.ref,legal_evidence_ref:.legal_admission.evidence_reference,legal_evidence_sha256:.legal_admission.evidence_sha256}]' <<<"$PACKY_REGISTRATIONS_JSON")"
-            source_ids="$(jq -c '[.[].source_id]' <<<"$members")"
-            jq -n --arg pack_id "$PACKY_PACK_ID" --argjson source_ids "$source_ids" --arg registration_bundle_sha256 "$PACKY_REGISTRATION_BUNDLE_SHA256" --arg proposed_version "$PACKY_PROPOSED_VERSION" --arg proposed_manifest_sha256 "$PACKY_PROPOSED_MANIFEST_SHA256" --argjson members "$members" \
-              '{schema_version:3,state:"blocked",pack_id:$pack_id,source_ids:$source_ids,registration_bundle_sha256:$registration_bundle_sha256,proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,members:$members,blockers:["The complete-set Apply or Packy validation suite did not finish."],recovery:["Inspect the validation evidence, correct the complete bundle, and start a fresh Inspect."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/validation/operational-artifact.json"
-            exit 0
-          fi
-          jq -n --arg source_id "$PACKY_SOURCE_ID" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The sandbox Apply or complete Packy-owned validation suite did not finish."],recovery:["Inspect the validation logs, correct the implementation separately if needed, and start a fresh dispatch."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/validation/operational-artifact.json"
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Check out protected main as the preparation sandbox
-        if: inputs.prepare_only == true
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-        with:
-          ref: main
-          path: packy-main
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: pack-source-inspection-${{ github.run_id }}
-          path: ${{ runner.temp }}/packy-sync/inspect
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: pack-source-classification-${{ github.run_id }}
-          path: ${{ runner.temp }}/packy-sync/classification
-      - name: Apply in sandbox and run the complete Packy-owned suite
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PACKY_PREPARE_ONLY: ${{ inputs.prepare_only }}
-        run: |
-          export HOME="$RUNNER_TEMP/packy-home"
-          export XDG_CONFIG_HOME="$RUNNER_TEMP/packy-xdg"
-          mkdir -p "$HOME" "$XDG_CONFIG_HOME"
-          repository_root="$GITHUB_WORKSPACE"
-          syncpacksource=(go run ./internal/tools/syncpacksource)
-          if [[ "$PACKY_PREPARE_ONLY" == "true" ]]; then
-            go build -o "$RUNNER_TEMP/syncpacksource" ./internal/tools/syncpacksource
-            syncpacksource=("$RUNNER_TEMP/syncpacksource")
-            repository_root="$GITHUB_WORKSPACE/packy-main"
-          fi
-          evidence="$RUNNER_TEMP/packy-sync/classification/classification.json"
-          if jq -e '.schema_version == 3' "$RUNNER_TEMP/packy-sync/inspect/request.json" >/dev/null; then
-            evidence="$RUNNER_TEMP/packy-sync/classification/classification-evidence.json"
-          fi
-          "${syncpacksource[@]}" --phase validate \
-            --repository-root "$repository_root" \
-            --request "$RUNNER_TEMP/packy-sync/inspect/request.json" \
-            --plan "$RUNNER_TEMP/packy-sync/inspect/plan.json" \
-            --evidence "$evidence" \
-            --output "$RUNNER_TEMP/packy-sync/validation"
-      - name: Upload sandbox validation proof
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: pack-source-validation-${{ github.run_id }}
-          path: ${{ runner.temp }}/packy-sync/validation/validation.json
-          if-no-files-found: error
-          retention-days: ${{ inputs.prepare_only && 30 || 1 }}
-      - name: Upload validation failure artifact
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: pack-source-failure-${{ github.run_id }}
-          path: ${{ runner.temp }}/packy-sync/validation/operational-artifact.json
-          if-no-files-found: error
-          retention-days: 30
-
   prepare:
     name: Prepare publication without writes
-    needs: [inspect, classify, validate]
-    if: ${{ always() && inputs.prepare_only == true && github.ref != 'refs/heads/main' && needs.inspect.result == 'success' && needs.classify.result == 'success' && needs.validate.result == 'success' }}
+    needs: [inspect, classify]
+    if: ${{ always() && inputs.prepare_only == true && github.ref != 'refs/heads/main' && needs.inspect.result == 'success' && needs.classify.result == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 4
     permissions:
       contents: read
       pull-requests: read
@@ -524,7 +455,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
       - name: Check out protected main as the preparation sandbox
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -540,11 +471,7 @@ jobs:
         with:
           name: pack-source-classification-${{ github.run_id }}
           path: ${{ runner.temp }}/packy-sync/classification
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: pack-source-validation-${{ github.run_id }}
-          path: ${{ runner.temp }}/packy-sync/validation
-      - name: Reacquire, Apply, validate, construct, and observe without writing
+      - name: Reacquire, validate Pack content, construct, and observe without writing
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -559,14 +486,13 @@ jobs:
             --request "$RUNNER_TEMP/packy-sync/inspect/request.json" \
             --plan "$RUNNER_TEMP/packy-sync/inspect/plan.json" \
             --evidence "$RUNNER_TEMP/packy-sync/classification/classification-evidence.json" \
-            --validation "$RUNNER_TEMP/packy-sync/validation/validation.json" \
             --output "$RUNNER_TEMP/packy-sync/preparation"
       - name: Upload read-only preparation proof
         if: ${{ success() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: pack-source-preparation-${{ github.run_id }}
-          path: ${{ runner.temp }}/packy-sync/preparation/preparation.json
+          path: ${{ runner.temp }}/packy-sync/preparation/
           if-no-files-found: error
           retention-days: 30
       - name: Upload preparation failure artifact
@@ -580,9 +506,10 @@ jobs:
 
   publish:
     name: Publish
-    needs: [inspect, classify, validate]
+    needs: [inspect, classify]
     if: github.repository == 'yersonargotev/packy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.prepare_only == false
     runs-on: ubuntu-latest
+    timeout-minutes: 4
     permissions:
       contents: write
       pull-requests: write
@@ -614,7 +541,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: pack-source-classification-${{ github.run_id }}
@@ -623,11 +550,7 @@ jobs:
         with:
           name: pack-source-inspection-${{ github.run_id }}
           path: ${{ runner.temp }}/packy-sync/inspect
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: pack-source-validation-${{ github.run_id }}
-          path: ${{ runner.temp }}/packy-sync/validation
-      - name: Reacquire, Apply, validate, reobserve, then publish
+      - name: Reacquire, validate Pack content, reobserve, then publish
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -644,7 +567,6 @@ jobs:
             --request "$RUNNER_TEMP/packy-sync/inspect/request.json" \
             --plan "$RUNNER_TEMP/packy-sync/inspect/plan.json" \
             --evidence "$evidence" \
-            --validation "$RUNNER_TEMP/packy-sync/validation/validation.json" \
             --output "$RUNNER_TEMP/packy-sync/publication"
       - name: Bind the canonical automation run to the exact proposal
         env:

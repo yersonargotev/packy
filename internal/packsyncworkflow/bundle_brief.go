@@ -91,3 +91,16 @@ func (brief BundleReviewBrief) Markdown() (string, error) {
 	}
 	return fmt.Sprintf("## Packy composite Pack registration\n\n- Pack: `%s`\n- Members: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Auto-merge: disabled; manual merge required.\n\nAuthorization-Exception: automation\nAuthorization-Record: %s\n\n<details><summary>Canonical v3 composite admission evidence</summary>\n\n```json\n%s```\n</details>\n", brief.Identity.PackID, strings.Join(brief.Identity.SourceIDs, ", "), brief.Identity.PlanID, brief.Identity.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, string(canonical)), nil
 }
+
+// ManagedMarkdown keeps the pull request below GitHub's transport ceiling.
+// Full v3 evidence remains available as the canonical run artifact.
+func (brief BundleReviewBrief) ManagedMarkdown() (string, error) {
+	if _, err := brief.CanonicalJSON(); err != nil {
+		return "", err
+	}
+	status := "blocked"
+	if brief.DecisionReady {
+		status = "decision-ready"
+	}
+	return fmt.Sprintf("## Packy composite Pack registration\n\n- Pack: `%s`\n- Members: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Complete canonical evidence: [workflow run](%s)\n- Auto-merge: disabled; manual merge required.\n\nAuthorization-Exception: automation\nAuthorization-Record: %s\n", brief.Identity.PackID, strings.Join(brief.Identity.SourceIDs, ", "), brief.Identity.PlanID, brief.Identity.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, brief.RunURL), nil
+}
