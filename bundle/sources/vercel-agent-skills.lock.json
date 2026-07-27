@@ -1,0 +1,1956 @@
+{
+  "schema_version": 1,
+  "generator": "packy-packsync",
+  "generator_version": "1",
+  "provider": "github",
+  "provider_api_version": "2022-11-28",
+  "source_id": "vercel-agent-skills",
+  "repository": "vercel-labs/agent-skills",
+  "repository_id": 1112540808,
+  "owner": "vercel-labs",
+  "owner_id": 108547162,
+  "selector": {
+    "mode": "commit",
+    "ref": "7c180d9044c9ae2b442b567aad4e42a28dd5ed62"
+  },
+  "candidate": {
+    "repository": "vercel-labs/agent-skills",
+    "repository_id": 1112540808,
+    "repository_node_id": "R_kgDOQlAGiA",
+    "repository_html_url": "https://github.com/vercel-labs/agent-skills",
+    "repository_clone_url": "https://github.com/vercel-labs/agent-skills.git",
+    "repository_api_url": "https://api.github.com/repos/vercel-labs/agent-skills",
+    "visibility": "public",
+    "owner": "vercel-labs",
+    "owner_id": 108547162,
+    "owner_node_id": "O_kgDOBnhMWg",
+    "public": true,
+    "archived": false,
+    "disabled": false,
+    "commit": "7c180d9044c9ae2b442b567aad4e42a28dd5ed62",
+    "commit_node_id": "C_kwDOQlAGiNoAKDdjMTgwZDkwNDRjOWFlMmI0NDJiNTY3YWFkNGU0MmEyOGRkNWVkNjI",
+    "tree": "0557b732b3907e51bed3fd7898095f8097a0834e",
+    "parents": [
+      "fb0282c76b8bbd709e1a5dadb32bb4aa463cdd9b",
+      "c45afa187f2085e6c53ecacc5a3029b2838c719e"
+    ],
+    "commit_verification": {
+      "verified": true,
+      "reason": "valid",
+      "verified_at": "2026-07-24T10:25:24Z",
+      "signature_sha256": "e33c30ea155fa02e58115fd1d4d476e8f366961ce10e76fcaaf5386c73ae0c1d",
+      "payload_sha256": "6512553822a11f7bc2a1e368d08d7ad3f154fe6ea45b61fad62ee5c245d525bd"
+    }
+  },
+  "snapshot_sha256": "33a07ce6380d8e063323f01db2873e48409111c62b4c20523e8dd4a4a0d843d8",
+  "resources": [
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-cli-with-tokens",
+      "upstream_path": "skills/vercel-cli-with-tokens",
+      "vendored_path": "bundle/skills/vercel-cli-with-tokens",
+      "sha256": "31fa03ce884ac7744817bf92b405c7c363e4028e6f9612e4a722c6f2da8c1a5c",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 10476,
+          "mode": 420,
+          "sha256": "c06bea99e75eab07fde4fae26069baa002f82f39b53f07981704c2901551dd4c"
+        }
+      ]
+    },
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-composition-patterns",
+      "upstream_path": "skills/composition-patterns",
+      "vendored_path": "bundle/skills/vercel-composition-patterns",
+      "sha256": "975cd37dcfc52340091c7af09498d442214d37195bc6ece29ee4a62803f69596",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "size": 22627,
+          "mode": 420,
+          "sha256": "89e3ddd58fcf99a53a50e25dfd21b8cde1be5f10b7df6bacd3dfa6796932f516"
+        },
+        {
+          "path": "README.md",
+          "size": 2140,
+          "mode": 420,
+          "sha256": "85915a43a6f0b4efe525e3cf6398dd866166da2025837c4460468a24a940da94"
+        },
+        {
+          "path": "SKILL.md",
+          "size": 2886,
+          "mode": 420,
+          "sha256": "e38e0eaa609316b10423a9a138ed95e35099accd3f735585295c8a8f165c28a3"
+        },
+        {
+          "path": "metadata.json",
+          "size": 530,
+          "mode": 420,
+          "sha256": "49262ed5cb4186f31ee980cf8d990be0170c51efed4908d0464a1cff9905bd05"
+        },
+        {
+          "path": "rules/_sections.md",
+          "size": 829,
+          "mode": 420,
+          "sha256": "a174213b87e6911e2b766995a2cbaf8d1534057076e82fb79fe3f0ecb38047df"
+        },
+        {
+          "path": "rules/_template.md",
+          "size": 329,
+          "mode": 420,
+          "sha256": "587f7d16b0660eb61fee4a4d3d7df2b3077d6835de170602c7d6e60bee559131"
+        },
+        {
+          "path": "rules/architecture-avoid-boolean-props.md",
+          "size": 2267,
+          "mode": 420,
+          "sha256": "007555ebb020f4d552582a2c4db194db71a1fd33094012e5187bcfa4f8c392d5"
+        },
+        {
+          "path": "rules/architecture-compound-components.md",
+          "size": 2600,
+          "mode": 420,
+          "sha256": "f246af13dc269b521cf20eb8ad99a0cb645beac381c8c9b117262c34612c8457"
+        },
+        {
+          "path": "rules/patterns-children-over-render-props.md",
+          "size": 1886,
+          "mode": 420,
+          "sha256": "7c45a0d21b3c4126a32cba916ee31adeae195386ad1dbbe6634aedb7457aa0ad"
+        },
+        {
+          "path": "rules/patterns-explicit-variants.md",
+          "size": 2395,
+          "mode": 420,
+          "sha256": "8c19e596e61807549d01ce8c6954c6358199f97a8511c0c02c625ec0efda8c0e"
+        },
+        {
+          "path": "rules/react19-no-forwardref.md",
+          "size": 953,
+          "mode": 420,
+          "sha256": "881830adb7534c4b2d70db426556646ad9837f5478f744f35641f635ada22227"
+        },
+        {
+          "path": "rules/state-context-interface.md",
+          "size": 4974,
+          "mode": 420,
+          "sha256": "09e73afbf9285fa416679cc864a287b9e8b821d0969272ab784295386d8c9bc3"
+        },
+        {
+          "path": "rules/state-decouple-implementation.md",
+          "size": 2699,
+          "mode": 420,
+          "sha256": "76a8c1eb29a70d8996ab3f71260345af2f7bc89deab815a421d6c87c6591a9c3"
+        },
+        {
+          "path": "rules/state-lift-state.md",
+          "size": 3224,
+          "mode": 420,
+          "sha256": "74c54038a6c554c748fe31cec673b80861b5d920b7553cf78cdf10d18b4b759b"
+        }
+      ]
+    },
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-deploy-to-vercel",
+      "upstream_path": "skills/deploy-to-vercel",
+      "vendored_path": "bundle/skills/vercel-deploy-to-vercel",
+      "sha256": "e36acb4a1b478f3e94e694acb1af1b3e1124f0e30c10978fc9e05170baa2aaac",
+      "files": [
+        {
+          "path": "Archive.zip",
+          "size": 11314,
+          "mode": 420,
+          "sha256": "37c0d035b3d2c6256105316a2492c1487f3688efa21f030a8a623a9f7f0ee02f"
+        },
+        {
+          "path": "SKILL.md",
+          "size": 11786,
+          "mode": 420,
+          "sha256": "cfcc3dd479ab2e0ae721ddf39b8af84d977321487672f1487c8d6855f576927b"
+        },
+        {
+          "path": "resources/deploy-codex.sh",
+          "size": 8855,
+          "mode": 493,
+          "sha256": "18b411e2bfe07778bca11d7f0e1ec9c95e5764011dd2e3838f51066728646855"
+        },
+        {
+          "path": "resources/deploy.sh",
+          "size": 8841,
+          "mode": 493,
+          "sha256": "418da6ff48c582790799d850a88fd83ca00f2ee00502665caf8dbb06d4dab8b9"
+        }
+      ]
+    },
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-optimize",
+      "upstream_path": "skills/vercel-optimize",
+      "vendored_path": "bundle/skills/vercel-optimize",
+      "sha256": "01d329916de3f440d4647f2f6d86c78c4e317a8100b4ea9ce84128a90f2f0701",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "size": 1964,
+          "mode": 420,
+          "sha256": "922a35993ffd98c923d61fa3d7a722bc1bc17466ea1e0b5828f67de21fbb0e7a"
+        },
+        {
+          "path": "CONTRIBUTING.md",
+          "size": 2224,
+          "mode": 420,
+          "sha256": "4a3c6695f23ada3228582f1062509545dbad485e5011434c12b7ddd81bf1370a"
+        },
+        {
+          "path": "README.md",
+          "size": 4471,
+          "mode": 420,
+          "sha256": "4ebb0ae7c6a2c8cfe7ed8ad26a6bee0be99d8682be331d9d28c1cb81ad3718d0"
+        },
+        {
+          "path": "SKILL.md",
+          "size": 17311,
+          "mode": 420,
+          "sha256": "95ae2683b30d892d165af92a350c5628b68106f395a59b448857b654e306ed91"
+        },
+        {
+          "path": "lib/auth-route.mjs",
+          "size": 807,
+          "mode": 420,
+          "sha256": "c06a222bccd2c57b418b1d935d73f5b81297dac8533c004ec5bb4027cec3307a"
+        },
+        {
+          "path": "lib/budget-summary.mjs",
+          "size": 7145,
+          "mode": 420,
+          "sha256": "8662a2914940b8c548be164c09ce7706ea261549fb61147d2a7a13af1e3337cc"
+        },
+        {
+          "path": "lib/citations.mjs",
+          "size": 4029,
+          "mode": 420,
+          "sha256": "41a1bafa7addc4b39d144491f178a159cc23ff779b4803f2c152fe579209b384"
+        },
+        {
+          "path": "lib/cost-coverage.mjs",
+          "size": 8628,
+          "mode": 420,
+          "sha256": "483b0f03f5db08e15388e1c047ffad414bb132bb3ce48418defc0d9a70a20e44"
+        },
+        {
+          "path": "lib/dedup-recs.mjs",
+          "size": 10151,
+          "mode": 420,
+          "sha256": "5fc631c1f56eea8bf8c59afb773511d9a8f42d29574fa14f03abb60c881206cc"
+        },
+        {
+          "path": "lib/deep-dive.mjs",
+          "size": 10458,
+          "mode": 420,
+          "sha256": "c86c5ed224c00c2e72a54eef16260b8e7237302a7e69e47310077eae7f65ced1"
+        },
+        {
+          "path": "lib/display-labels.mjs",
+          "size": 7611,
+          "mode": 420,
+          "sha256": "e56e54a0e19ed3ed4f45112cb358c1df5a77caa7411f5c2267c73064f64d1b08"
+        },
+        {
+          "path": "lib/extract-claims.mjs",
+          "size": 19136,
+          "mode": 420,
+          "sha256": "a3f44334dad0ba743699860d6b83a06e38c7e465f73418749822cf00d563ee2a"
+        },
+        {
+          "path": "lib/framework-support.mjs",
+          "size": 2126,
+          "mode": 420,
+          "sha256": "ed8ef73604d5bd91f4aea6fb0de465079474e00299c23bbdba8b04dd70545364"
+        },
+        {
+          "path": "lib/gates/build-minutes-fanout.mjs",
+          "size": 3016,
+          "mode": 420,
+          "sha256": "c088ab1f91af8b4e86e8f3f3210c7b625757a3699bd5818c905f66ade92064b1"
+        },
+        {
+          "path": "lib/gates/cold-start.mjs",
+          "size": 2797,
+          "mode": 420,
+          "sha256": "40023aae34ebc37df1382c7c4c00efc3864b2c11a8c9ee8cf05f371762680300"
+        },
+        {
+          "path": "lib/gates/contract.mjs",
+          "size": 3143,
+          "mode": 420,
+          "sha256": "e0bd012b53b6a70684279a3ad58598f5a1f79698d0e521d0e9d0994e87b3ae65"
+        },
+        {
+          "path": "lib/gates/cwv-poor.mjs",
+          "size": 3372,
+          "mode": 420,
+          "sha256": "17ab4ae24b5d0220d941215db8544bed68c1af02e6d5d7aba4ff077a46675fbb"
+        },
+        {
+          "path": "lib/gates/external-api-slow.mjs",
+          "size": 2173,
+          "mode": 420,
+          "sha256": "12ce4f0cf906e5631170a58307758f095069d3051c16f64ddeec00bb99a66dc9"
+        },
+        {
+          "path": "lib/gates/hard-gates.mjs",
+          "size": 2543,
+          "mode": 420,
+          "sha256": "b31d94495e20721b8ce825bde073ba9a32c14063b0cc711e23e2582fb0ebd677"
+        },
+        {
+          "path": "lib/gates/index.mjs",
+          "size": 2066,
+          "mode": 420,
+          "sha256": "d473dfce777f68430d2b68836efb184152a59da97d3b06d37a6f618c7d4c59a6"
+        },
+        {
+          "path": "lib/gates/isr-overrevalidation.mjs",
+          "size": 2442,
+          "mode": 420,
+          "sha256": "333d2dc8523d5850fddb5c13cd78fe62c0838ffd627c41b374804dca26cc63c6"
+        },
+        {
+          "path": "lib/gates/middleware-heavy.mjs",
+          "size": 2085,
+          "mode": 420,
+          "sha256": "1ad98bc73be97254d6131707ed93c72262c071e54ce071a392549df33d0d7ae7"
+        },
+        {
+          "path": "lib/gates/observability-events-attribution.mjs",
+          "size": 2255,
+          "mode": 420,
+          "sha256": "8e465217257c771c0be8580c1b9abcf1defd26e5a70c9559dc10f4cc45527c52"
+        },
+        {
+          "path": "lib/gates/platform-bot-protection.mjs",
+          "size": 5089,
+          "mode": 420,
+          "sha256": "0124cd71876616f7de741d962ff4cbcb79a78654a3026372a18195e2ff99294b"
+        },
+        {
+          "path": "lib/gates/platform-fluid-compute.mjs",
+          "size": 3630,
+          "mode": 420,
+          "sha256": "de81279134bef9499f1cbe2f38d06bb5caa968daa5438f09c9bad0d2f27efa96"
+        },
+        {
+          "path": "lib/gates/region-misconfig.mjs",
+          "size": 3101,
+          "mode": 420,
+          "sha256": "0b3976cd50a9fb54601c60ad27c62b64aa7a4eeb338af4226b618ae1d5a9cc4a"
+        },
+        {
+          "path": "lib/gates/route-errors.mjs",
+          "size": 3101,
+          "mode": 420,
+          "sha256": "a32a29b683557409b351da84e45ab316818f8a90c5af380ba7efc5366c03129f"
+        },
+        {
+          "path": "lib/gates/scanner-driven.mjs",
+          "size": 5191,
+          "mode": 420,
+          "sha256": "485313169d009ded7bdb1e4083150919e77eb4373aff0252cd5c0c235f2e8f3b"
+        },
+        {
+          "path": "lib/gates/select-candidates.mjs",
+          "size": 4703,
+          "mode": 420,
+          "sha256": "bde0714be600905caaaa99991d37c31df9e6775b8a107ee2df5eb63ffa9d1e11"
+        },
+        {
+          "path": "lib/gates/slow-route.mjs",
+          "size": 4384,
+          "mode": 420,
+          "sha256": "b0d330e4244bd3d2e240f6398ead4b235bb69b72fe585771cde4f11ae8726148"
+        },
+        {
+          "path": "lib/gates/types.d.ts",
+          "size": 893,
+          "mode": 420,
+          "sha256": "097ea533204446ccc18798fc01656577df8b864c24b0eda4c66ebc913fa36f31"
+        },
+        {
+          "path": "lib/gates/uncached-route.mjs",
+          "size": 3963,
+          "mode": 420,
+          "sha256": "c4f89fa083f13a9360dd5ec6b45b39db3f480c797193c590bf131f53463388cb"
+        },
+        {
+          "path": "lib/gates/usage-spike-triage.mjs",
+          "size": 5095,
+          "mode": 420,
+          "sha256": "b8f84b57fe9d41323467c765ef9da4893b0cac6eee31603179cd8cb77ffd7be3"
+        },
+        {
+          "path": "lib/grade-recommendation.mjs",
+          "size": 6887,
+          "mode": 420,
+          "sha256": "e06008677dd1c6a27d767636356b6a68f357a3122b57adca3238bd2ca7576c38"
+        },
+        {
+          "path": "lib/impact-label.mjs",
+          "size": 5344,
+          "mode": 420,
+          "sha256": "4d55baae79025bfa43b829ff291019bb6a1f6d015c72dd44612d8e3afeb60b9f"
+        },
+        {
+          "path": "lib/impact-magnitude.mjs",
+          "size": 2172,
+          "mode": 420,
+          "sha256": "a87cec394f9d853da43e633e8ce2cb9f1f62fb2ae7dd6a58f542a5e7024b2c5b"
+        },
+        {
+          "path": "lib/investigation-brief.mjs",
+          "size": 35165,
+          "mode": 420,
+          "sha256": "f41d9354992fb5c7904b8faa1ad1fa457f8b69533d2113ec9c38192c227bf0c7"
+        },
+        {
+          "path": "lib/observation-safety.mjs",
+          "size": 9486,
+          "mode": 420,
+          "sha256": "540a4c49f10ceab570513f2834b7fbd88b2090c85690ed0f8b5c5bf0e623badd"
+        },
+        {
+          "path": "lib/project-facts.mjs",
+          "size": 4399,
+          "mode": 420,
+          "sha256": "d8b508d1077fdb4bcf5c2f267750cb4a6ca529811eecdadb10f9e632e304f30b"
+        },
+        {
+          "path": "lib/queries.mjs",
+          "size": 10338,
+          "mode": 420,
+          "sha256": "a747292c7bbc69a245799f846c6d081df44506c5c8e3d245b610c0f32edcea69"
+        },
+        {
+          "path": "lib/reconcile-candidates.mjs",
+          "size": 15966,
+          "mode": 420,
+          "sha256": "4e02dbc4fba1834192f018b05e9d42723fda13dbecf26a7cc09eacbfe1925b75"
+        },
+        {
+          "path": "lib/render-report.mjs",
+          "size": 39131,
+          "mode": 420,
+          "sha256": "35068fb5df2f2b9a89cabf40e050c40da5d8fadeec33cdbd47c8fc995677a127"
+        },
+        {
+          "path": "lib/repo-root.mjs",
+          "size": 3135,
+          "mode": 420,
+          "sha256": "77ce8277fa444dea77cb10c17e7a0d2db98a6cbea6e2df0fa2ff01372b52eb0c"
+        },
+        {
+          "path": "lib/route-normalize.mjs",
+          "size": 8590,
+          "mode": 420,
+          "sha256": "a2e39b3f653695392f096c1b385e31a9b1452714de4908c1d0e6604626274b5d"
+        },
+        {
+          "path": "lib/sanitizers/bot-protection-certainty.mjs",
+          "size": 1988,
+          "mode": 420,
+          "sha256": "2edac6df3f4565ec7d2f784db7e660767f8a213bfe9f55f6da14f2517f4a071a"
+        },
+        {
+          "path": "lib/sanitizers/cache-tag-invalidation-certainty.mjs",
+          "size": 1522,
+          "mode": 420,
+          "sha256": "31aec0481e996fd2a9a546c792ff17223747c850806405b2ee3cb95c40e296c0"
+        },
+        {
+          "path": "lib/sanitizers/count-correct.mjs",
+          "size": 1956,
+          "mode": 420,
+          "sha256": "cf427876a8c64d9591d89da727a2d4cec9dc0dcd717ffba3f82be52c38c73de3"
+        },
+        {
+          "path": "lib/sanitizers/function-duration-invocations.mjs",
+          "size": 1470,
+          "mode": 420,
+          "sha256": "c745bc90e67722f8584d3d426f28ccc4701504a635dd966cdb8f487ee79eb7b3"
+        },
+        {
+          "path": "lib/sanitizers/index.mjs",
+          "size": 3053,
+          "mode": 420,
+          "sha256": "99babb880c7d5e7ac209e7eb1bf26f2ae9ac5a795062d01e15d76c57055247bf"
+        },
+        {
+          "path": "lib/sanitizers/middleware-conflict.mjs",
+          "size": 1586,
+          "mode": 420,
+          "sha256": "89fae25e31662ed7f31fef973e7b969271fc061839112adabf253a3e87380b97"
+        },
+        {
+          "path": "lib/sanitizers/missing-citation.mjs",
+          "size": 497,
+          "mode": 420,
+          "sha256": "431ec0944239d4477556a23808733298ecd5bdfb4a810ab887b83f0266eb5904"
+        },
+        {
+          "path": "lib/sanitizers/pre-release.mjs",
+          "size": 2224,
+          "mode": 420,
+          "sha256": "dce1475fd392d245bd4a48e1280c2f0a00fc4dea96cd9f40e4d260fdc0bf5940"
+        },
+        {
+          "path": "lib/sanitizers/rate-limit.mjs",
+          "size": 2655,
+          "mode": 420,
+          "sha256": "42b2a3ecb07443ab5aeb881ab6dea31a92f767b73697fd0529e877084657629c"
+        },
+        {
+          "path": "lib/sanitizers/rendering-mode-mislabel.mjs",
+          "size": 1670,
+          "mode": 420,
+          "sha256": "410c60d8f71250d8b443384098f02869e7a1b4d9dcb3e3ca384ca3b875648788"
+        },
+        {
+          "path": "lib/sanitizers/undeclared-dep.mjs",
+          "size": 2833,
+          "mode": 420,
+          "sha256": "bc2a483311a2c44103b15d9498b5d303101724454c114907d23de6d7725e8769"
+        },
+        {
+          "path": "lib/sanitizers/vercel-directive-strip.mjs",
+          "size": 1460,
+          "mode": 420,
+          "sha256": "b94a6fcd0a03358dcb853b04a392b0946d8a07d8619e86b562b8b38a6cffac85"
+        },
+        {
+          "path": "lib/sanitizers/window-units.mjs",
+          "size": 869,
+          "mode": 420,
+          "sha256": "f7823f1c4705166c313107571f048fd4e7fa160cb982dcbfe07d936ab4cb5a3b"
+        },
+        {
+          "path": "lib/scanners/cache-components-suspense-dedupe.mjs",
+          "size": 4367,
+          "mode": 420,
+          "sha256": "ca4c643a30b76df0e8728f8b8854167483f746a9d45aafb467c3bec9125b7878"
+        },
+        {
+          "path": "lib/scanners/edge-heavy-import.mjs",
+          "size": 3740,
+          "mode": 420,
+          "sha256": "0faacf202542cc6ea37290377a61e9c34a84d3d9439822cd7df09d450ff663a3"
+        },
+        {
+          "path": "lib/scanners/force-dynamic.mjs",
+          "size": 1586,
+          "mode": 420,
+          "sha256": "5f378119f8e6d1961cde57dcd6ccd193cc4a9713068d4828ca4eee724b15095d"
+        },
+        {
+          "path": "lib/scanners/headers-in-page.mjs",
+          "size": 1537,
+          "mode": 420,
+          "sha256": "84f72dcd79631561fa54f6a5128337b6b9317bc9b7c720b709078cf0c2758e7d"
+        },
+        {
+          "path": "lib/scanners/index.mjs",
+          "size": 1458,
+          "mode": 420,
+          "sha256": "9443d7e055a4b8368973c027b739742bbf5e98de4dbc5078c4cd7fb2677aeeb9"
+        },
+        {
+          "path": "lib/scanners/large-static-asset.mjs",
+          "size": 3279,
+          "mode": 420,
+          "sha256": "5ee29065ae96b7aff236dd3ea9766765a7c48e1bd95008e261837ae42932b783"
+        },
+        {
+          "path": "lib/scanners/max-age-without-s-maxage.mjs",
+          "size": 1629,
+          "mode": 420,
+          "sha256": "ec722b65530f428232f2b501f5f52e427cd7218c51cceb4783b5f7b03c3ad577"
+        },
+        {
+          "path": "lib/scanners/middleware-broad-matcher.mjs",
+          "size": 1986,
+          "mode": 420,
+          "sha256": "e41e07c4fb8d0b6776e5f27609e719ae42c1644b7adcfa2dc1abc90a511c0492"
+        },
+        {
+          "path": "lib/scanners/missing-cache-headers.mjs",
+          "size": 3922,
+          "mode": 420,
+          "sha256": "cc4ccea4c4f1d8594a97b18ca39b5212060faa3306dccdea0b2c7645d3f3cf8a"
+        },
+        {
+          "path": "lib/scanners/prisma-include-tree.mjs",
+          "size": 1585,
+          "mode": 420,
+          "sha256": "ab107e2732ca1873b4e4ce974e9c08b6ebde83a8f96675b96087213b16aa901e"
+        },
+        {
+          "path": "lib/scanners/region-pin-in-config.mjs",
+          "size": 3448,
+          "mode": 420,
+          "sha256": "906f33c344c98910f1148c86a9c5cd5cfbaf84cc8c06d02e3eb257ecd639b0d3"
+        },
+        {
+          "path": "lib/scanners/source-maps-production.mjs",
+          "size": 1300,
+          "mode": 420,
+          "sha256": "f9ab9cf88a22a4c0fa32f73ac39243b6f61a868b81ca55f804d8c33a9341013c"
+        },
+        {
+          "path": "lib/scanners/sveltekit-prerender-missing.mjs",
+          "size": 2127,
+          "mode": 420,
+          "sha256": "ff5380fa9d8a3e77d8ff430e1b7866a0890b50d163bcc2a599f0b30238947999"
+        },
+        {
+          "path": "lib/scanners/turbo-force-bypass.mjs",
+          "size": 4974,
+          "mode": 420,
+          "sha256": "b84a7774f18e1ea86cb19335fd41324b89635ccb43b75f31e0218516fd9363d2"
+        },
+        {
+          "path": "lib/scanners/unoptimized-image.mjs",
+          "size": 4516,
+          "mode": 420,
+          "sha256": "f2049c073b769838e33f6110f8f139cacd1e8b8a01eda1473ebed0a14ec64b4f"
+        },
+        {
+          "path": "lib/scanners/use-cache-date-stamp.mjs",
+          "size": 4040,
+          "mode": 420,
+          "sha256": "2d04abd40b888e8c16bccee92dc3423ab86b109551cfab8807367d9cc8ca0878"
+        },
+        {
+          "path": "lib/support-topics.mjs",
+          "size": 12836,
+          "mode": 420,
+          "sha256": "c9ac60070df4e6707299da5ab0d72a9853659ddfcfd4dca29f5803ef3ce41840"
+        },
+        {
+          "path": "lib/throttle.mjs",
+          "size": 8992,
+          "mode": 420,
+          "sha256": "1d09d586071838152fe28882cd65f508a508ecd99b59187c84f27b908cc18017"
+        },
+        {
+          "path": "lib/util.mjs",
+          "size": 544,
+          "mode": 420,
+          "sha256": "431eb675f0a658e19a1b08cdb064e19f96a62d42a35c5f4d962756c8cf97d523"
+        },
+        {
+          "path": "lib/vercel.mjs",
+          "size": 31125,
+          "mode": 420,
+          "sha256": "01a7bd818b64bd26143f93e4417f6463199a81c154854e9c60d2fcce3aea2e82"
+        },
+        {
+          "path": "lib/verify-claim.mjs",
+          "size": 60992,
+          "mode": 420,
+          "sha256": "b7956b5e96e0be7e4ed7a107541d5e4ea11475f9b4e7829c4035769d3a879f71"
+        },
+        {
+          "path": "lib/workspace-resolver.mjs",
+          "size": 17545,
+          "mode": 420,
+          "sha256": "9da10f288418475ab871b5430de38d4b97441794373721844cb540e40986e74c"
+        },
+        {
+          "path": "metadata.json",
+          "size": 903,
+          "mode": 420,
+          "sha256": "729f7dcb13ebac414d54232e56acaeae4f7ded041947805a0b30a5d8fee59511"
+        },
+        {
+          "path": "references/candidates.md",
+          "size": 8510,
+          "mode": 420,
+          "sha256": "1e04722b3924a11a774d87abbf35070cdf480ad02c8487f97a3dd69bb46b59af"
+        },
+        {
+          "path": "references/data-collection.md",
+          "size": 20925,
+          "mode": 420,
+          "sha256": "dbc013dfc59c29f38f279fbbb422f19d7cc1ba37d17ee02d9c64ea6cb594bd22"
+        },
+        {
+          "path": "references/docs-library.json",
+          "size": 31540,
+          "mode": 420,
+          "sha256": "287d4dabbb3eab789911a6c2b4aea9ffc57206fa4a8449636358503e32b9542c"
+        },
+        {
+          "path": "references/doctrine.md",
+          "size": 9512,
+          "mode": 420,
+          "sha256": "4a7eac752141410d134febe786c4b51f4723a55026a5638c38fcb492a1d86df4"
+        },
+        {
+          "path": "references/observability-plus.md",
+          "size": 5329,
+          "mode": 420,
+          "sha256": "86b6f6d5bd7f4b9827f70505705ed0f875a0ef2e2cdb85653f0e09f825393333"
+        },
+        {
+          "path": "references/playbooks/README.md",
+          "size": 2812,
+          "mode": 420,
+          "sha256": "9b699bb8d2436b089ced036780cbc108502f3713b15f83440fd042e393487cf3"
+        },
+        {
+          "path": "references/playbooks/ai-application.md",
+          "size": 3933,
+          "mode": 420,
+          "sha256": "e9e353a3f7d5c576e14893ebb0e1eddaa90ee986f0ef3d9edb3be73a2e947ac9"
+        },
+        {
+          "path": "references/playbooks/api-service.md",
+          "size": 2485,
+          "mode": 420,
+          "sha256": "f90e2d558ea697dc06f05794ad47770f379e3268321ab8a6a642abd7f2fa7ed3"
+        },
+        {
+          "path": "references/playbooks/content-site.md",
+          "size": 2502,
+          "mode": 420,
+          "sha256": "9d4b1a7d1c6eb6f58e94c5df5dc8264c5bd6c877f045c7c81228924cbadc9d37"
+        },
+        {
+          "path": "references/playbooks/ecommerce.md",
+          "size": 2737,
+          "mode": 420,
+          "sha256": "f44707fac676e67de04b7ddb2f78bc806f286cd324d05d990641acef3097a0e9"
+        },
+        {
+          "path": "references/playbooks/marketing.md",
+          "size": 2675,
+          "mode": 420,
+          "sha256": "b7e0ed3de01e95f7776891b6a63e0d2929b066c61ccd9b8ac012b42cbc3e4a19"
+        },
+        {
+          "path": "references/playbooks/saas.md",
+          "size": 2896,
+          "mode": 420,
+          "sha256": "f23b518dd7c369144813f80abe6eba3e762db3b737b3271bb8b887307fcec387"
+        },
+        {
+          "path": "references/playbooks/sveltekit.md",
+          "size": 4019,
+          "mode": 420,
+          "sha256": "32db0a70f1217c2e3f750ef5e5671da54a07a510369307e38877e3fd3ad21767"
+        },
+        {
+          "path": "references/recommendations.md",
+          "size": 10788,
+          "mode": 420,
+          "sha256": "8e65890c1afd942f4bf9dd07ba538b2b9f53a6136ec83e96cc10740c6f8dda87"
+        },
+        {
+          "path": "references/scanner-patterns.md",
+          "size": 13671,
+          "mode": 420,
+          "sha256": "e160869045f6456d10bd4f1fdeff76d42d8b3e0c50a7212a607603589798bcaa"
+        },
+        {
+          "path": "references/scoring.md",
+          "size": 12505,
+          "mode": 420,
+          "sha256": "44a295b6c65ee5c221815149c7fad1adb02c8ac8750d0604a8dfbfe47d04b6d6"
+        },
+        {
+          "path": "references/support-topics/README.md",
+          "size": 1785,
+          "mode": 420,
+          "sha256": "63e2acd6e221ca52355a5f70ff8d9c3d9704600eb7e176d3cb2f4597ad03db4b"
+        },
+        {
+          "path": "references/support-topics/astro-edge-middleware-scope.md",
+          "size": 1012,
+          "mode": 420,
+          "sha256": "80586e0b110749f2cdd6e56635d6cd88082230b9bd11a8e388ec6d3b280bc65d"
+        },
+        {
+          "path": "references/support-topics/astro-output-mode-and-isr.md",
+          "size": 1135,
+          "mode": 420,
+          "sha256": "6137553e35076795f6c0851b0e93d4686cf937930d35b284567da7c0edfe35ba"
+        },
+        {
+          "path": "references/support-topics/auth-preserving-parallelization.md",
+          "size": 1203,
+          "mode": 420,
+          "sha256": "34cfd687cc106ef15696b8f1f155c30f635234e29f3c4db087193c3c2c3c4bac"
+        },
+        {
+          "path": "references/support-topics/bot-protection-product-guardrails.md",
+          "size": 1119,
+          "mode": 420,
+          "sha256": "892d8f32deb5bded86863a513d3799bfd81dc4654ae4fde5a264638cfd86755d"
+        },
+        {
+          "path": "references/support-topics/build-minutes-monorepo-fanout.md",
+          "size": 1269,
+          "mode": 420,
+          "sha256": "1f54f0ba4d1b2ab873eb166ca2f1661d39b49e70253dea8ce13a44c2b728ba85"
+        },
+        {
+          "path": "references/support-topics/cache-components-static-shell-boundaries.md",
+          "size": 1162,
+          "mode": 420,
+          "sha256": "664a13ced4e985e9b12bdf6730fecccfd79fb715be2998a710068384a0ab4cc0"
+        },
+        {
+          "path": "references/support-topics/cache-components-suspense-dedupe-pitfall.md",
+          "size": 1380,
+          "mode": 420,
+          "sha256": "212f1bedf49c9a1e7aac7745c5b19f57c486456d5e4ef9037fa9689f51930047"
+        },
+        {
+          "path": "references/support-topics/cdn-cache-auth-safety.md",
+          "size": 1068,
+          "mode": 420,
+          "sha256": "5691cd39b3403ef939199c3b9b21e28cb447b2f8d2f6dea6000064e5ef3fdfb5"
+        },
+        {
+          "path": "references/support-topics/cold-start-initialization-bundle.md",
+          "size": 1159,
+          "mode": 420,
+          "sha256": "98961df48eac648e71c73b7dd53a215ac02af62f0bfbc67a1af335e66b8fb7c1"
+        },
+        {
+          "path": "references/support-topics/core-web-vitals-client-bottlenecks.md",
+          "size": 1037,
+          "mode": 420,
+          "sha256": "05d84906be0f1e26787e871c00cd563f18533a7b12d3383c5cb3557fe01ea768"
+        },
+        {
+          "path": "references/support-topics/database-egress-pooling-region.md",
+          "size": 1015,
+          "mode": 420,
+          "sha256": "83fa0f1a3ff67b9f149ba39432834bba88437dbdf09d6b5e7a5e3b552ceb473e"
+        },
+        {
+          "path": "references/support-topics/dynamic-rendering-traps.md",
+          "size": 1139,
+          "mode": 420,
+          "sha256": "a075a13fc3c40d7d249051519cf2384497a34f3f4a207f757bf4343c3896fd64"
+        },
+        {
+          "path": "references/support-topics/external-api-critical-path-platform.md",
+          "size": 1145,
+          "mode": 420,
+          "sha256": "02a7a7e3ba867973c9e45d565e69349cd44a5bdb9e00e6fbbf9c76edd01516e5"
+        },
+        {
+          "path": "references/support-topics/external-api-critical-path.md",
+          "size": 978,
+          "mode": 420,
+          "sha256": "dade955ceba21150590f8606b993881d6f6b20fef32c147b77ce26d9e9931773"
+        },
+        {
+          "path": "references/support-topics/fast-data-transfer-payloads.md",
+          "size": 1050,
+          "mode": 420,
+          "sha256": "d7daca1a05d8f3157aab22b97552247cb0a8f856f08fc49079fd76872f7a50fa"
+        },
+        {
+          "path": "references/support-topics/fluid-compute-caveats.md",
+          "size": 1125,
+          "mode": 420,
+          "sha256": "3408a19b49a9723cfac1b461babe56dc414f0f1f7561bd7e6f4f7579ab26a13f"
+        },
+        {
+          "path": "references/support-topics/function-duration-io-and-after.md",
+          "size": 1027,
+          "mode": 420,
+          "sha256": "693c07390d7cf8b4c0a0d0235176a5f452694d1553c33db4fd385f76c94d307d"
+        },
+        {
+          "path": "references/support-topics/function-invocation-reduction.md",
+          "size": 1181,
+          "mode": 420,
+          "sha256": "1e50e0e24299fc08aaf6b81d6673ce24c0bc250883c8ecc76e52d6d1dca989a9"
+        },
+        {
+          "path": "references/support-topics/function-region-misconfiguration-ttfb.md",
+          "size": 1254,
+          "mode": 420,
+          "sha256": "dd5013cf9bd5b3ee7383d3b9835babc6a93b965e07b7093f48d53ce755510326"
+        },
+        {
+          "path": "references/support-topics/image-optimization-cost-control.md",
+          "size": 1071,
+          "mode": 420,
+          "sha256": "1123f4712ec4a4ff057dadbee25f7de51bc8473862dbb398693f9c091336681c"
+        },
+        {
+          "path": "references/support-topics/isr-revalidation-static-generation.md",
+          "size": 1419,
+          "mode": 420,
+          "sha256": "fafc8585a02b2142b60289177b041d63e1280d1fdccd38a2faa2e89d7c1950cb"
+        },
+        {
+          "path": "references/support-topics/middleware-proxy-edge-cost.md",
+          "size": 991,
+          "mode": 420,
+          "sha256": "d1c6f3b0f4ecf3c4d430c2ae3999c9485e8f2115e40d9ba973b637541a5a5f32"
+        },
+        {
+          "path": "references/support-topics/next-fetch-revalidate-floor.md",
+          "size": 1059,
+          "mode": 420,
+          "sha256": "65897b4111c75457e1fbe16ce6f9716c5fd58365d8defaeb80b5ea0ca4f2a3b0"
+        },
+        {
+          "path": "references/support-topics/next-font-cls-self-hosting.md",
+          "size": 906,
+          "mode": 420,
+          "sha256": "a06d7f692fc902f41a227f5acb20d694e2d47c3098b1fba354b5413e7df32964"
+        },
+        {
+          "path": "references/support-topics/next-heavy-ui-lazy-load-boundaries.md",
+          "size": 1048,
+          "mode": 420,
+          "sha256": "f48f1f61626aa313b3e08a6e43a5550bddef278f5c6aa4093b52bee1e9e1d78b"
+        },
+        {
+          "path": "references/support-topics/next-image-lcp-preload-sizes.md",
+          "size": 1062,
+          "mode": 420,
+          "sha256": "f176647780339cbd409897cbbaa8666f0dc7c301905651ad39b7feb2a0696a89"
+        },
+        {
+          "path": "references/support-topics/next-route-handler-get-cache-defaults.md",
+          "size": 1072,
+          "mode": 420,
+          "sha256": "2f7e29b85cc1a8a31db214f59524035d3486c3a26c9fb9a39d62f3b834ee0f0c"
+        },
+        {
+          "path": "references/support-topics/next-script-third-party-strategy.md",
+          "size": 1051,
+          "mode": 420,
+          "sha256": "413fb8dfdb561ccb5073c89b93c0e28420cfa5125bff89317c699167c3b2f35a"
+        },
+        {
+          "path": "references/support-topics/nextjs-version-cache-semantics.md",
+          "size": 996,
+          "mode": 420,
+          "sha256": "e8bf6e27e63841bb49c44e8d0e93d674866ba28f6217d41d5c4de2b51178b8dc"
+        },
+        {
+          "path": "references/support-topics/not-found-catchall-request-waste.md",
+          "size": 1273,
+          "mode": 420,
+          "sha256": "88a9bf8ec200182534957603bda8c3bcc8d9dce8d884ea19c890994424827ab8"
+        },
+        {
+          "path": "references/support-topics/nuxt-route-rules-cache-isr.md",
+          "size": 1188,
+          "mode": 420,
+          "sha256": "639b0a57b50813bfea7f1734a2cb883d8fb756c86a3a4460e08e899d04323cbb"
+        },
+        {
+          "path": "references/support-topics/observability-events-cost-attribution.md",
+          "size": 1155,
+          "mode": 420,
+          "sha256": "60b2aea01836d6554b07cc79c9d8d64a4430782a2a4cec2ccd43ad957d69658e"
+        },
+        {
+          "path": "references/support-topics/post-response-work-waituntil.md",
+          "size": 1009,
+          "mode": 420,
+          "sha256": "da5ff4b2d2a714bc06d2cc4b442e77840b89f9e72e171ec33af4fb95cac8ab26"
+        },
+        {
+          "path": "references/support-topics/route-error-durable-offload.md",
+          "size": 1298,
+          "mode": 420,
+          "sha256": "2ff21304503673bbeb656d92fd9841f8aa874cd93a5428f14a0f9abb55e49b65"
+        },
+        {
+          "path": "references/support-topics/route-error-runtime-limits.md",
+          "size": 988,
+          "mode": 420,
+          "sha256": "e4a70ec3e1112c658e1ce136359c00fcb6c9fb484887efafb3ba3364ebdb70a6"
+        },
+        {
+          "path": "references/support-topics/runtime-cache-reusable-data.md",
+          "size": 1180,
+          "mode": 420,
+          "sha256": "cf59ca89dbfa178d371435e0aa7f5c588c2fc3114b4574049b4d644c63628911"
+        },
+        {
+          "path": "references/support-topics/sveltekit-isr-prerender-safety.md",
+          "size": 1167,
+          "mode": 420,
+          "sha256": "909357c83a7718865cf5e1056653117f08df0042416e17050f22eae7900dfa49"
+        },
+        {
+          "path": "references/support-topics/sveltekit-split-cold-start-tradeoff.md",
+          "size": 1040,
+          "mode": 420,
+          "sha256": "e61fee58a22120acbdfafb2559959749806cf2c1ad242749d30ad6d9f533d5f6"
+        },
+        {
+          "path": "references/support-topics/usage-spike-triage.md",
+          "size": 1018,
+          "mode": 420,
+          "sha256": "850ce351c3cbff86a321b349eaa82330a29e08b78a3d255150dc290a7d095015"
+        },
+        {
+          "path": "references/support-topics/use-cache-date-stamp-isr-write-amplifier.md",
+          "size": 1189,
+          "mode": 420,
+          "sha256": "45d5381f890b552dd672f6577aad203630f9f0e3caf04f3f2170726c0cea86fb"
+        },
+        {
+          "path": "references/support-topics/use-cache-remote-shared-origin-data.md",
+          "size": 1089,
+          "mode": 420,
+          "sha256": "4e8590e6c3ed65e5ec8811cfad82fcecf3cf5ac797e446bbf00e4498bd7e0d68"
+        },
+        {
+          "path": "references/support-topics/workflow-resumable-stream-routes.md",
+          "size": 1274,
+          "mode": 420,
+          "sha256": "07145dac55800c709a57a1abfbe29e1764ecd6371ff05f342c8f73f69d101257"
+        },
+        {
+          "path": "references/verification.md",
+          "size": 9000,
+          "mode": 420,
+          "sha256": "db3ffb183ae3c141eeb980ea3765ff215da01eb4bb8b569c7f86868ec3cfe5a1"
+        },
+        {
+          "path": "references/voice.md",
+          "size": 3731,
+          "mode": 420,
+          "sha256": "1bd89b7f12f8ce912d0381b9ca7c251f8183f69bae0abf0021391e8397dfef11"
+        },
+        {
+          "path": "scripts/budget-summary.mjs",
+          "size": 2096,
+          "mode": 420,
+          "sha256": "4dc6cb8ab9278ac9196e4cd70c36ecc1ffe2afeaffe09e99e562de42e62f94ea"
+        },
+        {
+          "path": "scripts/build-docs.mjs",
+          "size": 3414,
+          "mode": 493,
+          "sha256": "ce426e5bb4a803b86981588b733fc97aff13fea1c393d6d6559b97518df31ad8"
+        },
+        {
+          "path": "scripts/check-citations.mjs",
+          "size": 3531,
+          "mode": 420,
+          "sha256": "47acb1d9deba97531ad46ef81cccaa9349bec4a3cf57d8fdc2bd601411b57fdb"
+        },
+        {
+          "path": "scripts/check-docs-fresh.mjs",
+          "size": 3910,
+          "mode": 493,
+          "sha256": "6c47f5595c6e317426606d67afa53d52d822fcc071fee27885cc25df38e7949e"
+        },
+        {
+          "path": "scripts/collect-signals.mjs",
+          "size": 21576,
+          "mode": 493,
+          "sha256": "bc1dcba99aa20ad7863450bc1a336d0ec8d78aac0f3f26f8b6be9183e52e944a"
+        },
+        {
+          "path": "scripts/collect-sub-agent-outputs.mjs",
+          "size": 10123,
+          "mode": 420,
+          "sha256": "21bd960b11c75711e1f51cb362efb5243f19bc8db65a3bfdab48549bb47bf9fb"
+        },
+        {
+          "path": "scripts/deep-dive.mjs",
+          "size": 12332,
+          "mode": 493,
+          "sha256": "f90c74b28a1a1580a45d7d12ab64f683c8c6f1b59d32aa7299980e74980550aa"
+        },
+        {
+          "path": "scripts/gate-investigations.mjs",
+          "size": 6353,
+          "mode": 493,
+          "sha256": "b30d756a3af5bc1170e4eec95e2fca7241999a516d8871497bd4e5a1cd681535"
+        },
+        {
+          "path": "scripts/merge-signals.mjs",
+          "size": 6325,
+          "mode": 420,
+          "sha256": "2d16f83d221ea6bb28f1a05f48829c2e67e315d0acc2125fc8b642813a527f06"
+        },
+        {
+          "path": "scripts/prepare-investigation-brief.mjs",
+          "size": 8071,
+          "mode": 420,
+          "sha256": "8a9c9a840e907985f8a84218251c33c38f3dc17956b851a8b5d7e28c56689edc"
+        },
+        {
+          "path": "scripts/reconcile-candidates.mjs",
+          "size": 2442,
+          "mode": 420,
+          "sha256": "ef8d6ae2f1e7e43c62a46dfe7af14e9618fd2b550724823448f8badf266cccaf"
+        },
+        {
+          "path": "scripts/render-report.mjs",
+          "size": 17424,
+          "mode": 420,
+          "sha256": "ab0a3f0188215fe0f9a464858b3a42c74e2d4daea6fe857b6a969595f27ebf5b"
+        },
+        {
+          "path": "scripts/scan-codebase.mjs",
+          "size": 11521,
+          "mode": 493,
+          "sha256": "4b5c847899604831aafd3fcdf860968792e99203670a3ba6f3947cb7ae708705"
+        },
+        {
+          "path": "scripts/verify-and-regen.mjs",
+          "size": 15238,
+          "mode": 420,
+          "sha256": "9211268107c17f577d24a8994515946b9fd3a1fc1d2353a79dd0a139df25f706"
+        },
+        {
+          "path": "scripts/verify-finding.mjs",
+          "size": 698,
+          "mode": 493,
+          "sha256": "534590f7900e20648f67cc2d6845502960709ddfeb10cbb6733ade37b2eebe8e"
+        }
+      ]
+    },
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-react-best-practices",
+      "upstream_path": "skills/react-best-practices",
+      "vendored_path": "bundle/skills/vercel-react-best-practices",
+      "sha256": "93e84b2e728ef24781f1a81a740c225b12ebfa9a43b02d4197341a9f1a626372",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "size": 108261,
+          "mode": 420,
+          "sha256": "fc93e7421177bbf869cce892bc60a6c83a4517d974bc3bf65c4e2c1e58a6ccf6"
+        },
+        {
+          "path": "README.md",
+          "size": 3360,
+          "mode": 420,
+          "sha256": "9eafb2123d3b8b2aef41fba0db2648a3f4f49996f8c7c8bb2c86263befd8b48a"
+        },
+        {
+          "path": "SKILL.md",
+          "size": 7251,
+          "mode": 420,
+          "sha256": "71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355"
+        },
+        {
+          "path": "metadata.json",
+          "size": 921,
+          "mode": 420,
+          "sha256": "c4e18bac3290fbe1b471a605867d4df68b03144ea26b8befdbe8f9d8fd124354"
+        },
+        {
+          "path": "rules/_sections.md",
+          "size": 1554,
+          "mode": 420,
+          "sha256": "01c59969e4e867f0708c8f8ef9c6d87fab9a07d0586244f429ff84013db8a115"
+        },
+        {
+          "path": "rules/_template.md",
+          "size": 631,
+          "mode": 420,
+          "sha256": "99df2a3ea088c6c22de2484ddc7e964d0e9923846f44c63380343ecc64455442"
+        },
+        {
+          "path": "rules/advanced-effect-event-deps.md",
+          "size": 1802,
+          "mode": 420,
+          "sha256": "55ed8f9f27a1bff803d6fa55828176207714b02123cbb97ddb8a90d88024a723"
+        },
+        {
+          "path": "rules/advanced-event-handler-refs.md",
+          "size": 1483,
+          "mode": 420,
+          "sha256": "a3097edeecfb2ff6851cd66ed8cdf0617c3c88180504bee824aa6e75a215bbbc"
+        },
+        {
+          "path": "rules/advanced-init-once.md",
+          "size": 958,
+          "mode": 420,
+          "sha256": "3e4dc22173eb0e2b6dcf583e3babd862b8696328f8f59aee7c4d746c5bc05f6c"
+        },
+        {
+          "path": "rules/advanced-use-latest.md",
+          "size": 1072,
+          "mode": 420,
+          "sha256": "8a3f64dfe5a77d1564248faf17fe662ae75b55d497a243cb30b38eb07ccbbf9a"
+        },
+        {
+          "path": "rules/async-api-routes.md",
+          "size": 1125,
+          "mode": 420,
+          "sha256": "523338540d73427dc14c0cbb19f2741ebccdf8b105a7b2c1b33d2905cf237a42"
+        },
+        {
+          "path": "rules/async-cheap-condition-before-await.md",
+          "size": 1220,
+          "mode": 420,
+          "sha256": "03107c1f70a293cd58a8abc5474c5548e20ea4efdf01b6d45aae7ad0ac1cb32c"
+        },
+        {
+          "path": "rules/async-defer-await.md",
+          "size": 2208,
+          "mode": 420,
+          "sha256": "f3c142d090615abdcc99d31c123be37b31f0f1ed8d9ec9f7789a3bc6883ae0fb"
+        },
+        {
+          "path": "rules/async-dependencies.md",
+          "size": 1293,
+          "mode": 420,
+          "sha256": "16ef469f877e30c6b8e1e1b4bc3e527312fa3c6318cb785a4eca186ea236131a"
+        },
+        {
+          "path": "rules/async-parallel.md",
+          "size": 654,
+          "mode": 420,
+          "sha256": "6d2f841896279e976dfcdc1ac89e70771ac188baadfd43c096b5706cb838b961"
+        },
+        {
+          "path": "rules/async-suspense-boundaries.md",
+          "size": 2510,
+          "mode": 420,
+          "sha256": "de05fedac2eb7ae563b887b5a424464ec3dfaf84e5b7797467ebe2a796ac8afc"
+        },
+        {
+          "path": "rules/bundle-analyzable-paths.md",
+          "size": 2382,
+          "mode": 420,
+          "sha256": "62090b5c815fd71bf1133dce754f51abc16a9456d0ccd025fd627de27726e92a"
+        },
+        {
+          "path": "rules/bundle-barrel-imports.md",
+          "size": 2795,
+          "mode": 420,
+          "sha256": "e648f6d54525f07a691357040ca5bff6ea3424788a91ff63812adb29622a671b"
+        },
+        {
+          "path": "rules/bundle-conditional.md",
+          "size": 949,
+          "mode": 420,
+          "sha256": "09c8259c3efb04fc0abb8e412ccbda217c222ae8118516283e571c995fe3a7d4"
+        },
+        {
+          "path": "rules/bundle-defer-third-party.md",
+          "size": 920,
+          "mode": 420,
+          "sha256": "3719fb47b191e8db4fe22686ec88448ad5af9e6838585425abbe103d0b642e37"
+        },
+        {
+          "path": "rules/bundle-dynamic-imports.md",
+          "size": 791,
+          "mode": 420,
+          "sha256": "401817a7369f315fc5a68a1095742ff7d53d0461906880dc9d64a41495ee1986"
+        },
+        {
+          "path": "rules/bundle-preload.md",
+          "size": 1149,
+          "mode": 420,
+          "sha256": "d1f7cc28da7cd5ab249acd287edc5b761afcfb194e9cb62cd44c5f3543db2de2"
+        },
+        {
+          "path": "rules/client-event-listeners.md",
+          "size": 1969,
+          "mode": 420,
+          "sha256": "242a873349febc1ce685e85617994784dbab92c2eaa68aed7fed5a83e7680e93"
+        },
+        {
+          "path": "rules/client-localstorage-schema.md",
+          "size": 1950,
+          "mode": 420,
+          "sha256": "0fb7cdf9dc93fdf22f87e3669f953fb9d4ac9b0be42eec4a29fe9a2560610b88"
+        },
+        {
+          "path": "rules/client-passive-event-listeners.md",
+          "size": 1644,
+          "mode": 420,
+          "sha256": "1f35016f9053de69e884ee9be00654e37979c2ca85f5e57764dc2626ff7acb4b"
+        },
+        {
+          "path": "rules/client-swr-dedup.md",
+          "size": 1159,
+          "mode": 420,
+          "sha256": "644652c39c6cc00de8d1c77a7273612e868dc3f7edda30764164c12ec0f764a3"
+        },
+        {
+          "path": "rules/js-batch-dom-css.md",
+          "size": 3266,
+          "mode": 420,
+          "sha256": "480b891b9eaf96e929dc1e964274a4828e3a78009b7d00ccd965a0d425215959"
+        },
+        {
+          "path": "rules/js-cache-function-results.md",
+          "size": 1949,
+          "mode": 420,
+          "sha256": "3daaa11d24f4295cb6be8bc6f407f2ce83cc7b5bd1f0e68891ea8ab835721dc7"
+        },
+        {
+          "path": "rules/js-cache-property-access.md",
+          "size": 532,
+          "mode": 420,
+          "sha256": "73e47431e74878a927061bf0ddc7cd91a7556cb35d2573f3421e82300d9ae311"
+        },
+        {
+          "path": "rules/js-cache-storage.md",
+          "size": 1651,
+          "mode": 420,
+          "sha256": "11b826b0433898c1ece2d3547010d8e77db9fb240185748c45db91493de9b6cc"
+        },
+        {
+          "path": "rules/js-combine-iterations.md",
+          "size": 753,
+          "mode": 420,
+          "sha256": "71add08aeeb43091d4ff4c0b2842cce8b4bdef8ad3e732cc034bb5a84827e746"
+        },
+        {
+          "path": "rules/js-early-exit.md",
+          "size": 1133,
+          "mode": 420,
+          "sha256": "925ce5ce87f3347186ca62212f29cc6baa2b8c85a96d2720ad07c3d0abf781c0"
+        },
+        {
+          "path": "rules/js-flatmap-filter.md",
+          "size": 1411,
+          "mode": 420,
+          "sha256": "9e5b166a41914d975bef7635467f8fb32cd98b5c3126c0bc6f163490812fb5f0"
+        },
+        {
+          "path": "rules/js-hoist-regexp.md",
+          "size": 1028,
+          "mode": 420,
+          "sha256": "f9e9aef2f7c2307dd7310f283df85dcada45fc43e9bb941b0c3aa414dec21ec4"
+        },
+        {
+          "path": "rules/js-index-maps.md",
+          "size": 837,
+          "mode": 420,
+          "sha256": "5df1bdc2cfabb2c98abd55d26762e5c18189535c2e686184f426082e62920391"
+        },
+        {
+          "path": "rules/js-length-check-first.md",
+          "size": 1747,
+          "mode": 420,
+          "sha256": "8b54a311c826b299272f29187fc58bc55772a04c4a72eeb29456ee96dc9fc624"
+        },
+        {
+          "path": "rules/js-min-max-loop.md",
+          "size": 2290,
+          "mode": 420,
+          "sha256": "87dfb67e2f39df6ad8bcfb5b78c5fb364d3c07554ad188a202408d99f3763421"
+        },
+        {
+          "path": "rules/js-request-idle-callback.md",
+          "size": 2647,
+          "mode": 420,
+          "sha256": "ee08f83905b4011abbc33d594033157d77561b5bbd9b36b04f0f409581ffec32"
+        },
+        {
+          "path": "rules/js-set-map-lookups.md",
+          "size": 532,
+          "mode": 420,
+          "sha256": "a7fd781a6ba9ad49065961b6f9a90ef486bf6b648390e1a08704025f98e1642b"
+        },
+        {
+          "path": "rules/js-tosorted-immutable.md",
+          "size": 1782,
+          "mode": 420,
+          "sha256": "d0a5e1b0fec48a0a81397957e2f068e224329f7c42cb5feeed8aae6fa64025e8"
+        },
+        {
+          "path": "rules/rendering-activity.md",
+          "size": 564,
+          "mode": 420,
+          "sha256": "1e5e7eaf3555e61d6a2e900089c676527d26259501db5594f59544b6c664f85a"
+        },
+        {
+          "path": "rules/rendering-animate-svg-wrapper.md",
+          "size": 1185,
+          "mode": 420,
+          "sha256": "9c6ae0ca7a51434e803887c64cded760956579a1452ccb80a461a03f9c937c77"
+        },
+        {
+          "path": "rules/rendering-conditional-render.md",
+          "size": 980,
+          "mode": 420,
+          "sha256": "2ec2fa23c4148285144687050c52369adba3da2fbe3d486f8d3e0aad8f06f2bc"
+        },
+        {
+          "path": "rules/rendering-content-visibility.md",
+          "size": 815,
+          "mode": 420,
+          "sha256": "64eee6d5b916fe74df33363994b27fc7f71bea3bcedc7ee04bda23107ca3e6e4"
+        },
+        {
+          "path": "rules/rendering-hoist-jsx.md",
+          "size": 1039,
+          "mode": 420,
+          "sha256": "93b229560fae92005ed9a2a829064607b39b2e984e92d221d05b2d41df2b7c0e"
+        },
+        {
+          "path": "rules/rendering-hydration-no-flicker.md",
+          "size": 2308,
+          "mode": 420,
+          "sha256": "dc7ab358c67c177bca6e6f360fbc935ebe4efa928c0ba3ebd3f9f3d9e2000ca3"
+        },
+        {
+          "path": "rules/rendering-hydration-suppress-warning.md",
+          "size": 872,
+          "mode": 420,
+          "sha256": "915bacb934e2927d84b37a3f3d225a47b309ac8f9e494ed2bcb66ce07c5676a2"
+        },
+        {
+          "path": "rules/rendering-resource-hints.md",
+          "size": 2549,
+          "mode": 420,
+          "sha256": "351b1095d641717b930f1b2253282b7120af3023bc74e06c17675168d4286864"
+        },
+        {
+          "path": "rules/rendering-script-defer-async.md",
+          "size": 1868,
+          "mode": 420,
+          "sha256": "4cea07b7875ba7fc2c7465ff23b63a2bb334f90aaf2d9293d38d67b05fdb32ab"
+        },
+        {
+          "path": "rules/rendering-svg-precision.md",
+          "size": 588,
+          "mode": 420,
+          "sha256": "ed468533f6e95f622859c884b122cf21f9f593ed6bb3d500a54de4b9f9bcb9fb"
+        },
+        {
+          "path": "rules/rendering-usetransition-loading.md",
+          "size": 2074,
+          "mode": 420,
+          "sha256": "3a1249c3f13026b6f54ab5712c388df219d6af01b12aa542749acd99a46f4bc1"
+        },
+        {
+          "path": "rules/rerender-defer-reads.md",
+          "size": 973,
+          "mode": 420,
+          "sha256": "234050a77faf50cb306be10a9e15bd4421134ab5907e75f13e6d78e2bd262dc9"
+        },
+        {
+          "path": "rules/rerender-dependencies.md",
+          "size": 824,
+          "mode": 420,
+          "sha256": "17eb5830956fb56486fd3cfc7431f5849d39751730c05ad9e77dd4f0c27169c5"
+        },
+        {
+          "path": "rules/rerender-derived-state-no-effect.md",
+          "size": 1201,
+          "mode": 420,
+          "sha256": "cb11ec76f50aa7b6847269f02d79b120c889a30d9ecd2c1d578f75144419c77a"
+        },
+        {
+          "path": "rules/rerender-derived-state.md",
+          "size": 728,
+          "mode": 420,
+          "sha256": "1c326bb67b01fb084eb00c8911b0a7cff54681c2315b629f88e49b64eaa6481d"
+        },
+        {
+          "path": "rules/rerender-functional-setstate.md",
+          "size": 2968,
+          "mode": 420,
+          "sha256": "5e68df6b2ae8058e67f476ff1ac67bde159f5a9d18df439e46eabcdeb7b52e58"
+        },
+        {
+          "path": "rules/rerender-lazy-state-init.md",
+          "size": 2016,
+          "mode": 420,
+          "sha256": "4ae844740f266fc8cbf050701230286624a2440ec5be67b9a63d9edc3c580573"
+        },
+        {
+          "path": "rules/rerender-memo-with-default-value.md",
+          "size": 1173,
+          "mode": 420,
+          "sha256": "81c47476564ad8a79fc68fc442734255ca7d6829424359464503fda0a9f9a0dd"
+        },
+        {
+          "path": "rules/rerender-memo.md",
+          "size": 1148,
+          "mode": 420,
+          "sha256": "1f258990c2f27ff6256b3cc5c43300631bb3f0d81f749aed08d07fcdcc131dd1"
+        },
+        {
+          "path": "rules/rerender-move-effect-to-event.md",
+          "size": 1268,
+          "mode": 420,
+          "sha256": "abc2cbf167bee056743023351e96806a411d3398da8802093620aecf0721f029"
+        },
+        {
+          "path": "rules/rerender-no-inline-components.md",
+          "size": 2135,
+          "mode": 420,
+          "sha256": "1cc32907a770272524ba682eef9e7efdd8ad4533b6f89b718a1fcd7d1d0eb6a3"
+        },
+        {
+          "path": "rules/rerender-simple-expression-in-memo.md",
+          "size": 1018,
+          "mode": 420,
+          "sha256": "5bdcf2d1558ba5204e643c887b7b4060f89630969425651eb68e96427d97f800"
+        },
+        {
+          "path": "rules/rerender-split-combined-hooks.md",
+          "size": 1844,
+          "mode": 420,
+          "sha256": "6f45d703343484ef9acef9388397f3642966ae6a5a258899a0cf1f9977cfbf6c"
+        },
+        {
+          "path": "rules/rerender-transitions.md",
+          "size": 1055,
+          "mode": 420,
+          "sha256": "60f4033909a62df5e5b8c601494f9e50a562e2f8c1c2d81eac24f38142265f1c"
+        },
+        {
+          "path": "rules/rerender-use-deferred-value.md",
+          "size": 1846,
+          "mode": 420,
+          "sha256": "8c3579576a61a949884167745dcfaf1d5426ba305cc61fd0a79602d70fda4909"
+        },
+        {
+          "path": "rules/rerender-use-ref-transient-values.md",
+          "size": 1742,
+          "mode": 420,
+          "sha256": "f1a649af9d1d0b5c762f6c9c4c1c70c90d7df82aa10296ee87aadb78c1b76c54"
+        },
+        {
+          "path": "rules/server-after-nonblocking.md",
+          "size": 2012,
+          "mode": 420,
+          "sha256": "d0b8d24a3db9f0f65f9e2bddbf230b0e03a5f60e1229d93a4a18f5e7a991c7c2"
+        },
+        {
+          "path": "rules/server-auth-actions.md",
+          "size": 2649,
+          "mode": 420,
+          "sha256": "a2ca8aa102839251c7971ec784560fab943c20b36fe6f80365d4110c13260c23"
+        },
+        {
+          "path": "rules/server-cache-lru.md",
+          "size": 1353,
+          "mode": 420,
+          "sha256": "1924b64561841923b88a657085097a0aeba3e0ba2d5470b9f5c15cc10d6ae70f"
+        },
+        {
+          "path": "rules/server-cache-react.md",
+          "size": 2228,
+          "mode": 420,
+          "sha256": "fddeea6c870bb3da4134b61d54b7d09b83d2603f929b7547cd3dc1dc269edd5c"
+        },
+        {
+          "path": "rules/server-dedup-props.md",
+          "size": 2060,
+          "mode": 420,
+          "sha256": "c2747424cdac46be62f835f245a0aa887b0090b416d28e2ac8676702645eeb37"
+        },
+        {
+          "path": "rules/server-hoist-static-io.md",
+          "size": 4423,
+          "mode": 420,
+          "sha256": "5abea4dd882b13661bd5f7dfb93f9e547d5f08176c61c448ade91b210ed5d49f"
+        },
+        {
+          "path": "rules/server-no-shared-module-state.md",
+          "size": 1766,
+          "mode": 420,
+          "sha256": "4d869bf1cd2f1632e5ca4c0e64b1cf0e71c5f5a0f940bc8a22174d205e735ed7"
+        },
+        {
+          "path": "rules/server-parallel-fetching.md",
+          "size": 1554,
+          "mode": 420,
+          "sha256": "569a2e9fc04f9606686cd75c5894ef8781b502786a7fffe241396846c7733472"
+        },
+        {
+          "path": "rules/server-parallel-nested-fetching.md",
+          "size": 992,
+          "mode": 420,
+          "sha256": "ad5d9656984d4a959997a2367bf59cc6632297b4634a1dd13a087939d83f30b3"
+        },
+        {
+          "path": "rules/server-serialization.md",
+          "size": 996,
+          "mode": 420,
+          "sha256": "f4c7d68b29c82381baad059c4a7f09e868e71ec9c3115a26ad3ae7d24c0dfe1f"
+        }
+      ]
+    },
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-react-native-skills",
+      "upstream_path": "skills/react-native-skills",
+      "vendored_path": "bundle/skills/vercel-react-native-skills",
+      "sha256": "bbbf1d4eeb9cdcc692043a339895ca1b1a2d7bee96895667c36b7cea9fb35d87",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "size": 73771,
+          "mode": 420,
+          "sha256": "72996343b8260800fbeb9af63ddaed91f14b65dc547e0922f9f8e9bd72076cbf"
+        },
+        {
+          "path": "README.md",
+          "size": 5064,
+          "mode": 420,
+          "sha256": "d60d7623005a833b928be6a109ed9d14dea43d7217fb534e8f2e4de5fc1f0ddf"
+        },
+        {
+          "path": "SKILL.md",
+          "size": 4439,
+          "mode": 420,
+          "sha256": "4012750a5ccbe064ca04af3835d5d1b011979d2d09d9b6df1c8128fac58e0a66"
+        },
+        {
+          "path": "metadata.json",
+          "size": 896,
+          "mode": 420,
+          "sha256": "59ee2274cadbd95b2220727028f0dbc26d3e0251e7937226edc9e7640756ba21"
+        },
+        {
+          "path": "rules/_sections.md",
+          "size": 2228,
+          "mode": 420,
+          "sha256": "21d7445e92bd7d393b420118c3fb9ebbf30aaf123a15143afb6c0b1b562cfdfd"
+        },
+        {
+          "path": "rules/_template.md",
+          "size": 631,
+          "mode": 420,
+          "sha256": "99df2a3ea088c6c22de2484ddc7e964d0e9923846f44c63380343ecc64455442"
+        },
+        {
+          "path": "rules/animation-derived-value.md",
+          "size": 1373,
+          "mode": 420,
+          "sha256": "689228e9d59227934f296563963951aa9368be0afb2a188f650de161203b1862"
+        },
+        {
+          "path": "rules/animation-gesture-detector-press.md",
+          "size": 2559,
+          "mode": 420,
+          "sha256": "69408d4be669e74689d865c5f50a22fc3a802d521fe493371761abd20526e58e"
+        },
+        {
+          "path": "rules/animation-gpu-properties.md",
+          "size": 2059,
+          "mode": 420,
+          "sha256": "f885e4179445da27cbc225e0a4aa3ed9016fc3507ca6f864392ba7a9d0bd7516"
+        },
+        {
+          "path": "rules/design-system-compound-components.md",
+          "size": 1625,
+          "mode": 420,
+          "sha256": "dcb10900a58fcf57cca2e27c062d02df2325a7949e08fb45e9e05cc2b132b1a6"
+        },
+        {
+          "path": "rules/fonts-config-plugin.md",
+          "size": 1393,
+          "mode": 420,
+          "sha256": "b92568774064a604e7a479d4c8d7263aed5609740e9161d2f2764bfff761905d"
+        },
+        {
+          "path": "rules/imports-design-system-folder.md",
+          "size": 1418,
+          "mode": 420,
+          "sha256": "aa6337f7f2869a46a9141ec65e02c3da5c3bf051023899b82e0f0aef5bff8423"
+        },
+        {
+          "path": "rules/js-hoist-intl.md",
+          "size": 1645,
+          "mode": 420,
+          "sha256": "b4b08622465ffcd5e5961878eb8c6d7359aa242d16c990b59941c9111962fe46"
+        },
+        {
+          "path": "rules/list-performance-callbacks.md",
+          "size": 1059,
+          "mode": 420,
+          "sha256": "db800e9dfe0080eb4954b96e2a362ee8344d08e08b1ed06bc8059450f3e6f0dd"
+        },
+        {
+          "path": "rules/list-performance-function-references.md",
+          "size": 4133,
+          "mode": 420,
+          "sha256": "b54470e41d578b207ee3223f6853efb7fbf8e5f83d9aecf8da16989072f99544"
+        },
+        {
+          "path": "rules/list-performance-images.md",
+          "size": 1417,
+          "mode": 420,
+          "sha256": "e88f16ac113c29230d674b7aa2c66c31d5772a74b1ea378d48a97b1143fe6c19"
+        },
+        {
+          "path": "rules/list-performance-inline-objects.md",
+          "size": 2308,
+          "mode": 420,
+          "sha256": "e2a80aac0f29c6abaf0163c1cc273d09cc8a0030ec077ca2022bbf5c309e4625"
+        },
+        {
+          "path": "rules/list-performance-item-expensive.md",
+          "size": 2466,
+          "mode": 420,
+          "sha256": "a68cc8ec5dba3c55761bd5df9dfd3d98485f63076868d3e03af15f1e58907ce3"
+        },
+        {
+          "path": "rules/list-performance-item-memo.md",
+          "size": 2250,
+          "mode": 420,
+          "sha256": "38ec1d149ee485434d11c2b9e2101dfc914afadae4a0738ca905f26b05f708c1"
+        },
+        {
+          "path": "rules/list-performance-item-types.md",
+          "size": 2749,
+          "mode": 420,
+          "sha256": "eed225f4e9e504bfa7db01f5395d1402545cc47de8adf1829a9408cd5d158cf6"
+        },
+        {
+          "path": "rules/list-performance-virtualize.md",
+          "size": 1742,
+          "mode": 420,
+          "sha256": "98cad308118acb4d6e8e975c0168ce56e2d48ca52ed47f23bc9a30667c066ada"
+        },
+        {
+          "path": "rules/monorepo-native-deps-in-app.md",
+          "size": 1091,
+          "mode": 420,
+          "sha256": "8368b109027fcec1b8a81bfb99718aef2b64edaba77107f73d7c465cc5a14217"
+        },
+        {
+          "path": "rules/monorepo-single-dependency-versions.md",
+          "size": 1351,
+          "mode": 420,
+          "sha256": "61c01b9eaab1e319bf078204231fb573bdfea3c43a6eb99e7ef73ee95d474ccc"
+        },
+        {
+          "path": "rules/navigation-native-navigators.md",
+          "size": 4941,
+          "mode": 420,
+          "sha256": "6642dedb57e72f0b56df5fbc3d5b8aaa91fc4456932c12712cfd076d393f32c6"
+        },
+        {
+          "path": "rules/react-compiler-destructure-functions.md",
+          "size": 1274,
+          "mode": 420,
+          "sha256": "8048926a4fa3fbd28fc0ecf4ba4c383a2f0ed06c2fd7330dd4a15d7f4e548044"
+        },
+        {
+          "path": "rules/react-compiler-reanimated-shared-values.md",
+          "size": 1268,
+          "mode": 420,
+          "sha256": "3174303a72b6849ff0eda5cd9f9650f26baa5f31ed28d35a75076af714fb2ffc"
+        },
+        {
+          "path": "rules/react-state-dispatcher.md",
+          "size": 2255,
+          "mode": 420,
+          "sha256": "7ec5b653e3ff8d9ca97d8d66981cce5590c0e49fa79ab708fd6324542b588870"
+        },
+        {
+          "path": "rules/react-state-fallback.md",
+          "size": 1735,
+          "mode": 420,
+          "sha256": "eb76e386d71680bfdfc0ab64dba1221f4d3d0fdcb4980bb4a871381d58e9e58b"
+        },
+        {
+          "path": "rules/react-state-minimize.md",
+          "size": 1740,
+          "mode": 420,
+          "sha256": "31b989de61defda1c61d8578c4700efd64a427218c3f3dbb7062a1666e1cbe43"
+        },
+        {
+          "path": "rules/rendering-no-falsy-and.md",
+          "size": 1812,
+          "mode": 420,
+          "sha256": "7300fa45ac3a4968db144727a21052421bc62de9b5e9f6f59e28bd16d2fff001"
+        },
+        {
+          "path": "rules/rendering-text-in-text-component.md",
+          "size": 697,
+          "mode": 420,
+          "sha256": "fc67897b6126b6b5574f4d284a6c5b2282528fe89de8ec08e6cfd2a86ab5b235"
+        },
+        {
+          "path": "rules/scroll-position-no-state.md",
+          "size": 1936,
+          "mode": 420,
+          "sha256": "70aa1ee679e755556d7b01b326431fe898d3c23ddba40d0da6bdac23c87a1525"
+        },
+        {
+          "path": "rules/state-ground-truth.md",
+          "size": 2172,
+          "mode": 420,
+          "sha256": "9f3efc73d2e66a5deb3199c9774f42524cd6a0f69784af38301946be5d747cb5"
+        },
+        {
+          "path": "rules/ui-expo-image.md",
+          "size": 1648,
+          "mode": 420,
+          "sha256": "c3c13cce3dd2cc7f8a9b4861e5743af98f62e28f5699f72f492e79a335cfae55"
+        },
+        {
+          "path": "rules/ui-image-gallery.md",
+          "size": 2546,
+          "mode": 420,
+          "sha256": "b34d1ba03710ed9622187716541ae618968e7d03bc28895c2ac918d3cc5853f1"
+        },
+        {
+          "path": "rules/ui-measure-views.md",
+          "size": 2232,
+          "mode": 420,
+          "sha256": "170d058abc4900ea9e851e54f5e8b437ffffc2c9d3847ae35e30a515c8990c3d"
+        },
+        {
+          "path": "rules/ui-menus.md",
+          "size": 4598,
+          "mode": 420,
+          "sha256": "5964adbecfe9aeb28d736a4eaacec6469a1c4ca3f48779d243eb38b6d181cfe9"
+        },
+        {
+          "path": "rules/ui-native-modals.md",
+          "size": 1859,
+          "mode": 420,
+          "sha256": "d803493b3046ad31cbb2c189f1fffb948fd0055050e3c322589bd548421e23a8"
+        },
+        {
+          "path": "rules/ui-pressable.md",
+          "size": 1534,
+          "mode": 420,
+          "sha256": "52cdbad127d713d7d32c59ef74ab1bbd6dca211edc9b25993453f7f4545e79fa"
+        },
+        {
+          "path": "rules/ui-safe-area-scroll.md",
+          "size": 1579,
+          "mode": 420,
+          "sha256": "3dd776caef2344d73529010940b50042861d06d31a192122a4df64bc06aed0e8"
+        },
+        {
+          "path": "rules/ui-scrollview-content-inset.md",
+          "size": 1317,
+          "mode": 420,
+          "sha256": "89e4bbe5e9a602660f4155e9d4c0dee09db1adf21c73f47213cd67ec896e5a13"
+        },
+        {
+          "path": "rules/ui-styling.md",
+          "size": 2212,
+          "mode": 420,
+          "sha256": "cdef4d8b1a097b844e5992ab78e66a2dc604faf1e90f8d325a0eb116e8ef6a7e"
+        }
+      ]
+    },
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-react-view-transitions",
+      "upstream_path": "skills/react-view-transitions",
+      "vendored_path": "bundle/skills/vercel-react-view-transitions",
+      "sha256": "72882e2caa709bb41c20d43ed321778d7ea3c6d3b171656837d55ff6f93bae5b",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "size": 32301,
+          "mode": 420,
+          "sha256": "847e68771417af6cffd9d3ecd4c9412dae1b2bda559912681e17d5d9aa8da435"
+        },
+        {
+          "path": "README.md",
+          "size": 2116,
+          "mode": 420,
+          "sha256": "32f645ec37e9eaaa34c874e29e99c7447814e0d0f60218628ae2976f1aa74651"
+        },
+        {
+          "path": "SKILL.md",
+          "size": 14092,
+          "mode": 420,
+          "sha256": "8be50324a2c0c168cd104756a3ae92e28522e96d4ed2fc1a034f1cbf6b626983"
+        },
+        {
+          "path": "metadata.json",
+          "size": 852,
+          "mode": 420,
+          "sha256": "b1a5ae09f3904dc83dab79f518d033bd98f1e2f55caabfdb5beeeaaf0ca5e4c2"
+        },
+        {
+          "path": "references/css-recipes.md",
+          "size": 8104,
+          "mode": 420,
+          "sha256": "41f880f3a62b53b46f1ccc540401e4bc19522dfbd1ecd65d18d0b72fec44e829"
+        },
+        {
+          "path": "references/implementation.md",
+          "size": 11036,
+          "mode": 420,
+          "sha256": "f36958ff58ed3b8b7da008df5a59e99a67f46b3a6f590274fdc44b89f017f05d"
+        },
+        {
+          "path": "references/nextjs.md",
+          "size": 9159,
+          "mode": 420,
+          "sha256": "fccba72d7473cbca659242bd763ebc02201795e6f4d96d0680864a12bf53e028"
+        },
+        {
+          "path": "references/patterns.md",
+          "size": 14977,
+          "mode": 420,
+          "sha256": "970f94c2afb086b8b3ffafd05d223ba71595f20ecd6db671b458db88b247e627"
+        }
+      ]
+    },
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-web-design-guidelines",
+      "upstream_path": "skills/web-design-guidelines",
+      "vendored_path": "bundle/skills/vercel-web-design-guidelines",
+      "sha256": "8d905919c5dba1e1173519523f4c4aa15628ed4ac07e1dcfc4091040b6892716",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1231,
+          "mode": 420,
+          "sha256": "f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f"
+        }
+      ]
+    },
+    {
+      "pack_id": "vercel",
+      "kind": "skill",
+      "resource_id": "vercel-writing-guidelines",
+      "upstream_path": "skills/writing-guidelines",
+      "vendored_path": "bundle/skills/vercel-writing-guidelines",
+      "sha256": "b7f7451287d021c92f228e650b134df7170057ba242d94775836cbd200fd4701",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1233,
+          "mode": 420,
+          "sha256": "89a5f581193289b80af58b980090aeed535047c8df2b55ccbaae0de40283a99d"
+        }
+      ]
+    }
+  ]
+}

@@ -422,6 +422,117 @@
           "upstream_path": "skills/productivity/writing-great-skills"
         }
       ]
+    },
+    {
+      "id": "vercel-agent-skills",
+      "provider": "github",
+      "repository": "vercel-labs/agent-skills",
+      "selector": {
+        "mode": "commit",
+        "ref": "7c180d9044c9ae2b442b567aad4e42a28dd5ed62"
+      },
+      "resources": [
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-cli-with-tokens",
+          "upstream_path": "skills/vercel-cli-with-tokens"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-composition-patterns",
+          "upstream_path": "skills/composition-patterns"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-deploy-to-vercel",
+          "upstream_path": "skills/deploy-to-vercel"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-optimize",
+          "upstream_path": "skills/vercel-optimize"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-react-best-practices",
+          "upstream_path": "skills/react-best-practices"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-react-native-skills",
+          "upstream_path": "skills/react-native-skills"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-react-view-transitions",
+          "upstream_path": "skills/react-view-transitions"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-web-design-guidelines",
+          "upstream_path": "skills/web-design-guidelines"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "skill",
+          "resource_id": "vercel-writing-guidelines",
+          "upstream_path": "skills/writing-guidelines"
+        }
+      ]
+    },
+    {
+      "id": "vercel-web-interface-guidelines",
+      "provider": "github",
+      "repository": "vercel-labs/web-interface-guidelines",
+      "selector": {
+        "mode": "commit",
+        "ref": "4e799d45c17aec1498c269287a83b9dba22b966b"
+      },
+      "resources": [
+        {
+          "pack_id": "vercel",
+          "kind": "asset",
+          "resource_id": "web-interface-guidelines-rules",
+          "upstream_path": "command.md"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "notice",
+          "resource_id": "web-interface-guidelines-mit",
+          "upstream_path": "LICENSE"
+        }
+      ]
+    },
+    {
+      "id": "vercel-writing-guidelines",
+      "provider": "github",
+      "repository": "vercel-labs/writing-guidelines",
+      "selector": {
+        "mode": "commit",
+        "ref": "83e2316b034cf572400513538e4e4da01c4cc742"
+      },
+      "resources": [
+        {
+          "pack_id": "vercel",
+          "kind": "asset",
+          "resource_id": "writing-guidelines-rules",
+          "upstream_path": "command.md"
+        },
+        {
+          "pack_id": "vercel",
+          "kind": "notice",
+          "resource_id": "writing-guidelines-mit",
+          "upstream_path": "LICENSE"
+        }
+      ]
     }
   ]
 }
