@@ -38,13 +38,29 @@ type execValidationRunner struct{}
 func (execValidationRunner) Run(ctx context.Context, repository string, sandbox deliveryevidence.SandboxFacts) error {
 	c := exec.CommandContext(ctx, "./scripts/validate-packy.sh")
 	c.Dir = repository
-	c.Env = append(os.Environ(),
-		"PACKY_VALIDATION_HOME="+sandbox.HomeRoot,
-		"PACKY_VALIDATION_CONFIG_HOME="+sandbox.ConfigHomeRoot,
-	)
+	c.Env = replacedEnvironment(os.Environ(), map[string]string{
+		"HOME":                         sandbox.HomeRoot,
+		"XDG_CONFIG_HOME":              sandbox.ConfigHomeRoot,
+		"PACKY_VALIDATION_HOME":        sandbox.HomeRoot,
+		"PACKY_VALIDATION_CONFIG_HOME": sandbox.ConfigHomeRoot,
+	})
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	return c.Run()
+}
+
+func replacedEnvironment(current []string, replacements map[string]string) []string {
+	out := make([]string, 0, len(current)+len(replacements))
+	for _, entry := range current {
+		key, _, _ := strings.Cut(entry, "=")
+		if _, replaced := replacements[key]; !replaced {
+			out = append(out, entry)
+		}
+	}
+	for key, value := range replacements {
+		out = append(out, key+"="+value)
+	}
+	return out
 }
 
 type command struct {
@@ -574,6 +590,7 @@ type validationFlags struct {
 	sandboxHome     string
 	sandboxConfig   string
 	identityExpires string
+	requiredCommand string
 }
 
 func parseValidationFlags(name string, args []string) (validationFlags, error) {
@@ -585,6 +602,7 @@ func parseValidationFlags(name string, args []string) (validationFlags, error) {
 	f.StringVar(&values.sandboxHome, "sandbox-home", "", "absolute disposable HOME used by validation")
 	f.StringVar(&values.sandboxConfig, "sandbox-config-home", "", "absolute disposable configuration root used by validation")
 	f.StringVar(&values.identityExpires, "validator-identity-expires-at", "", "canonical RFC3339 validator identity expiry")
+	f.StringVar(&values.requiredCommand, "required-command", exhaustiveValidationCommand, "exact validation authority command to observe")
 	if err := f.Parse(args); err != nil {
 		return validationFlags{}, err
 	}
@@ -601,6 +619,9 @@ func (c command) recordExhaustiveValidation(ctx context.Context, args []string, 
 	}
 	if c.Validation == nil {
 		return errors.New("validation runner is required")
+	}
+	if values.requiredCommand != exhaustiveValidationCommand {
+		return errors.New("recording supports only the exhaustive validation authority command")
 	}
 	bundle, _, err := deliveryevidence.Load(values.bundlePath)
 	if err != nil {
@@ -715,6 +736,20 @@ func (c command) validationObservation(ctx context.Context, bundle deliveryevide
 	if slug != bundle.Repository.Owner+"/"+bundle.Repository.Name {
 		return deliveryevidence.ValidationObservation{}, errors.New("validation repository does not match bundle authority")
 	}
+	if c.GitHub == nil {
+		return deliveryevidence.ValidationObservation{}, errors.New("GitHub read-only runner is required")
+	}
+	repositoryRaw, err := c.GitHub.Output(ctx, "gh", "repo", "view", slug, "--json", "nameWithOwner,id")
+	if err != nil {
+		return deliveryevidence.ValidationObservation{}, fmt.Errorf("observe GitHub repository identity: %w", err)
+	}
+	var observedRepository repoObservation
+	if err = json.Unmarshal(repositoryRaw, &observedRepository); err != nil {
+		return deliveryevidence.ValidationObservation{}, err
+	}
+	if observedRepository.NameWithOwner != slug || observedRepository.ID != bundle.Repository.NodeID {
+		return deliveryevidence.ValidationObservation{}, errors.New("validation repository identity does not match bundle authority")
+	}
 	headRaw, err := c.Git.Output(ctx, "git", "-C", repository, "rev-parse", "HEAD^{commit}")
 	if err != nil {
 		return deliveryevidence.ValidationObservation{}, fmt.Errorf("observe validation commit: %w", err)
@@ -743,7 +778,7 @@ func (c command) validationObservation(ctx context.Context, bundle deliveryevide
 		ValidatorIdentity:          "scripts/validate-packy.sh",
 		ValidatorSHA256:            fmt.Sprintf("%x", validatorDigest),
 		ValidatorIdentityExpiresAt: values.identityExpires,
-		RequiredCommand:            exhaustiveValidationCommand,
+		RequiredCommand:            values.requiredCommand,
 		Sandbox:                    sandbox,
 	}, nil
 }

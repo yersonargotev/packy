@@ -48,6 +48,24 @@ func (f *fakeRunner) Output(_ context.Context, name string, args ...string) ([]b
 	return out, nil
 }
 
+func TestValidationRunnerEnvironmentReplacesOperatorRoots(t *testing.T) {
+	got := replacedEnvironment(
+		[]string{"HOME=/operator", "XDG_CONFIG_HOME=/operator/config", "PATH=/bin"},
+		map[string]string{"HOME": "/sandbox/home", "XDG_CONFIG_HOME": "/sandbox/config"},
+	)
+	joined := "\n" + strings.Join(got, "\n") + "\n"
+	for _, want := range []string{"\nHOME=/sandbox/home\n", "\nXDG_CONFIG_HOME=/sandbox/config\n", "\nPATH=/bin\n"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("replacement environment missing %q: %v", want, got)
+		}
+	}
+	for _, forbidden := range []string{"HOME=/operator\n", "XDG_CONFIG_HOME=/operator/config\n"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("operator root survived replacement: %v", got)
+		}
+	}
+}
+
 func TestInitializeResumeAndFreshAuthorityInvalidation(t *testing.T) {
 	root := t.TempDir()
 	common := filepath.Join(root, "common")
@@ -344,6 +362,7 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 		}
 	}
 	clock := func() time.Time { return time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC) }
+	repositoryObservation := []byte(`{"nameWithOwner":"yersonargotev/packy","id":"R1"}`)
 	args := []string{
 		"record-exhaustive-validation",
 		"--bundle", bundlePath,
@@ -353,9 +372,10 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 		"--validator-identity-expires-at", "2026-07-28T00:00:00Z",
 	}
 	git := &fakeRunner{outputs: append(gitObservation(tree, false), gitObservation(tree, false)...)}
+	github := &fakeRunner{outputs: [][]byte{repositoryObservation, repositoryObservation}}
 	validation := &fakeValidationRunner{}
 	var stdout bytes.Buffer
-	if err := (command{Git: git, Validation: validation, Now: clock}).run(context.Background(), args, &stdout); err != nil {
+	if err := (command{Git: git, GitHub: github, Validation: validation, Now: clock}).run(context.Background(), args, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	if len(validation.calls) != 1 || validation.calls[0].HomeRoot != home || validation.calls[0].ConfigHomeRoot != config {
@@ -370,10 +390,10 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 	}
 
 	statusArgs := append([]string{"validation-status"}, args[1:]...)
-	assertStatus := func(outputs [][]byte, commandArgs []string, want string) {
+	assertStatus := func(outputs [][]byte, commandArgs []string, now func() time.Time, repositoryIdentity []byte, want string) {
 		t.Helper()
 		var output bytes.Buffer
-		err := (command{Git: &fakeRunner{outputs: outputs}, Now: clock}).run(context.Background(), commandArgs, &output)
+		err := (command{Git: &fakeRunner{outputs: outputs}, GitHub: &fakeRunner{outputs: [][]byte{repositoryIdentity}}, Now: now}).run(context.Background(), commandArgs, &output)
 		if want == "" {
 			if err != nil || !strings.Contains(output.String(), "reusable exhaustive validation") {
 				t.Fatalf("exact receipt not reusable: %q %v", output.String(), err)
@@ -384,21 +404,33 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 			t.Fatalf("wanted %q, got %v", want, err)
 		}
 	}
-	assertStatus(gitObservation(tree, false), statusArgs, "")
-	assertStatus(gitObservation(strings.Repeat("d", 40), false), statusArgs, "no exhaustive validation receipt matches")
-	assertStatus(gitObservation(tree, true), statusArgs, "clean workspace")
+	assertStatus(gitObservation(tree, false), statusArgs, clock, repositoryObservation, "")
+	changedCommit := gitObservation(tree, false)
+	changedCommit[1] = []byte(strings.Repeat("d", 40) + "\n")
+	assertStatus(changedCommit, statusArgs, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	assertStatus(gitObservation(strings.Repeat("d", 40), false), statusArgs, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	assertStatus(gitObservation(tree, true), statusArgs, clock, repositoryObservation, "clean workspace")
 	alteredSandbox := append([]string(nil), statusArgs...)
 	for i := range alteredSandbox {
 		if alteredSandbox[i] == config {
 			alteredSandbox[i] = config + "-changed"
 		}
 	}
-	assertStatus(gitObservation(tree, false), alteredSandbox, "no exhaustive validation receipt matches")
+	assertStatus(gitObservation(tree, false), alteredSandbox, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	changedCommand := append([]string(nil), statusArgs...)
+	changedCommand = append(changedCommand, "--required-command", "./scripts/validate-packy.sh --changed")
+	assertStatus(gitObservation(tree, false), changedCommand, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	foreignRepository := []byte(`{"nameWithOwner":"yersonargotev/packy","id":"R-foreign"}`)
+	assertStatus(gitObservation(tree, false), statusArgs, clock, foreignRepository, "repository identity does not match")
+	expiredClock := func() time.Time { return time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC) }
+	assertStatus(gitObservation(tree, false), statusArgs, expiredClock, repositoryObservation, "validator identity is expired")
+	incompleteIdentity := []string{"validation-status", "--bundle", bundlePath, "--repository", repository, "--sandbox-home", home, "--sandbox-config-home", config}
+	assertStatus(nil, incompleteIdentity, clock, repositoryObservation, "validator-identity-expires-at are required")
 
 	if err := os.WriteFile(validatorPath, []byte("#!/usr/bin/env bash\nexit 1\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	assertStatus(gitObservation(tree, false), statusArgs, "no exhaustive validation receipt matches")
+	assertStatus(gitObservation(tree, false), statusArgs, clock, repositoryObservation, "no exhaustive validation receipt matches")
 	if err := os.WriteFile(validatorPath, []byte("#!/usr/bin/env bash\nexit 0\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +447,7 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 			foreignArgs[i] = foreign
 		}
 	}
-	assertStatus(gitObservation(tree, false), foreignArgs, "no exhaustive validation receipt matches")
+	assertStatus(gitObservation(tree, false), foreignArgs, clock, repositoryObservation, "no exhaustive validation receipt matches")
 
 	failingPath := filepath.Join(root, "failed.json")
 	if err := deliveryevidence.StoreAtomic(failingPath, bundle); err != nil {
@@ -432,7 +464,7 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 		}
 	}
 	failedValidation := &fakeValidationRunner{fail: true}
-	err = (command{Git: &fakeRunner{outputs: gitObservation(tree, false)}, Validation: failedValidation, Now: clock}).run(context.Background(), failingArgs, &bytes.Buffer{})
+	err = (command{Git: &fakeRunner{outputs: gitObservation(tree, false)}, GitHub: &fakeRunner{outputs: [][]byte{repositoryObservation}}, Validation: failedValidation, Now: clock}).run(context.Background(), failingArgs, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "exhaustive validation failed") {
 		t.Fatalf("failed validation accepted: %v", err)
 	}
@@ -463,7 +495,7 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 			focusedStatus[i] = focusedPath
 		}
 	}
-	assertStatus(gitObservation(tree, false), focusedStatus, "no exhaustive validation receipt matches")
+	assertStatus(gitObservation(tree, false), focusedStatus, clock, repositoryObservation, "no exhaustive validation receipt matches")
 }
 
 func reviewBundleFixture(base string) deliveryevidence.Bundle {
