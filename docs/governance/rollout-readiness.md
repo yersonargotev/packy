@@ -160,6 +160,22 @@ pending issue #317's bounded redesign. The `github-pages` environment no longer
 requires a second Owner review and retains its exact protected `main` branch
 policy. Fresh post-merge governance observation closes this transition.
 
+### 2026-07-26 ADR 0019 Pack Sync activation
+
+The bounded Pack Sync replacement merged in PR #319 and its exact effect-free
+activation proof completed in
+[run 30230017470](https://github.com/yersonargotev/packy/actions/runs/30230017470)
+in 156 seconds. Publish was skipped, every Pack-content and transport gate
+passed, and the `sync/vercel` branch and pull-request state remained absent.
+The workflow is therefore active under ADR 0019.
+
+The first protected-main request,
+[run 30230208253](https://github.com/yersonargotev/packy/actions/runs/30230208253),
+then failed closed before Inspect because the versioned workflow-identity
+baseline still expected `disabled_manually`. The expected state now records the
+accepted active identity; the promotion and publication gates continue to block
+any different workflow state.
+
 ## Verified baseline
 
 | Surface | Current state | Independent evidence | Consequence |

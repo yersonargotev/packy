@@ -269,7 +269,7 @@
         {
           "name": "Synchronize pack source",
           "path": ".github/workflows/sync-pack-source.yml",
-          "state": "disabled_manually"
+          "state": "active"
         },
         {
           "name": "pages-build-deployment",
