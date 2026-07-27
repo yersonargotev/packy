@@ -154,17 +154,24 @@ complete, while preserving the evidence and disposition of every other ledger
 entry. Once the latest iteration has zero actionable
 findings, run the final local gate on the unchanged `HEAD`: all acceptance
 checks, `./scripts/validate-packy.sh`, `git diff --check`, relevant sandboxed
-real-boundary checks, and confirmation that every matrix row is `proved`. Any
-unproved row fails the gate. Do not add a cumulative code review; every
-committed delta has already received its paired review.
+real-boundary checks, and confirmation that every matrix row is `proved`. Then
+run the repository-owned machine-verifiable LOCAL gate against the canonical
+evidence bundle and unchanged current repository, and retain its successful
+canonical report. Any unproved row or failed machine-verifiable gate fails the
+local gate. Do not add a cumulative code review; every committed delta has
+already received its paired review.
 
 **Complete when:** every implementation commit has a paired review of exactly
 its preceding `iteration-base-sha...HEAD` delta, every finding is adjudicated,
 the latest review has zero actionable findings, every acceptance criterion has
 a `proved` matrix row, the issue branch contains only intended commits, and
-every local gate passes on its unchanged final `HEAD`.
+every local gate, including the repository-owned machine-verifiable gate, passes
+on its unchanged final `HEAD`.
 
 ### 3. NON-LOCAL — Deliver
+
+Enter NON-LOCAL only with the successful canonical machine-verifiable LOCAL gate
+report for the exact current `HEAD`.
 
 Re-read the issue and its authoritative specification before the first
 mutation. If either changed materially, return to LOCAL qualification and

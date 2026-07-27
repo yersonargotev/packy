@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +21,16 @@ type fakeRunner struct {
 	outputs [][]byte
 	calls   []string
 	failAt  int
+}
+
+type environmentRunner struct {
+	environment []string
+}
+
+func (r environmentRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = r.environment
+	return cmd.Output()
 }
 
 type fakeValidationRunner struct {
@@ -496,6 +508,312 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 		}
 	}
 	assertStatus(gitObservation(tree, false), focusedStatus, clock, repositoryObservation, "no exhaustive validation receipt matches")
+}
+
+type localGateFixture struct {
+	root        string
+	repository  string
+	bundlePath  string
+	home        string
+	config      string
+	branch      string
+	issue       issueObservation
+	spec        issueObservation
+	environment []string
+}
+
+func newLocalGateFixture(t *testing.T, iterations int) localGateFixture {
+	t.Helper()
+	root := t.TempDir()
+	repository := filepath.Join(root, "checkout")
+	operatorHome := filepath.Join(root, "operator-home")
+	operatorConfig := filepath.Join(root, "operator-config")
+	environment := replacedEnvironment(os.Environ(), map[string]string{
+		"HOME":                operatorHome,
+		"XDG_CONFIG_HOME":     operatorConfig,
+		"GIT_CONFIG_GLOBAL":   filepath.Join(root, "empty-gitconfig"),
+		"GIT_CONFIG_NOSYSTEM": "1",
+	})
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repository
+		cmd.Env = environment
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	if err := os.MkdirAll(filepath.Join(repository, "scripts"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	run("git", "init", "-b", "feat/issue-279-local-delivery-gate")
+	run("git", "config", "user.name", "Gate Test")
+	run("git", "config", "user.email", "gate@example.com")
+	run("git", "remote", "add", "origin", "git@github.com:yersonargotev/packy.git")
+	validator := []byte("#!/usr/bin/env bash\nexit 0\n")
+	if err := os.WriteFile(filepath.Join(repository, "scripts", "validate-packy.sh"), validator, 0700); err != nil {
+		t.Fatal(err)
+	}
+	run("git", "add", "scripts/validate-packy.sh")
+	run("git", "commit", "-m", "base")
+	base := run("git", "rev-parse", "HEAD")
+
+	var recorded []deliveryevidence.Iteration
+	previous := base
+	for i := 1; i <= iterations; i++ {
+		path := filepath.Join(repository, fmt.Sprintf("change-%d.txt", i))
+		if err := os.WriteFile(path, []byte(fmt.Sprintf("change %d\n", i)), 0600); err != nil {
+			t.Fatal(err)
+		}
+		run("git", "add", filepath.Base(path))
+		run("git", "commit", "-m", fmt.Sprintf("iteration %d", i))
+		head := run("git", "rev-parse", "HEAD")
+		recorded = append(recorded, deliveryevidence.Iteration{Sequence: i, Identity: fmt.Sprintf("iteration-%d", i), BaseSHA: previous, HeadSHA: head, EvidenceSHA256: strings.Repeat(fmt.Sprint(i), 64)})
+		previous = head
+	}
+	head := previous
+	tree := run("git", "rev-parse", "HEAD^{tree}")
+	issue := issueObservation{Number: 279, ID: "I279", Title: "LOCAL gate", Body: "immutable issue", State: "OPEN", Labels: []labelObservation{{Name: "status:approved"}}}
+	spec := issueObservation{Number: 275, ID: "I275", Title: "accepted spec", Body: "immutable spec", State: "OPEN", Labels: []labelObservation{{Name: "status:approved"}}}
+	issueSHA, err := deliveryevidence.TypedObservationHash("github-issue", "yersonargotev/packy#279:I279", normalizedIssue(issue))
+	if err != nil {
+		t.Fatal(err)
+	}
+	specSHA, err := deliveryevidence.TypedObservationHash("github-spec", "yersonargotev/packy#275:I275", normalizedIssue(spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := deliveryevidence.AcceptanceRow{Identity: "AC-01", Criterion: "complete local gate", OwningSeam: "delivery evidence", PositiveEvidence: "passing report", NegativeEvidence: "fail closed", FailureEvidence: "distinct diagnostics", MutationEvidence: "read only", CompatibilityEvidence: "additive", PreservationEvidence: "workflow preserved", MigrationEvidence: "N/A: additive", State: deliveryevidence.AcceptanceProved}
+	bundle := deliveryevidence.Bundle{
+		Schema:           deliveryevidence.SchemaV1,
+		Repository:       deliveryevidence.RepositoryIdentity{Owner: "yersonargotev", Name: "packy", NodeID: "R1"},
+		Issue:            deliveryevidence.IssueIdentity{Number: 279, NodeID: "I279"},
+		Spec:             deliveryevidence.SpecIdentity{Number: 275, NodeID: "I275"},
+		Authority:        deliveryevidence.Authority{IssueSHA256: issueSHA, SpecSHA256: specSHA, Labels: []string{"status:approved"}, DependencyDisposition: []deliveryevidence.DependencyDisposition{}, AcceptanceCriteria: []string{"AC-01"}},
+		Scope:            deliveryevidence.ScopeLedger{OwnedNow: []deliveryevidence.LedgerEntry{{Identity: "O1", Requirement: "complete local gate", EvidenceLink: "issue#279"}}, Deferred: []deliveryevidence.DeferredEntry{}, Forbidden: []deliveryevidence.LedgerEntry{}, Prerequisites: []deliveryevidence.PrerequisiteEntry{}},
+		AcceptanceMatrix: []deliveryevidence.AcceptanceRow{row},
+		StartingBaseSHA:  base,
+		Iterations:       recorded,
+		ReviewReceipts:   []deliveryevidence.ReviewReceipt{},
+		Adjudications:    []deliveryevidence.Adjudication{},
+	}
+	for _, iteration := range recorded {
+		for _, axis := range []deliveryevidence.ReviewAxis{deliveryevidence.ReviewStandards, deliveryevidence.ReviewSpec} {
+			bundle.ReviewReceipts = append(bundle.ReviewReceipts, deliveryevidence.ReviewReceipt{IssueNumber: 279, Iteration: iteration.Identity, BaseSHA: iteration.BaseSHA, HeadSHA: iteration.HeadSHA, Axis: axis, Findings: []deliveryevidence.ReviewFinding{}})
+		}
+	}
+	resolvedRepository, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkoutDigest := sha256.Sum256([]byte(resolvedRepository))
+	validatorDigest := sha256.Sum256(validator)
+	home := filepath.Join(root, "sandbox-home")
+	config := filepath.Join(root, "sandbox-config")
+	observation := deliveryevidence.ValidationObservation{
+		Repository:                 bundle.Repository,
+		CheckoutSHA256:             fmt.Sprintf("%x", checkoutDigest),
+		CommitSHA:                  head,
+		TreeSHA:                    tree,
+		WorkspaceClean:             true,
+		ValidatorIdentity:          "scripts/validate-packy.sh",
+		ValidatorSHA256:            fmt.Sprintf("%x", validatorDigest),
+		ValidatorIdentityExpiresAt: "2026-07-29T00:00:00Z",
+		RequiredCommand:            exhaustiveValidationCommand,
+		Sandbox:                    deliveryevidence.SandboxFacts{HomeRoot: home, ConfigHomeRoot: config, Sandboxed: true},
+	}
+	bundle, err = deliveryevidence.RecordExhaustiveValidation(bundle, deliveryevidence.ExhaustiveValidationResult{Observation: observation, CompletedAt: "2026-07-27T12:00:00Z", Succeeded: true, Completed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundlePath := filepath.Join(root, "evidence.json")
+	if err = deliveryevidence.StoreAtomic(bundlePath, bundle); err != nil {
+		t.Fatal(err)
+	}
+	return localGateFixture{root: root, repository: repository, bundlePath: bundlePath, home: home, config: config, branch: "feat/issue-279-local-delivery-gate", issue: issue, spec: spec, environment: environment}
+}
+
+func (f localGateFixture) run(t *testing.T, issue issueObservation, expectedBranch string, extra ...string) (string, error) {
+	t.Helper()
+	issueRaw, _ := json.Marshal(issue)
+	specRaw, _ := json.Marshal(f.spec)
+	repositoryRaw := []byte(`{"nameWithOwner":"yersonargotev/packy","id":"R1"}`)
+	github := &fakeRunner{outputs: [][]byte{issueRaw, specRaw, repositoryRaw}}
+	args := []string{"local-gate", "--bundle", f.bundlePath, "--repository", f.repository, "--delivery-branch", expectedBranch, "--sandbox-home", f.home, "--sandbox-config-home", f.config, "--validator-identity-expires-at", "2026-07-29T00:00:00Z"}
+	args = append(args, extra...)
+	var stdout bytes.Buffer
+	err := (command{Git: environmentRunner{environment: f.environment}, GitHub: github, Now: func() time.Time {
+		return time.Date(2026, 7, 27, 13, 0, 0, 0, time.UTC)
+	}}).run(context.Background(), args, &stdout)
+	for _, call := range github.calls {
+		if !strings.HasPrefix(call, "gh issue view ") && !strings.HasPrefix(call, "gh repo view ") {
+			t.Fatalf("LOCAL gate used mutating or foreign GitHub authority: %s", call)
+		}
+	}
+	return stdout.String(), err
+}
+
+func TestLocalGateCommandAtSandboxedHighestSeam(t *testing.T) {
+	for _, iterations := range []int{1, 2} {
+		t.Run(fmt.Sprintf("%d-iterations", iterations), func(t *testing.T) {
+			fixture := newLocalGateFixture(t, iterations)
+			before, err := os.ReadFile(fixture.bundlePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, err := fixture.run(t, fixture.issue, fixture.branch)
+			if err != nil || !strings.Contains(output, "LOCAL delivery gate: PASS") || !strings.Contains(output, fmt.Sprintf("Iterations: %d", iterations)) {
+				t.Fatalf("gate did not pass: %q %v", output, err)
+			}
+			after, err := os.ReadFile(fixture.bundlePath)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("read-only gate changed canonical evidence")
+			}
+		})
+	}
+}
+
+func TestLocalGateCommandFailureClasses(t *testing.T) {
+	t.Run("required-arguments", func(t *testing.T) {
+		var output bytes.Buffer
+		err := (command{}).run(context.Background(), []string{"local-gate"}, &output)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateQualificationInvalid)) || !strings.Contains(output.String(), "LOCAL delivery gate: FAIL") {
+			t.Fatalf("unexpected result: %q %v", output.String(), err)
+		}
+	})
+	t.Run("authority-observation", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		github := &fakeRunner{outputs: [][]byte{[]byte("{}")}, failAt: 1}
+		args := []string{"local-gate", "--bundle", f.bundlePath, "--repository", f.repository, "--delivery-branch", f.branch, "--sandbox-home", f.home, "--sandbox-config-home", f.config, "--validator-identity-expires-at", "2026-07-29T00:00:00Z"}
+		var output bytes.Buffer
+		err := (command{Git: environmentRunner{environment: f.environment}, GitHub: github}).run(context.Background(), args, &output)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateTrackerAuthorityChanged)) || !strings.Contains(output.String(), "Issue: #279") {
+			t.Fatalf("unexpected result: %q %v", output.String(), err)
+		}
+	})
+	t.Run("missing-acceptance-row", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		b, _, _ := deliveryevidence.Load(f.bundlePath)
+		b.AcceptanceMatrix = []deliveryevidence.AcceptanceRow{}
+		raw, err := json.Marshal(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(f.bundlePath, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		output, err := f.run(t, f.issue, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateQualificationInvalid)) || !strings.Contains(err.Error(), "missing acceptance matrix row AC-01") || !strings.Contains(output, "LOCAL delivery gate: FAIL") {
+			t.Fatalf("unexpected result: %q %v", output, err)
+		}
+	})
+	t.Run("tracker-authority-changed", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		changed := f.issue
+		changed.Body = "changed"
+		output, err := f.run(t, changed, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateTrackerAuthorityChanged)) || !strings.Contains(output, "Issue: #279") {
+			t.Fatalf("unexpected result: %q %v", output, err)
+		}
+	})
+	t.Run("acceptance-unproved", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		b, _, _ := deliveryevidence.Load(f.bundlePath)
+		b.AcceptanceMatrix[0].State = deliveryevidence.AcceptancePlanned
+		if err := deliveryevidence.StoreAtomic(f.bundlePath, b); err != nil {
+			t.Fatal(err)
+		}
+		_, err := f.run(t, f.issue, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateAcceptanceUnproved)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("review-gap", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		b, _, _ := deliveryevidence.Load(f.bundlePath)
+		b.ReviewReceipts = b.ReviewReceipts[:1]
+		if err := deliveryevidence.StoreAtomic(f.bundlePath, b); err != nil {
+			t.Fatal(err)
+		}
+		_, err := f.run(t, f.issue, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateReviewGap)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("unresolved-findings", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		b, _, _ := deliveryevidence.Load(f.bundlePath)
+		axis := b.ReviewReceipts[0].Axis
+		authority := deliveryevidence.AuthorityDocumentedStandard
+		if axis == deliveryevidence.ReviewSpec {
+			authority = deliveryevidence.AuthoritySpecRequirement
+		}
+		finding := deliveryevidence.ReviewFinding{ID: "FINDING-1", Axis: axis, Severity: deliveryevidence.SeverityP1, Authority: authority, Citation: "issue#279:AC-07", Location: "gate.go", Evidence: "repair required"}
+		b.ReviewReceipts[0].Findings = []deliveryevidence.ReviewFinding{finding}
+		b.Adjudications = []deliveryevidence.Adjudication{{Sequence: 1, FindingID: finding.ID, Disposition: deliveryevidence.DispositionAccepted, Evidence: "owned repair", RepairIteration: "iteration-2"}}
+		if err := deliveryevidence.StoreAtomic(f.bundlePath, b); err != nil {
+			t.Fatal(err)
+		}
+		_, err := f.run(t, f.issue, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateUnresolvedFindings)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("stale-validation", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		_, err := f.run(t, f.issue, f.branch, "--required-command", "./scripts/validate-packy.sh --changed")
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateStaleValidation)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("dirty-workspace", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		if err := os.WriteFile(filepath.Join(f.repository, "dirty.txt"), []byte("dirty"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := f.run(t, f.issue, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateDirtyWorkspace)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("wrong-branch", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		_, err := f.run(t, f.issue, "feat/issue-279-other")
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateWrongBranch)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("self-asserted-main", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		_, err := f.run(t, f.issue, "main")
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateWrongBranch)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("foreign-evidence", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		foreign := f.issue
+		foreign.ID = "I-foreign"
+		_, err := f.run(t, foreign, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateForeignEvidence)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("unrecorded-delta", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		cmd := exec.Command("git", "commit", "--allow-empty", "-m", "extra")
+		cmd.Dir = f.repository
+		cmd.Env = f.environment
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("extra commit: %v\n%s", err, out)
+		}
+		_, err := f.run(t, f.issue, f.branch)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateUnrecordedDelta)) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 func reviewBundleFixture(base string) deliveryevidence.Bundle {

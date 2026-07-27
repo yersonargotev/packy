@@ -140,6 +140,8 @@ func (c command) run(ctx context.Context, args []string, stdout io.Writer) error
 		return c.validationStatus(ctx, args[1:], stdout)
 	case "record-focused-validation":
 		return c.recordFocusedValidation(args[1:], stdout)
+	case "local-gate":
+		return c.localGate(ctx, args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -255,17 +257,17 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if issue.Number != q.IssueNumber || spec.Number != q.SpecNumber || issue.ID == "" || spec.ID == "" {
 		return errors.New("foreign issue or spec identity")
 	}
-	if !strings.EqualFold(issue.State, "OPEN") || !strings.EqualFold(spec.State, "OPEN") {
-		return errors.New("issue and accepted spec must be open")
-	}
-	labels := labelNames(issue.Labels)
-	if !hasLabel(labels, "status:approved") && !hasLabel(labels, "status:needs-review") {
-		return errors.New("issue is not eligible: approved or needs-review status is required")
-	}
-	specLabels := labelNames(spec.Labels)
-	if !hasLabel(specLabels, "status:accepted") && !hasLabel(specLabels, "status:approved") {
+	if !eligibleIssueObservation(issue) || !eligibleSpecObservation(spec) {
+		if !strings.EqualFold(issue.State, "OPEN") || !strings.EqualFold(spec.State, "OPEN") {
+			return errors.New("issue and accepted spec must be open")
+		}
+		labels := labelNames(issue.Labels)
+		if !hasLabel(labels, "status:approved") && !hasLabel(labels, "status:needs-review") {
+			return errors.New("issue is not eligible: approved or needs-review status is required")
+		}
 		return errors.New("spec authority is not accepted")
 	}
+	labels := labelNames(issue.Labels)
 	if err = matchDependencies(q.DependencyDisposition, issue.BlockedBy.Nodes); err != nil {
 		return err
 	}
@@ -359,6 +361,16 @@ func hasLabel(labels []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func eligibleIssueObservation(issue issueObservation) bool {
+	labels := labelNames(issue.Labels)
+	return strings.EqualFold(issue.State, "OPEN") && (hasLabel(labels, "status:approved") || hasLabel(labels, "status:needs-review"))
+}
+
+func eligibleSpecObservation(spec issueObservation) bool {
+	labels := labelNames(spec.Labels)
+	return strings.EqualFold(spec.State, "OPEN") && (hasLabel(labels, "status:approved") || hasLabel(labels, "status:accepted"))
 }
 
 type canonicalIssue struct {
@@ -676,6 +688,105 @@ func (c command) validationStatus(ctx context.Context, args []string, stdout io.
 		return err
 	}
 	_, err = fmt.Fprintf(stdout, "reusable exhaustive validation completed at %s\n", receipt.CompletedAt)
+	return err
+}
+
+func (c command) localGate(ctx context.Context, args []string, stdout io.Writer) error {
+	renderFailure := func(err *deliveryevidence.LocalGateError) error {
+		_, _ = io.WriteString(stdout, deliveryevidence.RenderLocalGateFailureReport(err))
+		return err
+	}
+	bareFailure := func(code deliveryevidence.LocalGateErrorCode, detail string) error {
+		return renderFailure(&deliveryevidence.LocalGateError{Code: code, Detail: detail})
+	}
+	f := flag.NewFlagSet("deliveryevidence local-gate", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	var values validationFlags
+	var branch string
+	f.StringVar(&values.bundlePath, "bundle", "", "canonical evidence bundle")
+	f.StringVar(&values.repository, "repository", ".", "repository to observe")
+	f.StringVar(&values.sandboxHome, "sandbox-home", "", "absolute disposable HOME used by validation")
+	f.StringVar(&values.sandboxConfig, "sandbox-config-home", "", "absolute disposable configuration root used by validation")
+	f.StringVar(&values.identityExpires, "validator-identity-expires-at", "", "canonical RFC3339 validator identity expiry")
+	f.StringVar(&values.requiredCommand, "required-command", exhaustiveValidationCommand, "exact validation authority command to observe")
+	f.StringVar(&branch, "delivery-branch", "", "exact intended issue-delivery branch")
+	if err := f.Parse(args); err != nil {
+		return bareFailure(deliveryevidence.LocalGateQualificationInvalid, err.Error())
+	}
+	if values.bundlePath == "" || values.sandboxHome == "" || values.sandboxConfig == "" || values.identityExpires == "" || branch == "" || f.NArg() != 0 {
+		return bareFailure(deliveryevidence.LocalGateQualificationInvalid, "bundle, delivery-branch, sandbox-home, sandbox-config-home, and validator-identity-expires-at are required")
+	}
+	bundle, _, err := deliveryevidence.Load(values.bundlePath)
+	if err != nil {
+		return bareFailure(deliveryevidence.LocalGateQualificationInvalid, err.Error())
+	}
+	observation := deliveryevidence.LocalGateObservation{Repository: bundle.Repository, Issue: bundle.Issue, Spec: bundle.Spec, ExpectedBranch: branch}
+	fail := func(code deliveryevidence.LocalGateErrorCode, detail string) error {
+		return renderFailure(deliveryevidence.NewLocalGateFailure(bundle, observation, code, detail))
+	}
+	if c.Git == nil || c.GitHub == nil {
+		return fail(deliveryevidence.LocalGateQualificationInvalid, "Git and GitHub read-only runners are required")
+	}
+	slug := bundle.Repository.Owner + "/" + bundle.Repository.Name
+	observeIssue := func(number int) (issueObservation, error) {
+		raw, observeErr := c.GitHub.Output(ctx, "gh", "issue", "view", fmt.Sprint(number), "--repo", slug, "--json", "number,id,title,body,state,labels,blockedBy")
+		if observeErr != nil {
+			return issueObservation{}, observeErr
+		}
+		var observed issueObservation
+		observeErr = json.Unmarshal(raw, &observed)
+		return observed, observeErr
+	}
+	issue, err := observeIssue(bundle.Issue.Number)
+	if err != nil {
+		return fail(deliveryevidence.LocalGateTrackerAuthorityChanged, fmt.Sprintf("observe current issue authority: %v", err))
+	}
+	observation.Issue = deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID}
+	spec, err := observeIssue(bundle.Spec.Number)
+	if err != nil {
+		return fail(deliveryevidence.LocalGateTrackerAuthorityChanged, fmt.Sprintf("observe current specification authority: %v", err))
+	}
+	observation.Spec = deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID}
+	issueHash, err := deliveryevidence.TypedObservationHash("github-issue", fmt.Sprintf("%s#%d:%s", slug, issue.Number, issue.ID), normalizedIssue(issue))
+	if err != nil {
+		return fail(deliveryevidence.LocalGateTrackerAuthorityChanged, err.Error())
+	}
+	observation.IssueSHA256 = issueHash
+	specHash, err := deliveryevidence.TypedObservationHash("github-spec", fmt.Sprintf("%s#%d:%s", slug, spec.Number, spec.ID), normalizedIssue(spec))
+	if err != nil {
+		return fail(deliveryevidence.LocalGateTrackerAuthorityChanged, err.Error())
+	}
+	observation.SpecSHA256 = specHash
+	observation.IssueEligible = eligibleIssueObservation(issue)
+	observation.SpecEligible = eligibleSpecObservation(spec)
+	validation, err := c.validationObservation(ctx, bundle, values)
+	if err != nil {
+		code := deliveryevidence.LocalGateStaleValidation
+		if strings.Contains(err.Error(), "repository") {
+			code = deliveryevidence.LocalGateForeignEvidence
+		}
+		return fail(code, err.Error())
+	}
+	observation.Validation = validation
+	observation.HeadSHA = validation.CommitSHA
+	observation.TreeSHA = validation.TreeSHA
+	observation.ObservedAt = c.now().Format(time.RFC3339Nano)
+	branchRaw, err := c.Git.Output(ctx, "git", "-C", values.repository, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return fail(deliveryevidence.LocalGateWrongBranch, fmt.Sprintf("observe delivery branch: %v", err))
+	}
+	observation.CurrentBranch = strings.TrimSpace(string(branchRaw))
+	commitsRaw, err := c.Git.Output(ctx, "git", "-C", values.repository, "rev-list", "--reverse", "--ancestry-path", bundle.StartingBaseSHA+".."+validation.CommitSHA)
+	if err != nil {
+		return fail(deliveryevidence.LocalGateUnrecordedDelta, fmt.Sprintf("observe delivery commits: %v", err))
+	}
+	observation.OrderedCommits = append([]string{bundle.StartingBaseSHA}, strings.Fields(string(commitsRaw))...)
+	report, err := deliveryevidence.EvaluateLocalGate(bundle, observation)
+	if err != nil {
+		_, _ = io.WriteString(stdout, deliveryevidence.RenderLocalGateFailureReport(err))
+		return err
+	}
+	_, err = io.WriteString(stdout, deliveryevidence.RenderLocalGateReport(report))
 	return err
 }
 

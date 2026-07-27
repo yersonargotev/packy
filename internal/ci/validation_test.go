@@ -1940,6 +1940,8 @@ func TestHostile(t *testing.T) {
 		"GOPATH="+filepath.Join(tempRoot, "go-path"),
 		"HOSTILE_SENTINEL="+sentinel,
 		"PACKY_VALIDATION_COMMAND_LOG="+commandLog,
+		"PACKY_VALIDATION_HOME=",
+		"PACKY_VALIDATION_CONFIG_HOME=",
 		"PATH="+shimRoot+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"TMPDIR="+validationTemp,
 	)
