@@ -164,13 +164,79 @@ func TestRecordOperationsPreserveAppendOnlyHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := finding("finding-1", ReviewStandards)
-	if b, err = RecordReview(b, receipt(b, it.Identity, ReviewStandards, f)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = RecordAdjudication(b, Adjudication{Sequence: 1, FindingID: f.ID, Disposition: DispositionScoped, Evidence: "a separately approved issue owns this location"}); err != nil {
+	scoped := Adjudication{Sequence: 1, FindingID: f.ID, Disposition: DispositionScoped, Evidence: "a separately approved issue owns this location", ScopeIdentity: "D1"}
+	if b, err = RecordReview(b, receipt(b, it.Identity, ReviewStandards, f), scoped); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = RecordReview(b, receipt(b, it.Identity, ReviewStandards)); err == nil {
 		t.Fatal("duplicate review receipt appended")
+	}
+}
+
+func TestAcceptedFindingCanNameFutureRepairIteration(t *testing.T) {
+	b := fixture()
+	first := Iteration{Sequence: 1, Identity: "iteration-1", BaseSHA: b.StartingBaseSHA, HeadSHA: strings.Repeat("d", 40), EvidenceSHA256: strings.Repeat("1", 64)}
+	var err error
+	if b, err = RecordIteration(b, first); err != nil {
+		t.Fatal(err)
+	}
+	f := finding("future-repair", ReviewStandards)
+	accepted := Adjudication{Sequence: 1, FindingID: f.ID, Disposition: DispositionAccepted, Evidence: "repair is required in the next iteration", RepairIteration: "iteration-2"}
+	if b, err = RecordReview(b, receipt(b, first.Identity, ReviewStandards, f), accepted); err != nil {
+		t.Fatalf("accepted finding could not name a future repair iteration: %v", err)
+	}
+	second := Iteration{Sequence: 2, Identity: "iteration-2", BaseSHA: first.HeadSHA, HeadSHA: strings.Repeat("e", 40), EvidenceSHA256: strings.Repeat("2", 64)}
+	if b, err = RecordIteration(b, second); err != nil {
+		t.Fatal(err)
+	}
+	if b, err = RecordReview(b, receipt(b, second.Identity, ReviewStandards)); err != nil {
+		t.Fatal(err)
+	}
+	if b, err = RecordReview(b, receipt(b, second.Identity, ReviewSpec)); err != nil {
+		t.Fatal(err)
+	}
+	repaired := Adjudication{Sequence: 2, FindingID: f.ID, Disposition: DispositionRepairedByLaterIteration, Evidence: "paired reviews verify the repair", RepairIteration: second.Identity}
+	if _, err = RecordAdjudication(b, repaired); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFindingRequiresAtomicInitialAdjudication(t *testing.T) {
+	b := reviewFixture()
+	f := finding("needs-disposition", ReviewSpec)
+	r := receipt(b, "iteration-1", ReviewSpec, f)
+	if _, err := RecordReview(b, r); err == nil {
+		t.Fatal("finding without disposition was accepted")
+	}
+	rejected := Adjudication{Sequence: 1, FindingID: f.ID, Disposition: DispositionRejectedWithEvidence, Evidence: "the requirement applies to another seam"}
+	if _, err := RecordReview(b, r, rejected); err != nil {
+		t.Fatalf("atomic receipt and adjudication failed: %v", err)
+	}
+}
+
+func TestScopedDispositionUsesOnlyPrequalifiedScope(t *testing.T) {
+	for name, identity := range map[string]string{
+		"missing":   "",
+		"unknown":   "not-qualified",
+		"owned-now": "O1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			b := reviewFixture()
+			f := finding("scoped-"+name, ReviewStandards)
+			event := Adjudication{Sequence: 1, FindingID: f.ID, Disposition: DispositionScoped, Evidence: "the qualified scope ledger owns this work", ScopeIdentity: identity}
+			if _, err := RecordReview(b, receipt(b, "iteration-1", ReviewStandards, f), event); err == nil {
+				t.Fatal("invalid scope authority accepted")
+			}
+		})
+	}
+	for _, identity := range []string{"D1", "F1"} {
+		t.Run(identity, func(t *testing.T) {
+			b := reviewFixture()
+			f := finding("scoped-"+identity, ReviewStandards)
+			event := Adjudication{Sequence: 1, FindingID: f.ID, Disposition: DispositionScoped, Evidence: "the qualified scope ledger owns this work", ScopeIdentity: identity}
+			if _, err := RecordReview(b, receipt(b, "iteration-1", ReviewStandards, f), event); err != nil {
+				t.Fatalf("pre-qualified scope rejected: %v", err)
+			}
+		})
 	}
 }

@@ -424,19 +424,25 @@ func (c command) recordIteration(ctx context.Context, args []string, stdout io.W
 }
 
 func (c command) recordReview(args []string, stdout io.Writer) error {
-	var receipt deliveryevidence.ReviewReceipt
-	bundle, path, err := recordInput(args, "receipt", &receipt)
+	var record struct {
+		Receipt       deliveryevidence.ReviewReceipt  `json:"receipt"`
+		Adjudications []deliveryevidence.Adjudication `json:"adjudications"`
+	}
+	bundle, path, err := recordInput(args, "receipt", &record)
 	if err != nil {
 		return err
 	}
-	bundle, err = deliveryevidence.RecordReview(bundle, receipt)
+	if record.Adjudications == nil {
+		return errors.New("review record requires an explicit adjudications array")
+	}
+	bundle, err = deliveryevidence.RecordReview(bundle, record.Receipt, record.Adjudications...)
 	if err != nil {
 		return err
 	}
 	if err = deliveryevidence.StoreAtomic(path, bundle); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(stdout, "recorded %s review for %s\n", receipt.Axis, receipt.Iteration)
+	_, err = fmt.Fprintf(stdout, "recorded %s review for %s\n", record.Receipt.Axis, record.Receipt.Iteration)
 	return err
 }
 

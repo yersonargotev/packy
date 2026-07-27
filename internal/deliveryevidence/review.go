@@ -70,6 +70,7 @@ type Adjudication struct {
 	Disposition     FindingDisposition `json:"disposition"`
 	Evidence        string             `json:"evidence"`
 	RepairIteration string             `json:"repair_iteration"`
+	ScopeIdentity   string             `json:"scope_identity"`
 }
 
 type ReviewStatus struct {
@@ -86,8 +87,9 @@ func RecordIteration(bundle Bundle, iteration Iteration) (Bundle, error) {
 	return bundle, nil
 }
 
-func RecordReview(bundle Bundle, receipt ReviewReceipt) (Bundle, error) {
+func RecordReview(bundle Bundle, receipt ReviewReceipt, adjudications ...Adjudication) (Bundle, error) {
 	bundle.ReviewReceipts = append(clone(bundle.ReviewReceipts), receipt)
+	bundle.Adjudications = append(clone(bundle.Adjudications), adjudications...)
 	if err := Validate(bundle); err != nil {
 		return Bundle{}, err
 	}
@@ -110,6 +112,13 @@ func validateReviews(b Bundle) error {
 	paired := make(map[string]map[ReviewAxis]bool, len(b.Iterations))
 	findings := make(map[string]ReviewFinding)
 	findingIterations := make(map[string]string)
+	scopedIdentities := make(map[string]bool, len(b.Scope.Deferred)+len(b.Scope.Forbidden))
+	for _, entry := range b.Scope.Deferred {
+		scopedIdentities[entry.Identity] = true
+	}
+	for _, entry := range b.Scope.Forbidden {
+		scopedIdentities[entry.Identity] = true
+	}
 	for _, receipt := range b.ReviewReceipts {
 		it, ok := iterations[receipt.Iteration]
 		if !ok {
@@ -159,16 +168,19 @@ func validateReviews(b Bundle) error {
 		}
 		switch event.Disposition {
 		case DispositionAccepted:
-			repair, ok := iterations[event.RepairIteration]
-			if !ok {
-				return fmt.Errorf("accepted finding %q must name a repair iteration", event.FindingID)
+			if err := safeText("accepted repair iteration", event.RepairIteration); err != nil {
+				return err
 			}
-			if repair.Sequence <= iterations[findingIterations[event.FindingID]].Sequence {
+			if repair, exists := iterations[event.RepairIteration]; exists && repair.Sequence <= iterations[findingIterations[event.FindingID]].Sequence {
 				return fmt.Errorf("accepted finding %q must name a later repair iteration", event.FindingID)
 			}
 		case DispositionRepairedByLaterIteration:
-			if _, ok := iterations[event.RepairIteration]; !ok {
+			repair, ok := iterations[event.RepairIteration]
+			if !ok {
 				return fmt.Errorf("repaired finding %q must name a repair iteration", event.FindingID)
+			}
+			if repair.Sequence <= iterations[findingIterations[event.FindingID]].Sequence {
+				return fmt.Errorf("repaired finding %q must name a later repair iteration", event.FindingID)
 			}
 			prior, accepted := latest[event.FindingID]
 			if !accepted || prior.Disposition != DispositionAccepted || prior.RepairIteration != event.RepairIteration {
@@ -177,17 +189,32 @@ func validateReviews(b Bundle) error {
 			if !paired[event.RepairIteration][ReviewStandards] || !paired[event.RepairIteration][ReviewSpec] {
 				return fmt.Errorf("repair iteration %q lacks paired reviews", event.RepairIteration)
 			}
-		case DispositionRejectedWithEvidence, DispositionScoped, DispositionSuperseded:
+		case DispositionScoped:
+			if event.RepairIteration != "" {
+				return fmt.Errorf("%s adjudication for %q forbids a repair iteration", event.Disposition, event.FindingID)
+			}
+			if !scopedIdentities[event.ScopeIdentity] {
+				return fmt.Errorf("scoped finding %q must reference a pre-qualified deferred or forbidden identity", event.FindingID)
+			}
+		case DispositionRejectedWithEvidence, DispositionSuperseded:
 			if event.RepairIteration != "" {
 				return fmt.Errorf("%s adjudication for %q forbids a repair iteration", event.Disposition, event.FindingID)
 			}
 		default:
 			return fmt.Errorf("finding %q has invalid disposition", event.FindingID)
 		}
+		if event.Disposition != DispositionScoped && event.ScopeIdentity != "" {
+			return fmt.Errorf("%s adjudication for %q forbids a scope identity", event.Disposition, event.FindingID)
+		}
 		if prior, duplicate := latest[event.FindingID]; duplicate && event.Disposition != DispositionRepairedByLaterIteration {
 			return fmt.Errorf("finding %q already has disposition %q", event.FindingID, prior.Disposition)
 		}
 		latest[event.FindingID] = event
+	}
+	for id := range findings {
+		if _, ok := latest[id]; !ok {
+			return fmt.Errorf("finding %q lacks an adjudication", id)
+		}
 	}
 	return nil
 }
@@ -301,6 +328,9 @@ func RenderReviewReport(bundle Bundle, head string, orderedCommits []string) (st
 		fmt.Fprintf(&out, "Adjudication: sequence=%d finding=%s disposition=%s evidence=%s", event.Sequence, event.FindingID, event.Disposition, event.Evidence)
 		if event.RepairIteration != "" {
 			fmt.Fprintf(&out, " repair_iteration=%s", event.RepairIteration)
+		}
+		if event.ScopeIdentity != "" {
+			fmt.Fprintf(&out, " scope_identity=%s", event.ScopeIdentity)
 		}
 		out.WriteByte('\n')
 	}

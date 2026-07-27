@@ -221,7 +221,7 @@ func TestReviewCommandsAtSandboxedHighestSeam(t *testing.T) {
 		t.Fatal(err)
 	}
 	standards := deliveryevidence.ReviewReceipt{IssueNumber: 277, Iteration: "iteration-1", BaseSHA: base, HeadSHA: head1, Axis: deliveryevidence.ReviewStandards, Findings: []deliveryevidence.ReviewFinding{}}
-	if _, err := run("record-review", "--bundle", bundlePath, "--receipt", write("standards-1", standards)); err != nil {
+	if _, err := run("record-review", "--bundle", bundlePath, "--receipt", write("standards-1", map[string]any{"receipt": standards, "adjudications": []deliveryevidence.Adjudication{}})); err != nil {
 		t.Fatal(err)
 	}
 	git := &fakeRunner{outputs: [][]byte{[]byte(head1 + "\n"), []byte(head1 + "\n")}}
@@ -237,7 +237,7 @@ func TestReviewCommandsAtSandboxedHighestSeam(t *testing.T) {
 	stale := standards
 	stale.Axis = deliveryevidence.ReviewSpec
 	stale.HeadSHA = head2
-	if _, err := run("record-review", "--bundle", bundlePath, "--receipt", write("stale", stale)); err == nil || !strings.Contains(err.Error(), "exact delta") {
+	if _, err := run("record-review", "--bundle", bundlePath, "--receipt", write("stale", map[string]any{"receipt": stale, "adjudications": []deliveryevidence.Adjudication{}})); err == nil || !strings.Contains(err.Error(), "exact delta") {
 		t.Fatalf("stale receipt accepted: %v", err)
 	}
 	after, _ := os.ReadFile(bundlePath)
@@ -248,7 +248,11 @@ func TestReviewCommandsAtSandboxedHighestSeam(t *testing.T) {
 	specFinding := deliveryevidence.ReviewFinding{ID: "SPEC-1", Axis: deliveryevidence.ReviewSpec, Severity: deliveryevidence.SeverityP1, Authority: deliveryevidence.AuthoritySpecRequirement, Citation: "issue#277:AC-05", Location: "internal/deliveryevidence/review.go", Evidence: "repair pairing is missing"}
 	rejectedFinding := deliveryevidence.ReviewFinding{ID: "SPEC-2", Axis: deliveryevidence.ReviewSpec, Severity: deliveryevidence.SeverityP3, Authority: deliveryevidence.AuthoritySpecRequirement, Citation: "issue#277:AC-10", Location: "internal/tools/deliveryevidence/main.go", Evidence: "mutation concern is not reachable"}
 	spec := deliveryevidence.ReviewReceipt{IssueNumber: 277, Iteration: "iteration-1", BaseSHA: base, HeadSHA: head1, Axis: deliveryevidence.ReviewSpec, Findings: []deliveryevidence.ReviewFinding{specFinding, rejectedFinding}}
-	if _, err := run("record-review", "--bundle", bundlePath, "--receipt", write("spec-1", spec)); err != nil {
+	initialAdjudications := []deliveryevidence.Adjudication{
+		{Sequence: 1, FindingID: "SPEC-1", Disposition: deliveryevidence.DispositionAccepted, Evidence: "repair is owned by iteration-2", RepairIteration: "iteration-2"},
+		{Sequence: 2, FindingID: "SPEC-2", Disposition: deliveryevidence.DispositionRejectedWithEvidence, Evidence: "the private adapter exposes no GitHub mutation"},
+	}
+	if _, err := run("record-review", "--bundle", bundlePath, "--receipt", write("spec-1", map[string]any{"receipt": spec, "adjudications": initialAdjudications})); err != nil {
 		t.Fatal(err)
 	}
 	iteration2 := deliveryevidence.Iteration{Sequence: 2, Identity: "iteration-2", BaseSHA: head1, HeadSHA: head2, EvidenceSHA256: strings.Repeat("2", 64)}
@@ -257,14 +261,12 @@ func TestReviewCommandsAtSandboxedHighestSeam(t *testing.T) {
 	}
 	for _, axis := range []deliveryevidence.ReviewAxis{deliveryevidence.ReviewStandards, deliveryevidence.ReviewSpec} {
 		receipt := deliveryevidence.ReviewReceipt{IssueNumber: 277, Iteration: "iteration-2", BaseSHA: head1, HeadSHA: head2, Axis: axis, Findings: []deliveryevidence.ReviewFinding{}}
-		if _, err := run("record-review", "--bundle", bundlePath, "--receipt", write(string(axis)+"-2", receipt)); err != nil {
+		if _, err := run("record-review", "--bundle", bundlePath, "--receipt", write(string(axis)+"-2", map[string]any{"receipt": receipt, "adjudications": []deliveryevidence.Adjudication{}})); err != nil {
 			t.Fatal(err)
 		}
 	}
 	adjudications := []deliveryevidence.Adjudication{
-		{Sequence: 1, FindingID: "SPEC-1", Disposition: deliveryevidence.DispositionAccepted, Evidence: "repair is owned by iteration-2", RepairIteration: "iteration-2"},
-		{Sequence: 2, FindingID: "SPEC-1", Disposition: deliveryevidence.DispositionRepairedByLaterIteration, Evidence: "paired review proves the repair", RepairIteration: "iteration-2"},
-		{Sequence: 3, FindingID: "SPEC-2", Disposition: deliveryevidence.DispositionRejectedWithEvidence, Evidence: "the private adapter exposes no GitHub mutation"},
+		{Sequence: 3, FindingID: "SPEC-1", Disposition: deliveryevidence.DispositionRepairedByLaterIteration, Evidence: "paired review proves the repair", RepairIteration: "iteration-2"},
 	}
 	for _, adjudication := range adjudications {
 		if _, err := run("record-adjudication", "--bundle", bundlePath, "--adjudication", write(fmt.Sprintf("adjudication-%d", adjudication.Sequence), adjudication)); err != nil {
