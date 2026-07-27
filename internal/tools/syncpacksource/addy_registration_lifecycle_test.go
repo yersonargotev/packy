@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -125,27 +124,20 @@ func TestAddyRegistrationTracerProvesExactEndToEndAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	validateRepo, publishRepo := filepath.Join(t.TempDir(), "validate"), filepath.Join(t.TempDir(), "publish")
-	cloneForTest(t, base, validateRepo)
+	publishRepo := filepath.Join(t.TempDir(), "publish")
 	cloneForTest(t, base, publishRepo)
-	validationDir := filepath.Join(artifacts, "validation")
-	if err := run(context.Background(), []string{"--phase", "validate", "--repository-root", validateRepo, "--request", secondRequest, "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classificationDir, "classification.json"), "--output", validationDir}, io.Discard); err != nil {
-		t.Fatal(err)
-	}
 	publicationDir := filepath.Join(artifacts, "publication")
-	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", secondRequest, "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classificationDir, "classification.json"), "--validation", filepath.Join(validationDir, "validation.json"), "--output", publicationDir}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", secondRequest, "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", filepath.Join(classificationDir, "classification.json"), "--output", publicationDir}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 
-	var validation packsyncworkflow.ValidationArtifact
 	var publication packsyncworkflow.PublicationArtifact
-	readJSONForTest(t, filepath.Join(validationDir, "validation.json"), &validation)
 	readJSONForTest(t, filepath.Join(publicationDir, "publication.json"), &publication)
-	if source.acquisitions < 3 || source.executions != 0 || validator.bundleCalls < 2 || validator.suiteCalls < 2 || validator.commands < 2 {
-		t.Fatalf("reacquisition/gates = acquisitions:%d executions:%d bundle:%d suite:%d commands:%d", source.acquisitions, source.executions, validator.bundleCalls, validator.suiteCalls, validator.commands)
+	if source.acquisitions < 2 || source.executions != 0 || validator.bundleCalls != 1 || validator.suiteCalls != 0 {
+		t.Fatalf("reacquisition/gates = acquisitions:%d executions:%d bundle:%d suite:%d", source.acquisitions, source.executions, validator.bundleCalls, validator.suiteCalls)
 	}
-	if validation.ResultTreeSHA == "" || publication.ResultTreeSHA != validation.ResultTreeSHA || publication.BranchName != "sync/addy" || publication.PRNumber != 7 || !publication.DecisionReady || publication.AutoMerge || publication.UpstreamContentExecuted || fakeGitHub.createCalls != 1 || fakeGitHub.pushCalls != 1 {
-		t.Fatalf("registration publication = validation:%#v publication:%#v", validation, publication)
+	if publication.ResultTreeSHA == "" || publication.BranchName != "sync/addy" || publication.PRNumber != 7 || !publication.DecisionReady || publication.AutoMerge || publication.UpstreamContentExecuted || fakeGitHub.createCalls != 1 || fakeGitHub.pushCalls != 1 {
+		t.Fatalf("registration publication = %#v", publication)
 	}
 	assertSecretFreeArtifacts(t, artifacts)
 
@@ -159,7 +151,7 @@ func TestAddyRegistrationTracerProvesExactEndToEndAdmission(t *testing.T) {
 			t.Fatal(err)
 		}
 		beforePush, beforeCreate := fakeGitHub.pushCalls, fakeGitHub.createCalls
-		err := run(context.Background(), []string{"--phase", "publish", "--repository-root", failedRepo, "--request", secondRequest, "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", badPath, "--validation", filepath.Join(validationDir, "validation.json"), "--output", filepath.Join(t.TempDir(), "failure")}, io.Discard)
+		err := run(context.Background(), []string{"--phase", "publish", "--repository-root", failedRepo, "--request", secondRequest, "--plan", filepath.Join(inspectDir, "plan.json"), "--evidence", badPath, "--output", filepath.Join(t.TempDir(), "failure")}, io.Discard)
 		if err == nil || fakeGitHub.pushCalls != beforePush || fakeGitHub.createCalls != beforeCreate {
 			t.Fatalf("pre-gate failure wrote GitHub state: pushes=%d creates=%d err=%v", fakeGitHub.pushCalls-beforePush, fakeGitHub.createCalls-beforeCreate, err)
 		}
@@ -240,7 +232,6 @@ func (source *exactAddySource) WithSnapshot(_ context.Context, _ packsync.Candid
 
 type exactAddyValidator struct {
 	bundleCalls, suiteCalls int
-	commands                int
 }
 
 func (validator *exactAddyValidator) ValidateBundle(ctx context.Context, repositoryRoot, bundleRoot string) error {
@@ -248,21 +239,14 @@ func (validator *exactAddyValidator) ValidateBundle(ctx context.Context, reposit
 	if err := validateExactAddyResult(bundleRoot); err != nil {
 		return err
 	}
-	return (commandValidator{run: validator.captureValidationCommand}).ValidateBundle(ctx, repositoryRoot, bundleRoot)
+	return (contentValidator{}).ValidateBundle(ctx, repositoryRoot, bundleRoot)
 }
 func (validator *exactAddyValidator) Validate(ctx context.Context, repositoryRoot string) error {
 	validator.suiteCalls++
 	if err := validateExactAddyResult(filepath.Join(repositoryRoot, "bundle")); err != nil {
 		return err
 	}
-	return (commandValidator{run: validator.captureValidationCommand}).Validate(ctx, repositoryRoot)
-}
-func (validator *exactAddyValidator) captureValidationCommand(cmd *exec.Cmd) ([]byte, error) {
-	validator.commands++
-	if cmd.Dir == "" || len(cmd.Args) != 2 || cmd.Args[0] != "bash" || cmd.Args[1] != "./scripts/validate-packy.sh" {
-		return nil, errors.New("validation did not invoke Packy's full authority")
-	}
-	return nil, nil
+	return (contentValidator{}).Validate(ctx, repositoryRoot)
 }
 func validateExactAddyResult(bundleRoot string) error {
 	var manifest addyacceptance.Manifest

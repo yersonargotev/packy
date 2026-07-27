@@ -350,7 +350,6 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"governance-drift": {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
 		"inspect":          {"contents": "read"},
 		"classify":         {"contents": "read", "models": "read"},
-		"validate":         {"contents": "read"},
 		"prepare":          {"contents": "read", "pull-requests": "read"},
 		"publish":          {"contents": "write", "pull-requests": "write"},
 	},

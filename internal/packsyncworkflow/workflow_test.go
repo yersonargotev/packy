@@ -602,51 +602,24 @@ func TestConcurrencySupersedesOnlyPendingAndPromotesThroughFreshCheck(t *testing
 	}
 }
 
-func TestPublishRunsApplyAndCompleteValidationBeforeGitHubAndRevalidatesBeforeWrite(t *testing.T) {
+func TestPublishRunsValidatedApplyBeforeGitHubAndRevalidatesBeforeWrite(t *testing.T) {
 	events := []string{}
 	applier := fakeApplier{events: &events}
-	validator := fakeValidator{events: &events}
 	github := &fakePublicationGateway{events: &events, states: []PublicationState{{BaseSHA: baseA, ProvenanceCurrent: true}, {BaseSHA: baseA, ProvenanceCurrent: true}, publishedState(true, strings.Repeat("6", 64)), publishedState(false, strings.Repeat("7", 64))}}
-	result, err := (Publisher{Applier: applier, Validator: validator, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
+	result, err := (Publisher{Applier: applier, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
 	if err != nil || result.Decision.Action != PublicationCreate {
 		t.Fatalf("publish = %#v, %v", result, err)
 	}
-	want := []string{"apply", "validate", "build", "prepare", "provenance", "observe", "provenance", "observe", "publish", "observe", "provenance", "finalize", "provenance", "observe"}
+	want := []string{"apply", "build", "prepare", "provenance", "observe", "provenance", "observe", "publish", "observe", "provenance", "finalize", "provenance", "observe"}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %v, want %v", events, want)
 	}
 
 	events = nil
 	github = &fakePublicationGateway{events: &events, states: []PublicationState{{BaseSHA: baseA, ProvenanceCurrent: true}, {BaseSHA: baseB, ProvenanceCurrent: true}}}
-	_, err = (Publisher{Applier: fakeApplier{events: &events}, Validator: fakeValidator{events: &events}, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
+	_, err = (Publisher{Applier: fakeApplier{events: &events}, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
 	if err == nil || contains(events, "publish") {
 		t.Fatalf("changed final state wrote: events %v err %v", events, err)
-	}
-}
-
-func TestPublisherPrefersAppliedValidationCapability(t *testing.T) {
-	events := []string{}
-	validator := &fakeAppliedValidator{events: &events}
-	github := &fakePublicationGateway{events: &events, states: []PublicationState{{BaseSHA: baseA, ProvenanceCurrent: true}, {BaseSHA: baseA, ProvenanceCurrent: true}, publishedState(true, strings.Repeat("6", 64)), publishedState(false, strings.Repeat("7", 64))}}
-	_, err := (Publisher{Applier: fakeApplier{events: &events}, Validator: validator, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if validator.appliedCalls != 1 || validator.ordinaryCalls != 0 {
-		t.Fatalf("validation calls = applied:%d ordinary:%d", validator.appliedCalls, validator.ordinaryCalls)
-	}
-}
-
-func TestPublisherFallsBackToOrdinaryValidation(t *testing.T) {
-	events := []string{}
-	validator := fakeValidator{events: &events}
-	github := &fakePublicationGateway{events: &events, states: []PublicationState{{BaseSHA: baseA, ProvenanceCurrent: true}, {BaseSHA: baseA, ProvenanceCurrent: true}, publishedState(true, strings.Repeat("6", 64)), publishedState(false, strings.Repeat("7", 64))}}
-	_, err := (Publisher{Applier: fakeApplier{events: &events}, Validator: validator, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Count(strings.Join(events, ","), "validate"); got != 1 {
-		t.Fatalf("ordinary validation calls = %d, events %v", got, events)
 	}
 }
 
@@ -654,44 +627,31 @@ func TestMovedProvenanceAfterDraftNeverFinalizesReadiness(t *testing.T) {
 	events := []string{}
 	github := &fakePublicationGateway{events: &events, states: []PublicationState{{BaseSHA: baseA}, {BaseSHA: baseA}, publishedState(true, strings.Repeat("6", 64))}}
 	provenance := &sequenceProvenance{events: &events, failAt: 3}
-	_, err := (Publisher{Applier: fakeApplier{events: &events}, Validator: fakeValidator{events: &events}, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: provenance, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
+	_, err := (Publisher{Applier: fakeApplier{events: &events}, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: provenance, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
 	if err == nil || contains(events, "finalize") {
 		t.Fatalf("moved provenance finalized readiness: events=%v err=%v", events, err)
 	}
 }
 
-func TestFailedApplyOrValidationNeverObservesOrWritesGitHub(t *testing.T) {
-	for name, test := range map[string]struct {
-		applier   fakeApplier
-		validator fakeValidator
-	}{
-		"apply":      {applier: fakeApplier{err: errors.New("provenance")}},
-		"validation": {validator: fakeValidator{err: errors.New("suite")}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			events := []string{}
-			applier := test.applier
-			validator := test.validator
-			applier.events = &events
-			validator.events = &events
-			github := &fakePublicationGateway{events: &events}
-			_, err := (Publisher{Applier: applier, Validator: validator, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
-			if err == nil || github.publishCalls != 0 || contains(events, "observe") {
-				t.Fatalf("pre-publication failure crossed GitHub boundary: %v, events %v", err, events)
-			}
-		})
+func TestFailedValidatedApplyNeverObservesOrWritesGitHub(t *testing.T) {
+	events := []string{}
+	applier := fakeApplier{events: &events, err: errors.New("content validation")}
+	github := &fakePublicationGateway{events: &events}
+	_, err := (Publisher{Applier: applier, Builder: fakeProposalBuilder{events: &events}, Diff: fakeDiff{}, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
+	if err == nil || github.publishCalls != 0 || contains(events, "observe") {
+		t.Fatalf("pre-publication failure crossed GitHub boundary: %v, events %v", err, events)
 	}
 }
 
-func TestValidatorOrBuilderCannotChangeSealedApplyDiff(t *testing.T) {
+func TestWorkspaceOrBuilderCannotChangeSealedApplyDiff(t *testing.T) {
 	for name, diff := range map[string]fakeDiff{
-		"validator mutation": {workspaceErr: errors.New("changed")},
+		"workspace mutation": {workspaceErr: errors.New("changed")},
 		"commit mutation":    {commitErr: errors.New("changed")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			events := []string{}
 			github := &fakePublicationGateway{events: &events}
-			_, err := (Publisher{Applier: fakeApplier{events: &events}, Validator: fakeValidator{events: &events}, Builder: fakeProposalBuilder{events: &events}, Diff: diff, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
+			_, err := (Publisher{Applier: fakeApplier{events: &events}, Builder: fakeProposalBuilder{events: &events}, Diff: diff, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
 			if err == nil || github.publishCalls != 0 || contains(events, "observe") {
 				t.Fatalf("changed diff crossed publication boundary: events=%v err=%v", events, err)
 			}
@@ -703,7 +663,7 @@ func TestPublisherKeepsValidatedTreeDistinctFromCommitHead(t *testing.T) {
 	events := []string{}
 	diff := &recordingDiff{seal: treeA, commitErr: errors.New("stop after recording")}
 	github := &fakePublicationGateway{events: &events}
-	_, err := (Publisher{Applier: fakeApplier{events: &events}, Validator: fakeValidator{events: &events}, Builder: fakeProposalBuilder{events: &events}, Diff: diff, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
+	_, err := (Publisher{Applier: fakeApplier{events: &events}, Builder: fakeProposalBuilder{events: &events}, Diff: diff, Provenance: fakeProvenance{events: &events}, GitHub: github}).Run(context.Background(), PublishRequest{RepositoryRoot: t.TempDir()})
 	if err == nil || diff.verifiedTree != treeA || diff.verifiedHead != headA || github.publishCalls != 0 {
 		t.Fatalf("tree/head verification = tree:%s head:%s writes:%d err:%v", diff.verifiedTree, diff.verifiedHead, github.publishCalls, err)
 	}

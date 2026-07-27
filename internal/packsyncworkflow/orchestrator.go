@@ -16,14 +16,12 @@ type Applier interface {
 	RecoverPending(context.Context, string) (packsync.ApplyResult, bool, error)
 }
 
-// Validator runs the complete Packy-owned validation authority against the
-// sandbox checkout after Apply and before publication credentials are used.
+// Validator remains the diagnostic phase seam. Publication no longer invokes
+// it after Apply because the transaction owns staged Pack-content validation.
 type Validator interface {
 	Validate(context.Context, string) error
 }
 
-// AppliedValidator optionally distinguishes validation of a repository whose
-// sealed plan has already been applied from ordinary repository validation.
 type AppliedValidator interface {
 	ValidateApplied(context.Context, string) error
 }
@@ -75,7 +73,6 @@ type PublicationPreparation struct {
 
 type Publisher struct {
 	Applier    Applier
-	Validator  Validator
 	Builder    ProposalBuilder
 	Diff       DiffVerifier
 	Provenance ProvenanceVerifier
@@ -141,8 +138,8 @@ func (publisher Publisher) Run(ctx context.Context, request PublishRequest) (Pub
 }
 
 func (publisher Publisher) prepare(ctx context.Context, request PublishRequest) (PublicationPreparation, PublicationDecision, error) {
-	if publisher.Applier == nil || publisher.Validator == nil || publisher.Builder == nil || publisher.Diff == nil || publisher.Provenance == nil || publisher.GitHub == nil || request.RepositoryRoot == "" {
-		return PublicationPreparation{}, PublicationDecision{}, errors.New("publish requires Apply, validation, proposal construction, provenance revalidation, GitHub, and a sandbox repository")
+	if publisher.Applier == nil || publisher.Builder == nil || publisher.Diff == nil || publisher.Provenance == nil || publisher.GitHub == nil || request.RepositoryRoot == "" {
+		return PublicationPreparation{}, PublicationDecision{}, errors.New("publish requires Apply, proposal construction, provenance revalidation, GitHub, and a sandbox repository")
 	}
 	recovered, pending, err := publisher.Applier.RecoverPending(ctx, request.RepositoryRoot)
 	if err != nil {
@@ -164,17 +161,8 @@ func (publisher Publisher) prepare(ctx context.Context, request PublishRequest) 
 	if err != nil {
 		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureIntegrity, Err: err}
 	}
-	var validationErr error
-	if validator, ok := publisher.Validator.(AppliedValidator); ok {
-		validationErr = validator.ValidateApplied(ctx, request.RepositoryRoot)
-	} else {
-		validationErr = publisher.Validator.Validate(ctx, request.RepositoryRoot)
-	}
-	if validationErr != nil {
-		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureValidation, Err: validationErr}
-	}
 	if err := publisher.Diff.VerifyWorkspace(ctx, request.RepositoryRoot, diffSeal); err != nil {
-		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureValidation, Err: errors.New("validation changed the sealed Apply diff")}
+		return PublicationPreparation{}, PublicationDecision{}, Failure{Kind: FailureValidation, Err: errors.New("sealed Apply diff changed before proposal construction")}
 	}
 	proposal, err := publisher.Builder.Build(ctx, request.RepositoryRoot, result)
 	if err != nil {

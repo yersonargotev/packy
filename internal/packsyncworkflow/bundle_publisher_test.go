@@ -41,14 +41,13 @@ func TestBundlePublisherRevalidatesCompleteMembersTwiceBeforeExactNoop(t *testin
 	gateway := &fakePublicationGateway{events: &events, states: []PublicationState{state, state}}
 	provenance := &fakeCompositeProvenance{events: &events}
 	publisher := BundlePublisher{
-		Applier: fakeCompositeApplier{events: &events}, Validator: fakeValidator{events: &events},
+		Applier: fakeCompositeApplier{events: &events},
 		Builder: bundleProposalBuilder{proposal: proposal}, Diff: fakeDiff{},
 		Provenance: provenance, GitHub: gateway,
 	}
 	result, err := publisher.Run(context.Background(), BundlePublishRequest{
-		RepositoryRoot:        t.TempDir(),
-		Apply:                 packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}},
-		ExpectedResultTreeSHA: headA,
+		RepositoryRoot: t.TempDir(),
+		Apply:          packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +59,7 @@ func TestBundlePublisherRevalidatesCompleteMembersTwiceBeforeExactNoop(t *testin
 	provenance.failAt = 2
 	provenance.calls = 0
 	gateway.states = []PublicationState{state}
-	if _, err := publisher.Run(context.Background(), BundlePublishRequest{RepositoryRoot: t.TempDir(), Apply: packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}}, ExpectedResultTreeSHA: headA}); err == nil {
+	if _, err := publisher.Run(context.Background(), BundlePublishRequest{RepositoryRoot: t.TempDir(), Apply: packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}}}); err == nil {
 		t.Fatal("changed complete-member provenance reached publication")
 	}
 }
@@ -71,15 +70,14 @@ func TestBundlePublisherPrepareReturnsStableReadOnlyEvidenceWithoutPublishing(t 
 	state := bundlePublicationState(proposal)
 	gateway := &fakePublicationGateway{events: &events, states: []PublicationState{state, state}}
 	publisher := BundlePublisher{
-		Applier: fakeCompositeApplier{events: &events}, Validator: fakeValidator{events: &events},
+		Applier: fakeCompositeApplier{events: &events},
 		Builder: bundleProposalBuilder{proposal: proposal}, Diff: fakeDiff{},
 		Provenance: &fakeCompositeProvenance{events: &events}, GitHub: gateway,
 	}
 
 	preparation, err := publisher.Prepare(context.Background(), BundlePublishRequest{
-		RepositoryRoot:        t.TempDir(),
-		Apply:                 packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}},
-		ExpectedResultTreeSHA: headA,
+		RepositoryRoot: t.TempDir(),
+		Apply:          packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -100,43 +98,20 @@ func TestBundlePublisherPrepareFailsClosedWithoutPublishing(t *testing.T) {
 	second.BaseSHA = baseB
 	gateway := &fakePublicationGateway{events: &events, states: []PublicationState{first, second}}
 	publisher := BundlePublisher{
-		Applier: fakeCompositeApplier{events: &events}, Validator: fakeValidator{events: &events},
+		Applier: fakeCompositeApplier{events: &events},
 		Builder: bundleProposalBuilder{proposal: proposal}, Diff: fakeDiff{},
 		Provenance: &fakeCompositeProvenance{events: &events}, GitHub: gateway,
 	}
 
 	_, err := publisher.Prepare(context.Background(), BundlePublishRequest{
-		RepositoryRoot:        t.TempDir(),
-		Apply:                 packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}},
-		ExpectedResultTreeSHA: headA,
+		RepositoryRoot: t.TempDir(),
+		Apply:          packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}},
 	})
 	if err == nil {
 		t.Fatal("changed observation prepared publication")
 	}
 	if contains(events, "publish") || contains(events, "finalize") || gateway.publishCalls != 0 {
 		t.Fatalf("failed preparation crossed publication mutation boundary: %v", events)
-	}
-}
-
-func TestBundlePublisherRejectsChangedValidationTreeBeforeGitHub(t *testing.T) {
-	events := []string{}
-	proposal := bundleProposal()
-	gateway := &fakePublicationGateway{events: &events}
-	publisher := BundlePublisher{
-		Applier: fakeCompositeApplier{events: &events}, Validator: fakeValidator{events: &events},
-		Builder: bundleProposalBuilder{proposal: proposal}, Diff: fakeDiff{},
-		Provenance: &fakeCompositeProvenance{events: &events}, GitHub: gateway,
-	}
-	_, err := publisher.Run(context.Background(), BundlePublishRequest{
-		RepositoryRoot:        t.TempDir(),
-		Apply:                 packsync.CompositeApplyRequest{Plan: packsync.CompositePlan{PlanID: proposal.PlanID, PackID: "vercel"}},
-		ExpectedResultTreeSHA: baseB,
-	})
-	if err == nil || !strings.Contains(err.Error(), "does not reproduce sealed Validation result") {
-		t.Fatalf("changed result tree error = %v", err)
-	}
-	if contains(events, "prepare") || contains(events, "observe") || contains(events, "publish") {
-		t.Fatalf("changed result tree reached GitHub: %v", events)
 	}
 }
 

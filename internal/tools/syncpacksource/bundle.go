@@ -446,27 +446,18 @@ func (b *bundleProposalBuilder) Build(ctx context.Context, root string, result p
 type bundlePublicationRuntime struct {
 	plan      packsync.CompositePlan
 	publisher packsyncworkflow.BundlePublisher
+	gateway   *githubGateway
 	request   packsyncworkflow.BundlePublishRequest
 	cleanup   func()
 }
 
 func newBundlePublicationRuntime(option options) (bundlePublicationRuntime, error) {
-	if option.requestPath == "" || option.planPath == "" || option.evidencePath == "" || option.validationPath == "" || option.outputDir == "" {
-		return bundlePublicationRuntime{}, errors.New("register_bundle publication requires request, plan, evidence, validation proof, and output paths")
+	if option.requestPath == "" || option.planPath == "" || option.evidencePath == "" || option.outputDir == "" {
+		return bundlePublicationRuntime{}, errors.New("register_bundle publication requires request, plan, evidence, and output paths")
 	}
 	request, plan, err := readBundleInputs(option)
 	if err != nil {
 		return bundlePublicationRuntime{}, err
-	}
-	var proof packsyncworkflow.BundleValidationArtifact
-	if err := readJSON(option.validationPath, &proof); err != nil {
-		return bundlePublicationRuntime{}, err
-	}
-	if err := proof.Validate(); err != nil {
-		return bundlePublicationRuntime{}, err
-	}
-	if err := proof.BundleArtifactIdentity.Matches(bundleIdentity(plan)); err != nil {
-		return bundlePublicationRuntime{}, errors.New("v3 validation proof is stale or mixed")
 	}
 	evidence, err := readBundleEvidence(option.evidencePath)
 	if err != nil {
@@ -496,13 +487,12 @@ func newBundlePublicationRuntime(option options) (bundlePublicationRuntime, erro
 		return packsyncworkflow.CandidateRegressive
 	}
 	builder := &bundleProposalBuilder{plan: plan, request: request, classificationSHA256: classification.ClassificationSHA256, gateway: gateway}
-	publisher := packsyncworkflow.BundlePublisher{Applier: engine, Validator: validator, Builder: builder, Diff: gitDiffVerifier{}, Provenance: compositeProvenance{engine: engine}, GitHub: gateway}
+	publisher := packsyncworkflow.BundlePublisher{Applier: engine, Builder: builder, Diff: gitDiffVerifier{}, Provenance: compositeProvenance{engine: engine}, GitHub: gateway}
 	return bundlePublicationRuntime{
-		plan: plan, publisher: publisher,
+		plan: plan, publisher: publisher, gateway: gateway,
 		request: packsyncworkflow.BundlePublishRequest{
-			RepositoryRoot:        option.repositoryRoot,
-			Apply:                 apply,
-			ExpectedResultTreeSHA: proof.ResultTreeSHA,
+			RepositoryRoot: option.repositoryRoot,
+			Apply:          apply,
 		},
 		cleanup: func() { _ = os.RemoveAll(acquisition) },
 	}, nil
@@ -518,12 +508,16 @@ func prepareBundle(ctx context.Context, option options, output io.Writer) error 
 	if err != nil {
 		return err
 	}
+	transport, err := runtime.gateway.exerciseTransport(result.Proposal)
+	if err != nil {
+		return err
+	}
 	artifact := packsyncworkflow.BundlePreparationArtifact{
 		SchemaVersion: 3, BundleArtifactIdentity: bundleIdentity(runtime.plan),
 		HeadSHA: result.Proposal.HeadSHA, ResultTreeSHA: result.Proposal.ResultTreeSHA,
 		BranchName: "sync/" + runtime.plan.PackID, ProvenanceSHA256: result.Proposal.ProvenanceSHA256,
 		ManagedTitle: result.Proposal.ManagedTitle, ManagedMetadataHash: result.Proposal.ManagedMetadataHash,
-		ObservedBaseSHA: result.ObservedState.BaseSHA, Validation: result.Proposal.Validation,
+		ObservedBaseSHA: result.ObservedState.BaseSHA, Transport: transport, Validation: result.Proposal.Validation,
 		ObservationsStable: true, RepositoryMutated: false, DecisionReady: false,
 		UpstreamContentExecuted: false,
 	}
@@ -531,6 +525,9 @@ func prepareBundle(ctx context.Context, option options, output io.Writer) error 
 		return err
 	}
 	if err := os.MkdirAll(option.outputDir, 0o755); err != nil {
+		return err
+	}
+	if err := writeBundleReviewBrief(option.outputDir, runtime.gateway.brief); err != nil {
 		return err
 	}
 	name := filepath.Join(option.outputDir, "preparation.json")
@@ -566,10 +563,32 @@ func publishBundle(ctx context.Context, option options, output io.Writer) error 
 	if err := os.MkdirAll(option.outputDir, 0o755); err != nil {
 		return err
 	}
+	if err := writeBundleReviewBrief(option.outputDir, runtime.gateway.brief); err != nil {
+		return err
+	}
 	name := filepath.Join(option.outputDir, "publication.json")
 	if err := writeCanonical(name, artifact); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintln(output, name)
 	return err
+}
+
+func writeBundleReviewBrief(outputDir string, publication publicationBrief) error {
+	brief, ok := publication.(*packsyncworkflow.BundleReviewBrief)
+	if !ok {
+		return errors.New("bundle publication did not produce canonical v3 review evidence")
+	}
+	canonical, err := brief.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(outputDir, "proposal-brief.json"), canonical, 0o600); err != nil {
+		return err
+	}
+	markdown, err := brief.Markdown()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(outputDir, "proposal-brief.md"), []byte(markdown), 0o600)
 }

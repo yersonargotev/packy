@@ -105,3 +105,17 @@ func (brief ReviewBrief) Markdown() (string, error) {
 	}
 	return fmt.Sprintf("## Packy pack synchronization\n\n- Source: `%s`\n- Candidate: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Auto-merge: disabled; manual merge required.\n\nAuthorization-Exception: automation\nAuthorization-Record: %s\n\n<details><summary>Canonical synchronization evidence</summary>\n\n```json\n%s```\n</details>\n", brief.Request.SourceID, brief.Candidate.Commit, brief.PlanID, brief.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, strings.TrimSuffix(string(canonical), "\n")+"\n"), nil
 }
+
+// ManagedMarkdown is the bounded pull-request projection. The complete
+// canonical evidence remains in the workflow artifact instead of being copied
+// into GitHub's size-limited pull-request body.
+func (brief ReviewBrief) ManagedMarkdown() (string, error) {
+	if _, err := brief.CanonicalJSON(); err != nil {
+		return "", err
+	}
+	status := "blocked"
+	if brief.DecisionReady {
+		status = "decision-ready"
+	}
+	return fmt.Sprintf("## Packy pack synchronization\n\n- Source: `%s`\n- Candidate: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Complete canonical evidence: [workflow run](%s)\n- Auto-merge: disabled; manual merge required.\n\nAuthorization-Exception: automation\nAuthorization-Record: %s\n", brief.Request.SourceID, brief.Candidate.Commit, brief.PlanID, brief.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, brief.RunURL), nil
+}

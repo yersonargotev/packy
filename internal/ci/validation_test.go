@@ -54,6 +54,7 @@ var packyOwnedPackages = []string{
 	"./internal/tools/claudevercelsmoke",
 	"./internal/tools/codexsmoke",
 	"./internal/tools/opencodesmoke",
+	"./internal/tools/packcontentvalidate",
 	"./internal/tools/governanceauth",
 	"./internal/tools/governancedrift",
 	"./internal/tools/syncpacksource",
@@ -689,16 +690,36 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 		"workflow_dispatch:", "permissions: {}", "sync-pack-source-prepare-{0}-{1}", "format('sync-pack-source-{0}'", "cancel-in-progress: false",
 		"run-name: sync-pack-source / ${{ inputs.pack_id || inputs.source_id }} / ${{ inputs.request_digest }}", "PACKY_REQUEST_DIGEST: ${{ inputs.request_digest }}",
 		"prepare_only:", "Admit protected publication or read-only preparation", "Enforce the ref, mode, and operation boundary",
+		"Enforce input and transport bounds before acquisition", "inputs_bytes <= 61440", "registration_json exceeds 16 KiB",
+		"registrations_json exceeds 16 KiB", "proposed_manifest_json exceeds 48 KiB", "human_evidence_json exceeds 16 KiB",
+		"request_reason exceeds 2 KiB", "register_bundle requires 2..8 members",
 		"operation:", "register_bundle", "pack_id:", "registrations_json:", "registration_bundle_sha256:", "proposed_version:", "proposed_manifest_json:", "proposed_manifest_sha256:",
 		"registration_json:", "registration_sha256:", "PACKY_OPERATION: ${{ inputs.operation }}", "PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}", "PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}",
 		"PACKY_PACK_ID: ${{ inputs.pack_id }}", "PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}", "PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}",
 		"PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}", "PACKY_PROPOSED_MANIFEST_JSON: ${{ inputs.proposed_manifest_json }}", "PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}",
-		"inspect:", "classify:", "validate:", "prepare:", "publish:", "needs: [inspect, classify, validate]", "contents: write", "pull-requests: write",
-		"--phase validate", "--phase prepare", "pack-source-preparation-${{ github.run_id }}", "steps.route.outputs.continue", "always() && needs.inspect.result == 'success' && needs.inspect.outputs.continue == 'true'", "always() && needs.inspect.result == 'success' && needs.classify.result == 'success'", "needs.validate.result == 'success'", "steps.route.outputs.noop", "packy-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
+		"inspect:", "classify:", "prepare:", "publish:", "needs: [inspect, classify]", "contents: write", "pull-requests: write",
+		"--phase prepare", "pack-source-preparation-${{ github.run_id }}", "steps.route.outputs.continue", "always() && needs.inspect.result == 'success' && needs.inspect.outputs.continue == 'true'", "needs.inspect.result == 'success' && needs.classify.result == 'success'", "steps.route.outputs.noop", "packy-sync/inspect/no-op.json", "pack-source-publication-${{ github.run_id }}", "retention-days: 30",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("synchronization workflow missing %q", required)
 		}
+	}
+	for _, forbidden := range []string{"\n  validate:", "--phase validate", "--validation", "pack-source-validation-${{ github.run_id }}", "./scripts/validate-packy.sh", "cache: false"} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("synchronization workflow retained expensive or uncached path %q", forbidden)
+		}
+	}
+	for _, timeout := range []string{"timeout-minutes: 1", "timeout-minutes: 2", "timeout-minutes: 4"} {
+		if !strings.Contains(workflow, timeout) {
+			t.Fatalf("synchronization workflow is missing bounded runtime %q", timeout)
+		}
+	}
+	if strings.Count(workflow, "cache: true") != 5 {
+		t.Fatalf("synchronization workflow setup-go cache count = %d, want 5", strings.Count(workflow, "cache: true"))
+	}
+	ciWorkflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
+	if strings.Count(ciWorkflow, "./scripts/validate-packy.sh") != 1 {
+		t.Fatal("ordinary pull-request CI must remain the single exhaustive validation authority")
 	}
 	sourceInput := workflowSection(t, workflow, "      source_id:", "      pack_id:")
 	selectorInput := workflowSection(t, workflow, "      selector:", "      selector_ref:")
@@ -706,23 +727,91 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 		t.Fatal("v3 transport weakened the published v1/v2 workflow-dispatch boundary")
 	}
 	inspect := workflowSection(t, workflow, "  inspect:", "  classify:")
-	classify := workflowSection(t, workflow, "  classify:", "  validate:")
-	validate := workflowSection(t, workflow, "  validate:", "  prepare:")
+	classify := workflowSection(t, workflow, "  classify:", "  prepare:")
 	prepare := workflowSection(t, workflow, "  prepare:", "  publish:")
 	publish := workflow[strings.Index(workflow, "  publish:"):]
-	for name, section := range map[string]string{"inspect": inspect, "validate": validate, "prepare": prepare, "publish": publish} {
+	for name, section := range map[string]string{"inspect": inspect, "prepare": prepare, "publish": publish} {
 		if !strings.Contains(section, "GITHUB_TOKEN: ${{ github.token }}") {
 			t.Fatalf("%s acquisition does not receive the job-scoped GitHub token", name)
 		}
 	}
-	if strings.Contains(inspect, "contents: write") || strings.Contains(inspect, "pull-requests: write") || strings.Contains(classify, "contents: write") || strings.Contains(classify, "pull-requests: write") || strings.Contains(validate, "contents: write") || strings.Contains(validate, "pull-requests: write") || strings.Contains(prepare, "contents: write") || strings.Contains(prepare, "pull-requests: write") {
-		t.Fatal("Inspect, Classify, Validate, or Prepare has publication permission")
+	if strings.Contains(inspect, "contents: write") || strings.Contains(inspect, "pull-requests: write") || strings.Contains(classify, "contents: write") || strings.Contains(classify, "pull-requests: write") || strings.Contains(prepare, "contents: write") || strings.Contains(prepare, "pull-requests: write") {
+		t.Fatal("Inspect, Classify, or Prepare has publication permission")
 	}
 	if !strings.Contains(classify, "models: read") || !strings.Contains(prepare, "pull-requests: read") ||
 		!strings.Contains(prepare, "inputs.prepare_only == true") || !strings.Contains(prepare, "github.ref != 'refs/heads/main'") ||
 		!strings.Contains(publish, "contents: write") || !strings.Contains(publish, "pull-requests: write") ||
 		!strings.Contains(publish, "github.ref == 'refs/heads/main'") || !strings.Contains(publish, "inputs.prepare_only == false") {
 		t.Fatal("phase permissions do not match the accepted minimum")
+	}
+}
+
+func TestSyncWorkflowAdmitRejectsMalformedJSONBeforeLaterJobs(t *testing.T) {
+	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "sync-pack-source.yml"))
+	step := workflowSection(t, workflow, "      - name: Enforce input and transport bounds before acquisition", "      - name: Enforce the ref, mode, and operation boundary")
+	marker := "        run: |\n"
+	index := strings.Index(step, marker)
+	if index < 0 {
+		t.Fatal("admission step has no shell body")
+	}
+	lines := strings.Split(step[index+len(marker):], "\n")
+	for index := range lines {
+		lines[index] = strings.TrimPrefix(lines[index], "          ")
+	}
+	script := strings.Join(lines, "\n")
+	if output, err := exec.Command("bash", "-n", "-c", script).CombinedOutput(); err != nil {
+		t.Fatalf("admission shell is invalid: %v: %s", err, output)
+	}
+
+	baseInputs := map[string]any{
+		"registration_json": "", "registrations_json": `[{},{}]`,
+		"proposed_manifest_json": `{}`, "human_evidence_json": "",
+		"request_reason": "bounded admission",
+	}
+	runAdmission := func(t *testing.T, operation string, inputs map[string]any) ([]byte, error) {
+		t.Helper()
+		event, err := json.Marshal(map[string]any{"inputs": inputs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		eventPath := filepath.Join(t.TempDir(), "event.json")
+		if err := os.WriteFile(eventPath, event, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command("/bin/bash", "-c", script)
+		command.Env = append(os.Environ(), "GITHUB_EVENT_PATH="+eventPath, "PACKY_OPERATION="+operation)
+		return command.CombinedOutput()
+	}
+	if output, err := runAdmission(t, "register_bundle", baseInputs); err != nil {
+		t.Fatalf("valid bounded bundle admission failed: %v: %s", err, output)
+	}
+	tests := []struct {
+		name      string
+		operation string
+		key       string
+		value     string
+		want      string
+	}{
+		{name: "registration malformed", operation: "register", key: "registration_json", value: `{`, want: "registration_json is malformed JSON"},
+		{name: "registrations wrong shape", operation: "register_bundle", key: "registrations_json", value: `{}`, want: "registrations_json must be a JSON array"},
+		{name: "manifest wrong shape", operation: "register_bundle", key: "proposed_manifest_json", value: `[]`, want: "proposed_manifest_json must be a JSON object"},
+		{name: "human evidence malformed", operation: "register_bundle", key: "human_evidence_json", value: `{`, want: "human_evidence_json is malformed JSON"},
+		{name: "unselected registration malformed", operation: "register_bundle", key: "registration_json", value: `{`, want: "registration_json is malformed JSON"},
+		{name: "unselected registrations malformed", operation: "register", key: "registrations_json", value: `[`, want: "registrations_json is malformed JSON"},
+		{name: "unselected manifest malformed", operation: "register", key: "proposed_manifest_json", value: `{`, want: "proposed_manifest_json is malformed JSON"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inputs := make(map[string]any, len(baseInputs))
+			for key, value := range baseInputs {
+				inputs[key] = value
+			}
+			inputs[test.key] = test.value
+			output, err := runAdmission(t, test.operation, inputs)
+			if err == nil || !strings.Contains(string(output), test.want) {
+				t.Fatalf("admission = %v: %s, want failure containing %q", err, output, test.want)
+			}
+		})
 	}
 }
 
