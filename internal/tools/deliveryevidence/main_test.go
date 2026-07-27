@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,16 @@ type fakeRunner struct {
 
 type environmentRunner struct {
 	environment []string
+}
+
+type recordingRunner struct {
+	delegate Runner
+	calls    []string
+}
+
+func (r *recordingRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	return r.delegate.Output(ctx, name, args...)
 }
 
 func (r environmentRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -832,5 +843,201 @@ func reviewBundleFixture(base string) deliveryevidence.Bundle {
 		Adjudications:      []deliveryevidence.Adjudication{},
 		ValidationReceipts: []deliveryevidence.ValidationReceipt{},
 		FocusedValidation:  []deliveryevidence.FocusedValidationEvidence{},
+	}
+}
+
+func TestNonLocalCommandsReadOnlyGreenAndRed(t *testing.T) {
+	root := t.TempDir()
+	repository := filepath.Join(root, "repository")
+	if err := os.MkdirAll(repository, 0700); err != nil {
+		t.Fatal(err)
+	}
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repository}, args...)...)
+		cmd.Env = append(os.Environ(), "HOME="+filepath.Join(root, "home"), "XDG_CONFIG_HOME="+filepath.Join(root, "config"))
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s %v", args, output, err)
+		}
+	}
+	runGit("init", "-q")
+	if err := os.WriteFile(filepath.Join(repository, "sentinel"), []byte("unchanged\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("-c", "user.name=Packy Test", "-c", "user.email=packy@example.invalid", "add", "sentinel")
+	runGit("-c", "user.name=Packy Test", "-c", "user.email=packy@example.invalid", "commit", "-qm", "fixture")
+	runGit("branch", "-M", "main")
+	if err := os.WriteFile(filepath.Join(repository, "delivery"), []byte("head\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("-c", "user.name=Packy Test", "-c", "user.email=packy@example.invalid", "add", "delivery")
+	runGit("-c", "user.name=Packy Test", "-c", "user.email=packy@example.invalid", "commit", "-qm", "delivery")
+	gitOutput := func(args ...string) string {
+		t.Helper()
+		output, err := exec.Command("git", append([]string{"-C", repository}, args...)...).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	base, head, tree := gitOutput("rev-parse", "HEAD~1"), gitOutput("rev-parse", "HEAD"), gitOutput("rev-parse", "HEAD^{tree}")
+	origin := filepath.Join(root, "origin.git")
+	if output, err := exec.Command("git", "init", "--bare", "-q", origin).CombinedOutput(); err != nil {
+		t.Fatalf("initialize origin: %s %v", output, err)
+	}
+	runGit("remote", "add", "origin", origin)
+	runGit("push", "-qu", "origin", "main")
+	bundle := reviewBundleFixture(base)
+	bundle.AcceptanceMatrix[0].State = deliveryevidence.AcceptanceProved
+	bundle.Iterations = []deliveryevidence.Iteration{{Sequence: 1, Identity: "iteration-1", BaseSHA: base, HeadSHA: head, EvidenceSHA256: strings.Repeat("1", 64)}}
+	issue := issueObservation{Number: bundle.Issue.Number, ID: bundle.Issue.NodeID, Title: "issue", Body: "body", State: "OPEN", Labels: []labelObservation{{Name: "status:approved"}}}
+	spec := issueObservation{Number: bundle.Spec.Number, ID: bundle.Spec.NodeID, Title: "spec", Body: "body", State: "OPEN", Labels: []labelObservation{{Name: "status:approved"}}}
+	slug := bundle.Repository.Owner + "/" + bundle.Repository.Name
+	bundle.Authority.IssueSHA256, _ = deliveryevidence.TypedObservationHash("github-issue", fmt.Sprintf("%s#%d:%s", slug, issue.Number, issue.ID), normalizedIssue(issue))
+	bundle.Authority.SpecSHA256, _ = deliveryevidence.TypedObservationHash("github-spec", fmt.Sprintf("%s#%d:%s", slug, spec.Number, spec.ID), normalizedIssue(spec))
+	bundlePath := filepath.Join(root, "bundle.json")
+	if err := deliveryevidence.StoreAtomic(bundlePath, bundle); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(bundlePath)
+	digest, _ := deliveryevidence.Digest(bundle)
+	write := func(name string, v any) string {
+		t.Helper()
+		p := filepath.Join(root, name+".json")
+		b, _ := json.Marshal(v)
+		if err := os.WriteFile(p, b, 0600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	local := deliveryevidence.LocalGateReport{Repository: bundle.Repository, Issue: bundle.Issue, Spec: bundle.Spec, Branch: "feat/issue-277-non-local", StartingBaseSHA: base, HeadSHA: head, TreeSHA: tree, AcceptanceProved: 1, ValidationCompletedAt: "2026-07-27T11:59:00Z", BundleSHA256: digest}
+	prJSON := fmt.Sprintf(`{"number":7,"url":"https://github.com/yersonargotev/packy/pull/7","headRefName":%q,"headRefOid":%q,"baseRefOid":%q,"mergeable":"MERGEABLE"}`, local.Branch, head, base)
+	checkRunsJSON := fmt.Sprintf(`{"check_runs":[{"name":"validate","conclusion":"success","status":"completed","head_sha":%q}]}`, head)
+	statusJSON := fmt.Sprintf(`{"sha":%q,"statuses":[]}`, head)
+	issueRaw, _ := json.Marshal(issue)
+	specRaw, _ := json.Marshal(spec)
+	github := &fakeRunner{outputs: [][]byte{[]byte(prJSON), []byte(checkRunsJSON), []byte(statusJSON), issueRaw, specRaw}}
+	args := []string{"non-local-readiness", "--bundle", bundlePath, "--local-report", write("local", local), "--repository", repository, "--pull-request", "7", "--required-checks", "validate"}
+	var stdout bytes.Buffer
+	if err := (command{GitHub: github, Now: func() time.Time { return time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC) }}).run(context.Background(), args, &stdout); err != nil {
+		t.Fatalf("readiness: %s %v", stdout.String(), err)
+	}
+	legacyStatus := fmt.Sprintf(`{"sha":%q,"statuses":[{"context":"validate","state":"success"}]}`, head)
+	legacyRunner := &fakeRunner{outputs: [][]byte{[]byte(prJSON), []byte(`{"check_runs":[]}`), []byte(legacyStatus), issueRaw, specRaw}}
+	if err := (command{GitHub: legacyRunner, Now: func() time.Time { return time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC) }}).run(context.Background(), args, io.Discard); err != nil {
+		t.Fatalf("legacy status readiness: %v", err)
+	}
+	checkCases := []struct {
+		name, checks, headSHA, baseSHA string
+		code                           deliveryevidence.CheckClassification
+	}{
+		{"expected-skip", `[{"name":"validate","conclusion":"skipped","status":"completed","head_sha":"` + head + `"}]`, head, base, deliveryevidence.CheckExpectedSkip},
+		{"absent", `[]`, head, base, deliveryevidence.CheckAbsent},
+		{"pending", `[{"name":"validate","status":"in_progress","head_sha":"` + head + `"}]`, head, base, deliveryevidence.CheckPending},
+		{"failed", `[{"name":"validate","conclusion":"failure","status":"completed","head_sha":"` + head + `"}]`, head, base, deliveryevidence.CheckFailed},
+		{"cancelled", `[{"name":"validate","conclusion":"cancelled","status":"completed","head_sha":"` + head + `"}]`, head, base, deliveryevidence.CheckCancelled},
+		{"conflict", `[{"name":"validate","conclusion":"success","status":"completed","head_sha":"` + head + `"},{"name":"validate","conclusion":"failure","status":"completed","head_sha":"` + head + `"}]`, head, base, deliveryevidence.CheckConflict},
+		{"moved-head", `[{"name":"validate","conclusion":"success","status":"completed","head_sha":"` + strings.Repeat("f", 40) + `"}]`, strings.Repeat("f", 40), base, deliveryevidence.CheckStaleHead},
+		{"moved-base", `[{"name":"validate","conclusion":"success","status":"completed","head_sha":"` + head + `"}]`, head, strings.Repeat("f", 40), deliveryevidence.CheckStaleHead},
+	}
+	for _, tc := range checkCases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := fmt.Sprintf(`{"number":7,"url":"https://github.com/yersonargotev/packy/pull/7","headRefName":%q,"headRefOid":%q,"baseRefOid":%q,"mergeable":"MERGEABLE"}`, local.Branch, tc.headSHA, tc.baseSHA)
+			checks := fmt.Sprintf(`{"check_runs":%s}`, tc.checks)
+			status := fmt.Sprintf(`{"sha":%q,"statuses":[]}`, tc.headSHA)
+			runner := &fakeRunner{outputs: [][]byte{[]byte(raw), []byte(checks), []byte(status), issueRaw, specRaw}}
+			caseArgs := append([]string(nil), args...)
+			if tc.name == "expected-skip" {
+				caseArgs = append(caseArgs, "--expected-skips", "validate")
+			}
+			var output bytes.Buffer
+			err := (command{GitHub: runner, Now: func() time.Time { return time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC) }}).run(context.Background(), caseArgs, &output)
+			if tc.name == "expected-skip" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			var gateErr *deliveryevidence.ReadinessError
+			if !errors.As(err, &gateErr) || (tc.name != "moved-base" && tc.name != "moved-head" && len(gateErr.Report.RequiredChecks) == 1 && gateErr.Report.RequiredChecks[0].Classification != tc.code) {
+				t.Fatalf("classification %s: %s %v", tc.code, output.String(), err)
+			}
+		})
+	}
+	unavailable := &fakeRunner{outputs: [][]byte{nil}, failAt: 1}
+	if err := (command{GitHub: unavailable, Now: time.Now}).run(context.Background(), args, io.Discard); err == nil {
+		t.Fatal("unavailable pull request observation passed")
+	}
+	var readiness deliveryevidence.ReadinessReport
+	if err := json.Unmarshal(stdout.Bytes(), &readiness); err != nil {
+		t.Fatal(err)
+	}
+	readinessPath := write("readiness", readiness)
+	for _, call := range github.calls {
+		if strings.Contains(call, " create ") || strings.Contains(call, " merge ") || strings.Contains(call, " delete ") {
+			t.Fatalf("mutating GitHub call: %s", call)
+		}
+	}
+	var receipts []deliveryevidence.PhaseReceipt
+	for _, phase := range []deliveryevidence.LifecyclePhase{deliveryevidence.PhaseQualification, deliveryevidence.PhaseImplementation, deliveryevidence.PhaseReview, deliveryevidence.PhaseValidation, deliveryevidence.PhaseCI, deliveryevidence.PhaseMerge, deliveryevidence.PhaseCleanup} {
+		receipts = append(receipts, deliveryevidence.PhaseReceipt{Phase: phase, StartedAt: "2026-07-27T12:00:00Z", CompletedAt: "2026-07-27T12:05:00Z"})
+	}
+	mergedAt := "2026-07-27T12:04:00Z"
+	finalPR, _ := json.Marshal(map[string]any{"number": 7, "url": readiness.URL, "headRefOid": head, "mergedAt": mergedAt, "mergeCommit": map[string]string{"oid": head}})
+	closedIssue := []byte(fmt.Sprintf(`{"number":%d,"id":%q,"state":"CLOSED"}`, bundle.Issue.Number, bundle.Issue.NodeID))
+	finalGit := &recordingRunner{delegate: execRunner{}}
+	finalGH := &fakeRunner{outputs: [][]byte{finalPR, closedIssue}}
+	finalArgs := []string{"final-outcome", "--bundle", bundlePath, "--readiness-report", readinessPath, "--phase-receipts", write("receipts", receipts), "--repository", repository, "--preserved-state-before", strings.Repeat("2", 64), "--preserved-state-after", strings.Repeat("2", 64), "--matrix-url", "https://e/matrix", "--reviews-url", "https://e/reviews", "--validation-url", "https://e/validation", "--ci-url", "https://e/ci", "--cleanup-url", "https://e/cleanup"}
+	stdout.Reset()
+	if err := (command{Git: finalGit, GitHub: finalGH, Now: func() time.Time { return time.Date(2026, 7, 27, 12, 5, 0, 0, time.UTC) }}).run(context.Background(), finalArgs, &stdout); err != nil || !strings.Contains(stdout.String(), "## Delivery succeeded") {
+		t.Fatalf("outcome: %s %v", stdout.String(), err)
+	}
+	outcomeCases := []struct {
+		name string
+		git  *fakeRunner
+		gh   *fakeRunner
+		args []string
+		code deliveryevidence.OutcomeCode
+	}{
+		{"non-containment", &fakeRunner{outputs: [][]byte{[]byte(head), []byte(head), {}, {}, {}}, failAt: 3}, &fakeRunner{outputs: [][]byte{finalPR, closedIssue}}, finalArgs, deliveryevidence.OutcomeNotContained},
+		{"open-issue", &fakeRunner{outputs: [][]byte{[]byte(head), []byte(head), {}, {}, {}, {}}}, &fakeRunner{outputs: [][]byte{finalPR, []byte(fmt.Sprintf(`{"number":%d,"id":%q,"state":"OPEN"}`, bundle.Issue.Number, bundle.Issue.NodeID))}}, finalArgs, deliveryevidence.OutcomeIssueOpen},
+		{"remote-branch", &fakeRunner{outputs: [][]byte{[]byte(head), []byte(head), {}, []byte("ref"), {}, {}}}, &fakeRunner{outputs: [][]byte{finalPR, closedIssue}}, finalArgs, deliveryevidence.OutcomeRemoteBranch},
+		{"local-branch", &fakeRunner{outputs: [][]byte{[]byte(head), []byte(head), {}, {}, []byte("* " + local.Branch), {}}}, &fakeRunner{outputs: [][]byte{finalPR, closedIssue}}, finalArgs, deliveryevidence.OutcomeLocalBranch},
+		{"dirty", &fakeRunner{outputs: [][]byte{[]byte(head), []byte(head), {}, {}, {}, []byte(" M file")}}, &fakeRunner{outputs: [][]byte{finalPR, closedIssue}}, finalArgs, deliveryevidence.OutcomeDirty},
+	}
+	mismatch := append([]string(nil), finalArgs...)
+	for i := range mismatch {
+		if mismatch[i] == "--preserved-state-after" {
+			mismatch[i+1] = strings.Repeat("3", 64)
+		}
+	}
+	outcomeCases = append(outcomeCases, struct {
+		name string
+		git  *fakeRunner
+		gh   *fakeRunner
+		args []string
+		code deliveryevidence.OutcomeCode
+	}{"preserved-state", &fakeRunner{outputs: [][]byte{[]byte(head), []byte(head), {}, {}, {}, {}}}, &fakeRunner{outputs: [][]byte{finalPR, closedIssue}}, mismatch, deliveryevidence.OutcomeStateChanged})
+	for _, tc := range outcomeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := (command{Git: tc.git, GitHub: tc.gh, Now: func() time.Time { return time.Date(2026, 7, 27, 12, 5, 0, 0, time.UTC) }}).run(context.Background(), tc.args, io.Discard)
+			var outcomeErr *deliveryevidence.OutcomeError
+			if !errors.As(err, &outcomeErr) || outcomeErr.Code != tc.code {
+				t.Fatalf("wanted %s, got %v", tc.code, err)
+			}
+		})
+	}
+	after, _ := os.ReadFile(bundlePath)
+	if !bytes.Equal(before, after) {
+		t.Fatal("read-only commands changed bundle")
+	}
+	status := exec.Command("git", "-C", repository, "status", "--porcelain")
+	if output, err := status.Output(); err != nil || len(output) != 0 {
+		t.Fatalf("disposable repository changed: %q %v", output, err)
+	}
+	for _, call := range finalGit.calls {
+		if strings.Contains(call, " checkout ") || strings.Contains(call, " branch -D ") || strings.Contains(call, " clean ") {
+			t.Fatalf("mutating Git call: %s", call)
+		}
 	}
 }
