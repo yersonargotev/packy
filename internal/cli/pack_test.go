@@ -674,6 +674,15 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	if !selected || !unselected {
 		t.Fatalf("selected JSON resources = %#v", report.Entries[0].ResourceSelections)
 	}
+
+	beforeRejectedChange := snapshotTree(t, home)
+	_, err = executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "instruction:matty-guidance")
+	if err == nil || !strings.Contains(err.Error(), "different resource selection") {
+		t.Fatalf("selection change error = %v", err)
+	}
+	if got := snapshotTree(t, home); got != beforeRejectedChange {
+		t.Fatalf("rejected selection change mutated sandbox HOME:\n%s", got)
+	}
 }
 
 func TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects(t *testing.T) {

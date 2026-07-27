@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -91,6 +92,42 @@ func TestSelectionIsImmutableAndSealedBeforeEffects(t *testing.T) {
 	}
 	if len(adapter.actions) != 0 || len(store.saves) != 0 {
 		t.Fatal("tampered selection caused effects")
+	}
+}
+
+func TestActivateRejectsChangingAnActiveSelectionBeforeInspectionOrEffects(t *testing.T) {
+	pack := Pack{
+		manifestVersion: manifestSchemaV4,
+		ID:              "app",
+		Version:         "1.0.0",
+		Surfaces:        []Surface{SurfaceCodex},
+		Resources: []Resource{
+			{Kind: "skill", ID: "one"},
+			{Kind: "instruction", ID: "two"},
+		},
+	}
+	original := ActivationState{Intent: ActivationIntent{
+		PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 3,
+		Aliases: []SurfaceAlias{}, Selection: ResourceSelection{
+			Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}},
+		},
+	}}
+	adapter := &fakeSurfaceAdapter{}
+	store := &fakeActivationStore{state: original}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+
+	_, err := facade.Preview(context.Background(), ActivationRequest{
+		PackID: "app", Surface: SurfaceCodex,
+		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "instruction", ID: "two"}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "different resource selection") {
+		t.Fatalf("selection change error = %v", err)
+	}
+	if adapter.inspectCalls != 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("rejected selection change caused effects: inspect=%d actions=%v saves=%v", adapter.inspectCalls, adapter.actions, store.saves)
+	}
+	if !reflect.DeepEqual(store.state, original) {
+		t.Fatalf("rejected selection change mutated state: got=%+v want=%+v", store.state, original)
 	}
 }
 
