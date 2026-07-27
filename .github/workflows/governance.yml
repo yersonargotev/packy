@@ -219,14 +219,14 @@ jobs:
                   if [[ "$record_url" =~ $run_pattern ]]; then
                     run_id="${BASH_REMATCH[1]}"
                     gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
-                      --jq '{state:.status,conclusion,workflow_id:.workflow_id,path,event,head_branch,head_sha,actor:.actor.login}' \
+                      --jq '{state:.status,conclusion,workflow_id:.workflow_id,event,head_branch,head_sha,actor:.actor.login}' \
                       >"$directory/run-record.json" || result=$?
                     if ((result == 0)); then
                       workflow_id="$(jq -er '.workflow_id | numbers | select(. > 0)' "$directory/run-record.json")" || result=$?
                     fi
                     if ((result == 0)); then
                       gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id" \
-                        --jq '{workflow:.name}' >"$directory/workflow-record.json" || result=$?
+                        --jq '{workflow:.name,path:.path}' >"$directory/workflow-record.json" || result=$?
                     fi
                     if ((result == 0)); then
                       jq -s '.[0] + .[1] | del(.workflow_id)' \
@@ -240,7 +240,7 @@ jobs:
                     fi
                     if ((result == 0)); then
                       jq --arg run_url "$record_url" --arg head_sha "$pr_head_sha" --argjson pr "$PR_NUMBER" \
-                        'map(select(.body == ("<!-- packy-canonical-automation\nrun: " + $run_url + "\nhead: " + $head_sha + "\n-->") and .user.id == 41898282 and .user.login == "github-actions[bot]" and .user.type == "Bot")) | last // {} | {proposal_run_url:$run_url,proposal_head_sha:$head_sha,binding_comment_author_id:.user.id,pull_request_number:$pr}' \
+                        'map(select(.body == ("<!-- packy-canonical-automation\nrun: " + $run_url + "\nhead: " + $head_sha + "\n-->\n") and .user.id == 41898282 and .user.login == "github-actions[bot]" and .user.type == "Bot")) | last // {} | {proposal_run_url:$run_url,proposal_head_sha:$head_sha,binding_comment_author_id:.user.id,pull_request_number:$pr}' \
                         "$directory/proposal-comments.json" >"$directory/proposal-binding.json" || result=$?
                     fi
                     if ((result == 0)); then
