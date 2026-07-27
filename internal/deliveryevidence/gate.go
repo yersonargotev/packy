@@ -53,6 +53,12 @@ func (e *LocalGateError) Error() string {
 	return fmt.Sprintf("local delivery gate %s: %s", e.Code, e.Detail)
 }
 
+// NewLocalGateFailure preserves every currently available fact for a
+// deterministic exception report before the complete evaluator can run.
+func NewLocalGateFailure(bundle Bundle, observation LocalGateObservation, code LocalGateErrorCode, detail string) *LocalGateError {
+	return &LocalGateError{Code: code, Detail: detail, Report: localGateReport(bundle, observation)}
+}
+
 // LocalGateReport is emitted only for a passing observation.
 type LocalGateReport struct {
 	Repository            RepositoryIdentity

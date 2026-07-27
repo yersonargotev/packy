@@ -23,6 +23,16 @@ type fakeRunner struct {
 	failAt  int
 }
 
+type environmentRunner struct {
+	environment []string
+}
+
+func (r environmentRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = r.environment
+	return cmd.Output()
+}
+
 type fakeValidationRunner struct {
 	calls  []deliveryevidence.SandboxFacts
 	fail   bool
@@ -501,14 +511,15 @@ func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
 }
 
 type localGateFixture struct {
-	root       string
-	repository string
-	bundlePath string
-	home       string
-	config     string
-	branch     string
-	issue      issueObservation
-	spec       issueObservation
+	root        string
+	repository  string
+	bundlePath  string
+	home        string
+	config      string
+	branch      string
+	issue       issueObservation
+	spec        issueObservation
+	environment []string
 }
 
 func newLocalGateFixture(t *testing.T, iterations int) localGateFixture {
@@ -517,16 +528,17 @@ func newLocalGateFixture(t *testing.T, iterations int) localGateFixture {
 	repository := filepath.Join(root, "checkout")
 	operatorHome := filepath.Join(root, "operator-home")
 	operatorConfig := filepath.Join(root, "operator-config")
+	environment := replacedEnvironment(os.Environ(), map[string]string{
+		"HOME":                operatorHome,
+		"XDG_CONFIG_HOME":     operatorConfig,
+		"GIT_CONFIG_GLOBAL":   filepath.Join(root, "empty-gitconfig"),
+		"GIT_CONFIG_NOSYSTEM": "1",
+	})
 	run := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = repository
-		cmd.Env = replacedEnvironment(os.Environ(), map[string]string{
-			"HOME":                operatorHome,
-			"XDG_CONFIG_HOME":     operatorConfig,
-			"GIT_CONFIG_GLOBAL":   filepath.Join(root, "empty-gitconfig"),
-			"GIT_CONFIG_NOSYSTEM": "1",
-		})
+		cmd.Env = environment
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", strings.Join(args, " "), err, out)
@@ -620,7 +632,7 @@ func newLocalGateFixture(t *testing.T, iterations int) localGateFixture {
 	if err = deliveryevidence.StoreAtomic(bundlePath, bundle); err != nil {
 		t.Fatal(err)
 	}
-	return localGateFixture{root: root, repository: repository, bundlePath: bundlePath, home: home, config: config, branch: "feat/issue-279-local-delivery-gate", issue: issue, spec: spec}
+	return localGateFixture{root: root, repository: repository, bundlePath: bundlePath, home: home, config: config, branch: "feat/issue-279-local-delivery-gate", issue: issue, spec: spec, environment: environment}
 }
 
 func (f localGateFixture) run(t *testing.T, issue issueObservation, expectedBranch string, extra ...string) (string, error) {
@@ -632,7 +644,9 @@ func (f localGateFixture) run(t *testing.T, issue issueObservation, expectedBran
 	args := []string{"local-gate", "--bundle", f.bundlePath, "--repository", f.repository, "--delivery-branch", expectedBranch, "--sandbox-home", f.home, "--sandbox-config-home", f.config, "--validator-identity-expires-at", "2026-07-29T00:00:00Z"}
 	args = append(args, extra...)
 	var stdout bytes.Buffer
-	err := (command{Git: execRunner{}, GitHub: github, Now: func() time.Time { return time.Date(2026, 7, 27, 13, 0, 0, 0, time.UTC) }}).run(context.Background(), args, &stdout)
+	err := (command{Git: environmentRunner{environment: f.environment}, GitHub: github, Now: func() time.Time {
+		return time.Date(2026, 7, 27, 13, 0, 0, 0, time.UTC)
+	}}).run(context.Background(), args, &stdout)
 	for _, call := range github.calls {
 		if !strings.HasPrefix(call, "gh issue view ") && !strings.HasPrefix(call, "gh repo view ") {
 			t.Fatalf("LOCAL gate used mutating or foreign GitHub authority: %s", call)
@@ -662,6 +676,23 @@ func TestLocalGateCommandAtSandboxedHighestSeam(t *testing.T) {
 }
 
 func TestLocalGateCommandFailureClasses(t *testing.T) {
+	t.Run("required-arguments", func(t *testing.T) {
+		var output bytes.Buffer
+		err := (command{}).run(context.Background(), []string{"local-gate"}, &output)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateQualificationInvalid)) || !strings.Contains(output.String(), "LOCAL delivery gate: FAIL") {
+			t.Fatalf("unexpected result: %q %v", output.String(), err)
+		}
+	})
+	t.Run("authority-observation", func(t *testing.T) {
+		f := newLocalGateFixture(t, 1)
+		github := &fakeRunner{outputs: [][]byte{[]byte("{}")}, failAt: 1}
+		args := []string{"local-gate", "--bundle", f.bundlePath, "--repository", f.repository, "--delivery-branch", f.branch, "--sandbox-home", f.home, "--sandbox-config-home", f.config, "--validator-identity-expires-at", "2026-07-29T00:00:00Z"}
+		var output bytes.Buffer
+		err := (command{Git: environmentRunner{environment: f.environment}, GitHub: github}).run(context.Background(), args, &output)
+		if err == nil || !strings.Contains(err.Error(), string(deliveryevidence.LocalGateTrackerAuthorityChanged)) || !strings.Contains(output.String(), "Issue: #279") {
+			t.Fatalf("unexpected result: %q %v", output.String(), err)
+		}
+	})
 	t.Run("missing-acceptance-row", func(t *testing.T) {
 		f := newLocalGateFixture(t, 1)
 		b, _, _ := deliveryevidence.Load(f.bundlePath)
@@ -774,6 +805,7 @@ func TestLocalGateCommandFailureClasses(t *testing.T) {
 		f := newLocalGateFixture(t, 1)
 		cmd := exec.Command("git", "commit", "--allow-empty", "-m", "extra")
 		cmd.Dir = f.repository
+		cmd.Env = f.environment
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("extra commit: %v\n%s", err, out)
 		}
