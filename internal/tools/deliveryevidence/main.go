@@ -89,6 +89,14 @@ func (c command) run(ctx context.Context, args []string, stdout io.Writer) error
 		return c.initialize(ctx, args[1:], stdout)
 	case "status":
 		return c.status(args[1:], stdout)
+	case "record-iteration":
+		return c.recordIteration(ctx, args[1:], stdout)
+	case "record-review":
+		return c.recordReview(args[1:], stdout)
+	case "record-adjudication":
+		return c.recordAdjudication(args[1:], stdout)
+	case "review-status":
+		return c.reviewStatus(ctx, args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -226,7 +234,7 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err != nil {
 		return err
 	}
-	bundle := deliveryevidence.Bundle{Schema: deliveryevidence.SchemaV1, Repository: deliveryevidence.RepositoryIdentity{Owner: q.Repository.Owner, Name: q.Repository.Name, NodeID: ro.ID}, Issue: deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID}, Spec: deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID}, Authority: deliveryevidence.Authority{IssueSHA256: issueHash, SpecSHA256: specHash, Labels: labels, DependencyDisposition: q.DependencyDisposition, AcceptanceCriteria: q.AcceptanceCriteria}, Scope: q.Scope, AcceptanceMatrix: q.AcceptanceMatrix, StartingBaseSHA: q.StartingBaseSHA, Iterations: q.Iterations}
+	bundle := deliveryevidence.Bundle{Schema: deliveryevidence.SchemaV1, Repository: deliveryevidence.RepositoryIdentity{Owner: q.Repository.Owner, Name: q.Repository.Name, NodeID: ro.ID}, Issue: deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID}, Spec: deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID}, Authority: deliveryevidence.Authority{IssueSHA256: issueHash, SpecSHA256: specHash, Labels: labels, DependencyDisposition: q.DependencyDisposition, AcceptanceCriteria: q.AcceptanceCriteria}, Scope: q.Scope, AcceptanceMatrix: q.AcceptanceMatrix, StartingBaseSHA: q.StartingBaseSHA, Iterations: q.Iterations, ReviewReceipts: []deliveryevidence.ReviewReceipt{}, Adjudications: []deliveryevidence.Adjudication{}}
 	path, err := deliveryevidence.ResolvePath(commonPath, output, bundle.Issue.Number)
 	if err != nil {
 		return err
@@ -372,5 +380,155 @@ func (c command) status(args []string, stdout io.Writer) error {
 		return err
 	}
 	_, err = io.WriteString(stdout, s)
+	return err
+}
+
+func (c command) recordIteration(ctx context.Context, args []string, stdout io.Writer) error {
+	f := flag.NewFlagSet("deliveryevidence record-iteration", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	var bundlePath, inputPath, repo string
+	f.StringVar(&bundlePath, "bundle", "", "canonical evidence bundle")
+	f.StringVar(&inputPath, "iteration", "", "canonical iteration input")
+	f.StringVar(&repo, "repository", ".", "repository to observe")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if bundlePath == "" || inputPath == "" || f.NArg() != 0 {
+		return errors.New("bundle and iteration are required")
+	}
+	if c.Git == nil {
+		return errors.New("Git read-only runner is required")
+	}
+	bundle, _, err := deliveryevidence.Load(bundlePath)
+	if err != nil {
+		return err
+	}
+	var iteration deliveryevidence.Iteration
+	if err = decodeFile(inputPath, &iteration); err != nil {
+		return err
+	}
+	for _, sha := range []string{iteration.BaseSHA, iteration.HeadSHA} {
+		if _, err = c.Git.Output(ctx, "git", "-C", repo, "cat-file", "-e", sha+"^{commit}"); err != nil {
+			return fmt.Errorf("iteration references a foreign or missing commit: %w", err)
+		}
+	}
+	bundle, err = deliveryevidence.RecordIteration(bundle, iteration)
+	if err != nil {
+		return err
+	}
+	if err = deliveryevidence.StoreAtomic(bundlePath, bundle); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "recorded iteration %s\n", iteration.Identity)
+	return err
+}
+
+func (c command) recordReview(args []string, stdout io.Writer) error {
+	var receipt deliveryevidence.ReviewReceipt
+	bundle, path, err := recordInput(args, "receipt", &receipt)
+	if err != nil {
+		return err
+	}
+	bundle, err = deliveryevidence.RecordReview(bundle, receipt)
+	if err != nil {
+		return err
+	}
+	if err = deliveryevidence.StoreAtomic(path, bundle); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "recorded %s review for %s\n", receipt.Axis, receipt.Iteration)
+	return err
+}
+
+func (c command) recordAdjudication(args []string, stdout io.Writer) error {
+	var adjudication deliveryevidence.Adjudication
+	bundle, path, err := recordInput(args, "adjudication", &adjudication)
+	if err != nil {
+		return err
+	}
+	bundle, err = deliveryevidence.RecordAdjudication(bundle, adjudication)
+	if err != nil {
+		return err
+	}
+	if err = deliveryevidence.StoreAtomic(path, bundle); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "recorded adjudication %d for %s\n", adjudication.Sequence, adjudication.FindingID)
+	return err
+}
+
+func recordInput[T any](args []string, inputName string, value *T) (deliveryevidence.Bundle, string, error) {
+	f := flag.NewFlagSet("deliveryevidence record-"+inputName, flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	var bundlePath, inputPath string
+	f.StringVar(&bundlePath, "bundle", "", "canonical evidence bundle")
+	f.StringVar(&inputPath, inputName, "", "canonical record input")
+	if err := f.Parse(args); err != nil {
+		return deliveryevidence.Bundle{}, "", err
+	}
+	if bundlePath == "" || inputPath == "" || f.NArg() != 0 {
+		return deliveryevidence.Bundle{}, "", fmt.Errorf("bundle and %s are required", inputName)
+	}
+	bundle, _, err := deliveryevidence.Load(bundlePath)
+	if err != nil {
+		return deliveryevidence.Bundle{}, "", err
+	}
+	if err = decodeFile(inputPath, value); err != nil {
+		return deliveryevidence.Bundle{}, "", err
+	}
+	return bundle, bundlePath, nil
+}
+
+func decodeFile(path string, value any) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(value); err != nil {
+		return err
+	}
+	var extra any
+	if err = decoder.Decode(&extra); err != io.EOF {
+		return errors.New("record input must contain exactly one JSON value")
+	}
+	return nil
+}
+
+func (c command) reviewStatus(ctx context.Context, args []string, stdout io.Writer) error {
+	f := flag.NewFlagSet("deliveryevidence review-status", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	var bundlePath, repo string
+	f.StringVar(&bundlePath, "bundle", "", "canonical evidence bundle")
+	f.StringVar(&repo, "repository", ".", "repository to observe")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if bundlePath == "" || f.NArg() != 0 {
+		return errors.New("bundle is required")
+	}
+	if c.Git == nil {
+		return errors.New("Git read-only runner is required")
+	}
+	bundle, _, err := deliveryevidence.Load(bundlePath)
+	if err != nil {
+		return err
+	}
+	headRaw, err := c.Git.Output(ctx, "git", "-C", repo, "rev-parse", "HEAD^{commit}")
+	if err != nil {
+		return fmt.Errorf("observe current head: %w", err)
+	}
+	head := strings.TrimSpace(string(headRaw))
+	commitsRaw, err := c.Git.Output(ctx, "git", "-C", repo, "rev-list", "--reverse", "--ancestry-path", bundle.StartingBaseSHA+".."+head)
+	if err != nil {
+		return fmt.Errorf("observe delivery commits: %w", err)
+	}
+	commits := append([]string{bundle.StartingBaseSHA}, strings.Fields(string(commitsRaw))...)
+	report, err := deliveryevidence.RenderReviewReport(bundle, head, commits)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(stdout, report)
 	return err
 }
