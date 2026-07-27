@@ -129,9 +129,35 @@ jobs:
           (( $(input_bytes proposed_manifest_json) <= 49152 )) || { echo "proposed_manifest_json exceeds 48 KiB" >&2; exit 1; }
           (( $(input_bytes human_evidence_json) <= 16384 )) || { echo "human_evidence_json exceeds 16 KiB" >&2; exit 1; }
           (( $(input_bytes request_reason) <= 2048 )) || { echo "request_reason exceeds 2 KiB" >&2; exit 1; }
+          json_input_type() {
+            jq -er --arg key "$1" '
+              (.inputs[$key] // "") |
+              if type != "string" then error($key + " must use string transport")
+              elif . == "" then "empty"
+              else (fromjson | type)
+              end
+            ' "$GITHUB_EVENT_PATH"
+          }
+          require_json_shape() {
+            local key="$1" expected="$2" required="${3:-false}" actual
+            actual="$(json_input_type "$key")" || { echo "$key is malformed JSON" >&2; exit 1; }
+            if [[ "$actual" == "empty" && "$required" == "false" ]]; then
+              return
+            fi
+            [[ "$actual" == "$expected" ]] || { echo "$key must be a JSON $expected" >&2; exit 1; }
+          }
+          require_json_shape human_evidence_json object
           if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
+            require_json_shape registrations_json array true
+            require_json_shape proposed_manifest_json object true
             member_count="$(jq -er '.inputs.registrations_json | fromjson | length' "$GITHUB_EVENT_PATH")"
             (( member_count >= 2 && member_count <= 8 )) || { echo "register_bundle requires 2..8 members" >&2; exit 1; }
+          elif [[ "$PACKY_OPERATION" == "register" ]]; then
+            require_json_shape registration_json object true
+          else
+            require_json_shape registration_json object
+            require_json_shape registrations_json array
+            require_json_shape proposed_manifest_json object
           fi
       - name: Enforce the ref, mode, and operation boundary
         env:
@@ -445,7 +471,7 @@ jobs:
               registration_bundle_sha256:$registration_bundle_sha256,
               proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,
               members:$members,blockers:["Read-only publication preparation did not finish."],
-              recovery:["Correct the branch implementation before merge, then start a fresh preparation-only dispatch."],
+              recovery:["Disable the workflow immediately, open a corrective issue, and repeat preparation-only proof from new reviewed bytes."],
               contains_secrets:false,contains_upstream_bytes:false}' \
             > "$RUNNER_TEMP/packy-sync/preparation/operational-artifact.json"
       - name: Check out issue-branch tool bytes

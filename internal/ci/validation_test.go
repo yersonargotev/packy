@@ -746,6 +746,72 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 	}
 }
 
+func TestSyncWorkflowAdmitRejectsMalformedJSONBeforeLaterJobs(t *testing.T) {
+	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "sync-pack-source.yml"))
+	step := workflowSection(t, workflow, "      - name: Enforce input and transport bounds before acquisition", "      - name: Enforce the ref, mode, and operation boundary")
+	marker := "        run: |\n"
+	index := strings.Index(step, marker)
+	if index < 0 {
+		t.Fatal("admission step has no shell body")
+	}
+	lines := strings.Split(step[index+len(marker):], "\n")
+	for index := range lines {
+		lines[index] = strings.TrimPrefix(lines[index], "          ")
+	}
+	script := strings.Join(lines, "\n")
+	if output, err := exec.Command("bash", "-n", "-c", script).CombinedOutput(); err != nil {
+		t.Fatalf("admission shell is invalid: %v: %s", err, output)
+	}
+
+	baseInputs := map[string]any{
+		"registration_json": "", "registrations_json": `[{},{}]`,
+		"proposed_manifest_json": `{}`, "human_evidence_json": "",
+		"request_reason": "bounded admission",
+	}
+	runAdmission := func(t *testing.T, operation string, inputs map[string]any) ([]byte, error) {
+		t.Helper()
+		event, err := json.Marshal(map[string]any{"inputs": inputs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		eventPath := filepath.Join(t.TempDir(), "event.json")
+		if err := os.WriteFile(eventPath, event, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command("/bin/bash", "-c", script)
+		command.Env = append(os.Environ(), "GITHUB_EVENT_PATH="+eventPath, "PACKY_OPERATION="+operation)
+		return command.CombinedOutput()
+	}
+	if output, err := runAdmission(t, "register_bundle", baseInputs); err != nil {
+		t.Fatalf("valid bounded bundle admission failed: %v: %s", err, output)
+	}
+	tests := []struct {
+		name      string
+		operation string
+		key       string
+		value     string
+		want      string
+	}{
+		{name: "registration malformed", operation: "register", key: "registration_json", value: `{`, want: "registration_json is malformed JSON"},
+		{name: "registrations wrong shape", operation: "register_bundle", key: "registrations_json", value: `{}`, want: "registrations_json must be a JSON array"},
+		{name: "manifest wrong shape", operation: "register_bundle", key: "proposed_manifest_json", value: `[]`, want: "proposed_manifest_json must be a JSON object"},
+		{name: "human evidence malformed", operation: "register_bundle", key: "human_evidence_json", value: `{`, want: "human_evidence_json is malformed JSON"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inputs := make(map[string]any, len(baseInputs))
+			for key, value := range baseInputs {
+				inputs[key] = value
+			}
+			inputs[test.key] = test.value
+			output, err := runAdmission(t, test.operation, inputs)
+			if err == nil || !strings.Contains(string(output), test.want) {
+				t.Fatalf("admission = %v: %s, want failure containing %q", err, output, test.want)
+			}
+		})
+	}
+}
+
 func TestSynchronizationSchemasAreCanonicalAndForbidSensitivePayloads(t *testing.T) {
 	repository := repositoryRoot(t)
 	if _, err := os.Stat(filepath.Join(repository, "workflows", "schemas")); !os.IsNotExist(err) {
