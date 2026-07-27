@@ -22,7 +22,12 @@ var structuredOutputFixtures = map[string]string{
 	"pack-status.json":               "pack-status.schema.json",
 }
 
-func TestStructuredOutputV2SchemasValidateFixturesAndProducers(t *testing.T) {
+var structuredOutputV3Fixtures = map[string]string{
+	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
+	"pack-status.json":            "pack-status.schema.json",
+}
+
+func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +48,18 @@ func TestStructuredOutputV2SchemasValidateFixturesAndProducers(t *testing.T) {
 			if strings.Contains(string(fixture), forbidden) {
 				t.Fatalf("fixture %s leaks %q", fixtureName, forbidden)
 			}
+		}
+	}
+	for fixtureName, schemaName := range structuredOutputV3Fixtures {
+		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v3", fixtureName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
+			t.Fatalf("v3 fixture %s: %v", fixtureName, err)
+		}
+		if err := validateCanonicalOperatorOrder(fixture); err != nil {
+			t.Fatalf("v3 fixture %s canonical order: %v", fixtureName, err)
 		}
 	}
 
@@ -427,11 +444,25 @@ func assertStructuredOutput(t *testing.T, root, schemaName, document string) {
 
 func validateStructuredOutput(t *testing.T, root, schemaName string, instance []byte) error {
 	t.Helper()
+	var versioned struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(instance, &versioned); err != nil {
+		return err
+	}
+	if versioned.SchemaVersion <= 0 {
+		if schemaName == "runtime-mode.schema.json" || schemaName == "lifecycle-contract.schema.json" {
+			versioned.SchemaVersion = 2
+		} else {
+			return fmt.Errorf("structured output schema_version is required")
+		}
+	}
 	compiler := jsonschema.NewCompiler()
-	schemaRoot := filepath.Join(root, "schemas", "cli", "v2")
+	schemaVersion := fmt.Sprintf("v%d", versioned.SchemaVersion)
+	schemaRoot := filepath.Join(root, "schemas", "cli", schemaVersion)
 	entries, err := os.ReadDir(schemaRoot)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -439,17 +470,17 @@ func validateStructuredOutput(t *testing.T, root, schemaName string, instance []
 		}
 		schemaBytes, err := os.ReadFile(filepath.Join(schemaRoot, entry.Name()))
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
 		document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
 		if err != nil {
-			t.Fatalf("parse schema %s: %v", entry.Name(), err)
+			return fmt.Errorf("parse schema %s: %w", entry.Name(), err)
 		}
-		if err := compiler.AddResource("https://yersonargotev.github.io/packy/schemas/cli/v2/"+entry.Name(), document); err != nil {
-			t.Fatal(err)
+		if err := compiler.AddResource("https://yersonargotev.github.io/packy/schemas/cli/"+schemaVersion+"/"+entry.Name(), document); err != nil {
+			return err
 		}
 	}
-	schema, err := compiler.Compile("https://yersonargotev.github.io/packy/schemas/cli/v2/" + schemaName)
+	schema, err := compiler.Compile("https://yersonargotev.github.io/packy/schemas/cli/" + schemaVersion + "/" + schemaName)
 	if err != nil {
 		t.Fatalf("compile schema %s: %v", schemaName, err)
 	}
@@ -458,7 +489,7 @@ func validateStructuredOutput(t *testing.T, root, schemaName string, instance []
 		return err
 	}
 	if encoded, err := json.Marshal(value); err != nil || !json.Valid(encoded) {
-		t.Fatalf("invalid decoded JSON: %v", err)
+		return fmt.Errorf("invalid decoded JSON: %w", err)
 	}
 	return schema.Validate(value)
 }

@@ -9,6 +9,8 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
+const packShowJSONSchemaVersion = 2
+
 type packShowSourceIdentityJSON struct {
 	PackID        string `json:"pack_id"`
 	Version       string `json:"version"`
@@ -89,7 +91,7 @@ func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 		})
 	}
 	return packShowJSON{
-		SchemaVersion: capabilitypack.LifecycleJSONSchemaVersion, Report: "pack-show", CatalogState: state,
+		SchemaVersion: packShowJSONSchemaVersion, Report: "pack-show", CatalogState: state,
 		ID: pack.ID, Version: pack.Version, Description: pack.Description,
 		SourceIdentity: packShowSourceIdentityJSON{
 			PackID: report.SourceIdentity.PackID, Version: report.SourceIdentity.Version,

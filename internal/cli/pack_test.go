@@ -603,6 +603,108 @@ func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
 	}
 }
 
+func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, repoRoot := packActivationOptions(t, terminal)
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	manifestPath := filepath.Join(bundle, "packs", "matty", "pack.json")
+	rewriteManifestAsV4(t, manifestPath)
+	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+
+	before := snapshotTree(t, home)
+	dryRun, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--resource", "skill:ask-matt", "--dry-run")
+	if err != nil {
+		t.Fatalf("selected dry-run failed: %v\n%s", err, dryRun)
+	}
+	for _, want := range []string{"Activation dry-run plan", "Selection mode: custom", "Selection root: skill:ask-matt", "link skill ask-matt"} {
+		if !strings.Contains(dryRun, want) {
+			t.Fatalf("selected dry-run missing %q:\n%s", want, dryRun)
+		}
+	}
+	if strings.Contains(dryRun, "write instruction matty-guidance") {
+		t.Fatalf("unselected resource entered dry-run:\n%s", dryRun)
+	}
+	if got := snapshotTree(t, home); got != before {
+		t.Fatalf("selected dry-run mutated sandbox HOME:\n%s", got)
+	}
+
+	applied, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
+	if err != nil {
+		t.Fatalf("selected activation failed: %v\n%s", err, applied)
+	}
+	if target, err := os.Readlink(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil || !strings.HasSuffix(target, "/skills/engineering/ask-matt") {
+		t.Fatalf("selected ask-matt link = %q err=%v", target, err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("unselected instructions were projected: %v", err)
+	}
+	state := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
+	for _, want := range []string{`"mode": "custom"`, `"kind": "skill"`, `"id": "ask-matt"`} {
+		if !strings.Contains(state, want) {
+			t.Fatalf("persisted selection missing %q:\n%s", want, state)
+		}
+	}
+
+	status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex")
+	if err != nil {
+		t.Fatalf("selected status failed: %v\n%s", err, status)
+	}
+	for _, want := range []string{"Selection mode: custom", "Resource selection: skill:ask-matt state=selected-root", "state=unselected"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("selected status missing %q:\n%s", want, status)
+		}
+	}
+
+	jsonStatus, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--json")
+	if err != nil {
+		t.Fatalf("selected JSON status failed: %v\n%s", err, jsonStatus)
+	}
+	var report capabilitypack.JSONStatusReport
+	if err := json.Unmarshal([]byte(jsonStatus), &report); err != nil {
+		t.Fatalf("invalid selected JSON status: %v\n%s", err, jsonStatus)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].Intent.Selection.Mode != capabilitypack.SelectionCustom {
+		t.Fatalf("selected JSON intent = %#v", report.Entries)
+	}
+	var selected, unselected bool
+	for _, resource := range report.Entries[0].ResourceSelections {
+		selected = selected || resource.Resource.String() == "skill:ask-matt" && resource.Selected
+		unselected = unselected || !resource.Selected
+	}
+	if !selected || !unselected {
+		t.Fatalf("selected JSON resources = %#v", report.Entries[0].ResourceSelections)
+	}
+}
+
+func TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, repoRoot := packActivationOptions(t, terminal)
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	manifestPath := filepath.Join(bundle, "packs", "matty", "pack.json")
+	rewriteManifestAsV4(t, manifestPath)
+	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	terminal.onApprove = func() {
+		target := filepath.Join(home, ".agents", "skills", "ask-matt")
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(target, "operator-owned"), []byte("preserve\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "stale") {
+		t.Fatalf("selected stale error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".packy", "packs.json")); !os.IsNotExist(err) {
+		t.Fatalf("selected stale plan wrote state: %v", err)
+	}
+	if got := readFileString(t, filepath.Join(home, ".agents", "skills", "ask-matt", "operator-owned")); got != "preserve\n" {
+		t.Fatalf("selected stale plan changed operator content: %q", got)
+	}
+}
+
 func TestPackActivateCodexRejectsNonTTYBeforeEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: false, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
@@ -1400,6 +1502,33 @@ func copyPackBundleForUpdate(t *testing.T, repoRoot string) string {
 	root := t.TempDir()
 	copyProductionCatalogBundle(t, root, repoRoot)
 	return root
+}
+
+func rewriteManifestAsV4(t *testing.T, manifestPath string) {
+	t.Helper()
+	var manifest map[string]any
+	if err := json.Unmarshal([]byte(readFileString(t, manifestPath)), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["schema_version"] = float64(4)
+	if contract, ok := manifest["contract"].(map[string]any); ok {
+		delete(contract, "optional_modes")
+	}
+	for _, raw := range manifest["resources"].([]any) {
+		resource := raw.(map[string]any)
+		switch resource["kind"] {
+		case "instruction", "asset", "notice":
+		default:
+			resource["runtime_modes"] = []any{}
+		}
+	}
+	encoded, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, append(encoded, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func copyProductionCatalogBundle(t *testing.T, target, repoRoot string) {

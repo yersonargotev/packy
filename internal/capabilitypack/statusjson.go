@@ -2,7 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 2
+const StatusSchemaVersion = 3
 
 type JSONOptionalBool struct {
 	State string `json:"state"`
@@ -10,10 +10,11 @@ type JSONOptionalBool struct {
 }
 
 type JSONIntent struct {
-	State    string `json:"state"`
-	Active   *bool  `json:"active"`
-	Revision *int   `json:"revision"`
-	Version  string `json:"version,omitempty"`
+	State     string            `json:"state"`
+	Active    *bool             `json:"active"`
+	Revision  *int              `json:"revision"`
+	Version   string            `json:"version,omitempty"`
+	Selection ResourceSelection `json:"selection"`
 }
 
 type JSONAttempt struct {
@@ -52,22 +53,28 @@ type JSONProjectionStatus struct {
 	Contributors        []string         `json:"contributors"`
 }
 
+type JSONResourceSelectionStatus struct {
+	Resource ResourceIdentity `json:"resource"`
+	Selected bool             `json:"selected"`
+}
+
 type JSONStatusEntry struct {
-	Pack                string                  `json:"pack"`
-	PackVersion         string                  `json:"pack_version"`
-	Surface             Surface                 `json:"surface"`
-	Intent              JSONIntent              `json:"intent"`
-	UpdateAvailable     bool                    `json:"update_available"`
-	LatestAttempt       *JSONAttempt            `json:"latest_attempt"`
-	Projections         JSONProjectionSummary   `json:"projection_summary"`
-	ProjectionDetails   []JSONProjectionStatus  `json:"projection_details"`
-	Contract            LifecycleContract       `json:"contract"`
-	Readiness           JSONReadiness           `json:"readiness"`
-	OptionalAuthorities []JSONOptionalAuthority `json:"optional_authorities"`
-	RuntimeModes        []RuntimeModeResult     `json:"runtime_modes,omitempty"`
-	Blockers            []string                `json:"blockers"`
-	Evidence            []string                `json:"evidence"`
-	PendingHumanActions []string                `json:"pending_human_actions"`
+	Pack                string                        `json:"pack"`
+	PackVersion         string                        `json:"pack_version"`
+	Surface             Surface                       `json:"surface"`
+	Intent              JSONIntent                    `json:"intent"`
+	UpdateAvailable     bool                          `json:"update_available"`
+	LatestAttempt       *JSONAttempt                  `json:"latest_attempt"`
+	Projections         JSONProjectionSummary         `json:"projection_summary"`
+	ProjectionDetails   []JSONProjectionStatus        `json:"projection_details"`
+	ResourceSelections  []JSONResourceSelectionStatus `json:"resource_selections"`
+	Contract            LifecycleContract             `json:"contract"`
+	Readiness           JSONReadiness                 `json:"readiness"`
+	OptionalAuthorities []JSONOptionalAuthority       `json:"optional_authorities"`
+	RuntimeModes        []RuntimeModeResult           `json:"runtime_modes,omitempty"`
+	Blockers            []string                      `json:"blockers"`
+	Evidence            []string                      `json:"evidence"`
+	PendingHumanActions []string                      `json:"pending_human_actions"`
 }
 
 type JSONStatusReport struct {
@@ -83,10 +90,11 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 	}
 	entries := make([]JSONStatusEntry, 0, len(report.Entries))
 	for _, entry := range report.Entries {
-		intent := JSONIntent{State: "absent"}
+		intent := JSONIntent{State: "absent", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}
 		if entry.IntentPresent {
 			active, revision := entry.Intent.Active, entry.Intent.Revision
-			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version}
+			selection, _ := canonicalSelection(entry.Intent.Selection)
+			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version, Selection: selection}
 		}
 		var attempt *JSONAttempt
 		if entry.LatestAttempt != nil {
@@ -105,7 +113,8 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			OptionalAuthorities: jsonOptionalAuthorities(entry.OptionalAuthorities),
 			RuntimeModes:        sortedRuntimeModeResults(entry.RuntimeModes),
 			ProjectionDetails:   jsonProjectionDetails(entry.ProjectionDetails), Contract: entry.Contract,
-			Blockers: sortedCopy(entry.Blockers), Evidence: sortedCopy(entry.Evidence), PendingHumanActions: sortedCopy(entry.PendingHumanActions),
+			ResourceSelections: jsonResourceSelectionDetails(entry.ResourceSelections),
+			Blockers:           sortedCopy(entry.Blockers), Evidence: sortedCopy(entry.Evidence), PendingHumanActions: sortedCopy(entry.PendingHumanActions),
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -115,6 +124,15 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 		return entries[i].Surface < entries[j].Surface
 	})
 	return JSONStatusReport{SchemaVersion: StatusSchemaVersion, Report: kind, Entries: entries}
+}
+
+func jsonResourceSelectionDetails(values []ResourceSelectionStatus) []JSONResourceSelectionStatus {
+	result := make([]JSONResourceSelectionStatus, 0, len(values))
+	for _, value := range values {
+		result = append(result, JSONResourceSelectionStatus{Resource: value.Resource, Selected: value.Selected})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Resource.String() < result[j].Resource.String() })
+	return result
 }
 
 func jsonOptionalAuthorities(values []OptionalAuthorityObservation) []JSONOptionalAuthority {

@@ -131,6 +131,10 @@ func (f Facade) compose(requested Pack, state ActivationState, surface Surface, 
 		if err != nil {
 			return composition{}, err
 		}
+		pack, err = selectPackResources(pack, intent.Selection)
+		if err != nil {
+			return composition{}, fmt.Errorf("active pack %q has invalid resource selection: %w", intent.PackID, err)
+		}
 		selected[pack.ID] = pack
 		activeIDs[pack.ID] = true
 	}
