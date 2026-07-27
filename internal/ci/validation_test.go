@@ -1482,6 +1482,25 @@ func TestMaintainerSkillFixturesCoverCanonicalRequestsAndMonitoring(t *testing.T
 	}
 }
 
+func TestMaintainerRuntimeMaterializationPreservesExactScriptBytes(t *testing.T) {
+	root := repositoryRoot(t)
+	requests := readFile(t, filepath.Join(root, ".agents", "skills", "sync-pack-source", "REQUESTS.md"))
+	if !strings.Contains(requests, "Accept: application/vnd.github.raw'") {
+		t.Fatal("maintainer runtime does not request exact raw GitHub content bytes")
+	}
+	if strings.Contains(requests, "application/vnd.github.raw+json") {
+		t.Fatal("maintainer runtime uses raw+json, which decodes JSON escapes in script source")
+	}
+
+	resultState := readFile(t, filepath.Join(root, ".agents", "skills", "sync-pack-source", "scripts", "result-state.sh"))
+	if strings.ContainsRune(resultState, '\x00') {
+		t.Fatal("result-state script contains a literal NUL instead of the jq escape")
+	}
+	if !strings.Contains(resultState, `.title, "\u0000"`) {
+		t.Fatal("result-state script does not preserve the NUL metadata separator escape")
+	}
+}
+
 func writeMaintainerArtifactFixture(t *testing.T, artifacts, kind string) (string, string) {
 	t.Helper()
 	sha, head, hash := strings.Repeat("a", 40), strings.Repeat("c", 40), strings.Repeat("b", 64)

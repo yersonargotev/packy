@@ -28,7 +28,7 @@ Materialize the remote runtime without touching the checkout:
 remote_main_sha="$(gh api repos/yersonargotev/packy/branches/main --jq .commit.sha)"
 remote_skill_runtime="$(mktemp -d)"
 for script in request.sh attach.sh dispatch.sh result-state.sh; do
-  gh api -H 'Accept: application/vnd.github.raw+json' \
+  gh api -H 'Accept: application/vnd.github.raw' \
     "repos/yersonargotev/packy/contents/.agents/skills/sync-pack-source/scripts/$script?ref=$remote_main_sha" \
     > "$remote_skill_runtime/$script"
   chmod 700 "$remote_skill_runtime/$script"
