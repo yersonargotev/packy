@@ -104,17 +104,19 @@ type Iteration struct {
 	EvidenceSHA256 string `json:"evidence_sha256"`
 }
 type Bundle struct {
-	Schema           string             `json:"schema"`
-	Repository       RepositoryIdentity `json:"repository"`
-	Issue            IssueIdentity      `json:"issue"`
-	Spec             SpecIdentity       `json:"spec"`
-	Authority        Authority          `json:"authority"`
-	Scope            ScopeLedger        `json:"scope"`
-	AcceptanceMatrix []AcceptanceRow    `json:"acceptance_matrix"`
-	StartingBaseSHA  string             `json:"starting_base_sha"`
-	Iterations       []Iteration        `json:"iterations"`
-	ReviewReceipts   []ReviewReceipt    `json:"review_receipts"`
-	Adjudications    []Adjudication     `json:"adjudications"`
+	Schema             string                      `json:"schema"`
+	Repository         RepositoryIdentity          `json:"repository"`
+	Issue              IssueIdentity               `json:"issue"`
+	Spec               SpecIdentity                `json:"spec"`
+	Authority          Authority                   `json:"authority"`
+	Scope              ScopeLedger                 `json:"scope"`
+	AcceptanceMatrix   []AcceptanceRow             `json:"acceptance_matrix"`
+	StartingBaseSHA    string                      `json:"starting_base_sha"`
+	Iterations         []Iteration                 `json:"iterations"`
+	ReviewReceipts     []ReviewReceipt             `json:"review_receipts"`
+	Adjudications      []Adjudication              `json:"adjudications"`
+	ValidationReceipts []ValidationReceipt         `json:"validation_receipts,omitempty"`
+	FocusedValidation  []FocusedValidationEvidence `json:"focused_validation,omitempty"`
 }
 
 // TypedObservationHash binds a kind and identity to canonical transient facts.
@@ -152,6 +154,8 @@ func CanonicalJSON(bundle Bundle) ([]byte, error) {
 		bundle.ReviewReceipts[i].Findings = clone(bundle.ReviewReceipts[i].Findings)
 	}
 	bundle.Adjudications = clone(bundle.Adjudications)
+	bundle.ValidationReceipts = clone(bundle.ValidationReceipts)
+	bundle.FocusedValidation = clone(bundle.FocusedValidation)
 	canonicalize(&bundle)
 	if err := Validate(bundle); err != nil {
 		return nil, err
@@ -368,6 +372,9 @@ func Validate(b Bundle) error {
 	if err := validateReviews(b); err != nil {
 		return err
 	}
+	if err := validateValidationEvidence(b); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -394,6 +401,18 @@ func canonicalize(b *Bundle) {
 			return b.ReviewReceipts[i].Findings[j].ID < b.ReviewReceipts[i].Findings[k].ID
 		})
 	}
+	sort.Slice(b.ValidationReceipts, func(i, j int) bool {
+		if b.ValidationReceipts[i].CompletedAt == b.ValidationReceipts[j].CompletedAt {
+			return b.ValidationReceipts[i].CommitSHA < b.ValidationReceipts[j].CommitSHA
+		}
+		return b.ValidationReceipts[i].CompletedAt < b.ValidationReceipts[j].CompletedAt
+	})
+	sort.Slice(b.FocusedValidation, func(i, j int) bool {
+		if b.FocusedValidation[i].CompletedAt == b.FocusedValidation[j].CompletedAt {
+			return b.FocusedValidation[i].Identity < b.FocusedValidation[j].Identity
+		}
+		return b.FocusedValidation[i].CompletedAt < b.FocusedValidation[j].CompletedAt
+	})
 }
 func blank(s string) bool { return strings.TrimSpace(s) == "" }
 func slug(s string) bool {
