@@ -131,6 +131,45 @@ func TestActivateRejectsChangingAnActiveSelectionBeforeInspectionOrEffects(t *te
 	}
 }
 
+func TestActivateAllowsNewSelectionAfterPriorIntentIsInactive(t *testing.T) {
+	pack := Pack{
+		manifestVersion: manifestSchemaV4,
+		ID:              "app",
+		Version:         "1.0.0",
+		Surfaces:        []Surface{SurfaceCodex},
+		Resources: []Resource{
+			{Kind: "skill", ID: "one"},
+			{Kind: "instruction", ID: "two"},
+		},
+	}
+	original := ActivationState{Intent: ActivationIntent{
+		PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: false, Revision: 4,
+		Aliases: []SurfaceAlias{}, Selection: ResourceSelection{
+			Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}},
+		},
+	}}
+	adapter := &fakeSurfaceAdapter{}
+	store := &fakeActivationStore{state: original}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	requested := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "instruction", ID: "two"}}}
+
+	plan, err := facade.Preview(context.Background(), ActivationRequest{
+		PackID: "app", Surface: SurfaceCodex, Selection: requested,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plan.Selection(), requested) {
+		t.Fatalf("reactivation selection = %+v want %+v", plan.Selection(), requested)
+	}
+	if adapter.inspectCalls != 1 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("reactivation preview effects: inspect=%d actions=%v saves=%v", adapter.inspectCalls, adapter.actions, store.saves)
+	}
+	if !reflect.DeepEqual(store.state, original) {
+		t.Fatalf("reactivation preview mutated state: got=%+v want=%+v", store.state, original)
+	}
+}
+
 func TestFileActivationStoreRejectsInvalidV4SelectionWithoutRewrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "packs.json")
 	data := `{"schema_version":4,"activations":[{"schema_version":3,"intent":{"pack_id":"app","surface":"codex","active":true,"revision":1,"aliases":[],"selection":{"mode":"future","roots":[]}}}]}`

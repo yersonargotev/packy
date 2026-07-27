@@ -717,7 +717,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		if err != nil {
 			return ReconciliationPlan{}, err
 		}
-		if operation == OperationActivate && digestJSON(previousSelection) != digestJSON(selection) {
+		if operation == OperationActivate && intent.Active && digestJSON(previousSelection) != digestJSON(selection) {
 			return ReconciliationPlan{}, fmt.Errorf("capability pack %q is already active on %s with a different resource selection; selection changes require an explicit lifecycle transition", requested.ID, request.Surface)
 		}
 	}
