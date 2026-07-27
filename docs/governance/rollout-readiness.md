@@ -96,10 +96,9 @@ then agreed on the effective state:
 - [x] Every `main` update must use a pull request, including updates performed
   by Admins; the branch must be current with its base and all conversations
   must be resolved.
-- [x] Under ADR 0018, `Validate Packy-owned code`,
-  `Claude 2.1.203 package smoke`, `Governance / Validate authorization`, and
-  `CodeQL` are the universal required contexts from GitHub Actions App ID
-  `15368`. Dependency review remains advisory.
+- [x] `Validate Packy-owned code`, `Claude 2.1.203 package smoke`,
+  `Governance / Validate authorization`, `CodeQL`, and `Dependency review` are
+  required from GitHub Actions App ID `15368` on the current head.
 - [x] Force pushes and branch deletion are disabled, and there is no push
   restriction or standing bypass actor.
 - [x] Native CODEOWNER approval remains disabled and the provisional sole-Admin
@@ -144,6 +143,22 @@ These addenda do not rewrite the issue-168 snapshot. Any confirmed,
 unclassifiable, collection-failed, missing, stale, or exact-evidence
 unclassified signal stops only its named boundary. Automation has no
 self-correction authority.
+
+### 2026-07-26 ADR 0018 CI simplification
+
+On `2026-07-26`, the human Owner authorized issue #316 to reduce universal
+merge enforcement to the four already qualified contexts named by ADR 0018.
+The required-status-check endpoint changes immediately before the locally
+proved pull request is opened so removing the Addy producer cannot deadlock
+that delivery. Strict up-to-date enforcement and every other protected-main
+control remain unchanged.
+
+Dependency review remains visible and advisory. The Addy universal PR gate and
+trusted collector retire, while Addy acceptance and release evidence remain in
+their owning validation and release paths. Pack Sync is `disabled_manually`
+pending issue #317's bounded redesign. The `github-pages` environment no longer
+requires a second Owner review and retains its exact protected `main` branch
+policy. Fresh post-merge governance observation closes this transition.
 
 ## Verified baseline
 

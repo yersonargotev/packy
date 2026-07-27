@@ -12,7 +12,7 @@ universal merge requirements. Dependency review remains advisory.
 | `CI / Validate Packy-owned code` | `CI` / `Validate Packy-owned code` | GitHub Actions; App ID `15368`, slug `github-actions` | Runs repository validation, the complete Go test suite (through validation), and advisory `govulncheck`; vulnerability findings remain visible without becoming required in this stage. |
 | `CI / Claude 2.1.203 package smoke` | `CI` / `Claude 2.1.203 package smoke` | GitHub Actions; App ID `15368`, slug `github-actions` | Runs the exact supported Claude floor on pull requests. |
 | `Governance / Validate authorization` | Protected `Governance` workflow commit status | GitHub Actions; App ID `15368`, slug `github-actions` | Accepts open, same-repository closing issues with exactly `status:approved`; every absent, ambiguous, stale, or cross-repository state is denied. |
-| `Security / CodeQL` | `Security` / `CodeQL` | GitHub Actions; App ID `15368`, slug `github-actions` | Uploads Go analysis without becoming a merge requirement. |
+| `Security / CodeQL` | `Security` / `CodeQL` | GitHub Actions; App ID `15368`, slug `github-actions` | Uploads Go analysis as a universal merge requirement. |
 | `Security / Dependency review` | `Security` / `Dependency review` | GitHub Actions; App ID `15368`, slug `github-actions` | Reports dependency risk with warning semantics; operational errors remain visible in the step result. |
 
 The expected source is a policy binding, not proof. Issue #172 must observe each

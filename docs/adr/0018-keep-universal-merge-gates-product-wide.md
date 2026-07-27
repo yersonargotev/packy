@@ -70,4 +70,9 @@ forbid reintroducing either Addy CI job or the trusted collector. Governance
 shadow qualification proves the three Actions check-runs plus the separate
 Governance commit status; Dependency review is not part of that qualification.
 
-Live branch protection is updated only after this decision reaches `main`.
+Because this change removes a currently required check producer, the transition
+updates only the live required-status-check endpoint to the four already
+qualified contexts immediately before opening the locally proved pull request.
+All other branch protections remain unchanged. The resulting short transition
+window is closed by merging the expected-state update and then collecting a
+fresh governance observation.
