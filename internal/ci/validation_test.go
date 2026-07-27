@@ -2003,6 +2003,33 @@ func TestHostile(t *testing.T) {
 			t.Fatalf("validation wrote operator path %s: %v", path, err)
 		}
 	}
+
+	receiptHome := filepath.Join(filepath.Dir(tempRoot), "receipt-home")
+	receiptConfig := filepath.Join(filepath.Dir(tempRoot), "receipt-config")
+	if err := os.WriteFile(commandLog, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	explicit := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"))
+	explicit.Dir = tempRoot
+	explicit.Env = append(cmd.Env,
+		"PACKY_VALIDATION_HOME="+receiptHome,
+		"PACKY_VALIDATION_CONFIG_HOME="+receiptConfig,
+	)
+	if output, err := explicit.CombinedOutput(); err != nil {
+		t.Fatalf("validation entrypoint rejected explicit receipt sandbox roots: %v\n%s", err, output)
+	}
+	for _, invocation := range validationInvocations(t, commandLog) {
+		if invocation.home != receiptHome || invocation.xdg != receiptConfig {
+			t.Fatalf("validation child did not use the sealed sandbox roots: %#v", invocation)
+		}
+	}
+
+	partial := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"))
+	partial.Dir = tempRoot
+	partial.Env = append(cmd.Env, "PACKY_VALIDATION_HOME="+receiptHome)
+	if output, err := partial.CombinedOutput(); err == nil || !strings.Contains(string(output), "must both be absolute") {
+		t.Fatalf("partial receipt sandbox identity was accepted: %v\n%s", err, output)
+	}
 }
 
 func validationRacePackages() []string {

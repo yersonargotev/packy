@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/deliveryevidence"
 )
@@ -20,6 +21,23 @@ type fakeRunner struct {
 	failAt  int
 }
 
+type fakeValidationRunner struct {
+	calls  []deliveryevidence.SandboxFacts
+	fail   bool
+	mutate func()
+}
+
+func (f *fakeValidationRunner) Run(_ context.Context, _ string, sandbox deliveryevidence.SandboxFacts) error {
+	f.calls = append(f.calls, sandbox)
+	if f.mutate != nil {
+		f.mutate()
+	}
+	if f.fail {
+		return errors.New("validator failed")
+	}
+	return nil
+}
+
 func (f *fakeRunner) Output(_ context.Context, name string, args ...string) ([]byte, error) {
 	f.calls = append(f.calls, name+" "+strings.Join(args, " "))
 	if f.failAt > 0 && len(f.calls) == f.failAt {
@@ -28,6 +46,24 @@ func (f *fakeRunner) Output(_ context.Context, name string, args ...string) ([]b
 	out := f.outputs[0]
 	f.outputs = f.outputs[1:]
 	return out, nil
+}
+
+func TestValidationRunnerEnvironmentReplacesOperatorRoots(t *testing.T) {
+	got := replacedEnvironment(
+		[]string{"HOME=/operator", "XDG_CONFIG_HOME=/operator/config", "PATH=/bin"},
+		map[string]string{"HOME": "/sandbox/home", "XDG_CONFIG_HOME": "/sandbox/config"},
+	)
+	joined := "\n" + strings.Join(got, "\n") + "\n"
+	for _, want := range []string{"\nHOME=/sandbox/home\n", "\nXDG_CONFIG_HOME=/sandbox/config\n", "\nPATH=/bin\n"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("replacement environment missing %q: %v", want, got)
+		}
+	}
+	for _, forbidden := range []string{"HOME=/operator\n", "XDG_CONFIG_HOME=/operator/config\n"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("operator root survived replacement: %v", got)
+		}
+	}
 }
 
 func TestInitializeResumeAndFreshAuthorityInvalidation(t *testing.T) {
@@ -294,19 +330,189 @@ func TestReviewCommandsAtSandboxedHighestSeam(t *testing.T) {
 	}
 }
 
+func TestValidationCommandsAtSandboxedHighestSeam(t *testing.T) {
+	root := t.TempDir()
+	repository := filepath.Join(root, "checkout")
+	if err := os.MkdirAll(filepath.Join(repository, "scripts"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	validatorPath := filepath.Join(repository, "scripts", "validate-packy.sh")
+	if err := os.WriteFile(validatorPath, []byte("#!/usr/bin/env bash\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	bundlePath := filepath.Join(root, "evidence.json")
+	bundle := reviewBundleFixture(strings.Repeat("a", 40))
+	if err := deliveryevidence.StoreAtomic(bundlePath, bundle); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "validation-home")
+	config := filepath.Join(root, "validation-config")
+	head := strings.Repeat("b", 40)
+	tree := strings.Repeat("c", 40)
+	gitObservation := func(observedTree string, dirty bool) [][]byte {
+		status := []byte{}
+		if dirty {
+			status = []byte(" M tracked.go\n")
+		}
+		return [][]byte{
+			[]byte("git@github.com:yersonargotev/packy.git\n"),
+			[]byte(head + "\n"),
+			[]byte(observedTree + "\n"),
+			status,
+		}
+	}
+	clock := func() time.Time { return time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC) }
+	repositoryObservation := []byte(`{"nameWithOwner":"yersonargotev/packy","id":"R1"}`)
+	args := []string{
+		"record-exhaustive-validation",
+		"--bundle", bundlePath,
+		"--repository", repository,
+		"--sandbox-home", home,
+		"--sandbox-config-home", config,
+		"--validator-identity-expires-at", "2026-07-28T00:00:00Z",
+	}
+	git := &fakeRunner{outputs: append(gitObservation(tree, false), gitObservation(tree, false)...)}
+	github := &fakeRunner{outputs: [][]byte{repositoryObservation, repositoryObservation}}
+	validation := &fakeValidationRunner{}
+	var stdout bytes.Buffer
+	if err := (command{Git: git, GitHub: github, Validation: validation, Now: clock}).run(context.Background(), args, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if len(validation.calls) != 1 || validation.calls[0].HomeRoot != home || validation.calls[0].ConfigHomeRoot != config {
+		t.Fatalf("validator did not receive exact sandbox facts: %+v", validation.calls)
+	}
+	recorded, _, err := deliveryevidence.Load(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recorded.ValidationReceipts) != 1 || !recorded.ValidationReceipts[0].Succeeded {
+		t.Fatalf("authoritative receipt not recorded: %+v", recorded.ValidationReceipts)
+	}
+
+	statusArgs := append([]string{"validation-status"}, args[1:]...)
+	assertStatus := func(outputs [][]byte, commandArgs []string, now func() time.Time, repositoryIdentity []byte, want string) {
+		t.Helper()
+		var output bytes.Buffer
+		err := (command{Git: &fakeRunner{outputs: outputs}, GitHub: &fakeRunner{outputs: [][]byte{repositoryIdentity}}, Now: now}).run(context.Background(), commandArgs, &output)
+		if want == "" {
+			if err != nil || !strings.Contains(output.String(), "reusable exhaustive validation") {
+				t.Fatalf("exact receipt not reusable: %q %v", output.String(), err)
+			}
+			return
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("wanted %q, got %v", want, err)
+		}
+	}
+	assertStatus(gitObservation(tree, false), statusArgs, clock, repositoryObservation, "")
+	changedCommit := gitObservation(tree, false)
+	changedCommit[1] = []byte(strings.Repeat("d", 40) + "\n")
+	assertStatus(changedCommit, statusArgs, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	assertStatus(gitObservation(strings.Repeat("d", 40), false), statusArgs, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	assertStatus(gitObservation(tree, true), statusArgs, clock, repositoryObservation, "clean workspace")
+	alteredSandbox := append([]string(nil), statusArgs...)
+	for i := range alteredSandbox {
+		if alteredSandbox[i] == config {
+			alteredSandbox[i] = config + "-changed"
+		}
+	}
+	assertStatus(gitObservation(tree, false), alteredSandbox, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	changedCommand := append([]string(nil), statusArgs...)
+	changedCommand = append(changedCommand, "--required-command", "./scripts/validate-packy.sh --changed")
+	assertStatus(gitObservation(tree, false), changedCommand, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	foreignRepository := []byte(`{"nameWithOwner":"yersonargotev/packy","id":"R-foreign"}`)
+	assertStatus(gitObservation(tree, false), statusArgs, clock, foreignRepository, "repository identity does not match")
+	expiredClock := func() time.Time { return time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC) }
+	assertStatus(gitObservation(tree, false), statusArgs, expiredClock, repositoryObservation, "validator identity is expired")
+	incompleteIdentity := []string{"validation-status", "--bundle", bundlePath, "--repository", repository, "--sandbox-home", home, "--sandbox-config-home", config}
+	assertStatus(nil, incompleteIdentity, clock, repositoryObservation, "validator-identity-expires-at are required")
+
+	if err := os.WriteFile(validatorPath, []byte("#!/usr/bin/env bash\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(gitObservation(tree, false), statusArgs, clock, repositoryObservation, "no exhaustive validation receipt matches")
+	if err := os.WriteFile(validatorPath, []byte("#!/usr/bin/env bash\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(root, "foreign-checkout")
+	if err := os.MkdirAll(filepath.Join(foreign, "scripts"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(foreign, "scripts", "validate-packy.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	foreignArgs := append([]string(nil), statusArgs...)
+	for i := range foreignArgs {
+		if foreignArgs[i] == repository {
+			foreignArgs[i] = foreign
+		}
+	}
+	assertStatus(gitObservation(tree, false), foreignArgs, clock, repositoryObservation, "no exhaustive validation receipt matches")
+
+	failingPath := filepath.Join(root, "failed.json")
+	if err := deliveryevidence.StoreAtomic(failingPath, bundle); err != nil {
+		t.Fatal(err)
+	}
+	_, beforeFailure, err := deliveryevidence.Load(failingPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failingArgs := append([]string(nil), args...)
+	for i := range failingArgs {
+		if failingArgs[i] == bundlePath {
+			failingArgs[i] = failingPath
+		}
+	}
+	failedValidation := &fakeValidationRunner{fail: true}
+	err = (command{Git: &fakeRunner{outputs: gitObservation(tree, false)}, GitHub: &fakeRunner{outputs: [][]byte{repositoryObservation}}, Validation: failedValidation, Now: clock}).run(context.Background(), failingArgs, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "exhaustive validation failed") {
+		t.Fatalf("failed validation accepted: %v", err)
+	}
+	_, afterFailure, err := deliveryevidence.Load(failingPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(beforeFailure, afterFailure) {
+		t.Fatal("failed validation changed canonical evidence")
+	}
+
+	focusedPath := filepath.Join(root, "focused.json")
+	if err := deliveryevidence.StoreAtomic(focusedPath, bundle); err != nil {
+		t.Fatal(err)
+	}
+	focusedInput := filepath.Join(root, "focused-input.json")
+	focused := deliveryevidence.FocusedValidationEvidence{Identity: "changed-impact", Command: "./scripts/validate-changed.sh", CommitSHA: head, TreeSHA: tree, CompletedAt: "2026-07-27T11:00:00Z", Succeeded: true, Completed: true}
+	raw, _ := json.Marshal(focused)
+	if err := os.WriteFile(focusedInput, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := (command{}).run(context.Background(), []string{"record-focused-validation", "--bundle", focusedPath, "--evidence", focusedInput}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	focusedStatus := append([]string(nil), statusArgs...)
+	for i := range focusedStatus {
+		if focusedStatus[i] == bundlePath {
+			focusedStatus[i] = focusedPath
+		}
+	}
+	assertStatus(gitObservation(tree, false), focusedStatus, clock, repositoryObservation, "no exhaustive validation receipt matches")
+}
+
 func reviewBundleFixture(base string) deliveryevidence.Bundle {
 	row := deliveryevidence.AcceptanceRow{Identity: "AC-01", Criterion: "structured review receipts", OwningSeam: "delivery evidence", PositiveEvidence: "paired receipts", NegativeEvidence: "foreign receipts rejected", FailureEvidence: "stale receipts rejected", MutationEvidence: "evidence file only", CompatibilityEvidence: "canonical schema", PreservationEvidence: "scope preserved", MigrationEvidence: "N/A: additive", State: deliveryevidence.AcceptancePlanned}
 	return deliveryevidence.Bundle{
-		Schema:           deliveryevidence.SchemaV1,
-		Repository:       deliveryevidence.RepositoryIdentity{Owner: "yersonargotev", Name: "packy", NodeID: "R1"},
-		Issue:            deliveryevidence.IssueIdentity{Number: 277, NodeID: "I277"},
-		Spec:             deliveryevidence.SpecIdentity{Number: 275, NodeID: "I275"},
-		Authority:        deliveryevidence.Authority{IssueSHA256: strings.Repeat("d", 64), SpecSHA256: strings.Repeat("e", 64), Labels: []string{"status:approved"}, DependencyDisposition: []deliveryevidence.DependencyDisposition{{Identity: "#276", Disposition: deliveryevidence.DependencySatisfied}}, AcceptanceCriteria: []string{"AC-01"}},
-		Scope:            deliveryevidence.ScopeLedger{OwnedNow: []deliveryevidence.LedgerEntry{{Identity: "O1", Requirement: "reviews", EvidenceLink: "issue#277"}}, Deferred: []deliveryevidence.DeferredEntry{}, Forbidden: []deliveryevidence.LedgerEntry{}, Prerequisites: []deliveryevidence.PrerequisiteEntry{}},
-		AcceptanceMatrix: []deliveryevidence.AcceptanceRow{row},
-		StartingBaseSHA:  base,
-		Iterations:       []deliveryevidence.Iteration{},
-		ReviewReceipts:   []deliveryevidence.ReviewReceipt{},
-		Adjudications:    []deliveryevidence.Adjudication{},
+		Schema:             deliveryevidence.SchemaV1,
+		Repository:         deliveryevidence.RepositoryIdentity{Owner: "yersonargotev", Name: "packy", NodeID: "R1"},
+		Issue:              deliveryevidence.IssueIdentity{Number: 277, NodeID: "I277"},
+		Spec:               deliveryevidence.SpecIdentity{Number: 275, NodeID: "I275"},
+		Authority:          deliveryevidence.Authority{IssueSHA256: strings.Repeat("d", 64), SpecSHA256: strings.Repeat("e", 64), Labels: []string{"status:approved"}, DependencyDisposition: []deliveryevidence.DependencyDisposition{{Identity: "#276", Disposition: deliveryevidence.DependencySatisfied}}, AcceptanceCriteria: []string{"AC-01"}},
+		Scope:              deliveryevidence.ScopeLedger{OwnedNow: []deliveryevidence.LedgerEntry{{Identity: "O1", Requirement: "reviews", EvidenceLink: "issue#277"}}, Deferred: []deliveryevidence.DeferredEntry{}, Forbidden: []deliveryevidence.LedgerEntry{}, Prerequisites: []deliveryevidence.PrerequisiteEntry{}},
+		AcceptanceMatrix:   []deliveryevidence.AcceptanceRow{row},
+		StartingBaseSHA:    base,
+		Iterations:         []deliveryevidence.Iteration{},
+		ReviewReceipts:     []deliveryevidence.ReviewReceipt{},
+		Adjudications:      []deliveryevidence.Adjudication{},
+		ValidationReceipts: []deliveryevidence.ValidationReceipt{},
+		FocusedValidation:  []deliveryevidence.FocusedValidationEvidence{},
 	}
 }

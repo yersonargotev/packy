@@ -77,10 +77,23 @@ done
 go_cache="${GOCACHE:-$(go env GOCACHE)}"
 go_mod_cache="${GOMODCACHE:-$(go env GOMODCACHE)}"
 go_path="${GOPATH:-$(go env GOPATH)}"
-sandbox="$(mktemp -d "${TMPDIR:-/tmp}/packy-validation.XXXXXX")"
-trap 'rm -rf "$sandbox"' EXIT
-export HOME="$sandbox/home"
-export XDG_CONFIG_HOME="$sandbox/xdg"
+validation_home="${PACKY_VALIDATION_HOME:-}"
+validation_config_home="${PACKY_VALIDATION_CONFIG_HOME:-}"
+sandbox=""
+if [[ -n "$validation_home" || -n "$validation_config_home" ]]; then
+  if [[ -z "$validation_home" || -z "$validation_config_home" || "$validation_home" != /* || "$validation_config_home" != /* ]]; then
+    echo "PACKY_VALIDATION_HOME and PACKY_VALIDATION_CONFIG_HOME must both be absolute when supplied" >&2
+    exit 1
+  fi
+  export HOME="$validation_home"
+  export XDG_CONFIG_HOME="$validation_config_home"
+else
+  sandbox="$(mktemp -d "${TMPDIR:-/tmp}/packy-validation.XXXXXX")"
+  export HOME="$sandbox/home"
+  export XDG_CONFIG_HOME="$sandbox/xdg"
+fi
+cleanup() { [[ -z "$sandbox" ]] || rm -rf "$sandbox"; }
+trap cleanup EXIT
 export GOCACHE="$go_cache"
 export GOMODCACHE="$go_mod_cache"
 export GOPATH="$go_path"
