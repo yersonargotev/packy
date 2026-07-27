@@ -219,6 +219,11 @@ func Validate(b Bundle) error {
 	if err := uniqueStrings("labels", b.Authority.Labels, true); err != nil {
 		return err
 	}
+	for _, label := range b.Authority.Labels {
+		if err := safeText("label", label); err != nil {
+			return err
+		}
+	}
 	if err := uniqueStrings("acceptance criteria", b.Authority.AcceptanceCriteria, true); err != nil {
 		return err
 	}

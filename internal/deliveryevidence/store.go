@@ -59,7 +59,7 @@ func Load(path string) (Bundle, []byte, error) {
 func StoreAtomic(path string, bundle Bundle) error {
 	return storeAtomicWithOps(path, bundle, defaultAtomicOps())
 }
-func storeAtomicWithOps(path string, bundle Bundle, ops atomicOps) error {
+func storeAtomicWithOps(path string, bundle Bundle, ops atomicOps) (retErr error) {
 	data, err := CanonicalJSON(bundle)
 	if err != nil {
 		return err
@@ -76,7 +76,14 @@ func storeAtomicWithOps(path string, bundle Bundle, ops atomicOps) error {
 	ok := false
 	defer func() {
 		if !ok {
-			_ = ops.Remove(tmp)
+			first := ops.Remove(tmp)
+			if first != nil {
+				second := ops.Remove(tmp)
+				retErr = errors.Join(retErr, fmt.Errorf("remove temporary delivery evidence: %w", first))
+				if second != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("retry remove temporary delivery evidence: %w", second))
+				}
+			}
 		}
 	}()
 	if err = f.Chmod(0600); err == nil {
@@ -101,8 +108,7 @@ func storeAtomicWithOps(path string, bundle Bundle, ops atomicOps) error {
 		return e
 	}
 	if e = d.Sync(); e != nil {
-		_ = d.Close()
-		return e
+		return errors.Join(e, d.Close())
 	}
 	if e = d.Close(); e != nil {
 		return e

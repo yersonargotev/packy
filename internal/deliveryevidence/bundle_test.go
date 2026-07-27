@@ -203,6 +203,21 @@ func TestIterationChainAndSafeText(t *testing.T) {
 	}
 }
 
+func TestPersistedLabelsUseSafeText(t *testing.T) {
+	for _, unsafe := range []string{"line\nbreak", "GITHUB_TOKEN=secret", "-----BEGIN PRIVATE KEY-----"} {
+		b := fixture()
+		b.Authority.Labels = append(b.Authority.Labels, unsafe)
+		if _, err := CanonicalJSON(b); err == nil {
+			t.Fatalf("unsafe label accepted: %q", unsafe)
+		}
+	}
+	b := fixture()
+	b.Authority.Labels = append(b.Authority.Labels, "area:delivery-evidence", "status:needs-review")
+	if _, err := CanonicalJSON(b); err != nil {
+		t.Fatalf("ordinary GitHub labels rejected: %v", err)
+	}
+}
+
 func TestInitializeResumeStaleAndAtomicFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "issue.json")
@@ -283,7 +298,7 @@ func TestResolvePathAndStatusAreSanitized(t *testing.T) {
 }
 
 func TestAtomicFaultBoundariesLeaveCompleteEvidence(t *testing.T) {
-	for _, stage := range []string{"create", "chmod", "write", "file-sync", "file-close", "rename", "directory-sync", "directory-close"} {
+	for _, stage := range []string{"mkdir", "create", "chmod", "write", "file-sync", "file-close", "rename", "open-directory", "directory-sync", "directory-close"} {
 		t.Run(stage, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "evidence.json")
@@ -296,6 +311,9 @@ func TestAtomicFaultBoundariesLeaveCompleteEvidence(t *testing.T) {
 			next.Authority.IssueSHA256 = strings.Repeat("f", 64)
 			newBytes, _ := CanonicalJSON(next)
 			ops := defaultAtomicOps()
+			if stage == "mkdir" {
+				ops.MkdirAll = func(string, os.FileMode) error { return errors.New("fault") }
+			}
 			create := ops.CreateTemp
 			ops.CreateTemp = func(d, p string) (atomicFile, error) {
 				if stage == "create" {
@@ -312,6 +330,9 @@ func TestAtomicFaultBoundariesLeaveCompleteEvidence(t *testing.T) {
 			}
 			open := ops.OpenDirectory
 			ops.OpenDirectory = func(p string) (atomicDirectory, error) {
+				if stage == "open-directory" {
+					return nil, errors.New("fault")
+				}
 				d, e := open(p)
 				if e != nil {
 					return nil, e
@@ -333,6 +354,68 @@ func TestAtomicFaultBoundariesLeaveCompleteEvidence(t *testing.T) {
 				if strings.HasPrefix(e.Name(), ".issue-delivery-") {
 					t.Fatalf("temporary remains: %s", e.Name())
 				}
+			}
+		})
+	}
+}
+
+func TestAtomicRemoveFaultRetriesAndFailsClosed(t *testing.T) {
+	for _, permanent := range []bool{false, true} {
+		name := "transient"
+		if permanent {
+			name = "permanent"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "evidence.json")
+			old := fixture()
+			if err := StoreAtomic(path, old); err != nil {
+				t.Fatal(err)
+			}
+			oldBytes, _ := CanonicalJSON(old)
+			next := fixture()
+			next.Authority.IssueSHA256 = strings.Repeat("f", 64)
+			ops := defaultAtomicOps()
+			create := ops.CreateTemp
+			ops.CreateTemp = func(d, p string) (atomicFile, error) {
+				f, err := create(d, p)
+				if err != nil {
+					return nil, err
+				}
+				return faultFile{atomicFile: f, stage: "write"}, nil
+			}
+			remove := ops.Remove
+			calls := 0
+			ops.Remove = func(path string) error {
+				calls++
+				if permanent || calls == 1 {
+					return errors.New("remove fault")
+				}
+				return remove(path)
+			}
+			err := storeAtomicWithOps(path, next, ops)
+			if err == nil || !strings.Contains(err.Error(), "remove temporary") {
+				t.Fatalf("cleanup failure not returned: %v", err)
+			}
+			if calls != 2 {
+				t.Fatalf("remove calls = %d, want retry", calls)
+			}
+			loaded, got, err := Load(path)
+			if err != nil || loaded.Authority.IssueSHA256 != old.Authority.IssueSHA256 || !bytes.Equal(got, oldBytes) {
+				t.Fatalf("authoritative path changed: %v", err)
+			}
+			entries, _ := os.ReadDir(dir)
+			temps := 0
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), ".issue-delivery-") {
+					temps++
+				}
+			}
+			if !permanent && temps != 0 {
+				t.Fatalf("transient cleanup left %d temps", temps)
+			}
+			if permanent && temps != 1 {
+				t.Fatalf("permanent cleanup residuals = %d, want reported temp", temps)
 			}
 		})
 	}
