@@ -19,6 +19,7 @@ readonly packages=(
   ./internal/codex
   ./internal/codexsmoke
   ./internal/corelifecycle
+  ./internal/deliveryevidence
   ./internal/engrambin
   ./internal/governanceauth
   ./internal/governancedrift
@@ -38,6 +39,7 @@ readonly packages=(
   ./internal/tools/claudesmoke
   ./internal/tools/claudevercelsmoke
   ./internal/tools/codexsmoke
+  ./internal/tools/deliveryevidence
   ./internal/tools/opencodesmoke
   ./internal/tools/packcontentvalidate
   ./internal/tools/governanceauth
