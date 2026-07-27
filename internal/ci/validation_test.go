@@ -475,6 +475,24 @@ func TestGovernanceNormalizesExternalMetadataBeforeStrictValidation(t *testing.T
 	}
 }
 
+func TestGovernanceCollectsCanonicalWorkflowNameForAutomationRuns(t *testing.T) {
+	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
+	for _, required := range []string{
+		"workflow_id:.workflow_id",
+		"jq -er '.workflow_id | numbers | select(. > 0)'",
+		"actions/workflows/$workflow_id",
+		"--jq '{workflow:.name}'",
+		"del(.workflow_id)",
+	} {
+		if !strings.Contains(governance, required) {
+			t.Fatalf("governance workflow does not collect canonical workflow identity with %q", required)
+		}
+	}
+	if strings.Contains(governance, "workflow:.name,path,event,head_branch") {
+		t.Fatal("governance workflow treats the dynamic run name as the canonical workflow name")
+	}
+}
+
 func TestGovernanceTargetMatrixRejectsWhitespaceOnlyRecords(t *testing.T) {
 	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
 	const marker = "jq -Rsc '"
