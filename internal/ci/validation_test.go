@@ -796,6 +796,9 @@ func TestSyncWorkflowAdmitRejectsMalformedJSONBeforeLaterJobs(t *testing.T) {
 		{name: "registrations wrong shape", operation: "register_bundle", key: "registrations_json", value: `{}`, want: "registrations_json must be a JSON array"},
 		{name: "manifest wrong shape", operation: "register_bundle", key: "proposed_manifest_json", value: `[]`, want: "proposed_manifest_json must be a JSON object"},
 		{name: "human evidence malformed", operation: "register_bundle", key: "human_evidence_json", value: `{`, want: "human_evidence_json is malformed JSON"},
+		{name: "unselected registration malformed", operation: "register_bundle", key: "registration_json", value: `{`, want: "registration_json is malformed JSON"},
+		{name: "unselected registrations malformed", operation: "register", key: "registrations_json", value: `[`, want: "registrations_json is malformed JSON"},
+		{name: "unselected manifest malformed", operation: "register", key: "proposed_manifest_json", value: `{`, want: "proposed_manifest_json is malformed JSON"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

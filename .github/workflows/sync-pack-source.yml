@@ -146,6 +146,9 @@ jobs:
             fi
             [[ "$actual" == "$expected" ]] || { echo "$key must be a JSON $expected" >&2; exit 1; }
           }
+          require_json_shape registration_json object
+          require_json_shape registrations_json array
+          require_json_shape proposed_manifest_json object
           require_json_shape human_evidence_json object
           if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
             require_json_shape registrations_json array true
@@ -154,10 +157,6 @@ jobs:
             (( member_count >= 2 && member_count <= 8 )) || { echo "register_bundle requires 2..8 members" >&2; exit 1; }
           elif [[ "$PACKY_OPERATION" == "register" ]]; then
             require_json_shape registration_json object true
-          else
-            require_json_shape registration_json object
-            require_json_shape registrations_json array
-            require_json_shape proposed_manifest_json object
           fi
       - name: Enforce the ref, mode, and operation boundary
         env:
