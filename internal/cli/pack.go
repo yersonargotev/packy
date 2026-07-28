@@ -602,6 +602,7 @@ func (e runnerExternalExecutor) Execute(ctx context.Context, action capabilitypa
 
 func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var surface string
+	var resource string
 	var require string
 	var jsonOutput bool
 	cmd := &cobra.Command{
@@ -614,11 +615,17 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 			if require != "" && (require != "usable" || packID == "" || surface == "") {
 				return fmt.Errorf("--require usable is valid only for status of one pack and surface")
 			}
+			if resource != "" && (packID == "" || surface == "") {
+				return fmt.Errorf("--resource is valid only for status of one pack and surface")
+			}
 			facade, err := activationFacade(opts, workstationResolver)
 			if err != nil {
 				return err
 			}
-			report, err := facade.Status(cmd.Context(), capabilitypack.StatusRequest{PackID: packID, Surface: capabilitypack.Surface(surface)})
+			report, err := facade.Status(cmd.Context(), capabilitypack.StatusRequest{
+				PackID: packID, Surface: capabilitypack.Surface(surface),
+				Resource: resource, RequireUsable: require == "usable",
+			})
 			if err != nil {
 				return err
 			}
@@ -628,16 +635,20 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				}
 			} else if packID == "" {
 				return renderPackStatusOverview(cmd, report)
-			} else if err := renderPackStatusDetail(cmd, report.Entries[0]); err != nil {
+			} else if err := renderPackStatusDetail(cmd, report.Entries[0], report.Focused); err != nil {
 				return err
 			}
-			if require == "usable" && !report.Entries[0].Readiness.Usable {
+			if report.Requirement != nil && !report.Requirement.Satisfied {
+				if report.Requirement.Resource.Kind != "" {
+					return fmt.Errorf("resource %q in pack %q on %s is not freshly observed usable", report.Requirement.Resource, packID, surface)
+				}
 				return fmt.Errorf("pack %q on %s is not freshly observed usable", packID, surface)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
+	cmd.Flags().StringVar(&resource, "resource", "", "Inspect one selected resource (<kind>:<id>)")
 	cmd.Flags().StringVar(&require, "require", "", "Require a readiness dimension (usable)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	return cmd
@@ -655,7 +666,7 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 	return writer.Flush()
 }
 
-func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry) error {
+func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry, focused *capabilitypack.ResourceStatus) error {
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nUpdate available: %s\nLatest attempt: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), renderUpdateAvailability(entry), renderAttempt(entry.LatestAttempt), readinessValue(entry.ReadinessObserved.Configured, entry.Readiness.Configured), readinessValue(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized), readinessValue(entry.ReadinessObserved.Usability, entry.Readiness.Usable), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
 	}
@@ -668,6 +679,25 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 				selection.Resource, selection.Role, renderIdentityChain(selection.DependencyChain)); err != nil {
 				return err
 			}
+		}
+	}
+	for _, resource := range entry.Resources {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Resource readiness: %s role=%s dependency_chain=%s configured=%s authorized=%s usable=%s projections=%d/%d blockers=%s\n",
+			resource.Resource, resource.Role, renderIdentityChain(resource.DependencyChain),
+			readinessValue(resource.ReadinessObserved.Configured, resource.Readiness.Configured),
+			readinessValue(resource.ReadinessObserved.Authorization, resource.Readiness.Authorized),
+			readinessValue(resource.ReadinessObserved.Usability, resource.Readiness.Usable),
+			resource.Projections.Verified, projectionCount(resource.Projections), renderPendingAction(resource.Blockers)); err != nil {
+			return err
+		}
+	}
+	if focused != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Focused resource: %s configured=%s authorized=%s usable=%s\n",
+			focused.Resource,
+			readinessValue(focused.ReadinessObserved.Configured, focused.Readiness.Configured),
+			readinessValue(focused.ReadinessObserved.Authorization, focused.Readiness.Authorized),
+			readinessValue(focused.ReadinessObserved.Usability, focused.Readiness.Usable)); err != nil {
+			return err
 		}
 	}
 	optionalAuthorities := append([]capabilitypack.OptionalAuthorityObservation(nil), entry.OptionalAuthorities...)
@@ -691,6 +721,10 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		return err
 	}
 	return renderRuntimeModes(cmd, entry.RuntimeModes)
+}
+
+func projectionCount(summary capabilitypack.ProjectionSummary) int {
+	return summary.Verified + summary.Missing + summary.Drifted + summary.Ambiguous + summary.Unmanaged
 }
 
 func renderIdentityChain(chain []capabilitypack.ResourceIdentity) string {

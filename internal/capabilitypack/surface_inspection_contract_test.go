@@ -107,7 +107,7 @@ func TestSurfaceInspectionContractPreservesLifecycleScopes(t *testing.T) {
 	})
 
 	t.Run("targeted and surface-wide reconciliation preserve distinct scopes and ownership residual", func(t *testing.T) {
-		ownership := []ProjectionOwnership{{ID: "instruction:obsolete", Contributors: []string{"app"}, Fingerprint: "owned"}}
+		ownership := []ProjectionOwnership{{ID: "instruction:obsolete", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "owned"}}
 		observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{
 			{ID: "instruction:app", ObservedFingerprint: "missing", DesiredFingerprint: "v2", Action: ProjectionAction{ID: "instruction:app", Description: "write app"}},
 			{ID: "instruction:other", ObservedFingerprint: "missing", DesiredFingerprint: "other", Action: ProjectionAction{ID: "instruction:other", Description: "write other"}},
@@ -145,7 +145,7 @@ func TestSurfaceInspectionContractPreservesLifecycleScopes(t *testing.T) {
 func TestSurfaceInspectionContractPreservesOwnershipAndDestructiveConsent(t *testing.T) {
 	pack := Pack{ID: "app", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "catalog"}}}
 	intent := activeIntent("app", "1", 4)
-	ownedState := ActivationState{Intent: intent, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "owned"}}}
+	ownedState := ActivationState{Intent: intent, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "owned"}}}
 	removal := ObservedProjection{ID: "instruction:guide", Exists: true, ObservedFingerprint: "owned", Action: ProjectionAction{ID: "instruction:guide", Description: "delete guide", Mode: ProjectionDeleteTarget}}
 
 	t.Run("deactivation protects ownership and requires destructive approval", func(t *testing.T) {

@@ -204,6 +204,12 @@ func TestRemainingIdentitySurfaceMatchesExactClassification(t *testing.T) {
 		if path == "internal/cli/pack_test.go" {
 			data = normalizeV3PackTestCutover(data)
 		}
+		if path == "internal/capabilitypack/activation_test.go" {
+			data = normalizeResourceContributorActivationTest(data)
+		}
+		if path == "internal/capabilitypack/status_test.go" {
+			data = normalizeResourceContributorStatusTest(data)
+		}
 		if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 			continue
 		}
@@ -393,11 +399,31 @@ func normalizeV3PackTestCutover(data []byte) []byte {
 	for _, replacement := range replacements {
 		data = bytes.Replace(data, []byte(replacement[0]), []byte(replacement[1]), 1)
 	}
+	// Issue #288 deepens lifecycle contributor output from Pack-only names to
+	// canonical Pack/resource identities. The dedicated ownership tests prove
+	// that contract; normalize the frozen rename gate to its original scope.
+	data = bytes.ReplaceAll(data, []byte("pack:engram:instruction:shared"), []byte("engram"))
+	data = bytes.ReplaceAll(data, []byte("pack:"+legacyProduct+":instruction:shared"), []byte(legacyProduct))
 	return omitPostCutoverPackTestFunctions(data,
 		"TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle",
+		"TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability",
 		"TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects",
 		"rewriteManifestAsV4",
 	)
+}
+
+func normalizeResourceContributorActivationTest(data []byte) []byte {
+	legacyProduct := "mat" + "ty"
+	canonical := fmt.Sprintf(`[]string{"pack:%s:" + owner.ID}`, legacyProduct)
+	original := fmt.Sprintf(`[]string{"%s"}`, legacyProduct)
+	return bytes.Replace(data, []byte(canonical), []byte(original), 1)
+}
+
+func normalizeResourceContributorStatusTest(data []byte) []byte {
+	legacyProduct := "mat" + "ty"
+	canonical := fmt.Sprintf(`[]string{"pack:engram:instruction:shared-guidance", "pack:%s:instruction:shared-guidance"}`, legacyProduct)
+	original := fmt.Sprintf(`[]string{"engram", "%s"}`, legacyProduct)
+	return bytes.Replace(data, []byte(canonical), []byte(original), 1)
 }
 
 func omitPostCutoverPackTestFunctions(data []byte, names ...string) []byte {

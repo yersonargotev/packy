@@ -29,7 +29,7 @@ func TestPackStatusDetailRendersOrderedOptionalAuthorityFacts(t *testing.T) {
 			DesiredFingerprint: "sha256:desired", Contributors: []string{"addy"},
 		}},
 	}
-	if err := renderPackStatusDetail(cmd, entry); err != nil {
+	if err := renderPackStatusDetail(cmd, entry, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := output.String()

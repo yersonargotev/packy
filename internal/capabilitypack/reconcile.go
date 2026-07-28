@@ -80,7 +80,7 @@ func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) 
 func (p *ReconciliationPlan) limitReconcileTo(packID string) {
 	inScope := func(id string) bool {
 		for _, contributor := range p.actionContributors(id) {
-			if contributor == packID {
+			if contributorBelongsToPack(contributor, packID) {
 				return true
 			}
 		}
@@ -138,7 +138,9 @@ func (p *ReconciliationPlan) actionContributors(id string) []string {
 		for _, pack := range p.compositionFacts {
 			for _, tool := range pack.Requires.Tools {
 				if strings.Contains(id, ":"+tool+":") || strings.HasSuffix(id, ":"+tool) {
-					matched[pack.ID] = true
+					for _, resource := range pack.Resources {
+						matched[resourceContributor(pack.ID, ResourceIdentity{Kind: resource.Kind, ID: resource.ID})] = true
+					}
 				}
 			}
 		}

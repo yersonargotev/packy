@@ -88,8 +88,8 @@ func TestCompositionMapsAliasedProjectionToOnlyItsPortableContributor(t *testing
 		t.Fatal(err)
 	}
 	got := result.contributorSet("skill:addy-example")
-	if len(got) != 1 || got[0] != "addy" {
-		t.Fatalf("aliased contributors = %v, want [addy]", got)
+	if len(got) != 1 || got[0] != "pack:addy:skill:example" {
+		t.Fatalf("aliased contributors = %v, want canonical Addy resource contributor", got)
 	}
 }
 
@@ -159,7 +159,7 @@ func TestApplyRecordsCompleteContributorsOnlyAfterFreshVerification(t *testing.T
 		t.Fatal(err)
 	}
 	got := store.state.Ownership
-	if len(got) != 1 || len(got[0].Contributors) != 2 || got[0].Contributors[0] != "active" || got[0].Contributors[1] != "requested" {
+	if len(got) != 1 || len(got[0].Contributors) != 2 || got[0].Contributors[0] != "pack:active:instruction:shared" || got[0].Contributors[1] != "pack:requested:instruction:shared" {
 		t.Fatalf("ownership=%+v", got)
 	}
 	if len(store.state.Intents) != 2 {

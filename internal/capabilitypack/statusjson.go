@@ -2,7 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 4
+const StatusSchemaVersion = 5
 
 type JSONOptionalBool struct {
 	State string `json:"state"`
@@ -60,6 +60,21 @@ type JSONResourceSelectionStatus struct {
 	DependencyChain []ResourceIdentity `json:"dependency_chain"`
 }
 
+type JSONResourceStatus struct {
+	Resource        ResourceIdentity      `json:"resource"`
+	Role            ResourceRole          `json:"role"`
+	DependencyChain []ResourceIdentity    `json:"dependency_chain"`
+	Readiness       JSONReadiness         `json:"readiness"`
+	Projections     JSONProjectionSummary `json:"projection_summary"`
+	Blockers        []string              `json:"blockers"`
+}
+
+type JSONStatusRequirement struct {
+	Resource  *ResourceIdentity `json:"resource,omitempty"`
+	Readiness string            `json:"readiness"`
+	Satisfied bool              `json:"satisfied"`
+}
+
 type JSONStatusEntry struct {
 	Pack                string                        `json:"pack"`
 	PackVersion         string                        `json:"pack_version"`
@@ -70,6 +85,7 @@ type JSONStatusEntry struct {
 	Projections         JSONProjectionSummary         `json:"projection_summary"`
 	ProjectionDetails   []JSONProjectionStatus        `json:"projection_details"`
 	ResourceSelections  []JSONResourceSelectionStatus `json:"resource_selections"`
+	Resources           []JSONResourceStatus          `json:"resources"`
 	Contract            LifecycleContract             `json:"contract"`
 	Readiness           JSONReadiness                 `json:"readiness"`
 	OptionalAuthorities []JSONOptionalAuthority       `json:"optional_authorities"`
@@ -80,9 +96,11 @@ type JSONStatusEntry struct {
 }
 
 type JSONStatusReport struct {
-	SchemaVersion int               `json:"schema_version"`
-	Report        string            `json:"report"`
-	Entries       []JSONStatusEntry `json:"entries"`
+	SchemaVersion int                    `json:"schema_version"`
+	Report        string                 `json:"report"`
+	Entries       []JSONStatusEntry      `json:"entries"`
+	Focused       *JSONResourceStatus    `json:"focused_resource,omitempty"`
+	Requirement   *JSONStatusRequirement `json:"requirement,omitempty"`
 }
 
 func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
@@ -116,6 +134,7 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			RuntimeModes:        sortedRuntimeModeResults(entry.RuntimeModes),
 			ProjectionDetails:   jsonProjectionDetails(entry.ProjectionDetails), Contract: entry.Contract,
 			ResourceSelections: jsonResourceSelectionDetails(entry.ResourceSelections),
+			Resources:          jsonResourceStatuses(entry.Resources),
 			Blockers:           sortedCopy(entry.Blockers), Evidence: sortedCopy(entry.Evidence), PendingHumanActions: sortedCopy(entry.PendingHumanActions),
 		})
 	}
@@ -125,7 +144,42 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 		}
 		return entries[i].Surface < entries[j].Surface
 	})
-	return JSONStatusReport{SchemaVersion: StatusSchemaVersion, Report: kind, Entries: entries}
+	result := JSONStatusReport{SchemaVersion: StatusSchemaVersion, Report: kind, Entries: entries}
+	if report.Focused != nil {
+		focused := jsonResourceStatus(*report.Focused)
+		result.Focused = &focused
+	}
+	if report.Requirement != nil {
+		requirement := &JSONStatusRequirement{Readiness: report.Requirement.Readiness, Satisfied: report.Requirement.Satisfied}
+		if report.Requirement.Resource.Kind != "" {
+			resource := report.Requirement.Resource
+			requirement.Resource = &resource
+		}
+		result.Requirement = requirement
+	}
+	return result
+}
+
+func jsonResourceStatuses(values []ResourceStatus) []JSONResourceStatus {
+	result := make([]JSONResourceStatus, 0, len(values))
+	for _, value := range values {
+		result = append(result, jsonResourceStatus(value))
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Resource.String() < result[j].Resource.String() })
+	return result
+}
+
+func jsonResourceStatus(value ResourceStatus) JSONResourceStatus {
+	return JSONResourceStatus{
+		Resource: value.Resource, Role: value.Role, DependencyChain: append([]ResourceIdentity{}, value.DependencyChain...),
+		Readiness: JSONReadiness{
+			optionalBool(value.ReadinessObserved.Configured, value.Readiness.Configured),
+			optionalBool(value.ReadinessObserved.Authorization, value.Readiness.Authorized),
+			optionalBool(value.ReadinessObserved.Usability, value.Readiness.Usable),
+		},
+		Projections: JSONProjectionSummary{Verified: value.Projections.Verified, Missing: value.Projections.Missing, Drifted: value.Projections.Drifted, Ambiguous: value.Projections.Ambiguous, Unmanaged: value.Projections.Unmanaged},
+		Blockers:    sortedCopy(value.Blockers),
+	}
 }
 
 func jsonResourceSelectionDetails(values []ResourceSelectionStatus) []JSONResourceSelectionStatus {

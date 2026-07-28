@@ -280,7 +280,7 @@ func TestApplyPersistsIntentAndJournalBeforeEffectsThenRecordsVerifiedOwnership(
 		t.Fatalf("verified state = %+v", store.saves[1])
 	}
 	for _, owner := range store.saves[1].Ownership {
-		if !reflect.DeepEqual(owner.Contributors, []string{"matty"}) || owner.Fingerprint == "" {
+		if !reflect.DeepEqual(owner.Contributors, []string{"pack:matty:" + owner.ID}) || owner.Fingerprint == "" {
 			t.Fatalf("ownership = %+v", owner)
 		}
 	}

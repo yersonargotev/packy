@@ -8,8 +8,10 @@ import (
 )
 
 type StatusRequest struct {
-	PackID  string
-	Surface Surface
+	PackID        string
+	Surface       Surface
+	Resource      string
+	RequireUsable bool
 }
 
 type IntentStatus struct {
@@ -56,6 +58,16 @@ type ResourceSelectionStatus struct {
 	Selected        bool
 	Role            ResourceRole
 	DependencyChain []ResourceIdentity
+}
+
+type ResourceStatus struct {
+	Resource          ResourceIdentity
+	Role              ResourceRole
+	DependencyChain   []ResourceIdentity
+	Readiness         ReadinessStatus
+	ReadinessObserved ReadinessObservationStatus
+	Projections       ProjectionSummary
+	Blockers          []string
 }
 
 // ReadinessObservation is fresh host-owned evidence. Observed distinguishes a
@@ -124,6 +136,7 @@ type StatusEntry struct {
 	Projections         ProjectionSummary
 	ProjectionDetails   []ProjectionStatus
 	ResourceSelections  []ResourceSelectionStatus
+	Resources           []ResourceStatus
 	Blockers            []string
 	PendingHumanActions []string
 	Evidence            []string
@@ -136,7 +149,17 @@ type ReadinessObservationStatus struct {
 	Usability     bool
 }
 
-type StatusReport struct{ Entries []StatusEntry }
+type StatusRequirement struct {
+	Resource  ResourceIdentity
+	Readiness string
+	Satisfied bool
+}
+
+type StatusReport struct {
+	Entries     []StatusEntry
+	Focused     *ResourceStatus
+	Requirement *StatusRequirement
+}
 
 // Facade is the single capability-pack use-case boundary consumed by the CLI.
 type Facade struct {
@@ -164,6 +187,20 @@ func (f Facade) Status(ctx context.Context, request StatusRequest) (StatusReport
 }
 
 func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport, error) {
+	if request.Resource != "" && (request.PackID == "" || request.Surface == "") {
+		return StatusReport{}, fmt.Errorf("a pack and --surface are required when a resource is specified")
+	}
+	if request.RequireUsable && (request.PackID == "" || request.Surface == "") {
+		return StatusReport{}, fmt.Errorf("a pack and --surface are required for require-usable")
+	}
+	var focused ResourceIdentity
+	if request.Resource != "" {
+		var err error
+		focused, err = ParseResourceIdentity(request.Resource)
+		if err != nil {
+			return StatusReport{}, fmt.Errorf("invalid resource %q: %w", request.Resource, err)
+		}
+	}
 	packs := f.catalog.List()
 	if request.PackID != "" {
 		if request.Surface == "" {
@@ -192,6 +229,22 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 	}
 	if request.Surface != "" && len(report.Entries) == 0 {
 		return StatusReport{}, fmt.Errorf("pack %q does not support CLI surface %q", request.PackID, request.Surface)
+	}
+	if request.Resource != "" {
+		for i := range report.Entries[0].Resources {
+			resource := &report.Entries[0].Resources[i]
+			if resource.Resource == focused {
+				report.Focused = resource
+				if request.RequireUsable {
+					report.Requirement = &StatusRequirement{Resource: focused, Readiness: "usable", Satisfied: resource.Readiness.Usable}
+				}
+				return report, nil
+			}
+		}
+		return StatusReport{}, fmt.Errorf("resource %q is unknown or unselected for capability pack %q on %s", focused.String(), request.PackID, request.Surface)
+	}
+	if request.RequireUsable {
+		report.Requirement = &StatusRequirement{Readiness: "usable", Satisfied: report.Entries[0].Readiness.Usable}
 	}
 	return report, nil
 }
@@ -299,6 +352,17 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	entry.OptionalAuthorities = cloneOptionalAuthorities(fresh.OptionalAuthorities)
 	entry.Readiness.Authorized = entry.Readiness.Configured && fresh.AuthorizationObserved && fresh.Authorized
 	entry.Readiness.Usable = entry.Readiness.Authorized && fresh.UsabilityObserved && fresh.Usable
+	if entry.Intent.Active {
+		entry.Resources = deriveResourceStatuses(pack.ID, graph, entry.ProjectionDetails, fresh)
+	}
+	if len(entry.Resources) > 0 {
+		entry.Readiness = entry.Resources[0].Readiness
+		for _, resource := range entry.Resources[1:] {
+			entry.Readiness.Configured = entry.Readiness.Configured && resource.Readiness.Configured
+			entry.Readiness.Authorized = entry.Readiness.Authorized && resource.Readiness.Authorized
+			entry.Readiness.Usable = entry.Readiness.Usable && resource.Readiness.Usable
+		}
+	}
 	if entry.Readiness.Configured && len(fresh.PendingHumanActions) == 0 {
 		entry.PendingHumanActions = append(entry.PendingHumanActions, observation.PendingHumanActions...)
 	}
@@ -312,6 +376,57 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	sort.Strings(entry.PendingHumanActions)
 	sort.Strings(entry.Evidence)
 	return entry, nil
+}
+
+func deriveResourceStatuses(packID string, graph ResourceGraph, projections []ProjectionStatus, fresh ReadinessObservation) []ResourceStatus {
+	result := make([]ResourceStatus, 0, len(graph.Resources))
+	allConfigured := len(projections) > 0
+	for _, projection := range projections {
+		allConfigured = allConfigured && projection.Health == ProjectionVerified
+	}
+	for _, fact := range graph.Resources {
+		if fact.Role == ResourceRoleUnselected {
+			continue
+		}
+		contributor := "pack:" + packID + ":" + fact.Resource.String()
+		status := ResourceStatus{Resource: fact.Resource, Role: fact.Role, DependencyChain: append([]ResourceIdentity{}, fact.DependencyChain...)}
+		for _, projection := range projections {
+			if containsString(projection.Contributors, contributor) {
+				addProjectionHealth(&status.Projections, projection.Health)
+				if projection.Health != ProjectionVerified {
+					status.Blockers = append(status.Blockers, fmt.Sprintf("%s is %s", projection.ID, projection.Health))
+				}
+			}
+		}
+		covered := status.Projections.Verified+status.Projections.Missing+status.Projections.Drifted+status.Projections.Ambiguous+status.Projections.Unmanaged > 0
+		status.Readiness.Configured = allConfigured
+		if covered {
+			status.Readiness.Configured = status.Projections.Verified > 0 &&
+				status.Projections.Verified == status.Projections.Verified+status.Projections.Missing+status.Projections.Drifted+status.Projections.Ambiguous+status.Projections.Unmanaged
+		}
+		status.ReadinessObserved = ReadinessObservationStatus{Configured: true, Authorization: fresh.AuthorizationObserved, Usability: fresh.UsabilityObserved}
+		status.Readiness.Authorized = status.Readiness.Configured && fresh.AuthorizationObserved && fresh.Authorized
+		status.Readiness.Usable = status.Readiness.Authorized && fresh.UsabilityObserved && fresh.Usable
+		sort.Strings(status.Blockers)
+		result = append(result, status)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Resource.String() < result[j].Resource.String() })
+	return result
+}
+
+func addProjectionHealth(summary *ProjectionSummary, health ProjectionHealth) {
+	switch health {
+	case ProjectionVerified:
+		summary.Verified++
+	case ProjectionMissing:
+		summary.Missing++
+	case ProjectionDrifted:
+		summary.Drifted++
+	case ProjectionAmbiguous:
+		summary.Ambiguous++
+	case ProjectionUnmanaged:
+		summary.Unmanaged++
+	}
 }
 
 // statusEvidencePack excludes unrelated active packs while retaining the
@@ -356,7 +471,7 @@ func deriveProjectionStatus(packID string, observed []ObservedProjection, owners
 		case !owned:
 			status.Health = ProjectionUnmanaged
 			summary.Unmanaged++
-		case owner.Fingerprint != p.DesiredFingerprint || digestJSON(owner.Contributors) != digestJSON(status.Contributors):
+		case owner.Fingerprint != p.DesiredFingerprint || !contributorsMatch(owner.Contributors, status.Contributors):
 			status.Health = ProjectionAmbiguous
 			summary.Ambiguous++
 		default:

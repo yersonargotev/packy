@@ -703,6 +703,56 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	}
 }
 
+func TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, repoRoot := packActivationOptions(t, terminal)
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	rewriteManifestAsV4(t, filepath.Join(bundle, "packs", "matty", "pack.json"))
+	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
+
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
+		t.Fatalf("activate selected resource: %v\n%s", err, out)
+	}
+	before := snapshotTree(t, home)
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--require", "usable")
+	if err != nil {
+		t.Fatalf("focused usable status: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"Resource readiness: skill:ask-matt role=root",
+		"configured=yes authorized=yes usable=yes",
+		"Focused resource: skill:ask-matt configured=yes authorized=yes usable=yes",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("focused human status missing %q:\n%s", want, out)
+		}
+	}
+	if got := snapshotTree(t, home); got != before {
+		t.Fatalf("focused status mutated sandbox HOME:\nbefore:\n%s\nafter:\n%s", before, got)
+	}
+
+	out, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--require", "usable", "--json")
+	if err != nil {
+		t.Fatalf("focused JSON status: %v\n%s", err, out)
+	}
+	var document map[string]any
+	if err := json.Unmarshal([]byte(out), &document); err != nil {
+		t.Fatalf("focused JSON decode: %v\n%s", err, out)
+	}
+	focused, _ := document["focused_resource"].(map[string]any)
+	requirement, _ := document["requirement"].(map[string]any)
+	if focused["role"] != "root" || requirement["readiness"] != "usable" || requirement["satisfied"] != true {
+		t.Fatalf("focused JSON facts = focused:%#v requirement:%#v", focused, requirement)
+	}
+
+	for _, resource := range []string{"malformed", "instruction:matty-guidance"} {
+		if _, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--resource", resource); err == nil {
+			t.Fatalf("focused status unexpectedly accepted %q", resource)
+		}
+	}
+}
+
 func TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, repoRoot := packActivationOptions(t, terminal)
@@ -1331,7 +1381,7 @@ func TestPackUpdateRendersVersionsAndRetainedSharedResourcesOnBothSurfaces(t *te
 			if err != nil {
 				t.Fatalf("update dry-run: %v\n%s", err, out)
 			}
-			for _, want := range []string{"Update dry-run plan plan-", "Version: 1.0.1 -> 2.0.0 (catalog-current)", "Intent revision:", "Retained shared projection:", "engram, matty", "no rewrite"} {
+			for _, want := range []string{"Update dry-run plan plan-", "Version: 1.0.1 -> 2.0.0 (catalog-current)", "Intent revision:", "Retained shared projection:", "pack:engram:instruction:shared, pack:matty:instruction:shared", "no rewrite"} {
 				if !strings.Contains(out, want) {
 					t.Fatalf("missing %q:\n%s", want, out)
 				}
@@ -1768,7 +1818,7 @@ func TestPackDeactivateRendersRemovedAndRetainedSharedContributors(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, want := range []string{"Contributor removed: instruction:shared <- matty", "Retained shared projection: instruction:shared <- engram (no rewrite)", "Contributors: instruction:shared <- engram"} {
+			for _, want := range []string{"Contributor removed: instruction:shared <- pack:matty:instruction:shared", "Retained shared projection: instruction:shared <- pack:engram:instruction:shared (no rewrite)", "Contributors: instruction:shared <- pack:engram:instruction:shared"} {
 				if !strings.Contains(out, want) {
 					t.Fatalf("missing %q:\n%s", want, out)
 				}
@@ -1837,8 +1887,8 @@ func TestPackReconcileTargetedAndSurfaceWideRenderSealedDesiredState(t *testing.
 		args []string
 		want []string
 	}{
-		{"targeted", []string{"pack", "reconcile", "matty", "--surface", "codex", "--dry-run"}, []string{"Reconcile dry-run plan plan-", "Scope: targeted", "Intent revision:", "Contributors: instruction:shared <- engram, matty", "Phase: reversible-local", "write instruction shared"}},
-		{"surface-wide", []string{"pack", "reconcile", "--surface", "codex", "--dry-run"}, []string{"Reconcile dry-run plan plan-", "Scope: surface-wide", "Activation:", "Contributors: instruction:shared <- engram, matty", "Phase: reversible-local", "write instruction shared"}},
+		{"targeted", []string{"pack", "reconcile", "matty", "--surface", "codex", "--dry-run"}, []string{"Reconcile dry-run plan plan-", "Scope: targeted", "Intent revision:", "Contributors: instruction:shared <- pack:engram:instruction:shared, pack:matty:instruction:shared", "Phase: reversible-local", "write instruction shared"}},
+		{"surface-wide", []string{"pack", "reconcile", "--surface", "codex", "--dry-run"}, []string{"Reconcile dry-run plan plan-", "Scope: surface-wide", "Activation:", "Contributors: instruction:shared <- pack:engram:instruction:shared, pack:matty:instruction:shared", "Phase: reversible-local", "write instruction shared"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := executeCommand(t, NewRootCommand(opts), tc.args...)

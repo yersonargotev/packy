@@ -80,7 +80,7 @@ func TestUpdateIncludesNewDependencyAndRetainsUnchangedSharedProjection(t *testi
 		t.Fatalf("activations = %+v", activations)
 	}
 	retained := plan.RetainedProjections()
-	if len(retained) != 1 || !reflect.DeepEqual(retained[0].Contributors, []string{"app", "dep"}) || len(plan.Phases()) != 0 || plan.NoOp() {
+	if len(retained) != 1 || !reflect.DeepEqual(retained[0].Contributors, []string{"pack:app:instruction:shared", "pack:dep:instruction:shared"}) || len(plan.Phases()) != 0 || plan.NoOp() {
 		t.Fatalf("retained/plan = %+v phases=%+v noop=%v", retained, plan.Phases(), plan.NoOp())
 	}
 	if len(adapter.actions) != 0 {

@@ -93,7 +93,7 @@ func TestSurfaceWideStatusRetainsSharedProjectionConflicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range report.Entries {
-		if entry.Projections.Ambiguous != 1 || len(entry.Blockers) == 0 || !reflect.DeepEqual(entry.ProjectionDetails[0].Contributors, []string{"engram", "matty"}) {
+		if entry.Projections.Ambiguous != 1 || len(entry.Blockers) == 0 || !reflect.DeepEqual(entry.ProjectionDetails[0].Contributors, []string{"pack:engram:instruction:shared-guidance", "pack:matty:instruction:shared-guidance"}) {
 			t.Fatalf("shared conflict hidden for %s: %+v", entry.Pack.ID, entry)
 		}
 	}
@@ -227,6 +227,61 @@ func TestStatusTargetsOnePackAndSurface(t *testing.T) {
 	}
 	if !reflect.DeepEqual(desiredPackIDs(codex.calls), []string{"engram"}) || len(opencode.calls) != 0 {
 		t.Fatalf("inspection calls: codex=%v opencode=%v", codex.calls, opencode.calls)
+	}
+}
+
+func TestFocusedResourceStatusUsesSelectedClosureAndMakesRequireUsableDecision(t *testing.T) {
+	root := Resource{Kind: "command", ID: "ship", Requires: []string{"skill:shared"}}
+	dependency := Resource{Kind: "skill", ID: "shared"}
+	unselected := Resource{Kind: "skill", ID: "orphan"}
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{root, dependency, unselected}}
+	selection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "command", ID: "ship"}}}
+	store := &fakeActivationStore{state: ActivationState{
+		Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1", Active: true, Selection: selection},
+		Ownership: []ProjectionOwnership{
+			{ID: "command:ship", Fingerprint: "same", Contributors: []string{"pack:app:command:ship"}},
+			{ID: "skill:shared", Fingerprint: "same", Contributors: []string{"pack:app:skill:shared"}},
+		},
+	}}
+	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{Projections: []ObservedProjection{
+		{Goal: ProjectionPresent, ID: "command:ship", Exists: true, ObservedFingerprint: "same", DesiredFingerprint: "same"},
+		{Goal: ProjectionPresent, ID: "skill:shared", Exists: true, ObservedFingerprint: "same", DesiredFingerprint: "same"},
+	}, Readiness: ReadinessObservation{AuthorizationObserved: true, Authorized: true, UsabilityObserved: true, Usable: true}}}}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+
+	report, err := facade.Status(context.Background(), StatusRequest{PackID: "app", Surface: SurfaceCodex, Resource: "skill:shared", RequireUsable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Focused == nil || report.Focused.Resource.String() != "skill:shared" || report.Focused.Role != ResourceRoleDependency || !report.Focused.Readiness.Usable {
+		t.Fatalf("focused resource = %+v", report.Focused)
+	}
+	if report.Requirement == nil || !report.Requirement.Satisfied || report.Requirement.Readiness != "usable" {
+		t.Fatalf("requirement = %+v", report.Requirement)
+	}
+	if got := report.Entries[0].Resources; len(got) != 2 || got[0].Resource.String() != "command:ship" || got[1].Resource.String() != "skill:shared" {
+		t.Fatalf("selected closure resources = %+v", got)
+	}
+	report, err = facade.Status(context.Background(), StatusRequest{PackID: "app", Surface: SurfaceCodex, RequireUsable: true})
+	if err != nil || report.Requirement == nil || !report.Requirement.Satisfied || report.Requirement.Resource != (ResourceIdentity{}) {
+		t.Fatalf("Pack requirement = %+v err=%v", report.Requirement, err)
+	}
+}
+
+func TestFocusedResourceStatusRejectsMalformedUnknownAndUnselected(t *testing.T) {
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "selected"}, {Kind: "skill", ID: "other"}}}
+	selection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "selected"}}}
+	store := &fakeActivationStore{state: ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1", Active: true, Selection: selection}}}
+	adapter := &fakeSurfaceAdapter{}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+
+	for _, resource := range []string{"bad", "skill:missing", "skill:other"} {
+		if _, err := facade.Status(context.Background(), StatusRequest{PackID: "app", Surface: SurfaceCodex, Resource: resource}); err == nil {
+			t.Fatalf("resource %q was accepted", resource)
+		}
+	}
+	if len(store.saves) != 0 {
+		t.Fatalf("focused status mutated state: %+v", store.saves)
 	}
 }
 

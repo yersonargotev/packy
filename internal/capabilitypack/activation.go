@@ -654,7 +654,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, selection: selection, previousSelection: selection, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: map[string]string{}}
 	for id, contributors := range before.contributors {
 		for _, contributor := range contributors {
-			if contributor == requested.ID {
+			if contributorBelongsToPack(contributor, requested.ID) {
 				plan.removedContributors[id] = contributor
 			}
 		}
@@ -681,7 +681,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 			continue
 		}
 		owner, owned := ownershipByID(state.Ownership, projection.ID)
-		if (active && intent.Active || recovery) && projection.Exists && owned && len(owner.Contributors) == 1 && owner.Contributors[0] == requested.ID && owner.Fingerprint == projection.ObservedFingerprint {
+		if (active && intent.Active || recovery) && projection.Exists && owned && len(owner.Contributors) == 1 && contributorBelongsToPack(owner.Contributors[0], requested.ID) && owner.Fingerprint == projection.ObservedFingerprint {
 			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
 			continue
 		}
@@ -710,7 +710,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 func hasContributor(values []ProjectionOwnership, packID string) bool {
 	for _, value := range values {
 		for _, contributor := range value.Contributors {
-			if contributor == packID {
+			if contributorBelongsToPack(contributor, packID) {
 				return true
 			}
 		}
@@ -761,8 +761,10 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 		plan.oldVersion = intent.Version
 	}
 	for id, contributors := range before.contributors {
-		if slices.Contains(contributors, requested.ID) && !slices.Contains(target.contributors[id], requested.ID) {
-			plan.removedContributors[id] = requested.ID
+		for _, contributor := range contributors {
+			if contributorBelongsToPack(contributor, requested.ID) && !slices.Contains(target.contributors[id], contributor) {
+				plan.removedContributors[id] = contributor
+			}
 		}
 	}
 	plan.blockers = append(plan.blockers, target.blockers...)
@@ -784,7 +786,7 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 			continue
 		}
 		owner, owned := ownershipByID(state.Ownership, projection.ID)
-		if projection.Exists && owned && len(owner.Contributors) == 1 && owner.Contributors[0] == requested.ID && !slices.Contains(contributors, requested.ID) && owner.Fingerprint == projection.ObservedFingerprint {
+		if projection.Exists && owned && len(owner.Contributors) == 1 && contributorBelongsToPack(owner.Contributors[0], requested.ID) && !slices.Contains(contributors, owner.Contributors[0]) && owner.Fingerprint == projection.ObservedFingerprint {
 			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
 			continue
 		}
@@ -1766,7 +1768,7 @@ func ownershipMatchesContributors(owners []ProjectionOwnership, projections []Ob
 			continue
 		}
 		owner, ok := byID[projection.ID]
-		if !ok || owner.Fingerprint != projection.DesiredFingerprint || digestJSON(owner.Contributors) != digestJSON(c.contributorSet(projection.ID)) {
+		if !ok || owner.Fingerprint != projection.DesiredFingerprint || !contributorsMatch(owner.Contributors, c.contributorSet(projection.ID)) {
 			return false
 		}
 	}
@@ -1954,7 +1956,7 @@ func ownedAtFingerprint(owners []ProjectionOwnership, id, fingerprint, packID st
 }
 func ownedAtComposition(owners []ProjectionOwnership, id, fingerprint string, c composition) bool {
 	for _, owner := range owners {
-		if owner.ID == id && owner.Fingerprint == fingerprint && digestJSON(owner.Contributors) == digestJSON(c.contributorSet(id)) {
+		if owner.ID == id && owner.Fingerprint == fingerprint && contributorsMatch(owner.Contributors, c.contributorSet(id)) {
 			return true
 		}
 	}
@@ -1975,7 +1977,7 @@ func repairEligible(owners []ProjectionOwnership, projection ObservedProjection,
 		return false
 	}
 	owner := matched[0]
-	return owner.Fingerprint == projection.DesiredFingerprint && digestJSON(owner.Contributors) == digestJSON(c.contributorSet(projection.ID))
+	return owner.Fingerprint == projection.DesiredFingerprint && contributorsMatch(owner.Contributors, c.contributorSet(projection.ID))
 }
 func cloneActivationState(state ActivationState) ActivationState {
 	state.Intent.Aliases = cloneAliases(state.Intent.Aliases)
