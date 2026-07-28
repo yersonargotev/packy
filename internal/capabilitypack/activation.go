@@ -90,8 +90,9 @@ type UpdateRequest struct {
 }
 
 type DeactivationRequest struct {
-	PackID  string
-	Surface Surface
+	PackID    string
+	Surface   Surface
+	Resources []ResourceIdentity
 }
 
 type ReconcileScope string
@@ -394,6 +395,7 @@ type ReconciliationPlan struct {
 	previousAliases        []SurfaceAlias
 	selection              ResourceSelection
 	previousSelection      ResourceSelection
+	partialSelection       bool
 	recovery               bool
 	historicalAttempt      *ApplyingJournal
 }
@@ -599,6 +601,21 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 			return ReconciliationPlan{}, err
 		}
 	}
+	if len(request.Resources) > 0 {
+		if !active || !intent.Active {
+			return ReconciliationPlan{}, fmt.Errorf("cannot remove resources from inactive capability pack %q", request.PackID)
+		}
+		if requested.manifestVersion != manifestSchemaV4 {
+			return ReconciliationPlan{}, fmt.Errorf("resource-scoped deactivation requires manifest schema_version 4")
+		}
+		nextSelection, selectionErr := removeResourceSelectionRoots(requested, selection, request.Resources)
+		if selectionErr != nil {
+			return ReconciliationPlan{}, selectionErr
+		}
+		if len(nextSelection.Roots) > 0 {
+			return f.previewPartialDeactivate(ctx, request, requested, state, selection, nextSelection)
+		}
+	}
 	recovery := recoveryAttempt(state, OperationDeactivate, request.PackID, request.Surface)
 	currentRequested, err := selectPackResources(requested, selection)
 	if err != nil {
@@ -700,6 +717,110 @@ func hasContributor(values []ProjectionOwnership, packID string) bool {
 	return false
 }
 
+func (f Facade) previewPartialDeactivate(ctx context.Context, request DeactivationRequest, requested Pack, state ActivationState, previousSelection, selection ResourceSelection) (ReconciliationPlan, error) {
+	previousPack, err := selectPackResources(requested, previousSelection)
+	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	targetPack, err := selectPackResources(requested, selection)
+	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	previousAliases := intentAliases(state, request.PackID, request.Surface)
+	aliases := aliasesForPack(targetPack, request.Surface, previousAliases)
+	before, err := f.compose(previousPack, state, request.Surface, true)
+	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	targetState := stateWithAliases(cloneActivationState(state), requested.ID, request.Surface, requested.Version, aliases)
+	targetState = stateWithSelection(targetState, requested.ID, request.Surface, requested.Version, selection)
+	target, err := f.compose(targetPack, targetState, request.Surface, true)
+	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	combinedBefore, combined := before.combinedPack(), target.combinedPack()
+	resolutions, err := f.resolveExecutables(ctx, combinedBefore)
+	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	adapter := f.activation.adapters[request.Surface]
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(OperationDeactivate, combinedBefore, combined, state.Ownership, resolutions))
+	if err != nil {
+		return ReconciliationPlan{}, fmt.Errorf("inspect partial deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
+	}
+	plan := ReconciliationPlan{
+		pack: targetPack, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision,
+		oldVersion: requested.Version, aliases: cloneAliases(aliases), previousAliases: cloneAliases(previousAliases), selection: selection, previousSelection: previousSelection, partialSelection: true,
+		observationFingerprint: observationDigest(observation), resolutions: resolutions,
+		runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), activations: target.activations, contributors: target.contributors,
+		compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts,
+		ownershipFacts: cloneOwnership(state.Ownership), removedContributors: map[string]string{},
+	}
+	if intent, ok := intentForPack(state, request.PackID, request.Surface); ok && intent.Version != "" {
+		plan.oldVersion = intent.Version
+	}
+	for id, contributors := range before.contributors {
+		if slices.Contains(contributors, requested.ID) && !slices.Contains(target.contributors[id], requested.ID) {
+			plan.removedContributors[id] = requested.ID
+		}
+	}
+	plan.blockers = append(plan.blockers, target.blockers...)
+	sortBlockers(plan.blockers)
+	for _, resource := range combined.Resources {
+		plan.portable = append(plan.portable, PortableOutcome{Kind: resource.Kind, ID: resource.ID})
+	}
+	for _, projection := range observation.Projections {
+		contributors := append([]string(nil), target.contributors[projection.ID]...)
+		if projection.DesiredFingerprint != "" {
+			plan.desired = append(plan.desired, projectionExpectation{ID: projection.ID, Fingerprint: projection.DesiredFingerprint, ExternallyManaged: projection.ExternallyManaged})
+			if projection.Exists && projection.ObservedFingerprint == projection.DesiredFingerprint {
+				plan.retained = append(plan.retained, RetainedProjection{ID: projection.ID, Contributors: contributors})
+			} else {
+				detail := fmt.Sprintf("preserved shared projection %s because it is missing, drifted, ambiguous, unmanaged, or ownership no longer matches", projection.ID)
+				plan.pendingHumanActions = append(plan.pendingHumanActions, detail)
+				plan.blockers = append(plan.blockers, PlanBlocker{Kind: BlockerOwnership, Subject: projection.ID, Detail: detail})
+			}
+			continue
+		}
+		owner, owned := ownershipByID(state.Ownership, projection.ID)
+		if projection.Exists && owned && len(owner.Contributors) == 1 && owner.Contributors[0] == requested.ID && !slices.Contains(contributors, requested.ID) && owner.Fingerprint == projection.ObservedFingerprint {
+			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
+			continue
+		}
+		if projection.Exists {
+			plan.pendingHumanActions = append(plan.pendingHumanActions, fmt.Sprintf("preserved %s because it is drifted, ambiguous, unmanaged, or ownership no longer matches", projection.ID))
+		}
+	}
+	readiness := ReadinessStatus{Configured: len(plan.blockers) == 0}
+	readiness.Authorized = readiness.Configured && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
+	readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
+	plan.readiness = readiness
+	plan.readinessObserved = ReadinessObservationStatus{Configured: true, Authorization: observation.Readiness.AuthorizationObserved, Usability: observation.Readiness.UsabilityObserved}
+	plan.observedEvidence = append([]string{}, observation.Readiness.Evidence...)
+	sort.Strings(plan.observedEvidence)
+	for _, projection := range observation.Projections {
+		if projection.ObservedFingerprint != projection.DesiredFingerprint && !projection.ExternallyManaged {
+			plan.pendingEvidence = append(plan.pendingEvidence, projection.ID+": verification pending Apply")
+		}
+	}
+	if !observation.Readiness.AuthorizationObserved {
+		plan.pendingEvidence = append(plan.pendingEvidence, "authorization evidence pending a host observation")
+	}
+	if !observation.Readiness.UsabilityObserved {
+		plan.pendingEvidence = append(plan.pendingEvidence, "usability evidence pending a host observation")
+	}
+	sort.Strings(plan.pendingEvidence)
+	sort.Strings(plan.pendingHumanActions)
+	sort.Slice(plan.retained, func(i, j int) bool { return plan.retained[i].ID < plan.retained[j].ID })
+	if len(plan.blockers) > 0 {
+		plan.noOp = false
+	}
+	plan.attachRecovery(state, recoveryAttempt(state, OperationDeactivate, request.PackID, request.Surface))
+	plan.requireRecoveryApproval()
+	plan.seal()
+	return plan, nil
+}
+
 func (f Facade) preview(ctx context.Context, request ActivationRequest, operation Operation, oldVersion string) (ReconciliationPlan, error) {
 	requested, adapter, state, err := f.activationInputsForOperation(ctx, request, operation)
 	if err != nil {
@@ -717,8 +838,21 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		if err != nil {
 			return ReconciliationPlan{}, err
 		}
-		if operation == OperationActivate && intent.Active && digestJSON(previousSelection) != digestJSON(selection) {
-			return ReconciliationPlan{}, fmt.Errorf("capability pack %q is already active on %s with a different resource selection; selection changes require an explicit lifecycle transition", requested.ID, request.Surface)
+		if operation == OperationActivate && intent.Active {
+			switch {
+			case selection.Mode == SelectionCustom && previousSelection.Mode == SelectionCustom:
+				selection, err = mergeCustomSelections(previousSelection, selection)
+				if err != nil {
+					return ReconciliationPlan{}, err
+				}
+			case selection.Mode == SelectionCustom && previousSelection.Mode == SelectionAll:
+				if _, err = selectPackResources(requested, selection); err != nil {
+					return ReconciliationPlan{}, err
+				}
+				selection = previousSelection
+			case digestJSON(previousSelection) != digestJSON(selection):
+				return ReconciliationPlan{}, fmt.Errorf("capability pack %q is already active on %s with a different resource selection; selection changes require an explicit lifecycle transition", requested.ID, request.Surface)
+			}
 		}
 	}
 	requested, err = selectPackResources(requested, selection)
@@ -927,7 +1061,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		for _, intent := range previousIntents {
 			previousByID[intent.PackID] = intent
 		}
-		activeTarget := request.Plan.operation != OperationDeactivate
+		activeTarget := request.Plan.operation != OperationDeactivate || request.Plan.partialSelection
 		targetVersion := pack.Version
 		if request.Plan.operation == OperationDeactivate && request.Plan.oldVersion != "" {
 			targetVersion = request.Plan.oldVersion
@@ -1282,8 +1416,22 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 			}
 		}
 	}
-	useRequestedIntent := plan.operation == OperationReconcile || plan.operation == OperationDeactivate
-	current, err := f.compose(pack, state, plan.surface, useRequestedIntent)
+	var current composition
+	if plan.operation == OperationDeactivate && plan.partialSelection {
+		previousPack, previousErr := selectPackResources(pack, plan.previousSelection)
+		if previousErr != nil {
+			return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("previous resource selection changed after Preview: %v; rerun deactivate to preview a fresh plan", previousErr)}
+		}
+		before, beforeErr := f.compose(previousPack, state, plan.surface, true)
+		if beforeErr != nil || digestJSON(before.packs) != digestJSON(plan.beforeCompositionFacts) {
+			return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("previous resource composition changed after Preview; rerun deactivate to preview a fresh plan")}
+		}
+		state = stateWithSelection(stateWithAliases(cloneActivationState(state), plan.pack.ID, plan.surface, plan.pack.Version, plan.aliases), plan.pack.ID, plan.surface, plan.pack.Version, plan.selection)
+		current, err = f.compose(pack, state, plan.surface, true)
+	} else {
+		useRequestedIntent := plan.operation == OperationReconcile || plan.operation == OperationDeactivate
+		current, err = f.compose(pack, state, plan.surface, useRequestedIntent)
+	}
 	if err != nil {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("catalog or historical artifact changed after Preview: %v; rerun %s to preview a fresh plan", err, plan.operation)}
 	}
@@ -1294,15 +1442,21 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 		}
 	}
 	if plan.operation == OperationDeactivate {
-		before := current
-		target, dependents, targetErr := f.composeWithout(pack, state, plan.surface)
-		if targetErr != nil {
-			return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("historical deactivation comparison changed after Preview: %v; rerun deactivate to preview a fresh plan", targetErr)}
+		if plan.partialSelection {
+			if digestJSON(current.intentFacts) != digestJSON(plan.intentFacts) {
+				return planPreflight{}, StalePlanError{Precondition: "resource selection or active intents changed after Preview; rerun deactivate to preview a fresh plan"}
+			}
+		} else {
+			before := current
+			target, dependents, targetErr := f.composeWithout(pack, state, plan.surface)
+			if targetErr != nil {
+				return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("historical deactivation comparison changed after Preview: %v; rerun deactivate to preview a fresh plan", targetErr)}
+			}
+			if digestJSON(before.packs) != digestJSON(plan.beforeCompositionFacts) || digestJSON(dependents) != digestJSON(plan.activeDependents) {
+				return planPreflight{}, StalePlanError{Precondition: "dependency closure or active dependents changed after Preview; rerun deactivate to preview a fresh plan"}
+			}
+			current = target
 		}
-		if digestJSON(before.packs) != digestJSON(plan.beforeCompositionFacts) || digestJSON(dependents) != digestJSON(plan.activeDependents) {
-			return planPreflight{}, StalePlanError{Precondition: "dependency closure or active dependents changed after Preview; rerun deactivate to preview a fresh plan"}
-		}
-		current = target
 	}
 	if plan.operation == OperationReconcile && digestJSON(current.intentFacts) != digestJSON(plan.intentFacts) {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("active intents or intent revisions changed after Preview; rerun %s to preview a fresh plan", plan.operation)}
@@ -1386,7 +1540,7 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if historicalActivationRecovery && !usesHistory {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("capability pack %q recovery cannot resolve exact intended version %s", request.PackID, intent.Version)
 	}
-	if historicalActivationRecovery {
+	if usesHistory {
 		pack, err = f.catalog.resolveIntentPack(request.PackID, intent.Version)
 		if err != nil {
 			return Pack{}, nil, ActivationState{}, err
@@ -1502,9 +1656,10 @@ func (p ReconciliationPlan) sealPayload() any {
 		PreviousAliases   []SurfaceAlias
 		Selection         ResourceSelection
 		PreviousSelection ResourceSelection
+		PartialSelection  bool
 		Recovery          bool
 		Historical        *ApplyingJournal
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.recovery, p.historicalAttempt}
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.partialSelection, p.recovery, p.historicalAttempt}
 }
 
 func ownershipByID(values []ProjectionOwnership, id string) (ProjectionOwnership, bool) {
@@ -1847,9 +2002,11 @@ func cloneAliases(aliases []SurfaceAlias) []SurfaceAlias {
 }
 
 func requestedAliases(pack Pack, surface Surface, supplied []SurfaceAlias, state ActivationState, operation Operation) ([]SurfaceAlias, error) {
-	if supplied == nil && operation != OperationActivate {
+	if supplied == nil {
 		if intent, ok := intentForPack(state, pack.ID, surface); ok {
-			return cloneAliases(intent.Aliases), nil
+			if operation != OperationActivate || intent.Active {
+				return cloneAliases(intent.Aliases), nil
+			}
 		}
 	}
 	aliases := cloneAliases(supplied)
@@ -1865,6 +2022,27 @@ func requestedAliases(pack Pack, surface Surface, supplied []SurfaceAlias, state
 		}
 	}
 	return aliases, nil
+}
+
+func intentAliases(state ActivationState, packID string, surface Surface) []SurfaceAlias {
+	if intent, ok := intentForPack(state, packID, surface); ok {
+		return intent.Aliases
+	}
+	return nil
+}
+
+func aliasesForPack(pack Pack, surface Surface, aliases []SurfaceAlias) []SurfaceAlias {
+	if aliases == nil {
+		return nil
+	}
+	result := make([]SurfaceAlias, 0, len(aliases))
+	for _, alias := range aliases {
+		if packHasAliasTarget(pack, alias, surface) {
+			result = append(result, alias)
+		}
+	}
+	_ = canonicalizeAliases(&result)
+	return result
 }
 
 func stateWithAliases(state ActivationState, packID string, surface Surface, version string, aliases []SurfaceAlias) ActivationState {

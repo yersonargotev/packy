@@ -66,14 +66,118 @@ func canonicalSelection(selection ResourceSelection) (ResourceSelection, error) 
 		}
 		roots[root.String()] = root
 	}
-	if len(roots) != 1 {
-		return ResourceSelection{}, fmt.Errorf("custom resource selection requires exactly one distinct root")
+	if len(roots) == 0 {
+		return ResourceSelection{}, fmt.Errorf("custom resource selection requires at least one distinct root")
 	}
-	var root ResourceIdentity
-	for _, candidate := range roots {
-		root = candidate
+	identities := make([]string, 0, len(roots))
+	for identity := range roots {
+		identities = append(identities, identity)
 	}
-	return ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{root}}, nil
+	sort.Strings(identities)
+	canonicalRoots := make([]ResourceIdentity, 0, len(identities))
+	for _, identity := range identities {
+		canonicalRoots = append(canonicalRoots, roots[identity])
+	}
+	return ResourceSelection{Mode: SelectionCustom, Roots: canonicalRoots}, nil
+}
+
+func mergeCustomSelections(current, requested ResourceSelection) (ResourceSelection, error) {
+	current, err := canonicalSelection(current)
+	if err != nil {
+		return ResourceSelection{}, err
+	}
+	requested, err = canonicalSelection(requested)
+	if err != nil {
+		return ResourceSelection{}, err
+	}
+	if current.Mode == SelectionAll {
+		return current, nil
+	}
+	roots := append([]ResourceIdentity{}, current.Roots...)
+	roots = append(roots, requested.Roots...)
+	return canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: roots})
+}
+
+func removeResourceSelectionRoots(pack Pack, selection ResourceSelection, removals []ResourceIdentity) (ResourceSelection, error) {
+	selection, err := canonicalSelection(selection)
+	if err != nil {
+		return ResourceSelection{}, err
+	}
+	if len(removals) == 0 {
+		return ResourceSelection{}, fmt.Errorf("resource-scoped deactivation requires at least one resource")
+	}
+	resources := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	requested := make(map[string]ResourceIdentity, len(removals))
+	for _, candidate := range removals {
+		identity, parseErr := ParseResourceIdentity(candidate.String())
+		if parseErr != nil {
+			return ResourceSelection{}, parseErr
+		}
+		resource, ok := resources[identity.String()]
+		if !ok {
+			return ResourceSelection{}, fmt.Errorf("resource %q does not exist in pack %q", identity.String(), pack.ID)
+		}
+		if resource.Kind == "asset" || resource.Kind == "notice" {
+			return ResourceSelection{}, fmt.Errorf("resource %q is not an operational selection root", identity.String())
+		}
+		requested[identity.String()] = identity
+	}
+
+	roots, err := resourceSelectionRoots(pack, selection)
+	if err != nil {
+		return ResourceSelection{}, err
+	}
+	rootSet := make(map[string]bool, len(roots))
+	for _, root := range roots {
+		rootSet[root.String()] = true
+	}
+	if selection.Mode == SelectionCustom {
+		_, chains, closureErr := resolveResourceClosure(pack, roots)
+		if closureErr != nil {
+			return ResourceSelection{}, closureErr
+		}
+		identities := make([]string, 0, len(requested))
+		for identity := range requested {
+			identities = append(identities, identity)
+		}
+		sort.Strings(identities)
+		for _, identity := range identities {
+			if rootSet[identity] {
+				continue
+			}
+			chain, selected := chains[identity]
+			if !selected {
+				return ResourceSelection{}, fmt.Errorf("resource %q is not selected by pack %q", identity, pack.ID)
+			}
+			consumers := []string{}
+			for _, root := range roots {
+				_, rootChains, rootErr := resolveResourceClosure(pack, []ResourceIdentity{root})
+				if rootErr != nil {
+					return ResourceSelection{}, rootErr
+				}
+				rootChain, rootSelected := rootChains[identity]
+				if rootSelected && len(rootChain) > 1 {
+					consumers = append(consumers, root.String())
+				}
+			}
+			sort.Strings(consumers)
+			if len(consumers) == 0 {
+				consumers = append(consumers, chain[0].String())
+			}
+			return ResourceSelection{}, fmt.Errorf("resource %q is dependency-only; remove consuming root(s) %s instead", identity, strings.Join(consumers, ", "))
+		}
+	}
+	remaining := make([]ResourceIdentity, 0, len(roots))
+	for _, root := range roots {
+		if _, removed := requested[root.String()]; !removed {
+			remaining = append(remaining, root)
+		}
+	}
+	sort.Slice(remaining, func(i, j int) bool { return remaining[i].String() < remaining[j].String() })
+	return ResourceSelection{Mode: SelectionCustom, Roots: remaining}, nil
 }
 
 func selectPackResources(pack Pack, selection ResourceSelection) (Pack, error) {
@@ -115,15 +219,18 @@ func resourceSelectionRoots(pack Pack, selection ResourceSelection) ([]ResourceI
 		sort.Slice(roots, func(i, j int) bool { return roots[i].String() < roots[j].String() })
 		return roots, nil
 	}
-	root := selection.Roots[0]
-	resource, ok := resources[root.String()]
-	if !ok {
-		return nil, fmt.Errorf("custom resource selection root %q does not exist in pack %q", root.String(), pack.ID)
+	roots := make([]ResourceIdentity, 0, len(selection.Roots))
+	for _, root := range selection.Roots {
+		resource, ok := resources[root.String()]
+		if !ok {
+			return nil, fmt.Errorf("custom resource selection root %q does not exist in pack %q", root.String(), pack.ID)
+		}
+		if resource.Kind == "asset" || resource.Kind == "notice" {
+			return nil, fmt.Errorf("custom resource selection root %q is not operational", root.String())
+		}
+		roots = append(roots, root)
 	}
-	if resource.Kind == "asset" || resource.Kind == "notice" {
-		return nil, fmt.Errorf("custom resource selection root %q is not operational", root.String())
-	}
-	return []ResourceIdentity{root}, nil
+	return roots, nil
 }
 
 func resolveResourceClosure(pack Pack, roots []ResourceIdentity) ([]Resource, map[string][]ResourceIdentity, error) {

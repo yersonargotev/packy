@@ -507,6 +507,9 @@ func lifecycleMigrations(p ReconciliationPlan) []string {
 	if digestJSON(p.previousAliases) != digestJSON(p.aliases) {
 		result = append(result, "surface-local aliases change")
 	}
+	if p.operation == OperationDeactivate && p.previousSelection.Mode == SelectionAll && p.selection.Mode == SelectionCustom {
+		result = append(result, "selection changes from all to custom; future resources are not selected automatically")
+	}
 	for _, blocker := range p.blockers {
 		if blocker.Kind == BlockerAlias {
 			result = append(result, blocker.Detail)

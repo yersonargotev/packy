@@ -44,6 +44,7 @@ automatically.`,
   packy pack status engram --surface codex --require usable
   packy pack activate matty --surface codex --dry-run
   packy pack activate example-pack --surface codex --resource skill:ask-matt --dry-run
+  packy pack deactivate example-pack --surface codex --resource skill:ask-matt --dry-run
   packy pack activate engram --surface claude --dry-run --json
   packy pack activate matty --surface codex
   packy pack update matty --surface codex
@@ -68,7 +69,7 @@ func newPackReconcileCommand(opts Options, workstationResolver *workstation.Reso
 			}
 			aliases, err := parseSurfaceAliases(aliasValues)
 			if err != nil {
-				return err
+				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 			}
 			facade, err := activationFacade(opts, workstationResolver)
 			if err != nil {
@@ -99,13 +100,22 @@ func newPackReconcileCommand(opts Options, workstationResolver *workstation.Reso
 func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var surface string
 	var dryRun bool
+	var resourceValues []string
 	var jsonOutput bool
 	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		resources := make([]capabilitypack.ResourceIdentity, 0, len(resourceValues))
+		for _, value := range resourceValues {
+			resource, err := capabilitypack.ParseResourceIdentity(value)
+			if err != nil {
+				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
+			}
+			resources = append(resources, resource)
+		}
 		facade, err := activationFacade(opts, workstationResolver)
 		if err != nil {
 			return err
 		}
-		plan, err := facade.PreviewDeactivate(cmd.Context(), capabilitypack.DeactivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface)})
+		plan, err := facade.PreviewDeactivate(cmd.Context(), capabilitypack.DeactivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Resources: resources})
 		if err != nil {
 			return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 		}
@@ -116,6 +126,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	}}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
+	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Remove a manifest-v4 operational resource root (<kind>:<id>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd
@@ -236,7 +247,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				for _, value := range resourceValues {
 					resource, err := capabilitypack.ParseResourceIdentity(value)
 					if err != nil {
-						return err
+						return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 					}
 					selection.Roots = append(selection.Roots, resource)
 				}
