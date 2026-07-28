@@ -69,7 +69,7 @@ func newPackReconcileCommand(opts Options, workstationResolver *workstation.Reso
 			}
 			aliases, err := parseSurfaceAliases(aliasValues)
 			if err != nil {
-				return err
+				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 			}
 			facade, err := activationFacade(opts, workstationResolver)
 			if err != nil {
@@ -107,7 +107,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 		for _, value := range resourceValues {
 			resource, err := capabilitypack.ParseResourceIdentity(value)
 			if err != nil {
-				return err
+				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 			}
 			resources = append(resources, resource)
 		}
@@ -247,7 +247,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				for _, value := range resourceValues {
 					resource, err := capabilitypack.ParseResourceIdentity(value)
 					if err != nil {
-						return err
+						return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 					}
 					selection.Roots = append(selection.Roots, resource)
 				}

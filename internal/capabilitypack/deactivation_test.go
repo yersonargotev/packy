@@ -31,9 +31,9 @@ func incrementalSelectionPack() Pack {
 		Version:         "1.0.0",
 		Surfaces:        []Surface{SurfaceCodex},
 		Resources: []Resource{
-			{Kind: "skill", ID: "one", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "one", Mode: "native"}}},
-			{Kind: "skill", ID: "two", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "two", Mode: "native"}}},
-			{Kind: "skill", ID: "shared", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "shared", Mode: "native"}}},
+			{Kind: "skill", ID: "one", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "one", Mode: "native", Sharing: "shared"}}},
+			{Kind: "skill", ID: "two", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "two", Mode: "native", Sharing: "shared"}}},
+			{Kind: "skill", ID: "shared", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "shared", Mode: "native", Sharing: "shared"}}},
 		},
 	}
 }
@@ -153,6 +153,31 @@ func TestDeactivateResourceFromAllDisclosesCustomSelection(t *testing.T) {
 	}
 	if !store.state.Intent.Active || store.state.Intent.Selection.Mode != SelectionCustom || len(store.state.Intent.Selection.Roots) != 2 || store.state.Intent.Selection.Roots[0].String() != "skill:shared" || store.state.Intent.Selection.Roots[1].String() != "skill:two" {
 		t.Fatalf("persisted all-to-custom state = %+v", store.state.Intent)
+	}
+}
+
+func TestDeactivatePartialSelectionPreservesAliasesAndHistoricalVersion(t *testing.T) {
+	pack := incrementalSelectionPack()
+	packID := "mat" + "ty"
+	pack.ID, pack.Version = packID, "2.0.0"
+	intent := ActivationIntent{PackID: packID, Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 7, Aliases: []SurfaceAlias{{Kind: "skill", ID: "two", Name: "aliased-two"}}, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "two"}}}}
+	state := ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}
+	store := &fakeActivationStore{state: state}
+	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{Revision: "host"}}}
+	facade := NewFacade(Catalog{packs: []Pack{pack}, allowSyntheticHistory: true}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: packID, Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "one"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.OldVersion() != "1.0.0" || len(plan.aliases) != 1 || plan.aliases[0].Name != "aliased-two" {
+		t.Fatalf("historical aliased partial plan = version %q aliases %+v", plan.OldVersion(), plan.aliases)
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); err != nil {
+		t.Fatalf("historical aliased partial apply: %v blockers=%+v phases=%+v", err, plan.Blockers(), plan.Phases())
+	}
+	if store.state.Intent.Version != "1.0.0" || len(store.state.Intent.Aliases) != 1 || store.state.Intent.Aliases[0].Name != "aliased-two" {
+		t.Fatalf("historical aliased partial state = %+v", store.state.Intent)
 	}
 }
 

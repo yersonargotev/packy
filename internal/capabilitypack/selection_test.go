@@ -70,9 +70,10 @@ func TestRemoveResourceSelectionRootsKeepsSharedDependenciesAndGuidesDerivedRemo
 		manifestVersion: manifestSchemaV4,
 		ID:              "app",
 		Resources: []Resource{
-			{Kind: "skill", ID: "one", Requires: []string{"skill:shared"}},
+			{Kind: "skill", ID: "one", Requires: []string{"skill:shared", "skill:a"}},
 			{Kind: "skill", ID: "two", Requires: []string{"skill:shared"}},
 			{Kind: "skill", ID: "shared"},
+			{Kind: "skill", ID: "a"},
 		},
 	}
 	selection, err := removeResourceSelectionRoots(pack, ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "two"}}}, []ResourceIdentity{{Kind: "skill", ID: "one"}})
@@ -86,6 +87,18 @@ func TestRemoveResourceSelectionRootsKeepsSharedDependenciesAndGuidesDerivedRemo
 	_, err = removeResourceSelectionRoots(pack, ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "two"}}}, []ResourceIdentity{{Kind: "skill", ID: "shared"}})
 	if err == nil || !strings.Contains(err.Error(), "dependency-only") || !strings.Contains(err.Error(), "skill:one") {
 		t.Fatalf("derived dependency removal error = %v", err)
+	}
+	var first string
+	for i := 0; i < 20; i++ {
+		_, err = removeResourceSelectionRoots(pack, ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "two"}}}, []ResourceIdentity{{Kind: "skill", ID: "shared"}, {Kind: "skill", ID: "a"}})
+		if err == nil {
+			t.Fatal("multiple derived dependency removal succeeded")
+		}
+		if i == 0 {
+			first = err.Error()
+		} else if err.Error() != first {
+			t.Fatalf("derived dependency error changed: first=%q got=%q", first, err)
+		}
 	}
 }
 
@@ -192,13 +205,14 @@ func TestActivateAddsCustomRootsAndPromotesDependenciesWithoutProjectionRewrite(
 		Version:         "1.0.0",
 		Surfaces:        []Surface{SurfaceCodex},
 		Resources: []Resource{
-			{Kind: "skill", ID: "one", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "one", Mode: "native"}}},
-			{Kind: "skill", ID: "two", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "two", Mode: "native"}}},
-			{Kind: "skill", ID: "shared", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "shared", Mode: "native"}}},
+			{Kind: "skill", ID: "one", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "one", Mode: "native", Sharing: "shared"}}},
+			{Kind: "skill", ID: "two", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "two", Mode: "native", Sharing: "shared"}}},
+			{Kind: "skill", ID: "shared", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "shared", Mode: "native", Sharing: "shared"}}},
 		},
 	}
 	state := ActivationState{Intent: ActivationIntent{
 		PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 3,
+		Aliases:   []SurfaceAlias{{Kind: "skill", ID: "one", Name: "aliased-one"}},
 		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}}},
 	}}
 	state.Intents = []ActivationIntent{state.Intent}
@@ -224,6 +238,9 @@ func TestActivateAddsCustomRootsAndPromotesDependenciesWithoutProjectionRewrite(
 	}
 	if got := store.state.Intent.Selection.Roots; len(got) != 2 || got[0].String() != "skill:one" || got[1].String() != "skill:two" {
 		t.Fatalf("persisted additive roots = %+v", got)
+	}
+	if len(store.state.Intent.Aliases) != 1 || store.state.Intent.Aliases[0].Name != "aliased-one" {
+		t.Fatalf("additive activation dropped aliases = %+v", store.state.Intent.Aliases)
 	}
 
 	state = store.state

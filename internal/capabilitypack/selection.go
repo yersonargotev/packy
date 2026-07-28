@@ -139,7 +139,12 @@ func removeResourceSelectionRoots(pack Pack, selection ResourceSelection, remova
 		if closureErr != nil {
 			return ResourceSelection{}, closureErr
 		}
+		identities := make([]string, 0, len(requested))
 		for identity := range requested {
+			identities = append(identities, identity)
+		}
+		sort.Strings(identities)
+		for _, identity := range identities {
 			if rootSet[identity] {
 				continue
 			}

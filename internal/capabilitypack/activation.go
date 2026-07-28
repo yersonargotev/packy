@@ -726,11 +726,14 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
+	previousAliases := intentAliases(state, request.PackID, request.Surface)
+	aliases := aliasesForPack(targetPack, request.Surface, previousAliases)
 	before, err := f.compose(previousPack, state, request.Surface, true)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	targetState := stateWithSelection(cloneActivationState(state), requested.ID, request.Surface, requested.Version, selection)
+	targetState := stateWithAliases(cloneActivationState(state), requested.ID, request.Surface, requested.Version, aliases)
+	targetState = stateWithSelection(targetState, requested.ID, request.Surface, requested.Version, selection)
 	target, err := f.compose(targetPack, targetState, request.Surface, true)
 	if err != nil {
 		return ReconciliationPlan{}, err
@@ -747,7 +750,7 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 	}
 	plan := ReconciliationPlan{
 		pack: targetPack, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision,
-		oldVersion: requested.Version, selection: selection, previousSelection: previousSelection, partialSelection: true,
+		oldVersion: requested.Version, aliases: cloneAliases(aliases), previousAliases: cloneAliases(previousAliases), selection: selection, previousSelection: previousSelection, partialSelection: true,
 		observationFingerprint: observationDigest(observation), resolutions: resolutions,
 		runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), activations: target.activations, contributors: target.contributors,
 		compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts,
@@ -1423,7 +1426,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 		if beforeErr != nil || digestJSON(before.packs) != digestJSON(plan.beforeCompositionFacts) {
 			return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("previous resource composition changed after Preview; rerun deactivate to preview a fresh plan")}
 		}
-		state = stateWithSelection(cloneActivationState(state), plan.pack.ID, plan.surface, plan.pack.Version, plan.selection)
+		state = stateWithSelection(stateWithAliases(cloneActivationState(state), plan.pack.ID, plan.surface, plan.pack.Version, plan.aliases), plan.pack.ID, plan.surface, plan.pack.Version, plan.selection)
 		current, err = f.compose(pack, state, plan.surface, true)
 	} else {
 		useRequestedIntent := plan.operation == OperationReconcile || plan.operation == OperationDeactivate
@@ -1537,7 +1540,7 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if historicalActivationRecovery && !usesHistory {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("capability pack %q recovery cannot resolve exact intended version %s", request.PackID, intent.Version)
 	}
-	if historicalActivationRecovery {
+	if usesHistory {
 		pack, err = f.catalog.resolveIntentPack(request.PackID, intent.Version)
 		if err != nil {
 			return Pack{}, nil, ActivationState{}, err
@@ -1999,9 +2002,11 @@ func cloneAliases(aliases []SurfaceAlias) []SurfaceAlias {
 }
 
 func requestedAliases(pack Pack, surface Surface, supplied []SurfaceAlias, state ActivationState, operation Operation) ([]SurfaceAlias, error) {
-	if supplied == nil && operation != OperationActivate {
+	if supplied == nil {
 		if intent, ok := intentForPack(state, pack.ID, surface); ok {
-			return cloneAliases(intent.Aliases), nil
+			if operation != OperationActivate || intent.Active {
+				return cloneAliases(intent.Aliases), nil
+			}
 		}
 	}
 	aliases := cloneAliases(supplied)
@@ -2017,6 +2022,27 @@ func requestedAliases(pack Pack, surface Surface, supplied []SurfaceAlias, state
 		}
 	}
 	return aliases, nil
+}
+
+func intentAliases(state ActivationState, packID string, surface Surface) []SurfaceAlias {
+	if intent, ok := intentForPack(state, packID, surface); ok {
+		return intent.Aliases
+	}
+	return nil
+}
+
+func aliasesForPack(pack Pack, surface Surface, aliases []SurfaceAlias) []SurfaceAlias {
+	if aliases == nil {
+		return nil
+	}
+	result := make([]SurfaceAlias, 0, len(aliases))
+	for _, alias := range aliases {
+		if packHasAliasTarget(pack, alias, surface) {
+			result = append(result, alias)
+		}
+	}
+	_ = canonicalizeAliases(&result)
+	return result
 }
 
 func stateWithAliases(state ActivationState, packID string, surface Surface, version string, aliases []SurfaceAlias) ActivationState {
