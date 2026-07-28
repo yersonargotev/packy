@@ -396,6 +396,7 @@ type ReconciliationPlan struct {
 	selection              ResourceSelection
 	previousSelection      ResourceSelection
 	partialSelection       bool
+	selectionValidity      SelectionValidity
 	recovery               bool
 	historicalAttempt      *ApplyingJournal
 }
@@ -855,7 +856,11 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 			}
 		}
 	}
-	requested, err = selectPackResources(requested, selection)
+	selectionValidityBlockers, selectionValidity, err := selectionBlockers(requested, selection, request.Surface)
+	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	requested, err = selectPackResourcesForSurface(requested, selection, request.Surface)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -869,6 +874,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
+	composition.blockers = append(composition.blockers, selectionValidityBlockers...)
 	var beforeCompositionFacts []Pack
 	if operation == OperationUpdate && hasTrustedHistoricalArtifact(requested.ID, oldVersion) {
 		before, err := f.compose(requested, state, request.Surface, true)
@@ -952,7 +958,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	sort.Strings(pendingEvidence)
 	pendingHumanActions := append([]string(nil), observation.PendingHumanActions...)
 	sort.Strings(pendingHumanActions)
-	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts}
+	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts}
 	recovery := recoveryAttempt(state, operation, request.PackID, request.Surface)
 	plan.attachRecovery(state, recovery)
 	for _, resource := range pack.Resources {
@@ -1362,7 +1368,11 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	if err != nil {
 		return planPreflight{}, err
 	}
-	pack, err = selectPackResources(pack, plan.selection)
+	if plan.operation == OperationDeactivate {
+		pack, err = selectPackResources(pack, plan.selection)
+	} else {
+		pack, err = selectPackResourcesForSurface(pack, plan.selection, plan.surface)
+	}
 	if err != nil {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("resource selection became invalid after Preview: %v; rerun %s to preview a fresh plan", err, plan.operation)}
 	}
@@ -1657,9 +1667,10 @@ func (p ReconciliationPlan) sealPayload() any {
 		Selection         ResourceSelection
 		PreviousSelection ResourceSelection
 		PartialSelection  bool
+		SelectionValidity SelectionValidity
 		Recovery          bool
 		Historical        *ApplyingJournal
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.partialSelection, p.recovery, p.historicalAttempt}
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
 }
 
 func ownershipByID(values []ProjectionOwnership, id string) (ProjectionOwnership, bool) {

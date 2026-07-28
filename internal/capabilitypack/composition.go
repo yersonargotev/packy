@@ -21,6 +21,8 @@ const (
 	BlockerAlias                    BlockerKind    = "alias"
 	BlockerSharing                  BlockerKind    = "sharing"
 	BlockerCompatibility            BlockerKind    = "compatibility"
+	BlockerResourceConflict         BlockerKind    = "resource-conflict"
+	BlockerSelectionUnavailable     BlockerKind    = "selection-unavailable"
 )
 
 type PlannedActivation struct {

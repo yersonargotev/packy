@@ -216,11 +216,48 @@ func renderPackShowContract(w io.Writer, contract capabilitypack.LifecycleContra
 			return err
 		}
 	}
+	if _, err := fmt.Fprintf(w, "All selection: available=%s\n", yesNo(contract.SelectionValidity.All.Available)); err != nil {
+		return err
+	}
+	for _, exclusion := range contract.SelectionValidity.All.OptionalExclusions {
+		if err := renderSelectionValidityReason(w, "Optional exclusion", exclusion); err != nil {
+			return err
+		}
+	}
+	for _, reason := range contract.SelectionValidity.All.Reasons {
+		if err := renderSelectionValidityReason(w, "All unavailable", reason); err != nil {
+			return err
+		}
+	}
+	for _, root := range contract.SelectionValidity.Roots {
+		if _, err := fmt.Fprintf(w, "Root selection: resource=%s available=%s\n", root.Resource, yesNo(root.Available)); err != nil {
+			return err
+		}
+		for _, reason := range root.Reasons {
+			if err := renderSelectionValidityReason(w, "Root unavailable", reason); err != nil {
+				return err
+			}
+		}
+	}
 	if _, err := fmt.Fprintf(w, "Invocation-time prompt authority: %s\nContract aliases: %s\n%s\n",
 		joinFacts(contract.PromptAuthorities), renderShowAliases(contract.Aliases), contract.AuthorityDisclosure); err != nil {
 		return err
 	}
 	return nil
+}
+
+func renderSelectionValidityReason(w io.Writer, label string, reason capabilitypack.SelectionValidityReason) error {
+	conflict := ""
+	if reason.ConflictingResource != "" {
+		conflict = fmt.Sprintf(" conflicts_with=%s conflicting_role=%s conflicting_chain=%s",
+			reason.ConflictingResource, reason.ConflictingRole, renderIdentityChain(reason.ConflictingDependencyChain))
+	}
+	_, err := fmt.Fprintf(w,
+		"%s: code=%s resource=%s role=%s chain=%s surface=%s%s detail=%s remediation=%s\n",
+		label, reason.Code, reason.Resource, reason.Role, renderIdentityChain(reason.DependencyChain),
+		reason.Surface, conflict, reason.Detail, reason.Remediation,
+	)
+	return err
 }
 
 func renderPackShowIntent(intent capabilitypack.ShowIntent) string {

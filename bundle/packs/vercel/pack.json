@@ -30,6 +30,7 @@
       "id": "web-interface-guidelines-rules",
       "kind": "asset",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "source": "references/vercel-web-interface-guidelines-command.md",
       "surface_exclusions": []
@@ -39,6 +40,7 @@
       "id": "writing-guidelines-rules",
       "kind": "asset",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "source": "references/vercel-writing-guidelines-command.md",
       "surface_exclusions": []
@@ -93,6 +95,7 @@
       "id": "vercel-cli-with-tokens",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -722,6 +725,7 @@
       "id": "vercel-composition-patterns",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -787,6 +791,7 @@
       "id": "vercel-deploy-to-vercel",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1428,6 +1433,7 @@
       "id": "vercel-optimize",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1754,6 +1760,7 @@
       "id": "vercel-react-best-practices",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1819,6 +1826,7 @@
       "id": "vercel-react-native-skills",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1884,6 +1892,7 @@
       "id": "vercel-react-view-transitions",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1949,6 +1958,7 @@
       "id": "vercel-web-design-guidelines",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [
         "asset:web-interface-guidelines-rules"
       ],
@@ -2007,6 +2017,7 @@
       "id": "vercel-writing-guidelines",
       "kind": "skill",
       "notices": [],
+      "conflicts": [],
       "requires": [
         "asset:writing-guidelines-rules"
       ],

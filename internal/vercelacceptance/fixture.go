@@ -70,11 +70,11 @@ func Canonical() Fixture {
 		if s.id == "vercel-writing-guidelines" {
 			req = []string{"asset:writing-guidelines-rules"}
 		}
-		resources = append(resources, capabilitypack.Resource{Kind: "skill", ID: s.id, Source: "skills/" + s.id, Requires: req, Notices: []string{}, Bindings: bindings(s.public), SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, RuntimeModes: modes(s.id)})
+		resources = append(resources, capabilitypack.Resource{Kind: "skill", ID: s.id, Source: "skills/" + s.id, Requires: req, Conflicts: []string{}, Notices: []string{}, Bindings: bindings(s.public), SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, RuntimeModes: modes(s.id)})
 	}
 	resources = append(resources,
-		capabilitypack.Resource{Kind: "asset", ID: "web-interface-guidelines-rules", Source: "references/vercel-web-interface-guidelines-command.md", Requires: []string{}, Notices: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}},
-		capabilitypack.Resource{Kind: "asset", ID: "writing-guidelines-rules", Source: "references/vercel-writing-guidelines-command.md", Requires: []string{}, Notices: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}},
+		capabilitypack.Resource{Kind: "asset", ID: "web-interface-guidelines-rules", Source: "references/vercel-web-interface-guidelines-command.md", Requires: []string{}, Conflicts: []string{}, Notices: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}},
+		capabilitypack.Resource{Kind: "asset", ID: "writing-guidelines-rules", Source: "references/vercel-writing-guidelines-command.md", Requires: []string{}, Conflicts: []string{}, Notices: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}},
 		capabilitypack.Resource{Kind: "notice", ID: "web-interface-guidelines-mit", Source: "notices/vercel-web-interface-guidelines-MIT.txt", Requires: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, License: "MIT", Attribution: "Copyright (c) 2025 Vercel Labs"},
 		capabilitypack.Resource{Kind: "notice", ID: "writing-guidelines-mit", Source: "notices/vercel-writing-guidelines-MIT.txt", Requires: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, License: "MIT", Attribution: "Copyright (c) 2026 Vercel Labs"})
 	sort.Slice(resources, func(i, j int) bool {

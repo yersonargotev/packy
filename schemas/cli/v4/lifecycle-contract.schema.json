@@ -172,6 +172,166 @@
       },
       "additionalProperties": false
     },
+    "resource_identity": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "selection_reason": {
+      "type": "object",
+      "required": [
+        "code",
+        "resource",
+        "role",
+        "dependency_chain",
+        "conflicting_dependency_chain",
+        "surface",
+        "detail",
+        "remediation"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "root-excluded",
+            "dependency-unavailable",
+            "mandatory-incomplete",
+            "resource-conflict",
+            "optional-exclusion"
+          ]
+        },
+        "resource": {
+          "$ref": "#/$defs/resource_identity"
+        },
+        "role": {
+          "enum": [
+            "root",
+            "dependency",
+            "asset",
+            "notice"
+          ]
+        },
+        "dependency_chain": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource_identity"
+          },
+          "minItems": 1
+        },
+        "conflicting_resource": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conflicting_role": {
+          "enum": [
+            "root",
+            "dependency"
+          ]
+        },
+        "conflicting_dependency_chain": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource_identity"
+          }
+        },
+        "surface": {
+          "enum": [
+            "claude",
+            "codex",
+            "opencode"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remediation": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "selection_availability": {
+      "type": "object",
+      "required": [
+        "available",
+        "reasons",
+        "optional_exclusions"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selection_reason"
+          }
+        },
+        "optional_exclusions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selection_reason"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "resource_selectability": {
+      "type": "object",
+      "required": [
+        "resource",
+        "available",
+        "reasons"
+      ],
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/resource_identity"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selection_reason"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "selection_validity": {
+      "type": "object",
+      "required": [
+        "all",
+        "roots"
+      ],
+      "properties": {
+        "all": {
+          "$ref": "#/$defs/selection_availability"
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource_selectability"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "contract": {
       "type": "object",
       "required": [
@@ -183,7 +343,8 @@
         "prompt_authorities",
         "aliases",
         "authority_disclosure",
-        "resource_graph"
+        "resource_graph",
+        "selection_validity"
       ],
       "properties": {
         "compatibility": {
@@ -341,6 +502,9 @@
             }
           },
           "additionalProperties": false
+        },
+        "selection_validity": {
+          "$ref": "#/$defs/selection_validity"
         }
       },
       "additionalProperties": false

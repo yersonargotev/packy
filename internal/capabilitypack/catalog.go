@@ -56,6 +56,7 @@ type Resource struct {
 	Tools             []string
 	Permissions       []string
 	Requires          []string
+	Conflicts         []string
 	Notices           []string
 	Bindings          []Binding
 	SurfaceExclusions []SurfaceExclusion
@@ -600,6 +601,7 @@ func clonePack(pack Pack) Pack {
 		pack.Resources[i].Tools = append([]string(nil), pack.Resources[i].Tools...)
 		pack.Resources[i].Permissions = append([]string(nil), pack.Resources[i].Permissions...)
 		pack.Resources[i].Requires = append([]string(nil), pack.Resources[i].Requires...)
+		pack.Resources[i].Conflicts = append([]string(nil), pack.Resources[i].Conflicts...)
 		pack.Resources[i].Notices = append([]string(nil), pack.Resources[i].Notices...)
 		pack.Resources[i].Bindings = append([]Binding(nil), pack.Resources[i].Bindings...)
 		pack.Resources[i].SurfaceExclusions = append([]SurfaceExclusion(nil), pack.Resources[i].SurfaceExclusions...)
@@ -837,6 +839,7 @@ func EncodePortableManifestV4(pack Pack) ([]byte, error) {
 			"bindings": resource.Bindings, "surface_exclusions": resource.SurfaceExclusions,
 		}
 		if resource.Kind != "notice" {
+			wire["conflicts"] = resource.Conflicts
 			wire["notices"] = resource.Notices
 		}
 		switch resource.Kind {
@@ -1010,10 +1013,14 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 	if err := validateNoticeWirePresence(data, kind == "notice"); err != nil {
 		return Resource{}, err
 	}
+	if err := validateResourceConflictWirePresence(data, kind == "notice"); err != nil {
+		return Resource{}, err
+	}
 	type resourceWireV4 struct {
 		Kind              string             `json:"kind"`
 		ID                string             `json:"id"`
 		Requires          []string           `json:"requires"`
+		Conflicts         []string           `json:"conflicts"`
 		Bindings          []Binding          `json:"bindings"`
 		SurfaceExclusions []SurfaceExclusion `json:"surface_exclusions"`
 		RuntimeModes      []RuntimeMode      `json:"runtime_modes"`
@@ -1024,7 +1031,7 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 		Source string `json:"source"`
 	}
 	toResource := func(raw resourceWireV4) Resource {
-		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Notices: raw.Notices, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes}
+		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Conflicts: raw.Conflicts, Notices: raw.Notices, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes}
 	}
 	switch kind {
 	case "skill", "instruction", "asset":
@@ -1100,6 +1107,24 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 	default:
 		return Resource{}, fmt.Errorf("unsupported resource kind %q", kind)
 	}
+}
+
+func validateResourceConflictWirePresence(data []byte, notice bool) error {
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	value, present := wire["conflicts"]
+	if notice {
+		if present {
+			return fmt.Errorf("conflicts is forbidden for notice resources")
+		}
+		return nil
+	}
+	if !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return fmt.Errorf("conflicts is a required non-null array")
+	}
+	return nil
 }
 
 func validateNoticeWirePresence(data []byte, notice bool) error {
@@ -1480,10 +1505,24 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 						return fmt.Errorf("resource %q: %w", identity, err)
 					}
 					if resource.Kind == "notice" {
+						if resource.Conflicts != nil {
+							return fmt.Errorf("resource %q: conflicts is forbidden for notice resources", identity)
+						}
 						if resource.Notices != nil {
 							return fmt.Errorf("resource %q: notices is forbidden for notice resources", identity)
 						}
 					} else {
+						if resource.Conflicts == nil {
+							return fmt.Errorf("resource %q: conflicts is a required non-null array", identity)
+						}
+						if !sort.StringsAreSorted(resource.Conflicts) || hasDuplicateStrings(resource.Conflicts) {
+							return fmt.Errorf("resource %q: conflicts must be a sorted set of canonical resource identities", identity)
+						}
+						for _, conflict := range resource.Conflicts {
+							if _, err := ParseResourceIdentity(conflict); err != nil {
+								return fmt.Errorf("resource %q: conflict identity %q must be canonical", identity, conflict)
+							}
+						}
 						if resource.Notices == nil {
 							return fmt.Errorf("resource %q: notices is a required non-null array", identity)
 						}
@@ -1533,6 +1572,9 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 			return err
 		}
 		if version == manifestSchemaV4 {
+			if err := validateResourceConflicts(pack.Resources, seenResources); err != nil {
+				return err
+			}
 			for _, resource := range pack.Resources {
 				identity := resource.Kind + ":" + resource.ID
 				for _, notice := range resource.Notices {
@@ -2252,6 +2294,68 @@ func validateDependencies(resources []Resource, identities map[string]bool, vers
 	for identity := range dependencies {
 		if err := visit(identity); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateResourceConflicts(resources []Resource, identities map[string]bool) error {
+	byIdentity := make(map[string]Resource, len(resources))
+	for _, resource := range resources {
+		byIdentity[resource.Kind+":"+resource.ID] = resource
+	}
+	for _, resource := range resources {
+		if resource.Kind == "notice" {
+			continue
+		}
+		identity := resource.Kind + ":" + resource.ID
+		for _, conflict := range resource.Conflicts {
+			if conflict == identity {
+				return fmt.Errorf("resource %q must not conflict with itself", identity)
+			}
+			if !identities[conflict] {
+				return fmt.Errorf("resource %q conflict %q does not exist", identity, conflict)
+			}
+			target := byIdentity[conflict]
+			if target.Kind == "notice" {
+				return fmt.Errorf("resource %q conflict %q may not target notice", identity, conflict)
+			}
+			if !containsString(target.Conflicts, identity) {
+				return fmt.Errorf("resource conflict between %q and %q must be symmetric", identity, conflict)
+			}
+		}
+
+		closure := map[string]bool{identity: true}
+		var visitDependencies func(string)
+		visitDependencies = func(candidate string) {
+			for _, dependency := range byIdentity[candidate].Requires {
+				if closure[dependency] {
+					continue
+				}
+				closure[dependency] = true
+				visitDependencies(dependency)
+			}
+		}
+		visitDependencies(identity)
+		for _, conflict := range resource.Conflicts {
+			if conflict != identity && closure[conflict] {
+				return fmt.Errorf("resource %q must not conflict with mandatory dependency %q", identity, conflict)
+			}
+		}
+		closureIdentities := make([]string, 0, len(closure))
+		for candidate := range closure {
+			closureIdentities = append(closureIdentities, candidate)
+		}
+		sort.Strings(closureIdentities)
+		for _, candidate := range closureIdentities {
+			if candidate == identity {
+				continue
+			}
+			for _, conflict := range byIdentity[candidate].Conflicts {
+				if conflict != identity && candidate < conflict && closure[conflict] {
+					return fmt.Errorf("resource %q mandatory dependency closure contains conflicting resources %q and %q", identity, candidate, conflict)
+				}
+			}
 		}
 	}
 	return nil

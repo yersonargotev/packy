@@ -61,6 +61,7 @@ type LifecycleContract struct {
 	Aliases               []SurfaceAlias       `json:"aliases"`
 	AuthorityDisclosure   string               `json:"authority_disclosure"`
 	ResourceGraph         ResourceGraph        `json:"resource_graph"`
+	SelectionValidity     SelectionValidity    `json:"selection_validity"`
 }
 
 // LifecycleExclusion is the rendered union of portable source exclusions and
@@ -104,6 +105,7 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 		Exclusions: []LifecycleExclusion{}, OptionalModes: []OptionalMode{}, PromptAuthorities: []string{}, Aliases: []SurfaceAlias{},
 		AuthorityDisclosure: "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
 		ResourceGraph:       ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
+		SelectionValidity:   SelectionValidityFor(pack, surface),
 	}
 	if !contract.CompatibilityObserved {
 		contract.Compatibility = ""
@@ -325,6 +327,9 @@ func compatibilityFor(pack Pack, surface Surface) Compatibility {
 func (p ReconciliationPlan) LifecycleContract() LifecycleContract {
 	contract := LifecycleContractFor(p.pack, p.surface, p.aliases)
 	contract.ResourceGraph = ResourceGraphFor(p.pack, p.selection, false)
+	if p.selectionValidity.Roots != nil {
+		contract.SelectionValidity = p.selectionValidity
+	}
 	if contract.CompatibilityObserved && len(p.blockers) > 0 {
 		contract.Compatibility = CompatibilityBlocked
 	}

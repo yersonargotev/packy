@@ -67,6 +67,14 @@
         "authority_disclosure": "Activation grants only sealed actions.",
         "resource_graph": {
           "resources": []
+        },
+        "selection_validity": {
+          "all": {
+            "available": true,
+            "reasons": [],
+            "optional_exclusions": []
+          },
+          "roots": []
         }
       },
       "readiness": {

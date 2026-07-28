@@ -1544,6 +1544,7 @@ func rewriteManifestAsV4(t *testing.T, manifestPath string) {
 	for _, raw := range manifest["resources"].([]any) {
 		resource := raw.(map[string]any)
 		if resource["kind"] != "notice" {
+			resource["conflicts"] = []any{}
 			resource["notices"] = []any{}
 		}
 		switch resource["kind"] {
