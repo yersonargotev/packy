@@ -21,6 +21,7 @@ const validManifestV4 = `{
     "id": "example",
     "source": "skills/example.md",
     "requires": [],
+    "notices": [],
     "bindings": [{
       "surface": "codex",
       "projection": "skill",
@@ -209,6 +210,12 @@ func TestLoadPortableManifestV4PreservesV3ResourceShapes(t *testing.T) {
 		"authorities": []any{}, "effects": []any{},
 		"fallback": map[string]any{"kind": "none"}, "on_unavailable": "fail_before_effects",
 	}}
+	for _, encoded := range manifest["resources"].([]any) {
+		resource := encoded.(map[string]any)
+		if resource["kind"] != "notice" {
+			resource["notices"] = []any{}
+		}
+	}
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -239,10 +246,55 @@ func TestLoadPortableManifestV4PreservesV3ResourceShapes(t *testing.T) {
 	t.Fatal("v4 did not preserve the v3 lifecycle hook shape")
 }
 
+func TestLoadPortableManifestV4ValidatesNoticeAssociations(t *testing.T) {
+	withNotice := strings.Replace(validManifestV4,
+		`  "resources": [{`,
+		`  "resources": [{"kind":"notice","id":"mit","source":"NOTICE","license":"MIT","attribution":"Example","requires":[],"bindings":[],"surface_exclusions":[]},{`,
+		1,
+	)
+	tests := map[string]string{
+		"missing":    strings.Replace(validManifestV4, `"notices": []`, `"notices": ["notice:missing"]`, 1),
+		"wrong kind": strings.Replace(validManifestV4, `"notices": []`, `"notices": ["skill:example"]`, 1),
+		"duplicate":  strings.Replace(withNotice, `"notices": []`, `"notices": ["notice:mit","notice:mit"]`, 1),
+		"unsorted": strings.Replace(
+			strings.Replace(withNotice, `"id":"mit"`, `"id":"apache"`, 1),
+			`"notices": []`, `"notices": ["notice:mit","notice:apache"]`, 1),
+	}
+	for name, manifest := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := LoadPortableManifest(writeManifestV4(t, manifest), t.TempDir()); err == nil {
+				t.Fatal("expected invalid notice association")
+			}
+		})
+	}
+}
+
+func TestEncodePortableManifestV4RejectsNoticeOwnedAssociations(t *testing.T) {
+	pack, err := LoadPortableManifest(writeManifestV4(t, validManifestV4), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack.Resources = append(pack.Resources, Resource{
+		Kind: "notice", ID: "mit", Source: "NOTICE", Requires: []string{},
+		Notices: []string{}, Bindings: []Binding{}, SurfaceExclusions: []SurfaceExclusion{},
+		License: "MIT", Attribution: "Example",
+	})
+	if _, err := EncodePortableManifestV4(pack); err == nil || !strings.Contains(err.Error(), "forbidden for notice resources") {
+		t.Fatalf("notice-owned associations error = %v", err)
+	}
+}
+
 func TestLoadPortableManifestV3StillForbidsRuntimeModes(t *testing.T) {
 	legacy := strings.Replace(validManifestV4, `"schema_version": 4`, `"schema_version": 3`, 1)
 	if _, err := LoadPortableManifest(writeManifestV4(t, legacy), t.TempDir()); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("v3 runtime_modes must remain unknown, got %v", err)
+	}
+}
+
+func TestLoadPortableManifestV3StillForbidsNotices(t *testing.T) {
+	resource := []byte(`{"kind":"instruction","id":"guide","source":"guide.md","requires":[],"notices":[],"bindings":[],"surface_exclusions":[]}`)
+	if _, err := decodeResource(resource, manifestSchemaV3); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("v3 notices must remain unknown, got %v", err)
 	}
 }
 

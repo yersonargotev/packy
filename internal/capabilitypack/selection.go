@@ -87,22 +87,85 @@ func selectPackResources(pack Pack, selection ResourceSelection) (Pack, error) {
 	if pack.manifestVersion != manifestSchemaV4 {
 		return Pack{}, fmt.Errorf("custom resource selection requires manifest schema_version 4")
 	}
-	root := selection.Roots[0]
+	resources := make(map[string]Resource, len(pack.Resources))
 	for _, resource := range pack.Resources {
-		if resource.Kind != root.Kind || resource.ID != root.ID {
-			continue
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	closure := map[string]bool{}
+	var visit func(string) error
+	visit = func(identity string) error {
+		resource, ok := resources[identity]
+		if !ok {
+			return fmt.Errorf("custom resource selection root or dependency %q does not exist in pack %q", identity, pack.ID)
+		}
+		if closure[identity] {
+			return nil
+		}
+		closure[identity] = true
+		for _, dependency := range resource.Requires {
+			if err := visit(dependency); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, root := range selection.Roots {
+		resource, ok := resources[root.String()]
+		if !ok {
+			return Pack{}, fmt.Errorf("custom resource selection root %q does not exist in pack %q", root.String(), pack.ID)
 		}
 		if resource.Kind == "asset" || resource.Kind == "notice" {
 			return Pack{}, fmt.Errorf("custom resource selection root %q is not operational", root.String())
 		}
-		if len(resource.Requires) != 0 {
-			return Pack{}, fmt.Errorf("custom resource selection root %q has resource dependencies", root.String())
+		if err := visit(root.String()); err != nil {
+			return Pack{}, err
 		}
-		selected := clonePack(pack)
-		selected.Resources = []Resource{resource}
-		return selected, nil
 	}
-	return Pack{}, fmt.Errorf("custom resource selection root %q does not exist in pack %q", root.String(), pack.ID)
+	ordered := make([]Resource, 0, len(closure))
+	emitted := map[string]bool{}
+	for len(emitted) < len(closure) {
+		ready := make([]string, 0)
+		for identity := range closure {
+			if emitted[identity] {
+				continue
+			}
+			resource := resources[identity]
+			ok := true
+			for _, dependency := range resource.Requires {
+				if closure[dependency] && !emitted[dependency] {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				ready = append(ready, identity)
+			}
+		}
+		sort.Strings(ready)
+		if len(ready) == 0 {
+			return Pack{}, fmt.Errorf("custom resource selection dependency cycle")
+		}
+		identity := ready[0]
+		ordered = append(ordered, resources[identity])
+		emitted[identity] = true
+	}
+	noticeSet := map[string]bool{}
+	for identity := range closure {
+		for _, notice := range resources[identity].Notices {
+			noticeSet[notice] = true
+		}
+	}
+	noticeIDs := make([]string, 0, len(noticeSet))
+	for identity := range noticeSet {
+		noticeIDs = append(noticeIDs, identity)
+	}
+	sort.Strings(noticeIDs)
+	for _, identity := range noticeIDs {
+		ordered = append(ordered, resources[identity])
+	}
+	selected := clonePack(pack)
+	selected.Resources = ordered
+	return selected, nil
 }
 
 func resourceSelectionFacts(pack Pack, selection ResourceSelection, active bool) []ResourceSelectionStatus {

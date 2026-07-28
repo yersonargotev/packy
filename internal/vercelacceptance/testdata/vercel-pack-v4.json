@@ -20,6 +20,7 @@
       "bindings": [],
       "id": "web-interface-guidelines-rules",
       "kind": "asset",
+      "notices": [],
       "requires": [],
       "source": "references/vercel-web-interface-guidelines-command.md",
       "surface_exclusions": []
@@ -28,6 +29,7 @@
       "bindings": [],
       "id": "writing-guidelines-rules",
       "kind": "asset",
+      "notices": [],
       "requires": [],
       "source": "references/vercel-writing-guidelines-command.md",
       "surface_exclusions": []
@@ -81,6 +83,7 @@
       ],
       "id": "vercel-cli-with-tokens",
       "kind": "skill",
+      "notices": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -709,6 +712,7 @@
       ],
       "id": "vercel-composition-patterns",
       "kind": "skill",
+      "notices": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -773,6 +777,7 @@
       ],
       "id": "vercel-deploy-to-vercel",
       "kind": "skill",
+      "notices": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1413,6 +1418,7 @@
       ],
       "id": "vercel-optimize",
       "kind": "skill",
+      "notices": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1738,6 +1744,7 @@
       ],
       "id": "vercel-react-best-practices",
       "kind": "skill",
+      "notices": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1802,6 +1809,7 @@
       ],
       "id": "vercel-react-native-skills",
       "kind": "skill",
+      "notices": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1866,6 +1874,7 @@
       ],
       "id": "vercel-react-view-transitions",
       "kind": "skill",
+      "notices": [],
       "requires": [],
       "runtime_modes": [
         {
@@ -1930,6 +1939,7 @@
       ],
       "id": "vercel-web-design-guidelines",
       "kind": "skill",
+      "notices": [],
       "requires": [
         "asset:web-interface-guidelines-rules"
       ],
@@ -1987,6 +1997,7 @@
       ],
       "id": "vercel-writing-guidelines",
       "kind": "skill",
+      "notices": [],
       "requires": [
         "asset:writing-guidelines-rules"
       ],

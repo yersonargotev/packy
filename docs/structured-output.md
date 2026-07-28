@@ -1,9 +1,9 @@
 # Structured CLI output
 
-Packy emits versioned JSON when `--json` is present. Classic lifecycle, doctor,
-and Pack show retain `schema_version: 2`. Capability-Pack lifecycle and status
-use `schema_version: 3` so selection intent is explicit rather than being added
-silently to v2.
+Packy emits versioned JSON when `--json` is present. Classic lifecycle and
+doctor retain `schema_version: 2`. Pack show, Capability-Pack lifecycle, and
+status use `schema_version: 4` so portable resource graphs and closure roles are
+introduced without silently changing v1-v3.
 
 | Command | `report` |
 | --- | --- |
@@ -17,7 +17,8 @@ silently to v2.
 | `packy pack status --json` | `pack-status-overview` |
 | targeted `packy pack status PACK --surface SURFACE --json` | `pack-status` |
 
-The exact offline schemas are under `schemas/cli/v2/` and `schemas/cli/v3/`.
+The exact offline schemas are under `schemas/cli/v2/`, `schemas/cli/v3/`, and
+`schemas/cli/v4/`.
 Canonical redacted fixtures use the matching directories under
 `internal/cli/testdata/structured-output/`; repository validation compiles the
 schema selected by each document's `schema_version` and validates both the
@@ -68,8 +69,12 @@ Lifecycle preview publishes the sealed ordered phases and actions, contract,
 compatibility, consent, preservation, blockers, expected readiness, observed
 evidence, pending evidence, evaluated runtime modes, recovery, and exact
 `all`/`custom` resource selection. Apply and failure reports retain that
-redacted plan. Status publishes intent, canonical selected roots, selected or
-unselected resource identities, projection health, compatibility, readiness,
+redacted plan. Status publishes intent, canonical selected roots, and a full
+resource inventory whose role is `root`, `dependency`, `asset`, `notice`, or
+`unselected`, with a deterministic root-to-resource `dependency_chain`.
+Lifecycle preview publishes the selected closure graph, including associated
+notices; show publishes every resource's portable `requires` and `notices`
+edges. Status also publishes projection health, compatibility, readiness,
 evaluated runtime modes, evidence, and pending actions. Each runtime-mode result
 keeps its declared role,
 requirements, authorities, effects, fallback, fail-before-effects policy, and

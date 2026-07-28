@@ -8,6 +8,50 @@ import (
 	"testing"
 )
 
+func TestResourceGraphForExplainsRootDependencyAssetNoticeAndUnselected(t *testing.T) {
+	pack := Pack{Resources: []Resource{
+		{Kind: "skill", ID: "other"},
+		{Kind: "skill", ID: "root", Requires: []string{"command:helper"}, Notices: []string{"notice:terms"}},
+		{Kind: "command", ID: "helper", Requires: []string{"asset:script"}},
+		{Kind: "asset", ID: "script"},
+		{Kind: "notice", ID: "terms"},
+	}}
+	graph := ResourceGraphFor(pack, ResourceSelection{
+		Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "root"}},
+	}, true)
+	got := map[string]ResourceClosureFact{}
+	for _, fact := range graph.Resources {
+		got[fact.Resource.String()] = fact
+	}
+	for id, role := range map[string]ResourceRole{
+		"skill:root": ResourceRoleRoot, "command:helper": ResourceRoleDependency,
+		"asset:script": ResourceRoleAsset, "notice:terms": ResourceRoleNotice,
+		"skill:other": ResourceRoleUnselected,
+	} {
+		if got[id].Role != role {
+			t.Fatalf("%s role = %q, want %q", id, got[id].Role, role)
+		}
+	}
+	if chain := got["asset:script"].DependencyChain; len(chain) != 3 ||
+		chain[0].String() != "skill:root" || chain[1].String() != "command:helper" || chain[2].String() != "asset:script" {
+		t.Fatalf("asset chain = %#v", chain)
+	}
+}
+
+func TestResourceGraphForAllTreatsEveryOperationalResourceAsSelectableRoot(t *testing.T) {
+	pack := Pack{Resources: []Resource{
+		{Kind: "command", ID: "consumer", Requires: []string{"skill:shared"}},
+		{Kind: "skill", ID: "shared"},
+	}}
+	graph := ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true)
+	for _, fact := range graph.Resources {
+		if fact.Resource.Kind != "asset" && fact.Resource.Kind != "notice" &&
+			(fact.Role != ResourceRoleRoot || len(fact.DependencyChain) != 1) {
+			t.Fatalf("operational resource is not selectable root: %#v", fact)
+		}
+	}
+}
+
 func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
 	pack := Pack{ID: "addy", Version: "1.0.0", Requires: Requirements{Capabilities: []string{"z", "a", "a"}},
 		Resources: []Resource{

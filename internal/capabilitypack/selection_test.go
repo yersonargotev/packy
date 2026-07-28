@@ -43,10 +43,9 @@ func TestCustomSelectionProjectsExactlyOneIndependentV4Root(t *testing.T) {
 	}
 }
 
-func TestCustomSelectionRejectsUnsupportedGraphs(t *testing.T) {
+func TestCustomSelectionRejectsLegacyAndNonOperationalRoots(t *testing.T) {
 	for name, pack := range map[string]Pack{
 		"legacy":         {manifestVersion: manifestSchemaV3, ID: "app", Resources: []Resource{{Kind: "skill", ID: "one"}}},
-		"dependency":     {manifestVersion: manifestSchemaV4, ID: "app", Resources: []Resource{{Kind: "skill", ID: "one", Requires: []string{"asset:data"}}, {Kind: "asset", ID: "data"}}},
 		"nonoperational": {manifestVersion: manifestSchemaV4, ID: "app", Resources: []Resource{{Kind: "asset", ID: "one"}}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -62,6 +61,36 @@ func TestCustomSelectionRejectsUnsupportedGraphs(t *testing.T) {
 	selection, err := canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "one"}}})
 	if err != nil || len(selection.Roots) != 1 || selection.Roots[0].String() != "skill:one" {
 		t.Fatalf("duplicate canonical root = %+v err=%v", selection, err)
+	}
+}
+
+func TestCustomSelectionResolvesTransitiveDependenciesAndAssociatedNotices(t *testing.T) {
+	pack := Pack{
+		manifestVersion: manifestSchemaV4,
+		ID:              "app",
+		Resources: []Resource{
+			{Kind: "asset", ID: "data", Notices: []string{"notice:mit"}},
+			{Kind: "instruction", ID: "guide", Requires: []string{"skill:shared"}, Notices: []string{"notice:guide"}},
+			{Kind: "notice", ID: "guide"},
+			{Kind: "notice", ID: "mit"},
+			{Kind: "skill", ID: "shared", Requires: []string{"asset:data"}},
+			{Kind: "skill", ID: "unused", Notices: []string{"notice:unused"}},
+			{Kind: "notice", ID: "unused"},
+		},
+	}
+	selected, err := selectPackResources(pack, ResourceSelection{
+		Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "instruction", ID: "guide"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var identities []string
+	for _, resource := range selected.Resources {
+		identities = append(identities, (ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String())
+	}
+	want := []string{"asset:data", "skill:shared", "instruction:guide", "notice:guide", "notice:mit"}
+	if !reflect.DeepEqual(identities, want) {
+		t.Fatalf("closure = %v want %v", identities, want)
 	}
 }
 

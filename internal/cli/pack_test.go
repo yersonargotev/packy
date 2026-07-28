@@ -649,7 +649,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("selected status failed: %v\n%s", err, status)
 	}
-	for _, want := range []string{"Selection mode: custom", "Resource selection: skill:ask-matt state=selected-root", "state=unselected"} {
+	for _, want := range []string{"Selection mode: custom", "Resource selection: skill:ask-matt role=root dependency_chain=skill:ask-matt", "role=unselected dependency_chain=none"} {
 		if !strings.Contains(status, want) {
 			t.Fatalf("selected status missing %q:\n%s", want, status)
 		}
@@ -668,8 +668,10 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	}
 	var selected, unselected bool
 	for _, resource := range report.Entries[0].ResourceSelections {
-		selected = selected || resource.Resource.String() == "skill:ask-matt" && resource.Selected
-		unselected = unselected || !resource.Selected
+		selected = selected || resource.Resource.String() == "skill:ask-matt" && resource.Selected &&
+			resource.Role == capabilitypack.ResourceRoleRoot && len(resource.DependencyChain) == 1
+		unselected = unselected || !resource.Selected && resource.Role == capabilitypack.ResourceRoleUnselected &&
+			len(resource.DependencyChain) == 0
 	}
 	if !selected || !unselected {
 		t.Fatalf("selected JSON resources = %#v", report.Entries[0].ResourceSelections)
@@ -1525,6 +1527,9 @@ func rewriteManifestAsV4(t *testing.T, manifestPath string) {
 	}
 	for _, raw := range manifest["resources"].([]any) {
 		resource := raw.(map[string]any)
+		if resource["kind"] != "notice" {
+			resource["notices"] = []any{}
+		}
 		switch resource["kind"] {
 		case "instruction", "asset", "notice":
 		default:
