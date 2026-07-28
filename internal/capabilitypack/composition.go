@@ -2,6 +2,7 @@ package capabilitypack
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -56,6 +57,20 @@ func resourceContributor(packID string, resource ResourceIdentity) string {
 
 func contributorBelongsToPack(contributor, packID string) bool {
 	return strings.HasPrefix(contributor, "pack:"+packID+":")
+}
+
+func uniqueRemovedContributor(projectionID string, before, after composition, packID string) (string, bool) {
+	var removed []string
+	remaining := after.contributorSet(projectionID)
+	for _, contributor := range before.contributorSet(projectionID) {
+		if contributorBelongsToPack(contributor, packID) && !slices.Contains(remaining, contributor) {
+			removed = append(removed, contributor)
+		}
+	}
+	if len(removed) != 1 {
+		return "", false
+	}
+	return removed[0], true
 }
 
 // contributorsMatch permits a legacy Pack-only ownership fact to be recognized

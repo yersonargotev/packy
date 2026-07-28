@@ -681,7 +681,8 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 			continue
 		}
 		owner, owned := ownershipByID(state.Ownership, projection.ID)
-		if (active && intent.Active || recovery) && projection.Exists && owned && len(owner.Contributors) == 1 && contributorBelongsToPack(owner.Contributors[0], requested.ID) && owner.Fingerprint == projection.ObservedFingerprint {
+		removedContributor, removed := uniqueRemovedContributor(projection.ID, before, target, requested.ID)
+		if (active && intent.Active || recovery) && projection.Exists && owned && len(owner.Contributors) == 1 && removed && owner.Contributors[0] == removedContributor && owner.Fingerprint == projection.ObservedFingerprint {
 			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
 			continue
 		}
@@ -786,7 +787,8 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 			continue
 		}
 		owner, owned := ownershipByID(state.Ownership, projection.ID)
-		if projection.Exists && owned && len(owner.Contributors) == 1 && contributorBelongsToPack(owner.Contributors[0], requested.ID) && !slices.Contains(contributors, owner.Contributors[0]) && owner.Fingerprint == projection.ObservedFingerprint {
+		removedContributor, removed := uniqueRemovedContributor(projection.ID, before, target, requested.ID)
+		if projection.Exists && owned && len(owner.Contributors) == 1 && removed && owner.Contributors[0] == removedContributor && owner.Fingerprint == projection.ObservedFingerprint {
 			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
 			continue
 		}

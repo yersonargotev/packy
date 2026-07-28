@@ -388,7 +388,7 @@ func deriveResourceStatuses(packID string, graph ResourceGraph, projections []Pr
 		if fact.Role == ResourceRoleUnselected {
 			continue
 		}
-		contributor := "pack:" + packID + ":" + fact.Resource.String()
+		contributor := resourceContributor(packID, fact.Resource)
 		status := ResourceStatus{Resource: fact.Resource, Role: fact.Role, DependencyChain: append([]ResourceIdentity{}, fact.DependencyChain...)}
 		for _, projection := range projections {
 			if containsString(projection.Contributors, contributor) {

@@ -214,6 +214,48 @@ func TestDeactivatePersistsInactiveIntentBeforeVerifiedLastContributorDeletion(t
 	}
 }
 
+func TestDeactivatePreservesProjectionWithoutExactResourceContributor(t *testing.T) {
+	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "guide"}}}
+	for _, contributor := range []string{"pack:app:skill:other", "pack:app:not-a-resource"} {
+		t.Run(contributor, func(t *testing.T) {
+			state := ActivationState{
+				Intent:    ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4},
+				Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{contributor}, Fingerprint: "verified"}},
+			}
+			facade, adapter, store := deactivationFixture([]Pack{pack}, state, deletionObservation("host-1", "verified", true))
+
+			plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Phases()) != 0 || len(plan.PendingHumanActions()) == 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+				t.Fatalf("wrong resource owner authorized cleanup: phases=%+v pending=%v actions=%v saves=%d", plan.Phases(), plan.PendingHumanActions(), adapter.actions, len(store.saves))
+			}
+		})
+	}
+}
+
+func TestPartialDeactivatePreservesProjectionWithoutExactRemovedResourceContributor(t *testing.T) {
+	pack := incrementalSelectionPack()
+	state := incrementalSelectionState("skill:one", "skill:two")
+	state.Ownership = []ProjectionOwnership{{ID: "skill:one", Contributors: []string{"pack:app:skill:two"}, Fingerprint: "verified"}}
+	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{
+		ID:                  "skill:one",
+		Exists:              true,
+		ObservedFingerprint: "verified",
+		Action:              ProjectionAction{ID: "skill:one", Description: "delete skill one"},
+	}}}
+	facade, adapter, store := deactivationFixture([]Pack{pack}, state, observation)
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "one"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Phases()) != 0 || len(plan.PendingHumanActions()) == 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("wrong partial resource owner authorized cleanup: phases=%+v pending=%v actions=%v saves=%d", plan.Phases(), plan.PendingHumanActions(), adapter.actions, len(store.saves))
+	}
+}
+
 func TestDeactivateRejectsActiveDependentWithoutCascade(t *testing.T) {
 	packs := []Pack{
 		{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Provides: []string{"cap:app"}},
