@@ -27,6 +27,12 @@ var structuredOutputV3Fixtures = map[string]string{
 	"pack-status.json":            "pack-status.schema.json",
 }
 
+var structuredOutputV4Fixtures = map[string]string{
+	"pack-show.json":              "pack-show.schema.json",
+	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
+	"pack-status.json":            "pack-status.schema.json",
+}
+
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -60,6 +66,18 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		}
 		if err := validateCanonicalOperatorOrder(fixture); err != nil {
 			t.Fatalf("v3 fixture %s canonical order: %v", fixtureName, err)
+		}
+	}
+	for fixtureName, schemaName := range structuredOutputV4Fixtures {
+		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v4", fixtureName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
+			t.Fatalf("v4 fixture %s: %v", fixtureName, err)
+		}
+		if err := validateCanonicalOperatorOrder(fixture); err != nil {
+			t.Fatalf("v4 fixture %s canonical order: %v", fixtureName, err)
 		}
 	}
 

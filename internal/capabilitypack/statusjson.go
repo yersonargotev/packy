@@ -2,7 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 3
+const StatusSchemaVersion = 4
 
 type JSONOptionalBool struct {
 	State string `json:"state"`
@@ -54,8 +54,10 @@ type JSONProjectionStatus struct {
 }
 
 type JSONResourceSelectionStatus struct {
-	Resource ResourceIdentity `json:"resource"`
-	Selected bool             `json:"selected"`
+	Resource        ResourceIdentity   `json:"resource"`
+	Selected        bool               `json:"selected"`
+	Role            ResourceRole       `json:"role"`
+	DependencyChain []ResourceIdentity `json:"dependency_chain"`
 }
 
 type JSONStatusEntry struct {
@@ -129,7 +131,10 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 func jsonResourceSelectionDetails(values []ResourceSelectionStatus) []JSONResourceSelectionStatus {
 	result := make([]JSONResourceSelectionStatus, 0, len(values))
 	for _, value := range values {
-		result = append(result, JSONResourceSelectionStatus{Resource: value.Resource, Selected: value.Selected})
+		result = append(result, JSONResourceSelectionStatus{
+			Resource: value.Resource, Selected: value.Selected, Role: value.Role,
+			DependencyChain: append([]ResourceIdentity{}, value.DependencyChain...),
+		})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Resource.String() < result[j].Resource.String() })
 	return result

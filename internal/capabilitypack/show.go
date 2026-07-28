@@ -40,6 +40,7 @@ type ShowReport struct {
 	Detail                CatalogDetail
 	SourceIdentity        PackSourceIdentity
 	ResourceCounts        ResourceCounts
+	ResourceGraph         ResourceGraph
 	LifecycleAvailability ShowLifecycleAvailability
 	Surfaces              []ShowSurfaceReport
 }
@@ -80,6 +81,7 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 			Limitation:    packSourceIdentityLimitation,
 		},
 		ResourceCounts: pack.ResourceCounts(),
+		ResourceGraph:  ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
 		LifecycleAvailability: ShowLifecycleAvailability{
 			FreshActivationAvailable: !detail.Withdrawn,
 			CatalogUpdateAvailable:   !detail.Withdrawn && len(detail.UpdateRoutes) > 0,

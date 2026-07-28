@@ -653,14 +653,8 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 			return err
 		}
 		for _, selection := range entry.ResourceSelections {
-			state := "unselected"
-			if selection.Selected {
-				state = "selected-root"
-				if entry.Intent.Selection.Mode == capabilitypack.SelectionAll {
-					state = "selected-all"
-				}
-			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Resource selection: %s state=%s\n", selection.Resource, state); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Resource selection: %s role=%s dependency_chain=%s\n",
+				selection.Resource, selection.Role, renderIdentityChain(selection.DependencyChain)); err != nil {
 				return err
 			}
 		}
@@ -686,6 +680,17 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		return err
 	}
 	return renderRuntimeModes(cmd, entry.RuntimeModes)
+}
+
+func renderIdentityChain(chain []capabilitypack.ResourceIdentity) string {
+	if len(chain) == 0 {
+		return "none"
+	}
+	values := make([]string, 0, len(chain))
+	for _, identity := range chain {
+		values = append(values, identity.String())
+	}
+	return strings.Join(values, " -> ")
 }
 
 func renderRuntimeModes(cmd *cobra.Command, modes []capabilitypack.RuntimeModeResult) error {

@@ -81,40 +81,160 @@ func selectPackResources(pack Pack, selection ResourceSelection) (Pack, error) {
 	if err != nil {
 		return Pack{}, err
 	}
-	if selection.Mode == SelectionAll {
+	if selection.Mode == SelectionAll && pack.manifestVersion != manifestSchemaV4 {
 		return clonePack(pack), nil
 	}
 	if pack.manifestVersion != manifestSchemaV4 {
 		return Pack{}, fmt.Errorf("custom resource selection requires manifest schema_version 4")
 	}
-	root := selection.Roots[0]
-	for _, resource := range pack.Resources {
-		if resource.Kind != root.Kind || resource.ID != root.ID {
-			continue
-		}
-		if resource.Kind == "asset" || resource.Kind == "notice" {
-			return Pack{}, fmt.Errorf("custom resource selection root %q is not operational", root.String())
-		}
-		if len(resource.Requires) != 0 {
-			return Pack{}, fmt.Errorf("custom resource selection root %q has resource dependencies", root.String())
-		}
-		selected := clonePack(pack)
-		selected.Resources = []Resource{resource}
-		return selected, nil
+	roots, err := resourceSelectionRoots(pack, selection)
+	if err != nil {
+		return Pack{}, err
 	}
-	return Pack{}, fmt.Errorf("custom resource selection root %q does not exist in pack %q", root.String(), pack.ID)
+	resources, _, err := resolveResourceClosure(pack, roots)
+	if err != nil {
+		return Pack{}, err
+	}
+	selected := clonePack(pack)
+	selected.Resources = resources
+	return selected, nil
+}
+
+func resourceSelectionRoots(pack Pack, selection ResourceSelection) ([]ResourceIdentity, error) {
+	resources := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	if selection.Mode == SelectionAll {
+		roots := make([]ResourceIdentity, 0, len(pack.Resources))
+		for _, resource := range pack.Resources {
+			if resource.Kind != "asset" && resource.Kind != "notice" {
+				roots = append(roots, ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
+			}
+		}
+		sort.Slice(roots, func(i, j int) bool { return roots[i].String() < roots[j].String() })
+		return roots, nil
+	}
+	root := selection.Roots[0]
+	resource, ok := resources[root.String()]
+	if !ok {
+		return nil, fmt.Errorf("custom resource selection root %q does not exist in pack %q", root.String(), pack.ID)
+	}
+	if resource.Kind == "asset" || resource.Kind == "notice" {
+		return nil, fmt.Errorf("custom resource selection root %q is not operational", root.String())
+	}
+	return []ResourceIdentity{root}, nil
+}
+
+func resolveResourceClosure(pack Pack, roots []ResourceIdentity) ([]Resource, map[string][]ResourceIdentity, error) {
+	resources := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	chains := map[string][]ResourceIdentity{}
+	rootIDs := map[string]bool{}
+	for _, root := range roots {
+		rootIDs[root.String()] = true
+	}
+	var visit func(string, []ResourceIdentity) error
+	visit = func(identity string, chain []ResourceIdentity) error {
+		resource, ok := resources[identity]
+		if !ok {
+			return fmt.Errorf("custom resource selection root or dependency %q does not exist in pack %q", identity, pack.ID)
+		}
+		if rootIDs[identity] && len(chain) > 0 {
+			return nil
+		}
+		candidate := append(append([]ResourceIdentity{}, chain...), ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
+		if prior, exists := chains[identity]; exists && !identityChainLess(candidate, prior) {
+			return nil
+		}
+		chains[identity] = candidate
+		for _, dependency := range resource.Requires {
+			if err := visit(dependency, candidate); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, root := range roots {
+		if err := visit(root.String(), nil); err != nil {
+			return nil, nil, err
+		}
+	}
+	ordered := make([]Resource, 0, len(chains))
+	emitted := map[string]bool{}
+	for len(emitted) < len(chains) {
+		ready := make([]string, 0)
+		for identity := range chains {
+			if emitted[identity] {
+				continue
+			}
+			resource := resources[identity]
+			ok := true
+			for _, dependency := range resource.Requires {
+				if _, selected := chains[dependency]; selected && !emitted[dependency] {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				ready = append(ready, identity)
+			}
+		}
+		sort.Strings(ready)
+		if len(ready) == 0 {
+			return nil, nil, fmt.Errorf("custom resource selection dependency cycle")
+		}
+		identity := ready[0]
+		ordered = append(ordered, resources[identity])
+		emitted[identity] = true
+	}
+	noticeChains := map[string][]ResourceIdentity{}
+	for identity, chain := range chains {
+		for _, notice := range resources[identity].Notices {
+			resource, ok := resources[notice]
+			if !ok {
+				return nil, nil, fmt.Errorf("resource %q notice %q does not exist in pack %q", identity, notice, pack.ID)
+			}
+			candidate := append(append([]ResourceIdentity{}, chain...), ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
+			if prior, exists := noticeChains[notice]; !exists || identityChainLess(candidate, prior) {
+				noticeChains[notice] = candidate
+			}
+		}
+	}
+	noticeIDs := make([]string, 0, len(noticeChains))
+	for identity := range noticeChains {
+		noticeIDs = append(noticeIDs, identity)
+	}
+	sort.Strings(noticeIDs)
+	for _, identity := range noticeIDs {
+		ordered = append(ordered, resources[identity])
+		chains[identity] = noticeChains[identity]
+	}
+	return ordered, chains, nil
 }
 
 func resourceSelectionFacts(pack Pack, selection ResourceSelection, active bool) []ResourceSelectionStatus {
 	selection, _ = canonicalSelection(selection)
 	selected := map[string]bool{}
-	if selection.Mode == SelectionCustom {
-		selected[selection.Roots[0].String()] = true
+	if active {
+		if selection.Mode == SelectionAll && pack.manifestVersion != manifestSchemaV4 {
+			for _, resource := range pack.Resources {
+				selected[resource.Kind+":"+resource.ID] = true
+			}
+		} else if roots, err := resourceSelectionRoots(pack, selection); err == nil {
+			if _, chains, err := resolveResourceClosure(pack, roots); err == nil {
+				for identity := range chains {
+					selected[identity] = true
+				}
+			}
+		}
 	}
 	result := make([]ResourceSelectionStatus, 0, len(pack.Resources))
 	for _, resource := range pack.Resources {
 		identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
-		result = append(result, ResourceSelectionStatus{Resource: identity, Selected: active && (selection.Mode == SelectionAll || selected[identity.String()])})
+		result = append(result, ResourceSelectionStatus{Resource: identity, Selected: selected[identity.String()]})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Resource.String() < result[j].Resource.String() })
 	return result

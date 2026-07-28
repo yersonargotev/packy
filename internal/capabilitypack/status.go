@@ -52,8 +52,10 @@ type ProjectionSummary struct {
 }
 
 type ResourceSelectionStatus struct {
-	Resource ResourceIdentity
-	Selected bool
+	Resource        ResourceIdentity
+	Selected        bool
+	Role            ResourceRole
+	DependencyChain []ResourceIdentity
 }
 
 // ReadinessObservation is fresh host-owned evidence. Observed distinguishes a
@@ -233,6 +235,20 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 		entry.Contract = LifecycleContractFor(pack, surface, nil)
 	}
 	entry.ResourceSelections = resourceSelectionFacts(evidencePack, selection, entry.Intent.Active)
+	graph := ResourceGraphFor(evidencePack, selection, true)
+	facts := make(map[string]ResourceClosureFact, len(graph.Resources))
+	for _, fact := range graph.Resources {
+		facts[fact.Resource.String()] = fact
+	}
+	for i := range entry.ResourceSelections {
+		fact := facts[entry.ResourceSelections[i].Resource.String()]
+		entry.ResourceSelections[i].Role = fact.Role
+		entry.ResourceSelections[i].DependencyChain = append([]ResourceIdentity{}, fact.DependencyChain...)
+		if !entry.Intent.Active {
+			entry.ResourceSelections[i].Role = ResourceRoleUnselected
+			entry.ResourceSelections[i].DependencyChain = []ResourceIdentity{}
+		}
+	}
 	entry.LatestAttempt = latestAttemptStatus(state, pack.ID, surface)
 	surfaceComposition, err := f.compose(evidencePack, state, surface, true)
 	if err != nil {

@@ -46,7 +46,7 @@ func TestPackHelpDocumentsClaudeAndStructuredOutput(t *testing.T) {
 	}
 }
 
-func TestPackShowJSONV2PublishesSurfaceContracts(t *testing.T) {
+func TestPackShowJSONV4PublishesSurfaceContracts(t *testing.T) {
 	repoRoot, _ := filepath.Abs(filepath.Join("..", ".."))
 	home := t.TempDir()
 	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}}
@@ -58,7 +58,7 @@ func TestPackShowJSONV2PublishesSurfaceContracts(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &report); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, out)
 	}
-	if report.SchemaVersion != 2 || report.Report != "pack-show" || report.ID != "engram" || len(report.SurfaceContracts) != 3 || report.Surfaces == nil || report.Provides == nil || report.Requires.Capabilities == nil || report.Requires.Tools == nil || report.Conflicts == nil {
+	if report.SchemaVersion != 4 || report.Report != "pack-show" || report.ID != "engram" || len(report.SurfaceContracts) != 3 || report.Surfaces == nil || report.Provides == nil || report.Requires.Capabilities == nil || report.Requires.Tools == nil || report.Conflicts == nil || report.ResourceGraph.Resources == nil {
 		t.Fatalf("show contract = %#v", report)
 	}
 	for _, surface := range report.SurfaceContracts {

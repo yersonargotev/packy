@@ -56,6 +56,7 @@ type Resource struct {
 	Tools             []string
 	Permissions       []string
 	Requires          []string
+	Notices           []string
 	Bindings          []Binding
 	SurfaceExclusions []SurfaceExclusion
 	Arguments         CommandArguments
@@ -599,6 +600,7 @@ func clonePack(pack Pack) Pack {
 		pack.Resources[i].Tools = append([]string(nil), pack.Resources[i].Tools...)
 		pack.Resources[i].Permissions = append([]string(nil), pack.Resources[i].Permissions...)
 		pack.Resources[i].Requires = append([]string(nil), pack.Resources[i].Requires...)
+		pack.Resources[i].Notices = append([]string(nil), pack.Resources[i].Notices...)
 		pack.Resources[i].Bindings = append([]Binding(nil), pack.Resources[i].Bindings...)
 		pack.Resources[i].SurfaceExclusions = append([]SurfaceExclusion(nil), pack.Resources[i].SurfaceExclusions...)
 		for j := range pack.Resources[i].Bindings {
@@ -834,6 +836,9 @@ func EncodePortableManifestV4(pack Pack) ([]byte, error) {
 			"kind": resource.Kind, "id": resource.ID, "requires": resource.Requires,
 			"bindings": resource.Bindings, "surface_exclusions": resource.SurfaceExclusions,
 		}
+		if resource.Kind != "notice" {
+			wire["notices"] = resource.Notices
+		}
 		switch resource.Kind {
 		case "skill", "instruction", "asset":
 			wire["source"] = resource.Source
@@ -1002,6 +1007,9 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 	if err := validateRuntimeModeWirePresence(data, kind == "skill" || kind == "agent" || kind == "command"); err != nil {
 		return Resource{}, err
 	}
+	if err := validateNoticeWirePresence(data, kind == "notice"); err != nil {
+		return Resource{}, err
+	}
 	type resourceWireV4 struct {
 		Kind              string             `json:"kind"`
 		ID                string             `json:"id"`
@@ -1009,13 +1017,14 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 		Bindings          []Binding          `json:"bindings"`
 		SurfaceExclusions []SurfaceExclusion `json:"surface_exclusions"`
 		RuntimeModes      []RuntimeMode      `json:"runtime_modes"`
+		Notices           []string           `json:"notices"`
 	}
 	type sourced struct {
 		resourceWireV4
 		Source string `json:"source"`
 	}
 	toResource := func(raw resourceWireV4) Resource {
-		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes}
+		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Notices: raw.Notices, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes}
 	}
 	switch kind {
 	case "skill", "instruction", "asset":
@@ -1091,6 +1100,24 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 	default:
 		return Resource{}, fmt.Errorf("unsupported resource kind %q", kind)
 	}
+}
+
+func validateNoticeWirePresence(data []byte, notice bool) error {
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	value, present := wire["notices"]
+	if notice {
+		if present {
+			return fmt.Errorf("notices is forbidden for notice resources")
+		}
+		return nil
+	}
+	if !present || bytes.Equal(value, []byte("null")) {
+		return fmt.Errorf("notices is a required non-null array")
+	}
+	return nil
 }
 
 func validateRuntimeModeWirePresence(data []byte, executable bool) error {
@@ -1452,6 +1479,24 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 					if err := validateRuntimeModes(resource); err != nil {
 						return fmt.Errorf("resource %q: %w", identity, err)
 					}
+					if resource.Kind == "notice" {
+						if resource.Notices != nil {
+							return fmt.Errorf("resource %q: notices is forbidden for notice resources", identity)
+						}
+					} else {
+						if resource.Notices == nil {
+							return fmt.Errorf("resource %q: notices is a required non-null array", identity)
+						}
+						if !sort.StringsAreSorted(resource.Notices) || hasDuplicateStrings(resource.Notices) {
+							return fmt.Errorf("resource %q: notices must be a sorted set of canonical notice identities", identity)
+						}
+						for _, notice := range resource.Notices {
+							parsed, err := ParseResourceIdentity(notice)
+							if err != nil || parsed.Kind != "notice" {
+								return fmt.Errorf("resource %q: notices identity %q must be canonical notice:<id>", identity, notice)
+							}
+						}
+					}
 				}
 				continue
 			}
@@ -1484,8 +1529,18 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 		if !sort.StringsAreSorted(identities) {
 			return fmt.Errorf("resources must be sorted by kind and id")
 		}
-		if err := validateDependencies(pack.Resources, seenResources); err != nil {
+		if err := validateDependencies(pack.Resources, seenResources, version); err != nil {
 			return err
+		}
+		if version == manifestSchemaV4 {
+			for _, resource := range pack.Resources {
+				identity := resource.Kind + ":" + resource.ID
+				for _, notice := range resource.Notices {
+					if !seenResources[notice] {
+						return fmt.Errorf("resource %q notice %q does not exist", identity, notice)
+					}
+				}
+			}
 		}
 		contract := pack.Contract
 		if version == manifestSchemaV4 {
@@ -2150,7 +2205,7 @@ func validateBindingsForSurfaces(pack Pack) error {
 	return nil
 }
 
-func validateDependencies(resources []Resource, identities map[string]bool) error {
+func validateDependencies(resources []Resource, identities map[string]bool, version int) error {
 	dependencies := make(map[string][]string, len(resources))
 	for _, resource := range resources {
 		identity := resource.Kind + ":" + resource.ID
@@ -2169,7 +2224,7 @@ func validateDependencies(resources []Resource, identities map[string]bool) erro
 				"asset":   {"asset": true},
 				"notice":  {},
 			}
-			if !allowed[resource.Kind][kind] {
+			if version != manifestSchemaV4 && !allowed[resource.Kind][kind] {
 				return fmt.Errorf("resource %q may not depend on %s", identity, kind)
 			}
 		}

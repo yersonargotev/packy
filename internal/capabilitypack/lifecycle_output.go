@@ -1,6 +1,7 @@
 package capabilitypack
 
 import (
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -8,7 +9,42 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 3
+const LifecycleJSONSchemaVersion = 4
+
+type ResourceRole string
+
+const (
+	ResourceRoleRoot       ResourceRole = "root"
+	ResourceRoleDependency ResourceRole = "dependency"
+	ResourceRoleAsset      ResourceRole = "asset"
+	ResourceRoleNotice     ResourceRole = "notice"
+	ResourceRoleUnselected ResourceRole = "unselected"
+)
+
+// ResourceClosureFact is the canonical portable explanation of why a resource
+// participates in an operation. DependencyChain runs from an explicit root to
+// Resource and is empty only for unselected inventory.
+type ResourceClosureFact struct {
+	Resource        ResourceIdentity   `json:"resource"`
+	Role            ResourceRole       `json:"role"`
+	DependencyChain []ResourceIdentity `json:"dependency_chain"`
+	Requires        []ResourceIdentity `json:"requires"`
+	Notices         []ResourceIdentity `json:"notices"`
+}
+
+type ResourceGraph struct {
+	Resources []ResourceClosureFact `json:"resources"`
+}
+
+func (graph ResourceGraph) MarshalJSON() ([]byte, error) {
+	resources := graph.Resources
+	if resources == nil {
+		resources = []ResourceClosureFact{}
+	}
+	return json.Marshal(struct {
+		Resources []ResourceClosureFact `json:"resources"`
+	}{Resources: resources})
+}
 
 // LifecycleContract is the canonical, host-neutral description rendered by
 // every lifecycle entry point. Renderers must not reconstruct these facts
@@ -24,6 +60,7 @@ type LifecycleContract struct {
 	PromptAuthorities     []string             `json:"prompt_authorities"`
 	Aliases               []SurfaceAlias       `json:"aliases"`
 	AuthorityDisclosure   string               `json:"authority_disclosure"`
+	ResourceGraph         ResourceGraph        `json:"resource_graph"`
 }
 
 // LifecycleExclusion is the rendered union of portable source exclusions and
@@ -66,6 +103,7 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 		Counts: pack.ResourceCounts(), DependencyClosure: []string{}, Bindings: []LifecycleBinding{},
 		Exclusions: []LifecycleExclusion{}, OptionalModes: []OptionalMode{}, PromptAuthorities: []string{}, Aliases: []SurfaceAlias{},
 		AuthorityDisclosure: "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
+		ResourceGraph:       ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
 	}
 	if !contract.CompatibilityObserved {
 		contract.Compatibility = ""
@@ -136,6 +174,83 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 		return contract.Aliases[i].Name < contract.Aliases[j].Name
 	})
 	return contract
+}
+
+// ResourceGraphFor returns deterministic graph facts. When inventory is true,
+// resources outside a custom closure are retained as unselected facts.
+func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) ResourceGraph {
+	selection, err := canonicalSelection(selection)
+	if err != nil {
+		return ResourceGraph{Resources: []ResourceClosureFact{}}
+	}
+	chains := map[string][]ResourceIdentity{}
+	ordered := pack.Resources
+	if selection.Mode == SelectionAll && pack.manifestVersion != manifestSchemaV4 {
+		for _, resource := range pack.Resources {
+			identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+			chains[identity.String()] = []ResourceIdentity{identity}
+		}
+	} else {
+		roots, err := resourceSelectionRoots(pack, selection)
+		if err != nil {
+			return ResourceGraph{Resources: []ResourceClosureFact{}}
+		}
+		ordered, chains, err = resolveResourceClosure(pack, roots)
+		if err != nil {
+			return ResourceGraph{Resources: []ResourceClosureFact{}}
+		}
+	}
+	source := ordered
+	if inventory {
+		source = pack.Resources
+	}
+	facts := make([]ResourceClosureFact, 0, len(source))
+	for _, resource := range source {
+		identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+		chain, selected := chains[identity.String()]
+		if !selected && !inventory {
+			continue
+		}
+		role := ResourceRoleDependency
+		switch {
+		case !selected:
+			role = ResourceRoleUnselected
+		case resource.Kind == "asset":
+			role = ResourceRoleAsset
+		case resource.Kind == "notice":
+			role = ResourceRoleNotice
+		case len(chain) == 1:
+			role = ResourceRoleRoot
+		}
+		facts = append(facts, ResourceClosureFact{
+			Resource: identity, Role: role, DependencyChain: append([]ResourceIdentity{}, chain...),
+			Requires: resourceIdentities(resource.Requires), Notices: resourceIdentities(resource.Notices),
+		})
+	}
+	if inventory {
+		sort.Slice(facts, func(i, j int) bool { return facts[i].Resource.String() < facts[j].Resource.String() })
+	}
+	return ResourceGraph{Resources: facts}
+}
+
+func resourceIdentities(values []string) []ResourceIdentity {
+	result := make([]ResourceIdentity, 0, len(values))
+	for _, value := range values {
+		if identity, err := ParseResourceIdentity(value); err == nil {
+			result = append(result, identity)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].String() < result[j].String() })
+	return result
+}
+
+func identityChainLess(a, b []ResourceIdentity) bool {
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i].String() != b[i].String() {
+			return a[i].String() < b[i].String()
+		}
+	}
+	return len(a) < len(b)
 }
 
 func compatibilityFor(pack Pack, surface Surface) Compatibility {
@@ -209,6 +324,7 @@ func compatibilityFor(pack Pack, surface Surface) Compatibility {
 
 func (p ReconciliationPlan) LifecycleContract() LifecycleContract {
 	contract := LifecycleContractFor(p.pack, p.surface, p.aliases)
+	contract.ResourceGraph = ResourceGraphFor(p.pack, p.selection, false)
 	if contract.CompatibilityObserved && len(p.blockers) > 0 {
 		contract.Compatibility = CompatibilityBlocked
 	}
@@ -247,6 +363,7 @@ type JSONLifecyclePlan struct {
 	Surface             Surface                    `json:"surface"`
 	IntentRevision      int                        `json:"intent_revision"`
 	Selection           ResourceSelection          `json:"selection"`
+	ResourceGraph       ResourceGraph              `json:"resource_graph"`
 	Contract            LifecycleContract          `json:"contract"`
 	Aliases             []SurfaceAlias             `json:"aliases"`
 	Contributors        map[string][]string        `json:"contributors"`
@@ -315,7 +432,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	selection, _ := canonicalSelection(p.selection)
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
-		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, Contract: contract, Aliases: contract.Aliases,
+		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false), Contract: contract, Aliases: contract.Aliases,
 		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
 		RuntimeModes: sortedRuntimeModeResults(p.runtimeModeResults),

@@ -9,7 +9,7 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-const packShowJSONSchemaVersion = 2
+const packShowJSONSchemaVersion = 4
 
 type packShowSourceIdentityJSON struct {
 	PackID        string `json:"pack_id"`
@@ -67,6 +67,7 @@ type packShowJSON struct {
 	ResourceCounts        capabilitypack.ResourceCounts     `json:"resource_counts"`
 	LifecycleAvailability packShowLifecycleAvailabilityJSON `json:"lifecycle_availability"`
 	SurfaceContracts      []packShowSurfaceJSON             `json:"surface_contracts"`
+	ResourceGraph         capabilitypack.ResourceGraph      `json:"resource_graph"`
 }
 
 func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
@@ -110,6 +111,7 @@ func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 			AutomaticDowngrade:       report.LifecycleAvailability.AutomaticDowngrade,
 		},
 		SurfaceContracts: contracts,
+		ResourceGraph:    report.ResourceGraph,
 	}
 }
 
@@ -151,6 +153,12 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 			if _, err := fmt.Fprintf(w, "Update route: %s -> %s on %s\n", route.FromVersion, route.ToVersion, joinSurfaces(route.ExistingSurfaces)); err != nil {
 				return err
 			}
+		}
+	}
+	for _, fact := range document.ResourceGraph.Resources {
+		if _, err := fmt.Fprintf(w, "Resource: %s role=%s requires=%s notices=%s\n",
+			fact.Resource, fact.Role, renderIdentityChain(fact.Requires), renderIdentityChain(fact.Notices)); err != nil {
+			return err
 		}
 	}
 	for _, surface := range report.Surfaces {
