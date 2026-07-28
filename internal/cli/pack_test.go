@@ -677,13 +677,29 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		t.Fatalf("selected JSON resources = %#v", report.Entries[0].ResourceSelections)
 	}
 
-	beforeRejectedChange := snapshotTree(t, home)
-	_, err = executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "instruction:matty-guidance")
-	if err == nil || !strings.Contains(err.Error(), "different resource selection") {
-		t.Fatalf("selection change error = %v", err)
+	additive, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "instruction:matty-guidance")
+	if err != nil {
+		t.Fatalf("additive selection failed: %v\n%s", err, additive)
 	}
-	if got := snapshotTree(t, home); got != beforeRejectedChange {
-		t.Fatalf("rejected selection change mutated sandbox HOME:\n%s", got)
+	if _, err := os.Stat(filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
+		t.Fatalf("additive instruction was not projected: %v", err)
+	}
+	state = readFileString(t, filepath.Join(home, ".packy", "packs.json"))
+	for _, want := range []string{`"id": "ask-matt"`, `"id": "matty-guidance"`} {
+		if !strings.Contains(state, want) {
+			t.Fatalf("additive selection missing %q:\n%s", want, state)
+		}
+	}
+
+	deactivated, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
+	if err != nil {
+		t.Fatalf("resource-scoped deactivation failed: %v\n%s", err, deactivated)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "ask-matt")); !os.IsNotExist(err) {
+		t.Fatalf("removed skill projection remains: %v\n%s", err, deactivated)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
+		t.Fatalf("remaining instruction projection was removed: %v", err)
 	}
 }
 

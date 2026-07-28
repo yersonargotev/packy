@@ -24,6 +24,138 @@ func deletionObservation(revision, observed string, exists bool) SurfaceInspecti
 	}}}
 }
 
+func incrementalSelectionPack() Pack {
+	return Pack{
+		manifestVersion: manifestSchemaV4,
+		ID:              "app",
+		Version:         "1.0.0",
+		Surfaces:        []Surface{SurfaceCodex},
+		Resources: []Resource{
+			{Kind: "skill", ID: "one", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "one", Mode: "native"}}},
+			{Kind: "skill", ID: "two", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "two", Mode: "native"}}},
+			{Kind: "skill", ID: "shared", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "shared", Mode: "native"}}},
+		},
+	}
+}
+
+func incrementalSelectionState(roots ...string) ActivationState {
+	identities := make([]ResourceIdentity, 0, len(roots))
+	for _, root := range roots {
+		identity, err := ParseResourceIdentity(root)
+		if err != nil {
+			panic(err)
+		}
+		identities = append(identities, identity)
+	}
+	intent := ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4, Selection: ResourceSelection{Mode: SelectionCustom, Roots: identities}}
+	return ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}
+}
+
+func TestDeactivateResourceRemovesOneCustomRootAndPersistsSelection(t *testing.T) {
+	pack := incrementalSelectionPack()
+	facade, adapter, store := deactivationFixture([]Pack{pack}, incrementalSelectionState("skill:one", "skill:two"), SurfaceInspection{Revision: "host"})
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "one"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.partialSelection || plan.NoOp() || len(plan.Blockers()) != 0 || len(plan.Phases()) != 0 {
+		t.Fatalf("partial plan = partial %v noop %v blockers %+v phases %+v", plan.partialSelection, plan.NoOp(), plan.Blockers(), plan.Phases())
+	}
+	if got := plan.Selection().Roots; len(got) != 1 || got[0].String() != "skill:two" {
+		t.Fatalf("remaining selection = %+v", got)
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !store.state.Intent.Active || len(store.state.Intent.Selection.Roots) != 1 || store.state.Intent.Selection.Roots[0].String() != "skill:two" {
+		t.Fatalf("persisted partial deactivation = %+v", store.state.Intent)
+	}
+	if len(adapter.actions) != 0 {
+		t.Fatalf("intent-only selection change applied projection actions: %+v", adapter.actions)
+	}
+}
+
+func TestDeactivateResourceRetainsSharedDependencyAndReportsRemainingRoot(t *testing.T) {
+	pack := incrementalSelectionPack()
+	facade, _, _ := deactivationFixture([]Pack{pack}, incrementalSelectionState("skill:one", "skill:two"), SurfaceInspection{Revision: "host"})
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "one"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := plan.JSONReport(false).ResourceGraph.Resources
+	var shared, remaining bool
+	for _, resource := range graph {
+		if resource.Resource.String() == "skill:shared" {
+			shared = resource.Role == ResourceRoleDependency && len(resource.DependencyChain) > 0 && resource.DependencyChain[0].String() == "skill:two"
+		}
+		if resource.Resource.String() == "skill:two" {
+			remaining = resource.Role == ResourceRoleRoot
+		}
+	}
+	if !shared || !remaining {
+		t.Fatalf("remaining resource graph = %+v", graph)
+	}
+}
+
+func TestDeactivateResourceRejectsDerivedDependencyWithConsumerGuidance(t *testing.T) {
+	pack := incrementalSelectionPack()
+	facade, adapter, store := deactivationFixture([]Pack{pack}, incrementalSelectionState("skill:one", "skill:two"), SurfaceInspection{Revision: "host"})
+
+	_, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "shared"}}})
+	if err == nil || !strings.Contains(err.Error(), "dependency-only") || !strings.Contains(err.Error(), "skill:one") || !strings.Contains(err.Error(), "skill:two") {
+		t.Fatalf("derived dependency error = %v", err)
+	}
+	if adapter.inspectCalls != 0 || len(store.saves) != 0 {
+		t.Fatalf("invalid resource removal caused effects: inspect=%d saves=%d", adapter.inspectCalls, len(store.saves))
+	}
+}
+
+func TestDeactivateFinalCustomRootDeactivatesPack(t *testing.T) {
+	pack := incrementalSelectionPack()
+	facade, _, store := deactivationFixture([]Pack{pack}, incrementalSelectionState("skill:one"), SurfaceInspection{Revision: "host"})
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "one"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.partialSelection {
+		t.Fatal("final root was treated as partial deactivation")
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if store.state.Intent.Active {
+		t.Fatalf("final-root deactivation left Pack active: %+v", store.state.Intent)
+	}
+}
+
+func TestDeactivateResourceFromAllDisclosesCustomSelection(t *testing.T) {
+	pack := incrementalSelectionPack()
+	state := incrementalSelectionState("skill:one")
+	state.Intent.Selection = ResourceSelection{Mode: SelectionAll}
+	state.Intents[0].Selection = ResourceSelection{Mode: SelectionAll}
+	facade, _, store := deactivationFixture([]Pack{pack}, state, SurfaceInspection{Revision: "host"})
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "one"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Selection().Roots; len(got) != 2 || got[0].String() != "skill:shared" || got[1].String() != "skill:two" {
+		t.Fatalf("all-to-custom selection = %+v", got)
+	}
+	if migrations := plan.JSONReport(false).Migrations; len(migrations) != 1 || !strings.Contains(migrations[0], "all to custom") {
+		t.Fatalf("all-to-custom migrations = %+v", migrations)
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !store.state.Intent.Active || store.state.Intent.Selection.Mode != SelectionCustom || len(store.state.Intent.Selection.Roots) != 2 || store.state.Intent.Selection.Roots[0].String() != "skill:shared" || store.state.Intent.Selection.Roots[1].String() != "skill:two" {
+		t.Fatalf("persisted all-to-custom state = %+v", store.state.Intent)
+	}
+}
+
 func TestDeactivatePersistsInactiveIntentBeforeVerifiedLastContributorDeletion(t *testing.T) {
 	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "guide"}}}
 	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "verified"}}}

@@ -55,12 +55,37 @@ func TestCustomSelectionRejectsLegacyAndNonOperationalRoots(t *testing.T) {
 			}
 		})
 	}
-	if _, err := canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "two"}}}); err == nil {
-		t.Fatal("multiple roots succeeded")
+	selection, err := canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "two"}, {Kind: "skill", ID: "one"}}})
+	if err != nil || len(selection.Roots) != 2 || selection.Roots[0].String() != "skill:one" || selection.Roots[1].String() != "skill:two" {
+		t.Fatalf("multiple canonical roots = %+v err=%v", selection, err)
 	}
-	selection, err := canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "one"}}})
+	selection, err = canonicalSelection(ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "one"}}})
 	if err != nil || len(selection.Roots) != 1 || selection.Roots[0].String() != "skill:one" {
 		t.Fatalf("duplicate canonical root = %+v err=%v", selection, err)
+	}
+}
+
+func TestRemoveResourceSelectionRootsKeepsSharedDependenciesAndGuidesDerivedRemoval(t *testing.T) {
+	pack := Pack{
+		manifestVersion: manifestSchemaV4,
+		ID:              "app",
+		Resources: []Resource{
+			{Kind: "skill", ID: "one", Requires: []string{"skill:shared"}},
+			{Kind: "skill", ID: "two", Requires: []string{"skill:shared"}},
+			{Kind: "skill", ID: "shared"},
+		},
+	}
+	selection, err := removeResourceSelectionRoots(pack, ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "two"}}}, []ResourceIdentity{{Kind: "skill", ID: "one"}})
+	if err != nil || len(selection.Roots) != 1 || selection.Roots[0].String() != "skill:two" {
+		t.Fatalf("remaining roots = %+v err=%v", selection, err)
+	}
+	selected, err := selectPackResources(pack, selection)
+	if err != nil || len(selected.Resources) != 2 || selected.Resources[0].ID != "shared" || selected.Resources[1].ID != "two" {
+		t.Fatalf("remaining closure = %+v err=%v", selected.Resources, err)
+	}
+	_, err = removeResourceSelectionRoots(pack, ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}, {Kind: "skill", ID: "two"}}}, []ResourceIdentity{{Kind: "skill", ID: "shared"}})
+	if err == nil || !strings.Contains(err.Error(), "dependency-only") || !strings.Contains(err.Error(), "skill:one") {
+		t.Fatalf("derived dependency removal error = %v", err)
 	}
 }
 
@@ -124,7 +149,7 @@ func TestSelectionIsImmutableAndSealedBeforeEffects(t *testing.T) {
 	}
 }
 
-func TestActivateRejectsChangingAnActiveSelectionBeforeInspectionOrEffects(t *testing.T) {
+func TestActivateRejectsResourceLessChangingAnActiveSelectionBeforeInspectionOrEffects(t *testing.T) {
 	pack := Pack{
 		manifestVersion: manifestSchemaV4,
 		ID:              "app",
@@ -147,7 +172,7 @@ func TestActivateRejectsChangingAnActiveSelectionBeforeInspectionOrEffects(t *te
 
 	_, err := facade.Preview(context.Background(), ActivationRequest{
 		PackID: "app", Surface: SurfaceCodex,
-		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "instruction", ID: "two"}}},
+		Selection: ResourceSelection{Mode: SelectionAll},
 	})
 	if err == nil || !strings.Contains(err.Error(), "different resource selection") {
 		t.Fatalf("selection change error = %v", err)
@@ -157,6 +182,71 @@ func TestActivateRejectsChangingAnActiveSelectionBeforeInspectionOrEffects(t *te
 	}
 	if !reflect.DeepEqual(store.state, original) {
 		t.Fatalf("rejected selection change mutated state: got=%+v want=%+v", store.state, original)
+	}
+}
+
+func TestActivateAddsCustomRootsAndPromotesDependenciesWithoutProjectionRewrite(t *testing.T) {
+	pack := Pack{
+		manifestVersion: manifestSchemaV4,
+		ID:              "app",
+		Version:         "1.0.0",
+		Surfaces:        []Surface{SurfaceCodex},
+		Resources: []Resource{
+			{Kind: "skill", ID: "one", Requires: []string{"skill:shared"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "one", Mode: "native"}}},
+			{Kind: "skill", ID: "two", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "two", Mode: "native"}}},
+			{Kind: "skill", ID: "shared", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "shared", Mode: "native"}}},
+		},
+	}
+	state := ActivationState{Intent: ActivationIntent{
+		PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 3,
+		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "one"}}},
+	}}
+	state.Intents = []ActivationIntent{state.Intent}
+	adapter := &fakeSurfaceAdapter{}
+	store := &fakeActivationStore{state: state}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+
+	plan, err := facade.Preview(context.Background(), ActivationRequest{
+		PackID: "app", Surface: SurfaceCodex,
+		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "two"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Selection().Roots; len(got) != 2 || got[0].String() != "skill:one" || got[1].String() != "skill:two" {
+		t.Fatalf("additive roots = %+v", got)
+	}
+	if plan.NoOp() {
+		t.Fatalf("adding a root became a no-op: disposition=%s blockers=%+v phases=%+v", plan.Disposition(), plan.Blockers(), plan.Phases())
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); err != nil {
+		t.Fatalf("apply additive root: %v; blockers=%+v phases=%+v", err, plan.Blockers(), plan.Phases())
+	}
+	if got := store.state.Intent.Selection.Roots; len(got) != 2 || got[0].String() != "skill:one" || got[1].String() != "skill:two" {
+		t.Fatalf("persisted additive roots = %+v", got)
+	}
+
+	state = store.state
+	store = &fakeActivationStore{state: state}
+	facade = NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}))
+	plan, err = facade.Preview(context.Background(), ActivationRequest{
+		PackID: "app", Surface: SurfaceCodex,
+		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "shared"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Selection().Roots; len(got) != 3 || got[0].String() != "skill:one" || got[1].String() != "skill:shared" || got[2].String() != "skill:two" {
+		t.Fatalf("promoted dependency roots = %+v", got)
+	}
+	if plan.NoOp() {
+		t.Fatal("dependency promotion became a no-op")
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.state.Intent.Selection.Roots; len(got) != 3 || got[0].String() != "skill:one" || got[1].String() != "skill:shared" || got[2].String() != "skill:two" {
+		t.Fatalf("persisted promoted dependency roots = %+v", got)
 	}
 }
 
