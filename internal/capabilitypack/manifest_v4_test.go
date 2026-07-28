@@ -394,6 +394,14 @@ func TestLoadPortableManifestV4ValidatesSamePackResourceConflicts(t *testing.T) 
 			}),
 			`"asset:alpha" must not conflict with mandatory dependency "asset:charlie"`,
 		},
+		"sibling dependencies": {
+			manifestWith([]map[string]any{
+				resource("asset", "alpha", nil, []string{"asset:beta"}),
+				resource("asset", "beta", nil, []string{"asset:alpha"}),
+				resource("asset", "root", []string{"asset:alpha", "asset:beta"}, nil),
+			}),
+			`resource "asset:root" mandatory dependency closure contains conflicting resources "asset:alpha" and "asset:beta"`,
+		},
 		"unsorted": {
 			manifestWith([]map[string]any{
 				resource("asset", "alpha", nil, []string{"asset:charlie", "asset:beta"}),

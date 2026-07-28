@@ -1368,7 +1368,11 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	if err != nil {
 		return planPreflight{}, err
 	}
-	pack, err = selectPackResources(pack, plan.selection)
+	if plan.operation == OperationDeactivate {
+		pack, err = selectPackResources(pack, plan.selection)
+	} else {
+		pack, err = selectPackResourcesForSurface(pack, plan.selection, plan.surface)
+	}
 	if err != nil {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("resource selection became invalid after Preview: %v; rerun %s to preview a fresh plan", err, plan.operation)}
 	}

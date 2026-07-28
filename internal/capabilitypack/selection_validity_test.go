@@ -217,6 +217,9 @@ func TestAllOmitsOptionalSurfaceExclusionsWhileCustomRootBlocks(t *testing.T) {
 		exclusions[0].Resource.String() != "skill:optional" {
 		t.Fatalf("all optional exclusions = %#v", exclusions)
 	}
+	if _, err := allFacade.preflightPlan(context.Background(), allPlan); err != nil {
+		t.Fatalf("all selection with optional exclusions became stale before Apply: %v", err)
+	}
 
 	customStore := &fakeActivationStore{}
 	customFacade := NewFacade(

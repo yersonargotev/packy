@@ -2325,27 +2325,37 @@ func validateResourceConflicts(resources []Resource, identities map[string]bool)
 			}
 		}
 
-		visited := map[string]bool{}
-		var visitDependencies func(string) error
-		visitDependencies = func(candidate string) error {
+		closure := map[string]bool{identity: true}
+		var visitDependencies func(string)
+		visitDependencies = func(candidate string) {
 			for _, dependency := range byIdentity[candidate].Requires {
-				if dependency == identity {
+				if closure[dependency] {
 					continue
 				}
-				if containsString(resource.Conflicts, dependency) {
-					return fmt.Errorf("resource %q must not conflict with mandatory dependency %q", identity, dependency)
-				}
-				if !visited[dependency] {
-					visited[dependency] = true
-					if err := visitDependencies(dependency); err != nil {
-						return err
-					}
+				closure[dependency] = true
+				visitDependencies(dependency)
+			}
+		}
+		visitDependencies(identity)
+		for _, conflict := range resource.Conflicts {
+			if conflict != identity && closure[conflict] {
+				return fmt.Errorf("resource %q must not conflict with mandatory dependency %q", identity, conflict)
+			}
+		}
+		closureIdentities := make([]string, 0, len(closure))
+		for candidate := range closure {
+			closureIdentities = append(closureIdentities, candidate)
+		}
+		sort.Strings(closureIdentities)
+		for _, candidate := range closureIdentities {
+			if candidate == identity {
+				continue
+			}
+			for _, conflict := range byIdentity[candidate].Conflicts {
+				if conflict != identity && candidate < conflict && closure[conflict] {
+					return fmt.Errorf("resource %q mandatory dependency closure contains conflicting resources %q and %q", identity, candidate, conflict)
 				}
 			}
-			return nil
-		}
-		if err := visitDependencies(identity); err != nil {
-			return err
 		}
 	}
 	return nil

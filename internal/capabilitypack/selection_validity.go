@@ -135,10 +135,6 @@ func selectionAvailability(pack Pack, selection ResourceSelection, surface Surfa
 	}
 	resources := resourceMap(pack)
 	reasons := []SelectionValidityReason{}
-	rootSet := map[string]bool{}
-	for _, root := range roots {
-		rootSet[root.String()] = true
-	}
 	identities := make([]string, 0, len(chains))
 	for identity := range chains {
 		identities = append(identities, identity)
