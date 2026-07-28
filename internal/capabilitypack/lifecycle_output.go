@@ -179,54 +179,35 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 // ResourceGraphFor returns deterministic graph facts. When inventory is true,
 // resources outside a custom closure are retained as unselected facts.
 func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) ResourceGraph {
-	selection, _ = canonicalSelection(selection)
-	byID := make(map[string]Resource, len(pack.Resources))
-	for _, resource := range pack.Resources {
-		byID[resource.Kind+":"+resource.ID] = resource
+	selection, err := canonicalSelection(selection)
+	if err != nil {
+		return ResourceGraph{Resources: []ResourceClosureFact{}}
 	}
 	chains := map[string][]ResourceIdentity{}
-	rootIDs := map[string]bool{}
-	var visit func(string, []ResourceIdentity)
-	visit = func(id string, chain []ResourceIdentity) {
-		if rootIDs[id] && len(chain) > 0 {
-			return
-		}
-		resource, ok := byID[id]
-		if !ok {
-			return
-		}
-		identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
-		candidate := append(append([]ResourceIdentity{}, chain...), identity)
-		if prior, ok := chains[id]; ok && !identityChainLess(candidate, prior) {
-			return
-		}
-		chains[id] = candidate
-		for _, dependency := range resource.Requires {
-			visit(dependency, candidate)
-		}
-		for _, notice := range resource.Notices {
-			visit(notice, candidate)
-		}
-	}
-	roots := append([]ResourceIdentity{}, selection.Roots...)
-	if selection.Mode == SelectionAll {
+	ordered := pack.Resources
+	if selection.Mode == SelectionAll && pack.manifestVersion != manifestSchemaV4 {
 		for _, resource := range pack.Resources {
-			if resource.Kind != "asset" && resource.Kind != "notice" {
-				roots = append(roots, ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
-			}
+			identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+			chains[identity.String()] = []ResourceIdentity{identity}
+		}
+	} else {
+		roots, err := resourceSelectionRoots(pack, selection)
+		if err != nil {
+			return ResourceGraph{Resources: []ResourceClosureFact{}}
+		}
+		ordered, chains, err = resolveResourceClosure(pack, roots)
+		if err != nil {
+			return ResourceGraph{Resources: []ResourceClosureFact{}}
 		}
 	}
-	sort.Slice(roots, func(i, j int) bool { return roots[i].String() < roots[j].String() })
-	for _, root := range roots {
-		rootIDs[root.String()] = true
+	source := ordered
+	if inventory {
+		source = pack.Resources
 	}
-	for _, root := range roots {
-		visit(root.String(), nil)
-	}
-	facts := make([]ResourceClosureFact, 0, len(pack.Resources))
-	for _, resource := range pack.Resources {
-		id := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
-		chain, selected := chains[id.String()]
+	facts := make([]ResourceClosureFact, 0, len(source))
+	for _, resource := range source {
+		identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+		chain, selected := chains[identity.String()]
 		if !selected && !inventory {
 			continue
 		}
@@ -242,7 +223,7 @@ func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) Re
 			role = ResourceRoleRoot
 		}
 		facts = append(facts, ResourceClosureFact{
-			Resource: id, Role: role, DependencyChain: append([]ResourceIdentity{}, chain...),
+			Resource: identity, Role: role, DependencyChain: append([]ResourceIdentity{}, chain...),
 			Requires: resourceIdentities(resource.Requires), Notices: resourceIdentities(resource.Notices),
 		})
 	}

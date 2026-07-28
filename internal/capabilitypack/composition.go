@@ -65,16 +65,9 @@ func (c composition) combinedPack() Pack {
 			key := r.Kind + ":" + r.ID
 			if _, ok := resources[key]; !ok {
 				resources[key] = r
+				p.Resources = append(p.Resources, r)
 			}
 		}
-	}
-	keys := make([]string, 0, len(resources))
-	for key := range resources {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		p.Resources = append(p.Resources, resources[key])
 	}
 	for tool := range tools {
 		p.Requires.Tools = append(p.Requires.Tools, tool)

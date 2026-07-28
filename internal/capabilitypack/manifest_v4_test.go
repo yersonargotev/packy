@@ -253,9 +253,10 @@ func TestLoadPortableManifestV4ValidatesNoticeAssociations(t *testing.T) {
 		1,
 	)
 	tests := map[string]string{
-		"missing":    strings.Replace(validManifestV4, `"notices": []`, `"notices": ["notice:missing"]`, 1),
-		"wrong kind": strings.Replace(validManifestV4, `"notices": []`, `"notices": ["skill:example"]`, 1),
-		"duplicate":  strings.Replace(withNotice, `"notices": []`, `"notices": ["notice:mit","notice:mit"]`, 1),
+		"missing":         strings.Replace(validManifestV4, `"notices": []`, `"notices": ["notice:missing"]`, 1),
+		"wrong kind":      strings.Replace(validManifestV4, `"notices": []`, `"notices": ["skill:example"]`, 1),
+		"duplicate":       strings.Replace(withNotice, `"notices": []`, `"notices": ["notice:mit","notice:mit"]`, 1),
+		"notice requires": strings.Replace(withNotice, `"requires":[]`, `"requires":["skill:example"]`, 1),
 		"unsorted": strings.Replace(
 			strings.Replace(withNotice, `"id":"mit"`, `"id":"apache"`, 1),
 			`"notices": []`, `"notices": ["notice:mit","notice:apache"]`, 1),

@@ -97,6 +97,11 @@ func TestFacadeShowReturnsDetachedCanonicalCatalogContractsAndIntents(t *testing
 	if first.ResourceCounts.Skills != 1 {
 		t.Fatalf("resource counts = %#v", first.ResourceCounts)
 	}
+	if len(first.ResourceGraph.Resources) != 1 ||
+		first.ResourceGraph.Resources[0].Resource != (ResourceIdentity{Kind: "skill", ID: "review"}) ||
+		first.ResourceGraph.Resources[0].Role != ResourceRoleRoot {
+		t.Fatalf("resource graph = %#v", first.ResourceGraph)
+	}
 	if first.LifecycleAvailability != (ShowLifecycleAvailability{LifecycleVerbsAvailable: true}) {
 		t.Fatalf("withdrawn lifecycle availability = %#v", first.LifecycleAvailability)
 	}
@@ -134,6 +139,7 @@ func TestFacadeShowReturnsDetachedCanonicalCatalogContractsAndIntents(t *testing
 	}
 
 	first.Detail.Pack.Resources[0].Bindings[0].Name = "mutated"
+	first.ResourceGraph.Resources[0].Resource.ID = "mutated"
 	first.Detail.HistoricalVersions[0] = "mutated"
 	first.Detail.UpdateRoutes[0].ExistingSurfaces[0] = SurfaceClaude
 	first.Surfaces[0].Contract.Bindings[0].Name = "mutated"

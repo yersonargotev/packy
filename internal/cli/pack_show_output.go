@@ -111,7 +111,7 @@ func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 			AutomaticDowngrade:       report.LifecycleAvailability.AutomaticDowngrade,
 		},
 		SurfaceContracts: contracts,
-		ResourceGraph:    capabilitypack.ResourceGraphFor(pack, capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll, Roots: []capabilitypack.ResourceIdentity{}}, true),
+		ResourceGraph:    report.ResourceGraph,
 	}
 }
 
