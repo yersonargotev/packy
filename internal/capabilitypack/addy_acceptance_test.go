@@ -50,7 +50,7 @@ func TestCompleteAddyAliasesRemainSurfaceLocalAndSharedRemovalRetainsContributor
 		}
 	}
 	catalog = Catalog{packs: []Pack{pack, other}}
-	state := ActivationState{Intent: ActivationIntent{PackID: "addy", Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 4}, Intents: []ActivationIntent{{PackID: "addy", Surface: SurfaceCodex, Version: pack.Version, Active: true}, {PackID: "other", Surface: SurfaceCodex, Version: other.Version, Active: true}}, Ownership: []ProjectionOwnership{{ID: "skill:using-agent-skills", Contributors: []string{"addy", "other"}, Fingerprint: "same"}}}
+	state := ActivationState{Intent: ActivationIntent{PackID: "addy", Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 4}, Intents: []ActivationIntent{{PackID: "addy", Surface: SurfaceCodex, Version: pack.Version, Active: true}, {PackID: "other", Surface: SurfaceCodex, Version: other.Version, Active: true}}, Ownership: []ProjectionOwnership{{ID: "skill:using-agent-skills", Contributors: []string{"pack:addy:skill:using-agent-skills", "pack:other:skill:using-agent-skills"}, Fingerprint: "same"}}}
 	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{ID: "skill:using-agent-skills", Exists: true, ObservedFingerprint: "same", DesiredFingerprint: "same", Action: ProjectionAction{ID: "skill:using-agent-skills"}}}}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
 	store := &fakeActivationStore{state: state}
@@ -58,7 +58,7 @@ func TestCompleteAddyAliasesRemainSurfaceLocalAndSharedRemovalRetainsContributor
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retained := plan.RetainedProjections(); len(retained) != 1 || retained[0].ID != "skill:using-agent-skills" || !reflect.DeepEqual(retained[0].Contributors, []string{"other"}) {
+	if retained := plan.RetainedProjections(); len(retained) != 1 || retained[0].ID != "skill:using-agent-skills" || !reflect.DeepEqual(retained[0].Contributors, []string{"pack:other:skill:using-agent-skills"}) {
 		t.Fatalf("shared Addy projection was not retained: %+v", retained)
 	}
 	if len(plan.Phases()) != 0 || len(adapter.actions) != 0 {

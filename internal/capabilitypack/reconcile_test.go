@@ -45,7 +45,7 @@ func TestTargetedReconcileRepairsActivePackInsideCompleteSurfaceDesiredStateWith
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Operation() != OperationReconcile || plan.ReconcileScope() != ReconcileTargeted || !reflect.DeepEqual(plan.Contributors()["instruction:shared"], []string{"app", "other"}) {
+	if plan.Operation() != OperationReconcile || plan.ReconcileScope() != ReconcileTargeted || !reflect.DeepEqual(plan.Contributors()["instruction:shared"], []string{"pack:app:instruction:shared", "pack:other:instruction:shared"}) {
 		t.Fatalf("plan operation/contributors = %s %+v", plan.Operation(), plan.Contributors())
 	}
 	if phases := plan.Phases(); len(phases) != 1 || phases[0].Kind != ConsentReversibleLocal || len(phases[0].Actions) != 2 || phases[0].Actions[0].ID != "instruction:app" || phases[0].Actions[1].ID != "instruction:shared" {
@@ -65,7 +65,7 @@ func TestTargetedReconcileRepairsActivePackInsideCompleteSurfaceDesiredStateWith
 		t.Fatalf("actions = %+v", adapter.actions)
 	}
 	owner, ok := ownershipByID(store.state.Ownership, "instruction:shared")
-	if !ok || !reflect.DeepEqual(owner.Contributors, []string{"app", "other"}) || owner.Fingerprint != "same" {
+	if !ok || !reflect.DeepEqual(owner.Contributors, []string{"pack:app:instruction:shared", "pack:other:instruction:shared"}) || owner.Fingerprint != "same" {
 		t.Fatalf("shared ownership after repair = %+v", owner)
 	}
 }
@@ -120,7 +120,7 @@ func TestSurfaceWideReconcileUsesOnlyActiveSurfaceIntentsAndAllContributorSets(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(plan.Contributors()["instruction:shared"], []string{"one", "two"}) {
+	if !reflect.DeepEqual(plan.Contributors()["instruction:shared"], []string{"pack:one:instruction:shared", "pack:two:instruction:shared"}) {
 		t.Fatalf("contributors = %+v", plan.Contributors())
 	}
 	if plan.ReconcileScope() != ReconcileSurfaceWide {
@@ -188,7 +188,7 @@ func TestReconcilePreservesAmbiguousOrUnmanagedDriftAsHumanAction(t *testing.T) 
 		name      string
 		ownership []ProjectionOwnership
 	}{
-		{name: "fingerprint does not prove catalog-current ownership", ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "owned"}}},
+		{name: "fingerprint does not prove catalog-current ownership", ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:obsolete"}, Fingerprint: "owned"}}},
 		{name: "contributors do not match composition", ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app", "other"}, Fingerprint: "desired"}}},
 		{name: "duplicate ownership is ambiguous", ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "desired"}, {ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "desired"}}},
 		{name: "unmanaged"},
@@ -238,7 +238,7 @@ func TestReconcilePlanDispositionDistinguishesBlockedMixedAndApplicable(t *testi
 
 func TestReconcileDeletesObsoleteProjectionOnlyWithVerifiedOwnershipAndDestructiveApproval(t *testing.T) {
 	pack := Pack{ID: "app", Version: "1", Surfaces: []Surface{SurfaceCodex}}
-	state := ActivationState{Intent: activeIntent("app", "1", 3), Ownership: []ProjectionOwnership{{ID: "instruction:obsolete", Contributors: []string{"app"}, Fingerprint: "owned"}}}
+	state := ActivationState{Intent: activeIntent("app", "1", 3), Ownership: []ProjectionOwnership{{ID: "instruction:obsolete", Contributors: []string{"pack:app:instruction:obsolete"}, Fingerprint: "owned"}}}
 	owned := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{
 		ID: "instruction:obsolete", Exists: true, ObservedFingerprint: "owned", DesiredFingerprint: "missing",
 		Action: ProjectionAction{ID: "instruction:obsolete", Description: "delete obsolete instruction", Mode: ProjectionDeleteTarget},

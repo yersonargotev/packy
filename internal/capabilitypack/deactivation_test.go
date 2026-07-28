@@ -183,7 +183,7 @@ func TestDeactivatePartialSelectionPreservesAliasesAndHistoricalVersion(t *testi
 
 func TestDeactivatePersistsInactiveIntentBeforeVerifiedLastContributorDeletion(t *testing.T) {
 	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "guide"}}}
-	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "verified"}}}
+	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "verified"}}}
 	deleted := deletionObservation("host-2", "", false)
 	facade, adapter, store := deactivationFixture([]Pack{pack}, state, deletionObservation("host-1", "verified", true), deletionObservation("host-1", "verified", true), deleted)
 	events := []string{}
@@ -211,6 +211,48 @@ func TestDeactivatePersistsInactiveIntentBeforeVerifiedLastContributorDeletion(t
 	}
 	if store.saves[0].Intent.Active || store.saves[0].Journal == nil || store.state.Journal != nil || len(store.state.Ownership) != 0 {
 		t.Fatalf("deactivation state = first %+v final %+v", store.saves[0], store.state)
+	}
+}
+
+func TestDeactivatePreservesProjectionWithoutExactResourceContributor(t *testing.T) {
+	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "guide"}}}
+	for _, contributor := range []string{"pack:app:skill:other", "pack:app:not-a-resource"} {
+		t.Run(contributor, func(t *testing.T) {
+			state := ActivationState{
+				Intent:    ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4},
+				Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{contributor}, Fingerprint: "verified"}},
+			}
+			facade, adapter, store := deactivationFixture([]Pack{pack}, state, deletionObservation("host-1", "verified", true))
+
+			plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Phases()) != 0 || len(plan.PendingHumanActions()) == 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+				t.Fatalf("wrong resource owner authorized cleanup: phases=%+v pending=%v actions=%v saves=%d", plan.Phases(), plan.PendingHumanActions(), adapter.actions, len(store.saves))
+			}
+		})
+	}
+}
+
+func TestPartialDeactivatePreservesProjectionWithoutExactRemovedResourceContributor(t *testing.T) {
+	pack := incrementalSelectionPack()
+	state := incrementalSelectionState("skill:one", "skill:two")
+	state.Ownership = []ProjectionOwnership{{ID: "skill:one", Contributors: []string{"pack:app:skill:two"}, Fingerprint: "verified"}}
+	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{
+		ID:                  "skill:one",
+		Exists:              true,
+		ObservedFingerprint: "verified",
+		Action:              ProjectionAction{ID: "skill:one", Description: "delete skill one"},
+	}}}
+	facade, adapter, store := deactivationFixture([]Pack{pack}, state, observation)
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "skill", ID: "one"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Phases()) != 0 || len(plan.PendingHumanActions()) == 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("wrong partial resource owner authorized cleanup: phases=%+v pending=%v actions=%v saves=%d", plan.Phases(), plan.PendingHumanActions(), adapter.actions, len(store.saves))
 	}
 }
 
@@ -251,7 +293,7 @@ func TestDeactivateRetainsSharedProjectionAndResultingContributorsWithoutRewrite
 	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 5}, Intents: []ActivationIntent{
 		{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 5},
 		{PackID: "other", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 1},
-	}, Ownership: []ProjectionOwnership{{ID: "instruction:shared", Contributors: []string{"app", "other"}, Fingerprint: "same"}}}
+	}, Ownership: []ProjectionOwnership{{ID: "instruction:shared", Contributors: []string{"pack:app:instruction:shared", "pack:other:instruction:shared"}, Fingerprint: "same"}}}
 	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{ID: "instruction:shared", Exists: true, ObservedFingerprint: "same", DesiredFingerprint: "same", Action: ProjectionAction{ID: "instruction:shared"}}}}
 	facade, adapter, _ := deactivationFixture(packs, state, observation)
 
@@ -259,10 +301,10 @@ func TestDeactivateRetainsSharedProjectionAndResultingContributorsWithoutRewrite
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retained := plan.RetainedProjections(); len(retained) != 1 || retained[0].ID != "instruction:shared" || !reflect.DeepEqual(retained[0].Contributors, []string{"other"}) {
+	if retained := plan.RetainedProjections(); len(retained) != 1 || retained[0].ID != "instruction:shared" || !reflect.DeepEqual(retained[0].Contributors, []string{"pack:other:instruction:shared"}) {
 		t.Fatalf("retained = %+v", retained)
 	}
-	if got := plan.Contributors()["instruction:shared"]; !reflect.DeepEqual(got, []string{"other"}) {
+	if got := plan.Contributors()["instruction:shared"]; !reflect.DeepEqual(got, []string{"pack:other:instruction:shared"}) {
 		t.Fatalf("result contributors = %v", got)
 	}
 	if len(plan.Phases()) != 0 || len(adapter.actions) != 0 {
@@ -290,7 +332,7 @@ func TestDeactivatePreservesDriftedAndUnmanagedLastContributorTargets(t *testing
 		name      string
 		ownership []ProjectionOwnership
 	}{
-		{name: "drifted", ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "verified"}}},
+		{name: "drifted", ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "verified"}}},
 		{name: "unmanaged"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -309,7 +351,7 @@ func TestDeactivatePreservesDriftedAndUnmanagedLastContributorTargets(t *testing
 
 func TestDeactivateRejectsStaleHostFactWithZeroEffects(t *testing.T) {
 	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "guide"}}}
-	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 1}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "verified"}}}
+	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 1}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "verified"}}}
 	facade, adapter, store := deactivationFixture([]Pack{pack}, state, deletionObservation("host-1", "verified", true), deletionObservation("host-2", "verified", true))
 	plan, _ := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
 
@@ -334,7 +376,7 @@ func TestDeactivateRejectsChangedIntentOwnershipCatalogAndDependentsWithZeroEffe
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pack := Pack{ID: "app", Version: "1", Surfaces: []Surface{SurfaceCodex}, Provides: []string{"cap:app"}, Resources: []Resource{{Kind: "instruction", ID: "guide"}}}
-			state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1", Active: true, Revision: 2}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "verified"}}}
+			state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1", Active: true, Revision: 2}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "verified"}}}
 			obs := deletionObservation("host", "verified", true)
 			facade, adapter, store := deactivationFixture([]Pack{pack}, state, obs, obs)
 			plan, _ := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
@@ -374,7 +416,7 @@ func TestDeactivateInactiveConvergedPackIsNoOpWithUnrelatedSurfaceOwnership(t *t
 
 func TestDeactivateInactivePartialStateIsReportOnlyWithoutApplyOrEffects(t *testing.T) {
 	pack := Pack{ID: "app", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide"}}}
-	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1", Active: false, Revision: 4}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "verified"}}}
+	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1", Active: false, Revision: 4}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "verified"}}}
 	facade, adapter, store := deactivationFixture([]Pack{pack}, state, deletionObservation("host", "user-drift", true))
 	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
 	if err != nil {

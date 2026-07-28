@@ -48,3 +48,32 @@ func TestStatusJSONNormalizesUnknownAttemptOutcome(t *testing.T) {
 		t.Fatalf("attempt = %#v", got)
 	}
 }
+
+func TestStatusJSONCarriesFocusedResourceReadinessAndRequirement(t *testing.T) {
+	resource := ResourceStatus{
+		Resource: ResourceIdentity{Kind: "skill", ID: "shared"}, Role: ResourceRoleDependency,
+		DependencyChain: []ResourceIdentity{{Kind: "command", ID: "ship"}, {Kind: "skill", ID: "shared"}},
+		Readiness:       ReadinessStatus{Configured: true, Authorized: true}, ReadinessObserved: ReadinessObservationStatus{Configured: true, Authorization: true},
+		Projections: ProjectionSummary{Verified: 1}, Blockers: []string{},
+	}
+	report := (StatusReport{
+		Entries: []StatusEntry{{Pack: Pack{ID: "app"}, Surface: SurfaceCodex, Resources: []ResourceStatus{resource}}},
+		Focused: &resource, Requirement: &StatusRequirement{Resource: resource.Resource, Readiness: "usable", Satisfied: false},
+	}).JSONReport(true)
+	if report.SchemaVersion != 5 || report.Focused == nil || report.Focused.Resource != resource.Resource || report.Focused.Readiness.Usable.State != "unknown" {
+		t.Fatalf("focused JSON = %#v", report)
+	}
+	if report.Requirement == nil || report.Requirement.Satisfied || report.Requirement.Readiness != "usable" {
+		t.Fatalf("requirement JSON = %#v", report.Requirement)
+	}
+	if len(report.Entries[0].Resources) != 1 || report.Entries[0].Resources[0].Blockers == nil {
+		t.Fatalf("resource JSON = %#v", report.Entries[0].Resources)
+	}
+	packRequirement := (StatusReport{
+		Entries:     []StatusEntry{{Pack: Pack{ID: "app"}, Surface: SurfaceCodex}},
+		Requirement: &StatusRequirement{Readiness: "usable", Satisfied: false},
+	}).JSONReport(true)
+	if packRequirement.Requirement == nil || packRequirement.Requirement.Resource != nil {
+		t.Fatalf("Pack requirement JSON invented a resource: %#v", packRequirement.Requirement)
+	}
+}

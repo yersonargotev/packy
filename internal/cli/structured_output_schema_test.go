@@ -33,6 +33,10 @@ var structuredOutputV4Fixtures = map[string]string{
 	"pack-status.json":            "pack-status.schema.json",
 }
 
+var structuredOutputV5Fixtures = map[string]string{
+	"pack-status.json": "pack-status.schema.json",
+}
+
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -78,6 +82,18 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		}
 		if err := validateCanonicalOperatorOrder(fixture); err != nil {
 			t.Fatalf("v4 fixture %s canonical order: %v", fixtureName, err)
+		}
+	}
+	for fixtureName, schemaName := range structuredOutputV5Fixtures {
+		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v5", fixtureName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
+			t.Fatalf("v5 fixture %s: %v", fixtureName, err)
+		}
+		if err := validateCanonicalOperatorOrder(fixture); err != nil {
+			t.Fatalf("v5 fixture %s canonical order: %v", fixtureName, err)
 		}
 	}
 
@@ -308,6 +324,16 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 			return strings.Join(parts, "\x00")
 		}
 	}
+	nestedObjectKey := func(parent string, fields ...string) func(any) string {
+		return func(value any) string {
+			object := value.(map[string]any)[parent].(map[string]any)
+			parts := make([]string, len(fields))
+			for i, field := range fields {
+				parts[i], _ = object[field].(string)
+			}
+			return strings.Join(parts, "\x00")
+		}
+	}
 	validateAliases := func(name string, values []any) error {
 		return requireOrdered(name, values, objectKey("kind", "id", "name"))
 	}
@@ -435,6 +461,17 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 			}
 			if err := requireOrdered("optional_authorities", entry["optional_authorities"].([]any), objectKey("mode_id", "authority")); err != nil {
 				return err
+			}
+			if resources, ok := entry["resources"].([]any); ok {
+				if err := requireOrdered("resources", resources, nestedObjectKey("resource", "kind", "id")); err != nil {
+					return err
+				}
+				for _, resourceValue := range resources {
+					resource := resourceValue.(map[string]any)
+					if err := requireStrings("resources.blockers", resource["blockers"].([]any)); err != nil {
+						return err
+					}
+				}
 			}
 			for _, field := range []string{"blockers", "evidence", "pending_human_actions"} {
 				if err := requireStrings(field, entry[field].([]any)); err != nil {

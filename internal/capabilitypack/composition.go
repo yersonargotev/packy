@@ -2,6 +2,7 @@ package capabilitypack
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -48,6 +49,48 @@ type composition struct {
 	contributors map[string][]string
 	blockers     []PlanBlocker
 	intentFacts  []ActivationIntent
+}
+
+func resourceContributor(packID string, resource ResourceIdentity) string {
+	return "pack:" + packID + ":" + resource.String()
+}
+
+func contributorBelongsToPack(contributor, packID string) bool {
+	return strings.HasPrefix(contributor, "pack:"+packID+":")
+}
+
+func uniqueRemovedContributor(projectionID string, before, after composition, packID string) (string, bool) {
+	var removed []string
+	remaining := after.contributorSet(projectionID)
+	for _, contributor := range before.contributorSet(projectionID) {
+		if contributorBelongsToPack(contributor, packID) && !slices.Contains(remaining, contributor) {
+			removed = append(removed, contributor)
+		}
+	}
+	if len(removed) != 1 {
+		return "", false
+	}
+	return removed[0], true
+}
+
+// contributorsMatch permits a legacy Pack-only ownership fact to be recognized
+// only when a freshly derived projection has one unambiguous resource
+// contributor for every recorded Pack. Mutation paths persist the canonical
+// form after verification; destructive paths still require an exact canonical
+// contributor.
+func contributorsMatch(recorded, canonical []string) bool {
+	if digestJSON(recorded) == digestJSON(canonical) {
+		return true
+	}
+	if len(recorded) != len(canonical) {
+		return false
+	}
+	for i, packID := range recorded {
+		if strings.HasPrefix(packID, "pack:") || !contributorBelongsToPack(canonical[i], packID) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c composition) combinedPack() Pack {
@@ -115,9 +158,11 @@ func (c composition) contributorSet(projectionID string) []string {
 		sort.Strings(values)
 		return values
 	}
-	ids := make([]string, len(c.packs))
-	for i, p := range c.packs {
-		ids[i] = p.ID
+	var ids []string
+	for _, p := range c.packs {
+		for _, resource := range p.Resources {
+			ids = append(ids, resourceContributor(p.ID, ResourceIdentity{Kind: resource.Kind, ID: resource.ID}))
+		}
 	}
 	sort.Strings(ids)
 	return ids
@@ -235,9 +280,10 @@ func (f Facade) compose(requested Pack, state ActivationState, surface Surface, 
 				}
 			}
 			resources[key] = resource
-			result.contributors[key] = append(result.contributors[key], pack.ID)
+			contributor := resourceContributor(pack.ID, ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
+			result.contributors[key] = append(result.contributors[key], contributor)
 			if projectionID, ok := effectiveProjectionID(resolved, surface); ok && projectionID != key {
-				result.contributors[projectionID] = append(result.contributors[projectionID], pack.ID)
+				result.contributors[projectionID] = append(result.contributors[projectionID], contributor)
 			}
 			if namespace, name, ok := projectedNamespace(resolved, surface); ok {
 				projection := namespace + ":" + name

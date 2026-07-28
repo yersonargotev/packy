@@ -1,9 +1,10 @@
 # Structured CLI output
 
 Packy emits versioned JSON when `--json` is present. Classic lifecycle and
-doctor retain `schema_version: 2`. Pack show, Capability-Pack lifecycle, and
-status use `schema_version: 4` so portable resource graphs and closure roles are
-introduced without silently changing v1-v3.
+doctor retain `schema_version: 2`. Pack show and Capability-Pack lifecycle use
+`schema_version: 4`; status uses `schema_version: 5` so resource readiness,
+focused-resource gates, and exact Pack/resource contributors are introduced
+without silently changing v1-v4.
 
 | Command | `report` |
 | --- | --- |
@@ -17,8 +18,8 @@ introduced without silently changing v1-v3.
 | `packy pack status --json` | `pack-status-overview` |
 | targeted `packy pack status PACK --surface SURFACE --json` | `pack-status` |
 
-The exact offline schemas are under `schemas/cli/v2/`, `schemas/cli/v3/`, and
-`schemas/cli/v4/`.
+The exact offline schemas are under `schemas/cli/v2/` through
+`schemas/cli/v5/`.
 Canonical redacted fixtures use the matching directories under
 `internal/cli/testdata/structured-output/`; repository validation compiles the
 schema selected by each document's `schema_version` and validates both the
@@ -74,15 +75,19 @@ resource inventory whose role is `root`, `dependency`, `asset`, `notice`, or
 `unselected`, with a deterministic root-to-resource `dependency_chain`.
 Lifecycle preview publishes the selected closure graph, including associated
 notices; show publishes every resource's portable `requires` and `notices`
-edges. Status also publishes projection health, compatibility, readiness,
-evaluated runtime modes, evidence, and pending actions. Each runtime-mode result
+edges. Status also publishes projection health, compatibility, readiness for
+each selected root and dependency, focused `--resource` status and
+`--require usable` results, evaluated runtime modes, evidence, and pending
+actions. Each runtime-mode result
 keeps its declared role,
 requirements, authorities, effects, fallback, fail-before-effects policy, and
 sanitized observation facts together; unobservable facts remain `unverified`
 and do not reduce whole-pack readiness. Each readiness dimension remains
 explicitly `{state:"known",value:true|false}` or
-`{state:"unknown",value:null}`. `--require usable` writes the complete status
-report before preserving the readiness-gate exit result.
+`{state:"unknown",value:null}`. Projection contributors use canonical
+`pack:<pack>:<kind>:<resource>` identities. `--require usable` writes the
+complete status report before preserving the Pack- or focused-resource
+readiness-gate exit result.
 
 ## Ordering and redaction
 

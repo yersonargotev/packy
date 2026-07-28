@@ -36,7 +36,7 @@ func TestRepeatUpdateRecoversTowardPersistedIntentWithoutNewRevision(t *testing.
 func TestRepeatDeactivateRecoversPersistedInactiveIntentWithoutNewRevision(t *testing.T) {
 	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "guide"}}}
 	history := ApplyingJournal{PlanID: "plan-old", PlanDigest: "old-digest", Operation: OperationDeactivate, Surface: SurfaceCodex, PackID: "app", Outcome: "recovery-required", Actions: []string{"instruction:guide"}, FailedAction: "destructive-cleanup", FailureDetail: "interrupted"}
-	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: false, Revision: 8}, Intents: []ActivationIntent{{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: false, Revision: 8}}, Journal: &history, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "verified"}}}
+	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: false, Revision: 8}, Intents: []ActivationIntent{{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: false, Revision: 8}}, Journal: &history, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "verified"}}}
 	facade, _, store := deactivationFixture([]Pack{pack}, state, deletionObservation("host-1", "verified", true), deletionObservation("host-1", "verified", true), deletionObservation("host-2", "", false))
 
 	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
@@ -100,7 +100,7 @@ func TestRecoveryBecomesStaleWithZeroEffectsWhenOwnershipChanges(t *testing.T) {
 
 func TestDestructiveCompletionIsTruthfulWhenVerificationFails(t *testing.T) {
 	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "guide"}}}
-	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 2}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}, Fingerprint: "verified"}}}
+	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 2}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "verified"}}}
 	stillPresent := deletionObservation("host-2", "verified", true)
 	facade, _, store := deactivationFixture([]Pack{pack}, state, deletionObservation("host-1", "verified", true), deletionObservation("host-1", "verified", true), stillPresent)
 	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})

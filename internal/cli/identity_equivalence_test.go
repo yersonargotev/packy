@@ -271,7 +271,7 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 	// Slice F intentionally deepens capability-pack lifecycle disclosure and
 	// preserves unobserved readiness as unknown. These are post-cutover product
 	// changes, not identity-cutover regressions covered by this frozen baseline.
-	value = regexp.MustCompile(`(?m)^(Logical resources|Dependency closure|Binding|Exclusion|Optional mode|All selection|Optional exclusion|All unavailable|Root selection|Root unavailable|Invocation-time prompt authority|Contract aliases|Activation grants only|Projection:|Expected readiness:|Observed evidence:|Pending evidence:|Contract diff:|Migration:)[^\n]*\n`).ReplaceAllString(value, "")
+	value = regexp.MustCompile(`(?m)^(Logical resources|Dependency closure|Binding|Exclusion|Optional mode|All selection|Optional exclusion|All unavailable|Root selection|Root unavailable|Invocation-time prompt authority|Contract aliases|Activation grants only|Projection:|Resource readiness:|Focused resource:|Expected readiness:|Observed evidence:|Pending evidence:|Contract diff:|Migration:)[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^(Phase approval required|Apply result facts):[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^\s+Action facts:[^\n]*\n`).ReplaceAllString(value, "")
 	value = strings.ReplaceAll(value, "authorized=unknown, usable=unknown", "authorized=no, usable=no")
@@ -295,6 +295,14 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 	// The granular lifecycle tests own it; remove it from legacy all-mode
 	// comparisons against the frozen pre-selection product.
 	value = regexp.MustCompile(`(?m)^Selection (?:mode|root):[^\n]*\n`).ReplaceAllString(value, "")
+	// Issue #288 deepens projection contributors from Pack-only names to
+	// canonical Pack/resource identities. Dedicated ownership tests own the
+	// added precision; compare the frozen baseline at Pack granularity.
+	contributorLine := regexp.MustCompile(`(?m)^(Contributors:|Contributor removed:|Retained shared projection:)[^\n]*$`)
+	canonicalContributor := regexp.MustCompile(`pack:([^:,\s]+):[^:,\s]+:[^,\s]+`)
+	value = contributorLine.ReplaceAllStringFunc(value, func(line string) string {
+		return canonicalContributor.ReplaceAllString(line, "$1")
+	})
 	value = regexp.MustCompile(`(?m)^(\$PRODUCT (?:install|update): synced[^\n]+) \(outcome: [^)]+\)$`).ReplaceAllString(value, "$1")
 	value = regexp.MustCompile(`(?m)^(\$PRODUCT uninstall): [^;\n]+; processed \$Product-managed artifacts for state`).ReplaceAllString(value, "$1: removed $$Product-managed artifacts and state")
 	value = identityPlanRE.ReplaceAllString(value, "plan-<ID>")
@@ -307,6 +315,15 @@ func removeSliceFJSONFields(value any) {
 	switch value := value.(type) {
 	case map[string]any:
 		delete(value, "selection_validity")
+		if contributors, ok := value["contributors"].([]any); ok {
+			for i, raw := range contributors {
+				contributor, _ := raw.(string)
+				parts := strings.SplitN(contributor, ":", 4)
+				if len(parts) == 4 && parts[0] == "pack" {
+					contributors[i] = parts[1]
+				}
+			}
+		}
 		if _, ok := value["activations"]; ok {
 			// Issue #284 advances the activation-state document to v4 solely
 			// to persist explicit all/custom selection.
@@ -333,6 +350,7 @@ func removeSliceFJSONFields(value any) {
 			for _, raw := range value["entries"].([]any) {
 				entry := raw.(map[string]any)
 				delete(entry, "resource_selections")
+				delete(entry, "resources")
 				if intent, ok := entry["intent"].(map[string]any); ok {
 					delete(intent, "selection")
 				}
