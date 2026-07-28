@@ -97,6 +97,14 @@
         "authority_disclosure": "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
         "resource_graph": {
           "resources": []
+        },
+        "selection_validity": {
+          "all": {
+            "available": true,
+            "reasons": [],
+            "optional_exclusions": []
+          },
+          "roots": []
         }
       },
       "intent": {
@@ -157,6 +165,14 @@
         "authority_disclosure": "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
         "resource_graph": {
           "resources": []
+        },
+        "selection_validity": {
+          "all": {
+            "available": true,
+            "reasons": [],
+            "optional_exclusions": []
+          },
+          "roots": []
         }
       },
       "intent": {
@@ -217,6 +233,14 @@
         "authority_disclosure": "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
         "resource_graph": {
           "resources": []
+        },
+        "selection_validity": {
+          "all": {
+            "available": true,
+            "reasons": [],
+            "optional_exclusions": []
+          },
+          "roots": []
         }
       },
       "intent": {

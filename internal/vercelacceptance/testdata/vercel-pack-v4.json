@@ -18,6 +18,7 @@
   "resources": [
     {
       "bindings": [],
+      "conflicts": [],
       "id": "web-interface-guidelines-rules",
       "kind": "asset",
       "notices": [],
@@ -27,6 +28,7 @@
     },
     {
       "bindings": [],
+      "conflicts": [],
       "id": "writing-guidelines-rules",
       "kind": "asset",
       "notices": [],
@@ -81,6 +83,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-cli-with-tokens",
       "kind": "skill",
       "notices": [],
@@ -710,6 +713,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-composition-patterns",
       "kind": "skill",
       "notices": [],
@@ -775,6 +779,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-deploy-to-vercel",
       "kind": "skill",
       "notices": [],
@@ -1416,6 +1421,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-optimize",
       "kind": "skill",
       "notices": [],
@@ -1742,6 +1748,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-react-best-practices",
       "kind": "skill",
       "notices": [],
@@ -1807,6 +1814,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-react-native-skills",
       "kind": "skill",
       "notices": [],
@@ -1872,6 +1880,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-react-view-transitions",
       "kind": "skill",
       "notices": [],
@@ -1937,6 +1946,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-web-design-guidelines",
       "kind": "skill",
       "notices": [],
@@ -1995,6 +2005,7 @@
           "sharing": "exclusive"
         }
       ],
+      "conflicts": [],
       "id": "vercel-writing-guidelines",
       "kind": "skill",
       "notices": [],

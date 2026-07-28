@@ -206,6 +206,64 @@ func TestLifecycleAndShowHumanRenderTheSameCompleteContract(t *testing.T) {
 	}
 }
 
+func TestPackShowContractRendersPerSurfaceSelectionValidity(t *testing.T) {
+	left := capabilitypack.ResourceIdentity{Kind: "skill", ID: "left"}
+	right := capabilitypack.ResourceIdentity{Kind: "skill", ID: "right"}
+	contract := capabilitypack.LifecycleContract{
+		SelectionValidity: capabilitypack.SelectionValidity{
+			All: capabilitypack.SelectionAvailability{
+				Available: false,
+				Reasons: []capabilitypack.SelectionValidityReason{{
+					Code:     capabilitypack.SelectionReasonResourceConflict,
+					Resource: left, Role: capabilitypack.ResourceRoleRoot,
+					DependencyChain:     []capabilitypack.ResourceIdentity{left},
+					ConflictingResource: right.String(), ConflictingRole: capabilitypack.ResourceRoleDependency,
+					ConflictingDependencyChain: []capabilitypack.ResourceIdentity{
+						{Kind: "command", ID: "consumer"}, right,
+					},
+					Surface: capabilitypack.SurfaceCodex,
+					Detail:  "the complete set conflicts", Remediation: "use custom selection",
+				}},
+				OptionalExclusions: []capabilitypack.SelectionValidityReason{{
+					Code:                       capabilitypack.SelectionReasonOptionalExclusion,
+					Resource:                   capabilitypack.ResourceIdentity{Kind: "agent", ID: "optional"},
+					Role:                       capabilitypack.ResourceRoleRoot,
+					DependencyChain:            []capabilitypack.ResourceIdentity{{Kind: "agent", ID: "optional"}},
+					ConflictingDependencyChain: []capabilitypack.ResourceIdentity{},
+					Surface:                    capabilitypack.SurfaceCodex,
+					Detail:                     "optional on codex", Remediation: "use another surface",
+				}},
+			},
+			Roots: []capabilitypack.ResourceSelectability{{
+				Resource: left, Available: false,
+				Reasons: []capabilitypack.SelectionValidityReason{{
+					Code:     capabilitypack.SelectionReasonRootExcluded,
+					Resource: left, Role: capabilitypack.ResourceRoleRoot,
+					DependencyChain:            []capabilitypack.ResourceIdentity{left},
+					ConflictingDependencyChain: []capabilitypack.ResourceIdentity{},
+					Surface:                    capabilitypack.SurfaceCodex,
+					Detail:                     "excluded on codex", Remediation: "use another root",
+				}},
+			}},
+		},
+	}
+	var output strings.Builder
+	if err := renderPackShowContract(&output, contract); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"All selection: available=no",
+		"Optional exclusion: code=optional-exclusion resource=agent:optional role=root chain=agent:optional surface=codex",
+		"All unavailable: code=resource-conflict resource=skill:left role=root chain=skill:left surface=codex conflicts_with=skill:right conflicting_role=dependency conflicting_chain=command:consumer -> skill:right",
+		"Root selection: resource=skill:left available=no",
+		"Root unavailable: code=root-excluded resource=skill:left role=root chain=skill:left surface=codex",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("selection output missing %q:\n%s", want, output.String())
+		}
+	}
+}
+
 func TestPackLifecycleHumanOutputIncludesRedactedStructuredActionAndApplyFacts(t *testing.T) {
 	opts, home, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
 	preview, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "ma"+"tty", "--surface", "codex", "--dry-run")

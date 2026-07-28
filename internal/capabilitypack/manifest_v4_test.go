@@ -21,6 +21,7 @@ const validManifestV4 = `{
     "id": "example",
     "source": "skills/example.md",
     "requires": [],
+    "conflicts": [],
     "notices": [],
     "bindings": [{
       "surface": "codex",
@@ -214,6 +215,7 @@ func TestLoadPortableManifestV4PreservesV3ResourceShapes(t *testing.T) {
 		resource := encoded.(map[string]any)
 		if resource["kind"] != "notice" {
 			resource["notices"] = []any{}
+			resource["conflicts"] = []any{}
 		}
 	}
 	data, err := json.Marshal(manifest)
@@ -296,6 +298,128 @@ func TestLoadPortableManifestV3StillForbidsNotices(t *testing.T) {
 	resource := []byte(`{"kind":"instruction","id":"guide","source":"guide.md","requires":[],"notices":[],"bindings":[],"surface_exclusions":[]}`)
 	if _, err := decodeResource(resource, manifestSchemaV3); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("v3 notices must remain unknown, got %v", err)
+	}
+}
+
+func TestLoadPortableManifestV4ValidatesSamePackResourceConflicts(t *testing.T) {
+	manifestWith := func(resources []map[string]any) string {
+		var manifest map[string]any
+		if err := json.Unmarshal([]byte(validManifestV4), &manifest); err != nil {
+			t.Fatal(err)
+		}
+		encoded := make([]any, len(resources))
+		for i := range resources {
+			encoded[i] = resources[i]
+		}
+		manifest["resources"] = encoded
+		data, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	resource := func(kind, id string, requires, conflicts []string) map[string]any {
+		if requires == nil {
+			requires = []string{}
+		}
+		if conflicts == nil {
+			conflicts = []string{}
+		}
+		return map[string]any{
+			"kind": kind, "id": id, "source": id + ".md",
+			"requires": requires, "conflicts": conflicts, "notices": []string{},
+			"bindings": []any{}, "surface_exclusions": []any{},
+		}
+	}
+
+	valid := manifestWith([]map[string]any{
+		resource("asset", "alpha", nil, []string{"asset:beta"}),
+		resource("asset", "beta", nil, []string{"asset:alpha"}),
+	})
+	if _, err := LoadPortableManifest(writeManifestV4(t, valid), t.TempDir()); err != nil {
+		t.Fatalf("symmetric conflict rejected: %v", err)
+	}
+	mutateExample := func(edit func(map[string]any)) string {
+		var manifest map[string]any
+		if err := json.Unmarshal([]byte(validManifestV4), &manifest); err != nil {
+			t.Fatal(err)
+		}
+		edit(manifest["resources"].([]any)[0].(map[string]any))
+		data, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	tests := map[string]struct {
+		manifest string
+		want     string
+	}{
+		"missing": {
+			mutateExample(func(resource map[string]any) { delete(resource, "conflicts") }),
+			"conflicts is a required non-null array",
+		},
+		"null": {
+			mutateExample(func(resource map[string]any) { resource["conflicts"] = nil }),
+			"conflicts is a required non-null array",
+		},
+		"self": {
+			mutateExample(func(resource map[string]any) { resource["conflicts"] = []string{"skill:example"} }),
+			`resource "skill:example" must not conflict with itself`,
+		},
+		"missing target": {
+			mutateExample(func(resource map[string]any) { resource["conflicts"] = []string{"asset:missing"} }),
+			`conflict "asset:missing" does not exist`,
+		},
+		"asymmetric": {
+			manifestWith([]map[string]any{
+				resource("asset", "alpha", nil, []string{"asset:beta"}),
+				resource("asset", "beta", nil, []string{}),
+			}),
+			`between "asset:alpha" and "asset:beta" must be symmetric`,
+		},
+		"direct dependency": {
+			manifestWith([]map[string]any{
+				resource("asset", "alpha", []string{"asset:beta"}, []string{"asset:beta"}),
+				resource("asset", "beta", nil, []string{"asset:alpha"}),
+			}),
+			`"asset:alpha" must not conflict with mandatory dependency "asset:beta"`,
+		},
+		"transitive dependency": {
+			manifestWith([]map[string]any{
+				resource("asset", "alpha", []string{"asset:beta"}, []string{"asset:charlie"}),
+				resource("asset", "beta", []string{"asset:charlie"}, []string{}),
+				resource("asset", "charlie", nil, []string{"asset:alpha"}),
+			}),
+			`"asset:alpha" must not conflict with mandatory dependency "asset:charlie"`,
+		},
+		"unsorted": {
+			manifestWith([]map[string]any{
+				resource("asset", "alpha", nil, []string{"asset:charlie", "asset:beta"}),
+				resource("asset", "beta", nil, []string{"asset:alpha"}),
+				resource("asset", "charlie", nil, []string{"asset:alpha"}),
+			}),
+			"conflicts must be a sorted set",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := LoadPortableManifest(writeManifestV4(t, test.manifest), t.TempDir()); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadPortableManifestV4ForbidsNoticeConflictsAndV3StillRejectsField(t *testing.T) {
+	noticeV4 := `{"kind":"notice","id":"mit","source":"NOTICE","license":"MIT","attribution":"Example","requires":[],"conflicts":[],"bindings":[],"surface_exclusions":[]}`
+	if _, err := decodeResource([]byte(noticeV4), manifestSchemaV4); err == nil || !strings.Contains(err.Error(), "forbidden for notice resources") {
+		t.Fatalf("v4 notice conflicts error = %v", err)
+	}
+	resourceV3 := []byte(`{"kind":"instruction","id":"guide","source":"guide.md","requires":[],"conflicts":[],"bindings":[],"surface_exclusions":[]}`)
+	if _, err := decodeResource(resourceV3, manifestSchemaV3); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("v3 conflicts must remain unknown, got %v", err)
 	}
 }
 

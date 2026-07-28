@@ -271,7 +271,7 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 	// Slice F intentionally deepens capability-pack lifecycle disclosure and
 	// preserves unobserved readiness as unknown. These are post-cutover product
 	// changes, not identity-cutover regressions covered by this frozen baseline.
-	value = regexp.MustCompile(`(?m)^(Logical resources|Dependency closure|Binding|Exclusion|Optional mode|Invocation-time prompt authority|Contract aliases|Activation grants only|Projection:|Expected readiness:|Observed evidence:|Pending evidence:|Contract diff:|Migration:)[^\n]*\n`).ReplaceAllString(value, "")
+	value = regexp.MustCompile(`(?m)^(Logical resources|Dependency closure|Binding|Exclusion|Optional mode|All selection|Optional exclusion|All unavailable|Root selection|Root unavailable|Invocation-time prompt authority|Contract aliases|Activation grants only|Projection:|Expected readiness:|Observed evidence:|Pending evidence:|Contract diff:|Migration:)[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^(Phase approval required|Apply result facts):[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^\s+Action facts:[^\n]*\n`).ReplaceAllString(value, "")
 	value = strings.ReplaceAll(value, "authorized=unknown, usable=unknown", "authorized=no, usable=no")
@@ -306,6 +306,7 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 func removeSliceFJSONFields(value any) {
 	switch value := value.(type) {
 	case map[string]any:
+		delete(value, "selection_validity")
 		if _, ok := value["activations"]; ok {
 			// Issue #284 advances the activation-state document to v4 solely
 			// to persist explicit all/custom selection.

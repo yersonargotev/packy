@@ -101,7 +101,10 @@ func TestUnavailableMandatoryDependencyBlocksSelectedRootBeforeMutation(t *testi
 		Version:         "1.0.0",
 		Surfaces:        []Surface{SurfaceCodex},
 		Resources: []Resource{
-			{Kind: "instruction", ID: "root", Requires: []string{"skill:required"}, Notices: []string{}},
+			{
+				Kind: "instruction", ID: "root", Requires: []string{"skill:required"}, Notices: []string{},
+				Bindings: []Binding{{Surface: SurfaceCodex, Projection: "instruction", Name: "root", Mode: "native"}},
+			},
 			{
 				Kind: "skill", ID: "required", Notices: []string{},
 				SurfaceExclusions: []SurfaceExclusion{{
@@ -134,9 +137,12 @@ func TestUnavailableMandatoryDependencyBlocksSelectedRootBeforeMutation(t *testi
 	if plan.Disposition() != PlanBlocked {
 		t.Fatalf("disposition = %s, want %s", plan.Disposition(), PlanBlocked)
 	}
-	if len(plan.Blockers()) != 1 ||
+	if len(plan.Blockers()) != 2 ||
 		plan.Blockers()[0].Kind != BlockerCompatibility ||
-		!strings.Contains(plan.Blockers()[0].Detail, "dependency closure") {
+		!strings.Contains(plan.Blockers()[0].Detail, "dependency closure") ||
+		plan.Blockers()[1].Kind != BlockerSelectionUnavailable ||
+		!strings.Contains(plan.Blockers()[1].Detail, "instruction:root") ||
+		!strings.Contains(plan.Blockers()[1].Detail, "skill:required") {
 		t.Fatalf("blockers = %+v", plan.Blockers())
 	}
 
