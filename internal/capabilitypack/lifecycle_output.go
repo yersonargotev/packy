@@ -324,6 +324,7 @@ func compatibilityFor(pack Pack, surface Surface) Compatibility {
 
 func (p ReconciliationPlan) LifecycleContract() LifecycleContract {
 	contract := LifecycleContractFor(p.pack, p.surface, p.aliases)
+	contract.ResourceGraph = ResourceGraphFor(p.pack, p.selection, false)
 	if contract.CompatibilityObserved && len(p.blockers) > 0 {
 		contract.Compatibility = CompatibilityBlocked
 	}

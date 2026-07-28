@@ -55,7 +55,9 @@ func (c composition) combinedPack() Pack {
 	p.Requires.Tools = nil
 	resources := map[string]Resource{}
 	tools := map[string]bool{}
+	preserveResourceOrder := false
 	for _, pack := range c.packs {
+		preserveResourceOrder = preserveResourceOrder || pack.manifestVersion == manifestSchemaV4
 		intent := intentByPackID(c.intentFacts, pack.ID)
 		for _, tool := range pack.Requires.Tools {
 			tools[tool] = true
@@ -67,6 +69,17 @@ func (c composition) combinedPack() Pack {
 				resources[key] = r
 				p.Resources = append(p.Resources, r)
 			}
+		}
+	}
+	if !preserveResourceOrder {
+		p.Resources = nil
+		keys := make([]string, 0, len(resources))
+		for key := range resources {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			p.Resources = append(p.Resources, resources[key])
 		}
 	}
 	for tool := range tools {

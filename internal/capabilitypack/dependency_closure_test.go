@@ -49,7 +49,7 @@ func TestPreviewPreservesDependencyOrderThroughComposition(t *testing.T) {
 		Catalog{packs: []Pack{pack}},
 		WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}),
 	)
-	_, err := facade.Preview(context.Background(), ActivationRequest{
+	plan, err := facade.Preview(context.Background(), ActivationRequest{
 		PackID: "app", Surface: SurfaceCodex,
 		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "instruction", ID: "a"}}},
 	})
@@ -65,6 +65,32 @@ func TestPreviewPreservesDependencyOrderThroughComposition(t *testing.T) {
 	}
 	if want := []string{"skill:z", "instruction:a"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("desired resource order = %v, want %v", got, want)
+	}
+	report := plan.JSONReport(true)
+	if !reflect.DeepEqual(report.ResourceGraph, report.Contract.ResourceGraph) {
+		t.Fatalf("preview graphs disagree: top-level=%#v contract=%#v", report.ResourceGraph, report.Contract.ResourceGraph)
+	}
+	if report.ResourceGraph.Resources[0].Role != ResourceRoleDependency {
+		t.Fatalf("dependency role = %q, want %q", report.ResourceGraph.Resources[0].Role, ResourceRoleDependency)
+	}
+}
+
+func TestCompositionPreservesLegacyLexicalResourceOrder(t *testing.T) {
+	pack := Pack{
+		manifestVersion: manifestSchemaV1,
+		ID:              "legacy",
+		Resources: []Resource{
+			{Kind: "skill", ID: "z"},
+			{Kind: "instruction", ID: "a"},
+		},
+	}
+	combined := (composition{requested: pack, packs: []Pack{pack}}).combinedPack()
+	got := []string{
+		combined.Resources[0].Kind + ":" + combined.Resources[0].ID,
+		combined.Resources[1].Kind + ":" + combined.Resources[1].ID,
+	}
+	if want := []string{"instruction:a", "skill:z"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy resource order = %v, want %v", got, want)
 	}
 }
 
