@@ -322,7 +322,7 @@ func removeSliceFJSONFields(value any) {
 				// compares the pre-existing attempt outcome.
 				delete(value, "affected_resources")
 				delete(value, "consumers")
-				delete(value, "next_command")
+				delete(value, "reconcile_scope")
 			}
 		}
 		if contributors, ok := value["contributors"].([]any); ok {

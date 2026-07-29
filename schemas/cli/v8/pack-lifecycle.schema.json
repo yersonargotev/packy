@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yersonargotev.github.io/packy/schemas/cli/v8/pack-lifecycle.schema.json",
-  "title": "Packy capability-pack lifecycle reports v7",
+  "title": "Packy capability-pack lifecycle reports v8",
   "$defs": {
     "action": {
       "type": "object",
@@ -908,7 +908,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": 7
+          "const": 8
         },
         "report": {
           "const": "pack-lifecycle-apply"
@@ -945,7 +945,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": 7
+          "const": 8
         },
         "report": {
           "const": "pack-lifecycle-failure"

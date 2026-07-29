@@ -272,7 +272,7 @@ type ApplyingJournal struct {
 	FailureDetail     string                     `json:"failure_detail,omitempty"`
 	AffectedResources []RecoveryAffectedResource `json:"affected_resources,omitempty"`
 	Consumers         []RecoveryConsumer         `json:"consumers,omitempty"`
-	NextCommand       string                     `json:"next_command,omitempty"`
+	ReconcileScope    ReconcileScope             `json:"reconcile_scope,omitempty"`
 }
 
 type RecoveryAffectedResource struct {
@@ -1439,7 +1439,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	state.Journal = &ApplyingJournal{
 		PlanID: request.Plan.id, PlanDigest: request.Plan.digest, Operation: request.Plan.operation,
 		Surface: request.Plan.surface, PackID: request.Plan.pack.ID, Outcome: AttemptApplying,
-		AffectedResources: affectedResources, Consumers: consumers, NextCommand: request.Plan.nextLifecycleCommand(),
+		AffectedResources: affectedResources, Consumers: consumers, ReconcileScope: request.Plan.reconcileScope,
 	}
 	for _, action := range actions {
 		if action.Kind != ActionHostFollowUp {
@@ -1593,7 +1593,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	verifiedAttempt.Outcome = AttemptVerified
 	verifiedAttempt.AffectedResources = nil
 	verifiedAttempt.Consumers = nil
-	verifiedAttempt.NextCommand = ""
+	verifiedAttempt.ReconcileScope = ""
 	state.LastAttempts = recordLatestAttempt(state.LastAttempts, verifiedAttempt)
 	state.Journal = nil
 	previousOwnership := cloneOwnership(state.Ownership)
@@ -2016,10 +2016,14 @@ func (p ReconciliationPlan) recoverySubjects() ([]RecoveryAffectedResource, []Re
 }
 
 func (p ReconciliationPlan) nextLifecycleCommand() string {
-	if p.operation == OperationReconcile && p.reconcileScope == ReconcileSurfaceWide {
-		return fmt.Sprintf("packy pack reconcile --surface %s", p.surface)
+	return lifecycleCommand(p.operation, p.pack.ID, p.surface, p.reconcileScope)
+}
+
+func lifecycleCommand(operation Operation, packID string, surface Surface, reconcileScope ReconcileScope) string {
+	if operation == OperationReconcile && reconcileScope == ReconcileSurfaceWide {
+		return fmt.Sprintf("packy pack reconcile --surface %s", surface)
 	}
-	return fmt.Sprintf("packy pack %s %s --surface %s", p.operation, p.pack.ID, p.surface)
+	return fmt.Sprintf("packy pack %s %s --surface %s", operation, packID, surface)
 }
 
 func normalizedRecoveryJournal(value *ApplyingJournal) *ApplyingJournal {

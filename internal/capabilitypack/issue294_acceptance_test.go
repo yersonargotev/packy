@@ -158,7 +158,7 @@ func TestIssue294TechnicalFailureRecordsRecoverySubjectsAndNextCommand(t *testin
 	wantResources := []RecoveryAffectedResource{{Pack: "app", Resource: ResourceIdentity{Kind: "instruction", ID: "guide"}}}
 	if journal.Outcome != AttemptRecoveryRequired ||
 		!reflect.DeepEqual(journal.AffectedResources, wantResources) ||
-		journal.NextCommand != "packy pack reconcile app --surface codex" ||
+		journal.ReconcileScope != ReconcileTargeted ||
 		journal.FailedAction != "instruction:guide" ||
 		len(journal.Completed) != 0 ||
 		len(journal.NotStarted()) != 0 {
@@ -179,7 +179,7 @@ func TestIssue294RecoveryPreservesTruthfulAttemptFactsAndRequiresFreshApproval(t
 		Completed: []string{"instruction:one"}, FailedAction: "instruction:two", FailureDetail: "disk full",
 		AffectedResources: []RecoveryAffectedResource{{Pack: pack.ID, Resource: ResourceIdentity{Kind: "instruction", ID: "two"}}},
 		Consumers:         []RecoveryConsumer{{Pack: "consumer", Resource: &ResourceIdentity{Kind: "instruction", ID: "root"}, Capability: "cap:app"}},
-		NextCommand:       "packy pack reconcile app --surface codex",
+		ReconcileScope:    ReconcileTargeted,
 	}
 	intent := ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 5}
 	state := ActivationState{Intent: intent, Intents: []ActivationIntent{intent}, Journal: &history}
@@ -209,7 +209,7 @@ func TestIssue294RecoveryPreservesTruthfulAttemptFactsAndRequiresFreshApproval(t
 	if guidance.OriginatingOperation != OperationReconcile ||
 		!reflect.DeepEqual(guidance.AffectedResources, history.AffectedResources) ||
 		!reflect.DeepEqual(guidance.Consumers, history.Consumers) ||
-		guidance.NextCommand != history.NextCommand ||
+		guidance.NextCommand != "packy pack reconcile app --surface codex" ||
 		!reflect.DeepEqual(guidance.Completed, history.Completed) ||
 		guidance.FailedAction != history.FailedAction ||
 		!reflect.DeepEqual(guidance.NotStarted, history.NotStarted()) {

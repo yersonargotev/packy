@@ -48,6 +48,8 @@ var structuredOutputV7Fixtures = map[string]string{
 }
 
 var structuredOutputV8Fixtures = map[string]string{
+	"pack-lifecycle-apply.json":   "pack-lifecycle.schema.json",
+	"pack-lifecycle-failure.json": "pack-lifecycle.schema.json",
 	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
 }
 
