@@ -443,15 +443,6 @@ func optionalResourceIdentity(identity ResourceIdentity) *ResourceIdentity {
 	return &copy
 }
 
-func resourceByIdentity(pack Pack, identity ResourceIdentity) (Resource, bool) {
-	for _, resource := range pack.Resources {
-		if resource.Kind == identity.Kind && resource.ID == identity.ID {
-			return resource, true
-		}
-	}
-	return Resource{}, false
-}
-
 type capabilityRequirement struct {
 	resource   ResourceIdentity
 	capability string
