@@ -3,7 +3,8 @@
 ## Packy development
 
 - Source control and delivery use GitHub issues, pull requests, and Actions.
-- Packy is a Go CLI; the repository completion gate requires `go test ./...`.
+- Packy is a Go CLI; follow the
+  [repository validation contract](README.md#verification) before delivery.
 - Architecture and symbol discovery use CodeGraph before source inspection;
   runtime behavior is verified with real commands or tests.
 - Tests and manual checks that exercise user configuration sandbox `HOME` and

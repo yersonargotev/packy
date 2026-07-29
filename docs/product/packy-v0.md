@@ -85,11 +85,8 @@ updateable, and reversible while keeping startup instructions small.
 
 ## Verification
 
-The repo-level verification remains:
-
-```bash
-go test ./...
-```
+The [repository validation contract](../../README.md#verification) defines the
+authoritative delivery gate, compatibility check, and focused iteration aid.
 
 Before using Packy against a real HOME, run the package lifecycle in a sandboxed
 HOME/config environment. The canonical command sequence and focused automated
