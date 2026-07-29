@@ -419,6 +419,7 @@ type ReconciliationPlan struct {
 	providerChoices         []ProviderChoice
 	previousProviderChoices []ProviderChoice
 	rootMigrations          []RootMigration
+	allModeContractChanges  []string
 	recovery                bool
 	historicalAttempt       *ApplyingJournal
 }
@@ -636,12 +637,24 @@ func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (Recon
 	if request.ProviderChoices == nil {
 		activation.ProviderChoices = cloneProviderChoices(intent.ProviderChoices)
 	}
+	allModeChanges := []string{}
+	if activation.Selection.Mode == SelectionAll && hasTrustedHistoricalArtifact(request.PackID, intent.Version) {
+		previous, resolveErr := f.catalog.resolveIntentPack(request.PackID, intent.Version)
+		if resolveErr != nil {
+			return ReconciliationPlan{}, resolveErr
+		}
+		allModeChanges, err = allModeOperationalContractChanges(previous, current, request.Surface)
+		if err != nil {
+			return ReconciliationPlan{}, err
+		}
+	}
 	plan, err := f.preview(ctx, activation, OperationUpdate, intent.Version)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
 	plan.rootMigrations = appliedRootMigrations(current, intent.Selection, intent.Aliases)
-	if len(plan.rootMigrations) > 0 && !planHasApprovalPhase(plan, ConsentReversibleLocal) {
+	plan.allModeContractChanges = allModeChanges
+	if (len(plan.rootMigrations) > 0 || len(plan.allModeContractChanges) > 0) && !planHasApprovalPhase(plan, ConsentReversibleLocal) {
 		plan.phases = append([]PlanPhase{{Kind: ConsentReversibleLocal, ApprovalRequired: true, Actions: []ProjectionAction{}}}, plan.phases...)
 	}
 	plan.seal()
@@ -663,10 +676,10 @@ func migrateUpdateIntent(target Pack, intent ActivationIntent) (ResourceSelectio
 		return ResourceSelection{}, nil, err
 	}
 	aliases := cloneAliases(intent.Aliases)
-	if selection.Mode != SelectionCustom {
-		return selection, aliases, nil
-	}
 	if target.manifestVersion != manifestSchemaV4 {
+		if selection.Mode != SelectionCustom {
+			return selection, aliases, nil
+		}
 		return ResourceSelection{}, nil, fmt.Errorf("custom resource selection update requires target manifest schema_version 4")
 	}
 	if target.RootMigrations != nil {
@@ -682,6 +695,17 @@ func migrateUpdateIntent(target Pack, intent ActivationIntent) (ResourceSelectio
 	for _, migration := range target.RootMigrations {
 		migrations[migration.From.String()] = migration.To
 	}
+	for i := range aliases {
+		if targetAlias, exists := migrations[(ResourceIdentity{Kind: aliases[i].Kind, ID: aliases[i].ID}).String()]; exists {
+			aliases[i].Kind, aliases[i].ID = targetAlias.Kind, targetAlias.ID
+		}
+	}
+	if selection.Mode != SelectionCustom {
+		if err := canonicalizeAliases(&aliases); err != nil {
+			return ResourceSelection{}, nil, err
+		}
+		return selection, aliases, nil
+	}
 	rewritten := make(map[string]ResourceIdentity, len(selection.Roots))
 	for _, root := range selection.Roots {
 		if resource, exists := resources[root.String()]; exists && resource.Kind != "asset" && resource.Kind != "notice" {
@@ -696,11 +720,6 @@ func migrateUpdateIntent(target Pack, intent ActivationIntent) (ResourceSelectio
 			return ResourceSelection{}, nil, fmt.Errorf("root migration to %q makes the selected roots ambiguous", targetRoot.String())
 		}
 		rewritten[targetRoot.String()] = targetRoot
-	}
-	for i := range aliases {
-		if targetAlias, exists := migrations[(ResourceIdentity{Kind: aliases[i].Kind, ID: aliases[i].ID}).String()]; exists {
-			aliases[i].Kind, aliases[i].ID = targetAlias.Kind, targetAlias.ID
-		}
 	}
 	roots := make([]ResourceIdentity, 0, len(rewritten))
 	for _, root := range rewritten {
@@ -718,7 +737,7 @@ func migrateUpdateIntent(target Pack, intent ActivationIntent) (ResourceSelectio
 
 func appliedRootMigrations(target Pack, before ResourceSelection, aliases []SurfaceAlias) []RootMigration {
 	before, beforeErr := canonicalSelection(before)
-	if beforeErr != nil || before.Mode != SelectionCustom {
+	if beforeErr != nil {
 		return []RootMigration{}
 	}
 	resources := make(map[string]bool, len(target.Resources))
@@ -730,11 +749,13 @@ func appliedRootMigrations(target Pack, before ResourceSelection, aliases []Surf
 		declared[migration.From.String()] = migration
 	}
 	applied := map[string]bool{}
-	for _, from := range before.Roots {
-		if resources[from.String()] {
-			continue
+	if before.Mode == SelectionCustom {
+		for _, from := range before.Roots {
+			if resources[from.String()] {
+				continue
+			}
+			applied[from.String()] = true
 		}
-		applied[from.String()] = true
 	}
 	for _, alias := range aliases {
 		from := (ResourceIdentity{Kind: alias.Kind, ID: alias.ID}).String()
@@ -749,6 +770,41 @@ func appliedRootMigrations(target Pack, before ResourceSelection, aliases []Surf
 		}
 	}
 	return result
+}
+
+func allModeOperationalContractChanges(before, target Pack, surface Surface) ([]string, error) {
+	selection := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+	before, err := selectPackResourcesForSurface(before, selection, surface)
+	if err != nil {
+		return nil, fmt.Errorf("resolve previous all-mode contract: %w", err)
+	}
+	target, err = selectPackResourcesForSurface(target, selection, surface)
+	if err != nil {
+		return nil, fmt.Errorf("resolve target all-mode contract: %w", err)
+	}
+	operational := func(pack Pack) map[string]bool {
+		result := map[string]bool{}
+		for _, resource := range pack.Resources {
+			if resource.Kind != "asset" && resource.Kind != "notice" {
+				result[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = true
+			}
+		}
+		return result
+	}
+	previous, next := operational(before), operational(target)
+	changes := []string{}
+	for identity := range next {
+		if !previous[identity] {
+			changes = append(changes, "all selection adds operational resource "+identity)
+		}
+	}
+	for identity := range previous {
+		if !next[identity] {
+			changes = append(changes, "all selection removes operational resource "+identity)
+		}
+	}
+	sort.Strings(changes)
+	return changes, nil
 }
 
 func (f Facade) PreviewDeactivate(ctx context.Context, request DeactivationRequest) (ReconciliationPlan, error) {
@@ -1959,11 +2015,12 @@ func (p ReconciliationPlan) sealPayload() any {
 		ProviderChoices         []ProviderChoice
 		PreviousProviderChoices []ProviderChoice
 		RootMigrations          []RootMigration
+		AllModeContractChanges  []string
 		PartialSelection        bool
 		SelectionValidity       SelectionValidity
 		Recovery                bool
 		Historical              *ApplyingJournal
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.sensitiveEffects, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.providerChoices, p.previousProviderChoices, p.rootMigrations, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.sensitiveEffects, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.providerChoices, p.previousProviderChoices, p.rootMigrations, p.allModeContractChanges, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
 }
 
 func providerHasConsumer(intents map[string]ActivationIntent, providerID string) bool {
