@@ -53,7 +53,7 @@ packy uninstall --dry-run
 Packy core remains available even when the optional `matty` capability pack is
 inactive.
 
-The selectable catalog currently contains `addy`, `engram`, and `matty`.
+The selectable pack catalog currently contains `addy`, `engram`, and `matty`.
 
 The catalog supports the `codex`, `opencode`, and `claude` surfaces when a Pack
 explicitly declares them. Existing Pack activations retain their recorded

@@ -11,19 +11,23 @@ import (
 )
 
 var (
-	catalogDeclaration = regexp.MustCompile(`(?m)^The selectable catalog currently contains ((?:` + "`[^`]+`" + `(?:, |, and )?)+)\.$`)
+	catalogDeclaration = regexp.MustCompile(`(?m)^The selectable pack catalog currently contains ((?:` + "`[^`]+`" + `(?:, |, and )?)+)\.$`)
 	catalogID          = regexp.MustCompile("`([^`]+)`")
 	staleCatalogClaim  = regexp.MustCompile("(?i)only\\s+`?matty`?\\s+and\\s+`?engram`?")
 )
 
-func TestPublicDocumentationNamesExactSelectableCatalog(t *testing.T) {
+func TestPublicDocumentationNamesExactSelectablePackCatalog(t *testing.T) {
 	root := repositoryRoot(t)
 	catalog, err := capabilitypack.Discover(filepath.Join(root, "bundle"))
 	if err != nil {
 		t.Fatalf("discover production catalog: %v", err)
 	}
 	var want []string
-	for _, pack := range catalog.List() {
+	packs, err := catalog.ListCurrent()
+	if err != nil {
+		t.Fatalf("list current production catalog: %v", err)
+	}
+	for _, pack := range packs {
 		want = append(want, pack.ID)
 	}
 	sort.Strings(want)
