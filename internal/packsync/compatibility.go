@@ -80,6 +80,9 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 		if !ok {
 			continue
 		}
+		if current.SchemaVersion == 4 {
+			continue
+		}
 		if current.Version != contract.ToVersion {
 			archived, err := readCompatibilityManifest(filepath.Join(repositoryRoot, "bundle", "history", contract.PackID, contract.ToVersion, "pack.json"))
 			if err != nil || archived.ID != contract.PackID || archived.Version != contract.ToVersion {
@@ -110,6 +113,9 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 		}
 		current, ok := manifests[historical.ID]
 		if !targetPacks[historical.ID] || !ok || current.Version == historical.Version {
+			continue
+		}
+		if current.SchemaVersion == 4 {
 			continue
 		}
 		if acceptedCompatibilityRoute(validated, historical.ID, historical.Version, current.Version) {

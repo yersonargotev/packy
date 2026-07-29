@@ -168,11 +168,31 @@ const (
 )
 
 type PackImpact struct {
-	PackID                   string              `json:"pack_id"`
-	CurrentVersion           string              `json:"current_version"`
-	MechanicalFloor          ClassificationLevel `json:"mechanical_floor"`
-	SemanticEvidenceRequired bool                `json:"semantic_evidence_required"`
-	Reasons                  []string            `json:"reasons"`
+	PackID                   string                    `json:"pack_id"`
+	CurrentVersion           string                    `json:"current_version"`
+	MechanicalFloor          ClassificationLevel       `json:"mechanical_floor"`
+	SemanticEvidenceRequired bool                      `json:"semantic_evidence_required"`
+	Reasons                  []string                  `json:"reasons"`
+	Contract                 *ManifestContractEvidence `json:"manifest_contract,omitempty"`
+}
+
+type ManifestContractEvidence struct {
+	SchemaVersion          int                 `json:"schema_version"`
+	CurrentVersion         string              `json:"current_version"`
+	CurrentManifestSHA256  string              `json:"current_manifest_sha256"`
+	BaselineManifestSHA256 string              `json:"baseline_manifest_sha256"`
+	RootMigrations         []MigrationIdentity `json:"root_migrations"`
+	NoticeAssociations     []NoticeAssociation `json:"notice_associations"`
+}
+
+type MigrationIdentity struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type NoticeAssociation struct {
+	Resource string `json:"resource"`
+	Notice   string `json:"notice"`
 }
 
 type Counts struct {
