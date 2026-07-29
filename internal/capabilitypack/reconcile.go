@@ -30,6 +30,15 @@ func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) 
 			return ReconciliationPlan{}, err
 		}
 		activation.Selection = intent.Selection
+		if request.Aliases != nil {
+			supplied := cloneAliases(request.Aliases)
+			persisted := cloneAliases(intent.Aliases)
+			if canonicalizeAliases(&supplied) != nil || canonicalizeAliases(&persisted) != nil ||
+				digestJSON(supplied) != digestJSON(persisted) {
+				return ReconciliationPlan{}, fmt.Errorf("reconcile preserves persisted aliases and cannot adopt new alias authority")
+			}
+		}
+		activation.Aliases = cloneAliases(intent.Aliases)
 		if request.ProviderChoices == nil {
 			activation.ProviderChoices = cloneProviderChoices(intent.ProviderChoices)
 		} else {

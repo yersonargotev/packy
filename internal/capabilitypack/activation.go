@@ -260,16 +260,30 @@ type ProjectionOwnership struct {
 func (o ProjectionOwnership) DeletionAuthorized() bool { return len(o.Contributors) == 1 }
 
 type ApplyingJournal struct {
-	PlanID        string         `json:"plan_id"`
-	PlanDigest    string         `json:"plan_digest,omitempty"`
-	Operation     Operation      `json:"operation,omitempty"`
-	Surface       Surface        `json:"surface,omitempty"`
-	PackID        string         `json:"pack_id,omitempty"`
-	Outcome       AttemptOutcome `json:"outcome,omitempty"`
-	Actions       []string       `json:"actions"`
-	Completed     []string       `json:"completed,omitempty"`
-	FailedAction  string         `json:"failed_action,omitempty"`
-	FailureDetail string         `json:"failure_detail,omitempty"`
+	PlanID            string                     `json:"plan_id"`
+	PlanDigest        string                     `json:"plan_digest,omitempty"`
+	Operation         Operation                  `json:"operation,omitempty"`
+	Surface           Surface                    `json:"surface,omitempty"`
+	PackID            string                     `json:"pack_id,omitempty"`
+	Outcome           AttemptOutcome             `json:"outcome,omitempty"`
+	Actions           []string                   `json:"actions"`
+	Completed         []string                   `json:"completed,omitempty"`
+	FailedAction      string                     `json:"failed_action,omitempty"`
+	FailureDetail     string                     `json:"failure_detail,omitempty"`
+	AffectedResources []RecoveryAffectedResource `json:"affected_resources,omitempty"`
+	Consumers         []RecoveryConsumer         `json:"consumers,omitempty"`
+	ReconcileScope    ReconcileScope             `json:"reconcile_scope,omitempty"`
+}
+
+type RecoveryAffectedResource struct {
+	Pack     string           `json:"pack"`
+	Resource ResourceIdentity `json:"resource"`
+}
+
+type RecoveryConsumer struct {
+	Pack       string            `json:"pack"`
+	Resource   *ResourceIdentity `json:"resource,omitempty"`
+	Capability string            `json:"capability"`
 }
 
 type AttemptOutcome string
@@ -1417,23 +1431,16 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			state.Intents = append(state.Intents, intent)
 		}
 		sort.Slice(state.Intents, func(i, j int) bool { return state.Intents[i].PackID < state.Intents[j].PackID })
-	} else if request.Plan.operation == OperationReconcile && request.Plan.reconcileScope == ReconcileTargeted {
-		previous := activeIntents(state)
-		for i := range previous {
-			if previous[i].PackID == pack.ID && previous[i].Surface == request.Plan.surface {
-				if digestJSON(previous[i].Aliases) != digestJSON(request.Plan.aliases) {
-					previous[i].Aliases = cloneAliases(request.Plan.aliases)
-					previous[i].Revision++
-				}
-				state.Intent = previous[i]
-			}
-		}
-		state.Intents = previous
 	}
 	if request.Plan.recovery && state.Journal != nil {
 		state.History = append(state.History, cloneJournal(*request.Plan.historicalAttempt))
 	}
-	state.Journal = &ApplyingJournal{PlanID: request.Plan.id, PlanDigest: request.Plan.digest, Operation: request.Plan.operation, Surface: request.Plan.surface, PackID: request.Plan.pack.ID, Outcome: AttemptApplying}
+	affectedResources, consumers := request.Plan.recoverySubjects()
+	state.Journal = &ApplyingJournal{
+		PlanID: request.Plan.id, PlanDigest: request.Plan.digest, Operation: request.Plan.operation,
+		Surface: request.Plan.surface, PackID: request.Plan.pack.ID, Outcome: AttemptApplying,
+		AffectedResources: affectedResources, Consumers: consumers, ReconcileScope: request.Plan.reconcileScope,
+	}
 	for _, action := range actions {
 		if action.Kind != ActionHostFollowUp {
 			state.Journal.Actions = append(state.Journal.Actions, action.ID)
@@ -1584,6 +1591,9 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	}
 	verifiedAttempt := cloneJournal(*state.Journal)
 	verifiedAttempt.Outcome = AttemptVerified
+	verifiedAttempt.AffectedResources = nil
+	verifiedAttempt.Consumers = nil
+	verifiedAttempt.ReconcileScope = ""
 	state.LastAttempts = recordLatestAttempt(state.LastAttempts, verifiedAttempt)
 	state.Journal = nil
 	previousOwnership := cloneOwnership(state.Ownership)
@@ -1919,7 +1929,7 @@ func recoveryAttempt(state ActivationState, operation Operation, packID string, 
 	}
 	intent, ok := intentForPack(state, packID, surface)
 	switch operation {
-	case OperationActivate, OperationUpdate:
+	case OperationActivate, OperationUpdate, OperationReconcile:
 		return ok && intent.Active
 	case OperationDeactivate:
 		return !ok || !intent.Active
@@ -1934,6 +1944,86 @@ func (p *ReconciliationPlan) attachRecovery(state ActivationState, recovery bool
 	}
 	p.recovery = true
 	p.historicalAttempt = normalizedRecoveryJournal(state.Journal)
+}
+
+func (p ReconciliationPlan) recoverySubjects() ([]RecoveryAffectedResource, []RecoveryConsumer) {
+	resources := map[string]RecoveryAffectedResource{}
+	for _, phase := range p.phases {
+		for _, action := range phase.Actions {
+			if action.Kind == ActionHostFollowUp {
+				continue
+			}
+			for _, contributor := range p.actionContributors(action.ID) {
+				parts := strings.SplitN(strings.TrimPrefix(contributor, "pack:"), ":", 3)
+				if len(parts) != 3 {
+					continue
+				}
+				resource, err := ParseResourceIdentity(parts[1] + ":" + parts[2])
+				if err != nil {
+					continue
+				}
+				value := RecoveryAffectedResource{Pack: parts[0], Resource: resource}
+				resources[value.Pack+"/"+value.Resource.String()] = value
+			}
+		}
+	}
+	affected := make([]RecoveryAffectedResource, 0, len(resources))
+	for _, value := range resources {
+		affected = append(affected, value)
+	}
+	sort.Slice(affected, func(i, j int) bool {
+		if affected[i].Pack != affected[j].Pack {
+			return affected[i].Pack < affected[j].Pack
+		}
+		return affected[i].Resource.String() < affected[j].Resource.String()
+	})
+
+	consumerSet := map[string]RecoveryConsumer{}
+	for _, fact := range p.capabilityFacts {
+		resourceKey := ""
+		if fact.ConsumerResource != nil {
+			resourceKey = fact.ConsumerResource.String()
+		}
+		key := fact.ConsumerPack + "/" + resourceKey + "/" + fact.Capability
+		consumer := RecoveryConsumer{Pack: fact.ConsumerPack, Capability: fact.Capability}
+		if fact.ConsumerResource != nil {
+			resource := *fact.ConsumerResource
+			consumer.Resource = &resource
+		}
+		consumerSet[key] = consumer
+	}
+	consumers := make([]RecoveryConsumer, 0, len(consumerSet))
+	for _, value := range consumerSet {
+		consumers = append(consumers, value)
+	}
+	sort.Slice(consumers, func(i, j int) bool {
+		if consumers[i].Pack != consumers[j].Pack {
+			return consumers[i].Pack < consumers[j].Pack
+		}
+		left, right := "", ""
+		if consumers[i].Resource != nil {
+			left = consumers[i].Resource.String()
+		}
+		if consumers[j].Resource != nil {
+			right = consumers[j].Resource.String()
+		}
+		if left != right {
+			return left < right
+		}
+		return consumers[i].Capability < consumers[j].Capability
+	})
+	return affected, consumers
+}
+
+func (p ReconciliationPlan) nextLifecycleCommand() string {
+	return lifecycleCommand(p.operation, p.pack.ID, p.surface, p.reconcileScope)
+}
+
+func lifecycleCommand(operation Operation, packID string, surface Surface, reconcileScope ReconcileScope) string {
+	if operation == OperationReconcile && reconcileScope == ReconcileSurfaceWide {
+		return fmt.Sprintf("packy pack reconcile --surface %s", surface)
+	}
+	return fmt.Sprintf("packy pack %s %s --surface %s", operation, packID, surface)
 }
 
 func normalizedRecoveryJournal(value *ApplyingJournal) *ApplyingJournal {
@@ -2513,6 +2603,14 @@ func canonicalProviderChoices(values []ProviderChoice) ([]ProviderChoice, error)
 func cloneJournal(journal ApplyingJournal) ApplyingJournal {
 	journal.Actions = append([]string(nil), journal.Actions...)
 	journal.Completed = append([]string(nil), journal.Completed...)
+	journal.AffectedResources = append([]RecoveryAffectedResource(nil), journal.AffectedResources...)
+	journal.Consumers = append([]RecoveryConsumer(nil), journal.Consumers...)
+	for i := range journal.Consumers {
+		if journal.Consumers[i].Resource != nil {
+			resource := *journal.Consumers[i].Resource
+			journal.Consumers[i].Resource = &resource
+		}
+	}
 	return journal
 }
 

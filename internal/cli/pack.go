@@ -446,7 +446,8 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		return err
 	}
 	if history := plan.HistoricalAttempt(); history != nil {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Recovery: fresh %s Preview toward the already-approved intent; historical plan %s is not replayed.\nHistorical outcome: %s\nHistorical digest: %s\nCompleted: %s\nFailed: %s — %s\nNot started: %s\nTo recover, repeat `packy pack %s %s --surface %s`; a new Preview and approvals are required.\n", plan.Operation(), history.PlanID, history.Outcome, history.PlanDigest, joinFacts(history.Completed), history.FailedAction, history.FailureDetail, joinFacts(history.NotStarted()), plan.Operation(), plan.Pack().ID, plan.Surface()); err != nil {
+		guidance := plan.RecoveryGuidance()
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Recovery: fresh %s Preview toward the already-approved intent; historical plan %s is not replayed.\nOriginating operation: %s\nHistorical outcome: %s\nHistorical digest: %s\nAffected resources: %s\nConsumers: %s\nCompleted: %s\nFailed: %s — %s\nNot started: %s\nNext explicit lifecycle command: `%s`\nTo recover, repeat `%s`; a new Preview and approvals are required.\n", plan.Operation(), history.PlanID, guidance.OriginatingOperation, history.Outcome, history.PlanDigest, renderRecoveryResources(guidance.AffectedResources), renderRecoveryConsumers(guidance.Consumers), joinFacts(guidance.Completed), guidance.FailedAction, guidance.FailureDetail, joinFacts(guidance.NotStarted), guidance.NextCommand, guidance.NextCommand); err != nil {
 			return err
 		}
 	}
@@ -631,6 +632,29 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		}
 	}
 	return nil
+}
+
+func renderRecoveryResources(values []capabilitypack.RecoveryAffectedResource) string {
+	facts := make([]string, 0, len(values))
+	for _, value := range values {
+		facts = append(facts, value.Pack+"/"+value.Resource.String())
+	}
+	return joinFacts(facts)
+}
+
+func renderRecoveryConsumers(values []capabilitypack.RecoveryConsumer) string {
+	facts := make([]string, 0, len(values))
+	for _, value := range values {
+		fact := value.Pack
+		if value.Resource != nil {
+			fact += "/" + value.Resource.String()
+		}
+		if value.Capability != "" {
+			fact += " (" + value.Capability + ")"
+		}
+		facts = append(facts, fact)
+	}
+	return joinFacts(facts)
 }
 
 func renderActivationPlanOutput(cmd *cobra.Command, plan capabilitypack.ReconciliationPlan, dryRun, jsonOutput bool) error {
