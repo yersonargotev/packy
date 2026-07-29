@@ -289,7 +289,14 @@ type Pack struct {
 	Requires        Requirements
 	Conflicts       []string
 	Resources       []Resource
+	RootMigrations  []RootMigration
 	Contract        Contract
+}
+
+// RootMigration declares one exact manifest-v4 update identity transition.
+type RootMigration struct {
+	From ResourceIdentity `json:"from"`
+	To   ResourceIdentity `json:"to"`
 }
 
 type ResourceCounts struct {
@@ -599,6 +606,7 @@ func clonePack(pack Pack) Pack {
 	pack.Requires.Capabilities = append([]string(nil), pack.Requires.Capabilities...)
 	pack.Requires.Tools = append([]string(nil), pack.Requires.Tools...)
 	pack.Conflicts = append([]string(nil), pack.Conflicts...)
+	pack.RootMigrations = append([]RootMigration(nil), pack.RootMigrations...)
 	pack.Resources = append([]Resource(nil), pack.Resources...)
 	for i := range pack.Resources {
 		pack.Resources[i].Args = append([]string(nil), pack.Resources[i].Args...)
@@ -808,15 +816,19 @@ func containsString(values []string, target string) bool {
 }
 
 type manifest struct {
-	SchemaVersion int               `json:"schema_version"`
-	ID            string            `json:"id"`
-	Version       string            `json:"version"`
-	Provides      []string          `json:"provides"`
-	Requires      Requirements      `json:"requires"`
-	Conflicts     []string          `json:"conflicts"`
-	Resources     []json.RawMessage `json:"resources"`
-	Contract      *Contract         `json:"contract,omitempty"`
-	Surfaces      *[]Surface        `json:"surfaces,omitempty"`
+	SchemaVersion  int               `json:"schema_version"`
+	ID             string            `json:"id"`
+	Version        string            `json:"version"`
+	Provides       []string          `json:"provides"`
+	Requires       Requirements      `json:"requires"`
+	Conflicts      []string          `json:"conflicts"`
+	Resources      []json.RawMessage `json:"resources"`
+	RootMigrations *[]struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	} `json:"root_migrations,omitempty"`
+	Contract *Contract  `json:"contract,omitempty"`
+	Surfaces *[]Surface `json:"surfaces,omitempty"`
 }
 
 func decodeManifest(path, bundleRoot string) (Pack, error) {
@@ -876,15 +888,19 @@ func EncodePortableManifestV4(pack Pack) ([]byte, error) {
 		resources = append(resources, wire)
 	}
 	wire := struct {
-		SchemaVersion int              `json:"schema_version"`
-		ID            string           `json:"id"`
-		Version       string           `json:"version"`
-		Surfaces      []Surface        `json:"surfaces"`
-		Provides      []string         `json:"provides"`
-		Requires      Requirements     `json:"requires"`
-		Conflicts     []string         `json:"conflicts"`
-		Resources     []map[string]any `json:"resources"`
-		Contract      struct {
+		SchemaVersion  int              `json:"schema_version"`
+		ID             string           `json:"id"`
+		Version        string           `json:"version"`
+		Surfaces       []Surface        `json:"surfaces"`
+		Provides       []string         `json:"provides"`
+		Requires       Requirements     `json:"requires"`
+		Conflicts      []string         `json:"conflicts"`
+		Resources      []map[string]any `json:"resources"`
+		RootMigrations []struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		} `json:"root_migrations"`
+		Contract struct {
 			Exclusions []Exclusion `json:"exclusions"`
 		} `json:"contract"`
 	}{
@@ -896,6 +912,16 @@ func EncodePortableManifestV4(pack Pack) ([]byte, error) {
 		Requires:      pack.Requires,
 		Conflicts:     pack.Conflicts,
 		Resources:     resources,
+		RootMigrations: make([]struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}, 0, len(pack.RootMigrations)),
+	}
+	for _, migration := range pack.RootMigrations {
+		wire.RootMigrations = append(wire.RootMigrations, struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}{From: migration.From.String(), To: migration.To.String()})
 	}
 	wire.Contract.Exclusions = pack.Contract.Exclusions
 	encoded, err := json.MarshalIndent(wire, "", "  ")
@@ -920,6 +946,12 @@ func decodeManifestWithSourceValidation(path, bundleRoot string, validateSources
 	if raw.SchemaVersion != manifestSchemaV3 && raw.SchemaVersion != manifestSchemaV4 && raw.Surfaces != nil {
 		return Pack{}, fmt.Errorf("invalid pack manifest %s: surfaces is forbidden before schema_version 3", path)
 	}
+	if raw.SchemaVersion == manifestSchemaV4 && raw.RootMigrations == nil {
+		return Pack{}, fmt.Errorf("invalid pack manifest %s: root_migrations is a required non-null array for schema_version 4", path)
+	}
+	if raw.SchemaVersion != manifestSchemaV4 && raw.RootMigrations != nil {
+		return Pack{}, fmt.Errorf("invalid pack manifest %s: root_migrations is forbidden before schema_version 4", path)
+	}
 	if raw.SchemaVersion == manifestSchemaV4 && raw.Contract != nil {
 		var wire struct {
 			Contract map[string]json.RawMessage `json:"contract"`
@@ -941,6 +973,20 @@ func decodeManifestWithSourceValidation(path, bundleRoot string, validateSources
 			return Pack{}, fmt.Errorf("pack %q resource %d: %w", raw.ID, i, err)
 		}
 		pack.Resources = append(pack.Resources, resource)
+	}
+	if raw.RootMigrations != nil {
+		pack.RootMigrations = make([]RootMigration, 0, len(*raw.RootMigrations))
+		for i, encoded := range *raw.RootMigrations {
+			from, fromErr := ParseResourceIdentity(encoded.From)
+			if fromErr != nil {
+				return Pack{}, fmt.Errorf("pack %q root migration %d from: %w", raw.ID, i, fromErr)
+			}
+			to, toErr := ParseResourceIdentity(encoded.To)
+			if toErr != nil {
+				return Pack{}, fmt.Errorf("pack %q root migration %d to: %w", raw.ID, i, toErr)
+			}
+			pack.RootMigrations = append(pack.RootMigrations, RootMigration{From: from, To: to})
+		}
 	}
 	if raw.Contract != nil {
 		pack.Contract = *raw.Contract
@@ -1623,6 +1669,12 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 			return err
 		}
 		if version == manifestSchemaV4 {
+			if pack.RootMigrations == nil {
+				return fmt.Errorf("root_migrations is a required non-null array")
+			}
+			if err := validateRootMigrations(pack); err != nil {
+				return err
+			}
 			if err := validateResourceConflicts(pack.Resources, seenResources); err != nil {
 				return err
 			}
@@ -1645,6 +1697,56 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 		if err := validateContract(contract, pack.Resources); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateRootMigrations(pack Pack) error {
+	resources := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	sources, targets := map[string]bool{}, map[string]bool{}
+	previous := ""
+	for _, migration := range pack.RootMigrations {
+		from, to := migration.From.String(), migration.To.String()
+		if _, err := ParseResourceIdentity(from); err != nil {
+			return fmt.Errorf("root migration from %q is not canonical", from)
+		}
+		if _, err := ParseResourceIdentity(to); err != nil {
+			return fmt.Errorf("root migration to %q is not canonical", to)
+		}
+		if migration.From.Kind == "asset" || migration.From.Kind == "notice" ||
+			migration.To.Kind == "asset" || migration.To.Kind == "notice" {
+			return fmt.Errorf("root migration %q to %q must use operational root identities", from, to)
+		}
+		if from == to {
+			return fmt.Errorf("root migration %q must change identity", from)
+		}
+		if _, exists := resources[from]; exists {
+			return fmt.Errorf("root migration source %q must be absent from target resources", from)
+		}
+		target, exists := resources[to]
+		if !exists {
+			return fmt.Errorf("root migration target %q does not exist in target resources", to)
+		}
+		if target.Kind == "asset" || target.Kind == "notice" {
+			return fmt.Errorf("root migration target %q is not an operational root", to)
+		}
+		if sources[from] {
+			return fmt.Errorf("duplicate root migration source %q", from)
+		}
+		if targets[to] {
+			return fmt.Errorf("duplicate root migration target %q", to)
+		}
+		key := from + "\x00" + to
+		if previous != "" && previous >= key {
+			return fmt.Errorf("root_migrations must be sorted by from then to")
+		}
+		if targets[from] || sources[to] {
+			return fmt.Errorf("root migration chains and cycles are forbidden between %q and %q", from, to)
+		}
+		sources[from], targets[to], previous = true, true, key
 	}
 	return nil
 }

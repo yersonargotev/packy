@@ -16,6 +16,7 @@ const validManifestV4 = `{
   "provides": [],
   "requires": {"capabilities": [], "tools": []},
   "conflicts": [],
+  "root_migrations": [],
   "resources": [{
     "kind": "skill",
     "id": "example",
@@ -69,6 +70,44 @@ func TestLoadPortableManifestV4ExposesCanonicalRuntimeModes(t *testing.T) {
 	mode := pack.Resources[0].RuntimeModes[0]
 	if mode.Requirements[0].Version != ">=20.0.0" || mode.OnUnavailable != "fail_before_effects" {
 		t.Fatalf("runtime contract changed: %#v", mode)
+	}
+}
+
+func TestLoadPortableManifestV4ValidatesCanonicalRootMigrations(t *testing.T) {
+	valid := strings.Replace(validManifestV4,
+		`"root_migrations": []`,
+		`"root_migrations": [{"from":"skill:legacy","to":"skill:example"}]`,
+		1,
+	)
+	pack, err := LoadPortableManifest(writeManifestV4(t, valid), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.RootMigrations) != 1 || pack.RootMigrations[0].From.String() != "skill:legacy" || pack.RootMigrations[0].To.String() != "skill:example" {
+		t.Fatalf("root migrations = %#v", pack.RootMigrations)
+	}
+
+	tests := map[string]string{
+		"missing":          strings.Replace(validManifestV4, "  \"root_migrations\": [],\n", "", 1),
+		"null":             strings.Replace(validManifestV4, `"root_migrations": []`, `"root_migrations": null`, 1),
+		"source present":   strings.Replace(validManifestV4, `"root_migrations": []`, `"root_migrations": [{"from":"skill:example","to":"skill:other"}]`, 1),
+		"target missing":   strings.Replace(validManifestV4, `"root_migrations": []`, `"root_migrations": [{"from":"skill:legacy","to":"skill:missing"}]`, 1),
+		"duplicate source": strings.Replace(validManifestV4, `"root_migrations": []`, `"root_migrations": [{"from":"skill:legacy","to":"skill:example"},{"from":"skill:legacy","to":"instruction:example"}]`, 1),
+		"duplicate target": strings.Replace(validManifestV4, `"root_migrations": []`, `"root_migrations": [{"from":"instruction:legacy","to":"skill:example"},{"from":"skill:legacy","to":"skill:example"}]`, 1),
+		"unsorted":         strings.Replace(validManifestV4, `"root_migrations": []`, `"root_migrations": [{"from":"skill:z","to":"skill:example"},{"from":"skill:a","to":"skill:other"}]`, 1),
+		"non-operational":  strings.Replace(validManifestV4, `"root_migrations": []`, `"root_migrations": [{"from":"asset:legacy","to":"skill:example"}]`, 1),
+	}
+	for name, manifest := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := LoadPortableManifest(writeManifestV4(t, manifest), t.TempDir()); err == nil {
+				t.Fatal("expected strict root migration rejection")
+			}
+		})
+	}
+
+	v3 := strings.Replace(validManifestV4, `"schema_version": 4`, `"schema_version": 3`, 1)
+	if _, err := LoadPortableManifest(writeManifestV4(t, v3), t.TempDir()); err == nil || !strings.Contains(err.Error(), "root_migrations is forbidden") {
+		t.Fatalf("legacy migration error = %v", err)
 	}
 }
 
@@ -209,6 +248,7 @@ func TestLoadPortableManifestV4RejectsOneFactNegativeTwins(t *testing.T) {
 func TestLoadPortableManifestV4PreservesV3ResourceShapes(t *testing.T) {
 	bundle, path, manifest := writeManifestV3Fixture(t)
 	manifest["schema_version"] = 4
+	manifest["root_migrations"] = []any{}
 	delete(manifest["contract"].(map[string]any), "optional_modes")
 	resource(manifest, "agent", "helper")["runtime_modes"] = []any{map[string]any{
 		"id": "assist", "role": "primary", "requirements": []any{},
@@ -298,6 +338,7 @@ func TestEncodePortableManifestV4RejectsNoticeOwnedAssociations(t *testing.T) {
 
 func TestLoadPortableManifestV3StillForbidsRuntimeModes(t *testing.T) {
 	legacy := strings.Replace(validManifestV4, `"schema_version": 4`, `"schema_version": 3`, 1)
+	legacy = strings.Replace(legacy, "  \"root_migrations\": [],\n", "", 1)
 	if _, err := LoadPortableManifest(writeManifestV4(t, legacy), t.TempDir()); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("v3 runtime_modes must remain unknown, got %v", err)
 	}

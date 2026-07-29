@@ -304,6 +304,7 @@ func completeVercelCatalog(t *testing.T) Catalog {
 	if err != nil {
 		t.Fatal(err)
 	}
+	manifest = []byte(strings.Replace(string(manifest), `"conflicts": [],`, `"conflicts": [],`+"\n  "+`"root_migrations": [],`, 1))
 	path := filepath.Join(bundle, "packs", "vercel", "pack.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)

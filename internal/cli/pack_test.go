@@ -1596,6 +1596,7 @@ func rewriteManifestAsV4(t *testing.T, manifestPath string) {
 	manifest["provides"] = []any{}
 	manifest["requires"] = map[string]any{"capabilities": []any{}, "tools": []any{}}
 	manifest["conflicts"] = []any{}
+	manifest["root_migrations"] = []any{}
 	if contract, ok := manifest["contract"].(map[string]any); ok {
 		delete(contract, "optional_modes")
 	}

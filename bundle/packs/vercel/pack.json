@@ -2099,6 +2099,7 @@
       "capability_conflicts": []
     }
   ],
+  "root_migrations": [],
   "schema_version": 4,
   "surfaces": [
     "claude",

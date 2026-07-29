@@ -2090,6 +2090,7 @@
       "surface_exclusions": []
     }
   ],
+  "root_migrations": [],
   "contract": {
     "exclusions": [
       {
