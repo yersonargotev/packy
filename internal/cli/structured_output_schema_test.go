@@ -34,7 +34,8 @@ var structuredOutputV4Fixtures = map[string]string{
 }
 
 var structuredOutputV5Fixtures = map[string]string{
-	"pack-status.json": "pack-status.schema.json",
+	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
+	"pack-status.json":            "pack-status.schema.json",
 }
 
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {

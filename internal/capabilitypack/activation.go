@@ -388,6 +388,7 @@ type ReconciliationPlan struct {
 	intentFacts            []ActivationIntent
 	ownershipFacts         []ProjectionOwnership
 	activeDependents       []ActiveDependent
+	capabilityFacts        []CapabilityRequirementFact
 	beforeCompositionFacts []Pack
 	removedContributors    map[string]string
 	reconcileScope         ReconcileScope
@@ -452,6 +453,23 @@ func (p ReconciliationPlan) Activations() []PlannedActivation {
 	result := append([]PlannedActivation(nil), p.activations...)
 	for i := range result {
 		result[i].Pack = clonePack(result[i].Pack)
+	}
+	return result
+}
+func (p ReconciliationPlan) CapabilityRequirements() []CapabilityRequirementFact {
+	result := make([]CapabilityRequirementFact, len(p.capabilityFacts))
+	copy(result, p.capabilityFacts)
+	for i := range result {
+		result[i].RequiredTools = append([]string(nil), result[i].RequiredTools...)
+		result[i].RequiredAuthority = append([]string(nil), result[i].RequiredAuthority...)
+		if result[i].ConsumerResource != nil {
+			resource := *result[i].ConsumerResource
+			result[i].ConsumerResource = &resource
+		}
+		if result[i].ProviderResource != nil {
+			resource := *result[i].ProviderResource
+			result[i].ProviderResource = &resource
+		}
 	}
 	return result
 }
@@ -962,7 +980,11 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	sort.Strings(pendingEvidence)
 	pendingHumanActions := append([]string(nil), observation.PendingHumanActions...)
 	sort.Strings(pendingHumanActions)
-	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts}
+	capabilityFacts := append([]CapabilityRequirementFact(nil), composition.capabilityFacts...)
+	for i := range capabilityFacts {
+		capabilityFacts[i].ResultingReadiness = readiness
+	}
+	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts, capabilityFacts: capabilityFacts}
 	recovery := recoveryAttempt(state, operation, request.PackID, request.Surface)
 	plan.attachRecovery(state, recovery)
 	for _, resource := range pack.Resources {
@@ -1086,7 +1108,8 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			if activation.Pack.ID == pack.ID {
 				aliases = request.Plan.aliases
 			}
-			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision, Aliases: cloneAliases(aliases), Selection: previousByID[activation.Pack.ID].Selection}
+			activationSelection := activation.Selection
+			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision, Aliases: cloneAliases(aliases), Selection: activationSelection}
 			if activation.Pack.ID == pack.ID {
 				byID[activation.Pack.ID] = state.Intent
 			}
@@ -1663,6 +1686,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		IntentFacts       []ActivationIntent
 		OwnershipFacts    []ProjectionOwnership
 		Dependents        []ActiveDependent
+		CapabilityFacts   []CapabilityRequirementFact
 		Before            []Pack
 		Removed           map[string]string
 		ReconcileScope    ReconcileScope
@@ -1674,7 +1698,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		SelectionValidity SelectionValidity
 		Recovery          bool
 		Historical        *ApplyingJournal
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
 }
 
 func ownershipByID(values []ProjectionOwnership, id string) (ProjectionOwnership, bool) {

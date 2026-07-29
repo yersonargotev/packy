@@ -17,9 +17,7 @@
     ]
   },
   "id": "vercel",
-  "provides": [
-    "workflow:vercel"
-  ],
+  "provides": [],
   "requires": {
     "capabilities": [],
     "tools": []
@@ -33,7 +31,11 @@
       "conflicts": [],
       "requires": [],
       "source": "references/vercel-web-interface-guidelines-command.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [],
@@ -43,7 +45,11 @@
       "conflicts": [],
       "requires": [],
       "source": "references/vercel-writing-guidelines-command.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "attribution": "Copyright (c) 2025 Vercel Labs",
@@ -53,7 +59,11 @@
       "license": "MIT",
       "requires": [],
       "source": "notices/vercel-web-interface-guidelines-MIT.txt",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "attribution": "Copyright (c) 2026 Vercel Labs",
@@ -63,7 +73,11 @@
       "license": "MIT",
       "requires": [],
       "source": "notices/vercel-writing-guidelines-MIT.txt",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -693,7 +707,11 @@
         }
       ],
       "source": "skills/vercel-cli-with-tokens",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -759,7 +777,11 @@
         }
       ],
       "source": "skills/vercel-composition-patterns",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -1401,7 +1423,13 @@
         }
       ],
       "source": "skills/vercel-deploy-to-vercel",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [
+        "workflow:vercel"
+      ],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -1728,7 +1756,11 @@
         }
       ],
       "source": "skills/vercel-optimize",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -1794,7 +1826,11 @@
         }
       ],
       "source": "skills/vercel-react-best-practices",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -1860,7 +1896,11 @@
         }
       ],
       "source": "skills/vercel-react-native-skills",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -1926,7 +1966,11 @@
         }
       ],
       "source": "skills/vercel-react-view-transitions",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -1985,7 +2029,11 @@
         }
       ],
       "source": "skills/vercel-web-design-guidelines",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     },
     {
       "bindings": [
@@ -2044,7 +2092,11 @@
         }
       ],
       "source": "skills/vercel-writing-guidelines",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": []
     }
   ],
   "schema_version": 4,

@@ -46,24 +46,28 @@ type Requirements struct {
 }
 
 type Resource struct {
-	Kind              string
-	ID                string
-	Source            string
-	Command           string
-	Args              []string
-	Description       string
-	Mode              string
-	Tools             []string
-	Permissions       []string
-	Requires          []string
-	Conflicts         []string
-	Notices           []string
-	Bindings          []Binding
-	SurfaceExclusions []SurfaceExclusion
-	Arguments         CommandArguments
-	License           string
-	Attribution       string
-	RuntimeModes      []RuntimeMode
+	Kind                 string
+	ID                   string
+	Source               string
+	Command              string
+	Args                 []string
+	Description          string
+	Mode                 string
+	Tools                []string
+	Permissions          []string
+	Requires             []string
+	Conflicts            []string
+	ProvidesCapabilities []string
+	RequiresCapabilities []string
+	RequiresTools        []string
+	CapabilityConflicts  []string
+	Notices              []string
+	Bindings             []Binding
+	SurfaceExclusions    []SurfaceExclusion
+	Arguments            CommandArguments
+	License              string
+	Attribution          string
+	RuntimeModes         []RuntimeMode
 }
 
 type RuntimeModeRole string
@@ -602,6 +606,10 @@ func clonePack(pack Pack) Pack {
 		pack.Resources[i].Permissions = append([]string(nil), pack.Resources[i].Permissions...)
 		pack.Resources[i].Requires = append([]string(nil), pack.Resources[i].Requires...)
 		pack.Resources[i].Conflicts = append([]string(nil), pack.Resources[i].Conflicts...)
+		pack.Resources[i].ProvidesCapabilities = append([]string(nil), pack.Resources[i].ProvidesCapabilities...)
+		pack.Resources[i].RequiresCapabilities = append([]string(nil), pack.Resources[i].RequiresCapabilities...)
+		pack.Resources[i].RequiresTools = append([]string(nil), pack.Resources[i].RequiresTools...)
+		pack.Resources[i].CapabilityConflicts = append([]string(nil), pack.Resources[i].CapabilityConflicts...)
 		pack.Resources[i].Notices = append([]string(nil), pack.Resources[i].Notices...)
 		pack.Resources[i].Bindings = append([]Binding(nil), pack.Resources[i].Bindings...)
 		pack.Resources[i].SurfaceExclusions = append([]SurfaceExclusion(nil), pack.Resources[i].SurfaceExclusions...)
@@ -837,6 +845,10 @@ func EncodePortableManifestV4(pack Pack) ([]byte, error) {
 		wire := map[string]any{
 			"kind": resource.Kind, "id": resource.ID, "requires": resource.Requires,
 			"bindings": resource.Bindings, "surface_exclusions": resource.SurfaceExclusions,
+			"provides_capabilities": resource.ProvidesCapabilities,
+			"requires_capabilities": resource.RequiresCapabilities,
+			"requires_tools":        resource.RequiresTools,
+			"capability_conflicts":  resource.CapabilityConflicts,
 		}
 		if resource.Kind != "notice" {
 			wire["conflicts"] = resource.Conflicts
@@ -1017,21 +1029,26 @@ func decodeResourceV4(data []byte, kind string) (Resource, error) {
 		return Resource{}, err
 	}
 	type resourceWireV4 struct {
-		Kind              string             `json:"kind"`
-		ID                string             `json:"id"`
-		Requires          []string           `json:"requires"`
-		Conflicts         []string           `json:"conflicts"`
-		Bindings          []Binding          `json:"bindings"`
-		SurfaceExclusions []SurfaceExclusion `json:"surface_exclusions"`
-		RuntimeModes      []RuntimeMode      `json:"runtime_modes"`
-		Notices           []string           `json:"notices"`
+		Kind                 string             `json:"kind"`
+		ID                   string             `json:"id"`
+		Requires             []string           `json:"requires"`
+		Conflicts            []string           `json:"conflicts"`
+		Bindings             []Binding          `json:"bindings"`
+		SurfaceExclusions    []SurfaceExclusion `json:"surface_exclusions"`
+		RuntimeModes         []RuntimeMode      `json:"runtime_modes"`
+		Notices              []string           `json:"notices"`
+		ProvidesCapabilities []string           `json:"provides_capabilities"`
+		RequiresCapabilities []string           `json:"requires_capabilities"`
+		RequiresTools        []string           `json:"requires_tools"`
+		CapabilityConflicts  []string           `json:"capability_conflicts"`
 	}
 	type sourced struct {
 		resourceWireV4
 		Source string `json:"source"`
 	}
 	toResource := func(raw resourceWireV4) Resource {
-		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Conflicts: raw.Conflicts, Notices: raw.Notices, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes}
+		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Conflicts: raw.Conflicts, Notices: raw.Notices, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes,
+			ProvidesCapabilities: raw.ProvidesCapabilities, RequiresCapabilities: raw.RequiresCapabilities, RequiresTools: raw.RequiresTools, CapabilityConflicts: raw.CapabilityConflicts}
 	}
 	switch kind {
 	case "skill", "instruction", "asset":
@@ -1482,6 +1499,9 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 	}
 	seenResources := map[string]bool{}
 	identities := make([]string, 0, len(pack.Resources))
+	if version == manifestSchemaV4 && (len(pack.Provides) != 0 || len(pack.Requires.Capabilities) != 0 || len(pack.Requires.Tools) != 0 || len(pack.Conflicts) != 0) {
+		return fmt.Errorf("schema_version 4 resource capability contracts cannot be combined with Pack-level provides, requires, or conflicts")
+	}
 	for _, resource := range pack.Resources {
 		if !idPattern.MatchString(resource.ID) {
 			return fmt.Errorf("resource id %q must be lowercase kebab-case", resource.ID)
@@ -1501,6 +1521,37 @@ func validatePackMetadataWithContract(pack Pack, version int, contractPresent bo
 					return fmt.Errorf("resource %q: %w", identity, err)
 				}
 				if version == manifestSchemaV4 {
+					if resource.ProvidesCapabilities == nil || resource.RequiresCapabilities == nil || resource.RequiresTools == nil || resource.CapabilityConflicts == nil {
+						return fmt.Errorf("resource %q: provides_capabilities, requires_capabilities, requires_tools, and capability_conflicts are required non-null arrays", identity)
+					}
+					seenResourceCapabilities := map[string]string{}
+					for _, group := range []struct {
+						name   string
+						values []string
+					}{
+						{"provides_capabilities", resource.ProvidesCapabilities},
+						{"requires_capabilities", resource.RequiresCapabilities},
+						{"capability_conflicts", resource.CapabilityConflicts},
+					} {
+						if !sortedPortableSet(group.values, validCapabilityIdentity) {
+							return fmt.Errorf("resource %q: %s must be a sorted set of canonical capability identities", identity, group.name)
+						}
+						for _, capability := range group.values {
+							if previous, ok := seenResourceCapabilities[capability]; ok {
+								return fmt.Errorf("resource %q: capability %q appears in both %s and %s", identity, capability, previous, group.name)
+							}
+							seenResourceCapabilities[capability] = group.name
+						}
+					}
+					if !sortedPortableSet(resource.RequiresTools, idPattern.MatchString) {
+						return fmt.Errorf("resource %q: requires_tools must be a sorted set of lowercase kebab-case tool identities", identity)
+					}
+					if resource.Kind == "notice" && (len(resource.ProvidesCapabilities) != 0 || len(resource.RequiresCapabilities) != 0 || len(resource.RequiresTools) != 0 || len(resource.CapabilityConflicts) != 0) {
+						return fmt.Errorf("resource %q: notice capability and tool arrays must be empty", identity)
+					}
+					if resource.Kind == "asset" && len(resource.ProvidesCapabilities) != 0 {
+						return fmt.Errorf("resource %q: non-rootable asset cannot provide capabilities", identity)
+					}
 					if err := validateRuntimeModes(resource); err != nil {
 						return fmt.Errorf("resource %q: %w", identity, err)
 					}

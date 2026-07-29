@@ -70,13 +70,17 @@ func Canonical() Fixture {
 		if s.id == "vercel-writing-guidelines" {
 			req = []string{"asset:writing-guidelines-rules"}
 		}
-		resources = append(resources, capabilitypack.Resource{Kind: "skill", ID: s.id, Source: "skills/" + s.id, Requires: req, Conflicts: []string{}, Notices: []string{}, Bindings: bindings(s.public), SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, RuntimeModes: modes(s.id)})
+		provides := []string{}
+		if s.id == "vercel-deploy-to-vercel" {
+			provides = []string{"workflow:vercel"}
+		}
+		resources = append(resources, capabilitypack.Resource{Kind: "skill", ID: s.id, Source: "skills/" + s.id, Requires: req, Conflicts: []string{}, Notices: []string{}, ProvidesCapabilities: provides, RequiresCapabilities: []string{}, RequiresTools: []string{}, CapabilityConflicts: []string{}, Bindings: bindings(s.public), SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, RuntimeModes: modes(s.id)})
 	}
 	resources = append(resources,
-		capabilitypack.Resource{Kind: "asset", ID: "web-interface-guidelines-rules", Source: "references/vercel-web-interface-guidelines-command.md", Requires: []string{}, Conflicts: []string{}, Notices: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}},
-		capabilitypack.Resource{Kind: "asset", ID: "writing-guidelines-rules", Source: "references/vercel-writing-guidelines-command.md", Requires: []string{}, Conflicts: []string{}, Notices: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}},
-		capabilitypack.Resource{Kind: "notice", ID: "web-interface-guidelines-mit", Source: "notices/vercel-web-interface-guidelines-MIT.txt", Requires: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, License: "MIT", Attribution: "Copyright (c) 2025 Vercel Labs"},
-		capabilitypack.Resource{Kind: "notice", ID: "writing-guidelines-mit", Source: "notices/vercel-writing-guidelines-MIT.txt", Requires: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, License: "MIT", Attribution: "Copyright (c) 2026 Vercel Labs"})
+		capabilitypack.Resource{Kind: "asset", ID: "web-interface-guidelines-rules", Source: "references/vercel-web-interface-guidelines-command.md", Requires: []string{}, Conflicts: []string{}, Notices: []string{}, ProvidesCapabilities: []string{}, RequiresCapabilities: []string{}, RequiresTools: []string{}, CapabilityConflicts: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}},
+		capabilitypack.Resource{Kind: "asset", ID: "writing-guidelines-rules", Source: "references/vercel-writing-guidelines-command.md", Requires: []string{}, Conflicts: []string{}, Notices: []string{}, ProvidesCapabilities: []string{}, RequiresCapabilities: []string{}, RequiresTools: []string{}, CapabilityConflicts: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}},
+		capabilitypack.Resource{Kind: "notice", ID: "web-interface-guidelines-mit", Source: "notices/vercel-web-interface-guidelines-MIT.txt", Requires: []string{}, ProvidesCapabilities: []string{}, RequiresCapabilities: []string{}, RequiresTools: []string{}, CapabilityConflicts: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, License: "MIT", Attribution: "Copyright (c) 2025 Vercel Labs"},
+		capabilitypack.Resource{Kind: "notice", ID: "writing-guidelines-mit", Source: "notices/vercel-writing-guidelines-MIT.txt", Requires: []string{}, ProvidesCapabilities: []string{}, RequiresCapabilities: []string{}, RequiresTools: []string{}, CapabilityConflicts: []string{}, Bindings: []capabilitypack.Binding{}, SurfaceExclusions: []capabilitypack.SurfaceExclusion{}, License: "MIT", Attribution: "Copyright (c) 2026 Vercel Labs"})
 	sort.Slice(resources, func(i, j int) bool {
 		if resources[i].Kind != resources[j].Kind {
 			return resources[i].Kind < resources[j].Kind
@@ -84,7 +88,7 @@ func Canonical() Fixture {
 		return resources[i].ID < resources[j].ID
 	})
 	exclusions := []capabilitypack.Exclusion{{ID: "excluded-upstream-archives", SourcePaths: []string{"react-best-practices.zip", "react-native-skills.zip", "skills/deploy-to-vercel/Archive.zip", "vercel-composition-patterns.zip", "vercel-deploy-claimable.zip", "vercel-react-best-practices.zip"}, Reason: "duplicate archive content is outside the selected complete trees"}}
-	pack := capabilitypack.Pack{ID: "vercel", Version: "1.0.0", Surfaces: []capabilitypack.Surface{"claude", "codex", "opencode"}, Provides: []string{"workflow:vercel"}, Requires: capabilitypack.Requirements{Capabilities: []string{}, Tools: []string{}}, Conflicts: []string{}, Resources: resources, Contract: capabilitypack.Contract{Exclusions: exclusions}}
+	pack := capabilitypack.Pack{ID: "vercel", Version: "1.0.0", Surfaces: []capabilitypack.Surface{"claude", "codex", "opencode"}, Provides: []string{}, Requires: capabilitypack.Requirements{Capabilities: []string{}, Tools: []string{}}, Conflicts: []string{}, Resources: resources, Contract: capabilitypack.Contract{Exclusions: exclusions}}
 	src := sourceConfigs()
 	loaders := []LoaderAdaptation{
 		{"vercel-web-design-guidelines", "web-interface-guidelines-rules", "../../references/vercel-web-interface-guidelines-command.md", "f4647ca866a3accf763777f83e7682954f0187cd6bea7eea0399796652414e8f", "d7d939ec1312895cb4e42b420233a7bf3e7a5f72c3b98b3b5f9a21c56e90ac2c"},

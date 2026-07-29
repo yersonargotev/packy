@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -445,6 +446,11 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 			return err
 		}
 	}
+	for _, requirement := range plan.CapabilityRequirements() {
+		if err := renderCapabilityRequirement(cmd.OutOrStdout(), requirement); err != nil {
+			return err
+		}
+	}
 	for _, alias := range plan.Aliases() {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Alias: %s:%s=%s\n", alias.Kind, alias.ID, alias.Name); err != nil {
 			return err
@@ -574,6 +580,22 @@ func renderActivationPlanOutput(cmd *cobra.Command, plan capabilitypack.Reconcil
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(plan.JSONReport(dryRun))
 	}
 	return renderActivationPlan(cmd, plan, dryRun)
+}
+
+func renderCapabilityRequirement(out io.Writer, requirement capabilitypack.CapabilityRequirementFact) error {
+	consumer, provider := "all", "all"
+	if requirement.ConsumerResource != nil {
+		consumer = requirement.ConsumerResource.String()
+	}
+	if requirement.ProviderResource != nil {
+		provider = requirement.ProviderResource.String()
+	}
+	readiness := requirement.ResultingReadiness
+	_, err := fmt.Fprintf(out, "Capability requirement: consumer=%s/%s capability=%s provider=%s/%s tools=%s authority=%s readiness=configured:%t,authorized:%t,usable:%t\n",
+		requirement.ConsumerPack, consumer, requirement.Capability, requirement.ProviderPack, provider,
+		joinFacts(requirement.RequiredTools), joinFacts(requirement.RequiredAuthority),
+		readiness.Configured, readiness.Authorized, readiness.Usable)
+	return err
 }
 
 func renderPackContract(cmd *cobra.Command, contract capabilitypack.LifecycleContract) error {

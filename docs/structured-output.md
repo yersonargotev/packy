@@ -1,10 +1,11 @@
 # Structured CLI output
 
 Packy emits versioned JSON when `--json` is present. Classic lifecycle and
-doctor retain `schema_version: 2`. Pack show and Capability-Pack lifecycle use
-`schema_version: 4`; status uses `schema_version: 5` so resource readiness,
-focused-resource gates, and exact Pack/resource contributors are introduced
-without silently changing v1-v4.
+doctor retain `schema_version: 2`. Pack show uses `schema_version: 4`.
+Capability-Pack lifecycle and status use `schema_version: 5`: lifecycle adds
+resource-scoped capability-provider requirements, while status adds resource
+readiness, focused-resource gates, and exact Pack/resource contributors without
+silently changing v1-v4.
 
 | Command | `report` |
 | --- | --- |
@@ -69,8 +70,11 @@ does not claim observed readiness.
 Lifecycle preview publishes the sealed ordered phases and actions, contract,
 compatibility, consent, preservation, blockers, expected readiness, observed
 evidence, pending evidence, evaluated runtime modes, recovery, and exact
-`all`/`custom` resource selection. Apply and failure reports retain that
-redacted plan. Status publishes intent, canonical selected roots, and a full
+`all`/`custom` resource selection. Its ordered `capability_requirements` identify
+the consumer Pack/resource, capability, provider Pack/resource, required tools
+and authorities, and resulting readiness. A null resource denotes legacy
+whole-Pack composition. Apply and failure reports retain that redacted plan.
+Status publishes intent, canonical selected roots, and a full
 resource inventory whose role is `root`, `dependency`, `asset`, `notice`, or
 `unselected`, with a deterministic root-to-resource `dependency_chain`.
 Lifecycle preview publishes the selected closure graph, including associated

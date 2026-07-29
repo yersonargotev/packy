@@ -21,6 +21,10 @@ const validManifestV4 = `{
     "id": "example",
     "source": "skills/example.md",
     "requires": [],
+    "provides_capabilities": [],
+    "requires_capabilities": [],
+    "requires_tools": [],
+    "capability_conflicts": [],
     "conflicts": [],
     "notices": [],
     "bindings": [{
@@ -213,6 +217,10 @@ func TestLoadPortableManifestV4PreservesV3ResourceShapes(t *testing.T) {
 	}}
 	for _, encoded := range manifest["resources"].([]any) {
 		resource := encoded.(map[string]any)
+		resource["provides_capabilities"] = []any{}
+		resource["requires_capabilities"] = []any{}
+		resource["requires_tools"] = []any{}
+		resource["capability_conflicts"] = []any{}
 		if resource["kind"] != "notice" {
 			resource["notices"] = []any{}
 			resource["conflicts"] = []any{}
@@ -251,7 +259,7 @@ func TestLoadPortableManifestV4PreservesV3ResourceShapes(t *testing.T) {
 func TestLoadPortableManifestV4ValidatesNoticeAssociations(t *testing.T) {
 	withNotice := strings.Replace(validManifestV4,
 		`  "resources": [{`,
-		`  "resources": [{"kind":"notice","id":"mit","source":"NOTICE","license":"MIT","attribution":"Example","requires":[],"bindings":[],"surface_exclusions":[]},{`,
+		`  "resources": [{"kind":"notice","id":"mit","source":"NOTICE","license":"MIT","attribution":"Example","requires":[],"provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[],"bindings":[],"surface_exclusions":[]},{`,
 		1,
 	)
 	tests := map[string]string{
@@ -280,7 +288,8 @@ func TestEncodePortableManifestV4RejectsNoticeOwnedAssociations(t *testing.T) {
 	pack.Resources = append(pack.Resources, Resource{
 		Kind: "notice", ID: "mit", Source: "NOTICE", Requires: []string{},
 		Notices: []string{}, Bindings: []Binding{}, SurfaceExclusions: []SurfaceExclusion{},
-		License: "MIT", Attribution: "Example",
+		License: "MIT", Attribution: "Example", ProvidesCapabilities: []string{},
+		RequiresCapabilities: []string{}, RequiresTools: []string{}, CapabilityConflicts: []string{},
 	})
 	if _, err := EncodePortableManifestV4(pack); err == nil || !strings.Contains(err.Error(), "forbidden for notice resources") {
 		t.Fatalf("notice-owned associations error = %v", err)
@@ -328,6 +337,8 @@ func TestLoadPortableManifestV4ValidatesSamePackResourceConflicts(t *testing.T) 
 		return map[string]any{
 			"kind": kind, "id": id, "source": id + ".md",
 			"requires": requires, "conflicts": conflicts, "notices": []string{},
+			"provides_capabilities": []string{}, "requires_capabilities": []string{},
+			"requires_tools": []string{}, "capability_conflicts": []string{},
 			"bindings": []any{}, "surface_exclusions": []any{},
 		}
 	}
