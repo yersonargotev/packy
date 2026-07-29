@@ -518,6 +518,13 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 	if err := renderPackContract(cmd, plan.LifecycleContract()); err != nil {
 		return err
 	}
+	for _, resource := range plan.JSONReport(dryRun).ResourceGraph.Resources {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Resource graph: resource=%s role=%s dependency_chain=%s requires=%s notices=%s\n",
+			resource.Resource, resource.Role, renderIdentityChain(resource.DependencyChain),
+			renderIdentityChain(resource.Requires), renderIdentityChain(resource.Notices)); err != nil {
+			return err
+		}
+	}
 	if err := renderRuntimeModes(cmd, plan.RuntimeModeResults()); err != nil {
 		return err
 	}

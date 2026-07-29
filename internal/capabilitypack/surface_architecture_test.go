@@ -67,8 +67,13 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 				t.Fatalf("%s reintroduced obsolete surface structure %q", source.path, forbidden)
 			}
 		}
-		if strings.Contains(source.path, "/codex/") || strings.Contains(source.path, "/opencode/") {
-			concreteAdapters += strings.Count(source.text, "type SurfaceAdapter struct")
+		supportedHost := strings.Contains(source.path, "/codex/") || strings.Contains(source.path, "/opencode/") || strings.Contains(source.path, "/claudecode/")
+		adapterDefinitions := strings.Count(source.text, "type SurfaceAdapter struct")
+		if adapterDefinitions > 0 && !supportedHost {
+			t.Fatalf("%s introduced a concrete surface adapter outside Codex, OpenCode, or Claude Code", source.path)
+		}
+		if supportedHost {
+			concreteAdapters += adapterDefinitions
 			inspectionImplementations += strings.Count(source.text, ") InspectSurface(")
 			applicationImplementations += strings.Count(source.text, ") ApplyProjections(")
 			for _, lifecycle := range []string{"capabilitypack.OperationActivate", "capabilitypack.OperationUpdate", "capabilitypack.OperationDeactivate", "capabilitypack.OperationReconcile", "capabilitypack.ActivationRequest", "capabilitypack.UpdateRequest", "capabilitypack.DeactivationRequest", "capabilitypack.ReconcileRequest"} {
@@ -78,7 +83,7 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 			}
 		}
 		if strings.Contains(source.path, "/capabilitypack/") {
-			for _, hostPolicy := range []string{"internal/codex", "internal/opencode", "MergeInstructionProjection(", "MergeMCPProjection(", "ValidateInstructionProjection(", "ValidateMCPProjection("} {
+			for _, hostPolicy := range []string{"internal/codex", "internal/opencode", "internal/claudecode", "MergeInstructionProjection(", "MergeMCPProjection(", "ValidateInstructionProjection(", "ValidateMCPProjection("} {
 				if strings.Contains(source.text, hostPolicy) {
 					t.Fatalf("%s redistributed host policy through %q", source.path, hostPolicy)
 				}
@@ -102,10 +107,10 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 		}
 		fingerprintRemovalSlots += removalSlots
 	}
-	if concreteAdapters != 2 {
-		t.Fatalf("found %d concrete production surface adapters, want Codex and OpenCode only", concreteAdapters)
+	if concreteAdapters != 3 {
+		t.Fatalf("found %d concrete production surface adapters, want Codex, OpenCode, and Claude Code only", concreteAdapters)
 	}
-	if inspectionImplementations != 2 || applicationImplementations != 2 {
+	if inspectionImplementations != 3 || applicationImplementations != 3 {
 		t.Fatalf("found %d inspection and %d application implementations, want one complete implementation per host", inspectionImplementations, applicationImplementations)
 	}
 	if directInspections != 1 {

@@ -78,11 +78,11 @@ func contributorBelongsToPack(contributor, packID string) bool {
 	return strings.HasPrefix(contributor, "pack:"+packID+":")
 }
 
-func uniqueRemovedContributor(projectionID string, before, after composition, packID string) (string, bool) {
+func uniqueRemovedContributor(projectionID string, before, after composition) (string, bool) {
 	var removed []string
 	remaining := after.contributorSet(projectionID)
 	for _, contributor := range before.contributorSet(projectionID) {
-		if contributorBelongsToPack(contributor, packID) && !slices.Contains(remaining, contributor) {
+		if !slices.Contains(remaining, contributor) {
 			removed = append(removed, contributor)
 		}
 	}
@@ -90,6 +90,16 @@ func uniqueRemovedContributor(projectionID string, before, after composition, pa
 		return "", false
 	}
 	return removed[0], true
+}
+
+func removedContributorSet(before, after composition) map[string]string {
+	result := map[string]string{}
+	for projectionID := range before.contributors {
+		if contributor, ok := uniqueRemovedContributor(projectionID, before, after); ok {
+			result[projectionID] = contributor
+		}
+	}
+	return result
 }
 
 // contributorsMatch permits a legacy Pack-only ownership fact to be recognized
