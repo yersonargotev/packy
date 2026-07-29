@@ -208,9 +208,8 @@ func TestIssue295CanonicalFixtureExercisesTheCompleteManifestV4Contract(t *testi
 type issue295ProductionAdapter struct {
 	binary, surface, bundleRoot, hostRoot string
 	failOnce                              string
-	inspection                            *SurfaceInspection
-	expectVerification                    bool
 	transition                            SurfaceTransition
+	appliedIDs                            []string
 }
 
 func (a *issue295ProductionAdapter) invoke(operation string, input, output any) error {
@@ -233,27 +232,30 @@ func (a *issue295ProductionAdapter) invoke(operation string, input, output any) 
 
 func (a *issue295ProductionAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
 	a.transition = transition
-	if a.expectVerification {
-		a.expectVerification = false
-		var observation SurfaceInspection
-		err := a.invoke("inspect", transition, &observation)
-		return observation, err
-	}
-	if a.inspection != nil {
-		observation := *a.inspection
-		a.inspection = nil
-		return observation, nil
-	}
 	var observation SurfaceInspection
 	err := a.invoke("inspect", transition, &observation)
-	if err == nil {
-		a.inspection = &observation
+	if err != nil {
+		return SurfaceInspection{}, err
 	}
-	return observation, err
+	const observedAt = "2000-01-01T00:00:00Z"
+	normalize := func(evidence *RuntimeEvidence) {
+		for i := range evidence.Requirements {
+			evidence.Requirements[i].ObservedAt = observedAt
+		}
+		for i := range evidence.Authorities {
+			evidence.Authorities[i].ObservedAt = observedAt
+		}
+	}
+	for i := range observation.RuntimeModeEvidence {
+		normalize(&observation.RuntimeModeEvidence[i].Evidence)
+	}
+	for i := range observation.RuntimeModeResults {
+		normalize(&observation.RuntimeModeResults[i].Evidence)
+	}
+	return observation, nil
 }
 
 func (a *issue295ProductionAdapter) ApplyProjections(_ context.Context, actions []ProjectionAction) *ProjectionActionError {
-	a.inspection = nil
 	if a.failOnce != "" {
 		for _, action := range actions {
 			if action.ID == a.failOnce {
@@ -274,7 +276,9 @@ func (a *issue295ProductionAdapter) ApplyProjections(_ context.Context, actions 
 	if failure.Error != "" {
 		return &ProjectionActionError{ID: failure.ID, Err: errors.New(failure.Error)}
 	}
-	a.expectVerification = true
+	for _, action := range actions {
+		a.appliedIDs = append(a.appliedIDs, action.ID)
+	}
 	return nil
 }
 
@@ -410,17 +414,19 @@ func issue295BuildAdapterHelper(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceDir, err := os.MkdirTemp(repositoryRoot, ".issue295-adapter-")
+	virtualSource := filepath.Join(repositoryRoot, "internal", "capabilitypack", "testdata", "issue295adapter", "main.go")
+	fixtureSource := virtualSource + ".txt"
+	overlay := filepath.Join(t.TempDir(), "overlay.json")
+	overlayDocument, err := json.Marshal(map[string]any{"Replace": map[string]string{virtualSource: fixtureSource}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(sourceDir) })
-	source := filepath.Join(sourceDir, "main.go")
-	if err := os.WriteFile(source, []byte(issue295AdapterHelper), 0o600); err != nil {
+	if err := os.WriteFile(overlay, overlayDocument, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(t.TempDir(), "issue295-adapter")
-	cmd := exec.Command("go", "build", "-o", binary, source)
+	cmd := exec.Command("go", "build", "-overlay", overlay, "-o", binary, "./internal/capabilitypack/testdata/issue295adapter")
+	cmd.Dir = repositoryRoot
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build production adapter helper: %v\n%s", err, output)
 	}
@@ -450,6 +456,66 @@ func issue295WriteBundle(t *testing.T, root string, packs ...Pack) {
 				t.Fatal(err)
 			}
 		}
+	}
+}
+
+func issue295AppliedCount(adapter *issue295ProductionAdapter, id string) int {
+	count := 0
+	for _, applied := range adapter.appliedIDs {
+		if applied == id {
+			count++
+		}
+	}
+	return count
+}
+
+func containsResourceIdentity(values []ResourceIdentity, target ResourceIdentity) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func issue295ProviderPath(surface Surface, hostRoot string) string {
+	if surface == SurfaceClaude {
+		return filepath.Join(hostRoot, ".claude", "skills", "storage")
+	}
+	return filepath.Join(hostRoot, "skills", "storage")
+}
+
+func issue295AssertHostClean(t *testing.T, hostRoot string) {
+	t.Helper()
+	forbidden := []string{"personal-alpha", "skill:storage", "# storage", "# beta", "packy:pack:beta", "pack:granular", "pack:storage-a"}
+	err := filepath.WalkDir(hostRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, _ := os.Readlink(path)
+			return fmt.Errorf("Packy-owned host link remains at %s -> %s", path, target)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, value := range forbidden {
+			if strings.Contains(string(content), value) {
+				return fmt.Errorf("Packy-owned content %q remains in %s", value, path)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -493,6 +559,7 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			)
 			legacyRoot := ResourceIdentity{Kind: "skill", ID: "legacy"}
 			betaRoot := ResourceIdentity{Kind: "instruction", ID: "beta"}
+			sharedRoot := ResourceIdentity{Kind: "skill", ID: "shared"}
 			providerResource := ResourceIdentity{Kind: "skill", ID: "storage"}
 			choice := ProviderChoice{Capability: "cap:storage", ProviderPack: provider.ID, ProviderResource: &providerResource}
 
@@ -503,7 +570,6 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			if err != nil || ambiguous.Applicable() || len(store.saves) != 0 {
 				t.Fatalf("ambiguous provider crossed boundary: plan=%+v err=%v", ambiguous.JSONReport(true), err)
 			}
-			adapter.inspection = nil
 
 			activate, err := facade.Preview(context.Background(), ActivationRequest{
 				PackID: legacy.ID, Surface: surface,
@@ -519,6 +585,12 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 				t.Fatalf("activation omitted provider or authority facts: %+v", activate.JSONReport(true))
 			}
 			issue295Apply(t, facade, activate)
+			if issue295AppliedCount(adapter, "skill:storage") == 0 {
+				t.Fatal("provider projection did not participate in production adapter application")
+			}
+			if _, err := os.Lstat(issue295ProviderPath(surface, hostRoot)); err != nil {
+				t.Fatalf("provider projection missing after activation: %v", err)
+			}
 
 			additive, err := facade.Preview(context.Background(), ActivationRequest{
 				PackID: legacy.ID, Surface: surface,
@@ -531,6 +603,36 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 				t.Fatalf("additive roots=%v", got)
 			}
 			issue295Apply(t, facade, additive)
+
+			promotion, err := facade.Preview(context.Background(), ActivationRequest{
+				PackID: legacy.ID, Surface: surface,
+				Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{sharedRoot}},
+			})
+			if err != nil || promotion.NoOp() {
+				t.Fatalf("dependency promotion plan noop=%t err=%v", promotion.NoOp(), err)
+			}
+			if got := promotion.Selection().Roots; len(got) != 3 || !containsResourceIdentity(got, sharedRoot) {
+				t.Fatalf("promoted roots=%v", got)
+			}
+			issue295Apply(t, facade, promotion)
+
+			demotion, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{
+				PackID: legacy.ID, Surface: surface, Resources: []ResourceIdentity{sharedRoot},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := demotion.Selection().Roots; len(got) != 2 || containsResourceIdentity(got, sharedRoot) {
+				t.Fatalf("demoted roots=%v", got)
+			}
+			retainedShared := false
+			for _, retained := range demotion.RetainedProjections() {
+				retainedShared = retainedShared || retained.ID == "skill:shared"
+			}
+			if !retainedShared {
+				t.Fatalf("dependency demotion did not retain shared projection: %+v", demotion.JSONReport(true))
+			}
+			issue295Apply(t, facade, demotion)
 
 			facade.catalog.packs[0] = current
 			update, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: current.ID, Surface: surface})
@@ -552,7 +654,6 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			if err := os.RemoveAll(alphaPath); err != nil {
 				t.Fatal(err)
 			}
-			adapter.inspection = nil
 			reconcile, err := facade.PreviewReconcile(context.Background(), ReconcileRequest{PackID: current.ID, Surface: surface})
 			if err != nil {
 				t.Fatal(err)
@@ -573,7 +674,6 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			if err := os.Remove(betaPath); err != nil && !os.IsNotExist(err) {
 				t.Fatal(err)
 			}
-			adapter.inspection = nil
 			adapter.failOnce = "instruction:beta"
 			recoverySeed, err := facade.PreviewReconcile(context.Background(), ReconcileRequest{PackID: current.ID, Surface: surface})
 			if err != nil {
@@ -601,7 +701,6 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 				store.state.Intent.Selection.Roots[0] != betaRoot || len(removeAlpha.RetainedProjections()) == 0 {
 				t.Fatalf("incremental deactivation lost retained selection/dependency: %+v", store.state.Intent)
 			}
-
 			cleanup, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{
 				PackID: current.ID, Surface: surface, Resources: []ResourceIdentity{betaRoot},
 			})
@@ -612,6 +711,13 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			if store.state.Intent.Active {
 				t.Fatalf("final cleanup left intent active: %+v", store.state.Intent)
 			}
+			if issue295AppliedCount(adapter, "skill:storage") < 2 {
+				t.Fatalf("final provider cleanup did not reach production adapter: applied=%v plan=%+v", adapter.appliedIDs, cleanup.JSONReport(true))
+			}
+			if _, err := os.Lstat(issue295ProviderPath(surface, hostRoot)); !os.IsNotExist(err) {
+				t.Fatalf("provider projection remains after final cleanup: %v", err)
+			}
+			issue295AssertHostClean(t, hostRoot)
 		})
 	}
 }

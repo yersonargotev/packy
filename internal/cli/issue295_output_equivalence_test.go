@@ -21,8 +21,9 @@ import (
 func TestIssue295LifecycleHumanAndJSONRenderTheSameDomainFacts(t *testing.T) {
 	covered := map[string]bool{}
 	tests := []struct {
-		name  string
-		setup func(*testing.T) (Options, []string)
+		name    string
+		wantErr bool
+		setup   func(*testing.T) (Options, []string)
 	}{
 		{
 			name: "activate",
@@ -64,7 +65,10 @@ func TestIssue295LifecycleHumanAndJSONRenderTheSameDomainFacts(t *testing.T) {
 				if out, err := executeCommand(t, NewRootCommand(opts), seed[:len(seed)-1]...); err != nil {
 					t.Fatalf("seed deactivation: %v\n%s", err, out)
 				}
-				return opts, []string{"pack", "deactivate", "matty", "--surface", "codex", "--dry-run"}
+				if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "instruction:beta"); err != nil {
+					t.Fatalf("seed shared retention: %v\n%s", err, out)
+				}
+				return opts, []string{"pack", "deactivate", "matty", "--surface", "codex", "--resource", "skill:alpha", "--dry-run"}
 			},
 		},
 		{
@@ -82,6 +86,16 @@ func TestIssue295LifecycleHumanAndJSONRenderTheSameDomainFacts(t *testing.T) {
 				return opts, seed
 			},
 		},
+		{
+			name:    "blocked",
+			wantErr: true,
+			setup: func(t *testing.T) (Options, []string) {
+				opts, _, bundle := issue295GranularCLIOptions(t, "2.0.0", "alpha", true)
+				args := issue295GranularArgs("activate", "alpha", bundle)
+				args = append(args[:7], append([]string{"--resource", "skill:alternate"}, args[7:]...)...)
+				return opts, args
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -89,21 +103,28 @@ func TestIssue295LifecycleHumanAndJSONRenderTheSameDomainFacts(t *testing.T) {
 			opts, args := tc.setup(t)
 			before := snapshotTree(t, opts.Env.(MapEnv)["HOME"])
 			human, err := executeCommand(t, NewRootCommand(opts), args...)
-			if err != nil {
+			if err != nil && !tc.wantErr {
 				t.Fatalf("human preview: %v\n%s", err, human)
+			}
+			if err == nil && tc.wantErr {
+				t.Fatalf("human preview unexpectedly succeeded:\n%s", human)
 			}
 			jsonArgs := append(append([]string{}, args...), "--json")
 			structured, err := executeCommand(t, NewRootCommand(opts), jsonArgs...)
-			if err != nil {
+			commandErr := err
+			if err != nil && !tc.wantErr {
 				t.Fatalf("JSON preview: %v\n%s", err, structured)
+			}
+			if err == nil && tc.wantErr {
+				t.Fatalf("JSON preview unexpectedly succeeded:\n%s", structured)
 			}
 			if got := snapshotTree(t, opts.Env.(MapEnv)["HOME"]); got != before {
 				t.Fatalf("paired dry-runs mutated sandbox HOME:\nbefore:\n%s\nafter:\n%s", before, got)
 			}
 
 			var report capabilitypack.JSONLifecyclePlan
-			if err := json.Unmarshal([]byte(structured), &report); err != nil {
-				t.Fatalf("decode lifecycle JSON: %v\n%s", err, structured)
+			if err := json.NewDecoder(strings.NewReader(structured)).Decode(&report); err != nil {
+				t.Fatalf("decode lifecycle JSON: %v; command error=%v\n%s", err, commandErr, structured)
 			}
 			if report.SchemaVersion != capabilitypack.LifecycleJSONSchemaVersion ||
 				report.Report != "pack-lifecycle-preview" || !report.DryRun {
@@ -112,7 +133,7 @@ func TestIssue295LifecycleHumanAndJSONRenderTheSameDomainFacts(t *testing.T) {
 			assertIssue295HumanEquivalent(t, human, report, covered)
 		})
 	}
-	for _, fact := range []string{"custom roots", "resource graph", "capability requirements", "providers", "aliases", "authority", "readiness", "contributors", "contract diff", "migrations", "actions", "recovery"} {
+	for _, fact := range []string{"custom roots", "resource graph", "capability requirements", "providers", "aliases", "authority", "readiness", "contributors", "contract diff", "migrations", "actions", "recovery", "blockers", "retention", "evidence"} {
 		if !covered[fact] {
 			t.Fatalf("canonical v4 lifecycle suite never populated %s", fact)
 		}
@@ -191,6 +212,7 @@ func assertIssue295HumanEquivalent(t *testing.T, human string, report capability
 		}
 	}
 	for _, blocker := range report.Blockers {
+		covered["blockers"] = true
 		fact := fmt.Sprintf("Blocker: %s %s", blocker.Kind, blocker.Subject)
 		if !strings.Contains(human, fact) {
 			t.Fatalf("human output omitted JSON blocker %q:\n%s", fact, human)
@@ -222,6 +244,7 @@ func assertIssue295HumanEquivalent(t *testing.T, human string, report capability
 		readinessValue(report.ReadinessObserved.Usability, report.ExpectedReadiness.Usable)))
 	assertIssue295Fact(t, human, "Observed evidence: "+renderPendingAction(report.Evidence))
 	assertIssue295Fact(t, human, "Pending evidence: "+renderPendingAction(report.PendingEvidence))
+	covered["evidence"] = covered["evidence"] || len(report.Evidence) > 0
 	for id, contributors := range report.Contributors {
 		covered["contributors"] = true
 		assertIssue295Fact(t, human, fmt.Sprintf("Contributors: %s <- %s", id, strings.Join(contributors, ", ")))
@@ -230,6 +253,7 @@ func assertIssue295HumanEquivalent(t *testing.T, human string, report capability
 		assertIssue295Fact(t, human, fmt.Sprintf("Contributor removed: %s <- %s", id, contributor))
 	}
 	for _, retained := range report.RetainedProjections {
+		covered["retention"] = true
 		assertIssue295Fact(t, human, fmt.Sprintf("Retained shared projection: %s <- %s (no rewrite)", retained.ID, strings.Join(retained.Contributors, ", ")))
 	}
 	for _, pending := range report.PendingHumanActions {
@@ -326,6 +350,7 @@ func writeIssue295GranularManifest(t *testing.T, bundle, version, root string, m
 		"skills/alpha/SKILL.md":     "alpha\n",
 		"skills/legacy/SKILL.md":    "legacy\n",
 		"skills/alternate/SKILL.md": "alternate\n",
+		"instructions/beta.md":      "beta\n",
 		"skills/storage/SKILL.md":   "storage\n",
 	} {
 		write(filepath.Join(bundle, path), content)
@@ -355,6 +380,8 @@ func writeIssue295GranularManifest(t *testing.T, bundle, version, root string, m
 	authority["tools"], authority["permissions"], authority["bindings"] = []string{}, []string{"filesystem"}, binding("agent", "authority")
 	shared := base("skill", "shared")
 	shared["source"], shared["bindings"] = "skills/shared", binding("skill", "shared")
+	beta := base("instruction", "beta")
+	beta["source"], beta["bindings"], beta["requires"] = "instructions/beta.md", binding("instruction", "beta"), []string{"skill:shared"}
 	rootResource := func(id string) map[string]any {
 		resource := base("skill", id)
 		resource["source"], resource["bindings"] = "skills/"+id, binding("skill", id)
@@ -370,7 +397,7 @@ func writeIssue295GranularManifest(t *testing.T, bundle, version, root string, m
 	if migration {
 		migrations = append(migrations, map[string]string{"from": "skill:legacy", "to": "skill:alpha"})
 	}
-	resources := []map[string]any{authority, asset, notice, alternate, selected, shared}
+	resources := []map[string]any{authority, asset, beta, notice, alternate, selected, shared}
 	sort.Slice(resources, func(i, j int) bool {
 		return resources[i]["kind"].(string)+":"+resources[i]["id"].(string) <
 			resources[j]["kind"].(string)+":"+resources[j]["id"].(string)
