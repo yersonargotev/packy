@@ -741,22 +741,7 @@ func (f Facade) providersExcept(capability string, surface Surface, excludedPack
 		if pack.ID == excludedPackID || !supportsSurface(pack, surface) {
 			continue
 		}
-		if pack.manifestVersion == manifestSchemaV4 {
-			for _, resource := range pack.Resources {
-				if resource.Kind == "notice" {
-					continue
-				}
-				if containsString(resource.ProvidesCapabilities, capability) {
-					result = append(result, capabilityProvider{pack: pack, resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}})
-				}
-			}
-		} else {
-			for _, provided := range pack.Provides {
-				if provided == capability {
-					result = append(result, capabilityProvider{pack: pack})
-				}
-			}
-		}
+		result = append(result, providersInPack(pack, capability)...)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].pack.ID != result[j].pack.ID {
