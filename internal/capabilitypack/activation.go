@@ -1198,10 +1198,9 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			}
 			activationSelection := activation.Selection
 			explicitIntent := activation.Role != ActivationRequired
-			providerChoices := []ProviderChoice(nil)
+			providerChoices := cloneProviderChoices(activation.ProviderChoices)
 			explicitFact := &explicitIntent
 			if previouslyActive {
-				providerChoices = cloneProviderChoices(previous.ProviderChoices)
 				explicitFact = previous.Explicit
 			}
 			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision, Aliases: cloneAliases(aliases), Selection: activationSelection, ProviderChoices: providerChoices, Explicit: explicitFact}

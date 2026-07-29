@@ -30,9 +30,10 @@ const (
 )
 
 type PlannedActivation struct {
-	Pack      Pack
-	Role      ActivationRole
-	Selection ResourceSelection
+	Pack            Pack
+	Role            ActivationRole
+	Selection       ResourceSelection
+	ProviderChoices []ProviderChoice
 }
 
 // CapabilityRequirementFact explains one resource-scoped provider edge without
@@ -337,7 +338,16 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 			if role == ActivationRequired && activeIDs[id] && intentIsExplicit(intentByPackID(active, id)) {
 				role = ActivationExplicitRequired
 			}
-			result.activations = append(result.activations, PlannedActivation{Pack: selected[id], Role: role, Selection: selections[id]})
+			choices := cloneProviderChoices(intentByPackID(active, id).ProviderChoices)
+			for _, fact := range result.capabilityFacts {
+				if fact.ConsumerPack == id {
+					if _, exists := providerChoicesByCapability(choices)[fact.Capability]; !exists {
+						choices = append(choices, ProviderChoice{Capability: fact.Capability, ProviderPack: fact.ProviderPack, ProviderResource: fact.ProviderResource})
+					}
+				}
+			}
+			choices, _ = canonicalProviderChoices(choices)
+			result.activations = append(result.activations, PlannedActivation{Pack: selected[id], Role: role, Selection: selections[id], ProviderChoices: choices})
 		}
 	}
 	for _, intent := range active {
@@ -641,27 +651,8 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 	targetState := cloneActivationState(state)
 	active := activeIntents(state)
 	remaining := make([]ActivationIntent, 0, len(active))
-	requestedFacts := requested
-	for _, intent := range active {
-		if intent.PackID != requested.ID || intent.Surface != surface || !intent.Active {
-			continue
-		}
-		var err error
-		requestedFacts, err = f.catalog.resolveIntentPack(intent.PackID, intent.Version)
-		if err != nil {
-			return composition{}, nil, err
-		}
-		requestedFacts, err = selectPackResources(requestedFacts, intent.Selection)
-		if err != nil {
-			return composition{}, nil, fmt.Errorf("active pack %q has invalid resource selection: %w", intent.PackID, err)
-		}
-		break
-	}
-	provided := map[string]bool{}
-	for _, capability := range providedCapabilities(requestedFacts) {
-		provided[capability] = true
-	}
 	var dependents []ActiveDependent
+	suppressed := map[string]bool{}
 	for _, intent := range active {
 		if intent.Surface != surface || !intent.Active {
 			continue
@@ -678,9 +669,10 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 		if err != nil {
 			return composition{}, nil, fmt.Errorf("active pack %q has invalid resource selection: %w", intent.PackID, err)
 		}
-		for _, requirement := range capabilityRequirements(pack) {
-			if provided[requirement.capability] {
-				dependents = append(dependents, ActiveDependent{PackID: pack.ID, Dependency: requirement.capability})
+		for _, choice := range intent.ProviderChoices {
+			if choice.ProviderPack == requested.ID {
+				dependents = append(dependents, ActiveDependent{PackID: pack.ID, Dependency: choice.Capability})
+				suppressed[choice.Capability] = true
 			}
 		}
 	}
@@ -720,7 +712,7 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 	if err != nil {
 		return composition{}, nil, err
 	}
-	result, err := f.composeWithPolicy(root, targetState, surface, true, requested.ID, provided)
+	result, err := f.composeWithPolicy(root, targetState, surface, true, requested.ID, suppressed)
 	if err != nil {
 		return composition{}, nil, err
 	}

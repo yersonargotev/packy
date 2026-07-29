@@ -20,7 +20,7 @@ Versions v1-v5 remain unchanged.
 | targeted `packy pack status PACK --surface SURFACE --json` | `pack-status` |
 
 The exact offline schemas are under `schemas/cli/v2/` through
-`schemas/cli/v5/`.
+`schemas/cli/v6/`.
 Canonical redacted fixtures use the matching directories under
 `internal/cli/testdata/structured-output/`; repository validation compiles the
 schema selected by each document's `schema_version` and validates both the

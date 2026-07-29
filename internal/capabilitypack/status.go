@@ -289,6 +289,13 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 			if resolveErr != nil {
 				return StatusEntry{}, fmt.Errorf("resolve capability consumer %q: %w", consumer.PackID, resolveErr)
 			}
+			consumerPack, resolveErr = selectPackResources(consumerPack, consumer.Selection)
+			if resolveErr != nil {
+				return StatusEntry{}, fmt.Errorf("active consumer pack %q has invalid resource selection: %w", consumer.PackID, resolveErr)
+			}
+			if resolveErr = f.validatePersistedProviderChoices(consumerPack, consumer, state, surface); resolveErr != nil {
+				return StatusEntry{}, resolveErr
+			}
 			for _, choice := range consumer.ProviderChoices {
 				if choice.ProviderPack != pack.ID {
 					continue
@@ -432,6 +439,54 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	sort.Strings(entry.PendingHumanActions)
 	sort.Strings(entry.Evidence)
 	return entry, nil
+}
+
+func (f Facade) validatePersistedProviderChoices(consumerPack Pack, intent ActivationIntent, state ActivationState, surface Surface) error {
+	choices, err := canonicalProviderChoices(intent.ProviderChoices)
+	if err != nil {
+		return fmt.Errorf("active consumer pack %q has invalid provider choices: %w", intent.PackID, err)
+	}
+	required := map[string]bool{}
+	for _, requirement := range capabilityRequirements(consumerPack) {
+		required[requirement.capability] = true
+	}
+	for _, choice := range choices {
+		if !required[choice.Capability] {
+			return fmt.Errorf("active consumer pack %q has stale provider choice for unselected capability %q", intent.PackID, choice.Capability)
+		}
+		providerIntent, ok := intentForPack(state, choice.ProviderPack, surface)
+		if !ok || !providerIntent.Active {
+			return fmt.Errorf("active consumer pack %q has invalid persisted provider choice: provider pack %q is not active", intent.PackID, choice.ProviderPack)
+		}
+		providerPack, err := f.catalog.resolveIntentPack(providerIntent.PackID, providerIntent.Version)
+		if err == nil {
+			providerPack, err = selectPackResources(providerPack, providerIntent.Selection)
+		}
+		if err != nil {
+			return fmt.Errorf("active consumer pack %q has invalid persisted provider choice: provider pack %q selection is invalid: %w", intent.PackID, choice.ProviderPack, err)
+		}
+		eligible := providersInPack(providerPack, choice.Capability)
+		if _, err := selectChosenProvider(choice, eligible); err != nil {
+			return fmt.Errorf("active consumer pack %q has invalid persisted provider choice: %w", intent.PackID, err)
+		}
+	}
+	return nil
+}
+
+func providersInPack(pack Pack, capability string) []capabilityProvider {
+	if pack.manifestVersion != manifestSchemaV4 {
+		if containsString(pack.Provides, capability) {
+			return []capabilityProvider{{pack: pack}}
+		}
+		return nil
+	}
+	var result []capabilityProvider
+	for _, resource := range pack.Resources {
+		if resource.Kind != "notice" && containsString(resource.ProvidesCapabilities, capability) {
+			result = append(result, capabilityProvider{pack: pack, resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}})
+		}
+	}
+	return result
 }
 
 func deriveResourceStatuses(packID string, graph ResourceGraph, projections []ProjectionStatus, fresh ReadinessObservation) []ResourceStatus {

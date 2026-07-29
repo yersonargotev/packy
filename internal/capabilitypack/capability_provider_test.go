@@ -286,6 +286,108 @@ func TestProviderChoiceFailuresAreDeterministicAndMutationFree(t *testing.T) {
 	}
 }
 
+func TestNestedConsumerProviderChoicePersistsOnNestedIntent(t *testing.T) {
+	empty := []string{}
+	pack := func(id, provides, requires string) Pack {
+		resource := Resource{Kind: "skill", ID: id, Bindings: testCapabilityBindings(id), ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty}
+		if provides != "" {
+			resource.ProvidesCapabilities = []string{provides}
+		}
+		if requires != "" {
+			resource.RequiresCapabilities = []string{requires}
+		}
+		return Pack{manifestVersion: manifestSchemaV4, ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{resource}}
+	}
+	store := &fakeActivationStore{}
+	facade := NewFacade(Catalog{packs: []Pack{pack("app", "", "cap:middle"), pack("middle", "cap:middle", "cap:leaf"), pack("leaf", "cap:leaf", "")}},
+		WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}))
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	middle, ok := intentForPack(store.state, "middle", SurfaceCodex)
+	if !ok || len(middle.ProviderChoices) != 1 || middle.ProviderChoices[0].ProviderPack != "leaf" {
+		t.Fatalf("nested provider choices = %#v", middle.ProviderChoices)
+	}
+}
+
+func TestDeactivateUsesPersistedProviderEdgeNotAmbientCapability(t *testing.T) {
+	consumer, first, second := providerStatusFixture()
+	explicit, required := true, false
+	choiceResource := ResourceIdentity{Kind: "skill", ID: "storage"}
+	consumerIntent := ActivationIntent{PackID: consumer.ID, Surface: SurfaceCodex, Version: consumer.Version, Active: true, Revision: 3,
+		Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, ProviderChoices: []ProviderChoice{{Capability: "cap:storage", ProviderPack: second.ID, ProviderResource: &choiceResource}}, Explicit: &explicit}
+	firstIntent := ActivationIntent{PackID: first.ID, Surface: SurfaceCodex, Version: first.Version, Active: true, Revision: 3,
+		Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Explicit: &explicit}
+	secondIntent := ActivationIntent{PackID: second.ID, Surface: SurfaceCodex, Version: second.Version, Active: true, Revision: 3,
+		Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Explicit: &required}
+	store := &fakeActivationStore{state: ActivationState{Intent: firstIntent, Intents: []ActivationIntent{consumerIntent, firstIntent, secondIntent}}}
+	facade := NewFacade(Catalog{packs: []Pack{consumer, first, second}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}))
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: first.ID, Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, blocker := range plan.Blockers() {
+		if blocker.Kind == BlockerActiveDependent {
+			t.Fatalf("ambient provider produced dependent blocker: %#v", blocker)
+		}
+	}
+}
+
+func TestStatusConsumersRespectPersistedResourceSelection(t *testing.T) {
+	consumer, provider, _ := providerStatusFixture()
+	consumer.Resources = append(consumer.Resources, Resource{Kind: "skill", ID: "unselected", Bindings: testCapabilityBindings("unselected"),
+		ProvidesCapabilities: []string{}, RequiresCapabilities: []string{"cap:storage"}, RequiresTools: []string{}, CapabilityConflicts: []string{}})
+	resource := ResourceIdentity{Kind: "skill", ID: "storage"}
+	selected := ResourceIdentity{Kind: "skill", ID: "root"}
+	explicit, required := true, false
+	consumerIntent := ActivationIntent{PackID: consumer.ID, Surface: SurfaceCodex, Version: consumer.Version, Active: true, Revision: 1,
+		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{selected}}, ProviderChoices: []ProviderChoice{{Capability: "cap:storage", ProviderPack: provider.ID, ProviderResource: &resource}}, Explicit: &explicit}
+	providerIntent := ActivationIntent{PackID: provider.ID, Surface: SurfaceCodex, Version: provider.Version, Active: true, Revision: 1,
+		Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Explicit: &required}
+	store := &fakeActivationStore{state: ActivationState{Intent: providerIntent, Intents: []ActivationIntent{consumerIntent, providerIntent}}}
+	facade := NewFacade(Catalog{packs: []Pack{consumer, provider}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}))
+	report, err := facade.Status(context.Background(), StatusRequest{PackID: provider.ID, Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := report.Entries[0].Consumers; len(got) != 1 || got[0].ConsumerResource == nil || got[0].ConsumerResource.ID != "root" {
+		t.Fatalf("consumer facts = %#v", got)
+	}
+}
+
+func TestStatusFailsClosedForStalePersistedProviderResource(t *testing.T) {
+	consumer, provider, _ := providerStatusFixture()
+	stale := ResourceIdentity{Kind: "skill", ID: "removed"}
+	explicit := true
+	consumerIntent := ActivationIntent{PackID: consumer.ID, Surface: SurfaceCodex, Version: consumer.Version, Active: true, Revision: 1,
+		Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, ProviderChoices: []ProviderChoice{{Capability: "cap:storage", ProviderPack: provider.ID, ProviderResource: &stale}}, Explicit: &explicit}
+	providerIntent := ActivationIntent{PackID: provider.ID, Surface: SurfaceCodex, Version: provider.Version, Active: true, Revision: 1,
+		Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Explicit: &explicit}
+	store := &fakeActivationStore{state: ActivationState{Intent: providerIntent, Intents: []ActivationIntent{consumerIntent, providerIntent}}}
+	facade := NewFacade(Catalog{packs: []Pack{consumer, provider}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}))
+	_, err := facade.Status(context.Background(), StatusRequest{PackID: provider.ID, Surface: SurfaceCodex})
+	if err == nil || !strings.Contains(err.Error(), "invalid persisted provider choice") {
+		t.Fatalf("stale provider choice error = %v", err)
+	}
+}
+
+func providerStatusFixture() (Pack, Pack, Pack) {
+	empty := []string{}
+	consumer := Pack{manifestVersion: manifestSchemaV4, ID: "consumer", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{
+		Kind: "skill", ID: "root", Bindings: testCapabilityBindings("root"), ProvidesCapabilities: empty, RequiresCapabilities: []string{"cap:storage"}, RequiresTools: empty, CapabilityConflicts: empty,
+	}}}
+	provider := func(id string) Pack {
+		return Pack{manifestVersion: manifestSchemaV4, ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{
+			Kind: "skill", ID: "storage", Bindings: testCapabilityBindings(id), ProvidesCapabilities: []string{"cap:storage"}, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty,
+		}}}
+	}
+	return consumer, provider("provider-a"), provider("provider-b")
+}
+
 func TestProviderStatusNamesEveryConsumerAndRequiredOnlyCleanupWaitsForLast(t *testing.T) {
 	empty := []string{}
 	consumer := func(id string) Pack {
