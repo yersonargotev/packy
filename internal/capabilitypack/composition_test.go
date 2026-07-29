@@ -116,6 +116,24 @@ func TestPreviewIncludesInactiveTransitiveRequirementsInCanonicalComposition(t *
 	}
 }
 
+func TestLegacyPreviewSortsMultiplePackRequirementsWithoutResourceIdentities(t *testing.T) {
+	packs := []Pack{
+		{manifestVersion: manifestSchemaV3, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Requires: Requirements{Capabilities: []string{"cap:a", "cap:b"}}},
+		{manifestVersion: manifestSchemaV3, ID: "a", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Provides: []string{"cap:a"}},
+		{manifestVersion: manifestSchemaV3, ID: "b", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Provides: []string{"cap:b"}},
+	}
+	facade := NewFacade(Catalog{packs: packs}, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}))
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := plan.CapabilityRequirements()
+	if len(facts) != 2 || facts[0].Capability != "cap:a" || facts[1].Capability != "cap:b" ||
+		facts[0].ConsumerResource != nil || facts[1].ConsumerResource != nil {
+		t.Fatalf("legacy capability facts = %#v", facts)
+	}
+}
+
 func TestPreviewAggregatesCompositionAndOwnershipBlockersWithoutApplicableActions(t *testing.T) {
 	packs := []Pack{
 		{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Provides: []string{"cap:x"}, Conflicts: []string{"cap:y"}, Requires: Requirements{Capabilities: []string{"missing"}}, Resources: []Resource{{Kind: "instruction", ID: "shared", Source: "one"}}},

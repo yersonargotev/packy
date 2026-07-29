@@ -21,7 +21,8 @@ func TestPreviewResolvesSelectedV4CapabilityProviderRootAndInternalClosure(t *te
 		manifestVersion: manifestSchemaV4, ID: "provider", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
 		Resources: []Resource{
 			{Kind: "asset", ID: "data", Notices: empty, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
-			{Kind: "skill", ID: "storage", Requires: []string{"asset:data"}, Notices: empty, ProvidesCapabilities: []string{"cap:storage"}, RequiresCapabilities: empty, RequiresTools: []string{"provider-tool"}, CapabilityConflicts: empty, Permissions: []string{"filesystem-read"}, Bindings: testCapabilityBindings("storage"), RuntimeModes: []RuntimeMode{{ID: "provider", Authorities: []RuntimeAuthority{{Kind: RuntimeAuthorityFilesystemRead, Scope: RuntimeScopeConsumerProject}}}}},
+			{Kind: "skill", ID: "helper", Requires: []string{"asset:data"}, Notices: empty, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty, Bindings: testCapabilityBindings("helper"), RuntimeModes: []RuntimeMode{{ID: "dependency", Authorities: []RuntimeAuthority{{Kind: RuntimeAuthorityGitInspect, Scope: RuntimeScopeLocalGit}}}}},
+			{Kind: "skill", ID: "storage", Requires: []string{"skill:helper"}, Notices: empty, ProvidesCapabilities: []string{"cap:storage"}, RequiresCapabilities: empty, RequiresTools: []string{"provider-tool"}, CapabilityConflicts: empty, Permissions: []string{"filesystem-read"}, Bindings: testCapabilityBindings("storage"), RuntimeModes: []RuntimeMode{{ID: "provider", Authorities: []RuntimeAuthority{{Kind: RuntimeAuthorityFilesystemRead, Scope: RuntimeScopeConsumerProject}}}}},
 			{Kind: "skill", ID: "unrelated", Notices: empty, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty, Bindings: testCapabilityBindings("unrelated")},
 		},
 	}
@@ -32,6 +33,9 @@ func TestPreviewResolvesSelectedV4CapabilityProviderRootAndInternalClosure(t *te
 		}}}},
 		{ResourceID: "storage", ModeID: "provider", Evidence: RuntimeEvidence{Requirements: []RuntimeRequirementObservation{}, Authorities: []RuntimeAuthorityObservation{{
 			Kind: RuntimeAuthorityFilesystemRead, Scope: RuntimeScopeConsumerProject, RuntimeObservation: RuntimeObservation{State: ObservationAvailable, Reason: ObservationReasonVerified, ObservedAt: observedAt, ObserverRevision: "host"},
+		}}}},
+		{ResourceID: "helper", ModeID: "dependency", Evidence: RuntimeEvidence{Requirements: []RuntimeRequirementObservation{}, Authorities: []RuntimeAuthorityObservation{{
+			Kind: RuntimeAuthorityGitInspect, Scope: RuntimeScopeLocalGit, RuntimeObservation: RuntimeObservation{State: ObservationAvailable, Reason: ObservationReasonVerified, ObservedAt: observedAt, ObserverRevision: "host"},
 		}}}},
 	}}}}
 	resolver := &fakeExecutableResolver{resolutions: []ExecutableResolution{
@@ -58,7 +62,7 @@ func TestPreviewResolvesSelectedV4CapabilityProviderRootAndInternalClosure(t *te
 		!reflect.DeepEqual(activations[1].Selection.Roots, []ResourceIdentity{{Kind: "skill", ID: "storage"}}) {
 		t.Fatalf("activations = %#v", activations)
 	}
-	if got := resourceIDs(adapter.calls[0].desired.Resources); !reflect.DeepEqual(got, []string{"instruction:root", "asset:data", "skill:storage"}) {
+	if got := resourceIDs(adapter.calls[0].desired.Resources); !reflect.DeepEqual(got, []string{"instruction:root", "asset:data", "skill:helper", "skill:storage"}) {
 		t.Fatalf("desired resources = %v", got)
 	}
 	if got := adapter.calls[0].desired.Requires.Tools; !reflect.DeepEqual(got, []string{"consumer-tool", "provider-tool"}) {
@@ -68,7 +72,7 @@ func TestPreviewResolvesSelectedV4CapabilityProviderRootAndInternalClosure(t *te
 	if len(facts) != 1 || facts[0].ConsumerPack != "consumer" || facts[0].ConsumerResource == nil || facts[0].ConsumerResource.String() != "instruction:root" ||
 		facts[0].ProviderPack != "provider" || facts[0].ProviderResource == nil || facts[0].ProviderResource.String() != "skill:storage" ||
 		!reflect.DeepEqual(facts[0].RequiredTools, []string{"consumer-tool"}) ||
-		!reflect.DeepEqual(facts[0].RequiredAuthority, []string{"filesystem-read", "filesystem_read:consumer_project", "network:remote_git"}) {
+		!reflect.DeepEqual(facts[0].RequiredAuthority, []string{"filesystem-read", "filesystem_read:consumer_project", "git_inspect:local_git", "network:remote_git"}) {
 		t.Fatalf("capability facts = %#v", facts)
 	}
 	if report := plan.JSONReport(true); !reflect.DeepEqual(report.CapabilityRequirements, facts) {
