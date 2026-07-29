@@ -25,7 +25,7 @@ func TestPublicDocumentationNamesExactSelectablePackCatalog(t *testing.T) {
 	var want []string
 	packs, err := catalog.ListCurrent()
 	if err != nil {
-		t.Fatalf("list current production catalog: %v", err)
+		t.Fatalf("list production selectable pack catalog: %v", err)
 	}
 	for _, pack := range packs {
 		want = append(want, pack.ID)
@@ -37,7 +37,7 @@ func TestPublicDocumentationNamesExactSelectablePackCatalog(t *testing.T) {
 		text := readFile(t, filepath.Join(root, filepath.FromSlash(path)))
 		got := documentedCatalogIDs(text)
 		if !reflect.DeepEqual(got, want) {
-			t.Errorf("%s selectable catalog IDs = %#v, want production catalog %#v", path, got, want)
+			t.Errorf("%s selectable pack catalog IDs = %#v, want production selectable pack catalog %#v", path, got, want)
 		}
 		if staleCatalogClaim.MatchString(text) {
 			t.Errorf("%s retains stale only-Matty-and-Engram catalog claim", path)
