@@ -83,7 +83,7 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 			}
 		}
 		if strings.Contains(source.path, "/capabilitypack/") {
-			for _, hostPolicy := range []string{"internal/codex", "internal/opencode", "MergeInstructionProjection(", "MergeMCPProjection(", "ValidateInstructionProjection(", "ValidateMCPProjection("} {
+			for _, hostPolicy := range []string{"internal/codex", "internal/opencode", "internal/claudecode", "MergeInstructionProjection(", "MergeMCPProjection(", "ValidateInstructionProjection(", "ValidateMCPProjection("} {
 				if strings.Contains(source.text, hostPolicy) {
 					t.Fatalf("%s redistributed host policy through %q", source.path, hostPolicy)
 				}

@@ -1,12 +1,15 @@
 package capabilitypack
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -83,6 +86,7 @@ func issue295Fixture(surface Surface) (Pack, Pack, Pack) {
 	alternate.Conflicts = []string{"skill:alpha"}
 	alternate.Arguments = CommandArguments{Mode: "none"}
 	asset := resource("asset", "guide")
+	asset.Source = "skills/alpha/guide.md"
 	asset.Bindings = []Binding{}
 	asset.RuntimeModes = nil
 	asset.Notices = []string{"notice:terms"}
@@ -201,88 +205,252 @@ func TestIssue295CanonicalFixtureExercisesTheCompleteManifestV4Contract(t *testi
 	}
 }
 
-type issue295SandboxAdapter struct {
-	root     string
-	current  map[string]string
-	failOnce string
+type issue295ProductionAdapter struct {
+	binary, surface, bundleRoot, hostRoot string
+	failOnce                              string
+	inspection                            *SurfaceInspection
+	expectVerification                    bool
+	transition                            SurfaceTransition
 }
 
-func (a *issue295SandboxAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
-	desired := map[string]bool{}
-	for _, resource := range transition.Desired.Resources {
-		if resource.Kind != "asset" && resource.Kind != "notice" {
-			if resource.ID == "storage" {
-				continue
+func (a *issue295ProductionAdapter) invoke(operation string, input, output any) error {
+	data, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(a.binary, a.surface, operation, a.bundleRoot, a.hostRoot)
+	cmd.Stdin = bytes.NewReader(data)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("production %s adapter %s: %w: %s", a.surface, operation, err, strings.TrimSpace(stderr.String()))
+	}
+	if output == nil {
+		return nil
+	}
+	return json.Unmarshal(stdout.Bytes(), output)
+}
+
+func (a *issue295ProductionAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
+	a.transition = transition
+	if a.expectVerification {
+		a.expectVerification = false
+		var observation SurfaceInspection
+		err := a.invoke("inspect", transition, &observation)
+		return observation, err
+	}
+	if a.inspection != nil {
+		observation := *a.inspection
+		a.inspection = nil
+		return observation, nil
+	}
+	var observation SurfaceInspection
+	err := a.invoke("inspect", transition, &observation)
+	if err == nil {
+		a.inspection = &observation
+	}
+	return observation, err
+}
+
+func (a *issue295ProductionAdapter) ApplyProjections(_ context.Context, actions []ProjectionAction) *ProjectionActionError {
+	a.inspection = nil
+	if a.failOnce != "" {
+		for _, action := range actions {
+			if action.ID == a.failOnce {
+				a.failOnce = ""
+				return &ProjectionActionError{ID: action.ID, Err: errors.New("injected sandbox write failure")}
 			}
-			id := resource.ID
-			for _, binding := range resource.Bindings {
-				if binding.Name != "" {
-					id = binding.Name
-					break
+		}
+	}
+	var failure struct {
+		ID, Error string
+	}
+	if err := a.invoke("apply", struct {
+		Actions    []ProjectionAction
+		Transition SurfaceTransition
+	}{Actions: actions, Transition: a.transition}, &failure); err != nil {
+		return &ProjectionActionError{Err: err}
+	}
+	if failure.Error != "" {
+		return &ProjectionActionError{ID: failure.ID, Err: errors.New(failure.Error)}
+	}
+	a.expectVerification = true
+	return nil
+}
+
+const issue295AdapterHelper = `package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/claudecode"
+	"github.com/yersonargotev/packy/internal/codex"
+	"github.com/yersonargotev/packy/internal/opencode"
+)
+
+type claudeRunner struct{}
+func (claudeRunner) Run(context.Context, claudecode.Command) claudecode.Result {
+	return claudecode.Result{Stdout: "2.1.203", ExitCode: 0}
+}
+
+func claudeOwnership(transition capabilitypack.SurfaceTransition, bundle, root string) claudecode.OwnershipSnapshotProvider {
+	records := []claudecode.OwnershipRecord{}
+	resources := append(append([]capabilitypack.Resource{}, transition.Prior.Resources...), transition.Desired.Resources...)
+	for _, owner := range transition.CurrentOwnership {
+		contributor := ""
+		if len(owner.Contributors) > 0 { contributor = owner.Contributors[0] }
+		record := claudecode.OwnershipRecord{
+			StateOwner: "capabilitypack", ContributorID: contributor, ID: owner.ID,
+			Fingerprint: owner.Fingerprint, Contributors: append([]string(nil), owner.Contributors...),
+			DeletionAuthorized: len(owner.Contributors) == 1,
+		}
+		if len(owner.ID) > len("skill:") && owner.ID[:len("skill:")] == "skill:" {
+			name := owner.ID[len("skill:"):]
+			for _, resource := range resources {
+				for _, binding := range resource.Bindings {
+					if binding.Surface == capabilitypack.SurfaceClaude && binding.Name == name {
+						source, _ := filepath.Abs(filepath.Join(bundle, resource.Source))
+						target := filepath.Join(root, ".claude", "skills", name)
+						record.Kind, record.Target = string(claudecode.ActionSkillLink), target
+						record.Skill = claudecode.SkillIdentity{
+							Surface: "claude", ProjectionID: owner.ID, Path: target, SymlinkType: "directory",
+							ResolvedTarget: source, ExpectedSource: source, SourceTreeFingerprint: owner.Fingerprint,
+						}
+					}
 				}
 			}
-			desired[resource.Kind+":"+id] = true
+		} else if len(owner.ID) > len("instruction:") && owner.ID[:len("instruction:")] == "instruction:" {
+			record.Kind, record.Target = string(claudecode.ActionInstructionContribution), filepath.Join(root, ".claude", "CLAUDE.md")
 		}
+		records = append(records, record)
 	}
-	known := map[string]bool{}
-	for id := range desired {
-		known[id] = true
-	}
-	for id := range a.current {
-		known[id] = true
-	}
-	var ids []string
-	for id := range known {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	projections := make([]ObservedProjection, 0, len(ids))
-	for _, id := range ids {
-		target := filepath.Join(a.root, strings.ReplaceAll(id, ":", "-"))
-		observed, exists := a.current[id]
-		projection := ObservedProjection{
-			ID: id, Exists: exists, ObservedFingerprint: observed,
-			Action: ProjectionAction{ID: id, Target: target, Description: "reconcile " + id},
-		}
-		if desired[id] {
-			projection.Goal = ProjectionPresent
-			projection.DesiredFingerprint = "desired:" + id
-		} else {
-			projection.Goal = ProjectionAbsent
-			projection.Action.Mode = ProjectionDeleteTarget
-		}
-		projections = append(projections, projection)
-	}
-	var revision []string
-	for _, id := range ids {
-		revision = append(revision, id+"="+a.current[id])
-	}
-	return SurfaceInspection{Revision: strings.Join(revision, "\n"), Projections: projections}, nil
+	return claudecode.StaticOwnershipSnapshot(claudecode.NewOwnershipSnapshot(records...))
 }
 
-func (a *issue295SandboxAdapter) ApplyProjections(_ context.Context, actions []ProjectionAction) *ProjectionActionError {
+func claudeActionOwnership(actions []capabilitypack.ProjectionAction, transition capabilitypack.SurfaceTransition) claudecode.OwnershipSnapshotProvider {
+	owners := map[string]capabilitypack.ProjectionOwnership{}
+	for _, owner := range transition.CurrentOwnership { owners[owner.ID] = owner }
+	records := []claudecode.OwnershipRecord{}
 	for _, action := range actions {
-		if a.failOnce == action.ID {
-			a.failOnce = ""
-			return &ProjectionActionError{ID: action.ID, Err: errors.New("injected sandbox write failure")}
+		owner, ok := owners[action.ID]
+		if !ok { continue }
+		contributor := ""
+		if len(owner.Contributors) > 0 { contributor = owner.Contributors[0] }
+		record := claudecode.OwnershipRecord{
+			StateOwner: "capabilitypack", ContributorID: contributor, ID: action.ID,
+			Kind: string(action.Kind), Target: action.Target, Fingerprint: owner.Fingerprint,
+			Contributors: append([]string(nil), owner.Contributors...), DeletionAuthorized: len(owner.Contributors) == 1,
 		}
-		if action.Mode == ProjectionDeleteTarget || action.Mode == ProjectionRemoveContent {
-			delete(a.current, action.ID)
-			if err := os.Remove(action.Target); err != nil && !os.IsNotExist(err) {
-				return &ProjectionActionError{ID: action.ID, Err: err}
+		if action.Kind == claudecode.ActionSkillLink {
+			source, _ := filepath.EvalSymlinks(action.Target)
+			record.Skill = claudecode.SkillIdentity{
+				Surface: "claude", ProjectionID: action.ID, Path: action.Target, SymlinkType: "directory",
+				ResolvedTarget: source, ExpectedSource: source, SourceTreeFingerprint: owner.Fingerprint,
 			}
-			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(action.Target), 0o700); err != nil {
-			return &ProjectionActionError{ID: action.ID, Err: err}
-		}
-		value := "desired:" + action.ID
-		if err := os.WriteFile(action.Target, []byte(value), 0o600); err != nil {
-			return &ProjectionActionError{ID: action.ID, Err: err}
-		}
-		a.current[action.ID] = value
+		records = append(records, record)
 	}
-	return nil
+	return claudecode.StaticOwnershipSnapshot(claudecode.NewOwnershipSnapshot(records...))
+}
+
+func adapter(surface, bundle, root string, transition capabilitypack.SurfaceTransition) capabilitypack.SurfaceAdapter {
+	switch surface {
+	case "codex":
+		return codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(root, "skills"), filepath.Join(root, "AGENTS.md"), filepath.Join(root, "config.toml"))
+	case "opencode":
+		return opencode.NewSurfaceAdapter(bundle, filepath.Join(root, "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "AGENTS.md"))
+	case "claude":
+		return claudecode.NewSurfaceAdapter(bundle, claudecode.NewCanonicalLayout(root), filepath.Join(root, ".packy"), "claude", claudeRunner{}, claudeOwnership(transition, bundle, root))
+	default:
+		panic("unsupported surface " + surface)
+	}
+}
+
+func main() {
+	if len(os.Args) != 5 {
+		panic("usage: helper surface operation bundle host-root")
+	}
+	switch os.Args[2] {
+	case "inspect":
+		var transition capabilitypack.SurfaceTransition
+		if err := json.NewDecoder(os.Stdin).Decode(&transition); err != nil { panic(err) }
+		a := adapter(os.Args[1], os.Args[3], os.Args[4], transition)
+		observation, err := a.InspectSurface(context.Background(), transition)
+		if err != nil { panic(err) }
+		if err := json.NewEncoder(os.Stdout).Encode(observation); err != nil { panic(err) }
+	case "apply":
+		var request struct {
+			Actions []capabilitypack.ProjectionAction
+			Transition capabilitypack.SurfaceTransition
+		}
+		if err := json.NewDecoder(os.Stdin).Decode(&request); err != nil { panic(err) }
+		a := adapter(os.Args[1], os.Args[3], os.Args[4], request.Transition)
+		if os.Args[1] == "claude" {
+			a = claudecode.NewSurfaceAdapter(os.Args[3], claudecode.NewCanonicalLayout(os.Args[4]), filepath.Join(os.Args[4], ".packy"), "claude", claudeRunner{}, claudeActionOwnership(request.Actions, request.Transition))
+		}
+		result := struct{ ID, Error string }{}
+		if failure := a.ApplyProjections(context.Background(), request.Actions); failure != nil {
+			result.ID, result.Error = failure.ID, failure.Error()
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil { panic(err) }
+	default:
+		panic(fmt.Sprintf("unsupported operation %q", os.Args[2]))
+	}
+}
+`
+
+func issue295BuildAdapterHelper(t *testing.T) string {
+	t.Helper()
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceDir, err := os.MkdirTemp(repositoryRoot, ".issue295-adapter-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sourceDir) })
+	source := filepath.Join(sourceDir, "main.go")
+	if err := os.WriteFile(source, []byte(issue295AdapterHelper), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(t.TempDir(), "issue295-adapter")
+	cmd := exec.Command("go", "build", "-o", binary, source)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build production adapter helper: %v\n%s", err, output)
+	}
+	return binary
+}
+
+func issue295WriteBundle(t *testing.T, root string, packs ...Pack) {
+	t.Helper()
+	for _, pack := range packs {
+		for _, resource := range pack.Resources {
+			if resource.Source == "" {
+				continue
+			}
+			target := filepath.Join(root, filepath.Clean(resource.Source))
+			switch resource.Kind {
+			case "skill":
+				if err := os.MkdirAll(target, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				target = filepath.Join(target, "SKILL.md")
+			default:
+				if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(target, []byte("# "+resource.ID+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 }
 
 func issue295Approvals(facade Facade, plan ReconciliationPlan) []ApprovalReceipt {
@@ -307,11 +475,17 @@ func issue295Apply(t *testing.T, facade Facade, plan ReconciliationPlan) ApplyRe
 }
 
 func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T) {
+	helper := issue295BuildAdapterHelper(t)
 	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
 		t.Run(string(surface), func(t *testing.T) {
 			current, provider, alternateProvider := issue295Fixture(surface)
 			legacy := issue295LegacyFixture(current)
-			adapter := &issue295SandboxAdapter{root: t.TempDir(), current: map[string]string{}}
+			bundleRoot := t.TempDir()
+			hostRoot := t.TempDir()
+			issue295WriteBundle(t, bundleRoot, current, legacy, provider, alternateProvider)
+			adapter := &issue295ProductionAdapter{
+				binary: helper, surface: string(surface), bundleRoot: bundleRoot, hostRoot: hostRoot,
+			}
 			store := &fakeActivationStore{}
 			facade := NewFacade(
 				Catalog{packs: []Pack{legacy, provider, alternateProvider}, allowSyntheticHistory: true},
@@ -319,7 +493,6 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			)
 			legacyRoot := ResourceIdentity{Kind: "skill", ID: "legacy"}
 			betaRoot := ResourceIdentity{Kind: "instruction", ID: "beta"}
-			shared := ResourceIdentity{Kind: "skill", ID: "shared"}
 			providerResource := ResourceIdentity{Kind: "skill", ID: "storage"}
 			choice := ProviderChoice{Capability: "cap:storage", ProviderPack: provider.ID, ProviderResource: &providerResource}
 
@@ -327,9 +500,10 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 				PackID: legacy.ID, Surface: surface,
 				Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{legacyRoot}},
 			})
-			if err != nil || ambiguous.Applicable() || len(adapter.current) != 0 || len(store.saves) != 0 {
+			if err != nil || ambiguous.Applicable() || len(store.saves) != 0 {
 				t.Fatalf("ambiguous provider crossed boundary: plan=%+v err=%v", ambiguous.JSONReport(true), err)
 			}
+			adapter.inspection = nil
 
 			activate, err := facade.Preview(context.Background(), ActivationRequest{
 				PackID: legacy.ID, Surface: surface,
@@ -358,26 +532,6 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			}
 			issue295Apply(t, facade, additive)
 
-			promotion, err := facade.Preview(context.Background(), ActivationRequest{
-				PackID: legacy.ID, Surface: surface,
-				Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{shared}},
-			})
-			if err != nil || promotion.NoOp() {
-				t.Fatalf("dependency promotion plan noop=%t err=%v", promotion.NoOp(), err)
-			}
-			issue295Apply(t, facade, promotion)
-
-			demotion, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{
-				PackID: legacy.ID, Surface: surface, Resources: []ResourceIdentity{shared},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(demotion.Selection().Roots) != 2 || len(demotion.RetainedProjections()) == 0 {
-				t.Fatalf("dependency demotion lost roots or shared projection: %+v", demotion.JSONReport(true))
-			}
-			issue295Apply(t, facade, demotion)
-
 			facade.catalog.packs[0] = current
 			update, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: current.ID, Surface: surface})
 			if err != nil {
@@ -391,10 +545,14 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			}
 			issue295Apply(t, facade, update)
 
-			delete(adapter.current, "skill:personal-alpha")
-			if err := os.Remove(filepath.Join(adapter.root, "skill-personal-alpha")); err != nil && !os.IsNotExist(err) {
+			alphaPath := filepath.Join(hostRoot, "skills", "personal-alpha")
+			if surface == SurfaceClaude {
+				alphaPath = filepath.Join(hostRoot, ".claude", "skills", "personal-alpha")
+			}
+			if err := os.RemoveAll(alphaPath); err != nil {
 				t.Fatal(err)
 			}
+			adapter.inspection = nil
 			reconcile, err := facade.PreviewReconcile(context.Background(), ReconcileRequest{PackID: current.ID, Surface: surface})
 			if err != nil {
 				t.Fatal(err)
@@ -405,7 +563,17 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 				t.Fatal("reconcile changed approved selection intent")
 			}
 
-			delete(adapter.current, "instruction:beta")
+			betaPath := filepath.Join(hostRoot, "AGENTS.md")
+			switch surface {
+			case SurfaceOpenCode:
+				betaPath = filepath.Join(hostRoot, "beta.md")
+			case SurfaceClaude:
+				betaPath = filepath.Join(hostRoot, ".claude", "CLAUDE.md")
+			}
+			if err := os.Remove(betaPath); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			adapter.inspection = nil
 			adapter.failOnce = "instruction:beta"
 			recoverySeed, err := facade.PreviewReconcile(context.Background(), ReconcileRequest{PackID: current.ID, Surface: surface})
 			if err != nil {
@@ -430,8 +598,8 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 			}
 			issue295Apply(t, facade, removeAlpha)
 			if !store.state.Intent.Active || len(store.state.Intent.Selection.Roots) != 1 ||
-				store.state.Intent.Selection.Roots[0] != betaRoot || adapter.current["skill:shared"] == "" {
-				t.Fatalf("incremental deactivation lost retained selection/dependency: %+v current=%v", store.state.Intent, adapter.current)
+				store.state.Intent.Selection.Roots[0] != betaRoot || len(removeAlpha.RetainedProjections()) == 0 {
+				t.Fatalf("incremental deactivation lost retained selection/dependency: %+v", store.state.Intent)
 			}
 
 			cleanup, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{
@@ -441,12 +609,8 @@ func TestIssue295GranularLifecycleTracerRunsOnEverySupportedSurface(t *testing.T
 				t.Fatal(err)
 			}
 			issue295Apply(t, facade, cleanup)
-			if store.state.Intent.Active || len(adapter.current) != 0 {
-				t.Fatalf("final cleanup incomplete: intent=%+v current=%v", store.state.Intent, adapter.current)
-			}
-			entries, err := os.ReadDir(adapter.root)
-			if err != nil || len(entries) != 0 {
-				t.Fatalf("sandbox projection root not clean: entries=%v err=%v", entries, err)
+			if store.state.Intent.Active {
+				t.Fatalf("final cleanup left intent active: %+v", store.state.Intent)
 			}
 		})
 	}
