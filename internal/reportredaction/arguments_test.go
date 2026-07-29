@@ -19,3 +19,13 @@ func TestErrorRedactsSealedEnvironmentValuesAndPreservesCause(t *testing.T) {
 		t.Fatalf("redacted error = %q", got)
 	}
 }
+
+func TestTextRedactsSealedEnvironmentValuesAndPayloads(t *testing.T) {
+	got := Text("observed TOKEN=secret and merged-document", [][]string{{"--env", "TOKEN=secret"}}, []string{"merged-document"})
+	if strings.Contains(got, "secret") || strings.Contains(got, "merged-document") {
+		t.Fatalf("redacted text = %q", got)
+	}
+	if !strings.Contains(got, "TOKEN=<redacted>") {
+		t.Fatalf("redacted text = %q", got)
+	}
+}

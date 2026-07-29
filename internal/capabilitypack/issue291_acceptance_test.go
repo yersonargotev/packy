@@ -63,6 +63,9 @@ func TestIssue291CustomClosureAliasesAndAuthorityDisclosure(t *testing.T) {
 	}
 	origins := map[string]SensitiveEffectOrigin{}
 	for _, origin := range report.SensitiveEffects {
+		if origin.Pack != pack.ID {
+			t.Fatalf("sensitive effect pack = %q", origin.Pack)
+		}
 		origins[origin.Resource.String()] = origin
 	}
 	if got := origins["instruction:root"]; !reflect.DeepEqual(got.PromptAuthorities, []string{"filesystem-read"}) ||
@@ -90,6 +93,63 @@ func TestIssue291CustomClosureAliasesAndAuthorityDisclosure(t *testing.T) {
 	}
 	if len(adapter.actions) != 0 || len(store.saves) != 0 {
 		t.Fatalf("rejected alias crossed mutation boundary: actions=%d saves=%d", len(adapter.actions), len(store.saves))
+	}
+}
+
+func TestIssue291SensitiveEffectsCoverEveryRetainingRootAndProviderPack(t *testing.T) {
+	rootA := ResourceIdentity{Kind: "instruction", ID: "a"}
+	rootB := ResourceIdentity{Kind: "instruction", ID: "b"}
+	shared := ResourceIdentity{Kind: "skill", ID: "shared"}
+	providerRoot := ResourceIdentity{Kind: "skill", ID: "storage"}
+	providerDependency := ResourceIdentity{Kind: "skill", ID: "helper"}
+	consumer := Pack{manifestVersion: manifestSchemaV4, ID: "consumer", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+		{Kind: rootA.Kind, ID: rootA.ID, Requires: []string{shared.String()}, Bindings: issue291Bindings(rootA.ID)},
+		{Kind: rootB.Kind, ID: rootB.ID, Requires: []string{shared.String()}, Bindings: issue291Bindings(rootB.ID)},
+		{Kind: shared.Kind, ID: shared.ID, Permissions: []string{"network"}, RequiresCapabilities: []string{"cap:storage"}, Bindings: issue291Bindings(shared.ID)},
+	}}
+	provider := Pack{manifestVersion: manifestSchemaV4, ID: "provider", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+		{Kind: providerRoot.Kind, ID: providerRoot.ID, Permissions: []string{"filesystem-write"}, Requires: []string{providerDependency.String()}, ProvidesCapabilities: []string{"cap:storage"}, Bindings: issue291Bindings(providerRoot.ID)},
+		{Kind: providerDependency.Kind, ID: providerDependency.ID, Permissions: []string{"filesystem-read"}, Bindings: issue291Bindings(providerDependency.ID)},
+	}}
+	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{Revision: "host"}}}
+	store := &fakeActivationStore{}
+	facade := NewFacade(Catalog{packs: []Pack{consumer, provider}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	plan, err := facade.Preview(context.Background(), ActivationRequest{
+		PackID: consumer.ID, Surface: SurfaceCodex,
+		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{rootA, rootB}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	origins := plan.SensitiveEffects()
+	want := map[string][]ResourceIdentity{
+		"consumer|instruction:a|skill:shared":  {rootA, shared},
+		"consumer|instruction:b|skill:shared":  {rootB, shared},
+		"provider|skill:storage|skill:storage": {providerRoot},
+		"provider|skill:storage|skill:helper":  {providerRoot, providerDependency},
+	}
+	if len(origins) != len(want) {
+		t.Fatalf("sensitive effects = %+v", origins)
+	}
+	for _, origin := range origins {
+		key := origin.Pack + "|" + origin.Root.String() + "|" + origin.Resource.String()
+		if !reflect.DeepEqual(origin.DependencyChain, want[key]) {
+			t.Fatalf("origin %s = %+v", key, origin)
+		}
+		delete(want, key)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing sensitive effects = %+v", want)
+	}
+
+	tampered := plan
+	tampered.sensitiveEffects = cloneSensitiveEffectOrigins(plan.sensitiveEffects)
+	tampered.sensitiveEffects[0].Pack = "tampered"
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: tampered, Interactive: true}); !errors.Is(err, ErrApprovalMismatch) {
+		t.Fatalf("tampered sensitive effects error = %v", err)
+	}
+	if len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("tampered provenance crossed mutation boundary: actions=%d saves=%d", len(adapter.actions), len(store.saves))
 	}
 }
 
@@ -208,7 +268,8 @@ func TestIssue291SecretLikeActionDataIsNotReportedOrPersistedAfterFailure(t *tes
 			ID: "instruction:root", Consent: ConsentExecutableExternal, Content: secret,
 			Args: []string{"tool", "--env", "TOKEN=" + secret}, Description: "configure secret safely",
 		},
-	}}}
+	}}, Readiness: ReadinessObservation{Evidence: []string{"observed TOKEN=" + secret}},
+		PendingHumanActions: []string{"copy " + secret + " into the host"}}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{inspection, inspection}, applyErr: &ProjectionActionError{ID: "instruction:root", Err: errors.New("adapter failed: " + secret)}}
 	store := &fakeActivationStore{}
 	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
@@ -221,7 +282,7 @@ func TestIssue291SecretLikeActionDataIsNotReportedOrPersistedAfterFailure(t *tes
 		t.Fatal(err)
 	}
 	if strings.Contains(string(report), secret) {
-		t.Fatalf("JSON preview leaked action secret: %s", report)
+		t.Fatalf("JSON preview leaked action/evidence secret: %s", report)
 	}
 	_, applyErr := facade.Apply(context.Background(), ApplyRequest{
 		Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true,

@@ -518,7 +518,18 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 			return err
 		}
 		if origins, ok := document["sensitive_effects"].([]any); ok {
-			if err := requireOrdered("sensitive_effects", origins, nestedObjectKey("resource", "kind", "id")); err != nil {
+			originKey := func(value any) string {
+				origin := value.(map[string]any)
+				root := origin["root"].(map[string]any)
+				resource := origin["resource"].(map[string]any)
+				parts := []string{origin["pack"].(string), root["kind"].(string), root["id"].(string), resource["kind"].(string), resource["id"].(string)}
+				for _, member := range origin["dependency_chain"].([]any) {
+					identity := member.(map[string]any)
+					parts = append(parts, identity["kind"].(string), identity["id"].(string))
+				}
+				return strings.Join(parts, "\x00")
+			}
+			if err := requireOrdered("sensitive_effects", origins, originKey); err != nil {
 				return err
 			}
 			for _, value := range origins {

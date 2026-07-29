@@ -39,7 +39,12 @@ func Error(err error, argumentSets [][]string, sealedPayloads []string) error {
 	if err == nil {
 		return nil
 	}
-	message := err.Error()
+	return redactedError{message: Text(err.Error(), argumentSets, sealedPayloads), cause: err}
+}
+
+// Text removes environment argument values and sealed payloads from arbitrary
+// report text such as host readiness evidence.
+func Text(message string, argumentSets [][]string, sealedPayloads []string) string {
 	for _, args := range argumentSets {
 		for _, argument := range environmentArguments(args) {
 			message = strings.ReplaceAll(message, argument.value, environmentValue(argument.value))
@@ -53,7 +58,7 @@ func Error(err error, argumentSets [][]string, sealedPayloads []string) error {
 			message = strings.ReplaceAll(message, payload, "<redacted>")
 		}
 	}
-	return redactedError{message: message, cause: err}
+	return message
 }
 
 func environmentArguments(args []string) []environmentArgument {

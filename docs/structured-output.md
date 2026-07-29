@@ -74,9 +74,10 @@ evidence, pending evidence, evaluated runtime modes, recovery, and exact
 the consumer Pack/resource, capability, provider Pack/resource, required tools
 and authorities, and resulting readiness. A null resource denotes legacy
 whole-Pack composition. Its ordered `sensitive_effects` bind each selected
-resource's manifest-declared authorities and runtime effects to the exact
-introducing root and root-to-resource dependency chain. Apply and failure
-reports retain that redacted plan.
+resource's manifest-declared authorities and runtime effects to the owning Pack
+and every exact introducing root-to-resource dependency chain, including
+required provider Pack closures. Apply and failure reports retain that redacted,
+sealed plan.
 Status publishes intent, canonical selected roots, and a full
 resource inventory whose role is `root`, `dependency`, `asset`, `notice`, or
 `unselected`, with a deterministic root-to-resource `dependency_chain`.

@@ -391,6 +391,7 @@ type ReconciliationPlan struct {
 	portable                []PortableOutcome
 	resolutions             []ExecutableResolution
 	runtimeModeResults      []RuntimeModeResult
+	sensitiveEffects        []SensitiveEffectOrigin
 	readiness               ReadinessStatus
 	readinessObserved       ReadinessObservationStatus
 	observedEvidence        []string
@@ -442,6 +443,9 @@ func (p ReconciliationPlan) Aliases() []SurfaceAlias        { return cloneAliase
 func (p ReconciliationPlan) Selection() ResourceSelection   { return cloneSelection(p.selection) }
 func (p ReconciliationPlan) ProviderChoices() []ProviderChoice {
 	return cloneProviderChoices(p.providerChoices)
+}
+func (p ReconciliationPlan) SensitiveEffects() []SensitiveEffectOrigin {
+	return cloneSensitiveEffectOrigins(p.sensitiveEffects)
 }
 func (p ReconciliationPlan) OldVersion() string  { return p.oldVersion }
 func (p ReconciliationPlan) IntentRevision() int { return p.intentRevision }
@@ -698,7 +702,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	if active {
 		previousProviderChoices = cloneProviderChoices(intent.ProviderChoices)
 	}
-	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, selection: selection, previousSelection: selection, previousProviderChoices: previousProviderChoices, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: map[string]string{}}
+	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, selection: selection, previousSelection: selection, previousProviderChoices: previousProviderChoices, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), activations: target.activations, contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: map[string]string{}}
 	for id, contributors := range before.contributors {
 		for _, contributor := range contributors {
 			if contributorBelongsToPack(contributor, requested.ID) {
@@ -751,6 +755,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	sort.Strings(plan.pendingHumanActions)
 	plan.attachRecovery(state, recovery)
 	plan.requireRecoveryApproval()
+	plan.captureSensitiveEffects()
 	plan.seal()
 	return plan, nil
 }
@@ -852,7 +857,9 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 	readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
 	plan.readiness = readiness
 	plan.readinessObserved = ReadinessObservationStatus{Configured: true, Authorization: observation.Readiness.AuthorizationObserved, Usability: observation.Readiness.UsabilityObserved}
-	plan.observedEvidence = append([]string{}, observation.Readiness.Evidence...)
+	for _, evidence := range observation.Readiness.Evidence {
+		plan.observedEvidence = append(plan.observedEvidence, reportSafeObservationText(evidence, observation.Projections))
+	}
 	sort.Strings(plan.observedEvidence)
 	for _, projection := range observation.Projections {
 		if projection.ObservedFingerprint != projection.DesiredFingerprint && !projection.ExternallyManaged {
@@ -873,6 +880,7 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 	}
 	plan.attachRecovery(state, recoveryAttempt(state, OperationDeactivate, request.PackID, request.Surface))
 	plan.requireRecoveryApproval()
+	plan.captureSensitiveEffects()
 	plan.seal()
 	return plan, nil
 }
@@ -1049,7 +1057,10 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	readiness.Authorized = readiness.Configured && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
 	readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
 	readinessObserved := ReadinessObservationStatus{Configured: true, Authorization: observation.Readiness.AuthorizationObserved, Usability: observation.Readiness.UsabilityObserved}
-	observedEvidence := append([]string(nil), observation.Readiness.Evidence...)
+	observedEvidence := make([]string, 0, len(observation.Readiness.Evidence))
+	for _, evidence := range observation.Readiness.Evidence {
+		observedEvidence = append(observedEvidence, reportSafeObservationText(evidence, observation.Projections))
+	}
 	sort.Strings(observedEvidence)
 	pendingEvidence := []string{}
 	for _, projection := range observation.Projections {
@@ -1064,7 +1075,10 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		pendingEvidence = append(pendingEvidence, "usability evidence pending a host observation")
 	}
 	sort.Strings(pendingEvidence)
-	pendingHumanActions := append([]string(nil), observation.PendingHumanActions...)
+	pendingHumanActions := make([]string, 0, len(observation.PendingHumanActions))
+	for _, action := range observation.PendingHumanActions {
+		pendingHumanActions = append(pendingHumanActions, reportSafeObservationText(action, observation.Projections))
+	}
 	sort.Strings(pendingHumanActions)
 	capabilityFacts := append([]CapabilityRequirementFact(nil), composition.capabilityFacts...)
 	for i := range capabilityFacts {
@@ -1111,6 +1125,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		plan.noOp = false
 	}
 	plan.requireRecoveryApproval()
+	plan.captureSensitiveEffects()
 	plan.seal()
 	return plan, nil
 }
@@ -1772,6 +1787,15 @@ func (p *ReconciliationPlan) requireRecoveryApproval() {
 	}
 	p.phases = append([]PlanPhase{{Kind: ConsentReversibleLocal, ApprovalRequired: true}}, p.phases...)
 }
+func (p *ReconciliationPlan) captureSensitiveEffects() {
+	p.sensitiveEffects = sensitiveEffectOriginsForComposition(
+		p.compositionFacts,
+		p.activations,
+		p.intentFacts,
+		p.pack.ID,
+		p.selection,
+	)
+}
 func (p ReconciliationPlan) validSeal() bool {
 	copy := p
 	copy.seal()
@@ -1790,6 +1814,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		Portable                []PortableOutcome
 		Resolutions             []ExecutableResolution
 		RuntimeModes            []RuntimeModeResult
+		SensitiveEffects        []SensitiveEffectOrigin
 		Readiness               ReadinessStatus
 		Pending                 []string
 		NoOp                    bool
@@ -1815,7 +1840,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		SelectionValidity       SelectionValidity
 		Recovery                bool
 		Historical              *ApplyingJournal
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.providerChoices, p.previousProviderChoices, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.sensitiveEffects, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.providerChoices, p.previousProviderChoices, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
 }
 
 func providerHasConsumer(intents map[string]ActivationIntent, providerID string) bool {

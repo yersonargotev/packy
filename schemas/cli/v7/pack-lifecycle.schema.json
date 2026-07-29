@@ -695,6 +695,7 @@
     "sensitive_effect_origin": {
       "type": "object",
       "required": [
+        "pack",
         "resource",
         "root",
         "dependency_chain",
@@ -703,6 +704,10 @@
         "runtime_effects"
       ],
       "properties": {
+        "pack": {
+          "type": "string",
+          "minLength": 1
+        },
         "resource": {
           "$ref": "#/$defs/resource_identity"
         },
