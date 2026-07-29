@@ -1463,7 +1463,7 @@ func TestPackUpdateRendersConsolidatedBlockersWithoutPrompts(t *testing.T) {
 	if !errors.Is(err, capabilitypack.ErrPlanNotActionable) {
 		t.Fatalf("blocked update error: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Plan disposition: blocked", "Cannot apply update: 2 blockers", "capability-conflict", "dependency cap:missing"} {
+	for _, want := range []string{"Plan disposition: blocked", "Cannot apply update: 3 blockers", "capability-conflict", "dependency cap:missing", "provider choice"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q:\n%s", want, out)
 		}

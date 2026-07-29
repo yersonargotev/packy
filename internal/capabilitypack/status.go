@@ -15,10 +15,17 @@ type StatusRequest struct {
 }
 
 type IntentStatus struct {
-	Active    bool
-	Revision  int
-	Version   string
-	Selection ResourceSelection
+	Active          bool
+	Revision        int
+	Version         string
+	Selection       ResourceSelection
+	ProviderChoices []ProviderChoice
+}
+
+type CapabilityConsumerFact struct {
+	ConsumerPack     string
+	ConsumerResource *ResourceIdentity
+	Capability       string
 }
 
 type AttemptStatus struct {
@@ -141,6 +148,8 @@ type StatusEntry struct {
 	PendingHumanActions []string
 	Evidence            []string
 	Contract            LifecycleContract
+	ActivationRole      ActivationRole
+	Consumers           []CapabilityConsumerFact
 }
 
 type ReadinessObservationStatus struct {
@@ -270,7 +279,54 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 			return StatusEntry{}, err
 		}
 		entry.Contract = LifecycleContractFor(pack, surface, intent.Aliases)
-		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection}
+		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection, ProviderChoices: cloneProviderChoices(intent.ProviderChoices)}
+		explicit, required := intentIsExplicit(intent), false
+		for _, consumer := range activeIntents(state) {
+			if !consumer.Active {
+				continue
+			}
+			consumerPack, resolveErr := f.catalog.resolveIntentPack(consumer.PackID, consumer.Version)
+			if resolveErr != nil {
+				return StatusEntry{}, fmt.Errorf("resolve capability consumer %q: %w", consumer.PackID, resolveErr)
+			}
+			for _, choice := range consumer.ProviderChoices {
+				if choice.ProviderPack != pack.ID {
+					continue
+				}
+				required = true
+				for _, requirement := range capabilityRequirements(consumerPack) {
+					if requirement.capability == choice.Capability {
+						entry.Consumers = append(entry.Consumers, CapabilityConsumerFact{ConsumerPack: consumer.PackID, ConsumerResource: optionalResourceIdentity(requirement.resource), Capability: choice.Capability})
+					}
+				}
+			}
+		}
+		switch {
+		case !intent.Active:
+			entry.ActivationRole = ActivationInactive
+		case explicit && required:
+			entry.ActivationRole = ActivationExplicitRequired
+		case required:
+			entry.ActivationRole = ActivationRequired
+		default:
+			entry.ActivationRole = ActivationExplicit
+		}
+		sort.Slice(entry.Consumers, func(i, j int) bool {
+			if entry.Consumers[i].ConsumerPack != entry.Consumers[j].ConsumerPack {
+				return entry.Consumers[i].ConsumerPack < entry.Consumers[j].ConsumerPack
+			}
+			if entry.Consumers[i].Capability != entry.Consumers[j].Capability {
+				return entry.Consumers[i].Capability < entry.Consumers[j].Capability
+			}
+			left, right := "", ""
+			if entry.Consumers[i].ConsumerResource != nil {
+				left = entry.Consumers[i].ConsumerResource.String()
+			}
+			if entry.Consumers[j].ConsumerResource != nil {
+				right = entry.Consumers[j].ConsumerResource.String()
+			}
+			return left < right
+		})
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
 		if intent.Active {

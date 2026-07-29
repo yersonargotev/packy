@@ -2,10 +2,10 @@
 
 Packy emits versioned JSON when `--json` is present. Classic lifecycle and
 doctor retain `schema_version: 2`. Pack show uses `schema_version: 4`.
-Capability-Pack lifecycle and status use `schema_version: 5`: lifecycle adds
-resource-scoped capability-provider requirements, while status adds resource
-readiness, focused-resource gates, and exact Pack/resource contributors without
-silently changing v1-v4.
+Capability-Pack lifecycle and status use `schema_version: 6`: lifecycle adds
+persisted capability-provider choices to the v5 resource-scoped requirements,
+while status adds explicit/required activation roles and canonical consumers.
+Versions v1-v5 remain unchanged.
 
 | Command | `report` |
 | --- | --- |
