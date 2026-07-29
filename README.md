@@ -51,10 +51,14 @@ packy uninstall --dry-run
 ## Opt-in capability packs
 
 Packy core remains available even when the optional `matty` capability pack is
-inactive. The initial Packy-owned catalog contains only `matty` and `engram`, and
-supports the `codex`, `opencode`, and `claude` surfaces when a Pack explicitly
-declares them. Existing Pack activations retain their recorded surfaces until an
-explicit Pack update and Claude activation remains a separate surface choice.
+inactive.
+
+The selectable pack catalog currently contains `addy`, `engram`, and `matty`.
+
+The catalog supports the `codex`, `opencode`, and `claude` surfaces when a Pack
+explicitly declares them. Existing Pack activations retain their recorded
+surfaces until an explicit Pack update and Claude activation remains a separate
+surface choice.
 
 Before opting in, inspect the catalog and current host state without mutation:
 

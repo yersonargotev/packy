@@ -4,6 +4,8 @@ Capability packs are opt-in additions managed by **Packy core**. Packy remains
 available when the optional pack named `matty` is inactive. Discovery, show,
 status, and dry-run are inspection-only.
 
+The selectable pack catalog currently contains `addy`, `engram`, and `matty`.
+
 | Current Pack | Purpose | Claude contract |
 | --- | --- | --- |
 | `matty` **3.0.0** | Workflow skills and guidance | **complete**: every skill and instruction has a native binding and no Claude exclusion. Projection does not prove runtime usability. |
