@@ -102,9 +102,13 @@ func TestIssue291SensitiveEffectsCoverEveryRetainingRootAndProviderPack(t *testi
 	shared := ResourceIdentity{Kind: "skill", ID: "shared"}
 	providerRoot := ResourceIdentity{Kind: "skill", ID: "storage"}
 	providerDependency := ResourceIdentity{Kind: "skill", ID: "helper"}
+	left := ResourceIdentity{Kind: "skill", ID: "left"}
+	right := ResourceIdentity{Kind: "skill", ID: "right"}
 	consumer := Pack{manifestVersion: manifestSchemaV4, ID: "consumer", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
-		{Kind: rootA.Kind, ID: rootA.ID, Requires: []string{shared.String()}, Bindings: issue291Bindings(rootA.ID)},
+		{Kind: rootA.Kind, ID: rootA.ID, Requires: []string{left.String(), right.String()}, Bindings: issue291Bindings(rootA.ID)},
 		{Kind: rootB.Kind, ID: rootB.ID, Requires: []string{shared.String()}, Bindings: issue291Bindings(rootB.ID)},
+		{Kind: left.Kind, ID: left.ID, Requires: []string{shared.String()}, Bindings: issue291Bindings(left.ID)},
+		{Kind: right.Kind, ID: right.ID, Requires: []string{shared.String()}, Bindings: issue291Bindings(right.ID)},
 		{Kind: shared.Kind, ID: shared.ID, Permissions: []string{"network"}, RequiresCapabilities: []string{"cap:storage"}, Bindings: issue291Bindings(shared.ID)},
 	}}
 	provider := Pack{manifestVersion: manifestSchemaV4, ID: "provider", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
@@ -123,16 +127,17 @@ func TestIssue291SensitiveEffectsCoverEveryRetainingRootAndProviderPack(t *testi
 	}
 	origins := plan.SensitiveEffects()
 	want := map[string][]ResourceIdentity{
-		"consumer|instruction:a|skill:shared":  {rootA, shared},
-		"consumer|instruction:b|skill:shared":  {rootB, shared},
-		"provider|skill:storage|skill:storage": {providerRoot},
-		"provider|skill:storage|skill:helper":  {providerRoot, providerDependency},
+		"consumer|instruction:a|skill:left|skill:shared":  {rootA, left, shared},
+		"consumer|instruction:a|skill:right|skill:shared": {rootA, right, shared},
+		"consumer|instruction:b|skill:shared":             {rootB, shared},
+		"provider|skill:storage":                          {providerRoot},
+		"provider|skill:storage|skill:helper":             {providerRoot, providerDependency},
 	}
 	if len(origins) != len(want) {
 		t.Fatalf("sensitive effects = %+v", origins)
 	}
 	for _, origin := range origins {
-		key := origin.Pack + "|" + origin.Root.String() + "|" + origin.Resource.String()
+		key := origin.Pack + "|" + strings.ReplaceAll(identityChainKey(origin.DependencyChain), "\x00", "|")
 		if !reflect.DeepEqual(origin.DependencyChain, want[key]) {
 			t.Fatalf("origin %s = %+v", key, origin)
 		}

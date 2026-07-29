@@ -3,6 +3,7 @@ package capabilitypack
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -275,28 +276,109 @@ func SensitiveEffectOriginsFor(pack Pack, selection ResourceSelection) []Sensiti
 	}
 	origins := []SensitiveEffectOrigin{}
 	for _, root := range roots {
-		ordered, chains, err := resolveResourceClosure(pack, []ResourceIdentity{root})
+		paths, err := resourceDependencyPaths(pack, root)
 		if err != nil {
 			return []SensitiveEffectOrigin{}
 		}
-		for _, selected := range ordered {
-			resource := resources[(ResourceIdentity{Kind: selected.Kind, ID: selected.ID}).String()]
+		identities := make([]string, 0, len(paths))
+		for identity := range paths {
+			identities = append(identities, identity)
+		}
+		sort.Strings(identities)
+		for _, identity := range identities {
+			resource := resources[identity]
 			promptAuthorities, runtimeAuthorities, runtimeEffects := resourceSensitiveFacts(resource)
 			if len(promptAuthorities) == 0 && len(runtimeAuthorities) == 0 && len(runtimeEffects) == 0 {
 				continue
 			}
-			identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
-			origins = append(origins, SensitiveEffectOrigin{
-				Pack: pack.ID, Resource: identity, Root: root,
-				DependencyChain:   append([]ResourceIdentity{}, chains[identity.String()]...),
-				PromptAuthorities: promptAuthorities, RuntimeAuthorities: runtimeAuthorities, RuntimeEffects: runtimeEffects,
-			})
+			resourceIdentity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+			for _, path := range paths[identity] {
+				origins = append(origins, SensitiveEffectOrigin{
+					Pack: pack.ID, Resource: resourceIdentity, Root: root,
+					DependencyChain:   append([]ResourceIdentity{}, path...),
+					PromptAuthorities: promptAuthorities, RuntimeAuthorities: runtimeAuthorities, RuntimeEffects: runtimeEffects,
+				})
+			}
 		}
 	}
 	sort.Slice(origins, func(i, j int) bool {
 		return sensitiveEffectOriginKey(origins[i]) < sensitiveEffectOriginKey(origins[j])
 	})
 	return origins
+}
+
+func resourceDependencyPaths(pack Pack, root ResourceIdentity) (map[string][][]ResourceIdentity, error) {
+	resources := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	paths := map[string][][]ResourceIdentity{}
+	seenPaths := map[string]bool{}
+	var visit func(string, []ResourceIdentity) error
+	visit = func(identity string, path []ResourceIdentity) error {
+		resource, ok := resources[identity]
+		if !ok {
+			return fmt.Errorf("custom resource selection root or dependency %q does not exist in pack %q", identity, pack.ID)
+		}
+		for _, member := range path {
+			if member.String() == identity {
+				return nil
+			}
+		}
+		candidate := append(append([]ResourceIdentity{}, path...), ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
+		key := identity + "\x00" + identityChainKey(candidate)
+		if !seenPaths[key] {
+			paths[identity] = append(paths[identity], candidate)
+			seenPaths[key] = true
+		}
+		dependencies := append([]string(nil), resource.Requires...)
+		sort.Strings(dependencies)
+		for _, dependency := range dependencies {
+			if err := visit(dependency, candidate); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := visit(root.String(), nil); err != nil {
+		return nil, err
+	}
+	dependencyPaths := make(map[string][][]ResourceIdentity, len(paths))
+	for identity, values := range paths {
+		dependencyPaths[identity] = append([][]ResourceIdentity(nil), values...)
+	}
+	for identity, values := range dependencyPaths {
+		notices := append([]string(nil), resources[identity].Notices...)
+		sort.Strings(notices)
+		for _, notice := range notices {
+			resource, ok := resources[notice]
+			if !ok {
+				return nil, fmt.Errorf("resource %q notice %q does not exist in pack %q", identity, notice, pack.ID)
+			}
+			for _, path := range values {
+				candidate := append(append([]ResourceIdentity{}, path...), ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
+				key := notice + "\x00" + identityChainKey(candidate)
+				if !seenPaths[key] {
+					paths[notice] = append(paths[notice], candidate)
+					seenPaths[key] = true
+				}
+			}
+		}
+	}
+	for identity := range paths {
+		sort.Slice(paths[identity], func(i, j int) bool {
+			return identityChainLess(paths[identity][i], paths[identity][j])
+		})
+	}
+	return paths, nil
+}
+
+func identityChainKey(values []ResourceIdentity) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, value.String())
+	}
+	return strings.Join(parts, "\x00")
 }
 
 func resourceSensitiveFacts(resource Resource) ([]string, []RuntimeAuthorityOrigin, []RuntimeEffectOrigin) {
