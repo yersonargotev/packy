@@ -22,6 +22,7 @@ type packManifest struct {
 	ID            string             `json:"id"`
 	Version       string             `json:"version"`
 	Resources     []manifestResource `json:"resources"`
+	canonicalV4   []byte
 }
 
 type manifestResource struct {
@@ -396,6 +397,11 @@ func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, binding
 	plan.Discoveries = discoverUnselected(snapshotRoot, bindings)
 	plan.Counts.Discoveries = len(plan.Discoveries)
 	plan.AffectedPacks = derivePackImpacts(plan.Changes, manifests, &plan.Blockers)
+	targetPacks := make(map[string]bool)
+	for _, binding := range bindings {
+		targetPacks[binding.PackID] = true
+	}
+	plan.AffectedPacks = applyManifestContracts(repositoryRoot, manifests, targetPacks, plan.AffectedPacks, existingPacks, plan.Registration != nil, &plan.Blockers)
 	if plan.Registration != nil {
 		for i := range plan.AffectedPacks {
 			if existingPacks[plan.AffectedPacks[i].PackID] {
@@ -713,6 +719,12 @@ func loadManifests(root string) (map[string]packManifest, string, error) {
 			}
 			if portable.ID != manifest.ID || portable.Version != manifest.Version {
 				return nil, "", fmt.Errorf("runtime manifest %s identity disagrees with capability-pack contract", name)
+			}
+			if manifest.SchemaVersion == 4 {
+				manifest.canonicalV4, err = capabilitypack.EncodePortableManifestV4(portable)
+				if err != nil {
+					return nil, "", fmt.Errorf("canonicalize runtime manifest %s: %w", name, err)
+				}
 			}
 		}
 		result[manifest.ID] = manifest

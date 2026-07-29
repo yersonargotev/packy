@@ -18,6 +18,10 @@ func (plan Plan) Human() string {
 	var output strings.Builder
 	fmt.Fprintf(&output, "source: %s\n", plan.SourceID)
 	fmt.Fprintf(&output, "candidate: %s\n", plan.Candidate.Commit)
+	if plan.Candidate.Release != nil {
+		fmt.Fprintf(&output, "candidate_release: %s\n", plan.Candidate.Release.Tag)
+	}
+	fmt.Fprintf(&output, "source_lock: current=%s proposed=%s\n", plan.Preconditions.SourceLockSHA256, plan.SourceLockSHA256)
 	fmt.Fprintf(&output, "plan_id: %s\n", plan.PlanID)
 	fmt.Fprintf(&output, "status: %s\n", plan.Status)
 	fmt.Fprintf(&output, "authoritative: %t\n", plan.Authoritative)
@@ -26,6 +30,21 @@ func (plan Plan) Human() string {
 	fmt.Fprintf(&output, "unselected discoveries: %d\n", plan.Counts.Discoveries)
 	for _, change := range plan.Changes {
 		fmt.Fprintf(&output, "  %s %s\n", change.Kind, change.Path)
+	}
+	for _, impact := range plan.AffectedPacks {
+		fmt.Fprintf(&output, "affected_pack: %s current=%s floor=%s\n", impact.PackID, impact.CurrentVersion, impact.MechanicalFloor)
+		for _, reason := range impact.Reasons {
+			fmt.Fprintf(&output, "  reason: %s\n", reason)
+		}
+		if impact.Contract != nil {
+			fmt.Fprintf(&output, "  manifest: schema=%d current_sha256=%s baseline_sha256=%s\n", impact.Contract.SchemaVersion, impact.Contract.CurrentManifestSHA256, impact.Contract.BaselineManifestSHA256)
+			for _, migration := range impact.Contract.RootMigrations {
+				fmt.Fprintf(&output, "  migration: %s -> %s\n", migration.From, migration.To)
+			}
+			for _, notice := range impact.Contract.NoticeAssociations {
+				fmt.Fprintf(&output, "  notice: %s -> %s\n", notice.Resource, notice.Notice)
+			}
+		}
 	}
 	if len(plan.Blockers) > 0 {
 		output.WriteString("blockers:\n")
