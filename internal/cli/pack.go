@@ -494,6 +494,26 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 			return err
 		}
 	}
+	for _, origin := range plan.JSONReport(dryRun).SensitiveEffects {
+		for _, authority := range origin.PromptAuthorities {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Authority origin: %s resource=%s root=%s dependency_chain=%s\n",
+				authority, origin.Resource, origin.Root, renderIdentityChain(origin.DependencyChain)); err != nil {
+				return err
+			}
+		}
+		for _, authority := range origin.RuntimeAuthorities {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Runtime authority origin: mode=%s kind=%s scope=%s resource=%s root=%s dependency_chain=%s\n",
+				authority.ModeID, authority.Kind, factOrNone(string(authority.Scope)), origin.Resource, origin.Root, renderIdentityChain(origin.DependencyChain)); err != nil {
+				return err
+			}
+		}
+		for _, effect := range origin.RuntimeEffects {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Sensitive effect origin: mode=%s kind=%s scope=%s resource=%s root=%s dependency_chain=%s\n",
+				effect.ModeID, effect.Kind, factOrNone(string(effect.Scope)), origin.Resource, origin.Root, renderIdentityChain(origin.DependencyChain)); err != nil {
+				return err
+			}
+		}
+	}
 	if err := renderPackContract(cmd, plan.LifecycleContract()); err != nil {
 		return err
 	}

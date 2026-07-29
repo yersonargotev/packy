@@ -2,10 +2,10 @@
 
 Packy emits versioned JSON when `--json` is present. Classic lifecycle and
 doctor retain `schema_version: 2`. Pack show uses `schema_version: 4`.
-Capability-Pack lifecycle and status use `schema_version: 6`: lifecycle adds
-persisted capability-provider choices to the v5 resource-scoped requirements,
-while status adds explicit/required activation roles and canonical consumers.
-Versions v1-v5 remain unchanged.
+Capability-Pack lifecycle uses `schema_version: 7`, adding closure-bound
+`sensitive_effects` to the v6 provider-choice plan. Capability-Pack status
+remains `schema_version: 6`, where explicit/required activation roles and
+canonical consumers were added. Versions v1-v6 remain unchanged.
 
 | Command | `report` |
 | --- | --- |
@@ -20,7 +20,7 @@ Versions v1-v5 remain unchanged.
 | targeted `packy pack status PACK --surface SURFACE --json` | `pack-status` |
 
 The exact offline schemas are under `schemas/cli/v2/` through
-`schemas/cli/v6/`.
+`schemas/cli/v7/`.
 Canonical redacted fixtures use the matching directories under
 `internal/cli/testdata/structured-output/`; repository validation compiles the
 schema selected by each document's `schema_version` and validates both the
@@ -73,7 +73,10 @@ evidence, pending evidence, evaluated runtime modes, recovery, and exact
 `all`/`custom` resource selection. Its ordered `capability_requirements` identify
 the consumer Pack/resource, capability, provider Pack/resource, required tools
 and authorities, and resulting readiness. A null resource denotes legacy
-whole-Pack composition. Apply and failure reports retain that redacted plan.
+whole-Pack composition. Its ordered `sensitive_effects` bind each selected
+resource's manifest-declared authorities and runtime effects to the exact
+introducing root and root-to-resource dependency chain. Apply and failure
+reports retain that redacted plan.
 Status publishes intent, canonical selected roots, and a full
 resource inventory whose role is `root`, `dependency`, `asset`, `notice`, or
 `unselected`, with a deterministic root-to-resource `dependency_chain`.

@@ -1125,9 +1125,10 @@ func (f Facade) Approve(plan ReconciliationPlan, kind ConsentKind) ApprovalRecei
 }
 
 func (f Facade) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
-	return withBundleObservation(ctx, f, func(locked Facade) (ApplyResult, error) {
+	result, err := withBundleObservation(ctx, f, func(locked Facade) (ApplyResult, error) {
 		return locked.apply(ctx, request)
 	})
+	return result, ReportSafeError(err, &request.Plan)
 }
 
 func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
@@ -1258,17 +1259,19 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	}
 	if len(localActions) > 0 {
 		if err := adapter.ApplyProjections(ctx, localActions); err != nil {
-			state.Journal.recordFailure(requiredFailedActionID(err, "reversible-local"), err)
+			safeErr := ReportSafeError(err, &request.Plan)
+			state.Journal.recordFailure(requiredFailedActionID(err, "reversible-local"), safeErr)
 			if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
-				return ApplyResult{}, fmt.Errorf("apply reversible local projections: %v; could not persist recovery facts: %w", err, saveErr)
+				return ApplyResult{}, fmt.Errorf("apply reversible local projections: %v; could not persist recovery facts: %w", safeErr, saveErr)
 			}
-			return ApplyResult{}, err
+			return ApplyResult{}, safeErr
 		}
 	}
 	destructiveActions := phaseActions(request.Plan.phases, ConsentDestructiveCleanup)
 	prior := composition{requested: pack, packs: request.Plan.beforeCompositionFacts}.combinedPack()
 	verified, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.operation, prior, combined, state.Ownership, resolutions))
 	if err != nil {
+		err = ReportSafeError(err, &request.Plan)
 		state.Journal.recordFailure("verify-reversible-local", err)
 		if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
 			return ApplyResult{}, fmt.Errorf("verify reversible local projections: %v; could not persist recovery facts: %w", err, saveErr)
@@ -1321,6 +1324,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			actionErr = err
 		}
 		if actionErr != nil {
+			actionErr = ReportSafeError(actionErr, &request.Plan)
 			state.Journal.recordFailure(action.ID, actionErr)
 			if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
 				return ApplyResult{}, fmt.Errorf("external action %s failed: %v; could not persist recovery facts: %w", action.ID, actionErr, saveErr)
@@ -1337,9 +1341,10 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	}
 	for _, action := range destructiveActions {
 		if err := adapter.ApplyProjections(ctx, []ProjectionAction{action}); err != nil {
-			state.Journal.recordFailure(requiredFailedActionID(err, "destructive-cleanup"), err)
+			safeErr := ReportSafeError(err, &request.Plan)
+			state.Journal.recordFailure(requiredFailedActionID(err, "destructive-cleanup"), safeErr)
 			_ = f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state)
-			return ApplyResult{}, err
+			return ApplyResult{}, safeErr
 		}
 		state.Journal.Completed = appendCompleted(state.Journal.Completed, action.ID)
 		if err := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); err != nil {
@@ -1349,6 +1354,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	if len(externalActions) > 0 || len(destructiveActions) > 0 {
 		verified, err = inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.operation, prior, combined, state.Ownership, resolutions))
 		if err != nil {
+			err = ReportSafeError(err, &request.Plan)
 			state.Journal.recordFailure("verify-after-external", err)
 			if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
 				return ApplyResult{}, fmt.Errorf("verify after external effects: %v; could not persist recovery facts: %w", err, saveErr)
@@ -2184,7 +2190,7 @@ func requestedAliases(pack Pack, surface Surface, supplied []SurfaceAlias, state
 			return nil, fmt.Errorf("activation alias name %q is invalid", alias.Name)
 		}
 		if !packHasAliasTarget(pack, alias, surface) {
-			return nil, fmt.Errorf("activation alias %s:%s does not identify a portable resource bound to %s in pack %q", alias.Kind, alias.ID, surface, pack.ID)
+			return nil, fmt.Errorf("activation alias %s:%s does not identify a resource in the resulting selected closure bound to %s in pack %q", alias.Kind, alias.ID, surface, pack.ID)
 		}
 	}
 	return aliases, nil

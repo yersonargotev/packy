@@ -9,7 +9,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 6
+const LifecycleJSONSchemaVersion = 7
 
 type ResourceRole string
 
@@ -30,6 +30,30 @@ type ResourceClosureFact struct {
 	DependencyChain []ResourceIdentity `json:"dependency_chain"`
 	Requires        []ResourceIdentity `json:"requires"`
 	Notices         []ResourceIdentity `json:"notices"`
+}
+
+// SensitiveEffectOrigin binds manifest-declared authority and effect facts to
+// the exact selected resource and root-to-resource dependency chain that
+// introduces them.
+type SensitiveEffectOrigin struct {
+	Resource           ResourceIdentity         `json:"resource"`
+	Root               ResourceIdentity         `json:"root"`
+	DependencyChain    []ResourceIdentity       `json:"dependency_chain"`
+	PromptAuthorities  []string                 `json:"prompt_authorities"`
+	RuntimeAuthorities []RuntimeAuthorityOrigin `json:"runtime_authorities"`
+	RuntimeEffects     []RuntimeEffectOrigin    `json:"runtime_effects"`
+}
+
+type RuntimeAuthorityOrigin struct {
+	ModeID string               `json:"mode_id"`
+	Kind   RuntimeAuthorityKind `json:"kind"`
+	Scope  RuntimeScope         `json:"scope,omitempty"`
+}
+
+type RuntimeEffectOrigin struct {
+	ModeID string            `json:"mode_id"`
+	Kind   RuntimeEffectKind `json:"kind"`
+	Scope  RuntimeScope      `json:"scope,omitempty"`
 }
 
 type ResourceGraph struct {
@@ -235,6 +259,64 @@ func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) Re
 	return ResourceGraph{Resources: facts}
 }
 
+func SensitiveEffectOriginsFor(pack Pack, selection ResourceSelection) []SensitiveEffectOrigin {
+	graph := ResourceGraphFor(pack, selection, false)
+	resources := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	origins := []SensitiveEffectOrigin{}
+	for _, fact := range graph.Resources {
+		resource := resources[fact.Resource.String()]
+		promptAuthorities, runtimeAuthorities, runtimeEffects := resourceSensitiveFacts(resource)
+		if len(promptAuthorities) == 0 && len(runtimeAuthorities) == 0 && len(runtimeEffects) == 0 {
+			continue
+		}
+		root := ResourceIdentity{}
+		if len(fact.DependencyChain) > 0 {
+			root = fact.DependencyChain[0]
+		}
+		origins = append(origins, SensitiveEffectOrigin{
+			Resource: fact.Resource, Root: root, DependencyChain: append([]ResourceIdentity{}, fact.DependencyChain...),
+			PromptAuthorities: promptAuthorities, RuntimeAuthorities: runtimeAuthorities, RuntimeEffects: runtimeEffects,
+		})
+	}
+	return origins
+}
+
+func resourceSensitiveFacts(resource Resource) ([]string, []RuntimeAuthorityOrigin, []RuntimeEffectOrigin) {
+	promptAuthorities := sortedUnique(resource.Permissions)
+	runtimeAuthorities := []RuntimeAuthorityOrigin{}
+	runtimeEffects := []RuntimeEffectOrigin{}
+	for _, mode := range resource.RuntimeModes {
+		for _, authority := range mode.Authorities {
+			runtimeAuthorities = append(runtimeAuthorities, RuntimeAuthorityOrigin{ModeID: mode.ID, Kind: authority.Kind, Scope: authority.Scope})
+		}
+		for _, effect := range mode.Effects {
+			runtimeEffects = append(runtimeEffects, RuntimeEffectOrigin{ModeID: mode.ID, Kind: effect.Kind, Scope: effect.Scope})
+		}
+	}
+	sort.Slice(runtimeAuthorities, func(i, j int) bool {
+		if runtimeAuthorities[i].ModeID != runtimeAuthorities[j].ModeID {
+			return runtimeAuthorities[i].ModeID < runtimeAuthorities[j].ModeID
+		}
+		if runtimeAuthorities[i].Kind != runtimeAuthorities[j].Kind {
+			return runtimeAuthorities[i].Kind < runtimeAuthorities[j].Kind
+		}
+		return runtimeAuthorities[i].Scope < runtimeAuthorities[j].Scope
+	})
+	sort.Slice(runtimeEffects, func(i, j int) bool {
+		if runtimeEffects[i].ModeID != runtimeEffects[j].ModeID {
+			return runtimeEffects[i].ModeID < runtimeEffects[j].ModeID
+		}
+		if runtimeEffects[i].Kind != runtimeEffects[j].Kind {
+			return runtimeEffects[i].Kind < runtimeEffects[j].Kind
+		}
+		return runtimeEffects[i].Scope < runtimeEffects[j].Scope
+	})
+	return promptAuthorities, runtimeAuthorities, runtimeEffects
+}
+
 func resourceIdentities(values []string) []ResourceIdentity {
 	result := make([]ResourceIdentity, 0, len(values))
 	for _, value := range values {
@@ -369,6 +451,7 @@ type JSONLifecyclePlan struct {
 	IntentRevision         int                         `json:"intent_revision"`
 	Selection              ResourceSelection           `json:"selection"`
 	ResourceGraph          ResourceGraph               `json:"resource_graph"`
+	SensitiveEffects       []SensitiveEffectOrigin     `json:"sensitive_effects"`
 	Contract               LifecycleContract           `json:"contract"`
 	Aliases                []SurfaceAlias              `json:"aliases"`
 	Contributors           map[string][]string         `json:"contributors"`
@@ -443,7 +526,8 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	}
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
-		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false), Contract: contract, Aliases: contract.Aliases,
+		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false),
+		SensitiveEffects: SensitiveEffectOriginsFor(p.pack, selection), Contract: contract, Aliases: contract.Aliases,
 		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
 		RuntimeModes:           sortedRuntimeModeResults(p.runtimeModeResults),
