@@ -215,6 +215,18 @@ func TestIssue294RecoveryPreservesTruthfulAttemptFactsAndRequiresFreshApproval(t
 		!reflect.DeepEqual(guidance.NotStarted, history.NotStarted()) {
 		t.Fatalf("JSON recovery guidance = %+v", guidance)
 	}
+	legacyHistory := history
+	legacyHistory.ReconcileScope = ""
+	legacyState := state
+	legacyState.Journal = &legacyHistory
+	legacyFacade, _, _ := reconcileFixture([]Pack{pack}, legacyState, pending, pending)
+	legacyRecovery, err := legacyFacade.PreviewReconcile(context.Background(), ReconcileRequest{Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := legacyRecovery.RecoveryGuidance().NextCommand; got != "packy pack reconcile --surface codex" {
+		t.Fatalf("legacy surface-wide next command = %q", got)
+	}
 	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: recovery, Interactive: true}); !errors.Is(err, ErrApprovalMismatch) {
 		t.Fatalf("recovery without fresh approvals error = %v", err)
 	}

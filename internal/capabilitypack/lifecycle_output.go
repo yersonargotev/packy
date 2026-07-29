@@ -636,6 +636,10 @@ func (p ReconciliationPlan) RecoveryGuidance() *RecoveryGuidance {
 	if len(consumers) == 0 {
 		consumers = derivedConsumers
 	}
+	reconcileScope := history.ReconcileScope
+	if history.Operation == OperationReconcile && reconcileScope == "" {
+		reconcileScope = p.reconcileScope
+	}
 	return &RecoveryGuidance{
 		OriginatingOperation: history.Operation,
 		AffectedResources:    nonNilAffectedResources(affected),
@@ -644,7 +648,7 @@ func (p ReconciliationPlan) RecoveryGuidance() *RecoveryGuidance {
 		FailedAction:         history.FailedAction,
 		FailureDetail:        history.FailureDetail,
 		NotStarted:           nonNilStrings(history.NotStarted()),
-		NextCommand:          lifecycleCommand(history.Operation, history.PackID, history.Surface, history.ReconcileScope),
+		NextCommand:          lifecycleCommand(history.Operation, history.PackID, history.Surface, reconcileScope),
 	}
 }
 
