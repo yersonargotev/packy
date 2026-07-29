@@ -17,6 +17,7 @@ const portableManifestV4Fixture = `{
   "provides": [],
   "requires": {"capabilities": [], "tools": []},
   "conflicts": [],
+  "root_migrations": [],
   "resources": [{
     "kind": "skill",
     "id": "example",

@@ -737,6 +737,9 @@ func lifecycleContractDiff(before, after []Pack) JSONContractDiff {
 
 func lifecycleMigrations(p ReconciliationPlan) []string {
 	result := []string{}
+	for _, migration := range p.rootMigrations {
+		result = append(result, fmt.Sprintf("resource root migrates from %s to %s", migration.From.String(), migration.To.String()))
+	}
 	if digestJSON(p.previousAliases) != digestJSON(p.aliases) {
 		result = append(result, "surface-local aliases change")
 	}
