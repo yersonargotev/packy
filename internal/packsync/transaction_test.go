@@ -2,6 +2,7 @@ package packsync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -463,6 +464,22 @@ func TestApplyMaterializesCompleteAuthoritativeCandidateBundle(t *testing.T) {
 	if _, _, err := readHistoricalManifestBaseline(repository, packID, "1.0.1"); err != nil {
 		t.Fatalf("classified immutable history artifact is invalid: %v", err)
 	}
+	var artifact compositeHistoricalArtifact
+	if err := json.Unmarshal(mustReadFile(t, filepath.Join(history, "artifact.json")), &artifact); err != nil {
+		t.Fatal(err)
+	}
+	foundSourceLess := false
+	for _, resource := range artifact.Resources {
+		if resource.Source == "" {
+			foundSourceLess = true
+			if resource.Files == nil || len(resource.Files) != 0 || resource.SHA256 != resourceHash([]FileEvidence{}) {
+				t.Fatalf("source-less historical evidence = %#v", resource)
+			}
+		}
+	}
+	if !foundSourceLess {
+		t.Fatal("classified history omitted source-less v4 resource evidence")
+	}
 	lock, _, present, err := readLock(filepath.Join(repository, "bundle", "sources/mattpocock-skills.lock.json"))
 	if err != nil || !present || lock.Candidate.Commit != newCandidate.Commit {
 		t.Fatalf("updated lock = %#v, present=%t, err=%v", lock, present, err)
@@ -494,6 +511,38 @@ func upgradeTinyRepositoryToV4(t *testing.T, repository string) {
 	raw = strings.Replace(raw, `"id": "example"`, fmt.Sprintf(`"id": %q`, packID), 1)
 	raw = strings.Replace(raw, `"id": "example"`, `"id": "one"`, 1)
 	raw = strings.Replace(raw, `"source": "skills/example.md"`, `"source": "skills/engineering/one"`, 1)
+	raw = strings.Replace(raw, "  }],\n  \"contract\"", `  }, {
+    "kind": "lifecycle",
+    "id": "background",
+    "requires": [],
+    "conflicts": [],
+    "notices": [],
+    "provides_capabilities": [],
+    "requires_capabilities": [],
+    "requires_tools": [],
+    "capability_conflicts": [],
+    "bindings": [{
+      "surface": "codex",
+      "projection": "lifecycle",
+      "name": "background",
+      "invocation": "background",
+      "mode": "native",
+      "sharing": "exclusive"
+    }],
+    "surface_exclusions": []
+  }],
+  "contract"`, 1)
+	var document map[string]any
+	if err := json.Unmarshal([]byte(raw), &document); err != nil {
+		t.Fatal(err)
+	}
+	resources := document["resources"].([]any)
+	resources[0], resources[1] = resources[1], resources[0]
+	encoded, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = string(encoded)
 	path := filepath.Join(repository, "bundle", "packs", packID, "pack.json")
 	writeFile(t, path, raw)
 	manifests, _, err := loadManifests(repository)
@@ -504,6 +553,17 @@ func upgradeTinyRepositoryToV4(t *testing.T, repository string) {
 	writeFile(t, path, string(canonical))
 	history := filepath.Join(repository, "bundle", "history", packID, "1.0.0")
 	writeFile(t, filepath.Join(history, "pack.json"), string(canonical))
+	for _, resource := range manifests[packID].Resources {
+		if resource.Source == "" {
+			continue
+		}
+		if err := copyTreeExact(
+			filepath.Join(repository, "bundle", filepath.FromSlash(resource.Source)),
+			filepath.Join(history, filepath.FromSlash(resource.Source)),
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
 	writeHistoricalManifestArtifact(t, history, packID, "1.0.0", canonical)
 }
 

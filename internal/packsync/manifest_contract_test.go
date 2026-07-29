@@ -91,6 +91,7 @@ func TestApplyManifestContractsSealsCanonicalEvidenceAndFailsClosed(t *testing.T
 	baseline := canonicalPortableManifestV4(t, root)
 	historyPath := filepath.Join(root, "bundle", "history", "example", "1.0.0", "pack.json")
 	writeFile(t, historyPath, string(baseline))
+	writeFile(t, filepath.Join(filepath.Dir(historyPath), "skills", "example.md"), "historical\n")
 	writeHistoricalManifestArtifact(t, filepath.Dir(historyPath), "example", "1.0.0", baseline)
 
 	current := strings.Replace(string(baseline), `"notices": []`, `"notices": ["notice:z","notice:a"]`, 1)
@@ -174,6 +175,54 @@ func TestHistoricalManifestBaselineAdmitsArchivedV4AndRejectsArtifactTamper(t *t
 	}
 }
 
+func TestHistoricalManifestBaselineRejectsResourceAndAggregateTampering(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, string, *compositeHistoricalArtifact)
+	}{
+		{"archived resource bytes", func(t *testing.T, history string, _ *compositeHistoricalArtifact) {
+			writeFile(t, filepath.Join(history, "skills", "example.md"), "tampered\n")
+		}},
+		{"resource file evidence", func(_ *testing.T, _ string, artifact *compositeHistoricalArtifact) {
+			artifact.Resources[0].Files[0].SHA256 = strings.Repeat("0", 64)
+		}},
+		{"resource hash", func(_ *testing.T, _ string, artifact *compositeHistoricalArtifact) {
+			artifact.Resources[0].SHA256 = strings.Repeat("0", 64)
+		}},
+		{"aggregate seal", func(_ *testing.T, _ string, artifact *compositeHistoricalArtifact) {
+			artifact.AggregateSHA256 = strings.Repeat("0", 64)
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			baseline := canonicalPortableManifestV4(t, root)
+			history := filepath.Join(root, "bundle", "history", "example", "1.0.0")
+			writeFile(t, filepath.Join(history, "pack.json"), string(baseline))
+			writeFile(t, filepath.Join(history, "skills", "example.md"), "historical\n")
+			writeHistoricalManifestArtifact(t, history, "example", "1.0.0", baseline)
+			var artifact compositeHistoricalArtifact
+			artifactPath := filepath.Join(history, "artifact.json")
+			if err := json.Unmarshal(mustReadFile(t, artifactPath), &artifact); err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, history, &artifact)
+			if test.name != "archived resource bytes" {
+				encoded, err := json.MarshalIndent(artifact, "", "  ")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(artifactPath, append(encoded, '\n'), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, _, err := readHistoricalManifestBaseline(root, "example", "1.0.0"); err == nil {
+				t.Fatal("tampered historical baseline was admitted")
+			}
+		})
+	}
+}
+
 func TestManifestContractEvidenceIsRenderedAndSealed(t *testing.T) {
 	plan := Plan{
 		SchemaVersion: 1, SourceID: "source", Candidate: Candidate{Commit: strings.Repeat("a", 40), Release: &Release{Tag: "v1.2.3"}},
@@ -232,11 +281,31 @@ func cloneManifestWire(t *testing.T, value manifestV4Wire) manifestV4Wire {
 
 func writeHistoricalManifestArtifact(t *testing.T, root, packID, version string, manifest []byte) {
 	t.Helper()
-	artifact := historicalManifestArtifact{
+	artifact := compositeHistoricalArtifact{
 		SchemaVersion: 1, PackID: packID, PackVersion: version,
-		Manifest:  FileEvidence{Path: "pack.json", Size: int64(len(manifest)), Mode: 0o644, SHA256: hashBytes(manifest)},
-		Resources: json.RawMessage(`[]`), AggregateSHA256: strings.Repeat("a", 64),
+		Manifest: FileEvidence{Path: "pack.json", Size: int64(len(manifest)), Mode: 0o644, SHA256: hashBytes(manifest)},
 	}
+	var decoded packManifest
+	if err := json.Unmarshal(manifest, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, resource := range decoded.Resources {
+		files := []FileEvidence{}
+		if resource.Source != "" {
+			var err error
+			files, err = inventory(filepath.Join(root, filepath.FromSlash(resource.Source)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range files {
+				files[i].Path = filepath.ToSlash(filepath.Join(resource.Source, files[i].Path))
+			}
+		}
+		artifact.Resources = append(artifact.Resources, compositeHistoricalResource{
+			Kind: resource.Kind, ID: resource.ID, Source: resource.Source, Files: files, SHA256: resourceHash(files),
+		})
+	}
+	artifact.AggregateSHA256 = compositeHistoricalAggregate(artifact)
 	encoded, err := json.MarshalIndent(artifact, "", "  ")
 	if err != nil {
 		t.Fatal(err)

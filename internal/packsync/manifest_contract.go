@@ -282,22 +282,13 @@ func contractEvidence(current packManifest, currentCanonical, baseline []byte, w
 	return evidence
 }
 
-type historicalManifestArtifact struct {
-	SchemaVersion   int             `json:"schema_version"`
-	PackID          string          `json:"pack_id"`
-	PackVersion     string          `json:"pack_version"`
-	Manifest        FileEvidence    `json:"manifest"`
-	Resources       json.RawMessage `json:"resources"`
-	AggregateSHA256 string          `json:"aggregate_sha256"`
-}
-
 func readHistoricalManifestBaseline(root, packID, version string) (manifestV4Wire, []byte, error) {
 	historyRoot := filepath.Join(root, "bundle", "history", packID, version)
 	artifactBytes, err := os.ReadFile(filepath.Join(historyRoot, "artifact.json"))
 	if err != nil {
 		return manifestV4Wire{}, nil, fmt.Errorf("read artifact: %w", err)
 	}
-	var artifact historicalManifestArtifact
+	var artifact compositeHistoricalArtifact
 	if err := strictManifestJSON(artifactBytes, &artifact); err != nil {
 		return manifestV4Wire{}, nil, fmt.Errorf("decode artifact: %w", err)
 	}
@@ -325,6 +316,39 @@ func readHistoricalManifestBaseline(root, packID, version string) (manifestV4Wir
 	canonical, err := normalizedManifestV4(data, &wire)
 	if err != nil || wire.SchemaVersion != 4 || wire.ID != packID || wire.Version != version {
 		return manifestV4Wire{}, nil, errors.New("historical manifest identity is invalid")
+	}
+	if len(artifact.Resources) != len(wire.Resources) {
+		return manifestV4Wire{}, nil, errors.New("artifact resource evidence count is invalid")
+	}
+	for i, resource := range wire.Resources {
+		evidence := artifact.Resources[i]
+		if evidence.Kind != resource.Kind || evidence.ID != resource.ID || evidence.Source != resource.Source {
+			return manifestV4Wire{}, nil, errors.New("artifact resource evidence identity or order is invalid")
+		}
+		if resource.Source == "" {
+			empty := []FileEvidence{}
+			if !reflect.DeepEqual(evidence.Files, empty) || evidence.SHA256 != resourceHash(empty) {
+				return manifestV4Wire{}, nil, errors.New("artifact source-less resource evidence is invalid")
+			}
+			continue
+		}
+		files, err := inventory(filepath.Join(historyRoot, filepath.FromSlash(resource.Source)))
+		if err != nil {
+			return manifestV4Wire{}, nil, fmt.Errorf("inspect archived resource %s:%s: %w", resource.Kind, resource.ID, err)
+		}
+		for j := range files {
+			relative, err := filepath.Rel(historyRoot, filepath.Join(historyRoot, filepath.FromSlash(resource.Source), filepath.FromSlash(files[j].Path)))
+			if err != nil {
+				return manifestV4Wire{}, nil, err
+			}
+			files[j].Path = filepath.ToSlash(relative)
+		}
+		if !reflect.DeepEqual(evidence.Files, files) || evidence.SHA256 != resourceHash(files) {
+			return manifestV4Wire{}, nil, errors.New("artifact archived resource file evidence or hash is invalid")
+		}
+	}
+	if artifact.AggregateSHA256 == "" || artifact.AggregateSHA256 != compositeHistoricalAggregate(artifact) {
+		return manifestV4Wire{}, nil, errors.New("artifact aggregate seal is invalid")
 	}
 	return wire, canonical, nil
 }

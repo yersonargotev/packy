@@ -531,6 +531,11 @@ func materializePackHistory(staged, packID, version string, manifestBytes []byte
 	artifact.Manifest = manifestFiles[0]
 	artifact.Manifest.Path = "pack.json"
 	for _, resource := range manifest.Resources {
+		if resource.Source == "" {
+			files := []FileEvidence{}
+			artifact.Resources = append(artifact.Resources, compositeHistoricalResource{Kind: resource.Kind, ID: resource.ID, Source: "", Files: files, SHA256: resourceHash(files)})
+			continue
+		}
 		source := filepath.Join(staged, filepath.FromSlash(resource.Source))
 		target := filepath.Join(history, filepath.FromSlash(resource.Source))
 		if err := copyTreeExact(source, target); err != nil {
