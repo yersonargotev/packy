@@ -85,15 +85,8 @@ updateable, and reversible while keeping startup instructions small.
 
 ## Verification
 
-The authoritative repository validation command required before delivery is:
-
-```bash
-./scripts/validate-packy.sh
-```
-
-Focused validation can speed up iteration, but it does not replace that
-delivery gate. While the repository has no vendored upstream Go content,
-`go test ./...` remains a compatibility check, not a second delivery gate.
+The [repository validation contract](../../README.md#verification) defines the
+authoritative delivery gate, compatibility check, and focused iteration aid.
 
 Before using Packy against a real HOME, run the package lifecycle in a sandboxed
 HOME/config environment. The canonical command sequence and focused automated
