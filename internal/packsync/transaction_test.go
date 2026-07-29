@@ -396,6 +396,7 @@ func TestStagedSuiteFailureLeavesRepositoryUntouched(t *testing.T) {
 
 func TestApplyMaterializesCompleteAuthoritativeCandidateBundle(t *testing.T) {
 	repository, oldSnapshot := tinyRepository(t)
+	upgradeTinyRepositoryToV4(t, repository)
 	initializeFixtureGit(t, repository)
 	oldCandidate := acceptedCandidate()
 	bootstrapSource := &fixtureSource{root: oldSnapshot, candidate: oldCandidate}
@@ -415,6 +416,30 @@ func TestApplyMaterializesCompleteAuthoritativeCandidateBundle(t *testing.T) {
 	}
 	engine.Source = source
 	evidence := classificationEvidenceForPlan(t, plan, ClassifierAI, "fixture-model", LevelPatch)
+	if len(plan.AffectedPacks) != 1 || plan.AffectedPacks[0].Contract == nil {
+		t.Fatalf("v4 contract evidence = %#v", plan.AffectedPacks)
+	}
+	oldBundleHash, err := treeHash(filepath.Join(repository, "bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	badPlan := plan
+	badPlan.AffectedPacks = append([]PackImpact(nil), plan.AffectedPacks...)
+	badContract := *plan.AffectedPacks[0].Contract
+	badContract.CurrentManifestSHA256 = strings.Repeat("0", 64)
+	badPlan.AffectedPacks[0].Contract = &badContract
+	badPlan.PlanID, err = seal(badPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badEvidence := classificationEvidenceForPlan(t, badPlan, ClassifierAI, "fixture-model", LevelPatch)
+	if _, err := engine.Apply(context.Background(), ApplyRequest{CheckRequest: newCheckRequest(t, repository), Plan: badPlan, ClassificationEvidence: badEvidence}); err == nil ||
+		!strings.Contains(err.Error(), "staged manifest contract") {
+		t.Fatalf("invalid staged contract error = %v", err)
+	}
+	if after, err := treeHash(filepath.Join(repository, "bundle")); err != nil || after != oldBundleHash {
+		t.Fatalf("invalid staged contract crossed swap boundary: hash=%s err=%v", after, err)
+	}
 	result, err := engine.Apply(context.Background(), ApplyRequest{CheckRequest: newCheckRequest(t, repository), Plan: plan, ClassificationEvidence: evidence})
 	if err != nil || result.Status != "applied" {
 		t.Fatalf("Apply = %#v, %v", result, err)
@@ -426,6 +451,17 @@ func TestApplyMaterializesCompleteAuthoritativeCandidateBundle(t *testing.T) {
 	manifest := mustReadFile(t, filepath.Join(repository, "bundle", "packs", "matty", "pack.json"))
 	if !strings.Contains(string(manifest), `"version": "1.0.1"`) {
 		t.Fatalf("classified exact version was not materialized: %s", manifest)
+	}
+	packID := plan.AffectedPacks[0].PackID
+	history := filepath.Join(repository, "bundle", "history", packID, "1.0.1")
+	if historical := mustReadFile(t, filepath.Join(history, "pack.json")); string(historical) != string(manifest) {
+		t.Fatal("classified immutable history manifest differs from the installed manifest")
+	}
+	if historical := mustReadFile(t, filepath.Join(history, "skills", "engineering", "one", "SKILL.md")); string(historical) != "updated\n" {
+		t.Fatalf("classified immutable history omitted selected resource: %q", historical)
+	}
+	if _, _, err := readHistoricalManifestBaseline(repository, packID, "1.0.1"); err != nil {
+		t.Fatalf("classified immutable history artifact is invalid: %v", err)
 	}
 	lock, _, present, err := readLock(filepath.Join(repository, "bundle", "sources/mattpocock-skills.lock.json"))
 	if err != nil || !present || lock.Candidate.Commit != newCandidate.Commit {
@@ -443,6 +479,32 @@ func TestApplyMaterializesCompleteAuthoritativeCandidateBundle(t *testing.T) {
 	if _, err := engine.Apply(context.Background(), ApplyRequest{CheckRequest: newCheckRequest(t, repository), Plan: plan, ClassificationEvidence: evidence}); err == nil || !strings.Contains(err.Error(), "classified pack versions") {
 		t.Fatalf("tampered classified version error = %v", err)
 	}
+}
+
+func upgradeTinyRepositoryToV4(t *testing.T, repository string) {
+	t.Helper()
+	existing, _, err := loadManifests(repository)
+	if err != nil || len(existing) != 1 {
+		t.Fatalf("derive sole tiny Pack identity: manifests=%#v err=%v", existing, err)
+	}
+	var packID string
+	for packID = range existing {
+	}
+	raw := portableManifestV4Fixture
+	raw = strings.Replace(raw, `"id": "example"`, fmt.Sprintf(`"id": %q`, packID), 1)
+	raw = strings.Replace(raw, `"id": "example"`, `"id": "one"`, 1)
+	raw = strings.Replace(raw, `"source": "skills/example.md"`, `"source": "skills/engineering/one"`, 1)
+	path := filepath.Join(repository, "bundle", "packs", packID, "pack.json")
+	writeFile(t, path, raw)
+	manifests, _, err := loadManifests(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical := manifests[packID].canonicalV4
+	writeFile(t, path, string(canonical))
+	history := filepath.Join(repository, "bundle", "history", packID, "1.0.0")
+	writeFile(t, filepath.Join(history, "pack.json"), string(canonical))
+	writeHistoricalManifestArtifact(t, history, packID, "1.0.0", canonical)
 }
 
 func TestApplyRejectsAffectedPlanWithoutCompleteClassificationEvidence(t *testing.T) {

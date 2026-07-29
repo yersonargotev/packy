@@ -152,7 +152,7 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 		} else if !ok {
 			return ApplyResult{}, errors.New("stale classified pack versions contradict the sealed evidence")
 		}
-		if err := engine.validateStaged(ctx, request.RepositoryRoot, bundle, snapshotRoot, plan); err != nil {
+		if err := engine.validateStaged(ctx, request.RepositoryRoot, bundle, snapshotRoot, plan, request.ClassificationEvidence); err != nil {
 			return ApplyResult{}, fmt.Errorf("validate converged bundle: %w", err)
 		}
 		return ApplyResult{Status: "no-op", PlanID: plan.PlanID}, nil
@@ -194,6 +194,9 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 	if err := materializeClassifiedVersions(staged, plan, request.ClassificationEvidence); err != nil {
 		return ApplyResult{}, err
 	}
+	if err := materializeClassifiedHistory(staged, plan, request.ClassificationEvidence); err != nil {
+		return ApplyResult{}, err
+	}
 	if err := writeCanonicalLock(filepath.Join(staged, "sources", plan.SourceID+".lock.json"), plan.ProposedLock); err != nil {
 		return ApplyResult{}, err
 	}
@@ -205,7 +208,7 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	if err := engine.validateStaged(ctx, request.RepositoryRoot, staged, snapshotRoot, plan); err != nil {
+	if err := engine.validateStaged(ctx, request.RepositoryRoot, staged, snapshotRoot, plan, request.ClassificationEvidence); err != nil {
 		return ApplyResult{}, err
 	}
 	if err := engine.inject(FaultBeforeSwap); err != nil {
@@ -306,6 +309,30 @@ func materializeClassifiedVersions(staged string, plan Plan, set ClassificationE
 	return nil
 }
 
+func materializeClassifiedHistory(staged string, plan Plan, set ClassificationEvidenceSet) error {
+	versions := classificationVersions(set)
+	for _, impact := range plan.AffectedPacks {
+		if impact.Contract == nil || impact.Contract.SchemaVersion != 4 {
+			continue
+		}
+		version := versions[impact.PackID]
+		name := filepath.Join(staged, "packs", impact.PackID, "pack.json")
+		manifestBytes, err := os.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("read classified Pack manifest for history: %w", err)
+		}
+		var manifest packManifest
+		if err := json.Unmarshal(manifestBytes, &manifest); err != nil ||
+			manifest.SchemaVersion != 4 || manifest.ID != impact.PackID || manifest.Version != version {
+			return fmt.Errorf("classified Pack manifest contradicts history identity for %s", impact.PackID)
+		}
+		if err := materializePackHistory(staged, impact.PackID, version, manifestBytes, manifest); err != nil {
+			return fmt.Errorf("materialize classified Pack history for %s: %w", impact.PackID, err)
+		}
+	}
+	return nil
+}
+
 func classificationVersions(set ClassificationEvidenceSet) map[string]string {
 	versions := make(map[string]string, len(set.Evidence))
 	for _, evidence := range set.Evidence {
@@ -334,7 +361,37 @@ func readAffectedPackManifest(bundle string, impact PackImpact) (string, map[str
 	return name, manifest, nil
 }
 
-func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged, snapshotRoot string, plan Plan) error {
+func verifyStagedManifestContracts(bundle string, plan Plan, set ClassificationEvidenceSet) error {
+	versions := classificationVersions(set)
+	for _, impact := range plan.AffectedPacks {
+		if impact.Contract == nil {
+			continue
+		}
+		_, manifest, err := readAffectedPackManifest(bundle, impact)
+		if err != nil {
+			return err
+		}
+		proposed := versions[impact.PackID]
+		if proposed == "" || manifest["version"] != proposed {
+			return fmt.Errorf("staged pack version contradicts classified version for %s", impact.PackID)
+		}
+		manifest["version"] = impact.Contract.CurrentVersion
+		encoded, err := json.Marshal(manifest)
+		if err != nil {
+			return err
+		}
+		var wire manifestV4Wire
+		canonical, err := normalizedManifestV4(encoded, &wire)
+		if err != nil || wire.SchemaVersion != impact.Contract.SchemaVersion ||
+			wire.ID != impact.PackID || wire.Version != impact.Contract.CurrentVersion ||
+			hashBytes(canonical) != impact.Contract.CurrentManifestSHA256 {
+			return fmt.Errorf("staged manifest contract contradicts sealed Check evidence for %s", impact.PackID)
+		}
+	}
+	return nil
+}
+
+func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged, snapshotRoot string, plan Plan, classifications ClassificationEvidenceSet) error {
 	view, err := os.MkdirTemp(repositoryRoot, ".packy-bundle-validation-")
 	if err != nil {
 		return err
@@ -374,6 +431,9 @@ func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged,
 	if err != nil {
 		return err
 	}
+	if err := verifyStagedManifestContracts(viewBundle, plan, classifications); err != nil {
+		return err
+	}
 	bindings, blockers := deriveDestinations(source.Resources, manifests)
 	lockSet, err := loadSourceLockSet(viewBundle, config)
 	lock, present := lockSet.Locks[plan.SourceID]
@@ -385,7 +445,7 @@ func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged,
 	for _, impact := range plan.AffectedPacks {
 		existingPacks[impact.PackID] = impact.CurrentVersion != "0.0.0"
 	}
-	if err := buildPlan(snapshotRoot, view, source, bindings, manifests, lock, true, existingPacks, &stagedPlan); err != nil {
+	if err := buildPlan(snapshotRoot, view, source, bindings, manifests, lock, true, existingPacks, buildPlanStaged, &stagedPlan); err != nil {
 		return err
 	}
 	blockers = append(blockers, stagedPlan.Blockers...)

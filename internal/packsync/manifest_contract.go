@@ -69,6 +69,7 @@ type manifestV4Wire struct {
 	ID             string                      `json:"id"`
 	Version        string                      `json:"version"`
 	Surfaces       []string                    `json:"surfaces"`
+	Provides       []string                    `json:"provides"`
 	Requires       capabilitypack.Requirements `json:"requires"`
 	Conflicts      []string                    `json:"conflicts"`
 	Resources      []resourceV4Wire            `json:"resources"`
@@ -79,21 +80,32 @@ type resourceV4Wire struct {
 	Kind                 string              `json:"kind"`
 	ID                   string              `json:"id"`
 	Source               string              `json:"source"`
+	Command              string              `json:"command"`
+	Args                 []string            `json:"args"`
+	Mode                 string              `json:"mode"`
+	Tools                []string            `json:"tools"`
+	Permissions          []string            `json:"permissions"`
 	Requires             []string            `json:"requires"`
 	Conflicts            []string            `json:"conflicts"`
 	Notices              []string            `json:"notices"`
+	ProvidesCapabilities []string            `json:"provides_capabilities"`
 	RequiresCapabilities []string            `json:"requires_capabilities"`
 	RequiresTools        []string            `json:"requires_tools"`
 	CapabilityConflicts  []string            `json:"capability_conflicts"`
 	Bindings             []map[string]any    `json:"bindings"`
+	Arguments            map[string]any      `json:"arguments"`
 	SurfaceExclusions    []map[string]any    `json:"surface_exclusions"`
 	RuntimeModes         []runtimeModeV4Wire `json:"runtime_modes"`
 }
 
 type runtimeModeV4Wire struct {
-	ID           string           `json:"id"`
-	Requirements []map[string]any `json:"requirements"`
-	Authorities  []map[string]any `json:"authorities"`
+	ID            string           `json:"id"`
+	Role          string           `json:"role"`
+	Requirements  []map[string]any `json:"requirements"`
+	Authorities   []map[string]any `json:"authorities"`
+	Effects       []map[string]any `json:"effects"`
+	Fallback      map[string]any   `json:"fallback"`
+	OnUnavailable string           `json:"on_unavailable"`
 }
 
 type migrationV4Wire struct {
@@ -113,6 +125,9 @@ func manifestFloor(before, after manifestV4Wire) (ClassificationLevel, []string)
 	if lostStrings(before.Surfaces, after.Surfaces) {
 		raise(LevelMajor, "manifest surface support removed")
 	}
+	if !reflect.DeepEqual(before.Provides, after.Provides) {
+		raise(LevelMajor, "manifest provided capabilities changed")
+	}
 	if addedStrings(before.Requires.Capabilities, after.Requires.Capabilities) ||
 		addedStrings(before.Requires.Tools, after.Requires.Tools) ||
 		addedStrings(before.Conflicts, after.Conflicts) {
@@ -129,8 +144,7 @@ func manifestFloor(before, after manifestV4Wire) (ClassificationLevel, []string)
 		if addedStrings(prior.Requires, current.Requires) || addedStrings(prior.Conflicts, current.Conflicts) ||
 			addedStrings(prior.RequiresCapabilities, current.RequiresCapabilities) || addedStrings(prior.RequiresTools, current.RequiresTools) ||
 			addedStrings(prior.CapabilityConflicts, current.CapabilityConflicts) ||
-			runtimeMandatoryAdded(prior.RuntimeModes, current.RuntimeModes) || prior.Source != current.Source ||
-			!reflect.DeepEqual(prior.Bindings, current.Bindings) || exclusionsAdded(prior.SurfaceExclusions, current.SurfaceExclusions) {
+			runtimeMandatoryAdded(prior.RuntimeModes, current.RuntimeModes) || projectionBehaviorChanged(prior, current) {
 			raise(LevelMajor, "manifest mandatory graph, authority, requirement, or projection changed")
 		}
 	}
@@ -148,6 +162,16 @@ func manifestFloor(before, after manifestV4Wire) (ClassificationLevel, []string)
 		reasons = append(reasons, "manifest observable contract changed")
 	}
 	return floor, reasons
+}
+
+func projectionBehaviorChanged(before, after resourceV4Wire) bool {
+	return before.Source != after.Source || before.Command != after.Command ||
+		!reflect.DeepEqual(before.Args, after.Args) || before.Mode != after.Mode ||
+		!reflect.DeepEqual(before.Tools, after.Tools) || !reflect.DeepEqual(before.Permissions, after.Permissions) ||
+		!reflect.DeepEqual(before.ProvidesCapabilities, after.ProvidesCapabilities) ||
+		!reflect.DeepEqual(before.Bindings, after.Bindings) || !reflect.DeepEqual(before.Arguments, after.Arguments) ||
+		!reflect.DeepEqual(before.SurfaceExclusions, after.SurfaceExclusions) ||
+		!reflect.DeepEqual(before.RuntimeModes, after.RuntimeModes)
 }
 
 func resourceMap(resources []resourceV4Wire) map[string]resourceV4Wire {
@@ -360,7 +384,7 @@ func normalizedManifestV4(data []byte, wire *manifestV4Wire) ([]byte, error) {
 			if !ok {
 				return nil, errors.New("historical manifest resource is malformed")
 			}
-			for _, key := range []string{"requires", "conflicts", "notices", "provides_capabilities", "requires_capabilities", "requires_tools", "capability_conflicts", "bindings", "surface_exclusions", "runtime_modes"} {
+			for _, key := range []string{"args", "tools", "permissions", "requires", "conflicts", "notices", "provides_capabilities", "requires_capabilities", "requires_tools", "capability_conflicts", "bindings", "surface_exclusions", "runtime_modes"} {
 				normalizeArray(resource, key)
 			}
 			if modes, ok := resource["runtime_modes"].([]any); ok {

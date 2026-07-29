@@ -51,6 +51,21 @@ func TestManifestFloorVersionBoundRules(t *testing.T) {
 		{"lost surface", func(m *manifestV4Wire) { m.Surfaces = []string{"codex"} }, LevelMajor},
 		{"binding projection change", func(m *manifestV4Wire) { m.Resources[0].Bindings[0]["projection"] = "command" }, LevelMajor},
 		{"source projection change", func(m *manifestV4Wire) { m.Resources[0].Source = "skills/replacement" }, LevelMajor},
+		{"MCP command change", func(m *manifestV4Wire) { m.Resources[0].Command = "replacement" }, LevelMajor},
+		{"MCP args replacement", func(m *manifestV4Wire) { m.Resources[0].Args = []string{"--changed"} }, LevelMajor},
+		{"agent mode change", func(m *manifestV4Wire) { m.Resources[0].Mode = "subagent" }, LevelMajor},
+		{"agent tools replacement", func(m *manifestV4Wire) { m.Resources[0].Tools = []string{"Read"} }, LevelMajor},
+		{"agent permissions replacement", func(m *manifestV4Wire) { m.Resources[0].Permissions = []string{"filesystem-read"} }, LevelMajor},
+		{"command arguments change", func(m *manifestV4Wire) {
+			m.Resources[0].Arguments = map[string]any{"mode": "required"}
+		}, LevelMajor},
+		{"runtime effects change", func(m *manifestV4Wire) {
+			m.Resources[0].RuntimeModes[0].Effects = []map[string]any{{"kind": "consumer_project_file_change"}}
+		}, LevelMajor},
+		{"provided capability change", func(m *manifestV4Wire) {
+			m.Resources[0].ProvidesCapabilities = []string{"cap:changed"}
+		}, LevelMajor},
+		{"top-level provides change", func(m *manifestV4Wire) { m.Provides = []string{"cap:changed"} }, LevelMajor},
 		{"surface exclusion added", func(m *manifestV4Wire) {
 			m.Resources[0].SurfaceExclusions = []map[string]any{{"surface": "claude", "reason": "unsupported"}}
 		}, LevelMajor},

@@ -203,7 +203,7 @@ func (engine Engine) CheckComposite(ctx context.Context, request CompositeCheckR
 				return fmt.Errorf("source %s bindings are invalid: %v", member.Registration.ID, blockers)
 			}
 			single := Plan{Registration: &member.Registration, Candidate: candidates[i], Selector: member.Registration.Selector}
-			if err := buildPlan(roots[i], request.RepositoryRoot, member.Registration, bindings, manifests, Lock{}, false, initial.existingPacks, &single); err != nil {
+			if err := buildPlan(roots[i], request.RepositoryRoot, member.Registration, bindings, manifests, Lock{}, false, initial.existingPacks, buildPlanCheck, &single); err != nil {
 				return err
 			}
 			if len(single.Blockers) != 0 {
@@ -509,17 +509,21 @@ func compositePlanRegistrations(plan CompositePlan) []SourceConfig {
 }
 
 func materializeCompositeHistory(staged string, plan CompositePlan, manifest packManifest) error {
-	history := filepath.Join(staged, "history", plan.PackID, plan.ProposedVersion)
+	return materializePackHistory(staged, plan.PackID, plan.ProposedVersion, plan.ProposedManifest, manifest)
+}
+
+func materializePackHistory(staged, packID, version string, manifestBytes []byte, manifest packManifest) error {
+	history := filepath.Join(staged, "history", packID, version)
 	if _, err := os.Lstat(history); err == nil || !errors.Is(err, fs.ErrNotExist) {
 		return errors.New("initial Pack history generation already exists or is unsafe")
 	}
 	if err := os.MkdirAll(history, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(history, "pack.json"), plan.ProposedManifest, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(history, "pack.json"), manifestBytes, 0o644); err != nil {
 		return err
 	}
-	artifact := compositeHistoricalArtifact{SchemaVersion: 1, PackID: plan.PackID, PackVersion: plan.ProposedVersion}
+	artifact := compositeHistoricalArtifact{SchemaVersion: 1, PackID: packID, PackVersion: version}
 	manifestFiles, err := inventory(filepath.Join(history, "pack.json"))
 	if err != nil || len(manifestFiles) != 1 {
 		return errors.New("inspect proposed historical manifest")

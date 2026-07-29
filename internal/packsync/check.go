@@ -104,7 +104,7 @@ func (engine Engine) Check(ctx context.Context, request CheckRequest) (Plan, err
 			plan.Blockers = append(plan.Blockers, continuityBlockers...)
 		}
 		plan.Blockers = append(plan.Blockers, validateCandidate(fresh.source, candidate, fresh.selector)...)
-		if err := buildPlan(snapshotRoot, request.RepositoryRoot, fresh.source, bindings, manifests, fresh.lock, fresh.lockPresent, fresh.existingPacks, &plan); err != nil {
+		if err := buildPlan(snapshotRoot, request.RepositoryRoot, fresh.source, bindings, manifests, fresh.lock, fresh.lockPresent, fresh.existingPacks, buildPlanCheck, &plan); err != nil {
 			return err
 		}
 		if fresh.registration != nil {
@@ -321,7 +321,14 @@ func (engine Engine) lockedContinuity(ctx context.Context, source SourceConfig, 
 	return blockers, nil
 }
 
-func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, bindings []Binding, manifests map[string]packManifest, oldLock Lock, lockPresent bool, existingPacks map[string]bool, plan *Plan) error {
+type buildPlanMode bool
+
+const (
+	buildPlanCheck  buildPlanMode = true
+	buildPlanStaged buildPlanMode = false
+)
+
+func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, bindings []Binding, manifests map[string]packManifest, oldLock Lock, lockPresent bool, existingPacks map[string]bool, mode buildPlanMode, plan *Plan) error {
 	oldByKey := mapResources(oldLock.Resources)
 	newByKey := map[string]ResourceEvidence{}
 	for _, binding := range bindings {
@@ -401,7 +408,9 @@ func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, binding
 	for _, binding := range bindings {
 		targetPacks[binding.PackID] = true
 	}
-	plan.AffectedPacks = applyManifestContracts(repositoryRoot, manifests, targetPacks, plan.AffectedPacks, existingPacks, plan.Registration != nil, &plan.Blockers)
+	if mode == buildPlanCheck {
+		plan.AffectedPacks = applyManifestContracts(repositoryRoot, manifests, targetPacks, plan.AffectedPacks, existingPacks, plan.Registration != nil, &plan.Blockers)
+	}
 	if plan.Registration != nil {
 		for i := range plan.AffectedPacks {
 			if existingPacks[plan.AffectedPacks[i].PackID] {
@@ -414,7 +423,9 @@ func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, binding
 			sort.Strings(plan.AffectedPacks[i].Reasons)
 		}
 	}
-	plan.Blockers = append(plan.Blockers, compatibilityBlockers(repositoryRoot, snapshotRoot, source, bindings, manifests)...)
+	if mode == buildPlanCheck {
+		plan.Blockers = append(plan.Blockers, compatibilityBlockers(repositoryRoot, snapshotRoot, source, bindings, manifests)...)
+	}
 	return nil
 }
 
