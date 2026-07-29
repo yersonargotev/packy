@@ -24,6 +24,10 @@ const portableManifestV4Fixture = `{
     "requires": [],
     "conflicts": [],
     "notices": [],
+    "provides_capabilities": [],
+    "requires_capabilities": [],
+    "requires_tools": [],
+    "capability_conflicts": [],
     "bindings": [{
       "surface": "codex",
       "projection": "skill",

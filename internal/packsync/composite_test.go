@@ -111,9 +111,12 @@ func TestCompositeCheckPreservesAndSealsSchemaV4Manifest(t *testing.T) {
 	  "version": "1.0.0",
 	  "description": "synthetic v4 composite",
 	  "surfaces": ["codex"],
+	  "provides": [],
+	  "requires": {"capabilities": [], "tools": []},
+	  "conflicts": [],
 	  "resources": [
-	    {"kind":"skill","id":"first","source":"skills/first"},
-	    {"kind":"notice","id":"second","source":"notices/second.md"}
+	    {"kind":"skill","id":"first","source":"skills/first","provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[]},
+	    {"kind":"notice","id":"second","source":"notices/second.md","provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[]}
 	  ]
 	}`)
 	plan, err := (Engine{Source: provider, Validate: acceptingBundleValidator()}).CheckComposite(context.Background(), request)
@@ -168,8 +171,8 @@ func TestCompositeCheckRejectsIncompleteCompleteResultWithoutWriting(t *testing.
 }
 
 func TestCanonicalCompositePackManifestParityAndSemanticChange(t *testing.T) {
-	compact := json.RawMessage(`{"schema_version":4,"id":"composite","version":"1.0.0","resources":[{"kind":"skill","id":"first","source":"skills/first"}]}`)
-	formatted := json.RawMessage("{\n  \"resources\": [{\"source\":\"skills/first\",\"id\":\"first\",\"kind\":\"skill\"}],\n  \"version\":\"1.0.0\", \"id\":\"composite\", \"schema_version\":4\n}\n")
+	compact := json.RawMessage(`{"schema_version":4,"id":"composite","version":"1.0.0","provides":[],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"skill","id":"first","source":"skills/first","provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[]}]}`)
+	formatted := json.RawMessage("{\n  \"resources\": [{\"capability_conflicts\":[],\"requires_tools\":[],\"requires_capabilities\":[],\"provides_capabilities\":[],\"source\":\"skills/first\",\"id\":\"first\",\"kind\":\"skill\"}],\n  \"conflicts\":[], \"requires\":{\"tools\":[],\"capabilities\":[]}, \"provides\":[],\n  \"version\":\"1.0.0\", \"id\":\"composite\", \"schema_version\":4\n}\n")
 	left, err := CanonicalCompositePackManifest(compact)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +184,7 @@ func TestCanonicalCompositePackManifestParityAndSemanticChange(t *testing.T) {
 	if !reflect.DeepEqual(left, right) || hashBytes(left) != hashBytes(right) {
 		t.Fatal("semantically equal manifests produced different workflow/core identities")
 	}
-	changed, err := CanonicalCompositePackManifest(json.RawMessage(`{"schema_version":4,"id":"composite","version":"1.0.1","resources":[{"kind":"skill","id":"first","source":"skills/first"}]}`))
+	changed, err := CanonicalCompositePackManifest(json.RawMessage(`{"schema_version":4,"id":"composite","version":"1.0.1","provides":[],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"skill","id":"first","source":"skills/first","provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[]}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

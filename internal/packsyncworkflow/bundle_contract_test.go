@@ -276,7 +276,7 @@ func completeValidationGates() ValidationGates {
 
 func canonicalVercelManifest(t *testing.T) json.RawMessage {
 	t.Helper()
-	manifest, err := packsync.CanonicalCompositePackManifest(json.RawMessage(`{"schema_version":4,"id":"vercel","version":"1.0.0","resources":[{"kind":"skill","id":"deploy","source":"skills/deploy"}]}`))
+	manifest, err := packsync.CanonicalCompositePackManifest(json.RawMessage(`{"schema_version":4,"id":"vercel","version":"1.0.0","provides":[],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"skill","id":"deploy","source":"skills/deploy","provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[]}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

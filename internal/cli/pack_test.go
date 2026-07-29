@@ -1588,11 +1588,31 @@ func rewriteManifestAsV4(t *testing.T, manifestPath string) {
 		t.Fatal(err)
 	}
 	manifest["schema_version"] = float64(4)
+	provides, _ := manifest["provides"].([]any)
+	requires, _ := manifest["requires"].(map[string]any)
+	requiredCapabilities, _ := requires["capabilities"].([]any)
+	requiredTools, _ := requires["tools"].([]any)
+	conflicts, _ := manifest["conflicts"].([]any)
+	manifest["provides"] = []any{}
+	manifest["requires"] = map[string]any{"capabilities": []any{}, "tools": []any{}}
+	manifest["conflicts"] = []any{}
 	if contract, ok := manifest["contract"].(map[string]any); ok {
 		delete(contract, "optional_modes")
 	}
+	assignedCapabilityContract := false
 	for _, raw := range manifest["resources"].([]any) {
 		resource := raw.(map[string]any)
+		resource["provides_capabilities"] = []any{}
+		resource["requires_capabilities"] = []any{}
+		resource["requires_tools"] = []any{}
+		resource["capability_conflicts"] = []any{}
+		if !assignedCapabilityContract && resource["kind"] == "skill" {
+			resource["provides_capabilities"] = provides
+			resource["requires_capabilities"] = requiredCapabilities
+			resource["requires_tools"] = requiredTools
+			resource["capability_conflicts"] = conflicts
+			assignedCapabilityContract = true
+		}
 		if resource["kind"] != "notice" {
 			resource["conflicts"] = []any{}
 			resource["notices"] = []any{}

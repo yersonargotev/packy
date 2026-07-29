@@ -27,8 +27,22 @@ const (
 )
 
 type PlannedActivation struct {
-	Pack Pack
-	Role ActivationRole
+	Pack      Pack
+	Role      ActivationRole
+	Selection ResourceSelection
+}
+
+// CapabilityRequirementFact explains one resource-scoped provider edge without
+// asking a renderer or host adapter to reconstruct portable manifest policy.
+type CapabilityRequirementFact struct {
+	ConsumerPack       string            `json:"consumer_pack"`
+	ConsumerResource   *ResourceIdentity `json:"consumer_resource"`
+	Capability         string            `json:"capability"`
+	ProviderPack       string            `json:"provider_pack"`
+	ProviderResource   *ResourceIdentity `json:"provider_resource"`
+	RequiredTools      []string          `json:"required_tools"`
+	RequiredAuthority  []string          `json:"required_authority"`
+	ResultingReadiness ReadinessStatus   `json:"resulting_readiness"`
 }
 
 type ActiveDependent struct {
@@ -42,13 +56,14 @@ type PlanBlocker struct {
 }
 
 type composition struct {
-	surface      Surface
-	requested    Pack
-	packs        []Pack
-	activations  []PlannedActivation
-	contributors map[string][]string
-	blockers     []PlanBlocker
-	intentFacts  []ActivationIntent
+	surface         Surface
+	requested       Pack
+	packs           []Pack
+	activations     []PlannedActivation
+	contributors    map[string][]string
+	blockers        []PlanBlocker
+	intentFacts     []ActivationIntent
+	capabilityFacts []CapabilityRequirementFact
 }
 
 func resourceContributor(packID string, resource ResourceIdentity) string {
@@ -108,6 +123,11 @@ func (c composition) combinedPack() Pack {
 			tools[tool] = true
 		}
 		for _, r := range pack.Resources {
+			if r.Kind != "notice" {
+				for _, tool := range r.RequiresTools {
+					tools[tool] = true
+				}
+			}
 			r = resourceWithSurfaceAlias(r, intent.Aliases, c.surface)
 			key := r.Kind + ":" + r.ID
 			if _, ok := resources[key]; !ok {
@@ -169,10 +189,15 @@ func (c composition) contributorSet(projectionID string) []string {
 }
 
 func (f Facade) compose(requested Pack, state ActivationState, surface Surface, useRequestedIntent bool) (composition, error) {
+	return f.composeWithPolicy(requested, state, surface, useRequestedIntent, "", nil)
+}
+
+func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface Surface, useRequestedIntent bool, excludedPackID string, suppressedCapabilities map[string]bool) (composition, error) {
 	result := composition{requested: requested, surface: surface, contributors: map[string][]string{}}
 	selected := map[string]Pack{}
 	active := activeIntents(state)
 	activeIDs := map[string]bool{}
+	selections := map[string]ResourceSelection{}
 	for _, intent := range active {
 		if !intent.Active || intent.Surface != surface {
 			continue
@@ -190,14 +215,46 @@ func (f Facade) compose(requested Pack, state ActivationState, surface Surface, 
 		}
 		selected[pack.ID] = pack
 		activeIDs[pack.ID] = true
+		selections[pack.ID] = cloneSelection(intent.Selection)
 	}
-	var visit func(Pack, ActivationRole)
+	var visit func(Pack, ActivationRole, ResourceSelection)
 	visiting := map[string]bool{}
 	expanded := map[string]bool{}
 	roles := map[string]ActivationRole{requested.ID: ActivationRequested}
-	visit = func(pack Pack, role ActivationRole) {
+	visit = func(pack Pack, role ActivationRole, selection ResourceSelection) {
+		catalogPack := pack
 		if existing, ok := selected[pack.ID]; ok {
 			pack = existing
+			if pack.manifestVersion == manifestSchemaV4 && selection.Mode == SelectionCustom {
+				currentSelection, err := canonicalSelection(selections[pack.ID])
+				if err != nil {
+					result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
+					return
+				}
+				if currentSelection.Mode == SelectionCustom {
+					merged, err := mergeCustomSelections(currentSelection, selection)
+					if err != nil {
+						result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
+						return
+					}
+					pack, err = selectPackResources(catalogPack, merged)
+					if err != nil {
+						result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
+						return
+					}
+					selected[pack.ID] = pack
+					selections[pack.ID] = merged
+					roles[pack.ID] = ActivationRequired
+					delete(expanded, pack.ID)
+				}
+			}
+		} else if pack.manifestVersion == manifestSchemaV4 {
+			var err error
+			pack, err = selectPackResources(pack, selection)
+			if err != nil {
+				result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
+				return
+			}
 		}
 		if expanded[pack.ID] {
 			return
@@ -207,12 +264,20 @@ func (f Facade) compose(requested Pack, state ActivationState, surface Surface, 
 			return
 		}
 		selected[pack.ID] = pack
+		if _, present := selections[pack.ID]; !present {
+			selections[pack.ID] = cloneSelection(selection)
+		}
 		if _, ok := roles[pack.ID]; !ok && !activeIDs[pack.ID] {
 			roles[pack.ID] = role
 		}
 		visiting[pack.ID] = true
-		for _, capability := range pack.Requires.Capabilities {
-			providers := f.providers(capability, surface)
+		requirements := capabilityRequirements(pack)
+		for _, requirement := range requirements {
+			capability := requirement.capability
+			if suppressedCapabilities[capability] {
+				continue
+			}
+			providers := f.providersExcept(capability, surface, excludedPackID)
 			if len(providers) != 1 {
 				detail := "required capability has no provider"
 				if len(providers) > 1 {
@@ -221,12 +286,30 @@ func (f Facade) compose(requested Pack, state ActivationState, surface Surface, 
 				result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, capability, detail})
 				continue
 			}
-			visit(providers[0], ActivationRequired)
+			provider := providers[0]
+			providerSelection := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+			if provider.resource != (ResourceIdentity{}) {
+				providerSelection = ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{provider.resource}}
+			}
+			visit(provider.pack, ActivationRequired, providerSelection)
+			requiredAuthority := append([]string(nil), requirement.authority...)
+			if provider.resource != (ResourceIdentity{}) {
+				providerClosure, err := selectPackResources(provider.pack, providerSelection)
+				if err == nil {
+					requiredAuthority = append(requiredAuthority, packAuthorities(providerClosure)...)
+				}
+			}
+			result.capabilityFacts = append(result.capabilityFacts, CapabilityRequirementFact{
+				ConsumerPack: pack.ID, ConsumerResource: optionalResourceIdentity(requirement.resource), Capability: capability,
+				ProviderPack: provider.pack.ID, ProviderResource: optionalResourceIdentity(provider.resource),
+				RequiredTools:     append([]string(nil), requirement.tools...),
+				RequiredAuthority: sortedUnique(requiredAuthority),
+			})
 		}
 		delete(visiting, pack.ID)
 		expanded[pack.ID] = true
 	}
-	visit(requested, ActivationRequested)
+	visit(requested, ActivationRequested, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}})
 	ids := make([]string, 0, len(selected))
 	for id := range selected {
 		ids = append(ids, id)
@@ -235,7 +318,7 @@ func (f Facade) compose(requested Pack, state ActivationState, surface Surface, 
 	for _, id := range ids {
 		result.packs = append(result.packs, selected[id])
 		if role, ok := roles[id]; ok {
-			result.activations = append(result.activations, PlannedActivation{selected[id], role})
+			result.activations = append(result.activations, PlannedActivation{Pack: selected[id], Role: role, Selection: selections[id]})
 		}
 	}
 	for _, intent := range active {
@@ -244,16 +327,46 @@ func (f Facade) compose(requested Pack, state ActivationState, surface Surface, 
 		}
 	}
 	sort.Slice(result.intentFacts, func(i, j int) bool { return result.intentFacts[i].PackID < result.intentFacts[j].PackID })
-	provided := map[string]string{}
+	type capabilityContributor struct {
+		packID   string
+		resource ResourceIdentity
+	}
+	provided := map[string]capabilityContributor{}
 	for _, pack := range result.packs {
-		for _, capability := range pack.Provides {
-			provided[capability] = pack.ID
+		if pack.manifestVersion != manifestSchemaV4 {
+			for _, capability := range pack.Provides {
+				provided[capability] = capabilityContributor{packID: pack.ID}
+			}
+			continue
+		}
+		for _, resource := range pack.Resources {
+			if resource.Kind == "notice" {
+				continue
+			}
+			for _, capability := range resource.ProvidesCapabilities {
+				provided[capability] = capabilityContributor{packID: pack.ID, resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}}
+			}
 		}
 	}
 	for _, pack := range result.packs {
-		for _, conflict := range pack.Conflicts {
-			if other, ok := provided[conflict]; ok && other != pack.ID {
-				result.blockers = append(result.blockers, PlanBlocker{BlockerCapabilityConflict, conflict, fmt.Sprintf("pack %s conflicts with capability provided by %s", pack.ID, other)})
+		if pack.manifestVersion != manifestSchemaV4 {
+			for _, conflict := range pack.Conflicts {
+				if other, ok := provided[conflict]; ok && other.packID != pack.ID {
+					result.blockers = append(result.blockers, PlanBlocker{BlockerCapabilityConflict, conflict, fmt.Sprintf("pack %s conflicts with capability provided by %s", pack.ID, other.packID)})
+				}
+			}
+			continue
+		}
+		for _, resource := range pack.Resources {
+			if resource.Kind == "notice" {
+				continue
+			}
+			identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+			for _, conflict := range resource.CapabilityConflicts {
+				if other, ok := provided[conflict]; ok && (other.packID != pack.ID || other.resource != identity) {
+					result.blockers = append(result.blockers, PlanBlocker{BlockerCapabilityConflict, conflict,
+						fmt.Sprintf("resource %s in pack %s conflicts with capability provided by %s in pack %s", identity.String(), pack.ID, other.resource.String(), other.packID)})
+				}
 			}
 		}
 	}
@@ -302,7 +415,96 @@ func (f Facade) compose(requested Pack, state ActivationState, surface Surface, 
 		sort.Strings(result.contributors[key])
 	}
 	sortBlockers(result.blockers)
+	sort.Slice(result.capabilityFacts, func(i, j int) bool {
+		a, b := result.capabilityFacts[i], result.capabilityFacts[j]
+		if a.ConsumerPack != b.ConsumerPack {
+			return a.ConsumerPack < b.ConsumerPack
+		}
+		if resourceIdentityKey(a.ConsumerResource) != resourceIdentityKey(b.ConsumerResource) {
+			return resourceIdentityKey(a.ConsumerResource) < resourceIdentityKey(b.ConsumerResource)
+		}
+		return a.Capability < b.Capability
+	})
 	return result, nil
+}
+
+func resourceIdentityKey(identity *ResourceIdentity) string {
+	if identity == nil {
+		return ""
+	}
+	return identity.String()
+}
+
+func optionalResourceIdentity(identity ResourceIdentity) *ResourceIdentity {
+	if identity == (ResourceIdentity{}) {
+		return nil
+	}
+	copy := identity
+	return &copy
+}
+
+type capabilityRequirement struct {
+	resource   ResourceIdentity
+	capability string
+	tools      []string
+	authority  []string
+}
+
+func capabilityRequirements(pack Pack) []capabilityRequirement {
+	if pack.manifestVersion != manifestSchemaV4 {
+		result := make([]capabilityRequirement, 0, len(pack.Requires.Capabilities))
+		for _, capability := range pack.Requires.Capabilities {
+			result = append(result, capabilityRequirement{capability: capability, tools: append([]string(nil), pack.Requires.Tools...)})
+		}
+		return result
+	}
+	var result []capabilityRequirement
+	for _, resource := range pack.Resources {
+		if resource.Kind == "notice" {
+			continue
+		}
+		for _, capability := range resource.RequiresCapabilities {
+			result = append(result, capabilityRequirement{
+				resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, capability: capability,
+				tools: append([]string(nil), resource.RequiresTools...), authority: resourceAuthorities(resource),
+			})
+		}
+	}
+	return result
+}
+
+func providedCapabilities(pack Pack) []string {
+	if pack.manifestVersion != manifestSchemaV4 {
+		return pack.Provides
+	}
+	var result []string
+	for _, resource := range pack.Resources {
+		if resource.Kind == "notice" {
+			continue
+		}
+		result = append(result, resource.ProvidesCapabilities...)
+	}
+	return sortedUnique(result)
+}
+
+func resourceAuthorities(resource Resource) []string {
+	result := append([]string(nil), resource.Permissions...)
+	for _, mode := range resource.RuntimeModes {
+		for _, authority := range mode.Authorities {
+			result = append(result, string(authority.Kind)+":"+string(authority.Scope))
+		}
+	}
+	return sortedUnique(result)
+}
+
+func packAuthorities(pack Pack) []string {
+	var result []string
+	for _, resource := range pack.Resources {
+		if resource.Kind != "notice" {
+			result = append(result, resourceAuthorities(resource)...)
+		}
+	}
+	return sortedUnique(result)
 }
 
 func projectedNamespace(resource Resource, surface Surface) (string, string, bool) {
@@ -395,8 +597,24 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 	targetState := cloneActivationState(state)
 	active := activeIntents(state)
 	remaining := make([]ActivationIntent, 0, len(active))
+	requestedFacts := requested
+	for _, intent := range active {
+		if intent.PackID != requested.ID || intent.Surface != surface || !intent.Active {
+			continue
+		}
+		var err error
+		requestedFacts, err = f.catalog.resolveIntentPack(intent.PackID, intent.Version)
+		if err != nil {
+			return composition{}, nil, err
+		}
+		requestedFacts, err = selectPackResources(requestedFacts, intent.Selection)
+		if err != nil {
+			return composition{}, nil, fmt.Errorf("active pack %q has invalid resource selection: %w", intent.PackID, err)
+		}
+		break
+	}
 	provided := map[string]bool{}
-	for _, capability := range requested.Provides {
+	for _, capability := range providedCapabilities(requestedFacts) {
 		provided[capability] = true
 	}
 	var dependents []ActiveDependent
@@ -412,9 +630,13 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 		if err != nil {
 			return composition{}, nil, err
 		}
-		for _, dependency := range pack.Requires.Capabilities {
-			if provided[dependency] {
-				dependents = append(dependents, ActiveDependent{PackID: pack.ID, Dependency: dependency})
+		pack, err = selectPackResources(pack, intent.Selection)
+		if err != nil {
+			return composition{}, nil, fmt.Errorf("active pack %q has invalid resource selection: %w", intent.PackID, err)
+		}
+		for _, requirement := range capabilityRequirements(pack) {
+			if provided[requirement.capability] {
+				dependents = append(dependents, ActiveDependent{PackID: pack.ID, Dependency: requirement.capability})
 			}
 		}
 	}
@@ -433,7 +655,7 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 	if err != nil {
 		return composition{}, nil, err
 	}
-	result, err := f.compose(root, targetState, surface, true)
+	result, err := f.composeWithPolicy(root, targetState, surface, true, requested.ID, provided)
 	if err != nil {
 		return composition{}, nil, err
 	}
@@ -451,18 +673,40 @@ func (c composition) identityDigest() string {
 	}{c.packs, c.activations, c.contributors, c.blockers, c.intentFacts})
 }
 
-func (f Facade) providers(capability string, surface Surface) []Pack {
-	var result []Pack
+type capabilityProvider struct {
+	pack     Pack
+	resource ResourceIdentity
+}
+
+func (f Facade) providersExcept(capability string, surface Surface, excludedPackID string) []capabilityProvider {
+	var result []capabilityProvider
 	for _, pack := range f.catalog.List() {
-		if supportsSurface(pack, surface) {
+		if pack.ID == excludedPackID || !supportsSurface(pack, surface) {
+			continue
+		}
+		if pack.manifestVersion == manifestSchemaV4 {
+			for _, resource := range pack.Resources {
+				if resource.Kind == "notice" {
+					continue
+				}
+				if containsString(resource.ProvidesCapabilities, capability) {
+					result = append(result, capabilityProvider{pack: pack, resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}})
+				}
+			}
+		} else {
 			for _, provided := range pack.Provides {
 				if provided == capability {
-					result = append(result, pack)
+					result = append(result, capabilityProvider{pack: pack})
 				}
 			}
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].pack.ID != result[j].pack.ID {
+			return result[i].pack.ID < result[j].pack.ID
+		}
+		return result[i].resource.String() < result[j].resource.String()
+	})
 	return result
 }
 

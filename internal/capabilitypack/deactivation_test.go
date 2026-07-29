@@ -285,6 +285,42 @@ func TestDeactivateRejectsActiveDependentWithoutCascade(t *testing.T) {
 	}
 }
 
+func TestDeactivateV4ProviderRejectsSelectedResourceDependentWithoutReintroduction(t *testing.T) {
+	empty := []string{}
+	provider := Pack{manifestVersion: manifestSchemaV4, ID: "provider", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+		{Kind: "skill", ID: "storage", Bindings: testCapabilityBindings("storage"), Notices: empty, ProvidesCapabilities: []string{"cap:storage"}, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
+		{Kind: "skill", ID: "unselected", Bindings: testCapabilityBindings("unselected"), Notices: empty, ProvidesCapabilities: []string{"cap:other"}, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
+	}}
+	consumer := Pack{manifestVersion: manifestSchemaV4, ID: "consumer", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+		{Kind: "skill", ID: "root", Bindings: testCapabilityBindings("root"), Notices: empty, ProvidesCapabilities: empty, RequiresCapabilities: []string{"cap:storage"}, RequiresTools: empty, CapabilityConflicts: empty},
+		{Kind: "skill", ID: "inactive", Bindings: testCapabilityBindings("inactive"), Notices: empty, ProvidesCapabilities: empty, RequiresCapabilities: []string{"cap:other"}, RequiresTools: empty, CapabilityConflicts: empty},
+	}}
+	providerSelection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "storage"}}}
+	consumerSelection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "root"}}}
+	intents := []ActivationIntent{
+		{PackID: "provider", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 3, Selection: providerSelection},
+		{PackID: "consumer", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4, Selection: consumerSelection},
+	}
+	state := ActivationState{Intent: intents[0], Intents: intents}
+	facade, adapter, store := deactivationFixture([]Pack{consumer, provider}, state, SurfaceInspection{Revision: "host"})
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "provider", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Applicable() || len(plan.Blockers()) != 1 || plan.Blockers()[0].Kind != BlockerActiveDependent ||
+		plan.Blockers()[0].Subject != "provider" || !strings.Contains(plan.Blockers()[0].Detail, "cap:storage") {
+		t.Fatalf("v4 dependent blocker = applicable:%v blockers:%#v", plan.Applicable(), plan.Blockers())
+	}
+	for _, pack := range plan.compositionFacts {
+		if pack.ID == "provider" {
+			t.Fatalf("removed provider was rediscovered in target composition: %#v", plan.compositionFacts)
+		}
+	}
+	if len(plan.Phases()) != 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("blocked v4 deactivation mutated: phases=%#v actions=%d saves=%d", plan.Phases(), len(adapter.actions), len(store.saves))
+	}
+}
+
 func TestDeactivateRetainsSharedProjectionAndResultingContributorsWithoutRewrite(t *testing.T) {
 	packs := []Pack{
 		{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "shared", Source: "same"}}},

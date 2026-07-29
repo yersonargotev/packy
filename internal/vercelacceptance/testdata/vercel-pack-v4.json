@@ -7,9 +7,7 @@
     "codex",
     "opencode"
   ],
-  "provides": [
-    "workflow:vercel"
-  ],
+  "provides": [],
   "requires": {
     "capabilities": [],
     "tools": []
@@ -18,41 +16,57 @@
   "resources": [
     {
       "bindings": [],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "web-interface-guidelines-rules",
       "kind": "asset",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "source": "references/vercel-web-interface-guidelines-command.md",
       "surface_exclusions": []
     },
     {
       "bindings": [],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "writing-guidelines-rules",
       "kind": "asset",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "source": "references/vercel-writing-guidelines-command.md",
       "surface_exclusions": []
     },
     {
       "attribution": "Copyright (c) 2025 Vercel Labs",
       "bindings": [],
+      "capability_conflicts": [],
       "id": "web-interface-guidelines-mit",
       "kind": "notice",
       "license": "MIT",
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "source": "notices/vercel-web-interface-guidelines-MIT.txt",
       "surface_exclusions": []
     },
     {
       "attribution": "Copyright (c) 2026 Vercel Labs",
       "bindings": [],
+      "capability_conflicts": [],
       "id": "writing-guidelines-mit",
       "kind": "notice",
       "license": "MIT",
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "source": "notices/vercel-writing-guidelines-MIT.txt",
       "surface_exclusions": []
     },
@@ -83,11 +97,15 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-cli-with-tokens",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "deploy-preview",
@@ -713,11 +731,15 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-composition-patterns",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "guidance-edit",
@@ -779,11 +801,17 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-deploy-to-vercel",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [
+        "workflow:vercel"
+      ],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "claimable-preview",
@@ -1421,11 +1449,15 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-optimize",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "sequential-investigation",
@@ -1748,11 +1780,15 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-react-best-practices",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "guidance-edit",
@@ -1814,11 +1850,15 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-react-native-skills",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "guidance-edit",
@@ -1880,11 +1920,15 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-react-view-transitions",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "guidance-edit",
@@ -1946,13 +1990,17 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-web-design-guidelines",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [
         "asset:web-interface-guidelines-rules"
       ],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "local-review",
@@ -2005,13 +2053,17 @@
           "sharing": "exclusive"
         }
       ],
+      "capability_conflicts": [],
       "conflicts": [],
       "id": "vercel-writing-guidelines",
       "kind": "skill",
       "notices": [],
+      "provides_capabilities": [],
       "requires": [
         "asset:writing-guidelines-rules"
       ],
+      "requires_capabilities": [],
+      "requires_tools": [],
       "runtime_modes": [
         {
           "id": "local-review",

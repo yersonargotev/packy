@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yersonargotev.github.io/packy/schemas/cli/v5/pack-lifecycle.schema.json",
-  "title": "Packy capability-pack lifecycle reports v4",
+  "title": "Packy capability-pack lifecycle reports v5",
   "$defs": {
     "action": {
       "type": "object",
@@ -131,6 +131,7 @@
         "readiness_observed",
         "evidence",
         "pending_evidence",
+        "capability_requirements",
         "recovery",
         "mandatory_actions",
         "contract_diff",
@@ -142,7 +143,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": 4
+          "const": 5
         },
         "report": {
           "const": "pack-lifecycle-preview"
@@ -317,6 +318,86 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "capability_requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "consumer_pack",
+              "consumer_resource",
+              "capability",
+              "provider_pack",
+              "provider_resource",
+              "required_tools",
+              "required_authority",
+              "resulting_readiness"
+            ],
+            "properties": {
+              "consumer_pack": {
+                "type": "string"
+              },
+              "consumer_resource": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/resource_identity"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capability": {
+                "type": "string"
+              },
+              "provider_pack": {
+                "type": "string"
+              },
+              "provider_resource": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/resource_identity"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "required_tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "required_authority": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "resulting_readiness": {
+                "type": "object",
+                "required": [
+                  "Configured",
+                  "Authorized",
+                  "Usable"
+                ],
+                "properties": {
+                  "Configured": {
+                    "type": "boolean"
+                  },
+                  "Authorized": {
+                    "type": "boolean"
+                  },
+                  "Usable": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           }
         },
         "recovery": {
@@ -593,7 +674,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": 4
+          "const": 5
         },
         "report": {
           "const": "pack-lifecycle-apply"
@@ -630,7 +711,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": 4
+          "const": 5
         },
         "report": {
           "const": "pack-lifecycle-failure"
