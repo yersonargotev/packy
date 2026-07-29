@@ -26,10 +26,58 @@ never adds Claude intent. Claude activation is a separate explicit choice.
 Remote/third-party sources, marketplaces, signing, version selection,
 downgrades, unattended Apply, and background runtime management are excluded.
 
-## Manifest v3 bindings and exclusions
+## Manifest discovery and resource selection
 
-Only manifest v3 can declare Claude. Its required, sorted, non-null `surfaces`
-array names the Pack's surfaces. Every runtime resource (`skill`, `instruction`,
+`packy pack list` discovers the current catalog, and `packy pack show <pack>`
+shows the manifest contract before activation. Manifest v4 adds operational
+resource roots and their dependency closure. Packy discovers those roots from
+the manifest; it does not use presets, profiles, or an interactive picker.
+
+Activation without `--resource` keeps the resource-less **all** mode and selects
+every operational root:
+
+```sh
+packy pack activate example-pack --surface codex --dry-run
+```
+
+For a custom selection, repeat `--resource` with canonical `kind:id` roots.
+Dependencies are included by discovery and are reported separately from the
+selected roots:
+
+```sh
+packy pack activate example-pack --surface codex \
+  --resource skill:build \
+  --resource instruction:guidance \
+  --dry-run
+```
+
+Applying another custom activation adds its roots to the persisted selection;
+it does not replace the existing selection. `asset` and `notice` resources are
+not selectable roots. Preview and status report the persisted selection mode,
+each root, dependency chain, and unselected resource.
+
+When a required capability has more than one valid provider, Packy does not
+choose one implicitly. Select it explicitly with repeatable
+`--provider <capability>=<pack>[/<kind>:<id>]`:
+
+```sh
+packy pack activate consumer --surface codex \
+  --provider cap:storage=storage-pack/skill:storage \
+  --dry-run
+```
+
+The chosen provider edge is persisted with the consumer intent. Status and
+readiness use that recorded provider and its selected resource, not another
+ambient provider. A provider activated only because it is required remains
+while it has consumers; an explicitly activated provider remains independently
+active. Invalid or stale persisted provider choices fail closed.
+
+## Manifest v3 and v4 bindings and exclusions
+
+Only manifest v3 and v4 can declare Claude. V4 preserves that explicit surface
+contract and adds operational selection, capability composition, runtime modes,
+and root migrations. The required, sorted, non-null `surfaces` array names the
+Pack's surfaces. Every runtime resource (`skill`, `instruction`,
 `mcp_server`, `lifecycle`, `agent`, or `command`) declares exactly one binding
 or exclusion for every top-level surface. Assets inherit their consumers;
 notices have empty outcome arrays and do not affect readiness. V1 and v2 remain
@@ -86,10 +134,18 @@ packy pack deactivate engram --surface claude --dry-run
 packy pack deactivate engram --surface claude
 ```
 
+Update preserves the active all/custom selection and provider choices. For a
+manifest-v4 custom selection, each old root must still exist in the target
+manifest or have one exact declared `root_migrations` entry. Packy migrates that
+recorded root identity during update; a missing, chained, cyclic, duplicate, or
+ambiguous migration blocks the update rather than guessing a replacement.
+
 Approvals belong to one immutable plan. A stale plan executes no actions;
 repeat the originating verb for fresh inspection and consent. After a partial
 attempt marked `recovery-required`, also repeat the originating verb. Packy
-plans recovery from current evidence rather than replaying history.
+plans recovery from current evidence rather than replaying history. Recovery
+keeps the recorded selection, provider edges, aliases, version transition, and
+ownership evidence sealed to the fresh replacement plan.
 
 Packy updates or removes only an exact unchanged recorded projection. It
 preserves unmanaged, ambiguous, drifted, foreign, and higher-precedence content.
@@ -97,6 +153,24 @@ Shared resources remain while another contributor is active. Deactivation never
 deletes credentials, Engram memory, foreign configuration, or external data. If
 Claude is unavailable, local cleanup may proceed while user MCP ownership is
 retained for later official removal.
+
+Manifest-v4 custom selections can be deactivated incrementally by repeating
+`--resource` for selected operational roots:
+
+```sh
+packy pack deactivate example-pack --surface codex \
+  --resource skill:build \
+  --resource instruction:guidance \
+  --dry-run
+```
+
+Dependency-only resources cannot be removed directly; remove their consuming
+root instead. Removing some roots persists the remaining custom selection.
+Removing the last custom root deactivates the Pack. Omitting `--resource`
+retains the resource-less whole-Pack deactivation behavior, including for an
+activation recorded in all mode. Required providers and shared projections are
+removed only when their last recorded consumer is gone. There is no force,
+cascade, or automatic provider replacement path.
 
 ## Apply success is not readiness
 
