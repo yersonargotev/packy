@@ -2,10 +2,13 @@
 
 Packy emits versioned JSON when `--json` is present. Classic lifecycle and
 doctor retain `schema_version: 2`. Pack show uses `schema_version: 4`.
-Capability-Pack lifecycle uses `schema_version: 7`, adding closure-bound
-`sensitive_effects` to the v6 provider-choice plan. Capability-Pack status
+Capability-Pack lifecycle uses `schema_version: 8`, adding structured
+`recovery_guidance` to the v7 closure-bound sensitive-effect plan. The guidance
+names the originating operation, affected resources, consumers, truthful
+completed/failed/not-started effects, and the next explicit lifecycle command.
+Capability-Pack status
 remains `schema_version: 6`, where explicit/required activation roles and
-canonical consumers were added. Versions v1-v6 remain unchanged.
+canonical consumers were added. Versions v1-v7 remain unchanged.
 
 | Command | `report` |
 | --- | --- |
@@ -20,7 +23,7 @@ canonical consumers were added. Versions v1-v6 remain unchanged.
 | targeted `packy pack status PACK --surface SURFACE --json` | `pack-status` |
 
 The exact offline schemas are under `schemas/cli/v2/` through
-`schemas/cli/v7/`.
+`schemas/cli/v8/`.
 Canonical redacted fixtures use the matching directories under
 `internal/cli/testdata/structured-output/`; repository validation compiles the
 schema selected by each document's `schema_version` and validates both the
@@ -77,7 +80,8 @@ whole-Pack composition. Its ordered `sensitive_effects` bind each selected
 resource's manifest-declared authorities and runtime effects to the owning Pack
 and every exact introducing root-to-resource dependency chain, including
 required provider Pack closures. Apply and failure reports retain that redacted,
-sealed plan.
+sealed plan. Recovery previews additionally publish `recovery_guidance`; they
+never encode replay authority for the historical plan.
 Status publishes intent, canonical selected roots, and a full
 resource inventory whose role is `root`, `dependency`, `asset`, `notice`, or
 `unselected`, with a deterministic root-to-resource `dependency_chain`.

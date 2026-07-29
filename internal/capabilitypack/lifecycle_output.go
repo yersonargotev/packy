@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 7
+const LifecycleJSONSchemaVersion = 8
 
 type ResourceRole string
 
@@ -602,12 +602,75 @@ type JSONLifecyclePlan struct {
 	CapabilityRequirements []CapabilityRequirementFact `json:"capability_requirements"`
 	ProviderChoices        []ProviderChoice            `json:"provider_choices"`
 	Recovery               bool                        `json:"recovery"`
+	RecoveryGuidance       *RecoveryGuidance           `json:"recovery_guidance,omitempty"`
 	MandatoryActions       []ProjectionAction          `json:"mandatory_actions"`
 	ContractDiff           JSONContractDiff            `json:"contract_diff"`
 	Migrations             []string                    `json:"migrations"`
 	RetainedProjections    []RetainedProjection        `json:"retained_projections"`
 	RemovedContributors    map[string]string           `json:"removed_contributors"`
 	DryRun                 bool                        `json:"dry_run"`
+}
+
+type RecoveryGuidance struct {
+	OriginatingOperation Operation                  `json:"originating_operation"`
+	AffectedResources    []RecoveryAffectedResource `json:"affected_resources"`
+	Consumers            []RecoveryConsumer         `json:"consumers"`
+	Completed            []string                   `json:"completed"`
+	FailedAction         string                     `json:"failed_action"`
+	FailureDetail        string                     `json:"failure_detail"`
+	NotStarted           []string                   `json:"not_started"`
+	NextCommand          string                     `json:"next_command"`
+}
+
+func (p ReconciliationPlan) RecoveryGuidance() *RecoveryGuidance {
+	history := p.HistoricalAttempt()
+	if history == nil {
+		return nil
+	}
+	affected := append([]RecoveryAffectedResource(nil), history.AffectedResources...)
+	consumers := append([]RecoveryConsumer(nil), history.Consumers...)
+	derivedAffected, derivedConsumers := p.recoverySubjects()
+	if len(affected) == 0 {
+		affected = derivedAffected
+	}
+	if len(consumers) == 0 {
+		consumers = derivedConsumers
+	}
+	next := history.NextCommand
+	if next == "" {
+		next = p.nextLifecycleCommand()
+	}
+	return &RecoveryGuidance{
+		OriginatingOperation: history.Operation,
+		AffectedResources:    nonNilAffectedResources(affected),
+		Consumers:            nonNilRecoveryConsumers(consumers),
+		Completed:            nonNilStrings(history.Completed),
+		FailedAction:         history.FailedAction,
+		FailureDetail:        history.FailureDetail,
+		NotStarted:           nonNilStrings(history.NotStarted()),
+		NextCommand:          next,
+	}
+}
+
+func nonNilAffectedResources(values []RecoveryAffectedResource) []RecoveryAffectedResource {
+	if values == nil {
+		return []RecoveryAffectedResource{}
+	}
+	return values
+}
+
+func nonNilRecoveryConsumers(values []RecoveryConsumer) []RecoveryConsumer {
+	if values == nil {
+		return []RecoveryConsumer{}
+	}
+	return values
+}
+
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 type JSONContractDiff struct {
@@ -669,7 +732,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		RuntimeModes:           sortedRuntimeModeResults(p.runtimeModeResults),
 		CapabilityRequirements: p.CapabilityRequirements(),
 		ProviderChoices:        providerChoices,
-		Recovery:               p.recovery, MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
+		Recovery:               p.recovery, RecoveryGuidance: p.RecoveryGuidance(), MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
 		RetainedProjections: retained, RemovedContributors: removed, DryRun: dryRun}
 }
 

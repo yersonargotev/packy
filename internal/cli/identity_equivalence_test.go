@@ -315,6 +315,16 @@ func removeSliceFJSONFields(value any) {
 	switch value := value.(type) {
 	case map[string]any:
 		delete(value, "selection_validity")
+		if _, isAttempt := value["plan_id"]; isAttempt {
+			if _, hasActions := value["actions"]; hasActions {
+				// Issue #294 adds recovery-only context to attempt history.
+				// Dedicated recovery tests own it; the frozen rename baseline
+				// compares the pre-existing attempt outcome.
+				delete(value, "affected_resources")
+				delete(value, "consumers")
+				delete(value, "next_command")
+			}
+		}
 		if contributors, ok := value["contributors"].([]any); ok {
 			for i, raw := range contributors {
 				contributor, _ := raw.(string)
