@@ -3,7 +3,10 @@
 ## Packy development
 
 - Source control and delivery use GitHub issues, pull requests, and Actions.
-- Packy is a Go CLI; the repository completion gate requires `go test ./...`.
+- `./scripts/validate-packy.sh` is the authoritative repository validation
+  command required before delivery. Focused checks are iteration aids. While
+  the repository has no vendored upstream Go content, `go test ./...` is a
+  compatibility check, not a second delivery gate.
 - Architecture and symbol discovery use CodeGraph before source inspection;
   runtime behavior is verified with real commands or tests.
 - Tests and manual checks that exercise user configuration sandbox `HOME` and
