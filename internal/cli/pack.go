@@ -234,6 +234,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	var dryRun bool
 	var aliasValues []string
 	var resourceValues []string
+	var providerValues []string
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Args: cobra.ExactArgs(1),
@@ -253,11 +254,15 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 					selection.Roots = append(selection.Roots, resource)
 				}
 			}
+			providerChoices, err := parseProviderChoices(providerValues)
+			if err != nil {
+				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
+			}
 			facade, err := activationFacade(opts, workstationResolver)
 			if err != nil {
 				return err
 			}
-			plan, err := facade.Preview(cmd.Context(), capabilitypack.ActivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Aliases: aliases, Selection: selection})
+			plan, err := facade.Preview(cmd.Context(), capabilitypack.ActivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Aliases: aliases, Selection: selection, ProviderChoices: providerChoices})
 			if err != nil {
 				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 			}
@@ -271,9 +276,37 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one manifest-v4 operational resource (<kind>:<id>); repeatable")
+	cmd.Flags().StringArrayVar(&providerValues, "provider", nil, "Select a capability provider (<capability>=<pack>[/<kind>:<id>]); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd
+}
+
+func parseProviderChoices(values []string) ([]capabilitypack.ProviderChoice, error) {
+	if values == nil {
+		return nil, nil
+	}
+	result := make([]capabilitypack.ProviderChoice, 0, len(values))
+	for _, value := range values {
+		capability, provider, ok := strings.Cut(value, "=")
+		if !ok || capability == "" || provider == "" {
+			return nil, fmt.Errorf("provider choice %q must be <capability>=<pack>[/<kind>:<id>]", value)
+		}
+		packID, resourceValue, hasResource := strings.Cut(provider, "/")
+		if packID == "" {
+			return nil, fmt.Errorf("provider choice %q has an empty provider pack", value)
+		}
+		choice := capabilitypack.ProviderChoice{Capability: capability, ProviderPack: packID}
+		if hasResource {
+			resource, err := capabilitypack.ParseResourceIdentity(resourceValue)
+			if err != nil {
+				return nil, fmt.Errorf("provider choice %q: %w", value, err)
+			}
+			choice.ProviderResource = &resource
+		}
+		result = append(result, choice)
+	}
+	return result, nil
 }
 
 func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err error, plan *capabilitypack.ReconciliationPlan) error {
@@ -451,6 +484,11 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 			return err
 		}
 	}
+	for _, choice := range plan.ProviderChoices() {
+		if err := renderProviderChoice(cmd.OutOrStdout(), choice); err != nil {
+			return err
+		}
+	}
 	for _, alias := range plan.Aliases() {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Alias: %s:%s=%s\n", alias.Kind, alias.ID, alias.Name); err != nil {
 			return err
@@ -598,6 +636,15 @@ func renderCapabilityRequirement(out io.Writer, requirement capabilitypack.Capab
 	return err
 }
 
+func renderProviderChoice(out io.Writer, choice capabilitypack.ProviderChoice) error {
+	provider := "all"
+	if choice.ProviderResource != nil {
+		provider = choice.ProviderResource.String()
+	}
+	_, err := fmt.Fprintf(out, "Provider choice: capability=%s provider=%s/%s\n", choice.Capability, choice.ProviderPack, provider)
+	return err
+}
+
 func renderPackContract(cmd *cobra.Command, contract capabilitypack.LifecycleContract) error {
 	return renderPackShowContract(cmd.OutOrStdout(), contract)
 }
@@ -693,6 +740,23 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		return err
 	}
 	if entry.Intent.Active {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Activation role: %s\n", entry.ActivationRole); err != nil {
+			return err
+		}
+		for _, choice := range entry.Intent.ProviderChoices {
+			if err := renderProviderChoice(cmd.OutOrStdout(), choice); err != nil {
+				return err
+			}
+		}
+		for _, consumer := range entry.Consumers {
+			resource := "all"
+			if consumer.ConsumerResource != nil {
+				resource = consumer.ConsumerResource.String()
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Capability consumer: consumer=%s/%s capability=%s\n", consumer.ConsumerPack, resource, consumer.Capability); err != nil {
+				return err
+			}
+		}
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Selection mode: %s\n", entry.Intent.Selection.Mode); err != nil {
 			return err
 		}

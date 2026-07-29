@@ -17,7 +17,7 @@ func (f Facade) PreviewReconcile(ctx context.Context, request ReconcileRequest) 
 
 func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) (ReconciliationPlan, error) {
 	if request.PackID != "" {
-		activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface, Aliases: request.Aliases}
+		activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface, Aliases: request.Aliases, ProviderChoices: request.ProviderChoices}
 		_, _, state, err := f.activationInputsForOperation(ctx, activation, OperationReconcile)
 		if err != nil {
 			return ReconciliationPlan{}, err
@@ -30,6 +30,18 @@ func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) 
 			return ReconciliationPlan{}, err
 		}
 		activation.Selection = intent.Selection
+		if request.ProviderChoices == nil {
+			activation.ProviderChoices = cloneProviderChoices(intent.ProviderChoices)
+		} else {
+			supplied, choiceErr := canonicalProviderChoices(request.ProviderChoices)
+			if choiceErr != nil {
+				return ReconciliationPlan{}, choiceErr
+			}
+			persisted, choiceErr := canonicalProviderChoices(intent.ProviderChoices)
+			if choiceErr != nil || digestJSON(supplied) != digestJSON(persisted) {
+				return ReconciliationPlan{}, fmt.Errorf("reconcile preserves the persisted provider choice and cannot switch providers")
+			}
+		}
 		plan, err := f.preview(ctx, activation, OperationReconcile, "")
 		if err != nil {
 			return ReconciliationPlan{}, err
@@ -68,7 +80,8 @@ func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) 
 	if len(ids) == 0 {
 		return ReconciliationPlan{}, fmt.Errorf("no active capability packs on %s; reconcile does not activate packs", request.Surface)
 	}
-	plan, err := f.preview(ctx, ActivationRequest{PackID: ids[0], Surface: request.Surface, Selection: selections[ids[0]]}, OperationReconcile, "")
+	firstIntent, _ := intentForPack(state, ids[0], request.Surface)
+	plan, err := f.preview(ctx, ActivationRequest{PackID: ids[0], Surface: request.Surface, Selection: selections[ids[0]], ProviderChoices: cloneProviderChoices(firstIntent.ProviderChoices)}, OperationReconcile, "")
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}

@@ -2,7 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 5
+const StatusSchemaVersion = 6
 
 type JSONOptionalBool struct {
 	State string `json:"state"`
@@ -10,11 +10,18 @@ type JSONOptionalBool struct {
 }
 
 type JSONIntent struct {
-	State     string            `json:"state"`
-	Active    *bool             `json:"active"`
-	Revision  *int              `json:"revision"`
-	Version   string            `json:"version,omitempty"`
-	Selection ResourceSelection `json:"selection"`
+	State           string            `json:"state"`
+	Active          *bool             `json:"active"`
+	Revision        *int              `json:"revision"`
+	Version         string            `json:"version,omitempty"`
+	Selection       ResourceSelection `json:"selection"`
+	ProviderChoices []ProviderChoice  `json:"provider_choices"`
+}
+
+type JSONCapabilityConsumer struct {
+	ConsumerPack     string            `json:"consumer_pack"`
+	ConsumerResource *ResourceIdentity `json:"consumer_resource"`
+	Capability       string            `json:"capability"`
 }
 
 type JSONAttempt struct {
@@ -93,6 +100,8 @@ type JSONStatusEntry struct {
 	Blockers            []string                      `json:"blockers"`
 	Evidence            []string                      `json:"evidence"`
 	PendingHumanActions []string                      `json:"pending_human_actions"`
+	ActivationRole      ActivationRole                `json:"activation_role"`
+	Consumers           []JSONCapabilityConsumer      `json:"consumers"`
 }
 
 type JSONStatusReport struct {
@@ -110,11 +119,15 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 	}
 	entries := make([]JSONStatusEntry, 0, len(report.Entries))
 	for _, entry := range report.Entries {
-		intent := JSONIntent{State: "absent", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}
+		intent := JSONIntent{State: "absent", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, ProviderChoices: []ProviderChoice{}}
 		if entry.IntentPresent {
 			active, revision := entry.Intent.Active, entry.Intent.Revision
 			selection, _ := canonicalSelection(entry.Intent.Selection)
-			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version, Selection: selection}
+			choices, _ := canonicalProviderChoices(entry.Intent.ProviderChoices)
+			if choices == nil {
+				choices = []ProviderChoice{}
+			}
+			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version, Selection: selection, ProviderChoices: choices}
 		}
 		var attempt *JSONAttempt
 		if entry.LatestAttempt != nil {
@@ -136,6 +149,7 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			ResourceSelections: jsonResourceSelectionDetails(entry.ResourceSelections),
 			Resources:          jsonResourceStatuses(entry.Resources),
 			Blockers:           sortedCopy(entry.Blockers), Evidence: sortedCopy(entry.Evidence), PendingHumanActions: sortedCopy(entry.PendingHumanActions),
+			ActivationRole: statusActivationRole(entry), Consumers: jsonCapabilityConsumers(entry.Consumers),
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -156,6 +170,23 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			requirement.Resource = &resource
 		}
 		result.Requirement = requirement
+	}
+	return result
+}
+
+func statusActivationRole(entry StatusEntry) ActivationRole {
+	if !entry.IntentPresent || !entry.Intent.Active {
+		return ActivationInactive
+	}
+	return entry.ActivationRole
+}
+
+func jsonCapabilityConsumers(values []CapabilityConsumerFact) []JSONCapabilityConsumer {
+	result := make([]JSONCapabilityConsumer, 0, len(values))
+	for _, value := range values {
+		result = append(result, JSONCapabilityConsumer{
+			ConsumerPack: value.ConsumerPack, ConsumerResource: value.ConsumerResource, Capability: value.Capability,
+		})
 	}
 	return result
 }

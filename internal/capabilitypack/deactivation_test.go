@@ -263,7 +263,7 @@ func TestDeactivateRejectsActiveDependentWithoutCascade(t *testing.T) {
 	}
 	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 2}, Intents: []ActivationIntent{
 		{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 2},
-		{PackID: "dependent", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 3},
+		{PackID: "dependent", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 3, ProviderChoices: []ProviderChoice{{Capability: "cap:app", ProviderPack: "app"}}},
 	}}
 	facade, adapter, store := deactivationFixture(packs, state, SurfaceInspection{Revision: "host"})
 
@@ -297,9 +297,10 @@ func TestDeactivateV4ProviderRejectsSelectedResourceDependentWithoutReintroducti
 	}}
 	providerSelection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "storage"}}}
 	consumerSelection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "root"}}}
+	providerResource := ResourceIdentity{Kind: "skill", ID: "storage"}
 	intents := []ActivationIntent{
 		{PackID: "provider", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 3, Selection: providerSelection},
-		{PackID: "consumer", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4, Selection: consumerSelection},
+		{PackID: "consumer", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4, Selection: consumerSelection, ProviderChoices: []ProviderChoice{{Capability: "cap:storage", ProviderPack: "provider", ProviderResource: &providerResource}}},
 	}
 	state := ActivationState{Intent: intents[0], Intents: intents}
 	facade, adapter, store := deactivationFixture([]Pack{consumer, provider}, state, SurfaceInspection{Revision: "host"})

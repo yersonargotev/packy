@@ -2,10 +2,10 @@
 
 Packy emits versioned JSON when `--json` is present. Classic lifecycle and
 doctor retain `schema_version: 2`. Pack show uses `schema_version: 4`.
-Capability-Pack lifecycle and status use `schema_version: 5`: lifecycle adds
-resource-scoped capability-provider requirements, while status adds resource
-readiness, focused-resource gates, and exact Pack/resource contributors without
-silently changing v1-v4.
+Capability-Pack lifecycle and status use `schema_version: 6`: lifecycle adds
+persisted capability-provider choices to the v5 resource-scoped requirements,
+while status adds explicit/required activation roles and canonical consumers.
+Versions v1-v5 remain unchanged.
 
 | Command | `report` |
 | --- | --- |
@@ -20,7 +20,7 @@ silently changing v1-v4.
 | targeted `packy pack status PACK --surface SURFACE --json` | `pack-status` |
 
 The exact offline schemas are under `schemas/cli/v2/` through
-`schemas/cli/v5/`.
+`schemas/cli/v6/`.
 Canonical redacted fixtures use the matching directories under
 `internal/cli/testdata/structured-output/`; repository validation compiles the
 schema selected by each document's `schema_version` and validates both the

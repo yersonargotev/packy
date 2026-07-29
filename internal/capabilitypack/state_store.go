@@ -195,12 +195,20 @@ func canonicalizeActivationState(state *ActivationState) error {
 	if err := canonicalizeAliases(&state.Intent.Aliases); err != nil {
 		return err
 	}
+	state.Intent.ProviderChoices, err = canonicalProviderChoices(state.Intent.ProviderChoices)
+	if err != nil {
+		return err
+	}
 	for i := range state.Intents {
 		state.Intents[i].Selection, err = canonicalSelection(state.Intents[i].Selection)
 		if err != nil {
 			return err
 		}
 		if err := canonicalizeAliases(&state.Intents[i].Aliases); err != nil {
+			return err
+		}
+		state.Intents[i].ProviderChoices, err = canonicalProviderChoices(state.Intents[i].ProviderChoices)
+		if err != nil {
 			return err
 		}
 	}

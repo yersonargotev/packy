@@ -385,6 +385,7 @@ func normalizeV3PackTestCutover(data []byte) []byte {
 		{claudeOverview, baselineOverview},
 		{`"engram 2.0.0 on codex"`, `"engram 1.0.0 on codex"`},
 		{`len(report.Entries) != 6`, `len(report.Entries) != 5`},
+		{`[]string{"Plan disposition: blocked", "Cannot apply update: 3 blockers", "capability-conflict", "dependency cap:missing", "provider choice"}`, `[]string{"Plan disposition: blocked", "Cannot apply update: 2 blockers", "capability-conflict", "dependency cap:missing"}`},
 		{`"Pack: engram 2.0.0"`, `"Pack: engram 1.0.0"`},
 		{`currentVersion, staleVersion = "3.0.0", "3.0.1"`, `currentVersion, staleVersion, updateVersion = "2.0.0", "2.0.1", "3.0.0"`},
 		{"\t\t\t\tif packID == \"matty\" {\n\t\t\t\t\tif err := os.WriteFile(manifestPath, []byte(originalManifest), 0o600); err != nil {\n\t\t\t\t\t\tt.Fatal(err)\n\t\t\t\t\t}\n\t\t\t\t}\n", ""},

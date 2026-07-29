@@ -335,6 +335,8 @@ func removeSliceFJSONFields(value any) {
 		if _, ok := value["pack_id"]; ok {
 			if _, hasActive := value["active"]; hasActive {
 				delete(value, "selection")
+				delete(value, "provider_choices")
+				delete(value, "explicit")
 			}
 		}
 		if report, ok := value["report"].(string); ok && strings.HasPrefix(report, "pack-lifecycle-") {
@@ -343,6 +345,7 @@ func removeSliceFJSONFields(value any) {
 			// new contract; the frozen rename gate compares legacy all behavior.
 			value["schema_version"] = float64(2)
 			delete(value, "selection")
+			delete(value, "provider_choices")
 			delete(value, "evidence")
 		} else if ok && strings.HasPrefix(report, "pack-status") {
 			value["schema_version"] = float64(1)
@@ -351,8 +354,11 @@ func removeSliceFJSONFields(value any) {
 				entry := raw.(map[string]any)
 				delete(entry, "resource_selections")
 				delete(entry, "resources")
+				delete(entry, "activation_role")
+				delete(entry, "consumers")
 				if intent, ok := entry["intent"].(map[string]any); ok {
 					delete(intent, "selection")
+					delete(intent, "provider_choices")
 				}
 			}
 		} else if ok && report == "doctor" {

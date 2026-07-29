@@ -57,6 +57,31 @@ func TestFileActivationStorePersistsAliasesInCanonicalOrder(t *testing.T) {
 	}
 }
 
+func TestFileActivationStoreRoundTripsCanonicalProviderChoicesAndRole(t *testing.T) {
+	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
+	requiredOnly := false
+	resource := ResourceIdentity{Kind: "skill", ID: "storage"}
+	state := ActivationState{Intent: ActivationIntent{
+		PackID: "consumer", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 1, Explicit: &requiredOnly,
+		ProviderChoices: []ProviderChoice{
+			{Capability: "cap:z", ProviderPack: "legacy"},
+			{Capability: "cap:a", ProviderPack: "provider", ProviderResource: &resource},
+		},
+	}}
+	if err := store.Save(context.Background(), SurfaceCodex, 0, state); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(context.Background(), SurfaceCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Intent.Explicit == nil || *loaded.Intent.Explicit || len(loaded.Intent.ProviderChoices) != 2 ||
+		loaded.Intent.ProviderChoices[0].Capability != "cap:a" || loaded.Intent.ProviderChoices[0].ProviderResource == nil ||
+		*loaded.Intent.ProviderChoices[0].ProviderResource != resource {
+		t.Fatalf("provider intent round-trip = %#v", loaded.Intent)
+	}
+}
+
 func TestFileActivationStoreRejectsInvalidAliases(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

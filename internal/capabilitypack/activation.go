@@ -77,16 +77,18 @@ func (e StalePlanError) Error() string { return fmt.Sprintf("%s: %s", ErrStalePl
 func (e StalePlanError) Unwrap() error { return ErrStalePlan }
 
 type ActivationRequest struct {
-	PackID    string
-	Surface   Surface
-	Aliases   []SurfaceAlias
-	Selection ResourceSelection
+	PackID          string
+	Surface         Surface
+	Aliases         []SurfaceAlias
+	Selection       ResourceSelection
+	ProviderChoices []ProviderChoice
 }
 
 type UpdateRequest struct {
-	PackID  string
-	Surface Surface
-	Aliases []SurfaceAlias
+	PackID          string
+	Surface         Surface
+	Aliases         []SurfaceAlias
+	ProviderChoices []ProviderChoice
 }
 
 type DeactivationRequest struct {
@@ -103,9 +105,19 @@ const (
 )
 
 type ReconcileRequest struct {
-	PackID  string
-	Surface Surface
-	Aliases []SurfaceAlias
+	PackID          string
+	Surface         Surface
+	Aliases         []SurfaceAlias
+	ProviderChoices []ProviderChoice
+}
+
+// ProviderChoice is the durable, consumer-owned selection of one provider for
+// a required capability. Resource is empty for Pack-level (schema v1-v3)
+// providers.
+type ProviderChoice struct {
+	Capability       string            `json:"capability"`
+	ProviderPack     string            `json:"provider_pack"`
+	ProviderResource *ResourceIdentity `json:"provider_resource,omitempty"`
 }
 
 // ExecutableResolution is the immutable fact set used to choose an external
@@ -216,13 +228,18 @@ type SurfaceAdapter interface {
 }
 
 type ActivationIntent struct {
-	PackID    string            `json:"pack_id"`
-	Surface   Surface           `json:"surface"`
-	Version   string            `json:"version"`
-	Active    bool              `json:"active"`
-	Revision  int               `json:"revision"`
-	Aliases   []SurfaceAlias    `json:"aliases"`
-	Selection ResourceSelection `json:"selection"`
+	PackID          string            `json:"pack_id"`
+	Surface         Surface           `json:"surface"`
+	Version         string            `json:"version"`
+	Active          bool              `json:"active"`
+	Revision        int               `json:"revision"`
+	Aliases         []SurfaceAlias    `json:"aliases"`
+	Selection       ResourceSelection `json:"selection"`
+	ProviderChoices []ProviderChoice  `json:"provider_choices,omitempty"`
+	// Explicit distinguishes direct activation intent from an activation kept
+	// solely to satisfy consumers. Absence is conservatively treated as direct
+	// intent for state written before provider roles were persisted.
+	Explicit *bool `json:"explicit,omitempty"`
 }
 
 type SurfaceAlias struct {
@@ -361,45 +378,47 @@ type PlanPhase struct {
 }
 
 type ReconciliationPlan struct {
-	id                     string
-	digest                 string
-	pack                   Pack
-	operation              Operation
-	surface                Surface
-	intentRevision         int
-	oldVersion             string
-	observationFingerprint string
-	phases                 []PlanPhase
-	desired                []projectionExpectation
-	portable               []PortableOutcome
-	resolutions            []ExecutableResolution
-	runtimeModeResults     []RuntimeModeResult
-	readiness              ReadinessStatus
-	readinessObserved      ReadinessObservationStatus
-	observedEvidence       []string
-	pendingEvidence        []string
-	pendingHumanActions    []string
-	noOp                   bool
-	activations            []PlannedActivation
-	contributors           map[string][]string
-	retained               []RetainedProjection
-	blockers               []PlanBlocker
-	compositionFacts       []Pack
-	intentFacts            []ActivationIntent
-	ownershipFacts         []ProjectionOwnership
-	activeDependents       []ActiveDependent
-	capabilityFacts        []CapabilityRequirementFact
-	beforeCompositionFacts []Pack
-	removedContributors    map[string]string
-	reconcileScope         ReconcileScope
-	aliases                []SurfaceAlias
-	previousAliases        []SurfaceAlias
-	selection              ResourceSelection
-	previousSelection      ResourceSelection
-	partialSelection       bool
-	selectionValidity      SelectionValidity
-	recovery               bool
-	historicalAttempt      *ApplyingJournal
+	id                      string
+	digest                  string
+	pack                    Pack
+	operation               Operation
+	surface                 Surface
+	intentRevision          int
+	oldVersion              string
+	observationFingerprint  string
+	phases                  []PlanPhase
+	desired                 []projectionExpectation
+	portable                []PortableOutcome
+	resolutions             []ExecutableResolution
+	runtimeModeResults      []RuntimeModeResult
+	readiness               ReadinessStatus
+	readinessObserved       ReadinessObservationStatus
+	observedEvidence        []string
+	pendingEvidence         []string
+	pendingHumanActions     []string
+	noOp                    bool
+	activations             []PlannedActivation
+	contributors            map[string][]string
+	retained                []RetainedProjection
+	blockers                []PlanBlocker
+	compositionFacts        []Pack
+	intentFacts             []ActivationIntent
+	ownershipFacts          []ProjectionOwnership
+	activeDependents        []ActiveDependent
+	capabilityFacts         []CapabilityRequirementFact
+	beforeCompositionFacts  []Pack
+	removedContributors     map[string]string
+	reconcileScope          ReconcileScope
+	aliases                 []SurfaceAlias
+	previousAliases         []SurfaceAlias
+	selection               ResourceSelection
+	previousSelection       ResourceSelection
+	partialSelection        bool
+	selectionValidity       SelectionValidity
+	providerChoices         []ProviderChoice
+	previousProviderChoices []ProviderChoice
+	recovery                bool
+	historicalAttempt       *ApplyingJournal
 }
 
 type RetainedProjection struct {
@@ -421,9 +440,12 @@ func (p ReconciliationPlan) Operation() Operation           { return p.operation
 func (p ReconciliationPlan) ReconcileScope() ReconcileScope { return p.reconcileScope }
 func (p ReconciliationPlan) Aliases() []SurfaceAlias        { return cloneAliases(p.aliases) }
 func (p ReconciliationPlan) Selection() ResourceSelection   { return cloneSelection(p.selection) }
-func (p ReconciliationPlan) OldVersion() string             { return p.oldVersion }
-func (p ReconciliationPlan) IntentRevision() int            { return p.intentRevision }
-func (p ReconciliationPlan) NoOp() bool                     { return p.noOp }
+func (p ReconciliationPlan) ProviderChoices() []ProviderChoice {
+	return cloneProviderChoices(p.providerChoices)
+}
+func (p ReconciliationPlan) OldVersion() string  { return p.oldVersion }
+func (p ReconciliationPlan) IntentRevision() int { return p.intentRevision }
+func (p ReconciliationPlan) NoOp() bool          { return p.noOp }
 func (p ReconciliationPlan) Applicable() bool {
 	return p.Disposition() == PlanApplicable || p.Disposition() == PlanConverged || p.Disposition() == PlanPendingHuman
 }
@@ -577,7 +599,7 @@ func (f Facade) PreviewUpdate(ctx context.Context, request UpdateRequest) (Recon
 }
 
 func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (ReconciliationPlan, error) {
-	activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface, Aliases: request.Aliases}
+	activation := ActivationRequest{PackID: request.PackID, Surface: request.Surface, Aliases: request.Aliases, ProviderChoices: request.ProviderChoices}
 	_, _, state, err := f.activationInputsForOperation(ctx, activation, OperationUpdate)
 	if err != nil {
 		return ReconciliationPlan{}, err
@@ -597,6 +619,9 @@ func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (Recon
 		return ReconciliationPlan{}, err
 	}
 	activation.Selection = intent.Selection
+	if request.ProviderChoices == nil {
+		activation.ProviderChoices = cloneProviderChoices(intent.ProviderChoices)
+	}
 	return f.preview(ctx, activation, OperationUpdate, intent.Version)
 }
 
@@ -669,7 +694,11 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
 	}
-	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, selection: selection, previousSelection: selection, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: map[string]string{}}
+	previousProviderChoices := []ProviderChoice{}
+	if active {
+		previousProviderChoices = cloneProviderChoices(intent.ProviderChoices)
+	}
+	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, selection: selection, previousSelection: selection, previousProviderChoices: previousProviderChoices, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: map[string]string{}}
 	for id, contributors := range before.contributors {
 		for _, contributor := range contributors {
 			if contributorBelongsToPack(contributor, requested.ID) {
@@ -776,6 +805,10 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 		compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts,
 		ownershipFacts: cloneOwnership(state.Ownership), removedContributors: map[string]string{},
 	}
+	if persisted, ok := intentForPack(state, request.PackID, request.Surface); ok {
+		plan.providerChoices = cloneProviderChoices(persisted.ProviderChoices)
+		plan.previousProviderChoices = cloneProviderChoices(persisted.ProviderChoices)
+	}
 	if intent, ok := intentForPack(state, request.PackID, request.Surface); ok && intent.Version != "" {
 		plan.oldVersion = intent.Version
 	}
@@ -855,8 +888,10 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	}
 	previousAliases := []SurfaceAlias{}
 	previousSelection := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+	previousProviderChoices := []ProviderChoice{}
 	if intent, ok := intentForPack(state, requested.ID, request.Surface); ok {
 		previousAliases = cloneAliases(intent.Aliases)
+		previousProviderChoices = cloneProviderChoices(intent.ProviderChoices)
 		previousSelection, err = canonicalSelection(intent.Selection)
 		if err != nil {
 			return ReconciliationPlan{}, err
@@ -878,6 +913,16 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 			}
 		}
 	}
+	providerChoices, err := canonicalProviderChoices(request.ProviderChoices)
+	if err != nil {
+		return ReconciliationPlan{}, err
+	}
+	if request.ProviderChoices == nil {
+		providerChoices = cloneProviderChoices(previousProviderChoices)
+	}
+	if operation == OperationUpdate && digestJSON(providerChoices) != digestJSON(previousProviderChoices) {
+		return ReconciliationPlan{}, fmt.Errorf("update preserves the persisted provider choice; changing it requires an explicit lifecycle transition")
+	}
 	selectionValidityBlockers, selectionValidity, err := selectionBlockers(requested, selection, request.Surface)
 	if err != nil {
 		return ReconciliationPlan{}, err
@@ -891,12 +936,45 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		return ReconciliationPlan{}, err
 	}
 	state = stateWithSelection(stateWithAliases(state, requested.ID, request.Surface, requested.Version, aliases), requested.ID, request.Surface, requested.Version, selection)
+	state = stateWithProviderChoices(state, requested.ID, request.Surface, providerChoices)
 	useRequestedIntent := operation == OperationReconcile
 	composition, err := f.compose(requested, state, request.Surface, useRequestedIntent)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
+	requiredCapabilities := map[string]bool{}
+	for _, requirement := range capabilityRequirements(requested) {
+		requiredCapabilities[requirement.capability] = true
+	}
+	staleChoiceBlockers := []PlanBlocker{}
+	for _, choice := range providerChoices {
+		if !requiredCapabilities[choice.Capability] {
+			staleChoiceBlockers = append(staleChoiceBlockers, PlanBlocker{
+				Kind: BlockerDependency, Subject: choice.Capability,
+				Detail: fmt.Sprintf("persisted provider choice is invalid for consumer pack %q; approve a provider migration or replacement choice", requested.ID),
+			})
+		}
+	}
+	if request.ProviderChoices == nil && len(previousProviderChoices) == 0 {
+		for _, fact := range composition.capabilityFacts {
+			if fact.ConsumerPack != requested.ID {
+				continue
+			}
+			providerChoices = append(providerChoices, ProviderChoice{Capability: fact.Capability, ProviderPack: fact.ProviderPack, ProviderResource: fact.ProviderResource})
+		}
+		providerChoices, err = canonicalProviderChoices(providerChoices)
+		if err != nil {
+			return ReconciliationPlan{}, err
+		}
+		state = stateWithProviderChoices(state, requested.ID, request.Surface, providerChoices)
+		composition, err = f.compose(requested, state, request.Surface, useRequestedIntent)
+		if err != nil {
+			return ReconciliationPlan{}, err
+		}
+	}
 	composition.blockers = append(composition.blockers, selectionValidityBlockers...)
+	composition.blockers = append(composition.blockers, staleChoiceBlockers...)
+	sortBlockers(composition.blockers)
 	var beforeCompositionFacts []Pack
 	if operation == OperationUpdate && hasTrustedHistoricalArtifact(requested.ID, oldVersion) {
 		before, err := f.compose(requested, state, request.Surface, true)
@@ -959,6 +1037,14 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	if digestJSON(previousSelection) != digestJSON(selection) {
 		noOp = false
 	}
+	if digestJSON(previousProviderChoices) != digestJSON(providerChoices) {
+		noOp = false
+	}
+	if operation == OperationActivate {
+		if current, ok := intentForPack(state, request.PackID, request.Surface); ok && current.Active && !intentIsExplicit(current) {
+			noOp = false
+		}
+	}
 	readiness := ReadinessStatus{Configured: operation != OperationDeactivate && len(composition.blockers) == 0}
 	readiness.Authorized = readiness.Configured && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
 	readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
@@ -984,7 +1070,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	for i := range capabilityFacts {
 		capabilityFacts[i].ResultingReadiness = readiness
 	}
-	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts, capabilityFacts: capabilityFacts}
+	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, providerChoices: providerChoices, previousProviderChoices: previousProviderChoices, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts, capabilityFacts: capabilityFacts}
 	recovery := recoveryAttempt(state, operation, request.PackID, request.Surface)
 	plan.attachRecovery(state, recovery)
 	for _, resource := range pack.Resources {
@@ -1098,24 +1184,39 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		if request.Plan.operation == OperationDeactivate && request.Plan.oldVersion != "" {
 			targetVersion = request.Plan.oldVersion
 		}
-		state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: targetVersion, Active: activeTarget, Revision: state.Intent.Revision + 1, Aliases: cloneAliases(request.Plan.aliases), Selection: request.Plan.selection}
+		explicit := true
+		state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: targetVersion, Active: activeTarget, Revision: state.Intent.Revision + 1, Aliases: cloneAliases(request.Plan.aliases), Selection: request.Plan.selection, ProviderChoices: cloneProviderChoices(request.Plan.providerChoices), Explicit: &explicit}
 		byID := map[string]ActivationIntent{}
 		for _, intent := range previousIntents {
 			byID[intent.PackID] = intent
 		}
 		for _, activation := range request.Plan.activations {
-			aliases := previousByID[activation.Pack.ID].Aliases
+			previous, previouslyActive := previousByID[activation.Pack.ID]
+			aliases := previous.Aliases
 			if activation.Pack.ID == pack.ID {
 				aliases = request.Plan.aliases
 			}
 			activationSelection := activation.Selection
-			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision, Aliases: cloneAliases(aliases), Selection: activationSelection}
+			explicitIntent := activation.Role != ActivationRequired
+			providerChoices := cloneProviderChoices(activation.ProviderChoices)
+			explicitFact := &explicitIntent
+			if previouslyActive {
+				explicitFact = previous.Explicit
+			}
+			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision, Aliases: cloneAliases(aliases), Selection: activationSelection, ProviderChoices: providerChoices, Explicit: explicitFact}
 			if activation.Pack.ID == pack.ID {
 				byID[activation.Pack.ID] = state.Intent
 			}
 		}
 		if request.Plan.operation == OperationDeactivate {
 			byID[pack.ID] = state.Intent
+			for id, candidate := range byID {
+				if id == pack.ID || !candidate.Active || intentIsExplicit(candidate) || providerHasConsumer(byID, id) {
+					continue
+				}
+				candidate.Active = false
+				byID[id] = candidate
+			}
 		}
 		state.Intents = nil
 		for _, intent := range byID {
@@ -1424,6 +1525,13 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	if selectionErr != nil || digestJSON(currentSelection) != digestJSON(plan.previousSelection) {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("resource selection changed after Preview; rerun %s to preview a fresh plan", plan.operation)}
 	}
+	currentChoices := []ProviderChoice{}
+	if intent, ok := intentForPack(state, plan.pack.ID, plan.surface); ok {
+		currentChoices, err = canonicalProviderChoices(intent.ProviderChoices)
+	}
+	if err != nil || digestJSON(currentChoices) != digestJSON(plan.previousProviderChoices) {
+		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("provider choice changed after Preview; rerun %s to preview a fresh plan", plan.operation)}
+	}
 	if plan.operation == OperationDeactivate {
 		intent, ok := intentForPack(state, plan.pack.ID, plan.surface)
 		if ok && intent.Version != "" {
@@ -1444,6 +1552,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	}
 	if plan.operation != OperationDeactivate {
 		state = stateWithSelection(stateWithAliases(state, plan.pack.ID, plan.surface, plan.pack.Version, plan.aliases), plan.pack.ID, plan.surface, plan.pack.Version, plan.selection)
+		state = stateWithProviderChoices(state, plan.pack.ID, plan.surface, plan.providerChoices)
 		if state.Intent.PackID == plan.pack.ID && state.Intent.Surface == plan.surface {
 			state.Intent.Revision = plan.intentRevision
 		}
@@ -1664,41 +1773,57 @@ func (p ReconciliationPlan) validSeal() bool {
 }
 func (p ReconciliationPlan) sealPayload() any {
 	return struct {
-		PackID, Version   string
-		Operation         Operation
-		Surface           Surface
-		IntentRevision    int
-		OldVersion        string
-		Observation       string
-		Phases            []PlanPhase
-		Desired           []projectionExpectation
-		Portable          []PortableOutcome
-		Resolutions       []ExecutableResolution
-		RuntimeModes      []RuntimeModeResult
-		Readiness         ReadinessStatus
-		Pending           []string
-		NoOp              bool
-		Activations       []PlannedActivation
-		Contributors      map[string][]string
-		Retained          []RetainedProjection
-		Blockers          []PlanBlocker
-		Composition       []Pack
-		IntentFacts       []ActivationIntent
-		OwnershipFacts    []ProjectionOwnership
-		Dependents        []ActiveDependent
-		CapabilityFacts   []CapabilityRequirementFact
-		Before            []Pack
-		Removed           map[string]string
-		ReconcileScope    ReconcileScope
-		Aliases           []SurfaceAlias
-		PreviousAliases   []SurfaceAlias
-		Selection         ResourceSelection
-		PreviousSelection ResourceSelection
-		PartialSelection  bool
-		SelectionValidity SelectionValidity
-		Recovery          bool
-		Historical        *ApplyingJournal
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
+		PackID, Version         string
+		Operation               Operation
+		Surface                 Surface
+		IntentRevision          int
+		OldVersion              string
+		Observation             string
+		Phases                  []PlanPhase
+		Desired                 []projectionExpectation
+		Portable                []PortableOutcome
+		Resolutions             []ExecutableResolution
+		RuntimeModes            []RuntimeModeResult
+		Readiness               ReadinessStatus
+		Pending                 []string
+		NoOp                    bool
+		Activations             []PlannedActivation
+		Contributors            map[string][]string
+		Retained                []RetainedProjection
+		Blockers                []PlanBlocker
+		Composition             []Pack
+		IntentFacts             []ActivationIntent
+		OwnershipFacts          []ProjectionOwnership
+		Dependents              []ActiveDependent
+		CapabilityFacts         []CapabilityRequirementFact
+		Before                  []Pack
+		Removed                 map[string]string
+		ReconcileScope          ReconcileScope
+		Aliases                 []SurfaceAlias
+		PreviousAliases         []SurfaceAlias
+		Selection               ResourceSelection
+		PreviousSelection       ResourceSelection
+		ProviderChoices         []ProviderChoice
+		PreviousProviderChoices []ProviderChoice
+		PartialSelection        bool
+		SelectionValidity       SelectionValidity
+		Recovery                bool
+		Historical              *ApplyingJournal
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.providerChoices, p.previousProviderChoices, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
+}
+
+func providerHasConsumer(intents map[string]ActivationIntent, providerID string) bool {
+	for _, intent := range intents {
+		if !intent.Active {
+			continue
+		}
+		for _, choice := range intent.ProviderChoices {
+			if choice.ProviderPack == providerID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func ownershipByID(values []ProjectionOwnership, id string) (ProjectionOwnership, bool) {
@@ -2008,11 +2133,13 @@ func repairEligible(owners []ProjectionOwnership, projection ObservedProjection,
 func cloneActivationState(state ActivationState) ActivationState {
 	state.Intent.Aliases = cloneAliases(state.Intent.Aliases)
 	state.Intent.Selection = cloneSelection(state.Intent.Selection)
+	state.Intent.ProviderChoices = cloneProviderChoices(state.Intent.ProviderChoices)
 	state.Ownership = append([]ProjectionOwnership(nil), state.Ownership...)
 	state.Intents = append([]ActivationIntent(nil), state.Intents...)
 	for i := range state.Intents {
 		state.Intents[i].Aliases = cloneAliases(state.Intents[i].Aliases)
 		state.Intents[i].Selection = cloneSelection(state.Intents[i].Selection)
+		state.Intents[i].ProviderChoices = cloneProviderChoices(state.Intents[i].ProviderChoices)
 	}
 	for i := range state.Ownership {
 		state.Ownership[i].Contributors = append([]string(nil), state.Ownership[i].Contributors...)
@@ -2118,6 +2245,58 @@ func stateWithSelection(state ActivationState, packID string, surface Surface, v
 		state.Intent.Selection = cloneSelection(selection)
 	}
 	return state
+}
+
+func stateWithProviderChoices(state ActivationState, packID string, surface Surface, choices []ProviderChoice) ActivationState {
+	choices = cloneProviderChoices(choices)
+	for i := range state.Intents {
+		if state.Intents[i].PackID == packID && state.Intents[i].Surface == surface {
+			state.Intents[i].ProviderChoices = cloneProviderChoices(choices)
+		}
+	}
+	if state.Intent.PackID == packID && state.Intent.Surface == surface {
+		state.Intent.ProviderChoices = cloneProviderChoices(choices)
+	}
+	return state
+}
+
+func cloneProviderChoices(values []ProviderChoice) []ProviderChoice {
+	if values == nil {
+		return nil
+	}
+	result := append([]ProviderChoice(nil), values...)
+	for i := range result {
+		if result[i].ProviderResource != nil {
+			resource := *result[i].ProviderResource
+			result[i].ProviderResource = &resource
+		}
+	}
+	return result
+}
+
+func canonicalProviderChoices(values []ProviderChoice) ([]ProviderChoice, error) {
+	if values == nil {
+		return nil, nil
+	}
+	result := cloneProviderChoices(values)
+	sort.Slice(result, func(i, j int) bool { return result[i].Capability < result[j].Capability })
+	for i, choice := range result {
+		if choice.Capability == "" || strings.TrimSpace(choice.Capability) != choice.Capability || !idPattern.MatchString(choice.ProviderPack) {
+			return nil, fmt.Errorf("provider choice requires canonical capability and provider pack identities")
+		}
+		if i > 0 && result[i-1].Capability == choice.Capability {
+			return nil, fmt.Errorf("duplicate provider choice for capability %q", choice.Capability)
+		}
+		if choice.ProviderResource != nil {
+			if _, err := ParseResourceIdentity(choice.ProviderResource.String()); err != nil {
+				return nil, fmt.Errorf("provider choice for capability %q has an invalid provider resource: %w", choice.Capability, err)
+			}
+		}
+	}
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
 }
 
 func cloneJournal(journal ApplyingJournal) ApplyingJournal {

@@ -9,7 +9,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 5
+const LifecycleJSONSchemaVersion = 6
 
 type ResourceRole string
 
@@ -381,6 +381,7 @@ type JSONLifecyclePlan struct {
 	PendingEvidence        []string                    `json:"pending_evidence"`
 	RuntimeModes           []RuntimeModeResult         `json:"runtime_modes,omitempty"`
 	CapabilityRequirements []CapabilityRequirementFact `json:"capability_requirements"`
+	ProviderChoices        []ProviderChoice            `json:"provider_choices"`
 	Recovery               bool                        `json:"recovery"`
 	MandatoryActions       []ProjectionAction          `json:"mandatory_actions"`
 	ContractDiff           JSONContractDiff            `json:"contract_diff"`
@@ -436,6 +437,10 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		retained = []RetainedProjection{}
 	}
 	selection, _ := canonicalSelection(p.selection)
+	providerChoices := p.ProviderChoices()
+	if providerChoices == nil {
+		providerChoices = []ProviderChoice{}
+	}
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
 		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false), Contract: contract, Aliases: contract.Aliases,
@@ -443,6 +448,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
 		RuntimeModes:           sortedRuntimeModeResults(p.runtimeModeResults),
 		CapabilityRequirements: p.CapabilityRequirements(),
+		ProviderChoices:        providerChoices,
 		Recovery:               p.recovery, MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
 		RetainedProjections: retained, RemovedContributors: removed, DryRun: dryRun}
 }
