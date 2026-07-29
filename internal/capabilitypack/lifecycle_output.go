@@ -3,13 +3,14 @@ package capabilitypack
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 6
+const LifecycleJSONSchemaVersion = 7
 
 type ResourceRole string
 
@@ -30,6 +31,31 @@ type ResourceClosureFact struct {
 	DependencyChain []ResourceIdentity `json:"dependency_chain"`
 	Requires        []ResourceIdentity `json:"requires"`
 	Notices         []ResourceIdentity `json:"notices"`
+}
+
+// SensitiveEffectOrigin binds manifest-declared authority and effect facts to
+// the exact selected resource and root-to-resource dependency chain that
+// introduces them.
+type SensitiveEffectOrigin struct {
+	Pack               string                   `json:"pack"`
+	Resource           ResourceIdentity         `json:"resource"`
+	Root               ResourceIdentity         `json:"root"`
+	DependencyChain    []ResourceIdentity       `json:"dependency_chain"`
+	PromptAuthorities  []string                 `json:"prompt_authorities"`
+	RuntimeAuthorities []RuntimeAuthorityOrigin `json:"runtime_authorities"`
+	RuntimeEffects     []RuntimeEffectOrigin    `json:"runtime_effects"`
+}
+
+type RuntimeAuthorityOrigin struct {
+	ModeID string               `json:"mode_id"`
+	Kind   RuntimeAuthorityKind `json:"kind"`
+	Scope  RuntimeScope         `json:"scope,omitempty"`
+}
+
+type RuntimeEffectOrigin struct {
+	ModeID string            `json:"mode_id"`
+	Kind   RuntimeEffectKind `json:"kind"`
+	Scope  RuntimeScope      `json:"scope,omitempty"`
 }
 
 type ResourceGraph struct {
@@ -235,6 +261,198 @@ func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) Re
 	return ResourceGraph{Resources: facts}
 }
 
+func SensitiveEffectOriginsFor(pack Pack, selection ResourceSelection) []SensitiveEffectOrigin {
+	resources := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	selection, err := canonicalSelection(selection)
+	if err != nil {
+		return []SensitiveEffectOrigin{}
+	}
+	roots, err := resourceSelectionRoots(pack, selection)
+	if err != nil {
+		return []SensitiveEffectOrigin{}
+	}
+	origins := []SensitiveEffectOrigin{}
+	for _, root := range roots {
+		paths, err := resourceDependencyPaths(pack, root)
+		if err != nil {
+			return []SensitiveEffectOrigin{}
+		}
+		identities := make([]string, 0, len(paths))
+		for identity := range paths {
+			identities = append(identities, identity)
+		}
+		sort.Strings(identities)
+		for _, identity := range identities {
+			resource := resources[identity]
+			promptAuthorities, runtimeAuthorities, runtimeEffects := resourceSensitiveFacts(resource)
+			if len(promptAuthorities) == 0 && len(runtimeAuthorities) == 0 && len(runtimeEffects) == 0 {
+				continue
+			}
+			resourceIdentity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+			for _, path := range paths[identity] {
+				origins = append(origins, SensitiveEffectOrigin{
+					Pack: pack.ID, Resource: resourceIdentity, Root: root,
+					DependencyChain:   append([]ResourceIdentity{}, path...),
+					PromptAuthorities: promptAuthorities, RuntimeAuthorities: runtimeAuthorities, RuntimeEffects: runtimeEffects,
+				})
+			}
+		}
+	}
+	sort.Slice(origins, func(i, j int) bool {
+		return sensitiveEffectOriginKey(origins[i]) < sensitiveEffectOriginKey(origins[j])
+	})
+	return origins
+}
+
+func resourceDependencyPaths(pack Pack, root ResourceIdentity) (map[string][][]ResourceIdentity, error) {
+	resources := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
+	}
+	paths := map[string][][]ResourceIdentity{}
+	seenPaths := map[string]bool{}
+	var visit func(string, []ResourceIdentity) error
+	visit = func(identity string, path []ResourceIdentity) error {
+		resource, ok := resources[identity]
+		if !ok {
+			return fmt.Errorf("custom resource selection root or dependency %q does not exist in pack %q", identity, pack.ID)
+		}
+		for _, member := range path {
+			if member.String() == identity {
+				return nil
+			}
+		}
+		candidate := append(append([]ResourceIdentity{}, path...), ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
+		key := identity + "\x00" + identityChainKey(candidate)
+		if !seenPaths[key] {
+			paths[identity] = append(paths[identity], candidate)
+			seenPaths[key] = true
+		}
+		dependencies := append([]string(nil), resource.Requires...)
+		sort.Strings(dependencies)
+		for _, dependency := range dependencies {
+			if err := visit(dependency, candidate); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := visit(root.String(), nil); err != nil {
+		return nil, err
+	}
+	dependencyPaths := make(map[string][][]ResourceIdentity, len(paths))
+	for identity, values := range paths {
+		dependencyPaths[identity] = append([][]ResourceIdentity(nil), values...)
+	}
+	for identity, values := range dependencyPaths {
+		notices := append([]string(nil), resources[identity].Notices...)
+		sort.Strings(notices)
+		for _, notice := range notices {
+			resource, ok := resources[notice]
+			if !ok {
+				return nil, fmt.Errorf("resource %q notice %q does not exist in pack %q", identity, notice, pack.ID)
+			}
+			for _, path := range values {
+				candidate := append(append([]ResourceIdentity{}, path...), ResourceIdentity{Kind: resource.Kind, ID: resource.ID})
+				key := notice + "\x00" + identityChainKey(candidate)
+				if !seenPaths[key] {
+					paths[notice] = append(paths[notice], candidate)
+					seenPaths[key] = true
+				}
+			}
+		}
+	}
+	for identity := range paths {
+		sort.Slice(paths[identity], func(i, j int) bool {
+			return identityChainLess(paths[identity][i], paths[identity][j])
+		})
+	}
+	return paths, nil
+}
+
+func identityChainKey(values []ResourceIdentity) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, value.String())
+	}
+	return strings.Join(parts, "\x00")
+}
+
+func resourceSensitiveFacts(resource Resource) ([]string, []RuntimeAuthorityOrigin, []RuntimeEffectOrigin) {
+	promptAuthorities := sortedUnique(resource.Permissions)
+	runtimeAuthorities := []RuntimeAuthorityOrigin{}
+	runtimeEffects := []RuntimeEffectOrigin{}
+	for _, mode := range resource.RuntimeModes {
+		for _, authority := range mode.Authorities {
+			runtimeAuthorities = append(runtimeAuthorities, RuntimeAuthorityOrigin{ModeID: mode.ID, Kind: authority.Kind, Scope: authority.Scope})
+		}
+		for _, effect := range mode.Effects {
+			runtimeEffects = append(runtimeEffects, RuntimeEffectOrigin{ModeID: mode.ID, Kind: effect.Kind, Scope: effect.Scope})
+		}
+	}
+	sort.Slice(runtimeAuthorities, func(i, j int) bool {
+		return runtimeOriginKey(runtimeAuthorities[i].ModeID, string(runtimeAuthorities[i].Kind), string(runtimeAuthorities[i].Scope)) <
+			runtimeOriginKey(runtimeAuthorities[j].ModeID, string(runtimeAuthorities[j].Kind), string(runtimeAuthorities[j].Scope))
+	})
+	sort.Slice(runtimeEffects, func(i, j int) bool {
+		return runtimeOriginKey(runtimeEffects[i].ModeID, string(runtimeEffects[i].Kind), string(runtimeEffects[i].Scope)) <
+			runtimeOriginKey(runtimeEffects[j].ModeID, string(runtimeEffects[j].Kind), string(runtimeEffects[j].Scope))
+	})
+	return promptAuthorities, runtimeAuthorities, runtimeEffects
+}
+
+func runtimeOriginKey(modeID, kind, scope string) string {
+	return modeID + "\x00" + kind + "\x00" + scope
+}
+
+func sensitiveEffectOriginKey(origin SensitiveEffectOrigin) string {
+	chain := make([]string, 0, len(origin.DependencyChain))
+	for _, identity := range origin.DependencyChain {
+		chain = append(chain, identity.String())
+	}
+	return origin.Pack + "\x00" + origin.Root.String() + "\x00" + origin.Resource.String() + "\x00" + strings.Join(chain, "\x00")
+}
+
+func cloneSensitiveEffectOrigins(values []SensitiveEffectOrigin) []SensitiveEffectOrigin {
+	result := make([]SensitiveEffectOrigin, len(values))
+	copy(result, values)
+	for i := range result {
+		result[i].DependencyChain = append([]ResourceIdentity(nil), result[i].DependencyChain...)
+		result[i].PromptAuthorities = append([]string(nil), result[i].PromptAuthorities...)
+		result[i].RuntimeAuthorities = append([]RuntimeAuthorityOrigin(nil), result[i].RuntimeAuthorities...)
+		result[i].RuntimeEffects = append([]RuntimeEffectOrigin(nil), result[i].RuntimeEffects...)
+	}
+	return result
+}
+
+func sensitiveEffectOriginsForComposition(packs []Pack, activations []PlannedActivation, intents []ActivationIntent, requestedPackID string, requestedSelection ResourceSelection) []SensitiveEffectOrigin {
+	selections := make(map[string]ResourceSelection, len(packs))
+	for _, intent := range intents {
+		selections[intent.PackID] = cloneSelection(intent.Selection)
+	}
+	for _, activation := range activations {
+		selections[activation.Pack.ID] = cloneSelection(activation.Selection)
+	}
+	if requestedPackID != "" {
+		selections[requestedPackID] = cloneSelection(requestedSelection)
+	}
+	origins := []SensitiveEffectOrigin{}
+	for _, pack := range packs {
+		selection, ok := selections[pack.ID]
+		if !ok {
+			selection = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+		}
+		origins = append(origins, SensitiveEffectOriginsFor(pack, selection)...)
+	}
+	sort.Slice(origins, func(i, j int) bool {
+		return sensitiveEffectOriginKey(origins[i]) < sensitiveEffectOriginKey(origins[j])
+	})
+	return origins
+}
+
 func resourceIdentities(values []string) []ResourceIdentity {
 	result := make([]ResourceIdentity, 0, len(values))
 	for _, value := range values {
@@ -369,6 +587,7 @@ type JSONLifecyclePlan struct {
 	IntentRevision         int                         `json:"intent_revision"`
 	Selection              ResourceSelection           `json:"selection"`
 	ResourceGraph          ResourceGraph               `json:"resource_graph"`
+	SensitiveEffects       []SensitiveEffectOrigin     `json:"sensitive_effects"`
 	Contract               LifecycleContract           `json:"contract"`
 	Aliases                []SurfaceAlias              `json:"aliases"`
 	Contributors           map[string][]string         `json:"contributors"`
@@ -443,7 +662,8 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	}
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
-		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false), Contract: contract, Aliases: contract.Aliases,
+		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false),
+		SensitiveEffects: p.SensitiveEffects(), Contract: contract, Aliases: contract.Aliases,
 		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
 		RuntimeModes:           sortedRuntimeModeResults(p.runtimeModeResults),
@@ -570,6 +790,16 @@ func ReportSafeError(err error, plan *ReconciliationPlan) error {
 		}
 	}
 	return reportredaction.Error(err, argumentSets, sealedPayloads)
+}
+
+func reportSafeObservationText(value string, projections []ObservedProjection) string {
+	argumentSets := make([][]string, 0, len(projections))
+	sealedPayloads := make([]string, 0, len(projections))
+	for _, projection := range projections {
+		argumentSets = append(argumentSets, projection.Action.Args)
+		sealedPayloads = append(sealedPayloads, projection.Action.Content)
+	}
+	return reportredaction.Text(value, argumentSets, sealedPayloads)
 }
 
 type JSONApplyResult struct {

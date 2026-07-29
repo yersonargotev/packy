@@ -43,6 +43,10 @@ var structuredOutputV6Fixtures = map[string]string{
 	"pack-status.json":            "pack-status.schema.json",
 }
 
+var structuredOutputV7Fixtures = map[string]string{
+	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
+}
+
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -112,6 +116,18 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		}
 		if err := validateCanonicalOperatorOrder(fixture); err != nil {
 			t.Fatalf("v6 fixture %s canonical order: %v", fixtureName, err)
+		}
+	}
+	for fixtureName, schemaName := range structuredOutputV7Fixtures {
+		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v7", fixtureName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
+			t.Fatalf("v7 fixture %s: %v", fixtureName, err)
+		}
+		if err := validateCanonicalOperatorOrder(fixture); err != nil {
+			t.Fatalf("v7 fixture %s canonical order: %v", fixtureName, err)
 		}
 	}
 
@@ -500,6 +516,34 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 	case "pack-lifecycle-preview":
 		if err := validateContract("contract", document["contract"].(map[string]any)); err != nil {
 			return err
+		}
+		if origins, ok := document["sensitive_effects"].([]any); ok {
+			originKey := func(value any) string {
+				origin := value.(map[string]any)
+				root := origin["root"].(map[string]any)
+				resource := origin["resource"].(map[string]any)
+				parts := []string{origin["pack"].(string), root["kind"].(string), root["id"].(string), resource["kind"].(string), resource["id"].(string)}
+				for _, member := range origin["dependency_chain"].([]any) {
+					identity := member.(map[string]any)
+					parts = append(parts, identity["kind"].(string), identity["id"].(string))
+				}
+				return strings.Join(parts, "\x00")
+			}
+			if err := requireOrdered("sensitive_effects", origins, originKey); err != nil {
+				return err
+			}
+			for _, value := range origins {
+				origin := value.(map[string]any)
+				if err := requireStrings("sensitive_effects.prompt_authorities", origin["prompt_authorities"].([]any)); err != nil {
+					return err
+				}
+				if err := requireOrdered("sensitive_effects.runtime_authorities", origin["runtime_authorities"].([]any), objectKey("mode_id", "kind", "scope")); err != nil {
+					return err
+				}
+				if err := requireOrdered("sensitive_effects.runtime_effects", origin["runtime_effects"].([]any), objectKey("mode_id", "kind", "scope")); err != nil {
+					return err
+				}
+			}
 		}
 		if modes, ok := document["runtime_modes"].([]any); ok {
 			return validateRuntimeModes("runtime_modes", modes)
