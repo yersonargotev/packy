@@ -268,18 +268,79 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 
 func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) {
 	root := repositoryRoot(t)
+	prepareScript := filepath.Join(root, "scripts", "prepare-go-cache-restore.sh")
 	script := filepath.Join(root, "scripts", "verify-go-cache-restore.sh")
 	action := readFile(t, filepath.Join(root, ".github", "actions", "go-cache", "action.yml"))
 	for _, required := range []string{
 		"lookup-only: true",
 		"actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0",
 		"actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0",
+		`./scripts/prepare-go-cache-restore.sh "$LOOKUP_HIT" "$GOMODCACHE" "$GOCACHE"`,
 		`./scripts/verify-go-cache-restore.sh "$LOOKUP_HIT" "$RESTORE_HIT"`,
 	} {
 		if !strings.Contains(action, required) {
 			t.Fatalf("verified Go cache action missing %q", required)
 		}
 	}
+	t.Run("exact hit removes preexisting read-only cache entries", func(t *testing.T) {
+		home := t.TempDir()
+		moduleCache := filepath.Join(home, "go", "pkg", "mod")
+		buildCache := filepath.Join(home, ".cache", "go-build")
+		for _, cachePath := range []string{moduleCache, buildCache} {
+			if err := os.MkdirAll(cachePath, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			entry := filepath.Join(cachePath, "preexisting")
+			if err := os.WriteFile(entry, []byte("occupied"), 0o444); err != nil {
+				t.Fatal(err)
+			}
+		}
+		command := exec.Command(prepareScript, "true", moduleCache, buildCache)
+		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+filepath.Join(home, "runner-temp"))
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("prepare exact cache restore: %v\n%s", err, output)
+		}
+		for _, cachePath := range []string{moduleCache, buildCache} {
+			entries, err := os.ReadDir(cachePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("cache path %s retained %d preexisting entries", cachePath, len(entries))
+			}
+		}
+	})
+	t.Run("miss preserves existing cache paths", func(t *testing.T) {
+		home := t.TempDir()
+		moduleCache := filepath.Join(home, "go", "pkg", "mod")
+		buildCache := filepath.Join(home, ".cache", "go-build")
+		for _, cachePath := range []string{moduleCache, buildCache} {
+			if err := os.MkdirAll(cachePath, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(cachePath, "preserved"), []byte("local"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		command := exec.Command(prepareScript, "false", moduleCache, buildCache)
+		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+filepath.Join(home, "runner-temp"))
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("prepare cache miss: %v\n%s", err, output)
+		}
+		for _, cachePath := range []string{moduleCache, buildCache} {
+			if _, err := os.Stat(filepath.Join(cachePath, "preserved")); err != nil {
+				t.Fatalf("cache miss removed existing content from %s: %v", cachePath, err)
+			}
+		}
+	})
+	t.Run("unsafe cache path fails closed", func(t *testing.T) {
+		home := t.TempDir()
+		command := exec.Command(prepareScript, "true", home, filepath.Join(home, ".cache", "go-build"))
+		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+filepath.Join(home, "runner-temp"))
+		if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "unsafe cache path") {
+			t.Fatalf("unsafe path error = %v, output:\n%s", err, output)
+		}
+	})
 	tests := []struct {
 		name       string
 		lookupHit  string

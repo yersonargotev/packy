@@ -8,10 +8,14 @@ runs:
       id: paths
       shell: bash
       run: |
+        gomodcache="$(go env GOMODCACHE)"
+        gocache="$(go env GOCACHE)"
         {
+          echo "gomodcache=$gomodcache"
+          echo "gocache=$gocache"
           echo 'value<<EOF'
-          go env GOMODCACHE
-          go env GOCACHE
+          echo "$gomodcache"
+          echo "$gocache"
           echo EOF
         } >> "$GITHUB_OUTPUT"
 
@@ -22,6 +26,14 @@ runs:
         path: ${{ steps.paths.outputs.value }}
         key: ${{ runner.os }}-${{ runner.arch }}-go-${{ hashFiles('**/go.sum') }}
         lookup-only: true
+
+    - name: Prepare exact Go cache restoration
+      shell: bash
+      env:
+        LOOKUP_HIT: ${{ steps.lookup.outputs.cache-hit }}
+        GOMODCACHE: ${{ steps.paths.outputs.gomodcache }}
+        GOCACHE: ${{ steps.paths.outputs.gocache }}
+      run: ./scripts/prepare-go-cache-restore.sh "$LOOKUP_HIT" "$GOMODCACHE" "$GOCACHE"
 
     - name: Restore or schedule the Go cache
       id: cache
