@@ -128,7 +128,95 @@ func TestProtectedCutoverHistoryMatchesFrozenBase(t *testing.T) {
 		got[path] = fileSHA256(t, filepath.Join(root, filepath.FromSlash(path)))
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("protected history differs from frozen base\nwant: %s\n got: %s", formatStringMap(want), formatStringMap(got))
+		t.Fatalf("protected history differs from frozen base\n%s", protectedCutoverDelta(want, got))
+	}
+}
+
+func protectedCutoverDelta(want, got map[string]string) string {
+	var delta []string
+	for path, gotHash := range got {
+		wantHash, exists := want[path]
+		switch {
+		case !exists:
+			delta = append(delta, fmt.Sprintf("added: %s; remove the unexpected path so the frozen contract does not expand", path))
+		case gotHash != wantHash:
+			delta = append(delta, fmt.Sprintf("changed: %s; restore the path's frozen content", path))
+		}
+	}
+	for path := range want {
+		if _, exists := got[path]; !exists {
+			delta = append(delta, fmt.Sprintf("removed: %s; restore the path with its frozen content", path))
+		}
+	}
+	sort.Strings(delta)
+	return strings.Join(delta, "\n")
+}
+
+func TestProtectedCutoverDelta(t *testing.T) {
+	tests := []struct {
+		name string
+		want map[string]string
+		got  map[string]string
+		out  string
+	}{
+		{
+			name: "single added path",
+			want: map[string]string{"kept.txt": "same"},
+			got:  map[string]string{"kept.txt": "same", "new.txt": "new"},
+			out:  "added: new.txt; remove the unexpected path so the frozen contract does not expand",
+		},
+		{
+			name: "removed and changed paths",
+			want: map[string]string{"changed.txt": "old", "removed.txt": "old"},
+			got:  map[string]string{"changed.txt": "new"},
+			out: strings.Join([]string{
+				"changed: changed.txt; restore the path's frozen content",
+				"removed: removed.txt; restore the path with its frozen content",
+			}, "\n"),
+		},
+		{
+			name: "deterministic sorted output",
+			want: map[string]string{"z-removed.txt": "old", "m-changed.txt": "old"},
+			got:  map[string]string{"a-added.txt": "new", "m-changed.txt": "new"},
+			out: strings.Join([]string{
+				"added: a-added.txt; remove the unexpected path so the frozen contract does not expand",
+				"changed: m-changed.txt; restore the path's frozen content",
+				"removed: z-removed.txt; restore the path with its frozen content",
+			}, "\n"),
+		},
+		{
+			name: "clean equality",
+			want: map[string]string{"kept.txt": "same"},
+			got:  map[string]string{"kept.txt": "same"},
+			out:  "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := protectedCutoverDelta(test.want, test.got); got != test.out {
+				t.Fatalf("unexpected delta\nwant: %q\n got: %q", test.out, got)
+			}
+		})
+	}
+}
+
+func TestProtectedCutoverDeltaDoesNotDumpFullMaps(t *testing.T) {
+	const (
+		frozenHash = "frozen-hash-that-must-not-be-dumped"
+		actualHash = "actual-hash-that-must-not-be-dumped"
+	)
+	delta := protectedCutoverDelta(
+		map[string]string{"changed.txt": frozenHash, "unchanged.txt": frozenHash},
+		map[string]string{"changed.txt": actualHash, "unchanged.txt": frozenHash},
+	)
+	for _, hash := range []string{frozenHash, actualHash} {
+		if strings.Contains(delta, hash) {
+			t.Fatalf("delta dumped map content %q: %s", hash, delta)
+		}
+	}
+	if strings.Contains(delta, "unchanged.txt") {
+		t.Fatalf("delta included an unchanged map entry: %s", delta)
 	}
 }
 
