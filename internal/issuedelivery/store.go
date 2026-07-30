@@ -22,11 +22,20 @@ var runIDPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type fileRunStore struct{}
 
+type lockedIssueStore struct {
+	directory int
+}
+
 type activeRun struct {
 	RunID string `json:"run_id"`
 }
 
-func (fileRunStore) withIssueLock(ctx context.Context, commonDir string, issue int, fn func() error) error {
+func (fileRunStore) withIssueLock(
+	ctx context.Context,
+	commonDir string,
+	issue int,
+	fn func(lockedIssueStore) error,
+) error {
 	if ctx == nil {
 		return errors.New("issue delivery lock requires a context")
 	}
@@ -65,20 +74,11 @@ func (fileRunStore) withIssueLock(ctx context.Context, commonDir string, issue i
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return fn()
+	return fn(lockedIssueStore{directory: issueFD})
 }
 
-func (fileRunStore) loadActive(commonDir string, issue int) (runID string, data []byte, found bool, err error) {
-	issueFD, err := openIssueDirectory(commonDir, issue, false)
-	if errors.Is(err, unix.ENOENT) {
-		return "", nil, false, nil
-	}
-	if err != nil {
-		return "", nil, false, err
-	}
-	defer unix.Close(issueFD)
-
-	activeData, err := readFileAt(issueFD, "active.json")
+func (store lockedIssueStore) loadActive() (runID string, data []byte, found bool, err error) {
+	activeData, err := readFileAt(store.directory, "active.json")
 	if errors.Is(err, unix.ENOENT) {
 		return "", nil, false, nil
 	}
@@ -89,7 +89,7 @@ func (fileRunStore) loadActive(commonDir string, issue int) (runID string, data 
 	if err != nil {
 		return "", nil, false, err
 	}
-	runsFD, err := openDirectoryAt(issueFD, "runs", false)
+	runsFD, err := openDirectoryAt(store.directory, "runs", false)
 	if err != nil {
 		return "", nil, false, fmt.Errorf("inspect issue delivery runs directory: %w", err)
 	}
@@ -101,19 +101,11 @@ func (fileRunStore) loadActive(commonDir string, issue int) (runID string, data 
 	return active.RunID, runData, true, nil
 }
 
-func (fileRunStore) loadRun(commonDir string, issue int, runID string) ([]byte, bool, error) {
+func (store lockedIssueStore) loadRun(runID string) ([]byte, bool, error) {
 	if !validRunID(runID) {
 		return nil, false, errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
 	}
-	issueFD, err := openIssueDirectory(commonDir, issue, false)
-	if errors.Is(err, unix.ENOENT) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	defer unix.Close(issueFD)
-	runsFD, err := openDirectoryAt(issueFD, "runs", false)
+	runsFD, err := openDirectoryAt(store.directory, "runs", false)
 	if errors.Is(err, unix.ENOENT) {
 		return nil, false, nil
 	}
@@ -128,35 +120,25 @@ func (fileRunStore) loadRun(commonDir string, issue int, runID string) ([]byte, 
 	return data, err == nil, err
 }
 
-func (fileRunStore) activate(commonDir string, issue int, runID string) error {
+func (store lockedIssueStore) activate(runID string) error {
 	if !validRunID(runID) {
 		return errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
 	}
-	issueFD, err := openIssueDirectory(commonDir, issue, true)
-	if err != nil {
-		return err
-	}
-	defer unix.Close(issueFD)
 	activeData, err := json.Marshal(activeRun{RunID: runID})
 	if err != nil {
 		return err
 	}
-	if err := atomicWriteAt(issueFD, "active.json", activeData); err != nil {
+	if err := atomicWriteAt(store.directory, "active.json", activeData); err != nil {
 		return fmt.Errorf("activate issue delivery run: %w", err)
 	}
 	return nil
 }
 
-func (store fileRunStore) storeAndActivate(commonDir string, issue int, runID string, data []byte) error {
+func (store lockedIssueStore) storeAndActivate(runID string, data []byte) error {
 	if !validRunID(runID) {
 		return errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
 	}
-	issueFD, err := openIssueDirectory(commonDir, issue, true)
-	if err != nil {
-		return err
-	}
-	defer unix.Close(issueFD)
-	runsFD, err := openDirectoryAt(issueFD, "runs", true)
+	runsFD, err := openDirectoryAt(store.directory, "runs", true)
 	if err != nil {
 		return err
 	}
@@ -172,7 +154,7 @@ func (store fileRunStore) storeAndActivate(commonDir string, issue int, runID st
 	} else if err := atomicWriteAt(runsFD, runName, data); err != nil {
 		return fmt.Errorf("store issue delivery run: %w", err)
 	}
-	return store.activate(commonDir, issue, runID)
+	return store.activate(runID)
 }
 
 func openIssueDirectory(commonDir string, issue int, create bool) (int, error) {

@@ -25,7 +25,7 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 	}
 
 	var outcome Outcome
-	err = m.store.withIssueLock(ctx, git.CommonDir, request.IssueNumber, func() error {
+	err = m.store.withIssueLock(ctx, git.CommonDir, request.IssueNumber, func(store lockedIssueStore) error {
 		tracker, err := m.github.ObserveIssue(ctx, git, request.IssueNumber)
 		if err != nil {
 			return fmt.Errorf("observe GitHub issue: %w", err)
@@ -33,7 +33,7 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 		if tracker.Issue.Number != request.IssueNumber {
 			return fmt.Errorf("GitHub observer returned issue #%d for requested issue #%d", tracker.Issue.Number, request.IssueNumber)
 		}
-		activeID, activeData, found, err := m.store.loadActive(git.CommonDir, request.IssueNumber)
+		activeID, activeData, found, err := store.loadActive()
 		if err != nil {
 			return err
 		}
@@ -65,7 +65,7 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 			supersedes = active.ID
 		}
 		runID := runIdentity(tracker.Repository, tracker.Issue, compiled.hash, supersedes)
-		orphanData, orphanFound, err := m.store.loadRun(git.CommonDir, request.IssueNumber, runID)
+		orphanData, orphanFound, err := store.loadRun(runID)
 		if err != nil {
 			return err
 		}
@@ -77,7 +77,7 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 			if !compatibleOrphan(orphan, tracker, compiled, supersedes) {
 				return errors.New("orphaned issue delivery run does not match current qualification")
 			}
-			if err := m.store.activate(git.CommonDir, request.IssueNumber, runID); err != nil {
+			if err := store.activate(runID); err != nil {
 				return err
 			}
 			outcome = outcomeFromRecord(orphan)
@@ -107,7 +107,7 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 		if err != nil {
 			return err
 		}
-		if err := m.store.storeAndActivate(git.CommonDir, request.IssueNumber, runID, data); err != nil {
+		if err := store.storeAndActivate(runID, data); err != nil {
 			return err
 		}
 		outcome = outcomeFromRecord(record)

@@ -431,6 +431,39 @@ func TestAdvanceRejectsSymlinkedStateDirectory(t *testing.T) {
 	}
 }
 
+func TestAdvanceUsesLockedDirectoryForEveryStateOperation(t *testing.T) {
+	module, _, tracker := moduleFixture(t, 356)
+	issueDir := module.storePathForTest(t, 356)
+	movedDir := issueDir + "-moved"
+	tracker.hook = func(issue int) {
+		if issue != 356 {
+			return
+		}
+		if err := os.Rename(issueDir, movedDir); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.Mkdir(issueDir, 0700); err != nil {
+			t.Error(err)
+		}
+	}
+	outcome, err := module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 356,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(movedDir, "runs", outcome.RunID+".json")); err != nil {
+		t.Fatalf("run escaped the locked directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(movedDir, "active.json")); err != nil {
+		t.Fatalf("active pointer escaped the locked directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(issueDir, "active.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("replacement directory received state: %v", err)
+	}
+}
+
 func TestAdvanceReportsBlockedDependency(t *testing.T) {
 	module, _, tracker := moduleFixture(t, 356)
 	tracker.value.Dependencies = []DependencyObservation{{
