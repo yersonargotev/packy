@@ -246,7 +246,7 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 		}
 	}
 
-	if strings.Count(ci, "cache: false") != 6 ||
+	if strings.Count(ci, "cache: false") != 7 ||
 		strings.Count(ci, "uses: ./.github/actions/go-cache") != 6 ||
 		strings.Count(governance, "cache: false") != 1 ||
 		strings.Count(governance, "uses: ./.github/actions/go-cache") != 1 {
@@ -255,6 +255,9 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 	validate := workflowSection(t, ci, "  validate:", "  claude-floor-smoke:")
 	if strings.Contains(validate, "continue-on-error: true\n        run: ./scripts/validate-packy.sh") {
 		t.Fatal("repository validation failure must remain fail-closed")
+	}
+	if !strings.Contains(validate, "go-version-input: \"\"\n          check-latest: false\n          cache: false") {
+		t.Fatal("advisory govulncheck must reuse the configured Go toolchain without a second implicit cache restore")
 	}
 	for _, runner := range []string{"runs-on: ubuntu-latest", "runs-on: macos-15"} {
 		if !strings.Contains(ci, runner) {
