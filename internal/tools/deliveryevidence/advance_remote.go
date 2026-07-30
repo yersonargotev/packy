@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/deliveryevidence"
 	"github.com/yersonargotev/packy/internal/issuedelivery"
@@ -152,12 +153,16 @@ func (gateway productionNonLocalGateway) ObserveNonLocal(ctx context.Context, re
 		}
 		observation.PullRequests = append(observation.PullRequests, converted)
 		if pr.MergedAt != "" && pr.MergeCommit != nil {
+			mergedAt, err := normalizeRemoteTimestamp(pr.MergedAt)
+			if err != nil {
+				return issuedelivery.NonLocalObservation{}, err
+			}
 			if observation.Merge != nil {
 				return issuedelivery.NonLocalObservation{}, errors.New("multiple merged pull requests match the delivery branch")
 			}
 			observation.Merge = &issuedelivery.MergeObservation{
 				PullRequest: pr.Number, URL: pr.URL, BaseRef: pr.BaseRefName,
-				HeadSHA: pr.HeadRefOID, MergeCommitSHA: pr.MergeCommit.OID, MergedAt: pr.MergedAt,
+				HeadSHA: pr.HeadRefOID, MergeCommitSHA: pr.MergeCommit.OID, MergedAt: mergedAt,
 			}
 		}
 	}
@@ -188,6 +193,14 @@ func (gateway productionNonLocalGateway) ObserveNonLocal(ctx context.Context, re
 		}
 	}
 	return observation, nil
+}
+
+func normalizeRemoteTimestamp(value string) (string, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return "", errors.New("remote timestamp is malformed")
+	}
+	return parsed.UTC().Format("2006-01-02T15:04:05.000000000Z"), nil
 }
 
 func (gateway productionNonLocalGateway) PushIssueBranch(ctx context.Context, request issuedelivery.PushIssueBranchRequest) error {
