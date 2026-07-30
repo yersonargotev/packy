@@ -47,7 +47,7 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 				return errors.New("active issue delivery run identity does not match current authority")
 			}
 		}
-		compiled, err := compileAuthority(git, tracker, active.Decisions, request.Decision)
+		compiled, err := compileAuthority(git, tracker, active.Decisions, request.Decision, m.declaredProfile)
 		if err != nil {
 			return err
 		}
@@ -99,8 +99,9 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 			Schema: runSchema, ID: runID, Repository: tracker.Repository, Issue: tracker.Issue,
 			AuthoritySHA256: compiled.hash, State: compiled.state, Reason: compiled.reason,
 			Evidence: &compiled.evidence, PendingDecision: compiled.pending,
-			Decisions:    append([]Decision{}, compiled.decisions...),
-			Observations: observationsFrom(git, tracker, compiled.hash),
+			Decisions:        append([]Decision{}, compiled.decisions...),
+			Observations:     observationsFrom(git, tracker, compiled.hash),
+			EffectiveProfile: compiled.evidence.RiskProfile,
 			Timing: []Timing{{
 				Sequence: 1, Phase: "qualification", To: compiled.state,
 				StartedAt: nowStarted.Format(timeFormat), CompletedAt: nowCompleted.Format(timeFormat),

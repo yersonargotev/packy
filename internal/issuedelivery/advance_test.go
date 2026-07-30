@@ -93,7 +93,9 @@ func moduleFixture(t *testing.T, issue int) (*Module, *fakeGitObserver, *fakeGit
 		Ambiguities:  []AuthorityItem{},
 	}}
 	clock := &fakeClock{next: time.Date(2026, 7, 30, 1, 0, 0, 0, time.UTC), step: time.Second}
-	module, err := New(Config{Git: git, GitHub: tracker, Clock: clock})
+	module, err := New(Config{
+		Git: git, GitHub: tracker, Clock: clock, DeclaredProfile: deliveryevidence.RiskLow,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

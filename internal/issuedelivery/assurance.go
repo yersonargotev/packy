@@ -39,6 +39,14 @@ func (m *Module) advanceAssurance(
 			return Outcome{}, errors.New("candidate changed before its review findings were adjudicated")
 		}
 		next := newCandidate(record, candidate, git)
+		if record.Schema != legacyRunSchema {
+			if _, err := m.observeCandidateRisk(ctx, &record, &next, candidate, request.RepositoryPath); err != nil {
+				return m.persistAssuranceTransition(
+					store, record, StateBlocked, "candidate risk observation is incomplete or invalid",
+					"risk-observation",
+				)
+			}
+		}
 		if err := validateSandboxRoot(m.sandboxRoot); err != nil {
 			return m.persistAssuranceTransition(
 				store, record, StateBlocked, "configured validation sandbox is not physically isolated",
@@ -64,6 +72,23 @@ func (m *Module) advanceAssurance(
 		return m.persistAssuranceTransition(
 			store, record, StateNeedsReview, "focused candidate evidence is ready for review", "focused-validation",
 		)
+	}
+
+	if record.Schema != legacyRunSchema {
+		riskChanged, err := m.observeCandidateRisk(ctx, &record, candidate, nil, request.RepositoryPath)
+		if err != nil {
+			return m.persistAssuranceTransition(
+				store, record, StateBlocked, "candidate risk observation is incomplete or invalid",
+				"risk-observation",
+			)
+		}
+		if riskChanged {
+			invalidateForProfileEscalation(&record, candidate)
+			return m.persistAssuranceTransition(
+				store, record, StateNeedsReview, "candidate assurance profile or sensitive boundaries escalated",
+				"risk-observation",
+			)
+		}
 	}
 
 	if record.LocalReadiness != nil &&
@@ -124,8 +149,61 @@ func (m *Module) advanceAssurance(
 			store, record, StateNeedsDecision, "review findings require one batch adjudication", "review",
 		)
 	}
+	if missing := missingSpecialistBoundaries(candidate); len(missing) > 0 {
+		reviews, err := m.executeSpecialistReviews(ctx, record, *candidate, missing)
+		if err != nil {
+			return m.persistAssuranceTransition(
+				store, record, StateBlocked, "required high-risk specialist review is unavailable",
+				"specialist-review",
+			)
+		}
+		for _, review := range reviews {
+			if review.Completed {
+				candidate.SpecialistReviews = append(candidate.SpecialistReviews, review)
+			}
+		}
+		sort.Slice(candidate.SpecialistReviews, func(i, j int) bool {
+			return candidate.SpecialistReviews[i].Boundary < candidate.SpecialistReviews[j].Boundary
+		})
+		for _, review := range reviews {
+			if !review.Completed {
+				return m.persistAssuranceTransition(
+					store, record, StateWaiting, "high-risk specialist review is still running",
+					"specialist-review",
+				)
+			}
+		}
+		if ids := unresolvedFindingIDs(candidate); len(ids) > 0 {
+			record.PendingRepair = repairDecisionRequest(candidate.ID, ids)
+			return m.persistAssuranceTransition(
+				store, record, StateNeedsDecision, "review findings require one batch adjudication",
+				"specialist-review",
+			)
+		}
+		return m.persistAssuranceTransition(
+			store, record, StateNeedsReview, "required high-risk specialist reviews completed",
+			"specialist-review",
+		)
+	}
 	if hasAcceptedFindings(candidate.RepairDecision) {
 		return outcomeWithReason(record, StateNeedsReview, "accepted findings must be repaired as one candidate batch"), nil
+	}
+	if missing := missingBoundaryProofs(candidate); len(missing) > 0 {
+		proofs, err := m.executeBoundaryProofs(ctx, record, *candidate, missing)
+		if err != nil {
+			return m.persistAssuranceTransition(
+				store, record, StateBlocked, "required sandboxed high-risk boundary proof is invalid",
+				"boundary-validation",
+			)
+		}
+		candidate.BoundaryProofs = append(candidate.BoundaryProofs, proofs...)
+		sort.Slice(candidate.BoundaryProofs, func(i, j int) bool {
+			return candidate.BoundaryProofs[i].Result.Boundary < candidate.BoundaryProofs[j].Result.Boundary
+		})
+		return m.persistAssuranceTransition(
+			store, record, StateNeedsReview, "required sandboxed high-risk boundary proofs completed",
+			"boundary-validation",
+		)
 	}
 	if candidate.Exhaustive == nil {
 		if err := validateSandboxRoot(m.sandboxRoot); err != nil {
@@ -191,7 +269,9 @@ func (m *Module) advanceAssurance(
 	if err != nil {
 		return Outcome{}, fmt.Errorf("reobserve GitHub after exhaustive validation: %w", err)
 	}
-	freshAuthority, err := compileAuthority(freshGit, freshTracker, record.Decisions, nil)
+	freshAuthority, err := compileAuthority(
+		freshGit, freshTracker, record.Decisions, nil, record.Evidence.RiskProfile,
+	)
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -342,6 +422,9 @@ func newCandidate(record runRecord, previous *Candidate, git GitObservation) Can
 		ID:      candidateIdentity(record.ID, base, git.HeadSHA, git.TreeSHA),
 		BaseSHA: base, CommitSHA: git.HeadSHA, TreeSHA: git.TreeSHA, RepairClass: class,
 		RequiredReviews: required, Reviews: []CandidateReview{},
+		Effects: []EffectObservation{}, Boundaries: []SensitiveBoundary{},
+		RequiredSpecialists: []SensitiveBoundary{}, SpecialistReviews: []SpecialistReview{},
+		BoundaryProofs: []BoundaryProof{},
 	}
 }
 
@@ -356,6 +439,7 @@ func (m *Module) validationRequest(record runRecord, candidate Candidate) Valida
 		CommitSHA: candidate.CommitSHA, TreeSHA: candidate.TreeSHA,
 		HomeRoot: filepath.Join(m.sandboxRoot, "home"), ConfigRoot: filepath.Join(m.sandboxRoot, "config"),
 		AcceptanceRows: append([]deliveryevidence.AcceptanceRow(nil), record.Evidence.AcceptanceMatrix...),
+		Profile:        candidate.Profile, Boundaries: append([]SensitiveBoundary(nil), candidate.Boundaries...),
 	}
 }
 
@@ -450,6 +534,21 @@ func admitAcceptanceProofs(
 		return errors.New("every acceptance row requires one exact proof")
 	}
 	byID := make(map[string]AcceptanceProof, len(proofs))
+	required := map[string]bool{"positive": true, "failure": true, "mutation": true}
+	if candidate.Profile == "" {
+		for _, name := range []string{
+			"positive", "negative", "failure", "mutation", "compatibility", "preservation", "migration",
+		} {
+			required[name] = true
+		}
+	} else if candidate.Profile == deliveryevidence.RiskStandard || candidate.Profile == deliveryevidence.RiskHigh {
+		required["negative"] = true
+		required["compatibility"] = true
+		required["preservation"] = true
+	}
+	if candidateRequiresMigrationEvidence(candidate) {
+		required["migration"] = true
+	}
 	for _, proof := range proofs {
 		if byID[proof.Identity].Identity != "" {
 			return fmt.Errorf("duplicate acceptance proof %q", proof.Identity)
@@ -460,8 +559,15 @@ func admitAcceptanceProofs(
 			"compatibility": proof.CompatibilityEvidence, "preservation": proof.PreservationEvidence,
 			"migration": proof.MigrationEvidence,
 		} {
-			if strings.TrimSpace(value) == "" || !strings.Contains(value, candidate.ID) {
-				return fmt.Errorf("acceptance %s evidence must bind exact candidate %s", name, candidate.ID)
+			value = strings.TrimSpace(value)
+			if value == "" ||
+				(required[name] && !strings.Contains(value, candidate.ID)) ||
+				(!required[name] && !strings.Contains(value, candidate.ID) &&
+					!strings.HasPrefix(value, "not-applicable:")) {
+				return fmt.Errorf(
+					"acceptance %s evidence is insufficient for %s candidate %s",
+					name, candidate.Profile, candidate.ID,
+				)
 			}
 		}
 		byID[proof.Identity] = proof
@@ -484,6 +590,15 @@ func admitAcceptanceProofs(
 	}
 	evidence.AcceptanceMatrix = next
 	return nil
+}
+
+func candidateRequiresMigrationEvidence(candidate *Candidate) bool {
+	for _, observation := range candidate.Effects {
+		if observation.Effect == EffectMigration || observation.Effect == EffectPersistentFormat {
+			return true
+		}
+	}
+	return false
 }
 
 func latestCandidate(record *runRecord) *Candidate {
@@ -518,6 +633,13 @@ func unresolvedFindingIDs(candidate *Candidate) []string {
 	}
 	var ids []string
 	for _, review := range candidate.Reviews {
+		for _, finding := range review.Findings {
+			if !decided[finding.ID] {
+				ids = append(ids, finding.ID)
+			}
+		}
+	}
+	for _, review := range candidate.SpecialistReviews {
 		for _, finding := range review.Findings {
 			if !decided[finding.ID] {
 				ids = append(ids, finding.ID)

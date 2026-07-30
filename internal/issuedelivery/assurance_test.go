@@ -18,6 +18,31 @@ type fakeReviewExecutor struct {
 	hook      func(deliveryevidence.ReviewAxis)
 }
 
+type fakeCandidateRiskObserver struct {
+	mu      sync.Mutex
+	effects []EffectObservation
+	calls   int
+}
+
+func (f *fakeCandidateRiskObserver) ObserveCandidateRisk(
+	_ context.Context,
+	request CandidateRiskRequest,
+) (CandidateRiskObservation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	effects := append([]EffectObservation(nil), f.effects...)
+	if len(effects) == 0 {
+		effects = []EffectObservation{{
+			Effect: EffectPassive, Evidence: "test-only passive candidate", Complete: true,
+		}}
+	}
+	return CandidateRiskObservation{
+		CandidateID: request.CandidateID, CommitSHA: request.CommitSHA, TreeSHA: request.TreeSHA,
+		Effects: effects, Completed: true,
+	}, nil
+}
+
 func (f *fakeReviewExecutor) Review(_ context.Context, request ReviewRequest) (CandidateReview, error) {
 	if f.hook != nil {
 		f.hook(request.Axis)
@@ -46,6 +71,9 @@ type fakeValidationExecutor struct {
 	invalidSandbox    bool
 	invalidCommand    bool
 	missingAcceptance bool
+	missingNegative   bool
+	missingMigration  bool
+	migrationNA       bool
 	afterExhaustive   func()
 }
 
@@ -72,12 +100,22 @@ func (f *fakeValidationExecutor) Exhaustive(_ context.Context, request Validatio
 	result.WorkspaceClean = true
 	for _, row := range request.AcceptanceRows {
 		binding := "candidate " + request.CandidateID
-		result.Acceptance = append(result.Acceptance, AcceptanceProof{
+		proof := AcceptanceProof{
 			Identity: row.Identity, PositiveEvidence: binding + " positive",
 			NegativeEvidence: binding + " negative", FailureEvidence: binding + " failure",
 			MutationEvidence: binding + " mutation", CompatibilityEvidence: binding + " compatibility",
 			PreservationEvidence: binding + " preservation", MigrationEvidence: binding + " migration",
-		})
+		}
+		if f.missingNegative {
+			proof.NegativeEvidence = ""
+		}
+		if f.missingMigration {
+			proof.MigrationEvidence = ""
+		}
+		if f.migrationNA {
+			proof.MigrationEvidence = "not-applicable: candidate has no migration effect"
+		}
+		result.Acceptance = append(result.Acceptance, proof)
 	}
 	if f.missingAcceptance && len(result.Acceptance) > 0 {
 		result.Acceptance = result.Acceptance[:len(result.Acceptance)-1]
@@ -109,6 +147,7 @@ func assuranceFixture(t *testing.T) (*Module, *fakeGitObserver, *fakeGitHubObser
 		calls:     map[deliveryevidence.ReviewAxis]int{},
 	}
 	validator := &fakeValidationExecutor{}
+	risk := &fakeCandidateRiskObserver{}
 	sandbox, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +157,7 @@ func assuranceFixture(t *testing.T) (*Module, *fakeGitObserver, *fakeGitHubObser
 			t.Fatal(err)
 		}
 	}
-	module.review, module.validation, module.sandboxRoot = reviewer, validator, sandbox
+	module.review, module.validation, module.risk, module.sandboxRoot = reviewer, validator, risk, sandbox
 	return module, git, tracker, reviewer, validator
 }
 
@@ -144,10 +183,20 @@ func TestAdvanceReviewsAccumulatedCandidateInParallelAndReachesExactLocalReadine
 	reviewErr := make(chan error, 1)
 	go func() {
 		outcome, advanceErr := module.Advance(context.Background(), request)
-		reviewed <- outcome
 		reviewErr <- advanceErr
+		reviewed <- outcome
 	}()
-	seen := map[deliveryevidence.ReviewAxis]bool{<-entered: true, <-entered: true}
+	seen := map[deliveryevidence.ReviewAxis]bool{}
+	for len(seen) < 2 {
+		select {
+		case axis := <-entered:
+			seen[axis] = true
+		case err := <-reviewErr:
+			t.Fatalf("advance returned before parallel reviews: %v", err)
+		case outcome := <-reviewed:
+			t.Fatalf("advance returned before parallel reviews: %#v", outcome)
+		}
+	}
 	if !seen[deliveryevidence.ReviewStandards] || !seen[deliveryevidence.ReviewSpec] {
 		t.Fatalf("reviews did not start independently: %v", seen)
 	}

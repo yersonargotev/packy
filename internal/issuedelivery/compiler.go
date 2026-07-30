@@ -26,6 +26,7 @@ func compileAuthority(
 	tracker TrackerObservation,
 	prior []Decision,
 	offered *Decision,
+	declaredProfile deliveryevidence.DeliveryRiskProfile,
 ) (compiledAuthority, error) {
 	if err := validateObservations(git, tracker); err != nil {
 		return compiledAuthority{}, err
@@ -76,7 +77,9 @@ func compileAuthority(
 	if err != nil {
 		return compiledAuthority{}, err
 	}
-	bundle, blocked, err := compileBundle(git, tracker, labels, criteria, exclusions, dependencies, references, authorityHash)
+	bundle, blocked, err := compileBundle(
+		git, tracker, labels, criteria, exclusions, dependencies, references, authorityHash, declaredProfile,
+	)
 	if err != nil {
 		return compiledAuthority{}, err
 	}
@@ -119,12 +122,13 @@ func compileBundle(
 	dependencies []DependencyObservation,
 	references []ReferenceObservation,
 	authorityHash string,
+	declaredProfile deliveryevidence.DeliveryRiskProfile,
 ) (deliveryevidence.Bundle, bool, error) {
 	bundle := deliveryevidence.Bundle{
 		Schema:      deliveryevidence.SchemaV2,
 		Repository:  tracker.Repository,
 		Issue:       tracker.Issue,
-		RiskProfile: deliveryevidence.RiskLow,
+		RiskProfile: declaredProfile,
 		Authority: deliveryevidence.Authority{
 			Kind:                  deliveryevidence.AuthoritySelfContainedIssue,
 			IssueSHA256:           authorityHash,
