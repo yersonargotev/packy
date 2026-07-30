@@ -59,4 +59,4 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 7. Append the map's one-line context pointer only after the issue is closed and the asset is durable.
 8. Verify the merged commit, closed issue, map entry, deleted branch, and clean local and remote state.
 
-The accepted [issue and Wayfinder governance contract](https://github.com/yersonargotev/packy/issues/128) defines the authorization policy. Follow the repository's [issue-delivery workflow](../../workflows/packy-issue-delivery.md) for the complete branch, review, validation, pull-request, merge, and cleanup loop.
+The accepted [issue and Wayfinder governance contract](https://github.com/yersonargotev/packy/issues/128) defines the authorization policy. Complete delivery is owned by the independent [`packy-delivery` workflow](https://github.com/yersonargotev/packy-delivery/blob/main/workflows/packy-issue-delivery.md).
