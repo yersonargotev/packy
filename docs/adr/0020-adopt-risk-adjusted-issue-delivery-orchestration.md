@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by [ADR 0021](0021-extract-issue-delivery.md).
 
 ## Context
 
