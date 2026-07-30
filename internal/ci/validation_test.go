@@ -536,12 +536,9 @@ func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testi
 		}
 	}
 	authority := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
-	if strings.Count(authority, "./scripts/validate-vercel-acceptance.sh") != 1 {
-		t.Fatal("repository validation authority must run the Vercel foundation exactly once")
-	}
 	validate := workflowSection(t, readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml")), "  validate:", "  claude-floor-smoke:")
-	if strings.Contains(validate, "./scripts/validate-vercel-acceptance.sh") {
-		t.Fatal("required validation job must not run a second Vercel foundation pass")
+	if err := validateVercelFoundationOwnership(authority, validate); err != nil {
+		t.Fatal(err)
 	}
 	for _, required := range []string{
 		"--vercel-foundation-evidence-dir \"$RUNNER_TEMP/vercel-foundation-evidence\"",
@@ -552,6 +549,35 @@ func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testi
 			t.Fatalf("required validation job does not bind foundation evidence with %q", required)
 		}
 	}
+	mutations := []struct {
+		name      string
+		authority string
+		workflow  string
+	}{
+		{name: "direct authority duplicate", authority: authority + "\n./scripts/validate-vercel-acceptance.sh\n", workflow: validate},
+		{name: "bash authority duplicate", authority: authority + "\nbash scripts/validate-vercel-acceptance.sh\n", workflow: validate},
+		{name: "root-qualified authority duplicate", authority: authority + "\n$root/scripts/validate-vercel-acceptance.sh\n", workflow: validate},
+		{name: "bash workflow bypass", authority: authority, workflow: validate + "\nbash scripts/validate-vercel-acceptance.sh\n"},
+		{name: "root-qualified workflow bypass", authority: authority, workflow: validate + "\n$root/scripts/validate-vercel-acceptance.sh\n"},
+	}
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			if err := validateVercelFoundationOwnership(mutation.authority, mutation.workflow); err == nil {
+				t.Fatal("mutated duplicate Vercel foundation invocation was accepted")
+			}
+		})
+	}
+}
+
+func validateVercelFoundationOwnership(authority, validateJob string) error {
+	const foundationScript = "scripts/validate-vercel-acceptance.sh"
+	if count := strings.Count(authority, foundationScript); count != 1 {
+		return fmt.Errorf("repository validation authority Vercel foundation invocation count = %d, want 1", count)
+	}
+	if strings.Contains(validateJob, foundationScript) {
+		return fmt.Errorf("required validation job must not run a second Vercel foundation pass")
+	}
+	return nil
 }
 
 func TestVercelAcceptanceFoundationNormalizationExcludesOnlyGoDownloadNoise(t *testing.T) {
