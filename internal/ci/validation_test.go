@@ -335,10 +335,13 @@ func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) 
 	})
 	t.Run("unsafe cache path fails closed", func(t *testing.T) {
 		home := t.TempDir()
-		command := exec.Command(prepareScript, "true", home, filepath.Join(home, ".cache", "go-build"))
-		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+filepath.Join(home, "runner-temp"))
-		if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "unsafe cache path") {
-			t.Fatalf("unsafe path error = %v, output:\n%s", err, output)
+		runnerTemp := filepath.Join(home, "runner-temp")
+		for _, unsafePath := range []string{home, runnerTemp} {
+			command := exec.Command(prepareScript, "true", unsafePath, filepath.Join(home, ".cache", "go-build"))
+			command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+runnerTemp)
+			if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "unsafe cache path") {
+				t.Fatalf("unsafe path %s error = %v, output:\n%s", unsafePath, err, output)
+			}
 		}
 	})
 	tests := []struct {

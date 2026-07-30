@@ -28,6 +28,7 @@ for cache_path in "$@"; do
     "$cache_path" == *"/../"* ||
     "$cache_path" == *"/./"* ||
     "$cache_path" == "$HOME" ||
+    -n "$runner_temp" && "$cache_path" == "$runner_temp" ||
     "$cache_path" != "$HOME/"* && (-z "$runner_temp" || "$cache_path" != "$runner_temp/"*) ]]; then
     echo "::error::Refusing unsafe cache path: $cache_path" >&2
     exit 1
