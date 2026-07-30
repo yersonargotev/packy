@@ -336,12 +336,43 @@ func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) 
 	t.Run("unsafe cache path fails closed", func(t *testing.T) {
 		home := t.TempDir()
 		runnerTemp := filepath.Join(home, "runner-temp")
-		for _, unsafePath := range []string{home, runnerTemp} {
+		if err := os.MkdirAll(filepath.Join(home, "sub"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, unsafePath := range []string{home, runnerTemp, filepath.Join(home, "sub", "..")} {
 			command := exec.Command(prepareScript, "true", unsafePath, filepath.Join(home, ".cache", "go-build"))
 			command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+runnerTemp)
 			if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "unsafe cache path") {
 				t.Fatalf("unsafe path %s error = %v, output:\n%s", unsafePath, err, output)
 			}
+		}
+	})
+	t.Run("symlink escape fails before any cache content is removed", func(t *testing.T) {
+		home := t.TempDir()
+		runnerTemp := filepath.Join(home, "runner-temp")
+		safeCache := filepath.Join(home, ".cache", "go-build")
+		if err := os.MkdirAll(safeCache, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		preserved := filepath.Join(safeCache, "preserved")
+		if err := os.WriteFile(preserved, []byte("local"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		outside := t.TempDir()
+		if err := os.Symlink(outside, filepath.Join(home, "escape")); err != nil {
+			t.Fatal(err)
+		}
+		escapedCache := filepath.Join(home, "escape", "go-cache")
+		if err := os.MkdirAll(filepath.Join(outside, "go-cache"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command(prepareScript, "true", safeCache, escapedCache)
+		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+runnerTemp)
+		if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "unsafe cache path") {
+			t.Fatalf("symlink escape error = %v, output:\n%s", err, output)
+		}
+		if _, err := os.Stat(preserved); err != nil {
+			t.Fatalf("safe cache was modified before all targets were validated: %v", err)
 		}
 	})
 	tests := []struct {
