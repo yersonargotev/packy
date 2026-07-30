@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 const packSourceIdentityLimitation = "Packy records the trusted pack ID, version, and manifest schema, but no upstream source provenance."
@@ -43,6 +44,123 @@ type ShowReport struct {
 	ResourceGraph         ResourceGraph
 	LifecycleAvailability ShowLifecycleAvailability
 	Surfaces              []ShowSurfaceReport
+}
+
+// ShowDecisionSummary is the owner-provided human decision that renderers place
+// before the complete portable contract.
+type ShowDecisionSummary struct {
+	WhatWillChange string
+	Risks          []string
+	NextCommand    string
+}
+
+// DecisionSummary derives inspection guidance from the same catalog, intent,
+// and selection-validity facts that own lifecycle policy.
+func (report ShowReport) DecisionSummary() ShowDecisionSummary {
+	pack := report.Detail.Pack
+	risks := make([]string, 0)
+	if report.Detail.Withdrawn {
+		risks = append(risks, "catalog entry is withdrawn; fresh activation is unavailable")
+	}
+	requiresCapabilities := append([]string(nil), pack.Requires.Capabilities...)
+	sort.Strings(requiresCapabilities)
+	if len(requiresCapabilities) > 0 {
+		risks = append(risks, "requires capabilities "+strings.Join(requiresCapabilities, ", "))
+	}
+	requiresTools := append([]string(nil), pack.Requires.Tools...)
+	sort.Strings(requiresTools)
+	if len(requiresTools) > 0 {
+		risks = append(risks, "requires global tools "+strings.Join(requiresTools, ", "))
+	}
+	conflicts := append([]string(nil), pack.Conflicts...)
+	sort.Strings(conflicts)
+	if len(conflicts) > 0 {
+		risks = append(risks, "conflicts with capabilities "+strings.Join(conflicts, ", "))
+	}
+	for _, surface := range report.Surfaces {
+		if surface.Contract.SelectionValidity.All.Available {
+			continue
+		}
+		if len(surface.Contract.SelectionValidity.All.Reasons) == 0 {
+			risks = append(risks, fmt.Sprintf("%s all-resource selection is unavailable", surface.Surface))
+			continue
+		}
+		for _, reason := range surface.Contract.SelectionValidity.All.Reasons {
+			risks = append(risks, fmt.Sprintf(
+				"%s all-resource selection is unavailable: %s; remediation: %s",
+				surface.Surface, reason.Detail, reason.Remediation,
+			))
+		}
+	}
+
+	changes := make([]string, 0, len(report.Surfaces))
+	for _, surface := range report.Surfaces {
+		intent := surface.Intent
+		switch {
+		case intent.Present && intent.Active && intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable:
+			changes = append(changes, fmt.Sprintf("update %s from %s to %s", surface.Surface, intent.Version, pack.Version))
+		case intent.Present && intent.Active:
+			changes = append(changes, fmt.Sprintf("keep %s at %s", surface.Surface, intent.Version))
+		case intent.Present && report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available:
+			changes = append(changes, fmt.Sprintf("activate inactive %s intent at %s", surface.Surface, intent.Version))
+		case intent.Present:
+			changes = append(changes, fmt.Sprintf("no activation is available for inactive %s intent", surface.Surface))
+		}
+	}
+	if len(changes) == 0 {
+		available := make([]Surface, 0, len(report.Surfaces))
+		for _, surface := range report.Surfaces {
+			if report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available {
+				available = append(available, surface.Surface)
+			}
+		}
+		if len(available) == 0 {
+			changes = append(changes, fmt.Sprintf(
+				"no compatible surface is available for %d catalog resources",
+				showResourceTotal(report.ResourceCounts),
+			))
+		} else {
+			changes = append(changes, fmt.Sprintf(
+				"activation would manage %d catalog resources across %s",
+				showResourceTotal(report.ResourceCounts), joinShowSurfaces(available),
+			))
+		}
+	}
+
+	nextCommand := "packy pack list"
+	for _, surface := range report.Surfaces {
+		if surface.Intent.Present && surface.Intent.Active &&
+			surface.Intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable {
+			nextCommand = fmt.Sprintf("packy pack update %s --surface %s --dry-run", pack.ID, surface.Surface)
+			return ShowDecisionSummary{WhatWillChange: strings.Join(changes, "; "), Risks: risks, NextCommand: nextCommand}
+		}
+	}
+	for _, surface := range report.Surfaces {
+		if surface.Intent.Present && surface.Intent.Active {
+			nextCommand = fmt.Sprintf("packy pack status %s --surface %s", pack.ID, surface.Surface)
+			return ShowDecisionSummary{WhatWillChange: strings.Join(changes, "; "), Risks: risks, NextCommand: nextCommand}
+		}
+	}
+	for _, surface := range report.Surfaces {
+		if report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available {
+			nextCommand = fmt.Sprintf("packy pack activate %s --surface %s --dry-run", pack.ID, surface.Surface)
+			break
+		}
+	}
+	return ShowDecisionSummary{WhatWillChange: strings.Join(changes, "; "), Risks: risks, NextCommand: nextCommand}
+}
+
+func showResourceTotal(counts ResourceCounts) int {
+	return counts.Skills + counts.Instructions + counts.MCPServers + counts.Lifecycles +
+		counts.Agents + counts.Commands + counts.Assets + counts.Notices
+}
+
+func joinShowSurfaces(surfaces []Surface) string {
+	values := make([]string, len(surfaces))
+	for i, surface := range surfaces {
+		values[i] = string(surface)
+	}
+	return strings.Join(values, ", ")
 }
 
 // ShowLifecycleAvailability makes withdrawal remediation explicit without

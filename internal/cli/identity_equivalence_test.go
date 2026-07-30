@@ -282,6 +282,11 @@ func normalizeIdentityEvidence(value, product string, roots map[string]string) s
 	// owner-layered Claude tests prove the new lifecycle contract directly.
 	value = regexp.MustCompile(`(?m)^(Outcome:|Desired surfaces:|State transition:|Pending prerequisite:|Pending prerequisites:|Preserved:|Blocker:|Lifecycle blockers:|Recovery:|Completed effects:|Failed effect:|Not started effects:)[^\n]*\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^- claude-[^\n]*\n`).ReplaceAllString(value, "")
+	// Issue #347 adds decision-first classic dry-run summaries while preserving
+	// the complete legacy action detail below them. Dedicated CLI tests own the
+	// new summary contract; keep this frozen rename gate focused on that detail.
+	value = regexp.MustCompile(`(?m)^(?:\$PRODUCT [^\n]+ dry-run: decision summary|What will change:|Important risks / prerequisites:|Recovery guidance:|Next command:|Action summary:|Complete action detail:)[^\n]*\n`).ReplaceAllString(value, "")
+	value = regexp.MustCompile(`(?m)^- [^:\n]+: \d+ action\(s\)\n`).ReplaceAllString(value, "")
 	value = regexp.MustCompile(`(?m)^(?:PASS|WARN|FAIL) claude-[^\n]*\n`).ReplaceAllString(value, "")
 	// Issue #245 adds explicit baseline-source health checks. Dedicated setup
 	// health tests own this new disclosure; keep the frozen rename gate focused

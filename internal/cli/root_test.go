@@ -998,6 +998,137 @@ func TestInstallDryRunReportsPlanAndDoesNotMutateSandbox(t *testing.T) {
 	}
 }
 
+func TestClassicLifecycleDryRunLeadsWithDecisionSummaryAndPreservesDetail(t *testing.T) {
+	for _, operation := range []string{"install", "update", "uninstall"} {
+		t.Run(operation, func(t *testing.T) {
+			opts, _, _ := sandboxOptions(t)
+			if operation != "install" {
+				if output, err := executeCommand(t, NewRootCommand(opts), "install"); err != nil {
+					t.Fatalf("fixture install: %v\n%s", err, output)
+				}
+			}
+			output, err := executeCommand(t, NewRootCommand(opts), operation, "--dry-run")
+			if err != nil {
+				t.Fatalf("%s preview: %v\n%s", operation, err, output)
+			}
+			command := NewRootCommand(opts).Name() + " " + operation
+			prior := -1
+			for _, want := range []string{
+				command + " dry-run: decision summary",
+				"What will change:",
+				"Important risks / prerequisites:",
+				"Recovery guidance:",
+				"Next command: " + command,
+				"Action summary:",
+				"Complete action detail:",
+				command + " dry-run: planned actions",
+			} {
+				index := strings.Index(output, want)
+				if index < 0 || index <= prior {
+					t.Fatalf("preview missing or misordered %q:\n%s", want, output)
+				}
+				prior = index
+			}
+			if !strings.Contains(output, " action(s)\n") {
+				t.Fatalf("preview omitted grouped action counts:\n%s", output)
+			}
+		})
+	}
+}
+
+func TestClassicLifecycleDryRunDecisionSummaryIsHumanOnly(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	output, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("JSON preview: %v\n%s", err, output)
+	}
+	var report classicLifecyclePlanJSON
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, output)
+	}
+	for _, humanOnly := range []string{
+		"decision summary", "What will change:", "Important risks / prerequisites:",
+		"Recovery guidance:", "Next command:", "Action summary:", "Complete action detail:",
+	} {
+		if strings.Contains(output, humanOnly) {
+			t.Fatalf("JSON preview contains human-only summary %q:\n%s", humanOnly, output)
+		}
+	}
+}
+
+func TestClassicLifecycleDryRunSurfacesPrerequisiteGuidanceAndRetainsDetail(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	output, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
+	if err != nil {
+		t.Fatalf("install preview: %v\n%s", err, output)
+	}
+	summary := strings.Index(output, "Important risks / prerequisites: prerequisite:")
+	recovery := strings.Index(output, "Recovery guidance: none")
+	next := strings.Index(output, "Next command: packy install")
+	detail := strings.Index(output, "Complete action detail:")
+	pending := strings.Index(output, "Pending prerequisite:")
+	action := strings.Index(output, "- write-file: persist Packy state metadata")
+	if summary < 0 || recovery <= summary || next <= recovery || detail <= next ||
+		pending <= detail || action <= detail {
+		t.Fatalf("prerequisite guidance or retained detail is missing or misordered:\n%s", output)
+	}
+}
+
+func TestLifecycleActionGroupsAreStableAndComplete(t *testing.T) {
+	actions := []corelifecycle.ActionView{
+		{Kind: corelifecycle.ActionRun},
+		{Kind: corelifecycle.ActionSymlink},
+		{Kind: corelifecycle.ActionRun},
+		{Kind: corelifecycle.ActionWriteFile},
+		{Kind: corelifecycle.ActionSymlink},
+	}
+	groups := lifecycleActionGroups(actions)
+	if len(groups) != 3 {
+		t.Fatalf("groups=%#v", groups)
+	}
+	wants := []lifecycleActionGroup{
+		{kind: corelifecycle.ActionRun, count: 2},
+		{kind: corelifecycle.ActionSymlink, count: 2},
+		{kind: corelifecycle.ActionWriteFile, count: 1},
+	}
+	for index, want := range wants {
+		if groups[index] != want {
+			t.Fatalf("group[%d]=%#v, want %#v", index, groups[index], want)
+		}
+	}
+	if got := lifecycleActionGroups(nil); len(got) != 0 {
+		t.Fatalf("empty groups=%#v", got)
+	}
+}
+
+func TestLifecycleActionDetailIsCompleteAndOrdered(t *testing.T) {
+	actions := []corelifecycle.ActionView{
+		{Kind: corelifecycle.ActionRun, Description: "first run", Command: "brew", Args: []string{"update"}},
+		{Kind: corelifecycle.ActionSymlink, Description: "link skill", Path: "/link", Target: "/source"},
+		{Kind: corelifecycle.ActionWriteFile, Description: "write state", Path: "/state"},
+		{Kind: corelifecycle.ActionRun, Description: "second run", Command: "engram", Args: []string{"setup", "codex"}},
+	}
+	var output strings.Builder
+	if err := renderLifecycleActions(&output, actions); err != nil {
+		t.Fatal(err)
+	}
+	want := "" +
+		"- run: first run (brew update)\n" +
+		"- symlink: link skill (/link -> /source)\n" +
+		"- write-file: write state (/state)\n" +
+		"- run: second run (engram setup codex)\n"
+	if output.String() != want {
+		t.Fatalf("action detail omitted, duplicated, or reordered an action:\nwant:\n%s\ngot:\n%s", want, output.String())
+	}
+	if lines := strings.Count(output.String(), "\n"); lines != len(actions) {
+		t.Fatalf("rendered %d action lines for %d actions:\n%s", lines, len(actions), output.String())
+	}
+	var empty strings.Builder
+	if err := renderLifecycleActions(&empty, nil); err != nil || empty.Len() != 0 {
+		t.Fatalf("empty action detail = %q, err %v", empty.String(), err)
+	}
+}
+
 func TestInstallRejectsCorruptState(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
 	fixture := newCLITestFixture(t, opts)

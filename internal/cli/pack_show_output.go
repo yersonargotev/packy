@@ -130,6 +130,13 @@ func renderPackShowJSON(w io.Writer, report capabilitypack.ShowReport) error {
 
 func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 	document := packShowDocument(report)
+	decision := report.DecisionSummary()
+	if _, err := fmt.Fprintf(w,
+		"Decision summary:\nWhat will change: %s\nImportant risks / prerequisites: %s\nNext command: %s\n",
+		decision.WhatWillChange, joinOrNoneReported(decision.Risks), decision.NextCommand,
+	); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(w,
 		"%s %s\nCatalog state: %s\nDescription: %s\nSource identity: pack=%s version=%s schema=%d\nSource limitation: %s\nHistorical versions: %s\nSupported CLI surfaces: %s\nProvides capabilities: %s\nRequires capabilities: %s\nRequires global tools: %s\nConflicts with capabilities: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
 		document.ID, document.Version, document.CatalogState, document.Description,
@@ -176,6 +183,13 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		}
 	}
 	return nil
+}
+
+func joinOrNoneReported(values []string) string {
+	if len(values) == 0 {
+		return "none reported"
+	}
+	return strings.Join(values, "; ")
 }
 
 func renderPackShowContract(w io.Writer, contract capabilitypack.LifecycleContract) error {
