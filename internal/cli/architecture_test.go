@@ -248,17 +248,19 @@ func TestClassicLifecycleDeletionDoesNotRedistributePolicyInCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for call, want := range map[string]int{
-		"corelifecycle.NewFacade(": 3,
-		"lifecycle.Preview(":       3,
-		"lifecycle.Apply(":         3,
+		"corelifecycle.NewFacade(":        1,
+		"lifecycle.Preview(":              1,
+		"lifecycle.Apply(":                1,
+		"return executeClassicLifecycle(": 3,
 	} {
 		if got := strings.Count(string(root), call); got != want {
-			t.Fatalf("root.go has %d occurrences of %q, want one route for each of three classic operations", got, call)
+			t.Fatalf("root.go has %d occurrences of %q, want %d", got, call, want)
 		}
 	}
 	for _, operation := range []string{"corelifecycle.Install", "corelifecycle.Update", "corelifecycle.Uninstall"} {
-		if got := strings.Count(string(root), operation); got != 1 {
-			t.Fatalf("root.go has %d production routes for %s, want 1", got, operation)
+		call := "return executeClassicLifecycle(cmd, opts, workstationResolver, " + operation + ", classicLifecycleFlags{"
+		if got := strings.Count(string(root), call); got != 1 {
+			t.Fatalf("root.go has %d command delegations for %s, want 1", got, operation)
 		}
 	}
 }
