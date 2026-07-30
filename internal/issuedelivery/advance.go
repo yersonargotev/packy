@@ -46,6 +46,27 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 			if active.ID != activeID || active.Repository != tracker.Repository || active.Issue != tracker.Issue {
 				return errors.New("active issue delivery run identity does not match current authority")
 			}
+			if active.State == StateCompleted {
+				outcome = outcomeFromRecord(active)
+				return nil
+			}
+			if active.NonLocal != nil && active.NonLocal.PullRequest != nil && m.nonlocal == nil {
+				outcome, err = m.persistAssuranceTransition(
+					store, active, StateBlocked,
+					"existing pull request requires a non-local observer to exclude or adopt merge; candidate flow remains disabled",
+					"post-merge-observation",
+				)
+				return err
+			}
+			if active.NonLocal != nil && active.NonLocal.PullRequest != nil && m.nonlocal != nil {
+				var handled bool
+				outcome, handled, err = m.resumeMergedBeforeAuthority(
+					ctx, store, active, git, tracker, request,
+				)
+				if err != nil || handled {
+					return err
+				}
+			}
 		}
 		compiled, err := compileAuthority(git, tracker, active.Decisions, request.Decision, m.declaredProfile)
 		if err != nil {

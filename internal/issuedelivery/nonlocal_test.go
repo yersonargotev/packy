@@ -8,16 +8,21 @@ import (
 )
 
 type fakeNonLocalGateway struct {
-	observation   NonLocalObservation
-	observeErr    error
-	pushErr       error
-	createErr     error
-	retryErr      error
-	observeCalls  int
-	pushCalls     int
-	createCalls   int
-	retryCalls    int
-	hideEnsuredPR bool
+	observation       NonLocalObservation
+	observeErr        error
+	pushErr           error
+	createErr         error
+	retryErr          error
+	observeCalls      int
+	pushCalls         int
+	createCalls       int
+	retryCalls        int
+	hideEnsuredPR     bool
+	mergeCalls        int
+	remoteDeleteCalls int
+	mergeErr          error
+	hideEnsuredMerge  bool
+	remoteDeleteErr   error
 }
 
 func (f *fakeNonLocalGateway) ObserveNonLocal(
@@ -70,6 +75,37 @@ func (f *fakeNonLocalGateway) RetryInfrastructureCheck(
 ) error {
 	f.retryCalls++
 	return f.retryErr
+}
+
+func (f *fakeNonLocalGateway) EnsureMerge(
+	_ context.Context,
+	request EnsureMergeRequest,
+) error {
+	f.mergeCalls++
+	if f.mergeErr != nil {
+		return f.mergeErr
+	}
+	if !f.hideEnsuredMerge {
+		url := ""
+		if len(f.observation.PullRequests) == 1 {
+			url = f.observation.PullRequests[0].URL
+		}
+		f.observation.Merge = &MergeObservation{
+			PullRequest: request.PullRequest, URL: url, BaseRef: "main",
+			HeadSHA: request.HeadSHA, MergeCommitSHA: strings.Repeat("f", 40),
+			MergedAt: "2026-07-30T01:00:00.000000000Z",
+		}
+	}
+	return nil
+}
+
+func (f *fakeNonLocalGateway) EnsureRemoteIssueBranchAbsent(
+	_ context.Context,
+	_ DeleteRemoteIssueBranchRequest,
+) error {
+	f.remoteDeleteCalls++
+	f.observation.Branch = nil
+	return f.remoteDeleteErr
 }
 
 func nonLocalFixture(t *testing.T) (*Module, *fakeGitObserver, *fakeNonLocalGateway, Request, Outcome) {
@@ -402,6 +438,16 @@ func TestAdvanceCandidateFailureInvalidatesReadinessUntilHeadChanges(t *testing.
 		failed.Candidate.Exhaustive != nil || len(failed.Candidate.Acceptance) != 0 ||
 		failed.NonLocal.CandidateFailure == nil {
 		t.Fatalf("candidate failure outcome=%#v", failed)
+	}
+	repairRequest := request
+	repairRequest.NonLocal = nil
+	repairRequest.Repair = &RepairDecision{
+		CandidateID: failed.Candidate.ID, Class: RepairCandidateChanging,
+	}
+	if _, err := module.Advance(context.Background(), repairRequest); err == nil ||
+		strings.Contains(err.Error(), "post-merge") ||
+		!strings.Contains(err.Error(), "pending candidate") {
+		t.Fatalf("pre-merge repair routing err=%v", err)
 	}
 	request.NonLocal = nil
 	unchanged := mustAdvance(t, module, request)

@@ -151,6 +151,15 @@ type NonLocalGateway interface {
 	PushIssueBranch(context.Context, PushIssueBranchRequest) error
 	EnsurePullRequest(context.Context, EnsurePullRequestRequest) error
 	RetryInfrastructureCheck(context.Context, RetryInfrastructureCheckRequest) error
+	EnsureMerge(context.Context, EnsureMergeRequest) error
+	EnsureRemoteIssueBranchAbsent(context.Context, DeleteRemoteIssueBranchRequest) error
+}
+
+type LocalCompletionGateway interface {
+	ObserveLocalCompletion(context.Context, LocalCompletionObserveRequest) (LocalCompletionObservation, error)
+	EnsureManagedWorktreeAbsent(context.Context, RemoveManagedWorktreeRequest) error
+	EnsureLocalIssueBranchAbsent(context.Context, DeleteLocalIssueBranchRequest) error
+	EnsureLocalMainFastForward(context.Context, FastForwardLocalMainRequest) error
 }
 
 type Clock interface {
@@ -437,6 +446,8 @@ type NonLocalObservation struct {
 	Branch       *RemoteBranchObservation
 	PullRequests []RemotePullRequestObservation
 	Checks       []CICheckObservation
+	Merge        *MergeObservation
+	OriginMain   *OriginMainObservation
 }
 
 type PushIssueBranchRequest struct {
@@ -476,6 +487,158 @@ type RetryInfrastructureCheckRequest struct {
 	FailedRunID   int64
 }
 
+type EnsureMergeRequest struct {
+	RunID          string
+	Repository     deliveryevidence.RepositoryIdentity
+	Issue          deliveryevidence.IssueIdentity
+	CandidateID    string
+	IdempotencyKey string
+	PullRequest    int
+	HeadSHA        string
+	BaseSHA        string
+	Method         string
+}
+
+type DeleteRemoteIssueBranchRequest struct {
+	RunID       string
+	Repository  deliveryevidence.RepositoryIdentity
+	CandidateID string
+	Branch      string
+	HeadSHA     string
+}
+
+type MergeObservation struct {
+	PullRequest    int    `json:"pull_request"`
+	URL            string `json:"url"`
+	BaseRef        string `json:"base_ref"`
+	HeadSHA        string `json:"head_sha"`
+	MergeCommitSHA string `json:"merge_commit_sha"`
+	MergedAt       string `json:"merged_at"`
+}
+
+type OriginMainObservation struct {
+	HeadSHA               string `json:"head_sha"`
+	MergeCommitSHA        string `json:"merge_commit_sha"`
+	CandidateHeadSHA      string `json:"candidate_head_sha"`
+	ContainsMergeCommit   bool   `json:"contains_merge_commit"`
+	ContainsCandidateHead bool   `json:"contains_candidate_head"`
+}
+
+type MergeIntent struct {
+	IdempotencyKey      string `json:"idempotency_key"`
+	PullRequest         int    `json:"pull_request"`
+	HeadSHA             string `json:"head_sha"`
+	BaseSHA             string `json:"base_sha"`
+	Method              string `json:"method"`
+	OperatorStateSHA256 string `json:"operator_state_sha256"`
+	PreparedAt          string `json:"prepared_at"`
+	DispatchedAt        string `json:"dispatched_at,omitempty"`
+}
+
+type MergeProof struct {
+	PullRequest    int    `json:"pull_request"`
+	URL            string `json:"url"`
+	HeadSHA        string `json:"head_sha"`
+	MergeCommitSHA string `json:"merge_commit_sha"`
+	MergedAt       string `json:"merged_at"`
+	AdoptedAt      string `json:"adopted_at"`
+}
+
+type ManagedWorktreeObservation struct {
+	Path        string `json:"path"`
+	Branch      string `json:"branch"`
+	HeadSHA     string `json:"head_sha"`
+	RunID       string `json:"run_id"`
+	CandidateID string `json:"candidate_id"`
+	Clean       bool   `json:"clean"`
+}
+
+type LocalBranchObservation struct {
+	Name    string `json:"name"`
+	HeadSHA string `json:"head_sha"`
+}
+
+type IntegrationWorkspaceObservation struct {
+	Path   string `json:"path"`
+	Branch string `json:"branch"`
+	Clean  bool   `json:"clean"`
+}
+
+type LocalMainRelation string
+
+const (
+	LocalMainSynced   LocalMainRelation = "synced"
+	LocalMainBehind   LocalMainRelation = "behind"
+	LocalMainAhead    LocalMainRelation = "ahead"
+	LocalMainDiverged LocalMainRelation = "diverged"
+)
+
+type LocalMainObservation struct {
+	Exists        bool              `json:"exists"`
+	HeadSHA       string            `json:"head_sha"`
+	OriginHeadSHA string            `json:"origin_head_sha"`
+	Relation      LocalMainRelation `json:"relation"`
+	Clean         bool              `json:"clean"`
+}
+
+type LocalCompletionObserveRequest struct {
+	RunID          string
+	CandidateID    string
+	CommonDir      string
+	RepositoryPath string
+	IssueBranch    string
+	CandidateHead  string
+	MergeCommitSHA string
+}
+
+type LocalCompletionObservation struct {
+	OperatorStateSHA256 string                          `json:"operator_state_sha256"`
+	Integration         IntegrationWorkspaceObservation `json:"integration"`
+	Worktrees           []ManagedWorktreeObservation    `json:"worktrees"`
+	LocalBranch         *LocalBranchObservation         `json:"local_branch,omitempty"`
+	LocalMain           LocalMainObservation            `json:"local_main"`
+}
+
+type RemoveManagedWorktreeRequest struct {
+	RunID          string
+	CandidateID    string
+	CommonDir      string
+	RepositoryPath string
+	Path           string
+	Branch         string
+	HeadSHA        string
+}
+
+type DeleteLocalIssueBranchRequest struct {
+	RunID          string
+	CandidateID    string
+	CommonDir      string
+	RepositoryPath string
+	Branch         string
+	HeadSHA        string
+}
+
+type FastForwardLocalMainRequest struct {
+	RunID          string
+	CommonDir      string
+	RepositoryPath string
+	ExpectedOldSHA string
+	OriginMainSHA  string
+	MergeCommitSHA string
+}
+
+type CompletionReport struct {
+	IssueClosed         bool                            `json:"issue_closed"`
+	OriginMain          OriginMainObservation           `json:"origin_main"`
+	RemoteBranchAbsent  bool                            `json:"remote_branch_absent"`
+	WorktreesAbsent     bool                            `json:"worktrees_absent"`
+	LocalBranchAbsent   bool                            `json:"local_branch_absent"`
+	LocalMain           LocalMainObservation            `json:"local_main"`
+	Integration         IntegrationWorkspaceObservation `json:"integration"`
+	OperatorStateSHA256 string                          `json:"operator_state_sha256"`
+	CompletedAt         string                          `json:"completed_at"`
+}
+
 type CIRetry struct {
 	CheckIdentity string `json:"check_identity"`
 	FailedRunID   int64  `json:"failed_run_id"`
@@ -499,6 +662,9 @@ type NonLocalDelivery struct {
 	Retries           []CIRetry                     `json:"retries"`
 	CandidateFailure  *CandidateCIFailure           `json:"candidate_failure,omitempty"`
 	CIStatus          string                        `json:"ci_status,omitempty"`
+	MergeIntent       *MergeIntent                  `json:"merge_intent,omitempty"`
+	Merge             *MergeProof                   `json:"merge,omitempty"`
+	Completion        *CompletionReport             `json:"completion,omitempty"`
 }
 
 type Config struct {
@@ -511,6 +677,7 @@ type Config struct {
 	Specialist      SpecialistReviewExecutor
 	Boundary        BoundaryValidationExecutor
 	NonLocal        NonLocalGateway
+	LocalCompletion LocalCompletionGateway
 	SandboxRoot     string
 	DeclaredProfile deliveryevidence.DeliveryRiskProfile
 }
@@ -525,6 +692,7 @@ type Module struct {
 	specialist      SpecialistReviewExecutor
 	boundary        BoundaryValidationExecutor
 	nonlocal        NonLocalGateway
+	localCompletion LocalCompletionGateway
 	sandboxRoot     string
 	declaredProfile deliveryevidence.DeliveryRiskProfile
 	store           fileRunStore
@@ -557,6 +725,9 @@ func New(config Config) (*Module, error) {
 	if config.NonLocal != nil && config.Review == nil {
 		return nil, fmt.Errorf("non-local delivery requires configured candidate assurance")
 	}
+	if config.LocalCompletion != nil && config.NonLocal == nil {
+		return nil, fmt.Errorf("local completion requires configured non-local delivery")
+	}
 	if config.Review != nil &&
 		(config.SandboxRoot == "" || !filepath.IsAbs(config.SandboxRoot) ||
 			filepath.Clean(config.SandboxRoot) != config.SandboxRoot || config.SandboxRoot == string(filepath.Separator)) {
@@ -571,7 +742,7 @@ func New(config Config) (*Module, error) {
 		git: config.Git, github: config.GitHub, clock: config.Clock,
 		review: config.Review, validation: config.Validation, sandboxRoot: config.SandboxRoot,
 		risk: config.Risk, specialist: config.Specialist, boundary: config.Boundary,
-		nonlocal:        config.NonLocal,
+		nonlocal: config.NonLocal, localCompletion: config.LocalCompletion,
 		declaredProfile: config.DeclaredProfile,
 	}, nil
 }
