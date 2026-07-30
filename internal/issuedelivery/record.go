@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/deliveryevidence"
 )
@@ -74,5 +76,71 @@ func decodeRun(data []byte) (runRecord, error) {
 		}
 		record.Evidence = &evidence
 	}
+	if err := validateRun(record); err != nil {
+		return runRecord{}, err
+	}
 	return record, nil
+}
+
+func validateRun(record runRecord) error {
+	if record.Schema != runSchema ||
+		record.ID != runIdentity(record.Repository, record.Issue, record.AuthoritySHA256, record.SupersedesRunID) {
+		return fmt.Errorf("issue delivery run identity is invalid")
+	}
+	if record.Repository.Owner == "" || record.Repository.Name == "" || record.Repository.NodeID == "" ||
+		record.Issue.Number <= 0 || record.Issue.NodeID == "" ||
+		len(record.AuthoritySHA256) != 64 || !runIDPattern.MatchString(record.AuthoritySHA256) {
+		return fmt.Errorf("issue delivery run authority identity is incomplete")
+	}
+	if strings.TrimSpace(record.Reason) == "" || record.Decisions == nil || record.Timing == nil ||
+		strings.TrimSpace(record.CreatedAt) == "" || strings.TrimSpace(record.UpdatedAt) == "" {
+		return fmt.Errorf("issue delivery run state is incomplete")
+	}
+	switch record.State {
+	case StateNeedsDecision:
+		if record.PendingDecision == nil || record.Evidence != nil {
+			return fmt.Errorf("needs-decision run requires one pending decision and no admitted evidence")
+		}
+	case StateNeedsReview, StateBlocked, StateCompleted:
+		if record.PendingDecision != nil || record.Evidence == nil {
+			return fmt.Errorf("%s run requires admitted evidence and no pending decision", record.State)
+		}
+	default:
+		return fmt.Errorf("persisted issue delivery run has invalid state %q", record.State)
+	}
+	if record.Evidence != nil {
+		if record.Evidence.Repository != record.Repository || record.Evidence.Issue != record.Issue ||
+			record.Evidence.Authority.IssueSHA256 != record.AuthoritySHA256 {
+			return fmt.Errorf("issue delivery evidence does not match its run")
+		}
+	}
+	if record.Observations.Repository != record.Repository || record.Observations.Issue != record.Issue ||
+		record.Observations.AuthoritySHA256 != record.AuthoritySHA256 ||
+		!fullGitSHAPattern.MatchString(record.Observations.CommitSHA) ||
+		!fullGitSHAPattern.MatchString(record.Observations.TreeSHA) {
+		return fmt.Errorf("issue delivery run observations do not match its authority")
+	}
+	for i, timing := range record.Timing {
+		started, startErr := time.Parse(timeFormat, timing.StartedAt)
+		completed, completeErr := time.Parse(timeFormat, timing.CompletedAt)
+		if timing.Sequence != i+1 || strings.TrimSpace(timing.Phase) == "" ||
+			startErr != nil || completeErr != nil || completed.Before(started) {
+			return fmt.Errorf("issue delivery run timing is invalid")
+		}
+	}
+	if len(record.Timing) == 0 || record.Timing[len(record.Timing)-1].To != record.State {
+		return fmt.Errorf("issue delivery run timing does not reach current state")
+	}
+	if _, err := time.Parse(timeFormat, record.CreatedAt); err != nil {
+		return fmt.Errorf("issue delivery run creation time is invalid")
+	}
+	if _, err := time.Parse(timeFormat, record.UpdatedAt); err != nil {
+		return fmt.Errorf("issue delivery run update time is invalid")
+	}
+	for _, decision := range record.Decisions {
+		if strings.TrimSpace(decision.RequestID) == "" {
+			return fmt.Errorf("issue delivery run contains an invalid decision")
+		}
+	}
+	return nil
 }

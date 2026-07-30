@@ -3,6 +3,7 @@ package issuedelivery
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -147,6 +148,7 @@ func TestAdvanceCreatesAndResumesSelfContainedLowRiskRun(t *testing.T) {
 func TestAdvanceSupersedesChangedAuthorityWithoutRewritingPriorRun(t *testing.T) {
 	module, _, tracker := moduleFixture(t, 356)
 	request := Request{RepositoryPath: "/repo", IssueNumber: 356}
+	originalCriteria := append([]AuthorityItem(nil), tracker.value.Criteria...)
 	first, err := module.Advance(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -178,6 +180,25 @@ func TestAdvanceSupersedesChangedAuthorityWithoutRewritingPriorRun(t *testing.T)
 	}
 	if !bytes.Equal(gotOldBytes, oldBytes) {
 		t.Fatal("superseding authority rewrote the prior run")
+	}
+
+	tracker.mu.Lock()
+	tracker.value.Criteria = originalCriteria
+	tracker.mu.Unlock()
+	third, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.RunID == first.RunID || third.RunID == second.RunID ||
+		third.SupersedesRunID != second.RunID {
+		t.Fatalf("A-B-A requalification reused history: first=%s second=%s third=%#v", first.RunID, second.RunID, third)
+	}
+	gotOldBytes, err = os.ReadFile(oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotOldBytes, oldBytes) {
+		t.Fatal("A-B-A requalification rewrote the original run")
 	}
 }
 
@@ -256,6 +277,119 @@ func TestAdvancePausesForTypedDecisionAndResumesWithMatchingAnswer(t *testing.T)
 	if resolved.State != StateNeedsReview || resolved.Evidence == nil ||
 		resolved.SupersedesRunID != pending.RunID || len(resolved.Evidence.Scope.Forbidden) != 2 {
 		t.Fatalf("resolved outcome = %#v", resolved)
+	}
+	resumed, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.RunID != resolved.RunID || resumed.State != StateNeedsReview {
+		t.Fatalf("resolved decision was not resumed: resolved=%#v resumed=%#v", resolved, resumed)
+	}
+}
+
+func TestAdvanceResolvesEveryMaterialAmbiguityBeforeReview(t *testing.T) {
+	module, _, tracker := moduleFixture(t, 356)
+	tracker.value.Ambiguities = []AuthorityItem{
+		{Text: "Include v1 compatibility?", EvidenceLink: "issue#356:question-1"},
+		{Text: "Include CLI wiring?", EvidenceLink: "issue#356:question-2"},
+	}
+	request := Request{RepositoryPath: "/repo", IssueNumber: 356}
+	outcome, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for sequence := 0; sequence < 2; sequence++ {
+		if outcome.State != StateNeedsDecision || outcome.Decision == nil {
+			t.Fatalf("ambiguity %d was skipped: %#v", sequence+1, outcome)
+		}
+		outcome, err = module.Advance(context.Background(), Request{
+			RepositoryPath: "/repo", IssueNumber: 356,
+			Decision: &Decision{
+				RequestID: outcome.Decision.ID, Disposition: DecisionForbidden,
+				Requirement: "Exclude " + outcome.Decision.Evidence, EvidenceLink: "caller:decision-" + strconv.Itoa(sequence+1),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if outcome.State != StateNeedsReview || len(outcome.Evidence.Scope.Forbidden) != 3 {
+		t.Fatalf("all ambiguities resolved outcome = %#v", outcome)
+	}
+}
+
+func TestAdvanceSupersedesChangedAmbiguityEvidence(t *testing.T) {
+	module, _, tracker := moduleFixture(t, 356)
+	tracker.value.Ambiguities = []AuthorityItem{{
+		Text: "Include v1 compatibility?", EvidenceLink: "issue#356:question-1",
+	}}
+	first, err := module.Advance(context.Background(), Request{RepositoryPath: "/repo", IssueNumber: 356})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker.value.Ambiguities[0].Text = "Include both v1 compatibility and migration?"
+	second, err := module.Advance(context.Background(), Request{RepositoryPath: "/repo", IssueNumber: 356})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.RunID == first.RunID || second.SupersedesRunID != first.RunID ||
+		second.Decision.ID == first.Decision.ID {
+		t.Fatalf("changed ambiguity resumed stale prompt: first=%#v second=%#v", first, second)
+	}
+}
+
+func TestAdvanceAdvertisesOnlySupportedDecisionsAndRejectsUnsolicitedInput(t *testing.T) {
+	module, _, tracker := moduleFixture(t, 356)
+	tracker.value.Criteria = nil
+	pending, err := module.Advance(context.Background(), Request{RepositoryPath: "/repo", IssueNumber: 356})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.Decision.Kind != DecisionSupplyCriterion ||
+		len(pending.Decision.Options) != 1 || pending.Decision.Options[0] != DecisionOwnedNow {
+		t.Fatalf("criterion decision options = %#v", pending.Decision)
+	}
+
+	cleanModule, _, _ := moduleFixture(t, 357)
+	_, err = cleanModule.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 357,
+		Decision: &Decision{
+			RequestID: "unsolicited", Disposition: DecisionOwnedNow,
+			Requirement: "Invented criterion", EvidenceLink: "caller:unsolicited",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not requested") {
+		t.Fatalf("unsolicited decision error = %v", err)
+	}
+}
+
+func TestAdvanceRejectsSemanticallyInvalidPersistedRun(t *testing.T) {
+	module, _, _ := moduleFixture(t, 356)
+	request := Request{RepositoryPath: "/repo", IssueNumber: 356}
+	outcome, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runPath := filepath.Join(module.storePathForTest(t, 356), "runs", outcome.RunID+".json")
+	data, err := os.ReadFile(runPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire runWire
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	wire.State = StateCompleted
+	data, err = json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runPath, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := module.Advance(context.Background(), request); err == nil ||
+		!strings.Contains(err.Error(), "timing does not reach current state") {
+		t.Fatalf("invalid persisted run error = %v", err)
 	}
 }
 

@@ -43,10 +43,11 @@ func (fileRunStore) withIssueLock(ctx context.Context, commonDir string, issue i
 	if err := rejectSymlinkIfPresent(lockPath); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+	lockFD, err := syscall.Open(lockPath, syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		return fmt.Errorf("open issue delivery lock: %w", err)
 	}
+	lock := os.NewFile(uintptr(lockFD), lockPath)
 	defer lock.Close()
 	if err := validateRegularFile(lockPath, lock); err != nil {
 		return err
@@ -126,7 +127,13 @@ func (fileRunStore) storeAndActivate(commonDir string, issue int, runID string, 
 	}
 
 	runPath := filepath.Join(runsDir, runID+".json")
-	if err := atomicWrite(runPath, data); err != nil {
+	if existing, err := readRegularFile(runPath); err == nil {
+		if !bytes.Equal(existing, data) {
+			return errors.New("issue delivery run is immutable")
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("inspect issue delivery run: %w", err)
+	} else if err := atomicWrite(runPath, data); err != nil {
 		return fmt.Errorf("store issue delivery run: %w", err)
 	}
 	activeData, err := json.Marshal(activeRun{RunID: runID})
@@ -236,10 +243,11 @@ func readRegularFile(path string) ([]byte, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("issue delivery path %q is not a regular non-symlink file", path)
 	}
-	file, err := os.Open(path)
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, err
 	}
+	file := os.NewFile(uintptr(fd), path)
 	defer file.Close()
 	if err := validateRegularFile(path, file); err != nil {
 		return nil, err

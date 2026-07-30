@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/yersonargotev/packy/internal/deliveryevidence"
 )
 
 func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) {
@@ -30,11 +32,6 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 		if tracker.Issue.Number != request.IssueNumber {
 			return fmt.Errorf("GitHub observer returned issue #%d for requested issue #%d", tracker.Issue.Number, request.IssueNumber)
 		}
-		compiled, err := compileAuthority(git, tracker, request.Decision)
-		if err != nil {
-			return err
-		}
-
 		activeID, activeData, found, err := m.store.loadActive(git.CommonDir, request.IssueNumber)
 		if err != nil {
 			return err
@@ -48,6 +45,12 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 			if active.ID != activeID || active.Repository != tracker.Repository || active.Issue != tracker.Issue {
 				return errors.New("active issue delivery run identity does not match current authority")
 			}
+		}
+		compiled, err := compileAuthority(git, tracker, active.Decisions, request.Decision)
+		if err != nil {
+			return err
+		}
+		if found {
 			if active.AuthoritySHA256 == compiled.hash {
 				outcome = outcomeFromRecord(active)
 				outcome.Observations = observationsFrom(git, tracker, compiled.hash)
@@ -56,13 +59,18 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 		}
 
 		nowStarted := m.clock.Now().UTC()
-		runID := runIdentity(tracker, compiled.hash)
+		supersedes := ""
+		if found {
+			supersedes = active.ID
+		}
+		runID := runIdentity(tracker.Repository, tracker.Issue, compiled.hash, supersedes)
 		nowCompleted := m.clock.Now().UTC()
 		record := runRecord{
 			Schema: runSchema, ID: runID, Repository: tracker.Repository, Issue: tracker.Issue,
 			AuthoritySHA256: compiled.hash, State: compiled.state, Reason: compiled.reason,
 			Evidence: &compiled.evidence, PendingDecision: compiled.pending,
-			Decisions: []Decision{}, Observations: observationsFrom(git, tracker, compiled.hash),
+			Decisions:    append([]Decision{}, compiled.decisions...),
+			Observations: observationsFrom(git, tracker, compiled.hash),
 			Timing: []Timing{{
 				Sequence: 1, Phase: "qualification", To: compiled.state,
 				StartedAt: nowStarted.Format(timeFormat), CompletedAt: nowCompleted.Format(timeFormat),
@@ -71,9 +79,6 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 		}
 		if compiled.pending != nil {
 			record.Evidence = nil
-		}
-		if request.Decision != nil {
-			record.Decisions = append(record.Decisions, *request.Decision)
 		}
 		if found {
 			record.SupersedesRunID = active.ID
@@ -96,8 +101,14 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 
 const timeFormat = "2006-01-02T15:04:05.000000000Z"
 
-func runIdentity(tracker TrackerObservation, authorityHash string) string {
-	sum := sha256.Sum256([]byte(tracker.Repository.NodeID + "\x00" + tracker.Issue.NodeID + "\x00" + authorityHash))
+func runIdentity(
+	repository deliveryevidence.RepositoryIdentity,
+	issue deliveryevidence.IssueIdentity,
+	authorityHash, supersedes string,
+) string {
+	sum := sha256.Sum256([]byte(
+		repository.NodeID + "\x00" + issue.NodeID + "\x00" + authorityHash + "\x00" + supersedes,
+	))
 	return hex.EncodeToString(sum[:])
 }
 

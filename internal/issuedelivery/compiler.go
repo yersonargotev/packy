@@ -13,14 +13,20 @@ import (
 )
 
 type compiledAuthority struct {
-	hash     string
-	evidence deliveryevidence.Bundle
-	pending  *DecisionRequest
-	state    State
-	reason   string
+	hash      string
+	evidence  deliveryevidence.Bundle
+	pending   *DecisionRequest
+	decisions []Decision
+	state     State
+	reason    string
 }
 
-func compileAuthority(git GitObservation, tracker TrackerObservation, decision *Decision) (compiledAuthority, error) {
+func compileAuthority(
+	git GitObservation,
+	tracker TrackerObservation,
+	prior []Decision,
+	offered *Decision,
+) (compiledAuthority, error) {
 	if err := validateObservations(git, tracker); err != nil {
 		return compiledAuthority{}, err
 	}
@@ -32,28 +38,41 @@ func compileAuthority(git GitObservation, tracker TrackerObservation, decision *
 	references := normalizedReferences(tracker.References)
 	labels := normalizedStrings(tracker.Labels)
 
-	var pending *DecisionRequest
-	if len(ambiguities) > 0 {
-		pending = decisionRequest(DecisionClassifyAuthorityItem, ambiguities[0])
-	} else if len(criteria) == 0 {
-		pending = decisionRequest(DecisionSupplyCriterion, AuthorityItem{
-			Text:         "The issue does not state an explicit acceptance criterion.",
-			EvidenceLink: fmt.Sprintf("issue#%d:missing-acceptance-criterion", tracker.Issue.Number),
-		})
+	available := make(map[string]Decision, len(prior))
+	for _, decision := range prior {
+		available[decision.RequestID] = decision
 	}
-	if pending != nil {
-		if decision == nil {
-			return compilePending(git, tracker, labels, criteria, exclusions, dependencies, references, pending)
+	applied := make([]Decision, 0, len(prior)+1)
+	offeredUsed := false
+	for {
+		pending := nextDecisionRequest(tracker.Issue.Number, criteria, ambiguities)
+		if pending == nil {
+			break
 		}
-		if decision.RequestID != pending.ID {
-			return compiledAuthority{}, &DecisionMismatchError{Expected: pending.ID, Got: decision.RequestID}
+		decision, ok := available[pending.ID]
+		if !ok && offered != nil && !offeredUsed {
+			if offered.RequestID != pending.ID {
+				return compiledAuthority{}, &DecisionMismatchError{Expected: pending.ID, Got: offered.RequestID}
+			}
+			decision, ok, offeredUsed = *offered, true, true
 		}
-		if err := applyDecision(&criteria, &exclusions, &ambiguities, pending, *decision); err != nil {
+		if !ok {
+			return compilePending(
+				tracker, labels, criteria, exclusions, ambiguities, dependencies, references, applied, pending,
+			)
+		}
+		if err := applyDecision(&criteria, &exclusions, &ambiguities, pending, decision); err != nil {
 			return compiledAuthority{}, err
 		}
+		applied = append(applied, decision)
+	}
+	if offered != nil && !offeredUsed {
+		return compiledAuthority{}, fmt.Errorf("delivery decision %q was not requested by current authority", offered.RequestID)
 	}
 
-	authorityHash, err := authorityDigest(tracker, labels, criteria, exclusions, dependencies, references, decision)
+	authorityHash, err := authorityDigest(
+		tracker, labels, criteria, exclusions, ambiguities, dependencies, references, applied,
+	)
 	if err != nil {
 		return compiledAuthority{}, err
 	}
@@ -65,24 +84,29 @@ func compileAuthority(git GitObservation, tracker TrackerObservation, decision *
 	if blocked {
 		state, reason = StateBlocked, "one or more issue dependencies are not satisfied"
 	}
-	return compiledAuthority{hash: authorityHash, evidence: bundle, state: state, reason: reason}, nil
+	return compiledAuthority{
+		hash: authorityHash, evidence: bundle, decisions: applied, state: state, reason: reason,
+	}, nil
 }
 
 func compilePending(
-	git GitObservation,
 	tracker TrackerObservation,
 	labels []string,
 	criteria, exclusions []AuthorityItem,
+	ambiguities []AuthorityItem,
 	dependencies []DependencyObservation,
 	references []ReferenceObservation,
+	decisions []Decision,
 	pending *DecisionRequest,
 ) (compiledAuthority, error) {
-	hash, err := authorityDigest(tracker, labels, criteria, exclusions, dependencies, references, nil)
+	hash, err := authorityDigest(
+		tracker, labels, criteria, exclusions, ambiguities, dependencies, references, decisions,
+	)
 	if err != nil {
 		return compiledAuthority{}, err
 	}
 	return compiledAuthority{
-		hash: hash, pending: pending, state: StateNeedsDecision,
+		hash: hash, pending: pending, decisions: decisions, state: StateNeedsDecision,
 		reason: "qualification requires a typed caller decision",
 	}, nil
 }
@@ -219,11 +243,6 @@ func applyDecision(criteria, exclusions, ambiguities *[]AuthorityItem, pending *
 			*criteria = append(*criteria, item)
 		case DecisionForbidden:
 			*exclusions = append(*exclusions, item)
-		case DecisionDeferred:
-			if cleanText(decision.Owner) == "" {
-				return fmt.Errorf("deferred delivery decisions require an owner")
-			}
-			return fmt.Errorf("deferred caller decisions are not supported by the low-risk compiler")
 		default:
 			return fmt.Errorf("invalid delivery decision disposition %q", decision.Disposition)
 		}
@@ -234,21 +253,41 @@ func applyDecision(criteria, exclusions, ambiguities *[]AuthorityItem, pending *
 
 func decisionRequest(kind DecisionKind, item AuthorityItem) *DecisionRequest {
 	evidence := cleanText(item.Text) + "\x00" + cleanText(item.EvidenceLink)
+	options := []DecisionDisposition{DecisionOwnedNow}
+	prompt := "Supply an explicit acceptance criterion before delivery can continue."
+	if kind == DecisionClassifyAuthorityItem {
+		options = append(options, DecisionForbidden)
+		prompt = "Classify this authority evidence before delivery can continue."
+	}
 	return &DecisionRequest{
 		ID: stableID("decision:"+string(kind), evidence), Kind: kind,
-		Prompt:   "Classify this authority evidence before delivery can continue.",
+		Prompt:   prompt,
 		Evidence: cleanText(item.Text),
-		Options:  []DecisionDisposition{DecisionOwnedNow, DecisionDeferred, DecisionForbidden},
+		Options:  options,
 	}
+}
+
+func nextDecisionRequest(issue int, criteria, ambiguities []AuthorityItem) *DecisionRequest {
+	if len(ambiguities) > 0 {
+		return decisionRequest(DecisionClassifyAuthorityItem, ambiguities[0])
+	}
+	if len(criteria) == 0 {
+		return decisionRequest(DecisionSupplyCriterion, AuthorityItem{
+			Text:         "The issue does not state an explicit acceptance criterion.",
+			EvidenceLink: fmt.Sprintf("issue#%d:missing-acceptance-criterion", issue),
+		})
+	}
+	return nil
 }
 
 func authorityDigest(
 	tracker TrackerObservation,
 	labels []string,
 	criteria, exclusions []AuthorityItem,
+	ambiguities []AuthorityItem,
 	dependencies []DependencyObservation,
 	references []ReferenceObservation,
-	decision *Decision,
+	decisions []Decision,
 ) (string, error) {
 	facts := struct {
 		Repository   deliveryevidence.RepositoryIdentity `json:"repository"`
@@ -259,12 +298,14 @@ func authorityDigest(
 		Labels       []string                            `json:"labels"`
 		Criteria     []AuthorityItem                     `json:"criteria"`
 		Exclusions   []AuthorityItem                     `json:"exclusions"`
+		Ambiguities  []AuthorityItem                     `json:"ambiguities"`
 		Dependencies []DependencyObservation             `json:"dependencies"`
 		References   []ReferenceObservation              `json:"references"`
-		Decision     *Decision                           `json:"decision,omitempty"`
+		Decisions    []Decision                          `json:"decisions"`
 	}{
 		tracker.Repository, tracker.Issue, cleanText(tracker.Title), cleanText(tracker.Body),
-		strings.ToLower(cleanText(tracker.State)), labels, criteria, exclusions, dependencies, references, decision,
+		strings.ToLower(cleanText(tracker.State)), labels, criteria, exclusions, ambiguities,
+		dependencies, references, decisions,
 	}
 	data, err := json.Marshal(facts)
 	if err != nil {
