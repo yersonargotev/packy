@@ -308,6 +308,19 @@ func TestLatestCommitStatusRejectsMalformedMatchingIdentity(t *testing.T) {
 	}
 }
 
+func TestNormalizeRemoteTimestampUsesCanonicalDeliveryFormat(t *testing.T) {
+	got, err := normalizeRemoteTimestamp("2026-07-30T15:10:37Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "2026-07-30T15:10:37.000000000Z" {
+		t.Fatalf("normalized timestamp = %q", got)
+	}
+	if _, err = normalizeRemoteTimestamp("not-a-timestamp"); err == nil {
+		t.Fatal("malformed remote timestamp was accepted")
+	}
+}
+
 func packyRemoteRepository() deliveryevidence.RepositoryIdentity {
 	return deliveryevidence.RepositoryIdentity{Owner: "yersonargotev", Name: "packy", NodeID: "R1"}
 }
