@@ -219,7 +219,8 @@ func (m *Module) advanceNonLocal(
 		)
 	}
 	return m.advanceRequiredCI(
-		ctx, store, record, candidate, confirmedPullRequest.BaseSHA, confirmation.Checks,
+		ctx, store, record, candidate, git, request.RepositoryPath,
+		confirmedPullRequest.BaseSHA, confirmation.Checks,
 	)
 }
 
@@ -318,23 +319,24 @@ func (m *Module) advanceRequiredCI(
 	store lockedIssueStore,
 	record runRecord,
 	candidate *Candidate,
+	git GitObservation,
+	repositoryPath string,
 	baseSHA string,
 	observed []CICheckObservation,
 ) (Outcome, error) {
 	result := evaluateCIPolicy(record.Repository, candidate.CommitSHA, baseSHA, observed)
 	record.NonLocal.Checks = canonicalCICheckObservations(observed)
 	record.NonLocal.CIStatus = string(result.State)
+	if result.State != CISuccess {
+		record.NonLocal.MergeIntent = nil
+	}
 	switch result.State {
 	case CIPending:
 		return m.persistAssuranceTransition(
 			store, record, StateWaiting, "required CI is pending for the exact candidate HEAD", "ci-wait",
 		)
 	case CISuccess:
-		return m.persistAssuranceTransition(
-			store, record, StateWaiting,
-			"required CI is green for the exact candidate HEAD; awaiting merge authority",
-			"ci-success",
-		)
+		return m.advanceMerge(ctx, store, record, *candidate, git.CommonDir, repositoryPath)
 	case CIInfrastructureFailure:
 		failure := firstFailedAttributedCheck(observed, candidate.CommitSHA, FailureInfrastructure)
 		if failure == nil {
@@ -453,6 +455,9 @@ func invalidateForCandidateCIFailure(record *runRecord, candidate *Candidate) {
 func validateNonLocalRecord(record runRecord, candidate Candidate) error {
 	remote := record.NonLocal
 	if remote == nil {
+		if record.State == StateCompleted {
+			return errors.New("completed delivery lacks non-local completion proof")
+		}
 		return nil
 	}
 	authorization := remote.Authorization
@@ -550,6 +555,80 @@ func validateNonLocalRecord(record runRecord, candidate Candidate) error {
 		)
 		if result.State != CIPolicyState(remote.CIStatus) {
 			return errors.New("non-local CI status does not match its exact observations")
+		}
+	}
+	if remote.MergeIntent != nil {
+		intent := remote.MergeIntent
+		if remote.PullRequest == nil ||
+			intent.IdempotencyKey != mergeIdempotencyKey(record, candidate) ||
+			!runIDPattern.MatchString(intent.IdempotencyKey) ||
+			intent.PullRequest != remote.PullRequest.Number ||
+			intent.HeadSHA != candidate.CommitSHA ||
+			intent.BaseSHA != remote.PullRequest.BaseSHA ||
+			intent.Method != mergeMethod ||
+			!runIDPattern.MatchString(intent.OperatorStateSHA256) {
+			return errors.New("non-local merge intent identity is invalid")
+		}
+		if _, err := time.Parse(timeFormat, intent.PreparedAt); err != nil {
+			return errors.New("non-local merge intent preparation time is invalid")
+		}
+		if intent.DispatchedAt != "" {
+			if _, err := time.Parse(timeFormat, intent.DispatchedAt); err != nil {
+				return errors.New("non-local merge dispatch time is invalid")
+			}
+		}
+		if err := validateStoredMergeGate(record, candidate); err != nil {
+			return err
+		}
+	}
+	if remote.Merge != nil {
+		if remote.CandidateFailure != nil ||
+			(record.State != StateWaiting && record.State != StateBlocked &&
+				record.State != StateCompleted) {
+			return errors.New("irreversible merge proof is incompatible with candidate flow")
+		}
+		merge := remote.Merge
+		if err := validateMergeObservation(record, candidate, MergeObservation{
+			PullRequest: merge.PullRequest, URL: merge.URL, BaseRef: nonLocalBaseRef,
+			HeadSHA: merge.HeadSHA, MergeCommitSHA: merge.MergeCommitSHA, MergedAt: merge.MergedAt,
+		}); err != nil {
+			return err
+		}
+		mergedAt, mergedErr := time.Parse(timeFormat, merge.MergedAt)
+		adoptedAt, adoptedErr := time.Parse(timeFormat, merge.AdoptedAt)
+		if mergedErr != nil || adoptedErr != nil || adoptedAt.Before(mergedAt) {
+			return errors.New("irreversible merge adoption time is invalid")
+		}
+	}
+	if remote.CandidateFailure != nil && remote.MergeIntent != nil {
+		return errors.New("candidate failure retained stale merge authority")
+	}
+	if (record.State == StateCompleted) != (remote.Completion != nil) {
+		return errors.New("completed state and completion report must coexist")
+	}
+	if remote.Completion != nil {
+		completion := remote.Completion
+		if remote.Merge == nil || remote.MergeIntent == nil || !completion.IssueClosed ||
+			!completion.RemoteBranchAbsent || !completion.WorktreesAbsent ||
+			!completion.LocalBranchAbsent ||
+			completion.OperatorStateSHA256 != remote.MergeIntent.OperatorStateSHA256 ||
+			!completion.Integration.Clean ||
+			completion.Integration.Branch == authorization.Branch ||
+			!completion.LocalMain.Exists || !completion.LocalMain.Clean ||
+			completion.LocalMain.Relation != LocalMainSynced ||
+			completion.LocalMain.HeadSHA != completion.OriginMain.HeadSHA ||
+			completion.LocalMain.OriginHeadSHA != completion.OriginMain.HeadSHA ||
+			!runIDPattern.MatchString(completion.OperatorStateSHA256) ||
+			!safeCompletionPath(completion.Integration.Path) {
+			return errors.New("non-local completion report is invalid")
+		}
+		if err := validateOriginMain(
+			completion.OriginMain, *remote.Merge, candidate.CommitSHA,
+		); err != nil {
+			return err
+		}
+		if _, err := time.Parse(timeFormat, completion.CompletedAt); err != nil {
+			return errors.New("non-local completion time is invalid")
 		}
 	}
 	if remote.CandidateFailure != nil {
