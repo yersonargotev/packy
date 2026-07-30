@@ -18,7 +18,10 @@ import (
 	"unicode/utf8"
 )
 
-const SchemaV1 = "packy.issue-delivery/v1"
+const (
+	SchemaV1 = "packy.issue-delivery/v1"
+	SchemaV2 = "packy.issue-delivery/v2"
+)
 
 type RepositoryIdentity struct {
 	Owner  string `json:"owner"`
@@ -34,12 +37,28 @@ type SpecIdentity struct {
 	NodeID string `json:"node_id"`
 }
 type Authority struct {
+	Kind                  DeliveryAuthorityKind   `json:"kind,omitempty"`
 	IssueSHA256           string                  `json:"issue_sha256"`
-	SpecSHA256            string                  `json:"spec_sha256"`
+	SpecSHA256            string                  `json:"spec_sha256,omitempty"`
 	Labels                []string                `json:"labels"`
 	DependencyDisposition []DependencyDisposition `json:"dependency_disposition"`
 	AcceptanceCriteria    []string                `json:"acceptance_criteria"`
 }
+type DeliveryAuthorityKind string
+
+const (
+	AuthoritySelfContainedIssue     DeliveryAuthorityKind = "self-contained-issue"
+	AuthorityIssueWithSpecification DeliveryAuthorityKind = "issue-with-specification"
+)
+
+type DeliveryRiskProfile string
+
+const (
+	RiskLow      DeliveryRiskProfile = "low-risk"
+	RiskStandard DeliveryRiskProfile = "standard"
+	RiskHigh     DeliveryRiskProfile = "high-risk"
+)
+
 type DependencyDisposition struct {
 	Identity    string                     `json:"identity"`
 	Disposition DependencyDispositionState `json:"disposition"`
@@ -109,6 +128,7 @@ type Bundle struct {
 	Issue              IssueIdentity               `json:"issue"`
 	Spec               SpecIdentity                `json:"spec"`
 	Authority          Authority                   `json:"authority"`
+	RiskProfile        DeliveryRiskProfile         `json:"risk_profile,omitempty"`
 	Scope              ScopeLedger                 `json:"scope"`
 	AcceptanceMatrix   []AcceptanceRow             `json:"acceptance_matrix"`
 	StartingBaseSHA    string                      `json:"starting_base_sha"`
@@ -160,7 +180,7 @@ func CanonicalJSON(bundle Bundle) ([]byte, error) {
 	if err := Validate(bundle); err != nil {
 		return nil, err
 	}
-	b, err := json.Marshal(bundle)
+	b, err := marshalBundle(bundle)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +223,48 @@ func Decode(data []byte) (Bundle, error) {
 }
 
 func Validate(b Bundle) error {
-	if b.Schema != SchemaV1 {
+	switch b.Schema {
+	case SchemaV1:
+		if b.Authority.Kind != "" || b.RiskProfile != "" {
+			return errors.New("schema v1 cannot contain v2 delivery authority or risk profile")
+		}
+		if b.Spec.Number <= 0 || blank(b.Spec.NodeID) {
+			return errors.New("spec number and GitHub node ID are required")
+		}
+		if b.Spec.Number == b.Issue.Number || b.Spec.NodeID == b.Issue.NodeID {
+			return errors.New("issue and spec identities must be distinct")
+		}
+		if !digest(b.Authority.IssueSHA256) || !digest(b.Authority.SpecSHA256) {
+			return errors.New("canonical issue and spec SHA-256 digests are required")
+		}
+	case SchemaV2:
+		if !digest(b.Authority.IssueSHA256) {
+			return errors.New("canonical issue SHA-256 digest is required")
+		}
+		switch b.Authority.Kind {
+		case AuthoritySelfContainedIssue:
+			if b.Spec != (SpecIdentity{}) || b.Authority.SpecSHA256 != "" {
+				return errors.New("self-contained issue authority must not contain a specification identity or digest")
+			}
+		case AuthorityIssueWithSpecification:
+			if b.Spec.Number <= 0 || blank(b.Spec.NodeID) {
+				return errors.New("spec number and GitHub node ID are required")
+			}
+			if b.Spec.Number == b.Issue.Number || b.Spec.NodeID == b.Issue.NodeID {
+				return errors.New("issue and spec identities must be distinct")
+			}
+			if !digest(b.Authority.SpecSHA256) {
+				return errors.New("canonical spec SHA-256 digest is required")
+			}
+		default:
+			return fmt.Errorf("invalid delivery authority kind %q", b.Authority.Kind)
+		}
+		switch b.RiskProfile {
+		case RiskLow, RiskStandard, RiskHigh:
+		default:
+			return fmt.Errorf("invalid delivery risk profile %q", b.RiskProfile)
+		}
+	default:
 		return fmt.Errorf("unsupported delivery evidence schema %q", b.Schema)
 	}
 	if !slug(b.Repository.Owner) || !slug(b.Repository.Name) || blank(b.Repository.NodeID) {
@@ -211,15 +272,6 @@ func Validate(b Bundle) error {
 	}
 	if b.Issue.Number <= 0 || blank(b.Issue.NodeID) {
 		return errors.New("issue number and GitHub node ID are required")
-	}
-	if b.Spec.Number <= 0 || blank(b.Spec.NodeID) {
-		return errors.New("spec number and GitHub node ID are required")
-	}
-	if b.Spec.Number == b.Issue.Number || b.Spec.NodeID == b.Issue.NodeID {
-		return errors.New("issue and spec identities must be distinct")
-	}
-	if !digest(b.Authority.IssueSHA256) || !digest(b.Authority.SpecSHA256) {
-		return errors.New("canonical issue and spec SHA-256 digests are required")
 	}
 	if b.Iterations == nil {
 		return errors.New("iterations must be an explicit array")
@@ -376,6 +428,37 @@ func Validate(b Bundle) error {
 		return err
 	}
 	return nil
+}
+
+// marshalBundle preserves the v1 wire shape while allowing a self-contained
+// v2 authority to omit specification evidence entirely.
+func marshalBundle(bundle Bundle) ([]byte, error) {
+	if bundle.Schema != SchemaV2 || bundle.Authority.Kind != AuthoritySelfContainedIssue {
+		return json.Marshal(bundle)
+	}
+	type selfContainedV2 struct {
+		Schema             string                      `json:"schema"`
+		Repository         RepositoryIdentity          `json:"repository"`
+		Issue              IssueIdentity               `json:"issue"`
+		Authority          Authority                   `json:"authority"`
+		RiskProfile        DeliveryRiskProfile         `json:"risk_profile"`
+		Scope              ScopeLedger                 `json:"scope"`
+		AcceptanceMatrix   []AcceptanceRow             `json:"acceptance_matrix"`
+		StartingBaseSHA    string                      `json:"starting_base_sha"`
+		Iterations         []Iteration                 `json:"iterations"`
+		ReviewReceipts     []ReviewReceipt             `json:"review_receipts"`
+		Adjudications      []Adjudication              `json:"adjudications"`
+		ValidationReceipts []ValidationReceipt         `json:"validation_receipts,omitempty"`
+		FocusedValidation  []FocusedValidationEvidence `json:"focused_validation,omitempty"`
+	}
+	return json.Marshal(selfContainedV2{
+		Schema: bundle.Schema, Repository: bundle.Repository, Issue: bundle.Issue,
+		Authority: bundle.Authority, RiskProfile: bundle.RiskProfile, Scope: bundle.Scope,
+		AcceptanceMatrix: bundle.AcceptanceMatrix, StartingBaseSHA: bundle.StartingBaseSHA,
+		Iterations: bundle.Iterations, ReviewReceipts: bundle.ReviewReceipts,
+		Adjudications: bundle.Adjudications, ValidationReceipts: bundle.ValidationReceipts,
+		FocusedValidation: bundle.FocusedValidation,
+	})
 }
 
 func canonicalize(b *Bundle) {

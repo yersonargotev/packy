@@ -69,6 +69,96 @@ func fixture() Bundle {
 	return Bundle{Schema: SchemaV1, Repository: RepositoryIdentity{"owner", "repo", "R_node"}, Issue: IssueIdentity{276, "I_node"}, Spec: SpecIdentity{277, "S_node"}, Authority: Authority{IssueSHA256: strings.Repeat("a", 64), SpecSHA256: strings.Repeat("b", 64), Labels: []string{"status:approved", "feature"}, DependencyDisposition: []DependencyDisposition{{"#275", "satisfied"}}, AcceptanceCriteria: criteria}, Scope: ScopeLedger{OwnedNow: []LedgerEntry{{"O1", "owned", "issue#276"}}, Deferred: []DeferredEntry{{"D1", "deferred", "issue#277", "owner-team"}}, Forbidden: []LedgerEntry{{"F1", "forbidden", "issue#276"}}, Prerequisites: []PrerequisiteEntry{{"E1", "prerequisite", "issue#275", "satisfied", "requalify on change"}}}, AcceptanceMatrix: rows, StartingBaseSHA: strings.Repeat("c", 40), Iterations: []Iteration{}}
 }
 
+func v2Fixture(kind DeliveryAuthorityKind, profile DeliveryRiskProfile) Bundle {
+	b := fixture()
+	b.Schema = SchemaV2
+	b.Authority.Kind = kind
+	b.RiskProfile = profile
+	if kind == AuthoritySelfContainedIssue {
+		b.Spec = SpecIdentity{}
+		b.Authority.SpecSHA256 = ""
+	}
+	return b
+}
+
+func TestV2AuthorityRiskAndCanonicalPersistence(t *testing.T) {
+	for _, kind := range []DeliveryAuthorityKind{AuthoritySelfContainedIssue, AuthorityIssueWithSpecification} {
+		for _, profile := range []DeliveryRiskProfile{RiskLow, RiskStandard, RiskHigh} {
+			t.Run(string(kind)+"/"+string(profile), func(t *testing.T) {
+				want := v2Fixture(kind, profile)
+				data, err := CanonicalJSON(want)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if kind == AuthoritySelfContainedIssue && (bytes.Contains(data, []byte(`"spec":`)) || bytes.Contains(data, []byte(`"spec_sha256":`))) {
+					t.Fatalf("self-contained authority manufactured specification evidence: %s", data)
+				}
+				path := filepath.Join(t.TempDir(), "evidence.json")
+				if err := StoreAtomic(path, want); err != nil {
+					t.Fatal(err)
+				}
+				got, stored, err := Load(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				canonicalize(&want)
+				if !reflect.DeepEqual(got, want) || !bytes.Equal(stored, data) {
+					t.Fatalf("v2 persistence roundtrip differs: %#v", got)
+				}
+				status, err := RenderStatus(got)
+				if err != nil || !strings.Contains(status, string(kind)) || !strings.Contains(status, string(profile)) {
+					t.Fatalf("v2 status: %q %v", status, err)
+				}
+			})
+		}
+	}
+}
+
+func TestV2RequiresExplicitValidAuthorityAndRisk(t *testing.T) {
+	tests := map[string]func(*Bundle){
+		"missing authority": func(b *Bundle) { b.Authority.Kind = "" },
+		"invalid authority": func(b *Bundle) { b.Authority.Kind = "other" },
+		"missing profile":   func(b *Bundle) { b.RiskProfile = "" },
+		"invalid profile":   func(b *Bundle) { b.RiskProfile = "routine" },
+		"self spec": func(b *Bundle) {
+			b.Spec = SpecIdentity{277, "S_node"}
+		},
+		"self spec digest": func(b *Bundle) { b.Authority.SpecSHA256 = strings.Repeat("b", 64) },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			b := v2Fixture(AuthoritySelfContainedIssue, RiskStandard)
+			mutate(&b)
+			if err := Validate(b); err == nil {
+				t.Fatal("accepted invalid v2 bundle")
+			}
+		})
+	}
+
+	b := v2Fixture(AuthorityIssueWithSpecification, RiskStandard)
+	b.Authority.SpecSHA256 = ""
+	if err := Validate(b); err == nil {
+		t.Fatal("issue-with-specification accepted without spec digest")
+	}
+}
+
+func TestV1AndV2QualificationAreStaleNotConverted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "issue.json")
+	v1 := fixture()
+	if err := StoreAtomic(path, v1); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	result, err := InitializeOrResume(path, v2Fixture(AuthorityIssueWithSpecification, RiskStandard))
+	if err != nil || result.State != Stale {
+		t.Fatalf("v1 versus v2 = %#v, %v", result, err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Fatal("stale v1 evidence was converted or overwritten")
+	}
+}
+
 func TestCanonicalRoundTripAndPermutation(t *testing.T) {
 	a := fixture()
 	b := fixture()

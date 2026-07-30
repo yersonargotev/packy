@@ -78,6 +78,8 @@ type qualification struct {
 	} `json:"repository"`
 	IssueNumber           int                                      `json:"issue_number"`
 	SpecNumber            int                                      `json:"spec_number"`
+	AuthorityKind         deliveryevidence.DeliveryAuthorityKind   `json:"authority_kind,omitempty"`
+	RiskProfile           deliveryevidence.DeliveryRiskProfile     `json:"risk_profile,omitempty"`
 	DependencyDisposition []deliveryevidence.DependencyDisposition `json:"dependency_disposition"`
 	Scope                 deliveryevidence.ScopeLedger             `json:"scope"`
 	AcceptanceCriteria    []string                                 `json:"acceptance_criteria"`
@@ -408,8 +410,38 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err = decoder.Decode(&extra); err != io.EOF {
 		return errors.New("qualification must contain exactly one JSON value")
 	}
-	if q.Schema != deliveryevidence.SchemaV1 || q.IssueNumber <= 0 || q.SpecNumber <= 0 || q.IssueNumber == q.SpecNumber {
-		return errors.New("qualification schema and distinct positive issue/spec numbers are required")
+	switch q.Schema {
+	case deliveryevidence.SchemaV1:
+		if q.IssueNumber <= 0 || q.SpecNumber <= 0 || q.IssueNumber == q.SpecNumber ||
+			q.AuthorityKind != "" || q.RiskProfile != "" {
+			return errors.New("v1 qualification requires distinct positive issue/spec numbers and forbids v2 fields")
+		}
+	case deliveryevidence.SchemaV2:
+		if q.IssueNumber <= 0 {
+			return errors.New("v2 qualification requires a positive issue number")
+		}
+		if q.RiskProfile == "" {
+			q.RiskProfile = deliveryevidence.RiskStandard
+		}
+		switch q.RiskProfile {
+		case deliveryevidence.RiskLow, deliveryevidence.RiskStandard, deliveryevidence.RiskHigh:
+		default:
+			return errors.New("v2 qualification risk profile must be low-risk, standard, or high-risk")
+		}
+		switch q.AuthorityKind {
+		case deliveryevidence.AuthoritySelfContainedIssue:
+			if q.SpecNumber != 0 {
+				return errors.New("self-contained issue qualification forbids a specification number")
+			}
+		case deliveryevidence.AuthorityIssueWithSpecification:
+			if q.SpecNumber <= 0 || q.SpecNumber == q.IssueNumber {
+				return errors.New("issue-with-specification qualification requires a distinct positive specification number")
+			}
+		default:
+			return errors.New("v2 qualification authority kind is required")
+		}
+	default:
+		return fmt.Errorf("unsupported qualification schema %q", q.Schema)
 	}
 	if c.Git == nil || c.GitHub == nil {
 		return errors.New("Git and GitHub read-only runners are required")
@@ -484,22 +516,32 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err != nil {
 		return fmt.Errorf("observe issue: %w", err)
 	}
-	spec, err := observe(q.SpecNumber)
-	if err != nil {
-		return fmt.Errorf("observe spec: %w", err)
+	var spec issueObservation
+	hasSpec := q.Schema == deliveryevidence.SchemaV1 || q.AuthorityKind == deliveryevidence.AuthorityIssueWithSpecification
+	if hasSpec {
+		spec, err = observe(q.SpecNumber)
+		if err != nil {
+			return fmt.Errorf("observe spec: %w", err)
+		}
 	}
-	if issue.Number != q.IssueNumber || spec.Number != q.SpecNumber || issue.ID == "" || spec.ID == "" {
-		return errors.New("foreign issue or spec identity")
+	if issue.Number != q.IssueNumber || issue.ID == "" {
+		return errors.New("foreign issue identity")
 	}
-	if !eligibleIssueObservation(issue) || !eligibleSpecObservation(spec) {
-		if !strings.EqualFold(issue.State, "OPEN") || !strings.EqualFold(spec.State, "OPEN") {
+	if hasSpec && (spec.Number != q.SpecNumber || spec.ID == "") {
+		return errors.New("foreign specification identity")
+	}
+	if !eligibleIssueObservation(issue) || (hasSpec && !eligibleSpecObservation(spec)) {
+		if !strings.EqualFold(issue.State, "OPEN") || (hasSpec && !strings.EqualFold(spec.State, "OPEN")) {
 			return errors.New("issue and accepted spec must be open")
 		}
 		labels := labelNames(issue.Labels)
 		if !hasLabel(labels, "status:approved") && !hasLabel(labels, "status:needs-review") {
 			return errors.New("issue is not eligible: approved or needs-review status is required")
 		}
-		return errors.New("spec authority is not accepted")
+		if hasSpec {
+			return errors.New("spec authority is not accepted")
+		}
+		return errors.New("issue authority is not accepted")
 	}
 	labels := labelNames(issue.Labels)
 	if err = matchDependencies(q.DependencyDisposition, issue.BlockedBy.Nodes); err != nil {
@@ -509,11 +551,14 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err != nil {
 		return err
 	}
-	specHash, err := deliveryevidence.TypedObservationHash("github-spec", fmt.Sprintf("%s#%d:%s", slug, spec.Number, spec.ID), normalizedIssue(spec))
-	if err != nil {
-		return err
+	var specHash string
+	if hasSpec {
+		specHash, err = deliveryevidence.TypedObservationHash("github-spec", fmt.Sprintf("%s#%d:%s", slug, spec.Number, spec.ID), normalizedIssue(spec))
+		if err != nil {
+			return err
+		}
 	}
-	bundle := deliveryevidence.Bundle{Schema: deliveryevidence.SchemaV1, Repository: deliveryevidence.RepositoryIdentity{Owner: q.Repository.Owner, Name: q.Repository.Name, NodeID: ro.ID}, Issue: deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID}, Spec: deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID}, Authority: deliveryevidence.Authority{IssueSHA256: issueHash, SpecSHA256: specHash, Labels: labels, DependencyDisposition: q.DependencyDisposition, AcceptanceCriteria: q.AcceptanceCriteria}, Scope: q.Scope, AcceptanceMatrix: q.AcceptanceMatrix, StartingBaseSHA: q.StartingBaseSHA, Iterations: q.Iterations, ReviewReceipts: []deliveryevidence.ReviewReceipt{}, Adjudications: []deliveryevidence.Adjudication{}, ValidationReceipts: []deliveryevidence.ValidationReceipt{}, FocusedValidation: []deliveryevidence.FocusedValidationEvidence{}}
+	bundle := deliveryevidence.Bundle{Schema: q.Schema, Repository: deliveryevidence.RepositoryIdentity{Owner: q.Repository.Owner, Name: q.Repository.Name, NodeID: ro.ID}, Issue: deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID}, Spec: deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID}, Authority: deliveryevidence.Authority{Kind: q.AuthorityKind, IssueSHA256: issueHash, SpecSHA256: specHash, Labels: labels, DependencyDisposition: q.DependencyDisposition, AcceptanceCriteria: q.AcceptanceCriteria}, RiskProfile: q.RiskProfile, Scope: q.Scope, AcceptanceMatrix: q.AcceptanceMatrix, StartingBaseSHA: q.StartingBaseSHA, Iterations: q.Iterations, ReviewReceipts: []deliveryevidence.ReviewReceipt{}, Adjudications: []deliveryevidence.Adjudication{}, ValidationReceipts: []deliveryevidence.ValidationReceipt{}, FocusedValidation: []deliveryevidence.FocusedValidationEvidence{}}
 	path, err := deliveryevidence.ResolvePath(commonPath, output, bundle.Issue.Number)
 	if err != nil {
 		return err
