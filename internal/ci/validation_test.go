@@ -246,8 +246,11 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 		}
 	}
 
-	if strings.Count(ci, "cache: true") != 6 || strings.Count(governance, "cache: true") != 1 {
-		t.Fatal("required setup-go jobs must keep cache misses observable and non-blocking")
+	if strings.Count(ci, "cache: false") != 6 ||
+		strings.Count(ci, "uses: ./.github/actions/go-cache") != 6 ||
+		strings.Count(governance, "cache: false") != 1 ||
+		strings.Count(governance, "uses: ./.github/actions/go-cache") != 1 {
+		t.Fatal("required setup-go jobs must use the verified cache adapter")
 	}
 	validate := workflowSection(t, ci, "  validate:", "  claude-floor-smoke:")
 	if strings.Contains(validate, "continue-on-error: true\n        run: ./scripts/validate-packy.sh") {
@@ -257,6 +260,47 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 		if !strings.Contains(ci, runner) {
 			t.Fatalf("supported required workflow runner missing %q", runner)
 		}
+	}
+}
+
+func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) {
+	root := repositoryRoot(t)
+	script := filepath.Join(root, "scripts", "verify-go-cache-restore.sh")
+	action := readFile(t, filepath.Join(root, ".github", "actions", "go-cache", "action.yml"))
+	for _, required := range []string{
+		"lookup-only: true",
+		"actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0",
+		"actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0",
+		`./scripts/verify-go-cache-restore.sh "$LOOKUP_HIT" "$RESTORE_HIT"`,
+	} {
+		if !strings.Contains(action, required) {
+			t.Fatalf("verified Go cache action missing %q", required)
+		}
+	}
+	tests := []struct {
+		name       string
+		lookupHit  string
+		restoreHit string
+		wantExit   bool
+		wantText   string
+	}{
+		{name: "cold miss", lookupHit: "false", restoreHit: "false", wantText: "Go cache miss"},
+		{name: "unavailable cache", lookupHit: "", restoreHit: "", wantText: "Go cache miss"},
+		{name: "exact restore", lookupHit: "true", restoreHit: "true", wantText: "Go cache restored"},
+		{name: "corrupt restore", lookupHit: "true", restoreHit: "false", wantExit: true, wantText: "::error::"},
+		{name: "invalid output", lookupHit: "unknown", restoreHit: "false", wantExit: true, wantText: "invalid hit value"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(script, test.lookupHit, test.restoreHit)
+			output, err := command.CombinedOutput()
+			if (err != nil) != test.wantExit {
+				t.Fatalf("exit error = %v, want failure %t\n%s", err, test.wantExit, output)
+			}
+			if !strings.Contains(string(output), test.wantText) {
+				t.Fatalf("output missing %q:\n%s", test.wantText, output)
+			}
+		})
 	}
 }
 

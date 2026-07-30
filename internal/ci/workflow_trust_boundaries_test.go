@@ -70,6 +70,20 @@ func TestWorkflowTrustBoundaries(t *testing.T) {
 	}
 }
 
+func TestCompositeActionsPinExternalUses(t *testing.T) {
+	root := repositoryRoot(t)
+	path := filepath.Join(root, ".github", "actions", "go-cache", "action.yml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertImmutableExternalUses(t, workflowDocument{
+		path:    ".github/actions/go-cache/action.yml",
+		content: string(data),
+		lines:   strings.Split(string(data), "\n"),
+	})
+}
+
 func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 	root := repositoryRoot(t)
 	tests := []struct {
