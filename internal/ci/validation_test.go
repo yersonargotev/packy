@@ -208,7 +208,7 @@ func TestChangedValidationClassifiesTheCompleteWorkingTree(t *testing.T) {
 
 func TestCIUsesOnlyTheValidationEntrypoint(t *testing.T) {
 	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
-	if strings.Count(workflow, "run: ./scripts/validate-packy.sh") != 1 {
+	if strings.Count(workflow, "./scripts/validate-packy.sh") != 1 {
 		t.Fatal("CI must invoke the repository validation authority exactly once")
 	}
 	for _, unsafe := range []string{"go test", "go vet", "go build", "gofmt"} {
@@ -538,6 +538,19 @@ func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testi
 	authority := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
 	if strings.Count(authority, "./scripts/validate-vercel-acceptance.sh") != 1 {
 		t.Fatal("repository validation authority must run the Vercel foundation exactly once")
+	}
+	validate := workflowSection(t, readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml")), "  validate:", "  claude-floor-smoke:")
+	if strings.Contains(validate, "./scripts/validate-vercel-acceptance.sh") {
+		t.Fatal("required validation job must not run a second Vercel foundation pass")
+	}
+	for _, required := range []string{
+		"--vercel-foundation-evidence-dir \"$RUNNER_TEMP/vercel-foundation-evidence\"",
+		"--candidate-sha \"$GITHUB_SHA\"",
+		"--run-id \"${{ github.run_id }}\"",
+	} {
+		if !strings.Contains(validate, required) {
+			t.Fatalf("required validation job does not bind foundation evidence with %q", required)
+		}
 	}
 }
 
@@ -2130,7 +2143,8 @@ func TestHostile(t *testing.T) {
 	// Acceptance cohorts own their own execution contracts; this tracer is
 	// scoped to the repository entrypoint's package selection and validation classes.
 	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-addy-acceptance.sh"), "#!/bin/sh\nexit 0\n")
-	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-vercel-acceptance.sh"), "#!/bin/sh\nexit 0\n")
+	vercelInvocationLog := filepath.Join(tempRoot, "vercel-invocations.log")
+	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-vercel-acceptance.sh"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$PACKY_VERCEL_INVOCATION_LOG\"\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -2144,6 +2158,7 @@ func TestHostile(t *testing.T) {
 		"GOPATH="+filepath.Join(tempRoot, "go-path"),
 		"HOSTILE_SENTINEL="+sentinel,
 		"PACKY_VALIDATION_COMMAND_LOG="+commandLog,
+		"PACKY_VERCEL_INVOCATION_LOG="+vercelInvocationLog,
 		"PACKY_VALIDATION_HOME=",
 		"PACKY_VALIDATION_CONFIG_HOME=",
 		"PATH="+shimRoot+string(os.PathListSeparator)+os.Getenv("PATH"),
@@ -2204,6 +2219,9 @@ func TestHostile(t *testing.T) {
 	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
 		t.Fatalf("hostile vendored test executed: %v", err)
 	}
+	if got := strings.TrimSpace(readFile(t, vercelInvocationLog)); got != "" {
+		t.Fatalf("ordinary local validation requested durable Vercel evidence: %q", got)
+	}
 	for _, path := range []string{operatorHome, operatorXDG} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("validation wrote operator path %s: %v", path, err)
@@ -2230,11 +2248,39 @@ func TestHostile(t *testing.T) {
 		}
 	}
 
+	evidenceDir := filepath.Join(filepath.Dir(tempRoot), "vercel-evidence")
+	candidateSHA := strings.Repeat("a", 40)
+	if err := os.WriteFile(vercelInvocationLog, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	withEvidence := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"),
+		"--vercel-foundation-evidence-dir", evidenceDir,
+		"--candidate-sha", candidateSHA,
+		"--run-id", "379",
+	)
+	withEvidence.Dir = tempRoot
+	withEvidence.Env = cmd.Env
+	if output, err := withEvidence.CombinedOutput(); err != nil {
+		t.Fatalf("validation entrypoint rejected complete Vercel evidence identity: %v\n%s", err, output)
+	}
+	wantVercelArgs := "--evidence-dir " + evidenceDir + " --candidate-sha " + candidateSHA + " --run-id 379"
+	if got := strings.TrimSpace(readFile(t, vercelInvocationLog)); got != wantVercelArgs {
+		t.Fatalf("Vercel foundation invocation = %q, want %q", got, wantVercelArgs)
+	}
+
 	partial := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"))
 	partial.Dir = tempRoot
 	partial.Env = append(cmd.Env, "PACKY_VALIDATION_HOME="+receiptHome)
 	if output, err := partial.CombinedOutput(); err == nil || !strings.Contains(string(output), "must both be absolute") {
 		t.Fatalf("partial receipt sandbox identity was accepted: %v\n%s", err, output)
+	}
+	partialEvidence := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"),
+		"--candidate-sha", candidateSHA,
+	)
+	partialEvidence.Dir = tempRoot
+	partialEvidence.Env = cmd.Env
+	if output, err := partialEvidence.CombinedOutput(); err == nil || !strings.Contains(string(output), "requires --vercel-foundation-evidence-dir, --candidate-sha, and --run-id together") {
+		t.Fatalf("partial Vercel evidence identity was accepted: %v\n%s", err, output)
 	}
 }
 
