@@ -57,6 +57,7 @@ type Request struct {
 	IssueNumber    int
 	Decision       *Decision
 	Repair         *RepairDecision
+	NonLocal       *NonLocalAuthorization
 }
 
 type Timing struct {
@@ -88,6 +89,7 @@ type Outcome struct {
 	Candidate       *Candidate
 	Repair          *RepairDecisionRequest
 	LocalReadiness  *LocalReadiness
+	NonLocal        *NonLocalDelivery
 	Timing          []Timing
 }
 
@@ -142,6 +144,13 @@ type GitObserver interface {
 
 type GitHubObserver interface {
 	ObserveIssue(context.Context, GitObservation, int) (TrackerObservation, error)
+}
+
+type NonLocalGateway interface {
+	ObserveNonLocal(context.Context, NonLocalObserveRequest) (NonLocalObservation, error)
+	PushIssueBranch(context.Context, PushIssueBranchRequest) error
+	EnsurePullRequest(context.Context, EnsurePullRequestRequest) error
+	RetryInfrastructureCheck(context.Context, RetryInfrastructureCheckRequest) error
 }
 
 type Clock interface {
@@ -388,6 +397,110 @@ type LocalReadiness struct {
 	ReadyAt       string `json:"ready_at"`
 }
 
+type NonLocalAuthorization struct {
+	RunID        string `json:"run_id"`
+	CandidateID  string `json:"candidate_id"`
+	CommitSHA    string `json:"commit_sha"`
+	TreeSHA      string `json:"tree_sha"`
+	Branch       string `json:"branch"`
+	LocalReadyAt string `json:"local_ready_at"`
+}
+
+type NonLocalObserveRequest struct {
+	RunID       string
+	Repository  deliveryevidence.RepositoryIdentity
+	Issue       deliveryevidence.IssueIdentity
+	CandidateID string
+	Branch      string
+	BaseRef     string
+	HeadSHA     string
+}
+
+type RemoteBranchObservation struct {
+	Name    string `json:"name"`
+	HeadSHA string `json:"head_sha"`
+}
+
+type RemotePullRequestObservation struct {
+	Number               int    `json:"number"`
+	URL                  string `json:"url"`
+	State                string `json:"state"`
+	BaseRef              string `json:"base_ref"`
+	BaseSHA              string `json:"base_sha"`
+	HeadBranch           string `json:"head_branch"`
+	HeadSHA              string `json:"head_sha"`
+	HeadRepositoryNodeID string `json:"head_repository_node_id"`
+	ClosingIssue         int    `json:"closing_issue"`
+}
+
+type NonLocalObservation struct {
+	Branch       *RemoteBranchObservation
+	PullRequests []RemotePullRequestObservation
+	Checks       []CICheckObservation
+}
+
+type PushIssueBranchRequest struct {
+	RunID       string
+	Repository  deliveryevidence.RepositoryIdentity
+	CandidateID string
+	Branch      string
+	HeadSHA     string
+}
+
+type EnsurePullRequestRequest struct {
+	RunID          string
+	Repository     deliveryevidence.RepositoryIdentity
+	Issue          deliveryevidence.IssueIdentity
+	CandidateID    string
+	IdempotencyKey string
+	BaseRef        string
+	HeadBranch     string
+	HeadSHA        string
+	Title          string
+	Body           string
+}
+
+type PullRequestIntent struct {
+	IdempotencyKey string `json:"idempotency_key"`
+	PreparedAt     string `json:"prepared_at"`
+	DispatchedAt   string `json:"dispatched_at,omitempty"`
+}
+
+type RetryInfrastructureCheckRequest struct {
+	RunID         string
+	Repository    deliveryevidence.RepositoryIdentity
+	PullRequest   int
+	CandidateID   string
+	HeadSHA       string
+	CheckIdentity string
+	FailedRunID   int64
+}
+
+type CIRetry struct {
+	CheckIdentity string `json:"check_identity"`
+	FailedRunID   int64  `json:"failed_run_id"`
+	RetriedAt     string `json:"retried_at"`
+}
+
+type CandidateCIFailure struct {
+	CheckIdentity string `json:"check_identity"`
+	RunID         int64  `json:"run_id"`
+	DetailsURL    string `json:"details_url"`
+	ObservedAt    string `json:"observed_at"`
+}
+
+type NonLocalDelivery struct {
+	Authorization     NonLocalAuthorization         `json:"authorization"`
+	BaseRef           string                        `json:"base_ref"`
+	Branch            *RemoteBranchObservation      `json:"branch,omitempty"`
+	PullRequestIntent *PullRequestIntent            `json:"pull_request_intent,omitempty"`
+	PullRequest       *RemotePullRequestObservation `json:"pull_request,omitempty"`
+	Checks            []CICheckObservation          `json:"checks"`
+	Retries           []CIRetry                     `json:"retries"`
+	CandidateFailure  *CandidateCIFailure           `json:"candidate_failure,omitempty"`
+	CIStatus          string                        `json:"ci_status,omitempty"`
+}
+
 type Config struct {
 	Git             GitObserver
 	GitHub          GitHubObserver
@@ -397,6 +510,7 @@ type Config struct {
 	Risk            CandidateRiskObserver
 	Specialist      SpecialistReviewExecutor
 	Boundary        BoundaryValidationExecutor
+	NonLocal        NonLocalGateway
 	SandboxRoot     string
 	DeclaredProfile deliveryevidence.DeliveryRiskProfile
 }
@@ -410,6 +524,7 @@ type Module struct {
 	risk            CandidateRiskObserver
 	specialist      SpecialistReviewExecutor
 	boundary        BoundaryValidationExecutor
+	nonlocal        NonLocalGateway
 	sandboxRoot     string
 	declaredProfile deliveryevidence.DeliveryRiskProfile
 	store           fileRunStore
@@ -439,6 +554,9 @@ func New(config Config) (*Module, error) {
 	if (config.Specialist == nil) != (config.Boundary == nil) {
 		return nil, fmt.Errorf("specialist review and boundary validation executors must be configured together")
 	}
+	if config.NonLocal != nil && config.Review == nil {
+		return nil, fmt.Errorf("non-local delivery requires configured candidate assurance")
+	}
 	if config.Review != nil &&
 		(config.SandboxRoot == "" || !filepath.IsAbs(config.SandboxRoot) ||
 			filepath.Clean(config.SandboxRoot) != config.SandboxRoot || config.SandboxRoot == string(filepath.Separator)) {
@@ -453,6 +571,7 @@ func New(config Config) (*Module, error) {
 		git: config.Git, github: config.GitHub, clock: config.Clock,
 		review: config.Review, validation: config.Validation, sandboxRoot: config.SandboxRoot,
 		risk: config.Risk, specialist: config.Specialist, boundary: config.Boundary,
+		nonlocal:        config.NonLocal,
 		declaredProfile: config.DeclaredProfile,
 	}, nil
 }
@@ -494,6 +613,7 @@ type runRecord struct {
 	EffectiveProfile   deliveryevidence.DeliveryRiskProfile
 	RequiredBoundaries []SensitiveBoundary
 	ProfileHistory     []ProfileTransition
+	NonLocal           *NonLocalDelivery
 	Timing             []Timing
 	CreatedAt          string
 	UpdatedAt          string

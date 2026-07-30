@@ -178,7 +178,8 @@ func outcomeFromRecord(record runRecord) Outcome {
 		SupersedesRunID: record.SupersedesRunID, Decision: record.PendingDecision,
 		Evidence: record.Evidence, Observations: record.Observations,
 		Candidate: candidate, Repair: record.PendingRepair, LocalReadiness: record.LocalReadiness,
-		Timing: append([]Timing(nil), record.Timing...),
+		NonLocal: record.NonLocal,
+		Timing:   append([]Timing(nil), record.Timing...),
 	}
 }
 
