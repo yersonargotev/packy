@@ -118,6 +118,7 @@ func decodeRun(data []byte) (runRecord, error) {
 		}
 		record.Evidence = &evidence
 	}
+	adoptLegacyNullQualificationFindings(&record)
 	if err := validateRun(record); err != nil {
 		return runRecord{}, err
 	}

@@ -469,6 +469,7 @@ func TestQualificationSeamValidationAllowsProofsButRejectsUnreviewedOwnership(t 
 func TestQualificationHistoryRejectsNullFindingsAndInvalidCorrectionMatrices(t *testing.T) {
 	module, git, _, _, _ := assuranceFixture(t)
 	var record runRecord
+	var persisted []byte
 	err := module.store.withIssueLock(
 		context.Background(), git.value.CommonDir, 357,
 		func(store lockedIssueStore) error {
@@ -476,6 +477,7 @@ func TestQualificationHistoryRejectsNullFindingsAndInvalidCorrectionMatrices(t *
 			if loadErr != nil || !found {
 				return loadErr
 			}
+			persisted = append([]byte(nil), data...)
 			record, loadErr = decodeRun(data)
 			return loadErr
 		},
@@ -495,6 +497,43 @@ func TestQualificationHistoryRejectsNullFindingsAndInvalidCorrectionMatrices(t *
 	if err := validateQualificationHistory(record); err == nil ||
 		!strings.Contains(err.Error(), "invalid correction matrix") {
 		t.Fatalf("invalid correction matrix validation error = %v", err)
+	}
+
+	legacyNull := bytes.Replace(
+		persisted,
+		[]byte(`"findings":[],"completed":true`),
+		[]byte(`"findings":null,"completed":true`),
+		1,
+	)
+	if bytes.Equal(legacyNull, persisted) {
+		t.Fatal("fixture did not contain an empty qualification findings array")
+	}
+	adopted, err := decodeRun(legacyNull)
+	if err != nil {
+		t.Fatalf("decode historical null qualification findings: %v", err)
+	}
+	if adopted.QualificationReviews[len(adopted.QualificationReviews)-1].Findings == nil {
+		t.Fatal("historical null qualification findings were not adopted as an explicit array")
+	}
+	if !bytes.Equal(
+		persisted,
+		bytes.Replace(
+			legacyNull,
+			[]byte(`"findings":null,"completed":true`),
+			[]byte(`"findings":[],"completed":true`),
+			1,
+		),
+	) {
+		t.Fatal("historical qualification bytes were not preserved during adoption")
+	}
+
+	pending := adopted
+	pending.QualificationApproved = false
+	pending.QualificationReviews = pending.QualificationReviews[:1]
+	pending.Evidence.AcceptanceMatrix[0].OwningSeam = "different complete seam"
+	if err := validateQualificationHistory(pending); err == nil ||
+		!strings.Contains(err.Error(), "pending independent rereview") {
+		t.Fatalf("unbound pending rereview matrix validation error = %v", err)
 	}
 }
 

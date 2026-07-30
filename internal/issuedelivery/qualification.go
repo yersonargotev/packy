@@ -256,8 +256,23 @@ func validateQualificationHistory(record runRecord) error {
 	} else if record.PendingQualificationCorrection == nil &&
 		len(record.QualificationReviews) != len(record.QualificationCorrections) {
 		return errors.New("qualification history is not ready for independent rereview")
+	} else if !record.QualificationApproved && record.PendingQualificationCorrection == nil &&
+		len(record.QualificationCorrections) > 0 {
+		corrected := record.QualificationCorrections[len(record.QualificationCorrections)-1].AcceptanceMatrix
+		correctedDigest, err := acceptanceMatrixDigest(corrected)
+		if err != nil || currentDigest != correctedDigest {
+			return errors.New("active qualification matrix does not match the pending independent rereview")
+		}
 	}
 	return nil
+}
+
+func adoptLegacyNullQualificationFindings(record *runRecord) {
+	for index := range record.QualificationReviews {
+		if record.QualificationReviews[index].Findings == nil {
+			record.QualificationReviews[index].Findings = []deliveryevidence.ReviewFinding{}
+		}
+	}
 }
 
 func qualificationSeamsMatchCorrection(
