@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -390,6 +391,43 @@ func TestAdvanceRejectsSemanticallyInvalidPersistedRun(t *testing.T) {
 	if _, err := module.Advance(context.Background(), request); err == nil ||
 		!strings.Contains(err.Error(), "timing does not reach current state") {
 		t.Fatalf("invalid persisted run error = %v", err)
+	}
+}
+
+func TestAdvanceRecoversRunPersistedWithoutActivePointer(t *testing.T) {
+	module, _, _ := moduleFixture(t, 356)
+	request := Request{RepositoryPath: "/repo", IssueNumber: 356}
+	first, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activePath := filepath.Join(module.storePathForTest(t, 356), "active.json")
+	if err := os.Remove(activePath); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.RunID != first.RunID || !reflect.DeepEqual(recovered.Timing, first.Timing) {
+		t.Fatalf("orphaned run was regenerated: first=%#v recovered=%#v", first, recovered)
+	}
+	if _, err := os.Stat(activePath); err != nil {
+		t.Fatalf("active pointer was not recovered: %v", err)
+	}
+}
+
+func TestAdvanceRejectsSymlinkedStateDirectory(t *testing.T) {
+	module, git, _ := moduleFixture(t, 356)
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(git.value.CommonDir, "packy")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 356,
+	}); err == nil {
+		t.Fatal("Advance accepted a symlinked state directory")
 	}
 }
 

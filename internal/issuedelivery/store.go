@@ -3,15 +3,17 @@ package issuedelivery
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 var errIssueRunActive = errors.New("issue delivery run is active")
@@ -35,31 +37,30 @@ func (fileRunStore) withIssueLock(ctx context.Context, commonDir string, issue i
 		return err
 	}
 
-	issueDir, err := ensureIssueDirectory(commonDir, issue)
+	issueFD, err := openIssueDirectory(commonDir, issue, true)
 	if err != nil {
 		return err
 	}
-	lockPath := filepath.Join(issueDir, "advance.lock")
-	if err := rejectSymlinkIfPresent(lockPath); err != nil {
-		return err
-	}
-	lockFD, err := syscall.Open(lockPath, syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0600)
+	defer unix.Close(issueFD)
+	lockFD, err := unix.Openat(
+		issueFD, "advance.lock",
+		unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+		0600,
+	)
 	if err != nil {
 		return fmt.Errorf("open issue delivery lock: %w", err)
 	}
-	lock := os.NewFile(uintptr(lockFD), lockPath)
-	defer lock.Close()
-	if err := validateRegularFile(lockPath, lock); err != nil {
+	defer unix.Close(lockFD)
+	if err := requireRegularFD(lockFD, "advance.lock"); err != nil {
 		return err
 	}
-
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+	if err := unix.Flock(lockFD, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return errIssueRunActive
 		}
 		return fmt.Errorf("lock issue delivery run: %w", err)
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unix.Flock(lockFD, unix.LOCK_UN)
 
 	if err := ctx.Err(); err != nil {
 		return err
@@ -68,216 +69,183 @@ func (fileRunStore) withIssueLock(ctx context.Context, commonDir string, issue i
 }
 
 func (fileRunStore) loadActive(commonDir string, issue int) (runID string, data []byte, found bool, err error) {
-	issueDir, err := issueDirectory(commonDir, issue)
+	issueFD, err := openIssueDirectory(commonDir, issue, false)
+	if errors.Is(err, unix.ENOENT) {
+		return "", nil, false, nil
+	}
 	if err != nil {
 		return "", nil, false, err
 	}
-	if err := validateIssueDirectoryChain(commonDir, issueDir); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", nil, false, nil
-		}
-		return "", nil, false, err
-	}
+	defer unix.Close(issueFD)
 
-	activePath := filepath.Join(issueDir, "active.json")
-	activeData, err := readRegularFile(activePath)
-	if errors.Is(err, fs.ErrNotExist) {
+	activeData, err := readFileAt(issueFD, "active.json")
+	if errors.Is(err, unix.ENOENT) {
 		return "", nil, false, nil
 	}
 	if err != nil {
 		return "", nil, false, fmt.Errorf("load active issue delivery run: %w", err)
 	}
-
-	var active activeRun
-	decoder := json.NewDecoder(bytes.NewReader(activeData))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&active); err != nil {
-		return "", nil, false, fmt.Errorf("decode active issue delivery run: %w", err)
-	}
-	canonical, err := json.Marshal(active)
+	active, err := decodeActive(activeData)
 	if err != nil {
 		return "", nil, false, err
 	}
-	if !bytes.Equal(activeData, canonical) || !validRunID(active.RunID) {
-		return "", nil, false, errors.New("active issue delivery run is not canonical")
-	}
-
-	runPath := filepath.Join(issueDir, "runs", active.RunID+".json")
-	if err := validateExistingDirectory(filepath.Dir(runPath)); err != nil {
+	runsFD, err := openDirectoryAt(issueFD, "runs", false)
+	if err != nil {
 		return "", nil, false, fmt.Errorf("inspect issue delivery runs directory: %w", err)
 	}
-	runData, err := readRegularFile(runPath)
+	defer unix.Close(runsFD)
+	runData, err := readFileAt(runsFD, active.RunID+".json")
 	if err != nil {
 		return "", nil, false, fmt.Errorf("load issue delivery run %q: %w", active.RunID, err)
 	}
 	return active.RunID, runData, true, nil
 }
 
-func (fileRunStore) storeAndActivate(commonDir string, issue int, runID string, data []byte) error {
+func (fileRunStore) loadRun(commonDir string, issue int, runID string) ([]byte, bool, error) {
+	if !validRunID(runID) {
+		return nil, false, errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
+	}
+	issueFD, err := openIssueDirectory(commonDir, issue, false)
+	if errors.Is(err, unix.ENOENT) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer unix.Close(issueFD)
+	runsFD, err := openDirectoryAt(issueFD, "runs", false)
+	if errors.Is(err, unix.ENOENT) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer unix.Close(runsFD)
+	data, err := readFileAt(runsFD, runID+".json")
+	if errors.Is(err, unix.ENOENT) {
+		return nil, false, nil
+	}
+	return data, err == nil, err
+}
+
+func (fileRunStore) activate(commonDir string, issue int, runID string) error {
 	if !validRunID(runID) {
 		return errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
 	}
-	issueDir, err := ensureIssueDirectory(commonDir, issue)
+	issueFD, err := openIssueDirectory(commonDir, issue, true)
 	if err != nil {
 		return err
 	}
-	runsDir := filepath.Join(issueDir, "runs")
-	if err := ensureDirectory(runsDir); err != nil {
-		return err
-	}
-
-	runPath := filepath.Join(runsDir, runID+".json")
-	if existing, err := readRegularFile(runPath); err == nil {
-		if !bytes.Equal(existing, data) {
-			return errors.New("issue delivery run is immutable")
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("inspect issue delivery run: %w", err)
-	} else if err := atomicWrite(runPath, data); err != nil {
-		return fmt.Errorf("store issue delivery run: %w", err)
-	}
+	defer unix.Close(issueFD)
 	activeData, err := json.Marshal(activeRun{RunID: runID})
 	if err != nil {
 		return err
 	}
-	if err := atomicWrite(filepath.Join(issueDir, "active.json"), activeData); err != nil {
+	if err := atomicWriteAt(issueFD, "active.json", activeData); err != nil {
 		return fmt.Errorf("activate issue delivery run: %w", err)
 	}
 	return nil
 }
 
-func issueDirectory(commonDir string, issue int) (string, error) {
+func (store fileRunStore) storeAndActivate(commonDir string, issue int, runID string, data []byte) error {
+	if !validRunID(runID) {
+		return errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
+	}
+	issueFD, err := openIssueDirectory(commonDir, issue, true)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(issueFD)
+	runsFD, err := openDirectoryAt(issueFD, "runs", true)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(runsFD)
+
+	runName := runID + ".json"
+	if existing, err := readFileAt(runsFD, runName); err == nil {
+		if !bytes.Equal(existing, data) {
+			return errors.New("issue delivery run is immutable")
+		}
+	} else if !errors.Is(err, unix.ENOENT) {
+		return fmt.Errorf("inspect issue delivery run: %w", err)
+	} else if err := atomicWriteAt(runsFD, runName, data); err != nil {
+		return fmt.Errorf("store issue delivery run: %w", err)
+	}
+	return store.activate(commonDir, issue, runID)
+}
+
+func openIssueDirectory(commonDir string, issue int, create bool) (int, error) {
 	if issue <= 0 {
-		return "", errors.New("issue number must be positive")
+		return -1, errors.New("issue number must be positive")
 	}
 	if commonDir == "" || !filepath.IsAbs(commonDir) || filepath.Clean(commonDir) != commonDir {
-		return "", errors.New("Git common directory must be an absolute canonical path")
+		return -1, errors.New("Git common directory must be an absolute canonical path")
 	}
-	info, err := os.Lstat(commonDir)
+	current, err := unix.Open(commonDir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if err != nil {
-		return "", fmt.Errorf("inspect Git common directory: %w", err)
+		return -1, fmt.Errorf("open Git common directory: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return "", errors.New("Git common directory must be a non-symlink directory")
+	for _, name := range []string{"packy", "issue-delivery", fmt.Sprintf("issue-%d", issue)} {
+		next, openErr := openDirectoryAt(current, name, create)
+		unix.Close(current)
+		if openErr != nil {
+			return -1, openErr
+		}
+		current = next
 	}
-	return filepath.Join(commonDir, "packy", "issue-delivery", fmt.Sprintf("issue-%d", issue)), nil
+	return current, nil
 }
 
-func ensureIssueDirectory(commonDir string, issue int) (string, error) {
-	issueDir, err := issueDirectory(commonDir, issue)
-	if err != nil {
-		return "", err
+func openDirectoryAt(parent int, name string, create bool) (int, error) {
+	flags := unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC | unix.O_NOFOLLOW
+	fd, err := unix.Openat(parent, name, flags, 0)
+	if errors.Is(err, unix.ENOENT) && create {
+		if mkdirErr := unix.Mkdirat(parent, name, 0700); mkdirErr != nil && !errors.Is(mkdirErr, unix.EEXIST) {
+			return -1, fmt.Errorf("create issue delivery directory %q: %w", name, mkdirErr)
+		}
+		fd, err = unix.Openat(parent, name, flags, 0)
 	}
-	current := commonDir
-	for _, name := range []string{"packy", "issue-delivery", filepath.Base(issueDir)} {
-		current = filepath.Join(current, name)
-		if err := ensureDirectory(current); err != nil {
-			return "", err
+	if err != nil {
+		return -1, fmt.Errorf("open issue delivery directory %q: %w", name, err)
+	}
+	if create {
+		if err := unix.Fchmod(fd, 0700); err != nil {
+			unix.Close(fd)
+			return -1, fmt.Errorf("secure issue delivery directory %q: %w", name, err)
 		}
 	}
-	return issueDir, nil
+	return fd, nil
 }
 
-func validateIssueDirectoryChain(commonDir, issueDir string) error {
-	current := commonDir
-	for _, name := range []string{"packy", "issue-delivery", filepath.Base(issueDir)} {
-		current = filepath.Join(current, name)
-		if err := validateExistingDirectory(current); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func ensureDirectory(path string) error {
-	if err := os.Mkdir(path, 0700); err != nil && !errors.Is(err, fs.ErrExist) {
-		return fmt.Errorf("create issue delivery directory %q: %w", path, err)
-	}
-	if err := validateExistingDirectory(path); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0700)
-}
-
-func validateExistingDirectory(path string) error {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return fmt.Errorf("issue delivery path %q is not a non-symlink directory", path)
-	}
-	return nil
-}
-
-func rejectSymlinkIfPresent(path string) error {
-	info, err := os.Lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("issue delivery path %q must not be a symlink", path)
-	}
-	return nil
-}
-
-func validateRegularFile(path string, file *os.File) error {
-	info, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("inspect issue delivery file %q: %w", path, err)
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("issue delivery path %q is not a regular file", path)
-	}
-	return nil
-}
-
-func readRegularFile(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
+func readFileAt(directory int, name string) ([]byte, error) {
+	fd, err := unix.Openat(directory, name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("issue delivery path %q is not a regular non-symlink file", path)
-	}
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
-	if err != nil {
-		return nil, err
-	}
-	file := os.NewFile(uintptr(fd), path)
+	file := os.NewFile(uintptr(fd), name)
 	defer file.Close()
-	if err := validateRegularFile(path, file); err != nil {
+	if err := requireRegularFD(fd, name); err != nil {
 		return nil, err
 	}
 	return io.ReadAll(file)
 }
 
-func atomicWrite(path string, data []byte) (retErr error) {
-	info, err := os.Lstat(path)
-	if err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular()) {
-		return fmt.Errorf("issue delivery path %q is not a regular non-symlink file", path)
-	}
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+func atomicWriteAt(directory int, name string, data []byte) (retErr error) {
+	if err := rejectNonRegularAt(directory, name); err != nil {
 		return err
 	}
-	dir := filepath.Dir(path)
-	if err := validateExistingDirectory(dir); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(dir, ".tmp-*")
+	tempName, tempFD, err := createTempAt(directory)
 	if err != nil {
 		return err
 	}
-	tempPath := temp.Name()
+	temp := os.NewFile(uintptr(tempFD), tempName)
 	defer func() {
 		if temp != nil {
 			retErr = errors.Join(retErr, temp.Close())
 		}
-		if tempPath != "" {
-			if err := os.Remove(tempPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if tempName != "" {
+			if err := unix.Unlinkat(directory, tempName, 0); err != nil && !errors.Is(err, unix.ENOENT) {
 				retErr = errors.Join(retErr, err)
 			}
 		}
@@ -295,18 +263,74 @@ func atomicWrite(path string, data []byte) (retErr error) {
 		return err
 	}
 	temp = nil
-	if err := os.Rename(tempPath, path); err != nil {
+	if err := unix.Renameat(directory, tempName, directory, name); err != nil {
 		return err
 	}
-	tempPath = ""
-	directory, err := os.Open(dir)
+	tempName = ""
+	return unix.Fsync(directory)
+}
+
+func createTempAt(directory int) (string, int, error) {
+	for attempts := 0; attempts < 100; attempts++ {
+		var random [12]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			return "", -1, err
+		}
+		name := ".tmp-" + hex.EncodeToString(random[:])
+		fd, err := unix.Openat(
+			directory, name,
+			unix.O_CREAT|unix.O_EXCL|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+			0600,
+		)
+		if errors.Is(err, unix.EEXIST) {
+			continue
+		}
+		return name, fd, err
+	}
+	return "", -1, errors.New("create issue delivery temporary file: exhausted unique names")
+}
+
+func rejectNonRegularAt(directory int, name string) error {
+	var stat unix.Stat_t
+	err := unix.Fstatat(directory, name, &stat, unix.AT_SYMLINK_NOFOLLOW)
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	if err := directory.Sync(); err != nil {
-		return errors.Join(err, directory.Close())
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
+		return fmt.Errorf("issue delivery entry %q is not a regular file", name)
 	}
-	return directory.Close()
+	return nil
+}
+
+func requireRegularFD(fd int, name string) error {
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		return err
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
+		return fmt.Errorf("issue delivery entry %q is not a regular file", name)
+	}
+	return nil
+}
+
+func decodeActive(data []byte) (activeRun, error) {
+	var active activeRun
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&active); err != nil {
+		return activeRun{}, fmt.Errorf("decode active issue delivery run: %w", err)
+	}
+	canonical, err := json.Marshal(active)
+	if err != nil {
+		return activeRun{}, err
+	}
+	if !bytes.Equal(data, canonical) || !validRunID(active.RunID) {
+		return activeRun{}, errors.New("active issue delivery run is not canonical")
+	}
+	return active, nil
 }
 
 func validRunID(runID string) bool {

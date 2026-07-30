@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/deliveryevidence"
@@ -64,6 +65,25 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 			supersedes = active.ID
 		}
 		runID := runIdentity(tracker.Repository, tracker.Issue, compiled.hash, supersedes)
+		orphanData, orphanFound, err := m.store.loadRun(git.CommonDir, request.IssueNumber, runID)
+		if err != nil {
+			return err
+		}
+		if orphanFound {
+			orphan, err := decodeRun(orphanData)
+			if err != nil {
+				return err
+			}
+			if !compatibleOrphan(orphan, tracker, compiled, supersedes) {
+				return errors.New("orphaned issue delivery run does not match current qualification")
+			}
+			if err := m.store.activate(git.CommonDir, request.IssueNumber, runID); err != nil {
+				return err
+			}
+			outcome = outcomeFromRecord(orphan)
+			outcome.Observations = observationsFrom(git, tracker, compiled.hash)
+			return nil
+		}
 		nowCompleted := m.clock.Now().UTC()
 		record := runRecord{
 			Schema: runSchema, ID: runID, Repository: tracker.Repository, Issue: tracker.Issue,
@@ -97,6 +117,30 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 		return Outcome{State: StateWaiting, Reason: "another Advance call is active for this issue"}, nil
 	}
 	return outcome, err
+}
+
+func compatibleOrphan(
+	record runRecord,
+	tracker TrackerObservation,
+	compiled compiledAuthority,
+	supersedes string,
+) bool {
+	return record.Repository == tracker.Repository &&
+		record.Issue == tracker.Issue &&
+		record.AuthoritySHA256 == compiled.hash &&
+		record.SupersedesRunID == supersedes &&
+		record.State == compiled.state &&
+		record.Reason == compiled.reason &&
+		reflect.DeepEqual(record.Evidence, evidencePointer(compiled)) &&
+		reflect.DeepEqual(record.PendingDecision, compiled.pending) &&
+		reflect.DeepEqual(record.Decisions, compiled.decisions)
+}
+
+func evidencePointer(compiled compiledAuthority) *deliveryevidence.Bundle {
+	if compiled.pending != nil {
+		return nil
+	}
+	return &compiled.evidence
 }
 
 const timeFormat = "2006-01-02T15:04:05.000000000Z"
