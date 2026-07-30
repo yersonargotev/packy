@@ -17,26 +17,30 @@ import (
 )
 
 type advanceOptions struct {
-	RepositoryPath        string
-	IssueNumber           int
-	SpecificationNumber   int
-	SandboxRoot           string
-	DeclaredProfile       deliveryevidence.DeliveryRiskProfile
-	Decision              *issuedelivery.Decision
-	Repair                *issuedelivery.RepairDecision
-	Reviews               []issuedelivery.CandidateReview
-	Specialists           []issuedelivery.SpecialistReview
-	Acceptance            []issuedelivery.AcceptanceProof
-	CIFailureAttributions []advanceCIFailureAttribution
-	AuthorizeRemote       bool
+	RepositoryPath          string
+	IssueNumber             int
+	SpecificationNumber     int
+	SandboxRoot             string
+	DeclaredProfile         deliveryevidence.DeliveryRiskProfile
+	Decision                *issuedelivery.Decision
+	Repair                  *issuedelivery.RepairDecision
+	Reviews                 []issuedelivery.CandidateReview
+	Specialists             []issuedelivery.SpecialistReview
+	Acceptance              []issuedelivery.AcceptanceProof
+	QualificationReview     *issuedelivery.QualificationReview
+	QualificationCorrection *issuedelivery.QualificationCorrection
+	CIFailureAttributions   []advanceCIFailureAttribution
+	AuthorizeRemote         bool
 }
 
 type advanceFactory func(advanceOptions) (issueDeliveryAdvancer, error)
 
 type advanceReviewContent struct {
-	Reviews     []issuedelivery.CandidateReview  `json:"reviews"`
-	Specialists []issuedelivery.SpecialistReview `json:"specialist_reviews"`
-	Acceptance  []issuedelivery.AcceptanceProof  `json:"acceptance_proofs"`
+	Reviews                 []issuedelivery.CandidateReview        `json:"reviews"`
+	Specialists             []issuedelivery.SpecialistReview       `json:"specialist_reviews"`
+	Acceptance              []issuedelivery.AcceptanceProof        `json:"acceptance_proofs"`
+	QualificationReview     *issuedelivery.QualificationReview     `json:"qualification_review,omitempty"`
+	QualificationCorrection *issuedelivery.QualificationCorrection `json:"qualification_correction,omitempty"`
 }
 
 type advanceCIFailureAttribution struct {
@@ -48,19 +52,23 @@ type advanceCIFailureAttribution struct {
 }
 
 type advanceReport struct {
-	RunID           string                               `json:"run_id"`
-	State           issuedelivery.State                  `json:"state"`
-	Reason          string                               `json:"reason"`
-	SupersedesRunID string                               `json:"supersedes_run_id,omitempty"`
-	Decision        *issuedelivery.DecisionRequest       `json:"decision,omitempty"`
-	Repair          *issuedelivery.RepairDecisionRequest `json:"repair,omitempty"`
-	Evidence        *deliveryevidence.Bundle             `json:"evidence,omitempty"`
-	Observations    issuedelivery.Observations           `json:"observations"`
-	Candidate       *issuedelivery.Candidate             `json:"candidate,omitempty"`
-	LocalReadiness  *issuedelivery.LocalReadiness        `json:"local_readiness,omitempty"`
-	NonLocal        *issuedelivery.NonLocalDelivery      `json:"non_local,omitempty"`
-	Timing          []issuedelivery.Timing               `json:"timing"`
-	TimingReport    issuedelivery.TimingReport           `json:"timing_report"`
+	RunID                    string                                        `json:"run_id"`
+	State                    issuedelivery.State                           `json:"state"`
+	Reason                   string                                        `json:"reason"`
+	SupersedesRunID          string                                        `json:"supersedes_run_id,omitempty"`
+	Decision                 *issuedelivery.DecisionRequest                `json:"decision,omitempty"`
+	Repair                   *issuedelivery.RepairDecisionRequest          `json:"repair,omitempty"`
+	QualificationCorrection  *issuedelivery.QualificationCorrectionRequest `json:"qualification_correction,omitempty"`
+	QualificationApproved    bool                                          `json:"qualification_approved,omitempty"`
+	QualificationReviews     []issuedelivery.QualificationReview           `json:"qualification_reviews,omitempty"`
+	QualificationCorrections []issuedelivery.QualificationCorrection       `json:"qualification_corrections,omitempty"`
+	Evidence                 *deliveryevidence.Bundle                      `json:"evidence,omitempty"`
+	Observations             issuedelivery.Observations                    `json:"observations"`
+	Candidate                *issuedelivery.Candidate                      `json:"candidate,omitempty"`
+	LocalReadiness           *issuedelivery.LocalReadiness                 `json:"local_readiness,omitempty"`
+	NonLocal                 *issuedelivery.NonLocalDelivery               `json:"non_local,omitempty"`
+	Timing                   []issuedelivery.Timing                        `json:"timing"`
+	TimingReport             issuedelivery.TimingReport                    `json:"timing_report"`
 }
 
 func (c command) advance(ctx context.Context, args []string, stdout io.Writer) error {
@@ -115,6 +123,8 @@ func (c command) advance(ctx context.Context, args []string, stdout io.Writer) e
 		options.Reviews = content.Reviews
 		options.Specialists = content.Specialists
 		options.Acceptance = content.Acceptance
+		options.QualificationReview = content.QualificationReview
+		options.QualificationCorrection = content.QualificationCorrection
 	}
 	if ciAttributionPath != "" {
 		if err := decodeExactJSONFile(ciAttributionPath, &options.CIFailureAttributions); err != nil {
@@ -135,10 +145,12 @@ func (c command) advance(ctx context.Context, args []string, stdout io.Writer) e
 		return fmt.Errorf("configure Advance: %w", err)
 	}
 	request := issuedelivery.Request{
-		RepositoryPath: options.RepositoryPath,
-		IssueNumber:    options.IssueNumber,
-		Decision:       options.Decision,
-		Repair:         options.Repair,
+		RepositoryPath:          options.RepositoryPath,
+		IssueNumber:             options.IssueNumber,
+		Decision:                options.Decision,
+		Repair:                  options.Repair,
+		QualificationReview:     options.QualificationReview,
+		QualificationCorrection: options.QualificationCorrection,
 	}
 	outcome, err := advancer.Advance(ctx, request)
 	if err != nil {
@@ -146,6 +158,7 @@ func (c command) advance(ctx context.Context, args []string, stdout io.Writer) e
 	}
 	if options.AuthorizeRemote && outcome.LocalReadiness != nil && outcome.NonLocal == nil {
 		request.Decision, request.Repair = nil, nil
+		request.QualificationReview, request.QualificationCorrection = nil, nil
 		request.NonLocal = nonLocalAuthorization(outcome)
 		outcome, err = advancer.Advance(ctx, request)
 		if err != nil {
@@ -186,7 +199,11 @@ func reportFromOutcome(outcome issuedelivery.Outcome, now time.Time) (advanceRep
 		RunID: outcome.RunID, State: outcome.State, Reason: outcome.Reason,
 		SupersedesRunID: outcome.SupersedesRunID, Decision: outcome.Decision,
 		Repair: outcome.Repair, Evidence: outcome.Evidence, Observations: outcome.Observations,
-		Candidate: outcome.Candidate, LocalReadiness: outcome.LocalReadiness,
+		QualificationCorrection:  outcome.QualificationCorrection,
+		QualificationApproved:    outcome.QualificationApproved,
+		QualificationReviews:     outcome.QualificationReviews,
+		QualificationCorrections: outcome.QualificationCorrections,
+		Candidate:                outcome.Candidate, LocalReadiness: outcome.LocalReadiness,
 		NonLocal: outcome.NonLocal, Timing: outcome.Timing, TimingReport: timingReport,
 	}, nil
 }

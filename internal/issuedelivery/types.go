@@ -53,11 +53,13 @@ type Decision struct {
 }
 
 type Request struct {
-	RepositoryPath string
-	IssueNumber    int
-	Decision       *Decision
-	Repair         *RepairDecision
-	NonLocal       *NonLocalAuthorization
+	RepositoryPath          string
+	IssueNumber             int
+	Decision                *Decision
+	Repair                  *RepairDecision
+	QualificationReview     *QualificationReview
+	QualificationCorrection *QualificationCorrection
+	NonLocal                *NonLocalAuthorization
 }
 
 type Timing struct {
@@ -79,18 +81,22 @@ type Observations struct {
 }
 
 type Outcome struct {
-	RunID           string
-	State           State
-	Reason          string
-	SupersedesRunID string
-	Decision        *DecisionRequest
-	Evidence        *deliveryevidence.Bundle
-	Observations    Observations
-	Candidate       *Candidate
-	Repair          *RepairDecisionRequest
-	LocalReadiness  *LocalReadiness
-	NonLocal        *NonLocalDelivery
-	Timing          []Timing
+	RunID                    string
+	State                    State
+	Reason                   string
+	SupersedesRunID          string
+	Decision                 *DecisionRequest
+	Evidence                 *deliveryevidence.Bundle
+	Observations             Observations
+	Candidate                *Candidate
+	Repair                   *RepairDecisionRequest
+	QualificationCorrection  *QualificationCorrectionRequest
+	QualificationApproved    bool
+	QualificationReviews     []QualificationReview
+	QualificationCorrections []QualificationCorrection
+	LocalReadiness           *LocalReadiness
+	NonLocal                 *NonLocalDelivery
+	Timing                   []Timing
 }
 
 type AuthorityItem struct {
@@ -778,28 +784,32 @@ type systemClock struct{}
 func (systemClock) Now() time.Time { return time.Now().UTC() }
 
 type runRecord struct {
-	Schema             string
-	ID                 string
-	Repository         deliveryevidence.RepositoryIdentity
-	Issue              deliveryevidence.IssueIdentity
-	AuthoritySHA256    string
-	State              State
-	Reason             string
-	SupersedesRunID    string
-	Evidence           *deliveryevidence.Bundle
-	PendingDecision    *DecisionRequest
-	Decisions          []Decision
-	Observations       Observations
-	Candidates         []Candidate
-	PendingRepair      *RepairDecisionRequest
-	LocalReadiness     *LocalReadiness
-	EffectiveProfile   deliveryevidence.DeliveryRiskProfile
-	RequiredBoundaries []SensitiveBoundary
-	ProfileHistory     []ProfileTransition
-	NonLocal           *NonLocalDelivery
-	Timing             []Timing
-	CreatedAt          string
-	UpdatedAt          string
+	Schema                         string
+	ID                             string
+	Repository                     deliveryevidence.RepositoryIdentity
+	Issue                          deliveryevidence.IssueIdentity
+	AuthoritySHA256                string
+	State                          State
+	Reason                         string
+	SupersedesRunID                string
+	Evidence                       *deliveryevidence.Bundle
+	PendingDecision                *DecisionRequest
+	Decisions                      []Decision
+	Observations                   Observations
+	Candidates                     []Candidate
+	PendingRepair                  *RepairDecisionRequest
+	PendingQualificationCorrection *QualificationCorrectionRequest
+	QualificationApproved          bool
+	QualificationReviews           []QualificationReview
+	QualificationCorrections       []QualificationCorrection
+	LocalReadiness                 *LocalReadiness
+	EffectiveProfile               deliveryevidence.DeliveryRiskProfile
+	RequiredBoundaries             []SensitiveBoundary
+	ProfileHistory                 []ProfileTransition
+	NonLocal                       *NonLocalDelivery
+	Timing                         []Timing
+	CreatedAt                      string
+	UpdatedAt                      string
 }
 
 type DecisionMismatchError struct {

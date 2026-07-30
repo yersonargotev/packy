@@ -207,7 +207,24 @@ func TestAdvanceCommandAdmitsOnlyTypedSemanticContent(t *testing.T) {
 		CandidateID: "candidate-1", Axis: deliveryevidence.ReviewStandards, Completed: true,
 	}}, Acceptance: []issuedelivery.AcceptanceProof{{
 		Identity: "criterion-1", PositiveEvidence: "candidate-1: reviewed positive proof",
-	}}}
+	}}, QualificationReview: &issuedelivery.QualificationReview{
+		AuthoritySHA256:        strings.Repeat("b", 64),
+		AcceptanceMatrixSHA256: strings.Repeat("c", 64),
+		Findings:               []deliveryevidence.ReviewFinding{}, Completed: true,
+	}, QualificationCorrection: &issuedelivery.QualificationCorrection{
+		AuthoritySHA256:      strings.Repeat("b", 64),
+		ReviewedMatrixSHA256: strings.Repeat("c", 64),
+		FindingIDs:           []string{"qualification-1"},
+		AcceptanceMatrix: []deliveryevidence.AcceptanceRow{{
+			Identity: "criterion-1", Criterion: "observable behavior",
+			OwningSeam: "product seam", PositiveEvidence: "positive",
+			NegativeEvidence: "negative", FailureEvidence: "failure",
+			MutationEvidence: "mutation", CompatibilityEvidence: "compatibility",
+			PreservationEvidence: "preservation", MigrationEvidence: "migration",
+			State: deliveryevidence.AcceptancePlanned,
+		}},
+		Evidence: "corrected exact owning seam and planned evidence",
+	}}
 	ciAttributions := []advanceCIFailureAttribution{{
 		CheckIdentity: "Validate Packy-owned code", RunID: 42,
 		HeadSHA:     strings.Repeat("a", 40),
@@ -234,12 +251,17 @@ func TestAdvanceCommandAdmitsOnlyTypedSemanticContent(t *testing.T) {
 	if configured.Decision == nil || *configured.Decision != decision ||
 		len(configured.Reviews) != 1 || configured.Reviews[0].Axis != deliveryevidence.ReviewStandards ||
 		len(configured.Acceptance) != 1 || configured.Acceptance[0].Identity != "criterion-1" ||
+		configured.QualificationReview == nil || !configured.QualificationReview.Completed ||
+		configured.QualificationCorrection == nil ||
+		configured.QualificationCorrection.FindingIDs[0] != "qualification-1" ||
 		len(configured.CIFailureAttributions) != 1 ||
 		configured.CIFailureAttributions[0].Attribution != issuedelivery.FailureInfrastructure {
 		t.Fatalf("configured semantic content = %#v", configured)
 	}
 	if len(fake.requests) != 1 || fake.requests[0].Decision == nil ||
-		*fake.requests[0].Decision != decision {
+		*fake.requests[0].Decision != decision ||
+		fake.requests[0].QualificationReview == nil ||
+		fake.requests[0].QualificationCorrection == nil {
 		t.Fatalf("Advance requests = %#v", fake.requests)
 	}
 

@@ -80,6 +80,11 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 				if request.Decision != nil {
 					return errors.New("delivery decision is not expected after authority qualification")
 				}
+				var handled bool
+				outcome, handled, err = m.advanceQualification(store, active, request)
+				if err != nil || handled {
+					return err
+				}
 				if m.review != nil {
 					outcome, err = m.advanceAssurance(ctx, store, active, git, tracker, compiled, request)
 					return err
@@ -202,6 +207,12 @@ func outcomeFromRecord(record runRecord) Outcome {
 		SupersedesRunID: record.SupersedesRunID, Decision: record.PendingDecision,
 		Evidence: record.Evidence, Observations: record.Observations,
 		Candidate: candidate, Repair: record.PendingRepair, LocalReadiness: record.LocalReadiness,
+		QualificationCorrection: record.PendingQualificationCorrection,
+		QualificationApproved:   record.QualificationApproved,
+		QualificationReviews:    append([]QualificationReview(nil), record.QualificationReviews...),
+		QualificationCorrections: append(
+			[]QualificationCorrection(nil), record.QualificationCorrections...,
+		),
 		NonLocal: record.NonLocal,
 		Timing:   append([]Timing(nil), record.Timing...),
 	}

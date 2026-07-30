@@ -172,17 +172,9 @@ func compileBundle(
 		bundle.Scope.OwnedNow = append(bundle.Scope.OwnedNow, deliveryevidence.LedgerEntry{
 			Identity: id, Requirement: item.Text, EvidenceLink: item.EvidenceLink,
 		})
-		bundle.AcceptanceMatrix = append(bundle.AcceptanceMatrix, deliveryevidence.AcceptanceRow{
-			Identity: id, Criterion: item.Text, OwningSeam: "issuedelivery.Advance",
-			PositiveEvidence:      "planned: focused positive behavior through Advance",
-			NegativeEvidence:      "planned: focused negative behavior through Advance",
-			FailureEvidence:       "planned: failure behavior through Advance",
-			MutationEvidence:      "planned: persisted run mutation inspection",
-			CompatibilityEvidence: "planned: compatibility validation",
-			PreservationEvidence:  "planned: prior run byte preservation",
-			MigrationEvidence:     migrationEvidence,
-			State:                 deliveryevidence.AcceptancePlanned,
-		})
+		bundle.AcceptanceMatrix = append(
+			bundle.AcceptanceMatrix, compileAcceptanceRow(id, item.Text, migrationEvidence),
+		)
 	}
 	for _, item := range exclusions {
 		bundle.Scope.Forbidden = append(bundle.Scope.Forbidden, deliveryevidence.LedgerEntry{
@@ -219,6 +211,95 @@ func compileBundle(
 	}
 	bundle, err = deliveryevidence.Decode(canonical)
 	return bundle, blocked, err
+}
+
+func compileAcceptanceRow(identity, criterion, migrationEvidence string) deliveryevidence.AcceptanceRow {
+	row := deliveryevidence.AcceptanceRow{
+		Identity: identity, Criterion: criterion,
+		OwningSeam:            "authority-selected product seam pending independent qualification review",
+		PositiveEvidence:      "required: observable positive proof for this exact authority criterion",
+		NegativeEvidence:      "required: negative proof that distinguishes the intended behavior",
+		FailureEvidence:       "required: failure-path proof at the criterion's owning seam",
+		MutationEvidence:      "required: mutation proof or an explicit not-applicable justification",
+		CompatibilityEvidence: "required: compatibility proof or an explicit not-applicable justification",
+		PreservationEvidence:  "required: preservation proof for behavior outside this criterion",
+		MigrationEvidence:     migrationEvidence,
+		State:                 deliveryevidence.AcceptancePlanned,
+	}
+	text := strings.ToLower(cleanText(criterion))
+	switch {
+	case strings.Contains(text, "validate-packy.sh"):
+		row.OwningSeam = "scripts/validate-packy.sh and production exhaustive validation adapter"
+		row.PositiveEvidence = "planned: exact ./scripts/validate-packy.sh success bound to candidate HEAD and tree"
+		row.NegativeEvidence = "planned: validator identity or candidate mismatch is rejected"
+		row.FailureEvidence = "planned: exact repository validation failure blocks local readiness"
+		row.MutationEvidence = "not applicable: repository validation is read-only"
+		row.CompatibilityEvidence = "planned: existing repository validation authority remains canonical"
+		row.PreservationEvidence = "planned: sandboxed HOME and XDG_CONFIG_HOME preserve operator configuration"
+	case strings.Contains(text, "packy pack show"):
+		row.OwningSeam = "internal/cli pack-show human renderer"
+		row.PositiveEvidence = "planned: pack show renders the decision summary before resource and surface detail"
+		row.NegativeEvidence = "planned: pack-show ordering test fails when detail precedes the summary"
+		row.FailureEvidence = "planned: pack-show failure output remains actionable"
+		row.MutationEvidence = "not applicable: pack show rendering does not mutate Packy state"
+		row.CompatibilityEvidence = "planned: structured pack-show JSON contract remains compatible"
+		row.PreservationEvidence = "planned: complete resource and surface contract detail remains available"
+	case strings.Contains(text, "--dry-run") &&
+		(strings.Contains(text, "group") || strings.Contains(text, "summar")):
+		row.OwningSeam = "internal/cli classic dry-run human renderer"
+		row.PositiveEvidence = "planned: classic dry-run groups repetitive actions before complete action detail"
+		row.NegativeEvidence = "planned: dry-run ordering test fails when repetitive detail leads"
+		row.FailureEvidence = "planned: dry-run rendering preserves blocked-action guidance"
+		row.MutationEvidence = "planned: classic dry-run proves no lifecycle mutation"
+		row.CompatibilityEvidence = "planned: structured dry-run JSON remains compatible"
+		row.PreservationEvidence = "planned: every complete action remains available after the summary"
+	case strings.Contains(text, "every planned action") ||
+		strings.Contains(text, "auditability"):
+		row.OwningSeam = "internal/cli classic dry-run action-detail renderer"
+		row.PositiveEvidence = "planned: classic dry-run exposes every planned action for audit"
+		row.NegativeEvidence = "planned: action-preservation test fails when any planned action is omitted"
+		row.FailureEvidence = "planned: incomplete action detail blocks acceptance"
+		row.MutationEvidence = "planned: audit rendering remains non-mutating"
+		row.CompatibilityEvidence = "planned: action identity and ordering remain compatible"
+		row.PreservationEvidence = "planned: summarization preserves the complete action set"
+	case strings.Contains(text, "json") && strings.Contains(text, "redaction"):
+		row.OwningSeam = "capability-pack lifecycle versioned JSON and redaction contracts"
+		row.PositiveEvidence = "planned: versioned JSON schema and redaction compatibility tests pass"
+		row.NegativeEvidence = "planned: unredacted sensitive values fail compatibility tests"
+		row.FailureEvidence = "planned: incompatible JSON shape or redaction regression blocks acceptance"
+		row.MutationEvidence = "not applicable: serialization compatibility tests are observational"
+		row.CompatibilityEvidence = "planned: existing versioned JSON schemas remain compatible"
+		row.PreservationEvidence = "planned: all existing redaction guarantees remain intact"
+	case strings.Contains(text, "human-output") &&
+		(strings.Contains(text, "ordering") || strings.Contains(text, "guidance")):
+		row.OwningSeam = "internal/cli human-output contract tests"
+		row.PositiveEvidence = "planned: human-output tests prove summary ordering and next-command guidance"
+		row.NegativeEvidence = "planned: missing ordering or guidance fails the human-output tests"
+		row.FailureEvidence = "planned: blocked output retains actionable human guidance"
+		row.MutationEvidence = "not applicable: human-output tests do not mutate user state"
+		row.CompatibilityEvidence = "planned: JSON output remains independent from human rendering"
+		row.PreservationEvidence = "planned: detailed human audit output remains available"
+	case strings.Contains(text, "qualification") ||
+		strings.Contains(text, "compiled row") ||
+		strings.Contains(text, "owning seam"):
+		row.OwningSeam = "issuedelivery qualification compiler and correction transition"
+		row.PositiveEvidence = "planned: exact criterion identity and authority link map to an observable owning seam"
+		row.NegativeEvidence = "planned: generic or untraceable product rows are rejected by independent review"
+		row.FailureEvidence = "planned: rejected qualification persists findings and requires one exact correction"
+		row.MutationEvidence = "planned: corrected acceptance matrix is stored as a new immutable run revision"
+		row.CompatibilityEvidence = "planned: existing schema-v2 runs decode and resume idempotently"
+		row.PreservationEvidence = "planned: the original run and prior revision bytes remain unchanged"
+	case strings.Contains(text, "recovery") || strings.Contains(text, "idempot") ||
+		strings.Contains(text, "resume") || strings.Contains(text, "duplicate run"):
+		row.OwningSeam = "issuedelivery.Advance and fileRunStore recovery boundary"
+		row.PositiveEvidence = "planned: Advance resumes the exact active run and adopts its immutable revision"
+		row.NegativeEvidence = "planned: incompatible run or revision identities fail closed"
+		row.FailureEvidence = "planned: orphan, lock, and active-pointer failures preserve recoverable evidence"
+		row.MutationEvidence = "planned: active revision changes atomically after immutable revision storage"
+		row.CompatibilityEvidence = "planned: schema-v2 canonical decoding remains compatible"
+		row.PreservationEvidence = "planned: prior run and revision bytes remain unchanged"
+	}
+	return row
 }
 
 func validateObservations(git GitObservation, tracker TrackerObservation) error {

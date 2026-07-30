@@ -1,0 +1,187 @@
+package issuedelivery
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/yersonargotev/packy/internal/deliveryevidence"
+)
+
+func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t *testing.T) {
+	module, _, _ := moduleFixture(t, 370)
+	request := Request{RepositoryPath: "/repo", IssueNumber: 370}
+
+	qualified, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPath := filepath.Join(module.storePathForTest(t, 370), "runs", qualified.RunID+".json")
+	originalBytes, err := os.ReadFile(originalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matrixHash, err := acceptanceMatrixDigest(qualified.Evidence.AcceptanceMatrix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := deliveryevidence.ReviewFinding{
+		ID: "qualification-product-seam", Axis: deliveryevidence.ReviewSpec,
+		Severity: deliveryevidence.SeverityP1, Authority: deliveryevidence.AuthoritySpecRequirement,
+		Citation: qualified.Evidence.Scope.OwnedNow[0].EvidenceLink,
+		Location: qualified.Evidence.AcceptanceMatrix[0].Identity,
+		Evidence: "the row names issuedelivery.Advance instead of the observable product seam",
+	}
+
+	rejected, err := module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370,
+		QualificationReview: &QualificationReview{
+			AuthoritySHA256:        qualified.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: matrixHash,
+			Findings:               []deliveryevidence.ReviewFinding{finding}, Completed: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejected.State != StateNeedsDecision || rejected.QualificationCorrection == nil ||
+		len(rejected.QualificationCorrection.FindingIDs) != 1 {
+		t.Fatalf("rejected qualification = %#v", rejected)
+	}
+	resumed, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.State != StateNeedsDecision || resumed.QualificationCorrection == nil ||
+		resumed.QualificationCorrection.ReviewedMatrixSHA256 != matrixHash {
+		t.Fatalf("resumed rejected qualification = %#v", resumed)
+	}
+	revisions, err := os.ReadDir(filepath.Join(
+		module.storePathForTest(t, 370), "revisions", qualified.RunID,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revisions) != 1 {
+		t.Fatalf("qualification rejection revisions = %d, want 1", len(revisions))
+	}
+	gotOriginal, err := os.ReadFile(originalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotOriginal, originalBytes) {
+		t.Fatal("qualification rejection rewrote the original run bytes")
+	}
+
+	correctedRows := append([]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...)
+	correctedRows[0].OwningSeam = "internal/cli pack-show renderer"
+	correctedRows[0].PositiveEvidence = "planned: pack-show human renderer ordering test"
+	correctedRows[0].NegativeEvidence = "planned: compact summary omission fails the renderer test"
+	correctedRows[0].FailureEvidence = "planned: invalid pack inspection preserves actionable failure output"
+	correctedRows[0].MutationEvidence = "not applicable: rendering does not mutate state"
+	correctedRows[0].CompatibilityEvidence = "planned: versioned JSON output remains byte-compatible"
+	correctedRows[0].PreservationEvidence = "planned: detailed resource and surface contracts remain present"
+	_, err = module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370,
+		QualificationCorrection: &QualificationCorrection{
+			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+			ReviewedMatrixSHA256: strings.Repeat("0", 64),
+			FindingIDs:           []string{finding.ID},
+			AcceptanceMatrix:     correctedRows,
+			Evidence:             "mismatched correction must fail closed",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("mismatched qualification correction error = %v", err)
+	}
+	corrected, err := module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370,
+		QualificationCorrection: &QualificationCorrection{
+			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+			ReviewedMatrixSHA256: matrixHash,
+			FindingIDs:           []string{finding.ID},
+			AcceptanceMatrix:     correctedRows,
+			Evidence:             "mapped the criterion to its observable renderer and compatibility tests",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if corrected.State != StateNeedsReview || corrected.QualificationCorrection != nil ||
+		corrected.Evidence.AcceptanceMatrix[0].OwningSeam != "internal/cli pack-show renderer" {
+		t.Fatalf("corrected qualification = %#v", corrected)
+	}
+	correctedHash, err := acceptanceMatrixDigest(corrected.Evidence.AcceptanceMatrix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370,
+		QualificationReview: &QualificationReview{
+			AuthoritySHA256:        corrected.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: correctedHash,
+			Findings:               []deliveryevidence.ReviewFinding{}, Completed: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approved.State != StateNeedsReview || !approved.QualificationApproved ||
+		len(approved.QualificationReviews) != 2 || len(approved.QualificationCorrections) != 1 {
+		t.Fatalf("approved qualification = %#v", approved)
+	}
+}
+
+func TestAdvanceCompilesIssue347ProductSpecificQualificationEvidence(t *testing.T) {
+	module, _, tracker := moduleFixture(t, 347)
+	tracker.value.Title = "Make pack inspection and dry-run output easier to scan"
+	tracker.value.Criteria = []AuthorityItem{
+		{Text: "`packy pack show` presents a compact decision-oriented summary before detailed resource and surface contracts.", EvidenceLink: "issue#347:acceptance-1"},
+		{Text: "Classic `--dry-run` output groups or summarizes repetitive actions before the complete action detail.", EvidenceLink: "issue#347:acceptance-2"},
+		{Text: "Users can still obtain every planned action needed for safety and auditability.", EvidenceLink: "issue#347:acceptance-3"},
+		{Text: "Existing versioned JSON schemas and redaction guarantees remain compatible.", EvidenceLink: "issue#347:acceptance-4"},
+		{Text: "Human-output tests cover the new ordering and guidance.", EvidenceLink: "issue#347:acceptance-5"},
+		{Text: "`./scripts/validate-packy.sh` passes.", EvidenceLink: "issue#347:acceptance-6"},
+	}
+
+	outcome, err := module.Advance(
+		context.Background(), Request{RepositoryPath: "/repo", IssueNumber: 347},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make(map[string]deliveryevidence.AcceptanceRow)
+	for _, row := range outcome.Evidence.AcceptanceMatrix {
+		rows[row.Criterion] = row
+		if row.OwningSeam == "issuedelivery.Advance" ||
+			strings.Contains(row.PositiveEvidence, "behavior through Advance") {
+			t.Fatalf("product criterion compiled to generic delivery evidence: %#v", row)
+		}
+	}
+	assertQualificationRowContains(t, rows[tracker.value.Criteria[0].Text], "pack show", "ordering")
+	assertQualificationRowContains(t, rows[tracker.value.Criteria[1].Text], "dry-run", "complete action")
+	assertQualificationRowContains(t, rows[tracker.value.Criteria[2].Text], "dry-run", "audit")
+	assertQualificationRowContains(t, rows[tracker.value.Criteria[3].Text], "JSON", "redaction")
+	assertQualificationRowContains(t, rows[tracker.value.Criteria[4].Text], "human", "guidance")
+	assertQualificationRowContains(t, rows[tracker.value.Criteria[5].Text], "validate-packy.sh", "exact")
+}
+
+func assertQualificationRowContains(
+	t *testing.T,
+	row deliveryevidence.AcceptanceRow,
+	values ...string,
+) {
+	t.Helper()
+	compiled := strings.ToLower(strings.Join([]string{
+		row.OwningSeam, row.PositiveEvidence, row.NegativeEvidence, row.FailureEvidence,
+		row.MutationEvidence, row.CompatibilityEvidence, row.PreservationEvidence,
+	}, " "))
+	for _, value := range values {
+		if !strings.Contains(compiled, strings.ToLower(value)) {
+			t.Fatalf("qualification row %q does not contain %q: %#v", row.Criterion, value, row)
+		}
+	}
+}

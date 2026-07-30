@@ -14,28 +14,32 @@ import (
 const runSchema = "packy.issue-delivery-run/v2"
 
 type runWire struct {
-	Schema             string                               `json:"schema"`
-	ID                 string                               `json:"id"`
-	Repository         deliveryevidence.RepositoryIdentity  `json:"repository"`
-	Issue              deliveryevidence.IssueIdentity       `json:"issue"`
-	AuthoritySHA256    string                               `json:"authority_sha256"`
-	State              State                                `json:"state"`
-	Reason             string                               `json:"reason"`
-	SupersedesRunID    string                               `json:"supersedes_run_id,omitempty"`
-	Evidence           json.RawMessage                      `json:"evidence,omitempty"`
-	PendingDecision    *DecisionRequest                     `json:"pending_decision,omitempty"`
-	Decisions          []Decision                           `json:"decisions"`
-	Observations       Observations                         `json:"observations"`
-	Candidates         []Candidate                          `json:"candidates,omitempty"`
-	PendingRepair      *RepairDecisionRequest               `json:"pending_repair,omitempty"`
-	LocalReadiness     *LocalReadiness                      `json:"local_readiness,omitempty"`
-	EffectiveProfile   deliveryevidence.DeliveryRiskProfile `json:"effective_profile,omitempty"`
-	RequiredBoundaries []SensitiveBoundary                  `json:"required_boundaries,omitempty"`
-	ProfileHistory     []ProfileTransition                  `json:"profile_history,omitempty"`
-	NonLocal           *NonLocalDelivery                    `json:"non_local,omitempty"`
-	Timing             []Timing                             `json:"timing"`
-	CreatedAt          string                               `json:"created_at"`
-	UpdatedAt          string                               `json:"updated_at"`
+	Schema                         string                               `json:"schema"`
+	ID                             string                               `json:"id"`
+	Repository                     deliveryevidence.RepositoryIdentity  `json:"repository"`
+	Issue                          deliveryevidence.IssueIdentity       `json:"issue"`
+	AuthoritySHA256                string                               `json:"authority_sha256"`
+	State                          State                                `json:"state"`
+	Reason                         string                               `json:"reason"`
+	SupersedesRunID                string                               `json:"supersedes_run_id,omitempty"`
+	Evidence                       json.RawMessage                      `json:"evidence,omitempty"`
+	PendingDecision                *DecisionRequest                     `json:"pending_decision,omitempty"`
+	Decisions                      []Decision                           `json:"decisions"`
+	Observations                   Observations                         `json:"observations"`
+	Candidates                     []Candidate                          `json:"candidates,omitempty"`
+	PendingRepair                  *RepairDecisionRequest               `json:"pending_repair,omitempty"`
+	PendingQualificationCorrection *QualificationCorrectionRequest      `json:"pending_qualification_correction,omitempty"`
+	QualificationApproved          bool                                 `json:"qualification_approved,omitempty"`
+	QualificationReviews           []QualificationReview                `json:"qualification_reviews,omitempty"`
+	QualificationCorrections       []QualificationCorrection            `json:"qualification_corrections,omitempty"`
+	LocalReadiness                 *LocalReadiness                      `json:"local_readiness,omitempty"`
+	EffectiveProfile               deliveryevidence.DeliveryRiskProfile `json:"effective_profile,omitempty"`
+	RequiredBoundaries             []SensitiveBoundary                  `json:"required_boundaries,omitempty"`
+	ProfileHistory                 []ProfileTransition                  `json:"profile_history,omitempty"`
+	NonLocal                       *NonLocalDelivery                    `json:"non_local,omitempty"`
+	Timing                         []Timing                             `json:"timing"`
+	CreatedAt                      string                               `json:"created_at"`
+	UpdatedAt                      string                               `json:"updated_at"`
 }
 
 func encodeRun(record runRecord) ([]byte, error) {
@@ -48,8 +52,12 @@ func encodeRun(record runRecord) ([]byte, error) {
 		SupersedesRunID: record.SupersedesRunID, PendingDecision: record.PendingDecision,
 		Decisions: record.Decisions, Observations: record.Observations, Timing: record.Timing,
 		Candidates: record.Candidates, PendingRepair: record.PendingRepair,
-		LocalReadiness:   record.LocalReadiness,
-		EffectiveProfile: record.EffectiveProfile, RequiredBoundaries: record.RequiredBoundaries,
+		PendingQualificationCorrection: record.PendingQualificationCorrection,
+		QualificationApproved:          record.QualificationApproved,
+		QualificationReviews:           record.QualificationReviews,
+		QualificationCorrections:       record.QualificationCorrections,
+		LocalReadiness:                 record.LocalReadiness,
+		EffectiveProfile:               record.EffectiveProfile, RequiredBoundaries: record.RequiredBoundaries,
 		ProfileHistory: record.ProfileHistory,
 		NonLocal:       record.NonLocal,
 		CreatedAt:      record.CreatedAt, UpdatedAt: record.UpdatedAt,
@@ -93,8 +101,12 @@ func decodeRun(data []byte) (runRecord, error) {
 		SupersedesRunID: wire.SupersedesRunID, PendingDecision: wire.PendingDecision,
 		Decisions: wire.Decisions, Observations: wire.Observations, Timing: wire.Timing,
 		Candidates: wire.Candidates, PendingRepair: wire.PendingRepair,
-		LocalReadiness:   wire.LocalReadiness,
-		EffectiveProfile: wire.EffectiveProfile, RequiredBoundaries: wire.RequiredBoundaries,
+		PendingQualificationCorrection: wire.PendingQualificationCorrection,
+		QualificationApproved:          wire.QualificationApproved,
+		QualificationReviews:           wire.QualificationReviews,
+		QualificationCorrections:       wire.QualificationCorrections,
+		LocalReadiness:                 wire.LocalReadiness,
+		EffectiveProfile:               wire.EffectiveProfile, RequiredBoundaries: wire.RequiredBoundaries,
 		ProfileHistory: wire.ProfileHistory,
 		NonLocal:       wire.NonLocal,
 		CreatedAt:      wire.CreatedAt, UpdatedAt: wire.UpdatedAt,
@@ -130,11 +142,14 @@ func validateRun(record runRecord) error {
 	case StateNeedsDecision:
 		authorityDecision := record.PendingDecision != nil && record.PendingRepair == nil && record.Evidence == nil
 		repairDecision := record.PendingDecision == nil && record.PendingRepair != nil && record.Evidence != nil
-		if !authorityDecision && !repairDecision {
+		qualificationCorrection := record.PendingDecision == nil && record.PendingRepair == nil &&
+			record.PendingQualificationCorrection != nil && record.Evidence != nil
+		if !authorityDecision && !repairDecision && !qualificationCorrection {
 			return fmt.Errorf("needs-decision run requires exactly one authority or repair decision")
 		}
 	case StateNeedsReview, StateWaiting, StateBlocked, StateCompleted:
-		if record.PendingDecision != nil || record.PendingRepair != nil || record.Evidence == nil {
+		if record.PendingDecision != nil || record.PendingRepair != nil ||
+			record.PendingQualificationCorrection != nil || record.Evidence == nil {
 			return fmt.Errorf("%s run requires admitted evidence and no pending decision", record.State)
 		}
 	default:
@@ -145,6 +160,9 @@ func validateRun(record runRecord) error {
 			record.Evidence.Authority.IssueSHA256 != record.AuthoritySHA256 {
 			return fmt.Errorf("issue delivery evidence does not match its run")
 		}
+	}
+	if err := validateQualificationHistory(record); err != nil {
+		return err
 	}
 	if record.Observations.Repository != record.Repository || record.Observations.Issue != record.Issue ||
 		record.Observations.AuthoritySHA256 != record.AuthoritySHA256 ||
