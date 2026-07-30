@@ -92,6 +92,47 @@ func TestProductionNonLocalObservationRefreshesAndBindsOriginMain(t *testing.T) 
 	}
 }
 
+func TestProductionNonLocalChecksProjectGitHubResponsesBeforeStrictDecode(t *testing.T) {
+	head, base := strings.Repeat("b", 40), strings.Repeat("a", 40)
+	runner := &fakeRemoteRunner{outputs: [][]byte{
+		[]byte(`{"check_runs":[{"name":"Validate Packy-owned code","head_sha":"` + head + `","status":"completed","conclusion":"success","details_url":"https://github.com/yersonargotev/packy/actions/runs/42/job/7","app":{"id":15368,"slug":"github-actions"}}]}`),
+		[]byte(`[]`),
+		[]byte(`{"id":42,"name":"CI","path":".github/workflows/ci.yml","head_sha":"` + head + `","html_url":"https://github.com/yersonargotev/packy/actions/runs/42","actor":{"login":"maintainer","id":1,"type":"User","html_url":"https://github.com/maintainer"}}`),
+		[]byte(head),
+	}}
+	gateway := productionNonLocalGateway{runner: runner}
+	checks, err := gateway.observeChecks(context.Background(), issuedelivery.NonLocalObserveRequest{
+		Repository: packyRemoteRepository(), HeadSHA: head,
+	}, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 || checks[0].Identity != "Validate Packy-owned code" {
+		t.Fatalf("checks = %#v", checks)
+	}
+	if got := runner.calls[0]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"api", "-H", "Accept: application/vnd.github+json",
+		"repos/yersonargotev/packy/commits/" + head + "/check-runs?filter=latest",
+		"--jq", checkRunsProjection,
+	}) {
+		t.Fatalf("check-runs command = %#v", got)
+	}
+	if got := runner.calls[1]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"api", "-H", "Accept: application/vnd.github+json",
+		"repos/yersonargotev/packy/commits/" + head + "/statuses",
+		"--jq", statusesProjection,
+	}) {
+		t.Fatalf("statuses command = %#v", got)
+	}
+	if got := runner.calls[2]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"api", "-H", "Accept: application/vnd.github+json",
+		"repos/yersonargotev/packy/actions/runs/42",
+		"--jq", workflowRunProjection,
+	}) {
+		t.Fatalf("workflow command = %#v", got)
+	}
+}
+
 func TestProductionNonLocalMergeUsesMatchHeadCommit(t *testing.T) {
 	head, base := strings.Repeat("b", 40), strings.Repeat("a", 40)
 	runner := &fakeRemoteRunner{outputs: [][]byte{

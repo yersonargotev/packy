@@ -87,6 +87,12 @@ type workflowRun struct {
 	} `json:"actor"`
 }
 
+const (
+	checkRunsProjection   = `{check_runs:[.check_runs[]|{name,head_sha,status,conclusion,details_url,app:{id:.app.id,slug:.app.slug}}]}`
+	statusesProjection    = `[.[]|{context,state,target_url,creator:{login:.creator.login,id:.creator.id,type:.creator.type,html_url:.creator.html_url}}]`
+	workflowRunProjection = `{id,name,path,head_sha,html_url,actor:{login:.actor.login,id:.actor.id,type:.actor.type,html_url:.actor.html_url}}`
+)
+
 func (gateway productionNonLocalGateway) ObserveNonLocal(ctx context.Context, request issuedelivery.NonLocalObserveRequest) (issuedelivery.NonLocalObservation, error) {
 	if err := gateway.validateObserveRequest(ctx, request); err != nil {
 		return issuedelivery.NonLocalObservation{}, err
@@ -320,7 +326,8 @@ func (gateway productionNonLocalGateway) EnsureRemoteIssueBranchAbsent(ctx conte
 func (gateway productionNonLocalGateway) observeChecks(ctx context.Context, request issuedelivery.NonLocalObserveRequest, baseSHA string) ([]issuedelivery.CICheckObservation, error) {
 	repo := repositoryName(request.Repository)
 	raw, err := gateway.output(ctx, "gh", "api", "-H", "Accept: application/vnd.github+json",
-		"repos/"+repo+"/commits/"+request.HeadSHA+"/check-runs?filter=latest")
+		"repos/"+repo+"/commits/"+request.HeadSHA+"/check-runs?filter=latest",
+		"--jq", checkRunsProjection)
 	if err != nil {
 		return nil, fmt.Errorf("observe check runs: %w", err)
 	}
@@ -329,7 +336,8 @@ func (gateway productionNonLocalGateway) observeChecks(ctx context.Context, requ
 		return nil, err
 	}
 	statusRaw, err := gateway.output(ctx, "gh", "api", "-H", "Accept: application/vnd.github+json",
-		"repos/"+repo+"/commits/"+request.HeadSHA+"/statuses")
+		"repos/"+repo+"/commits/"+request.HeadSHA+"/statuses",
+		"--jq", statusesProjection)
 	if err != nil {
 		return nil, fmt.Errorf("observe commit statuses: %w", err)
 	}
@@ -474,7 +482,8 @@ func (gateway productionNonLocalGateway) validateRepository(ctx context.Context,
 
 func (gateway productionNonLocalGateway) workflowRun(ctx context.Context, repository deliveryevidence.RepositoryIdentity, runID int64) (workflowRun, error) {
 	raw, err := gateway.output(ctx, "gh", "api", "-H", "Accept: application/vnd.github+json",
-		"repos/"+repositoryName(repository)+"/actions/runs/"+strconv.FormatInt(runID, 10))
+		"repos/"+repositoryName(repository)+"/actions/runs/"+strconv.FormatInt(runID, 10),
+		"--jq", workflowRunProjection)
 	if err != nil {
 		return workflowRun{}, fmt.Errorf("observe workflow run: %w", err)
 	}
