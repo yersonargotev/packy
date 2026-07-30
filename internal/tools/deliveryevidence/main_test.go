@@ -224,6 +224,149 @@ func TestInitializeResumeAndFreshAuthorityInvalidation(t *testing.T) {
 	}
 }
 
+func TestInitializeV2AuthorityAndRiskProfiles(t *testing.T) {
+	root := t.TempDir()
+	common := filepath.Join(root, "common")
+	work := filepath.Join(root, "work")
+	for _, path := range []string{common, work} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := strings.Repeat("a", 40)
+	q := qualification{
+		Schema:                deliveryevidence.SchemaV2,
+		IssueNumber:           355,
+		DependencyDisposition: []deliveryevidence.DependencyDisposition{},
+		Scope: deliveryevidence.ScopeLedger{
+			OwnedNow:      []deliveryevidence.LedgerEntry{{Identity: "O1", Requirement: "v2 evidence", EvidenceLink: "issue#355"}},
+			Deferred:      []deliveryevidence.DeferredEntry{},
+			Forbidden:     []deliveryevidence.LedgerEntry{},
+			Prerequisites: []deliveryevidence.PrerequisiteEntry{},
+		},
+		AcceptanceCriteria: []string{"AC1"},
+		AcceptanceMatrix: []deliveryevidence.AcceptanceRow{{
+			Identity: "AC1", Criterion: "v2 path", OwningSeam: "initialize",
+			PositiveEvidence: "positive", NegativeEvidence: "negative",
+			FailureEvidence: "failure", MutationEvidence: "mutation",
+			CompatibilityEvidence: "compatible", PreservationEvidence: "preserved",
+			MigrationEvidence: "explicit v2 only", State: deliveryevidence.AcceptancePlanned,
+		}},
+		StartingBaseSHA: base,
+		Iterations:      []deliveryevidence.Iteration{},
+	}
+	q.Repository.Owner = "owner"
+	q.Repository.Name = "repo"
+	repo := []byte(`{"nameWithOwner":"owner/repo","id":"R1"}`)
+	issue := []byte(`{"number":355,"id":"I355","title":"issue","body":"body","state":"OPEN","labels":[{"name":"status:approved"}],"blockedBy":{"nodes":[],"totalCount":0}}`)
+	spec := []byte(`{"number":354,"id":"I354","title":"spec","body":"spec","state":"OPEN","labels":[{"name":"status:approved"}],"blockedBy":{"nodes":[],"totalCount":0}}`)
+	writeQualification := func(name string, value qualification) string {
+		t.Helper()
+		path := filepath.Join(root, name+".json")
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	run := func(name string, value qualification) (deliveryevidence.Bundle, int) {
+		t.Helper()
+		input := writeQualification(name, value)
+		output := filepath.Join(root, name+"-evidence.json")
+		git := &fakeRunner{outputs: [][]byte{[]byte(common + "\n"), []byte(work + "\n"), []byte("git@github.com:owner/repo.git\n"), []byte(base + "\n")}}
+		ghOutputs := [][]byte{repo, issue}
+		if value.AuthorityKind == deliveryevidence.AuthorityIssueWithSpecification {
+			ghOutputs = append(ghOutputs, spec)
+		}
+		gh := &fakeRunner{outputs: ghOutputs}
+		var stdout bytes.Buffer
+		if err := (command{Git: git, GitHub: gh}).run(context.Background(), []string{"initialize", "--qualified-bundle", input, "--repository", work, "--out", output}, &stdout); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(stdout.String(), "initialized ") {
+			t.Fatalf("unexpected initialize result: %s", stdout.String())
+		}
+		bundle, _, err := deliveryevidence.Load(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bundle, len(gh.calls)
+	}
+
+	self := q
+	self.AuthorityKind = deliveryevidence.AuthoritySelfContainedIssue
+	got, calls := run("self-default", self)
+	if got.RiskProfile != deliveryevidence.RiskStandard || got.Spec != (deliveryevidence.SpecIdentity{}) ||
+		got.Authority.SpecSHA256 != "" || calls != 2 {
+		t.Fatalf("self-contained default qualification = %#v, GitHub calls=%d", got, calls)
+	}
+
+	for _, profile := range []deliveryevidence.DeliveryRiskProfile{
+		deliveryevidence.RiskLow,
+		deliveryevidence.RiskStandard,
+		deliveryevidence.RiskHigh,
+	} {
+		withSpec := q
+		withSpec.AuthorityKind = deliveryevidence.AuthorityIssueWithSpecification
+		withSpec.SpecNumber = 354
+		withSpec.RiskProfile = profile
+		got, calls = run("spec-"+string(profile), withSpec)
+		if got.RiskProfile != profile || got.Spec.Number != 354 ||
+			got.Authority.SpecSHA256 == "" || calls != 3 {
+			t.Fatalf("issue-with-specification %s = %#v, GitHub calls=%d", profile, got, calls)
+		}
+	}
+
+	invalid := q
+	invalid.AuthorityKind = deliveryevidence.AuthoritySelfContainedIssue
+	invalid.RiskProfile = "routine"
+	err := (command{}).run(context.Background(), []string{"initialize", "--qualified-bundle", writeQualification("invalid-risk", invalid)}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "risk profile") {
+		t.Fatalf("invalid risk profile accepted: %v", err)
+	}
+	invalid = q
+	invalid.AuthorityKind = deliveryevidence.AuthoritySelfContainedIssue
+	invalid.SpecNumber = 354
+	err = (command{}).run(context.Background(), []string{"initialize", "--qualified-bundle", writeQualification("self-with-spec", invalid)}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "forbids a specification") {
+		t.Fatalf("self-contained specification accepted: %v", err)
+	}
+}
+
+func TestLegacyCommandsRejectV2WhileStatusRemainsAvailable(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "v2.json")
+	bundle := reviewBundleFixture(strings.Repeat("a", 40))
+	bundle.Schema = deliveryevidence.SchemaV2
+	bundle.Spec = deliveryevidence.SpecIdentity{}
+	bundle.Authority.Kind = deliveryevidence.AuthoritySelfContainedIssue
+	bundle.Authority.SpecSHA256 = ""
+	bundle.RiskProfile = deliveryevidence.RiskStandard
+	if err := deliveryevidence.StoreAtomic(path, bundle); err != nil {
+		t.Fatal(err)
+	}
+
+	var status bytes.Buffer
+	if err := (command{}).run(context.Background(), []string{"status", "--bundle", path}, &status); err != nil {
+		t.Fatalf("v2 status rejected: %v", err)
+	}
+	if !strings.Contains(status.String(), "Self-contained issue") {
+		t.Fatalf("v2 status omitted authority: %s", status.String())
+	}
+
+	record := filepath.Join(root, "review.json")
+	if err := os.WriteFile(record, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := (command{}).run(context.Background(), []string{"record-review", "--bundle", path, "--receipt", record}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "requires Advance") {
+		t.Fatalf("legacy command admitted v2: %v", err)
+	}
+}
+
 func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 func TestGitHubSlugRealShapes(t *testing.T) {

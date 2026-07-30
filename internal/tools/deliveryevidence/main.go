@@ -78,6 +78,8 @@ type qualification struct {
 	} `json:"repository"`
 	IssueNumber           int                                      `json:"issue_number"`
 	SpecNumber            int                                      `json:"spec_number"`
+	AuthorityKind         deliveryevidence.DeliveryAuthorityKind   `json:"authority_kind,omitempty"`
+	RiskProfile           deliveryevidence.DeliveryRiskProfile     `json:"risk_profile,omitempty"`
 	DependencyDisposition []deliveryevidence.DependencyDisposition `json:"dependency_disposition"`
 	Scope                 deliveryevidence.ScopeLedger             `json:"scope"`
 	AcceptanceCriteria    []string                                 `json:"acceptance_criteria"`
@@ -168,7 +170,7 @@ func (c command) nonLocalReadiness(ctx context.Context, args []string, stdout io
 	if bundlePath == "" || localPath == "" || pullRequest <= 0 || checks == "" || f.NArg() != 0 {
 		return errors.New("bundle, local-report, pull-request, and required-checks are required")
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return err
 	}
@@ -298,7 +300,7 @@ func (c command) finalOutcome(ctx context.Context, args []string, stdout io.Writ
 		matrixURL == "" || reviewsURL == "" || validationURL == "" || ciURL == "" || cleanupURL == "" || f.NArg() != 0 {
 		return errors.New("bundle, readiness-report, phase-receipts, preservation digests, and evidence URLs are required")
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return err
 	}
@@ -408,9 +410,15 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err = decoder.Decode(&extra); err != io.EOF {
 		return errors.New("qualification must contain exactly one JSON value")
 	}
-	if q.Schema != deliveryevidence.SchemaV1 || q.IssueNumber <= 0 || q.SpecNumber <= 0 || q.IssueNumber == q.SpecNumber {
-		return errors.New("qualification schema and distinct positive issue/spec numbers are required")
+	plan, err := deliveryevidence.CompileQualification(deliveryevidence.QualificationInput{
+		Schema: q.Schema, IssueNumber: q.IssueNumber, SpecNumber: q.SpecNumber,
+		AuthorityKind: q.AuthorityKind, RiskProfile: q.RiskProfile,
+	})
+	if err != nil {
+		return err
 	}
+	q.AuthorityKind = plan.AuthorityKind
+	q.RiskProfile = plan.RiskProfile
 	if c.Git == nil || c.GitHub == nil {
 		return errors.New("Git and GitHub read-only runners are required")
 	}
@@ -484,22 +492,32 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err != nil {
 		return fmt.Errorf("observe issue: %w", err)
 	}
-	spec, err := observe(q.SpecNumber)
-	if err != nil {
-		return fmt.Errorf("observe spec: %w", err)
+	var spec issueObservation
+	hasSpec := plan.HasSpecification
+	if hasSpec {
+		spec, err = observe(q.SpecNumber)
+		if err != nil {
+			return fmt.Errorf("observe spec: %w", err)
+		}
 	}
-	if issue.Number != q.IssueNumber || spec.Number != q.SpecNumber || issue.ID == "" || spec.ID == "" {
-		return errors.New("foreign issue or spec identity")
+	if issue.Number != q.IssueNumber || issue.ID == "" {
+		return errors.New("foreign issue identity")
 	}
-	if !eligibleIssueObservation(issue) || !eligibleSpecObservation(spec) {
-		if !strings.EqualFold(issue.State, "OPEN") || !strings.EqualFold(spec.State, "OPEN") {
+	if hasSpec && (spec.Number != q.SpecNumber || spec.ID == "") {
+		return errors.New("foreign specification identity")
+	}
+	if !eligibleIssueObservation(issue) || (hasSpec && !eligibleSpecObservation(spec)) {
+		if !strings.EqualFold(issue.State, "OPEN") || (hasSpec && !strings.EqualFold(spec.State, "OPEN")) {
 			return errors.New("issue and accepted spec must be open")
 		}
 		labels := labelNames(issue.Labels)
 		if !hasLabel(labels, "status:approved") && !hasLabel(labels, "status:needs-review") {
 			return errors.New("issue is not eligible: approved or needs-review status is required")
 		}
-		return errors.New("spec authority is not accepted")
+		if hasSpec {
+			return errors.New("spec authority is not accepted")
+		}
+		return errors.New("issue authority is not accepted")
 	}
 	labels := labelNames(issue.Labels)
 	if err = matchDependencies(q.DependencyDisposition, issue.BlockedBy.Nodes); err != nil {
@@ -509,11 +527,14 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err != nil {
 		return err
 	}
-	specHash, err := deliveryevidence.TypedObservationHash("github-spec", fmt.Sprintf("%s#%d:%s", slug, spec.Number, spec.ID), normalizedIssue(spec))
-	if err != nil {
-		return err
+	var specHash string
+	if hasSpec {
+		specHash, err = deliveryevidence.TypedObservationHash("github-spec", fmt.Sprintf("%s#%d:%s", slug, spec.Number, spec.ID), normalizedIssue(spec))
+		if err != nil {
+			return err
+		}
 	}
-	bundle := deliveryevidence.Bundle{Schema: deliveryevidence.SchemaV1, Repository: deliveryevidence.RepositoryIdentity{Owner: q.Repository.Owner, Name: q.Repository.Name, NodeID: ro.ID}, Issue: deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID}, Spec: deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID}, Authority: deliveryevidence.Authority{IssueSHA256: issueHash, SpecSHA256: specHash, Labels: labels, DependencyDisposition: q.DependencyDisposition, AcceptanceCriteria: q.AcceptanceCriteria}, Scope: q.Scope, AcceptanceMatrix: q.AcceptanceMatrix, StartingBaseSHA: q.StartingBaseSHA, Iterations: q.Iterations, ReviewReceipts: []deliveryevidence.ReviewReceipt{}, Adjudications: []deliveryevidence.Adjudication{}, ValidationReceipts: []deliveryevidence.ValidationReceipt{}, FocusedValidation: []deliveryevidence.FocusedValidationEvidence{}}
+	bundle := deliveryevidence.Bundle{Schema: q.Schema, Repository: deliveryevidence.RepositoryIdentity{Owner: q.Repository.Owner, Name: q.Repository.Name, NodeID: ro.ID}, Issue: deliveryevidence.IssueIdentity{Number: issue.Number, NodeID: issue.ID}, Spec: deliveryevidence.SpecIdentity{Number: spec.Number, NodeID: spec.ID}, Authority: deliveryevidence.Authority{Kind: q.AuthorityKind, IssueSHA256: issueHash, SpecSHA256: specHash, Labels: labels, DependencyDisposition: q.DependencyDisposition, AcceptanceCriteria: q.AcceptanceCriteria}, RiskProfile: q.RiskProfile, Scope: q.Scope, AcceptanceMatrix: q.AcceptanceMatrix, StartingBaseSHA: q.StartingBaseSHA, Iterations: q.Iterations, ReviewReceipts: []deliveryevidence.ReviewReceipt{}, Adjudications: []deliveryevidence.Adjudication{}, ValidationReceipts: []deliveryevidence.ValidationReceipt{}, FocusedValidation: []deliveryevidence.FocusedValidationEvidence{}}
 	path, err := deliveryevidence.ResolvePath(commonPath, output, bundle.Issue.Number)
 	if err != nil {
 		return err
@@ -672,6 +693,17 @@ func (c command) status(args []string, stdout io.Writer) error {
 	return err
 }
 
+func loadLegacyBundle(path string) (deliveryevidence.Bundle, []byte, error) {
+	bundle, raw, err := deliveryevidence.Load(path)
+	if err != nil {
+		return deliveryevidence.Bundle{}, nil, err
+	}
+	if err = deliveryevidence.ValidateLegacyWorkflowBundle(bundle); err != nil {
+		return deliveryevidence.Bundle{}, nil, err
+	}
+	return bundle, raw, nil
+}
+
 func (c command) recordIteration(ctx context.Context, args []string, stdout io.Writer) error {
 	f := flag.NewFlagSet("deliveryevidence record-iteration", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
@@ -688,7 +720,7 @@ func (c command) recordIteration(ctx context.Context, args []string, stdout io.W
 	if c.Git == nil {
 		return errors.New("Git read-only runner is required")
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return err
 	}
@@ -764,7 +796,7 @@ func recordInput[T any](args []string, inputName string, value *T) (deliveryevid
 	if bundlePath == "" || inputPath == "" || f.NArg() != 0 {
 		return deliveryevidence.Bundle{}, "", fmt.Errorf("bundle and %s are required", inputName)
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return deliveryevidence.Bundle{}, "", err
 	}
@@ -806,7 +838,7 @@ func (c command) reviewStatus(ctx context.Context, args []string, stdout io.Writ
 	if c.Git == nil {
 		return errors.New("Git read-only runner is required")
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return err
 	}
@@ -869,7 +901,7 @@ func (c command) recordExhaustiveValidation(ctx context.Context, args []string, 
 	if values.requiredCommand != exhaustiveValidationCommand {
 		return errors.New("recording supports only the exhaustive validation authority command")
 	}
-	bundle, _, err := deliveryevidence.Load(values.bundlePath)
+	bundle, _, err := loadLegacyBundle(values.bundlePath)
 	if err != nil {
 		return err
 	}
@@ -909,7 +941,7 @@ func (c command) validationStatus(ctx context.Context, args []string, stdout io.
 	if err != nil {
 		return err
 	}
-	bundle, _, err := deliveryevidence.Load(values.bundlePath)
+	bundle, _, err := loadLegacyBundle(values.bundlePath)
 	if err != nil {
 		return err
 	}
@@ -950,7 +982,7 @@ func (c command) localGate(ctx context.Context, args []string, stdout io.Writer)
 	if values.bundlePath == "" || values.sandboxHome == "" || values.sandboxConfig == "" || values.identityExpires == "" || branch == "" || f.NArg() != 0 {
 		return bareFailure(deliveryevidence.LocalGateQualificationInvalid, "bundle, delivery-branch, sandbox-home, sandbox-config-home, and validator-identity-expires-at are required")
 	}
-	bundle, _, err := deliveryevidence.Load(values.bundlePath)
+	bundle, _, err := loadLegacyBundle(values.bundlePath)
 	if err != nil {
 		return bareFailure(deliveryevidence.LocalGateQualificationInvalid, err.Error())
 	}
