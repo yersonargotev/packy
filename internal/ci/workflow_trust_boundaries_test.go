@@ -79,9 +79,9 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 		check    func(errorReporter, workflowDocument)
 	}{
 		{name: "mutable action", workflow: "ci.yml", mutate: func(text string) string {
-			return strings.Replace(text, "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0", "actions/checkout@v5", 1)
+			return strings.Replace(text, "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", "actions/checkout@v7", 1)
 		}, check: assertImmutableExternalUses},
-		{name: "missing version annotation", workflow: "ci.yml", mutate: func(text string) string { return strings.Replace(text, " # v5.1.0", "", 1) }, check: assertImmutableExternalUses},
+		{name: "missing version annotation", workflow: "ci.yml", mutate: func(text string) string { return strings.Replace(text, " # v7.0.1", "", 1) }, check: assertImmutableExternalUses},
 		{name: "broadened default permission", workflow: "ci.yml", mutate: func(text string) string {
 			return strings.Replace(text, "permissions: {}", "permissions:\n  contents: write", 1)
 		}, check: assertMinimumPermissions},

@@ -218,6 +218,48 @@ func TestCIUsesOnlyTheValidationEntrypoint(t *testing.T) {
 	}
 }
 
+func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T) {
+	root := repositoryRoot(t)
+	ci := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	governance := readFile(t, filepath.Join(root, ".github", "workflows", "governance.yml"))
+	security := readFile(t, filepath.Join(root, ".github", "workflows", "security-pr.yml"))
+
+	for _, expected := range []struct {
+		name     string
+		workflow string
+		action   string
+		count    int
+	}{
+		{name: "CI checkout", workflow: ci, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 6},
+		{name: "CI setup-go cache", workflow: ci, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 6},
+		{name: "CI setup-node", workflow: ci, action: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0", count: 3},
+		{name: "CI upload-artifact", workflow: ci, action: "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1", count: 6},
+		{name: "CI download-artifact", workflow: ci, action: "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1", count: 4},
+		{name: "Governance checkout", workflow: governance, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 1},
+		{name: "Governance setup-go cache", workflow: governance, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 1},
+		{name: "Security checkout", workflow: security, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 2},
+		{name: "Security CodeQL", workflow: security, action: "github/codeql-action/", count: 3},
+		{name: "Security CodeQL revision", workflow: security, action: "@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4", count: 3},
+	} {
+		if got := strings.Count(expected.workflow, expected.action); got != expected.count {
+			t.Errorf("%s occurrences = %d, want %d", expected.name, got, expected.count)
+		}
+	}
+
+	if strings.Count(ci, "cache: true") != 6 || strings.Count(governance, "cache: true") != 1 {
+		t.Fatal("required setup-go jobs must keep cache misses observable and non-blocking")
+	}
+	validate := workflowSection(t, ci, "  validate:", "  claude-floor-smoke:")
+	if strings.Contains(validate, "continue-on-error: true\n        run: ./scripts/validate-packy.sh") {
+		t.Fatal("repository validation failure must remain fail-closed")
+	}
+	for _, runner := range []string{"runs-on: ubuntu-latest", "runs-on: macos-15"} {
+		if !strings.Contains(ci, runner) {
+			t.Fatalf("supported required workflow runner missing %q", runner)
+		}
+	}
+}
+
 func TestCIKeepsCapabilityPromotionOutOfUniversalGates(t *testing.T) {
 	root := repositoryRoot(t)
 	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
