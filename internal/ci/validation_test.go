@@ -234,7 +234,6 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 		{name: "CI setup-go cache", workflow: ci, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 6},
 		{name: "CI setup-node", workflow: ci, action: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0", count: 3},
 		{name: "CI upload-artifact", workflow: ci, action: "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1", count: 6},
-		{name: "CI download-artifact", workflow: ci, action: "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1", count: 4},
 		{name: "Governance checkout", workflow: governance, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 1},
 		{name: "Governance setup-go cache", workflow: governance, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 1},
 		{name: "Security checkout", workflow: security, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 2},
@@ -243,6 +242,19 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 	} {
 		if got := strings.Count(expected.workflow, expected.action); got != expected.count {
 			t.Errorf("%s occurrences = %d, want %d", expected.name, got, expected.count)
+		}
+	}
+	if strings.Contains(ci, "actions/download-artifact@") {
+		t.Fatal("required PR workflows must not use download-artifact while its Node 24 bundle emits DEP0005")
+	}
+	for _, command := range []string{
+		`gh run download "$GITHUB_RUN_ID" --name codex-floor-qualification --dir "$RUNNER_TEMP/codex-floor-evidence"`,
+		`gh run download "$GITHUB_RUN_ID" --name vercel-foundation-qualification --dir "$RUNNER_TEMP/vercel-foundation-evidence"`,
+		`gh run download "$GITHUB_RUN_ID" --name opencode-floor-qualification --dir "$RUNNER_TEMP/opencode-floor-evidence"`,
+		`gh run download "$GITHUB_RUN_ID" --name claude-vercel-floor-qualification --dir "$RUNNER_TEMP/claude-vercel-floor-evidence"`,
+	} {
+		if !strings.Contains(ci, command) {
+			t.Errorf("warning-clean exact-run artifact download missing %q", command)
 		}
 	}
 
@@ -450,10 +462,10 @@ func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *t
 		"contents: read",
 		"fetch-depth: 0",
 		"persist-credentials: false",
-		"name: codex-floor-qualification",
-		"name: opencode-floor-qualification",
-		"name: claude-vercel-floor-qualification",
-		"name: vercel-foundation-qualification",
+		"--name codex-floor-qualification",
+		"--name opencode-floor-qualification",
+		"--name claude-vercel-floor-qualification",
+		"--name vercel-foundation-qualification",
 		"VALIDATE_RESULT: ${{ needs.validate.result }}",
 		"CODEX_RESULT: ${{ needs.codex-floor-smoke.result }}",
 		"OPENCODE_RESULT: ${{ needs.opencode-floor-smoke.result }}",

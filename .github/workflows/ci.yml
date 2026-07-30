@@ -268,33 +268,22 @@ jobs:
       - name: Restore verified Go cache
         uses: ./.github/actions/go-cache
 
-      - name: Download exact Codex evidence
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: codex-floor-qualification
-          path: ${{ runner.temp }}/codex-floor-evidence
-
-      - name: Download exact foundation evidence
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: vercel-foundation-qualification
-          path: ${{ runner.temp }}/vercel-foundation-evidence
-
-      - name: Download exact OpenCode evidence
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: opencode-floor-qualification
-          path: ${{ runner.temp }}/opencode-floor-evidence
-
-      - name: Download exact Claude evidence
-        continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: claude-vercel-floor-qualification
-          path: ${{ runner.temp }}/claude-vercel-floor-evidence
+      - name: Download exact cohort evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh run download "$GITHUB_RUN_ID" --name codex-floor-qualification --dir "$RUNNER_TEMP/codex-floor-evidence"; then
+            echo "Evidence artifact unavailable: codex-floor-qualification"
+          fi
+          if ! gh run download "$GITHUB_RUN_ID" --name vercel-foundation-qualification --dir "$RUNNER_TEMP/vercel-foundation-evidence"; then
+            echo "Evidence artifact unavailable: vercel-foundation-qualification"
+          fi
+          if ! gh run download "$GITHUB_RUN_ID" --name opencode-floor-qualification --dir "$RUNNER_TEMP/opencode-floor-evidence"; then
+            echo "Evidence artifact unavailable: opencode-floor-qualification"
+          fi
+          if ! gh run download "$GITHUB_RUN_ID" --name claude-vercel-floor-qualification --dir "$RUNNER_TEMP/claude-vercel-floor-evidence"; then
+            echo "Evidence artifact unavailable: claude-vercel-floor-qualification"
+          fi
 
       - name: Close the exact six-gate cohort
         env:
