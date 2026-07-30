@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -17,6 +18,16 @@ type QualificationReview struct {
 	AcceptanceMatrixSHA256 string                           `json:"acceptance_matrix_sha256"`
 	Findings               []deliveryevidence.ReviewFinding `json:"findings"`
 	Completed              bool                             `json:"completed"`
+}
+
+type QualificationPlan struct {
+	OwningSeam            string `json:"owning_seam"`
+	PositiveEvidence      string `json:"positive_evidence"`
+	NegativeEvidence      string `json:"negative_evidence"`
+	FailureEvidence       string `json:"failure_evidence"`
+	MutationEvidence      string `json:"mutation_evidence"`
+	CompatibilityEvidence string `json:"compatibility_evidence"`
+	PreservationEvidence  string `json:"preservation_evidence"`
 }
 
 type QualificationCorrectionRequest struct {
@@ -41,6 +52,14 @@ func (m *Module) advanceQualification(
 	review, correction := request.QualificationReview, request.QualificationCorrection
 	if review != nil && correction != nil {
 		return Outcome{}, true, errors.New("one Advance call cannot review and correct qualification")
+	}
+	if review != nil && len(record.QualificationReviews) > 0 &&
+		reflect.DeepEqual(*review, record.QualificationReviews[len(record.QualificationReviews)-1]) {
+		return outcomeFromRecord(record), true, nil
+	}
+	if correction != nil && len(record.QualificationCorrections) > 0 &&
+		reflect.DeepEqual(*correction, record.QualificationCorrections[len(record.QualificationCorrections)-1]) {
+		return outcomeFromRecord(record), true, nil
 	}
 	if record.PendingQualificationCorrection != nil {
 		if correction == nil {
@@ -79,6 +98,9 @@ func (m *Module) advanceQualification(
 		return Outcome{}, true, errors.New("qualification correction was not requested")
 	}
 	if review == nil {
+		if !record.QualificationApproved && requiresQualificationCorrection(record.Evidence) {
+			return outcomeFromRecord(record), true, nil
+		}
 		return Outcome{}, false, nil
 	}
 	if record.QualificationApproved {
@@ -214,7 +236,7 @@ func validateQualificationHistory(record runRecord) error {
 	}
 	if record.QualificationApproved {
 		if len(lastReview.Findings) != 0 ||
-			!qualificationApprovalMatchesCurrentPlan(record, currentDigest, lastReview) ||
+			lastReview.AcceptanceMatrixSHA256 != currentDigest ||
 			len(record.QualificationReviews) != len(record.QualificationCorrections)+1 {
 			return errors.New("qualification approval does not match the current matrix")
 		}
@@ -225,45 +247,17 @@ func validateQualificationHistory(record runRecord) error {
 	return nil
 }
 
-func qualificationApprovalMatchesCurrentPlan(
-	record runRecord,
-	currentDigest string,
-	lastReview QualificationReview,
-) bool {
-	if lastReview.AcceptanceMatrixSHA256 == currentDigest {
-		return true
-	}
-	if len(record.Candidates) == 0 || len(record.QualificationCorrections) == 0 ||
-		!hasLegacyGenericInvalidation(record.Evidence.AcceptanceMatrix) {
+func requiresQualificationCorrection(evidence *deliveryevidence.Bundle) bool {
+	if evidence == nil {
 		return false
 	}
-	corrected := record.QualificationCorrections[len(record.QualificationCorrections)-1].AcceptanceMatrix
-	correctedDigest, err := acceptanceMatrixDigest(corrected)
-	if err != nil || correctedDigest != lastReview.AcceptanceMatrixSHA256 ||
-		len(corrected) != len(record.Evidence.AcceptanceMatrix) {
-		return false
-	}
-	for index := range corrected {
-		if corrected[index].Identity != record.Evidence.AcceptanceMatrix[index].Identity ||
-			corrected[index].Criterion != record.Evidence.AcceptanceMatrix[index].Criterion {
-			return false
-		}
-	}
-	return true
-}
-
-func hasLegacyGenericInvalidation(rows []deliveryevidence.AcceptanceRow) bool {
+	rows := evidence.AcceptanceMatrix
 	for _, row := range rows {
-		if row.PositiveEvidence != "planned: focused positive behavior through Advance" ||
-			row.NegativeEvidence != "planned: focused negative behavior through Advance" ||
-			row.FailureEvidence != "planned: failure behavior through Advance" ||
-			row.MutationEvidence != "planned: persisted run mutation inspection" ||
-			row.CompatibilityEvidence != "planned: compatibility validation" ||
-			row.PreservationEvidence != "planned: prior run byte preservation" {
-			return false
+		if row.OwningSeam == qualificationPlanRequired {
+			return true
 		}
 	}
-	return len(rows) > 0
+	return false
 }
 
 func validQualificationFinding(finding deliveryevidence.ReviewFinding) bool {

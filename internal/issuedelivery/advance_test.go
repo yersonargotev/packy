@@ -64,6 +64,18 @@ func (f *fakeClock) Now() time.Time {
 	return got
 }
 
+func testQualificationPlan(seam string) *QualificationPlan {
+	return &QualificationPlan{
+		OwningSeam:            seam,
+		PositiveEvidence:      "planned: focused positive evidence",
+		NegativeEvidence:      "planned: focused negative evidence",
+		FailureEvidence:       "planned: focused failure evidence",
+		MutationEvidence:      "planned: focused mutation evidence",
+		CompatibilityEvidence: "planned: focused compatibility evidence",
+		PreservationEvidence:  "planned: focused preservation evidence",
+	}
+}
+
 func moduleFixture(t *testing.T, issue int) (*Module, *fakeGitObserver, *fakeGitHubObserver) {
 	t.Helper()
 	common := filepath.Join(t.TempDir(), "common")
@@ -84,8 +96,14 @@ func moduleFixture(t *testing.T, issue int) (*Module, *fakeGitObserver, *fakeGit
 		State:      "OPEN",
 		Labels:     []string{"type:chore", "status:approved"},
 		Criteria: []AuthorityItem{
-			{Text: "Persist one self-contained low-risk run.", EvidenceLink: "issue#356:criterion-1"},
-			{Text: "Resume without creating a duplicate run.", EvidenceLink: "issue#356:criterion-2"},
+			{
+				Text: "Persist one self-contained low-risk run.", EvidenceLink: "issue#356:criterion-1",
+				Plan: testQualificationPlan("issuedelivery run persistence boundary"),
+			},
+			{
+				Text: "Resume without creating a duplicate run.", EvidenceLink: "issue#356:criterion-2",
+				Plan: testQualificationPlan("issuedelivery recovery boundary"),
+			},
 		},
 		Exclusions:   []AuthorityItem{{Text: "Do not push a branch.", EvidenceLink: "issue#356:out-of-scope"}},
 		Dependencies: []DependencyObservation{},

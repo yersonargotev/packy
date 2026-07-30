@@ -35,14 +35,15 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 		Location: qualified.Evidence.AcceptanceMatrix[0].Identity,
 		Evidence: "the row names issuedelivery.Advance instead of the observable product seam",
 	}
+	review := &QualificationReview{
+		AuthoritySHA256:        qualified.Observations.AuthoritySHA256,
+		AcceptanceMatrixSHA256: matrixHash,
+		Findings:               []deliveryevidence.ReviewFinding{finding}, Completed: true,
+	}
 
 	rejected, err := module.Advance(context.Background(), Request{
 		RepositoryPath: "/repo", IssueNumber: 370,
-		QualificationReview: &QualificationReview{
-			AuthoritySHA256:        qualified.Observations.AuthoritySHA256,
-			AcceptanceMatrixSHA256: matrixHash,
-			Findings:               []deliveryevidence.ReviewFinding{finding}, Completed: true,
-		},
+		QualificationReview: review,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,6 +69,16 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 	if len(revisions) != 1 {
 		t.Fatalf("qualification rejection revisions = %d, want 1", len(revisions))
 	}
+	replayedRejection, err := module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370, QualificationReview: review,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayedRejection.State != StateNeedsDecision {
+		t.Fatalf("replayed qualification rejection = %#v", replayedRejection)
+	}
+	assertQualificationRevisionCount(t, module, qualified.RunID, 1)
 	gotOriginal, err := os.ReadFile(originalPath)
 	if err != nil {
 		t.Fatal(err)
@@ -97,15 +108,15 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 	if err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("mismatched qualification correction error = %v", err)
 	}
+	correction := &QualificationCorrection{
+		AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+		ReviewedMatrixSHA256: matrixHash,
+		FindingIDs:           []string{finding.ID},
+		AcceptanceMatrix:     correctedRows,
+		Evidence:             "mapped the criterion to its observable renderer and compatibility tests",
+	}
 	corrected, err := module.Advance(context.Background(), Request{
-		RepositoryPath: "/repo", IssueNumber: 370,
-		QualificationCorrection: &QualificationCorrection{
-			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
-			ReviewedMatrixSHA256: matrixHash,
-			FindingIDs:           []string{finding.ID},
-			AcceptanceMatrix:     correctedRows,
-			Evidence:             "mapped the criterion to its observable renderer and compatibility tests",
-		},
+		RepositoryPath: "/repo", IssueNumber: 370, QualificationCorrection: correction,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -114,17 +125,27 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 		corrected.Evidence.AcceptanceMatrix[0].OwningSeam != "internal/cli pack-show renderer" {
 		t.Fatalf("corrected qualification = %#v", corrected)
 	}
+	replayedCorrection, err := module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370, QualificationCorrection: correction,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayedCorrection.State != StateNeedsReview {
+		t.Fatalf("replayed qualification correction = %#v", replayedCorrection)
+	}
+	assertQualificationRevisionCount(t, module, qualified.RunID, 2)
 	correctedHash, err := acceptanceMatrixDigest(corrected.Evidence.AcceptanceMatrix)
 	if err != nil {
 		t.Fatal(err)
 	}
+	approval := &QualificationReview{
+		AuthoritySHA256:        corrected.Observations.AuthoritySHA256,
+		AcceptanceMatrixSHA256: correctedHash,
+		Findings:               []deliveryevidence.ReviewFinding{}, Completed: true,
+	}
 	approved, err := module.Advance(context.Background(), Request{
-		RepositoryPath: "/repo", IssueNumber: 370,
-		QualificationReview: &QualificationReview{
-			AuthoritySHA256:        corrected.Observations.AuthoritySHA256,
-			AcceptanceMatrixSHA256: correctedHash,
-			Findings:               []deliveryevidence.ReviewFinding{}, Completed: true,
-		},
+		RepositoryPath: "/repo", IssueNumber: 370, QualificationReview: approval,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -133,6 +154,16 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 		len(approved.QualificationReviews) != 2 || len(approved.QualificationCorrections) != 1 {
 		t.Fatalf("approved qualification = %#v", approved)
 	}
+	replayedApproval, err := module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370, QualificationReview: approval,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayedApproval.QualificationApproved {
+		t.Fatalf("replayed qualification approval = %#v", replayedApproval)
+	}
+	assertQualificationRevisionCount(t, module, qualified.RunID, 3)
 	reloaded, err := module.Advance(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -160,13 +191,127 @@ func TestAdvanceCompilesIssue347ProductSpecificQualificationEvidence(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := make(map[string]deliveryevidence.AcceptanceRow)
-	for _, row := range outcome.Evidence.AcceptanceMatrix {
-		rows[row.Criterion] = row
-		if row.OwningSeam == "issuedelivery.Advance" ||
-			strings.Contains(row.PositiveEvidence, "behavior through Advance") {
-			t.Fatalf("product criterion compiled to generic delivery evidence: %#v", row)
+	if outcome.Candidate != nil || outcome.QualificationApproved {
+		t.Fatalf("unqualified product criteria advanced: %#v", outcome)
+	}
+	matrixHash, err := acceptanceMatrixDigest(outcome.Evidence.AcceptanceMatrix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	links := make(map[string]string, len(outcome.Evidence.Scope.OwnedNow))
+	for _, entry := range outcome.Evidence.Scope.OwnedNow {
+		links[entry.Identity] = entry.EvidenceLink
+	}
+	findings := make([]deliveryevidence.ReviewFinding, len(outcome.Evidence.AcceptanceMatrix))
+	for index, row := range outcome.Evidence.AcceptanceMatrix {
+		if row.OwningSeam != qualificationPlanRequired {
+			t.Fatalf("unqualified criterion inferred a product seam: %#v", row)
 		}
+		findings[index] = deliveryevidence.ReviewFinding{
+			ID:   "qualification-product-seam-" + row.Identity,
+			Axis: deliveryevidence.ReviewSpec, Severity: deliveryevidence.SeverityP1,
+			Authority: deliveryevidence.AuthoritySpecRequirement,
+			Citation:  links[row.Identity], Location: row.Identity,
+			Evidence: "the criterion requires an explicit observable product evidence plan",
+		}
+	}
+	rejected := mustAdvance(t, module, Request{
+		RepositoryPath: "/repo", IssueNumber: 347,
+		QualificationReview: &QualificationReview{
+			AuthoritySHA256:        outcome.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: matrixHash,
+			Findings:               findings, Completed: true,
+		},
+	})
+	correctedRows := append(
+		[]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...,
+	)
+	plans := []*QualificationPlan{
+		{
+			OwningSeam:            "internal/cli pack-show human renderer",
+			PositiveEvidence:      "planned: pack show summary ordering test",
+			NegativeEvidence:      "planned: ordering regression test",
+			FailureEvidence:       "planned: pack show actionable failure output",
+			MutationEvidence:      "not applicable: pack show is read-only",
+			CompatibilityEvidence: "planned: structured pack-show JSON compatibility",
+			PreservationEvidence:  "planned: detailed resource contracts remain available",
+		},
+		{
+			OwningSeam:            "internal/cli classic dry-run human renderer",
+			PositiveEvidence:      "planned: dry-run groups actions before complete action detail",
+			NegativeEvidence:      "planned: repetitive detail ordering regression test",
+			FailureEvidence:       "planned: blocked-action guidance",
+			MutationEvidence:      "planned: dry-run proves no lifecycle mutation",
+			CompatibilityEvidence: "planned: structured dry-run JSON compatibility",
+			PreservationEvidence:  "planned: complete action detail remains available",
+		},
+		{
+			OwningSeam:            "internal/cli classic dry-run audit renderer",
+			PositiveEvidence:      "planned: every action remains available for audit",
+			NegativeEvidence:      "planned: omitted action fails preservation test",
+			FailureEvidence:       "planned: incomplete audit detail blocks acceptance",
+			MutationEvidence:      "planned: audit rendering is non-mutating",
+			CompatibilityEvidence: "planned: action identity compatibility",
+			PreservationEvidence:  "planned: complete action set is preserved",
+		},
+		{
+			OwningSeam:            "versioned JSON and redaction contracts",
+			PositiveEvidence:      "planned: JSON schema and redaction tests",
+			NegativeEvidence:      "planned: sensitive value exposure fails tests",
+			FailureEvidence:       "planned: incompatible JSON blocks acceptance",
+			MutationEvidence:      "not applicable: serialization tests are observational",
+			CompatibilityEvidence: "planned: versioned JSON remains compatible",
+			PreservationEvidence:  "planned: redaction guarantees remain intact",
+		},
+		{
+			OwningSeam:            "internal/cli human-output contract tests",
+			PositiveEvidence:      "planned: human ordering and guidance tests",
+			NegativeEvidence:      "planned: missing guidance fails tests",
+			FailureEvidence:       "planned: blocked output remains actionable",
+			MutationEvidence:      "not applicable: renderer tests do not mutate state",
+			CompatibilityEvidence: "planned: JSON remains independent",
+			PreservationEvidence:  "planned: detailed audit output remains available",
+		},
+		{
+			OwningSeam:            "scripts/validate-packy.sh",
+			PositiveEvidence:      "planned: exact validate-packy.sh success",
+			NegativeEvidence:      "planned: candidate mismatch is rejected",
+			FailureEvidence:       "planned: validator failure blocks readiness",
+			MutationEvidence:      "not applicable: validation is read-only",
+			CompatibilityEvidence: "planned: validator authority remains canonical",
+			PreservationEvidence:  "planned: sandbox preserves operator configuration",
+		},
+	}
+	plansByCriterion := make(map[string]*QualificationPlan, len(plans))
+	for index, plan := range plans {
+		plansByCriterion[tracker.value.Criteria[index].Text] = plan
+	}
+	for index := range correctedRows {
+		plan := plansByCriterion[correctedRows[index].Criterion]
+		correctedRows[index].OwningSeam = plan.OwningSeam
+		correctedRows[index].PositiveEvidence = plan.PositiveEvidence
+		correctedRows[index].NegativeEvidence = plan.NegativeEvidence
+		correctedRows[index].FailureEvidence = plan.FailureEvidence
+		correctedRows[index].MutationEvidence = plan.MutationEvidence
+		correctedRows[index].CompatibilityEvidence = plan.CompatibilityEvidence
+		correctedRows[index].PreservationEvidence = plan.PreservationEvidence
+	}
+	corrected := mustAdvance(t, module, Request{
+		RepositoryPath: "/repo", IssueNumber: 347,
+		QualificationCorrection: &QualificationCorrection{
+			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+			ReviewedMatrixSHA256: matrixHash,
+			FindingIDs: []string{
+				findings[0].ID, findings[1].ID, findings[2].ID,
+				findings[3].ID, findings[4].ID, findings[5].ID,
+			},
+			AcceptanceMatrix: correctedRows,
+			Evidence:         "mapped every criterion to its explicit product evidence seam",
+		},
+	})
+	rows := make(map[string]deliveryevidence.AcceptanceRow)
+	for _, row := range corrected.Evidence.AcceptanceMatrix {
+		rows[row.Criterion] = row
 	}
 	assertQualificationRowContains(t, rows[tracker.value.Criteria[0].Text], "pack show", "ordering")
 	assertQualificationRowContains(t, rows[tracker.value.Criteria[1].Text], "dry-run", "complete action")
@@ -236,38 +381,16 @@ func TestCandidateInvalidationPreservesCorrectedQualificationEvidencePlan(t *tes
 	}
 }
 
-func TestQualificationHistoryAdoptsOnlyExactLegacyGenericInvalidation(t *testing.T) {
-	corrected := []deliveryevidence.AcceptanceRow{{
-		Identity: "criterion-1", Criterion: "Product behavior.",
-		OwningSeam: "product seam", PositiveEvidence: "specific positive",
-		NegativeEvidence: "specific negative", FailureEvidence: "specific failure",
-		MutationEvidence: "specific mutation", CompatibilityEvidence: "specific compatibility",
-		PreservationEvidence: "specific preservation", MigrationEvidence: "not applicable",
-		State: deliveryevidence.AcceptancePlanned,
-	}}
-	digest, err := acceptanceMatrixDigest(corrected)
+func assertQualificationRevisionCount(t *testing.T, module *Module, runID string, want int) {
+	t.Helper()
+	revisions, err := os.ReadDir(filepath.Join(
+		module.storePathForTest(t, 370), "revisions", runID,
+	))
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := append([]deliveryevidence.AcceptanceRow(nil), corrected...)
-	legacy[0].PositiveEvidence = "planned: focused positive behavior through Advance"
-	legacy[0].NegativeEvidence = "planned: focused negative behavior through Advance"
-	legacy[0].FailureEvidence = "planned: failure behavior through Advance"
-	legacy[0].MutationEvidence = "planned: persisted run mutation inspection"
-	legacy[0].CompatibilityEvidence = "planned: compatibility validation"
-	legacy[0].PreservationEvidence = "planned: prior run byte preservation"
-	record := runRecord{
-		Evidence:                 &deliveryevidence.Bundle{AcceptanceMatrix: legacy},
-		Candidates:               []Candidate{{ID: "candidate"}},
-		QualificationCorrections: []QualificationCorrection{{AcceptanceMatrix: corrected}},
-	}
-	review := QualificationReview{AcceptanceMatrixSHA256: digest}
-	if !qualificationApprovalMatchesCurrentPlan(record, "different", review) {
-		t.Fatal("exact legacy generic invalidation was not adopted")
-	}
-	record.Evidence.AcceptanceMatrix[0].PositiveEvidence = "other generic evidence"
-	if qualificationApprovalMatchesCurrentPlan(record, "different", review) {
-		t.Fatal("non-canonical invalidation was adopted")
+	if len(revisions) != want {
+		t.Fatalf("qualification revisions = %d, want %d", len(revisions), want)
 	}
 }
 

@@ -201,6 +201,15 @@ func TestProductionValidationAdapterAdvancesRealModuleToLocalReadiness(t *testin
 		Labels: []string{"status:approved", "type:chore"},
 		Criteria: []issuedelivery.AuthorityItem{{
 			Text: "Reach exact local readiness.", EvidenceLink: "issue#361:acceptance-1",
+			Plan: &issuedelivery.QualificationPlan{
+				OwningSeam:            "production validation adapter",
+				PositiveEvidence:      "planned: exact candidate validation succeeds",
+				NegativeEvidence:      "planned: mismatched candidate is rejected",
+				FailureEvidence:       "planned: validation failure blocks readiness",
+				MutationEvidence:      "planned: readiness receipt is persisted",
+				CompatibilityEvidence: "planned: validation contract remains compatible",
+				PreservationEvidence:  "planned: sandbox preserves operator configuration",
+			},
 		}},
 		Exclusions: []issuedelivery.AuthorityItem{}, Dependencies: []issuedelivery.DependencyObservation{},
 		References: []issuedelivery.ReferenceObservation{}, Ambiguities: []issuedelivery.AuthorityItem{},
