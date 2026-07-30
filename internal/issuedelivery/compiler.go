@@ -124,14 +124,30 @@ func compileBundle(
 	authorityHash string,
 	declaredProfile deliveryevidence.DeliveryRiskProfile,
 ) (deliveryevidence.Bundle, bool, error) {
+	authorityKind := deliveryevidence.AuthoritySelfContainedIssue
+	specIdentity := deliveryevidence.SpecIdentity{}
+	specHash := ""
+	migrationEvidence := "not applicable: new self-contained run"
+	if tracker.Specification != nil {
+		authorityKind = deliveryevidence.AuthorityIssueWithSpecification
+		specIdentity = tracker.Specification.Identity
+		var err error
+		specHash, err = specificationDigest(*tracker.Specification)
+		if err != nil {
+			return deliveryevidence.Bundle{}, false, err
+		}
+		migrationEvidence = "not applicable: new issue-with-specification run"
+	}
 	bundle := deliveryevidence.Bundle{
 		Schema:      deliveryevidence.SchemaV2,
 		Repository:  tracker.Repository,
 		Issue:       tracker.Issue,
+		Spec:        specIdentity,
 		RiskProfile: declaredProfile,
 		Authority: deliveryevidence.Authority{
-			Kind:                  deliveryevidence.AuthoritySelfContainedIssue,
+			Kind:                  authorityKind,
 			IssueSHA256:           authorityHash,
+			SpecSHA256:            specHash,
 			Labels:                labels,
 			DependencyDisposition: make([]deliveryevidence.DependencyDisposition, 0, len(dependencies)),
 			AcceptanceCriteria:    make([]string, 0, len(criteria)),
@@ -164,7 +180,7 @@ func compileBundle(
 			MutationEvidence:      "planned: persisted run mutation inspection",
 			CompatibilityEvidence: "planned: compatibility validation",
 			PreservationEvidence:  "planned: prior run byte preservation",
-			MigrationEvidence:     "not applicable: new self-contained run",
+			MigrationEvidence:     migrationEvidence,
 			State:                 deliveryevidence.AcceptancePlanned,
 		})
 	}
@@ -223,7 +239,34 @@ func validateObservations(git GitObservation, tracker TrackerObservation) error 
 	if tracker.Issue.Number <= 0 || tracker.Issue.NodeID == "" || tracker.Repository.NodeID == "" {
 		return fmt.Errorf("GitHub issue observation is incomplete")
 	}
+	if !strings.EqualFold(cleanText(tracker.State), "open") ||
+		!containsLabel(tracker.Labels, "status:approved") {
+		return fmt.Errorf("GitHub issue is not open and approved for delivery")
+	}
+	if specification := tracker.Specification; specification != nil {
+		if specification.Identity.Number <= 0 ||
+			specification.Identity.Number == tracker.Issue.Number ||
+			specification.Identity.NodeID == "" ||
+			cleanText(specification.Title) == "" ||
+			cleanText(specification.Body) == "" ||
+			cleanText(specification.State) == "" ||
+			cleanText(specification.URL) == "" {
+			return fmt.Errorf("GitHub specification observation is incomplete")
+		}
+		if !containsLabel(specification.Labels, "status:approved") {
+			return fmt.Errorf("GitHub specification is not approved delivery authority")
+		}
+	}
 	return nil
+}
+
+func containsLabel(labels []string, expected string) bool {
+	for _, label := range labels {
+		if strings.EqualFold(cleanText(label), expected) {
+			return true
+		}
+	}
+	return false
 }
 
 var fullGitSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -294,22 +337,23 @@ func authorityDigest(
 	decisions []Decision,
 ) (string, error) {
 	facts := struct {
-		Repository   deliveryevidence.RepositoryIdentity `json:"repository"`
-		Issue        deliveryevidence.IssueIdentity      `json:"issue"`
-		Title        string                              `json:"title"`
-		Body         string                              `json:"body"`
-		State        string                              `json:"state"`
-		Labels       []string                            `json:"labels"`
-		Criteria     []AuthorityItem                     `json:"criteria"`
-		Exclusions   []AuthorityItem                     `json:"exclusions"`
-		Ambiguities  []AuthorityItem                     `json:"ambiguities"`
-		Dependencies []DependencyObservation             `json:"dependencies"`
-		References   []ReferenceObservation              `json:"references"`
-		Decisions    []Decision                          `json:"decisions"`
+		Repository    deliveryevidence.RepositoryIdentity `json:"repository"`
+		Issue         deliveryevidence.IssueIdentity      `json:"issue"`
+		Title         string                              `json:"title"`
+		Body          string                              `json:"body"`
+		State         string                              `json:"state"`
+		Labels        []string                            `json:"labels"`
+		Criteria      []AuthorityItem                     `json:"criteria"`
+		Exclusions    []AuthorityItem                     `json:"exclusions"`
+		Ambiguities   []AuthorityItem                     `json:"ambiguities"`
+		Dependencies  []DependencyObservation             `json:"dependencies"`
+		References    []ReferenceObservation              `json:"references"`
+		Decisions     []Decision                          `json:"decisions"`
+		Specification *SpecificationObservation           `json:"specification,omitempty"`
 	}{
 		tracker.Repository, tracker.Issue, cleanText(tracker.Title), cleanText(tracker.Body),
 		strings.ToLower(cleanText(tracker.State)), labels, criteria, exclusions, ambiguities,
-		dependencies, references, decisions,
+		dependencies, references, decisions, normalizedSpecification(tracker.Specification),
 	}
 	data, err := json.Marshal(facts)
 	if err != nil {
@@ -317,6 +361,29 @@ func authorityDigest(
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func specificationDigest(specification SpecificationObservation) (string, error) {
+	normalized := normalizedSpecification(&specification)
+	return deliveryevidence.TypedObservationHash(
+		"github-specification",
+		fmt.Sprintf("issue-%d:%s", normalized.Identity.Number, normalized.Identity.NodeID),
+		normalized,
+	)
+}
+
+func normalizedSpecification(specification *SpecificationObservation) *SpecificationObservation {
+	if specification == nil {
+		return nil
+	}
+	return &SpecificationObservation{
+		Identity: specification.Identity,
+		Title:    cleanText(specification.Title),
+		Body:     cleanText(specification.Body),
+		State:    strings.ToLower(cleanText(specification.State)),
+		URL:      cleanText(specification.URL),
+		Labels:   normalizedStrings(specification.Labels),
+	}
 }
 
 func stableID(kind, value string) string {

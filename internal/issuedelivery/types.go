@@ -125,17 +125,27 @@ type GitObservation struct {
 }
 
 type TrackerObservation struct {
-	Repository   deliveryevidence.RepositoryIdentity
-	Issue        deliveryevidence.IssueIdentity
-	Title        string
-	Body         string
-	State        string
-	Labels       []string
-	Criteria     []AuthorityItem
-	Exclusions   []AuthorityItem
-	Dependencies []DependencyObservation
-	References   []ReferenceObservation
-	Ambiguities  []AuthorityItem
+	Repository    deliveryevidence.RepositoryIdentity
+	Issue         deliveryevidence.IssueIdentity
+	Specification *SpecificationObservation
+	Title         string
+	Body          string
+	State         string
+	Labels        []string
+	Criteria      []AuthorityItem
+	Exclusions    []AuthorityItem
+	Dependencies  []DependencyObservation
+	References    []ReferenceObservation
+	Ambiguities   []AuthorityItem
+}
+
+type SpecificationObservation struct {
+	Identity deliveryevidence.SpecIdentity
+	Title    string
+	Body     string
+	State    string
+	URL      string
+	Labels   []string
 }
 
 type GitObserver interface {
@@ -680,6 +690,7 @@ type Config struct {
 	LocalCompletion LocalCompletionGateway
 	SandboxRoot     string
 	DeclaredProfile deliveryevidence.DeliveryRiskProfile
+	AllowLegacyV1   bool
 }
 
 type Module struct {
@@ -695,6 +706,7 @@ type Module struct {
 	localCompletion LocalCompletionGateway
 	sandboxRoot     string
 	declaredProfile deliveryevidence.DeliveryRiskProfile
+	allowLegacyV1   bool
 	store           fileRunStore
 }
 
@@ -743,7 +755,7 @@ func New(config Config) (*Module, error) {
 		review: config.Review, validation: config.Validation, sandboxRoot: config.SandboxRoot,
 		risk: config.Risk, specialist: config.Specialist, boundary: config.Boundary,
 		nonlocal: config.NonLocal, localCompletion: config.LocalCompletion,
-		declaredProfile: config.DeclaredProfile,
+		declaredProfile: config.DeclaredProfile, allowLegacyV1: config.AllowLegacyV1,
 	}, nil
 }
 

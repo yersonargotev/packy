@@ -10,22 +10,12 @@ and [repository instructions](../../../AGENTS.md) before mutating project or
 tracker state. The contract owns delivery behavior; keep this skill as its thin
 orchestrator.
 
-## 1. LOCAL — Qualify
+Create or resume the issue's `Delivery Run`, then invoke the contract's
+private `deliveryevidence advance` adapter repeatedly. Supply genuine decisions,
+review results, and adjudications only when the returned state requires them.
+Otherwise let `Advance` reacquire facts, perform deterministic work, persist
+evidence, and recover idempotently.
 
-Run **LOCAL — Qualify** from the contract.
-
-**Complete when:** the contract's LOCAL Qualify criterion is satisfied.
-
-## 2. LOCAL — Implement-review loop
-
-Run the contract's **LOCAL — Implement-review loop**, applying `delegation`,
-`implement`, and `code-review` at their declared points.
-
-**Complete when:** the contract's LOCAL Implement-review criterion is
-satisfied.
-
-## 3. NON-LOCAL — Deliver
-
-Run **NON-LOCAL — Deliver** from the contract.
-
-**Complete when:** the contract's NON-LOCAL Deliver criterion is satisfied.
+Stop only when the run is completed, blocked, waiting for an external result,
+needs review, or needs one decision. For a schema v1 run, follow only the
+contract's explicit legacy-v1 behavior.

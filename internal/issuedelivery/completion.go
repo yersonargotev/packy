@@ -469,9 +469,14 @@ func validatePostMergeLocalObservation(
 		return errors.New("operator state changed after merge; preserve it without cleanup mutation")
 	}
 	if observation.Worktrees == nil || observation.Integration.Path != repositoryPath ||
-		!observation.Integration.Clean ||
-		observation.Integration.Branch == record.NonLocal.Authorization.Branch {
-		return errors.New("integration workspace is incomplete, dirty, or still owns the issue branch")
+		!observation.Integration.Clean {
+		return errors.New("integration workspace is incomplete or dirty")
+	}
+	if observation.Integration.Branch == record.NonLocal.Authorization.Branch &&
+		(observation.LocalBranch == nil ||
+			observation.LocalBranch.Name != record.NonLocal.Authorization.Branch ||
+			observation.LocalBranch.HeadSHA != candidate.CommitSHA) {
+		return errors.New("integration workspace issue branch is not the exact cleanup candidate")
 	}
 	if !observation.LocalMain.Exists || !observation.LocalMain.Clean {
 		return errors.New("local main is missing or dirty; preserve operator state without forced mutation")

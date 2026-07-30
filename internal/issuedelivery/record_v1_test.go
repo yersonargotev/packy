@@ -159,6 +159,11 @@ func TestLegacyRunContinuesUnderV1AssuranceWithoutRiskReclassification(t *testin
 		t.Fatal(err)
 	}
 	validator.missingNegative = true
+	if _, err = module.Advance(context.Background(), request); err == nil ||
+		!strings.Contains(err.Error(), "explicit legacy-v1") {
+		t.Fatalf("normal Advance admitted legacy v1 run: %v", err)
+	}
+	module.allowLegacyV1 = true
 	blocked := mustAdvance(t, module, request)
 	if blocked.State != StateBlocked ||
 		!strings.Contains(blocked.Reason, "acceptance traceability") ||

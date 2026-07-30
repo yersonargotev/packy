@@ -1,5 +1,6 @@
-// deliveryevidence is a private, read-only observation adapter. The only write
-// it performs is the explicitly selected evidence file.
+// deliveryevidence is the private adapter for the issue-delivery deep module.
+// Its normal Advance path may perform the delivery effects authorized by that
+// module; historical phase-recording commands remain isolated behind legacy-v1.
 package main
 
 import (
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/yersonargotev/packy/internal/deliveryevidence"
+	"github.com/yersonargotev/packy/internal/issuedelivery"
 )
 
 type Runner interface {
@@ -64,10 +66,12 @@ func replacedEnvironment(current []string, replacements map[string]string) []str
 }
 
 type command struct {
-	Git        Runner
-	GitHub     Runner
-	Validation ValidationRunner
-	Now        func() time.Time
+	Git                  Runner
+	GitHub               Runner
+	Validation           ValidationRunner
+	Now                  func() time.Time
+	AdvanceFactory       advanceFactory
+	LegacyPrefixRequired bool
 }
 
 type qualification struct {
@@ -113,7 +117,10 @@ type issueObservation struct {
 }
 
 func main() {
-	if err := (command{Git: execRunner{}, GitHub: execRunner{}, Validation: execValidationRunner{}, Now: time.Now}).run(context.Background(), os.Args[1:], os.Stdout); err != nil {
+	if err := (command{
+		Git: execRunner{}, GitHub: execRunner{}, Validation: execValidationRunner{},
+		Now: time.Now, AdvanceFactory: newProductionAdvancer, LegacyPrefixRequired: true,
+	}).run(context.Background(), os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -121,13 +128,30 @@ func main() {
 
 func (c command) run(ctx context.Context, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("command is required: initialize or status")
+		return errors.New("command is required: advance, status, or a legacy v1 command")
 	}
+	switch args[0] {
+	case "advance":
+		return c.advance(ctx, args[1:], stdout)
+	case "legacy-v1":
+		if len(args) == 1 {
+			return errors.New("legacy-v1 requires one historical v1 subcommand")
+		}
+		return c.runLegacy(ctx, args[1:], stdout)
+	case "status":
+		return c.status(args[1:], stdout)
+	default:
+		if c.LegacyPrefixRequired {
+			return fmt.Errorf("unknown command %q; historical evidence sequencing is available only through legacy-v1", args[0])
+		}
+		return c.runLegacy(ctx, args, stdout)
+	}
+}
+
+func (c command) runLegacy(ctx context.Context, args []string, stdout io.Writer) error {
 	switch args[0] {
 	case "initialize":
 		return c.initialize(ctx, args[1:], stdout)
-	case "status":
-		return c.status(args[1:], stdout)
 	case "record-iteration":
 		return c.recordIteration(ctx, args[1:], stdout)
 	case "record-review":
@@ -149,8 +173,12 @@ func (c command) run(ctx context.Context, args []string, stdout io.Writer) error
 	case "final-outcome":
 		return c.finalOutcome(ctx, args[1:], stdout)
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf("unknown legacy v1 command %q", args[0])
 	}
+}
+
+type issueDeliveryAdvancer interface {
+	Advance(context.Context, issuedelivery.Request) (issuedelivery.Outcome, error)
 }
 
 func (c command) nonLocalReadiness(ctx context.Context, args []string, stdout io.Writer) error {
@@ -409,6 +437,9 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	var extra any
 	if err = decoder.Decode(&extra); err != io.EOF {
 		return errors.New("qualification must contain exactly one JSON value")
+	}
+	if c.LegacyPrefixRequired && q.Schema != deliveryevidence.SchemaV1 {
+		return errors.New("legacy-v1 initialize accepts only schema v1 qualification")
 	}
 	plan, err := deliveryevidence.CompileQualification(deliveryevidence.QualificationInput{
 		Schema: q.Schema, IssueNumber: q.IssueNumber, SpecNumber: q.SpecNumber,
