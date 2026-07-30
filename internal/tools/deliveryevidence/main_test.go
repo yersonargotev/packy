@@ -336,6 +336,37 @@ func TestInitializeV2AuthorityAndRiskProfiles(t *testing.T) {
 	}
 }
 
+func TestLegacyCommandsRejectV2WhileStatusRemainsAvailable(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "v2.json")
+	bundle := reviewBundleFixture(strings.Repeat("a", 40))
+	bundle.Schema = deliveryevidence.SchemaV2
+	bundle.Spec = deliveryevidence.SpecIdentity{}
+	bundle.Authority.Kind = deliveryevidence.AuthoritySelfContainedIssue
+	bundle.Authority.SpecSHA256 = ""
+	bundle.RiskProfile = deliveryevidence.RiskStandard
+	if err := deliveryevidence.StoreAtomic(path, bundle); err != nil {
+		t.Fatal(err)
+	}
+
+	var status bytes.Buffer
+	if err := (command{}).run(context.Background(), []string{"status", "--bundle", path}, &status); err != nil {
+		t.Fatalf("v2 status rejected: %v", err)
+	}
+	if !strings.Contains(status.String(), "Self-contained issue") {
+		t.Fatalf("v2 status omitted authority: %s", status.String())
+	}
+
+	record := filepath.Join(root, "review.json")
+	if err := os.WriteFile(record, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := (command{}).run(context.Background(), []string{"record-review", "--bundle", path, "--receipt", record}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "requires Advance") {
+		t.Fatalf("legacy command admitted v2: %v", err)
+	}
+}
+
 func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 func TestGitHubSlugRealShapes(t *testing.T) {

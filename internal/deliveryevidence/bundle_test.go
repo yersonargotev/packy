@@ -159,6 +159,66 @@ func TestV1AndV2QualificationAreStaleNotConverted(t *testing.T) {
 	}
 }
 
+func TestCompileQualificationOwnsAuthorityAndRiskPolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   QualificationInput
+		want    QualificationPlan
+		wantErr bool
+	}{
+		{
+			name:  "v1 legacy authority",
+			input: QualificationInput{Schema: SchemaV1, IssueNumber: 355, SpecNumber: 354},
+			want:  QualificationPlan{HasSpecification: true},
+		},
+		{
+			name:  "v2 self contained defaults standard",
+			input: QualificationInput{Schema: SchemaV2, IssueNumber: 355, AuthorityKind: AuthoritySelfContainedIssue},
+			want:  QualificationPlan{AuthorityKind: AuthoritySelfContainedIssue, RiskProfile: RiskStandard},
+		},
+		{
+			name:  "v2 issue with specification",
+			input: QualificationInput{Schema: SchemaV2, IssueNumber: 355, SpecNumber: 354, AuthorityKind: AuthorityIssueWithSpecification, RiskProfile: RiskHigh},
+			want:  QualificationPlan{AuthorityKind: AuthorityIssueWithSpecification, RiskProfile: RiskHigh, HasSpecification: true},
+		},
+		{
+			name:    "v2 invalid risk",
+			input:   QualificationInput{Schema: SchemaV2, IssueNumber: 355, AuthorityKind: AuthoritySelfContainedIssue, RiskProfile: "routine"},
+			wantErr: true,
+		},
+		{
+			name:    "self contained with specification",
+			input:   QualificationInput{Schema: SchemaV2, IssueNumber: 355, SpecNumber: 354, AuthorityKind: AuthoritySelfContainedIssue},
+			wantErr: true,
+		},
+		{
+			name:    "v1 with v2 fields",
+			input:   QualificationInput{Schema: SchemaV1, IssueNumber: 355, SpecNumber: 354, RiskProfile: RiskStandard},
+			wantErr: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := CompileQualification(test.input)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("CompileQualification() error = %v, wantErr %t", err, test.wantErr)
+			}
+			if !test.wantErr && got != test.want {
+				t.Fatalf("CompileQualification() = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestV2IsNotAdmittedToLegacyWorkflow(t *testing.T) {
+	if err := ValidateLegacyWorkflowBundle(fixture()); err != nil {
+		t.Fatalf("v1 rejected from legacy workflow: %v", err)
+	}
+	if err := ValidateLegacyWorkflowBundle(v2Fixture(AuthoritySelfContainedIssue, RiskStandard)); err == nil {
+		t.Fatal("v2 admitted to legacy workflow before Advance")
+	}
+}
+
 func TestCanonicalRoundTripAndPermutation(t *testing.T) {
 	a := fixture()
 	b := fixture()

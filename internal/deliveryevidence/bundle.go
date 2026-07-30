@@ -59,6 +59,67 @@ const (
 	RiskHigh     DeliveryRiskProfile = "high-risk"
 )
 
+type QualificationInput struct {
+	Schema        string
+	IssueNumber   int
+	SpecNumber    int
+	AuthorityKind DeliveryAuthorityKind
+	RiskProfile   DeliveryRiskProfile
+}
+
+type QualificationPlan struct {
+	AuthorityKind    DeliveryAuthorityKind
+	RiskProfile      DeliveryRiskProfile
+	HasSpecification bool
+}
+
+func CompileQualification(input QualificationInput) (QualificationPlan, error) {
+	switch input.Schema {
+	case SchemaV1:
+		if input.IssueNumber <= 0 || input.SpecNumber <= 0 || input.IssueNumber == input.SpecNumber ||
+			input.AuthorityKind != "" || input.RiskProfile != "" {
+			return QualificationPlan{}, errors.New("v1 qualification requires distinct positive issue/spec numbers and forbids v2 fields")
+		}
+		return QualificationPlan{HasSpecification: true}, nil
+	case SchemaV2:
+		if input.IssueNumber <= 0 {
+			return QualificationPlan{}, errors.New("v2 qualification requires a positive issue number")
+		}
+		profile := input.RiskProfile
+		if profile == "" {
+			profile = RiskStandard
+		}
+		switch profile {
+		case RiskLow, RiskStandard, RiskHigh:
+		default:
+			return QualificationPlan{}, errors.New("v2 qualification risk profile must be low-risk, standard, or high-risk")
+		}
+		switch input.AuthorityKind {
+		case AuthoritySelfContainedIssue:
+			if input.SpecNumber != 0 {
+				return QualificationPlan{}, errors.New("self-contained issue qualification forbids a specification number")
+			}
+			return QualificationPlan{AuthorityKind: input.AuthorityKind, RiskProfile: profile}, nil
+		case AuthorityIssueWithSpecification:
+			if input.SpecNumber <= 0 || input.SpecNumber == input.IssueNumber {
+				return QualificationPlan{}, errors.New("issue-with-specification qualification requires a distinct positive specification number")
+			}
+			return QualificationPlan{AuthorityKind: input.AuthorityKind, RiskProfile: profile, HasSpecification: true}, nil
+		default:
+			return QualificationPlan{}, errors.New("v2 qualification authority kind is required")
+		}
+	default:
+		return QualificationPlan{}, fmt.Errorf("unsupported qualification schema %q", input.Schema)
+	}
+}
+
+func ValidateLegacyWorkflowBundle(bundle Bundle) error {
+	if bundle.Schema != SchemaV1 {
+		return errors.New("schema v2 requires Advance; legacy delivery commands accept only schema v1")
+	}
+	return nil
+}
+
 type DependencyDisposition struct {
 	Identity    string                     `json:"identity"`
 	Disposition DependencyDispositionState `json:"disposition"`

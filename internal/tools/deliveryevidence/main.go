@@ -170,7 +170,7 @@ func (c command) nonLocalReadiness(ctx context.Context, args []string, stdout io
 	if bundlePath == "" || localPath == "" || pullRequest <= 0 || checks == "" || f.NArg() != 0 {
 		return errors.New("bundle, local-report, pull-request, and required-checks are required")
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return err
 	}
@@ -300,7 +300,7 @@ func (c command) finalOutcome(ctx context.Context, args []string, stdout io.Writ
 		matrixURL == "" || reviewsURL == "" || validationURL == "" || ciURL == "" || cleanupURL == "" || f.NArg() != 0 {
 		return errors.New("bundle, readiness-report, phase-receipts, preservation digests, and evidence URLs are required")
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return err
 	}
@@ -410,39 +410,15 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 	if err = decoder.Decode(&extra); err != io.EOF {
 		return errors.New("qualification must contain exactly one JSON value")
 	}
-	switch q.Schema {
-	case deliveryevidence.SchemaV1:
-		if q.IssueNumber <= 0 || q.SpecNumber <= 0 || q.IssueNumber == q.SpecNumber ||
-			q.AuthorityKind != "" || q.RiskProfile != "" {
-			return errors.New("v1 qualification requires distinct positive issue/spec numbers and forbids v2 fields")
-		}
-	case deliveryevidence.SchemaV2:
-		if q.IssueNumber <= 0 {
-			return errors.New("v2 qualification requires a positive issue number")
-		}
-		if q.RiskProfile == "" {
-			q.RiskProfile = deliveryevidence.RiskStandard
-		}
-		switch q.RiskProfile {
-		case deliveryevidence.RiskLow, deliveryevidence.RiskStandard, deliveryevidence.RiskHigh:
-		default:
-			return errors.New("v2 qualification risk profile must be low-risk, standard, or high-risk")
-		}
-		switch q.AuthorityKind {
-		case deliveryevidence.AuthoritySelfContainedIssue:
-			if q.SpecNumber != 0 {
-				return errors.New("self-contained issue qualification forbids a specification number")
-			}
-		case deliveryevidence.AuthorityIssueWithSpecification:
-			if q.SpecNumber <= 0 || q.SpecNumber == q.IssueNumber {
-				return errors.New("issue-with-specification qualification requires a distinct positive specification number")
-			}
-		default:
-			return errors.New("v2 qualification authority kind is required")
-		}
-	default:
-		return fmt.Errorf("unsupported qualification schema %q", q.Schema)
+	plan, err := deliveryevidence.CompileQualification(deliveryevidence.QualificationInput{
+		Schema: q.Schema, IssueNumber: q.IssueNumber, SpecNumber: q.SpecNumber,
+		AuthorityKind: q.AuthorityKind, RiskProfile: q.RiskProfile,
+	})
+	if err != nil {
+		return err
 	}
+	q.AuthorityKind = plan.AuthorityKind
+	q.RiskProfile = plan.RiskProfile
 	if c.Git == nil || c.GitHub == nil {
 		return errors.New("Git and GitHub read-only runners are required")
 	}
@@ -517,7 +493,7 @@ func (c command) initialize(ctx context.Context, args []string, stdout io.Writer
 		return fmt.Errorf("observe issue: %w", err)
 	}
 	var spec issueObservation
-	hasSpec := q.Schema == deliveryevidence.SchemaV1 || q.AuthorityKind == deliveryevidence.AuthorityIssueWithSpecification
+	hasSpec := plan.HasSpecification
 	if hasSpec {
 		spec, err = observe(q.SpecNumber)
 		if err != nil {
@@ -717,6 +693,17 @@ func (c command) status(args []string, stdout io.Writer) error {
 	return err
 }
 
+func loadLegacyBundle(path string) (deliveryevidence.Bundle, []byte, error) {
+	bundle, raw, err := deliveryevidence.Load(path)
+	if err != nil {
+		return deliveryevidence.Bundle{}, nil, err
+	}
+	if err = deliveryevidence.ValidateLegacyWorkflowBundle(bundle); err != nil {
+		return deliveryevidence.Bundle{}, nil, err
+	}
+	return bundle, raw, nil
+}
+
 func (c command) recordIteration(ctx context.Context, args []string, stdout io.Writer) error {
 	f := flag.NewFlagSet("deliveryevidence record-iteration", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
@@ -733,7 +720,7 @@ func (c command) recordIteration(ctx context.Context, args []string, stdout io.W
 	if c.Git == nil {
 		return errors.New("Git read-only runner is required")
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return err
 	}
@@ -809,7 +796,7 @@ func recordInput[T any](args []string, inputName string, value *T) (deliveryevid
 	if bundlePath == "" || inputPath == "" || f.NArg() != 0 {
 		return deliveryevidence.Bundle{}, "", fmt.Errorf("bundle and %s are required", inputName)
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return deliveryevidence.Bundle{}, "", err
 	}
@@ -851,7 +838,7 @@ func (c command) reviewStatus(ctx context.Context, args []string, stdout io.Writ
 	if c.Git == nil {
 		return errors.New("Git read-only runner is required")
 	}
-	bundle, _, err := deliveryevidence.Load(bundlePath)
+	bundle, _, err := loadLegacyBundle(bundlePath)
 	if err != nil {
 		return err
 	}
@@ -914,7 +901,7 @@ func (c command) recordExhaustiveValidation(ctx context.Context, args []string, 
 	if values.requiredCommand != exhaustiveValidationCommand {
 		return errors.New("recording supports only the exhaustive validation authority command")
 	}
-	bundle, _, err := deliveryevidence.Load(values.bundlePath)
+	bundle, _, err := loadLegacyBundle(values.bundlePath)
 	if err != nil {
 		return err
 	}
@@ -954,7 +941,7 @@ func (c command) validationStatus(ctx context.Context, args []string, stdout io.
 	if err != nil {
 		return err
 	}
-	bundle, _, err := deliveryevidence.Load(values.bundlePath)
+	bundle, _, err := loadLegacyBundle(values.bundlePath)
 	if err != nil {
 		return err
 	}
@@ -995,7 +982,7 @@ func (c command) localGate(ctx context.Context, args []string, stdout io.Writer)
 	if values.bundlePath == "" || values.sandboxHome == "" || values.sandboxConfig == "" || values.identityExpires == "" || branch == "" || f.NArg() != 0 {
 		return bareFailure(deliveryevidence.LocalGateQualificationInvalid, "bundle, delivery-branch, sandbox-home, sandbox-config-home, and validator-identity-expires-at are required")
 	}
-	bundle, _, err := deliveryevidence.Load(values.bundlePath)
+	bundle, _, err := loadLegacyBundle(values.bundlePath)
 	if err != nil {
 		return bareFailure(deliveryevidence.LocalGateQualificationInvalid, err.Error())
 	}
