@@ -108,7 +108,7 @@ func invalidateForProfileEscalation(record *runRecord, candidate *Candidate) {
 	candidate.Acceptance = nil
 	candidate.Exhaustive = nil
 	record.Evidence.ValidationReceipts = []deliveryevidence.ValidationReceipt{}
-	invalidateAcceptance(record.Evidence)
+	invalidateAcceptance(record.Evidence, record.QualificationCorrections)
 }
 
 func (m *Module) executeSpecialistReviews(

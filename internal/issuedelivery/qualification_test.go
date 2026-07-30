@@ -176,6 +176,66 @@ func TestAdvanceCompilesIssue347ProductSpecificQualificationEvidence(t *testing.
 	assertQualificationRowContains(t, rows[tracker.value.Criteria[5].Text], "validate-packy.sh", "exact")
 }
 
+func TestCandidateInvalidationPreservesCorrectedQualificationEvidencePlan(t *testing.T) {
+	module, _, _, _, _ := assuranceFixture(t)
+	request := Request{RepositoryPath: "/repo", IssueNumber: 357}
+	qualified := mustAdvance(t, module, request)
+	matrixHash, err := acceptanceMatrixDigest(qualified.Evidence.AcceptanceMatrix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := deliveryevidence.ReviewFinding{
+		ID: "qualification-specific-plan", Axis: deliveryevidence.ReviewSpec,
+		Severity: deliveryevidence.SeverityP1, Authority: deliveryevidence.AuthoritySpecRequirement,
+		Citation: qualified.Evidence.Scope.OwnedNow[0].EvidenceLink,
+		Location: qualified.Evidence.AcceptanceMatrix[0].Identity,
+		Evidence: "the row requires a product-specific evidence plan",
+	}
+	rejected := mustAdvance(t, module, Request{
+		RepositoryPath: "/repo", IssueNumber: 357,
+		QualificationReview: &QualificationReview{
+			AuthoritySHA256:        qualified.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: matrixHash,
+			Findings:               []deliveryevidence.ReviewFinding{finding}, Completed: true,
+		},
+	})
+	rows := append([]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...)
+	rows[0].OwningSeam = "specific product seam"
+	rows[0].PositiveEvidence = "planned: specific positive evidence"
+	rows[0].NegativeEvidence = "planned: specific negative evidence"
+	rows[0].FailureEvidence = "planned: specific failure evidence"
+	rows[0].MutationEvidence = "planned: specific mutation evidence"
+	rows[0].CompatibilityEvidence = "planned: specific compatibility evidence"
+	rows[0].PreservationEvidence = "planned: specific preservation evidence"
+	corrected := mustAdvance(t, module, Request{
+		RepositoryPath: "/repo", IssueNumber: 357,
+		QualificationCorrection: &QualificationCorrection{
+			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+			ReviewedMatrixSHA256: matrixHash,
+			FindingIDs:           []string{finding.ID}, AcceptanceMatrix: rows,
+			Evidence: "mapped the criterion to its specific product evidence",
+		},
+	})
+	correctedHash, err := acceptanceMatrixDigest(corrected.Evidence.AcceptanceMatrix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustAdvance(t, module, Request{
+		RepositoryPath: "/repo", IssueNumber: 357,
+		QualificationReview: &QualificationReview{
+			AuthoritySHA256:        corrected.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: correctedHash,
+			Findings:               []deliveryevidence.ReviewFinding{}, Completed: true,
+		},
+	})
+	candidate := mustAdvance(t, module, request)
+	if candidate.Candidate == nil ||
+		candidate.Evidence.AcceptanceMatrix[0].PositiveEvidence !=
+			"planned: specific positive evidence" {
+		t.Fatalf("candidate invalidated corrected qualification plan: %#v", candidate)
+	}
+}
+
 func assertQualificationRowContains(
 	t *testing.T,
 	row deliveryevidence.AcceptanceRow,
