@@ -89,9 +89,7 @@ func CompileQualification(input QualificationInput) (QualificationPlan, error) {
 		if profile == "" {
 			profile = RiskStandard
 		}
-		switch profile {
-		case RiskLow, RiskStandard, RiskHigh:
-		default:
+		if !validRiskProfile(profile) {
 			return QualificationPlan{}, errors.New("v2 qualification risk profile must be low-risk, standard, or high-risk")
 		}
 		switch input.AuthorityKind {
@@ -320,9 +318,7 @@ func Validate(b Bundle) error {
 		default:
 			return fmt.Errorf("invalid delivery authority kind %q", b.Authority.Kind)
 		}
-		switch b.RiskProfile {
-		case RiskLow, RiskStandard, RiskHigh:
-		default:
+		if !validRiskProfile(b.RiskProfile) {
 			return fmt.Errorf("invalid delivery risk profile %q", b.RiskProfile)
 		}
 	default:
@@ -520,6 +516,10 @@ func marshalBundle(bundle Bundle) ([]byte, error) {
 		Adjudications: bundle.Adjudications, ValidationReceipts: bundle.ValidationReceipts,
 		FocusedValidation: bundle.FocusedValidation,
 	})
+}
+
+func validRiskProfile(profile DeliveryRiskProfile) bool {
+	return profile == RiskLow || profile == RiskStandard || profile == RiskHigh
 }
 
 func canonicalize(b *Bundle) {
