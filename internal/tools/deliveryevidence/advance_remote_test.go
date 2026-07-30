@@ -90,6 +90,14 @@ func TestProductionNonLocalObservationRefreshesAndBindsOriginMain(t *testing.T) 
 	}) {
 		t.Fatalf("origin/main refresh = %#v", got)
 	}
+	if got := runner.calls[4]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"pr", "list", "--repo", "yersonargotev/packy", "--state", "all",
+		"--head", "chore/issue-361-remote-adapter", "--json",
+		"number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,closingIssuesReferences,mergedAt,mergeCommit",
+		"--jq", pullRequestsProjection,
+	}) {
+		t.Fatalf("pull-request observation command = %#v", got)
+	}
 }
 
 func TestProductionNonLocalChecksProjectGitHubResponsesBeforeStrictDecode(t *testing.T) {
@@ -147,6 +155,13 @@ func TestProductionNonLocalMergeUsesMatchHeadCommit(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got := runner.calls[1]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"pr", "view", "17", "--repo", "yersonargotev/packy", "--json",
+		"number,state,baseRefOid,headRefOid,closingIssuesReferences,mergedAt",
+		"--jq", pullRequestProjection,
+	}) {
+		t.Fatalf("pull-request merge observation command = %#v", got)
 	}
 	got := runner.calls[2]
 	want := remoteRunnerCall{name: "gh", args: []string{

@@ -88,9 +88,11 @@ type workflowRun struct {
 }
 
 const (
-	checkRunsProjection   = `{check_runs:[.check_runs[]|{name,head_sha,status,conclusion,details_url,app:{id:.app.id,slug:.app.slug}}]}`
-	statusesProjection    = `[.[]|{context,state,target_url,creator:{login:.creator.login,id:.creator.id,type:.creator.type,html_url:.creator.html_url}}]`
-	workflowRunProjection = `{id,name,path,head_sha,html_url,actor:{login:.actor.login,id:.actor.id,type:.actor.type,html_url:.actor.html_url}}`
+	checkRunsProjection    = `{check_runs:[.check_runs[]|{name,head_sha,status,conclusion,details_url,app:{id:.app.id,slug:.app.slug}}]}`
+	statusesProjection     = `[.[]|{context,state,target_url,creator:{login:.creator.login,id:.creator.id,type:.creator.type,html_url:.creator.html_url}}]`
+	workflowRunProjection  = `{id,name,path,head_sha,html_url,actor:{login:.actor.login,id:.actor.id,type:.actor.type,html_url:.actor.html_url}}`
+	pullRequestsProjection = `[.[]|{number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository:{id:.headRepository.id},closingIssuesReferences:[.closingIssuesReferences[]|{number,id}],mergedAt,mergeCommit:(if .mergeCommit==null then null else {oid:.mergeCommit.oid} end)}]`
+	pullRequestProjection  = `{number,state,baseRefOid,headRefOid,closingIssuesReferences:[.closingIssuesReferences[]|{number,id}],mergedAt}`
 )
 
 func (gateway productionNonLocalGateway) ObserveNonLocal(ctx context.Context, request issuedelivery.NonLocalObserveRequest) (issuedelivery.NonLocalObservation, error) {
@@ -133,7 +135,8 @@ func (gateway productionNonLocalGateway) ObserveNonLocal(ctx context.Context, re
 
 	prRaw, err := gateway.output(ctx, "gh", "pr", "list", "--repo", repo, "--state", "all",
 		"--head", request.Branch, "--json",
-		"number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,closingIssuesReferences,mergedAt,mergeCommit")
+		"number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,closingIssuesReferences,mergedAt,mergeCommit",
+		"--jq", pullRequestsProjection)
 	if err != nil {
 		return issuedelivery.NonLocalObservation{}, fmt.Errorf("observe pull requests: %w", err)
 	}
@@ -272,7 +275,8 @@ func (gateway productionNonLocalGateway) EnsureMerge(ctx context.Context, reques
 	}
 	raw, err := gateway.output(ctx, "gh", "pr", "view", strconv.Itoa(request.PullRequest),
 		"--repo", repositoryName(request.Repository), "--json",
-		"number,state,baseRefOid,headRefOid,closingIssuesReferences,mergedAt")
+		"number,state,baseRefOid,headRefOid,closingIssuesReferences,mergedAt",
+		"--jq", pullRequestProjection)
 	if err != nil {
 		return fmt.Errorf("observe pull request before merge: %w", err)
 	}
