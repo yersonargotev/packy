@@ -5,6 +5,30 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+vercel_evidence_dir=""
+candidate_sha=""
+run_id=""
+while (($#)); do
+  case "$1" in
+    --vercel-foundation-evidence-dir) vercel_evidence_dir="${2:-}"; shift 2 ;;
+    --candidate-sha) candidate_sha="${2:-}"; shift 2 ;;
+    --run-id) run_id="${2:-}"; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+vercel_args=()
+if [[ -n "$vercel_evidence_dir$candidate_sha$run_id" ]]; then
+  if [[ -z "$vercel_evidence_dir" || -z "$candidate_sha" || -z "$run_id" ]]; then
+    echo "Vercel foundation evidence requires --vercel-foundation-evidence-dir, --candidate-sha, and --run-id together" >&2
+    exit 2
+  fi
+  vercel_args=(
+    --evidence-dir "$vercel_evidence_dir"
+    --candidate-sha "$candidate_sha"
+    --run-id "$run_id"
+  )
+fi
+
 # Keep this list explicit. A new Packy-owned package must be deliberately added
 # here before CI or the synchronization publisher can load or execute it.
 readonly packages=(
@@ -97,7 +121,9 @@ export GOMODCACHE="$go_mod_cache"
 export GOPATH="$go_path"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 
-./scripts/validate-vercel-acceptance.sh
+# The conditional expansion keeps the no-argument path compatible with the
+# system Bash 3.2 used by supported macOS validation.
+./scripts/validate-vercel-acceptance.sh ${vercel_args[@]+"${vercel_args[@]}"}
 ./scripts/validate-addy-acceptance.sh
 
 shopt -s nullglob

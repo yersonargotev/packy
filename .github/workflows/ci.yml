@@ -37,15 +37,16 @@ jobs:
         uses: ./.github/actions/go-cache
 
       - name: Validate allowlisted Packy-owned code
-        run: ./scripts/validate-packy.sh
-
-      - name: Retain exact Vercel foundation evidence
-        if: github.event_name == 'pull_request'
         run: |
-          ./scripts/validate-vercel-acceptance.sh \
-            --evidence-dir "$RUNNER_TEMP/vercel-foundation-evidence" \
-            --candidate-sha "$GITHUB_SHA" \
-            --run-id "${{ github.run_id }}"
+          validation_args=()
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            validation_args=(
+              --vercel-foundation-evidence-dir "$RUNNER_TEMP/vercel-foundation-evidence"
+              --candidate-sha "$GITHUB_SHA"
+              --run-id "${{ github.run_id }}"
+            )
+          fi
+          ./scripts/validate-packy.sh "${validation_args[@]}"
 
       - name: Upload exact Vercel foundation evidence
         if: github.event_name == 'pull_request'
