@@ -195,59 +195,12 @@ func newInstallCommand(opts Options, workstationResolver *workstation.Resolver) 
 		Short: "Install Packy-managed global workflow configuration",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			operation := corelifecycle.Install
-			composition, err := resolveClassicLifecycle(opts, workstationResolver)
-			if err != nil {
+			return executeClassicLifecycle(cmd, opts, workstationResolver, corelifecycle.Install, classicLifecycleFlags{
+				dryRun: dryRun, jsonOutput: jsonOutput,
+			}, func(out io.Writer, result corelifecycle.Result) error {
+				_, err := fmt.Fprintf(out, "packy install: synced %d managed skills and wrote state %s (outcome: %s)\n", result.ManagedSkillCount(), result.StateFile(), result.Outcome())
 				return err
-			}
-			lifecycle := corelifecycle.NewFacade(composition.config, opts.Runner, opts.Clock)
-			plan, err := lifecycle.Preview(operation)
-			if err != nil {
-				return err
-			}
-			if !jsonOutput {
-				if err := printSkillSourceReport(cmd.OutOrStdout(), composition.skillSource, composition.installedSource); err != nil {
-					return err
-				}
-			}
-			if dryRun && jsonOutput {
-				if err := renderClassicLifecyclePlanJSON(cmd.OutOrStdout(), operation, plan); err != nil {
-					return err
-				}
-				return classicLifecycleOutcomeError(plan.Outcome())
-			}
-			if dryRun {
-				if err := printLifecycleDryRunPlan(cmd.OutOrStdout(), "packy install", plan); err != nil {
-					return err
-				}
-				return classicLifecycleOutcomeError(plan.Outcome())
-			}
-			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
-			if applyErr != nil && result.Outcome() == "" {
-				return applyErr
-			}
-			if jsonOutput {
-				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
-					return err
-				}
-				if applyErr != nil {
-					return applyErr
-				}
-				return classicLifecycleOutcomeError(result.Outcome())
-			}
-			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result); err != nil {
-				return err
-			}
-			if err := printWarnings(cmd.OutOrStdout(), result.Warnings()); err != nil {
-				return err
-			}
-			if applyErr != nil {
-				return applyErr
-			}
-			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "packy install: synced %d managed skills and wrote state %s (outcome: %s)\n", result.ManagedSkillCount(), result.StateFile(), result.Outcome()); err != nil {
-				return err
-			}
-			return classicLifecycleOutcomeError(result.Outcome())
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview Packy-managed changes without writing files")
@@ -331,59 +284,12 @@ func newUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *
 		Short: "Refresh Packy-managed tools and configuration",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			operation := corelifecycle.Update
-			composition, err := resolveClassicLifecycle(opts, workstationResolver)
-			if err != nil {
+			return executeClassicLifecycle(cmd, opts, workstationResolver, corelifecycle.Update, classicLifecycleFlags{
+				dryRun: dryRun, jsonOutput: jsonOutput,
+			}, func(out io.Writer, result corelifecycle.Result) error {
+				_, err := fmt.Fprintf(out, "packy update: synced %d managed skills and wrote state %s (outcome: %s)\n", result.ManagedSkillCount(), result.StateFile(), result.Outcome())
 				return err
-			}
-			lifecycle := corelifecycle.NewFacade(composition.config, opts.Runner, opts.Clock)
-			plan, err := lifecycle.Preview(operation)
-			if err != nil {
-				return err
-			}
-			if !jsonOutput {
-				if err := printSkillSourceReport(cmd.OutOrStdout(), composition.skillSource, composition.installedSource); err != nil {
-					return err
-				}
-			}
-			if dryRun && jsonOutput {
-				if err := renderClassicLifecyclePlanJSON(cmd.OutOrStdout(), operation, plan); err != nil {
-					return err
-				}
-				return classicLifecycleOutcomeError(plan.Outcome())
-			}
-			if dryRun {
-				if err := printLifecycleDryRunPlan(cmd.OutOrStdout(), "packy update", plan); err != nil {
-					return err
-				}
-				return classicLifecycleOutcomeError(plan.Outcome())
-			}
-			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
-			if applyErr != nil && result.Outcome() == "" {
-				return applyErr
-			}
-			if jsonOutput {
-				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
-					return err
-				}
-				if applyErr != nil {
-					return applyErr
-				}
-				return classicLifecycleOutcomeError(result.Outcome())
-			}
-			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result); err != nil {
-				return err
-			}
-			if err := printWarnings(cmd.OutOrStdout(), result.Warnings()); err != nil {
-				return err
-			}
-			if applyErr != nil {
-				return applyErr
-			}
-			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "packy update: synced %d managed skills and wrote state %s (outcome: %s)\n", result.ManagedSkillCount(), result.StateFile(), result.Outcome()); err != nil {
-				return err
-			}
-			return classicLifecycleOutcomeError(result.Outcome())
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview Packy-managed update changes without writing files or running commands")
@@ -535,60 +441,93 @@ func newUninstallCommand(opts Options, workstationResolver *workstation.Resolver
 		Short: "Remove only Packy-managed artifacts",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			operation := corelifecycle.Uninstall
-			composition, err := resolveClassicLifecycle(opts, workstationResolver)
-			if err != nil {
-				return err
-			}
-			lifecycle := corelifecycle.NewFacade(composition.config, opts.Runner, opts.Clock)
-			plan, err := lifecycle.Preview(operation)
-			if err != nil {
-				return err
-			}
-			if dryRun && jsonOutput {
-				if err := renderClassicLifecyclePlanJSON(cmd.OutOrStdout(), operation, plan); err != nil {
+			return executeClassicLifecycle(cmd, opts, workstationResolver, corelifecycle.Uninstall, classicLifecycleFlags{
+				dryRun: dryRun, jsonOutput: jsonOutput,
+			}, func(out io.Writer, result corelifecycle.Result) error {
+				if !result.HasWork() {
+					_, err := fmt.Fprintln(out, "packy uninstall: no Packy-managed artifacts found")
 					return err
 				}
-				return classicLifecycleOutcomeError(plan.Outcome())
-			}
-			if dryRun {
-				if err := printLifecycleDryRunPlan(cmd.OutOrStdout(), "packy uninstall", plan); err != nil {
-					return err
-				}
-				return classicLifecycleOutcomeError(plan.Outcome())
-			}
-			result, applyErr := lifecycle.Apply(cmd.Context(), plan)
-			if applyErr != nil && result.Outcome() == "" {
-				return applyErr
-			}
-			if jsonOutput {
-				if err := renderClassicLifecycleResultJSON(cmd.OutOrStdout(), operation, plan, result); err != nil {
-					return err
-				}
-				if applyErr != nil {
-					return applyErr
-				}
-				return classicLifecycleOutcomeError(result.Outcome())
-			}
-			if err := renderClassicLifecycleResultHuman(cmd.OutOrStdout(), plan, result); err != nil {
+				_, err := fmt.Fprintf(out, "packy uninstall: %s; processed Packy-managed artifacts for state %s\n", result.Outcome(), result.StateFile())
 				return err
-			}
-			if applyErr != nil {
-				return applyErr
-			}
-			if !result.HasWork() {
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), "packy uninstall: no Packy-managed artifacts found")
-				return err
-			}
-			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "packy uninstall: %s; processed Packy-managed artifacts for state %s\n", result.Outcome(), result.StateFile()); err != nil {
-				return err
-			}
-			return classicLifecycleOutcomeError(result.Outcome())
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview Packy-managed removals without deleting files")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	return cmd
+}
+
+type classicLifecycleFlags struct {
+	dryRun     bool
+	jsonOutput bool
+}
+
+type classicLifecycleSuccessRenderer func(io.Writer, corelifecycle.Result) error
+
+func executeClassicLifecycle(
+	cmd *cobra.Command,
+	opts Options,
+	resolver *workstation.Resolver,
+	operation corelifecycle.Operation,
+	flags classicLifecycleFlags,
+	renderSuccess classicLifecycleSuccessRenderer,
+) error {
+	composition, err := resolveClassicLifecycle(opts, resolver)
+	if err != nil {
+		return err
+	}
+	lifecycle := corelifecycle.NewFacade(composition.config, opts.Runner, opts.Clock)
+	plan, err := lifecycle.Preview(operation)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if operation != corelifecycle.Uninstall && !flags.jsonOutput {
+		if err := printSkillSourceReport(out, composition.skillSource, composition.installedSource); err != nil {
+			return err
+		}
+	}
+	if flags.dryRun && flags.jsonOutput {
+		if err := renderClassicLifecyclePlanJSON(out, operation, plan); err != nil {
+			return err
+		}
+		return classicLifecycleOutcomeError(plan.Outcome())
+	}
+	if flags.dryRun {
+		if err := printLifecycleDryRunPlan(out, "packy "+string(operation), plan); err != nil {
+			return err
+		}
+		return classicLifecycleOutcomeError(plan.Outcome())
+	}
+	result, applyErr := lifecycle.Apply(cmd.Context(), plan)
+	if applyErr != nil && result.Outcome() == "" {
+		return applyErr
+	}
+	if flags.jsonOutput {
+		if err := renderClassicLifecycleResultJSON(out, operation, plan, result); err != nil {
+			return err
+		}
+		if applyErr != nil {
+			return applyErr
+		}
+		return classicLifecycleOutcomeError(result.Outcome())
+	}
+	if err := renderClassicLifecycleResultHuman(out, plan, result); err != nil {
+		return err
+	}
+	if operation != corelifecycle.Uninstall {
+		if err := printWarnings(out, result.Warnings()); err != nil {
+			return err
+		}
+	}
+	if applyErr != nil {
+		return applyErr
+	}
+	if err := renderSuccess(out, result); err != nil {
+		return err
+	}
+	return classicLifecycleOutcomeError(result.Outcome())
 }
 
 var ErrClassicLifecycleIncomplete = errors.New("classic lifecycle did not converge")
