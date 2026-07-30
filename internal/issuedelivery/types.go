@@ -3,6 +3,8 @@ package issuedelivery
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/yersonargotev/packy/internal/deliveryevidence"
@@ -23,6 +25,7 @@ type DecisionKind string
 const (
 	DecisionClassifyAuthorityItem DecisionKind = "classify-authority-item"
 	DecisionSupplyCriterion       DecisionKind = "supply-acceptance-criterion"
+	DecisionAdjudicateFindings    DecisionKind = "adjudicate-review-findings"
 )
 
 type DecisionDisposition string
@@ -53,6 +56,7 @@ type Request struct {
 	RepositoryPath string
 	IssueNumber    int
 	Decision       *Decision
+	Repair         *RepairDecision
 }
 
 type Timing struct {
@@ -81,6 +85,9 @@ type Outcome struct {
 	Decision        *DecisionRequest
 	Evidence        *deliveryevidence.Bundle
 	Observations    Observations
+	Candidate       *Candidate
+	Repair          *RepairDecisionRequest
+	LocalReadiness  *LocalReadiness
 	Timing          []Timing
 }
 
@@ -112,6 +119,7 @@ type GitObservation struct {
 	HeadSHA         string
 	TreeSHA         string
 	WorkspaceClean  bool
+	Branch          string
 }
 
 type TrackerObservation struct {
@@ -140,17 +148,152 @@ type Clock interface {
 	Now() time.Time
 }
 
+type ReviewExecutor interface {
+	Review(context.Context, ReviewRequest) (CandidateReview, error)
+}
+
+type ValidationExecutor interface {
+	Focused(context.Context, ValidationRequest) (ValidationResult, error)
+	Exhaustive(context.Context, ValidationRequest) (ValidationResult, error)
+}
+
+type ReviewRequest struct {
+	RunID       string
+	CandidateID string
+	Repository  deliveryevidence.RepositoryIdentity
+	Issue       deliveryevidence.IssueIdentity
+	Axis        deliveryevidence.ReviewAxis
+	BaseSHA     string
+	CommitSHA   string
+	TreeSHA     string
+}
+
+type CandidateReview struct {
+	CandidateID string                           `json:"candidate_id"`
+	Axis        deliveryevidence.ReviewAxis      `json:"axis"`
+	Findings    []deliveryevidence.ReviewFinding `json:"findings"`
+	Completed   bool                             `json:"completed"`
+}
+
+type ValidationRequest struct {
+	RunID          string
+	CandidateID    string
+	Repository     deliveryevidence.RepositoryIdentity
+	Issue          deliveryevidence.IssueIdentity
+	CommitSHA      string
+	TreeSHA        string
+	HomeRoot       string
+	ConfigRoot     string
+	AcceptanceRows []deliveryevidence.AcceptanceRow
+}
+
+type ValidationResult struct {
+	CommitSHA                  string            `json:"commit_sha"`
+	TreeSHA                    string            `json:"tree_sha"`
+	Command                    string            `json:"command"`
+	HomeRoot                   string            `json:"home_root"`
+	ConfigRoot                 string            `json:"config_root"`
+	CheckoutSHA256             string            `json:"checkout_sha256,omitempty"`
+	ValidatorIdentity          string            `json:"validator_identity,omitempty"`
+	ValidatorSHA256            string            `json:"validator_sha256,omitempty"`
+	ValidatorIdentityExpiresAt string            `json:"validator_identity_expires_at,omitempty"`
+	WorkspaceClean             bool              `json:"workspace_clean"`
+	Sandboxed                  bool              `json:"sandboxed"`
+	Succeeded                  bool              `json:"succeeded"`
+	Completed                  bool              `json:"completed"`
+	Acceptance                 []AcceptanceProof `json:"acceptance,omitempty"`
+}
+
+type AcceptanceProof struct {
+	Identity              string `json:"identity"`
+	PositiveEvidence      string `json:"positive_evidence"`
+	NegativeEvidence      string `json:"negative_evidence"`
+	FailureEvidence       string `json:"failure_evidence"`
+	MutationEvidence      string `json:"mutation_evidence"`
+	CompatibilityEvidence string `json:"compatibility_evidence"`
+	PreservationEvidence  string `json:"preservation_evidence"`
+	MigrationEvidence     string `json:"migration_evidence"`
+}
+
+type RepairClass string
+
+const (
+	RepairBounded           RepairClass = "bounded"
+	RepairCandidateChanging RepairClass = "candidate-changing"
+)
+
+type FindingDisposition string
+
+const (
+	FindingAccepted FindingDisposition = "accepted"
+	FindingRejected FindingDisposition = "rejected-with-evidence"
+)
+
+type FindingDecision struct {
+	FindingID   string             `json:"finding_id"`
+	Disposition FindingDisposition `json:"disposition"`
+	Evidence    string             `json:"evidence"`
+}
+
+type RepairDecision struct {
+	CandidateID string            `json:"candidate_id"`
+	Class       RepairClass       `json:"class"`
+	Findings    []FindingDecision `json:"findings"`
+}
+
+type RepairDecisionRequest struct {
+	ID          string        `json:"id"`
+	CandidateID string        `json:"candidate_id"`
+	FindingIDs  []string      `json:"finding_ids"`
+	Options     []RepairClass `json:"options"`
+}
+
+type ValidationProof struct {
+	Kind        string           `json:"kind"`
+	Result      ValidationResult `json:"result"`
+	CompletedAt string           `json:"completed_at"`
+}
+
+type Candidate struct {
+	ID              string                        `json:"id"`
+	BaseSHA         string                        `json:"base_sha"`
+	CommitSHA       string                        `json:"commit_sha"`
+	TreeSHA         string                        `json:"tree_sha"`
+	RepairClass     RepairClass                   `json:"repair_class,omitempty"`
+	RequiredReviews []deliveryevidence.ReviewAxis `json:"required_reviews"`
+	Reviews         []CandidateReview             `json:"reviews"`
+	Acceptance      []AcceptanceProof             `json:"acceptance,omitempty"`
+	Focused         *ValidationProof              `json:"focused,omitempty"`
+	Exhaustive      *ValidationProof              `json:"exhaustive,omitempty"`
+	RepairDecision  *RepairDecision               `json:"repair_decision,omitempty"`
+}
+
+type LocalReadiness struct {
+	CandidateID   string `json:"candidate_id"`
+	CommitSHA     string `json:"commit_sha"`
+	TreeSHA       string `json:"tree_sha"`
+	AuthorityHash string `json:"authority_sha256"`
+	Branch        string `json:"branch"`
+	ReadyAt       string `json:"ready_at"`
+}
+
 type Config struct {
-	Git    GitObserver
-	GitHub GitHubObserver
-	Clock  Clock
+	Git         GitObserver
+	GitHub      GitHubObserver
+	Clock       Clock
+	Review      ReviewExecutor
+	Validation  ValidationExecutor
+	SandboxRoot string
 }
 
 type Module struct {
-	git    GitObserver
-	github GitHubObserver
-	clock  Clock
-	store  fileRunStore
+	git         GitObserver
+	github      GitHubObserver
+	clock       Clock
+	review      ReviewExecutor
+	validation  ValidationExecutor
+	sandboxRoot string
+	store       fileRunStore
 }
 
 func New(config Config) (*Module, error) {
@@ -160,7 +303,37 @@ func New(config Config) (*Module, error) {
 	if config.Clock == nil {
 		config.Clock = systemClock{}
 	}
-	return &Module{git: config.Git, github: config.GitHub, clock: config.Clock}, nil
+	if (config.Review == nil) != (config.Validation == nil) {
+		return nil, fmt.Errorf("review and validation executors must be configured together")
+	}
+	if config.Review != nil &&
+		(config.SandboxRoot == "" || !filepath.IsAbs(config.SandboxRoot) ||
+			filepath.Clean(config.SandboxRoot) != config.SandboxRoot || config.SandboxRoot == string(filepath.Separator)) {
+		return nil, fmt.Errorf("configured assurance requires an absolute canonical validation sandbox root")
+	}
+	if config.Review != nil {
+		if err := validateSandboxRoot(config.SandboxRoot); err != nil {
+			return nil, err
+		}
+	}
+	return &Module{
+		git: config.Git, github: config.GitHub, clock: config.Clock,
+		review: config.Review, validation: config.Validation, sandboxRoot: config.SandboxRoot,
+	}, nil
+}
+
+func validateSandboxRoot(root string) error {
+	for _, path := range []string{root, filepath.Join(root, "home"), filepath.Join(root, "config")} {
+		info, err := os.Lstat(path)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("validation sandbox path %q must be a real directory", path)
+		}
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil || resolved != path {
+			return fmt.Errorf("validation sandbox path %q must not traverse symlinks", path)
+		}
+	}
+	return nil
 }
 
 type systemClock struct{}
@@ -180,6 +353,9 @@ type runRecord struct {
 	PendingDecision *DecisionRequest
 	Decisions       []Decision
 	Observations    Observations
+	Candidates      []Candidate
+	PendingRepair   *RepairDecisionRequest
+	LocalReadiness  *LocalReadiness
 	Timing          []Timing
 	CreatedAt       string
 	UpdatedAt       string

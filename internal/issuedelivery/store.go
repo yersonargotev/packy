@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,7 +28,8 @@ type lockedIssueStore struct {
 }
 
 type activeRun struct {
-	RunID string `json:"run_id"`
+	RunID    string `json:"run_id"`
+	Revision string `json:"revision,omitempty"`
 }
 
 func (fileRunStore) withIssueLock(
@@ -78,27 +80,80 @@ func (fileRunStore) withIssueLock(
 }
 
 func (store lockedIssueStore) loadActive() (runID string, data []byte, found bool, err error) {
+	active, found, err := store.loadActiveRecord()
+	if err != nil || !found {
+		return "", nil, found, err
+	}
+	if active.Revision != "" {
+		revisionData, found, err := store.loadRevision(active.RunID, active.Revision)
+		if err != nil {
+			return "", nil, false, fmt.Errorf("load active issue delivery revision: %w", err)
+		}
+		if !found {
+			return "", nil, false, errors.New("active issue delivery revision does not exist")
+		}
+		return active.RunID, revisionData, true, nil
+	}
+	runData, found, err := store.loadRun(active.RunID)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("load active issue delivery run %q: %w", active.RunID, err)
+	}
+	if !found {
+		return "", nil, false, errors.New("active issue delivery run does not exist")
+	}
+	return active.RunID, runData, true, nil
+}
+
+func (store lockedIssueStore) loadActiveRecord() (activeRun, bool, error) {
 	activeData, err := readFileAt(store.directory, "active.json")
 	if errors.Is(err, unix.ENOENT) {
-		return "", nil, false, nil
+		return activeRun{}, false, nil
 	}
 	if err != nil {
-		return "", nil, false, fmt.Errorf("load active issue delivery run: %w", err)
+		return activeRun{}, false, fmt.Errorf("load active issue delivery run: %w", err)
 	}
 	active, err := decodeActive(activeData)
 	if err != nil {
-		return "", nil, false, err
+		return activeRun{}, false, err
 	}
-	runsFD, err := openDirectoryAt(store.directory, "runs", false)
+	return active, true, nil
+}
+
+func (store lockedIssueStore) loadRevision(runID, revision string) ([]byte, bool, error) {
+	if !validRunID(runID) {
+		return nil, false, errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
+	}
+	if !validRunID(revision) {
+		return nil, false, errors.New("issue delivery revision ID must be 64 lowercase hexadecimal characters")
+	}
+	revisionsFD, err := openDirectoryAt(store.directory, "revisions", false)
+	if errors.Is(err, unix.ENOENT) {
+		return nil, false, nil
+	}
 	if err != nil {
-		return "", nil, false, fmt.Errorf("inspect issue delivery runs directory: %w", err)
+		return nil, false, fmt.Errorf("inspect issue delivery revisions directory: %w", err)
 	}
-	defer unix.Close(runsFD)
-	runData, err := readFileAt(runsFD, active.RunID+".json")
+	defer unix.Close(revisionsFD)
+	runFD, err := openDirectoryAt(revisionsFD, runID, false)
+	if errors.Is(err, unix.ENOENT) {
+		return nil, false, nil
+	}
 	if err != nil {
-		return "", nil, false, fmt.Errorf("load issue delivery run %q: %w", active.RunID, err)
+		return nil, false, fmt.Errorf("inspect issue delivery run revisions: %w", err)
 	}
-	return active.RunID, runData, true, nil
+	defer unix.Close(runFD)
+	data, err := readFileAt(runFD, revision+".json")
+	if errors.Is(err, unix.ENOENT) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("load issue delivery revision: %w", err)
+	}
+	digest := sha256.Sum256(data)
+	if hex.EncodeToString(digest[:]) != revision {
+		return nil, false, errors.New("issue delivery revision content does not match its identity")
+	}
+	return data, true, nil
 }
 
 func (store lockedIssueStore) loadRun(runID string) ([]byte, bool, error) {
@@ -121,10 +176,17 @@ func (store lockedIssueStore) loadRun(runID string) ([]byte, bool, error) {
 }
 
 func (store lockedIssueStore) activate(runID string) error {
+	return store.activateRevision(runID, "")
+}
+
+func (store lockedIssueStore) activateRevision(runID, revision string) error {
 	if !validRunID(runID) {
 		return errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
 	}
-	activeData, err := json.Marshal(activeRun{RunID: runID})
+	if revision != "" && !validRunID(revision) {
+		return errors.New("issue delivery revision ID must be 64 lowercase hexadecimal characters")
+	}
+	activeData, err := json.Marshal(activeRun{RunID: runID, Revision: revision})
 	if err != nil {
 		return err
 	}
@@ -132,6 +194,45 @@ func (store lockedIssueStore) activate(runID string) error {
 		return fmt.Errorf("activate issue delivery run: %w", err)
 	}
 	return nil
+}
+
+func (store lockedIssueStore) storeRevisionAndActivate(runID string, data []byte) (string, error) {
+	if !validRunID(runID) {
+		return "", errors.New("issue delivery run ID must be 64 lowercase hexadecimal characters")
+	}
+	if _, found, err := store.loadRun(runID); err != nil {
+		return "", fmt.Errorf("inspect issue delivery run: %w", err)
+	} else if !found {
+		return "", errors.New("issue delivery run does not exist")
+	}
+
+	digest := sha256.Sum256(data)
+	revision := hex.EncodeToString(digest[:])
+	revisionsFD, err := openDirectoryAt(store.directory, "revisions", true)
+	if err != nil {
+		return "", err
+	}
+	defer unix.Close(revisionsFD)
+	runFD, err := openDirectoryAt(revisionsFD, runID, true)
+	if err != nil {
+		return "", err
+	}
+	defer unix.Close(runFD)
+
+	revisionName := revision + ".json"
+	if existing, err := readFileAt(runFD, revisionName); err == nil {
+		if !bytes.Equal(existing, data) {
+			return "", errors.New("issue delivery revision is immutable")
+		}
+	} else if !errors.Is(err, unix.ENOENT) {
+		return "", fmt.Errorf("inspect issue delivery revision: %w", err)
+	} else if err := atomicWriteAt(runFD, revisionName, data); err != nil {
+		return "", fmt.Errorf("store issue delivery revision: %w", err)
+	}
+	if err := store.activateRevision(runID, revision); err != nil {
+		return "", err
+	}
+	return revision, nil
 }
 
 func (store lockedIssueStore) storeAndActivate(runID string, data []byte) error {
@@ -309,7 +410,9 @@ func decodeActive(data []byte) (activeRun, error) {
 	if err != nil {
 		return activeRun{}, err
 	}
-	if !bytes.Equal(data, canonical) || !validRunID(active.RunID) {
+	if !bytes.Equal(data, canonical) ||
+		!validRunID(active.RunID) ||
+		(active.Revision != "" && !validRunID(active.Revision)) {
 		return activeRun{}, errors.New("active issue delivery run is not canonical")
 	}
 	return active, nil
