@@ -169,3 +169,61 @@ func TestFacadeShowRequiresDurableIntentStoreWithoutHostInspection(t *testing.T)
 		t.Fatalf("show attempted %d saves", store.saves)
 	}
 }
+
+func TestShowDecisionSummaryTreatsInactiveIntentAsActivation(t *testing.T) {
+	report := ShowReport{
+		Detail: CatalogDetail{Pack: Pack{ID: "app", Version: "2.0.0"}},
+		LifecycleAvailability: ShowLifecycleAvailability{
+			FreshActivationAvailable: true,
+		},
+		Surfaces: []ShowSurfaceReport{{
+			Surface: SurfaceCodex,
+			Contract: LifecycleContract{SelectionValidity: SelectionValidity{
+				All: SelectionAvailability{Available: true},
+			}},
+			Intent: ShowIntent{Present: true, Active: false, Version: "1.0.0"},
+		}},
+	}
+
+	decision := report.DecisionSummary()
+	if decision.WhatWillChange != "activate inactive codex intent at 1.0.0" {
+		t.Fatalf("what will change = %q", decision.WhatWillChange)
+	}
+	if decision.NextCommand != "packy pack activate app --surface codex --dry-run" {
+		t.Fatalf("next command = %q", decision.NextCommand)
+	}
+}
+
+func TestShowDecisionSummaryFailsClosedForUnavailableAllSelection(t *testing.T) {
+	report := ShowReport{
+		Detail: CatalogDetail{Pack: Pack{ID: "app", Version: "2.0.0"}},
+		LifecycleAvailability: ShowLifecycleAvailability{
+			FreshActivationAvailable: true,
+		},
+		ResourceCounts: ResourceCounts{Skills: 1},
+		Surfaces: []ShowSurfaceReport{{
+			Surface: SurfaceCodex,
+			Contract: LifecycleContract{SelectionValidity: SelectionValidity{
+				All: SelectionAvailability{
+					Reasons: []SelectionValidityReason{{
+						Detail:      "mandatory dependency skill:shared is unavailable",
+						Remediation: "choose a valid root",
+					}},
+				},
+			}},
+		}},
+	}
+
+	decision := report.DecisionSummary()
+	if decision.WhatWillChange != "no compatible surface is available for 1 catalog resources" {
+		t.Fatalf("what will change = %q", decision.WhatWillChange)
+	}
+	if decision.NextCommand != "packy pack list" {
+		t.Fatalf("unsafe next command = %q", decision.NextCommand)
+	}
+	if !reflect.DeepEqual(decision.Risks, []string{
+		"codex all-resource selection is unavailable: mandatory dependency skill:shared is unavailable; remediation: choose a valid root",
+	}) {
+		t.Fatalf("risks = %#v", decision.Risks)
+	}
+}

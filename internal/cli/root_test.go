@@ -1017,6 +1017,7 @@ func TestClassicLifecycleDryRunLeadsWithDecisionSummaryAndPreservesDetail(t *tes
 				command + " dry-run: decision summary",
 				"What will change:",
 				"Important risks / prerequisites:",
+				"Recovery guidance:",
 				"Next command: " + command,
 				"Action summary:",
 				"Complete action detail:",
@@ -1047,11 +1048,29 @@ func TestClassicLifecycleDryRunDecisionSummaryIsHumanOnly(t *testing.T) {
 	}
 	for _, humanOnly := range []string{
 		"decision summary", "What will change:", "Important risks / prerequisites:",
-		"Next command:", "Action summary:", "Complete action detail:",
+		"Recovery guidance:", "Next command:", "Action summary:", "Complete action detail:",
 	} {
 		if strings.Contains(output, humanOnly) {
 			t.Fatalf("JSON preview contains human-only summary %q:\n%s", humanOnly, output)
 		}
+	}
+}
+
+func TestClassicLifecycleDryRunSurfacesPrerequisiteGuidanceAndRetainsDetail(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	output, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run")
+	if err != nil {
+		t.Fatalf("install preview: %v\n%s", err, output)
+	}
+	summary := strings.Index(output, "Important risks / prerequisites: prerequisite:")
+	recovery := strings.Index(output, "Recovery guidance: none")
+	next := strings.Index(output, "Next command: packy install")
+	detail := strings.Index(output, "Complete action detail:")
+	pending := strings.Index(output, "Pending prerequisite:")
+	action := strings.Index(output, "- write-file: persist Packy state metadata")
+	if summary < 0 || recovery <= summary || next <= recovery || detail <= next ||
+		pending <= detail || action <= detail {
+		t.Fatalf("prerequisite guidance or retained detail is missing or misordered:\n%s", output)
 	}
 }
 
@@ -1082,12 +1101,31 @@ func TestLifecycleActionGroupsAreStableAndComplete(t *testing.T) {
 	}
 }
 
-func TestLifecycleNextCommandFailsClosedForBlockers(t *testing.T) {
-	if got := lifecycleNextCommand("packy install", nil); got != "packy install" {
-		t.Fatalf("next command=%q", got)
+func TestLifecycleActionDetailIsCompleteAndOrdered(t *testing.T) {
+	actions := []corelifecycle.ActionView{
+		{Kind: corelifecycle.ActionRun, Description: "first run", Command: "brew", Args: []string{"update"}},
+		{Kind: corelifecycle.ActionSymlink, Description: "link skill", Path: "/link", Target: "/source"},
+		{Kind: corelifecycle.ActionWriteFile, Description: "write state", Path: "/state"},
+		{Kind: corelifecycle.ActionRun, Description: "second run", Command: "engram", Args: []string{"setup", "codex"}},
 	}
-	if got := lifecycleNextCommand("packy install", []string{"foreign state"}); got != "resolve blockers above, then run packy install" {
-		t.Fatalf("blocked next command=%q", got)
+	var output strings.Builder
+	if err := renderLifecycleActions(&output, actions); err != nil {
+		t.Fatal(err)
+	}
+	want := "" +
+		"- run: first run (brew update)\n" +
+		"- symlink: link skill (/link -> /source)\n" +
+		"- write-file: write state (/state)\n" +
+		"- run: second run (engram setup codex)\n"
+	if output.String() != want {
+		t.Fatalf("action detail omitted, duplicated, or reordered an action:\nwant:\n%s\ngot:\n%s", want, output.String())
+	}
+	if lines := strings.Count(output.String(), "\n"); lines != len(actions) {
+		t.Fatalf("rendered %d action lines for %d actions:\n%s", lines, len(actions), output.String())
+	}
+	var empty strings.Builder
+	if err := renderLifecycleActions(&empty, nil); err != nil || empty.Len() != 0 {
+		t.Fatalf("empty action detail = %q, err %v", empty.String(), err)
 	}
 }
 

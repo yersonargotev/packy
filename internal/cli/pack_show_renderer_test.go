@@ -56,6 +56,9 @@ func TestPackShowRenderersExposeTheSameWithdrawnHistoryRouteAndIntentFacts(t *te
 	contract := capabilitypack.LifecycleContract{
 		Compatibility: capabilitypack.CompatibilityComplete, CompatibilityObserved: true,
 		Counts: counts, DependencyClosure: []string{"skill:using-agent-skills"},
+		SelectionValidity: capabilitypack.SelectionValidity{
+			All: capabilitypack.SelectionAvailability{Available: true},
+		},
 		Bindings: []capabilitypack.LifecycleBinding{{
 			Kind: "agent", ID: "reviewer", Projection: "agent", Name: alias.Name,
 			Invocation: alias.Name, Mode: "native", Sharing: "exclusive",
@@ -199,7 +202,12 @@ func TestPackShowDecisionSummaryReportsPrerequisitesAndActivationPreview(t *test
 		}},
 		LifecycleAvailability: capabilitypack.ShowLifecycleAvailability{FreshActivationAvailable: true},
 		ResourceCounts:        capabilitypack.ResourceCounts{Skills: 2, Commands: 1},
-		Surfaces:              []capabilitypack.ShowSurfaceReport{{Surface: capabilitypack.SurfaceCodex}},
+		Surfaces: []capabilitypack.ShowSurfaceReport{{
+			Surface: capabilitypack.SurfaceCodex,
+			Contract: capabilitypack.LifecycleContract{SelectionValidity: capabilitypack.SelectionValidity{
+				All: capabilitypack.SelectionAvailability{Available: true},
+			}},
+		}},
 	}
 	var output strings.Builder
 	if err := renderPackShowHuman(&output, report); err != nil {

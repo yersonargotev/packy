@@ -423,10 +423,11 @@ func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.
 	actions := plan.Actions()
 	blockers := plan.Blockers()
 	actionGroups := lifecycleActionGroups(actions)
+	guidance := plan.DecisionGuidance()
 	if _, err := fmt.Fprintf(out,
-		"%s dry-run: decision summary\nWhat will change: %d planned actions across %d action groups; outcome %s\nImportant risks / prerequisites: %s\nNext command: %s\nAction summary:\n",
+		"%s dry-run: decision summary\nWhat will change: %d planned actions across %d action groups; outcome %s\nImportant risks / prerequisites: %s\nRecovery guidance: %s\nNext command: %s\nAction summary:\n",
 		command, len(actions), len(actionGroups), plan.Outcome(),
-		lifecycleDecisionRisks(plan), lifecycleNextCommand(command, blockers),
+		joinOrNone(guidance.Risks), joinOrNone(guidance.Recovery), guidance.NextCommand,
 	); err != nil {
 		return err
 	}
@@ -470,6 +471,13 @@ func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.
 			return err
 		}
 	}
+	if err := renderLifecycleActions(out, actions); err != nil {
+		return err
+	}
+	return nil
+}
+
+func renderLifecycleActions(out io.Writer, actions []corelifecycle.ActionView) error {
 	for _, action := range actions {
 		if _, err := fmt.Fprintf(out, "- %s: %s", action.Kind, action.Description); err != nil {
 			return err
@@ -509,30 +517,6 @@ func lifecycleActionGroups(actions []corelifecycle.ActionView) []lifecycleAction
 		groups = append(groups, lifecycleActionGroup{kind: action.Kind, count: 1})
 	}
 	return groups
-}
-
-func lifecycleDecisionRisks(plan corelifecycle.Plan) string {
-	risks := make([]string, 0)
-	for _, value := range plan.PendingPrerequisites() {
-		risks = append(risks, "prerequisite: "+value)
-	}
-	for _, value := range plan.Blockers() {
-		risks = append(risks, "blocker: "+value)
-	}
-	for _, value := range plan.Warnings() {
-		risks = append(risks, "warning: "+value)
-	}
-	if len(risks) == 0 {
-		return "none"
-	}
-	return strings.Join(risks, "; ")
-}
-
-func lifecycleNextCommand(command string, blockers []string) string {
-	if len(blockers) != 0 {
-		return "resolve blockers above, then run " + command
-	}
-	return command
 }
 
 func printWarnings(out io.Writer, warnings []string) error {
