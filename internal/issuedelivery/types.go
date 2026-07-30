@@ -102,7 +102,7 @@ type Outcome struct {
 type AuthorityItem struct {
 	Text         string
 	EvidenceLink string
-	Plan         *QualificationPlan
+	Plan         *QualificationPlan `json:"-"`
 }
 
 type DependencyObservation struct {

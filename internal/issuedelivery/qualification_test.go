@@ -321,6 +321,30 @@ func TestAdvanceCompilesIssue347ProductSpecificQualificationEvidence(t *testing.
 	assertQualificationRowContains(t, rows[tracker.value.Criteria[5].Text], "validate-packy.sh", "exact")
 }
 
+func TestQualificationPlanDoesNotChangeApprovedAuthorityDigest(t *testing.T) {
+	_, git, tracker := moduleFixture(t, 370)
+	withoutPlan := tracker.value
+	withoutPlan.Criteria = append([]AuthorityItem(nil), tracker.value.Criteria...)
+	for index := range withoutPlan.Criteria {
+		withoutPlan.Criteria[index].Plan = nil
+	}
+	plain, err := compileAuthority(
+		git.value, withoutPlan, nil, nil, deliveryevidence.RiskStandard,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned, err := compileAuthority(
+		git.value, tracker.value, nil, nil, deliveryevidence.RiskStandard,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planned.hash != plain.hash {
+		t.Fatalf("qualification plan changed authority digest: %s != %s", planned.hash, plain.hash)
+	}
+}
+
 func TestCandidateInvalidationPreservesCorrectedQualificationEvidencePlan(t *testing.T) {
 	module, _, _, _, _ := assuranceFixture(t)
 	request := Request{RepositoryPath: "/repo", IssueNumber: 357}
