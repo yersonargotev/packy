@@ -31,15 +31,35 @@ fi
 
 cache_paths=()
 for cache_path in "$@"; do
-  if [[ "$cache_path" != /* || "$cache_path" == "/" || ! -d "$cache_path" || -L "$cache_path" ]]; then
+  if [[ "$cache_path" != /* ||
+    "$cache_path" == "/" ||
+    "$cache_path" == *"//"* ||
+    "$cache_path" =~ (^|/)\.\.?(/|$) ||
+    -n "$runner_temp" && "$cache_path" == "$runner_temp" ||
+    -L "$cache_path" ]]; then
     echo "::error::Refusing unsafe cache path: $cache_path" >&2
     exit 1
   fi
 
-  canonical_cache_path="$(cd -P -- "$cache_path" && pwd -P)"
+  existing_path="$cache_path"
+  while [[ ! -e "$existing_path" && ! -L "$existing_path" ]]; do
+    existing_path="$(dirname "$existing_path")"
+  done
+  if [[ ! -d "$existing_path" ]]; then
+    echo "::error::Refusing unsafe cache path: $cache_path" >&2
+    exit 1
+  fi
+  canonical_existing_path="$(cd -P -- "$existing_path" && pwd -P)"
+  canonical_cache_path="$canonical_existing_path${cache_path#"$existing_path"}"
+  for trusted_root in "${trusted_roots[@]}"; do
+    if [[ "$canonical_cache_path" == "$trusted_root" ]]; then
+      echo "::error::Refusing unsafe cache path: $cache_path" >&2
+      exit 1
+    fi
+  done
   trusted=false
   for trusted_root in "${trusted_roots[@]}"; do
-    if [[ "$canonical_cache_path" != "$trusted_root" && "$canonical_cache_path" == "$trusted_root/"* ]]; then
+    if [[ "$canonical_cache_path" == "$trusted_root/"* ]]; then
       trusted=true
       break
     fi
@@ -52,6 +72,8 @@ for cache_path in "$@"; do
 done
 
 for cache_path in "${cache_paths[@]}"; do
+  mkdir -p "$cache_path"
+  find "$cache_path" -type d -exec chmod u+rwx {} +
   find "$cache_path" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 done
 

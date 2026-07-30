@@ -10,7 +10,6 @@ runs:
       run: |
         gomodcache="$(go env GOMODCACHE)"
         gocache="$(go env GOCACHE)"
-        mkdir -p "$gomodcache" "$gocache"
         {
           echo "gomodcache=$gomodcache"
           echo "gocache=$gocache"

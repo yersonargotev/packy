@@ -295,6 +295,16 @@ func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) 
 				t.Fatal(err)
 			}
 		}
+		readOnlyModule := filepath.Join(moduleCache, "example.org", "module@v1.0.0")
+		if err := os.MkdirAll(readOnlyModule, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(readOnlyModule, "go.mod"), []byte("module example.org/module"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(readOnlyModule, 0o555); err != nil {
+			t.Fatal(err)
+		}
 		command := exec.Command(prepareScript, "true", moduleCache, buildCache)
 		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+filepath.Join(home, "runner-temp"))
 		if output, err := command.CombinedOutput(); err != nil {
@@ -363,9 +373,6 @@ func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) 
 			t.Fatal(err)
 		}
 		escapedCache := filepath.Join(home, "escape", "go-cache")
-		if err := os.MkdirAll(filepath.Join(outside, "go-cache"), 0o755); err != nil {
-			t.Fatal(err)
-		}
 		command := exec.Command(prepareScript, "true", safeCache, escapedCache)
 		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+runnerTemp)
 		if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "unsafe cache path") {
@@ -373,6 +380,9 @@ func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) 
 		}
 		if _, err := os.Stat(preserved); err != nil {
 			t.Fatalf("safe cache was modified before all targets were validated: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(outside, "go-cache")); !os.IsNotExist(err) {
+			t.Fatalf("unsafe cache path was created before validation: %v", err)
 		}
 	})
 	tests := []struct {
