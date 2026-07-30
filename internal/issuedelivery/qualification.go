@@ -88,7 +88,7 @@ func (m *Module) advanceQualification(
 		return Outcome{}, true, err
 	}
 	stored := *review
-	stored.Findings = append([]deliveryevidence.ReviewFinding(nil), review.Findings...)
+	stored.Findings = append([]deliveryevidence.ReviewFinding{}, review.Findings...)
 	record.QualificationReviews = append(record.QualificationReviews, stored)
 	if len(stored.Findings) == 0 {
 		record.QualificationApproved = true
@@ -164,7 +164,7 @@ func validateQualificationHistory(record runRecord) error {
 	for _, review := range record.QualificationReviews {
 		if review.AuthoritySHA256 != record.AuthoritySHA256 ||
 			!runIDPattern.MatchString(review.AcceptanceMatrixSHA256) ||
-			!review.Completed || review.Findings == nil {
+			!review.Completed {
 			return errors.New("qualification history contains an invalid review")
 		}
 		seen := make(map[string]bool, len(review.Findings))

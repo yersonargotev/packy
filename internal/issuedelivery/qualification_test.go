@@ -133,6 +133,13 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 		len(approved.QualificationReviews) != 2 || len(approved.QualificationCorrections) != 1 {
 		t.Fatalf("approved qualification = %#v", approved)
 	}
+	reloaded, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reloaded.QualificationApproved || len(reloaded.QualificationReviews) != 2 {
+		t.Fatalf("reloaded approved qualification = %#v", reloaded)
+	}
 }
 
 func TestAdvanceCompilesIssue347ProductSpecificQualificationEvidence(t *testing.T) {
