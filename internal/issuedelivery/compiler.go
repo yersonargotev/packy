@@ -173,7 +173,7 @@ func compileBundle(
 			Identity: id, Requirement: item.Text, EvidenceLink: item.EvidenceLink,
 		})
 		bundle.AcceptanceMatrix = append(
-			bundle.AcceptanceMatrix, compileAcceptanceRow(id, item.Text, migrationEvidence, item.Plan),
+			bundle.AcceptanceMatrix, compileAcceptanceRow(id, item.Text, migrationEvidence),
 		)
 	}
 	for _, item := range exclusions {
@@ -217,9 +217,8 @@ const qualificationPlanRequired = "qualification correction required"
 
 func compileAcceptanceRow(
 	identity, criterion, migrationEvidence string,
-	plan *QualificationPlan,
 ) deliveryevidence.AcceptanceRow {
-	row := deliveryevidence.AcceptanceRow{
+	return deliveryevidence.AcceptanceRow{
 		Identity: identity, Criterion: criterion,
 		OwningSeam:            qualificationPlanRequired,
 		PositiveEvidence:      "required: observable positive proof for this exact authority criterion",
@@ -231,27 +230,6 @@ func compileAcceptanceRow(
 		MigrationEvidence:     migrationEvidence,
 		State:                 deliveryevidence.AcceptancePlanned,
 	}
-	if completeQualificationPlan(plan) {
-		row.OwningSeam = cleanText(plan.OwningSeam)
-		row.PositiveEvidence = cleanText(plan.PositiveEvidence)
-		row.NegativeEvidence = cleanText(plan.NegativeEvidence)
-		row.FailureEvidence = cleanText(plan.FailureEvidence)
-		row.MutationEvidence = cleanText(plan.MutationEvidence)
-		row.CompatibilityEvidence = cleanText(plan.CompatibilityEvidence)
-		row.PreservationEvidence = cleanText(plan.PreservationEvidence)
-	}
-	return row
-}
-
-func completeQualificationPlan(plan *QualificationPlan) bool {
-	return plan != nil &&
-		cleanText(plan.OwningSeam) != "" &&
-		cleanText(plan.PositiveEvidence) != "" &&
-		cleanText(plan.NegativeEvidence) != "" &&
-		cleanText(plan.FailureEvidence) != "" &&
-		cleanText(plan.MutationEvidence) != "" &&
-		cleanText(plan.CompatibilityEvidence) != "" &&
-		cleanText(plan.PreservationEvidence) != ""
 }
 
 func validateObservations(git GitObservation, tracker TrackerObservation) error {

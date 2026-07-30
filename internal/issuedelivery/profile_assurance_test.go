@@ -169,9 +169,6 @@ func TestCandidateRiskProfileAndBoundariesAreMonotonic(t *testing.T) {
 	module.boundary = &fakeBoundaryValidationExecutor{}
 	request := Request{RepositoryPath: "/repo", IssueNumber: 357}
 
-	if _, err := module.Advance(context.Background(), request); err != nil {
-		t.Fatal(err)
-	}
 	first, err := module.Advance(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)

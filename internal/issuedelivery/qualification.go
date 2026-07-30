@@ -20,16 +20,6 @@ type QualificationReview struct {
 	Completed              bool                             `json:"completed"`
 }
 
-type QualificationPlan struct {
-	OwningSeam            string `json:"owning_seam"`
-	PositiveEvidence      string `json:"positive_evidence"`
-	NegativeEvidence      string `json:"negative_evidence"`
-	FailureEvidence       string `json:"failure_evidence"`
-	MutationEvidence      string `json:"mutation_evidence"`
-	CompatibilityEvidence string `json:"compatibility_evidence"`
-	PreservationEvidence  string `json:"preservation_evidence"`
-}
-
 type QualificationCorrectionRequest struct {
 	AuthoritySHA256      string   `json:"authority_sha256"`
 	ReviewedMatrixSHA256 string   `json:"reviewed_matrix_sha256"`
@@ -75,6 +65,9 @@ func (m *Module) advanceQualification(
 		nextEvidence.AcceptanceMatrix = append(
 			[]deliveryevidence.AcceptanceRow(nil), correction.AcceptanceMatrix...,
 		)
+		if requiresQualificationCorrection(&nextEvidence) {
+			return Outcome{}, true, errors.New("qualification correction must resolve every acceptance row")
+		}
 		if err := deliveryevidence.Validate(nextEvidence); err != nil {
 			return Outcome{}, true, fmt.Errorf("corrected qualification evidence is invalid: %w", err)
 		}
@@ -108,6 +101,9 @@ func (m *Module) advanceQualification(
 	}
 	if err := validateQualificationReview(record, *review); err != nil {
 		return Outcome{}, true, err
+	}
+	if len(review.Findings) == 0 && requiresQualificationCorrection(record.Evidence) {
+		return Outcome{}, true, errors.New("qualification approval requires every acceptance row to be resolved")
 	}
 	stored := *review
 	stored.Findings = append([]deliveryevidence.ReviewFinding{}, review.Findings...)
@@ -235,9 +231,16 @@ func validateQualificationHistory(record runRecord) error {
 		}
 	}
 	if record.QualificationApproved {
-		if len(lastReview.Findings) != 0 ||
-			lastReview.AcceptanceMatrixSHA256 != currentDigest ||
+		if len(lastReview.Findings) != 0 || len(record.QualificationCorrections) == 0 ||
 			len(record.QualificationReviews) != len(record.QualificationCorrections)+1 {
+			return errors.New("qualification approval does not match the current matrix")
+		}
+		corrected := record.QualificationCorrections[len(record.QualificationCorrections)-1].AcceptanceMatrix
+		correctedDigest, err := acceptanceMatrixDigest(corrected)
+		if err != nil || lastReview.AcceptanceMatrixSHA256 != correctedDigest ||
+			(len(record.Candidates) == 0 && currentDigest != correctedDigest) ||
+			(len(record.Candidates) > 0 &&
+				!qualificationSeamsMatchCorrection(record.Evidence.AcceptanceMatrix, corrected)) {
 			return errors.New("qualification approval does not match the current matrix")
 		}
 	} else if record.PendingQualificationCorrection == nil &&
@@ -245,6 +248,22 @@ func validateQualificationHistory(record runRecord) error {
 		return errors.New("qualification history is not ready for independent rereview")
 	}
 	return nil
+}
+
+func qualificationSeamsMatchCorrection(
+	current, corrected []deliveryevidence.AcceptanceRow,
+) bool {
+	if len(current) != len(corrected) {
+		return false
+	}
+	for index := range corrected {
+		if current[index].Identity != corrected[index].Identity ||
+			current[index].Criterion != corrected[index].Criterion ||
+			current[index].OwningSeam != corrected[index].OwningSeam {
+			return false
+		}
+	}
+	return true
 }
 
 func requiresQualificationCorrection(evidence *deliveryevidence.Bundle) bool {

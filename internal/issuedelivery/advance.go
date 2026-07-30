@@ -82,6 +82,9 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 				}
 				var handled bool
 				outcome, handled, err = m.advanceQualification(store, active, request)
+				if handled && err == nil {
+					outcome.Observations = observationsFrom(git, tracker, compiled.hash)
+				}
 				if err != nil || handled {
 					return err
 				}

@@ -138,6 +138,8 @@ compatibility evidence as applicable.
 
 An independent qualification review may approve the exact compiled matrix or
 reject it with findings tied to criterion identities and authority links. A
+row marked `qualification correction required` is unresolved: neither a clean
+review nor a correction that retains that marker may approve it. A
 rejection moves the run to one persisted correction request. The corrected
 matrix is stored in a new immutable run revision, retains the original
 criterion identities and text, and returns to `needs-review`; development

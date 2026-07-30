@@ -28,6 +28,17 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370,
+		QualificationReview: &QualificationReview{
+			AuthoritySHA256:        qualified.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: matrixHash,
+			Findings:               []deliveryevidence.ReviewFinding{}, Completed: true,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "every acceptance row") {
+		t.Fatalf("unresolved qualification approval error = %v", err)
+	}
 	finding := deliveryevidence.ReviewFinding{
 		ID: "qualification-product-seam", Axis: deliveryevidence.ReviewSpec,
 		Severity: deliveryevidence.SeverityP1, Authority: deliveryevidence.AuthoritySpecRequirement,
@@ -86,15 +97,32 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 	if !bytes.Equal(gotOriginal, originalBytes) {
 		t.Fatal("qualification rejection rewrote the original run bytes")
 	}
+	_, err = module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370,
+		QualificationCorrection: &QualificationCorrection{
+			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+			ReviewedMatrixSHA256: matrixHash,
+			FindingIDs:           []string{finding.ID},
+			AcceptanceMatrix:     rejected.Evidence.AcceptanceMatrix,
+			Evidence:             "unresolved correction must fail closed",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "resolve every acceptance row") {
+		t.Fatalf("unresolved qualification correction error = %v", err)
+	}
 
 	correctedRows := append([]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...)
+	for index := range correctedRows {
+		correctedRows[index].OwningSeam = "issuedelivery qualification test seam"
+		correctedRows[index].PositiveEvidence = "planned: focused positive evidence"
+		correctedRows[index].NegativeEvidence = "planned: focused negative evidence"
+		correctedRows[index].FailureEvidence = "planned: focused failure evidence"
+		correctedRows[index].MutationEvidence = "planned: focused mutation evidence"
+		correctedRows[index].CompatibilityEvidence = "planned: focused compatibility evidence"
+		correctedRows[index].PreservationEvidence = "planned: focused preservation evidence"
+	}
 	correctedRows[0].OwningSeam = "internal/cli pack-show renderer"
 	correctedRows[0].PositiveEvidence = "planned: pack-show human renderer ordering test"
-	correctedRows[0].NegativeEvidence = "planned: compact summary omission fails the renderer test"
-	correctedRows[0].FailureEvidence = "planned: invalid pack inspection preserves actionable failure output"
-	correctedRows[0].MutationEvidence = "not applicable: rendering does not mutate state"
-	correctedRows[0].CompatibilityEvidence = "planned: versioned JSON output remains byte-compatible"
-	correctedRows[0].PreservationEvidence = "planned: detailed resource and surface contracts remain present"
 	_, err = module.Advance(context.Background(), Request{
 		RepositoryPath: "/repo", IssueNumber: 370,
 		QualificationCorrection: &QualificationCorrection{
@@ -226,7 +254,7 @@ func TestAdvanceCompilesIssue347ProductSpecificQualificationEvidence(t *testing.
 	correctedRows := append(
 		[]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...,
 	)
-	plans := []*QualificationPlan{
+	plans := []*deliveryevidence.AcceptanceRow{
 		{
 			OwningSeam:            "internal/cli pack-show human renderer",
 			PositiveEvidence:      "planned: pack show summary ordering test",
@@ -282,7 +310,7 @@ func TestAdvanceCompilesIssue347ProductSpecificQualificationEvidence(t *testing.
 			PreservationEvidence:  "planned: sandbox preserves operator configuration",
 		},
 	}
-	plansByCriterion := make(map[string]*QualificationPlan, len(plans))
+	plansByCriterion := make(map[string]*deliveryevidence.AcceptanceRow, len(plans))
 	for index, plan := range plans {
 		plansByCriterion[tracker.value.Criteria[index].Text] = plan
 	}
@@ -321,32 +349,9 @@ func TestAdvanceCompilesIssue347ProductSpecificQualificationEvidence(t *testing.
 	assertQualificationRowContains(t, rows[tracker.value.Criteria[5].Text], "validate-packy.sh", "exact")
 }
 
-func TestQualificationPlanDoesNotChangeApprovedAuthorityDigest(t *testing.T) {
-	_, git, tracker := moduleFixture(t, 370)
-	withoutPlan := tracker.value
-	withoutPlan.Criteria = append([]AuthorityItem(nil), tracker.value.Criteria...)
-	for index := range withoutPlan.Criteria {
-		withoutPlan.Criteria[index].Plan = nil
-	}
-	plain, err := compileAuthority(
-		git.value, withoutPlan, nil, nil, deliveryevidence.RiskStandard,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	planned, err := compileAuthority(
-		git.value, tracker.value, nil, nil, deliveryevidence.RiskStandard,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if planned.hash != plain.hash {
-		t.Fatalf("qualification plan changed authority digest: %s != %s", planned.hash, plain.hash)
-	}
-}
-
 func TestCandidateInvalidationPreservesCorrectedQualificationEvidencePlan(t *testing.T) {
-	module, _, _, _, _ := assuranceFixture(t)
+	fixture := assuranceFixtureWithoutQualification(t)
+	module := fixture.module
 	request := Request{RepositoryPath: "/repo", IssueNumber: 357}
 	qualified := mustAdvance(t, module, request)
 	matrixHash, err := acceptanceMatrixDigest(qualified.Evidence.AcceptanceMatrix)
@@ -369,6 +374,15 @@ func TestCandidateInvalidationPreservesCorrectedQualificationEvidencePlan(t *tes
 		},
 	})
 	rows := append([]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...)
+	for index := range rows {
+		rows[index].OwningSeam = "specific supporting seam"
+		rows[index].PositiveEvidence = "planned: supporting positive evidence"
+		rows[index].NegativeEvidence = "planned: supporting negative evidence"
+		rows[index].FailureEvidence = "planned: supporting failure evidence"
+		rows[index].MutationEvidence = "planned: supporting mutation evidence"
+		rows[index].CompatibilityEvidence = "planned: supporting compatibility evidence"
+		rows[index].PreservationEvidence = "planned: supporting preservation evidence"
+	}
 	rows[0].OwningSeam = "specific product seam"
 	rows[0].PositiveEvidence = "planned: specific positive evidence"
 	rows[0].NegativeEvidence = "planned: specific negative evidence"
@@ -415,6 +429,23 @@ func assertQualificationRevisionCount(t *testing.T, module *Module, runID string
 	}
 	if len(revisions) != want {
 		t.Fatalf("qualification revisions = %d, want %d", len(revisions), want)
+	}
+}
+
+func TestQualificationSeamValidationAllowsProofsButRejectsUnreviewedOwnership(t *testing.T) {
+	corrected := []deliveryevidence.AcceptanceRow{{
+		Identity: "criterion-1", Criterion: "Exact behavior.", OwningSeam: "reviewed seam",
+		PositiveEvidence: "planned positive", State: deliveryevidence.AcceptancePlanned,
+	}}
+	proved := append([]deliveryevidence.AcceptanceRow(nil), corrected...)
+	proved[0].PositiveEvidence = "candidate-specific positive proof"
+	proved[0].State = deliveryevidence.AcceptanceProved
+	if !qualificationSeamsMatchCorrection(proved, corrected) {
+		t.Fatal("candidate proof invalidated the reviewed qualification seam")
+	}
+	proved[0].OwningSeam = "unreviewed seam"
+	if qualificationSeamsMatchCorrection(proved, corrected) {
+		t.Fatal("unreviewed qualification seam was accepted")
 	}
 }
 

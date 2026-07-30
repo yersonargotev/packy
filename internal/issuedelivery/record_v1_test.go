@@ -88,7 +88,6 @@ func TestLegacyRunContinuesUnderV1AssuranceWithoutRiskReclassification(t *testin
 	module, git, tracker, _, validator := assuranceFixture(t)
 	request := Request{RepositoryPath: "/repo", IssueNumber: 357}
 	mustAdvance(t, module, request)
-	mustAdvance(t, module, request)
 	risk := module.risk.(*fakeCandidateRiskObserver)
 	initialRiskCalls := risk.calls
 
