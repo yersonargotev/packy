@@ -140,6 +140,21 @@ func (f *fakeValidationExecutor) result(request ValidationRequest) ValidationRes
 
 func assuranceFixture(t *testing.T) (*Module, *fakeGitObserver, *fakeGitHubObserver, *fakeReviewExecutor, *fakeValidationExecutor) {
 	t.Helper()
+	fixture := assuranceFixtureWithoutQualification(t)
+	approveQualificationFixture(t, fixture.module, 357)
+	return fixture.module, fixture.git, fixture.tracker, fixture.reviewer, fixture.validator
+}
+
+type assuranceTestFixture struct {
+	module    *Module
+	git       *fakeGitObserver
+	tracker   *fakeGitHubObserver
+	reviewer  *fakeReviewExecutor
+	validator *fakeValidationExecutor
+}
+
+func assuranceFixtureWithoutQualification(t *testing.T) assuranceTestFixture {
+	t.Helper()
 	module, git, tracker := moduleFixture(t, 357)
 	git.value.Branch = "chore/issue-357-prove-low-risk-candidate"
 	reviewer := &fakeReviewExecutor{
@@ -158,15 +173,82 @@ func assuranceFixture(t *testing.T) (*Module, *fakeGitObserver, *fakeGitHubObser
 		}
 	}
 	module.review, module.validation, module.risk, module.sandboxRoot = reviewer, validator, risk, sandbox
-	return module, git, tracker, reviewer, validator
+	return assuranceTestFixture{
+		module: module, git: git, tracker: tracker, reviewer: reviewer, validator: validator,
+	}
+}
+
+func approveQualificationFixture(t *testing.T, module *Module, issue int) {
+	t.Helper()
+	request := Request{RepositoryPath: "/repo", IssueNumber: issue}
+	qualified := mustAdvance(t, module, request)
+	matrixHash, err := acceptanceMatrixDigest(qualified.Evidence.AcceptanceMatrix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings := make([]deliveryevidence.ReviewFinding, len(qualified.Evidence.AcceptanceMatrix))
+	links := make(map[string]string, len(qualified.Evidence.Scope.OwnedNow))
+	for _, entry := range qualified.Evidence.Scope.OwnedNow {
+		links[entry.Identity] = entry.EvidenceLink
+	}
+	for index, row := range qualified.Evidence.AcceptanceMatrix {
+		findings[index] = deliveryevidence.ReviewFinding{
+			ID: "fixture-qualification-" + row.Identity, Axis: deliveryevidence.ReviewSpec,
+			Severity: deliveryevidence.SeverityP1, Authority: deliveryevidence.AuthoritySpecRequirement,
+			Citation: links[row.Identity], Location: row.Identity,
+			Evidence: "the production-shaped assurance fixture requires an explicit evidence seam",
+		}
+	}
+	rejected := mustAdvance(t, module, Request{
+		RepositoryPath: "/repo", IssueNumber: issue,
+		QualificationReview: &QualificationReview{
+			AuthoritySHA256:        qualified.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: matrixHash,
+			Findings:               findings, Completed: true,
+		},
+	})
+	rows := append([]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...)
+	findingIDs := make([]string, len(findings))
+	for index := range rows {
+		findingIDs[index] = findings[index].ID
+		rows[index].OwningSeam = "issuedelivery assurance fixture seam"
+		rows[index].PositiveEvidence = "planned: focused positive evidence"
+		rows[index].NegativeEvidence = "planned: focused negative evidence"
+		rows[index].FailureEvidence = "planned: focused failure evidence"
+		rows[index].MutationEvidence = "planned: focused mutation evidence"
+		rows[index].CompatibilityEvidence = "planned: focused compatibility evidence"
+		rows[index].PreservationEvidence = "planned: focused preservation evidence"
+	}
+	corrected := mustAdvance(t, module, Request{
+		RepositoryPath: "/repo", IssueNumber: issue,
+		QualificationCorrection: &QualificationCorrection{
+			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+			ReviewedMatrixSHA256: matrixHash,
+			FindingIDs:           findingIDs,
+			AcceptanceMatrix:     rows,
+			Evidence:             "mapped every assurance criterion through the typed correction envelope",
+		},
+	})
+	correctedHash, err := acceptanceMatrixDigest(corrected.Evidence.AcceptanceMatrix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved := mustAdvance(t, module, Request{
+		RepositoryPath: "/repo", IssueNumber: issue,
+		QualificationReview: &QualificationReview{
+			AuthoritySHA256:        corrected.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: correctedHash,
+			Findings:               []deliveryevidence.ReviewFinding{}, Completed: true,
+		},
+	})
+	if !approved.QualificationApproved {
+		t.Fatalf("fixture qualification was not approved: %#v", approved)
+	}
 }
 
 func TestAdvanceReviewsAccumulatedCandidateInParallelAndReachesExactLocalReadiness(t *testing.T) {
 	module, _, _, reviewer, validator := assuranceFixture(t)
 	request := Request{RepositoryPath: "/repo", IssueNumber: 357}
-	if outcome, err := module.Advance(context.Background(), request); err != nil || outcome.State != StateNeedsReview {
-		t.Fatalf("qualification outcome=%#v err=%v", outcome, err)
-	}
 	focused, err := module.Advance(context.Background(), request)
 	if err != nil || focused.State != StateNeedsReview || focused.Candidate == nil ||
 		focused.Candidate.Focused == nil {
@@ -367,7 +449,6 @@ func TestAdvanceRejectsDuplicateFindingIDsAcrossReviewAxes(t *testing.T) {
 	}}
 	request := Request{RepositoryPath: "/repo", IssueNumber: 357}
 	mustAdvance(t, module, request)
-	mustAdvance(t, module, request)
 	if _, err := module.Advance(context.Background(), request); err == nil ||
 		!strings.Contains(err.Error(), "duplicate candidate review finding") {
 		t.Fatalf("duplicate review finding error=%v", err)
@@ -438,7 +519,7 @@ func TestAdvanceBlocksSymlinkedConfiguredSandbox(t *testing.T) {
 func TestAdvanceRetriesFreshGateWithoutRerunningExactExhaustiveReceipt(t *testing.T) {
 	module, git, _, _, validator := assuranceFixture(t)
 	request := Request{RepositoryPath: "/repo", IssueNumber: 357}
-	for range 3 {
+	for range 2 {
 		mustAdvance(t, module, request)
 	}
 	validator.afterExhaustive = func() {

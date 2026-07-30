@@ -172,17 +172,9 @@ func compileBundle(
 		bundle.Scope.OwnedNow = append(bundle.Scope.OwnedNow, deliveryevidence.LedgerEntry{
 			Identity: id, Requirement: item.Text, EvidenceLink: item.EvidenceLink,
 		})
-		bundle.AcceptanceMatrix = append(bundle.AcceptanceMatrix, deliveryevidence.AcceptanceRow{
-			Identity: id, Criterion: item.Text, OwningSeam: "issuedelivery.Advance",
-			PositiveEvidence:      "planned: focused positive behavior through Advance",
-			NegativeEvidence:      "planned: focused negative behavior through Advance",
-			FailureEvidence:       "planned: failure behavior through Advance",
-			MutationEvidence:      "planned: persisted run mutation inspection",
-			CompatibilityEvidence: "planned: compatibility validation",
-			PreservationEvidence:  "planned: prior run byte preservation",
-			MigrationEvidence:     migrationEvidence,
-			State:                 deliveryevidence.AcceptancePlanned,
-		})
+		bundle.AcceptanceMatrix = append(
+			bundle.AcceptanceMatrix, compileAcceptanceRow(id, item.Text, migrationEvidence),
+		)
 	}
 	for _, item := range exclusions {
 		bundle.Scope.Forbidden = append(bundle.Scope.Forbidden, deliveryevidence.LedgerEntry{
@@ -219,6 +211,25 @@ func compileBundle(
 	}
 	bundle, err = deliveryevidence.Decode(canonical)
 	return bundle, blocked, err
+}
+
+const qualificationPlanRequired = "qualification correction required"
+
+func compileAcceptanceRow(
+	identity, criterion, migrationEvidence string,
+) deliveryevidence.AcceptanceRow {
+	return deliveryevidence.AcceptanceRow{
+		Identity: identity, Criterion: criterion,
+		OwningSeam:            qualificationPlanRequired,
+		PositiveEvidence:      "required: observable positive proof for this exact authority criterion",
+		NegativeEvidence:      "required: negative proof that distinguishes the intended behavior",
+		FailureEvidence:       "required: failure-path proof at the criterion's owning seam",
+		MutationEvidence:      "required: mutation proof or an explicit not-applicable justification",
+		CompatibilityEvidence: "required: compatibility proof or an explicit not-applicable justification",
+		PreservationEvidence:  "required: preservation proof for behavior outside this criterion",
+		MigrationEvidence:     migrationEvidence,
+		State:                 deliveryevidence.AcceptancePlanned,
+	}
 }
 
 func validateObservations(git GitObservation, tracker TrackerObservation) error {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -222,6 +224,70 @@ func TestProductionValidationAdapterAdvancesRealModuleToLocalReadiness(t *testin
 		t.Fatal(err)
 	}
 	request := issuedelivery.Request{RepositoryPath: repository, IssueNumber: 361}
+	qualified, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matrixDigest := func(rows []deliveryevidence.AcceptanceRow) string {
+		t.Helper()
+		raw, marshalErr := json.Marshal(rows)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		sum := sha256.Sum256(raw)
+		return hex.EncodeToString(sum[:])
+	}
+	plannedHash := matrixDigest(qualified.Evidence.AcceptanceMatrix)
+	finding := deliveryevidence.ReviewFinding{
+		ID: "production-validation-qualification", Axis: deliveryevidence.ReviewSpec,
+		Severity: deliveryevidence.SeverityP1, Authority: deliveryevidence.AuthoritySpecRequirement,
+		Citation: qualified.Evidence.Scope.OwnedNow[0].EvidenceLink,
+		Location: qualified.Evidence.AcceptanceMatrix[0].Identity,
+		Evidence: "production validation requires an explicit observable evidence seam",
+	}
+	rejected, err := module.Advance(context.Background(), issuedelivery.Request{
+		RepositoryPath: repository, IssueNumber: 361,
+		QualificationReview: &issuedelivery.QualificationReview{
+			AuthoritySHA256:        qualified.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: plannedHash,
+			Findings:               []deliveryevidence.ReviewFinding{finding}, Completed: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := append([]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...)
+	rows[0].OwningSeam = "production validation adapter"
+	rows[0].PositiveEvidence = "planned: exact candidate validation succeeds"
+	rows[0].NegativeEvidence = "planned: mismatched candidate is rejected"
+	rows[0].FailureEvidence = "planned: validation failure blocks readiness"
+	rows[0].MutationEvidence = "planned: readiness receipt is persisted"
+	rows[0].CompatibilityEvidence = "planned: validation contract remains compatible"
+	rows[0].PreservationEvidence = "planned: sandbox preserves operator configuration"
+	corrected, err := module.Advance(context.Background(), issuedelivery.Request{
+		RepositoryPath: repository, IssueNumber: 361,
+		QualificationCorrection: &issuedelivery.QualificationCorrection{
+			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+			ReviewedMatrixSHA256: plannedHash,
+			FindingIDs:           []string{finding.ID},
+			AcceptanceMatrix:     rows,
+			Evidence:             "mapped validation authority through the typed correction envelope",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = module.Advance(context.Background(), issuedelivery.Request{
+		RepositoryPath: repository, IssueNumber: 361,
+		QualificationReview: &issuedelivery.QualificationReview{
+			AuthoritySHA256:        corrected.Observations.AuthoritySHA256,
+			AcceptanceMatrixSHA256: matrixDigest(corrected.Evidence.AcceptanceMatrix),
+			Findings:               []deliveryevidence.ReviewFinding{}, Completed: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var outcome issuedelivery.Outcome
 	var lastCandidateID, acceptanceID string
 	sawTraceabilityPreflight := false

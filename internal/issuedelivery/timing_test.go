@@ -77,7 +77,9 @@ func TestTimingCategoryForPhaseCoversCurrentVocabulary(t *testing.T) {
 		"pull-request": TimingImplementation,
 
 		"review": TimingReview, "specialist-review": TimingReview,
-		"repair": TimingRepair, "adjudication": TimingRepair, "ci-candidate-failure": TimingRepair,
+		"qualification-review": TimingReview,
+		"repair":               TimingRepair, "adjudication": TimingRepair, "ci-candidate-failure": TimingRepair,
+		"qualification-correction": TimingRepair,
 
 		"risk-observation": TimingValidation, "focused-validation": TimingValidation,
 		"boundary-validation": TimingValidation, "exhaustive-validation": TimingValidation,

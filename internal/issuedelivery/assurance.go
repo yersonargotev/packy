@@ -82,7 +82,7 @@ func (m *Module) advanceAssurance(
 		record.Candidates = append(record.Candidates, next)
 		record.LocalReadiness = nil
 		record.NonLocal = nil
-		invalidateAcceptance(record.Evidence)
+		invalidateAcceptance(record.Evidence, record.QualificationCorrections)
 		return m.persistAssuranceTransition(
 			store, record, StateNeedsReview, "focused candidate evidence is ready for review", "focused-validation",
 		)
@@ -427,6 +427,7 @@ func (m *Module) persistAssuranceTransition(
 		StartedAt: started.Format(timeFormat), CompletedAt: completed.Format(timeFormat),
 	})
 	record.UpdatedAt = completed.Format(timeFormat)
+	adoptLegacyNullQualificationFindings(&record)
 	data, err := encodeRun(record)
 	if err != nil {
 		return Outcome{}, err
@@ -557,16 +558,18 @@ func validateReviewBatch(candidate Candidate, reviews []CandidateReview) error {
 	return nil
 }
 
-func invalidateAcceptance(evidence *deliveryevidence.Bundle) {
+func invalidateAcceptance(
+	evidence *deliveryevidence.Bundle,
+	corrections []QualificationCorrection,
+) {
+	if len(corrections) > 0 {
+		evidence.AcceptanceMatrix = append(
+			[]deliveryevidence.AcceptanceRow(nil),
+			corrections[len(corrections)-1].AcceptanceMatrix...,
+		)
+	}
 	for index := range evidence.AcceptanceMatrix {
 		row := &evidence.AcceptanceMatrix[index]
-		row.PositiveEvidence = "planned: focused positive behavior through Advance"
-		row.NegativeEvidence = "planned: focused negative behavior through Advance"
-		row.FailureEvidence = "planned: failure behavior through Advance"
-		row.MutationEvidence = "planned: persisted run mutation inspection"
-		row.CompatibilityEvidence = "planned: compatibility validation"
-		row.PreservationEvidence = "planned: prior run byte preservation"
-		row.MigrationEvidence = "not applicable: new self-contained run"
 		row.State = deliveryevidence.AcceptancePlanned
 	}
 	evidence.ValidationReceipts = []deliveryevidence.ValidationReceipt{}

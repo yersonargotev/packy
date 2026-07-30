@@ -90,6 +90,55 @@ func TestProductionNonLocalObservationRefreshesAndBindsOriginMain(t *testing.T) 
 	}) {
 		t.Fatalf("origin/main refresh = %#v", got)
 	}
+	if got := runner.calls[4]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"pr", "list", "--repo", "yersonargotev/packy", "--state", "all",
+		"--head", "chore/issue-361-remote-adapter", "--json",
+		"number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,closingIssuesReferences,mergedAt,mergeCommit",
+		"--jq", pullRequestsProjection,
+	}) {
+		t.Fatalf("pull-request observation command = %#v", got)
+	}
+}
+
+func TestProductionNonLocalChecksProjectGitHubResponsesBeforeStrictDecode(t *testing.T) {
+	head, base := strings.Repeat("b", 40), strings.Repeat("a", 40)
+	runner := &fakeRemoteRunner{outputs: [][]byte{
+		[]byte(`{"check_runs":[{"name":"Validate Packy-owned code","head_sha":"` + head + `","status":"completed","conclusion":"success","details_url":"https://github.com/yersonargotev/packy/actions/runs/42/job/7","app":{"id":15368,"slug":"github-actions"}}]}`),
+		[]byte(`[]`),
+		[]byte(`{"id":42,"name":"CI","path":".github/workflows/ci.yml","head_sha":"` + head + `","html_url":"https://github.com/yersonargotev/packy/actions/runs/42","actor":{"login":"maintainer","id":1,"type":"User","html_url":"https://github.com/maintainer"}}`),
+		[]byte(head),
+	}}
+	gateway := productionNonLocalGateway{runner: runner}
+	checks, err := gateway.observeChecks(context.Background(), issuedelivery.NonLocalObserveRequest{
+		Repository: packyRemoteRepository(), HeadSHA: head,
+	}, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 || checks[0].Identity != "Validate Packy-owned code" {
+		t.Fatalf("checks = %#v", checks)
+	}
+	if got := runner.calls[0]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"api", "-H", "Accept: application/vnd.github+json",
+		"repos/yersonargotev/packy/commits/" + head + "/check-runs?filter=latest",
+		"--jq", checkRunsProjection,
+	}) {
+		t.Fatalf("check-runs command = %#v", got)
+	}
+	if got := runner.calls[1]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"api", "-H", "Accept: application/vnd.github+json",
+		"repos/yersonargotev/packy/commits/" + head + "/statuses",
+		"--jq", statusesProjection,
+	}) {
+		t.Fatalf("statuses command = %#v", got)
+	}
+	if got := runner.calls[2]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"api", "-H", "Accept: application/vnd.github+json",
+		"repos/yersonargotev/packy/actions/runs/42",
+		"--jq", workflowRunProjection,
+	}) {
+		t.Fatalf("workflow command = %#v", got)
+	}
 }
 
 func TestProductionNonLocalMergeUsesMatchHeadCommit(t *testing.T) {
@@ -106,6 +155,13 @@ func TestProductionNonLocalMergeUsesMatchHeadCommit(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got := runner.calls[1]; got.name != "gh" || !reflect.DeepEqual(got.args, []string{
+		"pr", "view", "17", "--repo", "yersonargotev/packy", "--json",
+		"number,state,baseRefOid,headRefOid,closingIssuesReferences,mergedAt",
+		"--jq", pullRequestProjection,
+	}) {
+		t.Fatalf("pull-request merge observation command = %#v", got)
 	}
 	got := runner.calls[2]
 	want := remoteRunnerCall{name: "gh", args: []string{
@@ -225,6 +281,30 @@ func TestApplyCIFailureAttributionRequiresExactFailedRun(t *testing.T) {
 	decision.RunID++
 	if _, err = applyCIFailureAttributions(checks, []advanceCIFailureAttribution{decision}); err == nil {
 		t.Fatal("foreign failed run attribution was accepted")
+	}
+}
+
+func TestLatestCommitStatusSelectsNewestIdentity(t *testing.T) {
+	statuses := []commitStatus{
+		{ID: 41, Context: "Governance / Validate authorization", State: "pending"},
+		{ID: 42, Context: "Governance / Validate authorization", State: "success"},
+		{ID: 43, Context: "other", State: "failure"},
+	}
+	got, found, err := latestCommitStatus(statuses, "Governance / Validate authorization")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || got.ID != 42 || got.State != "success" {
+		t.Fatalf("latest status = %#v, found=%v", got, found)
+	}
+}
+
+func TestLatestCommitStatusRejectsMalformedMatchingIdentity(t *testing.T) {
+	_, _, err := latestCommitStatus([]commitStatus{{
+		Context: "Governance / Validate authorization", State: "success",
+	}}, "Governance / Validate authorization")
+	if err == nil {
+		t.Fatal("matching status without a stable identity was accepted")
 	}
 }
 

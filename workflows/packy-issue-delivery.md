@@ -86,8 +86,14 @@ specification; omitting it selects the self-contained authority form. This is a
 semantic scope decision, not phase sequencing. Repeat the same command to
 resume. Add `--decision`, `--repair`, or
 `--review-content` only when the returned state requests that typed semantic
-content. Acceptance proof in that review content must cite the exact candidate
-ID and the observed positive, negative/failure, mutation, compatibility,
+content. Before candidate development, review content may carry an independent
+qualification review bound to the exact authority and acceptance-matrix digest.
+When that review rejects the matrix, `Advance` persists its traceable findings
+and requests one exact qualification correction in the same typed content
+envelope. The correction must preserve every criterion identity and text,
+replace the complete evidence matrix, and pass a second independent review.
+Candidate acceptance proof in review content must cite the exact candidate ID
+and the observed positive, negative/failure, mutation, compatibility,
 preservation, and migration evidence required by each compiled row; a green
 repository validator never manufactures those proofs. Use `--ci-attribution`
 only to classify an exact failed run reported
@@ -129,6 +135,17 @@ criteria, exclusions, dependencies, and references and selects profile-shaped
 evidence requirements. Every acceptance obligation must remain traceable to its
 authority and have positive, negative or failure, and preservation or
 compatibility evidence as applicable.
+
+An independent qualification review may approve the exact compiled matrix or
+reject it with findings tied to criterion identities and authority links. A
+row marked `qualification correction required` is unresolved: neither a clean
+review nor a correction that retains that marker may approve it. A
+rejection moves the run to one persisted correction request. The corrected
+matrix is stored in a new immutable run revision, retains the original
+criterion identities and text, and returns to `needs-review`; development
+cannot resume through that path until a later independent review approves the
+corrected matrix. Resume preserves the original run bytes and adopts the active
+revision without duplicating either effect.
 
 For bugs, use `diagnosing-bugs` only while reproduction, cause, or failure
 boundary is uncertain. Run Delegation Preflight before separable local work.

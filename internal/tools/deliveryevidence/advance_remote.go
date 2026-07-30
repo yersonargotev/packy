@@ -62,6 +62,7 @@ type checkRunsResponse struct {
 }
 
 type commitStatus struct {
+	ID        int64  `json:"id"`
 	Context   string `json:"context"`
 	State     string `json:"state"`
 	TargetURL string `json:"target_url"`
@@ -86,6 +87,14 @@ type workflowRun struct {
 		HTMLURL string `json:"html_url"`
 	} `json:"actor"`
 }
+
+const (
+	checkRunsProjection    = `{check_runs:[.check_runs[]|{name,head_sha,status,conclusion,details_url,app:{id:.app.id,slug:.app.slug}}]}`
+	statusesProjection     = `[.[]|{id,context,state,target_url,creator:{login:.creator.login,id:.creator.id,type:.creator.type,html_url:.creator.html_url}}]`
+	workflowRunProjection  = `{id,name,path,head_sha,html_url,actor:{login:.actor.login,id:.actor.id,type:.actor.type,html_url:.actor.html_url}}`
+	pullRequestsProjection = `[.[]|{number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository:{id:.headRepository.id},closingIssuesReferences:[.closingIssuesReferences[]|{number,id}],mergedAt,mergeCommit:(if .mergeCommit==null then null else {oid:.mergeCommit.oid} end)}]`
+	pullRequestProjection  = `{number,state,baseRefOid,headRefOid,closingIssuesReferences:[.closingIssuesReferences[]|{number,id}],mergedAt}`
+)
 
 func (gateway productionNonLocalGateway) ObserveNonLocal(ctx context.Context, request issuedelivery.NonLocalObserveRequest) (issuedelivery.NonLocalObservation, error) {
 	if err := gateway.validateObserveRequest(ctx, request); err != nil {
@@ -127,7 +136,8 @@ func (gateway productionNonLocalGateway) ObserveNonLocal(ctx context.Context, re
 
 	prRaw, err := gateway.output(ctx, "gh", "pr", "list", "--repo", repo, "--state", "all",
 		"--head", request.Branch, "--json",
-		"number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,closingIssuesReferences,mergedAt,mergeCommit")
+		"number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,closingIssuesReferences,mergedAt,mergeCommit",
+		"--jq", pullRequestsProjection)
 	if err != nil {
 		return issuedelivery.NonLocalObservation{}, fmt.Errorf("observe pull requests: %w", err)
 	}
@@ -266,7 +276,8 @@ func (gateway productionNonLocalGateway) EnsureMerge(ctx context.Context, reques
 	}
 	raw, err := gateway.output(ctx, "gh", "pr", "view", strconv.Itoa(request.PullRequest),
 		"--repo", repositoryName(request.Repository), "--json",
-		"number,state,baseRefOid,headRefOid,closingIssuesReferences,mergedAt")
+		"number,state,baseRefOid,headRefOid,closingIssuesReferences,mergedAt",
+		"--jq", pullRequestProjection)
 	if err != nil {
 		return fmt.Errorf("observe pull request before merge: %w", err)
 	}
@@ -320,7 +331,8 @@ func (gateway productionNonLocalGateway) EnsureRemoteIssueBranchAbsent(ctx conte
 func (gateway productionNonLocalGateway) observeChecks(ctx context.Context, request issuedelivery.NonLocalObserveRequest, baseSHA string) ([]issuedelivery.CICheckObservation, error) {
 	repo := repositoryName(request.Repository)
 	raw, err := gateway.output(ctx, "gh", "api", "-H", "Accept: application/vnd.github+json",
-		"repos/"+repo+"/commits/"+request.HeadSHA+"/check-runs?filter=latest")
+		"repos/"+repo+"/commits/"+request.HeadSHA+"/check-runs?filter=latest",
+		"--jq", checkRunsProjection)
 	if err != nil {
 		return nil, fmt.Errorf("observe check runs: %w", err)
 	}
@@ -329,7 +341,8 @@ func (gateway productionNonLocalGateway) observeChecks(ctx context.Context, requ
 		return nil, err
 	}
 	statusRaw, err := gateway.output(ctx, "gh", "api", "-H", "Accept: application/vnd.github+json",
-		"repos/"+repo+"/commits/"+request.HeadSHA+"/statuses")
+		"repos/"+repo+"/commits/"+request.HeadSHA+"/statuses",
+		"--jq", statusesProjection)
 	if err != nil {
 		return nil, fmt.Errorf("observe commit statuses: %w", err)
 	}
@@ -367,10 +380,11 @@ func (gateway productionNonLocalGateway) observeChecks(ctx context.Context, requ
 			RunID: runID, DetailsURL: run.DetailsURL,
 		})
 	}
-	for _, status := range statuses {
-		if status.Context != "Governance / Validate authorization" {
-			continue
-		}
+	status, found, err := latestCommitStatus(statuses, "Governance / Validate authorization")
+	if err != nil {
+		return nil, err
+	}
+	if found {
 		runID, err := githubRunID(status.TargetURL, request.Repository)
 		if err != nil {
 			return nil, err
@@ -402,6 +416,24 @@ func (gateway productionNonLocalGateway) observeChecks(ctx context.Context, requ
 	}
 	sort.Slice(checks, func(i, j int) bool { return checks[i].Identity < checks[j].Identity })
 	return applyCIFailureAttributions(checks, gateway.attributions)
+}
+
+func latestCommitStatus(statuses []commitStatus, identity string) (commitStatus, bool, error) {
+	var latest commitStatus
+	found := false
+	for _, status := range statuses {
+		if status.Context != identity {
+			continue
+		}
+		if status.ID <= 0 {
+			return commitStatus{}, false, errors.New("commit status has no stable identity")
+		}
+		if !found || status.ID > latest.ID {
+			latest = status
+			found = true
+		}
+	}
+	return latest, found, nil
 }
 
 func applyCIFailureAttributions(
@@ -474,7 +506,8 @@ func (gateway productionNonLocalGateway) validateRepository(ctx context.Context,
 
 func (gateway productionNonLocalGateway) workflowRun(ctx context.Context, repository deliveryevidence.RepositoryIdentity, runID int64) (workflowRun, error) {
 	raw, err := gateway.output(ctx, "gh", "api", "-H", "Accept: application/vnd.github+json",
-		"repos/"+repositoryName(repository)+"/actions/runs/"+strconv.FormatInt(runID, 10))
+		"repos/"+repositoryName(repository)+"/actions/runs/"+strconv.FormatInt(runID, 10),
+		"--jq", workflowRunProjection)
 	if err != nil {
 		return workflowRun{}, fmt.Errorf("observe workflow run: %w", err)
 	}
