@@ -466,6 +466,38 @@ func TestQualificationSeamValidationAllowsProofsButRejectsUnreviewedOwnership(t 
 	}
 }
 
+func TestQualificationHistoryRejectsNullFindingsAndInvalidCorrectionMatrices(t *testing.T) {
+	module, git, _, _, _ := assuranceFixture(t)
+	var record runRecord
+	err := module.store.withIssueLock(
+		context.Background(), git.value.CommonDir, 357,
+		func(store lockedIssueStore) error {
+			_, data, found, loadErr := store.loadActive()
+			if loadErr != nil || !found {
+				return loadErr
+			}
+			record, loadErr = decodeRun(data)
+			return loadErr
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := len(record.QualificationReviews) - 1
+	record.QualificationReviews[last].Findings = nil
+	if err := validateQualificationHistory(record); err == nil ||
+		!strings.Contains(err.Error(), "invalid review") {
+		t.Fatalf("null qualification findings validation error = %v", err)
+	}
+	record.QualificationReviews[last].Findings = []deliveryevidence.ReviewFinding{}
+	record.QualificationCorrections[0].AcceptanceMatrix[0].OwningSeam =
+		qualificationPlanRequired
+	if err := validateQualificationHistory(record); err == nil ||
+		!strings.Contains(err.Error(), "invalid correction matrix") {
+		t.Fatalf("invalid correction matrix validation error = %v", err)
+	}
+}
+
 func assertQualificationRowContains(
 	t *testing.T,
 	row deliveryevidence.AcceptanceRow,
