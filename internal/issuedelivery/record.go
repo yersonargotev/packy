@@ -11,37 +11,45 @@ import (
 	"github.com/yersonargotev/packy/internal/deliveryevidence"
 )
 
-const runSchema = "packy.issue-delivery-run/v1"
+const runSchema = "packy.issue-delivery-run/v2"
 
 type runWire struct {
-	Schema          string                              `json:"schema"`
-	ID              string                              `json:"id"`
-	Repository      deliveryevidence.RepositoryIdentity `json:"repository"`
-	Issue           deliveryevidence.IssueIdentity      `json:"issue"`
-	AuthoritySHA256 string                              `json:"authority_sha256"`
-	State           State                               `json:"state"`
-	Reason          string                              `json:"reason"`
-	SupersedesRunID string                              `json:"supersedes_run_id,omitempty"`
-	Evidence        json.RawMessage                     `json:"evidence,omitempty"`
-	PendingDecision *DecisionRequest                    `json:"pending_decision,omitempty"`
-	Decisions       []Decision                          `json:"decisions"`
-	Observations    Observations                        `json:"observations"`
-	Candidates      []Candidate                         `json:"candidates,omitempty"`
-	PendingRepair   *RepairDecisionRequest              `json:"pending_repair,omitempty"`
-	LocalReadiness  *LocalReadiness                     `json:"local_readiness,omitempty"`
-	Timing          []Timing                            `json:"timing"`
-	CreatedAt       string                              `json:"created_at"`
-	UpdatedAt       string                              `json:"updated_at"`
+	Schema             string                               `json:"schema"`
+	ID                 string                               `json:"id"`
+	Repository         deliveryevidence.RepositoryIdentity  `json:"repository"`
+	Issue              deliveryevidence.IssueIdentity       `json:"issue"`
+	AuthoritySHA256    string                               `json:"authority_sha256"`
+	State              State                                `json:"state"`
+	Reason             string                               `json:"reason"`
+	SupersedesRunID    string                               `json:"supersedes_run_id,omitempty"`
+	Evidence           json.RawMessage                      `json:"evidence,omitempty"`
+	PendingDecision    *DecisionRequest                     `json:"pending_decision,omitempty"`
+	Decisions          []Decision                           `json:"decisions"`
+	Observations       Observations                         `json:"observations"`
+	Candidates         []Candidate                          `json:"candidates,omitempty"`
+	PendingRepair      *RepairDecisionRequest               `json:"pending_repair,omitempty"`
+	LocalReadiness     *LocalReadiness                      `json:"local_readiness,omitempty"`
+	EffectiveProfile   deliveryevidence.DeliveryRiskProfile `json:"effective_profile,omitempty"`
+	RequiredBoundaries []SensitiveBoundary                  `json:"required_boundaries,omitempty"`
+	ProfileHistory     []ProfileTransition                  `json:"profile_history,omitempty"`
+	Timing             []Timing                             `json:"timing"`
+	CreatedAt          string                               `json:"created_at"`
+	UpdatedAt          string                               `json:"updated_at"`
 }
 
 func encodeRun(record runRecord) ([]byte, error) {
+	if record.Schema == legacyRunSchema {
+		return encodeLegacyRun(record)
+	}
 	wire := runWire{
 		Schema: record.Schema, ID: record.ID, Repository: record.Repository, Issue: record.Issue,
 		AuthoritySHA256: record.AuthoritySHA256, State: record.State, Reason: record.Reason,
 		SupersedesRunID: record.SupersedesRunID, PendingDecision: record.PendingDecision,
 		Decisions: record.Decisions, Observations: record.Observations, Timing: record.Timing,
 		Candidates: record.Candidates, PendingRepair: record.PendingRepair,
-		LocalReadiness: record.LocalReadiness,
+		LocalReadiness:   record.LocalReadiness,
+		EffectiveProfile: record.EffectiveProfile, RequiredBoundaries: record.RequiredBoundaries,
+		ProfileHistory: record.ProfileHistory,
 		CreatedAt:      record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}
 	if record.Evidence != nil {
@@ -55,6 +63,15 @@ func encodeRun(record runRecord) ([]byte, error) {
 }
 
 func decodeRun(data []byte) (runRecord, error) {
+	var envelope struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return runRecord{}, fmt.Errorf("decode issue delivery run: %w", err)
+	}
+	if envelope.Schema == legacyRunSchema {
+		return decodeLegacyRun(data)
+	}
 	var wire runWire
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -74,7 +91,9 @@ func decodeRun(data []byte) (runRecord, error) {
 		SupersedesRunID: wire.SupersedesRunID, PendingDecision: wire.PendingDecision,
 		Decisions: wire.Decisions, Observations: wire.Observations, Timing: wire.Timing,
 		Candidates: wire.Candidates, PendingRepair: wire.PendingRepair,
-		LocalReadiness: wire.LocalReadiness,
+		LocalReadiness:   wire.LocalReadiness,
+		EffectiveProfile: wire.EffectiveProfile, RequiredBoundaries: wire.RequiredBoundaries,
+		ProfileHistory: wire.ProfileHistory,
 		CreatedAt:      wire.CreatedAt, UpdatedAt: wire.UpdatedAt,
 	}
 	if len(wire.Evidence) > 0 {
@@ -91,7 +110,7 @@ func decodeRun(data []byte) (runRecord, error) {
 }
 
 func validateRun(record runRecord) error {
-	if record.Schema != runSchema ||
+	if (record.Schema != runSchema && record.Schema != legacyRunSchema) ||
 		record.ID != runIdentity(record.Repository, record.Issue, record.AuthoritySHA256, record.SupersedesRunID) {
 		return fmt.Errorf("issue delivery run identity is invalid")
 	}
@@ -159,23 +178,81 @@ func validateRun(record runRecord) error {
 }
 
 func validateCandidates(record runRecord) error {
+	if record.Schema == legacyRunSchema {
+		return validateLegacyCandidates(record)
+	}
 	if len(record.Candidates) == 0 {
 		if record.PendingRepair != nil || record.LocalReadiness != nil {
 			return fmt.Errorf("issue delivery assurance state requires a candidate")
 		}
+		if record.EffectiveProfile != "" && record.Evidence != nil &&
+			record.EffectiveProfile != record.Evidence.RiskProfile {
+			return fmt.Errorf("issue delivery run profile does not match its evidence")
+		}
 		return nil
 	}
 	seen := make(map[string]bool, len(record.Candidates))
+	candidateOrder := make(map[string]int, len(record.Candidates))
 	for index, candidate := range record.Candidates {
 		if candidate.ID != candidateIdentity(record.ID, candidate.BaseSHA, candidate.CommitSHA, candidate.TreeSHA) ||
 			seen[candidate.ID] ||
 			!fullGitSHAPattern.MatchString(candidate.BaseSHA) ||
 			!fullGitSHAPattern.MatchString(candidate.CommitSHA) ||
 			!fullGitSHAPattern.MatchString(candidate.TreeSHA) ||
-			len(candidate.RequiredReviews) == 0 || candidate.Reviews == nil {
+			(len(candidate.RequiredReviews) == 0 &&
+				(candidate.RepairClass != RepairBounded || len(candidate.RequiredSpecialists) == 0)) ||
+			candidate.Reviews == nil ||
+			candidate.Effects == nil || candidate.Boundaries == nil ||
+			candidate.RequiredSpecialists == nil || candidate.SpecialistReviews == nil ||
+			candidate.BoundaryProofs == nil ||
+			(candidate.ObservedFloor != deliveryevidence.RiskLow &&
+				candidate.ObservedFloor != deliveryevidence.RiskStandard &&
+				candidate.ObservedFloor != deliveryevidence.RiskHigh) ||
+			(candidate.Profile != deliveryevidence.RiskLow &&
+				candidate.Profile != deliveryevidence.RiskStandard &&
+				candidate.Profile != deliveryevidence.RiskHigh) {
 			return fmt.Errorf("issue delivery candidate %d is invalid", index+1)
 		}
 		seen[candidate.ID] = true
+		candidateOrder[candidate.ID] = index
+		assessment := mechanicalProfileFloor(candidate.Effects)
+		if !assessment.Complete ||
+			assessment.Profile != candidate.ObservedFloor ||
+			!equalEffectObservations(assessment.Effects, candidate.Effects) ||
+			maxRiskProfile(candidate.ObservedFloor, candidate.Profile) != candidate.Profile ||
+			!equalBoundaries(candidate.Boundaries, unionBoundaries(nil, candidate.Boundaries)) {
+			return fmt.Errorf("issue delivery candidate risk assessment is invalid")
+		}
+		for _, boundary := range assessment.Boundaries {
+			if !containsBoundary(candidate.Boundaries, boundary) {
+				return fmt.Errorf("issue delivery candidate omits an observed sensitive boundary")
+			}
+		}
+		if candidate.Profile == deliveryevidence.RiskHigh && len(candidate.Boundaries) == 0 {
+			return fmt.Errorf("high-risk issue delivery candidate requires a sensitive boundary")
+		}
+		if candidate.Profile != deliveryevidence.RiskHigh && len(candidate.RequiredSpecialists) != 0 {
+			return fmt.Errorf("non-high-risk issue delivery candidate requires no specialist")
+		}
+		if !equalBoundaries(candidate.RequiredSpecialists, unionBoundaries(nil, candidate.RequiredSpecialists)) {
+			return fmt.Errorf("issue delivery candidate specialist boundaries are invalid")
+		}
+		for _, boundary := range candidate.RequiredSpecialists {
+			if !containsBoundary(candidate.Boundaries, boundary) {
+				return fmt.Errorf("issue delivery candidate specialist is outside its sensitive boundaries")
+			}
+		}
+		if candidate.Profile == deliveryevidence.RiskHigh && candidate.RepairClass != RepairBounded &&
+			!equalBoundaries(candidate.RequiredSpecialists, candidate.Boundaries) {
+			return fmt.Errorf("high-risk issue delivery candidate omits a required specialist")
+		}
+		if index > 0 {
+			previous := record.Candidates[index-1]
+			if maxRiskProfile(previous.Profile, candidate.Profile) != candidate.Profile ||
+				!equalBoundaries(candidate.Boundaries, unionBoundaries(previous.Boundaries, candidate.Boundaries)) {
+				return fmt.Errorf("issue delivery candidate assurance is not monotonic")
+			}
+		}
 		required := make(map[deliveryevidence.ReviewAxis]bool, len(candidate.RequiredReviews))
 		for _, axis := range candidate.RequiredReviews {
 			if (axis != deliveryevidence.ReviewStandards && axis != deliveryevidence.ReviewSpec) || required[axis] {
@@ -223,6 +300,30 @@ func validateCandidates(record runRecord) error {
 				!candidate.Exhaustive.Result.WorkspaceClean) {
 			return fmt.Errorf("issue delivery candidate contains an invalid exhaustive proof")
 		}
+		specialists := map[SensitiveBoundary]bool{}
+		for _, review := range candidate.SpecialistReviews {
+			if specialists[review.Boundary] || review.CandidateID != candidate.ID ||
+				!containsBoundary(candidate.RequiredSpecialists, review.Boundary) ||
+				review.Specialist != specialistForBoundary(review.Boundary) || review.Findings == nil {
+				return fmt.Errorf("issue delivery candidate contains an invalid specialist review")
+			}
+			specialists[review.Boundary] = true
+		}
+		proofs := map[SensitiveBoundary]bool{}
+		for _, proof := range candidate.BoundaryProofs {
+			result := proof.Result
+			if proofs[result.Boundary] || result.CandidateID != candidate.ID ||
+				!containsBoundary(candidate.Boundaries, result.Boundary) ||
+				result.CommitSHA != candidate.CommitSHA || result.TreeSHA != candidate.TreeSHA ||
+				!result.Sandboxed || !result.Succeeded || !result.Completed ||
+				result.OperatorStateBeforeSHA256 != result.OperatorStateAfterSHA256 ||
+				!runIDPattern.MatchString(result.OperatorStateBeforeSHA256) ||
+				!runIDPattern.MatchString(result.ToolSHA256) ||
+				!runIDPattern.MatchString(result.WriteManifestSHA256) {
+				return fmt.Errorf("issue delivery candidate contains an invalid boundary proof")
+			}
+			proofs[result.Boundary] = true
+		}
 	}
 	current := record.Candidates[len(record.Candidates)-1]
 	if record.PendingRepair != nil &&
@@ -241,7 +342,9 @@ func validateCandidates(record runRecord) error {
 	}
 	if record.LocalReadiness != nil {
 		if current.Exhaustive == nil || len(current.Acceptance) != len(record.Evidence.AcceptanceMatrix) ||
-			len(record.Evidence.ValidationReceipts) == 0 {
+			len(record.Evidence.ValidationReceipts) == 0 ||
+			len(missingSpecialistBoundaries(&current)) != 0 ||
+			len(missingBoundaryProofs(&current)) != 0 {
 			return fmt.Errorf("local readiness lacks exact candidate assurance")
 		}
 		for _, row := range record.Evidence.AcceptanceMatrix {
@@ -249,6 +352,49 @@ func validateCandidates(record runRecord) error {
 				return fmt.Errorf("local readiness contains unproved acceptance")
 			}
 		}
+	}
+	if record.EffectiveProfile != current.Profile || record.Evidence.RiskProfile != record.EffectiveProfile ||
+		!equalBoundaries(record.RequiredBoundaries, current.Boundaries) {
+		return fmt.Errorf("issue delivery run profile does not match its current candidate")
+	}
+	previousProfile := deliveryevidence.RiskLow
+	previousBoundaries := []SensitiveBoundary{}
+	previousCandidateIndex := -1
+	for index, transition := range record.ProfileHistory {
+		candidateIndex, candidateFound := candidateOrder[transition.CandidateID]
+		if transition.Sequence != index+1 || !candidateFound ||
+			(candidateIndex != previousCandidateIndex && candidateIndex != previousCandidateIndex+1) ||
+			(transition.ObservedFloor != deliveryevidence.RiskLow &&
+				transition.ObservedFloor != deliveryevidence.RiskStandard &&
+				transition.ObservedFloor != deliveryevidence.RiskHigh) ||
+			maxRiskProfile(transition.ObservedFloor, transition.EffectiveProfile) != transition.EffectiveProfile ||
+			maxRiskProfile(previousProfile, transition.EffectiveProfile) != transition.EffectiveProfile ||
+			!equalBoundaries(transition.Boundaries, unionBoundaries(nil, transition.Boundaries)) ||
+			!equalBoundaries(transition.Boundaries, unionBoundaries(previousBoundaries, transition.Boundaries)) ||
+			strings.TrimSpace(transition.ObservedAt) == "" {
+			return fmt.Errorf("issue delivery profile history is invalid")
+		}
+		candidate := record.Candidates[candidateIndex]
+		if maxRiskProfile(transition.EffectiveProfile, candidate.Profile) != candidate.Profile ||
+			!equalBoundaries(candidate.Boundaries, unionBoundaries(transition.Boundaries, candidate.Boundaries)) {
+			return fmt.Errorf("issue delivery profile transition does not match its candidate")
+		}
+		if candidateIndex != previousCandidateIndex && previousCandidateIndex >= 0 {
+			previousCandidate := record.Candidates[previousCandidateIndex]
+			if previousProfile != previousCandidate.Profile ||
+				!equalBoundaries(previousBoundaries, previousCandidate.Boundaries) {
+				return fmt.Errorf("issue delivery profile history does not close its candidate")
+			}
+		}
+		previousProfile = transition.EffectiveProfile
+		previousBoundaries = transition.Boundaries
+		previousCandidateIndex = candidateIndex
+	}
+	if len(record.ProfileHistory) == 0 ||
+		previousCandidateIndex != len(record.Candidates)-1 ||
+		record.ProfileHistory[len(record.ProfileHistory)-1].EffectiveProfile != record.EffectiveProfile ||
+		!equalBoundaries(record.ProfileHistory[len(record.ProfileHistory)-1].Boundaries, record.RequiredBoundaries) {
+		return fmt.Errorf("issue delivery profile history does not reach current profile")
 	}
 	return nil
 }
