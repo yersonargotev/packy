@@ -44,6 +44,13 @@ func (m *Module) advanceAssurance(
 		} else if candidate != nil && unresolvedFindingIDs(candidate) != nil {
 			return Outcome{}, errors.New("candidate changed before its review findings were adjudicated")
 		}
+		activityPhase := "implementation"
+		if candidate != nil {
+			activityPhase = "repair"
+		}
+		if err := m.appendElapsedTiming(&record, activityPhase, m.clock.Now().UTC()); err != nil {
+			return Outcome{}, err
+		}
 		next := newCandidate(record, candidate, git)
 		if record.Schema != legacyRunSchema {
 			if _, err := m.observeCandidateRisk(ctx, &record, &next, candidate, request.RepositoryPath); err != nil {
@@ -405,10 +412,16 @@ func (m *Module) persistAssuranceTransition(
 	state State,
 	reason, phase string,
 ) (Outcome, error) {
-	started := m.clock.Now().UTC()
+	started, err := time.Parse(timeFormat, record.UpdatedAt)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("parse issue delivery transition start: %w", err)
+	}
 	previous := record.State
 	record.State, record.Reason = state, reason
 	completed := m.clock.Now().UTC()
+	if completed.Before(started) {
+		return Outcome{}, errors.New("issue delivery transition clock moved backwards")
+	}
 	record.Timing = append(record.Timing, Timing{
 		Sequence: len(record.Timing) + 1, Phase: phase, From: previous, To: state,
 		StartedAt: started.Format(timeFormat), CompletedAt: completed.Format(timeFormat),
@@ -422,6 +435,22 @@ func (m *Module) persistAssuranceTransition(
 		return Outcome{}, err
 	}
 	return outcomeFromRecord(record), nil
+}
+
+func (m *Module) appendElapsedTiming(record *runRecord, phase string, completed time.Time) error {
+	started, err := time.Parse(timeFormat, record.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("parse issue delivery activity start: %w", err)
+	}
+	if completed.Before(started) {
+		return errors.New("issue delivery activity clock moved backwards")
+	}
+	record.Timing = append(record.Timing, Timing{
+		Sequence: len(record.Timing) + 1, Phase: phase, From: record.State, To: record.State,
+		StartedAt: started.Format(timeFormat), CompletedAt: completed.Format(timeFormat),
+	})
+	record.UpdatedAt = completed.Format(timeFormat)
+	return nil
 }
 
 func newCandidate(record runRecord, previous *Candidate, git GitObservation) Candidate {

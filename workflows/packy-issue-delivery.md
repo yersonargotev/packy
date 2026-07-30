@@ -4,242 +4,238 @@ Status: Active
 
 ## Goal
 
-Turn a requested Packy GitHub issue into a verified change merged to `main`
-through one predictable delivery loop:
+Deliver one named Packy GitHub issue through a resumable, risk-adjusted
+`Delivery Run`. Repeatedly invoke `Advance`; it observes current repository and
+GitHub facts, performs the next deterministic work, persists evidence, and
+stops only when it:
 
-`LOCAL[qualify -> optional bug diagnosis -> LOOP(implement -> code-review)]`
-`-> NON-LOCAL[PR -> wait for CI -> green CI -> merge]`
+- needs a decision;
+- needs review;
+- is waiting for an external result;
+- is blocked; or
+- is completed.
 
-## Skill shape
+This workflow is the behavioral contract. The model-invoked
+`deliver-packy-issue` skill is only its thin adapter. The private orchestrator,
+not its caller, owns phase sequencing, evidence schema v2, qualification
+compilation, gates, invalidation, effects, recovery, timing, and cleanup.
 
-The implementation is the project-local, model-invoked skill
-`deliver-packy-issue` at `.agents/skills/deliver-packy-issue/SKILL.md`. Its
-model-facing description triggers only complete delivery of a named Packy issue;
-consultations, isolated reviews, and releases do not trigger it.
+## Trigger and authority
 
-The skill is a thin orchestrator over the two execution modes below. This
-workflow is the full contract. The skill points here, to `AGENTS.md`, and to
-existing diagnosis, implementation, delegation, and code-review skills instead
-of copying their rules.
+Trigger only when the user names one Packy issue by number or URL and explicitly
+requests complete delivery. That request authorizes deterministic Git and GitHub
+delivery effects, but never release or Pack Source publication, package-manager
+effects, or real-user configuration.
 
-The primary agent retains requirements, decisions, integration, final
-verification, and every GitHub mutation. Safe bounded implementation and
-independent review slices may be delegated.
+Every new run qualifies exactly one `Delivery Authority`:
 
-## Workflow
+- a `Self-contained Issue`, when the approved issue completely states the
+  objective, verifiable acceptance criteria, limits, dependencies,
+  prerequisites, and prior decisions; or
+- an `Issue with Specification`, when a separate normative source is shared,
+  external, or independently identified and versioned.
 
-Remote reads are allowed in **LOCAL**. GitHub mutations begin only in
-**NON-LOCAL**. Before every local commit, run the repository validation
-authority, `./scripts/validate-packy.sh`.
+Complexity or length alone does not require a separate specification. If the
+authority permits materially different interpretations, `Advance` pauses for a
+decision rather than inventing intent.
 
-### Trigger
+## Risk profile
 
-The user identifies one Packy GitHub issue by number or URL and explicitly asks
-for complete delivery. Record the immutable issue contents and the starting base
-commit fetched from `origin/main` before changing project or tracker state.
+Qualification selects `low-risk`, `standard`, or `high-risk` from observable
+effects; `standard` is the default.
 
-### 1. LOCAL — Qualify
+- `low-risk` is limited to passive artifacts or fail-closed reinforcement of
+  existing repository validation, with no distributed-product or sensitive
+  boundary effect.
+- `standard` changes ordinary, reversible product behavior.
+- `high-risk` crosses installation, real configuration, security, publication,
+  migration, persistent-format, governance, destructive, or similarly
+  hard-to-reverse boundaries.
 
-Read this contract and the repository instructions. Fetch the issue, confirm it
-is open and labeled `status:needs-review` or `status:approved`, classify it as a
-bug, feature, or non-code change, and verify that its acceptance criteria remain
-current and implementable.
+Mechanical policy may raise but never lower the profile. Re-evaluate its floor
+whenever the candidate changes. Escalation invalidates only evidence that cannot
+satisfy the stronger profile; lowering the profile requires a newly qualified
+run.
 
-For a bug, apply `diagnosing-bugs` only while its reproduction, cause, or failure
-boundary remains uncertain. When the issue already supplies sufficient diagnosis
-and a clear reproducible regression, proceed directly to the local loop. Feature
-and non-code branches do not invoke `diagnosing-bugs`.
+Every profile retains fresh authority, acceptance traceability, exact-HEAD
+binding, sandboxed user paths, final exhaustive validation, required CI, merge
+verification, and cleanup. The profile changes only local assurance: focused
+checks, review cadence, evidence depth, specialist review, and
+sensitive-boundary proof. High-risk delivery adds the specialist review required
+by the crossed boundary and may add one exhaustive checkpoint immediately
+before a hard-to-reverse effect.
 
-For a needs-review issue, gather enough evidence to approve or reject it, but
-record approval only as deferred intent. LOCAL performs no label or other GitHub
-mutation. For an approved issue, perform the lighter currency check.
+## Advance
 
-From the immutable issue, accepted ADRs or specification, dependency graph, and
-qualification evidence, record a complete **qualified scope ledger**. Classify
-each distinct obligation into exactly one of these mutually exclusive sections:
+At most one run is active per repository and issue. State and locking are shared
+across worktrees; different issues may advance concurrently. Requalification
+supersedes the previous run with a new identity and preserves prior evidence.
 
-- **Owned now** — behavior this issue must implement and prove. Link every entry
-  to an issue criterion, exact specification section, or accepted decision.
-- **Deferred** — real behavior intentionally assigned elsewhere. Link the
-  evidence and name a concrete owning issue, delivery-graph slice, prerequisite,
-  or exact specification section; "future work" without an owner is invalid.
-- **Forbidden** — behavior this issue must not introduce, including explicit
-  exclusions, architecture boundaries, real-user mutations, publication or
-  release effects, and premature product content.
-- **External prerequisites** — human authority, legal evidence, credentials,
-  infrastructure, or other facts the local implementation cannot produce.
-  Record each prerequisite's current disposition and exception boundary.
+The normal private CLI surface is:
 
-Use Packy's accepted domain vocabulary and evidence-link every ledger entry. If
-an obligation cannot be classified safely, appears in more than one section, or
-has no owner when deferred, produce the existing decision-ready qualification
-exception. Never turn ambiguity into silent deferral.
+```sh
+go run ./internal/tools/deliveryevidence advance \
+  --repository /absolute/path/to/packy \
+  --issue N \
+  [--spec S] \
+  --risk-profile low-risk|standard|high-risk
+```
 
-Before branch creation or edits, derive a complete **acceptance-evidence
-matrix** from the immutable issue snapshot. Every acceptance criterion has one
-traceable row containing:
+Use `--spec S` only when qualification selects a distinct governing
+specification; omitting it selects the self-contained authority form. This is a
+semantic scope decision, not phase sequencing. Repeat the same command to
+resume. Add `--decision`, `--repair`, or
+`--review-content` only when the returned state requests that typed semantic
+content. Acceptance proof in that review content must cite the exact candidate
+ID and the observed positive, negative/failure, mutation, compatibility,
+preservation, and migration evidence required by each compiled row; a green
+repository validator never manufactures those proofs. Use `--ci-attribution`
+only to classify an exact failed run reported
+by `Advance` as `infrastructure` or `candidate`; the check, run, HEAD, and URL
+must all match the current observation. Add `--authorize-non-local` after exact local readiness when the
+complete-delivery request authorizes the deterministic remote effects. The CLI
+observes and binds repository, authority, candidate, branch, PR, CI, merge, and
+cleanup identities itself; callers never provide those receipts or select an
+internal phase.
 
-- its criterion text or a stable row ID;
-- the owning production seam, artifact, or documented boundary;
-- the positive evidence that will prove the behavior;
-- the required negative, failure, or mutation evidence;
-- compatibility, preservation, migration, or a concise reason why that evidence
-  is not applicable; and
-- its current state: `planned`, `implemented`, or `proved`.
+On every invocation, `Advance`:
 
-Rows may name the same implementation seam, but distinct acceptance obligations
-must not be silently collapsed. Needs-review and approved issues use the same
-matrix contract. An incomplete, ambiguous, contradictory, or unowned row enters
-the existing decision-ready exception boundary.
+1. creates or resumes the run and reacquires observable Git, GitHub, filesystem,
+   authority, candidate, validation, review, and CI facts;
+2. adopts already-completed matching work;
+3. blocks on incompatible identities or stale authority;
+4. performs all currently safe deterministic work; and
+5. persists the resulting state and automatic phase timing before returning.
 
-Inspect `main`, `origin/main`, and the working tree. Use the normal checkout when
-it is clean and synchronized; otherwise prepare a temporary clean worktree from
-the fetched `origin/main` commit without changing operator state.
+The caller supplies only genuine judgment: ambiguous scope classification,
+exceptions, profile decisions not settled mechanically, and review or
+adjudication content. It does not assemble phase receipts or caller-authored JSON
+for observable facts.
 
-**Complete when:** the issue is valid, its type and acceptance evidence are
-recorded in a complete matrix with every row `planned`, the qualified scope
-ledger is complete, mutually exclusive, and evidence-linked, any approval
-mutation is deferred, the immutable starting `origin/main` commit is known, no
-exception boundary is active, and the chosen workspace is isolated from
-unrelated changes. Failed validation produces an exception brief and stops
-before branch creation or code edits.
+LOCAL may prepare a branch and coherent commits but cannot mutate GitHub.
+NON-LOCAL begins only after fresh authority, candidate review, exact final
+validation, and readiness gates succeed. Every external phase observes before
+acting and uses deterministic issue, branch, pull-request, HEAD, and merge
+identities. Resume adopts a matching effect, never repeats it, blocks on an
+incompatible effect, and never performs automatic external rollback. Pushed
+history is never rewritten. After a confirmed merge, only verification and
+cleanup may continue.
 
-### 2. LOCAL — Implement-review loop
+## Qualification and development
 
-Create `fix/issue-N-slug`, `feat/issue-N-slug`, or `chore/issue-N-slug`
-according to issue type. Use CodeGraph before source discovery when the change
-needs architecture, symbol, call-flow, or impact analysis.
+Qualification compiles the authority into a canonical scope ledger and
+acceptance-evidence matrix with stable row identities. It extracts explicit
+criteria, exclusions, dependencies, and references and selects profile-shaped
+evidence requirements. Every acceptance obligation must remain traceable to its
+authority and have positive, negative or failure, and preservation or
+compatibility evidence as applicable.
 
-Run these steps for every iteration:
+For bugs, use `diagnosing-bugs` only while reproduction, cause, or failure
+boundary is uncertain. Run Delegation Preflight before separable local work.
+Use CodeGraph before code discovery for architecture, symbol, call-flow, or
+impact questions.
 
-1. Record `iteration-base-sha = HEAD` and an **iteration brief** that states the
-   exact behavior or review repair this iteration must deliver and names the
-   exact matrix rows it advances or repairs. Carry the qualified scope ledger
-   and every prior scope adjudication into the brief.
-2. Run Delegation Preflight. Delegate only a bounded local implementation slice
-   with explicit file or module ownership. Keep small, cross-cutting,
-   architectural, decision-dependent, or overlapping work inline. The primary
-   agent inspects and integrates delegated changes and records the accepted or
-   rejected handoff evidence.
-3. Apply `implement` to the iteration brief. For a bug with a valid regression
-   seam, apply `tdd`; for a feature, advance one vertical tracer bullet with
-   public-seam tests where behavior is testable; for non-code work, use targeted
-   artifact verification. Keep the delta surgical, run the required checks, and
-   update the affected matrix rows with implementation and focused-check
-   evidence without rewriting the immutable issue snapshot. Then create one
-   coherent local commit. Do not push it.
-4. Apply `code-review` with independent Standards and Spec axes against exactly
-   `iteration-base-sha...HEAD`. Give the Spec review the immutable issue and the
-   iteration brief, including the ledger and prior adjudications; it judges the
-   obligations of this delta rather than treating earlier out-of-delta work as
-   missing. Through this caller-owned context, instruct the Spec axis to report
-   missing or wrong **Owned now** obligations assigned to the iteration; not
-   report **Deferred** obligations as missing unless the delta contradicts,
-   prematurely implements, or invalidates their named owner; treat **Forbidden**
-   behavior as scope creep; and apply each unsatisfied **External prerequisite**
-   according to its recorded exception boundary. Do not modify, vendor, or fork
-   the shared `code-review` skill to supply these semantics.
-5. Adjudicate every finding and update the affected matrix rows with the review
-   evidence. Preserve scope adjudications in later iteration briefs. Rejected
-   findings retain concise evidence and are not raised again without new
-   evidence. Each accepted finding becomes a new iteration brief and returns to
-   step 1, so its repair receives its own implementation commit and review
-   delta; a finding cannot waive or silently reclassify an **Owned now**
-   obligation.
+Development advances the complete `Delivery Candidate`, independent of its
+local commit count. Use affected tests, formatting, `git diff --check`, and
+other focused checks selected by the acceptance matrix. Use sandboxed `HOME`,
+`XDG_CONFIG_HOME`, Packy home, source, and state paths for any check that
+resolves or writes user paths. Local commits remain coherent history units; they
+do not trigger exhaustive validation or determine review count.
 
-Maintain cumulative evidence in the matrix for every issue acceptance criterion
-and **Owned now** obligation, advancing rows from `planned` to `implemented` to
-`proved` as their implementation, focused checks, and review evidence become
-complete, while preserving the evidence and disposition of every other ledger
-entry. Once the latest iteration has zero actionable
-findings, run the final local gate on the unchanged `HEAD`: all acceptance
-checks, `./scripts/validate-packy.sh`, `git diff --check`, relevant sandboxed
-real-boundary checks, and confirmation that every matrix row is `proved`. Then
-run the repository-owned machine-verifiable LOCAL gate against the canonical
-evidence bundle and unchanged current repository, and retain its successful
-canonical report. Any unproved row or failed machine-verifiable gate fails the
-local gate. Do not add a cumulative code review; every committed delta has
-already received its paired review.
+## Candidate review and repair
 
-**Complete when:** every implementation commit has a paired review of exactly
-its preceding `iteration-base-sha...HEAD` delta, every finding is adjudicated,
-the latest review has zero actionable findings, every acceptance criterion has
-a `proved` matrix row, the issue branch contains only intended commits, and
-every local gate, including the repository-owned machine-verifiable gate, passes
-on its unchanged final `HEAD`.
+When the candidate is ready, run independent Standards and Spec reviews in
+parallel over the complete accumulated candidate. The Spec axis receives the
+immutable Delivery Authority, scope ledger, acceptance matrix, and prior
+adjudications. High-risk candidates also receive their required specialist
+review.
 
-### 3. NON-LOCAL — Deliver
+Adjudicate all findings and repair accepted findings as a batch:
 
-Enter NON-LOCAL only with the successful canonical machine-verifiable LOCAL gate
-report for the exact current `HEAD`.
+- A `Bounded Repair` preserves behavior, contract, scope, architecture, security
+  posture, and acceptance meaning. Run focused verification and obtain
+  confirmation from the originating review axis.
+- A `Candidate-changing Repair` changes one of those properties. It creates a
+  new candidate, triggers risk-floor re-evaluation, and repeats the reviews
+  required by the resulting profile.
 
-Re-read the issue and its authoritative specification before the first
-mutation. If either changed materially, return to LOCAL qualification and
-replace the active ledger from the new immutable evidence; do not patch the
-qualified ledger forward. If a needs-review issue still matches the qualified
-snapshot, replace `status:needs-review` with `status:approved`. If safe
-requalification is impossible or the mutation fails, stop before the PR with an
-exception brief. Preserve the prior ledger and adjudication history as evidence.
+After repairs, run one final Standards-and-Spec review of the complete resulting
+candidate. Do not add review per commit or per bounded repair beyond originating
+axis confirmation.
 
-Push the issue branch and create a PR to `main` with `Closes #N`, the change
-summary, and validation evidence. Wait for every required CI check on the exact
-locally proved `HEAD`.
+Before the first push, bounded repairs may be incorporated into coherent local
+commits. Once pushed, never rewrite history.
 
-Classify a failed check before acting:
+## Exact final validation
 
-- Retry an infrastructure failure or flake without changing code.
-- For a failure attributable to the change, return to the LOCAL
-  implement-review loop, record a new `iteration-base-sha`, implement and review
-  the repair, rerun the final local gate, push the new `HEAD`, and wait for CI
-  again.
-- If a bug failure restores uncertainty about reproduction, cause, or boundary,
-  apply `diagnosing-bugs` before the repair iteration.
+After the final candidate is stable and its required reviews are satisfied,
+create the intended final local commit and run the repository validation
+authority exactly once:
 
-Merge only when every required check is green for the exact proved PR `HEAD`.
-Merge through GitHub with a merge commit and delete the remote branch. Fetch
-with pruning and verify that `origin/main` contains the merge. Fast-forward local
-`main` only when Git can preserve the operator checkout; otherwise leave it
-untouched and report that it remains behind. Then clean up the local issue
-branch. For temporary-worktree runs, remove the worktree before deleting its
-branch; for in-place runs, switch to `main` before deleting the branch.
+`./scripts/validate-packy.sh`
 
-**Complete when:** the PR is merged, the issue is closed, the issue branch is
-absent locally and remotely, `origin/main` contains the merge commit, the
-integration workspace is clean, operator changes remain untouched, and the
-success brief reports the local `main` synchronization result. Release
-publication is outside this workflow.
+Also retain the acceptance evidence and `git diff --check` result required by
+the matrix. Bind the validation receipt to the exact commit and tree. Any later
+repository change invalidates it and returns the run to candidate development;
+do not reuse or patch the receipt. A high-risk pre-effect checkpoint, when
+required by policy, is the only additional exhaustive validation.
 
-## Checkpoints
+## Delivery, CI, merge, and cleanup
 
-There are no routine checkpoints after successful qualification. Technical
-failures, failing tests, review repairs, and red CI remain autonomous loop work.
-Stop only when acceptance criteria conflict or permit materially different
-behavior; no deterministic reproduction or valid regression seam exists;
-implementation requires a material scope, architecture, or real-user
-configuration change; the issue or its authoritative specification changes
-materially before the first mutation and cannot be requalified safely; an
-acceptance-evidence row is incomplete, ambiguous, contradictory, or unowned; or
-a review finding needs an unstated product decision.
+Immediately before the first GitHub mutation, reacquire authority and readiness.
+The issue and any separate specification must still carry
+`status:approved`; an unapproved authority blocks without mutation. Push the
+deterministic issue branch and create or adopt its PR to `main` with `Closes
+#N`, the candidate summary, and exact validation evidence.
 
-Failed qualification leaves issue labels and state unchanged. Every exception
-presents one decision-ready brief before the workflow continues.
+Wait for required CI on the exact validated HEAD. Retry an observed
+infrastructure failure without changing the candidate. A change-attributable
+failure returns to candidate development; after repair, review and validation
+policy applies normally. If a bug failure restores diagnostic uncertainty,
+invoke `diagnosing-bugs` before changing the candidate.
 
-## Briefs
+Merge only when every required check is green for the exact reviewed and
+validated PR HEAD. Use a merge commit and delete the remote branch. Fetch with
+pruning, verify `origin/main` contains the merge, verify the issue is closed,
+and clean the integration worktree and local issue branch without disturbing
+operator changes. Fast-forward local `main` only when Git can preserve the
+operator checkout; otherwise report that it remains behind.
 
-The success brief links the issue and PR; names the merge commit; summarizes the
-change and the completed acceptance-evidence matrix; summarizes relevant scope
-decisions and preserved deferrals; reports local validation, every iteration
-review, and CI; confirms cleanup; and notes preserved local state.
+Completion requires the merged commit on `origin/main`, the closed issue, no
+local or remote issue branch, clean integration state, verified cleanup, and a
+success brief reporting authority, profile, candidate reviews, exact validation,
+CI, merge, cleanup, timing, and preserved operator state.
 
-An exception brief consumes the affected matrix rows directly, presents their
-evidence, summarizes the relevant scope decisions, external-prerequisite
-dispositions, and preserved deferrals, explains why the workflow cannot choose
-safely, lists concrete options, recommends one, and asks for exactly one
-decision. Briefs link artifacts and omit raw logs.
+## Recovery and pauses
 
-## Definition of done
+Crashes and repeated invocations are normal. `Advance` resumes from persisted
+v2 state, reacquires facts, and continues without duplicating matching local or
+external effects. It pauses only for a genuine decision, required review,
+external wait, or a blocking identity or invariant mismatch. Each pause returns
+a decision-ready or status brief with linked evidence rather than raw logs.
 
-This workflow run is complete only when the NON-LOCAL criterion is satisfied or
-an exception brief is waiting on the user's decision. This specification is
-ready when an implementer can run `deliver-packy-issue` without asking another
-question.
+For low-risk delivery, the operating objective is approximately 25 minutes from
+qualification to PR readiness and 25–35 minutes end-to-end when CI completes
+within 10 minutes. This is an observable performance objective, not a
+correctness gate.
+
+## Explicit legacy-v1 behavior
+
+New runs always use evidence schema v2. Schema v1 is readable only under its
+original workflow semantics. Never implicitly convert, resume, or enrich v1
+evidence with v2 behavior.
+
+Historical sequencing commands are absent from the normal CLI surface. They
+are reachable only as:
+
+```sh
+go run ./internal/tools/deliveryevidence legacy-v1 <historical-subcommand> ...
+```
+
+When an existing v1 run is encountered, require an explicit choice:
+
+- finish it under the legacy v1 workflow; or
+- explicitly requalify it as a new v2 Delivery Run with a new identity.
+
+No other part of this normal workflow describes or authorizes schema v1
+behavior.

@@ -46,6 +46,9 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 			if active.ID != activeID || active.Repository != tracker.Repository || active.Issue != tracker.Issue {
 				return errors.New("active issue delivery run identity does not match current authority")
 			}
+			if active.Schema == legacyRunSchema && !m.allowLegacyV1 {
+				return errors.New("schema v1 issue delivery requires the explicit legacy-v1 workflow")
+			}
 			if active.State == StateCompleted {
 				outcome = outcomeFromRecord(active)
 				return nil

@@ -102,7 +102,7 @@ func moduleFixture(t *testing.T, issue int) (*Module, *fakeGitObserver, *fakeGit
 	return module, git, tracker
 }
 
-func TestAdvanceCreatesAndResumesSelfContainedLowRiskRun(t *testing.T) {
+func TestAdvanceIssue344StyleSelfContainedLowRiskRunCreatesAndResumes(t *testing.T) {
 	module, git, tracker := moduleFixture(t, 356)
 	request := Request{RepositoryPath: "/ignored/by-fake", IssueNumber: 356}
 
@@ -145,6 +145,77 @@ func TestAdvanceCreatesAndResumesSelfContainedLowRiskRun(t *testing.T) {
 	}
 	if git.calls != 2 || tracker.calls != 2 {
 		t.Fatalf("observations were not reacquired: git=%d github=%d", git.calls, tracker.calls)
+	}
+}
+
+func TestAdvanceIssueWithSpecificationBindsAndRequalifiesChangedSpecification(t *testing.T) {
+	module, _, tracker := moduleFixture(t, 361)
+	tracker.value.Specification = &SpecificationObservation{
+		Identity: deliveryevidence.SpecIdentity{Number: 354, NodeID: "S354"},
+		Title:    "Specify risk-adjusted issue delivery",
+		Body:     "The accepted delivery orchestration specification.",
+		State:    "OPEN",
+		URL:      "https://github.com/yersonargotev/packy/issues/354",
+		Labels:   []string{"type:spec", "status:approved"},
+	}
+	request := Request{RepositoryPath: "/repo", IssueNumber: 361}
+
+	first, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Evidence == nil ||
+		first.Evidence.Authority.Kind != deliveryevidence.AuthorityIssueWithSpecification ||
+		first.Evidence.Spec != tracker.value.Specification.Identity ||
+		first.Evidence.Authority.SpecSHA256 == "" {
+		t.Fatalf("issue-with-specification evidence = %#v", first.Evidence)
+	}
+
+	tracker.mu.Lock()
+	tracker.value.Specification.Body += " Revised."
+	tracker.mu.Unlock()
+	second, err := module.Advance(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.RunID == first.RunID || second.SupersedesRunID != first.RunID ||
+		second.Evidence.Authority.SpecSHA256 == first.Evidence.Authority.SpecSHA256 {
+		t.Fatalf("changed specification did not requalify: first=%#v second=%#v", first, second)
+	}
+}
+
+func TestAdvanceRejectsUnapprovedIssueOrSpecificationAuthority(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*fakeGitHubObserver)
+	}{
+		{
+			name: "issue",
+			mutate: func(tracker *fakeGitHubObserver) {
+				tracker.value.Labels = []string{"type:chore"}
+			},
+		},
+		{
+			name: "specification",
+			mutate: func(tracker *fakeGitHubObserver) {
+				tracker.value.Specification = &SpecificationObservation{
+					Identity: deliveryevidence.SpecIdentity{Number: 354, NodeID: "S354"},
+					Title:    "Spec", Body: "Normative authority.", State: "OPEN",
+					URL:    "https://github.com/yersonargotev/packy/issues/354",
+					Labels: []string{"type:spec"},
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			module, _, tracker := moduleFixture(t, 361)
+			test.mutate(tracker)
+			if _, err := module.Advance(
+				context.Background(), Request{RepositoryPath: "/repo", IssueNumber: 361},
+			); err == nil || !strings.Contains(err.Error(), "approved") {
+				t.Fatalf("unapproved authority accepted: %v", err)
+			}
+		})
 	}
 }
 

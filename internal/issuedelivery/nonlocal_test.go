@@ -218,6 +218,51 @@ func TestAdvanceRequiresFreshExplicitAuthorizationBeforeNonLocalMutation(t *test
 	}
 }
 
+func TestAdvanceChangedAuthorityOrHEADCannotUseStaleNonLocalAuthorization(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*fakeGitObserver, *fakeGitHubObserver)
+	}{
+		{
+			name: "authority",
+			mutate: func(_ *fakeGitObserver, tracker *fakeGitHubObserver) {
+				tracker.value.Criteria = append(tracker.value.Criteria, AuthorityItem{
+					Text:         "Newly observed acceptance authority.",
+					EvidenceLink: "issue#357:changed-authority",
+				})
+			},
+		},
+		{
+			name: "head",
+			mutate: func(git *fakeGitObserver, _ *fakeGitHubObserver) {
+				git.value.HeadSHA = strings.Repeat("d", 40)
+				git.value.TreeSHA = strings.Repeat("e", 40)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			module, git, gateway, request, ready := nonLocalFixture(t)
+			tracker := module.github.(*fakeGitHubObserver)
+			test.mutate(git, tracker)
+			authorization := exactNonLocalAuthorization(ready)
+			request.NonLocal = &authorization
+
+			outcome := mustAdvance(t, module, request)
+			if outcome.State != StateNeedsReview ||
+				gateway.observeCalls != 0 || gateway.pushCalls != 0 || gateway.createCalls != 0 {
+				t.Fatalf("stale %s reached NON-LOCAL: outcome=%#v gateway=%#v", test.name, outcome, gateway)
+			}
+			if test.name == "authority" && outcome.RunID == ready.RunID {
+				t.Fatalf("changed authority did not create a fresh run: %#v", outcome)
+			}
+			if test.name == "head" &&
+				(outcome.Candidate == nil || outcome.Candidate.CommitSHA == ready.Candidate.CommitSHA) {
+				t.Fatalf("changed HEAD did not create a fresh candidate: %#v", outcome)
+			}
+		})
+	}
+}
+
 func TestAdvancePushesAndCreatesOnceThenAdoptsExactRemoteState(t *testing.T) {
 	module, _, gateway, request, ready := nonLocalFixture(t)
 	pullRequest := advanceToExactPullRequest(t, module, gateway, request, ready)

@@ -65,6 +65,9 @@ func (f *fakeLocalCompletionGateway) EnsureLocalIssueBranchAbsent(
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
+	if f.observation.Integration.Branch == request.Branch {
+		f.observation.Integration.Branch = "main"
+	}
 	f.observation.LocalBranch = nil
 	return nil
 }
@@ -237,6 +240,33 @@ func TestAdvanceMergesOnceAndCompletesCleanupInSafeOrder(t *testing.T) {
 		remote.remoteDeleteCalls != 1 || local.removeCalls != 1 ||
 		local.deleteCalls != 1 || local.fastForwardCalls != 1 {
 		t.Fatalf("completed resume=%#v remote=%#v local=%#v", resumed, remote, local)
+	}
+}
+
+func TestAdvanceMovesExactIssueWorktreeToMainDuringPostMergeCleanup(t *testing.T) {
+	module, git, tracker, remote, local, request, ready := completionFixture(t)
+	adoptExactMerge(t, module, remote, local, request, ready)
+	mergeSHA := remote.observation.Merge.MergeCommitSHA
+	remote.observation.OriginMain = &OriginMainObservation{
+		HeadSHA: mergeSHA, MergeCommitSHA: mergeSHA,
+		CandidateHeadSHA:    ready.Candidate.CommitSHA,
+		ContainsMergeCommit: true, ContainsCandidateHead: true,
+	}
+	remote.observation.Branch = nil
+	tracker.value.State = "CLOSED"
+	git.value.Branch, git.value.HeadSHA = ready.LocalReadiness.Branch, ready.Candidate.CommitSHA
+	local.observation.Integration.Branch = ready.LocalReadiness.Branch
+	local.observation.LocalMain = LocalMainObservation{
+		Exists: true, HeadSHA: mergeSHA, OriginHeadSHA: mergeSHA,
+		Relation: LocalMainSynced, Clean: true,
+	}
+	request.NonLocal = nil
+
+	mustAdvance(t, module, request)
+	completed := mustAdvance(t, module, request)
+	if completed.State != StateCompleted || local.deleteCalls != 1 ||
+		local.observation.Integration.Branch != "main" {
+		t.Fatalf("issue-to-main cleanup did not complete: outcome=%#v local=%#v", completed, local)
 	}
 }
 
