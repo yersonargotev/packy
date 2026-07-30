@@ -214,6 +214,16 @@ func validateQualificationHistory(record runRecord) error {
 				return errors.New("qualification correction does not cover its review findings")
 			}
 		}
+		if err := validateQualificationMatrix(record.Evidence, correction.AcceptanceMatrix); err != nil {
+			return errors.New("qualification history contains an invalid correction matrix")
+		}
+		if index+1 < len(record.QualificationReviews) {
+			digest, err := acceptanceMatrixDigest(correction.AcceptanceMatrix)
+			if err != nil ||
+				record.QualificationReviews[index+1].AcceptanceMatrixSHA256 != digest {
+				return errors.New("qualification correction is not bound to its independent rereview")
+			}
+		}
 	}
 	currentDigest, err := acceptanceMatrixDigest(record.Evidence.AcceptanceMatrix)
 	if err != nil {
@@ -272,7 +282,7 @@ func requiresQualificationCorrection(evidence *deliveryevidence.Bundle) bool {
 	}
 	rows := evidence.AcceptanceMatrix
 	for _, row := range rows {
-		if row.OwningSeam == qualificationPlanRequired {
+		if strings.EqualFold(cleanText(row.OwningSeam), qualificationPlanRequired) {
 			return true
 		}
 	}
@@ -305,12 +315,22 @@ func validateQualificationCorrection(record runRecord, correction QualificationC
 			return errors.New("qualification correction must address every finding as one batch")
 		}
 	}
-	current := record.Evidence.AcceptanceMatrix
-	if len(correction.AcceptanceMatrix) != len(current) {
+	if err := validateQualificationMatrix(record.Evidence, correction.AcceptanceMatrix); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateQualificationMatrix(
+	evidence *deliveryevidence.Bundle,
+	rows []deliveryevidence.AcceptanceRow,
+) error {
+	if evidence == nil || len(rows) != len(evidence.Scope.OwnedNow) {
 		return errors.New("qualification correction must preserve every acceptance criterion")
 	}
-	for index, row := range correction.AcceptanceMatrix {
-		if row.Identity != current[index].Identity || row.Criterion != current[index].Criterion ||
+	for index, row := range rows {
+		scope := evidence.Scope.OwnedNow[index]
+		if row.Identity != scope.Identity || row.Criterion != scope.Requirement ||
 			row.State != deliveryevidence.AcceptancePlanned ||
 			strings.TrimSpace(row.OwningSeam) == "" ||
 			strings.TrimSpace(row.PositiveEvidence) == "" ||
@@ -319,7 +339,8 @@ func validateQualificationCorrection(record runRecord, correction QualificationC
 			strings.TrimSpace(row.MutationEvidence) == "" ||
 			strings.TrimSpace(row.CompatibilityEvidence) == "" ||
 			strings.TrimSpace(row.PreservationEvidence) == "" ||
-			strings.TrimSpace(row.MigrationEvidence) == "" {
+			strings.TrimSpace(row.MigrationEvidence) == "" ||
+			strings.EqualFold(cleanText(row.OwningSeam), qualificationPlanRequired) {
 			return errors.New("qualification correction must preserve traceability and complete every evidence row")
 		}
 	}

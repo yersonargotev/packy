@@ -427,6 +427,11 @@ func (m *Module) persistAssuranceTransition(
 		StartedAt: started.Format(timeFormat), CompletedAt: completed.Format(timeFormat),
 	})
 	record.UpdatedAt = completed.Format(timeFormat)
+	for index := range record.QualificationReviews {
+		if record.QualificationReviews[index].Findings == nil {
+			record.QualificationReviews[index].Findings = []deliveryevidence.ReviewFinding{}
+		}
+	}
 	data, err := encodeRun(record)
 	if err != nil {
 		return Outcome{}, err

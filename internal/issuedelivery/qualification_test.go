@@ -107,8 +107,25 @@ func TestAdvancePersistsRejectedQualificationCorrectionAndIndependentRereview(t 
 			Evidence:             "unresolved correction must fail closed",
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "resolve every acceptance row") {
+	if err == nil || !strings.Contains(err.Error(), "traceability") {
 		t.Fatalf("unresolved qualification correction error = %v", err)
+	}
+	spacedSentinel := append(
+		[]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...,
+	)
+	spacedSentinel[0].OwningSeam = "  QUALIFICATION CORRECTION REQUIRED  "
+	_, err = module.Advance(context.Background(), Request{
+		RepositoryPath: "/repo", IssueNumber: 370,
+		QualificationCorrection: &QualificationCorrection{
+			AuthoritySHA256:      rejected.Observations.AuthoritySHA256,
+			ReviewedMatrixSHA256: matrixHash,
+			FindingIDs:           []string{finding.ID},
+			AcceptanceMatrix:     spacedSentinel,
+			Evidence:             "normalized unresolved correction must fail closed",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "traceability") {
+		t.Fatalf("normalized unresolved qualification correction error = %v", err)
 	}
 
 	correctedRows := append([]deliveryevidence.AcceptanceRow(nil), rejected.Evidence.AcceptanceMatrix...)
