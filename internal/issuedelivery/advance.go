@@ -53,6 +53,16 @@ func (m *Module) Advance(ctx context.Context, request Request) (Outcome, error) 
 		}
 		if found {
 			if active.AuthoritySHA256 == compiled.hash {
+				if request.Decision != nil {
+					return errors.New("delivery decision is not expected after authority qualification")
+				}
+				if m.review != nil {
+					outcome, err = m.advanceAssurance(ctx, store, active, git, tracker, compiled, request)
+					return err
+				}
+				if request.Repair != nil {
+					return errors.New("repair decision requires configured review and validation executors")
+				}
 				outcome = outcomeFromRecord(active)
 				outcome.Observations = observationsFrom(git, tracker, compiled.hash)
 				return nil
@@ -157,10 +167,16 @@ func runIdentity(
 }
 
 func outcomeFromRecord(record runRecord) Outcome {
+	var candidate *Candidate
+	if current := latestCandidate(&record); current != nil {
+		value := *current
+		candidate = &value
+	}
 	return Outcome{
 		RunID: record.ID, State: record.State, Reason: record.Reason,
 		SupersedesRunID: record.SupersedesRunID, Decision: record.PendingDecision,
 		Evidence: record.Evidence, Observations: record.Observations,
+		Candidate: candidate, Repair: record.PendingRepair, LocalReadiness: record.LocalReadiness,
 		Timing: append([]Timing(nil), record.Timing...),
 	}
 }

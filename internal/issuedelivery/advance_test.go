@@ -74,7 +74,7 @@ func moduleFixture(t *testing.T, issue int) (*Module, *fakeGitObserver, *fakeGit
 		CommonDir: common, Worktree: filepath.Join(filepath.Dir(common), "worktree"),
 		OriginURL: "git@github.com:yersonargotev/packy.git", Owner: "yersonargotev", Name: "packy",
 		StartingBaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("b", 40),
-		TreeSHA: strings.Repeat("c", 40), WorkspaceClean: true,
+		TreeSHA: strings.Repeat("c", 40), WorkspaceClean: true, Branch: "chore/issue-356-test",
 	}}
 	tracker := &fakeGitHubObserver{value: TrackerObservation{
 		Repository: deliveryevidence.RepositoryIdentity{Owner: "yersonargotev", Name: "packy", NodeID: "R1"},
