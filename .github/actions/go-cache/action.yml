@@ -1,0 +1,50 @@
+name: Restore verified Go cache
+description: Restore Go caches while distinguishing a normal miss from corrupt extraction.
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Go cache paths
+      id: paths
+      shell: bash
+      run: |
+        gomodcache="$(go env GOMODCACHE)"
+        gocache="$(go env GOCACHE)"
+        {
+          echo "gomodcache=$gomodcache"
+          echo "gocache=$gocache"
+          echo 'value<<EOF'
+          echo "$gomodcache"
+          echo "$gocache"
+          echo EOF
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Look up the exact Go cache
+      id: lookup
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.paths.outputs.value }}
+        key: ${{ runner.os }}-${{ runner.arch }}-go-${{ hashFiles('**/go.sum') }}
+        lookup-only: true
+
+    - name: Prepare exact Go cache restoration
+      shell: bash
+      env:
+        LOOKUP_HIT: ${{ steps.lookup.outputs.cache-hit }}
+        GOMODCACHE: ${{ steps.paths.outputs.gomodcache }}
+        GOCACHE: ${{ steps.paths.outputs.gocache }}
+      run: ./scripts/prepare-go-cache-restore.sh "$LOOKUP_HIT" "$GOMODCACHE" "$GOCACHE"
+
+    - name: Restore or schedule the Go cache
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.paths.outputs.value }}
+        key: ${{ runner.os }}-${{ runner.arch }}-go-${{ hashFiles('**/go.sum') }}
+
+    - name: Verify exact Go cache restoration
+      shell: bash
+      env:
+        LOOKUP_HIT: ${{ steps.lookup.outputs.cache-hit }}
+        RESTORE_HIT: ${{ steps.cache.outputs.cache-hit }}
+      run: ./scripts/verify-go-cache-restore.sh "$LOOKUP_HIT" "$RESTORE_HIT"

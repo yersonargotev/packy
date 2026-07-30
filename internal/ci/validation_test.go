@@ -218,6 +218,212 @@ func TestCIUsesOnlyTheValidationEntrypoint(t *testing.T) {
 	}
 }
 
+func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T) {
+	root := repositoryRoot(t)
+	ci := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	governance := readFile(t, filepath.Join(root, ".github", "workflows", "governance.yml"))
+	security := readFile(t, filepath.Join(root, ".github", "workflows", "security-pr.yml"))
+
+	for _, expected := range []struct {
+		name     string
+		workflow string
+		action   string
+		count    int
+	}{
+		{name: "CI checkout", workflow: ci, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 6},
+		{name: "CI setup-go cache", workflow: ci, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 6},
+		{name: "CI setup-node", workflow: ci, action: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0", count: 3},
+		{name: "CI upload-artifact", workflow: ci, action: "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1", count: 6},
+		{name: "Governance checkout", workflow: governance, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 1},
+		{name: "Governance setup-go cache", workflow: governance, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 1},
+		{name: "Security checkout", workflow: security, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 2},
+		{name: "Security CodeQL", workflow: security, action: "github/codeql-action/", count: 3},
+		{name: "Security CodeQL revision", workflow: security, action: "@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4", count: 3},
+	} {
+		if got := strings.Count(expected.workflow, expected.action); got != expected.count {
+			t.Errorf("%s occurrences = %d, want %d", expected.name, got, expected.count)
+		}
+	}
+	if strings.Contains(ci, "actions/download-artifact@") {
+		t.Fatal("required PR workflows must not use download-artifact while its Node 24 bundle emits DEP0005")
+	}
+	for _, command := range []string{
+		`gh run download "$GITHUB_RUN_ID" --name codex-floor-qualification --dir "$RUNNER_TEMP/codex-floor-evidence"`,
+		`gh run download "$GITHUB_RUN_ID" --name vercel-foundation-qualification --dir "$RUNNER_TEMP/vercel-foundation-evidence"`,
+		`gh run download "$GITHUB_RUN_ID" --name opencode-floor-qualification --dir "$RUNNER_TEMP/opencode-floor-evidence"`,
+		`gh run download "$GITHUB_RUN_ID" --name claude-vercel-floor-qualification --dir "$RUNNER_TEMP/claude-vercel-floor-evidence"`,
+	} {
+		if !strings.Contains(ci, command) {
+			t.Errorf("warning-clean exact-run artifact download missing %q", command)
+		}
+	}
+
+	if strings.Count(ci, "cache: false") != 7 ||
+		strings.Count(ci, "uses: ./.github/actions/go-cache") != 6 ||
+		strings.Count(governance, "cache: false") != 1 ||
+		strings.Count(governance, "uses: ./.github/actions/go-cache") != 1 {
+		t.Fatal("required setup-go jobs must use the verified cache adapter")
+	}
+	validate := workflowSection(t, ci, "  validate:", "  claude-floor-smoke:")
+	if strings.Contains(validate, "continue-on-error: true\n        run: ./scripts/validate-packy.sh") {
+		t.Fatal("repository validation failure must remain fail-closed")
+	}
+	if !strings.Contains(validate, "go-version-input: \"\"\n          check-latest: false\n          cache: false") {
+		t.Fatal("advisory govulncheck must reuse the configured Go toolchain without a second implicit cache restore")
+	}
+	for _, runner := range []string{"runs-on: ubuntu-latest", "runs-on: macos-15"} {
+		if !strings.Contains(ci, runner) {
+			t.Fatalf("supported required workflow runner missing %q", runner)
+		}
+	}
+}
+
+func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) {
+	root := repositoryRoot(t)
+	prepareScript := filepath.Join(root, "scripts", "prepare-go-cache-restore.sh")
+	script := filepath.Join(root, "scripts", "verify-go-cache-restore.sh")
+	action := readFile(t, filepath.Join(root, ".github", "actions", "go-cache", "action.yml"))
+	for _, required := range []string{
+		"lookup-only: true",
+		"actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0",
+		"actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0",
+		`./scripts/prepare-go-cache-restore.sh "$LOOKUP_HIT" "$GOMODCACHE" "$GOCACHE"`,
+		`./scripts/verify-go-cache-restore.sh "$LOOKUP_HIT" "$RESTORE_HIT"`,
+	} {
+		if !strings.Contains(action, required) {
+			t.Fatalf("verified Go cache action missing %q", required)
+		}
+	}
+	t.Run("exact hit removes preexisting read-only cache entries", func(t *testing.T) {
+		home := t.TempDir()
+		moduleCache := filepath.Join(home, "go", "pkg", "mod")
+		buildCache := filepath.Join(home, ".cache", "go-build")
+		for _, cachePath := range []string{moduleCache, buildCache} {
+			if err := os.MkdirAll(cachePath, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			entry := filepath.Join(cachePath, "preexisting")
+			if err := os.WriteFile(entry, []byte("occupied"), 0o444); err != nil {
+				t.Fatal(err)
+			}
+		}
+		readOnlyModule := filepath.Join(moduleCache, "example.org", "module@v1.0.0")
+		if err := os.MkdirAll(readOnlyModule, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(readOnlyModule, "go.mod"), []byte("module example.org/module"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(readOnlyModule, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command(prepareScript, "true", moduleCache, buildCache)
+		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+filepath.Join(home, "runner-temp"))
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("prepare exact cache restore: %v\n%s", err, output)
+		}
+		for _, cachePath := range []string{moduleCache, buildCache} {
+			entries, err := os.ReadDir(cachePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("cache path %s retained %d preexisting entries", cachePath, len(entries))
+			}
+		}
+	})
+	t.Run("miss preserves existing cache paths", func(t *testing.T) {
+		home := t.TempDir()
+		moduleCache := filepath.Join(home, "go", "pkg", "mod")
+		buildCache := filepath.Join(home, ".cache", "go-build")
+		for _, cachePath := range []string{moduleCache, buildCache} {
+			if err := os.MkdirAll(cachePath, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(cachePath, "preserved"), []byte("local"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		command := exec.Command(prepareScript, "false", moduleCache, buildCache)
+		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+filepath.Join(home, "runner-temp"))
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("prepare cache miss: %v\n%s", err, output)
+		}
+		for _, cachePath := range []string{moduleCache, buildCache} {
+			if _, err := os.Stat(filepath.Join(cachePath, "preserved")); err != nil {
+				t.Fatalf("cache miss removed existing content from %s: %v", cachePath, err)
+			}
+		}
+	})
+	t.Run("unsafe cache path fails closed", func(t *testing.T) {
+		home := t.TempDir()
+		runnerTemp := filepath.Join(home, "runner-temp")
+		if err := os.MkdirAll(filepath.Join(home, "sub"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, unsafePath := range []string{home, runnerTemp, filepath.Join(home, "sub", "..")} {
+			command := exec.Command(prepareScript, "true", unsafePath, filepath.Join(home, ".cache", "go-build"))
+			command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+runnerTemp)
+			if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "unsafe cache path") {
+				t.Fatalf("unsafe path %s error = %v, output:\n%s", unsafePath, err, output)
+			}
+		}
+	})
+	t.Run("symlink escape fails before any cache content is removed", func(t *testing.T) {
+		home := t.TempDir()
+		runnerTemp := filepath.Join(home, "runner-temp")
+		safeCache := filepath.Join(home, ".cache", "go-build")
+		if err := os.MkdirAll(safeCache, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		preserved := filepath.Join(safeCache, "preserved")
+		if err := os.WriteFile(preserved, []byte("local"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		outside := t.TempDir()
+		if err := os.Symlink(outside, filepath.Join(home, "escape")); err != nil {
+			t.Fatal(err)
+		}
+		escapedCache := filepath.Join(home, "escape", "go-cache")
+		command := exec.Command(prepareScript, "true", safeCache, escapedCache)
+		command.Env = append(os.Environ(), "HOME="+home, "RUNNER_TEMP="+runnerTemp)
+		if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "unsafe cache path") {
+			t.Fatalf("symlink escape error = %v, output:\n%s", err, output)
+		}
+		if _, err := os.Stat(preserved); err != nil {
+			t.Fatalf("safe cache was modified before all targets were validated: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(outside, "go-cache")); !os.IsNotExist(err) {
+			t.Fatalf("unsafe cache path was created before validation: %v", err)
+		}
+	})
+	tests := []struct {
+		name       string
+		lookupHit  string
+		restoreHit string
+		wantExit   bool
+		wantText   string
+	}{
+		{name: "cold miss", lookupHit: "false", restoreHit: "false", wantText: "Go cache miss"},
+		{name: "unavailable cache", lookupHit: "", restoreHit: "", wantText: "Go cache miss"},
+		{name: "exact restore", lookupHit: "true", restoreHit: "true", wantText: "Go cache restored"},
+		{name: "corrupt restore", lookupHit: "true", restoreHit: "false", wantExit: true, wantText: "::error::"},
+		{name: "invalid output", lookupHit: "unknown", restoreHit: "false", wantExit: true, wantText: "invalid hit value"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(script, test.lookupHit, test.restoreHit)
+			output, err := command.CombinedOutput()
+			if (err != nil) != test.wantExit {
+				t.Fatalf("exit error = %v, want failure %t\n%s", err, test.wantExit, output)
+			}
+			if !strings.Contains(string(output), test.wantText) {
+				t.Fatalf("output missing %q:\n%s", test.wantText, output)
+			}
+		})
+	}
+}
+
 func TestCIKeepsCapabilityPromotionOutOfUniversalGates(t *testing.T) {
 	root := repositoryRoot(t)
 	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
@@ -256,10 +462,10 @@ func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *t
 		"contents: read",
 		"fetch-depth: 0",
 		"persist-credentials: false",
-		"name: codex-floor-qualification",
-		"name: opencode-floor-qualification",
-		"name: claude-vercel-floor-qualification",
-		"name: vercel-foundation-qualification",
+		"--name codex-floor-qualification",
+		"--name opencode-floor-qualification",
+		"--name claude-vercel-floor-qualification",
+		"--name vercel-foundation-qualification",
 		"VALIDATE_RESULT: ${{ needs.validate.result }}",
 		"CODEX_RESULT: ${{ needs.codex-floor-smoke.result }}",
 		"OPENCODE_RESULT: ${{ needs.opencode-floor-smoke.result }}",

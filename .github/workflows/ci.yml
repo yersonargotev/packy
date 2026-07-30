@@ -23,15 +23,18 @@ jobs:
       contents: read
     steps:
       - name: Check out repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore verified Go cache
+        uses: ./.github/actions/go-cache
 
       - name: Validate allowlisted Packy-owned code
         run: ./scripts/validate-packy.sh
@@ -46,7 +49,7 @@ jobs:
 
       - name: Upload exact Vercel foundation evidence
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vercel-foundation-qualification
           path: ${{ runner.temp }}/vercel-foundation-evidence
@@ -58,6 +61,9 @@ jobs:
         uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
           go-version-file: go.mod
+          go-version-input: ""
+          check-latest: false
+          cache: false
           go-package: ./...
           repo-checkout: false
 
@@ -70,19 +76,22 @@ jobs:
       contents: read
     steps:
       - name: Check out repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore verified Go cache
+        uses: ./.github/actions/go-cache
 
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -97,7 +106,7 @@ jobs:
 
       - name: Retain exact-floor evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: claude-floor-qualification
           path: ${{ runner.temp }}/claude-floor-evidence
@@ -113,19 +122,22 @@ jobs:
       contents: read
     steps:
       - name: Check out repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore verified Go cache
+        uses: ./.github/actions/go-cache
 
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -139,7 +151,7 @@ jobs:
 
       - name: Retain exact-floor Claude Vercel evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: claude-vercel-floor-qualification
           path: ${{ runner.temp }}/claude-vercel-floor-evidence
@@ -155,19 +167,22 @@ jobs:
       contents: read
     steps:
       - name: Check out repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore verified Go cache
+        uses: ./.github/actions/go-cache
 
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -181,7 +196,7 @@ jobs:
 
       - name: Retain exact-floor Codex evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: codex-floor-qualification
           path: ${{ runner.temp }}/codex-floor-evidence
@@ -197,16 +212,19 @@ jobs:
       contents: read
     steps:
       - name: Check out repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Restore verified Go cache
+        uses: ./.github/actions/go-cache
 
       - name: Run exact OpenCode native skill smoke
         run: |
@@ -218,7 +236,7 @@ jobs:
 
       - name: Retain exact OpenCode evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: opencode-floor-qualification
           path: ${{ runner.temp }}/opencode-floor-evidence
@@ -236,44 +254,36 @@ jobs:
       contents: read
     steps:
       - name: Check out exact candidate
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
 
-      - name: Download exact Codex evidence
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: codex-floor-qualification
-          path: ${{ runner.temp }}/codex-floor-evidence
+      - name: Restore verified Go cache
+        uses: ./.github/actions/go-cache
 
-      - name: Download exact foundation evidence
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: vercel-foundation-qualification
-          path: ${{ runner.temp }}/vercel-foundation-evidence
-
-      - name: Download exact OpenCode evidence
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: opencode-floor-qualification
-          path: ${{ runner.temp }}/opencode-floor-evidence
-
-      - name: Download exact Claude evidence
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: claude-vercel-floor-qualification
-          path: ${{ runner.temp }}/claude-vercel-floor-evidence
+      - name: Download exact cohort evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh run download "$GITHUB_RUN_ID" --name codex-floor-qualification --dir "$RUNNER_TEMP/codex-floor-evidence"; then
+            echo "Evidence artifact unavailable: codex-floor-qualification"
+          fi
+          if ! gh run download "$GITHUB_RUN_ID" --name vercel-foundation-qualification --dir "$RUNNER_TEMP/vercel-foundation-evidence"; then
+            echo "Evidence artifact unavailable: vercel-foundation-qualification"
+          fi
+          if ! gh run download "$GITHUB_RUN_ID" --name opencode-floor-qualification --dir "$RUNNER_TEMP/opencode-floor-evidence"; then
+            echo "Evidence artifact unavailable: opencode-floor-qualification"
+          fi
+          if ! gh run download "$GITHUB_RUN_ID" --name claude-vercel-floor-qualification --dir "$RUNNER_TEMP/claude-vercel-floor-evidence"; then
+            echo "Evidence artifact unavailable: claude-vercel-floor-qualification"
+          fi
 
       - name: Close the exact six-gate cohort
         env:
@@ -294,7 +304,7 @@ jobs:
 
       - name: Retain exact Vercel cohort
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vercel-acceptance-pr-${{ github.run_id }}
           path: ${{ runner.temp }}/vercel-acceptance
