@@ -30,6 +30,12 @@ func (m *Module) advanceAssurance(
 	if record.PendingRepair != nil {
 		return outcomeFromRecord(record), nil
 	}
+	if request.NonLocal != nil && m.nonlocal == nil {
+		return Outcome{}, errors.New("non-local authorization requires a configured non-local gateway")
+	}
+	if request.NonLocal != nil && record.LocalReadiness == nil {
+		return Outcome{}, errors.New("non-local authorization requires exact local readiness")
+	}
 
 	candidate := latestCandidate(&record)
 	if candidate == nil || candidate.CommitSHA != git.HeadSHA || candidate.TreeSHA != git.TreeSHA {
@@ -68,10 +74,19 @@ func (m *Module) advanceAssurance(
 		}
 		record.Candidates = append(record.Candidates, next)
 		record.LocalReadiness = nil
+		record.NonLocal = nil
 		invalidateAcceptance(record.Evidence)
 		return m.persistAssuranceTransition(
 			store, record, StateNeedsReview, "focused candidate evidence is ready for review", "focused-validation",
 		)
+	}
+
+	if record.NonLocal != nil && record.NonLocal.CandidateFailure != nil &&
+		record.NonLocal.Authorization.CandidateID == candidate.ID {
+		return outcomeWithReason(
+			record, StateNeedsReview,
+			"change-attributable CI failure requires a candidate-changing repair",
+		), nil
 	}
 
 	if record.Schema != legacyRunSchema {
@@ -97,6 +112,9 @@ func (m *Module) advanceAssurance(
 		record.LocalReadiness.TreeSHA == git.TreeSHA {
 		if record.LocalReadiness.Branch == git.Branch &&
 			git.WorkspaceClean && deliveryBranch(git.Branch, tracker.Issue.Number) {
+			if m.nonlocal != nil {
+				return m.advanceNonLocal(ctx, store, record, git, tracker, compiled, request)
+			}
 			if record.State == StateWaiting {
 				return outcomeFromRecord(record), nil
 			}

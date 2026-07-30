@@ -32,6 +32,7 @@ type runWire struct {
 	EffectiveProfile   deliveryevidence.DeliveryRiskProfile `json:"effective_profile,omitempty"`
 	RequiredBoundaries []SensitiveBoundary                  `json:"required_boundaries,omitempty"`
 	ProfileHistory     []ProfileTransition                  `json:"profile_history,omitempty"`
+	NonLocal           *NonLocalDelivery                    `json:"non_local,omitempty"`
 	Timing             []Timing                             `json:"timing"`
 	CreatedAt          string                               `json:"created_at"`
 	UpdatedAt          string                               `json:"updated_at"`
@@ -50,6 +51,7 @@ func encodeRun(record runRecord) ([]byte, error) {
 		LocalReadiness:   record.LocalReadiness,
 		EffectiveProfile: record.EffectiveProfile, RequiredBoundaries: record.RequiredBoundaries,
 		ProfileHistory: record.ProfileHistory,
+		NonLocal:       record.NonLocal,
 		CreatedAt:      record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}
 	if record.Evidence != nil {
@@ -94,6 +96,7 @@ func decodeRun(data []byte) (runRecord, error) {
 		LocalReadiness:   wire.LocalReadiness,
 		EffectiveProfile: wire.EffectiveProfile, RequiredBoundaries: wire.RequiredBoundaries,
 		ProfileHistory: wire.ProfileHistory,
+		NonLocal:       wire.NonLocal,
 		CreatedAt:      wire.CreatedAt, UpdatedAt: wire.UpdatedAt,
 	}
 	if len(wire.Evidence) > 0 {
@@ -395,6 +398,9 @@ func validateCandidates(record runRecord) error {
 		record.ProfileHistory[len(record.ProfileHistory)-1].EffectiveProfile != record.EffectiveProfile ||
 		!equalBoundaries(record.ProfileHistory[len(record.ProfileHistory)-1].Boundaries, record.RequiredBoundaries) {
 		return fmt.Errorf("issue delivery profile history does not reach current profile")
+	}
+	if err := validateNonLocalRecord(record, current); err != nil {
+		return err
 	}
 	return nil
 }

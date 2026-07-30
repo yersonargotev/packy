@@ -104,6 +104,7 @@ func boundedAssuranceShape(
 
 func invalidateForProfileEscalation(record *runRecord, candidate *Candidate) {
 	record.LocalReadiness = nil
+	record.NonLocal = nil
 	candidate.Acceptance = nil
 	candidate.Exhaustive = nil
 	record.Evidence.ValidationReceipts = []deliveryevidence.ValidationReceipt{}
