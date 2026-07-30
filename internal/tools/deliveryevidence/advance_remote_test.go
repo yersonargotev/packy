@@ -284,6 +284,30 @@ func TestApplyCIFailureAttributionRequiresExactFailedRun(t *testing.T) {
 	}
 }
 
+func TestLatestCommitStatusSelectsNewestIdentity(t *testing.T) {
+	statuses := []commitStatus{
+		{ID: 41, Context: "Governance / Validate authorization", State: "pending"},
+		{ID: 42, Context: "Governance / Validate authorization", State: "success"},
+		{ID: 43, Context: "other", State: "failure"},
+	}
+	got, found, err := latestCommitStatus(statuses, "Governance / Validate authorization")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || got.ID != 42 || got.State != "success" {
+		t.Fatalf("latest status = %#v, found=%v", got, found)
+	}
+}
+
+func TestLatestCommitStatusRejectsMalformedMatchingIdentity(t *testing.T) {
+	_, _, err := latestCommitStatus([]commitStatus{{
+		Context: "Governance / Validate authorization", State: "success",
+	}}, "Governance / Validate authorization")
+	if err == nil {
+		t.Fatal("matching status without a stable identity was accepted")
+	}
+}
+
 func packyRemoteRepository() deliveryevidence.RepositoryIdentity {
 	return deliveryevidence.RepositoryIdentity{Owner: "yersonargotev", Name: "packy", NodeID: "R1"}
 }

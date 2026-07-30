@@ -62,6 +62,7 @@ type checkRunsResponse struct {
 }
 
 type commitStatus struct {
+	ID        int64  `json:"id"`
 	Context   string `json:"context"`
 	State     string `json:"state"`
 	TargetURL string `json:"target_url"`
@@ -89,7 +90,7 @@ type workflowRun struct {
 
 const (
 	checkRunsProjection    = `{check_runs:[.check_runs[]|{name,head_sha,status,conclusion,details_url,app:{id:.app.id,slug:.app.slug}}]}`
-	statusesProjection     = `[.[]|{context,state,target_url,creator:{login:.creator.login,id:.creator.id,type:.creator.type,html_url:.creator.html_url}}]`
+	statusesProjection     = `[.[]|{id,context,state,target_url,creator:{login:.creator.login,id:.creator.id,type:.creator.type,html_url:.creator.html_url}}]`
 	workflowRunProjection  = `{id,name,path,head_sha,html_url,actor:{login:.actor.login,id:.actor.id,type:.actor.type,html_url:.actor.html_url}}`
 	pullRequestsProjection = `[.[]|{number,url,state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository:{id:.headRepository.id},closingIssuesReferences:[.closingIssuesReferences[]|{number,id}],mergedAt,mergeCommit:(if .mergeCommit==null then null else {oid:.mergeCommit.oid} end)}]`
 	pullRequestProjection  = `{number,state,baseRefOid,headRefOid,closingIssuesReferences:[.closingIssuesReferences[]|{number,id}],mergedAt}`
@@ -379,10 +380,11 @@ func (gateway productionNonLocalGateway) observeChecks(ctx context.Context, requ
 			RunID: runID, DetailsURL: run.DetailsURL,
 		})
 	}
-	for _, status := range statuses {
-		if status.Context != "Governance / Validate authorization" {
-			continue
-		}
+	status, found, err := latestCommitStatus(statuses, "Governance / Validate authorization")
+	if err != nil {
+		return nil, err
+	}
+	if found {
 		runID, err := githubRunID(status.TargetURL, request.Repository)
 		if err != nil {
 			return nil, err
@@ -414,6 +416,24 @@ func (gateway productionNonLocalGateway) observeChecks(ctx context.Context, requ
 	}
 	sort.Slice(checks, func(i, j int) bool { return checks[i].Identity < checks[j].Identity })
 	return applyCIFailureAttributions(checks, gateway.attributions)
+}
+
+func latestCommitStatus(statuses []commitStatus, identity string) (commitStatus, bool, error) {
+	var latest commitStatus
+	found := false
+	for _, status := range statuses {
+		if status.Context != identity {
+			continue
+		}
+		if status.ID <= 0 {
+			return commitStatus{}, false, errors.New("commit status has no stable identity")
+		}
+		if !found || status.ID > latest.ID {
+			latest = status
+			found = true
+		}
+	}
+	return latest, found, nil
 }
 
 func applyCIFailureAttributions(
