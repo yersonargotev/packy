@@ -236,6 +236,41 @@ func TestCandidateInvalidationPreservesCorrectedQualificationEvidencePlan(t *tes
 	}
 }
 
+func TestQualificationHistoryAdoptsOnlyExactLegacyGenericInvalidation(t *testing.T) {
+	corrected := []deliveryevidence.AcceptanceRow{{
+		Identity: "criterion-1", Criterion: "Product behavior.",
+		OwningSeam: "product seam", PositiveEvidence: "specific positive",
+		NegativeEvidence: "specific negative", FailureEvidence: "specific failure",
+		MutationEvidence: "specific mutation", CompatibilityEvidence: "specific compatibility",
+		PreservationEvidence: "specific preservation", MigrationEvidence: "not applicable",
+		State: deliveryevidence.AcceptancePlanned,
+	}}
+	digest, err := acceptanceMatrixDigest(corrected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := append([]deliveryevidence.AcceptanceRow(nil), corrected...)
+	legacy[0].PositiveEvidence = "planned: focused positive behavior through Advance"
+	legacy[0].NegativeEvidence = "planned: focused negative behavior through Advance"
+	legacy[0].FailureEvidence = "planned: failure behavior through Advance"
+	legacy[0].MutationEvidence = "planned: persisted run mutation inspection"
+	legacy[0].CompatibilityEvidence = "planned: compatibility validation"
+	legacy[0].PreservationEvidence = "planned: prior run byte preservation"
+	record := runRecord{
+		Evidence:                 &deliveryevidence.Bundle{AcceptanceMatrix: legacy},
+		Candidates:               []Candidate{{ID: "candidate"}},
+		QualificationCorrections: []QualificationCorrection{{AcceptanceMatrix: corrected}},
+	}
+	review := QualificationReview{AcceptanceMatrixSHA256: digest}
+	if !qualificationApprovalMatchesCurrentPlan(record, "different", review) {
+		t.Fatal("exact legacy generic invalidation was not adopted")
+	}
+	record.Evidence.AcceptanceMatrix[0].PositiveEvidence = "other generic evidence"
+	if qualificationApprovalMatchesCurrentPlan(record, "different", review) {
+		t.Fatal("non-canonical invalidation was adopted")
+	}
+}
+
 func assertQualificationRowContains(
 	t *testing.T,
 	row deliveryevidence.AcceptanceRow,

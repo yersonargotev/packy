@@ -214,7 +214,7 @@ func validateQualificationHistory(record runRecord) error {
 	}
 	if record.QualificationApproved {
 		if len(lastReview.Findings) != 0 ||
-			lastReview.AcceptanceMatrixSHA256 != currentDigest ||
+			!qualificationApprovalMatchesCurrentPlan(record, currentDigest, lastReview) ||
 			len(record.QualificationReviews) != len(record.QualificationCorrections)+1 {
 			return errors.New("qualification approval does not match the current matrix")
 		}
@@ -223,6 +223,47 @@ func validateQualificationHistory(record runRecord) error {
 		return errors.New("qualification history is not ready for independent rereview")
 	}
 	return nil
+}
+
+func qualificationApprovalMatchesCurrentPlan(
+	record runRecord,
+	currentDigest string,
+	lastReview QualificationReview,
+) bool {
+	if lastReview.AcceptanceMatrixSHA256 == currentDigest {
+		return true
+	}
+	if len(record.Candidates) == 0 || len(record.QualificationCorrections) == 0 ||
+		!hasLegacyGenericInvalidation(record.Evidence.AcceptanceMatrix) {
+		return false
+	}
+	corrected := record.QualificationCorrections[len(record.QualificationCorrections)-1].AcceptanceMatrix
+	correctedDigest, err := acceptanceMatrixDigest(corrected)
+	if err != nil || correctedDigest != lastReview.AcceptanceMatrixSHA256 ||
+		len(corrected) != len(record.Evidence.AcceptanceMatrix) {
+		return false
+	}
+	for index := range corrected {
+		if corrected[index].Identity != record.Evidence.AcceptanceMatrix[index].Identity ||
+			corrected[index].Criterion != record.Evidence.AcceptanceMatrix[index].Criterion {
+			return false
+		}
+	}
+	return true
+}
+
+func hasLegacyGenericInvalidation(rows []deliveryevidence.AcceptanceRow) bool {
+	for _, row := range rows {
+		if row.PositiveEvidence != "planned: focused positive behavior through Advance" ||
+			row.NegativeEvidence != "planned: focused negative behavior through Advance" ||
+			row.FailureEvidence != "planned: failure behavior through Advance" ||
+			row.MutationEvidence != "planned: persisted run mutation inspection" ||
+			row.CompatibilityEvidence != "planned: compatibility validation" ||
+			row.PreservationEvidence != "planned: prior run byte preservation" {
+			return false
+		}
+	}
+	return len(rows) > 0
 }
 
 func validQualificationFinding(finding deliveryevidence.ReviewFinding) bool {
