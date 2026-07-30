@@ -131,6 +131,12 @@ func renderPackShowJSON(w io.Writer, report capabilitypack.ShowReport) error {
 func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 	document := packShowDocument(report)
 	if _, err := fmt.Fprintf(w,
+		"Decision summary:\nWhat will change: %s\nImportant risks / prerequisites: %s\nNext command: %s\n",
+		packShowChangeSummary(document), packShowRisks(document), packShowNextCommand(document),
+	); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w,
 		"%s %s\nCatalog state: %s\nDescription: %s\nSource identity: pack=%s version=%s schema=%d\nSource limitation: %s\nHistorical versions: %s\nSupported CLI surfaces: %s\nProvides capabilities: %s\nRequires capabilities: %s\nRequires global tools: %s\nConflicts with capabilities: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
 		document.ID, document.Version, document.CatalogState, document.Description,
 		document.SourceIdentity.PackID, document.SourceIdentity.Version, document.SourceIdentity.SchemaVersion,
@@ -176,6 +182,75 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		}
 	}
 	return nil
+}
+
+func packShowChangeSummary(document packShowJSON) string {
+	changes := make([]string, 0, len(document.SurfaceContracts))
+	for _, surface := range document.SurfaceContracts {
+		if surface.Intent.State != "known" {
+			continue
+		}
+		if surface.Intent.Version != document.Version && document.LifecycleAvailability.CatalogUpdateAvailable {
+			changes = append(changes, fmt.Sprintf(
+				"update %s from %s to %s", surface.Surface, surface.Intent.Version, document.Version,
+			))
+			continue
+		}
+		changes = append(changes, fmt.Sprintf(
+			"keep %s at %s", surface.Surface, surface.Intent.Version,
+		))
+	}
+	if len(changes) > 0 {
+		return strings.Join(changes, "; ")
+	}
+	counts := document.ResourceCounts
+	total := counts.Skills + counts.Instructions + counts.MCPServers + counts.Lifecycles +
+		counts.Agents + counts.Commands + counts.Assets + counts.Notices
+	if len(document.Surfaces) == 0 {
+		return fmt.Sprintf("no compatible surface is available for %d catalog resources", total)
+	}
+	return fmt.Sprintf(
+		"activation would manage %d catalog resources across %s",
+		total, joinSurfaces(document.Surfaces),
+	)
+}
+
+func packShowRisks(document packShowJSON) string {
+	risks := make([]string, 0, 4)
+	if document.CatalogState == "withdrawn" {
+		risks = append(risks, "catalog entry is withdrawn; fresh activation is unavailable")
+	}
+	if len(document.Requires.Capabilities) > 0 {
+		risks = append(risks, "requires capabilities "+strings.Join(document.Requires.Capabilities, ", "))
+	}
+	if len(document.Requires.Tools) > 0 {
+		risks = append(risks, "requires global tools "+strings.Join(document.Requires.Tools, ", "))
+	}
+	if len(document.Conflicts) > 0 {
+		risks = append(risks, "conflicts with capabilities "+strings.Join(document.Conflicts, ", "))
+	}
+	if len(risks) == 0 {
+		return "none reported"
+	}
+	return strings.Join(risks, "; ")
+}
+
+func packShowNextCommand(document packShowJSON) string {
+	for _, surface := range document.SurfaceContracts {
+		if surface.Intent.State == "known" && surface.Intent.Version != document.Version &&
+			document.LifecycleAvailability.CatalogUpdateAvailable {
+			return fmt.Sprintf("packy pack update %s --surface %s --dry-run", document.ID, surface.Surface)
+		}
+	}
+	for _, surface := range document.SurfaceContracts {
+		if surface.Intent.State == "known" {
+			return fmt.Sprintf("packy pack status %s --surface %s", document.ID, surface.Surface)
+		}
+	}
+	if document.LifecycleAvailability.FreshActivationAvailable && len(document.Surfaces) > 0 {
+		return fmt.Sprintf("packy pack activate %s --surface %s --dry-run", document.ID, document.Surfaces[0])
+	}
+	return "packy pack list"
 }
 
 func renderPackShowContract(w io.Writer, contract capabilitypack.LifecycleContract) error {

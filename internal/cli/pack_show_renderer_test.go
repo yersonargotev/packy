@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -87,6 +88,15 @@ func TestPackShowRenderersExposeTheSameWithdrawnHistoryRouteAndIntentFacts(t *te
 			Limitation: "Upstream provenance is unavailable.",
 		},
 		ResourceCounts: counts,
+		ResourceGraph: capabilitypack.ResourceGraph{Resources: []capabilitypack.ResourceClosureFact{{
+			Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "using-agent-skills"},
+			Role:     capabilitypack.ResourceRoleRoot,
+			DependencyChain: []capabilitypack.ResourceIdentity{
+				{Kind: "skill", ID: "using-agent-skills"},
+			},
+			Requires: []capabilitypack.ResourceIdentity{},
+			Notices:  []capabilitypack.ResourceIdentity{},
+		}}},
 		LifecycleAvailability: capabilitypack.ShowLifecycleAvailability{
 			LifecycleVerbsAvailable: true,
 		},
@@ -132,6 +142,10 @@ func TestPackShowRenderersExposeTheSameWithdrawnHistoryRouteAndIntentFacts(t *te
 		t.Fatal(err)
 	}
 	for _, fact := range []string{
+		"Decision summary:",
+		"What will change: keep claude at 1.1.0",
+		"Important risks / prerequisites: catalog entry is withdrawn; fresh activation is unavailable",
+		"Next command: packy pack status addy --surface claude",
 		"Catalog state: withdrawn",
 		"Source identity: pack=addy version=1.1.0 schema=3",
 		"Source limitation: Upstream provenance is unavailable.",
@@ -139,6 +153,7 @@ func TestPackShowRenderersExposeTheSameWithdrawnHistoryRouteAndIntentFacts(t *te
 		"Update route: 1.0.0 -> 1.1.0 on codex, opencode",
 		"Resources: 24 skill, 0 instruction, 0 mcp_server, 0 lifecycle, 4 agent, 8 command, 7 asset, 1 notice",
 		"Lifecycle availability: fresh_activation=no catalog_update=no lifecycle_verbs=yes automatic_downgrade=no",
+		"Resource: skill:using-agent-skills role=root requires=none notices=none",
 		"Dependency closure: skill:using-agent-skills",
 		"Binding: agent:reviewer -> addy-reviewer [native]; projection=agent name=addy-reviewer sharing=exclusive",
 		"Exclusion: lifecycle:cache — typed hook unavailable; resource_kind=lifecycle surface=claude mode=optional code=unsupported source_paths=hooks/cache.sh",
@@ -151,6 +166,12 @@ func TestPackShowRenderersExposeTheSameWithdrawnHistoryRouteAndIntentFacts(t *te
 			t.Fatalf("human show missing %q:\n%s", fact, human.String())
 		}
 	}
+	if summary, detail := strings.Index(human.String(), "Decision summary:"), strings.Index(human.String(), "addy 1.1.0"); summary < 0 || detail <= summary {
+		t.Fatalf("decision summary does not lead detailed output:\n%s", human.String())
+	}
+	if !strings.Contains(human.String(), "Surface contract: claude") {
+		t.Fatalf("decision summary replaced surface contract details:\n%s", human.String())
+	}
 
 	var repeated bytes.Buffer
 	if err := renderPackShowJSON(&repeated, report); err != nil {
@@ -158,6 +179,62 @@ func TestPackShowRenderersExposeTheSameWithdrawnHistoryRouteAndIntentFacts(t *te
 	}
 	if repeated.String() != structured.String() {
 		t.Fatalf("structured show is nondeterministic:\nfirst=%s\nsecond=%s", structured.String(), repeated.String())
+	}
+	for _, humanOnly := range []string{"Decision summary:", "What will change:", "Important risks / prerequisites:", "Next command:"} {
+		if strings.Contains(structured.String(), humanOnly) {
+			t.Fatalf("structured show contains human-only summary label %q:\n%s", humanOnly, structured.String())
+		}
+	}
+}
+
+func TestPackShowDecisionSummaryReportsPrerequisitesAndActivationPreview(t *testing.T) {
+	report := capabilitypack.ShowReport{
+		Detail: capabilitypack.CatalogDetail{Pack: capabilitypack.Pack{
+			ID: "sample", Version: "2.0.0",
+			Requires: capabilitypack.Requirements{
+				Capabilities: []string{"cap:z", "cap:a"},
+				Tools:        []string{"zsh", "git"},
+			},
+			Conflicts: []string{"cap:legacy"},
+		}},
+		LifecycleAvailability: capabilitypack.ShowLifecycleAvailability{FreshActivationAvailable: true},
+		ResourceCounts:        capabilitypack.ResourceCounts{Skills: 2, Commands: 1},
+		Surfaces:              []capabilitypack.ShowSurfaceReport{{Surface: capabilitypack.SurfaceCodex}},
+	}
+	var output strings.Builder
+	if err := renderPackShowHuman(&output, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"What will change: activation would manage 3 catalog resources across codex",
+		"Important risks / prerequisites: requires capabilities cap:a, cap:z; requires global tools git, zsh; conflicts with capabilities cap:legacy",
+		"Next command: packy pack activate sample --surface codex --dry-run",
+		"Surface contract: codex",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("decision summary missing %q:\n%s", want, output.String())
+		}
+	}
+}
+
+func TestPackShowDecisionSummaryReportsNoRisksAndPropagatesWriterFailure(t *testing.T) {
+	report := capabilitypack.ShowReport{Detail: capabilitypack.CatalogDetail{
+		Pack: capabilitypack.Pack{ID: "empty", Version: "1.0.0"},
+	}}
+	var output strings.Builder
+	if err := renderPackShowHuman(&output, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Important risks / prerequisites: none reported") {
+		t.Fatalf("risk-free summary missing:\n%s", output.String())
+	}
+	if !strings.Contains(output.String(), "Next command: packy pack list") {
+		t.Fatalf("fallback next command missing:\n%s", output.String())
+	}
+
+	wantErr := errors.New("write failed")
+	if err := renderPackShowHuman(failingWriter{err: wantErr}, report); !errors.Is(err, wantErr) {
+		t.Fatalf("writer error = %v, want %v", err, wantErr)
 	}
 }
 

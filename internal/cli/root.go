@@ -420,6 +420,24 @@ func printSkillSourceReport(out io.Writer, source skillbundle.Source, installedS
 }
 
 func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.Plan) error {
+	actions := plan.Actions()
+	blockers := plan.Blockers()
+	actionGroups := lifecycleActionGroups(actions)
+	if _, err := fmt.Fprintf(out,
+		"%s dry-run: decision summary\nWhat will change: %d planned actions across %d action groups; outcome %s\nImportant risks / prerequisites: %s\nNext command: %s\nAction summary:\n",
+		command, len(actions), len(actionGroups), plan.Outcome(),
+		lifecycleDecisionRisks(plan), lifecycleNextCommand(command, blockers),
+	); err != nil {
+		return err
+	}
+	for _, group := range actionGroups {
+		if _, err := fmt.Fprintf(out, "- %s: %d action(s)\n", group.kind, group.count); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out, "Complete action detail:"); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(out, "%s dry-run: planned actions\nOutcome: %s\nDesired surfaces: %s\n", command, plan.Outcome(), strings.Join(plan.DesiredSurfaces(), ", ")); err != nil {
 		return err
 	}
@@ -437,7 +455,7 @@ func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.
 			return err
 		}
 	}
-	for _, value := range plan.Blockers() {
+	for _, value := range blockers {
 		if _, err := fmt.Fprintf(out, "Blocker: %s\n", value); err != nil {
 			return err
 		}
@@ -452,7 +470,7 @@ func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.
 			return err
 		}
 	}
-	for _, action := range plan.Actions() {
+	for _, action := range actions {
 		if _, err := fmt.Fprintf(out, "- %s: %s", action.Kind, action.Description); err != nil {
 			return err
 		}
@@ -472,6 +490,49 @@ func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.
 		}
 	}
 	return nil
+}
+
+type lifecycleActionGroup struct {
+	kind  corelifecycle.ActionKind
+	count int
+}
+
+func lifecycleActionGroups(actions []corelifecycle.ActionView) []lifecycleActionGroup {
+	groups := make([]lifecycleActionGroup, 0)
+	indexes := make(map[corelifecycle.ActionKind]int)
+	for _, action := range actions {
+		if index, ok := indexes[action.Kind]; ok {
+			groups[index].count++
+			continue
+		}
+		indexes[action.Kind] = len(groups)
+		groups = append(groups, lifecycleActionGroup{kind: action.Kind, count: 1})
+	}
+	return groups
+}
+
+func lifecycleDecisionRisks(plan corelifecycle.Plan) string {
+	risks := make([]string, 0)
+	for _, value := range plan.PendingPrerequisites() {
+		risks = append(risks, "prerequisite: "+value)
+	}
+	for _, value := range plan.Blockers() {
+		risks = append(risks, "blocker: "+value)
+	}
+	for _, value := range plan.Warnings() {
+		risks = append(risks, "warning: "+value)
+	}
+	if len(risks) == 0 {
+		return "none"
+	}
+	return strings.Join(risks, "; ")
+}
+
+func lifecycleNextCommand(command string, blockers []string) string {
+	if len(blockers) != 0 {
+		return "resolve blockers above, then run " + command
+	}
+	return command
 }
 
 func printWarnings(out io.Writer, warnings []string) error {

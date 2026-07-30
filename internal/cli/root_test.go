@@ -998,6 +998,99 @@ func TestInstallDryRunReportsPlanAndDoesNotMutateSandbox(t *testing.T) {
 	}
 }
 
+func TestClassicLifecycleDryRunLeadsWithDecisionSummaryAndPreservesDetail(t *testing.T) {
+	for _, operation := range []string{"install", "update", "uninstall"} {
+		t.Run(operation, func(t *testing.T) {
+			opts, _, _ := sandboxOptions(t)
+			if operation != "install" {
+				if output, err := executeCommand(t, NewRootCommand(opts), "install"); err != nil {
+					t.Fatalf("fixture install: %v\n%s", err, output)
+				}
+			}
+			output, err := executeCommand(t, NewRootCommand(opts), operation, "--dry-run")
+			if err != nil {
+				t.Fatalf("%s preview: %v\n%s", operation, err, output)
+			}
+			command := NewRootCommand(opts).Name() + " " + operation
+			prior := -1
+			for _, want := range []string{
+				command + " dry-run: decision summary",
+				"What will change:",
+				"Important risks / prerequisites:",
+				"Next command: " + command,
+				"Action summary:",
+				"Complete action detail:",
+				command + " dry-run: planned actions",
+			} {
+				index := strings.Index(output, want)
+				if index < 0 || index <= prior {
+					t.Fatalf("preview missing or misordered %q:\n%s", want, output)
+				}
+				prior = index
+			}
+			if !strings.Contains(output, " action(s)\n") {
+				t.Fatalf("preview omitted grouped action counts:\n%s", output)
+			}
+		})
+	}
+}
+
+func TestClassicLifecycleDryRunDecisionSummaryIsHumanOnly(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	output, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("JSON preview: %v\n%s", err, output)
+	}
+	var report classicLifecyclePlanJSON
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, output)
+	}
+	for _, humanOnly := range []string{
+		"decision summary", "What will change:", "Important risks / prerequisites:",
+		"Next command:", "Action summary:", "Complete action detail:",
+	} {
+		if strings.Contains(output, humanOnly) {
+			t.Fatalf("JSON preview contains human-only summary %q:\n%s", humanOnly, output)
+		}
+	}
+}
+
+func TestLifecycleActionGroupsAreStableAndComplete(t *testing.T) {
+	actions := []corelifecycle.ActionView{
+		{Kind: corelifecycle.ActionRun},
+		{Kind: corelifecycle.ActionSymlink},
+		{Kind: corelifecycle.ActionRun},
+		{Kind: corelifecycle.ActionWriteFile},
+		{Kind: corelifecycle.ActionSymlink},
+	}
+	groups := lifecycleActionGroups(actions)
+	if len(groups) != 3 {
+		t.Fatalf("groups=%#v", groups)
+	}
+	wants := []lifecycleActionGroup{
+		{kind: corelifecycle.ActionRun, count: 2},
+		{kind: corelifecycle.ActionSymlink, count: 2},
+		{kind: corelifecycle.ActionWriteFile, count: 1},
+	}
+	for index, want := range wants {
+		if groups[index] != want {
+			t.Fatalf("group[%d]=%#v, want %#v", index, groups[index], want)
+		}
+	}
+	if got := lifecycleActionGroups(nil); len(got) != 0 {
+		t.Fatalf("empty groups=%#v", got)
+	}
+}
+
+func TestLifecycleNextCommandFailsClosedForBlockers(t *testing.T) {
+	if got := lifecycleNextCommand("packy install", nil); got != "packy install" {
+		t.Fatalf("next command=%q", got)
+	}
+	if got := lifecycleNextCommand("packy install", []string{"foreign state"}); got != "resolve blockers above, then run packy install" {
+		t.Fatalf("blocked next command=%q", got)
+	}
+}
+
 func TestInstallRejectsCorruptState(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
 	fixture := newCLITestFixture(t, opts)
