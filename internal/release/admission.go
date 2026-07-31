@@ -3,9 +3,12 @@ package release
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var candidateLocatorPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
 
 type AdmissionMode string
 
@@ -92,6 +95,12 @@ func AdmitRelease(observed AdmissionObservation) (Admission, error) {
 		if !observed.ReleaseSealed || observed.ReleaseTag != observed.Tag || observed.ReleaseCommit != observed.TagCommit {
 			return Admission{}, errors.New("recovery release does not match the sealed tag and commit")
 		}
+		if !positiveDecimal(observed.OriginalRunID) {
+			return Admission{}, errors.New("recovery original run ID must be a positive decimal GitHub run ID")
+		}
+		if !candidateLocatorPattern.MatchString(observed.CandidateLocator) {
+			return Admission{}, errors.New("recovery candidate locator must be non-empty bounded safe text")
+		}
 	}
 
 	result := Admission{
@@ -104,6 +113,14 @@ func AdmitRelease(observed AdmissionObservation) (Admission, error) {
 		result.CandidateLocator = observed.CandidateLocator
 	}
 	return result, nil
+}
+
+func positiveDecimal(value string) bool {
+	if value == "" || value[0] == '0' {
+		return false
+	}
+	_, err := strconv.ParseUint(value, 10, 64)
+	return err == nil
 }
 
 func classifyAdmission(observed AdmissionObservation) (AdmissionMode, error) {

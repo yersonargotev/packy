@@ -81,6 +81,37 @@ func TestAdmitReleaseRejectsRecoveryWithoutExistingSealedRelease(t *testing.T) {
 	}
 }
 
+func TestAdmitReleaseRequiresExactRecoveryLocator(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	valid := AdmissionObservation{
+		EventName: "workflow_dispatch", EventRef: PackyMainRef, RequestedMode: "recovery",
+		Repository: PackyRepository, Tag: "v0.4.0", TagCommit: sha, EventCommit: sha,
+		CurrentMain: sha, LatestVersion: "v0.4.0", TagInMain: true,
+		ReleasePresent: true, ReleaseState: "published", ReleaseTag: "v0.4.0",
+		ReleaseCommit: sha, ReleaseSealed: true, OriginalRunID: "123",
+		CandidateLocator: "packy-release-v0.4.0",
+	}
+	tests := map[string]func(*AdmissionObservation){
+		"missing run":      func(o *AdmissionObservation) { o.OriginalRunID = "" },
+		"zero run":         func(o *AdmissionObservation) { o.OriginalRunID = "0" },
+		"leading zero run": func(o *AdmissionObservation) { o.OriginalRunID = "0123" },
+		"non-decimal run":  func(o *AdmissionObservation) { o.OriginalRunID = "run-123" },
+		"overflow run":     func(o *AdmissionObservation) { o.OriginalRunID = "18446744073709551616" },
+		"missing locator":  func(o *AdmissionObservation) { o.CandidateLocator = "" },
+		"unsafe locator":   func(o *AdmissionObservation) { o.CandidateLocator = "candidate $(unsafe)" },
+		"long locator":     func(o *AdmissionObservation) { o.CandidateLocator = strings.Repeat("a", 129) },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			observed := valid
+			mutate(&observed)
+			if _, err := AdmitRelease(observed); err == nil {
+				t.Fatal("ambiguous recovery locator admitted")
+			}
+		})
+	}
+}
+
 func TestVerifyRefStateAllowsMainAdvancementAndRejectsMovedTag(t *testing.T) {
 	releaseCommit, main := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	valid := RefStateObservation{
