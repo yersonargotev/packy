@@ -231,6 +231,7 @@ jobs:
     needs: [normalize, governance-drift]
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
@@ -393,6 +394,7 @@ jobs:
     if: always() && needs.build.result == 'success' && (needs.normalize.outputs.mode == 'recovery' || needs.claude-smoke.result == 'success')
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
     steps:
       - name: Check out proved commit
@@ -458,7 +460,7 @@ jobs:
           mkdir release-candidate-parent
           go run ./internal/tools/releasecandidate create \
             --version "${{ needs.build.outputs.tag }}" --repository "$GITHUB_REPOSITORY" \
-            --ref "${{ needs.normalize.outputs.source_ref }}" --commit "${{ needs.build.outputs.commit }}" \
+            --ref refs/heads/main --commit "${{ needs.build.outputs.commit }}" \
             --workflow .github/workflows/release.yml --workflow-sha "$workflow_sha" \
             --release-notes release-metadata/release-notes.md --dist dist \
             --output-dir release-candidate-parent/sealed \
@@ -500,10 +502,6 @@ jobs:
         with:
           name: packy-release-metadata-${{ needs.build.outputs.tag }}
           path: release-metadata
-          run-id: ${{ needs.normalize.outputs.mode == 'recovery' && needs.normalize.outputs.original_run_id || github.run_id }}
-          github-token: ${{ github.token }}
-          run-id: ${{ needs.normalize.outputs.mode == 'recovery' && needs.normalize.outputs.original_run_id || github.run_id }}
-          github-token: ${{ github.token }}
           if-no-files-found: error
           retention-days: 90
 
@@ -550,6 +548,7 @@ jobs:
     needs: [normalize, build, validate-release-evidence]
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
     outputs:
       state: ${{ steps.inspect.outputs.state }}
@@ -611,9 +610,11 @@ jobs:
           tap_url=https://github.com/yersonargotev/homebrew-tap.git
           tap_ref=refs/heads/main
           git clone --quiet --depth 1 --branch main "$tap_url" "$RUNNER_TEMP/homebrew-tap"
-          mapfile -t tap_refs < <(git ls-remote --exit-code "$tap_url" "$tap_ref")
-          [[ "${#tap_refs[@]}" == 1 ]] || { echo 'tap main did not resolve uniquely' >&2; exit 1; }
-          read -r tap_commit observed_tap_ref <<< "${tap_refs[0]}"
+          tap_refs="$(git ls-remote --exit-code "$tap_url" "$tap_ref")"
+          [[ -n "$tap_refs" && "$(printf '%s\n' "$tap_refs" | wc -l | tr -d ' ')" == 1 ]] || {
+            echo 'tap main did not resolve uniquely' >&2; exit 1;
+          }
+          read -r tap_commit observed_tap_ref <<< "$tap_refs"
           [[ "$observed_tap_ref" == "$tap_ref" && "$tap_commit" =~ ^[0-9a-f]{40}$ &&
              "$tap_commit" == "$(git -C "$RUNNER_TEMP/homebrew-tap" rev-parse HEAD)" ]] || {
             echo 'tap main changed during read-only inspection' >&2; exit 1;
@@ -672,7 +673,7 @@ jobs:
           } > "$RUNNER_TEMP/canonical-body.md"
           cmp "$RUNNER_TEMP/canonical-body.md" "$RUNNER_TEMP/read-body.md"
           jq --slurpfile metadata "$RUNNER_TEMP/observed-metadata.json" \
-            --arg repository "$GITHUB_REPOSITORY" --arg ref "${{ needs.normalize.outputs.source_ref }}" \
+            --arg repository "$GITHUB_REPOSITORY" --arg ref refs/heads/main \
             --arg workflow .github/workflows/release.yml \
             --arg workflow_sha "$(jq -r .workflow_sha release-metadata/candidate.json)" \
             --arg notes "$(jq -r .release_notes_sha256 release-metadata/candidate.json)" \
@@ -762,6 +763,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     permissions:
+      actions: read
       contents: read
       id-token: write
       attestations: write
@@ -771,11 +773,15 @@ jobs:
         with:
           name: packy-release-${{ needs.build.outputs.tag }}
           path: dist
+          run-id: ${{ needs.normalize.outputs.mode == 'recovery' && needs.normalize.outputs.original_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Download sealed candidate metadata
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: packy-release-metadata-${{ needs.build.outputs.tag }}
           path: release-metadata
+          run-id: ${{ needs.normalize.outputs.mode == 'recovery' && needs.normalize.outputs.original_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Download existing exact bundle for recovery
         if: needs.inspect-release.outputs.has_bundle == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -887,8 +893,6 @@ jobs:
         with:
           name: packy-attestation-${{ needs.build.outputs.tag }}
           path: attestation
-          run-id: ${{ needs.normalize.outputs.mode == 'recovery' && needs.normalize.outputs.original_run_id || github.run_id }}
-          github-token: ${{ github.token }}
           if-no-files-found: error
           retention-days: 90
 
@@ -899,6 +903,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     permissions:
+      actions: read
       contents: write
     outputs:
       published: ${{ steps.publish.outputs.published }}
@@ -999,7 +1004,7 @@ jobs:
             local tag_commit
             tag_commit="$(assert_ref_identity)"
             jq --slurpfile metadata "$RUNNER_TEMP/observed-metadata.json" \
-              --arg repository "$GITHUB_REPOSITORY" --arg ref "${{ needs.normalize.outputs.source_ref }}" \
+              --arg repository "$GITHUB_REPOSITORY" --arg ref refs/heads/main \
               --arg workflow .github/workflows/release.yml \
               --arg workflow_sha "$(jq -r .workflow_sha "$candidate")" \
               --arg notes "$(jq -r .release_notes_sha256 "$candidate")" \
@@ -1069,6 +1074,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: homebrew
     permissions:
+      actions: read
       contents: read
     outputs:
       tap_commit: ${{ steps.tap.outputs.commit }}
@@ -1201,21 +1207,28 @@ jobs:
             [[ "$object_type" == commit && "$object_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
             printf '%s\n' "$object_sha"
           }
-          tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
-          main_commit="$(resolve_ref_commit heads/main)"
-          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
-          [[ "$tag_commit" == "$RELEASE_COMMIT" &&
-             ( "$ancestry" == ahead || "$ancestry" == identical ) ]] || {
-            echo 'tag moved or sealed commit left protected-main history before tap push' >&2; exit 1;
+          verify_release_ref() {
+            local tag_commit main_commit ancestry release_in_main=false
+            tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
+            main_commit="$(resolve_ref_commit heads/main)"
+            ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
+            [[ "$ancestry" == ahead || "$ancestry" == identical ]] && release_in_main=true
+            jq -n --arg tag "$RELEASE_TAG" --arg expected_tag_commit "$RELEASE_COMMIT" \
+              --arg remote_tag_commit "$tag_commit" --arg release_commit "$RELEASE_COMMIT" \
+              --arg current_main "$main_commit" --argjson release_in_main "$release_in_main" \
+              '{tag:$tag,expected_tag_commit:$expected_tag_commit,remote_tag_commit:$remote_tag_commit,
+                release_commit:$release_commit,current_main:$current_main,release_in_main:$release_in_main}' \
+              > "$RUNNER_TEMP/ref-observation.json"
+            chmod +x ../release-metadata/releasecandidate
+            ../release-metadata/releasecandidate verify-ref-state \
+              --observation "$RUNNER_TEMP/ref-observation.json" >/dev/null || {
+              echo 'tag moved or sealed commit left protected-main history before tap mutation' >&2
+              exit 1
+            }
           }
+          verify_release_ref
           git push --dry-run origin HEAD:main
-          tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
-          main_commit="$(resolve_ref_commit heads/main)"
-          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
-          [[ "$tag_commit" == "$RELEASE_COMMIT" &&
-             ( "$ancestry" == ahead || "$ancestry" == identical ) ]] || {
-            echo 'tag moved or sealed commit left protected-main history after tap push proof' >&2; exit 1;
-          }
+          verify_release_ref
           git push origin HEAD:main
           git fetch --force origin main
           [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
