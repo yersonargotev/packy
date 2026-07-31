@@ -803,6 +803,147 @@ func TestVercelAcceptanceFoundationNormalizationExcludesOnlyGoDownloadNoise(t *t
 	}
 }
 
+func TestVercelAcceptanceFoundationReusesOnlyExactSeamReruns(t *testing.T) {
+	const mappings = `VERCEL-ACCEPTANCE-01|positive|./internal/example/TestShared
+VERCEL-ACCEPTANCE-01|negative|./internal/example/TestNegative
+VERCEL-ACCEPTANCE-01|oracle|./internal/example/TestShared
+VERCEL-ACCEPTANCE-02|positive|./internal/example/TestShared
+VERCEL-ACCEPTANCE-02|negative|./internal/example/TestOtherNegative
+VERCEL-ACCEPTANCE-02|oracle|./internal/example/TestOtherOracle
+`
+	result := runVercelFoundationValidation(t, mappings, "")
+	if result.err != nil {
+		t.Fatalf("Vercel foundation failed: %v\n%s", result.err, result.output)
+	}
+	wantCounts := map[string]int{
+		"./internal/example/TestShared":        2,
+		"./internal/example/TestNegative":      2,
+		"./internal/example/TestOtherNegative": 2,
+		"./internal/example/TestOtherOracle":   2,
+	}
+	gotCounts := make(map[string]int)
+	for _, seam := range strings.Fields(result.log) {
+		gotCounts[seam]++
+	}
+	if !reflect.DeepEqual(gotCounts, wantCounts) {
+		t.Fatalf("Vercel foundation seam invocations = %#v, want exactly two fresh runs per exact seam %#v", gotCounts, wantCounts)
+	}
+
+	first := readFile(t, filepath.Join(result.evidence, "VERCEL-ACCEPTANCE-01.positive.first.txt"))
+	second := readFile(t, filepath.Join(result.evidence, "VERCEL-ACCEPTANCE-01.positive.second.txt"))
+	reused := readFile(t, filepath.Join(result.evidence, "VERCEL-ACCEPTANCE-02.positive.first.txt"))
+	if first != second || first != reused {
+		t.Fatal("an exact seam did not retain byte-identical deterministic and reused proof artifacts")
+	}
+	for _, identity := range []string{
+		"@identity\t" + strings.Repeat("a", 40) + "\tissue-398\t",
+		"\t./internal/example/TestShared\n",
+		"@toolchain\tgo1.test/darwin/arm64\n",
+		"=== RUN   TestShared\n",
+		"--- PASS: TestShared (duration)\n",
+	} {
+		if !strings.Contains(first, identity) {
+			t.Fatalf("reused proof lacks bound identity %q:\n%s", identity, first)
+		}
+	}
+}
+
+func TestVercelAcceptanceFoundationSharedSeamFailureKeepsFirstRowDiagnostic(t *testing.T) {
+	const mappings = `VERCEL-ACCEPTANCE-01|positive|./internal/example/TestShared
+VERCEL-ACCEPTANCE-01|negative|./internal/example/TestNegative
+VERCEL-ACCEPTANCE-02|oracle|./internal/example/TestShared
+`
+	result := runVercelFoundationValidation(t, mappings, "./internal/example/TestShared")
+	if result.err == nil || !strings.Contains(result.output, "Vercel acceptance foundation failed: VERCEL-ACCEPTANCE-01 positive ./internal/example/TestShared") {
+		t.Fatalf("shared seam failure lost its deterministic first-row boundary: %v\n%s", result.err, result.output)
+	}
+	if got := strings.Count(result.log, "./internal/example/TestShared\n"); got != 1 {
+		t.Fatalf("failing seam invocation count = %d, want one fail-fast attempt:\n%s", got, result.log)
+	}
+}
+
+type vercelFoundationResult struct {
+	output   string
+	log      string
+	evidence string
+	err      error
+}
+
+func runVercelFoundationValidation(t *testing.T, mappings, failSeam string) vercelFoundationResult {
+	t.Helper()
+	root := t.TempDir()
+	writeExecutable(t, filepath.Join(root, "scripts", "validate-vercel-acceptance.sh"), readFile(t, filepath.Join(repositoryRoot(t), "scripts", "validate-vercel-acceptance.sh")))
+	writeFile(t, filepath.Join(root, "mappings"), mappings)
+	bin := filepath.Join(root, "bin")
+	logPath := filepath.Join(root, "go.log")
+	writeExecutable(t, filepath.Join(bin, "git"), `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "rev-parse" ]]; then
+  printf '%s\n' "${CANDIDATE_SHA}"
+  exit 0
+fi
+if [[ "$1" == "status" ]]; then
+  exit 0
+fi
+exit 2
+`)
+	writeExecutable(t, filepath.Join(bin, "go"), `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "env" ]]; then
+  printf 'go1.test\ndarwin\narm64\n'
+  exit 0
+fi
+if [[ "$1" == "run" && "${3-}" == "--list-foundation" ]]; then
+  cat "$MAPPINGS"
+  exit 0
+fi
+if [[ "$1" == "run" && "${3-}" == "--foundation-manifest" ]]; then
+  cat >/dev/null
+  printf 'manifest\n'
+  exit 0
+fi
+if [[ "$1" == "run" && "${3-}" == "--validate-foundation" ]]; then
+  exit 0
+fi
+if [[ "$1" != "test" || "${3-}" != "-run" ]]; then
+  exit 2
+fi
+test_name="${4#^}"
+test_name="${test_name%\$}"
+seam="$2/$test_name"
+printf '%s\n' "$seam" >>"$GO_LOG"
+if [[ "$seam" == "${FAIL_SEAM-}" ]]; then
+  printf '%s\n' "--- FAIL: $test_name (0.01s)" >&2
+  exit 1
+fi
+printf '=== RUN   %s\nproof detail\n--- PASS: %s (0.01s)\nPASS\nok  \t%s\t0.02s\n' "$test_name" "$test_name" "$2"
+`)
+	evidence := filepath.Join(root, "evidence")
+	command := exec.Command("/bin/bash", filepath.Join(root, "scripts", "validate-vercel-acceptance.sh"),
+		"--evidence-dir", evidence,
+		"--candidate-sha", strings.Repeat("a", 40),
+		"--run-id", "issue-398")
+	command.Env = append(os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"CANDIDATE_SHA="+strings.Repeat("a", 40),
+		"MAPPINGS="+filepath.Join(root, "mappings"),
+		"GO_LOG="+logPath,
+		"FAIL_SEAM="+failSeam,
+		"HOME="+filepath.Join(root, "home"),
+		"XDG_CONFIG_HOME="+filepath.Join(root, "xdg"),
+		"TMPDIR="+filepath.Join(root, "tmp"),
+	)
+	if err := os.MkdirAll(filepath.Join(root, "tmp"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	output, err := command.CombinedOutput()
+	log, readErr := os.ReadFile(logPath)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	return vercelFoundationResult{output: string(output), log: string(log), evidence: evidence, err: err}
+}
+
 func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
 	root := repositoryRoot(t)
 	governance := readFile(t, filepath.Join(root, ".github", "workflows", "governance.yml"))
