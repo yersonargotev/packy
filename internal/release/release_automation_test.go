@@ -468,6 +468,11 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 		`--candidate "$candidate"`,
 		`--provenance "$provenance"`,
 		`--state-output "$RUNNER_TEMP/boundary-state.json"`,
+		`--decision-output "$RUNNER_TEMP/boundary-decision.json"`,
+		`--expected-body "$expected_body"`,
+		`--attestation "$bundle"`,
+		`--upload-asset "$name"`,
+		`--upload-asset "$(basename "$bundle")"`,
 	} {
 		if !strings.Contains(publishStep, want) {
 			t.Fatalf("publication boundaries must use sealed release-state verification %q", want)
@@ -813,7 +818,10 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 		"sha256sum --check SHA256SUMS",
 		"publication_plan.homebrew.sha256",
 		"--boundary 'Homebrew mutation'",
-		"--state-output \"$RUNNER_TEMP/boundary-state.json\" --mode published",
+		"--state-output \"$RUNNER_TEMP/boundary-state.json\"",
+		"--decision-output \"$RUNNER_TEMP/boundary-decision.json\"",
+		"--expected-body ../attestation/release-body.md",
+		"--attestation ../attestation/attestation.bundle.jsonl --mode published",
 		"tap remote formula does not match the sealed destination plan",
 		"git push --dry-run origin HEAD:main",
 		"git push origin HEAD:main",

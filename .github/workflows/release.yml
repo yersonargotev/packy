@@ -827,13 +827,17 @@ jobs:
               # The adapter reports that the sealed recovery release disappeared before publication.
               verify_boundary publication \
                 --candidate "$candidate" --provenance "$provenance" \
-                --state-output "$RUNNER_TEMP/boundary-state.json" --mode current
+                --state-output "$RUNNER_TEMP/boundary-state.json" \
+                --decision-output "$RUNNER_TEMP/boundary-decision.json" \
+                --expected-body "$expected_body" --attestation "$bundle" --mode current
               exit 1
             fi
           else
             verify_boundary publication \
               --candidate "$candidate" --provenance "$provenance" \
-              --state-output "$RUNNER_TEMP/boundary-state.json" --mode current
+              --state-output "$RUNNER_TEMP/boundary-state.json" \
+              --decision-output "$RUNNER_TEMP/boundary-decision.json" \
+              --expected-body "$expected_body" --attestation "$bundle" --mode current
           fi
 
           read_release() {
@@ -882,7 +886,9 @@ jobs:
           if jq -e '.isDraft==false' "$RUNNER_TEMP/release.json" >/dev/null; then
             verify_boundary publication \
               --candidate "$candidate" --provenance "$provenance" \
-              --state-output "$RUNNER_TEMP/boundary-state.json" --mode published
+              --state-output "$RUNNER_TEMP/boundary-state.json" \
+              --decision-output "$RUNNER_TEMP/boundary-decision.json" \
+              --expected-body "$expected_body" --attestation "$bundle" --mode published
             jq -e '.assets|length==7 and any(.name=="attestation.bundle.jsonl")' "$RUNNER_TEMP/release.json" >/dev/null
             assert_server_hashes
             echo 'published=true' >> "$GITHUB_OUTPUT"
@@ -895,13 +901,19 @@ jobs:
             [[ -n "$name" ]]
             verify_boundary 'asset upload' \
               --candidate "$candidate" --provenance "$provenance" \
-              --state-output "$RUNNER_TEMP/boundary-state.json" --mode draft
+              --state-output "$RUNNER_TEMP/boundary-state.json" \
+              --decision-output "$RUNNER_TEMP/boundary-decision.json" \
+              --expected-body "$expected_body" --attestation "$bundle" \
+              --upload-asset "$name" --mode draft
             gh release upload "$RELEASE_TAG" "dist/$name" --repo "$GITHUB_REPOSITORY"
           done
           if ! jq -e '.assets | any(.name=="attestation.bundle.jsonl")' "$RUNNER_TEMP/release.json" >/dev/null; then
             verify_boundary 'asset upload' \
               --candidate "$candidate" --provenance "$provenance" \
-              --state-output "$RUNNER_TEMP/boundary-state.json" --mode draft
+              --state-output "$RUNNER_TEMP/boundary-state.json" \
+              --decision-output "$RUNNER_TEMP/boundary-decision.json" \
+              --expected-body "$expected_body" --attestation "$bundle" \
+              --upload-asset "$(basename "$bundle")" --mode draft
             gh release upload "$RELEASE_TAG" "$bundle" --repo "$GITHUB_REPOSITORY"
           fi
 
@@ -915,7 +927,9 @@ jobs:
           assert_server_hashes
           verify_boundary publication \
             --candidate "$candidate" --provenance "$provenance" \
-            --state-output "$RUNNER_TEMP/boundary-state.json" --mode draft
+            --state-output "$RUNNER_TEMP/boundary-state.json" \
+            --decision-output "$RUNNER_TEMP/boundary-decision.json" \
+            --expected-body "$expected_body" --attestation "$bundle" --mode draft
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
           echo 'published=true' >> "$GITHUB_OUTPUT"
 
@@ -1044,7 +1058,10 @@ jobs:
               --ref-output "$RUNNER_TEMP/verified-release-ref.json" \
               --candidate ../release-metadata/candidate.json \
               --provenance ../release-metadata/provenance.json \
-              --state-output "$RUNNER_TEMP/boundary-state.json" --mode published
+              --state-output "$RUNNER_TEMP/boundary-state.json" \
+              --decision-output "$RUNNER_TEMP/boundary-decision.json" \
+              --expected-body ../attestation/release-body.md \
+              --attestation ../attestation/attestation.bundle.jsonl --mode published
           }
           verify_release_boundary
           git push --dry-run origin HEAD:main
