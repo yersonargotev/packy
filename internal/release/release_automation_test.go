@@ -181,6 +181,7 @@ func TestReleaseWorkflowAdmissionPassesRawReleaseMetadataFacts(t *testing.T) {
 		"release_schema_version",
 		"release_candidate_id",
 		"release_attestation_source_ref",
+		`--slurpfile release_metadata "$RUNNER_TEMP/admission-metadata.json"`,
 	} {
 		if !strings.Contains(normalize, want) {
 			t.Fatalf("normalization must pass raw release metadata fact %q", want)
@@ -188,6 +189,15 @@ func TestReleaseWorkflowAdmissionPassesRawReleaseMetadataFacts(t *testing.T) {
 	}
 	if strings.Contains(normalize, "release_sealed") {
 		t.Fatal("workflow adapter must not derive or pass a trusted release_sealed verdict")
+	}
+	for _, forbidden := range []string{
+		"--argjson release_schema_version",
+		"--arg release_candidate_id",
+		"--arg release_attestation_source_ref",
+	} {
+		if strings.Contains(normalize, forbidden) {
+			t.Fatalf("workflow adapter must preserve raw release metadata types instead of rebuilding %q", forbidden)
+		}
 	}
 }
 
@@ -342,7 +352,7 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 
 	seal := releaseWorkflowStepIndex(t, workflow, "Create immutable candidate and provenance metadata", []string{
 		"releasecandidate create",
-		`--ref "${{ needs.normalize.outputs.source_ref }}"`,
+		"--ref refs/heads/main",
 		"--permission attestations=write",
 		"--permission contents=write",
 		"--permission id-token=write",

@@ -121,9 +121,8 @@ jobs:
             -f query='query($owner:String!,$repository:String!,$tag:String!){repository(owner:$owner,name:$repository){release(tagName:$tag){id}}}' \
             -f owner="$owner" -f repository="$repository" -f tag="$tag" \
             --jq '.data.repository.release.id // ""')"
-          release_present=false release_state=absent release_tag= release_commit=
-          release_schema_version=0 release_candidate_id=
-          release_attestation_source_ref= original_run_id= candidate_locator=
+          release_present=false release_state=absent release_tag= candidate_locator=
+          printf '{}\n' > "$RUNNER_TEMP/admission-metadata.json"
           if [[ -n "$release_id" ]]; then
             gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
               --json tagName,isDraft,body > "$RUNNER_TEMP/admission-release.json"
@@ -133,11 +132,6 @@ jobs:
             jq -j .body "$RUNNER_TEMP/admission-release.json" |
               awk '/^<!-- packy-release-metadata$/{capture=1;next}/^-->$/{capture=0}capture' \
               > "$RUNNER_TEMP/admission-metadata.json"
-            release_schema_version="$(jq -r '.schema_version // 0' "$RUNNER_TEMP/admission-metadata.json")"
-            release_candidate_id="$(jq -r '.candidate_id // ""' "$RUNNER_TEMP/admission-metadata.json")"
-            release_attestation_source_ref="$(jq -r '.attestation_source_ref // .publication_plan.attestation_source_ref // ""' "$RUNNER_TEMP/admission-metadata.json")"
-            release_commit="$(jq -r '.target_commit // ""' "$RUNNER_TEMP/admission-metadata.json")"
-            original_run_id="$(jq -r '.source_run_id // .publication_plan.source_run_id // ""' "$RUNNER_TEMP/admission-metadata.json")"
             candidate_locator="packy-release-$tag"
           fi
           tag_in_main=false
@@ -149,20 +143,22 @@ jobs:
             --arg current_main "$main_commit" --arg latest_version "$latest_version" \
             --argjson tag_in_main "$tag_in_main" --argjson release_present "$release_present" \
             --arg release_state "$release_state" --arg release_tag "$release_tag" \
-            --arg release_commit "$release_commit" \
-            --argjson release_schema_version "$release_schema_version" \
-            --arg release_candidate_id "$release_candidate_id" \
-            --arg release_attestation_source_ref "$release_attestation_source_ref" \
-            --arg original_run_id "$original_run_id" --arg candidate_locator "$candidate_locator" \
-            '{event_name:$event_name,event_ref:$event_ref,requested_mode:$requested_mode,
+            --arg candidate_locator "$candidate_locator" \
+            --slurpfile release_metadata "$RUNNER_TEMP/admission-metadata.json" \
+            '($release_metadata |
+              if length==0 then {} elif length==1 then .[0]
+              else error("release metadata must contain at most one JSON document") end) as $metadata |
+             {event_name:$event_name,event_ref:$event_ref,requested_mode:$requested_mode,
               repository:$repository,tag:$tag,tag_commit:$tag_commit,event_commit:$event_commit,
               current_main:$current_main,latest_version:$latest_version,tag_in_main:$tag_in_main,
               release_present:$release_present,release_state:$release_state,release_tag:$release_tag,
-              release_commit:$release_commit,
-              release_schema_version:$release_schema_version,
-              release_candidate_id:$release_candidate_id,
-              release_attestation_source_ref:$release_attestation_source_ref,
-              original_run_id:$original_run_id,candidate_locator:$candidate_locator}' \
+              release_commit:($metadata.target_commit // ""),
+              release_schema_version:($metadata.schema_version // 0),
+              release_candidate_id:($metadata.candidate_id // ""),
+              release_attestation_source_ref:
+                ($metadata.attestation_source_ref // $metadata.publication_plan.attestation_source_ref // ""),
+              original_run_id:($metadata.source_run_id // $metadata.publication_plan.source_run_id // ""),
+              candidate_locator:$candidate_locator}' \
             > "$RUNNER_TEMP/admission-observation.json"
           go run ./internal/tools/releasecandidate admit \
             --observation "$RUNNER_TEMP/admission-observation.json" > "$RUNNER_TEMP/admission.json"
@@ -462,7 +458,7 @@ jobs:
           mkdir release-candidate-parent
           go run ./internal/tools/releasecandidate create \
             --version "${{ needs.build.outputs.tag }}" --repository "$GITHUB_REPOSITORY" \
-            --ref "${{ needs.normalize.outputs.source_ref }}" --commit "${{ needs.build.outputs.commit }}" \
+            --ref refs/heads/main --commit "${{ needs.build.outputs.commit }}" \
             --workflow .github/workflows/release.yml --workflow-sha "$workflow_sha" \
             --release-notes release-metadata/release-notes.md --dist dist \
             --output-dir release-candidate-parent/sealed \
