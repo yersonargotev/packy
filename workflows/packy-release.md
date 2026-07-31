@@ -134,9 +134,12 @@ history. The published tag is immutable: never delete it for reuse, recreate
 it, or move it locally or remotely.
 
 For recovery, use the documented manual-dispatch path only to complete or repair
-release artifacts or tap state for the existing tag's unchanged target SHA.
-Rebuilt outputs must reproduce and satisfy the sealed contract for that same
-tagged source. Recovery cannot edit the published title, body, or assets.
+release artifacts or tap state for the existing tag's unchanged target SHA and
+sealed source run. The workflow reacquires that run's retained candidate and
+publication metadata; it does not rebuild binaries, checksums, SBOM, smoke
+evidence, attestation, or formula. Missing or expired retained artifacts fail
+closed. Recovery cannot create an absent release or edit a published title,
+body, or asset.
 
 For either workflow-running branch, require its tap permission dry-run and tap
 publication step to succeed. A reported no-op is valid only when the step

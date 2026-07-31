@@ -87,14 +87,19 @@ bundle, dry-run downloads and verifies it against the rebuilt candidate without
 requesting a new token. It does not request an OIDC token or
 create/change a tag, attestation, draft, release, asset, or tap commit.
 
-A real run creates a draft only when the version is absent. If an exact draft
-already exists, recovery revalidates its hidden candidate metadata, target
-commit, notes, provenance, and every server-reported asset digest before
-uploading only missing assets. Divergent or ambiguous state fails closed. An
-already-published exact release is read and verified, never edited or recreated;
-that recovery path may continue to the independently verified Homebrew stage.
-Its title, body, assets, and tag are immutable workflow outputs. Any mismatch
-fails closed and is corrected only by a newer version.
+A fresh tag-triggered run creates a draft only when the version is absent.
+Manual recovery requires an existing exact draft or published release whose
+sealed metadata identifies the original workflow run and candidate. Recovery
+downloads that run's retained candidate and publication metadata; it never
+invokes the build or smoke jobs again. If the retained artifacts expired or are
+missing, recovery fails closed instead of rebuilding. An exact draft is
+revalidated against its target commit, notes, provenance, source run, and every
+server-reported asset digest before uploading only missing retained assets.
+Divergent or ambiguous state fails closed. An already-published exact release
+is read and verified, never edited or recreated; that recovery path may continue
+to the independently verified Homebrew stage. Its title, body, assets, and tag
+are immutable workflow outputs. Any mismatch fails closed and is corrected only
+by a newer version.
 
 ## `HOMEBREW_TAP_TOKEN` setup
 
@@ -230,9 +235,12 @@ either publication environment. Environment approval therefore gates only the
 destination authority that the approved job is about to exercise.
 
 The OIDC bundle is verified against the exact repository, fully-qualified signer
-workflow, protected-main source ref, source commit, signer commit, and every
-retained candidate file, including `SHA256SUMS` itself. Verification uses the retained bundle and an
-explicit trusted-root document rather than fetching an arbitrary attestation.
+workflow, sealed tag-trigger source ref, source commit, signer commit, and every
+retained candidate file, including `SHA256SUMS` itself. Candidate eligibility
+still binds that commit to protected `main`; the attestation source-ref claim
+binds the GitHub run that was actually triggered by `refs/tags/<version>`.
+Verification uses the retained bundle and an explicit trusted-root document
+rather than fetching an arbitrary attestation.
 
 Before the draft becomes public, the workflow reads back the complete draft,
 requires the exact body metadata and seven-asset inventory, compares every
@@ -244,6 +252,10 @@ rechecked immediately before draft creation, every asset upload, OIDC issuance,
 publication, and the final tap push. Initial sealing requires the tag and
 protected-main tip to equal the retained commit; later checks require unchanged
 tag identity and the retained commit to remain in protected-main history. The
+governance gate always evaluates the freshly observed protected-main contract,
+not the historical release checkout. Published recovery admits only the sealed
+tag's own immutable, bot-authored seven-asset latest-release transition; any
+other latest-release state remains governance drift. The
 tap stage also reads remote `main` and `Formula/packy.rb` back after pushing and
 compares the remote commit and formula digest with the sealed destination plan.
 
