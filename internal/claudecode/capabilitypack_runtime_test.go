@@ -364,7 +364,36 @@ func TestTypedHookContainerProvenanceSurvivesCreatorFirstRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lastRemoval.Projections) != 1 || lastRemoval.Projections[0].Action.Content != string(original) {
+	if len(lastRemoval.Projections) != 1 || lastRemoval.Projections[0].Action.Content != string(original) || lastRemoval.Projections[0].AdapterProvenance != provenance || lastRemoval.Projections[0].Action.AdapterProvenance != "" {
 		t.Fatalf("last removal did not restore original settings: %+v", lastRemoval.Projections)
+	}
+}
+
+func TestTypedHookRemovalRetainsCanonicalGenericOwnershipProvenance(t *testing.T) {
+	home := t.TempDir()
+	layout := NewCanonicalLayout(home)
+	if err := os.MkdirAll(layout.ConfigDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hook := capabilitypack.CommandHook{Type: "command", Event: "SessionStart", Command: "engram", Args: []string{"session"}, TimeoutSeconds: 5, Failure: "warn", Authorities: []string{}}
+	resource := capabilitypack.Resource{Kind: "lifecycle", ID: "session", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "command_hook", Name: "session", Hook: &hook}}}
+	pack := capabilitypack.Pack{ID: "p", Version: "1", Resources: []capabilitypack.Resource{resource}}
+	entry := fromBindingHook(resource.Bindings[0])
+	settings, _, err := MergeCommandHookWithProvenance([]byte(`{"hooks":{"SessionStart":[]}}`), entry, false, HookMergeProvenance{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.SettingsFile, settings, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const provenance = "claude-projection/v1/claude-command-hook"
+	record := OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "pack:p:lifecycle:session", Contributors: []string{"pack:p:lifecycle:session"}, ID: "lifecycle:session", Kind: string(ActionCommandHook), Target: layout.SettingsFile, Fingerprint: HookOwnershipFingerprint(entry.Event, entry.Fingerprint()), HookProvenance: provenance, HookEvent: entry.Event, DeletionAuthorized: true}
+	adapter := NewSurfaceAdapter("", layout, filepath.Join(home, "state"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(NewOwnershipSnapshot(record)))
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inspection.Projections) != 1 || inspection.Projections[0].AdapterProvenance != provenance || inspection.Projections[0].Action.AdapterProvenance != "" {
+		t.Fatalf("generic hook provenance was not retained: %+v", inspection.Projections)
 	}
 }

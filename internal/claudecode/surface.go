@@ -489,8 +489,10 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 		settings := settingsObservation.Raw
 		hook := fromBindingHook(b)
 		provenance := HookMergeProvenance{}
+		sealedProvenance := ""
 		for _, record := range ownership.Records {
 			if record.ID == id && record.Kind == string(ActionCommandHook) {
+				sealedProvenance = record.HookProvenance
 				provenance = ParseHookMergeProvenance(record.HookProvenance)
 			}
 		}
@@ -507,7 +509,7 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 		if exists {
 			fp = HookOwnershipFingerprint(hook.Event, o.EntryFingerprint)
 		}
-		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionCommandHook, Target: a.layout.SettingsFile, Content: string(merged), Source: provenance.Seal(), Command: Fingerprint(settings), Mode: capabilitypack.ProjectionRemoveContent, Description: "remove Claude Code hook " + b.Name}}, id + fp, nil
+		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, AdapterProvenance: sealedProvenance, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionCommandHook, Target: a.layout.SettingsFile, Content: string(merged), Source: provenance.Seal(), Command: Fingerprint(settings), Mode: capabilitypack.ProjectionRemoveContent, Description: "remove Claude Code hook " + b.Name}}, id + fp, nil
 	case "mcp_server":
 		o := ObserveUserMCP(a.layout.UserMCPFile, b.Name)
 		if o.Err != nil {
