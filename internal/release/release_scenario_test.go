@@ -56,10 +56,11 @@ type releaseProcessBoundary struct {
 }
 
 type releaseProcessFixture struct {
-	Name        string
-	Boundary    string
-	ReleaseMode string
-	Inject      func(*releaseProcessObservation)
+	Name            string
+	Boundary        string
+	ReleaseMode     string
+	StartAtBoundary bool
+	Inject          func(*releaseProcessObservation)
 }
 
 type releaseProcessObservation struct {
@@ -70,9 +71,11 @@ type releaseProcessObservation struct {
 }
 
 type releaseProcessResult struct {
-	Effects     []string
-	Diagnostics []string
-	err         error
+	Admission    *release.Admission
+	Effects      []string
+	Observations []releaseScenarioEffect
+	Diagnostics  []string
+	err          error
 }
 
 var releaseCandidateBuild struct {
@@ -321,6 +324,289 @@ func TestReleaseScenarioRejectsIdentityDriftAtEveryPrivilegedBoundary(t *testing
 	}
 }
 
+func TestReleaseScenarioManualRecoveryConsumesOnlyOriginalRetainedEvidence(t *testing.T) {
+	event := baseReleaseEventFixture()
+	event.tag = "v0.1.2"
+	event.tagCommit = strings.Repeat("c", 40)
+	event.mainCommit = event.tagCommit
+	event.eventName = "workflow_dispatch"
+	event.eventRef, event.eventRefType, event.eventRefName = "refs/heads/main", "branch", "main"
+	event.eventSHA, event.inputTag, event.inputDryRun = event.mainCommit, event.tag, "false"
+	event.releaseID, event.releaseState, event.originalRunID = "R_release", "draft", "12345"
+
+	result := runRetainedRecoveryVerification(t, event.tag, event.tagCommit, event.originalRunID, "", nil)
+	if result.err != nil {
+		t.Fatalf("retained recovery verification failed: %v\n%s", result.err, strings.Join(result.Diagnostics, "\n"))
+	}
+	if result.Admission == nil || result.Admission.Mode != release.AdmissionRecovery || result.Admission.OriginalRunID != event.originalRunID {
+		t.Fatalf("integrated recovery admission = %#v, want original run %s", result.Admission, event.originalRunID)
+	}
+	for _, effect := range result.Effects[:len(result.Effects)-1] {
+		if strings.Contains(effect, "build") || strings.Contains(effect, "attest") || strings.Contains(effect, "sign") ||
+			strings.Contains(effect, "release create") || strings.Contains(effect, "release upload") {
+			t.Fatalf("recovery verification attempted a forbidden effect: %q", effect)
+		}
+	}
+	wantEffects := []string{
+		"gh run download 12345 --repo yersonargotev/packy --name packy-release-v0.1.2 --dir " + filepath.Join(resultRoot(result), "dist"),
+		"gh run download 12345 --repo yersonargotev/packy --name packy-release-metadata-v0.1.2 --dir " + filepath.Join(resultRoot(result), "metadata"),
+	}
+	if len(result.Effects) < 8 || !reflect.DeepEqual(result.Effects[1:3], wantEffects) ||
+		!strings.HasPrefix(result.Effects[0], "releasecandidate admit ") ||
+		!strings.HasPrefix(result.Effects[3], "releasecandidate verify-recovery ") ||
+		!strings.HasPrefix(result.Effects[len(result.Effects)-1], "gh release edit ") {
+		t.Fatalf("integrated effects = %#v, want admission, original-run downloads, domain verification, boundary observations, and continuation (downloads %#v)", result.Effects, wantEffects)
+	}
+}
+
+func TestReleaseScenarioRejectsUnavailableOrDivergentRetainedEvidenceBeforePrivilege(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		downloadFailure string
+		diagnostic      string
+		effectCount     int
+		mutate          func(string, string)
+	}{
+		{name: "missing candidate artifact", downloadFailure: "missing-candidate", diagnostic: "candidate artifact not found", effectCount: 2},
+		{name: "expired metadata artifact", downloadFailure: "expired-metadata", diagnostic: "metadata artifact expired", effectCount: 3},
+		{name: "divergent bytes", diagnostic: "retained candidate subject set or digest diverges", effectCount: 4, mutate: func(dist, _ string) {
+			entries, err := os.ReadDir(dist)
+			if err != nil || len(entries) == 0 {
+				t.Fatalf("read retained fixture: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(dist, entries[0].Name()), []byte("divergent retained bytes\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "divergent metadata", diagnostic: "retained publication plan diverges", effectCount: 4, mutate: func(_, metadata string) {
+			path := filepath.Join(metadata, "publication-plan.json")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = []byte(strings.Replace(string(data), `"source_run_id":"12345"`, `"source_run_id":"99999"`, 1))
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result := runRetainedRecoveryVerification(t, "v0.1.2", strings.Repeat("c", 40), "12345", test.downloadFailure, test.mutate)
+			if result.err == nil {
+				t.Fatalf("%s unexpectedly passed", test.name)
+			}
+			if !containsDiagnostic(result.Diagnostics, test.diagnostic) || len(result.Effects) != test.effectCount {
+				t.Fatalf("denial diagnostics/effects = %#v / %#v, want %q and %d read-only effects", result.Diagnostics, result.Effects, test.diagnostic, test.effectCount)
+			}
+			for _, effect := range result.Effects {
+				if !strings.HasPrefix(effect, "gh run download ") && !strings.HasPrefix(effect, "releasecandidate admit ") && !strings.HasPrefix(effect, "releasecandidate verify-recovery ") {
+					t.Fatalf("denial crossed a privileged boundary: %#v", result.Effects)
+				}
+			}
+		})
+	}
+}
+
+func TestReleaseScenarioDistinguishesFreshPublicationFromSafeResumeAndCannotRecreateDisappearedRelease(t *testing.T) {
+	fresh := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
+	if fresh.err != nil || fresh.Admission.Mode != release.AdmissionFresh || fresh.Admission.OriginalRunID != "" {
+		t.Fatalf("fresh admission = %#v, err=%v", fresh.Admission, fresh.err)
+	}
+	recovery := baseReleaseEventFixture()
+	recovery.eventName = "workflow_dispatch"
+	recovery.eventRef, recovery.eventRefType, recovery.eventRefName = "refs/heads/main", "branch", "main"
+	recovery.eventSHA, recovery.inputTag, recovery.inputDryRun = recovery.mainCommit, recovery.tag, "false"
+	recovery.releaseID, recovery.releaseState, recovery.originalRunID = "R_release", "draft", "12345"
+	resumed := runReleaseScenario(t, releaseScenario{Event: recovery})
+	if resumed.err != nil || resumed.Admission.Mode != release.AdmissionRecovery || resumed.Admission.OriginalRunID != "12345" {
+		t.Fatalf("recovery admission = %#v, err=%v", resumed.Admission, resumed.err)
+	}
+	recovery.releaseID, recovery.releaseState, recovery.originalRunID = "", "", ""
+	disappeared := runReleaseScenario(t, releaseScenario{Event: recovery})
+	if disappeared.err == nil {
+		t.Fatal("manual recovery recreated a disappeared sealed release")
+	}
+	assertNoReleaseScenarioRemoteMutation(t, disappeared.Effects)
+
+	continuation := runRetainedRecoveryVerification(t, "v0.1.2", strings.Repeat("c", 40), "12345", "disappeared-release", nil)
+	if continuation.err == nil || !containsDiagnostic(continuation.Diagnostics, "publication denied") ||
+		!containsDiagnostic(continuation.Diagnostics, "expected") || !containsDiagnostic(continuation.Diagnostics, "observed") {
+		t.Fatalf("post-admission disappearance = %#v, want fail-closed continuation", continuation)
+	}
+	for _, command := range continuation.Effects {
+		for _, forbidden := range []string{"gh release create", "gh release upload", "gh release edit", "oidc ", "build", "attest", "sign", "git push"} {
+			if strings.Contains(command, forbidden) {
+				t.Fatalf("post-admission disappearance attempted %q: %#v", forbidden, continuation.Effects)
+			}
+		}
+	}
+}
+
+func runRetainedRecoveryVerification(t *testing.T, tag, commit, runID, downloadFailure string, mutate func(string, string)) releaseProcessResult {
+	t.Helper()
+	root := t.TempDir()
+	dist, metadata := filepath.Join(root, "dist"), filepath.Join(root, "metadata")
+	retainedDist, retainedMetadata := filepath.Join(root, "retained-dist"), filepath.Join(root, "retained-metadata")
+	for _, path := range []string{retainedDist, retainedMetadata, filepath.Join(root, "bin"), filepath.Join(root, "home"), filepath.Join(root, "config"), filepath.Join(root, "cache"), filepath.Join(root, "state"), filepath.Join(root, "tmp")} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	binary := []byte("original retained candidate bytes\n")
+	observed := fixtureObservation()
+	for index := range observed.Subjects {
+		if strings.HasPrefix(observed.Subjects[index].Name, "packy_") {
+			observed.Subjects[index].SHA256 = digest(binary)
+		}
+	}
+	replaceSBOM(&observed, []byte(strings.ReplaceAll(string(observed.SBOM), strings.Repeat("b", 64), digest(binary))))
+	candidate := mustCandidate(t, observed)
+	for _, subject := range candidate.Subjects {
+		var content []byte
+		switch subject.Name {
+		case release.SBOMName:
+			content = observed.SBOM
+		case release.ChecksumsName:
+			content = observed.SHA256SUMS
+		default:
+			content = binary
+		}
+		if err := os.WriteFile(filepath.Join(retainedDist, subject.Name), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeReleaseProcessJSON(t, retainedMetadata, "candidate.json", candidate)
+	provenance := release.ProvenanceFor(candidate)
+	writeReleaseProcessJSON(t, retainedMetadata, "provenance.json", provenance)
+	plan := map[string]any{"schema_version": 1, "tag": tag, "target_commit": commit, "draft": true, "source_run_id": runID, "attestation_source_ref": "refs/tags/" + tag, "candidate_id": candidate.ID, "candidate_assets": candidate.Subjects, "attestation": "attestation.bundle.jsonl", "homebrew": map[string]any{"repository": "yersonargotev/homebrew-tap", "path": "Formula/packy.rb", "sha256": strings.Repeat("a", 64)}}
+	writeReleaseProcessJSON(t, retainedMetadata, "publication-plan.json", plan)
+	draft := map[string]any{"schema_version": 1, "candidate_id": candidate.ID, "provenance": provenance, "target_commit": commit, "source_run_id": runID, "attestation_source_ref": "refs/tags/" + tag, "publication_plan": plan}
+	writeReleaseProcessJSON(t, retainedMetadata, "draft-base.json", draft)
+	if mutate != nil {
+		mutate(retainedDist, retainedMetadata)
+	}
+	effectLog := filepath.Join(root, "effects.log")
+	fakeVerifier := filepath.Join(root, "bin", "releasecandidate")
+	if err := os.WriteFile(fakeVerifier, []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'releasecandidate %s\\n' \"$*\" >> \"$FIXTURE_EFFECT_LOG\"\nexec \"$FIXTURE_REAL_RELEASECANDIDATE\" \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	admissionPath := writeReleaseProcessJSON(t, root, "recovery-admission.json", release.AdmissionObservation{
+		EventName: "workflow_dispatch", EventRef: release.PackyMainRef, RequestedMode: "recovery",
+		Repository: release.PackyRepository, Tag: tag, TagCommit: commit, EventCommit: commit,
+		CurrentMain: commit, LatestVersion: tag, TagInMain: true, ReleasePresent: true,
+		ReleaseTag: tag, ReleaseState: "draft", ReleaseCommit: commit, ReleaseSchemaVersion: 1,
+		ReleaseCandidateID: candidate.ID, ReleaseAttestationSourceRef: "refs/tags/" + tag,
+		OriginalRunID: runID, CandidateLocator: "run-" + runID,
+	})
+	admit := exec.Command(fakeVerifier, "admit", "--observation", admissionPath)
+	admit.Env = []string{"PATH=" + os.Getenv("PATH"), "FIXTURE_EFFECT_LOG=" + effectLog, "FIXTURE_REAL_RELEASECANDIDATE=" + releaseCandidateAdapter(t, repoRoot(t))}
+	admissionJSON, err := admit.Output()
+	if err != nil {
+		return retainedRecoveryResult(t, root, effectLog, nil, err)
+	}
+	var admission release.Admission
+	if err := json.Unmarshal(admissionJSON, &admission); err != nil {
+		t.Fatal(err)
+	}
+	tag, commit, runID = admission.Tag, admission.ReleaseCommit, admission.OriginalRunID
+	fakeGH := filepath.Join(root, "bin", "gh")
+	if err := os.WriteFile(fakeGH, []byte(`#!/usr/bin/env bash
+set -euo pipefail
+printf 'gh %s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
+if [[ "${1:-}" == run ]]; then
+  [[ "$#" == 9 && "$2" == download && "$3" == "$FIXTURE_RUN_ID" &&
+     "$4" == --repo && "$5" == yersonargotev/packy && "$6" == --name && "$8" == --dir ]] || exit 98
+  case "$7" in
+  "packy-release-$FIXTURE_TAG")
+    [[ "$FIXTURE_DOWNLOAD_FAILURE" != missing-candidate ]] || { echo 'candidate artifact not found' >&2; exit 1; }
+    cp -R "$FIXTURE_RETAINED_DIST/." "$9/"
+    ;;
+  "packy-release-metadata-$FIXTURE_TAG")
+    [[ "$FIXTURE_DOWNLOAD_FAILURE" != expired-metadata ]] || { echo 'metadata artifact expired' >&2; exit 1; }
+    cp -R "$FIXTURE_RETAINED_METADATA/." "$9/"
+    ;;
+  *) exit 98 ;;
+esac; exit 0; fi
+args="$*"
+case "$args" in
+  *"git/ref/heads/main"*) printf 'commit\t%s\n' "$FIXTURE_COMMIT" ;;
+  *"git/ref/tags/"*) printf 'commit\t%s\n' "$FIXTURE_COMMIT" ;;
+  *"compare/"*) printf 'ahead\n' ;;
+  "api graphql "*) [[ "$FIXTURE_DOWNLOAD_FAILURE" == disappeared-release ]] || printf 'R_release\n' ;;
+  "release view "*) jq . "$FIXTURE_RELEASE_JSON" ;;
+  "release edit "*) exit 0 ;;
+  *) echo "unexpected gh invocation: $*" >&2; exit 98 ;;
+esac
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	acquire := exec.Command("/bin/bash", filepath.Join(repoRoot(t), "scripts", "acquire-retained-release-candidate.sh"), "--repository", "yersonargotev/packy", "--tag", tag, "--run-id", runID, "--dist", dist, "--metadata", metadata)
+	baseEnv := []string{"PATH=" + filepath.Join(root, "bin") + ":" + os.Getenv("PATH"), "FIXTURE_EFFECT_LOG=" + effectLog, "FIXTURE_REAL_RELEASECANDIDATE=" + releaseCandidateAdapter(t, repoRoot(t)), "FIXTURE_RUN_ID=" + runID, "FIXTURE_TAG=" + tag, "FIXTURE_COMMIT=" + commit, "FIXTURE_DOWNLOAD_FAILURE=" + downloadFailure, "FIXTURE_RETAINED_DIST=" + retainedDist, "FIXTURE_RETAINED_METADATA=" + retainedMetadata}
+	acquire.Env = baseEnv
+	if output, err := acquire.CombinedOutput(); err != nil {
+		result := retainedRecoveryResult(t, root, effectLog, output, err)
+		result.Admission = &admission
+		return result
+	}
+	command := exec.Command("/bin/bash", filepath.Join(repoRoot(t), "scripts", "verify-retained-release-candidate.sh"), "--tag", tag, "--commit", commit, "--run-id", runID, "--dist", dist, "--metadata", metadata, "--verifier", fakeVerifier)
+	command.Dir = repoRoot(t)
+	command.Env = append(baseEnv, "HOME="+filepath.Join(root, "home"), "XDG_CONFIG_HOME="+filepath.Join(root, "config"), "XDG_CACHE_HOME="+filepath.Join(root, "cache"), "XDG_STATE_HOME="+filepath.Join(root, "state"), "TMPDIR="+filepath.Join(root, "tmp"))
+	output, err := command.CombinedOutput()
+	if err != nil {
+		result := retainedRecoveryResult(t, root, effectLog, output, err)
+		result.Admission = &admission
+		return result
+	}
+	releaseSubjects := append([]release.Subject(nil), candidate.Subjects...)
+	releaseSubjects = append(releaseSubjects, release.Subject{Name: "attestation.bundle.jsonl", SHA256: digest([]byte("sealed attestation bundle\n"))})
+	releaseState := exactRelease(candidate, true, releaseSubjects)
+	expectedBody := filepath.Join(root, "expected-release-body.md")
+	if err := os.WriteFile(expectedBody, []byte(releaseProcessBody(releaseState)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	attestation := filepath.Join(root, "attestation.bundle.jsonl")
+	if err := os.WriteFile(attestation, []byte("sealed attestation bundle\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	releaseJSON := writeReleaseProcessObservation(t, root, 0, releaseState)
+	boundaryEnv := append(baseEnv, "FIXTURE_RELEASE_JSON="+releaseJSON, "RUNNER_TEMP="+filepath.Join(root, "tmp"))
+	boundary := exec.Command("/bin/bash", filepath.Join(repoRoot(t), "scripts", "verify-release-boundary.sh"), "--boundary", "publication", "--repository", release.PackyRepository, "--tag", tag, "--release-commit", commit, "--verifier", fakeVerifier, "--ref-output", filepath.Join(root, "refs.json"), "--candidate", filepath.Join(metadata, "candidate.json"), "--provenance", filepath.Join(metadata, "provenance.json"), "--state-output", filepath.Join(root, "state.json"), "--decision-output", filepath.Join(root, "decision.json"), "--expected-body", expectedBody, "--attestation", attestation, "--mode", "draft")
+	boundary.Env = boundaryEnv
+	if output, err := boundary.CombinedOutput(); err != nil {
+		result := retainedRecoveryResult(t, root, effectLog, output, err)
+		result.Admission = &admission
+		return result
+	}
+	continuation := exec.Command(filepath.Join(root, "bin", "gh"), "release", "edit", tag, "--repo", release.PackyRepository, "--draft=false")
+	continuation.Env = boundaryEnv
+	output, err = continuation.CombinedOutput()
+	result := retainedRecoveryResult(t, root, effectLog, output, err)
+	result.Admission = &admission
+	return result
+}
+
+func retainedRecoveryResult(t *testing.T, root, effectLog string, output []byte, err error) releaseProcessResult {
+	t.Helper()
+	result := releaseProcessResult{err: err, Diagnostics: appendDiagnostics(nil, output)}
+	data, readErr := os.ReadFile(effectLog)
+	if readErr == nil {
+		result.Effects = strings.Split(strings.TrimSpace(string(data)), "\n")
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		t.Fatal(readErr)
+	}
+	result.Diagnostics = append(result.Diagnostics, "scenario_root="+root)
+	return result
+}
+
+func resultRoot(result releaseProcessResult) string {
+	for _, diagnostic := range result.Diagnostics {
+		if root, ok := strings.CutPrefix(diagnostic, "scenario_root="); ok {
+			return root
+		}
+	}
+	return ""
+}
+
 func TestReleaseScenarioAllowsProtectedMainToAdvanceAtEveryPrivilegedBoundary(t *testing.T) {
 	result := runReleaseProcessScenario(t, releaseProcessFixture{
 		Name: "later main advancement",
@@ -491,6 +777,7 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 		"TMPDIR=" + filepath.Join(root, "tmp"),
 		"GITHUB_REPOSITORY=yersonargotev/packy",
 		"FIXTURE_EFFECT_LOG=" + effectLog,
+		"FIXTURE_REAL_RELEASECANDIDATE=" + releaseCandidate,
 		"FIXTURE_TAGS=",
 		"FIXTURE_RELEASES=",
 		"FIXTURE_RELEASE_STATE=",
@@ -506,6 +793,9 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 
 	result := releaseProcessResult{}
 	for index, boundary := range releaseProcessBoundaries() {
+		if fixture.StartAtBoundary && boundary.Name != fixture.Boundary {
+			continue
+		}
 		releaseMode := boundary.ReleaseMode
 		if fixture.Boundary == boundary.Name && fixture.ReleaseMode != "" {
 			releaseMode = fixture.ReleaseMode
@@ -547,7 +837,7 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			"--repository", "yersonargotev/packy",
 			"--tag", candidate.Version,
 			"--release-commit", commit,
-			"--verifier", releaseCandidate,
+			"--verifier", filepath.Join(fakeBin, "releasecandidate"),
 			"--ref-output", refOutput,
 		}
 		if releaseMode != "" {
@@ -571,6 +861,7 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			result.err = fmt.Errorf("%s denied", boundary.Name)
 			result.Diagnostics = appendDiagnostics(result.Diagnostics, output)
 			result.Effects = readReleaseProcessEffects(t, effectLog, root)
+			result.Observations = readReleaseScenarioEffects(t, effectLog, root)
 			return result
 		}
 		effect := releaseProcessEffectCommand(fakeBin, boundary)
@@ -580,6 +871,7 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 		}
 	}
 	result.Effects = readReleaseProcessEffects(t, effectLog, root)
+	result.Observations = readReleaseScenarioEffects(t, effectLog, root)
 	return result
 }
 

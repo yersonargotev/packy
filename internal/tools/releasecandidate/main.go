@@ -35,7 +35,7 @@ func (v *stringList) Set(s string) error { *v = append(*v, s); return nil }
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("command is required: admit, create, verify-provenance, verify-ref-state, or verify-state")
+		return errors.New("command is required: admit, create, verify-provenance, verify-recovery, verify-ref-state, or verify-state")
 	}
 	switch args[0] {
 	case "admit":
@@ -44,6 +44,8 @@ func run(args []string, stdout io.Writer) error {
 		return runCreate(args[1:], stdout)
 	case "verify-provenance":
 		return runVerifyProvenance(args[1:], stdout)
+	case "verify-recovery":
+		return runVerifyRecovery(args[1:], stdout)
 	case "verify-state":
 		return runVerifyState(args[1:], stdout)
 	case "verify-ref-state":
@@ -51,6 +53,47 @@ func run(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func runVerifyRecovery(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("releasecandidate verify-recovery", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var tag, commit, runID, candidatePath, provenancePath, planPath, draftPath, subjectsPath string
+	flags.StringVar(&tag, "tag", "", "sealed release tag")
+	flags.StringVar(&commit, "commit", "", "sealed release commit")
+	flags.StringVar(&runID, "run-id", "", "original workflow run")
+	flags.StringVar(&candidatePath, "candidate", "", "candidate JSON")
+	flags.StringVar(&provenancePath, "provenance", "", "provenance JSON")
+	flags.StringVar(&planPath, "publication-plan", "", "publication plan JSON")
+	flags.StringVar(&draftPath, "draft-base", "", "draft base JSON")
+	flags.StringVar(&subjectsPath, "subjects", "", "observed retained subjects JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("unexpected positional arguments")
+	}
+	candidate, provenance, err := readEvidence(candidatePath, provenancePath)
+	if err != nil {
+		return err
+	}
+	var plan release.RecoveryPublicationPlan
+	if err := strictReadJSON(planPath, &plan, recoveryPlanSchema); err != nil {
+		return fmt.Errorf("read publication plan: %w", err)
+	}
+	var draft release.RecoveryDraftBase
+	if err := strictReadJSON(draftPath, &draft, recoveryDraftSchema); err != nil {
+		return fmt.Errorf("read draft base: %w", err)
+	}
+	var subjects []release.Subject
+	if err := strictReadJSON(subjectsPath, &subjects, jsonShape{array: &subjectShape}); err != nil {
+		return fmt.Errorf("read retained subjects: %w", err)
+	}
+	if err := release.VerifyRetainedRecovery(release.RetainedRecoveryObservation{Tag: tag, Commit: commit, OriginalRunID: runID, Candidate: candidate, Provenance: provenance, PublicationPlan: plan, DraftBase: draft, Subjects: subjects}); err != nil {
+		return fmt.Errorf("verify retained recovery: %w", err)
+	}
+	_, err = io.WriteString(stdout, "{\"verified\":true}\n")
+	return err
 }
 
 func runAdmit(args []string, stdout io.Writer) error {
@@ -465,6 +508,9 @@ var refStateSchema = jsonShape{keys: map[string]jsonShape{
 	"tag": stringScalar, "expected_tag_commit": stringScalar, "remote_tag_commit": stringScalar,
 	"release_commit": stringScalar, "current_main": stringScalar, "release_in_main": boolScalar,
 }}
+var homebrewShape = jsonShape{keys: map[string]jsonShape{"repository": stringScalar, "path": stringScalar, "sha256": stringScalar}}
+var recoveryPlanSchema = jsonShape{keys: map[string]jsonShape{"schema_version": numberScalar, "tag": stringScalar, "target_commit": stringScalar, "draft": boolScalar, "source_run_id": stringScalar, "attestation_source_ref": stringScalar, "candidate_id": stringScalar, "candidate_assets": {array: &subjectShape}, "attestation": stringScalar, "homebrew": homebrewShape}}
+var recoveryDraftSchema = jsonShape{keys: map[string]jsonShape{"schema_version": numberScalar, "candidate_id": stringScalar, "provenance": provenanceSchema, "target_commit": stringScalar, "source_run_id": stringScalar, "attestation_source_ref": stringScalar, "publication_plan": recoveryPlanSchema}}
 
 func strictReadJSON(path string, out any, schema jsonShape) error {
 	data, err := readRegularFile(path)
