@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -216,6 +217,185 @@ func TestCIUsesOnlyTheValidationEntrypoint(t *testing.T) {
 			t.Fatalf("CI bypasses validation entrypoint with %q", unsafe)
 		}
 	}
+}
+
+func TestReleaseScenariosHaveOneCanonicalOwnerAndOneFocusedDeveloperEntrypoint(t *testing.T) {
+	root := repositoryRoot(t)
+	authority := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
+	developerScript := readFile(t, filepath.Join(root, "scripts", "test-release-scenarios.sh"))
+	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+
+	if err := validateReleaseScenarioOwnership(authority, developerScript, workflow); err != nil {
+		t.Fatal(err)
+	}
+	mutations := []struct {
+		name            string
+		authority       string
+		developerScript string
+		workflow        string
+	}{
+		{name: "missing release package", authority: strings.Replace(authority, "  ./internal/release\n", "", 1), developerScript: developerScript, workflow: workflow},
+		{name: "direct scenario duplicate", authority: authority + "\ngo test ./internal/release -run '^TestReleaseScenario' -count=1 -v\n", developerScript: developerScript, workflow: workflow},
+		{name: "bash direct scenario duplicate", authority: authority + "\nbash -c \"go test ./internal/release -run '^TestReleaseScenario'\"\n", developerScript: developerScript, workflow: workflow},
+		{name: "root-qualified direct scenario duplicate", authority: authority + "\ngo test \"$root/internal/release\" -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
+		{name: "multiline direct scenario duplicate", authority: authority + "\ngo test ./internal/release \\\n  -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
+		{name: "broad release package duplicate", authority: authority + "\ngo test ./internal/release\n", developerScript: developerScript, workflow: workflow},
+		{name: "developer script duplicate", authority: authority + "\n./scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
+		{name: "bash developer script duplicate", authority: authority + "\nbash scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
+		{name: "root-qualified developer script duplicate", authority: authority + "\n$root/scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
+		{name: "duplicate focused command", authority: authority, developerScript: developerScript + "\ngo test ./internal/release -run '^TestReleaseScenario' -count=1 -v\n", workflow: workflow},
+		{name: "CI direct scenario bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: go test ./internal/release -run '^TestReleaseScenario'\n"},
+		{name: "CI multiline scenario bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: |\n          go test ./internal/release \\\n            -run '^TestReleaseScenario'\n"},
+		{name: "CI broad release package bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: go test ./internal/release\n"},
+		{name: "CI developer script bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: bash scripts/test-release-scenarios.sh\n"},
+		{name: "CI second validation entrypoint", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: bash scripts/validate-packy.sh\n"},
+	}
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			if err := validateReleaseScenarioOwnership(mutation.authority, mutation.developerScript, mutation.workflow); err == nil {
+				t.Fatal("mutated release scenario ownership was accepted")
+			}
+		})
+	}
+}
+
+func TestReleaseScenarioDeveloperEntrypointIsFocusedAndSandboxed(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		goExit     string
+		wantErr    bool
+		wantOutput string
+		wantDetail string
+	}{
+		{name: "success", wantOutput: "Release scenario cohort passed."},
+		{name: "failure", goExit: "7", wantErr: true, wantOutput: "Release scenario cohort failed; inspect the verbose test output above", wantDetail: "publication denied: expected=sealed-commit observed=moved-tag effects=none"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			bin := filepath.Join(root, "bin")
+			logPath := filepath.Join(root, "go.log")
+			writeExecutable(t, filepath.Join(root, "scripts", "test-release-scenarios.sh"), readFile(t, filepath.Join(repositoryRoot(t), "scripts", "test-release-scenarios.sh")))
+			writeExecutable(t, filepath.Join(bin, "go"), `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$HOME" "$XDG_CONFIG_HOME" "$GOCACHE" "$GOMODCACHE" "$GOPATH" "$*" >>"$GO_LOG"
+[[ -z "${GO_DETAIL:-}" ]] || printf '%s\n' "$GO_DETAIL"
+exit "${GO_EXIT:-0}"
+`)
+
+			operatorHome := filepath.Join(root, "operator-home")
+			operatorXDG := filepath.Join(root, "operator-xdg")
+			goCache := filepath.Join(root, "go-cache")
+			goModCache := filepath.Join(root, "go-mod-cache")
+			goPath := filepath.Join(root, "go-path")
+			cmd := exec.Command("/bin/bash", filepath.Join(root, "scripts", "test-release-scenarios.sh"))
+			cmd.Dir = root
+			cmd.Env = append(os.Environ(),
+				"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+				"HOME="+operatorHome,
+				"XDG_CONFIG_HOME="+operatorXDG,
+				"GOCACHE="+goCache,
+				"GOMODCACHE="+goModCache,
+				"GOPATH="+goPath,
+				"GO_LOG="+logPath,
+				"GO_EXIT="+test.goExit,
+				"GO_DETAIL="+test.wantDetail,
+				"TMPDIR="+root,
+			)
+			output, err := cmd.CombinedOutput()
+			if (err != nil) != test.wantErr {
+				t.Fatalf("entrypoint error = %v, want error %t\n%s", err, test.wantErr, output)
+			}
+			if test.goExit != "" {
+				var exitErr *exec.ExitError
+				if !errors.As(err, &exitErr) || exitErr.ExitCode() != 7 {
+					t.Fatalf("entrypoint exit = %v, want propagated status 7", err)
+				}
+			}
+			if !strings.Contains(string(output), test.wantOutput) {
+				t.Fatalf("entrypoint output missing %q:\n%s", test.wantOutput, output)
+			}
+			if test.wantDetail != "" && !strings.Contains(string(output), test.wantDetail) {
+				t.Fatalf("entrypoint discarded scenario boundary/identity/effect diagnostic %q:\n%s", test.wantDetail, output)
+			}
+
+			fields := strings.Split(strings.TrimSpace(readFile(t, logPath)), "\t")
+			if len(fields) != 6 {
+				t.Fatalf("fake Go log fields = %#v, want six", fields)
+			}
+			if fields[2] != goCache || fields[3] != goModCache || fields[4] != goPath {
+				t.Fatalf("Go cache roots were not preserved: %#v", fields[2:5])
+			}
+			if fields[5] != "test ./internal/release -run ^TestReleaseScenario -count=1 -v" {
+				t.Fatalf("focused Go invocation = %q", fields[5])
+			}
+			sandbox := filepath.Dir(fields[0])
+			if filepath.Base(fields[0]) != "home" || fields[1] != filepath.Join(sandbox, "xdg") || filepath.Dir(sandbox) != root || !strings.HasPrefix(filepath.Base(sandbox), "packy-release-scenarios.") {
+				t.Fatalf("focused Go invocation escaped its disposable roots: HOME=%q XDG_CONFIG_HOME=%q", fields[0], fields[1])
+			}
+			if _, statErr := os.Stat(sandbox); !os.IsNotExist(statErr) {
+				t.Fatalf("disposable sandbox was not removed: %s", sandbox)
+			}
+			for _, path := range []string{operatorHome, operatorXDG} {
+				if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+					t.Fatalf("operator root touched: %s", path)
+				}
+			}
+		})
+	}
+}
+
+func validateReleaseScenarioOwnership(authority, developerScript, workflow string) error {
+	packages := shellArrayValue(authority, "readonly packages=(")
+	if count := strings.Count(" "+strings.Join(packages, " ")+" ", " ./internal/release "); count != 1 {
+		return fmt.Errorf("canonical release package count = %d, want 1", count)
+	}
+	if strings.Count(authority, `go test "${packages[@]}"`) != 1 {
+		return fmt.Errorf("ordinary canonical test command must remain exactly once")
+	}
+	if strings.Count(authority, `go test -race -timeout 10m "${race_packages[@]}"`) != 1 || !strings.Contains(authority, "./internal/release) ;;\n    *) race_packages") {
+		return fmt.Errorf("release package ordinary/race contract changed")
+	}
+	if releaseScenarioCommandCount(authority) != 0 {
+		return fmt.Errorf("canonical validation must own scenarios through the ordinary release package only")
+	}
+	if count := strings.Count(authority, "scripts/test-release-scenarios.sh"); count != 0 {
+		return fmt.Errorf("canonical validation invokes focused developer script %d times, want 0", count)
+	}
+	if releaseScenarioCommandCount(developerScript) != 1 || strings.Count(developerScript, `go test ./internal/release -run '^TestReleaseScenario' -count=1 -v`) != 1 {
+		return fmt.Errorf("focused developer scenario command count must equal 1")
+	}
+	if count := strings.Count(workflow, "scripts/validate-packy.sh"); count != 1 {
+		return fmt.Errorf("CI validation entrypoint count = %d, want 1", count)
+	}
+	if releaseScenarioCommandCount(workflow) != 0 || strings.Contains(workflow, "scripts/test-release-scenarios.sh") {
+		return fmt.Errorf("CI bypasses the one validation entrypoint")
+	}
+	return nil
+}
+
+func shellArrayValue(script, opening string) []string {
+	start := strings.Index(script, opening)
+	if start < 0 {
+		return nil
+	}
+	body, _, found := strings.Cut(script[start+len(opening):], "\n)")
+	if !found {
+		return nil
+	}
+	return strings.Fields(body)
+}
+
+func releaseScenarioCommandCount(contents string) int {
+	contents = strings.ReplaceAll(contents, "\\\r\n", " ")
+	contents = strings.ReplaceAll(contents, "\\\n", " ")
+	count := 0
+	for _, line := range strings.Split(contents, "\n") {
+		line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+		if strings.Contains(line, "go test") && strings.Contains(line, "internal/release") {
+			count++
+		}
+	}
+	return count
 }
 
 func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T) {
