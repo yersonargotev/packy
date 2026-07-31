@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -247,22 +250,198 @@ func TestClassicLifecycleDeletionDoesNotRedistributePolicyInCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for call, want := range map[string]int{
-		"corelifecycle.NewFacade(":        1,
-		"lifecycle.Preview(":              1,
-		"lifecycle.Apply(":                1,
-		"return executeClassicLifecycle(": 3,
-	} {
-		if got := strings.Count(string(root), call); got != want {
-			t.Fatalf("root.go has %d occurrences of %q, want %d", got, call, want)
+	if problems := classicLifecycleArchitectureProblems(root); len(problems) > 0 {
+		t.Fatalf("classic lifecycle architecture drifted:\n- %s", strings.Join(problems, "\n- "))
+	}
+}
+
+func TestClassicLifecycleArchitectureGuardUsesGoSyntax(t *testing.T) {
+	root, err := os.ReadFile("root.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := format.Source(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noise := append(append([]byte(nil), formatted...), []byte(`
+
+// lifecycle.Preview(operation); lifecycle.Apply(ctx, plan)
+var classicLifecycleArchitectureNoise = "corelifecycle.NewFacade(); return executeClassicLifecycle(corelifecycle.Uninstall)"
+`)...)
+	if problems := classicLifecycleArchitectureProblems(noise); len(problems) > 0 {
+		t.Fatalf("formatting, comments, or string literals affected the semantic guard:\n- %s", strings.Join(problems, "\n- "))
+	}
+
+	mutationBase := string(noise)
+	mutations := map[string][]byte{
+		"bypass shared executor": []byte(strings.Replace(
+			mutationBase, "return executeClassicLifecycle(", "return bypassClassicLifecycle(", 1,
+		)),
+		"duplicate delegation": append(append([]byte(nil), noise...), []byte(`
+
+func duplicateClassicLifecycleRoute() {
+	executeClassicLifecycle(nil, Options{}, nil, corelifecycle.Install, classicLifecycleFlags{}, nil)
+}
+`)...),
+		"misroute update": []byte(strings.Replace(
+			mutationBase,
+			"workstationResolver, corelifecycle.Update, classicLifecycleFlags{",
+			"workstationResolver, corelifecycle.Install, classicLifecycleFlags{",
+			1,
+		)),
+		"facade outside executor": append(append([]byte(nil), noise...), []byte(`
+
+func bypassClassicLifecycleExecutor() {
+	_ = corelifecycle.NewFacade(nil, nil, nil)
+}
+`)...),
+	}
+	for name, mutated := range mutations {
+		t.Run(name, func(t *testing.T) {
+			if problems := classicLifecycleArchitectureProblems(mutated); len(problems) == 0 {
+				t.Fatal("semantic architecture guard accepted the deliberate mutation")
+			}
+		})
+	}
+	if problems := classicLifecycleArchitectureProblems(root); len(problems) > 0 {
+		t.Fatalf("restored production source did not pass:\n- %s", strings.Join(problems, "\n- "))
+	}
+}
+
+const coreLifecycleImportPath = "github.com/yersonargotev/packy/internal/corelifecycle"
+
+func classicLifecycleArchitectureProblems(source []byte) []string {
+	file, err := parser.ParseFile(token.NewFileSet(), "root.go", source, parser.SkipObjectResolution)
+	if err != nil {
+		return []string{fmt.Sprintf("parse root.go: %v", err)}
+	}
+	imports := importedPackages(file)
+	expectedRoutes := map[string]string{
+		"newInstallCommand":   "Install",
+		"newUpdateCommand":    "Update",
+		"newUninstallCommand": "Uninstall",
+	}
+	routes := map[string][]string{}
+	executorDeclarations := 0
+	facadeCreations := map[string]int{}
+	previewCalls := map[string]int{}
+	applyCalls := map[string]int{}
+
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Body == nil {
+			continue
+		}
+		owner := function.Name.Name
+		if owner == "executeClassicLifecycle" {
+			executorDeclarations++
+		}
+		facadeVariables := map[string]bool{}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			assignment, ok := node.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for index, expression := range assignment.Rhs {
+				call, ok := expression.(*ast.CallExpr)
+				if !ok || !isImportedCall(call.Fun, imports, coreLifecycleImportPath, "NewFacade") ||
+					index >= len(assignment.Lhs) {
+					continue
+				}
+				identifier, ok := assignment.Lhs[index].(*ast.Ident)
+				if ok {
+					facadeVariables[identifier.Name] = true
+				}
+			}
+			return true
+		})
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if isImportedCall(call.Fun, imports, coreLifecycleImportPath, "NewFacade") {
+				facadeCreations[owner]++
+			}
+			if identifier, ok := call.Fun.(*ast.Ident); ok && identifier.Name == "executeClassicLifecycle" {
+				operation := "<invalid>"
+				if len(call.Args) > 3 {
+					selector, ok := call.Args[3].(*ast.SelectorExpr)
+					if ok && isImportedSelector(selector, imports, coreLifecycleImportPath) {
+						operation = selector.Sel.Name
+					}
+				}
+				routes[owner] = append(routes[owner], operation)
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			receiver, ok := selector.X.(*ast.Ident)
+			if !ok || !facadeVariables[receiver.Name] {
+				return true
+			}
+			switch selector.Sel.Name {
+			case "Preview":
+				previewCalls[owner]++
+			case "Apply":
+				applyCalls[owner]++
+			}
+			return true
+		})
+	}
+
+	var problems []string
+	if executorDeclarations != 1 {
+		problems = append(problems, fmt.Sprintf("found %d executeClassicLifecycle declarations, want 1", executorDeclarations))
+	}
+	for owner, count := range facadeCreations {
+		if owner != "executeClassicLifecycle" || count != 1 {
+			problems = append(problems, fmt.Sprintf("%s creates %d core lifecycle facades", owner, count))
 		}
 	}
-	for _, operation := range []string{"corelifecycle.Install", "corelifecycle.Update", "corelifecycle.Uninstall"} {
-		call := "return executeClassicLifecycle(cmd, opts, workstationResolver, " + operation + ", classicLifecycleFlags{"
-		if got := strings.Count(string(root), call); got != 1 {
-			t.Fatalf("root.go has %d command delegations for %s, want 1", got, operation)
+	if facadeCreations["executeClassicLifecycle"] != 1 {
+		problems = append(problems, fmt.Sprintf(
+			"executeClassicLifecycle creates %d core lifecycle facades, want 1",
+			facadeCreations["executeClassicLifecycle"],
+		))
+	}
+	for owner, count := range previewCalls {
+		if owner != "executeClassicLifecycle" || count != 1 {
+			problems = append(problems, fmt.Sprintf("%s calls Preview %d times on a core lifecycle facade", owner, count))
 		}
 	}
+	for owner, count := range applyCalls {
+		if owner != "executeClassicLifecycle" || count != 1 {
+			problems = append(problems, fmt.Sprintf("%s calls Apply %d times on a core lifecycle facade", owner, count))
+		}
+	}
+	if previewCalls["executeClassicLifecycle"] != 1 {
+		problems = append(problems, fmt.Sprintf(
+			"executeClassicLifecycle calls Preview %d times, want 1",
+			previewCalls["executeClassicLifecycle"],
+		))
+	}
+	if applyCalls["executeClassicLifecycle"] != 1 {
+		problems = append(problems, fmt.Sprintf(
+			"executeClassicLifecycle calls Apply %d times, want 1",
+			applyCalls["executeClassicLifecycle"],
+		))
+	}
+	for owner := range routes {
+		if _, allowed := expectedRoutes[owner]; !allowed {
+			problems = append(problems, fmt.Sprintf("%s delegates through executeClassicLifecycle", owner))
+		}
+	}
+	for owner, expected := range expectedRoutes {
+		operations := routes[owner]
+		if len(operations) != 1 || operations[0] != expected {
+			problems = append(problems, fmt.Sprintf("%s delegates with %v, want exactly [%s]", owner, operations, expected))
+		}
+	}
+	sort.Strings(problems)
+	return problems
 }
 
 func TestSetupHealthDeletionDoesNotRedistributeDiagnosisPolicyInCLI(t *testing.T) {
