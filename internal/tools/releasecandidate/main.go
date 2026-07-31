@@ -444,6 +444,7 @@ type jsonShape struct {
 
 var stringScalar = jsonShape{scalarType: "string"}
 var boolScalar = jsonShape{scalarType: "bool"}
+var numberScalar = jsonShape{scalarType: "number"}
 var permissionShape = jsonShape{keys: map[string]jsonShape{"name": stringScalar, "access": stringScalar}}
 var subjectShape = jsonShape{keys: map[string]jsonShape{"name": stringScalar, "sha256": stringScalar}}
 var candidateSchema = jsonShape{keys: map[string]jsonShape{"id": stringScalar, "version": stringScalar, "repository": stringScalar, "ref": stringScalar, "commit": stringScalar, "workflow": stringScalar, "workflow_sha": stringScalar, "release_notes_sha256": stringScalar, "permissions": {array: &permissionShape}, "subjects": {array: &subjectShape}}}
@@ -455,7 +456,9 @@ var admissionSchema = jsonShape{keys: map[string]jsonShape{
 	"repository": stringScalar, "tag": stringScalar, "tag_commit": stringScalar,
 	"event_commit": stringScalar, "current_main": stringScalar, "latest_version": stringScalar,
 	"tag_in_main": boolScalar, "release_present": boolScalar, "release_tag": stringScalar,
-	"release_state": stringScalar, "release_commit": stringScalar, "release_sealed": boolScalar, "original_run_id": stringScalar,
+	"release_state": stringScalar, "release_commit": stringScalar,
+	"release_schema_version": numberScalar, "release_candidate_id": stringScalar,
+	"release_attestation_source_ref": stringScalar, "original_run_id": stringScalar,
 	"candidate_locator": stringScalar,
 }}
 var refStateSchema = jsonShape{keys: map[string]jsonShape{
@@ -550,6 +553,11 @@ func walkJSON(dec *json.Decoder, s jsonShape) error {
 	if s.scalarType == "bool" {
 		if _, ok := tok.(bool); !ok {
 			return errors.New("expected boolean")
+		}
+	}
+	if s.scalarType == "number" {
+		if _, ok := tok.(float64); !ok {
+			return errors.New("expected number")
 		}
 	}
 	return nil

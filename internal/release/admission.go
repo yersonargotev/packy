@@ -21,23 +21,25 @@ const (
 // AdmissionObservation is a read-only projection of the event, refs, and
 // release identity acquired by the workflow adapter.
 type AdmissionObservation struct {
-	EventName        string `json:"event_name"`
-	EventRef         string `json:"event_ref"`
-	RequestedMode    string `json:"requested_mode"`
-	Repository       string `json:"repository"`
-	Tag              string `json:"tag"`
-	TagCommit        string `json:"tag_commit"`
-	EventCommit      string `json:"event_commit"`
-	CurrentMain      string `json:"current_main"`
-	LatestVersion    string `json:"latest_version"`
-	TagInMain        bool   `json:"tag_in_main"`
-	ReleasePresent   bool   `json:"release_present"`
-	ReleaseState     string `json:"release_state"`
-	ReleaseTag       string `json:"release_tag"`
-	ReleaseCommit    string `json:"release_commit"`
-	ReleaseSealed    bool   `json:"release_sealed"`
-	OriginalRunID    string `json:"original_run_id"`
-	CandidateLocator string `json:"candidate_locator"`
+	EventName                   string `json:"event_name"`
+	EventRef                    string `json:"event_ref"`
+	RequestedMode               string `json:"requested_mode"`
+	Repository                  string `json:"repository"`
+	Tag                         string `json:"tag"`
+	TagCommit                   string `json:"tag_commit"`
+	EventCommit                 string `json:"event_commit"`
+	CurrentMain                 string `json:"current_main"`
+	LatestVersion               string `json:"latest_version"`
+	TagInMain                   bool   `json:"tag_in_main"`
+	ReleasePresent              bool   `json:"release_present"`
+	ReleaseState                string `json:"release_state"`
+	ReleaseTag                  string `json:"release_tag"`
+	ReleaseCommit               string `json:"release_commit"`
+	ReleaseSchemaVersion        int    `json:"release_schema_version"`
+	ReleaseCandidateID          string `json:"release_candidate_id"`
+	ReleaseAttestationSourceRef string `json:"release_attestation_source_ref"`
+	OriginalRunID               string `json:"original_run_id"`
+	CandidateLocator            string `json:"candidate_locator"`
 }
 
 type Admission struct {
@@ -92,8 +94,17 @@ func AdmitRelease(observed AdmissionObservation) (Admission, error) {
 		if observed.ReleaseState != "draft" && observed.ReleaseState != "published" {
 			return Admission{}, errors.New("recovery release state must be draft or published")
 		}
-		if !observed.ReleaseSealed || observed.ReleaseTag != observed.Tag || observed.ReleaseCommit != observed.TagCommit {
+		if observed.ReleaseTag != observed.Tag || observed.ReleaseCommit != observed.TagCommit {
 			return Admission{}, errors.New("recovery release does not match the sealed tag and commit")
+		}
+		if observed.ReleaseSchemaVersion != 1 {
+			return Admission{}, errors.New("recovery release metadata schema must be 1")
+		}
+		if observed.ReleaseCandidateID == "" {
+			return Admission{}, errors.New("recovery release candidate ID is required")
+		}
+		if observed.ReleaseAttestationSourceRef != "refs/tags/"+observed.Tag {
+			return Admission{}, errors.New("recovery release attestation source ref must match the exact tag ref")
 		}
 		if !positiveDecimal(observed.OriginalRunID) {
 			return Admission{}, errors.New("recovery original run ID must be a positive decimal GitHub run ID")

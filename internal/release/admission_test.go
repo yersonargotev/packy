@@ -29,9 +29,12 @@ func TestAdmitReleaseClassifiesFreshDryRunAndRecovery(t *testing.T) {
 	}
 
 	recovery := dry
-	recovery.RequestedMode, recovery.ReleasePresent, recovery.ReleaseSealed = "recovery", true, true
+	recovery.RequestedMode, recovery.ReleasePresent = "recovery", true
 	recovery.ReleaseState = "draft"
 	recovery.ReleaseTag, recovery.ReleaseCommit = recovery.Tag, recovery.TagCommit
+	recovery.ReleaseSchemaVersion = 1
+	recovery.ReleaseCandidateID = strings.Repeat("c", 64)
+	recovery.ReleaseAttestationSourceRef = "refs/tags/v0.4.0"
 	recovery.OriginalRunID, recovery.CandidateLocator = "123", "candidate-abc"
 	if got, err = AdmitRelease(recovery); err != nil {
 		t.Fatal(err)
@@ -88,7 +91,8 @@ func TestAdmitReleaseRequiresExactRecoveryLocator(t *testing.T) {
 		Repository: PackyRepository, Tag: "v0.4.0", TagCommit: sha, EventCommit: sha,
 		CurrentMain: sha, LatestVersion: "v0.4.0", TagInMain: true,
 		ReleasePresent: true, ReleaseState: "published", ReleaseTag: "v0.4.0",
-		ReleaseCommit: sha, ReleaseSealed: true, OriginalRunID: "123",
+		ReleaseCommit: sha, ReleaseSchemaVersion: 1, ReleaseCandidateID: strings.Repeat("c", 64),
+		ReleaseAttestationSourceRef: "refs/tags/v0.4.0", OriginalRunID: "123",
 		CandidateLocator: "packy-release-v0.4.0",
 	}
 	tests := map[string]func(*AdmissionObservation){
@@ -107,6 +111,36 @@ func TestAdmitReleaseRequiresExactRecoveryLocator(t *testing.T) {
 			mutate(&observed)
 			if _, err := AdmitRelease(observed); err == nil {
 				t.Fatal("ambiguous recovery locator admitted")
+			}
+		})
+	}
+}
+
+func TestAdmitReleaseDerivesSealedRecoveryFromMetadataFacts(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	valid := AdmissionObservation{
+		EventName: "workflow_dispatch", EventRef: PackyMainRef, RequestedMode: "recovery",
+		Repository: PackyRepository, Tag: "v0.4.0", TagCommit: sha, EventCommit: sha,
+		CurrentMain: sha, LatestVersion: "v0.4.0", TagInMain: true,
+		ReleasePresent: true, ReleaseState: "published", ReleaseTag: "v0.4.0",
+		ReleaseCommit: sha, ReleaseSchemaVersion: 1, ReleaseCandidateID: strings.Repeat("c", 64),
+		ReleaseAttestationSourceRef: "refs/tags/v0.4.0", OriginalRunID: "123",
+		CandidateLocator: "packy-release-v0.4.0",
+	}
+	if _, err := AdmitRelease(valid); err != nil {
+		t.Fatalf("valid sealed metadata rejected: %v", err)
+	}
+	tests := map[string]func(*AdmissionObservation){
+		"wrong schema":     func(o *AdmissionObservation) { o.ReleaseSchemaVersion = 2 },
+		"empty candidate":  func(o *AdmissionObservation) { o.ReleaseCandidateID = "" },
+		"wrong source ref": func(o *AdmissionObservation) { o.ReleaseAttestationSourceRef = PackyMainRef },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			observed := valid
+			mutate(&observed)
+			if _, err := AdmitRelease(observed); err == nil {
+				t.Fatal("unsealed recovery metadata admitted")
 			}
 		})
 	}
