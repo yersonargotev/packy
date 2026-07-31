@@ -174,6 +174,28 @@ func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *test
 	}
 }
 
+func TestReleaseWorkflowAcquiresBoundaryAdapterOutsideRetainedRecoveryMetadata(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+	for _, job := range []string{"attest", "publish-github", "homebrew"} {
+		block := releaseWorkflowJob(t, text, job)
+		for _, want := range []string{
+			"Check out trusted release boundary adapter",
+			"ref: ${{ github.sha }}",
+			"path: release-boundary",
+			"sparse-checkout: scripts",
+			"persist-credentials: false",
+			"release-boundary/scripts/verify-release-boundary.sh",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("%s must acquire the trusted boundary adapter independently of retained metadata: missing %q", job, want)
+			}
+		}
+	}
+	if strings.Contains(releaseWorkflowJob(t, text, "build"), "cp scripts/verify-release-boundary.sh release-metadata/") {
+		t.Fatal("the boundary adapter must remain independent of retained candidate metadata")
+	}
+}
+
 func TestReleaseWorkflowAdmissionPassesRawReleaseMetadataFacts(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 	normalize := readReleaseEventNormalizer(t, repoRoot(t))
@@ -381,8 +403,9 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 	})
 	refBeforeAttest := releaseWorkflowStepIndex(t, workflow, "Revalidate refs immediately before OIDC issuance", []string{
 		"needs.inspect-release.outputs.has_bundle != 'true'",
+		"verify-release-boundary.sh",
 		"verify-release-ref-state.sh",
-		"sealed commit left protected-main history before OIDC issuance",
+		"--boundary 'OIDC issuance'",
 	})
 	verify := releaseWorkflowStepIndex(t, workflow, "Verify bundle offline against exact workflow and subjects", []string{
 		"gh attestation trusted-root",
@@ -430,15 +453,30 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 		t.Fatal("a failed release lookup is ambiguous; absence must be proved by a successful API query")
 	}
 	publishStep := releaseWorkflowStep(t, workflow, "Create or verify draft, upload only missing assets, and publish once").Text
-	firstRefCheck := strings.Index(publishStep, "assert_ref_identity >/dev/null")
+	firstRefCheck := strings.Index(publishStep, "verify_boundary 'draft creation'")
 	create := strings.Index(publishStep, "gh release create")
-	finalRefCheck := strings.LastIndex(publishStep, "assert_ref_identity >/dev/null")
+	finalRefCheck := strings.LastIndex(publishStep, "verify_boundary publication")
 	publishEdit := strings.Index(publishStep, "gh release edit")
 	if firstRefCheck < 0 || create < 0 || finalRefCheck < 0 || publishEdit < 0 || !(firstRefCheck < create && create < finalRefCheck && finalRefCheck < publishEdit) {
 		t.Fatal("tag and protected main must be revalidated immediately before draft creation and publication")
 	}
-	if got := strings.Count(publishStep, "assert_ref_identity >/dev/null"); got < 4 {
-		t.Fatalf("every draft creation, asset upload phase, and publication needs an adjacent ref recheck; got %d", got)
+	if got := strings.Count(publishStep, "verify_boundary 'asset upload'"); got < 2 {
+		t.Fatalf("every asset upload phase needs the shared boundary adapter; got %d", got)
+	}
+	for _, want := range []string{
+		"verify-release-boundary.sh",
+		`--candidate "$candidate"`,
+		`--provenance "$provenance"`,
+		`--state-output "$RUNNER_TEMP/boundary-state.json"`,
+		`--decision-output "$RUNNER_TEMP/boundary-decision.json"`,
+		`--expected-body "$expected_body"`,
+		`--attestation "$bundle"`,
+		`--upload-asset "$name"`,
+		`--upload-asset "$(basename "$bundle")"`,
+	} {
+		if !strings.Contains(publishStep, want) {
+			t.Fatalf("publication boundaries must use sealed release-state verification %q", want)
+		}
 	}
 }
 
@@ -772,14 +810,18 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 		"needs: [normalize, build, validate-release-evidence, publish-github]",
 		"needs.publish-github.outputs.published == 'true'",
 		"Independently read back exact published GitHub assets",
+		"verify-release-boundary.sh",
 		"verify-release-ref-state.sh",
 		"cmp attestation/release-body.md",
 		"attestation.bundle.jsonl",
 		"cmp \"$RUNNER_TEMP/expected-assets\" \"$RUNNER_TEMP/actual-assets\"",
 		"sha256sum --check SHA256SUMS",
 		"publication_plan.homebrew.sha256",
-		"sealed commit left protected-main history before tap push",
-		"sealed commit left protected-main history after tap push proof",
+		"--boundary 'Homebrew mutation'",
+		"--state-output \"$RUNNER_TEMP/boundary-state.json\"",
+		"--decision-output \"$RUNNER_TEMP/boundary-decision.json\"",
+		"--expected-body ../attestation/release-body.md",
+		"--attestation ../attestation/attestation.bundle.jsonl --mode published",
 		"tap remote formula does not match the sealed destination plan",
 		"git push --dry-run origin HEAD:main",
 		"git push origin HEAD:main",

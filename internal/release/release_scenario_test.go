@@ -50,6 +50,31 @@ type releaseScenarioResult struct {
 	err          error
 }
 
+type releaseProcessBoundary struct {
+	Name        string
+	ReleaseMode string
+}
+
+type releaseProcessFixture struct {
+	Name        string
+	Boundary    string
+	ReleaseMode string
+	Inject      func(*releaseProcessObservation)
+}
+
+type releaseProcessObservation struct {
+	TagCommit  string
+	MainCommit string
+	Ancestor   bool
+	Release    *release.Release
+}
+
+type releaseProcessResult struct {
+	Effects     []string
+	Diagnostics []string
+	err         error
+}
+
 var releaseCandidateBuild struct {
 	sync.Once
 	root string
@@ -223,6 +248,420 @@ func TestReleaseScenarioResultIsDeterministicAndMutationSensitive(t *testing.T) 
 	if mutated.Admission.ReleaseCommit != mutatedCommit || mutated.VerifiedRefs.ReleaseCommit != mutatedCommit {
 		t.Fatalf("mutated identities did not seal %s: admission=%#v refs=%#v", mutatedCommit, mutated.Admission, mutated.VerifiedRefs)
 	}
+}
+
+func TestReleaseScenarioRejectsIdentityDriftAtEveryPrivilegedBoundary(t *testing.T) {
+	commit := strings.Repeat("c", 40)
+	moved := strings.Repeat("e", 40)
+	boundaries := releaseProcessBoundaries()
+	var fixtures []releaseProcessFixture
+	for _, boundary := range boundaries {
+		boundary := boundary
+		fixtures = append(fixtures,
+			releaseProcessFixture{
+				Name: "tag movement", Boundary: boundary.Name,
+				Inject: func(observed *releaseProcessObservation) {
+					observed.TagCommit = moved
+				},
+			},
+			releaseProcessFixture{
+				Name: "loss of protected-main ancestry", Boundary: boundary.Name,
+				Inject: func(observed *releaseProcessObservation) {
+					observed.Ancestor = false
+				},
+			},
+		)
+		if boundary.ReleaseMode != "" {
+			fixtures = append(fixtures,
+				releaseProcessFixture{
+					Name: "mismatched release target", Boundary: boundary.Name,
+					Inject: func(observed *releaseProcessObservation) {
+						observed.Release.TargetCommit = moved
+					},
+				},
+				releaseProcessFixture{
+					Name: "missing release", Boundary: boundary.Name,
+					Inject: func(observed *releaseProcessObservation) {
+						observed.Release = nil
+					},
+				},
+				releaseProcessFixture{
+					Name: "divergent sealed release", Boundary: boundary.Name,
+					Inject: func(observed *releaseProcessObservation) {
+						observed.Release.CandidateID = strings.Repeat("f", 64)
+					},
+				},
+			)
+		}
+	}
+
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.Boundary+"/"+fixture.Name, func(t *testing.T) {
+			result := runReleaseProcessScenario(t, fixture)
+			if result.err == nil {
+				t.Fatalf("%s at %s was accepted", fixture.Name, fixture.Boundary)
+			}
+			diagnostic := strings.Join(result.Diagnostics, "\n")
+			for _, want := range []string{fixture.Boundary, "expected", commit, "observed"} {
+				if !strings.Contains(diagnostic, want) {
+					t.Fatalf("diagnostic %q does not name %q", diagnostic, want)
+				}
+			}
+			boundaryIndex := releaseProcessBoundaryIndex(t, fixture.Boundary)
+			if len(result.Effects) != boundaryIndex {
+				t.Fatalf("effects = %#v, want exactly the %d effects before %s", result.Effects, boundaryIndex, fixture.Boundary)
+			}
+			for index, effect := range result.Effects {
+				if effect != boundaries[index].Name {
+					t.Fatalf("effect %d = %q, want %q", index, effect, boundaries[index].Name)
+				}
+			}
+		})
+	}
+}
+
+func TestReleaseScenarioAllowsProtectedMainToAdvanceAtEveryPrivilegedBoundary(t *testing.T) {
+	result := runReleaseProcessScenario(t, releaseProcessFixture{
+		Name: "later main advancement",
+		Inject: func(observed *releaseProcessObservation) {
+			observed.MainCommit = strings.Repeat("d", 40)
+		},
+	})
+	if result.err != nil {
+		t.Fatalf("later protected-main advancement failed: %v\n%s", result.err, strings.Join(result.Diagnostics, "\n"))
+	}
+	want := []string{
+		"OIDC issuance",
+		"draft creation",
+		"asset upload",
+		"publication",
+		"Homebrew mutation",
+	}
+	if !reflect.DeepEqual(result.Effects, want) {
+		t.Fatalf("effects = %#v, want %#v", result.Effects, want)
+	}
+}
+
+func TestReleaseScenarioAllowsExactPublishedContinuationAtPublication(t *testing.T) {
+	result := runReleaseProcessScenario(t, releaseProcessFixture{
+		Name:        "published continuation",
+		Boundary:    "publication",
+		ReleaseMode: "published",
+	})
+	if result.err != nil {
+		t.Fatalf("exact published continuation failed: %v\n%s", result.err, strings.Join(result.Diagnostics, "\n"))
+	}
+	want := []string{"OIDC issuance", "draft creation", "asset upload", "publication", "Homebrew mutation"}
+	if !reflect.DeepEqual(result.Effects, want) {
+		t.Fatalf("effects = %#v, want %#v", result.Effects, want)
+	}
+}
+
+func TestReleaseScenarioReacquiresReleaseStateAfterEarlierEffects(t *testing.T) {
+	moved := strings.Repeat("e", 40)
+	result := runReleaseProcessScenario(t, releaseProcessFixture{
+		Name:     "release target changed after asset upload",
+		Boundary: "publication",
+		Inject: func(observed *releaseProcessObservation) {
+			observed.Release.TargetCommit = moved
+		},
+	})
+	if result.err == nil {
+		t.Fatal("publication used release state captured before the earlier asset effect")
+	}
+	if !containsDiagnostic(result.Diagnostics, "publication denied") ||
+		!containsDiagnostic(result.Diagnostics, "observed") ||
+		!containsDiagnostic(result.Diagnostics, moved) {
+		t.Fatalf("diagnostics = %#v, want freshly observed publication drift", result.Diagnostics)
+	}
+	want := []string{"OIDC issuance", "draft creation", "asset upload"}
+	if !reflect.DeepEqual(result.Effects, want) {
+		t.Fatalf("effects = %#v, want only earlier effects %#v", result.Effects, want)
+	}
+}
+
+func TestReleaseScenarioRejectsReleaseSetDriftAfterEarlierEffects(t *testing.T) {
+	tests := []struct {
+		name   string
+		inject func(*releaseProcessObservation)
+	}{
+		{
+			name: "body drift",
+			inject: func(observed *releaseProcessObservation) {
+				observed.Release.CandidateID = strings.Repeat("f", 64)
+			},
+		},
+		{
+			name: "attestation bundle drift",
+			inject: func(observed *releaseProcessObservation) {
+				for index := range observed.Release.Assets {
+					if observed.Release.Assets[index].Name == "attestation.bundle.jsonl" {
+						observed.Release.Assets[index].SHA256 = strings.Repeat("f", 64)
+					}
+				}
+			},
+		},
+		{
+			name: "incomplete candidate assets",
+			inject: func(observed *releaseProcessObservation) {
+				observed.Release.Assets = observed.Release.Assets[1:]
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			result := runReleaseProcessScenario(t, releaseProcessFixture{
+				Name: test.name, Boundary: "publication", Inject: test.inject,
+			})
+			if result.err == nil {
+				t.Fatalf("%s passed publication", test.name)
+			}
+			diagnostic := strings.Join(result.Diagnostics, "\n")
+			for _, want := range []string{"publication denied", "expected", "observed"} {
+				if !strings.Contains(diagnostic, want) {
+					t.Fatalf("diagnostic %q does not contain %q", diagnostic, want)
+				}
+			}
+			wantEffects := []string{"OIDC issuance", "draft creation", "asset upload"}
+			if !reflect.DeepEqual(result.Effects, wantEffects) {
+				t.Fatalf("effects = %#v, want only earlier effects %#v", result.Effects, wantEffects)
+			}
+		})
+	}
+}
+
+func releaseProcessBoundaries() []releaseProcessBoundary {
+	return []releaseProcessBoundary{
+		{Name: "OIDC issuance"},
+		{Name: "draft creation"},
+		{Name: "asset upload", ReleaseMode: "draft"},
+		{Name: "publication", ReleaseMode: "draft"},
+		{Name: "Homebrew mutation", ReleaseMode: "published"},
+	}
+}
+
+func releaseProcessBoundaryIndex(t *testing.T, name string) int {
+	t.Helper()
+	for index, boundary := range releaseProcessBoundaries() {
+		if boundary.Name == name {
+			return index
+		}
+	}
+	t.Fatalf("unknown release process boundary %q", name)
+	return -1
+}
+
+func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) releaseProcessResult {
+	t.Helper()
+	root := t.TempDir()
+	repositoryRoot := repoRoot(t)
+	fakeBin := filepath.Join(root, "bin")
+	if err := os.Mkdir(fakeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeReleaseScenarioFakes(t, fakeBin)
+	commit := strings.Repeat("c", 40)
+	candidate := mustCandidate(t, fixtureObservation())
+	releaseState := exactRelease(candidate, true, candidate.Subjects)
+	candidatePath := writeReleaseProcessJSON(t, root, "candidate.json", candidate)
+	provenancePath := writeReleaseProcessJSON(t, root, "provenance.json", release.ProvenanceFor(candidate))
+	expectedBody := filepath.Join(root, "expected-release-body.md")
+	if err := os.WriteFile(expectedBody, []byte(releaseProcessBody(releaseState)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	attestation := filepath.Join(root, "attestation.bundle.jsonl")
+	attestationBytes := []byte("sealed attestation bundle\n")
+	if err := os.WriteFile(attestation, attestationBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	attestationSubject := release.Subject{Name: filepath.Base(attestation), SHA256: digest(attestationBytes)}
+	releaseCandidate := releaseCandidateAdapter(t, repositoryRoot)
+	effectLog := filepath.Join(root, "effects.log")
+	runnerTemp := filepath.Join(root, "runner")
+	if err := os.Mkdir(runnerTemp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{
+		"PATH=" + fakeBin + ":" + os.Getenv("PATH"),
+		"HOME=" + filepath.Join(root, "home"),
+		"XDG_CONFIG_HOME=" + filepath.Join(root, "config"),
+		"RUNNER_TEMP=" + runnerTemp,
+		"TMPDIR=" + filepath.Join(root, "tmp"),
+		"GITHUB_REPOSITORY=yersonargotev/packy",
+		"FIXTURE_EFFECT_LOG=" + effectLog,
+		"FIXTURE_TAGS=",
+		"FIXTURE_RELEASES=",
+		"FIXTURE_RELEASE_STATE=",
+		"FIXTURE_RELEASE_BODY=",
+		"FIXTURE_TAG=v0.1.2",
+		"FIXTURE_ALLOW_MUTATION=true",
+	}
+	for _, directory := range []string{filepath.Join(root, "home"), filepath.Join(root, "config"), filepath.Join(root, "tmp")} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := releaseProcessResult{}
+	for index, boundary := range releaseProcessBoundaries() {
+		releaseMode := boundary.ReleaseMode
+		if fixture.Boundary == boundary.Name && fixture.ReleaseMode != "" {
+			releaseMode = fixture.ReleaseMode
+		}
+		observed := releaseProcessObservation{
+			TagCommit:  commit,
+			MainCommit: commit,
+			Ancestor:   true,
+		}
+		if releaseMode != "" {
+			state := releaseState
+			if releaseMode == "published" {
+				state.Draft = false
+			}
+			if boundary.Name == "publication" || boundary.Name == "Homebrew mutation" {
+				state.Assets = append(state.Assets, attestationSubject)
+			}
+			observed.Release = &state
+		}
+		if fixture.Inject != nil && (fixture.Boundary == "" || fixture.Boundary == boundary.Name) {
+			fixture.Inject(&observed)
+		}
+		boundaryEnv := append([]string(nil), env...)
+		boundaryEnv = append(boundaryEnv,
+			"FIXTURE_TAG_COMMIT="+observed.TagCommit,
+			"FIXTURE_MAIN_COMMIT="+observed.MainCommit,
+			"FIXTURE_ANCESTOR="+fmt.Sprint(observed.Ancestor),
+		)
+		if observed.Release == nil {
+			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=", "FIXTURE_RELEASE_JSON=")
+		} else {
+			releaseJSON := writeReleaseProcessObservation(t, root, index, *observed.Release)
+			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=R_release", "FIXTURE_RELEASE_JSON="+releaseJSON)
+		}
+		refOutput := filepath.Join(root, fmt.Sprintf("verified-ref-%d.json", index))
+		arguments := []string{
+			filepath.Join(repositoryRoot, "scripts", "verify-release-boundary.sh"),
+			"--boundary", boundary.Name,
+			"--repository", "yersonargotev/packy",
+			"--tag", candidate.Version,
+			"--release-commit", commit,
+			"--verifier", releaseCandidate,
+			"--ref-output", refOutput,
+		}
+		if releaseMode != "" {
+			arguments = append(arguments,
+				"--candidate", candidatePath,
+				"--provenance", provenancePath,
+				"--state-output", filepath.Join(root, fmt.Sprintf("release-state-%d.json", index)),
+				"--decision-output", filepath.Join(root, fmt.Sprintf("release-decision-%d.json", index)),
+				"--expected-body", expectedBody,
+				"--attestation", attestation,
+				"--mode", releaseMode,
+			)
+			if boundary.Name == "asset upload" {
+				arguments = append(arguments, "--upload-asset", filepath.Base(attestation))
+			}
+		}
+		command := exec.Command("/bin/bash", arguments...)
+		command.Dir = repositoryRoot
+		command.Env = boundaryEnv
+		if output, err := command.CombinedOutput(); err != nil {
+			result.err = fmt.Errorf("%s denied", boundary.Name)
+			result.Diagnostics = appendDiagnostics(result.Diagnostics, output)
+			result.Effects = readReleaseProcessEffects(t, effectLog, root)
+			return result
+		}
+		effect := releaseProcessEffectCommand(fakeBin, boundary)
+		effect.Env = boundaryEnv
+		if output, err := effect.CombinedOutput(); err != nil {
+			t.Fatalf("fake %s effect failed: %v: %s", boundary.Name, err, output)
+		}
+	}
+	result.Effects = readReleaseProcessEffects(t, effectLog, root)
+	return result
+}
+
+func releaseProcessEffectCommand(fakeBin string, boundary releaseProcessBoundary) *exec.Cmd {
+	switch boundary.Name {
+	case "OIDC issuance":
+		return exec.Command(filepath.Join(fakeBin, "oidc"), "issue")
+	case "draft creation":
+		return exec.Command(filepath.Join(fakeBin, "gh"), "release", "create", "v0.1.2")
+	case "asset upload":
+		return exec.Command(filepath.Join(fakeBin, "gh"), "release", "upload", "v0.1.2", "asset")
+	case "publication":
+		return exec.Command(filepath.Join(fakeBin, "gh"), "release", "edit", "v0.1.2", "--draft=false")
+	case "Homebrew mutation":
+		return exec.Command(filepath.Join(fakeBin, "git"), "push", "origin", "HEAD:main")
+	default:
+		panic("unknown release process boundary " + boundary.Name)
+	}
+}
+
+func readReleaseProcessEffects(t *testing.T, path, root string) []string {
+	t.Helper()
+	var effects []string
+	for _, effect := range readReleaseScenarioEffects(t, path, root) {
+		switch {
+		case effect.Tool == "oidc":
+			effects = append(effects, "OIDC issuance")
+		case effect.Tool == "gh" && strings.HasPrefix(effect.Args, "release create "):
+			effects = append(effects, "draft creation")
+		case effect.Tool == "gh" && strings.HasPrefix(effect.Args, "release upload "):
+			effects = append(effects, "asset upload")
+		case effect.Tool == "gh" && strings.HasPrefix(effect.Args, "release edit "):
+			effects = append(effects, "publication")
+		case effect.Tool == "git" && strings.HasPrefix(effect.Args, "push "):
+			effects = append(effects, "Homebrew mutation")
+		}
+	}
+	return effects
+}
+
+func writeReleaseProcessJSON(t *testing.T, root, name string, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeReleaseProcessObservation(t *testing.T, root string, index int, state release.Release) string {
+	t.Helper()
+	assets := make([]map[string]string, len(state.Assets))
+	for index, asset := range state.Assets {
+		assets[index] = map[string]string{"name": asset.Name, "digest": "sha256:" + asset.SHA256}
+	}
+	body := releaseProcessBody(state)
+	return writeReleaseProcessJSON(t, root, fmt.Sprintf("release-observation-%d.json", index), struct {
+		TagName string              `json:"tagName"`
+		IsDraft bool                `json:"isDraft"`
+		Body    string              `json:"body"`
+		Assets  []map[string]string `json:"assets"`
+	}{
+		TagName: state.Version, IsDraft: state.Draft, Body: body, Assets: assets,
+	})
+}
+
+func releaseProcessBody(state release.Release) string {
+	metadata, err := json.Marshal(struct {
+		CandidateID  string             `json:"candidate_id"`
+		Provenance   release.Provenance `json:"provenance"`
+		TargetCommit string             `json:"target_commit"`
+	}{
+		CandidateID: state.CandidateID, Provenance: state.Provenance, TargetCommit: state.TargetCommit,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return "notes\n\n<!-- packy-release-metadata\n" + string(metadata) + "\n-->\n"
 }
 
 func runReleaseScenario(t *testing.T, scenario releaseScenario) releaseScenarioResult {
@@ -436,6 +875,7 @@ set -euo pipefail
 printf 'git\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
 case "${1:-}" in
   fetch|checkout) exit 0 ;;
+  push) [[ "${FIXTURE_ALLOW_MUTATION:-}" == true ]] ;;
   rev-parse) printf '%s\n' "$FIXTURE_TAG_COMMIT" ;;
   merge-base) [[ "$FIXTURE_ANCESTOR" == true ]] ;;
   tag) [[ -z "$FIXTURE_TAGS" ]] || printf '%s\n' "$FIXTURE_TAGS" ;;
@@ -465,6 +905,13 @@ if [[ "${1:-}" == api && "${2:-}" == graphql ]]; then
   exit 0
 fi
 case "$args" in
+  release\ create\ *|release\ upload\ *|release\ edit\ *)
+    [[ "${FIXTURE_ALLOW_MUTATION:-}" == true ]] || {
+      echo "GitHub mutation is forbidden" >&2
+      exit 98
+    }
+    exit 0
+    ;;
   *"git/ref/heads/main"*) printf 'commit\t%s\n' "$FIXTURE_MAIN_COMMIT" ;;
   *"git/ref/tags/"*) printf 'commit\t%s\n' "$FIXTURE_TAG_COMMIT" ;;
   *"compare/"*)
@@ -475,6 +922,10 @@ case "$args" in
   *"releases?per_page=100&page="*) ;;
   *)
     if [[ "$args" == release\ view* ]]; then
+      if [[ -n "${FIXTURE_RELEASE_JSON:-}" ]]; then
+        jq . "$FIXTURE_RELEASE_JSON"
+        exit 0
+      fi
       is_draft=false
       [[ "$FIXTURE_RELEASE_STATE" == draft ]] && is_draft=true
       jq -n --arg tag "$FIXTURE_TAG" --arg body "$FIXTURE_RELEASE_BODY" \
@@ -490,6 +941,11 @@ esac
 set -euo pipefail
 printf 'releasecandidate\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
 exec "$FIXTURE_REAL_RELEASECANDIDATE" "$@"
+`,
+		"oidc": `#!/usr/bin/env bash
+set -euo pipefail
+printf 'oidc\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
+[[ "${FIXTURE_ALLOW_MUTATION:-}" == true ]]
 `,
 	}
 	names := make([]string, 0, len(files))
