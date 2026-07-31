@@ -417,9 +417,17 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 	switch b.Projection {
 	case "skill":
 		if isClaudeCompositeProjection(pack, r, b) {
+			composite, err := claudeCompositeSkill(pack, r, b, a.bundleRoot)
+			if err != nil {
+				return capabilitypack.ObservedProjection{}, "", err
+			}
+			provenance, err := canonicalCompositeOwnership(composite.Ownership)
+			if err != nil {
+				return capabilitypack.ObservedProjection{}, "", err
+			}
 			target := filepath.Join(a.layout.SkillsDir, b.Name)
 			fp, exists, err := observeCompositeTree(target)
-			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove exact Claude composite skill " + b.Name}}, id + fp, err
+			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, AdapterProvenance: provenance, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove exact Claude composite skill " + b.Name}}, id + fp, err
 		}
 		if r.Kind == "command" {
 			target := filepath.Join(a.layout.SkillsDir, b.Name, "SKILL.md")

@@ -180,6 +180,7 @@ type ObservedProjection struct {
 	Exists              bool
 	ObservedFingerprint string
 	DesiredFingerprint  string
+	AdapterProvenance   string
 	ExternallyManaged   bool
 	Action              ProjectionAction
 }
@@ -920,7 +921,14 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 		owner, owned := ownershipByID(state.Ownership, projection.ID)
 		removedContributor, removed := uniqueRemovedContributor(projection.ID, before, target)
 		residual := active && !intent.Active && hasContributor(state.Ownership, requested.ID)
-		if (active && intent.Active || residual || recovery) && projection.Exists && owned && len(owner.Contributors) == 1 && removed && owner.Contributors[0] == removedContributor && owner.Fingerprint == projection.ObservedFingerprint {
+		residualLifecycle := residual || recovery && !intent.Active
+		observedProvenance := projection.AdapterProvenance
+		if observedProvenance == "" {
+			observedProvenance = projection.Action.AdapterProvenance
+		}
+		residualAuthorized := residualLifecycle && owner.AdapterProvenance != "" && owner.AdapterProvenance == observedProvenance
+		activeLifecycle := active && intent.Active || recovery && intent.Active
+		if (activeLifecycle || residualAuthorized) && projection.Exists && owned && len(owner.Contributors) == 1 && removed && owner.Contributors[0] == removedContributor && owner.Fingerprint == projection.ObservedFingerprint {
 			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
 			continue
 		}

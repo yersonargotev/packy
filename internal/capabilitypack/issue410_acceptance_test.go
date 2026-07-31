@@ -98,6 +98,45 @@ func TestIssue410RepeatedInactiveDeactivateDeletesNowExactResidualWithoutReactiv
 	}
 }
 
+func TestIssue410RepeatedInactiveDeactivateRequiresMatchingAdapterProvenance(t *testing.T) {
+	pack := issue410Pack("guide")
+	intent := ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: false, Revision: 9, Selection: ResourceSelection{Mode: SelectionAll}}
+	present := issue410RemovalObservation("host-present", map[string]string{"instruction:guide": "packy-exact"})
+
+	for _, tc := range []struct {
+		name       string
+		provenance string
+		recovery   bool
+	}{
+		{name: "historical-missing", provenance: ""},
+		{name: "different-adapter", provenance: "opencode-instructions-v1"},
+		{name: "recovery-with-historical-missing", provenance: "", recovery: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			owner := ProjectionOwnership{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "packy-exact", AdapterProvenance: tc.provenance}
+			state := ActivationState{Intent: intent, Intents: []ActivationIntent{intent}, Ownership: []ProjectionOwnership{owner}}
+			if tc.recovery {
+				state.Journal = &ApplyingJournal{PlanID: "historical-deactivation", PlanDigest: "historical-digest", Operation: OperationDeactivate, Surface: SurfaceCodex, PackID: pack.ID, Outcome: AttemptRecoveryRequired}
+			}
+			facade, adapter, _ := deactivationFixture([]Pack{pack}, state, present)
+
+			plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: pack.ID, Surface: SurfaceCodex})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(phaseActions(plan.phases, ConsentDestructiveCleanup)) != 0 || len(plan.PendingHumanActions()) == 0 {
+				t.Fatalf("unsafe residual cleanup was authorized: applicable=%v phases=%+v blockers=%+v pending=%+v", plan.Applicable(), plan.Phases(), plan.Blockers(), plan.PendingHumanActions())
+			}
+			if !tc.recovery && (plan.Applicable() || len(plan.Blockers()) == 0) {
+				t.Fatalf("non-recovery residual did not block: applicable=%v blockers=%+v", plan.Applicable(), plan.Blockers())
+			}
+			if len(adapter.actions) != 0 {
+				t.Fatalf("preview mutated residual: %+v", adapter.actions)
+			}
+		})
+	}
+}
+
 func TestIssue410UnmanagedLookalikeNeverGainsOwnershipDuringDeactivate(t *testing.T) {
 	pack := issue410Pack("guide")
 	intent := ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 2, Selection: ResourceSelection{Mode: SelectionAll}}
