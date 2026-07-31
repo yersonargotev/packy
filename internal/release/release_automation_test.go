@@ -324,10 +324,21 @@ func TestReleaseWorkflowRecoveryUsesOnlyOriginalRetainedCandidate(t *testing.T) 
 		"Build four binaries, deterministic SBOM, and SHA256SUMS once",
 		"Retrieve original sealed candidate for recovery",
 		"Verify retained recovery bytes against the original candidate",
+		"Check out trusted retained recovery adapter",
+		"ref: ${{ github.sha }}",
+		"path: recovery-boundary",
+		"sparse-checkout: scripts",
+		"persist-credentials: false",
+		"recovery-boundary/scripts/verify-retained-release-candidate.sh",
+		`--run-id "${{ needs.normalize.outputs.original_run_id }}"`,
+		"--verifier release-metadata/releasecandidate",
 	} {
 		if !strings.Contains(build, want) {
 			t.Fatalf("build job must keep recovery away from rebuilding with %q", want)
 		}
+	}
+	if strings.Contains(build, "cp scripts/verify-retained-release-candidate.sh release-metadata/") {
+		t.Fatal("trusted retained recovery adapter must not come from retained metadata")
 	}
 	for _, forbidden := range []string{"scripts/build-release-artifacts.sh", "run-claude-smoke.sh", "releasecandidate create"} {
 		recoverySteps := releaseWorkflowStep(t, parseReleaseWorkflow(t, text), "Retrieve original publication metadata for recovery").Text
