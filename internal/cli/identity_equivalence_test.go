@@ -205,13 +205,17 @@ func normalizeIdentityArgs(args []string) []string {
 }
 
 var (
-	identityPlanRE         = regexp.MustCompile(`plan-[0-9a-f]+`)
-	identityHashRE         = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
-	identityTimeRE         = regexp.MustCompile(`2026-07-17T12:00:00Z`)
-	identityEmptyAliasesRE = regexp.MustCompile(`,\n(\s*)"aliases": \[\]`)
+	identityPlanRE          = regexp.MustCompile(`plan-[0-9a-f]+`)
+	identityHashRE          = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
+	identityTimeRE          = regexp.MustCompile(`2026-07-17T12:00:00Z`)
+	identityEmptyAliasesRE  = regexp.MustCompile(`,\n(\s*)"aliases": \[\]`)
+	identityLifecycleJSONRE = regexp.MustCompile(`,"lifecycle_state":"(?:active|inactive-clean|inactive-with-residuals|recovery-required)"`)
+	identityLifecycleTextRE = regexp.MustCompile(`Lifecycle state: (?:active|inactive-clean|inactive-with-residuals|recovery-required)\n`)
 )
 
 func normalizeIdentityEvidence(value, product string, roots map[string]string) string {
+	value = identityLifecycleJSONRE.ReplaceAllString(value, "")
+	value = identityLifecycleTextRE.ReplaceAllString(value, "")
 	ordered := make([]string, 0, len(roots))
 	for root := range roots {
 		if root != "" {
@@ -413,6 +417,10 @@ func removeSliceFJSONFields(value any) {
 		delete(value, "readiness_observed")
 		delete(value, "optional_authorities")
 		delete(value, "pending_evidence")
+		// Issue #410 adds adapter provenance to durable projection ownership.
+		// Dedicated residual-cleanup tests own that authority contract; the
+		// frozen rename gate compares the remaining legacy behavior.
+		delete(value, "adapter_provenance")
 		for _, child := range value {
 			removeSliceFJSONFields(child)
 		}

@@ -2,7 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 6
+const StatusSchemaVersion = 7
 
 type JSONOptionalBool struct {
 	State string `json:"state"`
@@ -102,6 +102,7 @@ type JSONStatusEntry struct {
 	PendingHumanActions []string                      `json:"pending_human_actions"`
 	ActivationRole      ActivationRole                `json:"activation_role"`
 	Consumers           []JSONCapabilityConsumer      `json:"consumers"`
+	LifecycleState      PackLifecycleState            `json:"lifecycle_state"`
 }
 
 type JSONStatusReport struct {
@@ -149,7 +150,7 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			ResourceSelections: jsonResourceSelectionDetails(entry.ResourceSelections),
 			Resources:          jsonResourceStatuses(entry.Resources),
 			Blockers:           sortedCopy(entry.Blockers), Evidence: sortedCopy(entry.Evidence), PendingHumanActions: sortedCopy(entry.PendingHumanActions),
-			ActivationRole: statusActivationRole(entry), Consumers: jsonCapabilityConsumers(entry.Consumers),
+			ActivationRole: statusActivationRole(entry), Consumers: jsonCapabilityConsumers(entry.Consumers), LifecycleState: normalizedLifecycleState(entry),
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -172,6 +173,19 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 		result.Requirement = requirement
 	}
 	return result
+}
+
+func normalizedLifecycleState(entry StatusEntry) PackLifecycleState {
+	if entry.LifecycleState != "" {
+		return entry.LifecycleState
+	}
+	if entry.LatestAttempt != nil && AttemptOutcome(entry.LatestAttempt.Outcome) == AttemptRecoveryRequired {
+		return PackLifecycleRecoveryRequired
+	}
+	if entry.IntentPresent && entry.Intent.Active {
+		return PackLifecycleActive
+	}
+	return PackLifecycleInactiveClean
 }
 
 func statusActivationRole(entry StatusEntry) ActivationRole {

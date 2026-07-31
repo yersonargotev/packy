@@ -44,6 +44,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	if err != nil {
 		return capabilitypack.SurfaceInspection{}, err
 	}
+	bindAdapterProvenance(&observation)
 	applyRecordedOccupancyOwnership(&observation, transition.CurrentOwnership)
 	readinessPack := transition.Desired
 	if readinessPack.ID == "" {
@@ -57,6 +58,20 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		readinessPack, time.Now().UTC(), observation.Revision,
 	)
 	return observation, err
+}
+
+func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
+	for i := range observation.Projections {
+		projection := &observation.Projections[i]
+		provenance := projection.AdapterProvenance
+		if provenance == "" {
+			provenance = projection.Action.AdapterProvenance
+		}
+		if provenance == "" {
+			provenance = "codex-projection/v1/" + string(projection.Action.Kind)
+		}
+		projection.AdapterProvenance = provenance
+	}
 }
 
 // InspectReadiness is filesystem-only and side-effect-free. The initial matty

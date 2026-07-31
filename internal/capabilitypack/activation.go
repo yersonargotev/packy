@@ -180,6 +180,7 @@ type ObservedProjection struct {
 	Exists              bool
 	ObservedFingerprint string
 	DesiredFingerprint  string
+	AdapterProvenance   string
 	ExternallyManaged   bool
 	Action              ProjectionAction
 }
@@ -887,7 +888,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(OperationDeactivate, before.combinedPack(), combined, nil, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(OperationDeactivate, before.combinedPack(), combined, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
 	}
@@ -919,7 +920,15 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 		}
 		owner, owned := ownershipByID(state.Ownership, projection.ID)
 		removedContributor, removed := uniqueRemovedContributor(projection.ID, before, target)
-		if (active && intent.Active || recovery) && projection.Exists && owned && len(owner.Contributors) == 1 && removed && owner.Contributors[0] == removedContributor && owner.Fingerprint == projection.ObservedFingerprint {
+		residual := active && !intent.Active && hasContributor(state.Ownership, requested.ID)
+		residualLifecycle := residual || recovery && !intent.Active
+		observedProvenance := projection.AdapterProvenance
+		if observedProvenance == "" {
+			observedProvenance = projection.Action.AdapterProvenance
+		}
+		residualAuthorized := residualLifecycle && owner.AdapterProvenance != "" && owner.AdapterProvenance == observedProvenance
+		activeLifecycle := active && intent.Active || recovery && intent.Active
+		if (activeLifecycle || residualAuthorized) && projection.Exists && owned && len(owner.Contributors) == 1 && removed && owner.Contributors[0] == removedContributor && owner.Fingerprint == projection.ObservedFingerprint {
 			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
 			continue
 		}
@@ -929,7 +938,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	}
 	if (!active || !intent.Active) && !recovery {
 		plan.noOp = len(plan.phases) == 0 && len(plan.pendingHumanActions) == 0 && !hasContributor(state.Ownership, requested.ID)
-		if !plan.noOp {
+		if len(plan.phases) == 0 && !plan.noOp {
 			plan.blockers = append(plan.blockers, PlanBlocker{Kind: BlockerOwnership, Subject: requested.ID, Detail: fmt.Sprintf("inactive pack %s has partial, drifted, or residual state; preserved it without starting general reconcile", requested.ID)})
 		}
 	}
@@ -1599,7 +1608,20 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 	}
 	for _, projection := range verified.Projections {
-		if projection.ExternallyManaged || projection.DesiredFingerprint == "" || hasPhaseActionID(request.Plan.phases, ConsentDestructiveCleanup, projection.ID) || (request.Plan.operation == OperationReconcile && request.Plan.reconcileScope == ReconcileTargeted && !hasExpectation(request.Plan.desired, projection.ID)) {
+		if projection.ExternallyManaged || hasPhaseActionID(request.Plan.phases, ConsentDestructiveCleanup, projection.ID) || (request.Plan.operation == OperationReconcile && request.Plan.reconcileScope == ReconcileTargeted && !hasExpectation(request.Plan.desired, projection.ID)) {
+			continue
+		}
+		if projection.DesiredFingerprint == "" {
+			// A deactivation may intentionally preserve a projection that no longer
+			// belongs in the desired composition. Keep only pre-existing ownership:
+			// an unmanaged lookalike must never become Packy-owned merely because it
+			// matches a catalog resource. The inactive intent retains the exact Pack
+			// version and selection needed to inspect this residual again.
+			if request.Plan.operation == OperationDeactivate && projection.Exists {
+				if previous, ok := ownershipByID(previousOwnership, projection.ID); ok {
+					state.Ownership = append(state.Ownership, previous)
+				}
+			}
 			continue
 		}
 		provenance := ""
@@ -1611,6 +1633,8 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 				provenance = action.AdapterProvenance
 			} else if action.Consent == ConsentExecutableExternal && action.Source != "" {
 				provenance = action.Source
+			} else if projection.AdapterProvenance != "" {
+				provenance = projection.AdapterProvenance
 			}
 		}
 		state.Ownership = append(state.Ownership, ProjectionOwnership{ID: projection.ID, Contributors: currentComposition.contributorSet(projection.ID), Fingerprint: projection.DesiredFingerprint, AdapterProvenance: provenance})
@@ -2250,6 +2274,7 @@ func observationDigest(o SurfaceInspection) string {
 		Exists              bool
 		ObservedFingerprint string
 		DesiredFingerprint  string
+		AdapterProvenance   string `json:",omitempty"`
 		ExternallyManaged   bool
 		Action              ProjectionAction
 	}
@@ -2259,6 +2284,7 @@ func observationDigest(o SurfaceInspection) string {
 			ID: projection.ID, Exists: projection.Exists,
 			ObservedFingerprint: projection.ObservedFingerprint,
 			DesiredFingerprint:  projection.DesiredFingerprint,
+			AdapterProvenance:   projection.AdapterProvenance,
 			ExternallyManaged:   projection.ExternallyManaged,
 			Action:              projection.Action,
 		})

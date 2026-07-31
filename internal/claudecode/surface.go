@@ -334,6 +334,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			result.Projections[i].Goal = capabilitypack.ProjectionPresent
 		}
 	}
+	bindAdapterProvenance(&result)
 	sort.Strings(revision)
 	result.Revision = Fingerprint([]byte(strings.Join(revision, "\n")))
 	version := ObserveVersion(ctx, a.executable, a.runner)
@@ -381,6 +382,23 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	return result, err
 }
 
+func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
+	for i := range observation.Projections {
+		projection := &observation.Projections[i]
+		provenance := projection.AdapterProvenance
+		if provenance == "" {
+			provenance = projection.Action.AdapterProvenance
+		}
+		if provenance == "" && projection.Action.Consent == capabilitypack.ConsentExecutableExternal && projection.Action.Source != "" {
+			provenance = projection.Action.Source
+		}
+		if provenance == "" {
+			provenance = "claude-projection/v1/" + string(projection.Action.Kind)
+		}
+		projection.AdapterProvenance = provenance
+	}
+}
+
 func ownedHooksContainerCreated(snapshot OwnershipSnapshot, target string) bool {
 	for _, record := range snapshot.Records {
 		if record.Kind != string(ActionCommandHook) || filepath.Clean(record.Target) != filepath.Clean(target) || record.HookProvenance == "" {
@@ -417,9 +435,17 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 	switch b.Projection {
 	case "skill":
 		if isClaudeCompositeProjection(pack, r, b) {
+			composite, err := claudeCompositeSkill(pack, r, b, a.bundleRoot)
+			if err != nil {
+				return capabilitypack.ObservedProjection{}, "", err
+			}
+			provenance, err := canonicalCompositeOwnership(composite.Ownership)
+			if err != nil {
+				return capabilitypack.ObservedProjection{}, "", err
+			}
 			target := filepath.Join(a.layout.SkillsDir, b.Name)
 			fp, exists, err := observeCompositeTree(target)
-			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove exact Claude composite skill " + b.Name}}, id + fp, err
+			return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, AdapterProvenance: provenance, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionSkillTree, Target: target, Mode: capabilitypack.ProjectionDeleteTarget, Description: "remove exact Claude composite skill " + b.Name}}, id + fp, err
 		}
 		if r.Kind == "command" {
 			target := filepath.Join(a.layout.SkillsDir, b.Name, "SKILL.md")
@@ -463,8 +489,10 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 		settings := settingsObservation.Raw
 		hook := fromBindingHook(b)
 		provenance := HookMergeProvenance{}
+		sealedProvenance := ""
 		for _, record := range ownership.Records {
 			if record.ID == id && record.Kind == string(ActionCommandHook) {
+				sealedProvenance = record.HookProvenance
 				provenance = ParseHookMergeProvenance(record.HookProvenance)
 			}
 		}
@@ -481,7 +509,7 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 		if exists {
 			fp = HookOwnershipFingerprint(hook.Event, o.EntryFingerprint)
 		}
-		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionCommandHook, Target: a.layout.SettingsFile, Content: string(merged), Source: provenance.Seal(), Command: Fingerprint(settings), Mode: capabilitypack.ProjectionRemoveContent, Description: "remove Claude Code hook " + b.Name}}, id + fp, nil
+		return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionAbsent, Exists: exists, ObservedFingerprint: fp, AdapterProvenance: sealedProvenance, Action: capabilitypack.ProjectionAction{ID: id, Kind: ActionCommandHook, Target: a.layout.SettingsFile, Content: string(merged), Source: provenance.Seal(), Command: Fingerprint(settings), Mode: capabilitypack.ProjectionRemoveContent, Description: "remove Claude Code hook " + b.Name}}, id + fp, nil
 	case "mcp_server":
 		o := ObserveUserMCP(a.layout.UserMCPFile, b.Name)
 		if o.Err != nil {

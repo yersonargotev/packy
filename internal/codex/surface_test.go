@@ -12,6 +12,15 @@ import (
 	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
+func TestBindAdapterProvenancePublishesCanonicalObservationWithoutChangingAction(t *testing.T) {
+	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Kind: capabilitypack.ActionCodexAgentFile}}}}
+	bindAdapterProvenance(&inspection)
+	projection := inspection.Projections[0]
+	if projection.AdapterProvenance != "codex-projection/v1/codex-agent-file" || projection.Action.AdapterProvenance != "" {
+		t.Fatalf("provenance = observed:%q action:%q", projection.AdapterProvenance, projection.Action.AdapterProvenance)
+	}
+}
+
 func TestEngramCodexSetupContractIsObservedWithoutCompetingLocalWrites(t *testing.T) {
 	root := t.TempDir()
 	prompt := filepath.Join(root, ".codex", "AGENTS.md")

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yersonargotev.github.io/packy/schemas/cli/v7/pack-status.schema.json",
-  "title": "Packy capability-pack status reports v5",
+  "title": "Packy capability-pack status reports v7",
   "$defs": {
     "optional_bool": {
       "type": "object",
@@ -102,6 +102,7 @@
         "pack_version",
         "surface",
         "intent",
+        "lifecycle_state",
         "activation_role",
         "consumers",
         "update_available",
@@ -174,6 +175,14 @@
             }
           },
           "additionalProperties": false
+        },
+        "lifecycle_state": {
+          "enum": [
+            "active",
+            "inactive-clean",
+            "inactive-with-residuals",
+            "recovery-required"
+          ]
         },
         "update_available": {
           "type": "boolean"
@@ -603,7 +612,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 6
+      "const": 7
     },
     "report": {
       "enum": [

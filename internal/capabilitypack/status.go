@@ -22,6 +22,15 @@ type IntentStatus struct {
 	ProviderChoices []ProviderChoice
 }
 
+type PackLifecycleState string
+
+const (
+	PackLifecycleActive                PackLifecycleState = "active"
+	PackLifecycleInactiveClean         PackLifecycleState = "inactive-clean"
+	PackLifecycleInactiveWithResiduals PackLifecycleState = "inactive-with-residuals"
+	PackLifecycleRecoveryRequired      PackLifecycleState = "recovery-required"
+)
+
 type CapabilityConsumerFact struct {
 	ConsumerPack     string
 	ConsumerResource *ResourceIdentity
@@ -150,6 +159,7 @@ type StatusEntry struct {
 	Contract            LifecycleContract
 	ActivationRole      ActivationRole
 	Consumers           []CapabilityConsumerFact
+	LifecycleState      PackLifecycleState
 }
 
 type ReadinessObservationStatus struct {
@@ -272,6 +282,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	}
 	entry := StatusEntry{Pack: pack, Surface: surface}
 	evidencePack := pack
+	ownedResidual := hasContributor(state.Ownership, pack.ID)
 	selection := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
 	if intent, ok := intentForPack(state, pack.ID, surface); ok {
 		selection, err = canonicalSelection(intent.Selection)
@@ -336,7 +347,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 		})
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
-		if intent.Active {
+		if intent.Active || ownedResidual {
 			evidencePack, err = f.catalog.resolveIntentPack(intent.PackID, intent.Version)
 			if err != nil {
 				return StatusEntry{}, err
@@ -350,7 +361,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	if entry.Contract.DependencyClosure == nil {
 		entry.Contract = LifecycleContractFor(pack, surface, nil)
 	}
-	entry.ResourceSelections = resourceSelectionFacts(evidencePack, selection, entry.Intent.Active)
+	entry.ResourceSelections = resourceSelectionFacts(evidencePack, selection, entry.Intent.Active || ownedResidual)
 	graph := ResourceGraphFor(evidencePack, selection, true)
 	facts := make(map[string]ResourceClosureFact, len(graph.Resources))
 	for _, fact := range graph.Resources {
@@ -360,7 +371,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 		fact := facts[entry.ResourceSelections[i].Resource.String()]
 		entry.ResourceSelections[i].Role = fact.Role
 		entry.ResourceSelections[i].DependencyChain = append([]ResourceIdentity{}, fact.DependencyChain...)
-		if !entry.Intent.Active {
+		if !entry.Intent.Active && !ownedResidual {
 			entry.ResourceSelections[i].Role = ResourceRoleUnselected
 			entry.ResourceSelections[i].DependencyChain = []ResourceIdentity{}
 		}
@@ -395,6 +406,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	if inspectErr != nil {
 		return StatusEntry{}, inspectErr
 	}
+	entry.LifecycleState = lifecycleStateForStatus(entry, state, pack.ID, observation.Projections)
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)
 	entry.RuntimeModes = cloneRuntimeModeResults(observation.RuntimeModeResults)
 	entry.Readiness.Configured = entry.Projections.Verified == len(observation.Projections) && len(observation.Projections) > 0
@@ -439,6 +451,40 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	sort.Strings(entry.PendingHumanActions)
 	sort.Strings(entry.Evidence)
 	return entry, nil
+}
+
+func lifecycleStateForStatus(entry StatusEntry, state ActivationState, packID string, projections []ObservedProjection) PackLifecycleState {
+	if entry.LatestAttempt != nil && AttemptOutcome(entry.LatestAttempt.Outcome) == AttemptRecoveryRequired {
+		return PackLifecycleRecoveryRequired
+	}
+	if entry.IntentPresent && entry.Intent.Active {
+		return PackLifecycleActive
+	}
+	if hasContributor(state.Ownership, packID) {
+		observed := make(map[string]string, len(projections))
+		for _, projection := range projections {
+			provenance := projection.AdapterProvenance
+			if provenance == "" {
+				provenance = projection.Action.AdapterProvenance
+			}
+			observed[projection.ID] = provenance
+		}
+		for _, owner := range state.Ownership {
+			relevant := false
+			for _, contributor := range owner.Contributors {
+				if contributorBelongsToPack(contributor, packID) {
+					relevant = true
+					break
+				}
+			}
+			fresh, inspectable := observed[owner.ID]
+			if relevant && (owner.AdapterProvenance == "" || !inspectable || fresh == "" || owner.AdapterProvenance != fresh) {
+				return PackLifecycleRecoveryRequired
+			}
+		}
+		return PackLifecycleInactiveWithResiduals
+	}
+	return PackLifecycleInactiveClean
 }
 
 func (f Facade) validatePersistedProviderChoices(consumerPack Pack, intent ActivationIntent, state ActivationState, surface Surface) error {

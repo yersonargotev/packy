@@ -6,9 +6,10 @@ Capability-Pack lifecycle uses `schema_version: 8`, adding structured
 `recovery_guidance` to the v7 closure-bound sensitive-effect plan. The guidance
 names the originating operation, affected resources, consumers, truthful
 completed/failed/not-started effects, and the next explicit lifecycle command.
-Capability-Pack status
-remains `schema_version: 6`, where explicit/required activation roles and
-canonical consumers were added. Versions v1-v7 remain unchanged.
+Capability-Pack status uses `schema_version: 7`, adding the explicit
+`lifecycle_state` values `active`, `inactive-clean`,
+`inactive-with-residuals`, and `recovery-required` to the v6 activation-role
+and canonical-consumer contract. Earlier versions remain unchanged.
 
 | Command | `report` |
 | --- | --- |
@@ -85,6 +86,9 @@ never encode replay authority for the historical plan.
 Status publishes intent, canonical selected roots, and a full
 resource inventory whose role is `root`, `dependency`, `asset`, `notice`, or
 `unselected`, with a deterministic root-to-resource `dependency_chain`.
+Its lifecycle state distinguishes a clean inactive intent from retained
+Packy-owned residual projections and from an interrupted attempt that requires
+recovery.
 Lifecycle preview publishes the selected closure graph, including associated
 notices; show publishes every resource's portable `requires` and `notices`
 edges. Status also publishes projection health, compatibility, readiness for

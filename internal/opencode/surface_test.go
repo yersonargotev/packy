@@ -10,6 +10,15 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
+func TestBindAdapterProvenancePublishesCanonicalObservationWithoutChangingAction(t *testing.T) {
+	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Kind: capabilitypack.ActionOpenCodeCommandFile}}}}
+	bindAdapterProvenance(&inspection)
+	projection := inspection.Projections[0]
+	if projection.AdapterProvenance != "opencode-projection/v1/opencode-command-file" || projection.Action.AdapterProvenance != "" {
+		t.Fatalf("provenance = observed:%q action:%q", projection.AdapterProvenance, projection.Action.AdapterProvenance)
+	}
+}
+
 func TestSurfaceAdapterAppliesHostSpecificProjectionsAndPreservesJSONC(t *testing.T) {
 	root := t.TempDir()
 	bundle := filepath.Join(root, "bundle")
