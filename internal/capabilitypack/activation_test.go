@@ -93,6 +93,32 @@ func TestApplyPersistsTypedAdapterProvenance(t *testing.T) {
 	}
 }
 
+func TestApplyPersistsObservedAdapterProvenanceWithoutExposingItInAction(t *testing.T) {
+	pack := Pack{ID: "app", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide"}}}
+	pending := SurfaceInspection{Revision: "one", Projections: []ObservedProjection{{ID: "instruction:guide", ObservedFingerprint: "missing", DesiredFingerprint: "guide", AdapterProvenance: "codex-projection/v1/codex-instruction-file", Action: ProjectionAction{ID: "instruction:guide", Kind: ActionInstructionFile}}}}
+	verified := pending
+	verified.Revision = "two"
+	verified.Projections = append([]ObservedProjection(nil), pending.Projections...)
+	verified.Projections[0].Exists = true
+	verified.Projections[0].ObservedFingerprint = "guide"
+	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{pending, pending, verified}}
+	store := &fakeActivationStore{}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Phases()[0].Actions[0].AdapterProvenance != "" {
+		t.Fatalf("internal provenance leaked into action: %+v", plan.Phases()[0].Actions[0])
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.state.Ownership) != 1 || store.state.Ownership[0].AdapterProvenance != "codex-projection/v1/codex-instruction-file" {
+		t.Fatalf("ownership=%+v", store.state.Ownership)
+	}
+}
+
 func (f *fakeSurfaceAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
 	f.inspectCalls++
 	kind := "desired"

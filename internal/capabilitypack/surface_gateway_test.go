@@ -109,4 +109,11 @@ func TestObservationDigestIgnoresNewGoalAndReadinessEvidence(t *testing.T) {
 	if observationDigest(withUnifiedFacts) != observationDigest(legacyFacts) {
 		t.Fatal("new adapter goal/readiness facts changed the legacy stale-plan fingerprint")
 	}
+	changedProvenance := withUnifiedFacts
+	changedProvenance.Projections = append([]ObservedProjection(nil), withUnifiedFacts.Projections...)
+	withUnifiedFacts.Projections[0].AdapterProvenance = "codex-projection/v1/codex-instruction-file"
+	changedProvenance.Projections[0].AdapterProvenance = "opencode-projection/v1/opencode-instruction-file"
+	if observationDigest(withUnifiedFacts) == observationDigest(changedProvenance) {
+		t.Fatal("authoritative adapter provenance was omitted from the stale-plan fingerprint")
+	}
 }

@@ -42,6 +42,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 	if err != nil {
 		return capabilitypack.SurfaceInspection{}, err
 	}
+	bindAdapterProvenance(&observation)
 	applyRecordedOccupancyOwnership(&observation, transition.CurrentOwnership)
 	readinessPack := transition.Desired
 	if readinessPack.ID == "" {
@@ -55,6 +56,20 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		readinessPack, time.Now().UTC(), observation.Revision,
 	)
 	return observation, err
+}
+
+func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
+	for i := range observation.Projections {
+		projection := &observation.Projections[i]
+		provenance := projection.AdapterProvenance
+		if provenance == "" {
+			provenance = projection.Action.AdapterProvenance
+		}
+		if provenance == "" {
+			provenance = "opencode-projection/v1/" + string(projection.Action.Kind)
+		}
+		projection.AdapterProvenance = provenance
+	}
 }
 
 func (a *SurfaceAdapter) inspectReadiness(_ context.Context, pack capabilitypack.Pack, observation capabilitypack.SurfaceInspection, _ []capabilitypack.ExecutableResolution) (capabilitypack.ReadinessObservation, error) {

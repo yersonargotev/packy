@@ -417,6 +417,10 @@ func removeSliceFJSONFields(value any) {
 		delete(value, "readiness_observed")
 		delete(value, "optional_authorities")
 		delete(value, "pending_evidence")
+		// Issue #410 adds adapter provenance to durable projection ownership.
+		// Dedicated residual-cleanup tests own that authority contract; the
+		// frozen rename gate compares the remaining legacy behavior.
+		delete(value, "adapter_provenance")
 		for _, child := range value {
 			removeSliceFJSONFields(child)
 		}

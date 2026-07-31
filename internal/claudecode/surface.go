@@ -334,6 +334,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			result.Projections[i].Goal = capabilitypack.ProjectionPresent
 		}
 	}
+	bindAdapterProvenance(&result)
 	sort.Strings(revision)
 	result.Revision = Fingerprint([]byte(strings.Join(revision, "\n")))
 	version := ObserveVersion(ctx, a.executable, a.runner)
@@ -379,6 +380,23 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		readinessPack, time.Now().UTC(), result.Revision,
 	)
 	return result, err
+}
+
+func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
+	for i := range observation.Projections {
+		projection := &observation.Projections[i]
+		provenance := projection.AdapterProvenance
+		if provenance == "" {
+			provenance = projection.Action.AdapterProvenance
+		}
+		if provenance == "" && projection.Action.Consent == capabilitypack.ConsentExecutableExternal && projection.Action.Source != "" {
+			provenance = projection.Action.Source
+		}
+		if provenance == "" {
+			provenance = "claude-projection/v1/" + string(projection.Action.Kind)
+		}
+		projection.AdapterProvenance = provenance
+	}
 }
 
 func ownedHooksContainerCreated(snapshot OwnershipSnapshot, target string) bool {

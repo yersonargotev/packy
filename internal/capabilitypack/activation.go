@@ -1633,6 +1633,8 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 				provenance = action.AdapterProvenance
 			} else if action.Consent == ConsentExecutableExternal && action.Source != "" {
 				provenance = action.Source
+			} else if projection.AdapterProvenance != "" {
+				provenance = projection.AdapterProvenance
 			}
 		}
 		state.Ownership = append(state.Ownership, ProjectionOwnership{ID: projection.ID, Contributors: currentComposition.contributorSet(projection.ID), Fingerprint: projection.DesiredFingerprint, AdapterProvenance: provenance})
@@ -2272,6 +2274,7 @@ func observationDigest(o SurfaceInspection) string {
 		Exists              bool
 		ObservedFingerprint string
 		DesiredFingerprint  string
+		AdapterProvenance   string `json:",omitempty"`
 		ExternallyManaged   bool
 		Action              ProjectionAction
 	}
@@ -2281,6 +2284,7 @@ func observationDigest(o SurfaceInspection) string {
 			ID: projection.ID, Exists: projection.Exists,
 			ObservedFingerprint: projection.ObservedFingerprint,
 			DesiredFingerprint:  projection.DesiredFingerprint,
+			AdapterProvenance:   projection.AdapterProvenance,
 			ExternallyManaged:   projection.ExternallyManaged,
 			Action:              projection.Action,
 		})

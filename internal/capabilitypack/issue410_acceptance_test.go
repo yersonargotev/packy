@@ -163,6 +163,10 @@ func TestIssue410StatusDistinguishesInactiveCleanResidualAndRecoveryRequired(t *
 	pack := issue410Pack("guide")
 	inactive := ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: false, Revision: 5, Selection: ResourceSelection{Mode: SelectionAll}}
 	owner := ProjectionOwnership{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "packy-exact", AdapterProvenance: "codex-instructions-v2"}
+	missingIdentity := owner
+	missingIdentity.AdapterProvenance = ""
+	mismatchedIdentity := owner
+	mismatchedIdentity.AdapterProvenance = "opencode-instructions-v1"
 	drifted := issue410RemovalObservation("host-drifted", map[string]string{"instruction:guide": "operator-edit"})
 
 	tests := []struct {
@@ -173,6 +177,8 @@ func TestIssue410StatusDistinguishesInactiveCleanResidualAndRecoveryRequired(t *
 	}{
 		{name: "inactive-clean", state: ActivationState{Intent: inactive, Intents: []ActivationIntent{inactive}}, observation: SurfaceInspection{Revision: "clean"}, want: PackLifecycleInactiveClean},
 		{name: "inactive-with-residuals", state: ActivationState{Intent: inactive, Intents: []ActivationIntent{inactive}, Ownership: []ProjectionOwnership{owner}}, observation: drifted, want: PackLifecycleInactiveWithResiduals},
+		{name: "recovery-required-missing-historical-identity", state: ActivationState{Intent: inactive, Intents: []ActivationIntent{inactive}, Ownership: []ProjectionOwnership{missingIdentity}}, observation: drifted, want: PackLifecycleRecoveryRequired},
+		{name: "recovery-required-mismatched-historical-identity", state: ActivationState{Intent: inactive, Intents: []ActivationIntent{inactive}, Ownership: []ProjectionOwnership{mismatchedIdentity}}, observation: drifted, want: PackLifecycleRecoveryRequired},
 		{name: "recovery-required", state: ActivationState{Intent: inactive, Intents: []ActivationIntent{inactive}, Ownership: []ProjectionOwnership{owner}, Journal: &ApplyingJournal{PlanID: "failed-deactivation", PackID: pack.ID, Surface: SurfaceCodex, Operation: OperationDeactivate, Outcome: AttemptRecoveryRequired}}, observation: drifted, want: PackLifecycleRecoveryRequired},
 	}
 	for _, tc := range tests {
@@ -189,7 +195,7 @@ func TestIssue410StatusDistinguishesInactiveCleanResidualAndRecoveryRequired(t *
 			if tc.want == PackLifecycleInactiveWithResiduals && (entry.Intent.Active || entry.Projections.Drifted != 1 || len(entry.ProjectionDetails) != 1 || entry.ProjectionDetails[0].Owner != "packy") {
 				t.Fatalf("inactive residual status lost evidence: %+v", entry)
 			}
-			if tc.want == PackLifecycleRecoveryRequired && (entry.LatestAttempt == nil || entry.LatestAttempt.Outcome != string(AttemptRecoveryRequired)) {
+			if tc.state.Journal != nil && tc.want == PackLifecycleRecoveryRequired && (entry.LatestAttempt == nil || entry.LatestAttempt.Outcome != string(AttemptRecoveryRequired)) {
 				t.Fatalf("recovery status lost attempt evidence: %+v", entry)
 			}
 			if len(store.saves) != 0 {

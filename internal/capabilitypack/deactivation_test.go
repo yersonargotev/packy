@@ -398,6 +398,26 @@ func TestDeactivateRejectsStaleHostFactWithZeroEffects(t *testing.T) {
 	}
 }
 
+func TestDeactivateRejectsStaleAdapterProvenanceWithZeroEffects(t *testing.T) {
+	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide", Source: "guide"}}}
+	state := ActivationState{Intent: ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 1}, Ownership: []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"pack:app:instruction:guide"}, Fingerprint: "verified", AdapterProvenance: "codex-projection/v1/codex-instruction-file"}}}
+	preview := deletionObservation("host-1", "verified", true)
+	preview.Projections[0].AdapterProvenance = "codex-projection/v1/codex-instruction-file"
+	changed := preview
+	changed.Projections = append([]ObservedProjection(nil), preview.Projections...)
+	changed.Projections[0].AdapterProvenance = "opencode-projection/v1/opencode-instruction-file"
+	facade, adapter, store := deactivationFixture([]Pack{pack}, state, preview, changed)
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentDestructiveCleanup)}, Interactive: true})
+	if !errors.Is(err, ErrStalePlan) || len(store.saves) != 0 || len(adapter.actions) != 0 {
+		t.Fatalf("stale provenance err=%v saves=%d actions=%d", err, len(store.saves), len(adapter.actions))
+	}
+}
+
 func TestDeactivateRejectsChangedIntentOwnershipCatalogAndDependentsWithZeroEffects(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

@@ -377,7 +377,6 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 		}
 	}
 	entry.LatestAttempt = latestAttemptStatus(state, pack.ID, surface)
-	entry.LifecycleState = lifecycleStateForStatus(entry, state, pack.ID)
 	surfaceComposition, err := f.compose(evidencePack, state, surface, true)
 	if err != nil {
 		return StatusEntry{}, err
@@ -407,6 +406,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	if inspectErr != nil {
 		return StatusEntry{}, inspectErr
 	}
+	entry.LifecycleState = lifecycleStateForStatus(entry, state, pack.ID, observation.Projections)
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)
 	entry.RuntimeModes = cloneRuntimeModeResults(observation.RuntimeModeResults)
 	entry.Readiness.Configured = entry.Projections.Verified == len(observation.Projections) && len(observation.Projections) > 0
@@ -453,7 +453,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	return entry, nil
 }
 
-func lifecycleStateForStatus(entry StatusEntry, state ActivationState, packID string) PackLifecycleState {
+func lifecycleStateForStatus(entry StatusEntry, state ActivationState, packID string, projections []ObservedProjection) PackLifecycleState {
 	if entry.LatestAttempt != nil && AttemptOutcome(entry.LatestAttempt.Outcome) == AttemptRecoveryRequired {
 		return PackLifecycleRecoveryRequired
 	}
@@ -461,6 +461,27 @@ func lifecycleStateForStatus(entry StatusEntry, state ActivationState, packID st
 		return PackLifecycleActive
 	}
 	if hasContributor(state.Ownership, packID) {
+		observed := make(map[string]string, len(projections))
+		for _, projection := range projections {
+			provenance := projection.AdapterProvenance
+			if provenance == "" {
+				provenance = projection.Action.AdapterProvenance
+			}
+			observed[projection.ID] = provenance
+		}
+		for _, owner := range state.Ownership {
+			relevant := false
+			for _, contributor := range owner.Contributors {
+				if contributorBelongsToPack(contributor, packID) {
+					relevant = true
+					break
+				}
+			}
+			fresh, inspectable := observed[owner.ID]
+			if relevant && (owner.AdapterProvenance == "" || !inspectable || fresh == "" || owner.AdapterProvenance != fresh) {
+				return PackLifecycleRecoveryRequired
+			}
+		}
 		return PackLifecycleInactiveWithResiduals
 	}
 	return PackLifecycleInactiveClean

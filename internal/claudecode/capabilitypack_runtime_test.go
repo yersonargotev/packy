@@ -10,6 +10,15 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
+func TestBindAdapterProvenancePreservesDetailedIdentityAndKeepsDeletePayloadClean(t *testing.T) {
+	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{Goal: capabilitypack.ProjectionAbsent, AdapterProvenance: "sealed-composite-identity", Action: capabilitypack.ProjectionAction{Kind: ActionSkillTree, Mode: capabilitypack.ProjectionDeleteTarget}}}}
+	bindAdapterProvenance(&inspection)
+	projection := inspection.Projections[0]
+	if projection.AdapterProvenance != "sealed-composite-identity" || projection.Action.AdapterProvenance != "" {
+		t.Fatalf("provenance = observed:%q action:%q", projection.AdapterProvenance, projection.Action.AdapterProvenance)
+	}
+}
+
 type ownershipStore struct {
 	state capabilitypack.ActivationState
 }
