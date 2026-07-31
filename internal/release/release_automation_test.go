@@ -36,11 +36,7 @@ func TestReleaseWorkflowClassifiesTagPushAndManualModes(t *testing.T) {
 		"type: boolean",
 		"Normalize and seal release identity read-only",
 		"Classify event and seal immutable candidate",
-		"requested_mode=dry-run",
-		"requested_mode=recovery",
-		"releasecandidate admit",
-		`[[ "$tag" =~ ^v0\.[0-9]+\.[0-9]+$ ]]`,
-		"git fetch --force origin main 'refs/tags/*:refs/tags/*'",
+		"run: ./scripts/normalize-release-event.sh",
 		"scripts/build-release-artifacts.sh",
 		"sbom.spdx.json",
 		"SHA256SUMS",
@@ -169,14 +165,21 @@ func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *test
 			t.Fatalf("%s must not invalidate a sealed candidate merely because protected main advanced", job)
 		}
 	}
-	if got := strings.Count(text, "resolve_ref_commit()"); got != 1 {
-		t.Fatalf("only normalization may observe refs inline; got %d copied observers", got)
+	normalizer := readReleaseEventNormalizer(t, repoRoot(t))
+	if got := strings.Count(text, "resolve_ref_commit()"); got != 0 {
+		t.Fatalf("workflow must not retain private inline ref observers; got %d", got)
+	}
+	if got := strings.Count(normalizer, "resolve_ref_commit()"); got != 1 {
+		t.Fatalf("checked-in normalizer must own one ref observer; got %d", got)
 	}
 }
 
 func TestReleaseWorkflowAdmissionPassesRawReleaseMetadataFacts(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
-	normalize := releaseWorkflowJob(t, text, "normalize")
+	normalize := readReleaseEventNormalizer(t, repoRoot(t))
+	if !strings.Contains(releaseWorkflowJob(t, text, "normalize"), "run: ./scripts/normalize-release-event.sh") {
+		t.Fatal("normalize job must execute the checked-in event adapter")
+	}
 	for _, want := range []string{
 		"release_schema_version",
 		"release_candidate_id",
@@ -199,6 +202,15 @@ func TestReleaseWorkflowAdmissionPassesRawReleaseMetadataFacts(t *testing.T) {
 			t.Fatalf("workflow adapter must preserve raw release metadata types instead of rebuilding %q", forbidden)
 		}
 	}
+}
+
+func readReleaseEventNormalizer(t *testing.T, root string) string {
+	t.Helper()
+	normalizer, err := os.ReadFile(filepath.Join(root, "scripts", "normalize-release-event.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(normalizer)
 }
 
 func TestVerifyReleaseRefStateAdapterOwnsRemoteObservation(t *testing.T) {
@@ -1096,131 +1108,14 @@ func baseReleaseEventFixture() releaseEventFixture {
 
 func runReleaseEventFixture(t *testing.T, workflow string, fixture releaseEventFixture) (string, error) {
 	t.Helper()
-	script := releaseWorkflowRunScript(t, workflow, "Classify event and seal immutable candidate")
-	bin := t.TempDir()
-	gitStub := `#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  fetch|checkout) exit 0 ;;
-  rev-parse)
-    printf '%s\n' "$FIXTURE_TAG_COMMIT"
-    ;;
-  merge-base)
-    [[ "$FIXTURE_ANCESTOR" == true ]]
-    ;;
-  tag)
-    [[ -z "$FIXTURE_TAGS" ]] || printf '%s\n' "$FIXTURE_TAGS"
-    ;;
-  *)
-    echo "unexpected git invocation: $*" >&2
-    exit 97
-    ;;
-esac
-`
-	ghStub := `#!/usr/bin/env bash
-set -euo pipefail
-args="$*"
-case "$args" in
-  *" api graphql "*|api\ graphql\ *)
-    [[ -z "$FIXTURE_RELEASE_ID" ]] || printf '%s\n' "$FIXTURE_RELEASE_ID"
-    ;;
-  *"git/ref/heads/main"*)
-    printf 'commit\t%s\n' "$FIXTURE_MAIN_COMMIT"
-    ;;
-  *"git/ref/tags/"*)
-    printf 'commit\t%s\n' "$FIXTURE_TAG_COMMIT"
-    ;;
-  *"releases?per_page=100&page=1"*)
-    [[ -z "$FIXTURE_RELEASES" ]] || printf '%s\n' "$FIXTURE_RELEASES"
-    ;;
-  *"releases?per_page=100"*)
-    [[ -z "$FIXTURE_RELEASES" ]] || printf '%s\n' "$FIXTURE_RELEASES"
-    ;;
-  *"releases?per_page=100&page="*)
-    ;;
-  *)
-    if [[ "$args" == release\ view* ]]; then
-      is_draft=false
-      [[ "$FIXTURE_RELEASE_STATE" == draft ]] && is_draft=true
-      jq -n --arg tag "$FIXTURE_TAG" --arg body "$FIXTURE_RELEASE_BODY" \
-        --argjson isDraft "$is_draft" '{tagName:$tag,isDraft:$isDraft,body:$body}'
-      exit 0
-    fi
-    echo "unexpected gh invocation: $*" >&2
-    exit 98
-    ;;
-esac
-`
-	for name, contents := range map[string]string{"git": gitStub, "gh": ghStub} {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte(contents), 0o755); err != nil {
-			t.Fatal(err)
-		}
+	if !strings.Contains(workflow, "run: ./scripts/normalize-release-event.sh") {
+		t.Fatal("release workflow does not invoke the checked-in event normalizer")
 	}
-	outputPath := filepath.Join(t.TempDir(), "github-output")
-	runnerTemp := t.TempDir()
-	releaseBody := fmt.Sprintf("notes\n\n<!-- packy-release-metadata\n{\"schema_version\":1,\"candidate_id\":\"candidate\",\"target_commit\":%q,\"source_run_id\":%q,\"attestation_source_ref\":%q,\"publication_plan\":{\"source_run_id\":%q,\"attestation_source_ref\":%q}}\n-->\n",
-		fixture.tagCommit, fixture.originalRunID, "refs/tags/"+fixture.tag, fixture.originalRunID, "refs/tags/"+fixture.tag)
-	cmd := exec.Command("/bin/bash", "-c", script)
-	cmd.Dir = repoRoot(t)
-	cmd.Env = []string{
-		"PATH=" + bin + ":" + os.Getenv("PATH"),
-		"HOME=" + t.TempDir(),
-		"XDG_CONFIG_HOME=" + t.TempDir(),
-		"GOCACHE=" + t.TempDir(),
-		"GOPATH=" + goEnv(t, "GOPATH"),
-		"GOMODCACHE=" + goEnv(t, "GOMODCACHE"),
-		"RUNNER_TEMP=" + runnerTemp,
-		"GITHUB_REPOSITORY=yersonargotev/packy",
-		"GITHUB_OUTPUT=" + outputPath,
-		"EVENT_NAME=" + fixture.eventName,
-		"EVENT_REF=" + fixture.eventRef,
-		"EVENT_REF_TYPE=" + fixture.eventRefType,
-		"EVENT_REF_NAME=" + fixture.eventRefName,
-		"EVENT_SHA=" + fixture.eventSHA,
-		"INPUT_TAG=" + fixture.inputTag,
-		"INPUT_DRY_RUN=" + fixture.inputDryRun,
-		"FIXTURE_TAG_COMMIT=" + fixture.tagCommit,
-		"FIXTURE_MAIN_COMMIT=" + fixture.mainCommit,
-		"FIXTURE_ANCESTOR=" + fmt.Sprint(fixture.ancestor),
-		"FIXTURE_TAGS=" + fixture.existingTags,
-		"FIXTURE_RELEASES=" + fixture.existingReleases,
-		"FIXTURE_RELEASE_ID=" + fixture.releaseID,
-		"FIXTURE_RELEASE_STATE=" + fixture.releaseState,
-		"FIXTURE_RELEASE_BODY=" + releaseBody,
-		"FIXTURE_TAG=" + fixture.tag,
+	result := runReleaseScenario(t, releaseScenario{Event: fixture})
+	if result.err != nil {
+		return strings.Join(result.Diagnostics, "\n"), result.err
 	}
-	combined, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(combined), err
-	}
-	output, readErr := os.ReadFile(outputPath)
-	if readErr != nil {
-		return string(combined), readErr
-	}
-	return string(output), nil
-}
-
-func releaseWorkflowRunScript(t *testing.T, workflow, stepName string) string {
-	t.Helper()
-	step := releaseWorkflowStep(t, parseReleaseWorkflow(t, workflow), stepName).Text
-	const marker = "\n        run: |\n"
-	start := strings.Index(step, marker)
-	if start < 0 {
-		t.Fatalf("release workflow step %q has no multiline run script", stepName)
-	}
-	lines := strings.Split(step[start+len(marker):], "\n")
-	scriptLines := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			scriptLines = append(scriptLines, "")
-			continue
-		}
-		if !strings.HasPrefix(line, "          ") {
-			break
-		}
-		scriptLines = append(scriptLines, strings.TrimPrefix(line, "          "))
-	}
-	return strings.Join(scriptLines, "\n")
+	return result.GitHubOutput, nil
 }
 
 func assertReleaseEventOutput(t *testing.T, output, mode, tag, commit string) {
