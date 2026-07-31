@@ -21,11 +21,12 @@ documented install, update, or uninstall workflows.
   deterministic SHA-256 checksums, an SPDX SBOM, and verified provenance.
 - GitHub publication completes and is independently read back before the
   separately approved Homebrew update can begin.
-- Published release assets and the associated version tag are immutable. Normal
-  correction uses a new monotonically increasing version. Release title and
-  notes remain editable residual Owner authority; destructive release deletion
-  is an Owner-only break-glass action and permanently prevents reuse of the
-  deleted version tag.
+- Published release assets, body, and associated version tag are immutable
+  workflow outputs. Normal correction uses a new monotonically increasing
+  version. The platform still exposes residual Owner capability to edit a title
+  or notes, but Packy's publication and recovery paths never use it; destructive
+  release deletion is an Owner-only break-glass action and permanently prevents
+  reuse of the deleted version tag.
 
 ## Operator impact and limitations
 

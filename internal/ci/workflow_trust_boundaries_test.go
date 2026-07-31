@@ -342,15 +342,17 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"report":  {"actions": "read", "contents": "read", "issues": "write"},
 	},
 	".github/workflows/release.yml": {
+		"normalize":                 {"contents": "read"},
 		"governance-drift":          {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
-		"build":                     {"contents": "read"},
+		"build":                     {"actions": "read", "contents": "read"},
 		"claude-smoke":              {"contents": "read"},
-		"validate-release-evidence": {"contents": "read"},
+		"validate-release-evidence": {"actions": "read", "contents": "read"},
 		"dry-run":                   {"contents": "read"},
-		"inspect-release":           {"contents": "read"},
-		"attest":                    {"attestations": "write", "contents": "read", "id-token": "write"},
-		"publish-github":            {"contents": "write"},
-		"homebrew":                  {"contents": "read"},
+		"inspect-release":           {"actions": "read", "contents": "read"},
+		"attest":                    {"actions": "read", "attestations": "write", "contents": "read", "id-token": "write"},
+		"publish-github":            {"actions": "read", "contents": "write"},
+		"homebrew":                  {"actions": "read", "contents": "read"},
+		"release-summary":           {"contents": "read"},
 	},
 	".github/workflows/security.yml": {
 		"codeql": {"contents": "read", "packages": "read", "security-events": "write"},
@@ -483,8 +485,8 @@ func assertTrustedPrivilegedExecution(t errorReporter, workflow workflowDocument
 // Write-capable or secret-bearing jobs must name the trusted repository and a
 // protected ref boundary in their job-level gate. Governance checks out only
 // the protected base/default branch; proposed-head identity may be compared as
-// data but is never fetched or executed. Release publication admits protected
-// main only.
+// data but is never fetched or executed. Release publication consumes only the
+// mode and candidate identity admitted by its read-only normalization gate.
 var trustedExecutionMarkers = map[string][]string{
 	".github/workflows/claude-canary.yml|stable-smoke": {
 		"github.repository == 'yersonargotev/packy'",
@@ -500,20 +502,20 @@ var trustedExecutionMarkers = map[string][]string{
 	},
 	".github/workflows/release.yml|attest": {
 		"github.repository == 'yersonargotev/packy'",
-		"refs/heads/main",
-		"inputs.dry_run == false",
+		"needs.normalize.outputs.mode == 'fresh'",
+		"needs.normalize.outputs.mode == 'recovery'",
 		"environment: release",
 	},
 	".github/workflows/release.yml|publish-github": {
 		"github.repository == 'yersonargotev/packy'",
-		"refs/heads/main",
-		"inputs.dry_run == false",
+		"needs.normalize.outputs.mode == 'fresh'",
+		"needs.normalize.outputs.mode == 'recovery'",
 		"environment: release",
 	},
 	".github/workflows/release.yml|homebrew": {
 		"github.repository == 'yersonargotev/packy'",
-		"refs/heads/main",
-		"inputs.dry_run == false",
+		"needs.normalize.outputs.mode == 'fresh'",
+		"needs.normalize.outputs.mode == 'recovery'",
 		"environment: homebrew",
 	},
 	".github/workflows/security.yml|codeql": {

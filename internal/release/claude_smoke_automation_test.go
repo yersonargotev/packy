@@ -73,6 +73,8 @@ func TestStableCanaryIsIndependentFromPullRequestsAndOpensCompatibilityWork(t *t
 func TestReleaseBlocksPublicationOnBothClaudeVariantsAndDarwinArchitectures(t *testing.T) {
 	text := readWorkflowFile(t, "release.yml")
 	for _, want := range []string{
+		"Normalize and seal release identity read-only",
+		"Classify event and seal immutable candidate",
 		"Validate exact tag commit",
 		"./scripts/validate-packy.sh",
 		"name: packy-release-${{ steps.release.outputs.tag }}",
@@ -91,7 +93,8 @@ func TestReleaseBlocksPublicationOnBothClaudeVariantsAndDarwinArchitectures(t *t
 		"ref: ${{ needs.build.outputs.commit }}",
 		"--packy-ref \"${{ needs.build.outputs.commit }}\"",
 		`tag_commit="$(git rev-parse --verify "${RELEASE_TAG}^{commit}")"`,
-		`[[ "$head" == "$main" && "$head" == "$tag_commit" ]]`,
+		"checkout and $RELEASE_TAG must match the sealed commit",
+		"sealed commit left protected-main history before OIDC issuance",
 		"Create or resume exact draft and publish once",
 		"actions/upload-artifact@",
 		"Gate exact-tag Addy promotion evidence",

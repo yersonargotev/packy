@@ -69,6 +69,58 @@ func TestCreateAndVerifyLifecycleOffline(t *testing.T) {
 	}
 }
 
+func TestAdmissionAndRefStateSubcommandsConsumeStrictObservations(t *testing.T) {
+	root := t.TempDir()
+	sha, main := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	admissionPath := filepath.Join(root, "admission.json")
+	writeJSON(t, admissionPath, release.AdmissionObservation{
+		EventName: "push", EventRef: "refs/tags/v0.4.0", Repository: release.PackyRepository,
+		Tag: "v0.4.0", TagCommit: sha, EventCommit: sha, CurrentMain: sha, LatestVersion: "v0.3.9",
+		ReleaseState: "absent",
+	})
+	var stdout bytes.Buffer
+	if err := run([]string{"admit", "--observation", admissionPath}, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"mode":"fresh"`) ||
+		!strings.Contains(stdout.String(), `"attestation_source_ref":"refs/tags/v0.4.0"`) {
+		t.Fatalf("admission output = %s", stdout.String())
+	}
+
+	refPath := filepath.Join(root, "refs.json")
+	writeJSON(t, refPath, release.RefStateObservation{
+		Tag: "v0.4.0", ExpectedTagCommit: sha, RemoteTagCommit: sha,
+		ReleaseCommit: sha, CurrentMain: main, ReleaseInMain: true,
+	})
+	stdout.Reset()
+	if err := run([]string{"verify-ref-state", "--observation", refPath}, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"verified":true`) ||
+		!strings.Contains(stdout.String(), `"current_main":"`+main+`"`) {
+		t.Fatalf("ref verification output = %s", stdout.String())
+	}
+
+	os.WriteFile(refPath, []byte(`{"tag":"v0.4.0","tag":"v0.4.1"}`), 0o600)
+	if err := run([]string{"verify-ref-state", "--observation", refPath}, ioDiscard{}); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("strict ref observation error = %v", err)
+	}
+}
+
+func TestAdmissionSubcommandRejectsAbsentRecovery(t *testing.T) {
+	root := t.TempDir()
+	sha := strings.Repeat("a", 40)
+	path := filepath.Join(root, "admission.json")
+	writeJSON(t, path, release.AdmissionObservation{
+		EventName: "workflow_dispatch", EventRef: release.PackyMainRef, RequestedMode: "recovery",
+		Repository: release.PackyRepository, Tag: "v0.4.0", TagCommit: sha,
+		EventCommit: sha, CurrentMain: sha, LatestVersion: "v0.4.0", TagInMain: true, ReleaseState: "absent",
+	})
+	if err := run([]string{"admit", "--observation", path}, ioDiscard{}); err == nil || !strings.Contains(err.Error(), "existing release") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestCreateRejectsUnsafeFilesystemAndOverlap(t *testing.T) {
 	root := t.TempDir()
 	dist := filepath.Join(root, "dist")

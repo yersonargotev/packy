@@ -23,7 +23,7 @@ func main() {
 func run(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("governancedrift", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	mode := flags.String("mode", "", "evaluate, gate, issue-decision, or classify-comments")
+	mode := flags.String("mode", "", "evaluate, recovery-contract, gate, issue-decision, or classify-comments")
 	contractPath := flags.String("contract", "", "expected-state contract JSON")
 	observationPath := flags.String("observation", "", "sanitized observation JSON")
 	evaluationPath := flags.String("evaluation", "", "evaluation JSON")
@@ -40,6 +40,7 @@ func run(args []string, stdout io.Writer) error {
 	canonicalKey := flags.String("canonical-key", "", "canonical drift issue key")
 	commentsPath := flags.String("comments", "", "sanitized issue comments JSON")
 	evidenceDigest := flags.String("evidence-digest", "", "sha256 digest for exact evidence classification")
+	releaseTag := flags.String("release-tag", "", "sealed release tag admitted during exact recovery")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -49,6 +50,20 @@ func run(args []string, stdout io.Writer) error {
 
 	var result any
 	switch *mode {
+	case "recovery-contract":
+		var contract governancedrift.Contract
+		var observation governancedrift.Observation
+		if err := readStrict(*contractPath, &contract); err != nil {
+			return fmt.Errorf("read contract: %w", err)
+		}
+		if err := readStrict(*observationPath, &observation); err != nil {
+			return fmt.Errorf("read observation: %w", err)
+		}
+		effective, err := governancedrift.RecoveryContract(contract, observation, *releaseTag)
+		if err != nil {
+			return err
+		}
+		result = effective
 	case "evaluate":
 		var contract governancedrift.Contract
 		var observation governancedrift.Observation
@@ -130,7 +145,7 @@ func run(args []string, stdout io.Writer) error {
 			Classified bool `json:"classified"`
 		}{Classified: classified}
 	default:
-		return errors.New("--mode must be evaluate, gate, issue-decision, or classify-comments")
+		return errors.New("--mode must be evaluate, recovery-contract, gate, issue-decision, or classify-comments")
 	}
 	return writeJSON(*outputPath, stdout, result)
 }

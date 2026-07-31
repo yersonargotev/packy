@@ -42,55 +42,64 @@ Installed Source is missing or stale, run `packy init` first.
 
 ## Maintainer quick path
 
-Publication is manual-only. The workflow must be dispatched from protected
-`main`, and the selected exact `v0.x.y` tag must already resolve to the checked
-`origin/main` commit. The workflow never creates, moves, or pushes a tag.
+Fresh publication is tag-triggered. Pushing one authorized exact `v0.x.y` tag
+starts the workflow; manual dispatch is only a non-mutating dry-run or recovery
+for that exact tag and sealed candidate. The workflow never creates, moves, or
+pushes a tag.
 
 1. Confirm the protected-main candidate passes validation:
    ```bash
    ./scripts/validate-packy.sh
    ```
-2. Review `docs/release-notes/next.md` for this exact candidate. It must contain
-   exactly one `{{TAG}}` placeholder.
+2. Finalize `docs/release-notes/next.md`, including the support statement, on
+   this exact protected-main candidate. It must contain exactly one `{{TAG}}`
+   placeholder. Release notes cannot be repaired after publication.
 3. Confirm the protected `homebrew` environment's `HOMEBREW_TAP_TOKEN` has
    write access only to `yersonargotev/homebrew-tap`.
 4. Create and push the exact tag through the repository's authorized process.
-5. In **Actions → Release → Run workflow**, select `main`, enter the tag, and
-   leave **dry_run** enabled.
-6. Review the dry-run summary. It performs the build, smoke/evidence gates,
-   immutable candidate sealing, and read-only release inspection, then reports
-   the exact state-dependent OIDC, missing-asset, draft/publication, and tap
-   effects without performing any of them.
-7. Dispatch the same tag from the same protected-main commit with **dry_run**
-   disabled.
-8. Verify the published release has exactly these seven assets:
+   The tag-triggered run is the only fresh-publication path.
+5. If that run is interrupted, dispatch the same tag and sealed candidate with
+   **dry_run** disabled to recover it. Do not dispatch a different candidate.
+6. Verify the published release has exactly these seven assets:
    - four `packy_<tag>_<goos>_<goarch>` binaries;
    - `SHA256SUMS`;
    - `sbom.spdx.json`; and
    - `attestation.bundle.jsonl`.
-9. Verify `yersonargotev/homebrew-tap` has a `Formula/packy.rb` commit for the
+7. Verify `yersonargotev/homebrew-tap` has a `Formula/packy.rb` commit for the
    same immutable tag and binary hashes.
-10. Run a sandboxed package-install smoke test before announcing the release.
+8. Run a sandboxed package-install smoke test before announcing the release.
 
 ## Manual dispatch and recovery
 
-A dispatch is accepted only when the workflow checkout, freshly fetched
-`origin/main`, and the selected tag all resolve to one commit. All platform
-binaries are built once. Validation, Claude smoke, draft preparation,
-publication, and Homebrew consume those retained bytes without rebuilding.
+A fresh tag-triggered run is initially accepted only when the workflow checkout,
+freshly fetched `origin/main`, and the selected tag all resolve to one commit.
+Once that exact candidate is sealed, later protected-main advancement is allowed
+only while the sealed commit remains in protected-main history and the tag still
+resolves to it. A manual real run is accepted only to recover that same tag and
+candidate. All platform binaries are built once. Validation, Claude smoke,
+draft preparation, publication, and Homebrew consume those retained bytes
+without rebuilding.
 
-The default dry-run completes every safe, non-mutating check and read-only
-inspection available before stopping. If the version already has an attestation
+For an existing exact tag, the default manual dry-run completes every safe,
+non-mutating check and read-only inspection available before stopping. It does
+not authorize fresh publication. If the version already has an attestation
 bundle, dry-run downloads and verifies it against the rebuilt candidate without
 requesting a new token. It does not request an OIDC token or
 create/change a tag, attestation, draft, release, asset, or tap commit.
 
-A real run creates a draft only when the version is absent. If an exact draft
-already exists, recovery revalidates its hidden candidate metadata, target
-commit, notes, provenance, and every server-reported asset digest before
-uploading only missing assets. Divergent or ambiguous state fails closed. An
-already-published exact release is read and verified, never edited or recreated;
-that recovery path may continue to the independently verified Homebrew stage.
+A fresh tag-triggered run creates a draft only when the version is absent.
+Manual recovery requires an existing exact draft or published release whose
+sealed metadata identifies the original workflow run and candidate. Recovery
+downloads that run's retained candidate and publication metadata; it never
+invokes the build or smoke jobs again. If the retained artifacts expired or are
+missing, recovery fails closed instead of rebuilding. An exact draft is
+revalidated against its target commit, notes, provenance, source run, and every
+server-reported asset digest before uploading only missing retained assets.
+Divergent or ambiguous state fails closed. An already-published exact release
+is read and verified, never edited or recreated; that recovery path may continue
+to the independently verified Homebrew stage. Its title, body, assets, and tag
+are immutable workflow outputs. Any mismatch fails closed and is corrected only
+by a newer version.
 
 ## `HOMEBREW_TAP_TOKEN` setup
 
@@ -129,7 +138,7 @@ non-regular, symlinked, or mismatched file. The publication stage adds the
 separately verified `attestation.bundle.jsonl` as the seventh release asset.
 
 The sealed candidate binds the version, protected-main commit/ref, repository,
-release workflow path and content digest, reviewed notes digest, exact subjects,
+release workflow path and content digest, final reviewed notes digest, exact subjects,
 and the reviewed union of effective GitHub permissions. Its deterministic
 provenance document and hidden draft-body metadata must round-trip exactly from
 GitHub before publication. After OIDC issuance, the final release-set identity
@@ -226,9 +235,12 @@ either publication environment. Environment approval therefore gates only the
 destination authority that the approved job is about to exercise.
 
 The OIDC bundle is verified against the exact repository, fully-qualified signer
-workflow, protected-main source ref, source commit, signer commit, and every
-retained candidate file, including `SHA256SUMS` itself. Verification uses the retained bundle and an
-explicit trusted-root document rather than fetching an arbitrary attestation.
+workflow, sealed tag-trigger source ref, source commit, signer commit, and every
+retained candidate file, including `SHA256SUMS` itself. Candidate eligibility
+still binds that commit to protected `main`; the attestation source-ref claim
+binds the GitHub run that was actually triggered by `refs/tags/<version>`.
+Verification uses the retained bundle and an explicit trusted-root document
+rather than fetching an arbitrary attestation.
 
 Before the draft becomes public, the workflow reads back the complete draft,
 requires the exact body metadata and seven-asset inventory, compares every
@@ -236,10 +248,16 @@ server-reported SHA-256 digest with the retained bytes, and asks the domain
 verifier for the one-time `publish-draft` decision. There is no clobber, delete,
 recreate, replacement, tag movement, or published-version mutation path.
 The tag and protected-main refs are peeled through the Git object API and
-rechecked against the retained commit immediately before draft creation, every
-asset upload, OIDC issuance, publication, and the final tap push. The tap stage
-also reads remote `main` and `Formula/packy.rb` back after pushing and compares
-the remote commit and formula digest with the sealed destination plan.
+rechecked immediately before draft creation, every asset upload, OIDC issuance,
+publication, and the final tap push. Initial sealing requires the tag and
+protected-main tip to equal the retained commit; later checks require unchanged
+tag identity and the retained commit to remain in protected-main history. The
+governance gate always evaluates the freshly observed protected-main contract,
+not the historical release checkout. Published recovery admits only the sealed
+tag's own immutable, bot-authored seven-asset latest-release transition; any
+other latest-release state remains governance drift. The
+tap stage also reads remote `main` and `Formula/packy.rb` back after pushing and
+compares the remote commit and formula digest with the sealed destination plan.
 
 After publication, the Homebrew job independently reads the release again,
 checks its version, commit, body, exact inventory, server digests, and
@@ -273,8 +291,11 @@ packy doctor
 ## First v0.x checklist
 
 - [ ] The candidate passed `./scripts/validate-packy.sh` on protected `main`.
-- [ ] The exact `v0.x.y` tag, workflow checkout, and freshly fetched
-      `origin/main` resolve to one commit.
+- [ ] Final support notes are committed on the exact candidate before tag push.
+- [ ] On initial sealing, the exact `v0.x.y` tag, workflow checkout, and freshly
+      fetched `origin/main` resolve to one commit.
+- [ ] On later recovery, the tag identity is unchanged and the sealed commit
+      remains in protected-main history.
 - [ ] The protected `homebrew` environment's `HOMEBREW_TAP_TOKEN` is configured
       only for the dedicated tap, with no repository-level fallback secret.
 - [ ] A default dry-run completed and reported the planned external mutations
@@ -288,6 +309,8 @@ packy doctor
       provenance, target commit, seven assets, and server hashes before publish.
 - [ ] The published release contains exactly four binaries, `SHA256SUMS`,
       `sbom.spdx.json`, and `attestation.bundle.jsonl`.
+- [ ] The published release title, body, assets, and tag match their sealed
+      immutable values; no post-publication repair was used.
 - [ ] Homebrew began only after an independent exact published-release read-back.
 - [ ] `Formula/packy.rb` points at the same immutable tag and binary hashes.
 - [ ] A sandboxed package install completes the documented lifecycle without

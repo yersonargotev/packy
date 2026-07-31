@@ -38,6 +38,9 @@ delegated.
 The user explicitly asks to publish Packy from `main`, optionally naming a
 version, or to recover publication for one named existing tag. Classify the run
 as fresh publication or existing-tag recovery before any external mutation.
+Fresh publication starts by pushing one authorized valid `v0.x.y` tag. Manual
+dispatch is reserved for a non-mutating dry-run or recovery of the exact same
+tag and sealed candidate; it is not an alternate fresh-publication trigger.
 
 Record the operator checkout's initial branch, HEAD, and status. Read this
 workflow, `docs/release.md`, and `.github/workflows/release.yml`; fetch `origin`
@@ -50,11 +53,15 @@ user-specified version when present; otherwise select the next patch after the
 highest valid published tag or release. An explicit version may advance patch
 or minor, but must be a valid `v0.x.y`, be monotonically newer than every
 existing tag and GitHub Release, and be absent locally, remotely, and on GitHub.
+Finalize the release-note template, including the required support statement,
+on that exact protected-main commit before authorizing its tag. The template is
+part of the sealed candidate and cannot be repaired after publication.
 
 For recovery, resolve the named existing remote tag and require its local tag,
-remote tag, and GitHub Release target, when present, to agree on one unchanged
-SHA that remains in `origin/main` history. Recovery repairs publication for that
-exact tag and source; it never selects another candidate or version.
+remote tag, sealed candidate, and GitHub Release target, when present, to agree
+on one unchanged SHA that remains in `origin/main` history. Recovery repairs
+publication for that exact tag and source; it never selects another candidate
+or version.
 
 Use the operator checkout only for a fresh publication when it is clean, on
 `main`, and exactly at the frozen `origin/main` SHA. Otherwise create a clean
@@ -66,9 +73,8 @@ Confirm GitHub authentication. For fresh publication and dispatch recovery,
 also confirm the observable presence of every secret required by the release
 contract. The tap token is available only inside GitHub Actions, so its actual
 write permission remains a publication gate exercised by the Release workflow.
-Note-only recovery instead requires release-edit permission and discloses no tap
-mutation. Prepare the exact support statement that the contract requires in the
-published release notes.
+Prepare the exact support statement that the contract requires in the published
+release notes before the tag push.
 
 **Complete when:** the branch, exact tag, immutable candidate SHA, isolated
 workspace, initial operator state, required support text, authentication, and
@@ -94,14 +100,13 @@ evidence is sufficient for the publication brief.
 ### 3. Approve
 
 Present one publication brief immediately before the first external publication
-mutation: the tag push for a fresh run, or manual dispatch or release edit for a
-recovery run. The brief contains the branch, version, immutable SHA, ancestry,
+mutation: the tag push for a fresh run, or manual dispatch for a recovery run.
+The brief contains the branch, version, immutable SHA, ancestry,
 local checks, exact-SHA CI, controlled smoke, disposable artifact/formula proof,
 prepared support text, and every external effect approval authorizes. It
 discloses, when the branch will run the Release workflow, that tap write
 permission cannot be proven from the pre-publication workspace and will first
-be exercised inside that workflow. A note-only brief instead states that no tap
-or artifact mutation will occur.
+be exercised inside that workflow.
 
 Offer a real Homebrew installation as a separate opt-in that names the impact
 and controlled target environment. Only an explicit affirmative answer
@@ -122,25 +127,29 @@ with the approved SHA invalidates the gate.
 
 For fresh publication, create the exact tag at the approved SHA, push only that
 tag once, locate its tag-triggered Release workflow, and wait for a terminal
-result. The published tag is immutable: never delete it for reuse, recreate it,
-or move it locally or remotely.
+result. That workflow must first prove that its tag target exactly equals the
+protected-main tip sealed by the candidate. After that initial sealing,
+protected `main` may advance only while the sealed commit remains in its
+history. The published tag is immutable: never delete it for reuse, recreate
+it, or move it locally or remotely.
 
 For recovery, use the documented manual-dispatch path only to complete or repair
-release artifacts or tap state for the existing tag's unchanged target SHA.
-Rebuilt outputs must satisfy the contract for that same tagged source. When the
-published notes are the only nonconforming surface and every other final-gate
-check already passes, skip dispatch and repair the body directly with
-`gh release edit`.
+release artifacts or tap state for the existing tag's unchanged target SHA and
+sealed source run. The workflow reacquires that run's retained candidate and
+publication metadata; it does not rebuild binaries, checksums, SBOM, smoke
+evidence, attestation, or formula. Missing or expired retained artifacts fail
+closed. Recovery cannot create an absent release or edit a published title,
+body, or asset.
 
 For either workflow-running branch, require its tap permission dry-run and tap
 publication step to succeed. A reported no-op is valid only when the step
 records that the generated formula already matches; the final gate still reads
 the published tap state independently.
 
-After the workflow creates or recovers the GitHub Release, preserve its generated
-change notes and use `gh release edit` to add or correct the prepared support
-statement. Verify the published body rather than treating prepared text as
-evidence.
+After the workflow creates or recovers the GitHub Release, verify the published
+body against the sealed notes rather than treating prepared text as evidence.
+Any mismatch fails closed and requires a newer version; there is no
+post-publication note-edit repair path.
 
 Diagnose technical failures autonomously. Idempotent retries and external-state
 repairs may continue for the same tag and SHA when their effects were disclosed
@@ -151,8 +160,8 @@ monotonically newer version; never repair versioned content by moving or reusing
 the failed tag.
 
 **Complete when:** the exact approved tag exists at the approved SHA; the Release
-workflow reports `completed/success` for that tag; and the published release
-notes satisfy the support contract.
+workflow reports `completed/success` for that tag; and the immutable published
+release body satisfies the support contract.
 
 ### 5. Verify and close
 

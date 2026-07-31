@@ -149,7 +149,10 @@
           "reviewers": []
         },
         {
-          "branch_policies": [{"name": "main", "type": "branch"}],
+          "branch_policies": [
+            {"name": "main", "type": "branch"},
+            {"name": "v0.*.*", "type": "tag"}
+          ],
           "can_admins_bypass": false,
           "deployment_branch_policy": {
             "custom_branch_policies": true,
@@ -165,7 +168,10 @@
           ]
         },
         {
-          "branch_policies": [{"name": "main", "type": "branch"}],
+          "branch_policies": [
+            {"name": "main", "type": "branch"},
+            {"name": "v0.*.*", "type": "tag"}
+          ],
           "can_admins_bypass": false,
           "deployment_branch_policy": {
             "custom_branch_policies": true,
@@ -221,7 +227,7 @@
           "conditions": {
             "ref_name": {
               "exclude": [],
-              "include": ["refs/tags/v*"]
+              "include": ["refs/tags/v0.*.*"]
             }
           },
           "enforcement": "active",
