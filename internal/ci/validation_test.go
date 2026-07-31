@@ -240,12 +240,18 @@ func TestReleaseScenariosHaveOneCanonicalOwnerAndOneFocusedDeveloperEntrypoint(t
 		{name: "root-qualified direct scenario duplicate", authority: authority + "\ngo test \"$root/internal/release\" -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
 		{name: "multiline direct scenario duplicate", authority: authority + "\ngo test ./internal/release \\\n  -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
 		{name: "broad release package duplicate", authority: authority + "\ngo test ./internal/release\n", developerScript: developerScript, workflow: workflow},
+		{name: "repository wildcard duplicate", authority: authority + "\ngo test ./... -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
+		{name: "internal wildcard duplicate", authority: authority + "\ngo test ./internal/... -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
+		{name: "variable expanded release duplicate", authority: authority + "\nrelease_package=./internal/release\ngo test \"$release_package\" -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
+		{name: "release directory duplicate", authority: authority + "\n(cd internal/release && go test . -run '^TestReleaseScenario')\n", developerScript: developerScript, workflow: workflow},
 		{name: "developer script duplicate", authority: authority + "\n./scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
 		{name: "bash developer script duplicate", authority: authority + "\nbash scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
 		{name: "root-qualified developer script duplicate", authority: authority + "\n$root/scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
 		{name: "duplicate focused command", authority: authority, developerScript: developerScript + "\ngo test ./internal/release -run '^TestReleaseScenario' -count=1 -v\n", workflow: workflow},
 		{name: "CI direct scenario bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: go test ./internal/release -run '^TestReleaseScenario'\n"},
 		{name: "CI multiline scenario bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: |\n          go test ./internal/release \\\n            -run '^TestReleaseScenario'\n"},
+		{name: "CI folded scenario bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: >-\n          go test\n          ./internal/release -run '^TestReleaseScenario'\n"},
+		{name: "CI folded wildcard bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: >-\n          go test\n          ./internal/... -run '^TestReleaseScenario'\n"},
 		{name: "CI broad release package bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: go test ./internal/release\n"},
 		{name: "CI developer script bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: bash scripts/test-release-scenarios.sh\n"},
 		{name: "CI second validation entrypoint", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: bash scripts/validate-packy.sh\n"},
@@ -355,19 +361,25 @@ func validateReleaseScenarioOwnership(authority, developerScript, workflow strin
 	if strings.Count(authority, `go test -race -timeout 10m "${race_packages[@]}"`) != 1 || !strings.Contains(authority, "./internal/release) ;;\n    *) race_packages") {
 		return fmt.Errorf("release package ordinary/race contract changed")
 	}
-	if releaseScenarioCommandCount(authority) != 0 {
+	authorityCommands := normalizedCommandText(authority)
+	if count := strings.Count(authorityCommands, "go test"); count != 2 {
+		return fmt.Errorf("canonical validation Go test command count = %d, want ordinary and race only", count)
+	}
+	if strings.Contains(authorityCommands, "TestReleaseScenario") {
 		return fmt.Errorf("canonical validation must own scenarios through the ordinary release package only")
 	}
 	if count := strings.Count(authority, "scripts/test-release-scenarios.sh"); count != 0 {
 		return fmt.Errorf("canonical validation invokes focused developer script %d times, want 0", count)
 	}
-	if releaseScenarioCommandCount(developerScript) != 1 || strings.Count(developerScript, `go test ./internal/release -run '^TestReleaseScenario' -count=1 -v`) != 1 {
+	developerCommands := normalizedCommandText(developerScript)
+	if strings.Count(developerCommands, "go test") != 1 || strings.Count(developerCommands, `go test ./internal/release -run '^TestReleaseScenario' -count=1 -v`) != 1 {
 		return fmt.Errorf("focused developer scenario command count must equal 1")
 	}
 	if count := strings.Count(workflow, "scripts/validate-packy.sh"); count != 1 {
 		return fmt.Errorf("CI validation entrypoint count = %d, want 1", count)
 	}
-	if releaseScenarioCommandCount(workflow) != 0 || strings.Contains(workflow, "scripts/test-release-scenarios.sh") {
+	workflowCommands := normalizedCommandText(workflow)
+	if strings.Contains(workflowCommands, "go test") || strings.Contains(workflowCommands, "internal/release") || strings.Contains(workflowCommands, "TestReleaseScenario") || strings.Contains(workflow, "scripts/test-release-scenarios.sh") {
 		return fmt.Errorf("CI bypasses the one validation entrypoint")
 	}
 	return nil
@@ -385,17 +397,10 @@ func shellArrayValue(script, opening string) []string {
 	return strings.Fields(body)
 }
 
-func releaseScenarioCommandCount(contents string) int {
+func normalizedCommandText(contents string) string {
 	contents = strings.ReplaceAll(contents, "\\\r\n", " ")
 	contents = strings.ReplaceAll(contents, "\\\n", " ")
-	count := 0
-	for _, line := range strings.Split(contents, "\n") {
-		line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
-		if strings.Contains(line, "go test") && strings.Contains(line, "internal/release") {
-			count++
-		}
-	}
-	return count
+	return strings.Join(strings.Fields(contents), " ")
 }
 
 func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T) {
