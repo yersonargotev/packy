@@ -122,7 +122,8 @@ jobs:
             -f owner="$owner" -f repository="$repository" -f tag="$tag" \
             --jq '.data.repository.release.id // ""')"
           release_present=false release_state=absent release_tag= release_commit=
-          release_sealed=false original_run_id= candidate_locator=
+          release_schema_version=0 release_candidate_id=
+          release_attestation_source_ref= original_run_id= candidate_locator=
           if [[ -n "$release_id" ]]; then
             gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
               --json tagName,isDraft,body > "$RUNNER_TEMP/admission-release.json"
@@ -132,17 +133,12 @@ jobs:
             jq -j .body "$RUNNER_TEMP/admission-release.json" |
               awk '/^<!-- packy-release-metadata$/{capture=1;next}/^-->$/{capture=0}capture' \
               > "$RUNNER_TEMP/admission-metadata.json"
-            if jq -e --arg tag "$tag" \
-              '.schema_version==1 and (.candidate_id|type=="string" and length>0)' \
-              "$RUNNER_TEMP/admission-metadata.json" >/dev/null; then
-              release_commit="$(jq -r .target_commit "$RUNNER_TEMP/admission-metadata.json")"
-              original_run_id="$(jq -r '.source_run_id // .publication_plan.source_run_id // ""' "$RUNNER_TEMP/admission-metadata.json")"
-              candidate_locator="packy-release-$tag"
-              expected_source_ref="refs/tags/$tag"
-              if [[ "$(jq -r '.attestation_source_ref // .publication_plan.attestation_source_ref // ""' "$RUNNER_TEMP/admission-metadata.json")" == "$expected_source_ref" ]]; then
-                release_sealed=true
-              fi
-            fi
+            release_schema_version="$(jq -r '.schema_version // 0' "$RUNNER_TEMP/admission-metadata.json")"
+            release_candidate_id="$(jq -r '.candidate_id // ""' "$RUNNER_TEMP/admission-metadata.json")"
+            release_attestation_source_ref="$(jq -r '.attestation_source_ref // .publication_plan.attestation_source_ref // ""' "$RUNNER_TEMP/admission-metadata.json")"
+            release_commit="$(jq -r '.target_commit // ""' "$RUNNER_TEMP/admission-metadata.json")"
+            original_run_id="$(jq -r '.source_run_id // .publication_plan.source_run_id // ""' "$RUNNER_TEMP/admission-metadata.json")"
+            candidate_locator="packy-release-$tag"
           fi
           tag_in_main=false
           if git merge-base --is-ancestor "$tag_commit" "$main_commit"; then tag_in_main=true; fi
@@ -153,13 +149,19 @@ jobs:
             --arg current_main "$main_commit" --arg latest_version "$latest_version" \
             --argjson tag_in_main "$tag_in_main" --argjson release_present "$release_present" \
             --arg release_state "$release_state" --arg release_tag "$release_tag" \
-            --arg release_commit "$release_commit" --argjson release_sealed "$release_sealed" \
+            --arg release_commit "$release_commit" \
+            --argjson release_schema_version "$release_schema_version" \
+            --arg release_candidate_id "$release_candidate_id" \
+            --arg release_attestation_source_ref "$release_attestation_source_ref" \
             --arg original_run_id "$original_run_id" --arg candidate_locator "$candidate_locator" \
             '{event_name:$event_name,event_ref:$event_ref,requested_mode:$requested_mode,
               repository:$repository,tag:$tag,tag_commit:$tag_commit,event_commit:$event_commit,
               current_main:$current_main,latest_version:$latest_version,tag_in_main:$tag_in_main,
               release_present:$release_present,release_state:$release_state,release_tag:$release_tag,
-              release_commit:$release_commit,release_sealed:$release_sealed,
+              release_commit:$release_commit,
+              release_schema_version:$release_schema_version,
+              release_candidate_id:$release_candidate_id,
+              release_attestation_source_ref:$release_attestation_source_ref,
               original_run_id:$original_run_id,candidate_locator:$candidate_locator}' \
             > "$RUNNER_TEMP/admission-observation.json"
           go run ./internal/tools/releasecandidate admit \
@@ -460,7 +462,7 @@ jobs:
           mkdir release-candidate-parent
           go run ./internal/tools/releasecandidate create \
             --version "${{ needs.build.outputs.tag }}" --repository "$GITHUB_REPOSITORY" \
-            --ref refs/heads/main --commit "${{ needs.build.outputs.commit }}" \
+            --ref "${{ needs.normalize.outputs.source_ref }}" --commit "${{ needs.build.outputs.commit }}" \
             --workflow .github/workflows/release.yml --workflow-sha "$workflow_sha" \
             --release-notes release-metadata/release-notes.md --dist dist \
             --output-dir release-candidate-parent/sealed \
@@ -468,6 +470,7 @@ jobs:
             --permission contents=write --permission id-token=write >/dev/null
           cp release-candidate-parent/sealed/{candidate.json,provenance.json} release-metadata/
           cp scripts/plan-homebrew-effects.sh release-metadata/
+          cp scripts/verify-release-ref-state.sh release-metadata/
           go build -trimpath -o release-metadata/releasecandidate ./internal/tools/releasecandidate
       - name: Seal exact publication plan and draft base
         if: needs.normalize.outputs.mode != 'recovery'
@@ -579,34 +582,16 @@ jobs:
           mkdir existing-attestation
           owner="${GITHUB_REPOSITORY%%/*}"
           repository="${GITHUB_REPOSITORY#*/}"
-          resolve_ref_commit() {
-            local ref="$1" object object_type object_sha hops=0
-            object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" --jq '[.object.type,.object.sha]|@tsv')"
-            IFS=$'\t' read -r object_type object_sha <<< "$object"
-            while [[ "$object_type" == tag && "$hops" -lt 8 ]]; do
-              object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq '[.object.type,.object.sha]|@tsv')"
-              IFS=$'\t' read -r object_type object_sha <<< "$object"
-              hops=$((hops + 1))
-            done
-            [[ "$object_type" == commit && "$object_sha" =~ ^[0-9a-f]{40}$ ]] || {
-              echo "ref $ref did not peel to one commit" >&2; return 1;
-            }
-            printf '%s\n' "$object_sha"
+          chmod +x release-metadata/{releasecandidate,verify-release-ref-state.sh}
+          release-metadata/verify-release-ref-state.sh \
+            --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --release-commit "${{ needs.build.outputs.commit }}" \
+            --verifier release-metadata/releasecandidate \
+            --output "$RUNNER_TEMP/verified-release-ref.json" || {
+            echo 'tag moved or sealed commit left protected-main history during read-only inspection' >&2
+            exit 1
           }
-          tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
-          main_commit="$(resolve_ref_commit heads/main)"
-          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/${{ needs.build.outputs.commit }}...$main_commit" --jq .status)"
-          release_in_main=false
-          [[ "$ancestry" == ahead || "$ancestry" == identical ]] && release_in_main=true
-          chmod +x release-metadata/releasecandidate
-          jq -n --arg tag "$RELEASE_TAG" --arg expected_tag_commit "${{ needs.build.outputs.commit }}" \
-            --arg remote_tag_commit "$tag_commit" --arg release_commit "${{ needs.build.outputs.commit }}" \
-            --arg current_main "$main_commit" --argjson release_in_main "$release_in_main" \
-            '{tag:$tag,expected_tag_commit:$expected_tag_commit,remote_tag_commit:$remote_tag_commit,
-              release_commit:$release_commit,current_main:$current_main,release_in_main:$release_in_main}' \
-            > "$RUNNER_TEMP/ref-observation.json"
-          release-metadata/releasecandidate verify-ref-state \
-            --observation "$RUNNER_TEMP/ref-observation.json" >/dev/null
+          tag_commit="$(jq -r .release_commit "$RUNNER_TEMP/verified-release-ref.json")"
           tap_url=https://github.com/yersonargotev/homebrew-tap.git
           tap_ref=refs/heads/main
           git clone --quiet --depth 1 --branch main "$tap_url" "$RUNNER_TEMP/homebrew-tap"
@@ -796,32 +781,12 @@ jobs:
           RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
         run: |
           set -euo pipefail
-          resolve_ref_commit() {
-            local ref="$1" object object_type object_sha hops=0
-            object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" --jq '[.object.type,.object.sha]|@tsv')"
-            IFS=$'\t' read -r object_type object_sha <<< "$object"
-            while [[ "$object_type" == tag && "$hops" -lt 8 ]]; do
-              object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq '[.object.type,.object.sha]|@tsv')"
-              IFS=$'\t' read -r object_type object_sha <<< "$object"
-              hops=$((hops + 1))
-            done
-            [[ "$object_type" == commit && "$object_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
-            printf '%s\n' "$object_sha"
-          }
-          tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
-          main_commit="$(resolve_ref_commit heads/main)"
-          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
-          release_in_main=false
-          [[ "$ancestry" == ahead || "$ancestry" == identical ]] && release_in_main=true
-          chmod +x release-metadata/releasecandidate
-          jq -n --arg tag "$RELEASE_TAG" --arg expected_tag_commit "$RELEASE_COMMIT" \
-            --arg remote_tag_commit "$tag_commit" --arg release_commit "$RELEASE_COMMIT" \
-            --arg current_main "$main_commit" --argjson release_in_main "$release_in_main" \
-            '{tag:$tag,expected_tag_commit:$expected_tag_commit,remote_tag_commit:$remote_tag_commit,
-              release_commit:$release_commit,current_main:$current_main,release_in_main:$release_in_main}' \
-            > "$RUNNER_TEMP/ref-observation.json"
-          release-metadata/releasecandidate verify-ref-state \
-            --observation "$RUNNER_TEMP/ref-observation.json" >/dev/null || {
+          chmod +x release-metadata/{releasecandidate,verify-release-ref-state.sh}
+          release-metadata/verify-release-ref-state.sh \
+            --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --release-commit "$RELEASE_COMMIT" \
+            --verifier release-metadata/releasecandidate \
+            --output "$RUNNER_TEMP/verified-release-ref.json" || {
             echo 'tag moved or sealed commit left protected-main history before OIDC issuance' >&2; exit 1;
           }
       - name: Attest exact retained candidate
@@ -933,6 +898,7 @@ jobs:
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
+          MODE: ${{ needs.normalize.outputs.mode }}
           RELEASE_TAG: ${{ needs.build.outputs.tag }}
           RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
         run: |
@@ -946,37 +912,15 @@ jobs:
 
           owner="${GITHUB_REPOSITORY%%/*}"
           repository="${GITHUB_REPOSITORY#*/}"
-          resolve_ref_commit() {
-            local ref="$1" object object_type object_sha hops=0
-            object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" --jq '[.object.type,.object.sha]|@tsv')"
-            IFS=$'\t' read -r object_type object_sha <<< "$object"
-            while [[ "$object_type" == tag && "$hops" -lt 8 ]]; do
-              object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq '[.object.type,.object.sha]|@tsv')"
-              IFS=$'\t' read -r object_type object_sha <<< "$object"
-              hops=$((hops + 1))
-            done
-            [[ "$object_type" == commit && "$object_sha" =~ ^[0-9a-f]{40}$ ]] || {
-              echo "ref $ref did not peel to one commit" >&2; return 1;
-            }
-            printf '%s\n' "$object_sha"
-          }
           assert_ref_identity() {
-            local tag_commit main_commit ancestry
-            tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
-            main_commit="$(resolve_ref_commit heads/main)"
-            ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
-            release_in_main=false
-            [[ "$ancestry" == ahead || "$ancestry" == identical ]] && release_in_main=true
-            jq -n --arg tag "$RELEASE_TAG" --arg expected_tag_commit "$RELEASE_COMMIT" \
-              --arg remote_tag_commit "$tag_commit" --arg release_commit "$RELEASE_COMMIT" \
-              --arg current_main "$main_commit" --argjson release_in_main "$release_in_main" \
-              '{tag:$tag,expected_tag_commit:$expected_tag_commit,remote_tag_commit:$remote_tag_commit,
-                release_commit:$release_commit,current_main:$current_main,release_in_main:$release_in_main}' \
-              > "$RUNNER_TEMP/ref-observation.json"
-            "$verifier" verify-ref-state --observation "$RUNNER_TEMP/ref-observation.json" >/dev/null || {
+            chmod +x release-metadata/verify-release-ref-state.sh
+            release-metadata/verify-release-ref-state.sh \
+              --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+              --release-commit "$RELEASE_COMMIT" --verifier "$verifier" \
+              --output "$RUNNER_TEMP/verified-release-ref.json" || {
               echo 'tag moved or sealed commit left protected-main history' >&2; exit 1;
             }
-            printf '%s\n' "$tag_commit"
+            jq -r .release_commit "$RUNNER_TEMP/verified-release-ref.json"
           }
           assert_ref_identity >/dev/null
           # GraphQL variables expand server-side.
@@ -986,6 +930,10 @@ jobs:
             -f owner="$owner" -f repository="$repository" -f tag="$RELEASE_TAG" \
             --jq '.data.repository.release.id // ""')"
           if [[ -z "$release_id" ]]; then
+            [[ "$MODE" == fresh ]] || {
+              echo 'sealed recovery release disappeared before publication' >&2
+              exit 1
+            }
             assert_ref_identity >/dev/null
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft \
               --title "$RELEASE_TAG" --notes-file "$expected_body"
@@ -1099,32 +1047,12 @@ jobs:
           RELEASE_TAG: ${{ needs.build.outputs.tag }}
         run: |
           set -euo pipefail
-          resolve_ref_commit() {
-            local ref="$1" object object_type object_sha hops=0
-            object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" --jq '[.object.type,.object.sha]|@tsv')"
-            IFS=$'\t' read -r object_type object_sha <<< "$object"
-            while [[ "$object_type" == tag && "$hops" -lt 8 ]]; do
-              object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq '[.object.type,.object.sha]|@tsv')"
-              IFS=$'\t' read -r object_type object_sha <<< "$object"
-              hops=$((hops + 1))
-            done
-            [[ "$object_type" == commit && "$object_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
-            printf '%s\n' "$object_sha"
-          }
-          tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
-          main_commit="$(resolve_ref_commit heads/main)"
-          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/${{ needs.build.outputs.commit }}...$main_commit" --jq .status)"
-          release_in_main=false
-          [[ "$ancestry" == ahead || "$ancestry" == identical ]] && release_in_main=true
-          chmod +x release-metadata/releasecandidate
-          jq -n --arg tag "$RELEASE_TAG" --arg expected_tag_commit "${{ needs.build.outputs.commit }}" \
-            --arg remote_tag_commit "$tag_commit" --arg release_commit "${{ needs.build.outputs.commit }}" \
-            --arg current_main "$main_commit" --argjson release_in_main "$release_in_main" \
-            '{tag:$tag,expected_tag_commit:$expected_tag_commit,remote_tag_commit:$remote_tag_commit,
-              release_commit:$release_commit,current_main:$current_main,release_in_main:$release_in_main}' \
-            > "$RUNNER_TEMP/ref-observation.json"
-          release-metadata/releasecandidate verify-ref-state \
-            --observation "$RUNNER_TEMP/ref-observation.json" >/dev/null || {
+          chmod +x release-metadata/{releasecandidate,verify-release-ref-state.sh}
+          release-metadata/verify-release-ref-state.sh \
+            --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --release-commit "${{ needs.build.outputs.commit }}" \
+            --verifier release-metadata/releasecandidate \
+            --output "$RUNNER_TEMP/verified-release-ref.json" || {
             echo 'tag moved or sealed commit left protected-main history' >&2; exit 1;
           }
           mkdir published-assets
@@ -1195,33 +1123,14 @@ jobs:
           RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
         run: |
           set -euo pipefail
-          resolve_ref_commit() {
-            local ref="$1" object object_type object_sha hops=0
-            object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" --jq '[.object.type,.object.sha]|@tsv')"
-            IFS=$'\t' read -r object_type object_sha <<< "$object"
-            while [[ "$object_type" == tag && "$hops" -lt 8 ]]; do
-              object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq '[.object.type,.object.sha]|@tsv')"
-              IFS=$'\t' read -r object_type object_sha <<< "$object"
-              hops=$((hops + 1))
-            done
-            [[ "$object_type" == commit && "$object_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
-            printf '%s\n' "$object_sha"
-          }
           verify_release_ref() {
-            local boundary="$1" tag_commit main_commit ancestry release_in_main=false
-            tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
-            main_commit="$(resolve_ref_commit heads/main)"
-            ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
-            [[ "$ancestry" == ahead || "$ancestry" == identical ]] && release_in_main=true
-            jq -n --arg tag "$RELEASE_TAG" --arg expected_tag_commit "$RELEASE_COMMIT" \
-              --arg remote_tag_commit "$tag_commit" --arg release_commit "$RELEASE_COMMIT" \
-              --arg current_main "$main_commit" --argjson release_in_main "$release_in_main" \
-              '{tag:$tag,expected_tag_commit:$expected_tag_commit,remote_tag_commit:$remote_tag_commit,
-                release_commit:$release_commit,current_main:$current_main,release_in_main:$release_in_main}' \
-              > "$RUNNER_TEMP/ref-observation.json"
-            chmod +x ../release-metadata/releasecandidate
-            ../release-metadata/releasecandidate verify-ref-state \
-              --observation "$RUNNER_TEMP/ref-observation.json" >/dev/null || {
+            local boundary="$1"
+            chmod +x ../release-metadata/{releasecandidate,verify-release-ref-state.sh}
+            ../release-metadata/verify-release-ref-state.sh \
+              --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+              --release-commit "$RELEASE_COMMIT" \
+              --verifier ../release-metadata/releasecandidate \
+              --output "$RUNNER_TEMP/verified-release-ref.json" || {
               case "$boundary" in
                 'before tap push')
                   echo 'tag moved or sealed commit left protected-main history before tap push' >&2

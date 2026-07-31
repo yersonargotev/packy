@@ -160,7 +160,7 @@ func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *test
 
 	for _, job := range []string{"inspect-release", "attest", "publish-github", "homebrew"} {
 		block := releaseWorkflowJob(t, text, job)
-		for _, want := range []string{"resolve_ref_commit \"tags/$RELEASE_TAG\"", "resolve_ref_commit heads/main", "compare/", "ahead ||", "identical"} {
+		for _, want := range []string{"verify-release-ref-state.sh", "--release-commit"} {
 			if !strings.Contains(block, want) {
 				t.Fatalf("%s lacks post-seal identity or ancestry proof %q", job, want)
 			}
@@ -168,6 +168,92 @@ func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *test
 		if strings.Contains(block, `"$main_commit" == "$tag_commit"`) {
 			t.Fatalf("%s must not invalidate a sealed candidate merely because protected main advanced", job)
 		}
+	}
+	if got := strings.Count(text, "resolve_ref_commit()"); got != 1 {
+		t.Fatalf("only normalization may observe refs inline; got %d copied observers", got)
+	}
+}
+
+func TestReleaseWorkflowAdmissionPassesRawReleaseMetadataFacts(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+	normalize := releaseWorkflowJob(t, text, "normalize")
+	for _, want := range []string{
+		"release_schema_version",
+		"release_candidate_id",
+		"release_attestation_source_ref",
+	} {
+		if !strings.Contains(normalize, want) {
+			t.Fatalf("normalization must pass raw release metadata fact %q", want)
+		}
+	}
+	if strings.Contains(normalize, "release_sealed") {
+		t.Fatal("workflow adapter must not derive or pass a trusted release_sealed verdict")
+	}
+}
+
+func TestVerifyReleaseRefStateAdapterOwnsRemoteObservation(t *testing.T) {
+	root := repoRoot(t)
+	bin := t.TempDir()
+	commit := strings.Repeat("a", 40)
+	mainCommit := strings.Repeat("b", 40)
+	gh := `#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *git/ref/tags/*) printf 'commit\t%s\n' "$TAG_COMMIT" ;;
+  *git/ref/heads/main*) printf 'commit\t%s\n' "$MAIN_COMMIT" ;;
+  *compare/*) printf '%s\n' "$COMPARE_STATUS" ;;
+  *) echo "unexpected gh invocation: $*" >&2; exit 91 ;;
+esac
+`
+	verifier := `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == verify-ref-state && "$2" == --observation ]]
+jq -e --arg commit "$EXPECTED_COMMIT" --arg main "$MAIN_COMMIT" '
+  .expected_tag_commit==$commit and .remote_tag_commit==$commit and
+  .release_commit==$commit and .current_main==$main and .release_in_main==true
+' "$3" >/dev/null
+jq -n --arg commit "$EXPECTED_COMMIT" --arg main "$MAIN_COMMIT" \
+  '{verified:true,tag:"v0.2.0",release_commit:$commit,current_main:$main}'
+`
+	for name, contents := range map[string]string{"gh": gh, "releasecandidate": verifier} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(contents), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	output := filepath.Join(t.TempDir(), "verified.json")
+	cmd := exec.Command(filepath.Join(root, "scripts", "verify-release-ref-state.sh"),
+		"--repository", "yersonargotev/packy", "--tag", "v0.2.0",
+		"--release-commit", commit, "--verifier", filepath.Join(bin, "releasecandidate"),
+		"--output", output)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir(), "RUNNER_TEMP="+t.TempDir(),
+		"TAG_COMMIT="+commit, "MAIN_COMMIT="+mainCommit, "EXPECTED_COMMIT="+commit,
+		"COMPARE_STATUS=ahead")
+	if combined, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("verify release refs: %v\n%s", err, combined)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"verified": true`) {
+		t.Fatalf("adapter did not retain verifier output:\n%s", data)
+	}
+
+	cmd = exec.Command(filepath.Join(root, "scripts", "verify-release-ref-state.sh"),
+		"--repository", "yersonargotev/packy", "--tag", "v0.2.0",
+		"--release-commit", commit, "--verifier", filepath.Join(bin, "releasecandidate"),
+		"--output", output)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir(), "RUNNER_TEMP="+t.TempDir(),
+		"TAG_COMMIT="+strings.Repeat("c", 40), "MAIN_COMMIT="+mainCommit,
+		"EXPECTED_COMMIT="+commit, "COMPARE_STATUS=ahead")
+	if _, err := cmd.CombinedOutput(); err == nil {
+		t.Fatal("adapter accepted a moved release tag")
 	}
 }
 
@@ -208,6 +294,15 @@ func TestReleaseWorkflowRecoveryUsesOnlyOriginalRetainedCandidate(t *testing.T) 
 	if !strings.Contains(attest, "if: needs.normalize.outputs.mode == 'fresh'") {
 		t.Fatal("recovery must not issue or re-seal attestation provenance")
 	}
+	for _, want := range []string{
+		"MODE: ${{ needs.normalize.outputs.mode }}",
+		`[[ "$MODE" == fresh ]]`,
+		"sealed recovery release disappeared before publication",
+	} {
+		if !strings.Contains(publish, want) {
+			t.Fatalf("recovery publication must fail closed when its sealed release disappears with %q", want)
+		}
+	}
 }
 
 func TestReleaseWorkflowSeparatesCurrentMainGovernanceFromTagBuildIdentity(t *testing.T) {
@@ -247,7 +342,7 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 
 	seal := releaseWorkflowStepIndex(t, workflow, "Create immutable candidate and provenance metadata", []string{
 		"releasecandidate create",
-		"--ref refs/heads/main",
+		`--ref "${{ needs.normalize.outputs.source_ref }}"`,
 		"--permission attestations=write",
 		"--permission contents=write",
 		"--permission id-token=write",
@@ -264,7 +359,7 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 	})
 	refBeforeAttest := releaseWorkflowStepIndex(t, workflow, "Revalidate refs immediately before OIDC issuance", []string{
 		"needs.inspect-release.outputs.has_bundle != 'true'",
-		"resolve_ref_commit",
+		"verify-release-ref-state.sh",
 		"sealed commit left protected-main history before OIDC issuance",
 	})
 	verify := releaseWorkflowStepIndex(t, workflow, "Verify bundle offline against exact workflow and subjects", []string{
@@ -655,8 +750,7 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 		"needs: [normalize, build, validate-release-evidence, publish-github]",
 		"needs.publish-github.outputs.published == 'true'",
 		"Independently read back exact published GitHub assets",
-		`resolve_ref_commit "tags/$RELEASE_TAG"`,
-		"resolve_ref_commit heads/main",
+		"verify-release-ref-state.sh",
 		"cmp attestation/release-body.md",
 		"attestation.bundle.jsonl",
 		"cmp \"$RUNNER_TEMP/expected-assets\" \"$RUNNER_TEMP/actual-assets\"",
