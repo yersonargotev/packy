@@ -247,7 +247,7 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 
 	seal := releaseWorkflowStepIndex(t, workflow, "Create immutable candidate and provenance metadata", []string{
 		"releasecandidate create",
-		`--ref "${{ needs.normalize.outputs.source_ref }}"`,
+		"--ref refs/heads/main",
 		"--permission attestations=write",
 		"--permission contents=write",
 		"--permission id-token=write",

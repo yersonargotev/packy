@@ -1208,7 +1208,7 @@ jobs:
             printf '%s\n' "$object_sha"
           }
           verify_release_ref() {
-            local tag_commit main_commit ancestry release_in_main=false
+            local boundary="$1" tag_commit main_commit ancestry release_in_main=false
             tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
             main_commit="$(resolve_ref_commit heads/main)"
             ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
@@ -1222,13 +1222,23 @@ jobs:
             chmod +x ../release-metadata/releasecandidate
             ../release-metadata/releasecandidate verify-ref-state \
               --observation "$RUNNER_TEMP/ref-observation.json" >/dev/null || {
-              echo 'tag moved or sealed commit left protected-main history before tap mutation' >&2
+              case "$boundary" in
+                'before tap push')
+                  echo 'tag moved or sealed commit left protected-main history before tap push' >&2
+                  ;;
+                'after tap push proof')
+                  echo 'tag moved or sealed commit left protected-main history after tap push proof' >&2
+                  ;;
+                *)
+                  echo 'unknown tap release-ref verification boundary' >&2
+                  ;;
+              esac
               exit 1
             }
           }
-          verify_release_ref
+          verify_release_ref 'before tap push'
           git push --dry-run origin HEAD:main
-          verify_release_ref
+          verify_release_ref 'before tap push'
           git push origin HEAD:main
           git fetch --force origin main
           [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
@@ -1239,6 +1249,7 @@ jobs:
           [[ "$remote_formula_sha" == "$expected_formula_sha" ]] || {
             echo 'tap remote formula does not match the sealed destination plan' >&2; exit 1;
           }
+          verify_release_ref 'after tap push proof'
 
   release-summary:
     name: Report sealed release verification
