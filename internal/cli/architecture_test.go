@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -273,32 +274,86 @@ var classicLifecycleArchitectureNoise = "corelifecycle.NewFacade(); return execu
 		t.Fatalf("formatting, comments, or string literals affected the semantic guard:\n- %s", strings.Join(problems, "\n- "))
 	}
 
-	mutationBase := string(noise)
-	mutations := map[string][]byte{
-		"bypass shared executor": []byte(strings.Replace(
-			mutationBase, "return executeClassicLifecycle(", "return bypassClassicLifecycle(", 1,
-		)),
-		"duplicate delegation": append(append([]byte(nil), noise...), []byte(`
-
-func duplicateClassicLifecycleRoute() {
-	executeClassicLifecycle(nil, Options{}, nil, corelifecycle.Install, classicLifecycleFlags{}, nil)
-}
-`)...),
-		"misroute update": []byte(strings.Replace(
-			mutationBase,
-			"workstationResolver, corelifecycle.Update, classicLifecycleFlags{",
-			"workstationResolver, corelifecycle.Install, classicLifecycleFlags{",
-			1,
-		)),
-		"facade outside executor": append(append([]byte(nil), noise...), []byte(`
-
-func bypassClassicLifecycleExecutor() {
-	_ = corelifecycle.NewFacade(nil, nil, nil)
-}
-`)...),
+	mutations := []struct {
+		name   string
+		mutate func(*ast.File) bool
+	}{
+		{name: "bypass shared executor", mutate: func(file *ast.File) bool {
+			call := classicLifecycleRouteCall(file, "newInstallCommand")
+			if call == nil {
+				return false
+			}
+			call.Fun = ast.NewIdent("bypassClassicLifecycle")
+			return true
+		}},
+		{name: "shadow shared executor", mutate: func(file *ast.File) bool {
+			runE := classicLifecycleRunE(file, "newInstallCommand")
+			if runE == nil {
+				return false
+			}
+			shadow, err := parser.ParseExpr("func(args ...any) error { return nil }")
+			if err != nil {
+				return false
+			}
+			runE.Body.List = append([]ast.Stmt{&ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent("executeClassicLifecycle")},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{shadow},
+			}}, runE.Body.List...)
+			return true
+		}},
+		{name: "duplicate delegation", mutate: func(file *ast.File) bool {
+			function := classicLifecycleFunction(file, "newInstallCommand")
+			call := classicLifecycleRouteCall(file, "newInstallCommand")
+			if function == nil || call == nil {
+				return false
+			}
+			function.Body.List = append(function.Body.List, &ast.ExprStmt{X: call})
+			return true
+		}},
+		{name: "misroute update", mutate: func(file *ast.File) bool {
+			call := classicLifecycleRouteCall(file, "newUpdateCommand")
+			if call == nil || len(call.Args) <= 3 {
+				return false
+			}
+			selector, ok := call.Args[3].(*ast.SelectorExpr)
+			if !ok {
+				return false
+			}
+			selector.Sel = ast.NewIdent("Install")
+			return true
+		}},
+		{name: "facade outside executor", mutate: func(file *ast.File) bool {
+			function := classicLifecycleFunction(file, "newInstallCommand")
+			call := classicLifecycleFacadeCreation(file)
+			if function == nil || call == nil {
+				return false
+			}
+			function.Body.List = append(function.Body.List, &ast.ExprStmt{X: call})
+			return true
+		}},
+		{name: "duplicate preview through alias", mutate: func(file *ast.File) bool {
+			function := classicLifecycleFunction(file, "executeClassicLifecycle")
+			if function == nil {
+				return false
+			}
+			function.Body.List = append(function.Body.List,
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent("lifecycleAlias")},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{ast.NewIdent("lifecycle")},
+				},
+				&ast.ExprStmt{X: &ast.CallExpr{
+					Fun:  &ast.SelectorExpr{X: ast.NewIdent("lifecycleAlias"), Sel: ast.NewIdent("Preview")},
+					Args: []ast.Expr{ast.NewIdent("operation")},
+				}},
+			)
+			return true
+		}},
 	}
-	for name, mutated := range mutations {
-		t.Run(name, func(t *testing.T) {
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			mutated := mutateClassicLifecycleSource(t, noise, mutation.mutate)
 			if problems := classicLifecycleArchitectureProblems(mutated); len(problems) == 0 {
 				t.Fatal("semantic architecture guard accepted the deliberate mutation")
 			}
@@ -312,7 +367,7 @@ func bypassClassicLifecycleExecutor() {
 const coreLifecycleImportPath = "github.com/yersonargotev/packy/internal/corelifecycle"
 
 func classicLifecycleArchitectureProblems(source []byte) []string {
-	file, err := parser.ParseFile(token.NewFileSet(), "root.go", source, parser.SkipObjectResolution)
+	file, err := parser.ParseFile(token.NewFileSet(), "root.go", source, parser.ParseComments)
 	if err != nil {
 		return []string{fmt.Sprintf("parse root.go: %v", err)}
 	}
@@ -323,10 +378,20 @@ func classicLifecycleArchitectureProblems(source []byte) []string {
 		"newUninstallCommand": "Uninstall",
 	}
 	routes := map[string][]string{}
-	executorDeclarations := 0
+	runERoutes := map[string][]string{}
 	facadeCreations := map[string]int{}
 	previewCalls := map[string]int{}
 	applyCalls := map[string]int{}
+	executorDeclarations := 0
+	var executorObject *ast.Object
+
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == "executeClassicLifecycle" {
+			executorDeclarations++
+			executorObject = function.Name.Obj
+		}
+	}
 
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
@@ -334,28 +399,7 @@ func classicLifecycleArchitectureProblems(source []byte) []string {
 			continue
 		}
 		owner := function.Name.Name
-		if owner == "executeClassicLifecycle" {
-			executorDeclarations++
-		}
-		facadeVariables := map[string]bool{}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			assignment, ok := node.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for index, expression := range assignment.Rhs {
-				call, ok := expression.(*ast.CallExpr)
-				if !ok || !isImportedCall(call.Fun, imports, coreLifecycleImportPath, "NewFacade") ||
-					index >= len(assignment.Lhs) {
-					continue
-				}
-				identifier, ok := assignment.Lhs[index].(*ast.Ident)
-				if ok {
-					facadeVariables[identifier.Name] = true
-				}
-			}
-			return true
-		})
+		facadeVariables := classicLifecycleFacadeVariables(function, imports)
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
 			if !ok {
@@ -364,22 +408,14 @@ func classicLifecycleArchitectureProblems(source []byte) []string {
 			if isImportedCall(call.Fun, imports, coreLifecycleImportPath, "NewFacade") {
 				facadeCreations[owner]++
 			}
-			if identifier, ok := call.Fun.(*ast.Ident); ok && identifier.Name == "executeClassicLifecycle" {
-				operation := "<invalid>"
-				if len(call.Args) > 3 {
-					selector, ok := call.Args[3].(*ast.SelectorExpr)
-					if ok && isImportedSelector(selector, imports, coreLifecycleImportPath) {
-						operation = selector.Sel.Name
-					}
-				}
-				routes[owner] = append(routes[owner], operation)
+			if classicLifecycleCallsObject(call, executorObject) {
+				routes[owner] = append(routes[owner], classicLifecycleOperation(call, imports))
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
 			if !ok {
 				return true
 			}
-			receiver, ok := selector.X.(*ast.Ident)
-			if !ok || !facadeVariables[receiver.Name] {
+			if !classicLifecycleFacadeExpression(selector.X, facadeVariables) {
 				return true
 			}
 			switch selector.Sel.Name {
@@ -390,6 +426,19 @@ func classicLifecycleArchitectureProblems(source []byte) []string {
 			}
 			return true
 		})
+		if runE := classicLifecycleRunE(file, owner); runE != nil {
+			ast.Inspect(runE.Body, func(node ast.Node) bool {
+				statement, ok := node.(*ast.ReturnStmt)
+				if !ok || len(statement.Results) != 1 {
+					return true
+				}
+				call, ok := statement.Results[0].(*ast.CallExpr)
+				if ok && classicLifecycleCallsObject(call, executorObject) {
+					runERoutes[owner] = append(runERoutes[owner], classicLifecycleOperation(call, imports))
+				}
+				return true
+			})
+		}
 	}
 
 	var problems []string
@@ -439,9 +488,197 @@ func classicLifecycleArchitectureProblems(source []byte) []string {
 		if len(operations) != 1 || operations[0] != expected {
 			problems = append(problems, fmt.Sprintf("%s delegates with %v, want exactly [%s]", owner, operations, expected))
 		}
+		runEOperations := runERoutes[owner]
+		if len(runEOperations) != 1 || runEOperations[0] != expected {
+			problems = append(problems, fmt.Sprintf(
+				"%s RunE returns delegations %v, want exactly [%s]",
+				owner, runEOperations, expected,
+			))
+		}
 	}
 	sort.Strings(problems)
 	return problems
+}
+
+func mutateClassicLifecycleSource(t *testing.T, source []byte, mutate func(*ast.File) bool) []byte {
+	t.Helper()
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, "root.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mutate(file) {
+		t.Fatal("could not apply semantic mutation")
+	}
+	var output bytes.Buffer
+	if err := format.Node(&output, fileSet, file); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
+}
+
+func classicLifecycleFunction(file *ast.File, name string) *ast.FuncDecl {
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == name {
+			return function
+		}
+	}
+	return nil
+}
+
+func classicLifecycleRunE(file *ast.File, functionName string) *ast.FuncLit {
+	function := classicLifecycleFunction(file, functionName)
+	if function == nil {
+		return nil
+	}
+	var runE *ast.FuncLit
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		field, ok := node.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+		key, ok := field.Key.(*ast.Ident)
+		value, valueOK := field.Value.(*ast.FuncLit)
+		if ok && valueOK && key.Name == "RunE" {
+			runE = value
+			return false
+		}
+		return true
+	})
+	return runE
+}
+
+func classicLifecycleRouteCall(file *ast.File, functionName string) *ast.CallExpr {
+	runE := classicLifecycleRunE(file, functionName)
+	if runE == nil {
+		return nil
+	}
+	var route *ast.CallExpr
+	ast.Inspect(runE.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		identifier, identifierOK := callFunctionIdentifier(call)
+		if ok && identifierOK && identifier.Name == "executeClassicLifecycle" {
+			route = call
+			return false
+		}
+		return true
+	})
+	return route
+}
+
+func classicLifecycleFacadeCreation(file *ast.File) *ast.CallExpr {
+	imports := importedPackages(file)
+	function := classicLifecycleFunction(file, "executeClassicLifecycle")
+	if function == nil {
+		return nil
+	}
+	var creation *ast.CallExpr
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if ok && isImportedCall(call.Fun, imports, coreLifecycleImportPath, "NewFacade") {
+			creation = call
+			return false
+		}
+		return true
+	})
+	return creation
+}
+
+func classicLifecycleFacadeVariables(function *ast.FuncDecl, imports map[string]string) map[string]bool {
+	variables := map[string]bool{}
+	if function.Type.Params != nil {
+		for _, field := range function.Type.Params.List {
+			if !classicLifecycleFacadeType(field.Type, imports) {
+				continue
+			}
+			for _, name := range field.Names {
+				variables[name.Name] = true
+			}
+		}
+	}
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		declaration, ok := node.(*ast.ValueSpec)
+		if !ok || !classicLifecycleFacadeType(declaration.Type, imports) {
+			return true
+		}
+		for _, name := range declaration.Names {
+			variables[name.Name] = true
+		}
+		return true
+	})
+	for changed := true; changed; {
+		changed = false
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			assignment, ok := node.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for index, expression := range assignment.Rhs {
+				if index >= len(assignment.Lhs) || !classicLifecycleFacadeValue(expression, variables, imports) {
+					continue
+				}
+				identifier, ok := assignment.Lhs[index].(*ast.Ident)
+				if ok && !variables[identifier.Name] {
+					variables[identifier.Name] = true
+					changed = true
+				}
+			}
+			return true
+		})
+	}
+	return variables
+}
+
+func classicLifecycleFacadeValue(expression ast.Expr, variables map[string]bool, imports map[string]string) bool {
+	call, ok := expression.(*ast.CallExpr)
+	if ok && isImportedCall(call.Fun, imports, coreLifecycleImportPath, "NewFacade") {
+		return true
+	}
+	return classicLifecycleFacadeExpression(expression, variables)
+}
+
+func classicLifecycleFacadeExpression(expression ast.Expr, variables map[string]bool) bool {
+	switch expression := expression.(type) {
+	case *ast.Ident:
+		return variables[expression.Name]
+	case *ast.ParenExpr:
+		return classicLifecycleFacadeExpression(expression.X, variables)
+	default:
+		return false
+	}
+}
+
+func classicLifecycleFacadeType(expression ast.Expr, imports map[string]string) bool {
+	if pointer, ok := expression.(*ast.StarExpr); ok {
+		expression = pointer.X
+	}
+	selector, ok := expression.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "Facade" && isImportedSelector(selector, imports, coreLifecycleImportPath)
+}
+
+func classicLifecycleCallsObject(call *ast.CallExpr, object *ast.Object) bool {
+	identifier, ok := callFunctionIdentifier(call)
+	return ok && object != nil && identifier.Obj == object
+}
+
+func callFunctionIdentifier(call *ast.CallExpr) (*ast.Ident, bool) {
+	if call == nil {
+		return nil, false
+	}
+	identifier, ok := call.Fun.(*ast.Ident)
+	return identifier, ok
+}
+
+func classicLifecycleOperation(call *ast.CallExpr, imports map[string]string) string {
+	if len(call.Args) <= 3 {
+		return "<invalid>"
+	}
+	selector, ok := call.Args[3].(*ast.SelectorExpr)
+	if !ok || !isImportedSelector(selector, imports, coreLifecycleImportPath) {
+		return "<invalid>"
+	}
+	return selector.Sel.Name
 }
 
 func TestSetupHealthDeletionDoesNotRedistributeDiagnosisPolicyInCLI(t *testing.T) {
