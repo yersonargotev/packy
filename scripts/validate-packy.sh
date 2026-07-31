@@ -85,11 +85,14 @@ for package in "${packages[@]}"; do
     ./internal/ci | ./internal/release) ;;
     *) build_packages+=("$package") ;;
   esac
-  # Release is a test-only subprocess, cross-platform, and package-install
-  # integration package. Its child commands are not race-instrumented, so the
-  # ordinary exhaustive test phase covers it while the race phase excludes it.
+  # CLI tests are sequential adapter, filesystem, and subprocess coverage; the
+  # synchronized domains they compose remain instrumented in their owning
+  # packages. Release is subprocess, cross-platform, and package-install
+  # integration coverage whose child commands are not race-instrumented. The
+  # ordinary exhaustive phase retains both packages without repeating them
+  # under race.
   case "$package" in
-    ./internal/release) ;;
+    ./internal/cli | ./internal/release) ;;
     *) race_packages+=("$package") ;;
   esac
 done

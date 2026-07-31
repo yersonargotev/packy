@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -110,6 +113,62 @@ func TestValidationEntrypointOwnsTheExactPackageAllowlist(t *testing.T) {
 	}
 	if commands := validationCommands(script); !reflect.DeepEqual(commands, wantCommands) {
 		t.Fatalf("validation commands = %#v, want only %#v", commands, wantCommands)
+	}
+}
+
+func TestValidationRaceCoverageRejectsRequiredPackageOmission(t *testing.T) {
+	invocations := expectedValidationGoInvocations()
+	raceInvocation := invocations[len(invocations)-1]
+	withoutCapabilityPack := make([]string, 0, len(raceInvocation)-1)
+	for _, argument := range raceInvocation {
+		if argument != "./internal/capabilitypack" {
+			withoutCapabilityPack = append(withoutCapabilityPack, argument)
+		}
+	}
+	invocations[len(invocations)-1] = withoutCapabilityPack
+	if err := validateCanonicalGoInvocations(invocations); err == nil {
+		t.Fatal("canonical race contract accepted omission of concurrency coverage")
+	}
+}
+
+func TestOrdinaryOnlyCLITestsRemainConcurrencyFree(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join(repositoryRoot(t), "internal", "cli", "*_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		findings, err := cliTestConcurrency(path, source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Errorf("ordinary-only CLI test requires a race-authority decision: %s", strings.Join(findings, ", "))
+		}
+	}
+}
+
+func TestCLITestConcurrencyGuardFailsClosed(t *testing.T) {
+	tests := map[string]string{
+		"goroutine":     "package cli\nfunc test() { go func() {}() }\n",
+		"parallel test": "package cli\nfunc test(t interface{ Parallel() }) { t.Parallel() }\n",
+		"channel":       "package cli\nfunc test() { _ = make(chan struct{}) }\n",
+		"sync import":   "package cli\nimport \"sync\"\nvar _ sync.Mutex\n",
+		"atomic import": "package cli\nimport \"sync/atomic\"\nvar _ atomic.Bool\n",
+	}
+	for name, source := range tests {
+		t.Run(name, func(t *testing.T) {
+			findings, err := cliTestConcurrency(name+".go", []byte(source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(findings) == 0 {
+				t.Fatal("concurrency guard accepted a CLI shared-memory boundary")
+			}
+		})
 	}
 }
 
@@ -358,8 +417,8 @@ func validateReleaseScenarioOwnership(authority, developerScript, workflow strin
 	if strings.Count(authority, `go test "${packages[@]}"`) != 1 {
 		return fmt.Errorf("ordinary canonical test command must remain exactly once")
 	}
-	if strings.Count(authority, `go test -race -timeout 10m "${race_packages[@]}"`) != 1 || !strings.Contains(authority, "./internal/release) ;;\n    *) race_packages") {
-		return fmt.Errorf("release package ordinary/race contract changed")
+	if strings.Count(authority, `go test -race -timeout 10m "${race_packages[@]}"`) != 1 || !strings.Contains(authority, "./internal/cli | ./internal/release) ;;\n    *) race_packages") {
+		return fmt.Errorf("CLI and release package ordinary/race contract changed")
 	}
 	authorityCommands := normalizedCommandText(authority)
 	if count := strings.Count(authorityCommands, "go test"); count != 2 {
@@ -2525,12 +2584,6 @@ func TestHostile(t *testing.T) {
 	}
 
 	invocations := validationInvocations(t, commandLog)
-	wantInvocations := [][]string{
-		append([]string{"build"}, validationBuildPackages()...),
-		append([]string{"vet"}, packyOwnedPackages...),
-		append([]string{"test"}, packyOwnedPackages...),
-		append([]string{"test", "-race", "-timeout", "10m"}, validationRacePackages()...),
-	}
 	var goInvocations [][]string
 	formatInvocations := 0
 	for _, invocation := range invocations {
@@ -2556,14 +2609,17 @@ func TestHostile(t *testing.T) {
 			t.Fatalf("unexpected validation command: %#v", invocation)
 		}
 	}
-	if !reflect.DeepEqual(goInvocations, wantInvocations) {
-		t.Fatalf("validation Go invocations = %#v, want %#v", goInvocations, wantInvocations)
+	if err := validateCanonicalGoInvocations(goInvocations); err != nil {
+		t.Fatal(err)
 	}
 	if countPackageInvocation(goInvocations, "test", "./internal/release") != 1 {
 		t.Fatalf("release package must appear exactly once in ordinary exhaustive tests: %#v", goInvocations)
 	}
 	if countPackageInvocation(goInvocations, "test -race", "./internal/release") != 0 {
-		t.Fatalf("release package must be excluded only from race tests: %#v", goInvocations)
+		t.Fatalf("release package must be excluded from race tests: %#v", goInvocations)
+	}
+	if countPackageInvocation(goInvocations, "test", "./internal/cli") != 1 || countPackageInvocation(goInvocations, "test -race", "./internal/cli") != 0 {
+		t.Fatalf("CLI package must remain ordinary-only: %#v", goInvocations)
 	}
 	if formatInvocations != 1 {
 		t.Fatalf("format invocation count = %d, want 1", formatInvocations)
@@ -2637,13 +2693,62 @@ func TestHostile(t *testing.T) {
 }
 
 func validationRacePackages() []string {
-	packages := make([]string, 0, len(packyOwnedPackages)-1)
+	packages := make([]string, 0, len(packyOwnedPackages)-2)
 	for _, packagePath := range packyOwnedPackages {
-		if packagePath != "./internal/release" {
+		if packagePath != "./internal/cli" && packagePath != "./internal/release" {
 			packages = append(packages, packagePath)
 		}
 	}
 	return packages
+}
+
+func expectedValidationGoInvocations() [][]string {
+	return [][]string{
+		append([]string{"build"}, validationBuildPackages()...),
+		append([]string{"vet"}, packyOwnedPackages...),
+		append([]string{"test"}, packyOwnedPackages...),
+		append([]string{"test", "-race", "-timeout", "10m"}, validationRacePackages()...),
+	}
+}
+
+func validateCanonicalGoInvocations(invocations [][]string) error {
+	want := expectedValidationGoInvocations()
+	if !reflect.DeepEqual(invocations, want) {
+		return fmt.Errorf("validation Go invocations = %#v, want %#v", invocations, want)
+	}
+	return nil
+}
+
+func cliTestConcurrency(path string, source []byte) ([]string, error) {
+	files := token.NewFileSet()
+	file, err := parser.ParseFile(files, path, source, 0)
+	if err != nil {
+		return nil, err
+	}
+	findings := []string{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		kind := ""
+		switch current := node.(type) {
+		case *ast.GoStmt:
+			kind = "goroutine"
+		case *ast.ChanType:
+			kind = "channel"
+		case *ast.CallExpr:
+			if selector, ok := current.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "Parallel" {
+				kind = "parallel test"
+			}
+		case *ast.ImportSpec:
+			if current.Path.Value == `"sync"` || current.Path.Value == `"sync/atomic"` {
+				kind = "synchronization import"
+			}
+		}
+		if kind != "" {
+			position := files.Position(node.Pos())
+			findings = append(findings, fmt.Sprintf("%s:%d (%s)", filepath.Base(path), position.Line, kind))
+		}
+		return true
+	})
+	return findings, nil
 }
 
 func countPackageInvocation(invocations [][]string, phase, packagePath string) int {
