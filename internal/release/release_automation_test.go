@@ -25,16 +25,22 @@ var supportedReleasePlatforms = []string{
 	"linux/arm64",
 }
 
-func TestReleaseWorkflowBuildsOneManualMainCandidate(t *testing.T) {
+func TestReleaseWorkflowClassifiesTagPushAndManualModes(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 
 	for _, want := range []string{
+		"push:",
+		"- 'v0.*.*'",
 		"workflow_dispatch:",
 		"dry_run:",
 		"type: boolean",
-		"github.ref == 'refs/heads/main'",
+		"Normalize and seal release identity read-only",
+		"Classify event and seal immutable candidate",
+		"mode=fresh",
+		"true) mode=dry-run",
+		"false) mode=recovery",
+		`[[ "$tag" =~ ^v0\.[0-9]+\.[0-9]+$ ]]`,
 		"git fetch --force origin main 'refs/tags/*:refs/tags/*'",
-		`[[ "$head" == "$main" && "$head" == "$tag_commit" ]]`,
 		"scripts/build-release-artifacts.sh",
 		"sbom.spdx.json",
 		"SHA256SUMS",
@@ -44,15 +50,116 @@ func TestReleaseWorkflowBuildsOneManualMainCandidate(t *testing.T) {
 			t.Fatalf("release workflow should contain %q", want)
 		}
 	}
-	if strings.Contains(text, "push:\n    tags:") {
-		t.Fatal("publication must remain manual-only until protected-tag enforcement is enabled")
-	}
 	if got := strings.Count(text, "scripts/build-release-artifacts.sh"); got != 1 {
 		t.Fatalf("release candidate must be built exactly once; got %d build invocations", got)
 	}
+
+	fresh := baseReleaseEventFixture()
+	output, err := runReleaseEventFixture(t, text, fresh)
+	if err != nil {
+		t.Fatalf("valid tag push should select fresh publication: %v\n%s", err, output)
+	}
+	assertReleaseEventOutput(t, output, "fresh", fresh.tag, fresh.tagCommit)
+
+	dryRun := baseReleaseEventFixture()
+	dryRun.eventName = "workflow_dispatch"
+	dryRun.eventRef = "refs/heads/main"
+	dryRun.eventRefType = "branch"
+	dryRun.eventRefName = "main"
+	dryRun.eventSHA = dryRun.mainCommit
+	dryRun.inputTag = dryRun.tag
+	dryRun.inputDryRun = "true"
+	output, err = runReleaseEventFixture(t, text, dryRun)
+	if err != nil {
+		t.Fatalf("valid manual dry run should remain available: %v", err)
+	}
+	assertReleaseEventOutput(t, output, "dry-run", dryRun.tag, dryRun.tagCommit)
+
+	recovery := dryRun
+	recovery.inputDryRun = "false"
+	output, err = runReleaseEventFixture(t, text, recovery)
+	if err != nil {
+		t.Fatalf("valid exact-tag recovery should remain available: %v", err)
+	}
+	assertReleaseEventOutput(t, output, "recovery", recovery.tag, recovery.tagCommit)
 }
 
-func TestReleaseWorkflowSealsAndVerifiesProvenanceBeforePublishing(t *testing.T) {
+func TestReleaseWorkflowRejectsUnauthorizedTriggersAndVersions(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+
+	tests := []struct {
+		name   string
+		mutate func(*releaseEventFixture)
+	}{
+		{name: "branch push", mutate: func(f *releaseEventFixture) {
+			f.eventRef, f.eventRefType, f.eventRefName = "refs/heads/main", "branch", "main"
+		}},
+		{name: "malformed tag", mutate: func(f *releaseEventFixture) {
+			f.tag, f.eventRef, f.eventRefName = "v1.2.0", "refs/tags/v1.2.0", "v1.2.0"
+		}},
+		{name: "occupied release", mutate: func(f *releaseEventFixture) {
+			f.releaseID = "R_release"
+		}},
+		{name: "non monotonic version", mutate: func(f *releaseEventFixture) {
+			f.existingReleases = "v0.3.0"
+		}},
+		{name: "moved event tag", mutate: func(f *releaseEventFixture) {
+			f.eventSHA = strings.Repeat("c", 40)
+		}},
+		{name: "ambiguous manual input", mutate: func(f *releaseEventFixture) {
+			f.eventName = "workflow_dispatch"
+			f.eventRef, f.eventRefType, f.eventRefName = "refs/heads/main", "branch", "main"
+			f.eventSHA = f.mainCommit
+			f.inputTag = f.tag
+			f.inputDryRun = ""
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := baseReleaseEventFixture()
+			test.mutate(&fixture)
+			if _, err := runReleaseEventFixture(t, text, fixture); err == nil {
+				t.Fatal("unauthorized release event unexpectedly passed normalization")
+			}
+		})
+	}
+}
+
+func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+	fresh := baseReleaseEventFixture()
+	if output, err := runReleaseEventFixture(t, text, fresh); err != nil {
+		t.Fatalf("fresh publication should seal the exact protected-main tip: %v\n%s", err, output)
+	}
+
+	recovery := baseReleaseEventFixture()
+	recovery.eventName = "workflow_dispatch"
+	recovery.eventRef, recovery.eventRefType, recovery.eventRefName = "refs/heads/main", "branch", "main"
+	recovery.mainCommit = strings.Repeat("b", 40)
+	recovery.eventSHA = recovery.mainCommit
+	recovery.inputTag, recovery.inputDryRun = recovery.tag, "false"
+	if _, err := runReleaseEventFixture(t, text, recovery); err != nil {
+		t.Fatalf("later main advancement should preserve an ancestral sealed candidate: %v", err)
+	}
+	recovery.ancestor = false
+	if _, err := runReleaseEventFixture(t, text, recovery); err == nil {
+		t.Fatal("candidate outside protected-main history unexpectedly reached recovery")
+	}
+
+	for _, job := range []string{"inspect-release", "attest", "publish-github", "homebrew"} {
+		block := releaseWorkflowJob(t, text, job)
+		for _, want := range []string{"resolve_ref_commit \"tags/$RELEASE_TAG\"", "resolve_ref_commit heads/main", "compare/", "ahead ||", "identical"} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("%s lacks post-seal identity or ancestry proof %q", job, want)
+			}
+		}
+		if strings.Contains(block, `"$main_commit" == "$tag_commit"`) {
+			t.Fatalf("%s must not invalidate a sealed candidate merely because protected main advanced", job)
+		}
+	}
+}
+
+func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 	workflow := parseReleaseWorkflow(t, text)
 
@@ -76,7 +183,7 @@ func TestReleaseWorkflowSealsAndVerifiesProvenanceBeforePublishing(t *testing.T)
 	refBeforeAttest := releaseWorkflowStepIndex(t, workflow, "Revalidate refs immediately before OIDC issuance", []string{
 		"needs.inspect-release.outputs.has_bundle != 'true'",
 		"resolve_ref_commit",
-		"diverged before OIDC issuance",
+		"sealed commit left protected-main history before OIDC issuance",
 	})
 	verify := releaseWorkflowStepIndex(t, workflow, "Verify bundle offline against exact workflow and subjects", []string{
 		"gh attestation trusted-root",
@@ -115,7 +222,7 @@ func TestReleaseWorkflowSealsAndVerifiesProvenanceBeforePublishing(t *testing.T)
 	assertReleaseWorkflowStepBefore(t, attest, verify, "the generated bundle must be verified before publication")
 	assertReleaseWorkflowStepBefore(t, verify, envelope, "the verified bundle must be bound into the final release set")
 	assertReleaseWorkflowStepBefore(t, envelope, publish, "the complete release set must reach the exact draft before one-time publication")
-	for _, forbidden := range []string{"--clobber", "gh release delete", "git tag -", "git push origin refs/tags"} {
+	for _, forbidden := range []string{"--clobber", "gh release delete", "git tag -f", "git tag -d", "git push origin refs/tags"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("immutable publication workflow must not contain %q", forbidden)
 		}
@@ -133,6 +240,35 @@ func TestReleaseWorkflowSealsAndVerifiesProvenanceBeforePublishing(t *testing.T)
 	}
 	if got := strings.Count(publishStep, "assert_ref_identity >/dev/null"); got < 4 {
 		t.Fatalf("every draft creation, asset upload phase, and publication needs an adjacent ref recheck; got %d", got)
+	}
+}
+
+func TestReleaseWorkflowKeepsPublishedReleaseImmutable(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+	publish := releaseWorkflowStep(
+		t,
+		parseReleaseWorkflow(t, text),
+		"Create or verify draft, upload only missing assets, and publish once",
+	).Text
+
+	published := strings.Index(publish, `if jq -e '.isDraft==false'`)
+	upload := strings.Index(publish, "gh release upload")
+	if published < 0 || upload < 0 {
+		t.Fatal("publication step lacks the published-state or draft-upload branch")
+	}
+	publishedExit := strings.Index(publish[published:], "exit 0")
+	if publishedExit < 0 || published+publishedExit >= upload {
+		t.Fatal("an exact published release must exit through read-only verification before any upload path")
+	}
+	if strings.Count(publish, "gh release edit") != 1 ||
+		!strings.Contains(publish, `gh release edit "$RELEASE_TAG"`) ||
+		!strings.Contains(publish, "--draft=false") {
+		t.Fatal("the sole release edit must be the one-way transition from an exact draft to published")
+	}
+	for _, forbidden := range []string{"--notes-file \"$RUNNER_TEMP", "--clobber", "gh release delete", "git tag -f", "git push --force"} {
+		if strings.Contains(publish, forbidden) {
+			t.Fatalf("published recovery contains forbidden mutation path %q", forbidden)
+		}
 	}
 }
 
@@ -156,7 +292,7 @@ func TestReleaseWorkflowKeepsDryRunAndDestinationAuthoritySeparate(t *testing.T)
 	}
 
 	for _, want := range []string{
-		"if: inputs.dry_run == true",
+		"if: needs.normalize.outputs.mode == 'dry-run'",
 		"RELEASE_EFFECTS: ${{ needs.inspect-release.outputs.effects }}",
 		"Exact effects a real run would perform from the observed state",
 		"Dry-run stopped before OIDC issuance or any GitHub Release/Homebrew mutation",
@@ -434,7 +570,7 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 	text := readReleaseWorkflow(t, repoRoot(t))
 	homebrew := releaseWorkflowJob(t, text, "homebrew")
 	for _, want := range []string{
-		"needs: [build, validate-release-evidence, publish-github]",
+		"needs: [normalize, build, validate-release-evidence, publish-github]",
 		"needs.publish-github.outputs.published == 'true'",
 		"Independently read back exact published GitHub assets",
 		`resolve_ref_commit "tags/$RELEASE_TAG"`,
@@ -444,8 +580,8 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 		"cmp \"$RUNNER_TEMP/expected-assets\" \"$RUNNER_TEMP/actual-assets\"",
 		"sha256sum --check SHA256SUMS",
 		"publication_plan.homebrew.sha256",
-		"diverged before tap push",
-		"diverged after tap push proof",
+		"sealed commit left protected-main history before tap push",
+		"sealed commit left protected-main history after tap push proof",
 		"tap remote formula does not match the sealed destination plan",
 		"git push --dry-run origin HEAD:main",
 		"git push origin HEAD:main",
@@ -463,6 +599,27 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 	for _, forbidden := range []string{"formula_renames.json", "FormulaRenames", "yersonargotev/matty", "Formula/matty.rb =>"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("release workflow must not contain legacy distribution identity %q", forbidden)
+		}
+	}
+}
+
+func TestReleaseWorkflowPublishesAuditableFinalSummary(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+	summary := releaseWorkflowJob(t, text, "release-summary")
+	for _, want := range []string{
+		"needs: [normalize, build, validate-release-evidence, inspect-release, attest, publish-github, homebrew]",
+		"Link exact published evidence",
+		"needs.normalize.outputs.tag",
+		"needs.normalize.outputs.commit",
+		"needs.homebrew.outputs.tap_commit",
+		"GitHub Release:",
+		"Attestation evidence:",
+		"Homebrew tap commit:",
+		"published bytes, checksums, attestation bundle, release envelope, and tap formula",
+		"GITHUB_STEP_SUMMARY",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("final release summary should contain %q", want)
 		}
 	}
 }
@@ -713,6 +870,157 @@ func readReleaseWorkflow(t *testing.T, root string) string {
 		t.Fatal(err)
 	}
 	return string(workflow)
+}
+
+type releaseEventFixture struct {
+	eventName        string
+	eventRef         string
+	eventRefType     string
+	eventRefName     string
+	eventSHA         string
+	inputTag         string
+	inputDryRun      string
+	tag              string
+	tagCommit        string
+	mainCommit       string
+	ancestor         bool
+	existingTags     string
+	existingReleases string
+	releaseID        string
+}
+
+func baseReleaseEventFixture() releaseEventFixture {
+	commit := strings.Repeat("a", 40)
+	return releaseEventFixture{
+		eventName:        "push",
+		eventRef:         "refs/tags/v0.2.0",
+		eventRefType:     "tag",
+		eventRefName:     "v0.2.0",
+		eventSHA:         commit,
+		tag:              "v0.2.0",
+		tagCommit:        commit,
+		mainCommit:       commit,
+		ancestor:         true,
+		existingTags:     "v0.1.0\nv0.2.0",
+		existingReleases: "v0.1.0",
+	}
+}
+
+func runReleaseEventFixture(t *testing.T, workflow string, fixture releaseEventFixture) (string, error) {
+	t.Helper()
+	script := releaseWorkflowRunScript(t, workflow, "Classify event and seal immutable candidate")
+	bin := t.TempDir()
+	gitStub := `#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  fetch|checkout) exit 0 ;;
+  rev-parse)
+    printf '%s\n' "$FIXTURE_TAG_COMMIT"
+    ;;
+  merge-base)
+    [[ "$FIXTURE_ANCESTOR" == true ]]
+    ;;
+  tag)
+    [[ -z "$FIXTURE_TAGS" ]] || printf '%s\n' "$FIXTURE_TAGS"
+    ;;
+  *)
+    echo "unexpected git invocation: $*" >&2
+    exit 97
+    ;;
+esac
+`
+	ghStub := `#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+case "$args" in
+  *" api graphql "*|api\ graphql\ *)
+    [[ -z "$FIXTURE_RELEASE_ID" ]] || printf '%s\n' "$FIXTURE_RELEASE_ID"
+    ;;
+  *"git/ref/heads/main"*)
+    printf 'commit\t%s\n' "$FIXTURE_MAIN_COMMIT"
+    ;;
+  *"git/ref/tags/"*)
+    printf 'commit\t%s\n' "$FIXTURE_TAG_COMMIT"
+    ;;
+  *"releases?per_page=100&page=1"*)
+    [[ -z "$FIXTURE_RELEASES" ]] || printf '%s\n' "$FIXTURE_RELEASES"
+    ;;
+  *"releases?per_page=100&page="*)
+    ;;
+  *)
+    echo "unexpected gh invocation: $*" >&2
+    exit 98
+    ;;
+esac
+`
+	for name, contents := range map[string]string{"git": gitStub, "gh": ghStub} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(contents), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outputPath := filepath.Join(t.TempDir(), "github-output")
+	cmd := exec.Command("/bin/bash", "-c", script)
+	cmd.Dir = repoRoot(t)
+	cmd.Env = []string{
+		"PATH=" + bin + ":/usr/bin:/bin",
+		"HOME=" + t.TempDir(),
+		"GITHUB_REPOSITORY=yersonargotev/packy",
+		"GITHUB_OUTPUT=" + outputPath,
+		"EVENT_NAME=" + fixture.eventName,
+		"EVENT_REF=" + fixture.eventRef,
+		"EVENT_REF_TYPE=" + fixture.eventRefType,
+		"EVENT_REF_NAME=" + fixture.eventRefName,
+		"EVENT_SHA=" + fixture.eventSHA,
+		"INPUT_TAG=" + fixture.inputTag,
+		"INPUT_DRY_RUN=" + fixture.inputDryRun,
+		"FIXTURE_TAG_COMMIT=" + fixture.tagCommit,
+		"FIXTURE_MAIN_COMMIT=" + fixture.mainCommit,
+		"FIXTURE_ANCESTOR=" + fmt.Sprint(fixture.ancestor),
+		"FIXTURE_TAGS=" + fixture.existingTags,
+		"FIXTURE_RELEASES=" + fixture.existingReleases,
+		"FIXTURE_RELEASE_ID=" + fixture.releaseID,
+	}
+	combined, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(combined), err
+	}
+	output, readErr := os.ReadFile(outputPath)
+	if readErr != nil {
+		return string(combined), readErr
+	}
+	return string(output), nil
+}
+
+func releaseWorkflowRunScript(t *testing.T, workflow, stepName string) string {
+	t.Helper()
+	step := releaseWorkflowStep(t, parseReleaseWorkflow(t, workflow), stepName).Text
+	const marker = "\n        run: |\n"
+	start := strings.Index(step, marker)
+	if start < 0 {
+		t.Fatalf("release workflow step %q has no multiline run script", stepName)
+	}
+	lines := strings.Split(step[start+len(marker):], "\n")
+	scriptLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			scriptLines = append(scriptLines, "")
+			continue
+		}
+		if !strings.HasPrefix(line, "          ") {
+			break
+		}
+		scriptLines = append(scriptLines, strings.TrimPrefix(line, "          "))
+	}
+	return strings.Join(scriptLines, "\n")
+}
+
+func assertReleaseEventOutput(t *testing.T, output, mode, tag, commit string) {
+	t.Helper()
+	for _, want := range []string{"mode=" + mode, "tag=" + tag, "commit=" + commit} {
+		if !strings.Contains(output, want+"\n") {
+			t.Fatalf("release event output missing %q:\n%s", want, output)
+		}
+	}
 }
 
 func releaseWorkflowJob(t *testing.T, workflow, name string) string {

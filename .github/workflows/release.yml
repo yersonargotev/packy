@@ -1,6 +1,11 @@
 name: Release
 
 on:
+  push:
+    tags:
+      # Actions tag filters are globs, not regular expressions. The normalize
+      # job below enforces the exact valid-v0 namespace before doing any work.
+      - 'v0.*.*'
   workflow_dispatch:
     inputs:
       tag:
@@ -16,9 +21,148 @@ on:
 permissions: {}
 
 jobs:
+  normalize:
+    name: Normalize and seal release identity read-only
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.seal.outputs.mode }}
+      tag: ${{ steps.seal.outputs.tag }}
+      commit: ${{ steps.seal.outputs.commit }}
+    steps:
+      - name: Check out triggering revision without credentials
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify event and seal immutable candidate
+        id: seal
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_REF_TYPE: ${{ github.ref_type }}
+          EVENT_REF_NAME: ${{ github.ref_name }}
+          EVENT_SHA: ${{ github.sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == yersonargotev/packy ]] || {
+            echo 'release workflow is sealed to yersonargotev/packy' >&2; exit 1;
+          }
+          resolve_ref_commit() {
+            local ref="$1" object object_type object_sha hops=0
+            object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" --jq '[.object.type,.object.sha]|@tsv')"
+            IFS=$'\t' read -r object_type object_sha <<< "$object"
+            while [[ "$object_type" == tag && "$hops" -lt 8 ]]; do
+              object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq '[.object.type,.object.sha]|@tsv')"
+              IFS=$'\t' read -r object_type object_sha <<< "$object"
+              hops=$((hops + 1))
+            done
+            [[ "$object_type" == commit && "$object_sha" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "ref $ref did not peel uniquely to one commit" >&2; return 1;
+            }
+            printf '%s\n' "$object_sha"
+          }
+          release_id_for_tag() {
+            local tag="$1" owner repository
+            owner="${GITHUB_REPOSITORY%%/*}"
+            repository="${GITHUB_REPOSITORY#*/}"
+            # GraphQL variables expand server-side.
+            # shellcheck disable=SC2016
+            gh api graphql \
+              -f query='query($owner:String!,$repository:String!,$tag:String!){repository(owner:$owner,name:$repository){release(tagName:$tag){id}}}' \
+              -f owner="$owner" -f repository="$repository" -f tag="$tag" \
+              --jq '.data.repository.release.id // ""'
+          }
+
+          mode= tag=
+          case "$EVENT_NAME" in
+            push)
+              [[ "$EVENT_REF_TYPE" == tag && "$EVENT_REF" == "refs/tags/$EVENT_REF_NAME" &&
+                 -z "$INPUT_TAG" && -z "$INPUT_DRY_RUN" ]] || {
+                echo 'ambiguous tag-push event payload' >&2; exit 1;
+              }
+              mode=fresh
+              tag="$EVENT_REF_NAME"
+              ;;
+            workflow_dispatch)
+              [[ "$EVENT_REF" == refs/heads/main && "$EVENT_REF_TYPE" == branch &&
+                 "$EVENT_REF_NAME" == main && -n "$INPUT_TAG" ]] || {
+                echo 'manual release dispatch must run from protected main with one tag' >&2; exit 1;
+              }
+              case "$INPUT_DRY_RUN" in
+                true) mode=dry-run ;;
+                false) mode=recovery ;;
+                *) echo 'manual dry_run must be exactly true or false' >&2; exit 1 ;;
+              esac
+              tag="$INPUT_TAG"
+              ;;
+            *)
+              echo "unsupported release event: $EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+          [[ "$tag" =~ ^v0\.[0-9]+\.[0-9]+$ ]] || {
+            echo 'tag must match the exact valid-v0 namespace v0.x.y' >&2; exit 1;
+          }
+
+          git fetch --force origin main 'refs/tags/*:refs/tags/*'
+          main_commit="$(resolve_ref_commit heads/main)"
+          tag_commit="$(resolve_ref_commit "tags/$tag")"
+          [[ "$(git rev-parse --verify "refs/tags/$tag^{commit}")" == "$tag_commit" ]] || {
+            echo 'fetched tag and remote tag target disagree' >&2; exit 1;
+          }
+          git merge-base --is-ancestor "$tag_commit" "$main_commit" || {
+            echo "$tag target is not in protected-main history" >&2; exit 1;
+          }
+
+          if [[ "$mode" == fresh ]]; then
+            [[ "$EVENT_SHA" == "$tag_commit" && "$tag_commit" == "$main_commit" ]] || {
+              echo 'fresh tag target must uniquely equal freshly observed protected main' >&2; exit 1;
+            }
+            [[ -z "$(release_id_for_tag "$tag")" ]] || {
+              echo 'fresh publication identity is already occupied by a GitHub Release' >&2; exit 1;
+            }
+            requested="${tag#v}"
+            while IFS= read -r existing; do
+              [[ "$existing" == "$tag" || ! "$existing" =~ ^v0\.[0-9]+\.[0-9]+$ ]] && continue
+              highest="$(printf '%s\n%s\n' "$requested" "${existing#v}" | sort -V | tail -n1)"
+              [[ "$highest" == "$requested" && "$requested" != "${existing#v}" ]] || {
+                echo "$tag is not monotonically newer than existing tag $existing" >&2; exit 1;
+              }
+            done < <(git tag --list)
+            page=1
+            while :; do
+              releases="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100&page=$page" --jq '.[].tag_name')"
+              [[ -n "$releases" ]] || break
+              while IFS= read -r existing; do
+                [[ "$existing" =~ ^v0\.[0-9]+\.[0-9]+$ ]] || continue
+                highest="$(printf '%s\n%s\n' "$requested" "${existing#v}" | sort -V | tail -n1)"
+                [[ "$highest" == "$requested" && "$requested" != "${existing#v}" ]] || {
+                  echo "$tag is not monotonically newer than release $existing" >&2; exit 1;
+                }
+              done <<< "$releases"
+              page=$((page + 1))
+            done
+          else
+            [[ "$EVENT_SHA" == "$main_commit" ]] || {
+              echo 'manual dispatch revision must equal freshly observed protected main' >&2; exit 1;
+            }
+          fi
+
+          git checkout --detach "$tag_commit"
+          {
+            echo "mode=$mode"
+            echo "tag=$tag"
+            echo "commit=$tag_commit"
+          } >> "$GITHUB_OUTPUT"
+
   governance-drift:
     name: Verify governance publication boundary
-    if: github.repository == 'yersonargotev/packy' && github.ref == 'refs/heads/main'
+    needs: normalize
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -30,6 +174,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
+          ref: ${{ needs.normalize.outputs.commit }}
           persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -44,8 +189,8 @@ jobs:
           ./scripts/gate-governance-drift.sh \
             --boundary publication \
             --repo "$GITHUB_REPOSITORY" \
-            --ref "$GITHUB_REF" \
-            --commit "$GITHUB_SHA" \
+            --ref refs/heads/main \
+            --commit "${{ needs.normalize.outputs.commit }}" \
             --workflow .github/workflows/release.yml \
             --output-dir "$RUNNER_TEMP/governance-drift"
       - name: Retain publication gate evidence
@@ -59,8 +204,7 @@ jobs:
 
   build:
     name: Validate main and build once
-    needs: governance-drift
-    if: github.repository == 'yersonargotev/packy' && github.ref == 'refs/heads/main'
+    needs: [normalize, governance-drift]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -72,26 +216,23 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
+          ref: ${{ needs.normalize.outputs.commit }}
           persist-credentials: false
 
-      - name: Resolve exact existing main tag
+      - name: Consume sealed release identity
         id: release
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ needs.normalize.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.normalize.outputs.commit }}
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v0\.[0-9]+\.[0-9]+$ ]] || { echo "tag must be v0.x.y" >&2; exit 1; }
-          git fetch --force origin main 'refs/tags/*:refs/tags/*'
           head="$(git rev-parse HEAD)"
-          main="$(git rev-parse origin/main)"
           tag_commit="$(git rev-parse --verify "${RELEASE_TAG}^{commit}")"
-          [[ "$head" == "$main" && "$head" == "$tag_commit" ]] || {
-            echo "HEAD, origin/main, and $RELEASE_TAG must resolve to one commit" >&2
-            printf 'HEAD=%s origin/main=%s tag=%s\n' "$head" "$main" "$tag_commit" >&2
+          [[ "$head" == "$RELEASE_COMMIT" && "$tag_commit" == "$RELEASE_COMMIT" ]] || {
+            echo "checkout and $RELEASE_TAG must match the sealed commit" >&2
             exit 1
           }
-          git checkout --detach "$head"
-          printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$head" >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$RELEASE_COMMIT" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -282,8 +423,8 @@ jobs:
 
   dry-run:
     name: Report exact dry-run effects
-    needs: [build, validate-release-evidence, inspect-release]
-    if: inputs.dry_run == true
+    needs: [normalize, build, validate-release-evidence, inspect-release]
+    if: needs.normalize.outputs.mode == 'dry-run'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -356,8 +497,10 @@ jobs:
           }
           tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
           main_commit="$(resolve_ref_commit heads/main)"
-          [[ "$tag_commit" == "${{ needs.build.outputs.commit }}" && "$main_commit" == "$tag_commit" ]] || {
-            echo 'tag, protected main, and candidate commit diverged' >&2; exit 1;
+          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/${{ needs.build.outputs.commit }}...$main_commit" --jq .status)"
+          [[ "$tag_commit" == "${{ needs.build.outputs.commit }}" &&
+             ( "$ancestry" == ahead || "$ancestry" == identical ) ]] || {
+            echo 'tag moved or sealed commit left protected-main history' >&2; exit 1;
           }
           tap_url=https://github.com/yersonargotev/homebrew-tap.git
           tap_ref=refs/heads/main
@@ -508,8 +651,8 @@ jobs:
 
   attest:
     name: Issue or verify exact build provenance
-    needs: [build, inspect-release]
-    if: github.repository == 'yersonargotev/packy' && github.ref == 'refs/heads/main' && inputs.dry_run == false
+    needs: [normalize, build, inspect-release]
+    if: github.repository == 'yersonargotev/packy' && (needs.normalize.outputs.mode == 'fresh' || needs.normalize.outputs.mode == 'recovery')
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -555,8 +698,10 @@ jobs:
           }
           tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
           main_commit="$(resolve_ref_commit heads/main)"
-          [[ "$tag_commit" == "$RELEASE_COMMIT" && "$main_commit" == "$tag_commit" ]] || {
-            echo 'tag, protected main, and candidate commit diverged before OIDC issuance' >&2; exit 1;
+          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
+          [[ "$tag_commit" == "$RELEASE_COMMIT" &&
+             ( "$ancestry" == ahead || "$ancestry" == identical ) ]] || {
+            echo 'tag moved or sealed commit left protected-main history before OIDC issuance' >&2; exit 1;
           }
       - name: Attest exact retained candidate
         id: attest
@@ -630,8 +775,8 @@ jobs:
 
   publish-github:
     name: Create or resume exact draft and publish once
-    needs: [build, validate-release-evidence, inspect-release, attest]
-    if: github.repository == 'yersonargotev/packy' && github.ref == 'refs/heads/main' && inputs.dry_run == false
+    needs: [normalize, build, validate-release-evidence, inspect-release, attest]
+    if: github.repository == 'yersonargotev/packy' && (needs.normalize.outputs.mode == 'fresh' || needs.normalize.outputs.mode == 'recovery')
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -686,11 +831,13 @@ jobs:
             printf '%s\n' "$object_sha"
           }
           assert_ref_identity() {
-            local tag_commit main_commit
+            local tag_commit main_commit ancestry
             tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
             main_commit="$(resolve_ref_commit heads/main)"
-            [[ "$tag_commit" == "$RELEASE_COMMIT" && "$main_commit" == "$tag_commit" ]] || {
-              echo 'tag, protected main, and candidate commit diverged' >&2; exit 1;
+            ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
+            [[ "$tag_commit" == "$RELEASE_COMMIT" &&
+               ( "$ancestry" == ahead || "$ancestry" == identical ) ]] || {
+              echo 'tag moved or sealed commit left protected-main history' >&2; exit 1;
             }
             printf '%s\n' "$tag_commit"
           }
@@ -785,12 +932,14 @@ jobs:
 
   homebrew:
     name: Verify published bytes and update Homebrew separately
-    needs: [build, validate-release-evidence, publish-github]
-    if: github.repository == 'yersonargotev/packy' && github.ref == 'refs/heads/main' && inputs.dry_run == false && needs.publish-github.outputs.published == 'true'
+    needs: [normalize, build, validate-release-evidence, publish-github]
+    if: github.repository == 'yersonargotev/packy' && (needs.normalize.outputs.mode == 'fresh' || needs.normalize.outputs.mode == 'recovery') && needs.publish-github.outputs.published == 'true'
     runs-on: ubuntu-latest
     environment: homebrew
     permissions:
       contents: read
+    outputs:
+      tap_commit: ${{ steps.tap.outputs.commit }}
     steps:
       - name: Download sealed formula and verifier metadata
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -822,8 +971,10 @@ jobs:
           }
           tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
           main_commit="$(resolve_ref_commit heads/main)"
-          [[ "$tag_commit" == "${{ needs.build.outputs.commit }}" && "$main_commit" == "$tag_commit" ]] || {
-            echo 'tag, protected main, and candidate commit diverged' >&2; exit 1;
+          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/${{ needs.build.outputs.commit }}...$main_commit" --jq .status)"
+          [[ "$tag_commit" == "${{ needs.build.outputs.commit }}" &&
+             ( "$ancestry" == ahead || "$ancestry" == identical ) ]] || {
+            echo 'tag moved or sealed commit left protected-main history' >&2; exit 1;
           }
           mkdir published-assets
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
@@ -876,9 +1027,14 @@ jobs:
           cp ../release-metadata/packy.rb Formula/packy.rb
           git rm --ignore-unmatch Formula/matty.rb
           git add Formula/packy.rb
-          if git diff --cached --quiet; then echo 'changed=false' >> "$GITHUB_OUTPUT"; exit 0; fi
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git commit -m "feat: update packy formula to ${RELEASE_TAG}"
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Prove tap push then publish it
         if: steps.tap.outputs.changed == 'true'
         working-directory: homebrew-tap
@@ -902,14 +1058,18 @@ jobs:
           }
           tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
           main_commit="$(resolve_ref_commit heads/main)"
-          [[ "$tag_commit" == "$RELEASE_COMMIT" && "$main_commit" == "$tag_commit" ]] || {
-            echo 'tag, protected main, and candidate commit diverged before tap push' >&2; exit 1;
+          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
+          [[ "$tag_commit" == "$RELEASE_COMMIT" &&
+             ( "$ancestry" == ahead || "$ancestry" == identical ) ]] || {
+            echo 'tag moved or sealed commit left protected-main history before tap push' >&2; exit 1;
           }
           git push --dry-run origin HEAD:main
           tag_commit="$(resolve_ref_commit "tags/$RELEASE_TAG")"
           main_commit="$(resolve_ref_commit heads/main)"
-          [[ "$tag_commit" == "$RELEASE_COMMIT" && "$main_commit" == "$tag_commit" ]] || {
-            echo 'tag, protected main, and candidate commit diverged after tap push proof' >&2; exit 1;
+          ancestry="$(gh api "repos/$GITHUB_REPOSITORY/compare/$RELEASE_COMMIT...$main_commit" --jq .status)"
+          [[ "$tag_commit" == "$RELEASE_COMMIT" &&
+             ( "$ancestry" == ahead || "$ancestry" == identical ) ]] || {
+            echo 'tag moved or sealed commit left protected-main history after tap push proof' >&2; exit 1;
           }
           git push origin HEAD:main
           git fetch --force origin main
@@ -921,3 +1081,33 @@ jobs:
           [[ "$remote_formula_sha" == "$expected_formula_sha" ]] || {
             echo 'tap remote formula does not match the sealed destination plan' >&2; exit 1;
           }
+
+  release-summary:
+    name: Report sealed release verification
+    needs: [normalize, build, validate-release-evidence, inspect-release, attest, publish-github, homebrew]
+    if: github.repository == 'yersonargotev/packy' && (needs.normalize.outputs.mode == 'fresh' || needs.normalize.outputs.mode == 'recovery') && success()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Link exact published evidence
+        env:
+          RELEASE_TAG: ${{ needs.normalize.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.normalize.outputs.commit }}
+          TAP_COMMIT: ${{ needs.homebrew.outputs.tap_commit }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v0\.[0-9]+\.[0-9]+$ &&
+             "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ &&
+             "$TAP_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'final release evidence is incomplete' >&2; exit 1;
+          }
+          {
+            echo '## Packy release verified'
+            echo "- Tag: [$RELEASE_TAG](https://github.com/$GITHUB_REPOSITORY/tree/$RELEASE_TAG)"
+            echo "- Candidate commit: [$RELEASE_COMMIT](https://github.com/$GITHUB_REPOSITORY/commit/$RELEASE_COMMIT)"
+            echo "- GitHub Release: [exact published release](https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG)"
+            echo "- Attestation evidence: [retained workflow artifacts](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#artifacts)"
+            echo "- Homebrew tap commit: [$TAP_COMMIT](https://github.com/yersonargotev/homebrew-tap/commit/$TAP_COMMIT)"
+            echo '- Verification: sealed tag identity and protected-main ancestry were rechecked at every privileged boundary; published bytes, checksums, attestation bundle, release envelope, and tap formula were independently read back.'
+          } >> "$GITHUB_STEP_SUMMARY"
