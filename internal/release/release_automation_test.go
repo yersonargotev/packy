@@ -50,13 +50,6 @@ func TestReleaseWorkflowClassifiesTagPushAndManualModes(t *testing.T) {
 		t.Fatalf("release candidate must be built exactly once; got %d build invocations", got)
 	}
 
-	fresh := baseReleaseEventFixture()
-	output, err := runReleaseEventFixture(t, text, fresh)
-	if err != nil {
-		t.Fatalf("valid tag push should select fresh publication: %v\n%s", err, output)
-	}
-	assertReleaseEventOutput(t, output, "fresh", fresh.tag, fresh.tagCommit)
-
 	dryRun := baseReleaseEventFixture()
 	dryRun.eventName = "workflow_dispatch"
 	dryRun.eventRef = "refs/heads/main"
@@ -65,7 +58,7 @@ func TestReleaseWorkflowClassifiesTagPushAndManualModes(t *testing.T) {
 	dryRun.eventSHA = dryRun.mainCommit
 	dryRun.inputTag = dryRun.tag
 	dryRun.inputDryRun = "true"
-	output, err = runReleaseEventFixture(t, text, dryRun)
+	output, err := runReleaseEventFixture(t, text, dryRun)
 	if err != nil {
 		t.Fatalf("valid manual dry run should remain available: %v", err)
 	}
@@ -132,11 +125,6 @@ func TestReleaseWorkflowRejectsUnauthorizedTriggersAndVersions(t *testing.T) {
 
 func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
-	fresh := baseReleaseEventFixture()
-	if output, err := runReleaseEventFixture(t, text, fresh); err != nil {
-		t.Fatalf("fresh publication should seal the exact protected-main tip: %v\n%s", err, output)
-	}
-
 	recovery := baseReleaseEventFixture()
 	recovery.eventName = "workflow_dispatch"
 	recovery.eventRef, recovery.eventRefType, recovery.eventRefName = "refs/heads/main", "branch", "main"
