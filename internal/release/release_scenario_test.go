@@ -177,6 +177,26 @@ func TestReleaseScenarioUsesFakeExternalBoundaries(t *testing.T) {
 	}
 }
 
+func TestReleaseScenarioFakeGitHubRejectsGraphQLMutation(t *testing.T) {
+	root := t.TempDir()
+	fakeBin := filepath.Join(root, "bin")
+	if err := os.Mkdir(fakeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeReleaseScenarioFakes(t, fakeBin)
+	command := exec.Command(filepath.Join(fakeBin, "gh"),
+		"api", "graphql",
+		"-f", "query=mutation { deleteRelease(input:{}) { clientMutationId } }",
+	)
+	command.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"FIXTURE_EFFECT_LOG=" + filepath.Join(root, "effects.log"),
+	}
+	if output, err := command.CombinedOutput(); err == nil {
+		t.Fatalf("GraphQL mutation unexpectedly crossed the fake boundary:\n%s", output)
+	}
+}
+
 func TestReleaseScenarioResultIsDeterministicAndMutationSensitive(t *testing.T) {
 	first := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
 	second := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
@@ -265,7 +285,6 @@ func runReleaseScenario(t *testing.T, scenario releaseScenario) releaseScenarioR
 		"EVENT_SHA=" + event.eventSHA,
 		"INPUT_TAG=" + event.inputTag,
 		"INPUT_DRY_RUN=" + event.inputDryRun,
-		"RELEASE_CANDIDATE_ADAPTER=" + filepath.Join(fakeBin, "releasecandidate"),
 		"FIXTURE_REAL_RELEASECANDIDATE=" + releaseCandidate,
 		"FIXTURE_EFFECT_LOG=" + effectLog,
 		"FIXTURE_TAG_COMMIT=" + event.tagCommit,
@@ -402,6 +421,16 @@ func releaseCandidateAdapter(t *testing.T, repositoryRoot string) string {
 func writeReleaseScenarioFakes(t *testing.T, fakeBin string) {
 	t.Helper()
 	files := map[string]string{
+		"go": `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" -ge 3 && "$1" == run && "$2" == ./internal/tools/releasecandidate ]] || {
+  echo "unexpected go invocation: $*" >&2
+  exit 96
+}
+shift 2
+printf 'releasecandidate\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
+exec "$FIXTURE_REAL_RELEASECANDIDATE" "$@"
+`,
 		"git": `#!/usr/bin/env bash
 set -euo pipefail
 printf 'git\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
@@ -417,10 +446,25 @@ esac
 set -euo pipefail
 printf 'gh\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
 args="$*"
+if [[ "${1:-}" == api && "${2:-}" == graphql ]]; then
+  expected_query='query($owner:String!,$repository:String!,$tag:String!){repository(owner:$owner,name:$repository){release(tagName:$tag){id}}}'
+  [[ "$#" -eq 12 &&
+     "$3" == -f && "$4" == "query=$expected_query" &&
+     "$5" == -f && "$6" == "owner=yersonargotev" &&
+     "$7" == -f && "$8" == "repository=packy" &&
+     "$9" == -f && "${10}" == "tag=$FIXTURE_TAG" &&
+     "${11}" == --jq && "${12}" == '.data.repository.release.id // ""' ]] || {
+    echo "unexpected GraphQL invocation: $*" >&2
+    exit 98
+  }
+  [[ "$expected_query" != mutation* ]] || {
+    echo "GraphQL mutation is forbidden" >&2
+    exit 98
+  }
+  [[ -z "$FIXTURE_RELEASE_ID" ]] || printf '%s\n' "$FIXTURE_RELEASE_ID"
+  exit 0
+fi
 case "$args" in
-  *" api graphql "*|api\ graphql\ *)
-    [[ -z "$FIXTURE_RELEASE_ID" ]] || printf '%s\n' "$FIXTURE_RELEASE_ID"
-    ;;
   *"git/ref/heads/main"*) printf 'commit\t%s\n' "$FIXTURE_MAIN_COMMIT" ;;
   *"git/ref/tags/"*) printf 'commit\t%s\n' "$FIXTURE_TAG_COMMIT" ;;
   *"compare/"*)

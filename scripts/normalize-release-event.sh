@@ -108,17 +108,7 @@ jq -n \
     original_run_id:($metadata.source_run_id // $metadata.publication_plan.source_run_id // ""),
     candidate_locator:$candidate_locator}' \
   > "$RUNNER_TEMP/admission-observation.json"
-release_candidate_adapter="${RELEASE_CANDIDATE_ADAPTER:-}"
-if [[ -n "$release_candidate_adapter" ]]; then
-  [[ "$release_candidate_adapter" == /* && -x "$release_candidate_adapter" ]] || {
-    echo 'RELEASE_CANDIDATE_ADAPTER must be an absolute executable path' >&2
-    exit 1
-  }
-  release_candidate_command=("$release_candidate_adapter")
-else
-  release_candidate_command=(go run ./internal/tools/releasecandidate)
-fi
-"${release_candidate_command[@]}" admit \
+go run ./internal/tools/releasecandidate admit \
   --observation "$RUNNER_TEMP/admission-observation.json" > "$RUNNER_TEMP/admission.json"
 git checkout --detach "$(jq -r .release_commit "$RUNNER_TEMP/admission.json")"
 {
