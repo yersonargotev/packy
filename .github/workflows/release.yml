@@ -346,6 +346,7 @@ jobs:
             --permission contents=write --permission id-token=write >/dev/null
           cp release-candidate-parent/sealed/{candidate.json,provenance.json} release-metadata/
           cp scripts/plan-homebrew-effects.sh release-metadata/
+          cp scripts/verify-release-boundary.sh release-metadata/
           cp scripts/verify-release-ref-state.sh release-metadata/
           go build -trimpath -o release-metadata/releasecandidate ./internal/tools/releasecandidate
       - name: Seal exact publication plan and draft base
@@ -657,14 +658,14 @@ jobs:
           RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
         run: |
           set -euo pipefail
-          chmod +x release-metadata/{releasecandidate,verify-release-ref-state.sh}
-          release-metadata/verify-release-ref-state.sh \
+          chmod +x release-metadata/{releasecandidate,verify-release-boundary.sh,verify-release-ref-state.sh}
+          # Denies when the tag moved or the sealed commit left protected-main history before OIDC issuance.
+          release-metadata/verify-release-boundary.sh \
+            --boundary 'OIDC issuance' \
             --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
             --release-commit "$RELEASE_COMMIT" \
             --verifier release-metadata/releasecandidate \
-            --output "$RUNNER_TEMP/verified-release-ref.json" || {
-            echo 'tag moved or sealed commit left protected-main history before OIDC issuance' >&2; exit 1;
-          }
+            --ref-output "$RUNNER_TEMP/verified-release-ref.json"
       - name: Attest exact retained candidate
         id: attest
         if: needs.normalize.outputs.mode == 'fresh' && needs.inspect-release.outputs.has_bundle != 'true'
@@ -788,17 +789,16 @@ jobs:
 
           owner="${GITHUB_REPOSITORY%%/*}"
           repository="${GITHUB_REPOSITORY#*/}"
-          assert_ref_identity() {
-            chmod +x release-metadata/verify-release-ref-state.sh
-            release-metadata/verify-release-ref-state.sh \
+          verify_boundary() {
+            local boundary="$1"
+            shift
+            chmod +x release-metadata/{verify-release-boundary.sh,verify-release-ref-state.sh}
+            release-metadata/verify-release-boundary.sh \
+              --boundary "$boundary" \
               --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
               --release-commit "$RELEASE_COMMIT" --verifier "$verifier" \
-              --output "$RUNNER_TEMP/verified-release-ref.json" || {
-              echo 'tag moved or sealed commit left protected-main history' >&2; exit 1;
-            }
-            jq -r .release_commit "$RUNNER_TEMP/verified-release-ref.json"
+              --ref-output "$RUNNER_TEMP/verified-release-ref.json" "$@"
           }
-          assert_ref_identity >/dev/null
           # GraphQL variables expand server-side.
           # shellcheck disable=SC2016
           release_id="$(gh api graphql \
@@ -810,7 +810,7 @@ jobs:
               echo 'sealed recovery release disappeared before publication' >&2
               exit 1
             }
-            assert_ref_identity >/dev/null
+            verify_boundary 'draft creation'
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft \
               --title "$RELEASE_TAG" --notes-file "$expected_body"
           fi
@@ -826,7 +826,7 @@ jobs:
           }
           make_state() {
             local tag_commit
-            tag_commit="$(assert_ref_identity)"
+            tag_commit="$RELEASE_COMMIT"
             jq --slurpfile metadata "$RUNNER_TEMP/observed-metadata.json" \
               --arg repository "$GITHUB_REPOSITORY" --arg ref refs/heads/main \
               --arg workflow .github/workflows/release.yml \
@@ -859,8 +859,9 @@ jobs:
           assert_no_extra_assets
           make_state
           if jq -e '.isDraft==false' "$RUNNER_TEMP/release.json" >/dev/null; then
-            "$verifier" verify-state --candidate "$candidate" --provenance "$provenance" \
-              --state "$RUNNER_TEMP/state.json" --mode published > "$RUNNER_TEMP/decision.json"
+            verify_boundary publication \
+              --candidate "$candidate" --provenance "$provenance" \
+              --state "$RUNNER_TEMP/state.json" --mode published
             jq -e '.assets|length==7 and any(.name=="attestation.bundle.jsonl")' "$RUNNER_TEMP/release.json" >/dev/null
             assert_server_hashes
             echo 'published=true' >> "$GITHUB_OUTPUT"
@@ -871,11 +872,15 @@ jobs:
             --state "$RUNNER_TEMP/state.json" --mode draft > "$RUNNER_TEMP/decision.json"
           jq -r '.missing_assets[].name' "$RUNNER_TEMP/decision.json" | while read -r name; do
             [[ -n "$name" ]]
-            assert_ref_identity >/dev/null
+            verify_boundary 'asset upload' \
+              --candidate "$candidate" --provenance "$provenance" \
+              --state "$RUNNER_TEMP/state.json" --mode draft
             gh release upload "$RELEASE_TAG" "dist/$name" --repo "$GITHUB_REPOSITORY"
           done
           if ! jq -e '.assets | any(.name=="attestation.bundle.jsonl")' "$RUNNER_TEMP/release.json" >/dev/null; then
-            assert_ref_identity >/dev/null
+            verify_boundary 'asset upload' \
+              --candidate "$candidate" --provenance "$provenance" \
+              --state "$RUNNER_TEMP/state.json" --mode draft
             gh release upload "$RELEASE_TAG" "$bundle" --repo "$GITHUB_REPOSITORY"
           fi
 
@@ -887,7 +892,9 @@ jobs:
           jq -e '.decision=="publish-draft" and (.missing_assets|length)==0' "$RUNNER_TEMP/final-decision.json" >/dev/null
           jq -e '.assets|length==7 and any(.name=="attestation.bundle.jsonl")' "$RUNNER_TEMP/release.json" >/dev/null
           assert_server_hashes
-          assert_ref_identity >/dev/null
+          verify_boundary publication \
+            --candidate "$candidate" --provenance "$provenance" \
+            --state "$RUNNER_TEMP/state.json" --mode draft
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
           echo 'published=true' >> "$GITHUB_OUTPUT"
 
@@ -958,6 +965,17 @@ jobs:
           [[ "$formula_sha" == "$(jq -r .publication_plan.homebrew.sha256 attestation/body-metadata.json)" ]] || {
             echo 'Homebrew formula does not match release set destination plan' >&2; exit 1;
           }
+          jq --slurpfile metadata attestation/body-metadata.json \
+            --arg repository "$GITHUB_REPOSITORY" --arg ref refs/heads/main \
+            --arg workflow .github/workflows/release.yml \
+            --arg workflow_sha "$(jq -r .workflow_sha release-metadata/candidate.json)" \
+            --arg notes "$(jq -r .release_notes_sha256 release-metadata/candidate.json)" \
+            --arg target_commit "${{ needs.build.outputs.commit }}" \
+            '{candidate_id:$metadata[0].candidate_id,provenance:$metadata[0].provenance,
+              version:.tagName,repository:$repository,ref:$ref,target_commit:$target_commit,
+              workflow:$workflow,workflow_sha:$workflow_sha,release_notes_sha256:$notes,
+              draft:.isDraft,assets:[.assets[]|select(.name!="attestation.bundle.jsonl")|{name,digest}]}' \
+            "$RUNNER_TEMP/release.json" > "$RUNNER_TEMP/published-release-state.json"
       - name: Check out Homebrew tap with only its scoped credential
         # This is the sole persist-credentials exception: the checkout contains
         # only the dedicated tap token needed for its reviewed dry-run and push.
@@ -999,31 +1017,21 @@ jobs:
           RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
         run: |
           set -euo pipefail
-          verify_release_ref() {
-            local boundary="$1"
-            chmod +x ../release-metadata/{releasecandidate,verify-release-ref-state.sh}
-            ../release-metadata/verify-release-ref-state.sh \
+          verify_release_boundary() {
+            chmod +x ../release-metadata/{releasecandidate,verify-release-boundary.sh,verify-release-ref-state.sh}
+            ../release-metadata/verify-release-boundary.sh \
+              --boundary 'Homebrew mutation' \
               --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
               --release-commit "$RELEASE_COMMIT" \
               --verifier ../release-metadata/releasecandidate \
-              --output "$RUNNER_TEMP/verified-release-ref.json" || {
-              case "$boundary" in
-                'before tap push')
-                  echo 'tag moved or sealed commit left protected-main history before tap push' >&2
-                  ;;
-                'after tap push proof')
-                  echo 'tag moved or sealed commit left protected-main history after tap push proof' >&2
-                  ;;
-                *)
-                  echo 'unknown tap release-ref verification boundary' >&2
-                  ;;
-              esac
-              exit 1
-            }
+              --ref-output "$RUNNER_TEMP/verified-release-ref.json" \
+              --candidate ../release-metadata/candidate.json \
+              --provenance ../release-metadata/provenance.json \
+              --state "$RUNNER_TEMP/published-release-state.json" --mode published
           }
-          verify_release_ref 'before tap push'
+          verify_release_boundary
           git push --dry-run origin HEAD:main
-          verify_release_ref 'before tap push'
+          verify_release_boundary
           git push origin HEAD:main
           git fetch --force origin main
           [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
@@ -1034,7 +1042,7 @@ jobs:
           [[ "$remote_formula_sha" == "$expected_formula_sha" ]] || {
             echo 'tap remote formula does not match the sealed destination plan' >&2; exit 1;
           }
-          verify_release_ref 'after tap push proof'
+          verify_release_boundary
 
   release-summary:
     name: Report sealed release verification

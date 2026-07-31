@@ -397,6 +397,7 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 		"FIXTURE_RELEASE_STATE=",
 		"FIXTURE_RELEASE_BODY=",
 		"FIXTURE_TAG=v0.1.2",
+		"FIXTURE_ALLOW_MUTATION=true",
 	}
 	for _, directory := range []string{filepath.Join(root, "home"), filepath.Join(root, "config"), filepath.Join(root, "tmp")} {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -428,53 +429,81 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			"FIXTURE_ANCESTOR="+fmt.Sprint(observed.Ancestor),
 		)
 		refOutput := filepath.Join(root, fmt.Sprintf("verified-ref-%d.json", index))
-		command := exec.Command("/bin/bash", filepath.Join(repositoryRoot, "scripts", "verify-release-ref-state.sh"),
+		arguments := []string{
+			filepath.Join(repositoryRoot, "scripts", "verify-release-boundary.sh"),
+			"--boundary", boundary.Name,
 			"--repository", "yersonargotev/packy",
 			"--tag", candidate.Version,
 			"--release-commit", commit,
 			"--verifier", releaseCandidate,
-			"--output", refOutput,
-		)
-		command.Dir = repositoryRoot
-		command.Env = boundaryEnv
-		if output, err := command.CombinedOutput(); err != nil {
-			result.err = fmt.Errorf("%s denied", boundary.Name)
-			result.Diagnostics = append(result.Diagnostics, fmt.Sprintf(
-				"%s denied: expected tag and release commit %s in protected main; observed tag %s, main %s, ancestry %t: %s",
-				boundary.Name, commit, observed.TagCommit, observed.MainCommit, observed.Ancestor, strings.TrimSpace(string(output)),
-			))
-			return result
+			"--ref-output", refOutput,
 		}
 		if boundary.ReleaseMode != "" {
-			if observed.Release == nil {
-				result.err = fmt.Errorf("%s denied", boundary.Name)
-				result.Diagnostics = append(result.Diagnostics, fmt.Sprintf(
-					"%s denied: expected sealed release %s targeting %s; observed release missing",
-					boundary.Name, candidate.ID, commit,
-				))
-				return result
+			statePath := filepath.Join(root, fmt.Sprintf("release-state-%d.json", index))
+			if observed.Release != nil {
+				statePath = writeReleaseProcessState(t, root, index, *observed.Release)
 			}
-			statePath := writeReleaseProcessState(t, root, index, *observed.Release)
-			command = exec.Command(releaseCandidate, "verify-state",
+			arguments = append(arguments,
 				"--candidate", candidatePath,
 				"--provenance", provenancePath,
 				"--state", statePath,
 				"--mode", boundary.ReleaseMode,
 			)
-			command.Env = boundaryEnv
-			if output, err := command.CombinedOutput(); err != nil {
-				result.err = fmt.Errorf("%s denied", boundary.Name)
-				result.Diagnostics = append(result.Diagnostics, fmt.Sprintf(
-					"%s denied: expected sealed release %s targeting %s; observed release %s targeting %s: %s",
-					boundary.Name, candidate.ID, commit, observed.Release.CandidateID,
-					observed.Release.TargetCommit, strings.TrimSpace(string(output)),
-				))
-				return result
-			}
 		}
-		result.Effects = append(result.Effects, boundary.Name)
+		command := exec.Command("/bin/bash", arguments...)
+		command.Dir = repositoryRoot
+		command.Env = boundaryEnv
+		if output, err := command.CombinedOutput(); err != nil {
+			result.err = fmt.Errorf("%s denied", boundary.Name)
+			result.Diagnostics = appendDiagnostics(result.Diagnostics, output)
+			result.Effects = readReleaseProcessEffects(t, effectLog, root)
+			return result
+		}
+		effect := releaseProcessEffectCommand(fakeBin, boundary)
+		effect.Env = boundaryEnv
+		if output, err := effect.CombinedOutput(); err != nil {
+			t.Fatalf("fake %s effect failed: %v: %s", boundary.Name, err, output)
+		}
 	}
+	result.Effects = readReleaseProcessEffects(t, effectLog, root)
 	return result
+}
+
+func releaseProcessEffectCommand(fakeBin string, boundary releaseProcessBoundary) *exec.Cmd {
+	switch boundary.Name {
+	case "OIDC issuance":
+		return exec.Command(filepath.Join(fakeBin, "oidc"), "issue")
+	case "draft creation":
+		return exec.Command(filepath.Join(fakeBin, "gh"), "release", "create", "v0.1.2")
+	case "asset upload":
+		return exec.Command(filepath.Join(fakeBin, "gh"), "release", "upload", "v0.1.2", "asset")
+	case "publication":
+		return exec.Command(filepath.Join(fakeBin, "gh"), "release", "edit", "v0.1.2", "--draft=false")
+	case "Homebrew mutation":
+		return exec.Command(filepath.Join(fakeBin, "git"), "push", "origin", "HEAD:main")
+	default:
+		panic("unknown release process boundary " + boundary.Name)
+	}
+}
+
+func readReleaseProcessEffects(t *testing.T, path, root string) []string {
+	t.Helper()
+	var effects []string
+	for _, effect := range readReleaseScenarioEffects(t, path, root) {
+		switch {
+		case effect.Tool == "oidc":
+			effects = append(effects, "OIDC issuance")
+		case effect.Tool == "gh" && strings.HasPrefix(effect.Args, "release create "):
+			effects = append(effects, "draft creation")
+		case effect.Tool == "gh" && strings.HasPrefix(effect.Args, "release upload "):
+			effects = append(effects, "asset upload")
+		case effect.Tool == "gh" && strings.HasPrefix(effect.Args, "release edit "):
+			effects = append(effects, "publication")
+		case effect.Tool == "git" && strings.HasPrefix(effect.Args, "push "):
+			effects = append(effects, "Homebrew mutation")
+		}
+	}
+	return effects
 }
 
 func writeReleaseProcessJSON(t *testing.T, root, name string, value any) string {
@@ -727,6 +756,7 @@ set -euo pipefail
 printf 'git\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
 case "${1:-}" in
   fetch|checkout) exit 0 ;;
+  push) [[ "${FIXTURE_ALLOW_MUTATION:-}" == true ]] ;;
   rev-parse) printf '%s\n' "$FIXTURE_TAG_COMMIT" ;;
   merge-base) [[ "$FIXTURE_ANCESTOR" == true ]] ;;
   tag) [[ -z "$FIXTURE_TAGS" ]] || printf '%s\n' "$FIXTURE_TAGS" ;;
@@ -756,6 +786,13 @@ if [[ "${1:-}" == api && "${2:-}" == graphql ]]; then
   exit 0
 fi
 case "$args" in
+  release\ create\ *|release\ upload\ *|release\ edit\ *)
+    [[ "${FIXTURE_ALLOW_MUTATION:-}" == true ]] || {
+      echo "GitHub mutation is forbidden" >&2
+      exit 98
+    }
+    exit 0
+    ;;
   *"git/ref/heads/main"*) printf 'commit\t%s\n' "$FIXTURE_MAIN_COMMIT" ;;
   *"git/ref/tags/"*) printf 'commit\t%s\n' "$FIXTURE_TAG_COMMIT" ;;
   *"compare/"*)
@@ -781,6 +818,11 @@ esac
 set -euo pipefail
 printf 'releasecandidate\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
 exec "$FIXTURE_REAL_RELEASECANDIDATE" "$@"
+`,
+		"oidc": `#!/usr/bin/env bash
+set -euo pipefail
+printf 'oidc\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
+[[ "${FIXTURE_ALLOW_MUTATION:-}" == true ]]
 `,
 	}
 	names := make([]string, 0, len(files))
