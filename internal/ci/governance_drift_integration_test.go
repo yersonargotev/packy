@@ -174,6 +174,17 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 		!strings.Contains(sync, "needs.governance-drift.result == 'success'") {
 		t.Fatal("affected workflows do not block their first action on governance drift")
 	}
+	gate := readFile(t, filepath.Join(root, "scripts", "gate-governance-drift.sh"))
+	for _, required := range []string{
+		"--recovery-tag",
+		"--mode recovery-contract",
+		"--release-tag \"$recovery_tag\"",
+		"--contract \"$contract\"",
+	} {
+		if !strings.Contains(gate, required) {
+			t.Fatalf("recovery-aware governance gate missing %q", required)
+		}
+	}
 }
 
 func TestGovernanceDriftAdaptersContainNoSelfCorrectionPath(t *testing.T) {
