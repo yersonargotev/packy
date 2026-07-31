@@ -50,6 +50,30 @@ type releaseScenarioResult struct {
 	err          error
 }
 
+type releaseProcessBoundary struct {
+	Name        string
+	ReleaseMode string
+}
+
+type releaseProcessFixture struct {
+	Name     string
+	Boundary string
+	Inject   func(*releaseProcessObservation)
+}
+
+type releaseProcessObservation struct {
+	TagCommit  string
+	MainCommit string
+	Ancestor   bool
+	Release    *release.Release
+}
+
+type releaseProcessResult struct {
+	Effects     []string
+	Diagnostics []string
+	err         error
+}
+
 var releaseCandidateBuild struct {
 	sync.Once
 	root string
@@ -223,6 +247,273 @@ func TestReleaseScenarioResultIsDeterministicAndMutationSensitive(t *testing.T) 
 	if mutated.Admission.ReleaseCommit != mutatedCommit || mutated.VerifiedRefs.ReleaseCommit != mutatedCommit {
 		t.Fatalf("mutated identities did not seal %s: admission=%#v refs=%#v", mutatedCommit, mutated.Admission, mutated.VerifiedRefs)
 	}
+}
+
+func TestReleaseScenarioRejectsIdentityDriftAtEveryPrivilegedBoundary(t *testing.T) {
+	commit := strings.Repeat("c", 40)
+	moved := strings.Repeat("e", 40)
+	boundaries := releaseProcessBoundaries()
+	var fixtures []releaseProcessFixture
+	for _, boundary := range boundaries {
+		boundary := boundary
+		fixtures = append(fixtures,
+			releaseProcessFixture{
+				Name: "tag movement", Boundary: boundary.Name,
+				Inject: func(observed *releaseProcessObservation) {
+					observed.TagCommit = moved
+				},
+			},
+			releaseProcessFixture{
+				Name: "loss of protected-main ancestry", Boundary: boundary.Name,
+				Inject: func(observed *releaseProcessObservation) {
+					observed.Ancestor = false
+				},
+			},
+		)
+		if boundary.ReleaseMode != "" {
+			fixtures = append(fixtures,
+				releaseProcessFixture{
+					Name: "mismatched release target", Boundary: boundary.Name,
+					Inject: func(observed *releaseProcessObservation) {
+						observed.Release.TargetCommit = moved
+					},
+				},
+				releaseProcessFixture{
+					Name: "missing release", Boundary: boundary.Name,
+					Inject: func(observed *releaseProcessObservation) {
+						observed.Release = nil
+					},
+				},
+				releaseProcessFixture{
+					Name: "divergent sealed release", Boundary: boundary.Name,
+					Inject: func(observed *releaseProcessObservation) {
+						observed.Release.CandidateID = strings.Repeat("f", 64)
+					},
+				},
+			)
+		}
+	}
+
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.Boundary+"/"+fixture.Name, func(t *testing.T) {
+			result := runReleaseProcessScenario(t, fixture)
+			if result.err == nil {
+				t.Fatalf("%s at %s was accepted", fixture.Name, fixture.Boundary)
+			}
+			diagnostic := strings.Join(result.Diagnostics, "\n")
+			for _, want := range []string{fixture.Boundary, "expected", commit, "observed"} {
+				if !strings.Contains(diagnostic, want) {
+					t.Fatalf("diagnostic %q does not name %q", diagnostic, want)
+				}
+			}
+			boundaryIndex := releaseProcessBoundaryIndex(t, fixture.Boundary)
+			if len(result.Effects) != boundaryIndex {
+				t.Fatalf("effects = %#v, want exactly the %d effects before %s", result.Effects, boundaryIndex, fixture.Boundary)
+			}
+			for index, effect := range result.Effects {
+				if effect != boundaries[index].Name {
+					t.Fatalf("effect %d = %q, want %q", index, effect, boundaries[index].Name)
+				}
+			}
+		})
+	}
+}
+
+func TestReleaseScenarioAllowsProtectedMainToAdvanceAtEveryPrivilegedBoundary(t *testing.T) {
+	result := runReleaseProcessScenario(t, releaseProcessFixture{
+		Name: "later main advancement",
+		Inject: func(observed *releaseProcessObservation) {
+			observed.MainCommit = strings.Repeat("d", 40)
+		},
+	})
+	if result.err != nil {
+		t.Fatalf("later protected-main advancement failed: %v\n%s", result.err, strings.Join(result.Diagnostics, "\n"))
+	}
+	want := []string{
+		"OIDC issuance",
+		"draft creation",
+		"asset upload",
+		"publication",
+		"Homebrew mutation",
+	}
+	if !reflect.DeepEqual(result.Effects, want) {
+		t.Fatalf("effects = %#v, want %#v", result.Effects, want)
+	}
+}
+
+func releaseProcessBoundaries() []releaseProcessBoundary {
+	return []releaseProcessBoundary{
+		{Name: "OIDC issuance"},
+		{Name: "draft creation"},
+		{Name: "asset upload", ReleaseMode: "draft"},
+		{Name: "publication", ReleaseMode: "draft"},
+		{Name: "Homebrew mutation", ReleaseMode: "published"},
+	}
+}
+
+func releaseProcessBoundaryIndex(t *testing.T, name string) int {
+	t.Helper()
+	for index, boundary := range releaseProcessBoundaries() {
+		if boundary.Name == name {
+			return index
+		}
+	}
+	t.Fatalf("unknown release process boundary %q", name)
+	return -1
+}
+
+func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) releaseProcessResult {
+	t.Helper()
+	root := t.TempDir()
+	repositoryRoot := repoRoot(t)
+	fakeBin := filepath.Join(root, "bin")
+	if err := os.Mkdir(fakeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeReleaseScenarioFakes(t, fakeBin)
+	commit := strings.Repeat("c", 40)
+	candidate := mustCandidate(t, fixtureObservation())
+	releaseState := exactRelease(candidate, true, candidate.Subjects)
+	candidatePath := writeReleaseProcessJSON(t, root, "candidate.json", candidate)
+	provenancePath := writeReleaseProcessJSON(t, root, "provenance.json", release.ProvenanceFor(candidate))
+	releaseCandidate := releaseCandidateAdapter(t, repositoryRoot)
+	effectLog := filepath.Join(root, "effects.log")
+	runnerTemp := filepath.Join(root, "runner")
+	if err := os.Mkdir(runnerTemp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{
+		"PATH=" + fakeBin + ":" + os.Getenv("PATH"),
+		"HOME=" + filepath.Join(root, "home"),
+		"XDG_CONFIG_HOME=" + filepath.Join(root, "config"),
+		"RUNNER_TEMP=" + runnerTemp,
+		"TMPDIR=" + filepath.Join(root, "tmp"),
+		"GITHUB_REPOSITORY=yersonargotev/packy",
+		"FIXTURE_EFFECT_LOG=" + effectLog,
+		"FIXTURE_TAGS=",
+		"FIXTURE_RELEASES=",
+		"FIXTURE_RELEASE_ID=",
+		"FIXTURE_RELEASE_STATE=",
+		"FIXTURE_RELEASE_BODY=",
+		"FIXTURE_TAG=v0.1.2",
+	}
+	for _, directory := range []string{filepath.Join(root, "home"), filepath.Join(root, "config"), filepath.Join(root, "tmp")} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := releaseProcessResult{}
+	for index, boundary := range releaseProcessBoundaries() {
+		observed := releaseProcessObservation{
+			TagCommit:  commit,
+			MainCommit: commit,
+			Ancestor:   true,
+		}
+		if boundary.ReleaseMode != "" {
+			state := releaseState
+			if boundary.ReleaseMode == "published" {
+				state.Draft = false
+			}
+			observed.Release = &state
+		}
+		if fixture.Inject != nil && (fixture.Boundary == "" || fixture.Boundary == boundary.Name) {
+			fixture.Inject(&observed)
+		}
+		boundaryEnv := append([]string(nil), env...)
+		boundaryEnv = append(boundaryEnv,
+			"FIXTURE_TAG_COMMIT="+observed.TagCommit,
+			"FIXTURE_MAIN_COMMIT="+observed.MainCommit,
+			"FIXTURE_ANCESTOR="+fmt.Sprint(observed.Ancestor),
+		)
+		refOutput := filepath.Join(root, fmt.Sprintf("verified-ref-%d.json", index))
+		command := exec.Command("/bin/bash", filepath.Join(repositoryRoot, "scripts", "verify-release-ref-state.sh"),
+			"--repository", "yersonargotev/packy",
+			"--tag", candidate.Version,
+			"--release-commit", commit,
+			"--verifier", releaseCandidate,
+			"--output", refOutput,
+		)
+		command.Dir = repositoryRoot
+		command.Env = boundaryEnv
+		if output, err := command.CombinedOutput(); err != nil {
+			result.err = fmt.Errorf("%s denied", boundary.Name)
+			result.Diagnostics = append(result.Diagnostics, fmt.Sprintf(
+				"%s denied: expected tag and release commit %s in protected main; observed tag %s, main %s, ancestry %t: %s",
+				boundary.Name, commit, observed.TagCommit, observed.MainCommit, observed.Ancestor, strings.TrimSpace(string(output)),
+			))
+			return result
+		}
+		if boundary.ReleaseMode != "" {
+			if observed.Release == nil {
+				result.err = fmt.Errorf("%s denied", boundary.Name)
+				result.Diagnostics = append(result.Diagnostics, fmt.Sprintf(
+					"%s denied: expected sealed release %s targeting %s; observed release missing",
+					boundary.Name, candidate.ID, commit,
+				))
+				return result
+			}
+			statePath := writeReleaseProcessState(t, root, index, *observed.Release)
+			command = exec.Command(releaseCandidate, "verify-state",
+				"--candidate", candidatePath,
+				"--provenance", provenancePath,
+				"--state", statePath,
+				"--mode", boundary.ReleaseMode,
+			)
+			command.Env = boundaryEnv
+			if output, err := command.CombinedOutput(); err != nil {
+				result.err = fmt.Errorf("%s denied", boundary.Name)
+				result.Diagnostics = append(result.Diagnostics, fmt.Sprintf(
+					"%s denied: expected sealed release %s targeting %s; observed release %s targeting %s: %s",
+					boundary.Name, candidate.ID, commit, observed.Release.CandidateID,
+					observed.Release.TargetCommit, strings.TrimSpace(string(output)),
+				))
+				return result
+			}
+		}
+		result.Effects = append(result.Effects, boundary.Name)
+	}
+	return result
+}
+
+func writeReleaseProcessJSON(t *testing.T, root, name string, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeReleaseProcessState(t *testing.T, root string, index int, state release.Release) string {
+	t.Helper()
+	assets := make([]map[string]string, len(state.Assets))
+	for index, asset := range state.Assets {
+		assets[index] = map[string]string{"name": asset.Name, "digest": "sha256:" + asset.SHA256}
+	}
+	return writeReleaseProcessJSON(t, root, fmt.Sprintf("release-state-%d.json", index), struct {
+		CandidateID        string              `json:"candidate_id"`
+		Provenance         release.Provenance  `json:"provenance"`
+		Version            string              `json:"version"`
+		Repository         string              `json:"repository"`
+		Ref                string              `json:"ref"`
+		TargetCommit       string              `json:"target_commit"`
+		Workflow           string              `json:"workflow"`
+		WorkflowSHA        string              `json:"workflow_sha"`
+		ReleaseNotesSHA256 string              `json:"release_notes_sha256"`
+		Draft              bool                `json:"draft"`
+		Assets             []map[string]string `json:"assets"`
+	}{
+		CandidateID: state.CandidateID, Provenance: state.Provenance, Version: state.Version,
+		Repository: state.Repository, Ref: state.Ref, TargetCommit: state.TargetCommit,
+		Workflow: state.Workflow, WorkflowSHA: state.WorkflowSHA,
+		ReleaseNotesSHA256: state.ReleaseNotesSHA256, Draft: state.Draft, Assets: assets,
+	})
 }
 
 func runReleaseScenario(t *testing.T, scenario releaseScenario) releaseScenarioResult {
