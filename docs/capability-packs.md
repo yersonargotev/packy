@@ -156,6 +156,14 @@ deletes credentials, Engram memory, foreign configuration, or external data. If
 Claude is unavailable, local cleanup may proceed while user MCP ownership is
 retained for later official removal.
 
+When deactivation preserves a Packy-owned projection, the Pack intent becomes
+inactive but retains its exact version, surface, all/custom selection, resource
+contributors, fingerprint, and adapter provenance. Status reports this as
+`inactive-with-residuals`, distinct from `inactive-clean` and
+`recovery-required`. Repeating the same deactivation freshly inspects those
+residuals without reactivating the Pack; a now-exact final-contributor residual
+can be removed, while drifted or unmanaged content remains preserved.
+
 Manifest-v4 custom selections can be deactivated incrementally by repeating
 `--resource` for selected operational roots:
 

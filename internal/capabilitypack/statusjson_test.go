@@ -60,7 +60,7 @@ func TestStatusJSONCarriesFocusedResourceReadinessAndRequirement(t *testing.T) {
 		Entries: []StatusEntry{{Pack: Pack{ID: "app"}, Surface: SurfaceCodex, Resources: []ResourceStatus{resource}}},
 		Focused: &resource, Requirement: &StatusRequirement{Resource: resource.Resource, Readiness: "usable", Satisfied: false},
 	}).JSONReport(true)
-	if report.SchemaVersion != 6 || report.Focused == nil || report.Focused.Resource != resource.Resource || report.Focused.Readiness.Usable.State != "unknown" {
+	if report.SchemaVersion != StatusSchemaVersion || report.Focused == nil || report.Focused.Resource != resource.Resource || report.Focused.Readiness.Usable.State != "unknown" {
 		t.Fatalf("focused JSON = %#v", report)
 	}
 	if report.Requirement == nil || report.Requirement.Satisfied || report.Requirement.Readiness != "usable" {
