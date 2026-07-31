@@ -36,9 +36,9 @@ func TestReleaseWorkflowClassifiesTagPushAndManualModes(t *testing.T) {
 		"type: boolean",
 		"Normalize and seal release identity read-only",
 		"Classify event and seal immutable candidate",
-		"mode=fresh",
-		"true) mode=dry-run",
-		"false) mode=recovery",
+		"requested_mode=dry-run",
+		"requested_mode=recovery",
+		"releasecandidate admit",
 		`[[ "$tag" =~ ^v0\.[0-9]+\.[0-9]+$ ]]`,
 		"git fetch --force origin main 'refs/tags/*:refs/tags/*'",
 		"scripts/build-release-artifacts.sh",
@@ -77,11 +77,20 @@ func TestReleaseWorkflowClassifiesTagPushAndManualModes(t *testing.T) {
 
 	recovery := dryRun
 	recovery.inputDryRun = "false"
+	recovery.releaseID = "R_release"
+	recovery.releaseState = "draft"
+	recovery.originalRunID = "12345"
 	output, err = runReleaseEventFixture(t, text, recovery)
 	if err != nil {
 		t.Fatalf("valid exact-tag recovery should remain available: %v", err)
 	}
 	assertReleaseEventOutput(t, output, "recovery", recovery.tag, recovery.tagCommit)
+
+	absentRecovery := dryRun
+	absentRecovery.inputDryRun = "false"
+	if _, err := runReleaseEventFixture(t, text, absentRecovery); err == nil {
+		t.Fatal("manual recovery without an existing sealed same-tag release unexpectedly passed")
+	}
 }
 
 func TestReleaseWorkflowRejectsUnauthorizedTriggersAndVersions(t *testing.T) {
@@ -138,6 +147,9 @@ func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *test
 	recovery.mainCommit = strings.Repeat("b", 40)
 	recovery.eventSHA = recovery.mainCommit
 	recovery.inputTag, recovery.inputDryRun = recovery.tag, "false"
+	recovery.releaseID = "R_release"
+	recovery.releaseState = "draft"
+	recovery.originalRunID = "12345"
 	if _, err := runReleaseEventFixture(t, text, recovery); err != nil {
 		t.Fatalf("later main advancement should preserve an ancestral sealed candidate: %v", err)
 	}
@@ -159,13 +171,83 @@ func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *test
 	}
 }
 
+func TestReleaseWorkflowRecoveryUsesOnlyOriginalRetainedCandidate(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+	build := releaseWorkflowJob(t, text, "build")
+	validate := releaseWorkflowJob(t, text, "validate-release-evidence")
+	attest := releaseWorkflowJob(t, text, "attest")
+	publish := releaseWorkflowJob(t, text, "publish-github")
+
+	for _, block := range []string{build, validate, attest, publish} {
+		for _, want := range []string{
+			"needs.normalize.outputs.original_run_id",
+			"run-id:",
+			"github-token: ${{ github.token }}",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("recovery consumer must retrieve original-run artifacts with %q", want)
+			}
+		}
+	}
+	for _, want := range []string{
+		"if: needs.normalize.outputs.mode != 'recovery'",
+		"Build four binaries, deterministic SBOM, and SHA256SUMS once",
+		"Retrieve original sealed candidate for recovery",
+		"Verify retained recovery bytes against the original candidate",
+	} {
+		if !strings.Contains(build, want) {
+			t.Fatalf("build job must keep recovery away from rebuilding with %q", want)
+		}
+	}
+	for _, forbidden := range []string{"scripts/build-release-artifacts.sh", "run-claude-smoke.sh", "releasecandidate create"} {
+		recoverySteps := releaseWorkflowStep(t, parseReleaseWorkflow(t, text), "Retrieve original publication metadata for recovery").Text
+		if strings.Contains(recoverySteps, forbidden) {
+			t.Fatalf("recovery metadata retrieval unexpectedly contains %q", forbidden)
+		}
+	}
+	if !strings.Contains(attest, "if: needs.normalize.outputs.mode == 'fresh'") {
+		t.Fatal("recovery must not issue or re-seal attestation provenance")
+	}
+}
+
+func TestReleaseWorkflowSeparatesCurrentMainGovernanceFromTagBuildIdentity(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+	normalize := releaseWorkflowJob(t, text, "normalize")
+	governance := releaseWorkflowJob(t, text, "governance-drift")
+	build := releaseWorkflowJob(t, text, "build")
+	for _, want := range []string{"main_commit:", "source_ref:", "release_state:"} {
+		if !strings.Contains(normalize, want) {
+			t.Fatalf("normalize must separately seal release and governance identity with %q", want)
+		}
+	}
+	for _, want := range []string{
+		`ref: ${{ needs.normalize.outputs.main_commit }}`,
+		`--commit "${{ needs.normalize.outputs.main_commit }}"`,
+	} {
+		if !strings.Contains(governance, want) {
+			t.Fatalf("governance must run against freshly observed current main with %q", want)
+		}
+	}
+	if !strings.Contains(build, `ref: ${{ needs.normalize.outputs.commit }}`) {
+		t.Fatal("release build must remain pinned to the sealed tag commit")
+	}
+	for _, want := range []string{
+		`--arg attestation_source_ref "${{ needs.normalize.outputs.source_ref }}"`,
+		`--source-ref "${{ needs.normalize.outputs.source_ref }}"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("tag-triggered attestation identity must be sealed and verified with %q", want)
+		}
+	}
+}
+
 func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 	workflow := parseReleaseWorkflow(t, text)
 
 	seal := releaseWorkflowStepIndex(t, workflow, "Create immutable candidate and provenance metadata", []string{
 		"releasecandidate create",
-		"--ref refs/heads/main",
+		`--ref "${{ needs.normalize.outputs.source_ref }}"`,
 		"--permission attestations=write",
 		"--permission contents=write",
 		"--permission id-token=write",
@@ -189,7 +271,7 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 		"gh attestation trusted-root",
 		"--bundle \"$bundle\"",
 		"--signer-workflow \"$GITHUB_REPOSITORY/.github/workflows/release.yml\"",
-		"--source-ref refs/heads/main",
+		`--source-ref "${{ needs.normalize.outputs.source_ref }}"`,
 		"--source-digest \"${{ needs.build.outputs.commit }}\"",
 		"--signer-digest \"${{ needs.build.outputs.commit }}\"",
 		"--custom-trusted-root",
@@ -887,6 +969,8 @@ type releaseEventFixture struct {
 	existingTags     string
 	existingReleases string
 	releaseID        string
+	releaseState     string
+	originalRunID    string
 }
 
 func baseReleaseEventFixture() releaseEventFixture {
@@ -945,9 +1029,19 @@ case "$args" in
   *"releases?per_page=100&page=1"*)
     [[ -z "$FIXTURE_RELEASES" ]] || printf '%s\n' "$FIXTURE_RELEASES"
     ;;
+  *"releases?per_page=100"*)
+    [[ -z "$FIXTURE_RELEASES" ]] || printf '%s\n' "$FIXTURE_RELEASES"
+    ;;
   *"releases?per_page=100&page="*)
     ;;
   *)
+    if [[ "$args" == release\ view* ]]; then
+      is_draft=false
+      [[ "$FIXTURE_RELEASE_STATE" == draft ]] && is_draft=true
+      jq -n --arg tag "$FIXTURE_TAG" --arg body "$FIXTURE_RELEASE_BODY" \
+        --argjson isDraft "$is_draft" '{tagName:$tag,isDraft:$isDraft,body:$body}'
+      exit 0
+    fi
     echo "unexpected gh invocation: $*" >&2
     exit 98
     ;;
@@ -959,11 +1053,19 @@ esac
 		}
 	}
 	outputPath := filepath.Join(t.TempDir(), "github-output")
+	runnerTemp := t.TempDir()
+	releaseBody := fmt.Sprintf("notes\n\n<!-- packy-release-metadata\n{\"schema_version\":1,\"candidate_id\":\"candidate\",\"target_commit\":%q,\"source_run_id\":%q,\"attestation_source_ref\":%q,\"publication_plan\":{\"source_run_id\":%q,\"attestation_source_ref\":%q}}\n-->\n",
+		fixture.tagCommit, fixture.originalRunID, "refs/tags/"+fixture.tag, fixture.originalRunID, "refs/tags/"+fixture.tag)
 	cmd := exec.Command("/bin/bash", "-c", script)
 	cmd.Dir = repoRoot(t)
 	cmd.Env = []string{
-		"PATH=" + bin + ":/usr/bin:/bin",
+		"PATH=" + bin + ":" + os.Getenv("PATH"),
 		"HOME=" + t.TempDir(),
+		"XDG_CONFIG_HOME=" + t.TempDir(),
+		"GOCACHE=" + t.TempDir(),
+		"GOPATH=" + goEnv(t, "GOPATH"),
+		"GOMODCACHE=" + goEnv(t, "GOMODCACHE"),
+		"RUNNER_TEMP=" + runnerTemp,
 		"GITHUB_REPOSITORY=yersonargotev/packy",
 		"GITHUB_OUTPUT=" + outputPath,
 		"EVENT_NAME=" + fixture.eventName,
@@ -979,6 +1081,9 @@ esac
 		"FIXTURE_TAGS=" + fixture.existingTags,
 		"FIXTURE_RELEASES=" + fixture.existingReleases,
 		"FIXTURE_RELEASE_ID=" + fixture.releaseID,
+		"FIXTURE_RELEASE_STATE=" + fixture.releaseState,
+		"FIXTURE_RELEASE_BODY=" + releaseBody,
+		"FIXTURE_TAG=" + fixture.tag,
 	}
 	combined, err := cmd.CombinedOutput()
 	if err != nil {
