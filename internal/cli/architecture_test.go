@@ -182,6 +182,13 @@ func importedPackages(file *ast.File) map[string]string {
 }
 
 func isImportedCall(expr ast.Expr, imports map[string]string, importPath, functionName string) bool {
+	for {
+		parenthesized, ok := expr.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expr = parenthesized.X
+	}
 	selector, ok := expr.(*ast.SelectorExpr)
 	if !ok || selector.Sel.Name != functionName {
 		return false
@@ -191,7 +198,7 @@ func isImportedCall(expr ast.Expr, imports map[string]string, importPath, functi
 
 func isImportedSelector(selector *ast.SelectorExpr, imports map[string]string, importPath string) bool {
 	identifier, ok := selector.X.(*ast.Ident)
-	return ok && imports[identifier.Name] == importPath
+	return ok && identifier.Obj == nil && imports[identifier.Name] == importPath
 }
 
 func cliGoSources(t *testing.T) []cliSource {
@@ -321,6 +328,17 @@ var classicLifecycleArchitectureNoise = "corelifecycle.NewFacade(); return execu
 			}, runE.Body.List...)
 			return true
 		}},
+		{name: "duplicate delegation through parenthesized executor", mutate: func(file *ast.File) bool {
+			runE := classicLifecycleRunE(file, "newInstallCommand")
+			call := classicLifecycleRouteCall(file, "newInstallCommand")
+			if runE == nil || call == nil {
+				return false
+			}
+			duplicate := *call
+			duplicate.Fun = &ast.ParenExpr{X: ast.NewIdent("executeClassicLifecycle")}
+			runE.Body.List = append([]ast.Stmt{&ast.ExprStmt{X: &duplicate}}, runE.Body.List...)
+			return true
+		}},
 		{name: "executor alias reassignment", mutate: func(file *ast.File) bool {
 			runE := classicLifecycleRunE(file, "newInstallCommand")
 			call := classicLifecycleRouteCall(file, "newInstallCommand")
@@ -381,6 +399,22 @@ var classicLifecycleArchitectureNoise = "corelifecycle.NewFacade(); return execu
 			}}, runE.Body.List...)
 			return true
 		}},
+		{name: "shadow facade package", mutate: func(file *ast.File) bool {
+			function := classicLifecycleFunction(file, "executeClassicLifecycle")
+			if function == nil {
+				return false
+			}
+			shadow, err := parser.ParseExpr("struct{ NewFacade func(any) any }{}")
+			if err != nil {
+				return false
+			}
+			function.Body.List = append([]ast.Stmt{&ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent("corelifecycle")},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{shadow},
+			}}, function.Body.List...)
+			return true
+		}},
 		{name: "nested return cannot satisfy route", mutate: func(file *ast.File) bool {
 			runE := classicLifecycleRunE(file, "newInstallCommand")
 			call := classicLifecycleRouteCall(file, "newInstallCommand")
@@ -421,6 +455,21 @@ var classicLifecycleArchitectureNoise = "corelifecycle.NewFacade(); return execu
 			function.Body.List = append(function.Body.List, &ast.ExprStmt{X: decoy})
 			return true
 		}},
+		{name: "RunE reassignment bypasses route", mutate: func(file *ast.File) bool {
+			function := classicLifecycleFunction(file, "newInstallCommand")
+			if function == nil {
+				return false
+			}
+			function.Body.List = append(function.Body.List, &ast.AssignStmt{
+				Lhs: []ast.Expr{&ast.SelectorExpr{
+					X:   ast.NewIdent("cmd"),
+					Sel: ast.NewIdent("RunE"),
+				}},
+				Tok: token.ASSIGN,
+				Rhs: []ast.Expr{ast.NewIdent("bypassClassicLifecycle")},
+			})
+			return true
+		}},
 		{name: "facade outside executor", mutate: func(file *ast.File) bool {
 			function := classicLifecycleFunction(file, "newInstallCommand")
 			call := classicLifecycleFacadeCreation(file)
@@ -428,6 +477,17 @@ var classicLifecycleArchitectureNoise = "corelifecycle.NewFacade(); return execu
 				return false
 			}
 			function.Body.List = append(function.Body.List, &ast.ExprStmt{X: call})
+			return true
+		}},
+		{name: "duplicate parenthesized facade creation", mutate: func(file *ast.File) bool {
+			function := classicLifecycleFunction(file, "executeClassicLifecycle")
+			call := classicLifecycleFacadeCreation(file)
+			if function == nil || call == nil {
+				return false
+			}
+			duplicate := *call
+			duplicate.Fun = &ast.ParenExpr{X: duplicate.Fun}
+			function.Body.List = append(function.Body.List, &ast.ExprStmt{X: &duplicate})
 			return true
 		}},
 		{name: "duplicate preview through alias", mutate: func(file *ast.File) bool {
@@ -684,6 +744,25 @@ func classicLifecycleRunE(file *ast.File, functionName string) *ast.FuncLit {
 	if returned == nil {
 		return nil
 	}
+	returnedObjects := classicLifecycleAliasedObjects(function.Body, returned)
+	reassigned := false
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for _, left := range assignment.Lhs {
+			selector, ok := left.(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "RunE" {
+				object := classicLifecycleExpressionObject(selector.X)
+				reassigned = reassigned || object != nil && returnedObjects[object]
+			}
+		}
+		return true
+	})
+	if reassigned {
+		return nil
+	}
 	for _, statement := range function.Body.List {
 		assignment, ok := statement.(*ast.AssignStmt)
 		if !ok {
@@ -716,6 +795,42 @@ func classicLifecycleRunE(file *ast.File, functionName string) *ast.FuncLit {
 		}
 	}
 	return nil
+}
+
+func classicLifecycleAliasedObjects(node ast.Node, root *ast.Object) map[*ast.Object]bool {
+	objects := map[*ast.Object]bool{root: true}
+	for changed := true; changed; {
+		changed = false
+		ast.Inspect(node, func(node ast.Node) bool {
+			var names []*ast.Ident
+			var values []ast.Expr
+			switch node := node.(type) {
+			case *ast.AssignStmt:
+				for _, expression := range node.Lhs {
+					identifier, _ := expression.(*ast.Ident)
+					names = append(names, identifier)
+				}
+				values = node.Rhs
+			case *ast.ValueSpec:
+				names = node.Names
+				values = node.Values
+			default:
+				return true
+			}
+			for index, value := range values {
+				if index >= len(names) || names[index] == nil || names[index].Obj == nil {
+					continue
+				}
+				object := classicLifecycleExpressionObject(value)
+				if object != nil && objects[object] && !objects[names[index].Obj] {
+					objects[names[index].Obj] = true
+					changed = true
+				}
+			}
+			return true
+		})
+	}
+	return objects
 }
 
 func classicLifecycleRouteCall(file *ast.File, functionName string) *ast.CallExpr {
@@ -929,7 +1044,15 @@ func callFunctionIdentifier(call *ast.CallExpr) (*ast.Ident, bool) {
 	if call == nil {
 		return nil, false
 	}
-	identifier, ok := call.Fun.(*ast.Ident)
+	expression := call.Fun
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expression = parenthesized.X
+	}
+	identifier, ok := expression.(*ast.Ident)
 	return identifier, ok
 }
 
