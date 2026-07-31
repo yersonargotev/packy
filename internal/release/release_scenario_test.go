@@ -140,6 +140,57 @@ func TestReleaseScenarioValidTagPush(t *testing.T) {
 		t.Fatal("valid scenario recorded no attempted effects")
 	}
 	assertNoReleaseScenarioRemoteMutation(t, result.Effects)
+
+	wantNames := []string{
+		"HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
+		"GOCACHE", "GOMODCACHE", "GOPATH", "TMPDIR", "RUNNER_TEMP", "GITHUB_OUTPUT",
+	}
+	for _, name := range wantNames {
+		path := result.WritableRoot[name]
+		if path == "" || !pathWithinRoot(result.SandboxRoot, path) {
+			t.Fatalf("%s = %q, want a path beneath %q", name, path, result.SandboxRoot)
+		}
+	}
+
+	seen := map[string]bool{}
+	for _, effect := range result.Effects {
+		seen[effect.Tool] = true
+		switch effect.Tool {
+		case "git", "gh", "releasecandidate":
+		default:
+			t.Fatalf("unexpected external boundary %#v", effect)
+		}
+	}
+	for _, tool := range []string{"git", "gh", "releasecandidate"} {
+		if !seen[tool] {
+			t.Fatalf("scenario did not exercise fake %s boundary: %#v", tool, result.Effects)
+		}
+	}
+
+	repeated := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
+	if repeated.err != nil {
+		t.Fatalf("repeat failed: %v", repeated.err)
+	}
+	if !reflect.DeepEqual(stableReleaseScenarioResult(result), stableReleaseScenarioResult(repeated)) {
+		t.Fatalf("repeated scenario changed result:\nfirst=%#v\nsecond=%#v", result, repeated)
+	}
+
+	mutatedEvent := baseReleaseEventFixture()
+	mutatedCommit := strings.Repeat("b", 40)
+	mutatedEvent.eventSHA = mutatedCommit
+	mutatedEvent.tagCommit = mutatedCommit
+	mutatedEvent.mainCommit = mutatedCommit
+	mutated := runReleaseScenario(t, releaseScenario{Event: mutatedEvent})
+	if mutated.err != nil {
+		t.Fatalf("mutated valid scenario failed: %v", mutated.err)
+	}
+	if reflect.DeepEqual(result.Admission, mutated.Admission) ||
+		reflect.DeepEqual(result.VerifiedRefs, mutated.VerifiedRefs) {
+		t.Fatalf("sealed identities ignored commit mutation: first=%#v mutated=%#v", result, mutated)
+	}
+	if mutated.Admission.ReleaseCommit != mutatedCommit || mutated.VerifiedRefs.ReleaseCommit != mutatedCommit {
+		t.Fatalf("mutated identities did not seal %s: admission=%#v refs=%#v", mutatedCommit, mutated.Admission, mutated.VerifiedRefs)
+	}
 }
 
 func TestReleaseScenarioRejectsMalformedEventBeforeAdmission(t *testing.T) {
@@ -167,44 +218,6 @@ func TestReleaseScenarioRejectsMalformedEventBeforeAdmission(t *testing.T) {
 	}
 }
 
-func TestReleaseScenarioUsesDisposableRoots(t *testing.T) {
-	result := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
-	if result.err != nil {
-		t.Fatal(result.err)
-	}
-	wantNames := []string{
-		"HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
-		"GOCACHE", "GOMODCACHE", "GOPATH", "TMPDIR", "RUNNER_TEMP", "GITHUB_OUTPUT",
-	}
-	for _, name := range wantNames {
-		path := result.WritableRoot[name]
-		if path == "" || !pathWithinRoot(result.SandboxRoot, path) {
-			t.Fatalf("%s = %q, want a path beneath %q", name, path, result.SandboxRoot)
-		}
-	}
-}
-
-func TestReleaseScenarioUsesFakeExternalBoundaries(t *testing.T) {
-	result := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
-	if result.err != nil {
-		t.Fatal(result.err)
-	}
-	seen := map[string]bool{}
-	for _, effect := range result.Effects {
-		seen[effect.Tool] = true
-		switch effect.Tool {
-		case "git", "gh", "releasecandidate":
-		default:
-			t.Fatalf("unexpected external boundary %#v", effect)
-		}
-	}
-	for _, tool := range []string{"git", "gh", "releasecandidate"} {
-		if !seen[tool] {
-			t.Fatalf("scenario did not exercise fake %s boundary: %#v", tool, result.Effects)
-		}
-	}
-}
-
 func TestReleaseScenarioFakeGitHubRejectsGraphQLMutation(t *testing.T) {
 	root := t.TempDir()
 	fakeBin := filepath.Join(root, "bin")
@@ -222,34 +235,6 @@ func TestReleaseScenarioFakeGitHubRejectsGraphQLMutation(t *testing.T) {
 	}
 	if output, err := command.CombinedOutput(); err == nil {
 		t.Fatalf("GraphQL mutation unexpectedly crossed the fake boundary:\n%s", output)
-	}
-}
-
-func TestReleaseScenarioResultIsDeterministicAndMutationSensitive(t *testing.T) {
-	first := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
-	second := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
-	if first.err != nil || second.err != nil {
-		t.Fatalf("repeat failed: first=%v second=%v", first.err, second.err)
-	}
-	if !reflect.DeepEqual(stableReleaseScenarioResult(first), stableReleaseScenarioResult(second)) {
-		t.Fatalf("repeated scenario changed result:\nfirst=%#v\nsecond=%#v", first, second)
-	}
-
-	mutatedEvent := baseReleaseEventFixture()
-	mutatedCommit := strings.Repeat("b", 40)
-	mutatedEvent.eventSHA = mutatedCommit
-	mutatedEvent.tagCommit = mutatedCommit
-	mutatedEvent.mainCommit = mutatedCommit
-	mutated := runReleaseScenario(t, releaseScenario{Event: mutatedEvent})
-	if mutated.err != nil {
-		t.Fatalf("mutated valid scenario failed: %v", mutated.err)
-	}
-	if reflect.DeepEqual(first.Admission, mutated.Admission) ||
-		reflect.DeepEqual(first.VerifiedRefs, mutated.VerifiedRefs) {
-		t.Fatalf("sealed identities ignored commit mutation: first=%#v mutated=%#v", first, mutated)
-	}
-	if mutated.Admission.ReleaseCommit != mutatedCommit || mutated.VerifiedRefs.ReleaseCommit != mutatedCommit {
-		t.Fatalf("mutated identities did not seal %s: admission=%#v refs=%#v", mutatedCommit, mutated.Admission, mutated.VerifiedRefs)
 	}
 }
 
@@ -408,10 +393,6 @@ func TestReleaseScenarioRejectsUnavailableOrDivergentRetainedEvidenceBeforePrivi
 }
 
 func TestReleaseScenarioDistinguishesFreshPublicationFromSafeResumeAndCannotRecreateDisappearedRelease(t *testing.T) {
-	fresh := runReleaseScenario(t, releaseScenario{Event: baseReleaseEventFixture()})
-	if fresh.err != nil || fresh.Admission.Mode != release.AdmissionFresh || fresh.Admission.OriginalRunID != "" {
-		t.Fatalf("fresh admission = %#v, err=%v", fresh.Admission, fresh.err)
-	}
 	recovery := baseReleaseEventFixture()
 	recovery.eventName = "workflow_dispatch"
 	recovery.eventRef, recovery.eventRefType, recovery.eventRefName = "refs/heads/main", "branch", "main"
