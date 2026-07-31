@@ -35,18 +35,74 @@ func (v *stringList) Set(s string) error { *v = append(*v, s); return nil }
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("command is required: create, verify-provenance, or verify-state")
+		return errors.New("command is required: admit, create, verify-provenance, verify-ref-state, or verify-state")
 	}
 	switch args[0] {
+	case "admit":
+		return runAdmit(args[1:], stdout)
 	case "create":
 		return runCreate(args[1:], stdout)
 	case "verify-provenance":
 		return runVerifyProvenance(args[1:], stdout)
 	case "verify-state":
 		return runVerifyState(args[1:], stdout)
+	case "verify-ref-state":
+		return runVerifyRefState(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func runAdmit(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("releasecandidate admit", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	observationPath := flags.String("observation", "", "raw release admission observation JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("unexpected positional arguments")
+	}
+	var observed release.AdmissionObservation
+	if err := strictReadJSON(*observationPath, &observed, admissionSchema); err != nil {
+		return fmt.Errorf("read admission observation: %w", err)
+	}
+	admission, err := release.AdmitRelease(observed)
+	if err != nil {
+		return fmt.Errorf("admit release: %w", err)
+	}
+	data, err := canonicalJSON(admission)
+	if err != nil {
+		return err
+	}
+	_, err = stdout.Write(data)
+	return err
+}
+
+func runVerifyRefState(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("releasecandidate verify-ref-state", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	observationPath := flags.String("observation", "", "raw ref-state observation JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("unexpected positional arguments")
+	}
+	var observed release.RefStateObservation
+	if err := strictReadJSON(*observationPath, &observed, refStateSchema); err != nil {
+		return fmt.Errorf("read ref-state observation: %w", err)
+	}
+	verified, err := release.VerifyRefState(observed)
+	if err != nil {
+		return fmt.Errorf("verify ref state: %w", err)
+	}
+	data, err := canonicalJSON(verified)
+	if err != nil {
+		return err
+	}
+	_, err = stdout.Write(data)
+	return err
 }
 
 func runCreate(args []string, stdout io.Writer) error {
@@ -394,6 +450,18 @@ var candidateSchema = jsonShape{keys: map[string]jsonShape{"id": stringScalar, "
 var provenanceSchema = jsonShape{keys: map[string]jsonShape{"candidate_id": stringScalar, "version": stringScalar, "repository": stringScalar, "ref": stringScalar, "commit": stringScalar, "workflow": stringScalar, "workflow_sha": stringScalar, "release_notes_sha256": stringScalar, "permissions": {array: &permissionShape}, "subjects": {array: &subjectShape}}}
 var assetShape = jsonShape{keys: map[string]jsonShape{"name": stringScalar, "digest": stringScalar}}
 var stateSchema = jsonShape{keys: map[string]jsonShape{"candidate_id": stringScalar, "provenance": provenanceSchema, "version": stringScalar, "repository": stringScalar, "ref": stringScalar, "target_commit": stringScalar, "workflow": stringScalar, "workflow_sha": stringScalar, "release_notes_sha256": stringScalar, "draft": boolScalar, "assets": {array: &assetShape}}}
+var admissionSchema = jsonShape{keys: map[string]jsonShape{
+	"event_name": stringScalar, "event_ref": stringScalar, "requested_mode": stringScalar,
+	"repository": stringScalar, "tag": stringScalar, "tag_commit": stringScalar,
+	"event_commit": stringScalar, "current_main": stringScalar, "latest_version": stringScalar,
+	"tag_in_main": boolScalar, "release_present": boolScalar, "release_tag": stringScalar,
+	"release_state": stringScalar, "release_commit": stringScalar, "release_sealed": boolScalar, "original_run_id": stringScalar,
+	"candidate_locator": stringScalar,
+}}
+var refStateSchema = jsonShape{keys: map[string]jsonShape{
+	"tag": stringScalar, "expected_tag_commit": stringScalar, "remote_tag_commit": stringScalar,
+	"release_commit": stringScalar, "current_main": stringScalar, "release_in_main": boolScalar,
+}}
 
 func strictReadJSON(path string, out any, schema jsonShape) error {
 	data, err := readRegularFile(path)
