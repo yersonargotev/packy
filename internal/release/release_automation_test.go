@@ -174,6 +174,28 @@ func TestReleaseWorkflowSealsCandidateAndRevalidatesPrivilegedBoundaries(t *test
 	}
 }
 
+func TestReleaseWorkflowAcquiresBoundaryAdapterOutsideRetainedRecoveryMetadata(t *testing.T) {
+	text := readReleaseWorkflow(t, repoRoot(t))
+	for _, job := range []string{"attest", "publish-github", "homebrew"} {
+		block := releaseWorkflowJob(t, text, job)
+		for _, want := range []string{
+			"Check out trusted release boundary adapter",
+			"ref: ${{ github.sha }}",
+			"path: release-boundary",
+			"sparse-checkout: scripts",
+			"persist-credentials: false",
+			"release-boundary/scripts/verify-release-boundary.sh",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("%s must acquire the trusted boundary adapter independently of retained metadata: missing %q", job, want)
+			}
+		}
+	}
+	if strings.Contains(releaseWorkflowJob(t, text, "build"), "cp scripts/verify-release-boundary.sh release-metadata/") {
+		t.Fatal("the boundary adapter must remain independent of retained candidate metadata")
+	}
+}
+
 func TestReleaseWorkflowAdmissionPassesRawReleaseMetadataFacts(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 	normalize := readReleaseEventNormalizer(t, repoRoot(t))
@@ -445,7 +467,7 @@ func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 		"verify-release-boundary.sh",
 		`--candidate "$candidate"`,
 		`--provenance "$provenance"`,
-		`--state "$RUNNER_TEMP/state.json"`,
+		`--state-output "$RUNNER_TEMP/boundary-state.json"`,
 	} {
 		if !strings.Contains(publishStep, want) {
 			t.Fatalf("publication boundaries must use sealed release-state verification %q", want)
@@ -791,7 +813,7 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 		"sha256sum --check SHA256SUMS",
 		"publication_plan.homebrew.sha256",
 		"--boundary 'Homebrew mutation'",
-		"--state \"$RUNNER_TEMP/published-release-state.json\" --mode published",
+		"--state-output \"$RUNNER_TEMP/boundary-state.json\" --mode published",
 		"tap remote formula does not match the sealed destination plan",
 		"git push --dry-run origin HEAD:main",
 		"git push origin HEAD:main",

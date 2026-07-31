@@ -342,6 +342,29 @@ func TestReleaseScenarioAllowsProtectedMainToAdvanceAtEveryPrivilegedBoundary(t 
 	}
 }
 
+func TestReleaseScenarioReacquiresReleaseStateAfterEarlierEffects(t *testing.T) {
+	moved := strings.Repeat("e", 40)
+	result := runReleaseProcessScenario(t, releaseProcessFixture{
+		Name:     "release target changed after asset upload",
+		Boundary: "publication",
+		Inject: func(observed *releaseProcessObservation) {
+			observed.Release.TargetCommit = moved
+		},
+	})
+	if result.err == nil {
+		t.Fatal("publication used release state captured before the earlier asset effect")
+	}
+	if !containsDiagnostic(result.Diagnostics, "publication denied") ||
+		!containsDiagnostic(result.Diagnostics, "observed") ||
+		!containsDiagnostic(result.Diagnostics, moved) {
+		t.Fatalf("diagnostics = %#v, want freshly observed publication drift", result.Diagnostics)
+	}
+	want := []string{"OIDC issuance", "draft creation", "asset upload"}
+	if !reflect.DeepEqual(result.Effects, want) {
+		t.Fatalf("effects = %#v, want only earlier effects %#v", result.Effects, want)
+	}
+}
+
 func releaseProcessBoundaries() []releaseProcessBoundary {
 	return []releaseProcessBoundary{
 		{Name: "OIDC issuance"},
@@ -393,7 +416,6 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 		"FIXTURE_EFFECT_LOG=" + effectLog,
 		"FIXTURE_TAGS=",
 		"FIXTURE_RELEASES=",
-		"FIXTURE_RELEASE_ID=",
 		"FIXTURE_RELEASE_STATE=",
 		"FIXTURE_RELEASE_BODY=",
 		"FIXTURE_TAG=v0.1.2",
@@ -428,6 +450,12 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			"FIXTURE_MAIN_COMMIT="+observed.MainCommit,
 			"FIXTURE_ANCESTOR="+fmt.Sprint(observed.Ancestor),
 		)
+		if observed.Release == nil {
+			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=", "FIXTURE_RELEASE_JSON=")
+		} else {
+			releaseJSON := writeReleaseProcessObservation(t, root, index, *observed.Release)
+			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=R_release", "FIXTURE_RELEASE_JSON="+releaseJSON)
+		}
 		refOutput := filepath.Join(root, fmt.Sprintf("verified-ref-%d.json", index))
 		arguments := []string{
 			filepath.Join(repositoryRoot, "scripts", "verify-release-boundary.sh"),
@@ -439,14 +467,10 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			"--ref-output", refOutput,
 		}
 		if boundary.ReleaseMode != "" {
-			statePath := filepath.Join(root, fmt.Sprintf("release-state-%d.json", index))
-			if observed.Release != nil {
-				statePath = writeReleaseProcessState(t, root, index, *observed.Release)
-			}
 			arguments = append(arguments,
 				"--candidate", candidatePath,
 				"--provenance", provenancePath,
-				"--state", statePath,
+				"--state-output", filepath.Join(root, fmt.Sprintf("release-state-%d.json", index)),
 				"--mode", boundary.ReleaseMode,
 			)
 		}
@@ -519,29 +543,30 @@ func writeReleaseProcessJSON(t *testing.T, root, name string, value any) string 
 	return path
 }
 
-func writeReleaseProcessState(t *testing.T, root string, index int, state release.Release) string {
+func writeReleaseProcessObservation(t *testing.T, root string, index int, state release.Release) string {
 	t.Helper()
 	assets := make([]map[string]string, len(state.Assets))
 	for index, asset := range state.Assets {
 		assets[index] = map[string]string{"name": asset.Name, "digest": "sha256:" + asset.SHA256}
 	}
-	return writeReleaseProcessJSON(t, root, fmt.Sprintf("release-state-%d.json", index), struct {
-		CandidateID        string              `json:"candidate_id"`
-		Provenance         release.Provenance  `json:"provenance"`
-		Version            string              `json:"version"`
-		Repository         string              `json:"repository"`
-		Ref                string              `json:"ref"`
-		TargetCommit       string              `json:"target_commit"`
-		Workflow           string              `json:"workflow"`
-		WorkflowSHA        string              `json:"workflow_sha"`
-		ReleaseNotesSHA256 string              `json:"release_notes_sha256"`
-		Draft              bool                `json:"draft"`
-		Assets             []map[string]string `json:"assets"`
+	metadata, err := json.Marshal(struct {
+		CandidateID  string             `json:"candidate_id"`
+		Provenance   release.Provenance `json:"provenance"`
+		TargetCommit string             `json:"target_commit"`
 	}{
-		CandidateID: state.CandidateID, Provenance: state.Provenance, Version: state.Version,
-		Repository: state.Repository, Ref: state.Ref, TargetCommit: state.TargetCommit,
-		Workflow: state.Workflow, WorkflowSHA: state.WorkflowSHA,
-		ReleaseNotesSHA256: state.ReleaseNotesSHA256, Draft: state.Draft, Assets: assets,
+		CandidateID: state.CandidateID, Provenance: state.Provenance, TargetCommit: state.TargetCommit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := "notes\n\n<!-- packy-release-metadata\n" + string(metadata) + "\n-->\n"
+	return writeReleaseProcessJSON(t, root, fmt.Sprintf("release-observation-%d.json", index), struct {
+		TagName string              `json:"tagName"`
+		IsDraft bool                `json:"isDraft"`
+		Body    string              `json:"body"`
+		Assets  []map[string]string `json:"assets"`
+	}{
+		TagName: state.Version, IsDraft: state.Draft, Body: body, Assets: assets,
 	})
 }
 
@@ -803,6 +828,10 @@ case "$args" in
   *"releases?per_page=100&page="*) ;;
   *)
     if [[ "$args" == release\ view* ]]; then
+      if [[ -n "${FIXTURE_RELEASE_JSON:-}" ]]; then
+        jq . "$FIXTURE_RELEASE_JSON"
+        exit 0
+      fi
       is_draft=false
       [[ "$FIXTURE_RELEASE_STATE" == draft ]] && is_draft=true
       jq -n --arg tag "$FIXTURE_TAG" --arg body "$FIXTURE_RELEASE_BODY" \
