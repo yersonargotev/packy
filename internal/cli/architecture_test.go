@@ -470,6 +470,23 @@ var classicLifecycleArchitectureNoise = "corelifecycle.NewFacade(); return execu
 			})
 			return true
 		}},
+		{name: "dereferenced RunE reassignment bypasses route", mutate: func(file *ast.File) bool {
+			function := classicLifecycleFunction(file, "newInstallCommand")
+			if function == nil {
+				return false
+			}
+			function.Body.List = append(function.Body.List, &ast.AssignStmt{
+				Lhs: []ast.Expr{&ast.SelectorExpr{
+					X: &ast.ParenExpr{X: &ast.StarExpr{
+						X: ast.NewIdent("cmd"),
+					}},
+					Sel: ast.NewIdent("RunE"),
+				}},
+				Tok: token.ASSIGN,
+				Rhs: []ast.Expr{ast.NewIdent("bypassClassicLifecycle")},
+			})
+			return true
+		}},
 		{name: "facade outside executor", mutate: func(file *ast.File) bool {
 			function := classicLifecycleFunction(file, "newInstallCommand")
 			call := classicLifecycleFacadeCreation(file)
@@ -488,6 +505,29 @@ var classicLifecycleArchitectureNoise = "corelifecycle.NewFacade(); return execu
 			duplicate := *call
 			duplicate.Fun = &ast.ParenExpr{X: duplicate.Fun}
 			function.Body.List = append(function.Body.List, &ast.ExprStmt{X: &duplicate})
+			return true
+		}},
+		{name: "duplicate parenthesized facade method", mutate: func(file *ast.File) bool {
+			function := classicLifecycleFunction(file, "executeClassicLifecycle")
+			if function == nil {
+				return false
+			}
+			var duplicate *ast.CallExpr
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				selector, selectorOK := classicLifecycleCallSelector(call)
+				if !ok || !selectorOK || selector.Sel.Name != "Preview" {
+					return true
+				}
+				copy := *call
+				copy.Fun = &ast.ParenExpr{X: copy.Fun}
+				duplicate = &copy
+				return false
+			})
+			if duplicate == nil {
+				return false
+			}
+			function.Body.List = append(function.Body.List, &ast.ExprStmt{X: duplicate})
 			return true
 		}},
 		{name: "duplicate preview through alias", mutate: func(file *ast.File) bool {
@@ -609,7 +649,7 @@ func classicLifecycleArchitectureProblems(source []byte) []string {
 			if classicLifecycleCallsObject(call, executorObjects) {
 				routes[owner] = append(routes[owner], classicLifecycleOperation(call, imports))
 			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
+			selector, ok := classicLifecycleCallSelector(call)
 			if !ok {
 				return true
 			}
@@ -1030,6 +1070,8 @@ func classicLifecycleExpressionObject(expression ast.Expr) *ast.Object {
 		return expression.Obj
 	case *ast.ParenExpr:
 		return classicLifecycleExpressionObject(expression.X)
+	case *ast.StarExpr:
+		return classicLifecycleExpressionObject(expression.X)
 	default:
 		return nil
 	}
@@ -1054,6 +1096,22 @@ func callFunctionIdentifier(call *ast.CallExpr) (*ast.Ident, bool) {
 	}
 	identifier, ok := expression.(*ast.Ident)
 	return identifier, ok
+}
+
+func classicLifecycleCallSelector(call *ast.CallExpr) (*ast.SelectorExpr, bool) {
+	if call == nil {
+		return nil, false
+	}
+	expression := call.Fun
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expression = parenthesized.X
+	}
+	selector, ok := expression.(*ast.SelectorExpr)
+	return selector, ok
 }
 
 func classicLifecycleOperation(call *ast.CallExpr, imports map[string]string) string {
