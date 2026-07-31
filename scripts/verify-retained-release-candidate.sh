@@ -37,56 +37,29 @@ done
 for path in "$dist" "$metadata" "$verifier"; do
   [[ -n "$path" ]] || { echo "retained candidate paths and verifier are required" >&2; exit 2; }
 done
-for command in jq find sort cmp; do
+for command in jq find sort; do
   command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 1; }
 done
 [[ -x "$verifier" ]] || { echo "release candidate verifier is missing or not executable" >&2; exit 1; }
 
-candidate="$metadata/candidate.json"
-provenance="$metadata/provenance.json"
-plan="$metadata/publication-plan.json"
-draft_base="$metadata/draft-base.json"
-for path in "$candidate" "$provenance" "$plan" "$draft_base"; do
-  [[ -f "$path" && ! -L "$path" ]] || { echo "retained publication metadata is missing: $(basename "$path")" >&2; exit 1; }
-done
-
-"$verifier" verify-provenance --candidate "$candidate" --provenance "$provenance" >/dev/null
-jq -e --arg tag "$tag" --arg commit "$commit" --arg run_id "$run_id" \
-  --slurpfile candidate "$candidate" --slurpfile provenance "$provenance" --slurpfile plan "$plan" '
-  .schema_version == 1 and .candidate_id == $candidate[0].id and
-  .provenance == $provenance[0] and .target_commit == $commit and
-  .source_run_id == $run_id and .attestation_source_ref == ("refs/tags/" + $tag) and
-  .publication_plan == $plan[0] and
-  $plan[0].schema_version == 1 and $plan[0].tag == $tag and
-  $plan[0].target_commit == $commit and $plan[0].source_run_id == $run_id and
-  $plan[0].attestation_source_ref == ("refs/tags/" + $tag) and
-  $plan[0].candidate_id == $candidate[0].id and
-  $plan[0].candidate_assets == $candidate[0].subjects and
-  $candidate[0].version == $tag and $candidate[0].commit == $commit
-' "$draft_base" >/dev/null || {
-  echo "retained publication metadata diverges from the sealed recovery identity or original run" >&2
-  exit 1
-}
-
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/packy-retained-release.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
-jq -r '.subjects[].name' "$candidate" | sort > "$scratch/expected"
-find "$dist" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort > "$scratch/actual"
-cmp -s "$scratch/expected" "$scratch/actual" || {
-  echo "retained candidate artifact set is missing, expired, or unexpected" >&2
-  exit 1
-}
-while IFS=$'\t' read -r digest name; do
-  [[ "$digest" =~ ^[0-9a-f]{64}$ && -f "$dist/$name" && ! -L "$dist/$name" ]] || {
-    echo "retained candidate subject is invalid or missing: $name" >&2
-    exit 1
-  }
+printf '[]\n' > "$scratch/subjects.json"
+while IFS= read -r path; do
+  [[ -f "$path" && ! -L "$path" ]] || { echo "retained candidate entry is not a regular file" >&2; exit 1; }
+  name="$(basename "$path")"
   if command -v sha256sum >/dev/null; then
-    actual="$(sha256sum "$dist/$name" | awk '{print $1}')"
+    digest="$(sha256sum "$path" | awk '{print $1}')"
   else
-    actual="$(shasum -a 256 "$dist/$name" | awk '{print $1}')"
+    digest="$(shasum -a 256 "$path" | awk '{print $1}')"
   fi
-  [[ "$actual" == "$digest" ]] || { echo "retained candidate digest diverges for $name" >&2; exit 1; }
-done < <(jq -r '.subjects[]|[.sha256,.name]|@tsv' "$candidate")
+  jq --arg name "$name" --arg sha256 "$digest" '. + [{name:$name,sha256:$sha256}]' "$scratch/subjects.json" > "$scratch/next.json"
+  mv "$scratch/next.json" "$scratch/subjects.json"
+done < <(find "$dist" -mindepth 1 -maxdepth 1 -print | sort)
+
+"$verifier" verify-recovery --tag "$tag" --commit "$commit" --run-id "$run_id" \
+  --candidate "$metadata/candidate.json" --provenance "$metadata/provenance.json" \
+  --publication-plan "$metadata/publication-plan.json" --draft-base "$metadata/draft-base.json" \
+  --subjects "$scratch/subjects.json" >/dev/null
 
 echo "retained release candidate verified: tag=$tag commit=$commit original_run_id=$run_id"

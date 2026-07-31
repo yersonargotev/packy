@@ -121,6 +121,42 @@ func TestAdmissionSubcommandRejectsAbsentRecovery(t *testing.T) {
 	}
 }
 
+func TestVerifyRecoverySubcommandDelegatesRetainedIdentity(t *testing.T) {
+	root := t.TempDir()
+	dist, metadata := filepath.Join(root, "dist"), filepath.Join(root, "metadata")
+	os.Mkdir(dist, 0o700)
+	writeDistFixture(t, dist)
+	notes := filepath.Join(root, "notes")
+	os.WriteFile(notes, []byte("notes"), 0o600)
+	if err := run(createArgs(notes, dist, metadata), ioDiscard{}); err != nil {
+		t.Fatal(err)
+	}
+	var candidate release.Candidate
+	json.Unmarshal(mustRead(t, filepath.Join(metadata, "candidate.json")), &candidate)
+	var provenance release.Provenance
+	json.Unmarshal(mustRead(t, filepath.Join(metadata, "provenance.json")), &provenance)
+	plan := release.RecoveryPublicationPlan{SchemaVersion: 1, Tag: candidate.Version, TargetCommit: candidate.Commit, Draft: true, SourceRunID: "12345", AttestationSourceRef: "refs/tags/" + candidate.Version, CandidateID: candidate.ID, CandidateAssets: candidate.Subjects, Attestation: "attestation.bundle.jsonl"}
+	plan.Homebrew.Repository, plan.Homebrew.Path, plan.Homebrew.SHA256 = "yersonargotev/homebrew-tap", "Formula/packy.rb", strings.Repeat("a", 64)
+	draft := release.RecoveryDraftBase{SchemaVersion: 1, CandidateID: candidate.ID, Provenance: provenance, TargetCommit: candidate.Commit, SourceRunID: "12345", AttestationSourceRef: "refs/tags/" + candidate.Version, PublicationPlan: plan}
+	planPath, draftPath, subjectsPath := filepath.Join(root, "plan.json"), filepath.Join(root, "draft.json"), filepath.Join(root, "subjects.json")
+	writeJSON(t, planPath, plan)
+	writeJSON(t, draftPath, draft)
+	writeJSON(t, subjectsPath, candidate.Subjects)
+	args := []string{"verify-recovery", "--tag", candidate.Version, "--commit", candidate.Commit, "--run-id", "12345", "--candidate", filepath.Join(metadata, "candidate.json"), "--provenance", filepath.Join(metadata, "provenance.json"), "--publication-plan", planPath, "--draft-base", draftPath, "--subjects", subjectsPath}
+	var stdout bytes.Buffer
+	if err := run(args, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != "{\"verified\":true}\n" {
+		t.Fatalf("output = %q", stdout.String())
+	}
+	plan.SourceRunID = "99999"
+	writeJSON(t, planPath, plan)
+	if err := run(args, ioDiscard{}); err == nil {
+		t.Fatal("divergent original run accepted")
+	}
+}
+
 func TestCreateRejectsUnsafeFilesystemAndOverlap(t *testing.T) {
 	root := t.TempDir()
 	dist := filepath.Join(root, "dist")

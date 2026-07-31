@@ -308,10 +308,9 @@ func TestReleaseWorkflowRecoveryUsesOnlyOriginalRetainedCandidate(t *testing.T) 
 	attest := releaseWorkflowJob(t, text, "attest")
 	publish := releaseWorkflowJob(t, text, "publish-github")
 
-	for _, block := range []string{build, validate, attest, publish} {
+	for _, block := range []string{validate, attest, publish} {
 		for _, want := range []string{
 			"needs.normalize.outputs.original_run_id",
-			"run-id:",
 			"github-token: ${{ github.token }}",
 		} {
 			if !strings.Contains(block, want) {
@@ -319,19 +318,32 @@ func TestReleaseWorkflowRecoveryUsesOnlyOriginalRetainedCandidate(t *testing.T) 
 			}
 		}
 	}
+	for _, want := range []string{"needs.normalize.outputs.original_run_id", "GH_TOKEN: ${{ github.token }}", "--run-id"} {
+		if !strings.Contains(build, want) {
+			t.Fatalf("shared recovery acquisition must contain %q", want)
+		}
+	}
+	for _, block := range []string{validate, attest, publish} {
+		if !strings.Contains(block, "run-id:") {
+			t.Fatal("downstream recovery consumer must select the original artifact run")
+		}
+	}
 	for _, want := range []string{
 		"if: needs.normalize.outputs.mode != 'recovery'",
 		"Build four binaries, deterministic SBOM, and SHA256SUMS once",
-		"Retrieve original sealed candidate for recovery",
+		"Retrieve original retained recovery evidence",
+		"recovery-boundary/scripts/acquire-retained-release-candidate.sh",
 		"Verify retained recovery bytes against the original candidate",
 		"Check out trusted retained recovery adapter",
 		"ref: ${{ github.sha }}",
 		"path: recovery-boundary",
-		"sparse-checkout: scripts",
+		"sparse-checkout: |",
+		"internal",
+		"scripts",
 		"persist-credentials: false",
 		"recovery-boundary/scripts/verify-retained-release-candidate.sh",
 		`--run-id "${{ needs.normalize.outputs.original_run_id }}"`,
-		"--verifier release-metadata/releasecandidate",
+		`--verifier "$RUNNER_TEMP/releasecandidate"`,
 	} {
 		if !strings.Contains(build, want) {
 			t.Fatalf("build job must keep recovery away from rebuilding with %q", want)
@@ -346,8 +358,11 @@ func TestReleaseWorkflowRecoveryUsesOnlyOriginalRetainedCandidate(t *testing.T) 
 			t.Fatalf("recovery metadata retrieval unexpectedly contains %q", forbidden)
 		}
 	}
-	if !strings.Contains(attest, "if: needs.normalize.outputs.mode == 'fresh'") {
-		t.Fatal("recovery must not issue or re-seal attestation provenance")
+	if !strings.Contains(attest, "if: github.repository == 'yersonargotev/packy' && needs.normalize.outputs.mode == 'fresh'") {
+		t.Fatal("the entire privileged attestation job must be fresh-only")
+	}
+	if !strings.Contains(publish, "needs.attest.result == 'skipped'") || !strings.Contains(publish, "needs.attest.result == 'success'") || !strings.Contains(publish, "always()") {
+		t.Fatal("publication must require fresh attestation success or a skipped privileged job for recovery")
 	}
 	for _, want := range []string{
 		"MODE: ${{ needs.normalize.outputs.mode }}",
@@ -858,7 +873,7 @@ func TestReleaseWorkflowPublishesAuditableFinalSummary(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 	summary := releaseWorkflowJob(t, text, "release-summary")
 	for _, want := range []string{
-		"needs: [normalize, build, validate-release-evidence, inspect-release, attest, publish-github, homebrew]",
+		"needs: [normalize, build, validate-release-evidence, inspect-release, publish-github, homebrew]",
 		"Link exact published evidence",
 		"needs.normalize.outputs.tag",
 		"needs.normalize.outputs.commit",

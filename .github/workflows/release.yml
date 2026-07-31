@@ -182,38 +182,41 @@ jobs:
         with:
           ref: ${{ github.sha }}
           path: recovery-boundary
-          sparse-checkout: scripts
+          sparse-checkout: |
+            go.mod
+            go.sum
+            internal
+            scripts
           persist-credentials: false
 
-      - name: Retrieve original sealed candidate for recovery
+      - name: Set up Go for trusted recovery verifier
         if: needs.normalize.outputs.mode == 'recovery'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          name: packy-release-${{ needs.normalize.outputs.tag }}
-          path: dist
-          run-id: ${{ needs.normalize.outputs.original_run_id }}
-          github-token: ${{ github.token }}
+          go-version-file: recovery-boundary/go.mod
+          cache: true
 
-      - name: Retrieve original sealed metadata for recovery verification
+      - name: Retrieve original retained recovery evidence
         if: needs.normalize.outputs.mode == 'recovery'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: packy-release-metadata-${{ needs.normalize.outputs.tag }}
-          path: release-metadata
-          run-id: ${{ needs.normalize.outputs.original_run_id }}
-          github-token: ${{ github.token }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          recovery-boundary/scripts/acquire-retained-release-candidate.sh \
+            --repository "$GITHUB_REPOSITORY" --tag "${{ needs.normalize.outputs.tag }}" \
+            --run-id "${{ needs.normalize.outputs.original_run_id }}" \
+            --dist dist --metadata release-metadata
 
       - name: Verify retained recovery bytes against the original candidate
         if: needs.normalize.outputs.mode == 'recovery'
         run: |
           set -euo pipefail
-          chmod +x release-metadata/releasecandidate
+          (cd recovery-boundary && go build -trimpath -o "$RUNNER_TEMP/releasecandidate" ./internal/tools/releasecandidate)
           recovery-boundary/scripts/verify-retained-release-candidate.sh \
             --tag "${{ needs.normalize.outputs.tag }}" \
             --commit "${{ needs.normalize.outputs.commit }}" \
             --run-id "${{ needs.normalize.outputs.original_run_id }}" \
             --dist dist --metadata release-metadata \
-            --verifier release-metadata/releasecandidate
+            --verifier "$RUNNER_TEMP/releasecandidate"
 
   claude-smoke:
     name: Claude ${{ matrix.claude }} smoke (${{ matrix.arch }})
@@ -629,7 +632,7 @@ jobs:
   attest:
     name: Issue or verify exact build provenance
     needs: [normalize, build, inspect-release]
-    if: github.repository == 'yersonargotev/packy' && (needs.normalize.outputs.mode == 'fresh' || needs.normalize.outputs.mode == 'recovery')
+    if: github.repository == 'yersonargotev/packy' && needs.normalize.outputs.mode == 'fresh'
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -756,7 +759,12 @@ jobs:
   publish-github:
     name: Create or resume exact draft and publish once
     needs: [normalize, build, validate-release-evidence, inspect-release, attest]
-    if: github.repository == 'yersonargotev/packy' && (needs.normalize.outputs.mode == 'fresh' || needs.normalize.outputs.mode == 'recovery')
+    if: >-
+      always() && github.repository == 'yersonargotev/packy' &&
+      needs.normalize.result == 'success' && needs.build.result == 'success' &&
+      needs.validate-release-evidence.result == 'success' && needs.inspect-release.result == 'success' &&
+      ((needs.normalize.outputs.mode == 'fresh' && needs.attest.result == 'success') ||
+       (needs.normalize.outputs.mode == 'recovery' && needs.attest.result == 'skipped'))
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -1089,7 +1097,7 @@ jobs:
 
   release-summary:
     name: Report sealed release verification
-    needs: [normalize, build, validate-release-evidence, inspect-release, attest, publish-github, homebrew]
+    needs: [normalize, build, validate-release-evidence, inspect-release, publish-github, homebrew]
     if: github.repository == 'yersonargotev/packy' && (needs.normalize.outputs.mode == 'fresh' || needs.normalize.outputs.mode == 'recovery') && success()
     runs-on: ubuntu-latest
     permissions:
