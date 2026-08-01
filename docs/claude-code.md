@@ -36,9 +36,9 @@ each chosen pack or resource selection explicitly for Claude:
 
 ```sh
 packy init
-packy pack show matty
-packy pack activate matty --surface claude --dry-run
-packy pack activate matty --surface claude
+packy pack show engram
+packy pack activate engram --surface claude --dry-run
+packy pack activate engram --surface claude
 packy doctor
 ```
 

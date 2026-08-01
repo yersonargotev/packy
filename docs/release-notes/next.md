@@ -18,10 +18,10 @@ After manual cleanup, install or upgrade the binary and start fresh:
 brew upgrade packy
 packy init
 packy pack list
-packy pack show matty
-packy pack activate matty --surface codex --dry-run
-packy pack activate matty --surface codex
-packy pack status matty --surface codex
+packy pack show engram
+packy pack activate engram --surface codex --dry-run
+packy pack activate engram --surface codex
+packy pack status engram --surface codex
 ```
 
 Repeat activation explicitly for each desired pack, resource selection, and

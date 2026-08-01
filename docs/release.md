@@ -30,9 +30,9 @@ active pack and surface:
 ```bash
 brew upgrade packy
 packy init
-packy pack update matty --surface codex --dry-run
-packy pack update matty --surface codex
-packy pack status matty --surface codex
+packy pack update engram --surface codex --dry-run
+packy pack update engram --surface codex
+packy pack status engram --surface codex
 ```
 
 Direct GitHub Release users replace the `packy` binary with the newer release
@@ -201,12 +201,12 @@ packy version
 packy init --repository-url <local-checkout> --repository-ref <proved-ref>
 packy doctor
 packy pack list
-packy pack show matty
-packy pack activate matty --surface claude --dry-run
-packy pack activate matty --surface claude
-packy pack status matty --surface claude
-packy pack deactivate matty --surface claude --dry-run
-packy pack deactivate matty --surface claude
+packy pack show engram
+packy pack activate engram --surface claude --dry-run
+packy pack activate engram --surface claude
+packy pack status engram --surface claude
+packy pack deactivate engram --surface claude --dry-run
+packy pack deactivate engram --surface claude
 packy doctor
 ```
 
@@ -284,9 +284,9 @@ applies one representative activation and inspects readiness separately:
 ```bash
 packy init --repository-url <local-fixture-repo>
 packy doctor
-packy pack activate matty --surface codex --dry-run
-packy pack activate matty --surface codex
-packy pack status matty --surface codex
+packy pack activate engram --surface codex --dry-run
+packy pack activate engram --surface codex
+packy pack status engram --surface codex
 ```
 
 ## First v0.x checklist

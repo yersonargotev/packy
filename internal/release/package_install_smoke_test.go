@@ -103,7 +103,7 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 	assertSmokePathExists(t, filepath.Join(home, ".local", "share", "packy", "bundle", "skills"), "init should create only the Installed Source substrate")
 	assertSmokeExternalCalls(t, externalLog, nil)
 
-	preview := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "activate", "matty", "--surface", "codex", "--dry-run")
+	preview := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "activate", "addy", "--surface", "codex", "--dry-run")
 	if !strings.Contains(preview, "Activation dry-run plan") || !strings.Contains(preview, "Surface: codex") {
 		t.Fatalf("activation preview omitted explicit surface intent:\n%s", preview)
 	}
@@ -115,14 +115,14 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 	}
 	assertSmokeExternalCalls(t, externalLog, nil)
 
-	activation := runSmokeInteractiveCommand(t, binary, outsideCheckout, env, "y\n", "pack", "activate", "matty", "--surface", "codex")
+	activation := runSmokeInteractiveCommand(t, binary, outsideCheckout, env, "y\n", "pack", "activate", "addy", "--surface", "codex")
 	if !strings.Contains(activation, "Verified plan") || !strings.Contains(activation, "Apply result facts: verified=yes") {
 		t.Fatalf("explicit activation did not report a verified Apply:\n%s", activation)
 	}
-	assertSmokePathExists(t, filepath.Join(home, ".agents", "skills", "ask-matt"), "explicit activation should project the representative shared skill")
+	assertSmokePathExists(t, filepath.Join(home, ".agents", "skills", "api-and-interface-design"), "explicit activation should project the representative shared skill")
 	assertSmokeExternalCalls(t, externalLog, nil)
 
-	status := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "status", "matty", "--surface", "codex")
+	status := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "status", "addy", "--surface", "codex")
 	for _, want := range []string{"configured", "authorized", "usable"} {
 		if !strings.Contains(status, want) {
 			t.Fatalf("status did not report readiness dimension %q separately from Apply:\n%s", want, status)

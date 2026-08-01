@@ -167,6 +167,11 @@ type ProjectionAction struct {
 	RollbackLimits    string               `json:"rollback_limits,omitempty"`
 	Mode              ProjectionActionMode `json:"mode,omitempty"`
 	AdapterProvenance string               `json:"adapter_provenance,omitempty"`
+	// ProjectionKey identifies the physical target when several surface
+	// adapters translate different logical projection IDs to one shared target.
+	ProjectionKey  string    `json:"projection_key,omitempty"`
+	Shared         bool      `json:"shared,omitempty"`
+	DiscoverableBy []Surface `json:"discoverable_by,omitempty"`
 }
 
 func RemovalCandidate(projection ObservedProjection, mode ProjectionActionMode, content, description string) ObservedProjection {
@@ -186,6 +191,9 @@ type ObservedProjection struct {
 	ObservedFingerprint string
 	DesiredFingerprint  string
 	AdapterProvenance   string
+	ProjectionKey       string
+	Shared              bool
+	DiscoverableBy      []Surface
 	ExternallyManaged   bool
 	Action              ProjectionAction
 }
@@ -255,10 +263,21 @@ type SurfaceAlias struct {
 }
 
 type ProjectionOwnership struct {
-	ID                string   `json:"id"`
-	Contributors      []string `json:"contributors"`
-	Fingerprint       string   `json:"fingerprint"`
-	AdapterProvenance string   `json:"adapter_provenance,omitempty"`
+	ID                string                `json:"id"`
+	ProjectionID      string                `json:"projection_id,omitempty"`
+	PhysicalID        string                `json:"physical_id,omitempty"`
+	Contributors      []string              `json:"contributors"`
+	Fingerprint       string                `json:"fingerprint"`
+	AdapterProvenance string                `json:"adapter_provenance,omitempty"`
+	Authorities       []ProjectionAuthority `json:"authorities,omitempty"`
+}
+
+// ProjectionAuthority records which adapter observation may authorize
+// destructive work for one surface. Discoverability is intentionally absent:
+// seeing a shared target never creates activation authority.
+type ProjectionAuthority struct {
+	Surface           Surface `json:"surface"`
+	AdapterProvenance string  `json:"adapter_provenance"`
 }
 
 // DeletionAuthorized is lifecycle-owned policy: only the last contributor may
@@ -344,19 +363,47 @@ type ExternalEffect struct {
 }
 
 type ActivationState struct {
-	SchemaVersion int                   `json:"schema_version"`
-	Intent        ActivationIntent      `json:"intent"`
-	Intents       []ActivationIntent    `json:"intents,omitempty"`
-	Journal       *ApplyingJournal      `json:"applying_journal,omitempty"`
-	LastAttempts  []ApplyingJournal     `json:"last_attempts,omitempty"`
-	History       []ApplyingJournal     `json:"attempt_history,omitempty"`
-	Ownership     []ProjectionOwnership `json:"ownership,omitempty"`
-	External      []ExternalEffect      `json:"external_effects,omitempty"`
+	SchemaVersion    int                   `json:"schema_version"`
+	Intent           ActivationIntent      `json:"intent"`
+	Intents          []ActivationIntent    `json:"intents,omitempty"`
+	Journal          *ApplyingJournal      `json:"applying_journal,omitempty"`
+	LastAttempts     []ApplyingJournal     `json:"last_attempts,omitempty"`
+	History          []ApplyingJournal     `json:"attempt_history,omitempty"`
+	Ownership        []ProjectionOwnership `json:"ownership,omitempty"`
+	External         []ExternalEffect      `json:"external_effects,omitempty"`
+	documentRevision int
+	snapshotManaged  bool
 }
 
 type ActivationStore interface {
 	Load(context.Context, Surface) (ActivationState, error)
 	Save(context.Context, Surface, int, ActivationState) error
+}
+
+// activationSnapshotStore is implemented by stores that own the complete
+// cross-surface state document. The legacy surface store interface remains a
+// narrow compatibility seam for embedders and test fakes.
+type activationSnapshotStore interface {
+	LoadSnapshot(context.Context, Surface) (ActivationState, error)
+	SaveSnapshot(context.Context, Surface, int, ActivationState) (int, error)
+}
+
+func loadActivationState(ctx context.Context, store ActivationStore, surface Surface) (ActivationState, error) {
+	if snapshots, ok := store.(activationSnapshotStore); ok {
+		return snapshots.LoadSnapshot(ctx, surface)
+	}
+	return store.Load(ctx, surface)
+}
+
+func saveActivationState(ctx context.Context, store ActivationStore, surface Surface, expectedIntentRevision int, state *ActivationState) error {
+	if snapshots, ok := store.(activationSnapshotStore); ok {
+		revision, err := snapshots.SaveSnapshot(ctx, surface, state.documentRevision, *state)
+		if err == nil {
+			state.documentRevision = revision
+		}
+		return err
+	}
+	return store.Save(ctx, surface, expectedIntentRevision, *state)
 }
 
 type activationDependencies struct {
@@ -404,6 +451,7 @@ type ReconciliationPlan struct {
 	operation               Operation
 	surface                 Surface
 	intentRevision          int
+	documentRevision        int
 	oldVersion              string
 	observationFingerprint  string
 	phases                  []PlanPhase
@@ -421,6 +469,7 @@ type ReconciliationPlan struct {
 	activations             []PlannedActivation
 	contributors            map[string][]string
 	retained                []RetainedProjection
+	sharedProjections       []SharedProjectionVisibility
 	blockers                []PlanBlocker
 	compositionFacts        []Pack
 	intentFacts             []ActivationIntent
@@ -448,6 +497,24 @@ type ReconciliationPlan struct {
 type RetainedProjection struct {
 	ID           string
 	Contributors []string
+}
+
+type SharedProjectionVisibility struct {
+	ID              string    `json:"id"`
+	ProjectionKey   string    `json:"projection_key"`
+	DiscoverableBy  []Surface `json:"discoverable_by"`
+	DiscoveryNotice string    `json:"discovery_notice"`
+}
+
+func (p *ReconciliationPlan) recordSharedProjection(projection ObservedProjection) {
+	if !projection.Shared && !projection.Action.Shared {
+		return
+	}
+	discoverable := append([]Surface(nil), projection.DiscoverableBy...)
+	if len(discoverable) == 0 {
+		discoverable = append(discoverable, projection.Action.DiscoverableBy...)
+	}
+	p.sharedProjections = append(p.sharedProjections, SharedProjectionVisibility{ID: projection.ID, ProjectionKey: projectionOwnershipID(projection), DiscoverableBy: discoverable, DiscoveryNotice: sharedProjectionDiscoveryNotice})
 }
 
 type projectionExpectation struct {
@@ -530,8 +597,12 @@ func (p ReconciliationPlan) Blockers() []PlanBlocker {
 }
 func (p ReconciliationPlan) RetainedProjections() []RetainedProjection {
 	result := append([]RetainedProjection(nil), p.retained...)
+	prefix := "surface:" + string(p.surface) + ":"
 	for i := range result {
 		result[i].Contributors = append([]string(nil), result[i].Contributors...)
+		for j := range result[i].Contributors {
+			result[i].Contributors[j] = strings.TrimPrefix(result[i].Contributors[j], prefix)
+		}
 	}
 	return result
 }
@@ -893,7 +964,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(OperationDeactivate, before.combinedPack(), combined, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, OperationDeactivate, before.combinedPack(), combined, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
 	}
@@ -901,7 +972,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	if active {
 		previousProviderChoices = cloneProviderChoices(intent.ProviderChoices)
 	}
-	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, previousAliases: cloneAliases(intent.Aliases), selection: selection, previousSelection: selection, previousProviderChoices: previousProviderChoices, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), activations: target.activations, contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, beforeIntentFacts: before.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: removedContributorSet(before, target)}
+	plan := ReconciliationPlan{pack: currentRequested, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, documentRevision: state.documentRevision, oldVersion: oldVersion, previousAliases: cloneAliases(intent.Aliases), selection: selection, previousSelection: selection, previousProviderChoices: previousProviderChoices, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), activations: target.activations, contributors: target.contributors, compositionFacts: target.packs, beforeCompositionFacts: before.packs, intentFacts: target.intentFacts, beforeIntentFacts: before.intentFacts, ownershipFacts: cloneOwnership(state.Ownership), activeDependents: dependents, removedContributors: removedContributorSet(before, target)}
 	for _, dependent := range dependents {
 		plan.blockers = append(plan.blockers, PlanBlocker{Kind: BlockerActiveDependent, Subject: requested.ID, Detail: fmt.Sprintf("cannot deactivate requested pack %s: active pack %s still requires capability/dependency %s; no automatic cascade will occur", requested.ID, dependent.PackID, dependent.Dependency)})
 	}
@@ -911,7 +982,13 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 		plan.portable = append(plan.portable, PortableOutcome{Kind: resource.Kind, ID: resource.ID})
 	}
 	for _, projection := range observation.Projections {
+		plan.recordSharedProjection(projection)
 		contributors := target.contributorSet(projection.ID)
+		if state.snapshotManaged {
+			if owner, ok := ownershipByID(state.Ownership, ownershipIDForState(state, request.Surface, projection)); ok {
+				contributors = mergedProjectionContributors(owner, request.Surface, contributors)
+			}
+		}
 		if projection.DesiredFingerprint != "" {
 			plan.desired = append(plan.desired, projectionExpectation{ID: projection.ID, Fingerprint: projection.DesiredFingerprint, ExternallyManaged: projection.ExternallyManaged})
 			if projection.Exists && projection.ObservedFingerprint == projection.DesiredFingerprint {
@@ -923,17 +1000,21 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 			}
 			continue
 		}
-		owner, owned := ownershipByID(state.Ownership, projection.ID)
+		owner, owned := ownershipByID(state.Ownership, ownershipIDForState(state, request.Surface, projection))
 		removedContributor, removed := uniqueRemovedContributor(projection.ID, before, target)
 		residual := active && !intent.Active && hasContributor(state.Ownership, requested.ID)
 		residualLifecycle := residual || recovery && !intent.Active
-		observedProvenance := projection.AdapterProvenance
-		if observedProvenance == "" {
-			observedProvenance = projection.Action.AdapterProvenance
-		}
-		residualAuthorized := residualLifecycle && owner.AdapterProvenance != "" && owner.AdapterProvenance == observedProvenance
+		observedProvenance := projectionProvenance(request.Surface, projection)
+		authority, hasAuthority := authorityForSurface(owner, request.Surface)
+		residualAuthorized := residualLifecycle && hasAuthority && authority.AdapterProvenance != "" && authority.AdapterProvenance == observedProvenance
 		activeLifecycle := active && intent.Active || recovery && intent.Active
-		if (activeLifecycle || residualAuthorized) && projection.Exists && owned && len(owner.Contributors) == 1 && removed && owner.Contributors[0] == removedContributor && owner.Fingerprint == projection.ObservedFingerprint {
+		if activeLifecycle && owned && state.snapshotManaged {
+			authority, hasAuthority = authorityForSurface(owner, request.Surface)
+			residualAuthorized = hasAuthority && authority.AdapterProvenance != "" && authority.AdapterProvenance == observedProvenance
+		} else if activeLifecycle && owned {
+			residualAuthorized = true
+		}
+		if (activeLifecycle || residualAuthorized) && residualAuthorized && projection.Exists && owned && len(owner.Contributors) == 1 && removed && removedContributorMatches(state, request.Surface, owner.Contributors[0], removedContributor) && owner.Fingerprint == projection.ObservedFingerprint {
 			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
 			continue
 		}
@@ -998,12 +1079,12 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 		return ReconciliationPlan{}, err
 	}
 	adapter := f.activation.adapters[request.Surface]
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(OperationDeactivate, combinedBefore, combined, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, OperationDeactivate, combinedBefore, combined, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect partial deactivation of pack %q on %s: %w", requested.ID, request.Surface, err)
 	}
 	plan := ReconciliationPlan{
-		pack: targetPack, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision,
+		pack: targetPack, operation: OperationDeactivate, surface: request.Surface, intentRevision: state.Intent.Revision, documentRevision: state.documentRevision,
 		oldVersion: requested.Version, aliases: cloneAliases(aliases), previousAliases: cloneAliases(previousAliases), selection: selection, previousSelection: previousSelection, partialSelection: true,
 		observationFingerprint: observationDigest(observation), resolutions: resolutions,
 		runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), activations: target.activations, contributors: target.contributors,
@@ -1023,7 +1104,13 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 		plan.portable = append(plan.portable, PortableOutcome{Kind: resource.Kind, ID: resource.ID})
 	}
 	for _, projection := range observation.Projections {
+		plan.recordSharedProjection(projection)
 		contributors := append([]string(nil), target.contributors[projection.ID]...)
+		if state.snapshotManaged {
+			if owner, ok := ownershipByID(state.Ownership, ownershipIDForState(state, request.Surface, projection)); ok {
+				contributors = mergedProjectionContributors(owner, request.Surface, contributors)
+			}
+		}
 		if projection.DesiredFingerprint != "" {
 			plan.desired = append(plan.desired, projectionExpectation{ID: projection.ID, Fingerprint: projection.DesiredFingerprint, ExternallyManaged: projection.ExternallyManaged})
 			if projection.Exists && projection.ObservedFingerprint == projection.DesiredFingerprint {
@@ -1035,9 +1122,12 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 			}
 			continue
 		}
-		owner, owned := ownershipByID(state.Ownership, projection.ID)
+		owner, owned := ownershipByID(state.Ownership, ownershipIDForState(state, request.Surface, projection))
 		removedContributor, removed := uniqueRemovedContributor(projection.ID, before, target)
-		if projection.Exists && owned && len(owner.Contributors) == 1 && removed && owner.Contributors[0] == removedContributor && owner.Fingerprint == projection.ObservedFingerprint {
+		authority, authorized := authorityForSurface(owner, request.Surface)
+		observedProvenance := projectionProvenance(request.Surface, projection)
+		ownershipAuthorized := !state.snapshotManaged || authorized && authority.AdapterProvenance == observedProvenance
+		if projection.Exists && owned && ownershipAuthorized && len(owner.Contributors) == 1 && removed && removedContributorMatches(state, request.Surface, owner.Contributors[0], removedContributor) && owner.Fingerprint == projection.ObservedFingerprint {
 			plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, projection.Action)
 			continue
 		}
@@ -1191,7 +1281,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(operation, Pack{}, pack, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, operation, Pack{}, pack, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect activation of pack %q on %s: %w", pack.ID, request.Surface, err)
 	}
@@ -1204,10 +1294,10 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 			if projection.ExternallyManaged {
 				continue
 			}
-			owned := ownedAtComposition(state.Ownership, projection.ID, projection.ObservedFingerprint, composition)
+			owned := ownedAtComposition(state.Ownership, projection, projection.ObservedFingerprint, composition)
 			managedDrift := operation == OperationReconcile && projection.Exists && repairEligible(state.Ownership, projection, composition)
 			if operation == OperationReconcile && (projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent) {
-				owner, ok := ownershipByID(state.Ownership, projection.ID)
+				owner, ok := ownershipByID(state.Ownership, ownershipIDForState(state, request.Surface, projection))
 				owned = ok && owner.Fingerprint == projection.ObservedFingerprint
 			}
 			if projection.Exists && !owned && !managedDrift {
@@ -1279,7 +1369,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	for i := range capabilityFacts {
 		capabilityFacts[i].ResultingReadiness = readiness
 	}
-	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, providerChoices: providerChoices, previousProviderChoices: previousProviderChoices, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, beforeIntentFacts: beforeIntentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts, capabilityFacts: capabilityFacts}
+	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, documentRevision: state.documentRevision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, providerChoices: providerChoices, previousProviderChoices: previousProviderChoices, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, contributors: composition.contributors, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, beforeIntentFacts: beforeIntentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts, capabilityFacts: capabilityFacts}
 	recovery := recoveryAttempt(state, operation, request.PackID, request.Surface)
 	plan.attachRecovery(state, recovery)
 	for _, resource := range pack.Resources {
@@ -1292,6 +1382,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		return plan.portable[i].Kind < plan.portable[j].Kind
 	})
 	for _, projection := range observation.Projections {
+		plan.recordSharedProjection(projection)
 		plan.desired = append(plan.desired, projectionExpectation{projection.ID, projection.DesiredFingerprint, projection.ExternallyManaged})
 		contributors := composition.contributorSet(projection.ID)
 		if projection.ObservedFingerprint == projection.DesiredFingerprint && len(contributors) > 1 {
@@ -1449,7 +1540,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			state.Journal.Actions = append(state.Journal.Actions, action.ID)
 		}
 	}
-	if err := f.activation.store.Save(ctx, request.Plan.surface, request.Plan.intentRevision, state); err != nil {
+	if err := saveActivationState(ctx, f.activation.store, request.Plan.surface, request.Plan.intentRevision, &state); err != nil {
 		return ApplyResult{}, err
 	}
 	localActions := phaseActions(request.Plan.phases, ConsentReversibleLocal)
@@ -1464,7 +1555,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		if err := adapter.ApplyProjections(ctx, localActions); err != nil {
 			safeErr := ReportSafeError(err, &request.Plan)
 			state.Journal.recordFailure(requiredFailedActionID(err, "reversible-local"), safeErr)
-			if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
+			if saveErr := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); saveErr != nil {
 				return ApplyResult{}, fmt.Errorf("apply reversible local projections: %v; could not persist recovery facts: %w", safeErr, saveErr)
 			}
 			return ApplyResult{}, safeErr
@@ -1472,11 +1563,11 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	}
 	destructiveActions := phaseActions(request.Plan.phases, ConsentDestructiveCleanup)
 	prior := priorCombinedPack(request.Plan, pack)
-	verified, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.operation, prior, combined, state.Ownership, resolutions))
+	verified, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.operation, prior, combined, state.Ownership, resolutions))
 	if err != nil {
 		err = ReportSafeError(err, &request.Plan)
 		state.Journal.recordFailure("verify-reversible-local", err)
-		if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
+		if saveErr := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); saveErr != nil {
 			return ApplyResult{}, fmt.Errorf("verify reversible local projections: %v; could not persist recovery facts: %w", err, saveErr)
 		}
 		return ApplyResult{}, err
@@ -1506,7 +1597,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	}
 	if !verifiedMatches {
 		state.Journal.recordFailure("verify-reversible-local", errors.New(verificationMismatch(request.Plan.desired, verified.Projections)))
-		if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
+		if saveErr := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); saveErr != nil {
 			return ApplyResult{}, fmt.Errorf("%w: %s; could not persist recovery facts: %v", ErrVerificationFailed, state.Journal.FailureDetail, saveErr)
 		}
 		return ApplyResult{}, fmt.Errorf("%w: %s", ErrVerificationFailed, verificationMismatch(request.Plan.desired, verified.Projections))
@@ -1515,7 +1606,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		state.Journal.Completed = appendCompleted(state.Journal.Completed, action.ID)
 	}
 	if len(externalActions) > 0 {
-		if err := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); err != nil {
+		if err := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); err != nil {
 			return ApplyResult{}, fmt.Errorf("persist verified local recovery facts: %w", err)
 		}
 	}
@@ -1529,7 +1620,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		if actionErr != nil {
 			actionErr = ReportSafeError(actionErr, &request.Plan)
 			state.Journal.recordFailure(action.ID, actionErr)
-			if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
+			if saveErr := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); saveErr != nil {
 				return ApplyResult{}, fmt.Errorf("external action %s failed: %v; could not persist recovery facts: %w", action.ID, actionErr, saveErr)
 			}
 			return ApplyResult{}, fmt.Errorf("external action %s failed; later actions stopped and recovery is required: %w", action.ID, actionErr)
@@ -1538,7 +1629,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		if action.Kind == ActionExternalCommand {
 			state.External = recordExternalEffect(state.External, action)
 		}
-		if err := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); err != nil {
+		if err := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); err != nil {
 			return ApplyResult{}, fmt.Errorf("external action %s completed but recovery facts could not be persisted: %w", action.ID, err)
 		}
 	}
@@ -1546,20 +1637,20 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		if err := adapter.ApplyProjections(ctx, []ProjectionAction{action}); err != nil {
 			safeErr := ReportSafeError(err, &request.Plan)
 			state.Journal.recordFailure(requiredFailedActionID(err, "destructive-cleanup"), safeErr)
-			_ = f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state)
+			_ = saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state)
 			return ApplyResult{}, safeErr
 		}
 		state.Journal.Completed = appendCompleted(state.Journal.Completed, action.ID)
-		if err := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); err != nil {
+		if err := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); err != nil {
 			return ApplyResult{}, fmt.Errorf("destructive action %s completed but recovery facts could not be persisted: %w", action.ID, err)
 		}
 	}
 	if len(externalActions) > 0 || len(destructiveActions) > 0 {
-		verified, err = inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.operation, prior, combined, state.Ownership, resolutions))
+		verified, err = inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.operation, prior, combined, state.Ownership, resolutions))
 		if err != nil {
 			err = ReportSafeError(err, &request.Plan)
 			state.Journal.recordFailure("verify-after-external", err)
-			if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
+			if saveErr := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); saveErr != nil {
 				return ApplyResult{}, fmt.Errorf("verify after external effects: %v; could not persist recovery facts: %w", err, saveErr)
 			}
 			return ApplyResult{}, err
@@ -1586,7 +1677,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 		if !matches {
 			state.Journal.recordFailure("verify-after-external", errors.New(verificationMismatch(request.Plan.desired, verified.Projections)))
-			if saveErr := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); saveErr != nil {
+			if saveErr := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); saveErr != nil {
 				return ApplyResult{}, fmt.Errorf("%w: %s; could not persist recovery facts: %v", ErrVerificationFailed, state.Journal.FailureDetail, saveErr)
 			}
 			return ApplyResult{}, fmt.Errorf("%w: %s", ErrVerificationFailed, verificationMismatch(request.Plan.desired, verified.Projections))
@@ -1601,6 +1692,20 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	state.Journal = nil
 	previousOwnership := cloneOwnership(state.Ownership)
 	state.Ownership = make([]ProjectionOwnership, 0, len(verified.Projections))
+	observedOwnershipIDs := map[string]bool{}
+	for _, projection := range verified.Projections {
+		observedOwnershipIDs[ownershipIDForState(state, request.Plan.surface, projection)] = true
+	}
+	// Ownership is document-wide. Preserve facts for physical projections not
+	// inspected by this surface; a surface adapter may update only identities it
+	// actually observed in its sealed transition.
+	if state.snapshotManaged {
+		for _, owner := range previousOwnership {
+			if !observedOwnershipIDs[owner.ID] {
+				state.Ownership = append(state.Ownership, owner)
+			}
+		}
+	}
 	if request.Plan.operation == OperationReconcile && request.Plan.reconcileScope == ReconcileTargeted {
 		desiredIDs := map[string]bool{}
 		for _, expectation := range request.Plan.desired {
@@ -1608,7 +1713,9 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 		for _, owner := range previousOwnership {
 			if !desiredIDs[owner.ID] {
-				state.Ownership = append(state.Ownership, owner)
+				if _, exists := ownershipByID(state.Ownership, owner.ID); !exists {
+					state.Ownership = append(state.Ownership, owner)
+				}
 			}
 		}
 	}
@@ -1623,14 +1730,15 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			// matches a catalog resource. The inactive intent retains the exact Pack
 			// version and selection needed to inspect this residual again.
 			if request.Plan.operation == OperationDeactivate && projection.Exists {
-				if previous, ok := ownershipByID(previousOwnership, projection.ID); ok {
+				if previous, ok := ownershipByID(previousOwnership, ownershipIDForState(state, request.Plan.surface, projection)); ok {
 					state.Ownership = append(state.Ownership, previous)
 				}
 			}
 			continue
 		}
 		provenance := ""
-		if previous, ok := ownershipByID(previousOwnership, projection.ID); ok {
+		previous, previouslyOwned := ownershipByID(previousOwnership, ownershipIDForState(state, request.Plan.surface, projection))
+		if previouslyOwned {
 			provenance = previous.AdapterProvenance
 		}
 		if action, ok := phaseActionByID(request.Plan.phases, projection.ID); ok {
@@ -1642,10 +1750,24 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 				provenance = projection.AdapterProvenance
 			}
 		}
-		state.Ownership = append(state.Ownership, ProjectionOwnership{ID: projection.ID, Contributors: currentComposition.contributorSet(projection.ID), Fingerprint: projection.DesiredFingerprint, AdapterProvenance: provenance})
+		if state.snapshotManaged {
+			provenance = projectionProvenance(request.Plan.surface, projection)
+		}
+		owner := ProjectionOwnership{ID: ownershipIDForState(state, request.Plan.surface, projection), ProjectionID: projection.ID, Fingerprint: projection.DesiredFingerprint, AdapterProvenance: provenance}
+		if previouslyOwned {
+			owner = previous
+			owner.Fingerprint = projection.DesiredFingerprint
+		}
+		if state.snapshotManaged {
+			owner.Contributors = mergedProjectionContributors(owner, request.Plan.surface, currentComposition.contributorSet(projection.ID))
+			owner = withSurfaceAuthority(owner, request.Plan.surface, provenance)
+		} else {
+			owner.Contributors = currentComposition.contributorSet(projection.ID)
+		}
+		state.Ownership = append(state.Ownership, owner)
 	}
 	sort.Slice(state.Ownership, func(i, j int) bool { return state.Ownership[i].ID < state.Ownership[j].ID })
-	if err := f.activation.store.Save(ctx, request.Plan.surface, state.Intent.Revision, state); err != nil {
+	if err := saveActivationState(ctx, f.activation.store, request.Plan.surface, state.Intent.Revision, &state); err != nil {
 		return ApplyResult{}, err
 	}
 	fresh := verified.Readiness
@@ -1731,6 +1853,9 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	pack, adapter, state, err := f.activationInputsForOperation(ctx, ActivationRequest{PackID: plan.pack.ID, Surface: plan.surface, Selection: plan.selection}, plan.operation)
 	if err != nil {
 		return planPreflight{}, err
+	}
+	if state.documentRevision != plan.documentRevision {
+		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("capability-pack state revision changed from %d to %d after Preview; rerun %s to preview a fresh plan", plan.documentRevision, state.documentRevision, plan.operation)}
 	}
 	if plan.operation == OperationDeactivate {
 		pack, err = selectPackResources(pack, plan.selection)
@@ -1863,7 +1988,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("executable resolution changed after Preview; rerun %s to preview a fresh plan", plan.operation)}
 	}
 	before := priorCombinedPack(plan, pack)
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(plan.operation, before, combined, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(plan.surface, plan.operation, before, combined, state.Ownership, resolutions))
 	if err != nil {
 		return planPreflight{}, err
 	}
@@ -1904,7 +2029,7 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if adapter == nil {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("no activation adapter configured for CLI surface %q", request.Surface)
 	}
-	state, err := f.activation.store.Load(ctx, request.Surface)
+	state, err := loadActivationState(ctx, f.activation.store, request.Surface)
 	if err != nil {
 		return Pack{}, nil, ActivationState{}, err
 	}
@@ -2102,6 +2227,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		Operation               Operation
 		Surface                 Surface
 		IntentRevision          int
+		DocumentRevision        int
 		OldVersion              string
 		Observation             string
 		Phases                  []PlanPhase
@@ -2116,6 +2242,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		Activations             []PlannedActivation
 		Contributors            map[string][]string
 		Retained                []RetainedProjection
+		SharedProjections       []SharedProjectionVisibility
 		Blockers                []PlanBlocker
 		Composition             []Pack
 		IntentFacts             []ActivationIntent
@@ -2138,7 +2265,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		SelectionValidity       SelectionValidity
 		Recovery                bool
 		Historical              *ApplyingJournal
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.sensitiveEffects, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.blockers, p.compositionFacts, p.intentFacts, p.beforeIntentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.providerChoices, p.previousProviderChoices, p.rootMigrations, p.allModeContractChanges, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.documentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.sensitiveEffects, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.contributors, p.retained, p.sharedProjections, p.blockers, p.compositionFacts, p.intentFacts, p.beforeIntentFacts, p.ownershipFacts, p.activeDependents, p.capabilityFacts, p.beforeCompositionFacts, p.removedContributors, p.reconcileScope, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.providerChoices, p.previousProviderChoices, p.rootMigrations, p.allModeContractChanges, p.partialSelection, p.selectionValidity, p.recovery, p.historicalAttempt}
 }
 
 func providerHasConsumer(intents map[string]ActivationIntent, providerID string) bool {
@@ -2162,6 +2289,77 @@ func ownershipByID(values []ProjectionOwnership, id string) (ProjectionOwnership
 		}
 	}
 	return ProjectionOwnership{}, false
+}
+
+func projectionOwnershipID(projection ObservedProjection) string {
+	if projection.ProjectionKey != "" {
+		return projection.ProjectionKey
+	}
+	if projection.Action.ProjectionKey != "" {
+		return projection.Action.ProjectionKey
+	}
+	return projection.ID
+}
+
+func physicalProjectionID(surface Surface, projection ObservedProjection) string {
+	if projection.ProjectionKey != "" || projection.Action.ProjectionKey != "" {
+		return projectionOwnershipID(projection)
+	}
+	return "surface:" + string(surface) + ":" + projection.ID
+}
+
+func ownershipIDForState(state ActivationState, surface Surface, projection ObservedProjection) string {
+	if state.snapshotManaged {
+		return physicalProjectionID(surface, projection)
+	}
+	return projectionOwnershipID(projection)
+}
+
+func projectionProvenance(surface Surface, projection ObservedProjection) string {
+	if projection.AdapterProvenance != "" {
+		return projection.AdapterProvenance
+	}
+	if projection.Action.AdapterProvenance != "" {
+		return projection.Action.AdapterProvenance
+	}
+	// Older adapters did not expose a typed provenance. Keep their authority
+	// surface-scoped; a future explicit provenance will no longer match this
+	// conservative compatibility value.
+	return "surface:" + string(surface) + "/unspecified-adapter"
+}
+
+func authorityForSurface(owner ProjectionOwnership, surface Surface) (ProjectionAuthority, bool) {
+	for _, authority := range owner.Authorities {
+		if authority.Surface == surface {
+			return authority, true
+		}
+	}
+	if len(owner.Authorities) == 0 && owner.AdapterProvenance != "" {
+		return ProjectionAuthority{Surface: surface, AdapterProvenance: owner.AdapterProvenance}, true
+	}
+	return ProjectionAuthority{}, false
+}
+
+func withSurfaceAuthority(owner ProjectionOwnership, surface Surface, provenance string) ProjectionOwnership {
+	var authorities []ProjectionAuthority
+	for _, authority := range owner.Authorities {
+		if authority.Surface != surface {
+			authorities = append(authorities, authority)
+		}
+	}
+	if provenance != "" {
+		authorities = append(authorities, ProjectionAuthority{Surface: surface, AdapterProvenance: provenance})
+	}
+	sort.Slice(authorities, func(i, j int) bool { return authorities[i].Surface < authorities[j].Surface })
+	owner.Authorities = authorities
+	return owner
+}
+
+func removedContributorMatches(state ActivationState, surface Surface, recorded, removed string) bool {
+	if !state.snapshotManaged {
+		return recorded == removed
+	}
+	return recorded == qualifyContributor(surface, removed)
 }
 
 func phaseActionByID(phases []PlanPhase, id string) (ProjectionAction, bool) {
@@ -2198,6 +2396,7 @@ func cloneOwnership(values []ProjectionOwnership) []ProjectionOwnership {
 	result := append([]ProjectionOwnership(nil), values...)
 	for i := range result {
 		result[i].Contributors = append([]string(nil), result[i].Contributors...)
+		result[i].Authorities = append([]ProjectionAuthority(nil), result[i].Authorities...)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
@@ -2227,19 +2426,6 @@ func compositionActive(state ActivationState, packs []Pack, surface Surface) boo
 }
 
 func ownershipMatchesContributors(owners []ProjectionOwnership, projections []ObservedProjection, c composition) bool {
-	managedCount := 0
-	for _, projection := range projections {
-		if !projection.ExternallyManaged {
-			managedCount++
-		}
-	}
-	if len(owners) != managedCount {
-		return false
-	}
-	byID := map[string]ProjectionOwnership{}
-	for _, owner := range owners {
-		byID[owner.ID] = owner
-	}
 	for _, projection := range projections {
 		if projection.ExternallyManaged {
 			if projection.ObservedFingerprint != projection.DesiredFingerprint {
@@ -2247,8 +2433,11 @@ func ownershipMatchesContributors(owners []ProjectionOwnership, projections []Ob
 			}
 			continue
 		}
-		owner, ok := byID[projection.ID]
-		if !ok || owner.Fingerprint != projection.DesiredFingerprint || !contributorsMatch(owner.Contributors, c.contributorSet(projection.ID)) {
+		owner, ok := ownershipByID(owners, physicalProjectionID(c.surface, projection))
+		if !ok {
+			owner, ok = ownershipByID(owners, projectionOwnershipID(projection))
+		}
+		if !ok || owner.Fingerprint != projection.DesiredFingerprint || !contributorsMatchForSurface(owner.Contributors, c.surface, c.contributorSet(projection.ID)) {
 			return false
 		}
 	}
@@ -2436,9 +2625,10 @@ func ownedAtFingerprint(owners []ProjectionOwnership, id, fingerprint, packID st
 	}
 	return false
 }
-func ownedAtComposition(owners []ProjectionOwnership, id, fingerprint string, c composition) bool {
+func ownedAtComposition(owners []ProjectionOwnership, projection ObservedProjection, fingerprint string, c composition) bool {
 	for _, owner := range owners {
-		if owner.ID == id && owner.Fingerprint == fingerprint && contributorsMatch(owner.Contributors, c.contributorSet(id)) {
+		identityMatches := owner.ID == physicalProjectionID(c.surface, projection) || owner.ID == projectionOwnershipID(projection)
+		if identityMatches && owner.Fingerprint == fingerprint && contributorsMatchForSurface(owner.Contributors, c.surface, c.contributorSet(projection.ID)) {
 			return true
 		}
 	}
@@ -2451,7 +2641,7 @@ func repairEligible(owners []ProjectionOwnership, projection ObservedProjection,
 	}
 	var matched []ProjectionOwnership
 	for _, owner := range owners {
-		if owner.ID == projection.ID {
+		if owner.ID == physicalProjectionID(c.surface, projection) || owner.ID == projectionOwnershipID(projection) {
 			matched = append(matched, owner)
 		}
 	}
@@ -2459,7 +2649,7 @@ func repairEligible(owners []ProjectionOwnership, projection ObservedProjection,
 		return false
 	}
 	owner := matched[0]
-	return owner.Fingerprint == projection.DesiredFingerprint && contributorsMatch(owner.Contributors, c.contributorSet(projection.ID))
+	return owner.Fingerprint == projection.DesiredFingerprint && contributorsMatchForSurface(owner.Contributors, c.surface, c.contributorSet(projection.ID))
 }
 func cloneActivationState(state ActivationState) ActivationState {
 	state.Intent.Aliases = cloneAliases(state.Intent.Aliases)
@@ -2474,6 +2664,7 @@ func cloneActivationState(state ActivationState) ActivationState {
 	}
 	for i := range state.Ownership {
 		state.Ownership[i].Contributors = append([]string(nil), state.Ownership[i].Contributors...)
+		state.Ownership[i].Authorities = append([]ProjectionAuthority(nil), state.Ownership[i].Authorities...)
 	}
 	if state.Journal != nil {
 		journal := cloneJournal(*state.Journal)
@@ -2858,15 +3049,31 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 	return observation, nil
 }
 
-func surfaceTransitionFacts(operation Operation, prior, desired Pack, ownership []ProjectionOwnership, resolutions []ExecutableResolution) SurfaceTransition {
-	transition := SurfaceTransition{Desired: desired, CurrentOwnership: ownership, ResolvedExecutables: resolutions}
+func surfaceTransitionFacts(surface Surface, operation Operation, prior, desired Pack, ownership []ProjectionOwnership, resolutions []ExecutableResolution) SurfaceTransition {
+	adapterOwnership := adapterOwnershipForSurface(ownership, surface)
+	transition := SurfaceTransition{Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
 	switch operation {
 	case OperationDeactivate:
 		transition.Prior = prior
 	case OperationReconcile:
-		transition.ResidualOwnership = ownership
+		transition.ResidualOwnership = adapterOwnership
 	}
 	return transition
+}
+
+func adapterOwnershipForSurface(ownership []ProjectionOwnership, surface Surface) []ProjectionOwnership {
+	var result []ProjectionOwnership
+	for _, durable := range cloneOwnership(ownership) {
+		if strings.HasPrefix(durable.ID, "surface:") && !strings.HasPrefix(durable.ID, "surface:"+string(surface)+":") {
+			continue
+		}
+		if durable.ProjectionID != "" {
+			durable.PhysicalID = durable.ID
+			durable.ID = durable.ProjectionID
+		}
+		result = append(result, durable)
+	}
+	return result
 }
 
 func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {

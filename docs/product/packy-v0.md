@@ -36,7 +36,7 @@ updateable, and reversible while keeping startup instructions small.
 | Skills | Pack-selected resources projected to standard targets such as `~/.agents/skills`. |
 | Sources | A package Installed Source plus explicitly managed Pack Sources and catalog data. |
 | Memory | Engram requirements and host setup only when declared by an activated pack and separately approved where required. |
-| Capability packs | `addy`, `matty`, and `engram` packs managed independently on each declared surface. |
+| Capability packs | Opt-in `matty` and `engram` packs managed independently on each supported surface. |
 | State | Capability-pack intent, ownership, consent, recovery, and readiness state beneath `~/.packy`. |
 | Prompts | Small pack-owned global instruction/config projections only. |
 | Safety | Preserve user, Engram, and Gentle AI content outside Packy markers. |
@@ -66,7 +66,7 @@ updateable, and reversible while keeping startup instructions small.
 | 08 lifecycle | Explicit activation, update, reconcile, recovery, and contributor-safe deactivation. |
 | 09 hardening | README docs and end-to-end sandbox lifecycle tests. |
 | Package distribution | Versioned GitHub Release artifacts, Homebrew publication, `packy init`, and package-install smoke coverage. |
-| Capability packs | Discovery, status, activation, update, reconciliation, deactivation, recovery, and readiness gates for `addy`, `matty`, and `engram`. |
+| Capability packs | Discovery, status, activation, update, reconciliation, deactivation, recovery, and readiness gates for `matty` and `engram`. |
 | Automation | Versioned JSON output for doctor and pack status, with stable health and readiness exit behavior. |
 | Internal ownership | Capability-pack lifecycle is the sole surface-mutation authority; host modules translate, inspect, and apply authorized actions. |
 | Claude Code | User-global skills, marked instructions, explicit agents and typed hooks, and official user-scoped MCP operations, with inert health and independent readiness. |

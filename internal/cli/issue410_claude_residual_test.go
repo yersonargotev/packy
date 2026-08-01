@@ -116,8 +116,16 @@ func TestIssue410ClaudeDriftedSkillSurvivesInactiveDeactivationThenExactRetryRem
 
 func issue410Ownership(values []capabilitypack.ProjectionOwnership, id string) (capabilitypack.ProjectionOwnership, bool) {
 	for _, value := range values {
-		if value.ID == id {
-			return value, true
+		if value.ID == id || value.ProjectionID == id {
+			for _, authority := range value.Authorities {
+				if authority.Surface == capabilitypack.SurfaceClaude {
+					value.AdapterProvenance = authority.AdapterProvenance
+					return value, true
+				}
+			}
+			if len(value.Authorities) == 0 {
+				return value, true
+			}
 		}
 	}
 	return capabilitypack.ProjectionOwnership{}, false

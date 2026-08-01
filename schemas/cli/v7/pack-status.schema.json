@@ -254,7 +254,9 @@
               "health",
               "observed_fingerprint",
               "desired_fingerprint",
-              "contributors"
+              "contributors",
+              "shared",
+              "discoverable_by"
             ],
             "properties": {
               "id": {
@@ -288,9 +290,22 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "pattern": "^pack:[a-z0-9][a-z0-9._-]*:[a-z_]+:[a-z0-9][a-z0-9._-]*$"
+                  "pattern": "^(?:surface:(?:codex|opencode|claude):)?pack:[a-z0-9][a-z0-9._-]*:[a-z_]+:[a-z0-9][a-z0-9._-]*$"
                 },
                 "uniqueItems": true
+              },
+              "shared": {
+                "type": "boolean"
+              },
+              "discoverable_by": {
+                "type": ["array", "null"],
+                "items": {
+                  "enum": ["codex", "opencode", "claude"]
+                },
+                "uniqueItems": true
+              },
+              "discovery_notice": {
+                "type": "string"
               }
             },
             "additionalProperties": false

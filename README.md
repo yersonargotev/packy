@@ -20,10 +20,10 @@ inspect the catalog, then preview and activate a chosen pack on a chosen surface
 brew install yersonargotev/tap/packy
 packy init
 packy pack list
-packy pack show matty
-packy pack activate matty --surface codex --dry-run
-packy pack activate matty --surface codex
-packy pack status matty --surface codex
+packy pack show engram
+packy pack activate engram --surface codex --dry-run
+packy pack activate engram --surface codex
+packy pack status engram --surface codex
 ```
 
 `packy init` is required for Homebrew/GitHub Release installs because package
