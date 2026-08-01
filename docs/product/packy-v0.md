@@ -1,25 +1,23 @@
 # Packy v0 product scope
 
-Packy v0 is a macOS-first installer/configurator for a lightweight AI coding workflow.
-It wires global Matt Pocock-style skills, Engram memory, and small Codex,
-OpenCode, and Claude Code projections without becoming an always-on runtime
-orchestrator.
+Packy v0 is a macOS-first installer/configurator for explicit capability packs.
+It prepares Packy-owned source and catalog substrate, then projects selected
+resources to Codex, OpenCode, and Claude Code only after per-surface activation.
+It is not an always-on runtime orchestrator.
 
 ## Quick path
 
 The [README quickstart](../../README.md#quickstart) is the canonical first-run
 sequence. Package-installed users initialize the Installed Source with
-`packy init`, preview the setup, and then apply it. Repository checkouts and an
-explicit `PACKY_SKILLS_SOURCE` remain development source options.
+`packy init`, inspect the catalog, and explicitly preview and activate a chosen
+pack or resource roots for a chosen surface. Initialization and discovery do
+not change any CLI surface.
 
 After installation:
 
-- use `packy doctor` for read-only setup health;
-- use `packy update` to refresh managed artifacts;
-- use `packy uninstall` to remove only Packy-owned artifacts.
-
-Capability packs have their own explicit, per-surface preview and Apply
-lifecycle.
+- use `packy doctor` for read-only core health and an active-pack summary;
+- use `packy pack update <pack> --surface <surface>` to refresh one activation;
+- use `packy pack deactivate <pack> --surface <surface>` to remove exact owned projections.
 
 ## Problem
 
@@ -35,40 +33,42 @@ updateable, and reversible while keeping startup instructions small.
 | Role | Installer/configurator, not a runtime orchestrator. |
 | Platform | macOS-first. Linux may be considered later but is not promised for v0. |
 | CLI surfaces | Codex, OpenCode, and user-global Claude Code 2.1.203+. |
-| Skills | Curated global bundle exposed as symlinks under `~/.agents/skills`. |
-| Sources | One resolved Skill Source selected from an explicit override, repository checkout, or package Installed Source. |
-| Memory | Engram installed/updated through official mechanisms and configured through `engram setup`. |
-| Capability packs | Opt-in `matty` and `engram` packs managed independently on each supported surface. |
-| State | Small classic and capability-pack state files beneath `~/.packy`. |
-| Prompts | Small Packy-owned global prompt/config blocks only. |
+| Skills | Pack-selected resources projected to standard targets such as `~/.agents/skills`. |
+| Sources | A package Installed Source plus explicitly managed Pack Sources and catalog data. |
+| Memory | Engram requirements and host setup only when declared by an activated pack and separately approved where required. |
+| Capability packs | `addy`, `matty`, and `engram` packs managed independently on each declared surface. |
+| State | Capability-pack intent, ownership, consent, recovery, and readiness state beneath `~/.packy`. |
+| Prompts | Small pack-owned global instruction/config projections only. |
 | Safety | Preserve user, Engram, and Gentle AI content outside Packy markers. |
 
 ## User outcomes
 
-- A previewable first-run sequence configures the preferred Codex/OpenCode/Claude Code workflow.
+- Initialization leaves every Codex/OpenCode/Claude Code surface unchanged.
+- A previewed full-pack or resource-scoped activation configures only a chosen surface.
 - Repos are not polluted with copied skills or local prompt files by default.
-- Repeated install/update runs are idempotent.
+- Repeated activation/update runs are idempotent.
 - `doctor` is safe and read-only.
-- `uninstall` removes Packy-owned symlinks, marker blocks, prompt entries/files, and state without uninstalling Engram or deleting Gentle AI content.
+- Deactivation preserves foreign or modified content and does not uninstall shared executables or delete external data.
 - Capability-pack changes are explicit, surface-scoped, ownership-aware, and separately gated from host readiness.
+- Shared-target discovery can make a resource visible to compatible hosts, but it does not create activation intent for those surfaces.
 
 ## Implemented product areas
 
 | Area | Outcome |
 | --- | --- |
-| 01 scaffold | Go+Cobra CLI with `install`, `doctor`, `update`, and `uninstall`, plus sandboxable command execution. |
-| 02 state/dry-run | Minimal Packy state and dry-run planning for file, symlink, and external-command actions. |
-| 03 skill symlinks | Global skill bundle synchronization under `~/.agents/skills`. |
-| 04 Engram lifecycle | Homebrew-backed Engram install/update planning and delegated `engram setup codex/opencode`. |
-| 05 Codex prompt | Packy-owned Codex marker blocks that preserve user, Engram, and Gentle AI content. |
-| 06 OpenCode prompt | Packy prompt/config merge for OpenCode without clobbering existing JSONC config. |
-| 07 doctor | Read-only health checks with actionable pass/warn/fail output. |
-| 08 lifecycle | Complete idempotent update and safe uninstall behavior. |
+| 01 scaffold | Go+Cobra CLI with Installed Source, doctor, catalog, and pack lifecycle commands, plus sandboxable execution. |
+| 02 state/dry-run | Immutable pack plans and intent/ownership state for file, symlink, and external-command actions. |
+| 03 skill projections | Contributor-owned pack skill projections, including standard shared targets. |
+| 04 requirements | Read-only detection plus separately approved acquisition and tool-owned host setup. |
+| 05 Codex | Pack-selected skills and instructions that preserve user and foreign content. |
+| 06 OpenCode | Pack-selected prompt/config projections without clobbering existing JSONC config. |
+| 07 doctor | Read-only core health plus active-pack drift, requirements, and readiness summary. |
+| 08 lifecycle | Explicit activation, update, reconcile, recovery, and contributor-safe deactivation. |
 | 09 hardening | README docs and end-to-end sandbox lifecycle tests. |
 | Package distribution | Versioned GitHub Release artifacts, Homebrew publication, `packy init`, and package-install smoke coverage. |
-| Capability packs | Discovery, status, activation, update, reconciliation, deactivation, recovery, and readiness gates for `matty` and `engram`. |
+| Capability packs | Discovery, status, activation, update, reconciliation, deactivation, recovery, and readiness gates for `addy`, `matty`, and `engram`. |
 | Automation | Versioned JSON output for doctor and pack status, with stable health and readiness exit behavior. |
-| Internal ownership | Deep core-lifecycle and setup-health modules plus domain-owned workstation layouts and host observations. |
+| Internal ownership | Capability-pack lifecycle is the sole surface-mutation authority; host modules translate, inspect, and apply authorized actions. |
 | Claude Code | User-global skills, marked instructions, explicit agents and typed hooks, and official user-scoped MCP operations, with inert health and independent readiness. |
 
 ## Out of scope for v0

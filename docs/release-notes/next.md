@@ -1,8 +1,31 @@
-# {{TAG}} — Protected publication rollout
+# {{TAG}} — Explicit capability-pack activation
 
-This release verifies Packy's protected publication path after the repository
-governance rollout. It does not introduce new Packy CLI behavior or change the
-documented install, update, or uninstall workflows.
+This release makes capability-pack lifecycle the sole authority for every
+Codex, OpenCode, and Claude Code projection. The cutover is intentionally
+incompatible: the former root lifecycle commands are removed with no aliases,
+automatic migration, or adoption of their state.
+
+## Operator transition
+
+The sole current operator must remove the old installation's classic artifacts
+manually before using this release. Packy will neither read nor delete old
+classic state, prompts, links, MCP configuration, or ownership records; any
+leftovers are unowned and normal collision protections preserve them.
+
+After manual cleanup, install or upgrade the binary and start fresh:
+
+```sh
+brew upgrade packy
+packy init
+packy pack list
+packy pack show matty
+packy pack activate matty --surface codex --dry-run
+packy pack activate matty --surface codex
+packy pack status matty --surface codex
+```
+
+Repeat activation explicitly for each desired pack, resource selection, and
+surface. Initialization and catalog inspection cause no surface effects.
 
 ## Repository controls
 
@@ -35,8 +58,8 @@ documented install, update, or uninstall workflows.
 - **matty 3.0.0** has a complete Claude Code contract.
 - **engram 2.0.0** remains **degraded** on Claude Code where generic lifecycle
   translation is unsupported.
-- No Packy-managed files or state schemas change in this release.
-- Existing installations continue to use `brew upgrade packy`, followed by
-  `packy init`, `packy update --dry-run`, and `packy update`.
+- Pack health now distinguishes Packy core health from readiness of active packs.
+- A shared projection can be discovered by another compatible surface without
+  activating the pack there; each surface's intent remains explicit.
 - Packy remains macOS-first. Darwin Homebrew installs are the supported user
   path; Linux artifacts remain published for future support.
