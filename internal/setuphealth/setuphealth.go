@@ -54,9 +54,14 @@ type ActivePack struct {
 	PendingHumanActions int
 }
 
+type Observation struct {
+	ActivePacks         []ActivePack
+	FailedStateSurfaces []string
+}
+
 // Diagnose reports Packy core availability plus compact active-pack health.
 // Removed classic state and inactive pack projections are intentionally absent.
-func Diagnose(homeDir, configHome string, activePacks ...ActivePack) Report {
+func Diagnose(homeDir, configHome string, observation Observation) Report {
 	report := Report{
 		SchemaVersion: 2,
 		Kind:          "doctor",
@@ -67,7 +72,14 @@ func Diagnose(homeDir, configHome string, activePacks ...ActivePack) Report {
 			Detail:   "Packy core is available; no capability-pack activation is implied",
 		}},
 	}
-	for _, pack := range activePacks {
+	for _, surface := range observation.FailedStateSurfaces {
+		report.Checks = append(report.Checks, Check{
+			Name:     fmt.Sprintf("pack-state-%s", surface),
+			Severity: Fail,
+			Detail:   fmt.Sprintf("capability-pack activation state for %s could not be observed; run packy pack status", surface),
+		})
+	}
+	for _, pack := range observation.ActivePacks {
 		report.Checks = append(report.Checks, diagnoseActivePack(pack))
 	}
 	report.Summary = summarize(report.Checks)
@@ -88,11 +100,15 @@ func diagnoseActivePack(pack ActivePack) Check {
 		findings = append(findings, "recovery is required")
 	}
 	if pack.ProjectionProblems > 0 {
-		severity = Fail
+		if severity == Pass {
+			severity = Warn
+		}
 		findings = append(findings, fmt.Sprintf("%d projection findings", pack.ProjectionProblems))
 	}
 	if pack.MissingRequirements > 0 {
-		severity = Fail
+		if severity == Pass {
+			severity = Warn
+		}
 		findings = append(findings, fmt.Sprintf("%d missing requirements", pack.MissingRequirements))
 	}
 	if pack.UpdateAvailable {

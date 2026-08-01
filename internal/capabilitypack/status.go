@@ -177,9 +177,15 @@ type StatusRequirement struct {
 }
 
 type StatusReport struct {
-	Entries     []StatusEntry
-	Focused     *ResourceStatus
-	Requirement *StatusRequirement
+	Entries             []StatusEntry
+	ObservationFailures []Surface
+	Focused             *ResourceStatus
+	Requirement         *StatusRequirement
+}
+
+type ActiveIntentObservation struct {
+	Intents        []ActivationIntent
+	FailedSurfaces []Surface
 }
 
 // Facade is the single capability-pack use-case boundary consumed by the CLI.
@@ -216,22 +222,30 @@ func (f Facade) ActiveStatus(ctx context.Context) (StatusReport, error) {
 	})
 }
 
-// HasActiveIntents checks the durable activation state without resolving or
-// inspecting catalog packs. Doctor uses it to keep the no-pack path independent
-// of optional Pack Source content.
-func HasActiveIntents(ctx context.Context, store ActivationStore) (bool, error) {
+// ObserveActiveIntents reads durable activation intent without resolving or
+// inspecting catalog packs. Per-surface failures remain detached health facts
+// so Doctor can still render the most complete report possible.
+func ObserveActiveIntents(ctx context.Context, store ActivationStore) ActiveIntentObservation {
+	var observation ActiveIntentObservation
 	for _, surface := range statusSurfaces() {
 		state, err := store.Load(ctx, surface)
 		if err != nil {
-			return false, err
+			observation.FailedSurfaces = append(observation.FailedSurfaces, surface)
+			continue
 		}
 		for _, intent := range activeIntents(state) {
 			if intent.Active && intent.Surface == surface {
-				return true, nil
+				observation.Intents = append(observation.Intents, intent)
 			}
 		}
 	}
-	return false, nil
+	sort.Slice(observation.Intents, func(i, j int) bool {
+		if observation.Intents[i].PackID != observation.Intents[j].PackID {
+			return observation.Intents[i].PackID < observation.Intents[j].PackID
+		}
+		return observation.Intents[i].Surface < observation.Intents[j].Surface
+	})
+	return observation
 }
 
 func statusSurfaces() []Surface {
@@ -248,10 +262,12 @@ func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
 		state   ActivationState
 	}
 	var targets []target
+	var report StatusReport
 	for _, surface := range statusSurfaces() {
 		state, err := f.activation.store.Load(ctx, surface)
 		if err != nil {
-			return StatusReport{}, err
+			report.ObservationFailures = append(report.ObservationFailures, surface)
+			continue
 		}
 		for _, intent := range activeIntents(state) {
 			if !intent.Active || intent.Surface != surface {
@@ -267,14 +283,13 @@ func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
 		return targets[i].surface < targets[j].surface
 	})
 
-	var report StatusReport
 	for _, target := range targets {
 		pack, err := f.catalog.catalogMetadata(target.intent.PackID)
 		if err != nil {
 			report.Entries = append(report.Entries, failedActiveStatusEntry(target.intent, target.surface))
 			continue
 		}
-		entry, err := f.statusEntryWithState(ctx, pack, target.surface, target.state)
+		entry, err := f.statusEntryWithState(ctx, pack, target.surface, activeOnlyStatusState(target.state))
 		if err != nil {
 			report.Entries = append(report.Entries, failedActiveStatusEntry(target.intent, target.surface))
 			continue
@@ -282,6 +297,39 @@ func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
 		report.Entries = append(report.Entries, entry)
 	}
 	return report, nil
+}
+
+func activeOnlyStatusState(state ActivationState) ActivationState {
+	filtered := cloneActivationState(state)
+	activePackIDs := map[string]bool{}
+	filtered.Intents = filtered.Intents[:0]
+	for _, intent := range activeIntents(state) {
+		if !intent.Active {
+			continue
+		}
+		activePackIDs[intent.PackID] = true
+		filtered.Intents = append(filtered.Intents, intent)
+	}
+	if !filtered.Intent.Active {
+		filtered.Intent = ActivationIntent{}
+	}
+	filtered.Ownership = filtered.Ownership[:0]
+	for _, owner := range state.Ownership {
+		copy := owner
+		copy.Contributors = make([]string, 0, len(owner.Contributors))
+		for _, contributor := range owner.Contributors {
+			for packID := range activePackIDs {
+				if contributor == packID || contributorBelongsToPack(contributor, packID) {
+					copy.Contributors = append(copy.Contributors, contributor)
+					break
+				}
+			}
+		}
+		if len(copy.Contributors) > 0 {
+			filtered.Ownership = append(filtered.Ownership, copy)
+		}
+	}
+	return filtered
 }
 
 func failedActiveStatusEntry(intent ActivationIntent, surface Surface) StatusEntry {

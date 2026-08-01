@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -219,24 +220,33 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 		return setuphealth.Report{}, err
 	}
 	store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
-	hasActivePacks, err := capabilitypack.HasActiveIntents(ctx, store)
-	if err != nil {
-		return setuphealth.Report{}, err
+	intentObservation := capabilitypack.ObserveActiveIntents(ctx, store)
+	observation := setuphealth.Observation{}
+	for _, surface := range intentObservation.FailedSurfaces {
+		observation.FailedStateSurfaces = append(observation.FailedStateSurfaces, string(surface))
 	}
-	if !hasActivePacks {
-		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome()), nil
+	if len(intentObservation.Intents) == 0 {
+		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
 	}
 	facade, err := activationFacade(opts, resolver)
 	if err != nil {
-		return setuphealth.Report{}, err
+		observation.ActivePacks = failedActivePackObservations(intentObservation.Intents)
+		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
 	}
 	status, err := facade.ActiveStatus(ctx)
 	if err != nil {
-		return setuphealth.Report{}, err
+		observation.ActivePacks = failedActivePackObservations(intentObservation.Intents)
+		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
 	}
-	activePacks := make([]setuphealth.ActivePack, 0, len(status.Entries))
+	for _, surface := range status.ObservationFailures {
+		value := string(surface)
+		if !slices.Contains(observation.FailedStateSurfaces, value) {
+			observation.FailedStateSurfaces = append(observation.FailedStateSurfaces, value)
+		}
+	}
+	observation.ActivePacks = make([]setuphealth.ActivePack, 0, len(status.Entries))
 	for _, entry := range status.Entries {
-		activePacks = append(activePacks, setuphealth.ActivePack{
+		observation.ActivePacks = append(observation.ActivePacks, setuphealth.ActivePack{
 			ID:                  entry.Pack.ID,
 			Surface:             string(entry.Surface),
 			InspectionFailed:    entry.InspectionFailed,
@@ -248,7 +258,15 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 			PendingHumanActions: len(entry.PendingHumanActions),
 		})
 	}
-	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), activePacks...), nil
+	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
+}
+
+func failedActivePackObservations(intents []capabilitypack.ActivationIntent) []setuphealth.ActivePack {
+	result := make([]setuphealth.ActivePack, 0, len(intents))
+	for _, intent := range intents {
+		result = append(result, setuphealth.ActivePack{ID: intent.PackID, Surface: string(intent.Surface), InspectionFailed: true})
+	}
+	return result
 }
 
 type invocationSources struct {

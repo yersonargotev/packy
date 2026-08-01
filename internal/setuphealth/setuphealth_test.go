@@ -18,7 +18,7 @@ func TestDiagnoseIgnoresRemovedClassicStateAndProjections(t *testing.T) {
 		}},
 		Summary: Summary{Status: "healthy", Passes: 1},
 	}
-	if got := Diagnose("/sandbox/home", "/sandbox/xdg"); !reflect.DeepEqual(got, want) {
+	if got := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Diagnose() = %#v, want %#v", got, want)
 	}
 }
@@ -48,15 +48,15 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 		{
 			name:     "drifted",
 			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex", ProjectionProblems: 2, ReadinessPending: true},
-			severity: Fail,
-			status:   "failures",
+			severity: Warn,
+			status:   "warnings",
 			want:     []string{"2 projection findings", "packy pack reconcile ma" + "tty --surface codex", "packy pack status ma" + "tty --surface codex"},
 		},
 		{
 			name:     "missing requirement",
 			pack:     ActivePack{ID: "engram", Surface: "opencode", MissingRequirements: 1, ReadinessPending: true},
-			severity: Fail,
-			status:   "failures",
+			severity: Warn,
+			status:   "warnings",
 			want:     []string{"1 missing requirements", "packy pack status engram --surface opencode"},
 		},
 		{
@@ -76,7 +76,7 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			report := Diagnose("/sandbox/home", "/sandbox/xdg", tc.pack)
+			report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{ActivePacks: []ActivePack{tc.pack}})
 			if len(report.Checks) != 2 || report.Checks[1].Severity != tc.severity || report.Summary.Status != tc.status {
 				t.Fatalf("report = %+v", report)
 			}
@@ -95,8 +95,21 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 }
 
 func TestDiagnoseWithNoActivePacksReportsOnlyCoreHealth(t *testing.T) {
-	report := Diagnose("/sandbox/home", "/sandbox/xdg")
+	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{})
 	if len(report.Checks) != 1 || report.Checks[0].Name != "packy-core" || report.Summary != (Summary{Status: "healthy", Passes: 1}) {
 		t.Fatalf("report = %+v", report)
+	}
+}
+
+func TestDiagnoseIncludesStateObservationFailuresAndContinues(t *testing.T) {
+	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{
+		FailedStateSurfaces: []string{"codex"},
+		ActivePacks:         []ActivePack{{ID: "engram", Surface: "opencode"}},
+	})
+	if len(report.Checks) != 3 || report.Checks[0].Name != "packy-core" || report.Checks[1].Name != "pack-state-codex" || report.Checks[1].Severity != Fail || report.Checks[2].Severity != Pass {
+		t.Fatalf("report = %+v", report)
+	}
+	if report.Summary != (Summary{Status: "failures", Passes: 2, Failures: 1}) {
+		t.Fatalf("summary = %+v", report.Summary)
 	}
 }

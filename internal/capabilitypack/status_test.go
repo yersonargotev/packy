@@ -2,6 +2,7 @@ package capabilitypack
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -103,6 +104,76 @@ func TestActiveStatusInspectsOnlyActivePackIntents(t *testing.T) {
 	}
 	if len(store.saves) != 0 {
 		t.Fatalf("active status persisted state: %+v", store.saves)
+	}
+}
+
+func TestActiveStatusIgnoresInactiveSharedProjectionContributors(t *testing.T) {
+	shared := Resource{Kind: "instruction", ID: "shared-guidance"}
+	active := Pack{ID: "active", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{shared}}
+	inactive := Pack{ID: "inactive", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{shared}}
+	store := &fakeActivationStore{state: ActivationState{
+		Intents: []ActivationIntent{
+			{PackID: active.ID, Surface: SurfaceCodex, Version: "1", Active: true},
+			{PackID: inactive.ID, Surface: SurfaceCodex, Version: "1", Active: false},
+		},
+		Ownership: []ProjectionOwnership{{
+			ID:           "instruction:shared-guidance",
+			Fingerprint:  "healthy",
+			Contributors: []string{"pack:active:instruction:shared-guidance", "pack:inactive:instruction:shared-guidance"},
+		}},
+	}}
+	adapter := &fakeSurfaceAdapter{inspect: resourceStatusInspection}
+	facade := NewFacade(Catalog{packs: []Pack{active, inactive}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+
+	report, err := facade.ActiveStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].Pack.ID != active.ID || report.Entries[0].Projections.Verified != 1 || report.Entries[0].Projections.Ambiguous != 0 {
+		t.Fatalf("active report was degraded by inactive residual ownership: %+v", report)
+	}
+	if got := report.Entries[0].ProjectionDetails[0].Contributors; !reflect.DeepEqual(got, []string{"pack:active:instruction:shared-guidance"}) {
+		t.Fatalf("active contributors = %v", got)
+	}
+}
+
+type failingSurfaceStore struct {
+	stateBySurface map[Surface]ActivationState
+	failSurface    Surface
+}
+
+func (s failingSurfaceStore) Load(_ context.Context, surface Surface) (ActivationState, error) {
+	if surface == s.failSurface {
+		return ActivationState{}, errors.New("state unavailable")
+	}
+	return cloneActivationState(s.stateBySurface[surface]), nil
+}
+
+func (failingSurfaceStore) Save(context.Context, Surface, int, ActivationState) error {
+	return errors.New("unexpected save")
+}
+
+func TestActiveStatusReportsStateObservationFailureAndContinues(t *testing.T) {
+	pack := Pack{ID: "active", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide"}}}
+	store := failingSurfaceStore{
+		failSurface: SurfaceClaude,
+		stateBySurface: map[Surface]ActivationState{SurfaceCodex: {
+			Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: "1", Active: true},
+			Ownership: []ProjectionOwnership{{ID: "instruction:guide", Fingerprint: "healthy", Contributors: []string{"active"}}},
+		}},
+	}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{inspect: resourceStatusInspection}}))
+
+	report, err := facade.ActiveStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(report.ObservationFailures, []Surface{SurfaceClaude}) || len(report.Entries) != 1 || report.Entries[0].Pack.ID != pack.ID {
+		t.Fatalf("report = %+v", report)
+	}
+	observation := ObserveActiveIntents(context.Background(), store)
+	if !reflect.DeepEqual(observation.FailedSurfaces, []Surface{SurfaceClaude}) || len(observation.Intents) != 1 || observation.Intents[0].PackID != pack.ID {
+		t.Fatalf("intent observation = %+v", observation)
 	}
 }
 
