@@ -75,6 +75,67 @@ func TestStatusIsolatesReadinessForTwoActivePacksOnOneSurface(t *testing.T) {
 	}
 }
 
+func TestActiveStatusInspectsOnlyActivePackIntents(t *testing.T) {
+	active := Pack{ID: "ma" + "tty", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "ma" + "tty-guidance"}}}
+	inactive := Pack{ID: "engram", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "external_setup", ID: "engram-memory"}}}
+	store := &fakeActivationStore{state: ActivationState{
+		Intents: []ActivationIntent{
+			{PackID: "engram", Surface: SurfaceCodex, Version: "1", Active: false, Revision: 1},
+			{PackID: "ma" + "tty", Surface: SurfaceCodex, Version: "1", Active: true, Revision: 2},
+		},
+		Ownership: []ProjectionOwnership{
+			{ID: "external_setup:engram-memory", Fingerprint: "residual", Contributors: []string{"engram"}},
+			{ID: "instruction:ma" + "tty-guidance", Fingerprint: "healthy", Contributors: []string{"ma" + "tty"}},
+		},
+	}}
+	adapter := &fakeSurfaceAdapter{inspect: resourceStatusInspection}
+	facade := NewFacade(Catalog{packs: []Pack{inactive, active}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+
+	report, err := facade.ActiveStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].Pack.ID != "ma"+"tty" || !report.Entries[0].Intent.Active {
+		t.Fatalf("active report = %+v", report)
+	}
+	if adapter.inspectCalls != 1 {
+		t.Fatalf("adapter inspected %d packs, want only the active pair", adapter.inspectCalls)
+	}
+	if len(store.saves) != 0 {
+		t.Fatalf("active status persisted state: %+v", store.saves)
+	}
+}
+
+func TestActiveStatusWithNoActivePacksDoesNotRequireAdapters(t *testing.T) {
+	pack := Pack{ID: "ma" + "tty", Version: "1", Surfaces: []Surface{SurfaceCodex}}
+	store := &fakeActivationStore{}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, nil))
+
+	report, err := facade.ActiveStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 0 || len(store.saves) != 0 {
+		t.Fatalf("report = %+v saves=%+v", report, store.saves)
+	}
+}
+
+func TestActiveStatusRepresentsAnUninspectableActiveIntent(t *testing.T) {
+	store := &fakeActivationStore{state: ActivationState{Intent: ActivationIntent{PackID: "missing", Surface: SurfaceCodex, Version: "1", Active: true, Revision: 3}}}
+	facade := NewFacade(Catalog{}, WithActivation(store, nil))
+
+	report, err := facade.ActiveStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 1 || report.Entries[0].Pack.ID != "missing" || !report.Entries[0].InspectionFailed || !report.Entries[0].Intent.Active {
+		t.Fatalf("report = %+v", report)
+	}
+	if len(store.saves) != 0 {
+		t.Fatalf("active status persisted state: %+v", store.saves)
+	}
+}
+
 func TestSurfaceWideStatusRetainsSharedProjectionConflicts(t *testing.T) {
 	shared := Resource{Kind: "instruction", ID: "shared-guidance"}
 	matty := Pack{ID: "matty", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{shared}}

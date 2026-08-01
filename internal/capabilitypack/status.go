@@ -154,6 +154,8 @@ type StatusEntry struct {
 	ResourceSelections  []ResourceSelectionStatus
 	Resources           []ResourceStatus
 	Blockers            []string
+	MissingRequirements []string
+	InspectionFailed    bool
 	PendingHumanActions []string
 	Evidence            []string
 	Contract            LifecycleContract
@@ -203,6 +205,94 @@ func (f Facade) Status(ctx context.Context, request StatusRequest) (StatusReport
 	return withBundleObservation(ctx, f, func(locked Facade) (StatusReport, error) {
 		return locked.status(ctx, request)
 	})
+}
+
+// ActiveStatus reports fresh status only for explicitly active pack intents.
+// It is the read-only summary seam used by Doctor; inactive catalog entries and
+// residual ownership are deliberately not inspected.
+func (f Facade) ActiveStatus(ctx context.Context) (StatusReport, error) {
+	return withBundleObservation(ctx, f, func(locked Facade) (StatusReport, error) {
+		return locked.activeStatus(ctx)
+	})
+}
+
+// HasActiveIntents checks the durable activation state without resolving or
+// inspecting catalog packs. Doctor uses it to keep the no-pack path independent
+// of optional Pack Source content.
+func HasActiveIntents(ctx context.Context, store ActivationStore) (bool, error) {
+	for _, surface := range statusSurfaces() {
+		state, err := store.Load(ctx, surface)
+		if err != nil {
+			return false, err
+		}
+		for _, intent := range activeIntents(state) {
+			if intent.Active && intent.Surface == surface {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func statusSurfaces() []Surface {
+	return []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}
+}
+
+func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
+	if f.activation == nil || f.activation.store == nil {
+		return StatusReport{}, fmt.Errorf("surface inspection is not configured")
+	}
+	type target struct {
+		intent  ActivationIntent
+		surface Surface
+		state   ActivationState
+	}
+	var targets []target
+	for _, surface := range statusSurfaces() {
+		state, err := f.activation.store.Load(ctx, surface)
+		if err != nil {
+			return StatusReport{}, err
+		}
+		for _, intent := range activeIntents(state) {
+			if !intent.Active || intent.Surface != surface {
+				continue
+			}
+			targets = append(targets, target{intent: intent, surface: surface, state: state})
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].intent.PackID != targets[j].intent.PackID {
+			return targets[i].intent.PackID < targets[j].intent.PackID
+		}
+		return targets[i].surface < targets[j].surface
+	})
+
+	var report StatusReport
+	for _, target := range targets {
+		pack, err := f.catalog.catalogMetadata(target.intent.PackID)
+		if err != nil {
+			report.Entries = append(report.Entries, failedActiveStatusEntry(target.intent, target.surface))
+			continue
+		}
+		entry, err := f.statusEntryWithState(ctx, pack, target.surface, target.state)
+		if err != nil {
+			report.Entries = append(report.Entries, failedActiveStatusEntry(target.intent, target.surface))
+			continue
+		}
+		report.Entries = append(report.Entries, entry)
+	}
+	return report, nil
+}
+
+func failedActiveStatusEntry(intent ActivationIntent, surface Surface) StatusEntry {
+	return StatusEntry{
+		Pack:             Pack{ID: intent.PackID, Version: intent.Version},
+		Surface:          surface,
+		Intent:           IntentStatus{Active: true, Revision: intent.Revision, Version: intent.Version},
+		IntentPresent:    true,
+		InspectionFailed: true,
+		LifecycleState:   PackLifecycleActive,
+	}
 }
 
 func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport, error) {
@@ -272,15 +362,20 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	if f.activation == nil || f.activation.store == nil {
 		return StatusEntry{}, fmt.Errorf("surface inspection is not configured")
 	}
-	adapter := f.activation.adapters[surface]
-	if adapter == nil {
-		return StatusEntry{}, fmt.Errorf("no activation adapter configured for CLI surface %q", surface)
-	}
 	state, err := f.activation.store.Load(ctx, surface)
 	if err != nil {
 		return StatusEntry{}, err
 	}
+	return f.statusEntryWithState(ctx, pack, surface, state)
+}
+
+func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Surface, state ActivationState) (StatusEntry, error) {
+	adapter := f.activation.adapters[surface]
+	if adapter == nil {
+		return StatusEntry{}, fmt.Errorf("no activation adapter configured for CLI surface %q", surface)
+	}
 	entry := StatusEntry{Pack: pack, Surface: surface}
+	var err error
 	evidencePack := pack
 	ownedResidual := hasContributor(state.Ownership, pack.ID)
 	selection := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
@@ -396,6 +491,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	}
 	for _, resolution := range resolutions {
 		if !resolution.Available {
+			entry.MissingRequirements = append(entry.MissingRequirements, resolution.Tool)
 			entry.Blockers = append(entry.Blockers, fmt.Sprintf("required executable %s is missing", resolution.Tool))
 			if entry.Intent.Active {
 				entry.PendingHumanActions = append(entry.PendingHumanActions, fmt.Sprintf("install %s and rerun status; Packy will not install it during Status", resolution.Tool))
@@ -448,6 +544,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 		entry.Blockers = append(entry.Blockers, "runtime usability is not freshly demonstrated")
 	}
 	sort.Strings(entry.Blockers)
+	sort.Strings(entry.MissingRequirements)
 	sort.Strings(entry.PendingHumanActions)
 	sort.Strings(entry.Evidence)
 	return entry, nil

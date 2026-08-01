@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -193,7 +194,7 @@ func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *
 			if opts.SetupHealthDiagnose != nil {
 				report, err = opts.SetupHealthDiagnose()
 			} else {
-				report, err = diagnoseSetupHealth(workstationResolver)
+				report, err = diagnoseSetupHealth(cmd.Context(), opts, workstationResolver)
 			}
 			if err != nil {
 				return err
@@ -212,12 +213,42 @@ func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *
 	return cmd
 }
 
-func diagnoseSetupHealth(resolver *workstation.Resolver) (setuphealth.Report, error) {
+func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstation.Resolver) (setuphealth.Report, error) {
 	snapshot, err := resolver.Resolve(workstation.Options{})
 	if err != nil {
 		return setuphealth.Report{}, err
 	}
-	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome()), nil
+	store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
+	hasActivePacks, err := capabilitypack.HasActiveIntents(ctx, store)
+	if err != nil {
+		return setuphealth.Report{}, err
+	}
+	if !hasActivePacks {
+		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome()), nil
+	}
+	facade, err := activationFacade(opts, resolver)
+	if err != nil {
+		return setuphealth.Report{}, err
+	}
+	status, err := facade.ActiveStatus(ctx)
+	if err != nil {
+		return setuphealth.Report{}, err
+	}
+	activePacks := make([]setuphealth.ActivePack, 0, len(status.Entries))
+	for _, entry := range status.Entries {
+		activePacks = append(activePacks, setuphealth.ActivePack{
+			ID:                  entry.Pack.ID,
+			Surface:             string(entry.Surface),
+			InspectionFailed:    entry.InspectionFailed,
+			RecoveryRequired:    entry.LifecycleState == capabilitypack.PackLifecycleRecoveryRequired,
+			UpdateAvailable:     entry.UpdateAvailable,
+			ProjectionProblems:  entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
+			MissingRequirements: len(entry.MissingRequirements),
+			ReadinessPending:    !entry.Readiness.Configured || !entry.Readiness.Authorized || !entry.Readiness.Usable,
+			PendingHumanActions: len(entry.PendingHumanActions),
+		})
+	}
+	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), activePacks...), nil
 }
 
 type invocationSources struct {

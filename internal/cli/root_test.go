@@ -85,6 +85,91 @@ func TestDoctorJSONHealthyWarningsAndFailures(t *testing.T) {
 	})
 }
 
+func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
+	t.Run("converged active pack", func(t *testing.T) {
+		terminal := &fakeTerminal{interactive: true, approve: true}
+		opts, home, _ := packActivationOptions(t, terminal)
+		opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
+		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+			t.Fatalf("activate: %v\n%s", err, out)
+		}
+		before := snapshotTree(t, home)
+		prompts := terminal.calls
+
+		human, err := executeCommand(t, NewRootCommand(opts), "doctor")
+		if err != nil {
+			t.Fatalf("doctor: %v\n%s", err, human)
+		}
+		for _, want := range []string{"PASS packy-core", "PASS pack-matty-codex", "converged and ready", "SUMMARY status=healthy passes=2"} {
+			if !strings.Contains(human, want) {
+				t.Fatalf("human doctor missing %q:\n%s", want, human)
+			}
+		}
+
+		jsonOutput, err := executeCommand(t, NewRootCommand(opts), "doctor", "--json")
+		if err != nil {
+			t.Fatalf("doctor JSON: %v\n%s", err, jsonOutput)
+		}
+		var report struct {
+			Checks  []setupHealthJSONCheck `json:"checks"`
+			Summary setupHealthJSONSummary `json:"summary"`
+		}
+		if err := json.Unmarshal([]byte(jsonOutput), &report); err != nil || len(report.Checks) != 2 || report.Checks[1].Name != "pack-matty-codex" || report.Summary.Status != "healthy" {
+			t.Fatalf("doctor JSON = %+v err=%v\n%s", report, err, jsonOutput)
+		}
+		if snapshotTree(t, home) != before || terminal.calls != prompts {
+			t.Fatal("doctor mutated sandbox state or requested approval")
+		}
+	})
+
+	t.Run("active drift fails with current remediation", func(t *testing.T) {
+		terminal := &fakeTerminal{interactive: true, approve: true}
+		opts, home, _ := packActivationOptions(t, terminal)
+		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+			t.Fatalf("activate: %v\n%s", err, out)
+		}
+		if err := os.Remove(filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
+			t.Fatal(err)
+		}
+		before := snapshotTree(t, home)
+		prompts := terminal.calls
+
+		out, err := executeCommand(t, NewRootCommand(opts), "doctor")
+		if !errors.Is(err, ErrDoctorUnhealthy) {
+			t.Fatalf("doctor error=%v\n%s", err, out)
+		}
+		for _, want := range []string{"FAIL pack-matty-codex", "projection findings", "packy pack reconcile matty --surface codex", "packy pack status matty --surface codex"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("drift doctor missing %q:\n%s", want, out)
+			}
+		}
+		for _, removed := range []string{"packy install", "packy uninstall", "packy update"} {
+			if strings.Contains(out, removed) {
+				t.Fatalf("doctor named removed command %q:\n%s", removed, out)
+			}
+		}
+		if snapshotTree(t, home) != before || terminal.calls != prompts {
+			t.Fatal("drift diagnosis mutated sandbox state or requested approval")
+		}
+	})
+
+	t.Run("pending human action warns", func(t *testing.T) {
+		terminal := &fakeTerminal{interactive: true, approve: true}
+		opts, home, _ := packActivationOptions(t, terminal)
+		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+			t.Fatalf("activate: %v\n%s", err, out)
+		}
+		before := snapshotTree(t, home)
+		out, err := executeCommand(t, NewRootCommand(opts), "doctor")
+		if err != nil || !strings.Contains(out, "WARN pack-matty-codex") || !strings.Contains(out, "readiness is pending") {
+			t.Fatalf("pending doctor: %v\n%s", err, out)
+		}
+		if snapshotTree(t, home) != before {
+			t.Fatal("pending diagnosis mutated sandbox state")
+		}
+	})
+}
+
 type fakeCall struct {
 	name string
 	args []string
