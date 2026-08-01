@@ -12,11 +12,8 @@ import (
 func TestRenderSetupHealthHuman(t *testing.T) {
 	report := setuphealth.Report{
 		Context: setuphealth.Context{
-			HomeDir:        "/home/test",
-			ConfigHome:     "/home/test/config",
-			StateFile:      "/home/test/.packy/config.json",
-			StateStatus:    "present",
-			AgentSkillsDir: "/home/test/.agents/skills",
+			HomeDir:    "/home/test",
+			ConfigHome: "/home/test/config",
 		},
 		Checks:  []setuphealth.Check{{Name: "fixture", Severity: setuphealth.Warn, Detail: "inspect fixture"}},
 		Summary: setuphealth.Summary{Status: "warnings", Warnings: 1},
@@ -26,7 +23,7 @@ func TestRenderSetupHealthHuman(t *testing.T) {
 	if err := renderSetupHealthHuman(&output, report); err != nil {
 		t.Fatal(err)
 	}
-	want := "HOME=/home/test\nCONFIG_HOME=/home/test/config\nPACKY_STATE=/home/test/.packy/config.json\nPACKY_STATE_STATUS=present\nAGENT_SKILLS=/home/test/.agents/skills\nWARN fixture: inspect fixture\nSUMMARY status=warnings passes=0 warnings=1 failures=0\n"
+	want := "HOME=/home/test\nCONFIG_HOME=/home/test/config\nWARN fixture: inspect fixture\nSUMMARY status=warnings passes=0 warnings=1 failures=0\n"
 	if output.String() != want {
 		t.Fatalf("human output = %q, want %q", output.String(), want)
 	}

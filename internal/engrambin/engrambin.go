@@ -548,7 +548,7 @@ func DiagnoseRuntimeProcess(process Process, canonical *Canonical, pathEngram *E
 
 func RuntimeRemediation(canonical *Canonical) string {
 	if canonical == nil {
-		return "safe remediation: pkill -f 'engram serve' && packy update"
+		return "safe remediation: pkill -f 'engram serve', then reconcile the active Engram capability pack"
 	}
 	return fmt.Sprintf("safe remediation: pkill -f 'engram serve' && %s serve", canonical.Path)
 }

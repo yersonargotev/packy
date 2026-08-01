@@ -82,6 +82,7 @@ type ProductionPromotionInputs struct {
 }
 
 type ProductionQualification struct {
+	SchemaVersion          int                 `json:"schema_version"`
 	Synthetic              bool                `json:"synthetic"`
 	Repository             string              `json:"repository"`
 	Workflow               string              `json:"workflow"`
@@ -118,10 +119,11 @@ type ProductionRunnerSafety struct {
 	NoInteractiveClaude, WriteBoundaryEnforced                                     bool
 }
 type ProductionAssertions struct {
-	ForeignContentPreserved, InstallCreatedManagedState, InstallCreatedManagedProjections                            bool
-	InstallProjectedClaudeMCP, DryRunsUnchanged, UninstallRemovedManagedState                                        bool
-	UninstallRemovedManagedProjections, ResidualManagedArtifactsAbsent, EngramStubProtocolVerified                   bool
-	SensitiveFixtureRedacted, ForeignMCPExactAfterInstall, ForeignMCPExactAfterUpdate, ForeignMCPExactAfterUninstall bool
+	InstalledSourceInitialized, DoctorReportedCoreHealthy                           bool
+	RemovedInstallRejected, RemovedUpdateRejected, RemovedUninstallRejected         bool
+	ClassicStatePreserved, ClaudeInstructionPreserved, ClaudeMCPPreserved           bool
+	SharedSkillSentinelPreserved, NoPacksOwnershipState, NoClaudeMutationOperations bool
+	EngramStubProtocolVerified, SensitiveFixtureRedacted                            bool
 }
 type ProductionWritableRoots struct {
 	Home, XDGConfig, ClaudeConfig, State, Package, Repository, Acquisition string
@@ -156,7 +158,7 @@ func BuildProductionPromotionEvidence(context PromotionValidationContext, in Pro
 		return PromotionEvidence{}, err
 	}
 	q := in.Qualification
-	if q.Synthetic || q.Repository != context.Repository || q.Workflow != context.Workflow ||
+	if q.SchemaVersion != 2 || q.Synthetic || q.Repository != context.Repository || q.Workflow != context.Workflow ||
 		q.WorkflowDigest != context.WorkflowDigest || q.RunID != context.RunID ||
 		q.Commit != contextCommit(context) || q.PackySHA != contextCommit(context) ||
 		q.RequestedClaudeVersion != "2.1.203" || q.ResolvedClaudeVersion != "2.1.203" ||
@@ -237,25 +239,28 @@ func canonicalAuthorityDigest(value any) (string, error) {
 func validateProductionAtomicity(q ProductionQualification) error {
 	a := q.Atomicity
 	want := []struct {
-		name string
-		args []string
+		name     string
+		args     []string
+		exitCode int
 	}{
-		{"claude", []string{"--version"}}, {"packy", []string{"version"}},
-		{"packy", []string{"init", "--home", filepath.Join(q.Sandbox, "home"), "--source-root", filepath.Join(q.Sandbox, "installed-source"), "--repository-url", filepath.Join(q.Sandbox, "source-repository"), "--repository-ref", "packy-smoke-proved-source"}},
-		{"packy", []string{"install", "--dry-run"}}, {"packy", []string{"install"}}, {"packy", []string{"doctor"}},
-		{"packy", []string{"update", "--dry-run"}}, {"packy", []string{"update"}},
-		{"packy", []string{"uninstall", "--dry-run"}}, {"packy", []string{"uninstall"}}, {"packy", []string{"doctor"}},
-		{"claude", []string{"version"}}, {"claude", []string{"version"}}, {"claude", []string{"version"}},
-		{"claude", []string{"mcp-add"}}, {"claude", []string{"version"}}, {"claude", []string{"version"}},
-		{"claude", []string{"version"}}, {"claude", []string{"version"}}, {"claude", []string{"version"}},
-		{"claude", []string{"mcp-remove"}}, {"claude", []string{"version"}},
+		{"claude", []string{"--version"}, 0},
+		{"packy", []string{"version"}, 0},
+		{"packy", []string{"init", "--home", filepath.Join(q.Sandbox, "home"), "--source-root", filepath.Join(q.Sandbox, "installed-source"), "--repository-url", filepath.Join(q.Sandbox, "source-repository"), "--repository-ref", "packy-smoke-proved-source"}, 0},
+		{"packy", []string{"doctor"}, 0},
+		{"packy", []string{"install"}, 1},
+		{"packy", []string{"update"}, 1},
+		{"packy", []string{"uninstall"}, 1},
+		{"claude", []string{"version"}, 0},
 	}
 	if len(a.Commands) != len(want) {
 		return errors.New("production atomicity commands are missing or incomplete")
 	}
 	for i, command := range a.Commands {
-		if command.Name != want[i].name || !equalStrings(command.Args, want[i].args) || command.ExitCode != 0 {
+		if command.Name != want[i].name || !equalStrings(command.Args, want[i].args) || command.ExitCode != want[i].exitCode {
 			return fmt.Errorf("production atomicity command %d is malformed or out of order", i)
+		}
+		if want[i].exitCode != 0 && !strings.Contains(command.Stdout+command.Stderr, "unknown command") {
+			return fmt.Errorf("production atomicity command %d did not prove the root command is absent", i)
 		}
 	}
 	if err := validateProductionManifest("before", a.Before); err != nil {
@@ -271,11 +276,11 @@ func validateProductionAtomicity(q ProductionQualification) error {
 		return errors.New("production runner safety is incomplete")
 	}
 	x := a.Assertions
-	if !x.ForeignContentPreserved || !x.InstallCreatedManagedState || !x.InstallCreatedManagedProjections ||
-		!x.InstallProjectedClaudeMCP || !x.DryRunsUnchanged || !x.UninstallRemovedManagedState ||
-		!x.UninstallRemovedManagedProjections || !x.ResidualManagedArtifactsAbsent || !x.EngramStubProtocolVerified ||
-		!x.SensitiveFixtureRedacted || !x.ForeignMCPExactAfterInstall || !x.ForeignMCPExactAfterUpdate ||
-		!x.ForeignMCPExactAfterUninstall {
+	if !x.InstalledSourceInitialized || !x.DoctorReportedCoreHealthy ||
+		!x.RemovedInstallRejected || !x.RemovedUpdateRejected || !x.RemovedUninstallRejected ||
+		!x.ClassicStatePreserved || !x.ClaudeInstructionPreserved || !x.ClaudeMCPPreserved ||
+		!x.SharedSkillSentinelPreserved || !x.NoPacksOwnershipState || !x.NoClaudeMutationOperations ||
+		!x.EngramStubProtocolVerified || !x.SensitiveFixtureRedacted {
 		return errors.New("production runner assertions are incomplete")
 	}
 	o := a.Observation

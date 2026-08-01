@@ -1,10 +1,7 @@
 package cli
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
@@ -13,10 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/claudecode"
-	"github.com/yersonargotev/packy/internal/codex"
-	"github.com/yersonargotev/packy/internal/corelifecycle"
 	"github.com/yersonargotev/packy/internal/engrambin"
-	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	packyversion "github.com/yersonargotev/packy/internal/version"
@@ -78,7 +72,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "packy",
-		Short:         "Install and configure the Packy AI coding workflow",
+		Short:         "Manage Packy capability packs and sources",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       packyversion.Value,
@@ -88,10 +82,7 @@ func NewRootCommand(opts Options) *cobra.Command {
 		newVersionCommand(),
 		newPackCommand(opts, workstationResolver),
 		newInitCommand(opts, workstationResolver),
-		newInstallCommand(opts, workstationResolver),
 		newDoctorCommand(opts, workstationResolver),
-		newUpdateCommand(opts, workstationResolver),
-		newUninstallCommand(opts, workstationResolver),
 	)
 
 	return root
@@ -188,26 +179,6 @@ func defaultInitRepositoryRef(explicitRef, currentVersion string) string {
 	return ""
 }
 
-func newInstallCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	var dryRun, jsonOutput bool
-	cmd := &cobra.Command{
-		Use:   "install",
-		Short: "Install Packy-managed global workflow configuration",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return executeClassicLifecycle(cmd, opts, workstationResolver, corelifecycle.Install, classicLifecycleFlags{
-				dryRun: dryRun, jsonOutput: jsonOutput,
-			}, func(out io.Writer, result corelifecycle.Result) error {
-				_, err := fmt.Fprintf(out, "packy install: synced %d managed skills and wrote state %s (outcome: %s)\n", result.ManagedSkillCount(), result.StateFile(), result.Outcome())
-				return err
-			})
-		},
-	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview Packy-managed changes without writing files")
-	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
-	return cmd
-}
-
 func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var jsonOutput bool
 	cmd := &cobra.Command{
@@ -222,7 +193,7 @@ func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *
 			if opts.SetupHealthDiagnose != nil {
 				report, err = opts.SetupHealthDiagnose()
 			} else {
-				report, err = diagnoseSetupHealth(cmd.Context(), opts, workstationResolver)
+				report, err = diagnoseSetupHealth(workstationResolver)
 			}
 			if err != nil {
 				return err
@@ -241,310 +212,12 @@ func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *
 	return cmd
 }
 
-func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstation.Resolver) (setuphealth.Report, error) {
+func diagnoseSetupHealth(resolver *workstation.Resolver) (setuphealth.Report, error) {
 	snapshot, err := resolver.Resolve(workstation.Options{})
 	if err != nil {
 		return setuphealth.Report{}, err
 	}
-	sources, err := resolveInvocationSources(opts, snapshot)
-	if err != nil {
-		return setuphealth.Report{}, err
-	}
-
-	state := corelifecycle.NewLayout(snapshot.PackyHome())
-	skills := skillbundle.NewGlobalLayout(snapshot.Home())
-	codexLayout := codex.NewCanonicalLayout(snapshot.Home())
-	openCodeLayout := opencode.NewCanonicalLayout(snapshot.ConfigurationHome())
-	engramLayout := engrambin.NewSetupLayout(snapshot.Home(), snapshot.HomebrewPrefix())
-	lifecycleObservation := corelifecycle.ObserveSetup(state, skills, sources.skills)
-	claudeExecutable, err := opts.ClaudeLookPath("claude")
-	if err != nil {
-		claudeExecutable = ""
-	}
-	claudeObservation := claudecode.ObserveSetup(
-		ctx, claudecode.NewCanonicalLayout(snapshot.Home()), claudeExecutable, opts.ClaudeRunner,
-		lifecycleObservation.State().ClaudeOwnershipSnapshot(),
-	)
-
-	return setuphealth.Diagnose(
-		snapshot.Home(),
-		snapshot.ConfigurationHome(),
-		lifecycleObservation,
-		engrambin.ObserveSetup(engramLayout, snapshot.ExecutableSearchPath(), opts.Runner.LookPath, opts.EngramFacts),
-		codex.ObserveSetup(codexLayout),
-		opencode.ObserveSetup(openCodeLayout),
-		claudeObservation,
-	), nil
-}
-
-func newUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	var dryRun, jsonOutput bool
-	cmd := &cobra.Command{
-		Use:   "update",
-		Short: "Refresh Packy-managed tools and configuration",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return executeClassicLifecycle(cmd, opts, workstationResolver, corelifecycle.Update, classicLifecycleFlags{
-				dryRun: dryRun, jsonOutput: jsonOutput,
-			}, func(out io.Writer, result corelifecycle.Result) error {
-				_, err := fmt.Fprintf(out, "packy update: synced %d managed skills and wrote state %s (outcome: %s)\n", result.ManagedSkillCount(), result.StateFile(), result.Outcome())
-				return err
-			})
-		},
-	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview Packy-managed update changes without writing files or running commands")
-	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
-	return cmd
-}
-
-func printSkillSourceReport(out io.Writer, source skillbundle.Source, installedSource bootstrap.InstalledSource) error {
-	switch source.Origin {
-	case skillbundle.SourceOriginOverride:
-		if _, err := fmt.Fprintf(out, "Skill source: explicit override (PACKY_SKILLS_SOURCE=%s)\n", source.Root); err != nil {
-			return err
-		}
-	case skillbundle.SourceOriginRepository:
-		if _, err := fmt.Fprintf(out, "Skill source: repo checkout (%s)\n", source.Root); err != nil {
-			return err
-		}
-		installedSkillSource := skillbundle.InstalledSourceRoot(installedSource)
-		if skillbundle.SourceRootExists(installedSkillSource) {
-			if _, err := fmt.Fprintf(out, "warning: installed source also exists at %s; repo checkout source may create a development-mode install. For package-installed setup, run packy install outside the repo or set PACKY_SKILLS_SOURCE explicitly.\n", installedSkillSource); err != nil {
-				return err
-			}
-		}
-	case skillbundle.SourceOriginInstalled:
-		if _, err := fmt.Fprintf(out, "Skill source: installed source (%s)\n", source.Root); err != nil {
-			return err
-		}
-	default:
-		if _, err := fmt.Fprintf(out, "Skill source: %s\n", source.Root); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func printLifecycleDryRunPlan(out io.Writer, command string, plan corelifecycle.Plan) error {
-	actions := plan.Actions()
-	blockers := plan.Blockers()
-	actionGroups := lifecycleActionGroups(actions)
-	guidance := plan.DecisionGuidance()
-	if _, err := fmt.Fprintf(out,
-		"%s dry-run: decision summary\nWhat will change: %d planned actions across %d action groups; outcome %s\nImportant risks / prerequisites: %s\nRecovery guidance: %s\nNext command: %s\nAction summary:\n",
-		command, len(actions), len(actionGroups), plan.Outcome(),
-		joinOrNone(guidance.Risks), joinOrNone(guidance.Recovery), guidance.NextCommand,
-	); err != nil {
-		return err
-	}
-	for _, group := range actionGroups {
-		if _, err := fmt.Fprintf(out, "- %s: %d action(s)\n", group.kind, group.count); err != nil {
-			return err
-		}
-	}
-	if _, err := fmt.Fprintln(out, "Complete action detail:"); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, "%s dry-run: planned actions\nOutcome: %s\nDesired surfaces: %s\n", command, plan.Outcome(), strings.Join(plan.DesiredSurfaces(), ", ")); err != nil {
-		return err
-	}
-	transition := plan.StateTransition()
-	if _, err := fmt.Fprintf(out, "State transition: schema %d -> %d; status %s -> %s\n", transition.FromSchemaVersion, transition.ToSchemaVersion, transition.FromStatus, transition.ToStatus); err != nil {
-		return err
-	}
-	for _, value := range plan.PendingPrerequisites() {
-		if _, err := fmt.Fprintf(out, "Pending prerequisite: %s\n", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range plan.Preserved() {
-		if _, err := fmt.Fprintf(out, "Preserved: %s\n", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range blockers {
-		if _, err := fmt.Fprintf(out, "Blocker: %s\n", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range plan.Warnings() {
-		if _, err := fmt.Fprintf(out, "warning: %s\n", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range plan.RecoveryEvidence() {
-		if _, err := fmt.Fprintf(out, "Recovery: %s\n", value); err != nil {
-			return err
-		}
-	}
-	if err := renderLifecycleActions(out, actions); err != nil {
-		return err
-	}
-	return nil
-}
-
-func renderLifecycleActions(out io.Writer, actions []corelifecycle.ActionView) error {
-	for _, action := range actions {
-		if _, err := fmt.Fprintf(out, "- %s: %s", action.Kind, action.Description); err != nil {
-			return err
-		}
-		switch action.Kind {
-		case corelifecycle.ActionWriteOpenCodePrompt, corelifecycle.ActionRemoveOpenCodePrompt, corelifecycle.ActionSymlink:
-			if _, err := fmt.Fprintf(out, " (%s -> %s)\n", action.Path, action.Target); err != nil {
-				return err
-			}
-		case corelifecycle.ActionRun:
-			if _, err := fmt.Fprintf(out, " (%s)\n", strings.Join(append([]string{action.Command}, action.Args...), " ")); err != nil {
-				return err
-			}
-		default:
-			if _, err := fmt.Fprintf(out, " (%s)\n", action.Path); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-type lifecycleActionGroup struct {
-	kind  corelifecycle.ActionKind
-	count int
-}
-
-func lifecycleActionGroups(actions []corelifecycle.ActionView) []lifecycleActionGroup {
-	groups := make([]lifecycleActionGroup, 0)
-	indexes := make(map[corelifecycle.ActionKind]int)
-	for _, action := range actions {
-		if index, ok := indexes[action.Kind]; ok {
-			groups[index].count++
-			continue
-		}
-		indexes[action.Kind] = len(groups)
-		groups = append(groups, lifecycleActionGroup{kind: action.Kind, count: 1})
-	}
-	return groups
-}
-
-func printWarnings(out io.Writer, warnings []string) error {
-	for _, warning := range warnings {
-		if _, err := fmt.Fprintf(out, "warning: %s\n", warning); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func newUninstallCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	var dryRun, jsonOutput bool
-	cmd := &cobra.Command{
-		Use:   "uninstall",
-		Short: "Remove only Packy-managed artifacts",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return executeClassicLifecycle(cmd, opts, workstationResolver, corelifecycle.Uninstall, classicLifecycleFlags{
-				dryRun: dryRun, jsonOutput: jsonOutput,
-			}, func(out io.Writer, result corelifecycle.Result) error {
-				if !result.HasWork() {
-					_, err := fmt.Fprintln(out, "packy uninstall: no Packy-managed artifacts found")
-					return err
-				}
-				_, err := fmt.Fprintf(out, "packy uninstall: %s; processed Packy-managed artifacts for state %s\n", result.Outcome(), result.StateFile())
-				return err
-			})
-		},
-	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview Packy-managed removals without deleting files")
-	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
-	return cmd
-}
-
-type classicLifecycleFlags struct {
-	dryRun     bool
-	jsonOutput bool
-}
-
-type classicLifecycleSuccessRenderer func(io.Writer, corelifecycle.Result) error
-
-func executeClassicLifecycle(
-	cmd *cobra.Command,
-	opts Options,
-	resolver *workstation.Resolver,
-	operation corelifecycle.Operation,
-	flags classicLifecycleFlags,
-	renderSuccess classicLifecycleSuccessRenderer,
-) error {
-	composition, err := resolveClassicLifecycle(opts, resolver)
-	if err != nil {
-		return err
-	}
-	lifecycle := corelifecycle.NewFacade(composition.config, opts.Runner, opts.Clock)
-	plan, err := lifecycle.Preview(operation)
-	if err != nil {
-		return err
-	}
-	out := cmd.OutOrStdout()
-	if operation != corelifecycle.Uninstall && !flags.jsonOutput {
-		if err := printSkillSourceReport(out, composition.skillSource, composition.installedSource); err != nil {
-			return err
-		}
-	}
-	if flags.dryRun && flags.jsonOutput {
-		if err := renderClassicLifecyclePlanJSON(out, operation, plan); err != nil {
-			return err
-		}
-		return classicLifecycleOutcomeError(plan.Outcome())
-	}
-	if flags.dryRun {
-		if err := printLifecycleDryRunPlan(out, "packy "+string(operation), plan); err != nil {
-			return err
-		}
-		return classicLifecycleOutcomeError(plan.Outcome())
-	}
-	result, applyErr := lifecycle.Apply(cmd.Context(), plan)
-	if applyErr != nil && result.Outcome() == "" {
-		return applyErr
-	}
-	if flags.jsonOutput {
-		if err := renderClassicLifecycleResultJSON(out, operation, plan, result); err != nil {
-			return err
-		}
-		if applyErr != nil {
-			return applyErr
-		}
-		return classicLifecycleOutcomeError(result.Outcome())
-	}
-	if err := renderClassicLifecycleResultHuman(out, plan, result); err != nil {
-		return err
-	}
-	if operation != corelifecycle.Uninstall {
-		if err := printWarnings(out, result.Warnings()); err != nil {
-			return err
-		}
-	}
-	if applyErr != nil {
-		return applyErr
-	}
-	if err := renderSuccess(out, result); err != nil {
-		return err
-	}
-	return classicLifecycleOutcomeError(result.Outcome())
-}
-
-var ErrClassicLifecycleIncomplete = errors.New("classic lifecycle did not converge")
-
-func classicLifecycleOutcomeError(outcome corelifecycle.Outcome) error {
-	switch outcome {
-	case corelifecycle.OutcomeConverged, corelifecycle.OutcomeApplied, corelifecycle.OutcomeAppliedWithPendingPrerequisite:
-		return nil
-	default:
-		return fmt.Errorf("%w: %s", ErrClassicLifecycleIncomplete, outcome)
-	}
-}
-
-type classicLifecycleComposition struct {
-	config          corelifecycle.FacadeConfig
-	skillSource     skillbundle.Source
-	installedSource bootstrap.InstalledSource
+	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome()), nil
 }
 
 type invocationSources struct {
@@ -570,42 +243,4 @@ func resolveInvocationSources(opts Options, snapshot workstation.Snapshot) (invo
 		return invocationSources{}, err
 	}
 	return invocationSources{installed: installed, skills: skills}, nil
-}
-
-func resolveClassicLifecycle(opts Options, resolver *workstation.Resolver) (classicLifecycleComposition, error) {
-	snapshot, err := resolver.Resolve(workstation.Options{})
-	if err != nil {
-		return classicLifecycleComposition{}, err
-	}
-	sources, err := resolveInvocationSources(opts, snapshot)
-	if err != nil {
-		return classicLifecycleComposition{}, err
-	}
-	claudeExecutable, err := opts.ClaudeLookPath("claude")
-	if err != nil {
-		claudeExecutable = ""
-	}
-	stateLayout := corelifecycle.NewLayout(snapshot.PackyHome())
-	claudeAdapter := claudecode.NewSurfaceAdapter(
-		"", claudecode.NewCanonicalLayout(snapshot.Home()), snapshot.PackyHome(),
-		claudeExecutable, opts.ClaudeRunner,
-		claudecode.OwnershipSnapshotFunc(func(_ context.Context) (claudecode.OwnershipSnapshot, error) {
-			return corelifecycle.ObserveClaudeOwnershipSnapshot(stateLayout.StateFile())
-		}),
-	)
-	return classicLifecycleComposition{
-		config: corelifecycle.FacadeConfig{
-			PackyHome:       snapshot.PackyHome(),
-			Skills:          skillbundle.NewGlobalLayout(snapshot.Home()),
-			SkillSource:     sources.skills,
-			Codex:           codex.NewCanonicalLayout(snapshot.Home()),
-			OpenCode:        opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
-			Engram:          engrambin.NewTopology(snapshot.HomebrewPrefix()),
-			InstalledSource: sources.installed,
-			RunningVersion:  packyversion.Value,
-			Claude:          claudeAdapter,
-		},
-		skillSource:     sources.skills,
-		installedSource: sources.installed,
-	}, nil
 }

@@ -7,10 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
+func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and executes a local release binary")
 	}
@@ -22,7 +21,6 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 	xdgConfigHome := filepath.Join(sandbox, "xdg")
 	outsideCheckout := filepath.Join(sandbox, "outside-checkout")
 	stubBin := filepath.Join(sandbox, "bin")
-	homebrewPrefix := sandbox
 	externalLog := filepath.Join(sandbox, "external-calls.log")
 	for _, dir := range []string{home, xdgConfigHome, outsideCheckout, stubBin} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -31,131 +29,79 @@ func TestPackageInstallSmokeLifecycleWithLocalReleaseBinary(t *testing.T) {
 	}
 
 	binary := buildLocalReleaseBinary(t, root, sandbox, "v0.99.0")
-	sourceRepo := createSmokeSourceRepo(t, sandbox, "v0.98.0")
-	appendSmokeSourceTag(t, sourceRepo, sandbox, "v0.99.0")
+	sourceRepo := createSmokeSourceRepo(t, sandbox, "v0.99.0")
 	writeSmokeStub(t, stubBin, "engram", externalLog)
 	writeSmokeStub(t, stubBin, "brew", externalLog)
-	writeSmokeVersionStub(t, stubBin, "claude", externalLog, "2.1.202")
-
+	writeSmokeStub(t, stubBin, "claude", externalLog)
 	env := append(os.Environ(),
 		"HOME="+home,
 		"XDG_CONFIG_HOME="+xdgConfigHome,
 		"PATH="+stubBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"HOMEBREW_PREFIX="+homebrewPrefix,
+		"HOMEBREW_PREFIX="+sandbox,
 		"GIT_CONFIG_NOSYSTEM=1",
 	)
+
+	legacy := map[string]string{
+		filepath.Join(home, ".packy", "config.json"):                   "{classic state remains unread}\n",
+		filepath.Join(home, ".codex", "AGENTS.md"):                     "codex-user-bytes\n",
+		filepath.Join(xdgConfigHome, "opencode", "opencode.json"):      "{\"user\":true}\n",
+		filepath.Join(xdgConfigHome, "opencode", "packy.md"):           "opencode-user-bytes\n",
+		filepath.Join(home, ".claude", "CLAUDE.md"):                    "claude-user-bytes\n",
+		filepath.Join(home, ".claude", "settings.json"):                "{\"user\":true}\n",
+		filepath.Join(home, ".agents", "skills", "legacy", "SKILL.md"): "shared-skill-user-bytes\n",
+	}
+	for path, content := range legacy {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	help := runSmokeCommand(t, binary, outsideCheckout, env, "--help")
-	for _, want := range []string{"Install and configure the Packy AI coding workflow", "version", "init", "install", "doctor", "update", "uninstall"} {
+	for _, want := range []string{"Manage Packy capability packs and sources", "version", "init", "doctor", "pack"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("root help output missing %q:\n%s", want, help)
 		}
 	}
+	for _, removed := range []string{"install", "update", "uninstall"} {
+		out, err := runSmokeCommandAllowError(t, binary, outsideCheckout, env, removed)
+		if err == nil || !strings.Contains(out, "unknown command") {
+			t.Fatalf("removed command %s did not fail as unknown: %v\n%s", removed, err, out)
+		}
+	}
+
 	versionFlag := runSmokeCommand(t, binary, outsideCheckout, env, "--version")
 	versionCommand := runSmokeCommand(t, binary, outsideCheckout, env, "version")
 	if want := "packy version v0.99.0\n"; versionFlag != want || versionCommand != want {
 		t.Fatalf("version outputs = flag %q, command %q; want %q", versionFlag, versionCommand, want)
 	}
-	assertSmokeExternalCalls(t, externalLog, nil)
-
-	runSmokeCommand(t, binary, outsideCheckout, env, "init", "--repository-url", sourceRepo, "--repository-ref", "v0.98.0")
-	assertInitializedSourceExcludesExternalReferenceTrees(t, home)
-	beforeStaleUpdateDryRun := snapshotSmokeTree(t, home)
-	out, err := runSmokeCommandAllowError(t, binary, outsideCheckout, env, "update", "--dry-run")
-	if err == nil {
-		t.Fatalf("stale update --dry-run unexpectedly succeeded:\n%s", out)
-	}
-	for _, want := range []string{"stale", "v0.99.0", "run packy init"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("stale update --dry-run output missing %q:\n%s", want, out)
-		}
-	}
-	if after := snapshotSmokeTree(t, home); after != beforeStaleUpdateDryRun {
-		t.Fatalf("stale update --dry-run mutated sandbox home\nbefore:\n%s\nafter:\n%s", beforeStaleUpdateDryRun, after)
-	}
-	assertSmokeExternalCalls(t, externalLog, nil)
-
 	runSmokeCommand(t, binary, outsideCheckout, env, "init", "--repository-url", sourceRepo)
+	assertInitializedSourceExcludesExternalReferenceTrees(t, home)
 
-	runSmokeCommand(t, binary, outsideCheckout, env, "install", "--dry-run")
-	assertSmokePathMissing(t, filepath.Join(home, ".packy"), "install --dry-run must not write state")
-	assertSmokePathMissing(t, filepath.Join(home, ".agents"), "install --dry-run must not write skill links")
-	assertSmokeExternalCalls(t, externalLog, []string{"claude --version"})
-
-	runSmokeCommand(t, binary, outsideCheckout, env, "install")
-	assertSmokePathExists(t, filepath.Join(home, ".packy", "config.json"), "install should write state")
-	assertSmokePathExists(t, filepath.Join(home, ".agents", "skills", "wayfinder"), "install should link bundled skills")
-	beforeRepeatInstall := snapshotSmokeTreeIgnoringInstallObservations(t, home)
-	beforeInstallCheck := readSmokeInstallCheck(t, home)
-	runSmokeCommand(t, binary, outsideCheckout, env, "install")
-	afterInstallCheck := readSmokeInstallCheck(t, home)
-	if afterInstallCheck.Before(beforeInstallCheck) {
-		t.Fatalf("repeat install observation regressed from %s to %s", beforeInstallCheck, afterInstallCheck)
-	}
-	if after := snapshotSmokeTreeIgnoringInstallObservations(t, home); after != beforeRepeatInstall {
-		t.Fatalf("repeat install changed content other than install observations\nbefore:\n%s\nafter:\n%s", beforeRepeatInstall, after)
-	}
 	doctorJSON := runSmokeCommand(t, binary, outsideCheckout, env, "doctor", "--json")
 	var doctor struct {
 		SchemaVersion int               `json:"schema_version"`
 		Report        string            `json:"report"`
 		Checks        []json.RawMessage `json:"checks"`
-		Summary       struct {
-			Status string `json:"status"`
-		} `json:"summary"`
 	}
 	if err := json.Unmarshal([]byte(doctorJSON), &doctor); err != nil {
 		t.Fatalf("doctor --json emitted invalid JSON: %v\n%s", err, doctorJSON)
 	}
-	if doctor.SchemaVersion != 2 || doctor.Report != "doctor" || len(doctor.Checks) == 0 || doctor.Summary.Status == "" {
+	if doctor.SchemaVersion != 2 || doctor.Report != "doctor" || len(doctor.Checks) == 0 {
 		t.Fatalf("doctor --json emitted unexpected shape: %#v", doctor)
 	}
 
-	beforeUpdateDryRun := snapshotSmokeTree(t, home)
-	runSmokeCommand(t, binary, outsideCheckout, env, "update", "--dry-run")
-	if after := snapshotSmokeTree(t, home); after != beforeUpdateDryRun {
-		t.Fatalf("update --dry-run mutated sandbox home\nbefore:\n%s\nafter:\n%s", beforeUpdateDryRun, after)
+	for path, want := range legacy {
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != want {
+			t.Fatalf("core operation changed legacy surface %s: %q, %v", path, data, err)
+		}
 	}
-	runSmokeCommand(t, binary, outsideCheckout, env, "update")
-
-	beforeUninstallDryRun := snapshotSmokeTree(t, home)
-	runSmokeCommand(t, binary, outsideCheckout, env, "uninstall", "--dry-run")
-	if after := snapshotSmokeTree(t, home); after != beforeUninstallDryRun {
-		t.Fatalf("uninstall --dry-run mutated sandbox home\nbefore:\n%s\nafter:\n%s", beforeUninstallDryRun, after)
-	}
-	runSmokeCommand(t, binary, outsideCheckout, env, "uninstall")
-	assertSmokePathMissing(t, filepath.Join(home, ".packy", "config.json"), "uninstall should remove state")
-	assertSmokePathMissing(t, filepath.Join(home, ".agents", "skills", "wayfinder"), "uninstall should remove managed skill links")
-	afterUninstall := snapshotSmokeTree(t, home)
-	runSmokeCommand(t, binary, outsideCheckout, env, "uninstall")
-	if after := snapshotSmokeTree(t, home); after != afterUninstall {
-		t.Fatalf("repeat uninstall mutated sandbox home\nbefore:\n%s\nafter:\n%s", afterUninstall, after)
-	}
-
-	runSmokeCommand(t, binary, outsideCheckout, env, "doctor")
-	assertSmokePathExists(t, filepath.Join(home, ".local", "share", "packy", "bundle", "skills"), "uninstall should keep initialized source")
-	assertSmokeExternalCalls(t, externalLog, []string{
-		"claude --version",
-		"claude --version",
-		"engram setup codex",
-		"engram setup opencode",
-		"claude --version",
-		"engram setup codex",
-		"engram setup opencode",
-		"claude --version",
-		"engram --version",
-		"claude --version",
-		"claude --version",
-		"brew update",
-		"brew upgrade engram",
-		"engram setup codex",
-		"engram setup opencode",
-		"claude --version",
-		"claude --version",
-		"claude --version",
-		"engram --version",
-	})
+	assertSmokePathExists(t, filepath.Join(home, ".local", "share", "packy", "bundle", "skills"), "init should create only the Installed Source substrate")
+	assertSmokeExternalCalls(t, externalLog, nil)
 }
-
 func buildLocalReleaseBinary(t *testing.T, root, sandbox, version string) string {
 	t.Helper()
 	binary := filepath.Join(sandbox, "packy")
@@ -200,17 +146,6 @@ func createSmokeSourceRepo(t *testing.T, sandbox, version string) string {
 	return repo
 }
 
-func appendSmokeSourceTag(t *testing.T, repo, sandbox, version string) {
-	t.Helper()
-	path := filepath.Join(repo, "bundle", "skills", "engineering", "ask-matt", "CHANGELOG.md")
-	if err := os.WriteFile(path, []byte(version+" fixture\n"), 0o600); err != nil {
-		t.Fatalf("write newer smoke source fixture: %v", err)
-	}
-	runSmokeGit(t, repo, sandbox, "add", ".")
-	runSmokeGit(t, repo, sandbox, "-c", "user.name=Packy Smoke", "-c", "user.email=packy-smoke@example.test", "commit", "-m", "fixture source "+version)
-	runSmokeGit(t, repo, sandbox, "tag", version)
-}
-
 func runSmokeGit(t *testing.T, repo, sandbox string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
@@ -231,14 +166,6 @@ func writeSmokeStub(t *testing.T, dir, name, logPath string) {
 	script := "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> " + shellQuote(logPath) + "\n"
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
 		t.Fatalf("write %s stub: %v", name, err)
-	}
-}
-
-func writeSmokeVersionStub(t *testing.T, dir, name, logPath, version string) {
-	t.Helper()
-	script := "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s %s\\n' \"$(basename \"$0\")\" \"$*\" >> " + shellQuote(logPath) + "\nprintf '%s\\n' " + shellQuote(version) + "\n"
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
-		t.Fatalf("write %s version stub: %v", name, err)
 	}
 }
 
@@ -324,82 +251,4 @@ func assertSmokePathMissing(t *testing.T, path, reason string) {
 	if !os.IsNotExist(err) {
 		t.Fatalf("%s: stat %s: %v", reason, path, err)
 	}
-}
-
-func snapshotSmokeTree(t *testing.T, root string) string {
-	return snapshotSmokeTreeWithInstallObservations(t, root, true)
-}
-
-func snapshotSmokeTreeIgnoringInstallObservations(t *testing.T, root string) string {
-	return snapshotSmokeTreeWithInstallObservations(t, root, false)
-}
-
-func snapshotSmokeTreeWithInstallObservations(t *testing.T, root string, includeInstallObservations bool) string {
-	t.Helper()
-	var entries []string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		info, err := os.Lstat(path)
-		if err != nil {
-			return err
-		}
-		switch {
-		case info.Mode()&os.ModeSymlink != 0:
-			target, err := os.Readlink(path)
-			if err != nil {
-				return err
-			}
-			entries = append(entries, rel+" symlink "+target)
-		case entry.IsDir():
-			entries = append(entries, rel+" dir")
-		default:
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			if !includeInstallObservations && rel == filepath.Join(".packy", "config.json") {
-				var state map[string]json.RawMessage
-				if err := json.Unmarshal(data, &state); err != nil {
-					return err
-				}
-				delete(state, "last_install_check")
-				delete(state, "latest_attempt")
-				data, err = json.Marshal(state)
-				if err != nil {
-					return err
-				}
-			}
-			entries = append(entries, rel+" file "+string(data))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("snapshot %s: %v", root, err)
-	}
-	return strings.Join(entries, "\n")
-}
-
-func readSmokeInstallCheck(t *testing.T, home string) time.Time {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(home, ".packy", "config.json"))
-	if err != nil {
-		t.Fatalf("read Packy state: %v", err)
-	}
-	var state struct {
-		LastInstallCheck string `json:"last_install_check"`
-	}
-	if err := json.Unmarshal(data, &state); err != nil {
-		t.Fatalf("decode Packy state: %v", err)
-	}
-	observedAt, err := time.Parse(time.RFC3339, state.LastInstallCheck)
-	if err != nil {
-		t.Fatalf("parse last_install_check %q: %v", state.LastInstallCheck, err)
-	}
-	return observedAt
 }

@@ -38,7 +38,7 @@ func TestAllowedCommandRejectsInteractiveClaudeAndUnknownPacky(t *testing.T) {
 	if !AllowedCommand(p, c, []string{c, "--version"}) {
 		t.Fatal("version rejected")
 	}
-	for _, argv := range [][]string{{c}, {c, "--print", "hello"}, {c, "mcp", "list"}, {p, "pack", "list"}, {p, "doctor", "--json"}, {"sh", "-c", "true"}} {
+	for _, argv := range [][]string{{c}, {c, "--print", "hello"}, {c, "mcp", "list"}, {p, "pack", "list"}, {p, "doctor", "--json"}, {p, "install", "--dry-run"}, {"sh", "-c", "true"}} {
 		if AllowedCommand(p, c, argv) {
 			t.Fatalf("allowed %#v", argv)
 		}
@@ -254,8 +254,6 @@ func TestObserveAddyQualificationAcquiresInstalledSourceState(t *testing.T) {
 			{Name: "claude", Args: []string{"--version"}, ExitCode: 0},
 			{Name: "packy", Args: []string{"version"}, ExitCode: 0},
 			{Name: "claude", Args: []string{"version"}, ExitCode: 0},
-			{Name: "claude", Args: []string{"mcp-add"}, ExitCode: 0},
-			{Name: "claude", Args: []string{"mcp-remove"}, ExitCode: 0},
 		},
 		Safety: SafetyEvidence{CredentialsScrubbed: true, WriteBoundaryEnforced: true},
 	}
@@ -323,52 +321,10 @@ func TestManifestDeterministicAndContentBound(t *testing.T) {
 	}
 }
 
-func TestDirectoryAbsentOrEmptyFailsClosed(t *testing.T) {
-	root := t.TempDir()
-	empty, err := directoryAbsentOrEmpty(filepath.Join(root, "missing"))
-	if err != nil || !empty {
-		t.Fatalf("missing: %v %v", empty, err)
-	}
-	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := directoryAbsentOrEmpty(file); err == nil {
-		t.Fatal("non-directory was treated as empty")
-	}
-}
-
-func TestClassicSkillTopologyUsesRecursiveSkillLeaves(t *testing.T) {
-	root := t.TempDir()
-	source := filepath.Join(root, "bundle", "skills")
-	home := filepath.Join(root, "home")
-	for _, rel := range []string{"engineering/review", "productivity/plan", "in-progress/loop-me"} {
-		dir := filepath.Join(source, rel)
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("x"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	links := filepath.Join(home, ".agents", "skills")
-	if err := os.MkdirAll(links, 0700); err != nil {
-		t.Fatal(err)
-	}
-	for name, target := range map[string]string{"review": filepath.Join(source, "engineering", "review"), "plan": filepath.Join(source, "productivity", "plan"), "loop-me": filepath.Join(source, "in-progress", "loop-me")} {
-		if err := os.Symlink(target, filepath.Join(links, name)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if !classicSkillTopologyExact(home, source) {
-		t.Fatal("recursive leaf topology rejected")
-	}
-}
-
 func TestValidationFailureStillWritesDiagnosticEvidence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "evidence.json")
 	evidence := validEvidence()
-	evidence.Assertions.DryRunsUnchanged = false
+	evidence.Assertions.NoPacksOwnershipState = false
 	if err := validateAndWriteEvidence(path, evidence); err == nil {
 		t.Fatal("invalid evidence accepted")
 	}
@@ -376,26 +332,58 @@ func TestValidationFailureStillWritesDiagnosticEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(b, []byte(`"dry_runs_unchanged": false`)) {
+	if !bytes.Contains(b, []byte(`"no_packs_ownership_state": false`)) {
 		t.Fatalf("failed diagnostic evidence missing assertion: %s", b)
 	}
 }
 
 func validEvidence() Evidence {
 	sandbox := filepath.Join(string(filepath.Separator), "sandbox")
-	args := [][]string{{"--version"}, {"version"}, {"init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", filepath.Join(sandbox, "source-repository"), "--repository-ref", syntheticSourceRef}, {"install", "--dry-run"}, {"install"}, {"doctor"}, {"update", "--dry-run"}, {"update"}, {"uninstall", "--dry-run"}, {"uninstall"}, {"doctor"}}
+	args := [][]string{{"--version"}, {"version"}, {"init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", filepath.Join(sandbox, "source-repository"), "--repository-ref", syntheticSourceRef}, {"doctor"}, {"install"}, {"update"}, {"uninstall"}}
 	commands := make([]CommandEvidence, len(args))
 	for i := range args {
 		commands[i] = CommandEvidence{Name: "packy", Args: args[i], ExitCode: 0}
 	}
 	commands[0].Name = "claude"
-	for _, operation := range []string{"version", "version", "version", "mcp-add", "version", "version", "version", "version", "version", "mcp-remove", "version"} {
-		commands = append(commands, CommandEvidence{Name: "claude", Args: []string{operation}, ExitCode: 0})
+	for i, name := range []string{"install", "update", "uninstall"} {
+		commands[4+i].ExitCode = 1
+		commands[4+i].Stderr = "unknown command \"" + name + "\" for \"packy\""
 	}
+	commands = append(commands, CommandEvidence{Name: "claude", Args: []string{"version"}, ExitCode: 0})
 	sha := strings.Repeat("a", 40)
 	manifest := []FileEvidence{{Path: "fixture", SHA256: strings.Repeat("c", 64), Mode: 0o600, Size: 1}}
-	return Evidence{SchemaVersion: 1, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Sandbox: sandbox, Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{ForeignContentPreserved: true, InstallCreatedManagedState: true, InstallCreatedManagedProjections: true, InstallProjectedClaudeMCP: true, DryRunsUnchanged: true, UninstallRemovedManagedState: true, UninstallRemovedManagedProjections: true, ResidualManagedArtifactsAbsent: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true, ForeignMCPExactAfterInstall: true, ForeignMCPExactAfterUpdate: true, ForeignMCPExactAfterUninstall: true}}
+	return Evidence{SchemaVersion: 2, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Sandbox: sandbox, Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true, RemovedInstallRejected: true, RemovedUpdateRejected: true, RemovedUninstallRejected: true, ClassicStatePreserved: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true, SharedSkillSentinelPreserved: true, NoPacksOwnershipState: true, NoClaudeMutationOperations: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true}}
 }
+
+func TestEvidenceSchemaV2UsesOnlyCoreCutoverAssertions(t *testing.T) {
+	data, err := json.Marshal(validEvidence())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		SchemaVersion int             `json:"schema_version"`
+		Assertions    map[string]bool `json:"assertions"`
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"installed_source_initialized", "doctor_reported_core_healthy",
+		"removed_install_rejected", "removed_update_rejected", "removed_uninstall_rejected",
+		"classic_state_preserved", "claude_instruction_preserved", "claude_mcp_preserved",
+		"shared_skill_sentinel_preserved", "no_packs_ownership_state",
+		"no_claude_mutation_operations", "engram_stub_protocol_verified", "sensitive_fixture_redacted",
+	}
+	if document.SchemaVersion != 2 || len(document.Assertions) != len(want) {
+		t.Fatalf("schema = %d, assertions = %#v", document.SchemaVersion, document.Assertions)
+	}
+	for _, name := range want {
+		if !document.Assertions[name] {
+			t.Fatalf("schema v2 omitted or failed %q: %#v", name, document.Assertions)
+		}
+	}
+}
+
 func TestValidateEvidenceRejectsTampering(t *testing.T) {
 	e := validEvidence()
 	if err := ValidateEvidence(e); err != nil {
@@ -451,19 +439,35 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 		t.Fatal("accepted unproved init repository ref")
 	}
 	e = validEvidence()
-	e.Commands = e.Commands[:11]
+	e.Commands = e.Commands[:7]
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted missing normalized Claude operations")
 	}
 	e = validEvidence()
-	e.Commands[14].Args[0] = "mcp-list"
+	e.Commands[7].Args[0] = "mcp-list"
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted tampered normalized Claude sequence")
 	}
 	e = validEvidence()
-	e.Assertions.InstallCreatedManagedProjections = false
+	e.Assertions.NoClaudeMutationOperations = false
 	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted no-op lifecycle assertions")
+		t.Fatal("accepted incomplete core-cutover assertions")
+	}
+	e = validEvidence()
+	e.Commands[4].ExitCode = 0
+	e.Commands[4].Stderr = ""
+	if err := ValidateEvidence(e); err == nil {
+		t.Fatal("accepted surviving classic install command")
+	}
+	e = validEvidence()
+	e.Commands[5].Stderr = "different failure"
+	if err := ValidateEvidence(e); err == nil {
+		t.Fatal("accepted removed command without unknown-command evidence")
+	}
+	e = validEvidence()
+	e.SchemaVersion = 1
+	if err := ValidateEvidence(e); err == nil {
+		t.Fatal("accepted superseded lifecycle evidence schema")
 	}
 	e = validEvidence()
 	e.Before = nil

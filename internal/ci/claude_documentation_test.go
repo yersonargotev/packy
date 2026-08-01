@@ -18,7 +18,7 @@ func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 		"docs/product/packy-v0.md":   {"Claude Code", claudecode.MinimumSupportedVersion},
 		"docs/roadmap.md":            {"Claude Code", claudecode.MinimumSupportedVersion},
 		"docs/capability-packs.md":   {"manifest v3", "Claude Code", "matty 3.0.0", "engram 2.0.0"},
-		"docs/structured-output.md":  {"schema_version: 2", "claude-readiness"},
+		"docs/structured-output.md":  {"schema_version: 2", "packy-core"},
 		"docs/release.md":            {"./scripts/validate-packy.sh", "Fail-closed publication gate", claudecode.MinimumSupportedVersion},
 		"docs/release-notes/next.md": {"{{TAG}}", claudecode.MinimumSupportedVersion, "state schema v2", "matty 3.0.0", "engram 2.0.0", "degraded"},
 	}

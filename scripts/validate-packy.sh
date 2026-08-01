@@ -42,14 +42,12 @@ readonly packages=(
   ./internal/claudesmoke
   ./internal/codex
   ./internal/codexsmoke
-  ./internal/corelifecycle
   ./internal/engrambin
   ./internal/governanceauth
   ./internal/governancedrift
   ./internal/localprojection
   ./internal/opencode
   ./internal/opencodesmoke
-  ./internal/ownedcontainer
   ./internal/packclassification
   ./internal/packsync
   ./internal/packsync/githubsource

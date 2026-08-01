@@ -3,7 +3,6 @@ package opencode
 import (
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,26 +10,6 @@ import (
 
 	"github.com/yersonargotev/packy/internal/prompt"
 )
-
-// WriteResult reports non-fatal conditions Packy noticed while preserving user
-// OpenCode config.
-type WriteResult struct {
-	Warnings []string
-}
-
-var ErrStaleWritePlan = errors.New("OpenCode rules observation changed after preview")
-
-type WritePlan struct {
-	configPath string
-	promptPath string
-	rulesSeal  string
-	rules      externalRulesObservation
-	warnings   []string
-}
-
-func (plan WritePlan) Warnings() []string {
-	return append([]string(nil), plan.warnings...)
-}
 
 type Inspection struct {
 	ConfigExists             bool
@@ -50,95 +29,6 @@ type externalRulesObservation struct {
 
 func (observation externalRulesObservation) exact() bool {
 	return len(observation.exactPaths) > 0
-}
-
-func promptContent(rules externalRulesObservation) string {
-	workflow := strings.TrimSpace(`## Packy global workflow
-- Global skills live in ~/.agents/skills. When a task matches a skill, read that skill's SKILL.md before acting.
-- Use ask-matt at ~/.agents/skills/ask-matt as the router when you are unsure which skill or workflow applies.
-- Use Engram memory tools when available: search before past-work or project-sensitive tasks; save decisions, discoveries, bug fixes, and conventions; summarize sessions before finishing.
-- Apply host delegation rules when this OpenCode session exposes subagent/delegation tools. If unavailable, proceed inline and mention that delegation was unavailable.`)
-	if rules.exact() {
-		return workflow + "\n"
-	}
-	return workflow + "\n\n" + prompt.RulesSectionContent() + "\n"
-}
-
-func Write(configPath, promptPath string) (WriteResult, error) {
-	plan, err := PreviewWrite(configPath, promptPath)
-	if err != nil {
-		return WriteResult{}, err
-	}
-	return ApplyWrite(plan)
-}
-
-func PreviewWrite(configPath, promptPath string) (WritePlan, error) {
-	existing, err := readOptionalFile(configPath)
-	if err != nil {
-		return WritePlan{}, err
-	}
-	instructions, err := configuredInstructions(existing, configPath)
-	if err != nil {
-		return WritePlan{}, err
-	}
-	rules, seal, err := observeInstructionRules(instructions, configPath, promptPath)
-	if err != nil {
-		return WritePlan{}, err
-	}
-	if _, err := mergeInstruction(existing, configPath, promptPath); err != nil {
-		return WritePlan{}, err
-	}
-	warnings := rulesWarnings(rules)
-	return WritePlan{configPath: configPath, promptPath: promptPath, rulesSeal: seal, rules: rules, warnings: warnings}, nil
-}
-
-func ApplyWrite(plan WritePlan) (WriteResult, error) {
-	if err := ValidateWritePlan(plan); err != nil {
-		return WriteResult{}, err
-	}
-	existing, err := readOptionalFile(plan.configPath)
-	if err != nil {
-		return WriteResult{}, err
-	}
-	result := WriteResult{Warnings: append(rulesWarnings(plan.rules), detectExternalManagedConfig(existing)...)}
-	config, err := mergeInstruction(existing, plan.configPath, plan.promptPath)
-	if err != nil {
-		return WriteResult{}, err
-	}
-	if err := os.MkdirAll(filepath.Dir(plan.promptPath), 0o700); err != nil {
-		return WriteResult{}, fmt.Errorf("create OpenCode config directory %s: %w", filepath.Dir(plan.promptPath), err)
-	}
-	if err := os.WriteFile(plan.promptPath, []byte(promptContent(plan.rules)), 0o600); err != nil {
-		return WriteResult{}, fmt.Errorf("write OpenCode Packy prompt %s: %w", plan.promptPath, err)
-	}
-	if config != existing {
-		if err := os.WriteFile(plan.configPath, []byte(config), 0o600); err != nil {
-			return WriteResult{}, fmt.Errorf("write OpenCode config %s: %w", plan.configPath, err)
-		}
-	}
-	return result, nil
-}
-
-func ValidateWritePlan(plan WritePlan) error {
-	if plan.configPath == "" || plan.promptPath == "" {
-		return ErrStaleWritePlan
-	}
-	existing, err := readOptionalFile(plan.configPath)
-	if err != nil {
-		return err
-	}
-	instructions, err := configuredInstructions(existing, plan.configPath)
-	if err != nil {
-		return err
-	}
-	_, seal, err := observeInstructionRules(instructions, plan.configPath, plan.promptPath)
-	if err != nil {
-		return err
-	}
-	if seal != plan.rulesSeal {
-		return ErrStaleWritePlan
-	}
-	return nil
 }
 
 type instructionRuleSnapshot struct {
@@ -296,25 +186,6 @@ func rulesConflictWarnings(rules externalRulesObservation) []string {
 	return warnings
 }
 
-func Remove(configPath, promptPath string) error {
-	existing, err := readOptionalFile(configPath)
-	if err != nil {
-		return err
-	}
-	config, err := removeInstruction(existing, configPath, promptPath)
-	if err != nil {
-		return err
-	}
-	if config != existing {
-		if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
-			return fmt.Errorf("remove OpenCode Packy config %s: %w", configPath, err)
-		}
-	}
-	if err := os.Remove(promptPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove OpenCode Packy prompt %s: %w", promptPath, err)
-	}
-	return nil
-}
 func detectExternalManagedConfig(content string) []string {
 	if !hasKnownGentleAIOverlay(content) {
 		return nil

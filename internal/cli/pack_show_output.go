@@ -4,12 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
 const packShowJSONSchemaVersion = 4
+
+func sortedStrings(values []string) []string {
+	result := append([]string{}, values...)
+	sort.Strings(result)
+	return result
+}
 
 type packShowSourceIdentityJSON struct {
 	PackID        string `json:"pack_id"`

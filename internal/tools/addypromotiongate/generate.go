@@ -60,7 +60,8 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 	evidence, err := addyacceptance.BuildProductionPromotionEvidence(context, addyacceptance.ProductionPromotionInputs{
 		Acceptance: acceptance,
 		Qualification: addyacceptance.ProductionQualification{
-			Synthetic: qualification.Synthetic, Repository: qualification.Repository,
+			SchemaVersion: qualification.Smoke.SchemaVersion,
+			Synthetic:     qualification.Synthetic, Repository: qualification.Repository,
 			Workflow: qualification.Workflow, WorkflowDigest: qualification.WorkflowDigest,
 			RunID: qualification.RunID, Commit: qualification.Commit, CollectedAt: collectedAt,
 			PackySHA: qualification.Smoke.PackySHA, PackyExecutableDigest: qualification.PackyExecutableDigest,
@@ -105,13 +106,13 @@ func projectProductionAtomicity(q claudesmoke.AddyQualification) addyacceptance.
 			WriteBoundaryEnforced: s.WriteBoundaryEnforced,
 		},
 		Assertions: addyacceptance.ProductionAssertions{
-			ForeignContentPreserved: x.ForeignContentPreserved, InstallCreatedManagedState: x.InstallCreatedManagedState,
-			InstallCreatedManagedProjections: x.InstallCreatedManagedProjections, InstallProjectedClaudeMCP: x.InstallProjectedClaudeMCP,
-			DryRunsUnchanged: x.DryRunsUnchanged, UninstallRemovedManagedState: x.UninstallRemovedManagedState,
-			UninstallRemovedManagedProjections: x.UninstallRemovedManagedProjections, ResidualManagedArtifactsAbsent: x.ResidualManagedArtifactsAbsent,
-			EngramStubProtocolVerified: x.EngramStubProtocolVerified, SensitiveFixtureRedacted: x.SensitiveFixtureRedacted,
-			ForeignMCPExactAfterInstall: x.ForeignMCPExactAfterInstall, ForeignMCPExactAfterUpdate: x.ForeignMCPExactAfterUpdate,
-			ForeignMCPExactAfterUninstall: x.ForeignMCPExactAfterUninstall,
+			InstalledSourceInitialized: x.InstalledSourceInitialized, DoctorReportedCoreHealthy: x.DoctorReportedCoreHealthy,
+			RemovedInstallRejected: x.RemovedInstallRejected, RemovedUpdateRejected: x.RemovedUpdateRejected,
+			RemovedUninstallRejected: x.RemovedUninstallRejected, ClassicStatePreserved: x.ClassicStatePreserved,
+			ClaudeInstructionPreserved: x.ClaudeInstructionPreserved, ClaudeMCPPreserved: x.ClaudeMCPPreserved,
+			SharedSkillSentinelPreserved: x.SharedSkillSentinelPreserved, NoPacksOwnershipState: x.NoPacksOwnershipState,
+			NoClaudeMutationOperations: x.NoClaudeMutationOperations, EngramStubProtocolVerified: x.EngramStubProtocolVerified,
+			SensitiveFixtureRedacted: x.SensitiveFixtureRedacted,
 		},
 		Observation: addyacceptance.ProductionObservation{
 			InstalledSource: o.InstalledSource, InstalledSourceCommit: o.InstalledSourceCommit,
