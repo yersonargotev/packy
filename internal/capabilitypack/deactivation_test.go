@@ -131,6 +131,50 @@ func TestDeactivateFinalCustomRootDeactivatesPack(t *testing.T) {
 	}
 }
 
+func TestFullDeactivateWithPersistedAliasesAppliesUnchangedPlan(t *testing.T) {
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "one", Bindings: testCapabilityBindings("one")}}}
+	alias := SurfaceAlias{Kind: "skill", ID: "one", Name: "aliased-one"}
+	intent := ActivationIntent{PackID: "app", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 4, Aliases: []SurfaceAlias{alias}, Selection: ResourceSelection{Mode: SelectionAll}}
+	state := ActivationState{Intent: intent, Intents: []ActivationIntent{intent}, Ownership: []ProjectionOwnership{{ID: "skill:one", Contributors: []string{"pack:app:skill:one"}, Fingerprint: "verified"}}}
+	owned := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{ID: "skill:one", Exists: true, ObservedFingerprint: "verified", Action: ProjectionAction{ID: "skill:one", Description: "delete skill one"}}}}
+	deleted := SurfaceInspection{Revision: "host-after-delete", Projections: []ObservedProjection{{ID: "skill:one", Exists: false, Action: ProjectionAction{ID: "skill:one", Description: "delete skill one"}}}}
+	facade, adapter, store := deactivationFixture([]Pack{pack}, state, owned, owned, deleted)
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentDestructiveCleanup)}, Interactive: true})
+	if err != nil {
+		t.Fatalf("apply unchanged aliased deactivation plan: %v", err)
+	}
+	if !result.Verified || store.state.Intent.Active || len(store.state.Intent.Aliases) != 0 || len(adapter.actions) != 1 {
+		t.Fatalf("full deactivation result=%+v intent=%+v actions=%+v", result, store.state.Intent, adapter.actions)
+	}
+}
+
+func TestFullDeactivateRejectsChangedAliasesWithZeroEffects(t *testing.T) {
+	pack := incrementalSelectionPack()
+	state := incrementalSelectionState("skill:one")
+	alias := SurfaceAlias{Kind: "skill", ID: "one", Name: "aliased-one"}
+	state.Intent.Aliases = []SurfaceAlias{alias}
+	state.Intents[0].Aliases = []SurfaceAlias{alias}
+	facade, adapter, store := deactivationFixture([]Pack{pack}, state, SurfaceInspection{Revision: "host"})
+
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := []SurfaceAlias{{Kind: "skill", ID: "one", Name: "renamed-one"}}
+	store.state.Intent.Aliases = changed
+	store.state.Intents[0].Aliases = changed
+
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true})
+	if !errors.Is(err, ErrStalePlan) || len(store.saves) != 0 || len(adapter.actions) != 0 {
+		t.Fatalf("changed aliases err=%v saves=%d actions=%d", err, len(store.saves), len(adapter.actions))
+	}
+}
+
 func TestDeactivateResourceFromAllDisclosesCustomSelection(t *testing.T) {
 	pack := incrementalSelectionPack()
 	state := incrementalSelectionState("skill:one")
