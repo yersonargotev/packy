@@ -13,6 +13,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/codex"
+	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	"github.com/yersonargotev/packy/internal/workstation"
@@ -519,6 +520,9 @@ func engramActivationOptions(t *testing.T, terminal Terminal) (Options, string, 
 	engram := writeEngramExecutable(t, filepath.Join(prefix, "bin"), "engram version 1.19.0")
 	runner := &fakeRunner{path: map[string]string{"engram": engram}}
 	opts.Runner = runner
+	opts.EngramFormulaInspector = func(_ context.Context, formula string) (engrambin.FormulaMetadata, error) {
+		return engrambin.FormulaMetadata{Source: formula, Version: "0.4.2"}, nil
+	}
 	env := opts.Env.(MapEnv)
 	env["HOMEBREW_PREFIX"] = prefix
 	env["PATH"] = filepath.Dir(engram)
@@ -1228,7 +1232,10 @@ func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T)
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Pack: engram 2.0.0", "Phase: executable-external", "engram setup codex", "Phase: host-follow-up", "/hooks"} {
+	for _, want := range []string{
+		"Pack: engram 2.0.0", "Phase: executable-external", "engram setup codex", "Phase: host-follow-up", "/hooks",
+		"consequences=allows engram to mutate the Codex host configuration", "rollback_limits=pack deactivation removes Packy-owned projections",
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -1241,6 +1248,36 @@ func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T)
 	}
 	if got := snapshotTree(t, filepath.Join(repoRoot, "bundle")); got != beforeBundle {
 		t.Fatal("dry-run mutated source bundle")
+	}
+}
+
+type formulaOutputRunner struct {
+	*fakeRunner
+	stdout string
+	stderr string
+	exit   int
+	err    error
+}
+
+func (r *formulaOutputRunner) RunOutput(_ context.Context, name string, args ...string) (string, string, int, error) {
+	r.calls = append(r.calls, fakeCall{name: name, args: append([]string(nil), args...)})
+	return r.stdout, r.stderr, r.exit, r.err
+}
+
+func TestHomebrewFormulaInspectorResolvesImmutableAcquisitionFactsReadOnly(t *testing.T) {
+	runner := &formulaOutputRunner{
+		fakeRunner: &fakeRunner{},
+		stdout:     `{"formulae":[{"full_name":"gentleman-programming/tap/engram","versions":{"stable":"0.4.2"}}]}`,
+	}
+	metadata, err := inspectHomebrewFormula(context.Background(), runner, engrambin.Formula)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Source != engrambin.Formula || metadata.Version != "0.4.2" {
+		t.Fatalf("metadata = %+v", metadata)
+	}
+	if len(runner.calls) != 1 || runner.calls[0].name != "brew" || !reflect.DeepEqual(runner.calls[0].args, []string{"info", "--json=v2", engrambin.Formula}) {
+		t.Fatalf("read-only inspection calls = %#v", runner.calls)
 	}
 }
 

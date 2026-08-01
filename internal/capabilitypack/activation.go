@@ -132,6 +132,8 @@ type ExecutableResolution struct {
 	AcquisitionSupported bool     `json:"acquisition_supported"`
 	AcquisitionCommand   string   `json:"acquisition_command,omitempty"`
 	AcquisitionArgs      []string `json:"acquisition_args,omitempty"`
+	AcquisitionSource    string   `json:"acquisition_source,omitempty"`
+	AcquisitionVersion   string   `json:"acquisition_version,omitempty"`
 	Precondition         string   `json:"precondition"`
 }
 
@@ -160,6 +162,9 @@ type ProjectionAction struct {
 	Content           string               `json:"content,omitempty"`
 	Command           string               `json:"command,omitempty"`
 	Args              []string             `json:"args,omitempty"`
+	Version           string               `json:"version,omitempty"`
+	Consequences      string               `json:"consequences,omitempty"`
+	RollbackLimits    string               `json:"rollback_limits,omitempty"`
 	Mode              ProjectionActionMode `json:"mode,omitempty"`
 	AdapterProvenance string               `json:"adapter_provenance,omitempty"`
 }
@@ -2659,7 +2664,18 @@ func (f Facade) externalPlan(pack Pack, surface Surface, state ActivationState, 
 				blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "no supported acquisition action is available; configure a supported acquisition or install it before retrying"})
 				continue
 			}
-			acquisition := ProjectionAction{ID: "external:" + resolution.Tool + ":acquire", Kind: ActionExternalCommand, Command: resolution.AcquisitionCommand, Args: append([]string(nil), resolution.AcquisitionArgs...), Description: fmt.Sprintf("acquire global tool %s via %s %s", resolution.Tool, resolution.AcquisitionCommand, strings.Join(resolution.AcquisitionArgs, " "))}
+			if strings.TrimSpace(resolution.AcquisitionSource) == "" || strings.TrimSpace(resolution.AcquisitionVersion) == "" {
+				blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "supported acquisition did not resolve an exact source and version; refresh the acquisition metadata before retrying"})
+				continue
+			}
+			acquisition := ProjectionAction{
+				ID: "external:" + resolution.Tool + ":acquire", Kind: ActionExternalCommand, Consent: ConsentExecutableExternal,
+				Source: resolution.AcquisitionSource, Version: resolution.AcquisitionVersion,
+				Command: resolution.AcquisitionCommand, Args: append([]string(nil), resolution.AcquisitionArgs...),
+				Description:    fmt.Sprintf("acquire global tool %s via %s %s", resolution.Tool, resolution.AcquisitionCommand, strings.Join(resolution.AcquisitionArgs, " ")),
+				Consequences:   fmt.Sprintf("installs the shared global executable %s at %s for Packy and other workflows", resolution.Tool, resolution.Path),
+				RollbackLimits: "pack deactivation does not uninstall the shared executable or delete tool-owned data and credentials",
+			}
 			if !externalEffectCompleted(state.External, acquisition) {
 				actions = append(actions, acquisition)
 			}
@@ -2673,13 +2689,32 @@ func (f Facade) externalPlan(pack Pack, surface Surface, state ActivationState, 
 			// Running a tool-owned generic setup would import a second lifecycle.
 			continue
 		}
-		setup := ProjectionAction{ID: "external:" + resolution.Tool + ":setup:" + string(surface), Kind: ActionExternalCommand, Command: resolution.Path, Args: []string{"setup", string(surface)}, Description: fmt.Sprintf("run %s setup %s", resolution.Path, surface)}
+		setup := ProjectionAction{
+			ID: "external:" + resolution.Tool + ":setup:" + string(surface), Kind: ActionExternalCommand, Consent: ConsentExecutableExternal,
+			Source: resolution.Path, Version: resolution.AcquisitionVersion, Command: resolution.Path, Args: []string{"setup", string(surface)},
+			Description:    fmt.Sprintf("run %s setup %s", resolution.Path, surface),
+			Consequences:   fmt.Sprintf("allows %s to mutate the %s host configuration for its tool-owned setup", resolution.Tool, surfaceDisplayName(surface)),
+			RollbackLimits: "pack deactivation removes Packy-owned projections but does not delete tool-owned configuration, data, or credentials",
+		}
 		if !externalEffectCompleted(state.External, setup) || externalVerificationNeedsRetry(state, setup, surface) {
 			actions = append(actions, setup)
 		}
 	}
 	sortBlockers(blockers)
 	return actions, blockers
+}
+
+func surfaceDisplayName(surface Surface) string {
+	switch surface {
+	case SurfaceCodex:
+		return "Codex"
+	case SurfaceOpenCode:
+		return "OpenCode"
+	case SurfaceClaude:
+		return "Claude Code"
+	default:
+		return string(surface)
+	}
 }
 
 func hasNativeMCPBinding(pack Pack, surface Surface, tool string) bool {

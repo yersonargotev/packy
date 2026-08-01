@@ -88,13 +88,24 @@ func (o Observation) Installed() bool { return o.installed }
 type Resolver struct {
 	HomebrewPrefixEnv string
 	LookPath          func(string) (string, error)
+	FormulaInspector  func(context.Context, string) (FormulaMetadata, error)
+}
+
+type FormulaMetadata struct {
+	Source  string
+	Version string
 }
 
 func NewResolver(homebrewPrefixEnv string, lookPath func(string) (string, error)) Resolver {
 	return Resolver{HomebrewPrefixEnv: homebrewPrefixEnv, LookPath: lookPath}
 }
 
-func (r Resolver) Resolve(_ context.Context, tool string) (capabilitypack.ExecutableResolution, error) {
+func (r Resolver) WithFormulaInspector(inspector func(context.Context, string) (FormulaMetadata, error)) Resolver {
+	r.FormulaInspector = inspector
+	return r
+}
+
+func (r Resolver) Resolve(ctx context.Context, tool string) (capabilitypack.ExecutableResolution, error) {
 	if tool != "engram" {
 		return capabilitypack.ExecutableResolution{}, fmt.Errorf("unsupported executable requirement %q", tool)
 	}
@@ -104,6 +115,16 @@ func (r Resolver) Resolve(_ context.Context, tool string) (capabilitypack.Execut
 	if acquisitionSupported {
 		acquisitionCommand = "brew"
 		acquisitionArgs = []string{"install", Formula}
+	}
+	acquisitionSource := Formula
+	acquisitionVersion := ""
+	if acquisitionSupported && r.FormulaInspector != nil {
+		metadata, err := r.FormulaInspector(ctx, Formula)
+		if err != nil {
+			return capabilitypack.ExecutableResolution{}, fmt.Errorf("inspect Homebrew formula %s: %w", Formula, err)
+		}
+		acquisitionSource = strings.TrimSpace(metadata.Source)
+		acquisitionVersion = strings.TrimSpace(metadata.Version)
 	}
 	canonical := DiscoverHomebrew(r.HomebrewPrefixEnv)
 	if canonical != nil {
@@ -116,6 +137,8 @@ func (r Resolver) Resolve(_ context.Context, tool string) (capabilitypack.Execut
 			AcquisitionSupported: acquisitionSupported,
 			AcquisitionCommand:   acquisitionCommand,
 			AcquisitionArgs:      acquisitionArgs,
+			AcquisitionSource:    acquisitionSource,
+			AcquisitionVersion:   acquisitionVersion,
 			Precondition:         executablePrecondition(canonical.Path, canonical.ResolvedPath),
 		}, nil
 	}
@@ -139,6 +162,8 @@ func (r Resolver) Resolve(_ context.Context, tool string) (capabilitypack.Execut
 			AcquisitionSupported: acquisitionSupported,
 			AcquisitionCommand:   acquisitionCommand,
 			AcquisitionArgs:      acquisitionArgs,
+			AcquisitionSource:    acquisitionSource,
+			AcquisitionVersion:   acquisitionVersion,
 			Precondition:         executablePrecondition(identity.Path, identity.ResolvedPath),
 		}, nil
 	}
@@ -151,6 +176,8 @@ func (r Resolver) Resolve(_ context.Context, tool string) (capabilitypack.Execut
 		AcquisitionSupported: acquisitionSupported,
 		AcquisitionCommand:   acquisitionCommand,
 		AcquisitionArgs:      acquisitionArgs,
+		AcquisitionSource:    acquisitionSource,
+		AcquisitionVersion:   acquisitionVersion,
 		Precondition:         "missing|" + expected,
 	}, nil
 }

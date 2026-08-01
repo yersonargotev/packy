@@ -87,7 +87,12 @@ func availableEngramResolution(path string) ExecutableResolution {
 }
 
 func missingEngramResolution() ExecutableResolution {
-	return ExecutableResolution{Available: false, Path: "/opt/homebrew/bin/engram", Origin: "homebrew", AcquisitionSupported: true, AcquisitionCommand: "brew", AcquisitionArgs: []string{"install", "gentleman-programming/tap/engram"}, Precondition: "missing|/opt/homebrew/bin/engram"}
+	return ExecutableResolution{
+		Available: false, Path: "/opt/homebrew/bin/engram", Origin: "homebrew",
+		AcquisitionSupported: true, AcquisitionCommand: "brew", AcquisitionArgs: []string{"install", "gentleman-programming/tap/engram"},
+		AcquisitionSource: "gentleman-programming/tap/engram", AcquisitionVersion: "0.4.2",
+		Precondition: "missing|/opt/homebrew/bin/engram",
+	}
 }
 
 func TestEngramPreviewSealsGlobalExecutableAndSeparatesPhases(t *testing.T) {
@@ -130,6 +135,53 @@ func TestEngramMissingExecutableUsesSupportedAcquisitionAction(t *testing.T) {
 	}
 	if actions[0].Command != "brew" || !strings.Contains(strings.Join(actions[0].Args, " "), "engram") {
 		t.Fatalf("acquisition = %#v", actions[0])
+	}
+}
+
+func TestEngramExternalPhaseDisclosesSeparateAcquisitionAndHostSetupAuthority(t *testing.T) {
+	resolver := &fakeExecutableResolver{resolutions: []ExecutableResolution{missingEngramResolution()}}
+	facade, _, _ := engramFacadeForTest(resolver, &fakeExternalExecutor{}, engramObservation("missing"))
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "engram", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := phaseActions(plan.Phases(), ConsentExecutableExternal)
+	if len(actions) != 2 {
+		t.Fatalf("external actions = %#v", actions)
+	}
+	acquire, setup := actions[0], actions[1]
+	if acquire.Source != "gentleman-programming/tap/engram" || acquire.Version != "0.4.2" || acquire.Command != "brew" ||
+		!strings.Contains(acquire.Consequences, "shared global executable") || !strings.Contains(acquire.RollbackLimits, "does not uninstall") {
+		t.Fatalf("acquisition disclosure = %#v", acquire)
+	}
+	if setup.Source != "/opt/homebrew/bin/engram" || setup.Version != "0.4.2" || setup.Command != "/opt/homebrew/bin/engram" ||
+		!strings.Contains(setup.Consequences, "Codex") || !strings.Contains(setup.RollbackLimits, "tool-owned") {
+		t.Fatalf("setup disclosure = %#v", setup)
+	}
+	if acquire.ID == setup.ID || acquire.Consent != ConsentExecutableExternal || setup.Consent != ConsentExecutableExternal {
+		t.Fatalf("external authorities were not separately sealed: acquire=%#v setup=%#v", acquire, setup)
+	}
+}
+
+func TestEngramAcquisitionWithoutResolvedSourceAndVersionFailsClosed(t *testing.T) {
+	resolution := missingEngramResolution()
+	resolution.AcquisitionSource = ""
+	resolution.AcquisitionVersion = ""
+	resolver := &fakeExecutableResolver{resolutions: []ExecutableResolution{resolution}}
+	executor := &fakeExternalExecutor{}
+	facade, adapter, store := engramFacadeForTest(resolver, executor, engramObservation("missing"))
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "engram", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Disposition() != PlanMixed || len(plan.Blockers()) != 1 || !strings.Contains(plan.Blockers()[0].Detail, "source and version") {
+		t.Fatalf("unresolved acquisition plan = disposition=%s blockers=%#v", plan.Disposition(), plan.Blockers())
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); !errors.Is(err, ErrPlanNotActionable) {
+		t.Fatalf("apply unresolved acquisition = %v", err)
+	}
+	if adapter.inspectCalls != 1 || len(store.saves) != 0 || len(executor.actions) != 0 {
+		t.Fatalf("unresolved acquisition caused effects: inspect=%d saves=%d external=%d", adapter.inspectCalls, len(store.saves), len(executor.actions))
 	}
 }
 

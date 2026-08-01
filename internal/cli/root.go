@@ -22,18 +22,19 @@ import (
 // Options carries injectable process boundaries for tests and future command
 // implementations. The zero value uses the real OS environment and runner.
 type Options struct {
-	Env                   Env
-	Getwd                 func() (string, error)
-	Runner                Runner
-	Clock                 func() time.Time
-	Terminal              Terminal
-	SurfaceAdapters       map[capabilitypack.Surface]capabilitypack.SurfaceAdapter
-	EngramFacts           engrambin.Facts
-	SetupHealthDiagnose   func() (setuphealth.Report, error)
-	ClaudeRunner          claudecode.Runner
-	ClaudeLookPath        claudecode.LookPath
-	ClaudeAuthorization   claudecode.AuthorizationObserver
-	ClaudeRuntimeEvidence claudecode.RuntimeEvidenceObserver
+	Env                    Env
+	Getwd                  func() (string, error)
+	Runner                 Runner
+	Clock                  func() time.Time
+	Terminal               Terminal
+	SurfaceAdapters        map[capabilitypack.Surface]capabilitypack.SurfaceAdapter
+	EngramFacts            engrambin.Facts
+	EngramFormulaInspector func(context.Context, string) (engrambin.FormulaMetadata, error)
+	SetupHealthDiagnose    func() (setuphealth.Report, error)
+	ClaudeRunner           claudecode.Runner
+	ClaudeLookPath         claudecode.LookPath
+	ClaudeAuthorization    claudecode.AuthorizationObserver
+	ClaudeRuntimeEvidence  claudecode.RuntimeEvidenceObserver
 }
 
 func (o Options) withDefaults() Options {

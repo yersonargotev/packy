@@ -187,6 +187,27 @@ func TestResolverReportsSupportedHomebrewAcquisitionWhenMissing(t *testing.T) {
 	}
 }
 
+func TestResolverSealsReadOnlyFormulaSourceAndVersionForAcquisition(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "homebrew")
+	calls := 0
+	resolver := NewResolver(prefix, func(string) (string, error) { return "", os.ErrNotExist }).WithFormulaInspector(
+		func(_ context.Context, formula string) (FormulaMetadata, error) {
+			calls++
+			if formula != Formula {
+				t.Fatalf("formula = %q", formula)
+			}
+			return FormulaMetadata{Source: Formula, Version: "0.4.2"}, nil
+		},
+	)
+	resolution, err := resolver.Resolve(context.Background(), "engram")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || resolution.AcquisitionSource != Formula || resolution.AcquisitionVersion != "0.4.2" {
+		t.Fatalf("sealed acquisition resolution = %+v calls=%d", resolution, calls)
+	}
+}
+
 func TestDiscoverHomebrewUsesOnlyExplicitPrefixAndFallsBackAcrossCandidates(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first")
 	second := filepath.Join(t.TempDir(), "second")
