@@ -69,7 +69,7 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 		WorkflowBlobSHA:       strings.Repeat("4", 40),
 		DisposableHarnessRoot: t.TempDir(),
 		Qualification: ProductionQualification{
-			Repository: ctx.Repository, Workflow: ctx.Workflow, WorkflowDigest: ctx.WorkflowDigest,
+			SchemaVersion: 2, Repository: ctx.Repository, Workflow: ctx.Workflow, WorkflowDigest: ctx.WorkflowDigest,
 			RunID: ctx.RunID, Commit: ctx.EvaluatedMergeSHA, CollectedAt: ctx.Now.Add(-time.Minute),
 			PackySHA: ctx.EvaluatedMergeSHA, PackyExecutableDigest: strings.Repeat("5", 64),
 			RequestedClaudeVersion: "2.1.203", ResolvedClaudeVersion: "2.1.203",
@@ -114,11 +114,23 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 		mutate func(*ProductionPromotionInputs)
 	}{
 		{"synthetic", func(in *ProductionPromotionInputs) { in.Qualification.Synthetic = true }},
+		{"v1-schema", func(in *ProductionPromotionInputs) { in.Qualification.SchemaVersion = 1 }},
 		{"stale-qualification", func(in *ProductionPromotionInputs) { in.Qualification.CollectedAt = ctx.Now.Add(-25 * time.Hour) }},
 		{"cross-run", func(in *ProductionPromotionInputs) { in.Qualification.RunID = "other" }},
 		{"cross-commit", func(in *ProductionPromotionInputs) { in.Qualification.Commit = strings.Repeat("e", 40) }},
 		{"wrong-floor", func(in *ProductionPromotionInputs) { in.Qualification.ResolvedClaudeVersion = "2.2.0" }},
 		{"missing-commands", func(in *ProductionPromotionInputs) { in.Qualification.Atomicity.Commands = nil }},
+		{"removed-command-succeeded", func(in *ProductionPromotionInputs) {
+			in.Qualification.Atomicity.Commands = append([]ProductionCommand(nil), in.Qualification.Atomicity.Commands...)
+			in.Qualification.Atomicity.Commands[4].ExitCode = 0
+		}},
+		{"removed-command-not-unknown", func(in *ProductionPromotionInputs) {
+			in.Qualification.Atomicity.Commands = append([]ProductionCommand(nil), in.Qualification.Atomicity.Commands...)
+			in.Qualification.Atomicity.Commands[4].Stderr = "other failure"
+		}},
+		{"incomplete-core-cutover-assertions", func(in *ProductionPromotionInputs) {
+			in.Qualification.Atomicity.Assertions.NoClaudeMutationOperations = false
+		}},
 		{"missing-manifest", func(in *ProductionPromotionInputs) { in.Qualification.Atomicity.Before = nil }},
 		{"directory-with-digest", func(in *ProductionPromotionInputs) {
 			in.Qualification.Atomicity.Before = append([]ProductionFile(nil), in.Qualification.Atomicity.Before...)
@@ -169,21 +181,28 @@ func validProductionAtomicity(commit string, collectedAt time.Time) ProductionAt
 	}{
 		{"claude", []string{"--version"}}, {"packy", []string{"version"}},
 		{"packy", []string{"init", "--home", "/sandbox/home", "--source-root", "/sandbox/installed-source", "--repository-url", "/sandbox/source-repository", "--repository-ref", "packy-smoke-proved-source"}},
-		{"packy", []string{"install", "--dry-run"}}, {"packy", []string{"install"}}, {"packy", []string{"doctor"}},
-		{"packy", []string{"update", "--dry-run"}}, {"packy", []string{"update"}},
-		{"packy", []string{"uninstall", "--dry-run"}}, {"packy", []string{"uninstall"}}, {"packy", []string{"doctor"}},
-		{"claude", []string{"version"}}, {"claude", []string{"version"}}, {"claude", []string{"version"}},
-		{"claude", []string{"mcp-add"}}, {"claude", []string{"version"}}, {"claude", []string{"version"}},
-		{"claude", []string{"version"}}, {"claude", []string{"version"}}, {"claude", []string{"version"}},
-		{"claude", []string{"mcp-remove"}}, {"claude", []string{"version"}},
+		{"packy", []string{"doctor"}}, {"packy", []string{"install"}}, {"packy", []string{"update"}},
+		{"packy", []string{"uninstall"}}, {"claude", []string{"version"}},
 	}
 	commands := make([]ProductionCommand, len(operations))
 	for i, operation := range operations {
 		commands[i] = ProductionCommand{Name: operation.name, Args: operation.args}
 	}
+	commands[4].ExitCode = 1
+	commands[5].ExitCode = 1
+	commands[6].ExitCode = 1
+	commands[4].Stderr = "unknown command: install"
+	commands[5].Stderr = "unknown command: update"
+	commands[6].Stderr = "unknown command: uninstall"
 	process, _ := json.Marshal(commands)
 	allRunnerSafety := ProductionRunnerSafety{true, true, true, true, true, true, true, true, true}
-	allAssertions := ProductionAssertions{true, true, true, true, true, true, true, true, true, true, true, true, true}
+	allAssertions := ProductionAssertions{
+		InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true,
+		RemovedInstallRejected: true, RemovedUpdateRejected: true, RemovedUninstallRejected: true,
+		ClassicStatePreserved: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true,
+		SharedSkillSentinelPreserved: true, NoPacksOwnershipState: true, NoClaudeMutationOperations: true,
+		EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true,
+	}
 	allObservedSafety := ProductionObservedSafety{true, true, true, true, true, true, true, true, true, true, true}
 	return ProductionAtomicity{
 		Commands: commands,
