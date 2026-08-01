@@ -2,6 +2,7 @@ package engrambin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -94,6 +95,26 @@ type Resolver struct {
 type FormulaMetadata struct {
 	Source  string
 	Version string
+}
+
+// ParseHomebrewFormulaMetadata owns Homebrew's formula identity contract.
+// Process execution stays at the CLI boundary; interpreting its output does not.
+func ParseHomebrewFormulaMetadata(formula, output string) (FormulaMetadata, error) {
+	var document struct {
+		Formulae []struct {
+			FullName string `json:"full_name"`
+			Versions struct {
+				Stable string `json:"stable"`
+			} `json:"versions"`
+		} `json:"formulae"`
+	}
+	if err := json.Unmarshal([]byte(output), &document); err != nil {
+		return FormulaMetadata{}, fmt.Errorf("decode Homebrew formula %s: %w", formula, err)
+	}
+	if len(document.Formulae) != 1 || strings.TrimSpace(document.Formulae[0].FullName) != formula || strings.TrimSpace(document.Formulae[0].Versions.Stable) == "" {
+		return FormulaMetadata{}, fmt.Errorf("Homebrew formula %s did not resolve one exact source and stable version", formula)
+	}
+	return FormulaMetadata{Source: formula, Version: strings.TrimSpace(document.Formulae[0].Versions.Stable)}, nil
 }
 
 func NewResolver(homebrewPrefixEnv string, lookPath func(string) (string, error)) Resolver {

@@ -423,21 +423,7 @@ func inspectHomebrewFormula(ctx context.Context, runner outputRunner, formula st
 	if exitCode != 0 {
 		return engrambin.FormulaMetadata{}, fmt.Errorf("inspect Homebrew formula %s: exit=%d: %s", formula, exitCode, strings.TrimSpace(stderr))
 	}
-	var document struct {
-		Formulae []struct {
-			FullName string `json:"full_name"`
-			Versions struct {
-				Stable string `json:"stable"`
-			} `json:"versions"`
-		} `json:"formulae"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
-		return engrambin.FormulaMetadata{}, fmt.Errorf("decode Homebrew formula %s: %w", formula, err)
-	}
-	if len(document.Formulae) != 1 || strings.TrimSpace(document.Formulae[0].FullName) != formula || strings.TrimSpace(document.Formulae[0].Versions.Stable) == "" {
-		return engrambin.FormulaMetadata{}, fmt.Errorf("Homebrew formula %s did not resolve one exact source and stable version", formula)
-	}
-	return engrambin.FormulaMetadata{Source: formula, Version: strings.TrimSpace(document.Formulae[0].Versions.Stable)}, nil
+	return engrambin.ParseHomebrewFormulaMetadata(formula, stdout)
 }
 
 type claudeRunner struct{ runner Runner }

@@ -208,6 +208,24 @@ func TestResolverSealsReadOnlyFormulaSourceAndVersionForAcquisition(t *testing.T
 	}
 }
 
+func TestParseHomebrewFormulaMetadataRequiresExactSourceAndStableVersion(t *testing.T) {
+	metadata, err := ParseHomebrewFormulaMetadata(Formula, `{"formulae":[{"full_name":"gentleman-programming/tap/engram","versions":{"stable":"0.4.2"}}]}`)
+	if err != nil || metadata.Source != Formula || metadata.Version != "0.4.2" {
+		t.Fatalf("metadata = %+v, %v", metadata, err)
+	}
+	for name, output := range map[string]string{
+		"wrong source": `{"formulae":[{"full_name":"other/tap/engram","versions":{"stable":"0.4.2"}}]}`,
+		"no version":   `{"formulae":[{"full_name":"gentleman-programming/tap/engram","versions":{"stable":""}}]}`,
+		"ambiguous":    `{"formulae":[{},{}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseHomebrewFormulaMetadata(Formula, output); err == nil {
+				t.Fatal("invalid formula metadata passed")
+			}
+		})
+	}
+}
+
 func TestDiscoverHomebrewUsesOnlyExplicitPrefixAndFallsBackAcrossCandidates(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first")
 	second := filepath.Join(t.TempDir(), "second")
