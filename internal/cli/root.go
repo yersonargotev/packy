@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -193,7 +195,7 @@ func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *
 			if opts.SetupHealthDiagnose != nil {
 				report, err = opts.SetupHealthDiagnose()
 			} else {
-				report, err = diagnoseSetupHealth(workstationResolver)
+				report, err = diagnoseSetupHealth(cmd.Context(), opts, workstationResolver)
 			}
 			if err != nil {
 				return err
@@ -212,12 +214,59 @@ func newDoctorCommand(opts Options, workstationResolver *workstation.Resolver) *
 	return cmd
 }
 
-func diagnoseSetupHealth(resolver *workstation.Resolver) (setuphealth.Report, error) {
+func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstation.Resolver) (setuphealth.Report, error) {
 	snapshot, err := resolver.Resolve(workstation.Options{})
 	if err != nil {
 		return setuphealth.Report{}, err
 	}
-	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome()), nil
+	store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
+	intentObservation := capabilitypack.ObserveActiveIntents(ctx, store)
+	observation := setuphealth.Observation{}
+	for _, surface := range intentObservation.FailedSurfaces {
+		observation.FailedStateSurfaces = append(observation.FailedStateSurfaces, string(surface))
+	}
+	if len(intentObservation.Intents) == 0 {
+		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
+	}
+	facade, err := activationFacade(opts, resolver)
+	if err != nil {
+		observation.ActivePacks = failedActivePackObservations(intentObservation.Intents)
+		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
+	}
+	status, err := facade.ActiveStatus(ctx)
+	if err != nil {
+		observation.ActivePacks = failedActivePackObservations(intentObservation.Intents)
+		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
+	}
+	for _, surface := range status.ObservationFailures {
+		value := string(surface)
+		if !slices.Contains(observation.FailedStateSurfaces, value) {
+			observation.FailedStateSurfaces = append(observation.FailedStateSurfaces, value)
+		}
+	}
+	observation.ActivePacks = make([]setuphealth.ActivePack, 0, len(status.Entries))
+	for _, entry := range status.Entries {
+		observation.ActivePacks = append(observation.ActivePacks, setuphealth.ActivePack{
+			ID:                  entry.Pack.ID,
+			Surface:             string(entry.Surface),
+			InspectionFailed:    entry.InspectionFailed,
+			RecoveryRequired:    entry.LifecycleState == capabilitypack.PackLifecycleRecoveryRequired,
+			UpdateAvailable:     entry.UpdateAvailable,
+			ProjectionProblems:  entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
+			MissingRequirements: len(entry.MissingRequirements),
+			ReadinessPending:    !entry.Readiness.Configured || !entry.Readiness.Authorized || !entry.Readiness.Usable,
+			PendingHumanActions: len(entry.PendingHumanActions),
+		})
+	}
+	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
+}
+
+func failedActivePackObservations(intents []capabilitypack.ActivationIntent) []setuphealth.ActivePack {
+	result := make([]setuphealth.ActivePack, 0, len(intents))
+	for _, intent := range intents {
+		result = append(result, setuphealth.ActivePack{ID: intent.PackID, Surface: string(intent.Surface), InspectionFailed: true})
+	}
+	return result
 }
 
 type invocationSources struct {
