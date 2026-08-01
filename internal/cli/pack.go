@@ -417,8 +417,11 @@ type outputRunner interface {
 
 func inspectHomebrewFormula(ctx context.Context, runner outputRunner, formula string) (engrambin.FormulaMetadata, error) {
 	stdout, stderr, exitCode, err := runner.RunOutput(ctx, "brew", "info", "--json=v2", formula)
-	if err != nil || exitCode != 0 {
+	if err != nil {
 		return engrambin.FormulaMetadata{}, fmt.Errorf("inspect Homebrew formula %s: exit=%d: %s: %w", formula, exitCode, strings.TrimSpace(stderr), err)
+	}
+	if exitCode != 0 {
+		return engrambin.FormulaMetadata{}, fmt.Errorf("inspect Homebrew formula %s: exit=%d: %s", formula, exitCode, strings.TrimSpace(stderr))
 	}
 	var document struct {
 		Formulae []struct {

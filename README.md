@@ -93,7 +93,7 @@ recovery, and contributor-safe deactivation for all three supported surfaces.
 | Path | Purpose |
 | --- | --- |
 | `~/.agents/skills` | Packy-managed skill symlinks |
-| `~/.packy/config.json` | Packy ownership/state metadata |
+| `~/.packy/packs.json` | Capability-pack activation, contributor ownership, and recovery metadata |
 | `~/.codex/AGENTS.md` | Codex prompt file containing Packy markers |
 | `$XDG_CONFIG_HOME/opencode/opencode.json` | OpenCode config containing the Packy prompt reference |
 | `$XDG_CONFIG_HOME/opencode/packy.md` | Packy-owned OpenCode prompt |
