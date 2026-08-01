@@ -163,7 +163,7 @@ func ValidateInstalledSourceRef(opts BootstrapOptions) error {
 		return err
 	}
 	if !matches {
-		return fmt.Errorf("default Installed Source at %s is stale for Packy %s; run packy init to align it before packy update", opts.InstalledSource.Root(), ref)
+		return fmt.Errorf("default Installed Source at %s is stale for Packy %s; run packy init to align it before managing capability packs", opts.InstalledSource.Root(), ref)
 	}
 	return nil
 }

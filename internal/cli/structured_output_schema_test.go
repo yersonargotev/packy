@@ -14,12 +14,10 @@ import (
 )
 
 var structuredOutputFixtures = map[string]string{
-	"classic-lifecycle-preview.json": "classic-lifecycle.schema.json",
-	"classic-lifecycle-result.json":  "classic-lifecycle.schema.json",
-	"doctor.json":                    "doctor.schema.json",
-	"pack-show.json":                 "pack-show.schema.json",
-	"pack-lifecycle-preview.json":    "pack-lifecycle.schema.json",
-	"pack-status.json":               "pack-status.schema.json",
+	"doctor.json":                 "doctor.schema.json",
+	"pack-show.json":              "pack-show.schema.json",
+	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
+	"pack-status.json":            "pack-status.schema.json",
 }
 
 var structuredOutputV3Fixtures = map[string]string{
@@ -151,12 +149,6 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	}
 
 	opts, _, _ := sandboxOptions(t)
-	classic, err := executeCommand(t, NewRootCommand(opts), "install", "--dry-run", "--json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertStructuredOutput(t, root, "classic-lifecycle.schema.json", classic)
-
 	opts.SetupHealthDiagnose = func() (setuphealth.Report, error) {
 		return setuphealth.Report{SchemaVersion: 2, Kind: "doctor", Checks: []setuphealth.Check{{Name: "claude-readiness", Severity: setuphealth.Warn, Detail: "runtime usability is unknown; start Claude Code explicitly"}}, Summary: setuphealth.Summary{Status: "warnings", Warnings: 1}}, nil
 	}

@@ -6,7 +6,6 @@ import (
 	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/codex"
-	"github.com/yersonargotev/packy/internal/corelifecycle"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/skillbundle"
@@ -19,13 +18,11 @@ type cliTestFixture struct {
 	workstation     workstation.Snapshot
 	installedSource bootstrap.InstalledSource
 	skillSource     skillbundle.Source
-	classicState    corelifecycle.Layout
 	packState       capabilitypack.StateLayout
 	skills          skillbundle.GlobalLayout
 	codex           codex.CanonicalLayout
 	opencode        opencode.CanonicalLayout
 	engram          engrambin.Topology
-	engramSetup     engrambin.SetupLayout
 }
 
 func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
@@ -60,12 +57,10 @@ func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
 		workstation:     snapshot,
 		installedSource: installedSource,
 		skillSource:     skillSource,
-		classicState:    corelifecycle.NewLayout(snapshot.PackyHome()),
 		packState:       capabilitypack.NewStateLayout(snapshot.PackyHome()),
 		skills:          skillbundle.NewGlobalLayout(snapshot.Home()),
 		codex:           codex.NewCanonicalLayout(snapshot.Home()),
 		opencode:        opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
 		engram:          engrambin.NewTopology(snapshot.HomebrewPrefix()),
-		engramSetup:     engrambin.NewSetupLayout(snapshot.Home(), snapshot.HomebrewPrefix()),
 	}
 }

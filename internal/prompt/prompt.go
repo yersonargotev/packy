@@ -3,10 +3,6 @@ package prompt
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -32,26 +28,6 @@ type RulesObservation struct {
 	Exact       bool
 	Drift       bool
 	Malformed   bool
-}
-
-type WriteResult struct {
-	Warnings []string
-}
-
-var ErrStaleCodexPlan = errors.New("Codex rules observation changed after preview")
-
-type CodexPlan struct {
-	path      string
-	rulesSeal string
-	warnings  []string
-}
-
-func (plan CodexPlan) Warnings() []string {
-	return append([]string(nil), plan.warnings...)
-}
-
-type Inspection struct {
-	HasPackySection bool
 }
 
 func CodexContent() string {
@@ -168,63 +144,6 @@ func HasExactPackyRules(content string) bool {
 	return rulesFingerprint(body) == RulesFingerprint()
 }
 
-func WriteCodex(path string) (WriteResult, error) {
-	plan, err := PreviewCodex(path)
-	if err != nil {
-		return WriteResult{}, err
-	}
-	return ApplyCodex(plan)
-}
-
-func PreviewCodex(path string) (CodexPlan, error) {
-	existing, err := readOptionalFile(path)
-	if err != nil {
-		return CodexPlan{}, err
-	}
-	return CodexPlan{path: path, rulesSeal: rulesContractSeal(existing), warnings: detectCodexRulesWarnings(existing)}, nil
-}
-
-func ValidateCodexPlan(plan CodexPlan) error {
-	if plan.path == "" {
-		return ErrStaleCodexPlan
-	}
-	existing, err := readOptionalFile(plan.path)
-	if err != nil {
-		return err
-	}
-	if rulesContractSeal(existing) != plan.rulesSeal {
-		return ErrStaleCodexPlan
-	}
-	return nil
-}
-
-func ApplyCodex(plan CodexPlan) (WriteResult, error) {
-	if err := ValidateCodexPlan(plan); err != nil {
-		return WriteResult{}, err
-	}
-	existing, err := readOptionalFile(plan.path)
-	if err != nil {
-		return WriteResult{}, err
-	}
-	result := WriteResult{Warnings: DetectExternalManagedBlocks(existing)}
-	updated := upsertSection(existing, codexPackySectionID, CodexContent())
-	if InspectRulesContract(existing).Disposition == RulesExternallySatisfied {
-		updated = removeSection(updated, packyRulesSectionID)
-	} else {
-		updated = upsertSection(updated, packyRulesSectionID, RulesContent())
-	}
-	if updated == existing {
-		return result, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(plan.path), 0o700); err != nil {
-		return WriteResult{}, fmt.Errorf("create Codex config directory %s: %w", filepath.Dir(plan.path), err)
-	}
-	if err := os.WriteFile(plan.path, []byte(updated), 0o600); err != nil {
-		return WriteResult{}, fmt.Errorf("write Codex Packy prompt %s: %w", plan.path, err)
-	}
-	return result, nil
-}
-
 func rulesContractSeal(content string) string {
 	var recognized strings.Builder
 	for len(content) > 0 {
@@ -252,30 +171,6 @@ func rulesContractSeal(content string) string {
 	}
 	sum := sha256.Sum256([]byte(recognized.String()))
 	return hex.EncodeToString(sum[:])
-}
-
-func InspectCodex(path string) (Inspection, error) {
-	existing, err := readOptionalFile(path)
-	if err != nil {
-		return Inspection{}, err
-	}
-	return Inspection{HasPackySection: strings.Contains(existing, openMarker(codexPackySectionID)) || strings.Contains(existing, openMarker(packyRulesSectionID))}, nil
-}
-
-func RemoveCodex(path string) error {
-	existing, err := readOptionalFile(path)
-	if err != nil {
-		return err
-	}
-	updated := removeSection(existing, codexPackySectionID)
-	updated = removeSection(updated, packyRulesSectionID)
-	if updated == existing {
-		return nil
-	}
-	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
-		return fmt.Errorf("remove Codex Packy prompt %s: %w", path, err)
-	}
-	return nil
 }
 
 func DetectExternalManagedBlocks(content string) []string {
@@ -320,17 +215,6 @@ func containsEngramMarker(content string) bool {
 		}
 	}
 	return false
-}
-
-func readOptionalFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("read %s: %w", path, err)
-	}
-	return string(data), nil
 }
 
 func upsertSection(existing, sectionID, content string) string {

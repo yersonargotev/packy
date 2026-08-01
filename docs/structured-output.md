@@ -1,7 +1,7 @@
 # Structured CLI output
 
-Packy emits versioned JSON when `--json` is present. Classic lifecycle and
-doctor retain `schema_version: 2`. Pack show uses `schema_version: 4`.
+Packy emits versioned JSON when `--json` is present. Doctor retains
+`schema_version: 2`. Pack show uses `schema_version: 4`.
 Capability-Pack lifecycle uses `schema_version: 8`, adding structured
 `recovery_guidance` to the v7 closure-bound sensitive-effect plan. The guidance
 names the originating operation, affected resources, consumers, truthful
@@ -13,8 +13,6 @@ and canonical-consumer contract. Earlier versions remain unchanged.
 
 | Command | `report` |
 | --- | --- |
-| `packy install|update|uninstall --dry-run --json` | `classic-lifecycle-preview` |
-| `packy install|update|uninstall --json` | `classic-lifecycle-result` |
 | `packy doctor --json` | `doctor` |
 | `packy pack show PACK --json` | `pack-show` |
 | Pack activate/update/deactivate/reconcile preview | `pack-lifecycle-preview` |
@@ -30,37 +28,17 @@ Canonical redacted fixtures use the matching directories under
 schema selected by each document's `schema_version` and validates both the
 fixtures and live producer examples.
 
-## Classic lifecycle
-
-Preview and result reports carry the operation and outcome plus these common
-facts: `desired_surfaces`, `pending_prerequisites`, `preserved`, `blockers`,
-sorted `warnings`, `recovery`, and `state_transition`. Preview adds the ordered redacted `actions`
-and `dry_run: true`. Result adds `committed`, ordered `completed_effects` and
-`not_started_effects`, the optional `failed_effect`, and the managed skill count.
-
-`desired_surfaces` is the canonical ordered set `codex`, `opencode`, `claude`.
-A dry-run or
-result is written before the existing outcome-to-exit mapping is applied:
-`converged`, `applied`, and `applied-with-pending-prerequisite` exit zero; all
-other completed outcomes exit nonzero.
-
 ## Doctor
 
-Doctor contains ordered `checks` and a `summary`. The Claude checks retain this
-exact order after the existing common and host checks:
+Doctor contains ordered `checks` and a `summary`. The cutover contract reports
+Packy core availability through the `packy-core` check without inspecting or
+inferring removed classic state or projections. Detailed capability-pack
+configured, authorized, and usable evidence remains available through
+`packy pack status`.
 
-1. `claude-binary`
-2. `claude-version`
-3. `claude-skills`
-4. `claude-instructions`
-5. `claude-hooks`
-6. `claude-mcp`
-7. `claude-readiness`
-
-Each check uses `PASS`, `WARN`, or `FAIL` and includes remediation in `detail`.
-Warnings exit zero. A complete report containing a failure is written before
-`ErrDoctorUnhealthy` produces the nonzero process exit. Workstation context and
-raw shared documents are not part of doctor JSON.
+Each check uses `PASS`, `WARN`, or `FAIL`. Warnings exit zero. A complete report
+containing a failure is written before `ErrDoctorUnhealthy` produces the
+nonzero process exit. Workstation context is not part of doctor JSON.
 
 ## Capability packs
 
