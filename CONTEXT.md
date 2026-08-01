@@ -7,9 +7,11 @@ A lightweight AI workflow toolkit inspired by Gentle AI, but intentionally centr
 
 ### Packy core
 The always-available installer/configurator that manages capability packs and their lifecycle. Packy core is distinct from the optional `matty` capability pack, so deactivating that pack never disables the tool needed to manage it.
+Without explicit pack or resource activation intent, it may mutate only Packy-owned non-surface substrate and never a CLI surface.
 
-### Packy core lifecycle
-The install, update, and uninstall behavior that reconciles Packy-managed global workflow artifacts. It excludes Installed Source initialization, setup health diagnosis, and capability-pack lifecycle operations.
+### Classic lifecycle
+The removed legacy behavior behind the former root `install`, `update`, and `uninstall` commands that directly reconciled global workflow artifacts. Packy does not read or migrate its state or ownership after the incompatible cutover.
+_Avoid_: Packy core lifecycle
 
 ### CLI surface
 An AI coding host that Packy can integrate with.
@@ -38,20 +40,26 @@ The Packy-owned set of current capability-pack versions advertised by `packy pac
 ### Pack resource
 One host-independent intent contributed by a capability pack. A CLI-surface adapter may realize one pack resource as multiple host-specific artifacts; host-native schemas, paths, and package formats are projections rather than pack resources.
 
+### Shared projection
+A realization of a pack resource at a standard global target that more than one CLI surface may discover. It must remain attributable to explicit activation contributors, but discovery by another surface does not activate the pack on that surface.
+
 ### Composite Pack Source Bundle
 The complete ordered set of two or more Pack Sources admitted together as the initial provenance of one previously absent capability pack. It is one sealed transactional value, not an additional persistent source identity.
 
 ### Pack requirement
-A global prerequisite a capability pack consumes but does not contribute to a CLI surface. External tools such as the Engram executable are requirements; platform-specific acquisition remains Packy core behavior rather than part of the portable pack manifest.
+A global prerequisite a capability pack consumes but does not contribute to a CLI surface. Packy core may detect an external tool, but acquisition requires a separately approved phase originating from explicit pack activation or update intent.
 
 ### Lifecycle resource
 A pack resource that declares behavior triggered at CLI lifecycle points. It names the portable intent while each CLI-surface adapter owns its event names, handlers, trust model, and rendered artifacts; it is not a universal hook schema.
 
 ### Pack activation
-The user's explicit consent to a previewed reconciliation of one capability pack on one CLI surface. Activation does not itself grant host trust, authenticate accounts, authorize executable code, or consent to destructive cleanup.
+The user's explicit consent to a previewed reconciliation of either a complete capability pack or selected resource roots and their declared dependencies on one CLI surface. Activation does not itself grant host trust, authenticate accounts, authorize executable code, or consent to destructive cleanup.
 
 ### Pack readiness
 The progression from **configured** (Packy-owned projections are reconciled), through **authorized** (required human trust and authentication are complete), to **usable** (the host has loaded the capability under its runtime permissions). An active pack may remain pending human action between these stages.
+
+### Packy health
+The read-only assessment of Packy core plus a summary of active-pack drift, requirements, and readiness. Inactive packs and removed classic-lifecycle artifacts do not degrade Packy health.
 
 ### Pack desired state
 The complete logical outcome Packy computes from the active capability packs on each CLI surface, including required shared resources and readiness, before translating that outcome into host-specific artifacts.
@@ -101,9 +109,6 @@ Packy v0's primary success path: given an existing repository, configure Codex a
 
 ### Global-first configuration
 Packy's default configuration model: install skills in `~/.agents/skills`, manage agent/system-prompt configuration in each CLI's global home/config surface, and avoid writing project-local files unless the user explicitly opts into project docs.
-
-### Packy state file
-A small global Packy-owned config/state file, expected at `~/.packy/config.json`, used to track installed Packy version, managed skill set, global skill paths, configured CLI surfaces, and doctor/update metadata. It must not become a large prompt store.
 
 ### Packy Home
 The single workstation root reserved for Packy-owned state. Domains may own separate files beneath it without sharing ownership of those files.
