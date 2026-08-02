@@ -67,6 +67,9 @@ The complete logical outcome Packy computes from the active capability packs on 
 ### Pack ownership
 Packy's recorded authority over a projected resource or config fragment. Ownership determines whether Packy may update or remove it and is distinct from the host's trust, authentication, and runtime authorization.
 
+### External-effect receipt
+A versioned record of one exact external configuration contribution that Packy initiated and freshly verified. It grants reversal authority only while the same contribution and host surface still match; a command fingerprint, tool installation, service, data, credential, or unrelated configuration is never a receipt.
+
 ### Pack observable contract
 The complete user-visible behavior of a capability pack, including its skill content, declared resources, requirements, capabilities, and activation or update experience. A pack version describes this contract rather than its upstream source version or textual diff size.
 
