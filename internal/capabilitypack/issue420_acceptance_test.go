@@ -97,11 +97,12 @@ func TestIssue420ContributorsAcrossCodexOpenCodeAndClaude(t *testing.T) {
 
 func TestIssue420SharedProjectionRequiresApprovedActivationPlan(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		selection ResourceSelection
+		name          string
+		selection     ResourceSelection
+		wantResources []string
 	}{
-		{name: "full-pack", selection: ResourceSelection{Mode: SelectionAll}},
-		{name: "resource-scoped", selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "shared"}}}},
+		{name: "full-pack", selection: ResourceSelection{Mode: SelectionAll}, wantResources: []string{"instruction:unselected", "skill:shared"}},
+		{name: "resource-scoped", selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "shared"}}}, wantResources: []string{"skill:shared"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pack := Pack{manifestVersion: manifestSchemaV4, ID: "shared", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
@@ -120,6 +121,14 @@ func TestIssue420SharedProjectionRequiresApprovedActivationPlan(t *testing.T) {
 			}
 			if shared := plan.JSONReport(false).SharedProjections; len(shared) != 1 || shared[0].ProjectionKey != "global-skill:shared" {
 				t.Fatalf("shared activation preview = %+v", shared)
+			}
+			if len(adapter.calls) != 1 || len(adapter.calls[0].desired.Resources) != len(tc.wantResources) {
+				t.Fatalf("adapter desired resources = %+v", adapter.calls)
+			}
+			for i, resource := range adapter.calls[0].desired.Resources {
+				if got := (ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String(); got != tc.wantResources[i] {
+					t.Fatalf("adapter desired resource[%d] = %q want %q", i, got, tc.wantResources[i])
+				}
 			}
 			if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Interactive: true}); !errors.Is(err, ErrApprovalMismatch) {
 				t.Fatalf("unapproved shared activation = %v", err)
@@ -251,6 +260,32 @@ func TestIssue420LastContributorRequiresOwnershipAndDestructiveConsent(t *testin
 	}}, snapshotManaged: true}
 	removing := sharedSkillObservation(SurfaceCodex, true, "same", "", ProjectionAbsent)
 	removed := sharedSkillObservation(SurfaceCodex, false, "", "", ProjectionAbsent)
+	for _, tc := range []struct {
+		name      string
+		ownership []ProjectionOwnership
+	}{
+		{name: "missing-ownership"},
+		{name: "mismatched-authority", ownership: []ProjectionOwnership{{
+			ID: "global-skill:shared", ProjectionID: "skill:shared", Contributors: []string{qualifyContributor(SurfaceCodex, "pack:shared:skill:shared")},
+			Fingerprint: "same", Authorities: []ProjectionAuthority{{Surface: SurfaceCodex, AdapterProvenance: "foreign-adapter/v1/codex"}},
+		}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			negativeState := ActivationState{Intent: intent, Intents: []ActivationIntent{intent}, Ownership: tc.ownership, snapshotManaged: true}
+			negativeAdapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{removing}}
+			negativeStore := &fakeActivationStore{state: negativeState}
+			negativeFacade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(negativeStore, map[Surface]SurfaceAdapter{SurfaceCodex: negativeAdapter}))
+
+			plan, err := negativeFacade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: pack.ID, Surface: SurfaceCodex})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "preserved skill:shared because it is drifted, ambiguous, unmanaged, or ownership no longer matches"
+			if len(plan.Phases()) != 0 || len(plan.PendingHumanActions()) != 1 || plan.PendingHumanActions()[0] != want || len(negativeAdapter.actions) != 0 || len(negativeStore.saves) != 0 {
+				t.Fatalf("unsafe last cleanup was not preserved: phases=%+v pending=%+v actions=%+v saves=%d", plan.Phases(), plan.PendingHumanActions(), negativeAdapter.actions, len(negativeStore.saves))
+			}
+		})
+	}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{removing, removing, removed}}
 	store := &fakeActivationStore{state: state}
 	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
@@ -300,7 +335,8 @@ func TestIssue420SharedProjectionCollisionsArePreservedAndReported(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !plan.Applicable() || len(plan.PendingHumanActions()) == 0 || len(plan.Phases()) != 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+			want := "preserved skill:shared because it is drifted, ambiguous, unmanaged, or ownership no longer matches"
+			if !plan.Applicable() || len(plan.PendingHumanActions()) != 1 || plan.PendingHumanActions()[0] != want || len(plan.Phases()) != 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
 				t.Fatalf("collision was not preserved: applicable=%v blockers=%+v pending=%+v actions=%+v saves=%d", plan.Applicable(), plan.Blockers(), plan.PendingHumanActions(), adapter.actions, len(store.saves))
 			}
 		})
