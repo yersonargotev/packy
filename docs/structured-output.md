@@ -30,9 +30,8 @@ fixtures and live producer examples.
 
 ## Doctor
 
-Doctor contains ordered `checks` and a `summary`. The cutover contract reports
-Packy core availability through the `packy-core` check without inspecting or
-inferring removed classic state or projections. Detailed capability-pack
+Doctor contains ordered `checks` and a `summary`. It reports Packy core
+availability through the `packy-core` check. Detailed capability-pack
 configured, authorized, and usable evidence remains available through
 `packy pack status`.
 

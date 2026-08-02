@@ -52,12 +52,12 @@ func TestUserMCPObservationIsStaticAndRedactedIdentity(t *testing.T) {
 }
 
 func TestInstructionUpsertPreservesForeignAndOtherContributorBytes(t *testing.T) {
-	doc := "foreign before\n" + instructionStart + "\n<!-- contributor:classic -->\nold\n<!-- /contributor:classic -->\n" + instructionEnd + "\nforeign after\n"
+	doc := "foreign before\n" + instructionStart + "\n<!-- contributor:pack:other:r -->\nold\n<!-- /contributor:pack:other:r -->\n" + instructionEnd + "\nforeign after\n"
 	got, err := UpsertInstructionContribution(doc, InstructionContribution{ContributorID: "pack:p:r", Content: "new"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(got, "foreign before\n") || !strings.HasSuffix(got, "foreign after\n") || !strings.Contains(got, "classic -->\nold") {
+	if !strings.HasPrefix(got, "foreign before\n") || !strings.HasSuffix(got, "foreign after\n") || !strings.Contains(got, "pack:other:r -->\nold") {
 		t.Fatalf("foreign bytes changed:\n%s", got)
 	}
 	repeated, err := UpsertInstructionContribution(got, InstructionContribution{ContributorID: "pack:p:r", Content: "new"})

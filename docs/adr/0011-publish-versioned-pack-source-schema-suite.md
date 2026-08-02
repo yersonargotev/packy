@@ -29,7 +29,7 @@ network. GitHub Pages provides the same checked-in bytes for external
 retrieval; deployment is not a second schema source.
 
 Machine consumers always select an exact suite version. There is no machine
-`latest` alias, old Matty-ID alias or redirect, runtime registry, or network
+`latest` alias, product-identity alias or redirect, runtime registry, or network
 fallback. Published suites are complete and immutable. Patch versions may
 change annotations without changing accepted instances, minor versions may
 expand validation compatibly, and major versions are incompatible. Suite major

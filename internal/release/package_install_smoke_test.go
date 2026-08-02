@@ -42,16 +42,15 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 		"GIT_CONFIG_NOSYSTEM=1",
 	)
 
-	legacy := map[string]string{
-		filepath.Join(home, ".packy", "config.json"):                   "{classic state remains unread}\n",
-		filepath.Join(home, ".codex", "AGENTS.md"):                     "codex-user-bytes\n",
-		filepath.Join(xdgConfigHome, "opencode", "opencode.json"):      "{\"user\":true}\n",
-		filepath.Join(xdgConfigHome, "opencode", "packy.md"):           "opencode-user-bytes\n",
-		filepath.Join(home, ".claude", "CLAUDE.md"):                    "claude-user-bytes\n",
-		filepath.Join(home, ".claude", "settings.json"):                "{\"user\":true}\n",
-		filepath.Join(home, ".agents", "skills", "legacy", "SKILL.md"): "shared-skill-user-bytes\n",
+	operatorFiles := map[string]string{
+		filepath.Join(home, ".codex", "AGENTS.md"):                       "codex-user-bytes\n",
+		filepath.Join(xdgConfigHome, "opencode", "opencode.json"):        "{\"user\":true}\n",
+		filepath.Join(xdgConfigHome, "opencode", "packy.md"):             "opencode-user-bytes\n",
+		filepath.Join(home, ".claude", "CLAUDE.md"):                      "claude-user-bytes\n",
+		filepath.Join(home, ".claude", "settings.json"):                  "{\"user\":true}\n",
+		filepath.Join(home, ".agents", "skills", "operator", "SKILL.md"): "shared-skill-user-bytes\n",
 	}
-	for path, content := range legacy {
+	for path, content := range operatorFiles {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -94,10 +93,10 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 		t.Fatalf("doctor --json emitted unexpected shape: %#v", doctor)
 	}
 
-	for path, want := range legacy {
+	for path, want := range operatorFiles {
 		data, err := os.ReadFile(path)
 		if err != nil || string(data) != want {
-			t.Fatalf("core operation changed legacy surface %s: %q, %v", path, data, err)
+			t.Fatalf("core operation changed operator file %s: %q, %v", path, data, err)
 		}
 	}
 	assertSmokePathExists(t, filepath.Join(home, ".local", "share", "packy", "bundle", "skills"), "init should create only the Installed Source substrate")
@@ -118,10 +117,10 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 		if !strings.Contains(preview, "Activation dry-run plan") || !strings.Contains(preview, "Surface: "+surface) {
 			t.Fatalf("%s activation preview omitted explicit surface intent:\n%s", surface, preview)
 		}
-		for path, want := range legacy {
+		for path, want := range operatorFiles {
 			data, err := os.ReadFile(path)
 			if err != nil || string(data) != want {
-				t.Fatalf("%s activation preview changed legacy surface %s: %q, %v", surface, path, data, err)
+				t.Fatalf("%s activation preview changed operator file %s: %q, %v", surface, path, data, err)
 			}
 		}
 		assertSmokeExternalCalls(t, externalLog, observedReadOnlyCommands)

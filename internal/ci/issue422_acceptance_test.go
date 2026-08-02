@@ -8,7 +8,7 @@ import (
 )
 
 func TestIssue422OperatorPathsTeachInitializationThenExplicitActivation(t *testing.T) {
-	root := cutoverRepoRoot(t)
+	root := repositoryRoot(t)
 	contracts := map[string][]string{
 		"README.md": {
 			"packy init",
@@ -23,11 +23,6 @@ func TestIssue422OperatorPathsTeachInitializationThenExplicitActivation(t *testi
 			"it does not create activation intent for those surfaces",
 		},
 		"docs/release-notes/next.md": {
-			"cutover is intentionally incompatible",
-			"must remove the old installation's classic artifacts manually",
-			"historical `managed_skills`, created-container, and Claude ownership records",
-			"`~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`",
-			"`$XDG_CONFIG_HOME/opencode/opencode.json`",
 			"packy init",
 			"packy pack activate engram --surface codex",
 		},
@@ -47,7 +42,7 @@ func TestIssue422OperatorPathsTeachInitializationThenExplicitActivation(t *testi
 }
 
 func TestIssue422ReleaseGuideMatchesPackageAndReleaseSmoke(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join(cutoverRepoRoot(t), "docs", "release.md"))
+	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "docs", "release.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,4 +59,13 @@ func TestIssue422ReleaseGuideMatchesPackageAndReleaseSmoke(t *testing.T) {
 			t.Errorf("release guide does not bind smoke behavior %q", want)
 		}
 	}
+}
+
+func repositoryRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
 }

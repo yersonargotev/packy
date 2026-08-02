@@ -36,7 +36,7 @@ mechanical floors, canonical-plan admission, exact next-version calculation,
 evidence validation, classified manifest materialization, Apply and Recover.
 Classifier output is evidence only. Apply validates the complete evidence set
 before acquisition and again under the shared bundle lock, then uses the
-existing sibling-staged transaction and Matty-owned validation seam.
+existing sibling-staged transaction and Packy-owned validation seam.
 
 Evidence is canonical per pack and records classifier type and identity,
 rationale, exact current and proposed versions, changed observable-contract
@@ -57,6 +57,6 @@ fail closed.
 
 ## Non-goals
 
-- A public Matty command or additional distributed binary.
+- A public Packy command or additional distributed binary.
 - GitHub writes, workflow publication, maintainer dispatch or real refresh.
-- Applying a synchronization candidate to the real Matty checkout.
+- Applying a synchronization candidate to the real Packy checkout.

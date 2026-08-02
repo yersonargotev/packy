@@ -29,7 +29,7 @@ writes that file directly**. It does not use Claude plugins, plugin
 marketplaces, caches, repository-local `CLAUDE.md`/`.claude` configuration, or
 opaque hook injection.
 
-## Explicit activation and incompatible cutover
+## Explicit activation
 
 Initialization and discovery never create Claude intent. Preview and activate
 each chosen pack or resource selection explicitly for Claude:
@@ -41,12 +41,6 @@ packy pack activate engram --surface claude --dry-run
 packy pack activate engram --surface claude
 packy doctor
 ```
-
-The removed classic lifecycle has no migration or compatibility path. Packy
-does not read, adopt, translate, or delete its old state or artifacts. The sole
-current operator removes those artifacts manually, initializes Packy afresh,
-and then activates only the desired packs and surfaces. A leftover classic
-artifact is unowned and normal collision protection preserves it.
 
 Inspection and `--dry-run` are inert. Application rereads shared state and
 documents before effects; a stale plan performs no unstarted work. Repeat the

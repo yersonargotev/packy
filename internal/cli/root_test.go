@@ -143,11 +143,6 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 				t.Fatalf("drift doctor missing %q:\n%s", want, out)
 			}
 		}
-		for _, removed := range []string{"packy install", "packy uninstall", "packy update"} {
-			if strings.Contains(out, removed) {
-				t.Fatalf("doctor named removed command %q:\n%s", removed, out)
-			}
-		}
 		if snapshotTree(t, home) != before || terminal.calls != prompts {
 			t.Fatal("drift diagnosis mutated sandbox state or requested approval")
 		}

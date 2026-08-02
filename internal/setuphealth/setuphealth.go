@@ -60,7 +60,7 @@ type Observation struct {
 }
 
 // Diagnose reports Packy core availability plus compact active-pack health.
-// Removed classic state and inactive pack projections are intentionally absent.
+// Inactive pack projections are intentionally absent.
 func Diagnose(homeDir, configHome string, observation Observation) Report {
 	report := Report{
 		SchemaVersion: 2,

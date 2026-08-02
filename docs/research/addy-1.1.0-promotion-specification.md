@@ -48,8 +48,6 @@ terminology, exits, and remediation remain equivalent to that prototype.
 
 Accepted architecture continues to govern ownership:
 
-- [ADR 0002](../adr/0002-package-installed-source-model.md): the running
-  binary and same-tag Installed Source form one package contract.
 - [ADR 0005](../adr/0005-capability-pack-surface-adapter.md):
   `internal/capabilitypack` owns portable lifecycle policy; one complete
   `internal/claudecode.SurfaceAdapter` owns Claude translation and effects.

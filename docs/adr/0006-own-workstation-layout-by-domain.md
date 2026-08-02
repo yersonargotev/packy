@@ -21,7 +21,7 @@ not read the operator's ambient environment directly; callers retain the
 ability to supply sandboxed facts.
 
 The workstation module validates the home directory, normalizes the
-configuration home, derives Matty Home, and creates the immutable snapshot. It
+configuration home, derives Packy Home, and creates the immutable snapshot. It
 does not know state filenames, skill paths, host projections, or executable
 locations.
 
@@ -29,8 +29,8 @@ locations.
 explicit dependencies to owning modules, but does not derive or transport a
 shared catalog of state, skill, host-projection, or executable paths.
 
-This decision refines the temporary path-composition responsibility retained by
-`internal/cli` in ADR 0003 and the shared-workstation exclusion in ADR 0004.
+This decision assigns path composition to each owning module and keeps
+`internal/cli` as the composition root.
 
 Skill-source selection is the deliberate exception to independent derivation.
 `skillbundle` applies the precedence between an explicit operator override, a
@@ -57,7 +57,7 @@ require a valid home directory. Every module participating in an invocation
 observes the same immutable snapshot.
 
 Snapshot construction accepts an explicit Home override for commands such as
-`matty init --home`. Without the override, configuration home follows the
+`packy init --home`. Without the override, configuration home follows the
 existing XDG normalization. With the override, configuration home is derived
 from that Home and does not inherit ambient `XDG_CONFIG_HOME`. The CLI only
 translates the flag into resolver input; it does not retain a second layout
@@ -80,10 +80,10 @@ workstation facts. Lifecycle, capability-pack, and setup-health consumers use
 its resolver or observer rather than receiving PATH, Homebrew, or local-bin
 candidate paths from the CLI.
 
-The resolver also derives one shared Matty Home root. Core lifecycle derives
-its classic state file beneath that root, while capability pack derives its
-separate pack-state file. Sharing the namespace root does not merge ownership
-of the files below it or justify another global path catalog.
+The resolver also derives one shared Packy Home root. Capability-pack state and
+other domain state remain separately owned beneath that root. Sharing the
+namespace root does not merge ownership of the files below it or justify
+another global path catalog.
 
 Read-only consumers do not reacquire layout knowledge. In particular,
 `setuphealth` consumes observations supplied by the modules that own lifecycle
@@ -97,12 +97,12 @@ context, rather than a union of every observed artifact path.
 - Tests preserve sandbox leverage without granting modules ambient environment access.
 - The shared 20-field `internal/cli.Paths` interface can be removed once all owners expose their narrower construction seams.
 - Source selection remains a separate policy owned by the skill-source modules rather than becoming CLI path logic.
-- Core lifecycle, capability packs, and setup health observe the same resolved Skill Source.
+- Capability packs and setup health observe the same resolved Skill Source.
 - Bootstrap, source selection, and lifecycle validation share one Installed Source descriptor.
 - Codex and OpenCode path conventions cannot diverge between lifecycle owners.
-- Core and pack lifecycle share one global skill-installation layout without sharing reconciliation policy.
+- Capability-pack surfaces share one global skill-installation layout without sharing reconciliation policy.
 - Engram executable-location policy has one owner and is hidden from all consumers.
-- Matty's state namespace remains consistent while classic and pack state retain separate owners.
+- Packy's state namespace remains consistent while domain state retains separate owners.
 - Moving an owned artifact does not require setup-health path changes.
 - One command observes a consistent, explicitly substitutable workstation context.
 - Help and version behavior remain independent from workstation resolution.

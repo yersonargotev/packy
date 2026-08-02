@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDiagnoseIgnoresRemovedClassicStateAndProjections(t *testing.T) {
+func TestDiagnoseWithNoActivePacksIsHealthy(t *testing.T) {
 	want := Report{
 		SchemaVersion: 2,
 		Kind:          "doctor",
@@ -83,11 +83,6 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 			for _, want := range tc.want {
 				if !strings.Contains(report.Checks[1].Detail, want) {
 					t.Fatalf("detail %q missing %q", report.Checks[1].Detail, want)
-				}
-			}
-			for _, removed := range []string{"packy install", "packy uninstall", "packy update"} {
-				if strings.Contains(report.Checks[1].Detail, removed) {
-					t.Fatalf("detail retained classic command %q: %s", removed, report.Checks[1].Detail)
 				}
 			}
 		})

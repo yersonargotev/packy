@@ -37,7 +37,6 @@ type InstructionObservation struct {
 	Contributions            map[string]string
 	ForeignContentPreserved  bool
 	RulesExternallySatisfied bool
-	RulesPackyProjected      bool
 	RulesExternalDrift       bool
 	RulesMalformed           bool
 	Err                      error
@@ -228,9 +227,6 @@ func ObserveInstructions(path string) InstructionObservation {
 		bodyEnd := bodyStart + bodyEndRel
 		body := strings.TrimSpace(inside[bodyStart:bodyEnd])
 		o.Contributions[id] = Fingerprint([]byte(body))
-		if id == "classic" {
-			o.RulesPackyProjected = strings.Contains(body, strings.TrimSpace(prompt.RulesContent()))
-		}
 		inside = inside[bodyEnd+len(endMarker):]
 	}
 	return o

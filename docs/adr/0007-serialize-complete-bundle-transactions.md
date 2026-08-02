@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-The Matty bundle contains runtime pack manifests, selected resources,
+The Packy bundle contains runtime pack manifests, selected resources,
 compatibility evidence, immutable history, source configuration, and generated
 provenance. Replacing those artifacts independently would let concurrent
 readers combine facts from different bundle generations. Portable directory
@@ -32,7 +32,7 @@ authority under the lock, constructs and validates a complete sibling-staged
 bundle, and records a durable sealed recovery marker. The bundle swap consists
 of exactly two directory renames: current to backup, then staged to current.
 Backup and marker remain until the installed or restored tree hash and
-Matty-owned validation succeed.
+Packy-owned validation succeed.
 
 Recover uses only the canonical marker paths, recorded phase, and observed
 old/new tree hashes. It rolls back a one-rename state, completes cleanup for an
@@ -61,6 +61,6 @@ CLI or maintainer synchronization operation is introduced by this decision.
 Focused tests cover lock participation, exact-candidate acquisition outside the
 lock, stale-plan boundaries, the four transaction fault points, marker and hash
 tampering, incomplete or unexpected siblings, recovery cleanup, concurrency,
-and Apply/Check idempotence. The Matty validation allowlist includes
+and Apply/Check idempotence. The Packy validation allowlist includes
 `internal/bundletransaction`; vendored or hostile upstream content remains
 outside the build, vet, test, and race package set.

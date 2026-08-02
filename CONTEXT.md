@@ -9,10 +9,6 @@ A lightweight AI workflow toolkit inspired by Gentle AI, but intentionally centr
 The always-available installer/configurator that manages capability packs and their lifecycle. Packy core is distinct from the optional `matty` capability pack, so deactivating that pack never disables the tool needed to manage it.
 Without explicit pack or resource activation intent, it may mutate only Packy-owned non-surface substrate and never a CLI surface.
 
-### Classic lifecycle
-The removed legacy behavior behind the former root `install`, `update`, and `uninstall` commands that directly reconciled global workflow artifacts. Packy does not read or migrate its state or ownership after the incompatible cutover.
-_Avoid_: Packy core lifecycle
-
 ### CLI surface
 An AI coding host that Packy can integrate with.
 
@@ -59,7 +55,7 @@ The user's explicit consent to a previewed reconciliation of either a complete c
 The progression from **configured** (Packy-owned projections are reconciled), through **authorized** (required human trust and authentication are complete), to **usable** (the host has loaded the capability under its runtime permissions). An active pack may remain pending human action between these stages.
 
 ### Packy health
-The read-only assessment of Packy core plus a summary of active-pack drift, requirements, and readiness. Inactive packs and removed classic-lifecycle artifacts do not degrade Packy health.
+The read-only assessment of Packy core plus a summary of active-pack drift, requirements, and readiness. Inactive packs do not degrade Packy health.
 
 ### Pack desired state
 The complete logical outcome Packy computes from the active capability packs on each CLI surface, including required shared resources and readiness, before translating that outcome into host-specific artifacts.
