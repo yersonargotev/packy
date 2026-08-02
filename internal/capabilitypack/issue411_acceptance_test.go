@@ -158,6 +158,55 @@ func TestReceiptBackedReversalFailureRetainsReceiptAndRecoveryEvidence(t *testin
 	}
 }
 
+func TestPartialReceiptBackedReversalResumesRemainingContribution(t *testing.T) {
+	pack := Pack{ID: "engram", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Requires: Requirements{Capabilities: []string{}, Tools: []string{"engram"}}, Resources: []Resource{{Kind: "mcp_server", ID: "engram", Command: "engram"}}}
+	first := ObservedProjection{ID: "external_setup:engram:codex:mcp", Exists: true, ObservedFingerprint: "mcp-contract", ExactFingerprint: "mcp-exact", ExternallyManaged: true, AdapterProvenance: "codex-engram-setup/v1/mcp", Action: ProjectionAction{ID: "external_setup:engram:codex:mcp", Kind: ActionCodexMCPConfig, Mode: ProjectionRemoveContent}}
+	second := ObservedProjection{ID: "external_setup:engram:codex:plugin", Exists: true, ObservedFingerprint: "plugin-contract", ExactFingerprint: "plugin-exact", ExternallyManaged: true, AdapterProvenance: "codex-engram-setup/v1/plugin", Action: ProjectionAction{ID: "external_setup:engram:codex:plugin", Kind: ActionCodexMCPConfig, Mode: ProjectionRemoveContent}}
+	present := SurfaceInspection{Revision: "present", Projections: []ObservedProjection{first, second}}
+	partial := SurfaceInspection{Revision: "partial", Projections: []ObservedProjection{first, second}}
+	partial.Projections[0].Exists = false
+	partial.Projections[0].ObservedFingerprint = "missing"
+	partial.Projections[0].ExactFingerprint = "missing"
+	absent := partial
+	absent.Revision = "absent"
+	absent.Projections = append([]ObservedProjection(nil), partial.Projections...)
+	absent.Projections[1].Exists = false
+	absent.Projections[1].ObservedFingerprint = "missing"
+	absent.Projections[1].ExactFingerprint = "missing"
+	receipt := &ExternalEffectReceipt{SchemaVersion: 1, EffectID: "external:engram:setup:codex", EffectFingerprint: "sealed", Surface: SurfaceCodex, Contributors: []string{"surface:codex:pack:engram:external:engram"}, Contributions: []ExternalContribution{
+		{ID: first.ID, ObservedFingerprint: first.ExactFingerprint, AdapterProvenance: first.AdapterProvenance},
+		{ID: second.ID, ObservedFingerprint: second.ExactFingerprint, AdapterProvenance: second.AdapterProvenance},
+	}, Reversal: ExternalReversalContract{SchemaVersion: 1, Consent: ConsentDestructiveCleanup, AuthorityLimits: []string{"configuration only"}}}
+	store := &fakeActivationStore{state: ActivationState{Intent: ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, External: []ExternalEffect{{ID: receipt.EffectID, Fingerprint: receipt.EffectFingerprint, Receipt: receipt}}}}
+	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{present, present, present, partial, partial, partial, absent}, applyErr: ProjectionActionError{ID: second.ID, Err: errors.New("second reversal interrupted")}}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}), WithExternalEffects(&fakeExecutableResolver{resolutions: []ExecutableResolution{availableEngramResolution("/opt/homebrew/bin/engram")}}, &fakeExternalExecutor{}))
+	plan, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: pack.ID, Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true}); err == nil {
+		t.Fatal("second reversal unexpectedly succeeded")
+	}
+	if store.state.Journal == nil || !containsString(store.state.Journal.Completed, first.ID) || store.state.Journal.FailedAction != second.ID || len(store.state.External) != 1 {
+		t.Fatalf("partial recovery state = %#v", store.state)
+	}
+	adapter.applyErr = nil
+	recovery, err := facade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: pack.ID, Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining := phaseActions(recovery.Phases(), ConsentDestructiveCleanup)
+	if !recovery.Recovery() || len(remaining) != 1 || remaining[0].ID != second.ID {
+		t.Fatalf("remaining reversal plan = %#v recovery=%v", remaining, recovery.Recovery())
+	}
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: recovery, Approvals: requiredApprovals(facade, recovery), Interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.state.External) != 0 || store.state.Journal != nil {
+		t.Fatalf("receipt was not retired after recovery: %#v", store.state)
+	}
+}
+
 func TestPartiallySuccessfulExternalSetupFailureCapturesReceiptAndCanResume(t *testing.T) {
 	pack := Pack{ID: "engram", Version: "1.0.0", Surfaces: []Surface{SurfaceOpenCode}, Requires: Requirements{Capabilities: []string{}, Tools: []string{"engram"}}, Resources: []Resource{{Kind: "mcp_server", ID: "engram", Command: "engram"}}}
 	pending := SurfaceInspection{Revision: "before", Projections: []ObservedProjection{{ID: "external_setup:engram:opencode:plugin", Exists: false, ObservedFingerprint: "missing", ExactFingerprint: "missing", DesiredFingerprint: "plugin-contract", ExternallyManaged: true, AdapterProvenance: "opencode-engram-setup/v1/plugin", Action: ProjectionAction{ID: "external_setup:engram:opencode:plugin", Kind: ActionOpenCodeAssetFile}}}}

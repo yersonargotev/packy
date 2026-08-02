@@ -174,6 +174,13 @@ func (f *fakeSurfaceAdapter) ApplyProjections(_ context.Context, actions []Proje
 	}
 	var actionErr ProjectionActionError
 	if errors.As(f.applyErr, &actionErr) {
+		matches := actionErr.ID == ""
+		for _, action := range actions {
+			matches = matches || action.ID == actionErr.ID
+		}
+		if !matches {
+			return nil
+		}
 		return &actionErr
 	}
 	return &ProjectionActionError{ID: actions[0].ID, Err: f.applyErr}

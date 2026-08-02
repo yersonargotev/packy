@@ -502,6 +502,58 @@ func TestReceiptCandidateRemovesOnlyExactOpenCodeSetupContributions(t *testing.T
 	}
 }
 
+func TestDuplicateOpenCodeSetupContributionIsAmbiguousAndPreserved(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "instruction.md"), []byte("Engram instructions\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plugin := filepath.Join(root, "plugins", "engram.ts")
+	if err := os.MkdirAll(filepath.Dir(plugin), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plugin, []byte("// Engram plugin\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tui := filepath.Join(root, "tui.json")
+	duplicate := "{\n  \"plugin\": [\n    \"opencode-subagent-statusline\",\n    \"opencode-subagent-statusline\"\n  ]\n}\n"
+	if err := os.WriteFile(tui, []byte(duplicate), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack := capabilitypack.Pack{ID: "engram", Resources: []capabilitypack.Resource{{Kind: "instruction", ID: "engram-memory", Source: "instruction.md"}, {Kind: "mcp_server", ID: "engram", Command: "engram"}}}
+	adapter := NewSurfaceAdapter(root, filepath.Join(root, ".agents", "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "engram-memory.md"))
+	observed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var duplicateProjection capabilitypack.ObservedProjection
+	for _, projection := range observed.Projections {
+		if projection.ID == "external_setup:engram:opencode:tui-plugin" {
+			duplicateProjection = projection
+		}
+	}
+	if !duplicateProjection.Exists || duplicateProjection.ObservedFingerprint == duplicateProjection.DesiredFingerprint {
+		t.Fatalf("duplicate setup entry was treated as exact: %+v", duplicateProjection)
+	}
+	removal, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack, Desired: capabilitypack.Pack{ID: "remaining"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range removal.Projections {
+		if projection.ID != duplicateProjection.ID {
+			continue
+		}
+		if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{projection.Action}); err != nil {
+			t.Fatal(err)
+		}
+		updated, readErr := os.ReadFile(tui)
+		if readErr != nil || string(updated) != duplicate {
+			t.Fatalf("ambiguous duplicate changed: %q err=%v", updated, readErr)
+		}
+		return
+	}
+	t.Fatal("duplicate setup projection was not observed")
+}
+
 func TestSurfaceAdapterRejectsInvalidConfigBeforeAnyProjection(t *testing.T) {
 	root := t.TempDir()
 	adapter := NewSurfaceAdapter(root, filepath.Join(root, "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "packy.md"))

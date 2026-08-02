@@ -1028,8 +1028,8 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 			}
 			continue
 		}
-		if receipt, authorized := receiptForExternalProjection(state.External, request.Surface, projection, observation.Projections); authorized {
-			if !externalReceiptHasRemainingContributor(receipt, target.packs) {
+		if receipt, authorized := receiptForExternalProjection(state.External, request.Surface, projection, observation.Projections, completedJournalActions(state)); authorized {
+			if projection.Exists && !externalReceiptHasRemainingContributor(receipt, target.packs) {
 				plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, externalReceiptReversalAction(projection.Action, receipt))
 			}
 			continue
@@ -1162,8 +1162,8 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 			}
 			continue
 		}
-		if receipt, authorized := receiptForExternalProjection(state.External, request.Surface, projection, observation.Projections); authorized {
-			if !externalReceiptHasRemainingContributor(receipt, target.packs) {
+		if receipt, authorized := receiptForExternalProjection(state.External, request.Surface, projection, observation.Projections, completedJournalActions(state)); authorized {
+			if projection.Exists && !externalReceiptHasRemainingContributor(receipt, target.packs) {
 				plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, externalReceiptReversalAction(projection.Action, receipt))
 			}
 			continue
@@ -1600,9 +1600,13 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		Surface: request.Plan.surface, PackID: request.Plan.pack.ID, Outcome: AttemptApplying,
 		AffectedResources: affectedResources, Consumers: consumers, ReconcileScope: request.Plan.reconcileScope,
 	}
+	if request.Plan.recovery && request.Plan.historicalAttempt != nil {
+		state.Journal.Actions = append([]string(nil), request.Plan.historicalAttempt.Actions...)
+		state.Journal.Completed = append([]string(nil), request.Plan.historicalAttempt.Completed...)
+	}
 	for _, action := range actions {
 		if action.Kind != ActionHostFollowUp {
-			state.Journal.Actions = append(state.Journal.Actions, action.ID)
+			state.Journal.Actions = appendCompleted(state.Journal.Actions, action.ID)
 		}
 	}
 	if err := saveActivationState(ctx, f.activation.store, request.Plan.surface, request.Plan.intentRevision, &state); err != nil {
@@ -1761,7 +1765,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 	}
 	if request.Plan.operation == OperationDeactivate && len(destructiveActions) > 0 {
-		state.External = retireExternalReceipts(state.External, destructiveActions)
+		state.External = retireExternalReceipts(state.External, state.Journal.Completed)
 	}
 	verifiedAttempt := cloneJournal(*state.Journal)
 	verifiedAttempt.Outcome = AttemptVerified
@@ -3398,7 +3402,7 @@ func cloneExternalEffects(values []ExternalEffect) []ExternalEffect {
 	return result
 }
 
-func receiptForExternalProjection(effects []ExternalEffect, surface Surface, projection ObservedProjection, observations []ObservedProjection) (*ExternalEffectReceipt, bool) {
+func receiptForExternalProjection(effects []ExternalEffect, surface Surface, projection ObservedProjection, observations []ObservedProjection, completed []string) (*ExternalEffectReceipt, bool) {
 	exact := projection.ExactFingerprint
 	if exact == "" {
 		exact = projection.ObservedFingerprint
@@ -3416,7 +3420,8 @@ func receiptForExternalProjection(effects []ExternalEffect, surface Surface, pro
 			if freshExact == "" {
 				freshExact = fresh.ObservedFingerprint
 			}
-			if !ok || !fresh.Exists || freshExact != sealed.ObservedFingerprint || fresh.AdapterProvenance != sealed.AdapterProvenance {
+			completedAndAbsent := ok && !fresh.Exists && slices.Contains(completed, sealed.ID)
+			if !completedAndAbsent && (!ok || !fresh.Exists || freshExact != sealed.ObservedFingerprint || fresh.AdapterProvenance != sealed.AdapterProvenance) {
 				allExact = false
 				break
 			}
@@ -3467,10 +3472,17 @@ func refreshExternalReceiptContributors(effects []ExternalEffect, packs []Pack, 
 	return result
 }
 
-func retireExternalReceipts(effects []ExternalEffect, actions []ProjectionAction) []ExternalEffect {
+func completedJournalActions(state ActivationState) []string {
+	if state.Journal == nil {
+		return nil
+	}
+	return state.Journal.Completed
+}
+
+func retireExternalReceipts(effects []ExternalEffect, completedActions []string) []ExternalEffect {
 	removed := map[string]bool{}
-	for _, action := range actions {
-		removed[action.ID] = true
+	for _, id := range completedActions {
+		removed[id] = true
 	}
 	result := make([]ExternalEffect, 0, len(effects))
 	for _, effect := range cloneExternalEffects(effects) {

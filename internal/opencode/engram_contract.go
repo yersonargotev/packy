@@ -37,15 +37,19 @@ func (a *SurfaceAdapter) inspectEngramSetupContract() ([]capabilitypack.Observed
 	if err != nil {
 		return nil, err
 	}
-	tuiConfigured, err := topLevelStringArrayContains(tuiContent, tuiPath, "plugin", openCodeSubagentStatuslinePlugin)
+	tuiMatches, err := topLevelStringArrayCount(tuiContent, tuiPath, "plugin", openCodeSubagentStatuslinePlugin)
 	if err != nil {
 		return nil, err
 	}
+	tuiExists := tuiMatches > 0
+	tuiConfigured := tuiMatches == 1
 	tuiDesired := localprojection.FingerprintBytes([]byte("engram-opencode-contract-v1:tui-plugin"))
 	tuiExact := "missing"
 	tuiObserved := "missing"
+	if tuiExists {
+		tuiExact = localprojection.FingerprintBytes([]byte(fmt.Sprintf("%s\ncount=%d", openCodeSubagentStatuslinePlugin, tuiMatches)))
+	}
 	if tuiConfigured {
-		tuiExact = localprojection.FingerprintBytes([]byte(openCodeSubagentStatuslinePlugin))
 		tuiObserved = tuiDesired
 	}
 	return []capabilitypack.ObservedProjection{
@@ -55,31 +59,32 @@ func (a *SurfaceAdapter) inspectEngramSetupContract() ([]capabilitypack.Observed
 			Action: capabilitypack.ProjectionAction{ID: "external_setup:engram:opencode:plugin", Kind: capabilitypack.ActionOpenCodeAssetFile, Target: pluginPath, Description: "observe Engram-owned OpenCode plugin configuration"},
 		},
 		{
-			ID: "external_setup:engram:opencode:tui-plugin", Exists: tuiConfigured, ObservedFingerprint: tuiObserved, ExactFingerprint: tuiExact,
+			ID: "external_setup:engram:opencode:tui-plugin", Exists: tuiExists, ObservedFingerprint: tuiObserved, ExactFingerprint: tuiExact,
 			DesiredFingerprint: tuiDesired, ExternallyManaged: true,
 			Action: capabilitypack.ProjectionAction{ID: "external_setup:engram:opencode:tui-plugin", Kind: capabilitypack.ActionOpenCodeAssetFile, Target: tuiPath, Description: "observe Engram-owned OpenCode TUI plugin configuration"},
 		},
 	}, nil
 }
 
-func topLevelStringArrayContains(content, path, key, value string) (bool, error) {
+func topLevelStringArrayCount(content, path, key, value string) (int, error) {
 	if content == "" {
-		return false, nil
+		return 0, nil
 	}
 	config, err := decodeConfig(content, path)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	items, ok := config[key].([]any)
 	if !ok {
-		return false, nil
+		return 0, nil
 	}
+	matches := 0
 	for _, item := range items {
 		if item == value {
-			return true, nil
+			matches++
 		}
 	}
-	return false, nil
+	return matches, nil
 }
 
 func removeTopLevelStringArrayEntry(content, key, value string) (string, error) {
@@ -101,6 +106,9 @@ func removeTopLevelStringArrayEntry(content, key, value string) (string, error) 
 		}
 	}
 	if matching == 0 {
+		return content, nil
+	}
+	if matching != 1 {
 		return content, nil
 	}
 	if remaining == 0 && !arrayValueHasComments(content[property.valueStart:property.valueEnd]) {
