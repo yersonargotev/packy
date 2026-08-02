@@ -4,6 +4,8 @@
 
 Accepted.
 
+Supersedes ADR 0020 and ADR 0021.
+
 ## Context
 
 Packy's protected branch already provides the durable integration boundary for
