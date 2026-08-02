@@ -250,7 +250,7 @@ func canonicalizeActivationDocument(document *activationDocument) error {
 }
 
 // migrateV4Ownership migrates only current capability-pack ownership. It does
-// not inspect or adopt any classic lifecycle state. Conflicting facts for the
+// does not inspect or adopt any removed classic lifecycle state. Conflicting facts for the
 // same physical identity are dropped so the target remains conservatively
 // unowned until an explicit activation resolves the collision.
 func migrateV4Ownership(document *activationDocument) {

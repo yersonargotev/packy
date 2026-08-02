@@ -40,7 +40,7 @@ func currentContractRetainsClassicAssumption(path, line string) bool {
 	historicalContext := false
 	for _, marker := range []string{
 		"removed", "former", "historical", "superseded", "legacy", "leftover",
-		"unowned", "preserv", "ignored", "does not", " not ", "must not", "reject", "unknown command",
+		"unowned", "preserv", "ignored", "does not", "must not", "reject", "unknown command",
 	} {
 		if strings.Contains(line, marker) {
 			historicalContext = true
@@ -97,6 +97,21 @@ func TestCurrentArchitectureCommandInvocationDetection(t *testing.T) {
 	}
 }
 
+func TestCurrentArchitectureClassicAssumptionDetection(t *testing.T) {
+	tests := []struct {
+		line string
+		want bool
+	}{
+		{line: "Packy is not optional; run packy install now", want: true},
+		{line: "Packy does not read removed classic lifecycle state"},
+	}
+	for _, test := range tests {
+		if got := currentContractRetainsClassicAssumption("README.md", strings.ToLower(test.line)); got != test.want {
+			t.Errorf("currentContractRetainsClassicAssumption(%q) = %t, want %t", test.line, got, test.want)
+		}
+	}
+}
+
 func TestCurrentArchitectureHistoricalPathsAreExplicitlyAllowlisted(t *testing.T) {
 	for _, path := range []string{
 		"docs/adr/0003-core-lifecycle-deep-module.md",
@@ -116,7 +131,7 @@ func TestCurrentArchitectureHistoricalPathsAreExplicitlyAllowlisted(t *testing.T
 	}
 }
 
-func TestCurrentArchitectureContractsCoverProductionAndTests(t *testing.T) {
+func TestCurrentArchitectureContractsIncludeRepresentativeProductionAndTests(t *testing.T) {
 	root := cutoverRepoRoot(t)
 	paths := currentArchitectureContractPaths(t, root)
 	covered := make(map[string]bool, len(paths))
