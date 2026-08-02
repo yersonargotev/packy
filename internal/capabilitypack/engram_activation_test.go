@@ -216,7 +216,7 @@ func TestClaudeNativeMCPBindingDoesNotImportGenericEngramSetup(t *testing.T) {
 	facade := Facade{}
 	resolution := missingEngramResolution()
 	resolution.Tool = "engram"
-	actions, blockers := facade.externalPlan(pack, SurfaceClaude, ActivationState{}, []ExecutableResolution{resolution})
+	actions, blockers := facade.externalPlan(OperationActivate, pack, SurfaceClaude, ActivationState{}, []ExecutableResolution{resolution})
 	if len(blockers) != 0 || len(actions) != 1 || actions[0].ID != "external:engram:acquire" {
 		t.Fatalf("actions=%#v blockers=%#v", actions, blockers)
 	}

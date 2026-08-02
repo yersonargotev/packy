@@ -1320,7 +1320,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	sort.Slice(actions, func(i, j int) bool { return actions[i].ID < actions[j].ID })
 	sort.Slice(executableAdapterActions, func(i, j int) bool { return executableAdapterActions[i].ID < executableAdapterActions[j].ID })
 	sort.Slice(destructiveActions, func(i, j int) bool { return destructiveActions[i].ID < destructiveActions[j].ID })
-	externalActions, externalBlockers := f.externalPlan(pack, request.Surface, state, resolutions)
+	externalActions, externalBlockers := f.externalPlan(operation, pack, request.Surface, state, resolutions)
 	externalActions = append(executableAdapterActions, externalActions...)
 	composition.blockers = append(composition.blockers, externalBlockers...)
 	sortBlockers(composition.blockers)
@@ -2865,11 +2865,15 @@ func recordLatestAttempt(attempts []ApplyingJournal, attempt ApplyingJournal) []
 	return append(result, cloneJournal(attempt))
 }
 
-func (f Facade) externalPlan(pack Pack, surface Surface, state ActivationState, resolutions []ExecutableResolution) ([]ProjectionAction, []PlanBlocker) {
+func (f Facade) externalPlan(operation Operation, pack Pack, surface Surface, state ActivationState, resolutions []ExecutableResolution) ([]ProjectionAction, []PlanBlocker) {
 	var actions []ProjectionAction
 	var blockers []PlanBlocker
 	for _, resolution := range resolutions {
 		if !resolution.Available {
+			if operation != OperationActivate && operation != OperationUpdate {
+				blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "executable acquisition requires an explicit activation or update; preview one of those operations before retrying"})
+				continue
+			}
 			if !resolution.AcquisitionSupported || strings.TrimSpace(resolution.AcquisitionCommand) == "" {
 				blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "no supported acquisition action is available; configure a supported acquisition or install it before retrying"})
 				continue

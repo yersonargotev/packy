@@ -259,7 +259,7 @@ func TestReconcileDeletesObsoleteProjectionOnlyWithVerifiedOwnershipAndDestructi
 }
 
 func TestReconcileApprovalKindsCannotAuthorizeOtherPhases(t *testing.T) {
-	resolver := &fakeExecutableResolver{resolutions: []ExecutableResolution{missingEngramResolution()}}
+	resolver := &fakeExecutableResolver{resolutions: []ExecutableResolution{availableEngramResolution("/opt/homebrew/bin/engram")}}
 	executor := &fakeExternalExecutor{}
 	facade, adapter, store := engramFacadeForTest(resolver, executor, engramObservation("missing"))
 	store.state = ActivationState{Intent: activeIntent("engram", "1.0.0", 6)}
@@ -267,7 +267,7 @@ func TestReconcileApprovalKindsCannotAuthorizeOtherPhases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if phases := plan.Phases(); len(phases) < 2 || phases[0].Kind != ConsentReversibleLocal || phases[1].Kind != ConsentExecutableExternal {
+	if phases := plan.Phases(); len(phases) < 2 || phases[0].Kind != ConsentReversibleLocal || phases[1].Kind != ConsentToolHostSetup {
 		t.Fatalf("phases = %+v", phases)
 	}
 	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
