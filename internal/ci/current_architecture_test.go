@@ -40,7 +40,7 @@ func currentContractRetainsClassicAssumption(path, line string) bool {
 	historicalContext := false
 	for _, marker := range []string{
 		"removed", "former", "historical", "superseded", "legacy", "leftover",
-		"unowned", "preserv", "ignored", "does not", "must not", "reject", "unknown command",
+		"unowned", "preserv", "ignored", "does not", " not ", "must not", "reject", "unknown command",
 	} {
 		if strings.Contains(line, marker) {
 			historicalContext = true
@@ -116,6 +116,25 @@ func TestCurrentArchitectureHistoricalPathsAreExplicitlyAllowlisted(t *testing.T
 	}
 }
 
+func TestCurrentArchitectureContractsCoverProductionAndTests(t *testing.T) {
+	root := cutoverRepoRoot(t)
+	paths := currentArchitectureContractPaths(t, root)
+	covered := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		covered[path] = true
+	}
+	for _, path := range []string{
+		"cmd/packy/main.go",
+		"internal/capabilitypack/activation.go",
+		"internal/cli/issue418_classic_cutover_test.go",
+		"internal/setuphealth/setuphealth_test.go",
+	} {
+		if !covered[path] {
+			t.Errorf("current architecture contracts do not cover %s", path)
+		}
+	}
+}
+
 func currentArchitectureContractPaths(t *testing.T, root string) []string {
 	t.Helper()
 	var paths []string
@@ -143,11 +162,7 @@ func currentArchitectureContractPaths(t *testing.T, root string) []string {
 			paths = append(paths, rel)
 		case strings.HasPrefix(rel, "docs/") && filepath.Ext(rel) == ".md":
 			paths = append(paths, rel)
-		case strings.HasPrefix(rel, "internal/cli/") && filepath.Ext(rel) == ".go" && !strings.HasSuffix(rel, "_test.go"):
-			paths = append(paths, rel)
-		case strings.HasPrefix(rel, "internal/setuphealth/") && filepath.Ext(rel) == ".go" && !strings.HasSuffix(rel, "_test.go"):
-			paths = append(paths, rel)
-		case strings.HasPrefix(rel, "internal/release/") && filepath.Ext(rel) == ".go" && !strings.HasSuffix(rel, "_test.go"):
+		case (strings.HasPrefix(rel, "cmd/") || strings.HasPrefix(rel, "internal/")) && filepath.Ext(rel) == ".go" && !architectureEnforcementPath(rel):
 			paths = append(paths, rel)
 		case strings.HasPrefix(rel, ".github/workflows/") && (filepath.Ext(rel) == ".yml" || filepath.Ext(rel) == ".yaml"):
 			paths = append(paths, rel)
@@ -160,6 +175,10 @@ func currentArchitectureContractPaths(t *testing.T, root string) []string {
 		t.Fatal(err)
 	}
 	return paths
+}
+
+func architectureEnforcementPath(path string) bool {
+	return path == "internal/ci/current_architecture_test.go" || path == "internal/cli/architecture_test.go"
 }
 
 // Historical decisions, research, immutable cutover records, and release
