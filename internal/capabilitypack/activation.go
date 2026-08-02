@@ -2910,9 +2910,14 @@ func (f Facade) externalPlan(operation Operation, pack Pack, surface Surface, st
 			Consequences:   fmt.Sprintf("allows %s to mutate the %s host configuration for its tool-owned setup", resolution.Tool, surfaceDisplayName(surface)),
 			RollbackLimits: "pack deactivation removes Packy-owned projections but does not delete tool-owned configuration, data, or credentials",
 		}
-		if !externalEffectCompleted(state.External, setup) || externalVerificationNeedsRetry(state, setup, surface) {
-			actions = append(actions, setup)
+		if externalEffectCompleted(state.External, setup) && !externalVerificationNeedsRetry(state, setup, surface) {
+			continue
 		}
+		if operation != OperationActivate && operation != OperationUpdate {
+			blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "tool-owned host setup requires an explicit activation or update; preview one of those operations before retrying"})
+			continue
+		}
+		actions = append(actions, setup)
 	}
 	sortBlockers(blockers)
 	return actions, blockers

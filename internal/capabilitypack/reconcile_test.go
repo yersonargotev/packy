@@ -258,7 +258,7 @@ func TestReconcileDeletesObsoleteProjectionOnlyWithVerifiedOwnershipAndDestructi
 	}
 }
 
-func TestReconcileApprovalKindsCannotAuthorizeOtherPhases(t *testing.T) {
+func TestReconcileCannotUseApprovalToAuthorizeToolHostSetup(t *testing.T) {
 	resolver := &fakeExecutableResolver{resolutions: []ExecutableResolution{availableEngramResolution("/opt/homebrew/bin/engram")}}
 	executor := &fakeExternalExecutor{}
 	facade, adapter, store := engramFacadeForTest(resolver, executor, engramObservation("missing"))
@@ -267,12 +267,12 @@ func TestReconcileApprovalKindsCannotAuthorizeOtherPhases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if phases := plan.Phases(); len(phases) < 2 || phases[0].Kind != ConsentReversibleLocal || phases[1].Kind != ConsentToolHostSetup {
-		t.Fatalf("phases = %+v", phases)
+	if plan.Applicable() || len(plan.Blockers()) != 1 || !strings.Contains(plan.Blockers()[0].Detail, "tool-owned host setup") {
+		t.Fatalf("reconcile setup authority = phases:%+v blockers:%+v", plan.Phases(), plan.Blockers())
 	}
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
-	if !errors.Is(err, ErrApprovalMismatch) || len(store.saves) != 0 || len(adapter.actions) != 0 || len(executor.actions) != 0 {
-		t.Fatalf("local approval authorized other phase: err=%v saves=%d local=%d external=%d", err, len(store.saves), len(adapter.actions), len(executor.actions))
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentToolHostSetup)}, Interactive: true})
+	if !errors.Is(err, ErrPlanNotActionable) || len(store.saves) != 0 || len(adapter.actions) != 0 || len(executor.actions) != 0 {
+		t.Fatalf("approval authorized blocked setup: err=%v saves=%d local=%d external=%d", err, len(store.saves), len(adapter.actions), len(executor.actions))
 	}
 }
 
