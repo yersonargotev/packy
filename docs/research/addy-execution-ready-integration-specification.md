@@ -28,8 +28,6 @@ exception.
 
 Accepted ADRs continue to govern module ownership:
 
-- [ADR 0003](../adr/0003-core-lifecycle-deep-module.md): capability-pack
-  lifecycle stays in `internal/capabilitypack`; CLI is an adapter.
 - [ADR 0005](../adr/0005-capability-pack-surface-adapter.md): one complete
   adapter per host; capability-pack owns lifecycle meaning and adapters own
   host translation and observation.

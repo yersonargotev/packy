@@ -598,7 +598,7 @@ func TestHomebrewEffectPlanIsExactForObservedTapFixtures(t *testing.T) {
 	}
 	formulaSHA := sha256.Sum256([]byte("class Packy < Formula\nend\n"))
 
-	makeTap := func(t *testing.T, observedFormula string, legacy bool) string {
+	makeTap := func(t *testing.T, observedFormula string) string {
 		t.Helper()
 		tap := t.TempDir()
 		if err := os.Mkdir(filepath.Join(tap, "Formula"), 0o700); err != nil {
@@ -606,11 +606,6 @@ func TestHomebrewEffectPlanIsExactForObservedTapFixtures(t *testing.T) {
 		}
 		if observedFormula != "" {
 			if err := os.WriteFile(filepath.Join(tap, "Formula", "packy.rb"), []byte(observedFormula), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if legacy {
-			if err := os.WriteFile(filepath.Join(tap, "Formula", "matty.rb"), []byte("legacy\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -628,16 +623,14 @@ func TestHomebrewEffectPlanIsExactForObservedTapFixtures(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		observedFormula string
-		legacy          bool
 		action          string
 		write           bool
-		deletions       int
 	}{
 		{name: "exact no-op", observedFormula: "class Packy < Formula\nend\n", action: "no-op"},
-		{name: "stale formula and legacy deletion", observedFormula: "stale\n", legacy: true, action: "commit-and-push", write: true, deletions: 1},
+		{name: "stale formula", observedFormula: "stale\n", action: "commit-and-push", write: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tap := makeTap(t, tc.observedFormula, tc.legacy)
+			tap := makeTap(t, tc.observedFormula)
 			cmd := exec.Command("bash", script, "--tap-dir", tap, "--formula", formula, "--repository", "yersonargotev/homebrew-tap", "--ref", "refs/heads/main")
 			cmd.Dir = root
 			cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
@@ -651,12 +644,11 @@ func TestHomebrewEffectPlanIsExactForObservedTapFixtures(t *testing.T) {
 					SHA256 string `json:"sha256"`
 					Write  bool   `json:"write"`
 				} `json:"formula"`
-				DeletePaths []string `json:"delete_paths"`
 			}
 			if err := json.Unmarshal(output, &plan); err != nil {
 				t.Fatal(err)
 			}
-			if plan.Action != tc.action || plan.Formula.Write != tc.write || len(plan.DeletePaths) != tc.deletions || plan.Formula.SHA256 != hex.EncodeToString(formulaSHA[:]) {
+			if plan.Action != tc.action || plan.Formula.Write != tc.write || plan.Formula.SHA256 != hex.EncodeToString(formulaSHA[:]) {
 				t.Fatalf("unexpected plan: %s", output)
 			}
 		})
@@ -850,7 +842,7 @@ func TestReleaseWorkflowVerifiesPublishedGitHubBytesBeforeHomebrew(t *testing.T)
 	if readBack < 0 || checkout < 0 || push < 0 || !(readBack < checkout && checkout < push) {
 		t.Fatal("published GitHub bytes must be independently verified before tap checkout and push")
 	}
-	for _, forbidden := range []string{"formula_renames.json", "FormulaRenames", "yersonargotev/matty", "Formula/matty.rb =>"} {
+	for _, forbidden := range []string{"formula_renames.json", "FormulaRenames"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("release workflow must not contain legacy distribution identity %q", forbidden)
 		}

@@ -24,10 +24,10 @@ func TestVersionRunnerFailureMatrix(t *testing.T) {
 	}
 }
 
-func TestInstructionObservationReportsRulesSource(t *testing.T) {
+func TestInstructionObservationReportsExternalRules(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "CLAUDE.md")
 	external := "<!-- dots:rules -->\n" + prompt.RulesContent() + "<!-- /dots:rules -->\n"
-	document, err := UpsertInstructionContribution(external, InstructionContribution{ContributorID: "classic", Content: prompt.CodexContent()})
+	document, err := UpsertInstructionContribution(external, InstructionContribution{ContributorID: "pack:p:r", Content: prompt.CodexContent()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,19 +35,8 @@ func TestInstructionObservationReportsRulesSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	observation := ObserveInstructions(path)
-	if observation.Err != nil || !observation.RulesExternallySatisfied || observation.RulesPackyProjected {
+	if observation.Err != nil || !observation.RulesExternallySatisfied {
 		t.Fatalf("external observation=%+v", observation)
-	}
-	document, err = UpsertInstructionContribution("", InstructionContribution{ContributorID: "classic", Content: prompt.CodexContent() + "\n" + prompt.RulesContent()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	observation = ObserveInstructions(path)
-	if observation.Err != nil || observation.RulesExternallySatisfied || !observation.RulesPackyProjected {
-		t.Fatalf("Packy observation=%+v", observation)
 	}
 }
 
@@ -118,7 +107,7 @@ func TestLastContributorAndAmbiguousOwnershipPreserve(t *testing.T) {
 	os.Symlink(src, target)
 	fp, _, _ := localprojection.FingerprintPath(target)
 	x := capabilitypack.ProjectionAction{ID: "skill:x", Kind: ActionSkillLink, Target: target, Mode: capabilitypack.ProjectionDeleteTarget}
-	for name, s := range map[string]OwnershipSnapshot{"shared": NewOwnershipSnapshot(OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "a", ID: x.ID, Kind: string(ActionSkillLink), Target: target, Fingerprint: fp, DeletionAuthorized: true, Contributors: []string{"a", "b"}}), "ambiguous": NewOwnershipSnapshot(OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "a", ID: x.ID, Kind: string(ActionSkillLink), Target: target, Fingerprint: fp, DeletionAuthorized: true, Contributors: []string{"a"}}, OwnershipRecord{StateOwner: "classic", ContributorID: "b", ID: x.ID, Kind: string(ActionSkillLink), Target: target, Fingerprint: fp, DeletionAuthorized: true, Contributors: []string{"b"}})} {
+	for name, s := range map[string]OwnershipSnapshot{"shared": NewOwnershipSnapshot(OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "a", ID: x.ID, Kind: string(ActionSkillLink), Target: target, Fingerprint: fp, DeletionAuthorized: true, Contributors: []string{"a", "b"}}), "ambiguous": NewOwnershipSnapshot(OwnershipRecord{StateOwner: "capabilitypack", ContributorID: "a", ID: x.ID, Kind: string(ActionSkillLink), Target: target, Fingerprint: fp, DeletionAuthorized: true, Contributors: []string{"a"}}, OwnershipRecord{StateOwner: "other", ContributorID: "b", ID: x.ID, Kind: string(ActionSkillLink), Target: target, Fingerprint: fp, DeletionAuthorized: true, Contributors: []string{"b"}})} {
 		t.Run(name, func(t *testing.T) {
 			a := NewSurfaceAdapter("", l, filepath.Join(home, name), "claude", &recordingRunner{}, StaticOwnershipSnapshot(s))
 			if err := a.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{x}); err == nil {
@@ -352,12 +341,12 @@ func TestExactCleanupMatrixForSkillInstructionHookAndMCP(t *testing.T) {
 		}
 	})
 	t.Run("instruction contribution", func(t *testing.T) {
-		doc := "foreign\n" + instructionStart + "\n<!-- contributor:classic -->\nkeep\n<!-- /contributor:classic -->\n<!-- contributor:pack:p:x -->\nremove\n<!-- /contributor:pack:p:x -->\n" + instructionEnd + "\ntail\n"
+		doc := "foreign\n" + instructionStart + "\n<!-- contributor:pack:other:x -->\nkeep\n<!-- /contributor:pack:other:x -->\n<!-- contributor:pack:p:x -->\nremove\n<!-- /contributor:pack:p:x -->\n" + instructionEnd + "\ntail\n"
 		got, err := RemoveInstructionContribution(doc, "pack:p:x")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(got, "classic -->\nkeep") || !strings.HasPrefix(got, "foreign\n") || !strings.HasSuffix(got, "tail\n") || strings.Contains(got, "\nremove\n") {
+		if !strings.Contains(got, "pack:other:x -->\nkeep") || !strings.HasPrefix(got, "foreign\n") || !strings.HasSuffix(got, "tail\n") || strings.Contains(got, "\nremove\n") {
 			t.Fatalf("preservation failed:\n%s", got)
 		}
 		again, err := RemoveInstructionContribution(got, "pack:p:x")

@@ -120,15 +120,7 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 		{"cross-commit", func(in *ProductionPromotionInputs) { in.Qualification.Commit = strings.Repeat("e", 40) }},
 		{"wrong-floor", func(in *ProductionPromotionInputs) { in.Qualification.ResolvedClaudeVersion = "2.2.0" }},
 		{"missing-commands", func(in *ProductionPromotionInputs) { in.Qualification.Atomicity.Commands = nil }},
-		{"removed-command-succeeded", func(in *ProductionPromotionInputs) {
-			in.Qualification.Atomicity.Commands = append([]ProductionCommand(nil), in.Qualification.Atomicity.Commands...)
-			in.Qualification.Atomicity.Commands[6].ExitCode = 0
-		}},
-		{"removed-command-not-unknown", func(in *ProductionPromotionInputs) {
-			in.Qualification.Atomicity.Commands = append([]ProductionCommand(nil), in.Qualification.Atomicity.Commands...)
-			in.Qualification.Atomicity.Commands[6].Stderr = "other failure"
-		}},
-		{"incomplete-core-cutover-assertions", func(in *ProductionPromotionInputs) {
+		{"incomplete-smoke-assertions", func(in *ProductionPromotionInputs) {
 			in.Qualification.Atomicity.Assertions.NoClaudeMutationOperations = false
 		}},
 		{"missing-manifest", func(in *ProductionPromotionInputs) { in.Qualification.Atomicity.Before = nil }},
@@ -182,7 +174,6 @@ func validProductionAtomicity(commit string, collectedAt time.Time) ProductionAt
 		{"claude", []string{"--version"}}, {"packy", []string{"version"}},
 		{"packy", []string{"init", "--home", "/sandbox/home", "--source-root", "/sandbox/installed-source", "--repository-url", "/sandbox/source-repository", "--repository-ref", "packy-smoke-proved-source"}},
 		{"packy", []string{"doctor"}}, {"packy", []string{"pack", "list"}}, {"packy", []string{"pack", "show", "addy"}},
-		{"packy", []string{"install"}}, {"packy", []string{"update"}}, {"packy", []string{"uninstall"}},
 		{"packy", []string{"pack", "activate", "addy", "--surface", "claude", "--dry-run"}},
 		{"packy", []string{"pack", "activate", "addy", "--surface", "claude"}},
 		{"packy", []string{"pack", "status", "addy", "--surface", "claude"}},
@@ -192,18 +183,11 @@ func validProductionAtomicity(commit string, collectedAt time.Time) ProductionAt
 	for i, operation := range operations {
 		commands[i] = ProductionCommand{Name: operation.name, Args: operation.args}
 	}
-	commands[6].ExitCode = 1
-	commands[7].ExitCode = 1
-	commands[8].ExitCode = 1
-	commands[6].Stderr = "unknown command: install"
-	commands[7].Stderr = "unknown command: update"
-	commands[8].Stderr = "unknown command: uninstall"
 	process, _ := json.Marshal(commands)
 	allRunnerSafety := ProductionRunnerSafety{true, true, true, true, true, true, true, true, true}
 	allAssertions := ProductionAssertions{
 		InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true,
-		RemovedInstallRejected: true, RemovedUpdateRejected: true, RemovedUninstallRejected: true,
-		ClassicStatePreserved: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true,
+		ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true,
 		SharedSkillSentinelPreserved: true, InitializationCausedNoSurfaceChange: true,
 		ActivationPreviewCausedNoChange: true, RepresentativePackActivated: true,
 		ReadinessInspectedSeparately: true, NoActivationStateAfterInitialization: true,

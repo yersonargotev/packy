@@ -296,22 +296,6 @@ func TestInspectCarriesStrictRegistrationIntoCheck(t *testing.T) {
 	}
 }
 
-func TestInspectDoesNotAdoptLegacyMattyWorkflowEnvironment(t *testing.T) {
-	clearPackyEnvironment(t)
-	t.Setenv("PACKY_SOURCE_ID", "")
-	t.Setenv("MATTY_SOURCE_ID", "legacy-source")
-	t.Setenv("MATTY_SELECTOR", "commit")
-	t.Setenv("MATTY_SELECTOR_REF", strings.Repeat("a", 40))
-
-	got, check, err := inspectRequest(options{repositoryRoot: t.TempDir(), sourceID: "explicit-source"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.SourceID != "explicit-source" || check.SourceID != "explicit-source" {
-		t.Fatalf("legacy Matty environment was adopted: request=%#v check=%#v", got, check)
-	}
-}
-
 func TestInspectRejectsMismatchedWorkflowRequestDigest(t *testing.T) {
 	clearPackyEnvironment(t)
 	t.Setenv("PACKY_SOURCE_ID", "source")

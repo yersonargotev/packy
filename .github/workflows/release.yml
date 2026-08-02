@@ -1046,7 +1046,6 @@ jobs:
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           mkdir -p Formula
           cp ../release-metadata/packy.rb Formula/packy.rb
-          git rm --ignore-unmatch Formula/matty.rb
           git add Formula/packy.rb
           if git diff --cached --quiet; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"

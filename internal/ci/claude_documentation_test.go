@@ -14,7 +14,7 @@ func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 	documents := map[string][]string{
 		"CONTEXT.md":                 {"### CLI surface", "### Supported CLI surface", "### Target CLI surface", "The supported CLI surfaces are Codex, OpenCode, and Claude Code;", "Antigravity and GitHub Copilot CLI remain future candidates."},
 		"README.md":                  {"Claude Code", "docs/claude-code.md", claudecode.MinimumSupportedVersion},
-		"docs/claude-code.md":        {"Prerequisite", "Global projections", "migration", "Preservation", "recovery", "readiness", "cleanup", "No authentication or model calls", claudecode.MinimumSupportedVersion},
+		"docs/claude-code.md":        {"Prerequisite", "Global projections", "Explicit activation", "Preservation", "recovery", "readiness", "cleanup", "No authentication or model calls", claudecode.MinimumSupportedVersion},
 		"docs/product/packy-v0.md":   {"Claude Code", claudecode.MinimumSupportedVersion},
 		"docs/roadmap.md":            {"Claude Code", claudecode.MinimumSupportedVersion},
 		"docs/capability-packs.md":   {"manifest v3", "Claude Code", "matty 3.0.0", "engram 2.0.0"},

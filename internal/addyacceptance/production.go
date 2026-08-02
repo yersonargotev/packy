@@ -120,8 +120,7 @@ type ProductionRunnerSafety struct {
 }
 type ProductionAssertions struct {
 	InstalledSourceInitialized, DoctorReportedCoreHealthy                                      bool
-	RemovedInstallRejected, RemovedUpdateRejected, RemovedUninstallRejected                    bool
-	ClassicStatePreserved, ClaudeInstructionPreserved, ClaudeMCPPreserved                      bool
+	ClaudeInstructionPreserved, ClaudeMCPPreserved                                             bool
 	SharedSkillSentinelPreserved, InitializationCausedNoSurfaceChange                          bool
 	ActivationPreviewCausedNoChange, RepresentativePackActivated, ReadinessInspectedSeparately bool
 	NoActivationStateAfterInitialization, NoClaudeMutationOperations                           bool
@@ -251,9 +250,6 @@ func validateProductionAtomicity(q ProductionQualification) error {
 		{"packy", []string{"doctor"}, 0},
 		{"packy", []string{"pack", "list"}, 0},
 		{"packy", []string{"pack", "show", "addy"}, 0},
-		{"packy", []string{"install"}, 1},
-		{"packy", []string{"update"}, 1},
-		{"packy", []string{"uninstall"}, 1},
 		{"packy", []string{"pack", "activate", "addy", "--surface", "claude", "--dry-run"}, 0},
 		{"packy", []string{"pack", "activate", "addy", "--surface", "claude"}, 0},
 		{"packy", []string{"pack", "status", "addy", "--surface", "claude"}, 0},
@@ -288,8 +284,7 @@ func validateProductionAtomicity(q ProductionQualification) error {
 	}
 	x := a.Assertions
 	if !x.InstalledSourceInitialized || !x.DoctorReportedCoreHealthy ||
-		!x.RemovedInstallRejected || !x.RemovedUpdateRejected || !x.RemovedUninstallRejected ||
-		!x.ClassicStatePreserved || !x.ClaudeInstructionPreserved || !x.ClaudeMCPPreserved ||
+		!x.ClaudeInstructionPreserved || !x.ClaudeMCPPreserved ||
 		!x.SharedSkillSentinelPreserved || !x.InitializationCausedNoSurfaceChange ||
 		!x.ActivationPreviewCausedNoChange || !x.RepresentativePackActivated || !x.ReadinessInspectedSeparately ||
 		!x.NoActivationStateAfterInitialization || !x.NoClaudeMutationOperations ||

@@ -10,13 +10,8 @@ Capability-pack status and lifecycle operations currently discover host
 behavior through an activation adapter, optional lifecycle-aware interfaces, a
 deprecated status inspector, and a separately registered readiness inspector.
 Both supported hosts already provide the complete behavior, so the fragmented
-seams permit combinations that cannot preserve Matty's safety semantics.
-
-[ADR 0001](0001-matty-v0-architecture.md) establishes Codex and
-OpenCode as CLI surfaces owned by a small installer/configurator, while
-[ADR 0003](0003-core-lifecycle-deep-module.md) keeps capability-pack lifecycle
-separate from Matty core lifecycle. The broader behavior-preserving migration
-is specified by the
+seams permit combinations that cannot preserve Packy's safety semantics. The
+broader behavior-preserving migration is specified by the
 [capability-pack surface adapter deepening specification](../../.scratch/capability-pack-surface-deepening/spec.md).
 
 ## Decision

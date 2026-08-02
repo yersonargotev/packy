@@ -32,10 +32,10 @@ only `contents: read`; Publish has only `contents: write` and
 `pull-requests: write`. The workflow has no automatic
 trigger, starts with empty permissions, pins actions by full SHA, serializes by
 source without cancelling an active run, and completes classification and
-Matty-owned validation before entering the publication job.
+Packy-owned validation before entering the publication job.
 
 `internal/tools/syncpacksource` is a private repository adapter for those four
-phases and is not a public or distributed Matty command. Publish performs exact
+phases and is not a public or distributed Packy command. Publish performs exact
 candidate reacquisition, canonical Apply, diff and complete validation in its
 sandbox, then freshly reobserves publication state before its first write.
 
@@ -54,7 +54,7 @@ manual maintainer decision.
 
 ## Consequences
 
-- Workflow and GitHub policy have one Matty-owned module rather than living as
+- Workflow and GitHub policy have one Packy-owned module rather than living as
   deterministic rules in YAML.
 - The write-capable phase remains narrow and cannot admit an unclassified or
   incompletely validated proposal.
@@ -68,7 +68,7 @@ manual maintainer decision.
 ## Non-goals
 
 - A scheduled synchronization or real refresh.
-- A public Matty command or new distributed binary.
+- A public Packy command or new distributed binary.
 - Automatic merge, issue publication, or implicit AI-to-human fallback.
 - The maintainer skill delivered by the later implementation slice.
 

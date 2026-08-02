@@ -107,8 +107,6 @@ func projectProductionAtomicity(q claudesmoke.AddyQualification) addyacceptance.
 		},
 		Assertions: addyacceptance.ProductionAssertions{
 			InstalledSourceInitialized: x.InstalledSourceInitialized, DoctorReportedCoreHealthy: x.DoctorReportedCoreHealthy,
-			RemovedInstallRejected: x.RemovedInstallRejected, RemovedUpdateRejected: x.RemovedUpdateRejected,
-			RemovedUninstallRejected: x.RemovedUninstallRejected, ClassicStatePreserved: x.ClassicStatePreserved,
 			ClaudeInstructionPreserved: x.ClaudeInstructionPreserved, ClaudeMCPPreserved: x.ClaudeMCPPreserved,
 			SharedSkillSentinelPreserved:         x.SharedSkillSentinelPreserved,
 			InitializationCausedNoSurfaceChange:  x.InitializationCausedNoSurfaceChange,

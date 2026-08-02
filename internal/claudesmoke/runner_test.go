@@ -49,7 +49,7 @@ func TestAllowedCommandRejectsInteractiveClaudeAndUnknownPacky(t *testing.T) {
 			t.Fatalf("release activation command rejected: %#v", argv)
 		}
 	}
-	for _, argv := range [][]string{{c}, {c, "--print", "hello"}, {c, "mcp", "list"}, {p, "pack", "show", "engram"}, {p, "doctor", "--json"}, {p, "install", "--dry-run"}, {"sh", "-c", "true"}} {
+	for _, argv := range [][]string{{c}, {c, "--print", "hello"}, {c, "mcp", "list"}, {p, "pack", "show", "engram"}, {p, "doctor", "--json"}, {p, "version", "extra"}, {"sh", "-c", "true"}} {
 		if AllowedCommand(p, c, argv) {
 			t.Fatalf("allowed %#v", argv)
 		}
@@ -356,7 +356,6 @@ func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
 		{Path: "home/.claude/CLAUDE.md"},
 		{Path: "home/.claude.json"},
 		{Path: "home/.agents/skills/example/SKILL.md"},
-		{Path: "home/.packy/config.json"}, // Historical classic state is not a CLI surface.
 	}
 	got := surfaceManifest(items)
 	if len(got) != 5 {
@@ -413,7 +412,6 @@ func validEvidence() Evidence {
 		{"--version"}, {"version"},
 		{"init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", filepath.Join(sandbox, "source-repository"), "--repository-ref", syntheticSourceRef},
 		{"doctor"}, {"pack", "list"}, {"pack", "show", "addy"},
-		{"install"}, {"update"}, {"uninstall"},
 		{"pack", "activate", "addy", "--surface", "claude", "--dry-run"},
 		{"pack", "activate", "addy", "--surface", "claude"},
 		{"pack", "status", "addy", "--surface", "claude"},
@@ -423,14 +421,10 @@ func validEvidence() Evidence {
 		commands[i] = CommandEvidence{Name: "packy", Args: args[i], ExitCode: 0}
 	}
 	commands[0].Name = "claude"
-	for i, name := range []string{"install", "update", "uninstall"} {
-		commands[6+i].ExitCode = 1
-		commands[6+i].Stderr = "unknown command \"" + name + "\" for \"packy\""
-	}
 	commands = append(commands, CommandEvidence{Name: "claude", Args: []string{"version"}, ExitCode: 0})
 	sha := strings.Repeat("a", 40)
 	manifest := []FileEvidence{{Path: "fixture", SHA256: strings.Repeat("c", 64), Mode: 0o600, Size: 1}}
-	return Evidence{SchemaVersion: 3, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Sandbox: sandbox, Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true, RemovedInstallRejected: true, RemovedUpdateRejected: true, RemovedUninstallRejected: true, ClassicStatePreserved: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true, SharedSkillSentinelPreserved: true, InitializationCausedNoSurfaceChange: true, ActivationPreviewCausedNoChange: true, RepresentativePackActivated: true, ReadinessInspectedSeparately: true, NoActivationStateAfterInitialization: true, NoClaudeMutationOperations: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true}}
+	return Evidence{SchemaVersion: 3, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Sandbox: sandbox, Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true, SharedSkillSentinelPreserved: true, InitializationCausedNoSurfaceChange: true, ActivationPreviewCausedNoChange: true, RepresentativePackActivated: true, ReadinessInspectedSeparately: true, NoActivationStateAfterInitialization: true, NoClaudeMutationOperations: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true}}
 }
 
 func TestEvidenceSchemaV3ProvesInitializationThenExplicitActivation(t *testing.T) {
@@ -447,8 +441,7 @@ func TestEvidenceSchemaV3ProvesInitializationThenExplicitActivation(t *testing.T
 	}
 	want := []string{
 		"installed_source_initialized", "doctor_reported_core_healthy",
-		"removed_install_rejected", "removed_update_rejected", "removed_uninstall_rejected",
-		"classic_state_preserved", "claude_instruction_preserved", "claude_mcp_preserved",
+		"claude_instruction_preserved", "claude_mcp_preserved",
 		"shared_skill_sentinel_preserved", "initialization_caused_no_surface_change",
 		"activation_preview_caused_no_change", "representative_pack_activated",
 		"readiness_inspected_separately", "no_activation_state_after_initialization",
@@ -517,7 +510,7 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 		t.Fatal("accepted credential marker")
 	}
 	e = validEvidence()
-	e.Commands[6].Args = []string{"install", "--dry-run"}
+	e.Commands[6].Args = []string{"pack", "activate", "addy", "--surface", "claude"}
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted tampered lifecycle sequence")
 	}
@@ -561,18 +554,6 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted incomplete explicit-activation assertions")
 	}
-	e = validEvidence()
-	e.Commands[6].ExitCode = 0
-	e.Commands[6].Stderr = ""
-	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted surviving classic install command")
-	}
-	e = validEvidence()
-	e.Commands[7].Stderr = "different failure"
-	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted removed command without unknown-command evidence")
-	}
-	e = validEvidence()
 	e.SchemaVersion = 2
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted superseded lifecycle evidence schema")
@@ -688,7 +669,7 @@ func TestPackyTriggeredClaudeInvocationIsRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := []string{"PATH=" + stubBin + ":/usr/bin:/bin"}
-	outer := runAllowed(context.Background(), root, root, env, packy, claude, []string{packy, "install"})
+	outer := runAllowed(context.Background(), root, root, env, packy, claude, []string{packy, "doctor"})
 	if outer.ExitCode != 0 {
 		t.Fatalf("fake Packy failed: %#v", outer)
 	}
