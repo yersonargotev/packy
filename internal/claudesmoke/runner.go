@@ -1,5 +1,6 @@
-// Package claudesmoke proves the package-installed Packy core cutover against
-// Claude Code without allowing either program to see operator workstation state.
+// Package claudesmoke proves the package-installed Packy initialization and
+// explicit activation path against Claude Code without allowing either program
+// to see operator workstation state.
 package claudesmoke
 
 import (
@@ -45,14 +46,20 @@ const (
 	phasePackyVersion
 	phaseInit
 	phaseDoctor
+	phasePackList
+	phasePackShow
 	phaseRemovedInstall
 	phaseRemovedUpdate
 	phaseRemovedUninstall
+	phaseActivationPreview
+	phaseActivationApply
+	phasePackStatus
 )
 
 type smokePhase struct {
-	Kind phaseKind
-	Argv []string
+	Kind             phaseKind
+	Argv             []string
+	InteractiveInput string
 }
 type workstationFixture struct {
 	ClassicStatePath, InstructionPath, MCPPath, SharedSkillPath string
@@ -60,11 +67,12 @@ type workstationFixture struct {
 	Sensitive                                                   string
 }
 type coreCutoverContext struct {
-	EvidencePath, Sandbox                                       string
-	Env                                                         []string
-	Packy, ClaudeInterposer, ClaudeLog, InstallRepo, InstallRef string
-	SourceCheckout                                              string
-	Workstation                                                 workstationFixture
+	EvidencePath, Sandbox                           string
+	Env                                             []string
+	Packy, ClaudeInterposer, ClaudeLog, ExternalLog string
+	InstallRepo, InstallRef                         string
+	SourceCheckout                                  string
+	Workstation                                     workstationFixture
 }
 
 type sandboxLayout struct {
@@ -107,19 +115,23 @@ type SafetyEvidence struct {
 	WriteBoundaryEnforced           bool `json:"write_boundary_enforced"`
 }
 type AssertionEvidence struct {
-	InstalledSourceInitialized   bool `json:"installed_source_initialized"`
-	DoctorReportedCoreHealthy    bool `json:"doctor_reported_core_healthy"`
-	RemovedInstallRejected       bool `json:"removed_install_rejected"`
-	RemovedUpdateRejected        bool `json:"removed_update_rejected"`
-	RemovedUninstallRejected     bool `json:"removed_uninstall_rejected"`
-	ClassicStatePreserved        bool `json:"classic_state_preserved"`
-	ClaudeInstructionPreserved   bool `json:"claude_instruction_preserved"`
-	ClaudeMCPPreserved           bool `json:"claude_mcp_preserved"`
-	SharedSkillSentinelPreserved bool `json:"shared_skill_sentinel_preserved"`
-	NoPacksOwnershipState        bool `json:"no_packs_ownership_state"`
-	NoClaudeMutationOperations   bool `json:"no_claude_mutation_operations"`
-	EngramStubProtocolVerified   bool `json:"engram_stub_protocol_verified"`
-	SensitiveFixtureRedacted     bool `json:"sensitive_fixture_redacted"`
+	InstalledSourceInitialized           bool `json:"installed_source_initialized"`
+	DoctorReportedCoreHealthy            bool `json:"doctor_reported_core_healthy"`
+	RemovedInstallRejected               bool `json:"removed_install_rejected"`
+	RemovedUpdateRejected                bool `json:"removed_update_rejected"`
+	RemovedUninstallRejected             bool `json:"removed_uninstall_rejected"`
+	ClassicStatePreserved                bool `json:"classic_state_preserved"`
+	ClaudeInstructionPreserved           bool `json:"claude_instruction_preserved"`
+	ClaudeMCPPreserved                   bool `json:"claude_mcp_preserved"`
+	SharedSkillSentinelPreserved         bool `json:"shared_skill_sentinel_preserved"`
+	InitializationCausedNoSurfaceChange  bool `json:"initialization_caused_no_surface_change"`
+	ActivationPreviewCausedNoChange      bool `json:"activation_preview_caused_no_change"`
+	RepresentativePackActivated          bool `json:"representative_pack_activated"`
+	ReadinessInspectedSeparately         bool `json:"readiness_inspected_separately"`
+	NoActivationStateAfterInitialization bool `json:"no_activation_state_after_initialization"`
+	NoClaudeMutationOperations           bool `json:"no_claude_mutation_operations"`
+	EngramStubProtocolVerified           bool `json:"engram_stub_protocol_verified"`
+	SensitiveFixtureRedacted             bool `json:"sensitive_fixture_redacted"`
 }
 type Evidence struct {
 	SchemaVersion          int                          `json:"schema_version"`
@@ -252,8 +264,8 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, fmt.Errorf("digest Claude: %w", err)
 	}
-	engramStub := `#!/bin/sh
-case "${1-}" in
+	externalLog := filepath.Join(sandbox, "external-invocations.log")
+	engramStub := `case "${1-}" in
   setup) exit 0 ;;
   mcp)
     [ "${2-}" = "--tools=agent" ] || exit 64
@@ -267,13 +279,13 @@ case "${1-}" in
   *) exit 64 ;;
 esac
 `
-	if err := writeStub(filepath.Join(sandbox, "stub-bin", "engram"), engramStub); err != nil {
+	if err := writeLoggedStub(filepath.Join(sandbox, "stub-bin", "engram"), externalLog, engramStub); err != nil {
 		return Evidence{}, err
 	}
-	if err := writeStub(filepath.Join(sandbox, "homebrew", "bin", "engram"), engramStub); err != nil {
+	if err := writeLoggedStub(filepath.Join(sandbox, "homebrew", "bin", "engram"), externalLog, engramStub); err != nil {
 		return Evidence{}, err
 	}
-	if err := writeStub(filepath.Join(sandbox, "stub-bin", "brew"), "#!/bin/sh\nexit 0\n"); err != nil {
+	if err := writeLoggedStub(filepath.Join(sandbox, "stub-bin", "brew"), externalLog, "exit 0\n"); err != nil {
 		return Evidence{}, err
 	}
 	claudeLog := filepath.Join(sandbox, "claude-invocations.log")
@@ -308,17 +320,20 @@ esac
 		return Evidence{}, err
 	}
 	engramProbe, probeErr := probeEngramStub(ctx, sandbox, filepath.Join(sandbox, "stub-bin", "engram"), env)
+	if err := os.WriteFile(externalLog, nil, 0600); err != nil {
+		return Evidence{}, err
+	}
 	before, err := Manifest(sandbox)
 	if err != nil {
 		return Evidence{}, err
 	}
-	e := Evidence{SchemaVersion: 2, PackyRef: cfg.SourceRef, PackySHA: sourceSHA, OS: runtime.GOOS, Arch: runtime.GOARCH, RequestedClaudeVersion: cfg.ClaudeSelector, ResolvedClaudeVersion: resolved, ClaudeIntegrity: integrity, ClaudeDigest: digest, Sandbox: sandbox, Before: before}
+	e := Evidence{SchemaVersion: 3, PackyRef: cfg.SourceRef, PackySHA: sourceSHA, OS: runtime.GOOS, Arch: runtime.GOARCH, RequestedClaudeVersion: cfg.ClaudeSelector, ResolvedClaudeVersion: resolved, ClaudeIntegrity: integrity, ClaudeDigest: digest, Sandbox: sandbox, Before: before}
 	e.Assertions.EngramStubProtocolVerified = probeErr == nil && engramProbe
 	e.Assertions.SensitiveFixtureRedacted = true
 	e.Safety = SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, NoInteractiveClaude: true, WriteBoundaryEnforced: probeErr == nil}
 	e, err = executeCoreCutover(ctx, e, coreCutoverContext{
 		EvidencePath: cfg.EvidencePath, Sandbox: sandbox, Env: env, Packy: packy,
-		ClaudeInterposer: claudeInterposer, ClaudeLog: claudeLog, InstallRepo: installRepo,
+		ClaudeInterposer: claudeInterposer, ClaudeLog: claudeLog, ExternalLog: externalLog, InstallRepo: installRepo,
 		InstallRef: installRef, SourceCheckout: repo,
 		Workstation: workstationFixture{
 			ClassicStatePath: classicStatePath, InstructionPath: foreignInstructionPath,
@@ -411,12 +426,22 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 		{Kind: phasePackyVersion, Argv: []string{packy, "version"}},
 		{Kind: phaseInit, Argv: []string{packy, "init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", installRepo, "--repository-ref", installRef}},
 		{Kind: phaseDoctor, Argv: []string{packy, "doctor"}},
+		{Kind: phasePackList, Argv: []string{packy, "pack", "list"}},
+		{Kind: phasePackShow, Argv: []string{packy, "pack", "show", "addy"}},
 		{Kind: phaseRemovedInstall, Argv: []string{packy, "install"}},
 		{Kind: phaseRemovedUpdate, Argv: []string{packy, "update"}},
 		{Kind: phaseRemovedUninstall, Argv: []string{packy, "uninstall"}},
+		{Kind: phaseActivationPreview, Argv: []string{packy, "pack", "activate", "addy", "--surface", "claude", "--dry-run"}},
+		{Kind: phaseActivationApply, Argv: []string{packy, "pack", "activate", "addy", "--surface", "claude"}, InteractiveInput: "y\n"},
+		{Kind: phasePackStatus, Argv: []string{packy, "pack", "status", "addy", "--surface", "claude"}},
 	}
 	for _, phase := range phases {
-		ce := runRestricted(ctx, sandbox, filepath.Join(sandbox, "work"), lc.SourceCheckout, env, packy, claudeInterposer, phase.Argv)
+		var ce CommandEvidence
+		if phase.InteractiveInput == "" {
+			ce = runRestricted(ctx, sandbox, filepath.Join(sandbox, "work"), lc.SourceCheckout, env, packy, claudeInterposer, phase.Argv)
+		} else {
+			ce = runInteractiveRestricted(ctx, sandbox, filepath.Join(sandbox, "work"), lc.SourceCheckout, env, packy, claudeInterposer, phase.InteractiveInput, phase.Argv)
+		}
 		e.Commands = append(e.Commands, ce)
 		removed := phase.Kind == phaseRemovedInstall || phase.Kind == phaseRemovedUpdate || phase.Kind == phaseRemovedUninstall
 		if removed && !removedRootCommandRejected(ce, phase.Argv[1]) {
@@ -447,6 +472,20 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 			e.Assertions.RemovedUpdateRejected = true
 		case phaseRemovedUninstall:
 			e.Assertions.RemovedUninstallRejected = true
+			e.Assertions.InitializationCausedNoSurfaceChange = initializationPreserved(lc.Workstation, sandbox, claudeLog, lc.ExternalLog, e.Before)
+		case phaseActivationPreview:
+			projection := filepath.Join(sandbox, "home", ".claude", "skills", "api-and-interface-design")
+			_, projectionErr := os.Lstat(projection)
+			e.Assertions.ActivationPreviewCausedNoChange = strings.Contains(ce.Stdout, "Activation dry-run plan") &&
+				strings.Contains(ce.Stdout, "Surface: claude") && os.IsNotExist(projectionErr) &&
+				surfacesPreservedWithoutActivation(lc.Workstation, sandbox, e.Before) && claudeVersionOnly(claudeLog) &&
+				externalLogEmpty(lc.ExternalLog)
+		case phaseActivationApply:
+			e.Assertions.RepresentativePackActivated = addyProjectionMatchesInstalledSource(sandbox) &&
+				strings.Contains(ce.Stdout, "Verified plan") &&
+				strings.Contains(ce.Stdout, "Apply result facts: verified=yes projections=")
+		case phasePackStatus:
+			e.Assertions.ReadinessInspectedSeparately = strings.Contains(ce.Stdout, "Readiness: configured=yes, authorized=unknown, usable=unknown")
 		}
 	}
 
@@ -468,14 +507,10 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 	if err != nil {
 		return e, err
 	}
-	if _, stateErr := os.Stat(filepath.Join(sandbox, "home", ".packy", "packs.json")); stateErr != nil && !os.IsNotExist(stateErr) {
-		return e, stateErr
-	} else {
-		e.Assertions.NoPacksOwnershipState = os.IsNotExist(stateErr)
-	}
+	e.Assertions.NoActivationStateAfterInitialization = e.Assertions.InitializationCausedNoSurfaceChange
 	claudeInvocations := readClaudeInvocations(claudeLog)
 	e.Commands = append(e.Commands, claudeInvocations...)
-	e.Assertions.NoClaudeMutationOperations = reflect.DeepEqual(claudeInvocations, []CommandEvidence{{Name: "claude", Args: []string{"version"}, ExitCode: 0}})
+	e.Assertions.NoClaudeMutationOperations = onlyClaudeVersionInvocations(claudeInvocations)
 	redacted := true
 	for _, command := range e.Commands {
 		redacted = redacted && !strings.Contains(command.Stdout, fixture.Sensitive) && !strings.Contains(command.Stderr, fixture.Sensitive)
@@ -488,6 +523,75 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 		}
 	}
 	return e, nil
+}
+
+func initializationPreserved(fixture workstationFixture, sandbox, claudeLog, externalLog string, before []FileEvidence) bool {
+	return surfacesPreservedWithoutActivation(fixture, sandbox, before) &&
+		reflect.DeepEqual(readClaudeInvocations(claudeLog), []CommandEvidence{{Name: "claude", Args: []string{"version"}, ExitCode: 0}}) &&
+		externalLogEmpty(externalLog)
+}
+
+func externalLogEmpty(path string) bool {
+	data, err := os.ReadFile(path)
+	return err == nil && len(data) == 0
+}
+
+func surfacesPreservedWithoutActivation(fixture workstationFixture, sandbox string, before []FileEvidence) bool {
+	for path, want := range map[string][]byte{
+		fixture.ClassicStatePath: fixture.ClassicState,
+		fixture.InstructionPath:  fixture.Instruction,
+		fixture.MCPPath:          fixture.MCP,
+		fixture.SharedSkillPath:  fixture.SharedSkill,
+	} {
+		got, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(got, want) {
+			return false
+		}
+	}
+	if _, err := os.Stat(filepath.Join(sandbox, "home", ".packy", "packs.json")); !os.IsNotExist(err) {
+		return false
+	}
+	after, err := Manifest(sandbox)
+	return err == nil && reflect.DeepEqual(surfaceManifest(before), surfaceManifest(after))
+}
+
+func surfaceManifest(items []FileEvidence) []FileEvidence {
+	prefixes := []string{"home/.codex", "config/opencode", "home/.claude", "home/.claude.json", "home/.agents/skills"}
+	result := make([]FileEvidence, 0, len(items))
+	for _, item := range items {
+		for _, prefix := range prefixes {
+			if item.Path == prefix || strings.HasPrefix(item.Path, prefix+"/") {
+				result = append(result, item)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func addyProjectionMatchesInstalledSource(sandbox string) bool {
+	projection, err := os.ReadFile(filepath.Join(sandbox, "home", ".claude", "skills", "api-and-interface-design", "SKILL.md"))
+	if err != nil {
+		return false
+	}
+	source, err := os.ReadFile(filepath.Join(sandbox, "installed-source", "bundle", "history", "addy", "1.1.0", "skills", "api-and-interface-design", "SKILL.md"))
+	return err == nil && bytes.Equal(projection, source)
+}
+
+func claudeVersionOnly(claudeLog string) bool {
+	return onlyClaudeVersionInvocations(readClaudeInvocations(claudeLog))
+}
+
+func onlyClaudeVersionInvocations(invocations []CommandEvidence) bool {
+	if len(invocations) == 0 {
+		return false
+	}
+	for _, invocation := range invocations {
+		if !reflect.DeepEqual(invocation, CommandEvidence{Name: "claude", Args: []string{"version"}, ExitCode: 0}) {
+			return false
+		}
+	}
+	return true
 }
 
 func removedRootCommandRejected(command CommandEvidence, name string) bool {
@@ -509,6 +613,51 @@ func runAllowed(ctx context.Context, sandbox, dir string, env []string, packy, c
 
 func runRestricted(ctx context.Context, sandbox, dir, deniedReadRoot string, env []string, packy, claude string, argv []string) CommandEvidence {
 	return runWithReadBoundary(ctx, sandbox, dir, deniedReadRoot, env, packy, claude, argv)
+}
+
+func runInteractiveRestricted(ctx context.Context, sandbox, dir, deniedReadRoot string, env []string, packy, claude, input string, argv []string) CommandEvidence {
+	ce := CommandEvidence{Name: filepath.Base(argv[0]), Args: append([]string(nil), argv[1:]...), ExitCode: -1}
+	if !AllowedCommand(packy, claude, argv) {
+		ce.Stderr = "forbidden command"
+		return ce
+	}
+	if argv[0] == packy {
+		ce.Name = "packy"
+	}
+	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	sandboxed, err := sandboxCommandDenyReads(cctx, sandbox, deniedReadRoot, argv[0], argv[1:]...)
+	if err != nil {
+		ce.Stderr = err.Error()
+		return ce
+	}
+	scriptArgs := append([]string{"-q", "/dev/null"}, sandboxed.Args...)
+	cmd := exec.CommandContext(cctx, "/usr/bin/script", scriptArgs...)
+	cmd.Dir = dir
+	cmd.Env = env
+	stdinRead, stdinWrite, err := os.Pipe()
+	if err != nil {
+		ce.Stderr = err.Error()
+		return ce
+	}
+	cmd.Stdin = stdinRead
+	go func() {
+		_, _ = stdinWrite.WriteString(input)
+	}()
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	_ = stdinWrite.Close()
+	_ = stdinRead.Close()
+	ce.Stdout = out.String()
+	ce.Stderr = stderr.String()
+	if err == nil {
+		ce.ExitCode = 0
+	} else if exit, ok := err.(*exec.ExitError); ok {
+		ce.ExitCode = exit.ExitCode()
+	}
+	return ce
 }
 
 func runWithReadBoundary(ctx context.Context, sandbox, dir, deniedReadRoot string, env []string, packy, claude string, argv []string) CommandEvidence {
@@ -566,6 +715,12 @@ func AllowedCommand(packy, claude string, argv []string) bool {
 		return len(argv) == 10
 	case "install", "update", "uninstall":
 		return len(argv) == 2
+	case "pack":
+		return reflect.DeepEqual(argv[2:], []string{"list"}) ||
+			reflect.DeepEqual(argv[2:], []string{"show", "addy"}) ||
+			reflect.DeepEqual(argv[2:], []string{"activate", "addy", "--surface", "claude", "--dry-run"}) ||
+			reflect.DeepEqual(argv[2:], []string{"activate", "addy", "--surface", "claude"}) ||
+			reflect.DeepEqual(argv[2:], []string{"status", "addy", "--surface", "claude"})
 	}
 	return false
 }
@@ -639,7 +794,7 @@ func pathWithin(root, path string) bool {
 }
 
 func ValidateEvidence(e Evidence) error {
-	if e.SchemaVersion != 2 || e.PackyVersion == "" || e.PackyRef == "" || len(e.PackySHA) != 40 || e.InstalledSourceSHA != e.PackySHA || e.ResolvedClaudeVersion == "" || e.ClaudeIntegrity == "" || len(e.ClaudeDigest) != 64 {
+	if e.SchemaVersion != 3 || e.PackyVersion == "" || e.PackyRef == "" || len(e.PackySHA) != 40 || e.InstalledSourceSHA != e.PackySHA || e.ResolvedClaudeVersion == "" || e.ClaudeIntegrity == "" || len(e.ClaudeDigest) != 64 {
 		return errors.New("missing or malformed canonical evidence")
 	}
 	packySHA, shaErr := hex.DecodeString(e.PackySHA)
@@ -661,11 +816,16 @@ func ValidateEvidence(e Evidence) error {
 		{Name: "packy", Args: []string{"version"}},
 		{Name: "packy", Args: []string{"init"}},
 		{Name: "packy", Args: []string{"doctor"}},
+		{Name: "packy", Args: []string{"pack", "list"}},
+		{Name: "packy", Args: []string{"pack", "show", "addy"}},
 		{Name: "packy", Args: []string{"install"}},
 		{Name: "packy", Args: []string{"update"}},
 		{Name: "packy", Args: []string{"uninstall"}},
+		{Name: "packy", Args: []string{"pack", "activate", "addy", "--surface", "claude", "--dry-run"}},
+		{Name: "packy", Args: []string{"pack", "activate", "addy", "--surface", "claude"}},
+		{Name: "packy", Args: []string{"pack", "status", "addy", "--surface", "claude"}},
 	}
-	if len(e.Commands) != len(want)+1 {
+	if len(e.Commands) <= len(want) {
 		return errors.New("evidence command sequence is incomplete")
 	}
 	for i, command := range want {
@@ -685,18 +845,20 @@ func ValidateEvidence(e Evidence) error {
 			return errors.New("evidence command sequence is malformed")
 		}
 	}
-	for i := 0; i < 4; i++ {
+	for i := range want {
+		if i >= 6 && i <= 8 {
+			continue
+		}
 		if e.Commands[i].ExitCode != 0 {
-			return errors.New("core smoke command failed")
+			return errors.New("release smoke command failed")
 		}
 	}
 	for i, name := range []string{"install", "update", "uninstall"} {
-		if !removedRootCommandRejected(e.Commands[4+i], name) {
+		if !removedRootCommandRejected(e.Commands[6+i], name) {
 			return errors.New("removed root command did not fail as unknown")
 		}
 	}
-	normalizedClaude := e.Commands[len(want)]
-	if normalizedClaude.Name != "claude" || normalizedClaude.ExitCode != 0 || !reflect.DeepEqual(normalizedClaude.Args, []string{"version"}) {
+	if !onlyClaudeVersionInvocations(e.Commands[len(want):]) {
 		return errors.New("unsafe normalized Claude operation")
 	}
 	if e.RequestedClaudeVersion != ExactFloor && e.RequestedClaudeVersion != "stable" {
@@ -710,8 +872,8 @@ func ValidateEvidence(e Evidence) error {
 		return errors.New("malformed Claude acquisition evidence")
 	}
 	a := e.Assertions
-	if !a.InstalledSourceInitialized || !a.DoctorReportedCoreHealthy || !a.RemovedInstallRejected || !a.RemovedUpdateRejected || !a.RemovedUninstallRejected || !a.ClassicStatePreserved || !a.ClaudeInstructionPreserved || !a.ClaudeMCPPreserved || !a.SharedSkillSentinelPreserved || !a.NoPacksOwnershipState || !a.NoClaudeMutationOperations || !a.EngramStubProtocolVerified || !a.SensitiveFixtureRedacted {
-		return errors.New("core cutover assertions are incomplete")
+	if !a.InstalledSourceInitialized || !a.DoctorReportedCoreHealthy || !a.RemovedInstallRejected || !a.RemovedUpdateRejected || !a.RemovedUninstallRejected || !a.ClassicStatePreserved || !a.ClaudeInstructionPreserved || !a.ClaudeMCPPreserved || !a.SharedSkillSentinelPreserved || !a.InitializationCausedNoSurfaceChange || !a.ActivationPreviewCausedNoChange || !a.RepresentativePackActivated || !a.ReadinessInspectedSeparately || !a.NoActivationStateAfterInitialization || !a.NoClaudeMutationOperations || !a.EngramStubProtocolVerified || !a.SensitiveFixtureRedacted {
+		return errors.New("explicit activation assertions are incomplete")
 	}
 	raw, _ := json.Marshal(e)
 	for _, needle := range []string{"ANTHROPIC_API_KEY", "AWS_SECRET_ACCESS_KEY", "OPENAI_API_KEY", sensitiveFixtureValue} {
@@ -796,6 +958,12 @@ func fileDigest(path string) (string, error) {
 	return hex.EncodeToString(h[:]), nil
 }
 func writeStub(path, body string) error { return os.WriteFile(path, []byte(body), 0700) }
+
+func writeLoggedStub(path, logPath, body string) error {
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+	script := "#!/bin/sh\nprintf '%s\\n' invoked >> " + quote(logPath) + "\n" + body
+	return writeStub(path, script)
+}
 
 // createClaudeInterposer makes the command policy independently enforceable for
 // Claude calls made inside Packy. The log contains only operation names and exit

@@ -38,7 +38,18 @@ func TestAllowedCommandRejectsInteractiveClaudeAndUnknownPacky(t *testing.T) {
 	if !AllowedCommand(p, c, []string{c, "--version"}) {
 		t.Fatal("version rejected")
 	}
-	for _, argv := range [][]string{{c}, {c, "--print", "hello"}, {c, "mcp", "list"}, {p, "pack", "list"}, {p, "doctor", "--json"}, {p, "install", "--dry-run"}, {"sh", "-c", "true"}} {
+	for _, argv := range [][]string{
+		{p, "pack", "list"},
+		{p, "pack", "show", "addy"},
+		{p, "pack", "activate", "addy", "--surface", "claude", "--dry-run"},
+		{p, "pack", "activate", "addy", "--surface", "claude"},
+		{p, "pack", "status", "addy", "--surface", "claude"},
+	} {
+		if !AllowedCommand(p, c, argv) {
+			t.Fatalf("release activation command rejected: %#v", argv)
+		}
+	}
+	for _, argv := range [][]string{{c}, {c, "--print", "hello"}, {c, "mcp", "list"}, {p, "pack", "show", "engram"}, {p, "doctor", "--json"}, {p, "install", "--dry-run"}, {"sh", "-c", "true"}} {
 		if AllowedCommand(p, c, argv) {
 			t.Fatalf("allowed %#v", argv)
 		}
@@ -71,6 +82,23 @@ func TestRunAllowedUsesCanonicalConfiguredPackyIdentity(t *testing.T) {
 	evidence.Commands[1] = runAllowed(context.Background(), root, root, RestrictedEnv(root, root), configured, filepath.Join(root, "claude"), []string{foreign, "version"})
 	if err := ValidateEvidence(evidence); err == nil {
 		t.Fatal("accepted substituted Packy executable")
+	}
+}
+
+func TestRunInteractiveRestrictedProvidesTTYForExplicitActivation(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec and script PTY are macOS-specific")
+	}
+	root := t.TempDir()
+	packy := filepath.Join(root, "packy")
+	if err := writeStub(packy, "#!/bin/sh\n[ -t 0 ] || exit 41\nread answer\n[ \"$answer\" = y ] || exit 42\nprintf 'Verified plan\\nApply result facts: verified=yes\\n'\n"); err != nil {
+		t.Fatal(err)
+	}
+	claude := filepath.Join(root, "claude")
+	argv := []string{packy, "pack", "activate", "addy", "--surface", "claude"}
+	evidence := runInteractiveRestricted(context.Background(), root, root, "", RestrictedEnv(root, root), packy, claude, "y\n", argv)
+	if evidence.ExitCode != 0 || !strings.Contains(evidence.Stdout, "Verified plan") {
+		t.Fatalf("interactive activation evidence = %#v", evidence)
 	}
 }
 
@@ -321,10 +349,52 @@ func TestManifestDeterministicAndContentBound(t *testing.T) {
 	}
 }
 
+func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
+	items := []FileEvidence{
+		{Path: "home/.codex/AGENTS.md"},
+		{Path: "config/opencode/opencode.json"},
+		{Path: "home/.claude/CLAUDE.md"},
+		{Path: "home/.claude.json"},
+		{Path: "home/.agents/skills/example/SKILL.md"},
+		{Path: "home/.packy/config.json"},
+	}
+	got := surfaceManifest(items)
+	if len(got) != 5 {
+		t.Fatalf("surface manifest = %#v", got)
+	}
+	changed := append(append([]FileEvidence(nil), got...), FileEvidence{Path: "home/.codex/new-surface-file"})
+	if reflect.DeepEqual(got, surfaceManifest(changed)) {
+		t.Fatal("surface manifest ignored a newly created Codex artifact")
+	}
+}
+
+func TestAddyProjectionMatchesInstalledSourceContent(t *testing.T) {
+	root := t.TempDir()
+	projection := filepath.Join(root, "home", ".claude", "skills", "api-and-interface-design", "SKILL.md")
+	source := filepath.Join(root, "installed-source", "bundle", "history", "addy", "1.1.0", "skills", "api-and-interface-design", "SKILL.md")
+	for _, path := range []string{projection, source} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("expected Addy skill\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !addyProjectionMatchesInstalledSource(root) {
+		t.Fatal("matching representative projection was rejected")
+	}
+	if err := os.WriteFile(projection, []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if addyProjectionMatchesInstalledSource(root) {
+		t.Fatal("mismatched representative projection was accepted")
+	}
+}
+
 func TestValidationFailureStillWritesDiagnosticEvidence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "evidence.json")
 	evidence := validEvidence()
-	evidence.Assertions.NoPacksOwnershipState = false
+	evidence.Assertions.NoActivationStateAfterInitialization = false
 	if err := validateAndWriteEvidence(path, evidence); err == nil {
 		t.Fatal("invalid evidence accepted")
 	}
@@ -332,30 +402,38 @@ func TestValidationFailureStillWritesDiagnosticEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(b, []byte(`"no_packs_ownership_state": false`)) {
+	if !bytes.Contains(b, []byte(`"no_activation_state_after_initialization": false`)) {
 		t.Fatalf("failed diagnostic evidence missing assertion: %s", b)
 	}
 }
 
 func validEvidence() Evidence {
 	sandbox := filepath.Join(string(filepath.Separator), "sandbox")
-	args := [][]string{{"--version"}, {"version"}, {"init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", filepath.Join(sandbox, "source-repository"), "--repository-ref", syntheticSourceRef}, {"doctor"}, {"install"}, {"update"}, {"uninstall"}}
+	args := [][]string{
+		{"--version"}, {"version"},
+		{"init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", filepath.Join(sandbox, "source-repository"), "--repository-ref", syntheticSourceRef},
+		{"doctor"}, {"pack", "list"}, {"pack", "show", "addy"},
+		{"install"}, {"update"}, {"uninstall"},
+		{"pack", "activate", "addy", "--surface", "claude", "--dry-run"},
+		{"pack", "activate", "addy", "--surface", "claude"},
+		{"pack", "status", "addy", "--surface", "claude"},
+	}
 	commands := make([]CommandEvidence, len(args))
 	for i := range args {
 		commands[i] = CommandEvidence{Name: "packy", Args: args[i], ExitCode: 0}
 	}
 	commands[0].Name = "claude"
 	for i, name := range []string{"install", "update", "uninstall"} {
-		commands[4+i].ExitCode = 1
-		commands[4+i].Stderr = "unknown command \"" + name + "\" for \"packy\""
+		commands[6+i].ExitCode = 1
+		commands[6+i].Stderr = "unknown command \"" + name + "\" for \"packy\""
 	}
 	commands = append(commands, CommandEvidence{Name: "claude", Args: []string{"version"}, ExitCode: 0})
 	sha := strings.Repeat("a", 40)
 	manifest := []FileEvidence{{Path: "fixture", SHA256: strings.Repeat("c", 64), Mode: 0o600, Size: 1}}
-	return Evidence{SchemaVersion: 2, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Sandbox: sandbox, Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true, RemovedInstallRejected: true, RemovedUpdateRejected: true, RemovedUninstallRejected: true, ClassicStatePreserved: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true, SharedSkillSentinelPreserved: true, NoPacksOwnershipState: true, NoClaudeMutationOperations: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true}}
+	return Evidence{SchemaVersion: 3, PackyVersion: "v1", PackyRef: "v1", PackySHA: sha, InstalledSourceSHA: sha, RequestedClaudeVersion: ExactFloor, ResolvedClaudeVersion: ExactFloor, ClaudeIntegrity: "sha512-x", ClaudeDigest: strings.Repeat("b", 64), Sandbox: sandbox, Commands: commands, Before: manifest, After: manifest, Safety: SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, CheckoutUnchanged: true, ConfiguredWritableRootsConfined: true, EvidencePathOutsideSandbox: true, NoInteractiveClaude: true, WriteBoundaryEnforced: true}, Assertions: AssertionEvidence{InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true, RemovedInstallRejected: true, RemovedUpdateRejected: true, RemovedUninstallRejected: true, ClassicStatePreserved: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true, SharedSkillSentinelPreserved: true, InitializationCausedNoSurfaceChange: true, ActivationPreviewCausedNoChange: true, RepresentativePackActivated: true, ReadinessInspectedSeparately: true, NoActivationStateAfterInitialization: true, NoClaudeMutationOperations: true, EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true}}
 }
 
-func TestEvidenceSchemaV2UsesOnlyCoreCutoverAssertions(t *testing.T) {
+func TestEvidenceSchemaV3ProvesInitializationThenExplicitActivation(t *testing.T) {
 	data, err := json.Marshal(validEvidence())
 	if err != nil {
 		t.Fatal(err)
@@ -371,16 +449,46 @@ func TestEvidenceSchemaV2UsesOnlyCoreCutoverAssertions(t *testing.T) {
 		"installed_source_initialized", "doctor_reported_core_healthy",
 		"removed_install_rejected", "removed_update_rejected", "removed_uninstall_rejected",
 		"classic_state_preserved", "claude_instruction_preserved", "claude_mcp_preserved",
-		"shared_skill_sentinel_preserved", "no_packs_ownership_state",
+		"shared_skill_sentinel_preserved", "initialization_caused_no_surface_change",
+		"activation_preview_caused_no_change", "representative_pack_activated",
+		"readiness_inspected_separately", "no_activation_state_after_initialization",
 		"no_claude_mutation_operations", "engram_stub_protocol_verified", "sensitive_fixture_redacted",
 	}
-	if document.SchemaVersion != 2 || len(document.Assertions) != len(want) {
+	if document.SchemaVersion != 3 || len(document.Assertions) != len(want) {
 		t.Fatalf("schema = %d, assertions = %#v", document.SchemaVersion, document.Assertions)
 	}
 	for _, name := range want {
 		if !document.Assertions[name] {
-			t.Fatalf("schema v2 omitted or failed %q: %#v", name, document.Assertions)
+			t.Fatalf("schema v3 omitted or failed %q: %#v", name, document.Assertions)
 		}
+	}
+}
+
+func TestLoggedStubCapturesExternalInvocation(t *testing.T) {
+	root := t.TempDir()
+	stub := filepath.Join(root, "engram")
+	logPath := filepath.Join(root, "external.log")
+	if err := writeLoggedStub(stub, logPath, "exit 0\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !externalLogEmpty(logPath) {
+		t.Fatal("new external invocation log is not empty")
+	}
+	if err := exec.Command(stub, "setup").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if externalLogEmpty(logPath) {
+		t.Fatal("external invocation was not detected")
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "invoked\n" {
+		t.Fatalf("external invocation log = %q", data)
 	}
 }
 
@@ -409,7 +517,7 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 		t.Fatal("accepted credential marker")
 	}
 	e = validEvidence()
-	e.Commands[4].Args = []string{"install", "--dry-run"}
+	e.Commands[6].Args = []string{"install", "--dry-run"}
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted tampered lifecycle sequence")
 	}
@@ -439,33 +547,33 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 		t.Fatal("accepted unproved init repository ref")
 	}
 	e = validEvidence()
-	e.Commands = e.Commands[:7]
+	e.Commands = e.Commands[:len(e.Commands)-1]
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted missing normalized Claude operations")
 	}
 	e = validEvidence()
-	e.Commands[7].Args[0] = "mcp-list"
+	e.Commands[len(e.Commands)-1].Args[0] = "mcp-list"
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted tampered normalized Claude sequence")
 	}
 	e = validEvidence()
 	e.Assertions.NoClaudeMutationOperations = false
 	if err := ValidateEvidence(e); err == nil {
-		t.Fatal("accepted incomplete core-cutover assertions")
+		t.Fatal("accepted incomplete explicit-activation assertions")
 	}
 	e = validEvidence()
-	e.Commands[4].ExitCode = 0
-	e.Commands[4].Stderr = ""
+	e.Commands[6].ExitCode = 0
+	e.Commands[6].Stderr = ""
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted surviving classic install command")
 	}
 	e = validEvidence()
-	e.Commands[5].Stderr = "different failure"
+	e.Commands[7].Stderr = "different failure"
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted removed command without unknown-command evidence")
 	}
 	e = validEvidence()
-	e.SchemaVersion = 1
+	e.SchemaVersion = 2
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted superseded lifecycle evidence schema")
 	}

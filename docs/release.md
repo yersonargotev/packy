@@ -194,29 +194,29 @@ MCP list/get/add/remove operations. It rejects login, authentication, REPL,
 print/model mode, project/local MCP mutation, and malformed commands before the
 real executable can observe them. The package-installed Packy sequence initializes
 source without surface effects, then previews and applies a representative
-explicit activation:
+explicit activation. Its evidence states directly that source initialization
+caused zero surface changes:
 
 ```text
 packy version
 packy init --repository-url <local-checkout> --repository-ref <proved-ref>
 packy doctor
 packy pack list
-packy pack show engram
-packy pack activate engram --surface claude --dry-run
-packy pack activate engram --surface claude
-packy pack status engram --surface claude
-packy pack deactivate engram --surface claude --dry-run
-packy pack deactivate engram --surface claude
-packy doctor
+packy pack show addy
+packy pack activate addy --surface claude --dry-run
+packy pack activate addy --surface claude
+packy pack status addy --surface claude
 ```
 
-Every run retains canonical JSON evidence. It binds the Packy version, ref and
+Every run retains canonical JSON evidence with `schema_version: 3`. It binds the Packy version, ref and
 commit; OS and architecture; requested and resolved Claude version; npm
 integrity and executable digest; each Packy command and normalized nested Claude
 operation with its exit; deterministic before/after sandbox manifests; and
 explicit assertions for disposable roots, allowlisted environment, credential
-scrubbing, command confinement, unchanged source checkout, and no interactive
-Claude invocation. Missing, malformed, failed, or unsafe evidence fails closed.
+scrubbing, command confinement, unchanged source checkout, zero initialization
+effects, a non-mutating activation preview, a verified representative activation,
+separate readiness inspection, and no interactive Claude invocation. Missing,
+malformed, failed, or unsafe evidence fails closed.
 
 ## Fail-closed publication gate
 
@@ -279,15 +279,18 @@ version, runs it from a temporary directory outside the repo checkout, clones a
 local Packy Source fixture, and places inert external executables ahead of the
 real `PATH`. It first proves initialization and inspection preserve byte-for-byte
 legacy/user surfaces and execute no external command. It then previews and
-applies one representative activation and inspects readiness separately:
+applies a representative activation and inspects readiness separately on each supported surface:
 
 ```bash
 packy init --repository-url <local-fixture-repo>
 packy doctor
-packy pack activate engram --surface codex --dry-run
-packy pack activate engram --surface codex
-packy pack status engram --surface codex
+packy pack activate addy --surface codex --dry-run
+packy pack activate addy --surface codex
+packy pack status addy --surface codex
 ```
+
+The test repeats the same `addy` preview, activation, projection check, and
+readiness inspection for OpenCode and Claude Code.
 
 ## First v0.x checklist
 
