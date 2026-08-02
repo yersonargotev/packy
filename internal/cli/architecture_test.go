@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -240,4 +241,129 @@ func TestClassicLifecycleAuthorityIsDeleted(t *testing.T) {
 			}
 		}
 	}
+
+	for _, source := range productionGoSourcesBelow(t, "..") {
+		file, err := parser.ParseFile(token.NewFileSet(), source.name, source.text, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", source.name, err)
+		}
+		for _, spec := range file.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err == nil && (strings.HasSuffix(path, "/corelifecycle") || strings.HasSuffix(path, "/ownedcontainer")) {
+				t.Errorf("%s imports removed classic lifecycle authority %q", source.name, path)
+			}
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch node := node.(type) {
+			case *ast.TypeSpec:
+				if map[string]bool{"ManagedSkill": true, "CreatedContainer": true, "StatePaths": true, "StateConfig": true}[node.Name.Name] {
+					t.Errorf("%s reintroduced classic ownership type %s", source.name, node.Name.Name)
+				}
+			case *ast.BasicLit:
+				if node.Kind != token.STRING {
+					return true
+				}
+				value, err := strconv.Unquote(node.Value)
+				if err == nil && classicOwnershipStateLiteral(value) {
+					t.Errorf("%s reintroduced classic ownership state field %q", source.name, value)
+				}
+			}
+			return true
+		})
+	}
+}
+
+func classicOwnershipStateLiteral(value string) bool {
+	for _, field := range []string{
+		"managed_skills",
+		"created_containers",
+		"configured_surfaces",
+		"last_install_check",
+		"install_status",
+		"claude_ownership",
+	} {
+		if value == field || strings.Contains(value, `json:"`+field+`"`) || strings.Contains(value, `json:"`+field+`,`) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestClassicOwnershipStateLiteralDetection(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{value: "managed_skills", want: true},
+		{value: `json:"created_containers,omitempty"`, want: true},
+		{value: `json:"configured_surfaces"`, want: true},
+		{value: `json:"activation_intents"`, want: false},
+		{value: "active-pack ownership", want: false},
+	}
+	for _, test := range tests {
+		if got := classicOwnershipStateLiteral(test.value); got != test.want {
+			t.Errorf("classicOwnershipStateLiteral(%q) = %t, want %t", test.value, got, test.want)
+		}
+	}
+}
+
+func TestRootCommandCannotReintroduceClassicLifecycleVerbs(t *testing.T) {
+	root := NewRootCommand(Options{})
+	forbidden := map[string]bool{"install": true, "update": true, "uninstall": true}
+	for _, command := range root.Commands() {
+		if forbidden[command.Name()] {
+			t.Errorf("root command %q reintroduced a removed classic lifecycle verb", command.Name())
+		}
+		for _, alias := range command.Aliases {
+			if forbidden[alias] {
+				t.Errorf("root command %q aliases removed classic lifecycle verb %q", command.Name(), alias)
+			}
+		}
+	}
+}
+
+func TestCapabilityPackIsTheOnlySemanticCallerOfSurfaceProjectionApplication(t *testing.T) {
+	for _, source := range productionGoSourcesBelow(t, "..") {
+		rel, err := filepath.Rel("..", source.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rel == "capabilitypack" || strings.HasPrefix(rel, "capabilitypack"+string(filepath.Separator)) {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), source.name, source.text, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", source.name, err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "ApplyProjections" {
+				t.Errorf("%s references ApplyProjections outside internal/capabilitypack; adapters may implement projection application, but only capability-pack lifecycle may call it", source.name)
+			}
+			return true
+		})
+	}
+}
+
+func productionGoSourcesBelow(t *testing.T, root string) []cliSource {
+	t.Helper()
+	var sources []cliSource
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		sources = append(sources, cliSource{name: filepath.Clean(path), text: string(data)})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sources
 }

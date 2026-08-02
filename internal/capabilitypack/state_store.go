@@ -18,8 +18,10 @@ type FileActivationStore struct {
 }
 
 type activationDocument struct {
-	SchemaVersion int               `json:"schema_version"`
-	Activations   []ActivationState `json:"activations"`
+	SchemaVersion int                   `json:"schema_version"`
+	Revision      int                   `json:"revision"`
+	Activations   []ActivationState     `json:"activations"`
+	Ownership     []ProjectionOwnership `json:"ownership,omitempty"`
 }
 
 func NewFileActivationStore(path string) *FileActivationStore {
@@ -33,38 +35,54 @@ func (s *FileActivationStore) Load(_ context.Context, surface Surface) (Activati
 	if err != nil {
 		return ActivationState{}, err
 	}
-	return activationForSurface(document, surface), nil
+	return snapshotStateForSurface(document, surface), nil
+}
+
+func (s *FileActivationStore) LoadSnapshot(ctx context.Context, surface Surface) (ActivationState, error) {
+	return s.Load(ctx, surface)
 }
 
 // Save compares the durable revision for one surface and atomically replaces
 // the whole document, preserving every other surface's intent and ownership.
 func (s *FileActivationStore) Save(_ context.Context, surface Surface, expectedRevision int, state ActivationState) error {
+	_, err := s.save(surface, state.documentRevision, expectedRevision, state, false)
+	return err
+}
+
+func (s *FileActivationStore) SaveSnapshot(_ context.Context, surface Surface, expectedDocumentRevision int, state ActivationState) (int, error) {
+	return s.save(surface, expectedDocumentRevision, state.Intent.Revision, state, true)
+}
+
+func (s *FileActivationStore) save(surface Surface, expectedDocumentRevision, expectedIntentRevision int, state ActivationState, compareDocument bool) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return fmt.Errorf("create capability-pack state directory: %w", err)
+		return 0, fmt.Errorf("create capability-pack state directory: %w", err)
 	}
 	lock, err := os.OpenFile(s.path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return fmt.Errorf("open capability-pack state lock: %w", err)
+		return 0, fmt.Errorf("open capability-pack state lock: %w", err)
 	}
 	defer lock.Close()
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return fmt.Errorf("lock capability-pack state: %w", err)
+		return 0, fmt.Errorf("lock capability-pack state: %w", err)
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 	document, err := s.load()
 	if err != nil {
-		return err
+		return 0, err
+	}
+	if compareDocument && document.Revision != expectedDocumentRevision {
+		return document.Revision, StalePlanError{Precondition: fmt.Sprintf("capability-pack state revision changed from %d to %d before persistence; rerun activation to preview a fresh plan", expectedDocumentRevision, document.Revision)}
 	}
 	current := activationForSurface(document, surface)
-	if current.Intent.Revision != expectedRevision {
-		return StalePlanError{Precondition: fmt.Sprintf("activation intent revision changed from %d to %d before persistence; rerun activation to preview a fresh plan", expectedRevision, current.Intent.Revision)}
+	if !compareDocument && current.Intent.Revision != expectedIntentRevision {
+		return document.Revision, StalePlanError{Precondition: fmt.Sprintf("activation intent revision changed from %d to %d before persistence; rerun activation to preview a fresh plan", expectedIntentRevision, current.Intent.Revision)}
 	}
 	state.SchemaVersion = 3
 	state.Intent.Surface = surface
 	if err := canonicalizeActivationState(&state); err != nil {
-		return err
+		return document.Revision, err
 	}
 	replaced := false
 	for i := range document.Activations {
@@ -80,12 +98,28 @@ func (s *FileActivationStore) Save(_ context.Context, surface Surface, expectedR
 	sort.Slice(document.Activations, func(i, j int) bool {
 		return document.Activations[i].Intent.Surface < document.Activations[j].Intent.Surface
 	})
-	document.SchemaVersion = 4
+	document.SchemaVersion = 5
+	document.Revision++
+	document.Ownership = cloneOwnership(state.Ownership)
+	for i := range document.Activations {
+		document.Activations[i].Ownership = nil
+	}
 	data, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode capability-pack state: %w", err)
+		return document.Revision, fmt.Errorf("encode capability-pack state: %w", err)
 	}
-	return atomicWriteState(s.path, append(data, '\n'))
+	if err := atomicWriteState(s.path, append(data, '\n')); err != nil {
+		return document.Revision, err
+	}
+	return document.Revision, nil
+}
+
+func snapshotStateForSurface(document activationDocument, surface Surface) ActivationState {
+	state := activationForSurface(document, surface)
+	state.Ownership = cloneOwnership(document.Ownership)
+	state.documentRevision = document.Revision
+	state.snapshotManaged = true
+	return state
 }
 
 func activationForSurface(document activationDocument, surface Surface) ActivationState {
@@ -119,6 +153,7 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 		}
 		document := activationDocument{SchemaVersion: 4, Activations: []ActivationState{legacy}}
 		defaultLegacySelections(&document)
+		migrateV4Ownership(&document)
 		if err := canonicalizeActivationDocument(&document); err != nil {
 			return activationDocument{}, err
 		}
@@ -134,6 +169,7 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 			}
 		}
 		defaultLegacySelections(&document)
+		migrateV4Ownership(&document)
 		if err := canonicalizeActivationDocument(&document); err != nil {
 			return activationDocument{}, err
 		}
@@ -149,6 +185,7 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 			}
 		}
 		defaultLegacySelections(&document)
+		migrateV4Ownership(&document)
 		if err := canonicalizeActivationDocument(&document); err != nil {
 			return activationDocument{}, err
 		}
@@ -169,6 +206,24 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 		if err := canonicalizeActivationDocument(&document); err != nil {
 			return activationDocument{}, err
 		}
+		migrateV4Ownership(&document)
+		return document, nil
+	case 5:
+		var document activationDocument
+		if err := strictDecode(data, &document); err != nil {
+			return activationDocument{}, fmt.Errorf("read capability-pack state %s: invalid document v5: %w", s.path, err)
+		}
+		for _, state := range document.Activations {
+			if state.SchemaVersion != 3 {
+				return activationDocument{}, fmt.Errorf("read capability-pack state %s: document v5 contains unsupported activation schema_version %d", s.path, state.SchemaVersion)
+			}
+			if err := validateExplicitSelections(state); err != nil {
+				return activationDocument{}, fmt.Errorf("read capability-pack state %s: %w", s.path, err)
+			}
+		}
+		if err := canonicalizeActivationDocument(&document); err != nil {
+			return activationDocument{}, err
+		}
 		return document, nil
 	default:
 		return activationDocument{}, fmt.Errorf("read capability-pack state %s: unsupported schema_version %d", s.path, header.SchemaVersion)
@@ -176,13 +231,66 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 }
 
 func canonicalizeActivationDocument(document *activationDocument) error {
-	document.SchemaVersion = 4
+	if document.SchemaVersion < 5 {
+		document.SchemaVersion = 5
+	}
 	for i := range document.Activations {
 		if err := canonicalizeActivationState(&document.Activations[i]); err != nil {
 			return err
 		}
 	}
+	for i := range document.Ownership {
+		document.Ownership[i].Contributors = sortedUnique(document.Ownership[i].Contributors)
+		sort.Slice(document.Ownership[i].Authorities, func(a, b int) bool {
+			return document.Ownership[i].Authorities[a].Surface < document.Ownership[i].Authorities[b].Surface
+		})
+	}
+	sort.Slice(document.Ownership, func(i, j int) bool { return document.Ownership[i].ID < document.Ownership[j].ID })
 	return nil
+}
+
+// migrateV4Ownership migrates only current capability-pack ownership. It does
+// not inspect or adopt any classic lifecycle state. Conflicting facts for the
+// same physical identity are dropped so the target remains conservatively
+// unowned until an explicit activation resolves the collision.
+func migrateV4Ownership(document *activationDocument) {
+	type candidate struct {
+		owner ProjectionOwnership
+		ok    bool
+	}
+	byID := map[string]candidate{}
+	for _, state := range document.Activations {
+		surface := state.Intent.Surface
+		for _, owner := range state.Ownership {
+			physicalID := "surface:" + string(surface) + ":" + owner.ID
+			current, exists := byID[physicalID]
+			if exists && (!current.ok || current.owner.Fingerprint != owner.Fingerprint) {
+				byID[physicalID] = candidate{}
+				continue
+			}
+			if !exists {
+				current = candidate{owner: ProjectionOwnership{ID: physicalID, ProjectionID: owner.ID, Fingerprint: owner.Fingerprint}, ok: true}
+			}
+			for _, contributor := range owner.Contributors {
+				current.owner.Contributors = append(current.owner.Contributors, qualifyContributor(surface, contributor))
+			}
+			provenance := owner.AdapterProvenance
+			if provenance != "" {
+				current.owner.Authorities = append(current.owner.Authorities, ProjectionAuthority{Surface: surface, AdapterProvenance: provenance})
+			}
+			byID[physicalID] = current
+		}
+		state.Ownership = nil
+	}
+	document.Ownership = nil
+	for _, value := range byID {
+		if value.ok {
+			value.owner.Contributors = sortedUnique(value.owner.Contributors)
+			document.Ownership = append(document.Ownership, value.owner)
+		}
+	}
+	sort.Slice(document.Ownership, func(i, j int) bool { return document.Ownership[i].ID < document.Ownership[j].ID })
+	document.SchemaVersion = 5
 }
 
 func canonicalizeActivationState(state *ActivationState) error {

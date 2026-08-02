@@ -19,6 +19,21 @@ func TestBindAdapterProvenancePublishesCanonicalObservationWithoutChangingAction
 	}
 }
 
+func TestBindAdapterProvenancePublishesSharedSkillTopologyWithoutCreatingCodexIntent(t *testing.T) {
+	target := filepath.Join(t.TempDir(), ".agents", "skills", "ask-matt")
+	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{
+		ID: "skill:ask-matt", Action: capabilitypack.ProjectionAction{Kind: capabilitypack.ActionOpenCodeSkillLink, Target: target},
+	}}}
+	bindAdapterProvenance(&inspection)
+	projection := inspection.Projections[0]
+	if projection.ProjectionKey != "path:"+filepath.Clean(target) || !projection.Shared || len(projection.DiscoverableBy) != 1 || projection.DiscoverableBy[0] != capabilitypack.SurfaceCodex {
+		t.Fatalf("OpenCode shared topology = %+v", projection)
+	}
+	if projection.Action.ProjectionKey != projection.ProjectionKey || !projection.Action.Shared || len(projection.Action.DiscoverableBy) != 1 || projection.Action.DiscoverableBy[0] != capabilitypack.SurfaceCodex {
+		t.Fatalf("OpenCode shared action topology = %+v", projection.Action)
+	}
+}
+
 func TestSurfaceAdapterAppliesHostSpecificProjectionsAndPreservesJSONC(t *testing.T) {
 	root := t.TempDir()
 	bundle := filepath.Join(root, "bundle")

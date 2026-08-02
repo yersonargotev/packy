@@ -4,6 +4,11 @@ Capability packs are opt-in additions managed by **Packy core**. Packy remains
 available when the optional pack named `matty` is inactive. Discovery, show,
 status, and dry-run are inspection-only.
 
+`packy init` prepares only Packy's Installed Source. Neither initialization nor
+catalog presence authorizes any host projection. A complete pack or selected
+operational roots and their dependency closure must be activated explicitly for
+each surface before Packy can change that surface.
+
 The selectable pack catalog currently contains `addy`, `engram`, and `matty`.
 
 | Current Pack | Purpose | Claude contract |
@@ -125,6 +130,19 @@ phases. Claude typed hooks require executable/external consent. Removing a
 last-contributor hook or user MCP definition requires destructive-cleanup
 consent. MCP environment values are always redacted. Any preview blocker
 executes zero effects.
+
+## Shared discovery is not activation
+
+Some resources use the standard global `~/.agents/skills` target shared by
+compatible agents. An activation on one surface may therefore make the physical
+resource discoverable from another surface. That incidental visibility does not
+activate the pack on the other surface, does not authorize its surface-specific
+instructions or configuration, and does not create readiness there.
+
+Every activation that requires the shared resource is recorded as a contributor.
+Deactivation preserves the physical projection while any contributor remains
+and removes it only after the final contributor is gone and its ownership
+fingerprint still matches.
 
 ## Update, reconcile, recovery, and deactivation
 

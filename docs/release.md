@@ -14,7 +14,7 @@ stops before build or publication authority is used.
 ## User install path
 
 The [README quickstart](../README.md#quickstart) is the canonical user-facing
-Homebrew path. Keep the exact install/init/dry-run/apply command sequence there
+Homebrew path. Keep the exact binary-install/init/discover/activate command sequence there
 so release docs do not drift from the first-run instructions users see first.
 
 Direct GitHub Release users may download the matching `packy_<version>_<goos>_<goarch>`
@@ -23,22 +23,23 @@ first-run sequence from the README quickstart.
 
 ## User upgrade path
 
-`packy update` is not a binary upgrade command. It refreshes Packy-managed
-workflow artifacts and Engram setup from the currently resolved skill bundle.
-Homebrew users upgrade Packy itself with:
+Capability-pack update is not a binary upgrade operation. Homebrew users upgrade
+Packy itself, align the Installed Source, then preview updates for each explicitly
+active pack and surface:
 
 ```bash
 brew upgrade packy
 packy init
-packy update --dry-run
-packy update
+packy pack update engram --surface codex --dry-run
+packy pack update engram --surface codex
+packy pack status engram --surface codex
 ```
 
 Direct GitHub Release users replace the `packy` binary with the newer release
-artifact, then run the same `packy init` and update dry-run/apply sequence.
+artifact, then run the same `packy init` and per-activation update sequence.
 `packy init` is the command that aligns the Installed Source checkout to the
-running release. `packy update --dry-run` must not mutate that checkout; if the
-Installed Source is missing or stale, run `packy init` first.
+running release. Pack dry-runs must not mutate that checkout; if the Installed
+Source is missing or stale, run `packy init` first.
 
 ## Maintainer quick path
 
@@ -191,18 +192,21 @@ Homebrew and Engram are deterministic inert stubs; Claude is real.
 The Claude interposer permits only version inspection and bounded user-scoped
 MCP list/get/add/remove operations. It rejects login, authentication, REPL,
 print/model mode, project/local MCP mutation, and malformed commands before the
-real executable can observe them. The package-installed Packy sequence is:
+real executable can observe them. The package-installed Packy sequence initializes
+source without surface effects, then previews and applies a representative
+explicit activation:
 
 ```text
 packy version
 packy init --repository-url <local-checkout> --repository-ref <proved-ref>
-packy install --dry-run
-packy install
 packy doctor
-packy update --dry-run
-packy update
-packy uninstall --dry-run
-packy uninstall
+packy pack list
+packy pack show engram
+packy pack activate engram --surface claude --dry-run
+packy pack activate engram --surface claude
+packy pack status engram --surface claude
+packy pack deactivate engram --surface claude --dry-run
+packy pack deactivate engram --surface claude
 packy doctor
 ```
 
@@ -267,25 +271,22 @@ stale, duplicated, partial, or ambiguous evidence has no waiver path.
 The automated local-release smoke test is:
 
 ```bash
-go test ./internal/release -run TestPackageInstallSmokeLifecycleWithLocalReleaseBinary -count=1
+go test ./internal/release -run TestPackageInstallSmokeRequiresExplicitPackActivation -count=1
 ```
 
 That test builds a temporary release-like `./cmd/packy` binary with an injected
 version, runs it from a temporary directory outside the repo checkout, clones a
-local Packy Source fixture, and places stubbed `brew` and `engram` executables
-ahead of the real `PATH` to verify the expected external calls without reaching
-real accounts. Its exact Packy command sequence is:
+local Packy Source fixture, and places inert external executables ahead of the
+real `PATH`. It first proves initialization and inspection preserve byte-for-byte
+legacy/user surfaces and execute no external command. It then previews and
+applies one representative activation and inspects readiness separately:
 
 ```bash
 packy init --repository-url <local-fixture-repo>
-packy install --dry-run
-packy install
 packy doctor
-packy update --dry-run
-packy update
-packy uninstall --dry-run
-packy uninstall
-packy doctor
+packy pack activate engram --surface codex --dry-run
+packy pack activate engram --surface codex
+packy pack status engram --surface codex
 ```
 
 ## First v0.x checklist
@@ -313,6 +314,6 @@ packy doctor
       immutable values; no post-publication repair was used.
 - [ ] Homebrew began only after an independent exact published-release read-back.
 - [ ] `Formula/packy.rb` points at the same immutable tag and binary hashes.
-- [ ] A sandboxed package install completes the documented lifecycle without
-      writing to real home configuration.
+- [ ] A sandboxed package install proves initialization alone has zero surface
+      effects, then explicitly activates a representative pack and checks readiness.
 - [ ] Release notes retain the macOS-first support statement and Linux limitation.

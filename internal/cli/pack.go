@@ -602,8 +602,15 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 			return err
 		}
 	}
+	for _, shared := range structured.SharedProjections {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Shared projection: %s key=%s discoverable_by=%s — %s\n", shared.ID, shared.ProjectionKey, joinSurfaces(shared.DiscoverableBy), shared.DiscoveryNotice); err != nil {
+			return err
+		}
+	}
 	for _, resolution := range plan.Resolutions() {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Requirement: %s available=%s path=%s origin=%s\n", resolution.Tool, yesNo(resolution.Available), resolution.Path, resolution.Origin); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Requirement: %s available=%s path=%s origin=%s acquisition_source=%s acquisition_version=%s\n",
+			resolution.Tool, yesNo(resolution.Available), resolution.Path, resolution.Origin,
+			factOrNone(resolution.AcquisitionSource), factOrNone(resolution.AcquisitionVersion)); err != nil {
 			return err
 		}
 	}
@@ -619,9 +626,10 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 				return err
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(),
-				"    Action facts: id=%s kind=%s consent=%s source=%s target=%s command=%s args=%s mode=%s adapter_provenance=%s\n",
+				"    Action facts: id=%s kind=%s consent=%s source=%s target=%s command=%s args=%s version=%s consequences=%s rollback_limits=%s mode=%s adapter_provenance=%s\n",
 				action.ID, factOrNone(string(action.Kind)), factOrNone(string(action.Consent)), factOrNone(action.Source),
-				factOrNone(action.Target), factOrNone(action.Command), joinFacts(action.Args), factOrNone(string(action.Mode)),
+				factOrNone(action.Target), factOrNone(action.Command), joinFacts(action.Args), factOrNone(action.Version),
+				factOrNone(action.Consequences), factOrNone(action.RollbackLimits), factOrNone(string(action.Mode)),
 				factOrNone(action.AdapterProvenance),
 			); err != nil {
 				return err
@@ -854,7 +862,7 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		}
 	}
 	for _, projection := range entry.ProjectionDetails {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s target=%s owner=%s health=%s observed=%s desired=%s contributors=%s\n", projection.ID, projection.Target, projection.Owner, projection.Health, projection.ObservedFingerprint, projection.DesiredFingerprint, joinFacts(projection.Contributors)); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s target=%s owner=%s health=%s observed=%s desired=%s contributors=%s shared=%s discoverable_by=%s discovery_notice=%s\n", projection.ID, projection.Target, projection.Owner, projection.Health, projection.ObservedFingerprint, projection.DesiredFingerprint, joinFacts(projection.Contributors), yesNo(projection.Shared), joinSurfaces(projection.DiscoverableBy), factOrNone(projection.DiscoveryNotice)); err != nil {
 			return err
 		}
 	}
@@ -1057,6 +1065,10 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 	if err != nil {
 		return packComposition{}, err
 	}
+	engramResolver := engrambin.NewResolver(snapshot.HomebrewPrefix(), opts.Runner.LookPath)
+	if opts.EngramFormulaInspector != nil {
+		engramResolver = engramResolver.WithFormulaInspector(opts.EngramFormulaInspector)
+	}
 	return packComposition{
 		catalog:    catalog,
 		state:      capabilitypack.NewStateLayout(snapshot.PackyHome()),
@@ -1065,7 +1077,7 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 		codex:      codex.NewCanonicalLayout(snapshot.Home()),
 		openCode:   opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
 		claude:     claudecode.NewCanonicalLayout(snapshot.Home()),
-		engram:     engrambin.NewResolver(snapshot.HomebrewPrefix(), opts.Runner.LookPath),
+		engram:     engramResolver,
 	}, nil
 }
 

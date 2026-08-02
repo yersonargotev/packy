@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 	}
 
 	binary := buildLocalReleaseBinary(t, root, sandbox, "v0.99.0")
-	sourceRepo := createSmokeSourceRepo(t, sandbox, "v0.99.0")
+	sourceRepo := createSmokeSourceRepo(t, root, sandbox, "v0.99.0")
 	writeSmokeStub(t, stubBin, "engram", externalLog)
 	writeSmokeStub(t, stubBin, "brew", externalLog)
 	writeSmokeStub(t, stubBin, "claude", externalLog)
@@ -101,6 +102,47 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 	}
 	assertSmokePathExists(t, filepath.Join(home, ".local", "share", "packy", "bundle", "skills"), "init should create only the Installed Source substrate")
 	assertSmokeExternalCalls(t, externalLog, nil)
+
+	projectionPaths := map[string]string{
+		"codex":    filepath.Join(home, ".agents", "skills", "api-and-interface-design"),
+		"opencode": filepath.Join(home, ".agents", "skills", "api-and-interface-design"),
+		"claude":   filepath.Join(home, ".claude", "skills", "api-and-interface-design"),
+	}
+	packID := "addy"
+	for _, surface := range []string{"codex", "opencode", "claude"} {
+		var observedReadOnlyCommands []string
+		if surface == "claude" {
+			observedReadOnlyCommands = []string{"claude --version"}
+		}
+		preview := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "activate", packID, "--surface", surface, "--dry-run")
+		if !strings.Contains(preview, "Activation dry-run plan") || !strings.Contains(preview, "Surface: "+surface) {
+			t.Fatalf("%s activation preview omitted explicit surface intent:\n%s", surface, preview)
+		}
+		for path, want := range legacy {
+			data, err := os.ReadFile(path)
+			if err != nil || string(data) != want {
+				t.Fatalf("%s activation preview changed legacy surface %s: %q, %v", surface, path, data, err)
+			}
+		}
+		assertSmokeExternalCalls(t, externalLog, observedReadOnlyCommands)
+
+		activation := runSmokeInteractiveCommand(t, binary, outsideCheckout, env, "y\n", "pack", "activate", packID, "--surface", surface)
+		if !strings.Contains(activation, "Verified plan") || !strings.Contains(activation, "Apply result facts: verified=yes") {
+			t.Fatalf("%s explicit activation did not report a verified Apply:\n%s", surface, activation)
+		}
+		assertSmokePathExists(t, projectionPaths[surface], "explicit activation should project the representative skill")
+		if surface == "claude" {
+			observedReadOnlyCommands = []string{"claude --version", "claude --version", "claude --version", "claude --version"}
+		}
+		assertSmokeExternalCalls(t, externalLog, observedReadOnlyCommands)
+
+		status := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "status", packID, "--surface", surface)
+		for _, want := range []string{"configured", "authorized", "usable"} {
+			if !strings.Contains(status, want) {
+				t.Fatalf("%s status did not report readiness dimension %q separately from Apply:\n%s", surface, want, status)
+			}
+		}
+	}
 }
 func buildLocalReleaseBinary(t *testing.T, root, sandbox, version string) string {
 	t.Helper()
@@ -120,24 +162,14 @@ func buildLocalReleaseBinary(t *testing.T, root, sandbox, version string) string
 	return binary
 }
 
-func createSmokeSourceRepo(t *testing.T, sandbox, version string) string {
+func createSmokeSourceRepo(t *testing.T, root, sandbox, version string) string {
 	t.Helper()
 	repo := filepath.Join(sandbox, "source-repo")
-	for _, rel := range []string{
-		"bundle/skills/engineering/ask-matt/SKILL.md",
-		"bundle/skills/engineering/codebase-design/SKILL.md",
-		"bundle/skills/productivity/grilling/SKILL.md",
-		"bundle/skills/productivity/handoff/SKILL.md",
-		"bundle/skills/in-progress/loop-me/SKILL.md",
-		"bundle/skills/engineering/wayfinder/SKILL.md",
-	} {
-		path := filepath.Join(repo, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			t.Fatalf("mkdir source repo fixture: %v", err)
-		}
-		if err := os.WriteFile(path, []byte("---\nname: fixture\n---\n"), 0o600); err != nil {
-			t.Fatalf("write source repo fixture: %v", err)
-		}
+	if err := os.MkdirAll(repo, 0o700); err != nil {
+		t.Fatalf("mkdir source repo fixture: %v", err)
+	}
+	if err := os.CopyFS(filepath.Join(repo, "bundle"), os.DirFS(filepath.Join(root, "bundle"))); err != nil {
+		t.Fatalf("copy source bundle fixture: %v", err)
 	}
 	runSmokeGit(t, repo, sandbox, "init")
 	runSmokeGit(t, repo, sandbox, "add", ".")
@@ -189,6 +221,42 @@ func runSmokeCommandAllowError(t *testing.T, binary, dir string, env []string, a
 	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func runSmokeInteractiveCommand(t *testing.T, binary, dir string, env []string, input string, args ...string) string {
+	t.Helper()
+	script, err := exec.LookPath("script")
+	if err != nil {
+		t.Fatalf("find script for pseudo-terminal smoke: %v", err)
+	}
+	var scriptArgs []string
+	if runtime.GOOS == "darwin" {
+		scriptArgs = append([]string{"-q", "/dev/null", binary}, args...)
+	} else {
+		command := shellQuote(binary)
+		for _, arg := range args {
+			command += " " + shellQuote(arg)
+		}
+		scriptArgs = []string{"-q", "-e", "-c", command, "/dev/null"}
+	}
+	cmd := exec.Command(script, scriptArgs...)
+	cmd.Dir = dir
+	cmd.Env = env
+	stdinRead, stdinWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create pseudo-terminal input pipe: %v", err)
+	}
+	cmd.Stdin = stdinRead
+	go func() {
+		_, _ = stdinWrite.WriteString(input)
+	}()
+	output, err := cmd.CombinedOutput()
+	_ = stdinWrite.Close()
+	_ = stdinRead.Close()
+	if err != nil {
+		t.Fatalf("interactive packy %s failed: %v\n%s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
 }
 
 func assertSourceRepositoryExcludesExternalReferenceTrees(t *testing.T, root string) {

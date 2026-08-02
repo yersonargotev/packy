@@ -19,6 +19,18 @@ func TestBindAdapterProvenancePreservesDetailedIdentityAndKeepsDeletePayloadClea
 	}
 }
 
+func TestClaudePersonalSkillTopologyDoesNotClaimSharedAgentsTarget(t *testing.T) {
+	target := filepath.Join(t.TempDir(), ".claude", "skills", "ask-matt")
+	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{
+		ID: "skill:ask-matt", Action: capabilitypack.ProjectionAction{Kind: ActionSkillLink, Target: target},
+	}}}
+	bindAdapterProvenance(&inspection)
+	projection := inspection.Projections[0]
+	if projection.Shared || projection.Action.Shared || len(projection.DiscoverableBy) != 0 || len(projection.Action.DiscoverableBy) != 0 {
+		t.Fatalf("Claude personal skill was misclassified as shared: %+v", projection)
+	}
+}
+
 type ownershipStore struct {
 	state capabilitypack.ActivationState
 }

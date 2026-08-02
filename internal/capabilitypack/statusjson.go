@@ -2,7 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 7
+const StatusSchemaVersion = 8
 
 type JSONOptionalBool struct {
 	State string `json:"state"`
@@ -58,6 +58,9 @@ type JSONProjectionStatus struct {
 	ObservedFingerprint string           `json:"observed_fingerprint"`
 	DesiredFingerprint  string           `json:"desired_fingerprint"`
 	Contributors        []string         `json:"contributors"`
+	Shared              bool             `json:"shared"`
+	DiscoverableBy      []Surface        `json:"discoverable_by"`
+	DiscoveryNotice     string           `json:"discovery_notice,omitempty"`
 }
 
 type JSONResourceSelectionStatus struct {
@@ -259,7 +262,8 @@ func jsonProjectionDetails(values []ProjectionStatus) []JSONProjectionStatus {
 	result := make([]JSONProjectionStatus, 0, len(values))
 	for _, value := range values {
 		result = append(result, JSONProjectionStatus{ID: value.ID, Target: value.Target, Owner: value.Owner, Health: value.Health,
-			ObservedFingerprint: value.ObservedFingerprint, DesiredFingerprint: value.DesiredFingerprint, Contributors: sortedCopy(value.Contributors)})
+			ObservedFingerprint: value.ObservedFingerprint, DesiredFingerprint: value.DesiredFingerprint, Contributors: sortedCopy(value.Contributors),
+			Shared: value.Shared, DiscoverableBy: append([]Surface(nil), value.DiscoverableBy...), DiscoveryNotice: value.DiscoveryNotice})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result

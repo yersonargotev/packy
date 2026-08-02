@@ -13,6 +13,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/codex"
+	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	"github.com/yersonargotev/packy/internal/workstation"
@@ -283,7 +284,7 @@ func TestPackRecoveryPreviewReportsMixedPlanAsNonActionableWithoutEffects(t *tes
 	if !errors.Is(err, capabilitypack.ErrPlanNotActionable) {
 		t.Fatalf("mixed recovery error=%v\n%s", err, out)
 	}
-	for _, want := range []string{"Recovery: fresh activate Preview", "Plan disposition: mixed", "Blocker: dependency", "Phase: executable-external"} {
+	for _, want := range []string{"Recovery: fresh activate Preview", "Plan disposition: mixed", "Blocker: dependency", "Phase: tool-host-setup"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("mixed recovery missing %q:\n%s", want, out)
 		}
@@ -519,6 +520,9 @@ func engramActivationOptions(t *testing.T, terminal Terminal) (Options, string, 
 	engram := writeEngramExecutable(t, filepath.Join(prefix, "bin"), "engram version 1.19.0")
 	runner := &fakeRunner{path: map[string]string{"engram": engram}}
 	opts.Runner = runner
+	opts.EngramFormulaInspector = func(_ context.Context, formula string) (engrambin.FormulaMetadata, error) {
+		return engrambin.FormulaMetadata{Source: formula, Version: "0.4.2"}, nil
+	}
 	env := opts.Env.(MapEnv)
 	env["HOMEBREW_PREFIX"] = prefix
 	env["PATH"] = filepath.Dir(engram)
@@ -1228,7 +1232,7 @@ func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T)
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Pack: engram 2.0.0", "Phase: executable-external", "engram setup codex", "Phase: host-follow-up", "/hooks"} {
+	for _, want := range []string{"Pack: engram 2.0.0", "Phase: tool-host-setup", "engram setup codex", "Phase: host-follow-up", "/hooks"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -1251,7 +1255,7 @@ func TestPackActivateEngramPromptsForExternalAuthorityAndReportsPendingActions(t
 	if err != nil {
 		t.Fatalf("activate failed: %v\n%s", err, out)
 	}
-	if terminal.calls != 1 || len(terminal.prompts) != 1 || !strings.Contains(terminal.prompts[0], "executable-external") {
+	if terminal.calls != 1 || len(terminal.prompts) != 1 || !strings.Contains(terminal.prompts[0], "tool-host-setup") {
 		t.Fatalf("prompts = %#v calls=%d", terminal.prompts, terminal.calls)
 	}
 	if len(runner.calls) != 1 || !strings.Contains(callStrings(runner.calls)[0], "setup codex") {
@@ -1566,7 +1570,7 @@ func TestPackUpdateExternalCancellationHasNoEffects(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("cancel error=%v\n%s", err, out)
 	}
-	if len(cancel.prompts) != 1 || !strings.Contains(cancel.prompts[0], "executable-external") {
+	if len(cancel.prompts) != 1 || !strings.Contains(cancel.prompts[0], "tool-host-setup") {
 		t.Fatalf("prompts=%#v", cancel.prompts)
 	}
 	if snapshotTree(t, home) != before || len(runner.calls) != calls {

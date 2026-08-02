@@ -303,6 +303,9 @@ func TestRemainingIdentitySurfaceMatchesExactClassification(t *testing.T) {
 		if path == "internal/capabilitypack/status_test.go" {
 			data = normalizeResourceContributorStatusTest(data)
 		}
+		if path == "internal/capabilitypack/state_store_test.go" {
+			data = normalizeGlobalOwnershipStateStoreTest(data)
+		}
 		if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 			continue
 		}
@@ -508,6 +511,18 @@ func normalizeV3PackTestCutover(data []byte) []byte {
 	// that contract; normalize the frozen rename gate to its original scope.
 	data = bytes.ReplaceAll(data, []byte("pack:engram:instruction:shared"), []byte("engram"))
 	data = bytes.ReplaceAll(data, []byte("pack:"+legacyProduct+":instruction:shared"), []byte(legacyProduct))
+	data = bytes.ReplaceAll(data, []byte("tool-host-setup"), []byte("executable-external"))
+	// Issue #417 seals Homebrew acquisition metadata before consent. Its
+	// read-only inspector seam and disclosure assertions deepen the current
+	// activation contract without changing the frozen product-rename suite.
+	data = bytes.Replace(data, []byte("\n\t\"github.com/yersonargotev/packy/internal/engrambin\""), nil, 1)
+	data = bytes.Replace(data, []byte("\n\topts.EngramFormulaInspector = func(_ context.Context, formula string) (engrambin.FormulaMetadata, error) {\n\t\treturn engrambin.FormulaMetadata{Source: formula, Version: \"0.4.2\"}, nil\n\t}"), nil, 1)
+	data = bytes.Replace(data, []byte("\tfor _, want := range []string{\n\t\t\"Pack: engram 2.0.0\", \"Phase: executable-external\", \"engram setup codex\", \"Phase: host-follow-up\", \"/hooks\",\n\t\t\"consequences=allows engram to mutate the Codex host configuration\", \"rollback_limits=pack deactivation removes Packy-owned projections\",\n\t}"), []byte("\tfor _, want := range []string{\"Pack: engram 2.0.0\", \"Phase: executable-external\", \"engram setup codex\", \"Phase: host-follow-up\", \"/hooks\"}"), 1)
+	start := bytes.Index(data, []byte("type formulaOutputRunner struct {"))
+	end := bytes.Index(data, []byte("func TestPackActivateEngramPromptsForExternalAuthorityAndReportsPendingActions"))
+	if start >= 0 && end > start {
+		data = append(append([]byte(nil), data[:start]...), data[end:]...)
+	}
 	return omitPostCutoverPackTestFunctions(data,
 		"TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle",
 		"TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability",
@@ -528,6 +543,13 @@ func normalizeResourceContributorStatusTest(data []byte) []byte {
 	canonical := fmt.Sprintf(`[]string{"pack:engram:instruction:shared-guidance", "pack:%s:instruction:shared-guidance"}`, legacyProduct)
 	original := fmt.Sprintf(`[]string{"engram", "%s"}`, legacyProduct)
 	return bytes.Replace(data, []byte(canonical), []byte(original), 1)
+}
+
+func normalizeGlobalOwnershipStateStoreTest(data []byte) []byte {
+	product := legacyIdentityToken()
+	current := []byte(fmt.Sprintf("\t\tstate.Intent = ActivationIntent{PackID: %q, Surface: surface, Active: true, Revision: 1}\n\t\tstate.Ownership = append(state.Ownership, ProjectionOwnership{ID: \"surface:\" + string(surface) + %q, ProjectionID: %q, Contributors: []string{qualifyContributor(surface, %q)}, Fingerprint: string(surface)})", product, ":instruction:"+product+"-guidance", "instruction:"+product+"-guidance", "pack:"+product+":instruction:"+product+"-guidance"))
+	frozen := []byte(fmt.Sprintf("\t\tstate := ActivationState{Intent: ActivationIntent{PackID: %q, Surface: surface, Active: true, Revision: 1}, Ownership: []ProjectionOwnership{{ID: %q, Contributors: []string{%q}, Fingerprint: string(surface)}}}", product, "instruction:"+product+"-guidance", product))
+	return bytes.Replace(data, current, frozen, 1)
 }
 
 func omitPostCutoverPackTestFunctions(data []byte, names ...string) []byte {

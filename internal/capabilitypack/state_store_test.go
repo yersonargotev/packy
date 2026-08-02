@@ -36,7 +36,7 @@ func TestFileActivationStoreMigratesLegacyDocumentsToCanonicalAliases(t *testing
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document["schema_version"] != float64(4) || !strings.Contains(string(data), `"aliases": []`) || !strings.Contains(string(data), `"mode": "all"`) {
+	if document["schema_version"] != float64(5) || document["revision"] != float64(1) || !strings.Contains(string(data), `"aliases": []`) || !strings.Contains(string(data), `"mode": "all"`) {
 		t.Fatalf("document = %s", data)
 	}
 }
@@ -130,8 +130,13 @@ func TestFileActivationStoreExplainsCompareAndSwapStaleRevision(t *testing.T) {
 func TestFileActivationStorePreservesIndependentSurfaceState(t *testing.T) {
 	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
 	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode} {
-		state := ActivationState{Intent: ActivationIntent{PackID: "matty", Surface: surface, Active: true, Revision: 1}, Ownership: []ProjectionOwnership{{ID: "instruction:matty-guidance", Contributors: []string{"matty"}, Fingerprint: string(surface)}}}
-		if err := store.Save(context.Background(), surface, 0, state); err != nil {
+		state, err := store.LoadSnapshot(context.Background(), surface)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state.Intent = ActivationIntent{PackID: "matty", Surface: surface, Active: true, Revision: 1}
+		state.Ownership = append(state.Ownership, ProjectionOwnership{ID: "surface:" + string(surface) + ":instruction:matty-guidance", ProjectionID: "instruction:matty-guidance", Contributors: []string{qualifyContributor(surface, "pack:matty:instruction:matty-guidance")}, Fingerprint: string(surface)})
+		if _, err := store.SaveSnapshot(context.Background(), surface, state.documentRevision, state); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -140,8 +145,48 @@ func TestFileActivationStorePreservesIndependentSurfaceState(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if state.Intent.Surface != surface || len(state.Ownership) != 1 || state.Ownership[0].Fingerprint != string(surface) {
+		if state.Intent.Surface != surface || len(state.Ownership) != 2 {
 			t.Fatalf("%s state = %+v", surface, state)
 		}
+	}
+}
+
+func TestFileActivationStoreSnapshotCASDetectsOtherSurfaceRace(t *testing.T) {
+	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
+	codex, err := store.LoadSnapshot(context.Background(), SurfaceCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opencode, err := store.LoadSnapshot(context.Background(), SurfaceOpenCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codex.Intent = ActivationIntent{Surface: SurfaceCodex, Revision: 1}
+	if _, err := store.SaveSnapshot(context.Background(), SurfaceCodex, codex.documentRevision, codex); err != nil {
+		t.Fatal(err)
+	}
+	opencode.Intent = ActivationIntent{Surface: SurfaceOpenCode, Revision: 1}
+	if _, err := store.SaveSnapshot(context.Background(), SurfaceOpenCode, opencode.documentRevision, opencode); !errors.Is(err, ErrStalePlan) || !strings.Contains(err.Error(), "state revision changed") {
+		t.Fatalf("cross-surface stale save error = %v", err)
+	}
+}
+
+func TestFileActivationStoreMigratesV4OwnershipWithoutMergingPrivateSurfaceIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "packs.json")
+	v4 := `{"schema_version":4,"activations":[` +
+		`{"schema_version":3,"intent":{"pack_id":"app","surface":"codex","active":true,"revision":1,"aliases":[],"selection":{"mode":"all","roots":[]}},"ownership":[{"id":"skill:shared-name","contributors":["pack:app:skill:one"],"fingerprint":"codex"}]},` +
+		`{"schema_version":3,"intent":{"pack_id":"app","surface":"opencode","active":true,"revision":1,"aliases":[],"selection":{"mode":"all","roots":[]}},"ownership":[{"id":"skill:shared-name","contributors":["pack:app:skill:one"],"fingerprint":"opencode"}]}` + `]}`
+	if err := os.WriteFile(path, []byte(v4), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := NewFileActivationStore(path).LoadSnapshot(context.Background(), SurfaceCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Ownership) != 2 || state.Ownership[0].ID != "surface:codex:skill:shared-name" || state.Ownership[1].ID != "surface:opencode:skill:shared-name" {
+		t.Fatalf("v4 private ownership migration = %+v", state.Ownership)
+	}
+	if state.Ownership[0].Contributors[0] != "surface:codex:pack:app:skill:one" {
+		t.Fatalf("v4 contributor was not surface-qualified: %+v", state.Ownership[0])
 	}
 }

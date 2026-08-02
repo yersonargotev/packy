@@ -71,6 +71,14 @@ func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
 			provenance = "codex-projection/v1/" + string(projection.Action.Kind)
 		}
 		projection.AdapterProvenance = provenance
+		if projection.Action.Kind == capabilitypack.ActionSkillLink && projection.Action.Target != "" {
+			projection.ProjectionKey = "path:" + filepath.Clean(projection.Action.Target)
+			projection.Shared = true
+			projection.DiscoverableBy = []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}
+			projection.Action.ProjectionKey = projection.ProjectionKey
+			projection.Action.Shared = true
+			projection.Action.DiscoverableBy = append([]capabilitypack.Surface(nil), projection.DiscoverableBy...)
+		}
 	}
 }
 

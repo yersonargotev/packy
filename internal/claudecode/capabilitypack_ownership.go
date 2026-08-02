@@ -34,7 +34,20 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 	}
 	owners := make(map[string]capabilitypack.ProjectionOwnership, len(state.Ownership))
 	for _, owner := range state.Ownership {
-		owners[owner.ID] = owner
+		logicalID := owner.ProjectionID
+		if logicalID == "" {
+			logicalID = owner.ID
+		}
+		provenance, relevant := claudeOwnershipAuthority(owner)
+		if !relevant {
+			continue
+		}
+		// Claude's adapter consumes surface-local logical projection IDs. The
+		// lifecycle store owns physical targets globally and seals destructive
+		// authority independently for each surface.
+		owner.ID = logicalID
+		owner.AdapterProvenance = provenance
+		owners[logicalID] = owner
 	}
 	records := []OwnershipRecord{}
 	recorded := map[string]bool{}
@@ -183,6 +196,20 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 		}
 	}
 	return NewOwnershipSnapshot(records...), nil
+}
+
+func claudeOwnershipAuthority(owner capabilitypack.ProjectionOwnership) (string, bool) {
+	for _, authority := range owner.Authorities {
+		if authority.Surface == capabilitypack.SurfaceClaude {
+			return authority.AdapterProvenance, true
+		}
+	}
+	// State written before global projection ownership had one implicit
+	// surface authority and remains valid through the conservative migration.
+	if len(owner.Authorities) == 0 {
+		return owner.AdapterProvenance, true
+	}
+	return "", false
 }
 
 func activeClaudeIntents(state capabilitypack.ActivationState) []capabilitypack.ActivationIntent {

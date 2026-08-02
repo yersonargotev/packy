@@ -75,7 +75,45 @@ func resourceContributor(packID string, resource ResourceIdentity) string {
 }
 
 func contributorBelongsToPack(contributor, packID string) bool {
-	return strings.HasPrefix(contributor, "pack:"+packID+":")
+	return strings.HasPrefix(contributor, "pack:"+packID+":") || strings.Contains(contributor, ":pack:"+packID+":")
+}
+
+func qualifyContributor(surface Surface, contributor string) string {
+	if strings.HasPrefix(contributor, "surface:") {
+		return contributor
+	}
+	return "surface:" + string(surface) + ":" + contributor
+}
+
+func contributorSurface(contributor string) (Surface, bool) {
+	if !strings.HasPrefix(contributor, "surface:") {
+		return "", false
+	}
+	rest := strings.TrimPrefix(contributor, "surface:")
+	index := strings.Index(rest, ":")
+	if index < 1 {
+		return "", false
+	}
+	return Surface(rest[:index]), true
+}
+
+func contributorsForSurface(surface Surface, canonical []string) []string {
+	result := make([]string, 0, len(canonical))
+	for _, contributor := range canonical {
+		result = append(result, qualifyContributor(surface, contributor))
+	}
+	return sortedUnique(result)
+}
+
+func mergedProjectionContributors(owner ProjectionOwnership, surface Surface, current []string) []string {
+	result := contributorsForSurface(surface, current)
+	for _, contributor := range owner.Contributors {
+		if contributorSurfaceValue, ok := contributorSurface(contributor); ok && contributorSurfaceValue == surface {
+			continue
+		}
+		result = append(result, contributor)
+	}
+	return sortedUnique(result)
 }
 
 func uniqueRemovedContributor(projectionID string, before, after composition) (string, bool) {
@@ -120,6 +158,22 @@ func contributorsMatch(recorded, canonical []string) bool {
 		}
 	}
 	return true
+}
+
+func contributorsMatchForSurface(recorded []string, surface Surface, canonical []string) bool {
+	var local []string
+	for _, contributor := range recorded {
+		contributorSurfaceValue, qualified := contributorSurface(contributor)
+		if qualified && contributorSurfaceValue != surface {
+			continue
+		}
+		if qualified {
+			prefix := "surface:" + string(surface) + ":"
+			contributor = strings.TrimPrefix(contributor, prefix)
+		}
+		local = append(local, contributor)
+	}
+	return contributorsMatch(local, canonical)
 }
 
 func (c composition) combinedPack() Pack {

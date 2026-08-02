@@ -1,6 +1,8 @@
 # Packy
 
-Packy is a lightweight macOS-first installer/configurator for a global AI coding workflow. It installs a curated Matt Pocock skill bundle, wires Engram through its official setup commands, and projects small Packy-owned integrations to Codex, OpenCode, and Claude Code.
+Packy is a lightweight macOS-first installer/configurator for explicit capability
+packs. It discovers packaged capabilities and projects only the packs or resource
+roots that an operator activates for Codex, OpenCode, or Claude Code.
 
 Packy is not a runtime orchestrator and does not copy workflow files into every project.
 
@@ -11,27 +13,38 @@ Packy does not install or upgrade Claude Code. See the canonical
 [Claude Code guide](docs/claude-code.md) for the global layout, migration,
 readiness, preservation, and no-auth/no-model boundary.
 
-Install Packy from the Homebrew tap, initialize the package-installed source checkout, preview the setup, then apply it:
+Install Packy from the Homebrew tap, initialize the package-installed source,
+inspect the catalog, then preview and activate a chosen pack on a chosen surface:
 
 ```sh
 brew install yersonargotev/tap/packy
 packy init
-packy install --dry-run
-packy install
+packy pack list
+packy pack show engram
+packy pack activate engram --surface codex --dry-run
+packy pack activate engram --surface codex
+packy pack status engram --surface codex
 ```
 
-`packy init` is required for Homebrew/GitHub Release installs because package managers install the binary only; Packy reads its default skill bundle from the initialized source at `~/.local/share/packy/bundle/skills`. To upgrade Packy itself later, use `brew upgrade packy` (or replace the GitHub Release binary), then rerun `packy init` before `packy update --dry-run`. Maintainer release docs live in [docs/release.md](docs/release.md).
+`packy init` is required for Homebrew/GitHub Release installs because package
+managers install the binary only. It prepares Packy's Installed Source at
+`~/.local/share/packy` and causes no CLI-surface changes. Catalog discovery is
+also read-only: availability never grants activation intent. To upgrade the
+binary later, use `brew upgrade packy` (or replace the GitHub Release binary),
+rerun `packy init`, and explicitly preview `packy pack update` for each active
+pack and surface. Maintainer release docs live in [docs/release.md](docs/release.md).
 
 ## v0 scope
 
-Packy v0 manages:
+Through explicit capability-pack activation, Packy v0 can manage:
 
 - global skill symlinks under `~/.agents/skills`
-- small Packy state at `~/.packy/config.json`
-- Codex prompt markers in `~/.codex/AGENTS.md`
+- capability-pack activation and ownership state beneath `~/.packy`
+- Codex instructions in `~/.codex/AGENTS.md`
 - an OpenCode prompt file and reference under `$XDG_CONFIG_HOME/opencode`
 - Claude Code global skills, instructions, and user-scoped Engram MCP setup
-- Engram install/update/setup by delegating to the Homebrew-managed Engram binary (`<brew-prefix>/bin/engram setup ...`)
+- separately approved external requirements and tool-owned host setup declared
+  by an activated pack
 
 Packy v0 is macOS-first. Linux and other agent adapters may be added later, but they are outside v0.
 
@@ -39,26 +52,28 @@ Packy v0 is macOS-first. Linux and other agent adapters may be added later, but 
 
 ```sh
 packy init             # initialize the package-installed source checkout
-packy install          # apply the golden-path setup
-packy install --dry-run
-packy doctor           # read-only setup health checks
-packy update           # refresh Engram, skill links, prompts, and state; does not upgrade the binary
-packy update --dry-run
-packy uninstall        # remove only Packy-managed artifacts
-packy uninstall --dry-run
+packy doctor           # read-only core health and active-pack summary
+packy pack list        # discover available packs without activation
+packy pack show <pack>
+packy pack activate <pack> --surface <surface> --dry-run
+packy pack activate <pack> --surface <surface>
+packy pack update <pack> --surface <surface> --dry-run
+packy pack status <pack> --surface <surface>
+packy pack deactivate <pack> --surface <surface> --dry-run
 ```
 
-## Opt-in capability packs
+## Capability packs
 
 Packy core remains available even when the optional `matty` capability pack is
 inactive.
 
 The selectable pack catalog currently contains `addy`, `engram`, and `matty`.
 
-The catalog supports the `codex`, `opencode`, and `claude` surfaces when a Pack
-explicitly declares them. Existing Pack activations retain their recorded
-surfaces until an explicit Pack update and Claude activation remains a separate
-surface choice.
+The catalog supports the `codex`, `opencode`, and `claude` surfaces when a pack
+explicitly declares them. Activation intent is per surface. A skill projected
+to the standard shared `~/.agents/skills` target may become discoverable by
+another compatible surface, but discovery is not activation on that surface.
+Each activation that needs the shared projection remains a recorded contributor.
 
 Before opting in, inspect the catalog and current host state without mutation:
 
@@ -78,7 +93,7 @@ recovery, and contributor-safe deactivation for all three supported surfaces.
 | Path | Purpose |
 | --- | --- |
 | `~/.agents/skills` | Packy-managed skill symlinks |
-| `~/.packy/config.json` | Packy ownership/state metadata |
+| `~/.packy/packs.json` | Capability-pack activation, contributor ownership, and recovery metadata |
 | `~/.codex/AGENTS.md` | Codex prompt file containing Packy markers |
 | `$XDG_CONFIG_HOME/opencode/opencode.json` | OpenCode config containing the Packy prompt reference |
 | `$XDG_CONFIG_HOME/opencode/packy.md` | Packy-owned OpenCode prompt |
@@ -91,10 +106,11 @@ If `XDG_CONFIG_HOME` is unset or relative, Packy uses `~/.config`.
 
 ## Safety model
 
-- `doctor` is read-only and reports which Engram binary is on `PATH`, whether it is Homebrew-managed, any `engram serve` daemon executable it can see, and whether a `~/.local/bin/engram` compatibility entry is a symlink to Homebrew.
+- `init`, catalog discovery, and `doctor` do not activate packs or change CLI surfaces.
+- `doctor` is read-only and separates Packy core health from active-pack readiness.
 - `--dry-run` reports planned actions without writing files or running external commands.
-- Packy-owned prompt content is wrapped in `packy:*` markers and only those blocks are updated or removed.
-- `uninstall` removes Packy-managed symlinks, Packy prompt blocks/references, the Packy OpenCode prompt, and Packy state.
+- Capability-pack projections carry activation ownership; shared projections remain until their final contributor is removed.
+- Deactivation removes only exact, unchanged projections owned by the selected activation and does not uninstall shared external executables.
 - Packy warns about `gentle-ai:*` content but does not delete or rewrite Gentle AI-managed content.
 - Tests use sandboxed `HOME` and `XDG_CONFIG_HOME`; they must not write to the operator's real home config.
 

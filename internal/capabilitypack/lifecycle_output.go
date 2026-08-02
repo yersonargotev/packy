@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 8
+const LifecycleJSONSchemaVersion = 9
 
 type ResourceRole string
 
@@ -575,40 +575,42 @@ type JSONLifecyclePhase struct {
 }
 
 type JSONLifecyclePlan struct {
-	SchemaVersion          int                         `json:"schema_version"`
-	Report                 string                      `json:"report"`
-	PlanID                 string                      `json:"plan_id"`
-	Operation              Operation                   `json:"operation"`
-	Disposition            PlanDisposition             `json:"disposition"`
-	Digest                 string                      `json:"digest"`
-	Pack                   string                      `json:"pack"`
-	PackVersion            string                      `json:"pack_version"`
-	Surface                Surface                     `json:"surface"`
-	IntentRevision         int                         `json:"intent_revision"`
-	Selection              ResourceSelection           `json:"selection"`
-	ResourceGraph          ResourceGraph               `json:"resource_graph"`
-	SensitiveEffects       []SensitiveEffectOrigin     `json:"sensitive_effects"`
-	Contract               LifecycleContract           `json:"contract"`
-	Aliases                []SurfaceAlias              `json:"aliases"`
-	Contributors           map[string][]string         `json:"contributors"`
-	Blockers               []PlanBlocker               `json:"blockers"`
-	Phases                 []JSONLifecyclePhase        `json:"phases"`
-	PendingHumanActions    []string                    `json:"pending_human_actions"`
-	ExpectedReadiness      ReadinessStatus             `json:"expected_readiness"`
-	ReadinessObserved      ReadinessObservationStatus  `json:"readiness_observed"`
-	Evidence               []string                    `json:"evidence"`
-	PendingEvidence        []string                    `json:"pending_evidence"`
-	RuntimeModes           []RuntimeModeResult         `json:"runtime_modes,omitempty"`
-	CapabilityRequirements []CapabilityRequirementFact `json:"capability_requirements"`
-	ProviderChoices        []ProviderChoice            `json:"provider_choices"`
-	Recovery               bool                        `json:"recovery"`
-	RecoveryGuidance       *RecoveryGuidance           `json:"recovery_guidance,omitempty"`
-	MandatoryActions       []ProjectionAction          `json:"mandatory_actions"`
-	ContractDiff           JSONContractDiff            `json:"contract_diff"`
-	Migrations             []string                    `json:"migrations"`
-	RetainedProjections    []RetainedProjection        `json:"retained_projections"`
-	RemovedContributors    map[string]string           `json:"removed_contributors"`
-	DryRun                 bool                        `json:"dry_run"`
+	SchemaVersion          int                          `json:"schema_version"`
+	Report                 string                       `json:"report"`
+	PlanID                 string                       `json:"plan_id"`
+	Operation              Operation                    `json:"operation"`
+	Disposition            PlanDisposition              `json:"disposition"`
+	Digest                 string                       `json:"digest"`
+	Pack                   string                       `json:"pack"`
+	PackVersion            string                       `json:"pack_version"`
+	Surface                Surface                      `json:"surface"`
+	IntentRevision         int                          `json:"intent_revision"`
+	DocumentRevision       int                          `json:"document_revision"`
+	Selection              ResourceSelection            `json:"selection"`
+	ResourceGraph          ResourceGraph                `json:"resource_graph"`
+	SensitiveEffects       []SensitiveEffectOrigin      `json:"sensitive_effects"`
+	Contract               LifecycleContract            `json:"contract"`
+	Aliases                []SurfaceAlias               `json:"aliases"`
+	Contributors           map[string][]string          `json:"contributors"`
+	Blockers               []PlanBlocker                `json:"blockers"`
+	Phases                 []JSONLifecyclePhase         `json:"phases"`
+	PendingHumanActions    []string                     `json:"pending_human_actions"`
+	ExpectedReadiness      ReadinessStatus              `json:"expected_readiness"`
+	ReadinessObserved      ReadinessObservationStatus   `json:"readiness_observed"`
+	Evidence               []string                     `json:"evidence"`
+	PendingEvidence        []string                     `json:"pending_evidence"`
+	RuntimeModes           []RuntimeModeResult          `json:"runtime_modes,omitempty"`
+	CapabilityRequirements []CapabilityRequirementFact  `json:"capability_requirements"`
+	ProviderChoices        []ProviderChoice             `json:"provider_choices"`
+	Recovery               bool                         `json:"recovery"`
+	RecoveryGuidance       *RecoveryGuidance            `json:"recovery_guidance,omitempty"`
+	MandatoryActions       []ProjectionAction           `json:"mandatory_actions"`
+	ContractDiff           JSONContractDiff             `json:"contract_diff"`
+	Migrations             []string                     `json:"migrations"`
+	RetainedProjections    []RetainedProjection         `json:"retained_projections"`
+	SharedProjections      []SharedProjectionVisibility `json:"shared_projections"`
+	RemovedContributors    map[string]string            `json:"removed_contributors"`
+	DryRun                 bool                         `json:"dry_run"`
 }
 
 type RecoveryGuidance struct {
@@ -718,6 +720,16 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	if retained == nil {
 		retained = []RetainedProjection{}
 	}
+	shared := append([]SharedProjectionVisibility(nil), p.sharedProjections...)
+	if shared == nil {
+		shared = []SharedProjectionVisibility{}
+	}
+	for i := range shared {
+		const pathKeyPrefix = "path:"
+		if strings.HasPrefix(shared[i].ProjectionKey, pathKeyPrefix) {
+			shared[i].ProjectionKey = pathKeyPrefix + portableProjectionTarget(strings.TrimPrefix(shared[i].ProjectionKey, pathKeyPrefix))
+		}
+	}
 	selection, _ := canonicalSelection(p.selection)
 	providerChoices := p.ProviderChoices()
 	if providerChoices == nil {
@@ -725,7 +737,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	}
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
-		Surface: p.surface, IntentRevision: p.intentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false),
+		Surface: p.surface, IntentRevision: p.intentRevision, DocumentRevision: p.documentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false),
 		SensitiveEffects: p.SensitiveEffects(), Contract: contract, Aliases: contract.Aliases,
 		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
@@ -733,7 +745,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		CapabilityRequirements: p.CapabilityRequirements(),
 		ProviderChoices:        providerChoices,
 		Recovery:               p.recovery, RecoveryGuidance: p.RecoveryGuidance(), MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
-		RetainedProjections: retained, RemovedContributors: removed, DryRun: dryRun}
+		RetainedProjections: retained, SharedProjections: shared, RemovedContributors: removed, DryRun: dryRun}
 }
 
 func actionForReport(action ProjectionAction) ProjectionAction {

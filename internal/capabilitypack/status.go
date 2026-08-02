@@ -63,7 +63,12 @@ type ProjectionStatus struct {
 	Health                                              ProjectionHealth
 	Contributors                                        []string
 	Owner                                               string
+	Shared                                              bool
+	DiscoverableBy                                      []Surface
+	DiscoveryNotice                                     string
 }
+
+const sharedProjectionDiscoveryNotice = "shared standard targets may be discovered by compatible surfaces; discovery does not create activation intent"
 
 type ProjectionSummary struct {
 	Verified, Missing, Drifted, Ambiguous, Unmanaged int
@@ -745,8 +750,17 @@ func deriveProjectionStatus(packID string, observed []ObservedProjection, owners
 	result := make([]ProjectionStatus, 0, len(observed))
 	var summary ProjectionSummary
 	for _, p := range observed {
-		status := ProjectionStatus{ID: p.ID, Target: portableProjectionTarget(p.Action.Target), ObservedFingerprint: p.ObservedFingerprint, DesiredFingerprint: p.DesiredFingerprint, Contributors: c.contributorSet(p.ID)}
-		owner, owned := ownershipByID(ownership, p.ID)
+		status := ProjectionStatus{ID: p.ID, Target: portableProjectionTarget(p.Action.Target), ObservedFingerprint: p.ObservedFingerprint, DesiredFingerprint: p.DesiredFingerprint, Contributors: c.contributorSet(p.ID), Shared: p.Shared || p.Action.Shared, DiscoverableBy: append([]Surface(nil), p.DiscoverableBy...)}
+		if len(status.DiscoverableBy) == 0 {
+			status.DiscoverableBy = append([]Surface(nil), p.Action.DiscoverableBy...)
+		}
+		if status.Shared {
+			status.DiscoveryNotice = sharedProjectionDiscoveryNotice
+		}
+		owner, owned := ownershipByID(ownership, physicalProjectionID(c.surface, p))
+		if !owned {
+			owner, owned = ownershipByID(ownership, projectionOwnershipID(p))
+		}
 		if p.ExternallyManaged {
 			status.Owner = "external"
 		} else if owned {
@@ -773,7 +787,7 @@ func deriveProjectionStatus(packID string, observed []ObservedProjection, owners
 		case !owned:
 			status.Health = ProjectionUnmanaged
 			summary.Unmanaged++
-		case owner.Fingerprint != p.DesiredFingerprint || !contributorsMatch(owner.Contributors, status.Contributors):
+		case owner.Fingerprint != p.DesiredFingerprint || !contributorsMatchForSurface(owner.Contributors, c.surface, status.Contributors):
 			status.Health = ProjectionAmbiguous
 			summary.Ambiguous++
 		default:

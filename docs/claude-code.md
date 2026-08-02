@@ -5,7 +5,8 @@ Codex and OpenCode. Claude Code **2.1.203 or newer stable** is required; Packy
 does not install or upgrade Claude Code. A missing, older, prerelease,
 unreadable, or timed-out executable is a pending prerequisite, not a failed
 Packy effect. Safe Codex/OpenCode and local Claude work may still converge;
-rerun `packy update` after installing a supported stable version.
+rerun the explicit `packy pack update <pack> --surface claude` or activation
+preview after installing a supported stable version.
 
 ## Prerequisite
 
@@ -28,24 +29,24 @@ writes that file directly**. It does not use Claude plugins, plugin
 marketplaces, caches, repository-local `CLAUDE.md`/`.claude` configuration, or
 opaque hook injection.
 
-## Classic install, update, and migration
+## Explicit activation and incompatible cutover
 
-Fresh `packy install` and `packy update` desire all three surfaces. Preview
-before applying:
+Initialization and discovery never create Claude intent. Preview and activate
+each chosen pack or resource selection explicitly for Claude:
 
 ```sh
-packy install --dry-run
-packy install
+packy init
+packy pack show engram
+packy pack activate engram --surface claude --dry-run
+packy pack activate engram --surface claude
 packy doctor
 ```
 
-Classic state schema v2 records durable `desired_surfaces` in canonical order
-`codex`, `opencode`, `claude`, plus exact Claude ownership and latest-attempt
-evidence. A valid v1 state containing the historical Codex/OpenCode intent is
-legacy provenance, not corruption. `packy update` is the canonical v1-to-v2
-migration: it freshly plans all three surfaces and publishes v2 only after the
-safe contract verifies. If a blocker or successfully rolled-back effect
-prevents verification, v1 remains authoritative. Unknown schemas fail closed.
+The removed classic lifecycle has no migration or compatibility path. Packy
+does not read, adopt, translate, or delete its old state or artifacts. The sole
+current operator removes those artifacts manually, initializes Packy afresh,
+and then activates only the desired packs and surfaces. A leftover classic
+artifact is unowned and normal collision protection preserves it.
 
 Inspection and `--dry-run` are inert. Application rereads shared state and
 documents before effects; a stale plan performs no unstarted work. Repeat the
@@ -65,12 +66,12 @@ state is reported as rolled back. Recovery is required only after an attempted
 effect fails and Packy cannot prove the complete intended prior or desired
 state; repeat the originating verb for fresh inspection and approval.
 
-`packy uninstall` removes only unchanged, exactly recorded fragments and keeps
-state while residual ownership remains. If Claude is unavailable, Packy can
-remove safe local projections but preserves user MCP ownership as
-`uninstall-incomplete`; an attempted MCP removal failure is recovery-required.
-Cleanup never deletes credentials, Engram memory, foreign configuration,
-external data, or an unproven shared container.
+`packy pack deactivate <pack> --surface claude` removes only unchanged, exactly
+recorded projections after the applicable destructive consent and keeps state
+while residual ownership remains. If Claude is unavailable, Packy preserves
+user MCP ownership for a later fresh reconciliation; an attempted MCP removal
+failure is recovery-required. Cleanup never deletes credentials, Engram memory,
+foreign configuration, external data, or an unproven shared container.
 
 ## Capability packs: compatibility and readiness
 
