@@ -249,10 +249,10 @@ func canonicalizeActivationDocument(document *activationDocument) error {
 	return nil
 }
 
-// migrateV4Ownership migrates only current capability-pack ownership. It does
-// not inspect or adopt any classic lifecycle state. Conflicting facts for the
-// same physical identity are dropped so the target remains conservatively
-// unowned until an explicit activation resolves the collision.
+// migrateV4Ownership migrates only current capability-pack ownership.
+// Removed classic lifecycle state is neither inspected nor adopted. Conflicting
+// facts for the same physical identity are dropped so the target remains
+// conservatively unowned until an explicit activation resolves the collision.
 func migrateV4Ownership(document *activationDocument) {
 	type candidate struct {
 		owner ProjectionOwnership

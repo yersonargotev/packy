@@ -27,7 +27,7 @@ func TestClassicLifecycleCommandsAndAuthorityAreAbsent(t *testing.T) {
 	}
 
 	if matches, err := filepath.Glob("../corelifecycle/*.go"); err != nil || len(matches) != 0 {
-		t.Fatalf("classic lifecycle authority still has Go files: %v, %v", matches, err)
+		t.Fatalf("removed classic lifecycle authority regained Go files: %v, %v", matches, err)
 	}
 }
 

@@ -356,7 +356,7 @@ func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
 		{Path: "home/.claude/CLAUDE.md"},
 		{Path: "home/.claude.json"},
 		{Path: "home/.agents/skills/example/SKILL.md"},
-		{Path: "home/.packy/config.json"},
+		{Path: "home/.packy/config.json"}, // Historical classic state is not a CLI surface.
 	}
 	got := surfaceManifest(items)
 	if len(got) != 5 {
