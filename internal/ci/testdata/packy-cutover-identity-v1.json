@@ -1,6 +1,6 @@
 {
   "behavioral_equivalence": {
-    "pack_test_normalized_sha256": "ee1bc617a23670560d4476c9dc9f3939b7f313c8a3b794da8f0ecb9870d39059",
+    "pack_test_normalized_sha256": "7c33fc3eb16956f96bb45116426621c19c9643e0ec31590fd86619efc5cbf3aa",
     "root_test_functions": {
       "TestDoctorJSONHealthyWarningsAndFailures": "9e74a8b5ccb7271e932e7fc0722f8e6ccb2171de369164513b7734384ecbc061",
       "TestEndToEndSandboxLifecyclePreservesGentleAIAndRealHome": "ae2f64d73237efe006c4f6d4fce2fcea3c8044a21b1bbb9e6b211ed0bf76a8d8",

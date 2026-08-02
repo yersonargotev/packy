@@ -320,6 +320,51 @@ func canonicalizeActivationState(state *ActivationState) error {
 			return err
 		}
 	}
+	seenEffects := map[string]bool{}
+	for i := range state.External {
+		effect := &state.External[i]
+		if seenEffects[effect.ID] {
+			return fmt.Errorf("duplicate external effect %q", effect.ID)
+		}
+		seenEffects[effect.ID] = true
+		if effect.Receipt == nil {
+			continue
+		}
+		if err := canonicalizeExternalReceipt(effect, state.Intent.Surface); err != nil {
+			return err
+		}
+	}
+	sort.Slice(state.External, func(i, j int) bool { return state.External[i].ID < state.External[j].ID })
+	return nil
+}
+
+func canonicalizeExternalReceipt(effect *ExternalEffect, surface Surface) error {
+	receipt := effect.Receipt
+	if receipt.SchemaVersion != 1 || receipt.Reversal.SchemaVersion != 1 {
+		return fmt.Errorf("external effect %q has unsupported receipt schema", effect.ID)
+	}
+	if receipt.EffectID != effect.ID || receipt.EffectFingerprint == "" || receipt.EffectFingerprint != effect.Fingerprint {
+		return fmt.Errorf("external effect %q receipt identity does not match its sealed effect", effect.ID)
+	}
+	if receipt.Surface == "" || surface != "" && receipt.Surface != surface {
+		return fmt.Errorf("external effect %q receipt targets surface %q instead of %q", effect.ID, receipt.Surface, surface)
+	}
+	if receipt.Reversal.Consent != ConsentDestructiveCleanup || len(receipt.Reversal.AuthorityLimits) == 0 {
+		return fmt.Errorf("external effect %q receipt has an invalid reversal contract", effect.ID)
+	}
+	receipt.Contributors = sortedUnique(receipt.Contributors)
+	if len(receipt.Contributors) == 0 || len(receipt.Contributions) == 0 {
+		return fmt.Errorf("external effect %q receipt has no sealed contributors or contributions", effect.ID)
+	}
+	seen := map[string]bool{}
+	for _, contribution := range receipt.Contributions {
+		if contribution.ID == "" || contribution.ObservedFingerprint == "" || contribution.AdapterProvenance == "" || seen[contribution.ID] {
+			return fmt.Errorf("external effect %q receipt has an invalid or duplicate contribution", effect.ID)
+		}
+		seen[contribution.ID] = true
+	}
+	sort.Slice(receipt.Contributions, func(i, j int) bool { return receipt.Contributions[i].ID < receipt.Contributions[j].ID })
+	receipt.Reversal.AuthorityLimits = sortedUnique(receipt.Reversal.AuthorityLimits)
 	return nil
 }
 

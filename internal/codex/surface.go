@@ -340,6 +340,28 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 		}
 		mode := capabilitypack.ProjectionRemoveContent
 		content := ""
+		if projection.ExternallyManaged {
+			switch strings.TrimPrefix(projection.ID, "external_setup:engram:codex:") {
+			case "mcp":
+				configContent = removeTOMLSection(configContent, "mcp_servers.engram")
+			case "instructions-config":
+				configContent = removeTOMLTopLevelKey(configContent, "model_instructions_file")
+			case "compact-config":
+				configContent = removeTOMLTopLevelKey(configContent, "experimental_compact_prompt_file")
+			case "marketplace":
+				configContent = removeTOMLSection(configContent, "marketplaces.engram")
+			case "plugin":
+				configContent = removeTOMLSection(configContent, `plugins."engram@engram"`)
+			case "instructions-file", "compact-file":
+				mode = capabilitypack.ProjectionDeleteTarget
+			}
+			if projection.Action.Target == a.configFile {
+				content = configContent
+			}
+			projection = capabilitypack.RemovalCandidate(projection, mode, content, fmt.Sprintf("remove exact receipt-backed Codex Engram setup contribution %s", projection.ID))
+			result.Projections = append(result.Projections, projection)
+			continue
+		}
 		switch projection.Action.Kind {
 		case capabilitypack.ActionSkillLink:
 			mode = capabilitypack.ProjectionDeleteTarget
