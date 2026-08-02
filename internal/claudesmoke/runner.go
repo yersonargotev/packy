@@ -478,7 +478,8 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 			_, projectionErr := os.Lstat(projection)
 			e.Assertions.ActivationPreviewCausedNoChange = strings.Contains(ce.Stdout, "Activation dry-run plan") &&
 				strings.Contains(ce.Stdout, "Surface: claude") && os.IsNotExist(projectionErr) &&
-				surfacesPreservedWithoutActivation(lc.Workstation, sandbox, e.Before) && claudeVersionOnly(claudeLog)
+				surfacesPreservedWithoutActivation(lc.Workstation, sandbox, e.Before) && claudeVersionOnly(claudeLog) &&
+				externalLogEmpty(lc.ExternalLog)
 		case phaseActivationApply:
 			e.Assertions.RepresentativePackActivated = addyProjectionMatchesInstalledSource(sandbox) &&
 				strings.Contains(ce.Stdout, "Verified plan") &&

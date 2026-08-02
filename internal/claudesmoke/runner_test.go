@@ -471,8 +471,17 @@ func TestLoggedStubCapturesExternalInvocation(t *testing.T) {
 	if err := writeLoggedStub(stub, logPath, "exit 0\n"); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !externalLogEmpty(logPath) {
+		t.Fatal("new external invocation log is not empty")
+	}
 	if err := exec.Command(stub, "setup").Run(); err != nil {
 		t.Fatal(err)
+	}
+	if externalLogEmpty(logPath) {
+		t.Fatal("external invocation was not detected")
 	}
 	data, err := os.ReadFile(logPath)
 	if err != nil {
