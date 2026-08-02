@@ -464,6 +464,25 @@ func TestEvidenceSchemaV3ProvesInitializationThenExplicitActivation(t *testing.T
 	}
 }
 
+func TestLoggedStubCapturesExternalInvocation(t *testing.T) {
+	root := t.TempDir()
+	stub := filepath.Join(root, "engram")
+	logPath := filepath.Join(root, "external.log")
+	if err := writeLoggedStub(stub, logPath, "exit 0\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command(stub, "setup").Run(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "invoked\n" {
+		t.Fatalf("external invocation log = %q", data)
+	}
+}
+
 func TestValidateEvidenceRejectsTampering(t *testing.T) {
 	e := validEvidence()
 	if err := ValidateEvidence(e); err != nil {

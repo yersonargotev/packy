@@ -17,11 +17,14 @@ func TestProjectProductionAtomicityMapsCoreCutoverEvidenceExactly(t *testing.T) 
 		InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true,
 		RemovedInstallRejected: true, RemovedUpdateRejected: true, RemovedUninstallRejected: true,
 		ClassicStatePreserved: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true,
-		SharedSkillSentinelPreserved: true, NoPacksOwnershipState: true, NoClaudeMutationOperations: true,
+		SharedSkillSentinelPreserved: true, InitializationCausedNoSurfaceChange: true,
+		ActivationPreviewCausedNoChange: true, RepresentativePackActivated: true,
+		ReadinessInspectedSeparately: true, NoActivationStateAfterInitialization: true,
+		NoClaudeMutationOperations: true,
 		EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true,
 	}
 	q := claudesmoke.AddyQualification{Smoke: claudesmoke.Evidence{
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		Commands: []claudesmoke.CommandEvidence{
 			{Name: "claude", Args: []string{"--version"}},
 			{Name: "packy", Args: []string{"install"}, ExitCode: 1, Stderr: "unknown command"},
@@ -33,7 +36,10 @@ func TestProjectProductionAtomicityMapsCoreCutoverEvidenceExactly(t *testing.T) 
 			InstalledSourceInitialized: true, DoctorReportedCoreHealthy: true,
 			RemovedInstallRejected: true, RemovedUpdateRejected: true, RemovedUninstallRejected: true,
 			ClassicStatePreserved: true, ClaudeInstructionPreserved: true, ClaudeMCPPreserved: true,
-			SharedSkillSentinelPreserved: true, NoPacksOwnershipState: true, NoClaudeMutationOperations: true,
+			SharedSkillSentinelPreserved: true, InitializationCausedNoSurfaceChange: true,
+			ActivationPreviewCausedNoChange: true, RepresentativePackActivated: true,
+			ReadinessInspectedSeparately: true, NoActivationStateAfterInitialization: true,
+			NoClaudeMutationOperations: true,
 			EngramStubProtocolVerified: true, SensitiveFixtureRedacted: true,
 		},
 		Qualification: claudesmoke.AddyQualificationObservation{CollectedAt: "2026-08-01T12:00:00Z"},

@@ -67,11 +67,12 @@ type workstationFixture struct {
 	Sensitive                                                   string
 }
 type coreCutoverContext struct {
-	EvidencePath, Sandbox                                       string
-	Env                                                         []string
-	Packy, ClaudeInterposer, ClaudeLog, InstallRepo, InstallRef string
-	SourceCheckout                                              string
-	Workstation                                                 workstationFixture
+	EvidencePath, Sandbox                           string
+	Env                                             []string
+	Packy, ClaudeInterposer, ClaudeLog, ExternalLog string
+	InstallRepo, InstallRef                         string
+	SourceCheckout                                  string
+	Workstation                                     workstationFixture
 }
 
 type sandboxLayout struct {
@@ -263,8 +264,8 @@ func Run(ctx context.Context, cfg Config) (Evidence, error) {
 	if err != nil {
 		return Evidence{}, fmt.Errorf("digest Claude: %w", err)
 	}
-	engramStub := `#!/bin/sh
-case "${1-}" in
+	externalLog := filepath.Join(sandbox, "external-invocations.log")
+	engramStub := `case "${1-}" in
   setup) exit 0 ;;
   mcp)
     [ "${2-}" = "--tools=agent" ] || exit 64
@@ -278,13 +279,13 @@ case "${1-}" in
   *) exit 64 ;;
 esac
 `
-	if err := writeStub(filepath.Join(sandbox, "stub-bin", "engram"), engramStub); err != nil {
+	if err := writeLoggedStub(filepath.Join(sandbox, "stub-bin", "engram"), externalLog, engramStub); err != nil {
 		return Evidence{}, err
 	}
-	if err := writeStub(filepath.Join(sandbox, "homebrew", "bin", "engram"), engramStub); err != nil {
+	if err := writeLoggedStub(filepath.Join(sandbox, "homebrew", "bin", "engram"), externalLog, engramStub); err != nil {
 		return Evidence{}, err
 	}
-	if err := writeStub(filepath.Join(sandbox, "stub-bin", "brew"), "#!/bin/sh\nexit 0\n"); err != nil {
+	if err := writeLoggedStub(filepath.Join(sandbox, "stub-bin", "brew"), externalLog, "exit 0\n"); err != nil {
 		return Evidence{}, err
 	}
 	claudeLog := filepath.Join(sandbox, "claude-invocations.log")
@@ -319,6 +320,9 @@ esac
 		return Evidence{}, err
 	}
 	engramProbe, probeErr := probeEngramStub(ctx, sandbox, filepath.Join(sandbox, "stub-bin", "engram"), env)
+	if err := os.WriteFile(externalLog, nil, 0600); err != nil {
+		return Evidence{}, err
+	}
 	before, err := Manifest(sandbox)
 	if err != nil {
 		return Evidence{}, err
@@ -329,7 +333,7 @@ esac
 	e.Safety = SafetyEvidence{DisposableSandbox: true, AllowlistEnvironment: true, CredentialsScrubbed: true, CommandAllowlist: true, NoInteractiveClaude: true, WriteBoundaryEnforced: probeErr == nil}
 	e, err = executeCoreCutover(ctx, e, coreCutoverContext{
 		EvidencePath: cfg.EvidencePath, Sandbox: sandbox, Env: env, Packy: packy,
-		ClaudeInterposer: claudeInterposer, ClaudeLog: claudeLog, InstallRepo: installRepo,
+		ClaudeInterposer: claudeInterposer, ClaudeLog: claudeLog, ExternalLog: externalLog, InstallRepo: installRepo,
 		InstallRef: installRef, SourceCheckout: repo,
 		Workstation: workstationFixture{
 			ClassicStatePath: classicStatePath, InstructionPath: foreignInstructionPath,
@@ -468,7 +472,7 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 			e.Assertions.RemovedUpdateRejected = true
 		case phaseRemovedUninstall:
 			e.Assertions.RemovedUninstallRejected = true
-			e.Assertions.InitializationCausedNoSurfaceChange = initializationPreserved(lc.Workstation, sandbox, claudeLog, e.Before)
+			e.Assertions.InitializationCausedNoSurfaceChange = initializationPreserved(lc.Workstation, sandbox, claudeLog, lc.ExternalLog, e.Before)
 		case phaseActivationPreview:
 			projection := filepath.Join(sandbox, "home", ".claude", "skills", "api-and-interface-design")
 			_, projectionErr := os.Lstat(projection)
@@ -520,9 +524,15 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 	return e, nil
 }
 
-func initializationPreserved(fixture workstationFixture, sandbox, claudeLog string, before []FileEvidence) bool {
+func initializationPreserved(fixture workstationFixture, sandbox, claudeLog, externalLog string, before []FileEvidence) bool {
 	return surfacesPreservedWithoutActivation(fixture, sandbox, before) &&
-		reflect.DeepEqual(readClaudeInvocations(claudeLog), []CommandEvidence{{Name: "claude", Args: []string{"version"}, ExitCode: 0}})
+		reflect.DeepEqual(readClaudeInvocations(claudeLog), []CommandEvidence{{Name: "claude", Args: []string{"version"}, ExitCode: 0}}) &&
+		externalLogEmpty(externalLog)
+}
+
+func externalLogEmpty(path string) bool {
+	data, err := os.ReadFile(path)
+	return err == nil && len(data) == 0
 }
 
 func surfacesPreservedWithoutActivation(fixture workstationFixture, sandbox string, before []FileEvidence) bool {
@@ -947,6 +957,12 @@ func fileDigest(path string) (string, error) {
 	return hex.EncodeToString(h[:]), nil
 }
 func writeStub(path, body string) error { return os.WriteFile(path, []byte(body), 0700) }
+
+func writeLoggedStub(path, logPath, body string) error {
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+	script := "#!/bin/sh\nprintf '%s\\n' invoked >> " + quote(logPath) + "\n" + body
+	return writeStub(path, script)
+}
 
 // createClaudeInterposer makes the command policy independently enforceable for
 // Claude calls made inside Packy. The log contains only operation names and exit

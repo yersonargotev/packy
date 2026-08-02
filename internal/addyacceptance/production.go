@@ -119,11 +119,13 @@ type ProductionRunnerSafety struct {
 	NoInteractiveClaude, WriteBoundaryEnforced                                     bool
 }
 type ProductionAssertions struct {
-	InstalledSourceInitialized, DoctorReportedCoreHealthy                           bool
-	RemovedInstallRejected, RemovedUpdateRejected, RemovedUninstallRejected         bool
-	ClassicStatePreserved, ClaudeInstructionPreserved, ClaudeMCPPreserved           bool
-	SharedSkillSentinelPreserved, NoPacksOwnershipState, NoClaudeMutationOperations bool
-	EngramStubProtocolVerified, SensitiveFixtureRedacted                            bool
+	InstalledSourceInitialized, DoctorReportedCoreHealthy                                      bool
+	RemovedInstallRejected, RemovedUpdateRejected, RemovedUninstallRejected                    bool
+	ClassicStatePreserved, ClaudeInstructionPreserved, ClaudeMCPPreserved                      bool
+	SharedSkillSentinelPreserved, InitializationCausedNoSurfaceChange                          bool
+	ActivationPreviewCausedNoChange, RepresentativePackActivated, ReadinessInspectedSeparately bool
+	NoActivationStateAfterInitialization, NoClaudeMutationOperations                           bool
+	EngramStubProtocolVerified, SensitiveFixtureRedacted                                       bool
 }
 type ProductionWritableRoots struct {
 	Home, XDGConfig, ClaudeConfig, State, Package, Repository, Acquisition string
@@ -158,7 +160,7 @@ func BuildProductionPromotionEvidence(context PromotionValidationContext, in Pro
 		return PromotionEvidence{}, err
 	}
 	q := in.Qualification
-	if q.SchemaVersion != 2 || q.Synthetic || q.Repository != context.Repository || q.Workflow != context.Workflow ||
+	if q.SchemaVersion != 3 || q.Synthetic || q.Repository != context.Repository || q.Workflow != context.Workflow ||
 		q.WorkflowDigest != context.WorkflowDigest || q.RunID != context.RunID ||
 		q.Commit != contextCommit(context) || q.PackySHA != contextCommit(context) ||
 		q.RequestedClaudeVersion != "2.1.203" || q.ResolvedClaudeVersion != "2.1.203" ||
@@ -247,20 +249,29 @@ func validateProductionAtomicity(q ProductionQualification) error {
 		{"packy", []string{"version"}, 0},
 		{"packy", []string{"init", "--home", filepath.Join(q.Sandbox, "home"), "--source-root", filepath.Join(q.Sandbox, "installed-source"), "--repository-url", filepath.Join(q.Sandbox, "source-repository"), "--repository-ref", "packy-smoke-proved-source"}, 0},
 		{"packy", []string{"doctor"}, 0},
+		{"packy", []string{"pack", "list"}, 0},
+		{"packy", []string{"pack", "show", "addy"}, 0},
 		{"packy", []string{"install"}, 1},
 		{"packy", []string{"update"}, 1},
 		{"packy", []string{"uninstall"}, 1},
-		{"claude", []string{"version"}, 0},
+		{"packy", []string{"pack", "activate", "addy", "--surface", "claude", "--dry-run"}, 0},
+		{"packy", []string{"pack", "activate", "addy", "--surface", "claude"}, 0},
+		{"packy", []string{"pack", "status", "addy", "--surface", "claude"}, 0},
 	}
-	if len(a.Commands) != len(want) {
+	if len(a.Commands) <= len(want) {
 		return errors.New("production atomicity commands are missing or incomplete")
 	}
-	for i, command := range a.Commands {
+	for i, command := range a.Commands[:len(want)] {
 		if command.Name != want[i].name || !equalStrings(command.Args, want[i].args) || command.ExitCode != want[i].exitCode {
 			return fmt.Errorf("production atomicity command %d is malformed or out of order", i)
 		}
 		if want[i].exitCode != 0 && !strings.Contains(command.Stdout+command.Stderr, "unknown command") {
 			return fmt.Errorf("production atomicity command %d did not prove the root command is absent", i)
+		}
+	}
+	for i, command := range a.Commands[len(want):] {
+		if command.Name != "claude" || !equalStrings(command.Args, []string{"version"}) || command.ExitCode != 0 {
+			return fmt.Errorf("production atomicity Claude observation %d is malformed", i)
 		}
 	}
 	if err := validateProductionManifest("before", a.Before); err != nil {
@@ -279,7 +290,9 @@ func validateProductionAtomicity(q ProductionQualification) error {
 	if !x.InstalledSourceInitialized || !x.DoctorReportedCoreHealthy ||
 		!x.RemovedInstallRejected || !x.RemovedUpdateRejected || !x.RemovedUninstallRejected ||
 		!x.ClassicStatePreserved || !x.ClaudeInstructionPreserved || !x.ClaudeMCPPreserved ||
-		!x.SharedSkillSentinelPreserved || !x.NoPacksOwnershipState || !x.NoClaudeMutationOperations ||
+		!x.SharedSkillSentinelPreserved || !x.InitializationCausedNoSurfaceChange ||
+		!x.ActivationPreviewCausedNoChange || !x.RepresentativePackActivated || !x.ReadinessInspectedSeparately ||
+		!x.NoActivationStateAfterInitialization || !x.NoClaudeMutationOperations ||
 		!x.EngramStubProtocolVerified || !x.SensitiveFixtureRedacted {
 		return errors.New("production runner assertions are incomplete")
 	}
