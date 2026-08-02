@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v7/pack-status.schema.json",
-  "title": "Packy capability-pack status reports v7",
+  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v8/pack-status.schema.json",
+  "title": "Packy capability-pack status reports v8",
   "$defs": {
     "optional_bool": {
       "type": "object",
@@ -254,7 +254,9 @@
               "health",
               "observed_fingerprint",
               "desired_fingerprint",
-              "contributors"
+              "contributors",
+              "shared",
+              "discoverable_by"
             ],
             "properties": {
               "id": {
@@ -288,9 +290,22 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "pattern": "^pack:[a-z0-9][a-z0-9._-]*:[a-z_]+:[a-z0-9][a-z0-9._-]*$"
+                  "pattern": "^(?:surface:(?:codex|opencode|claude):)?pack:[a-z0-9][a-z0-9._-]*:[a-z_]+:[a-z0-9][a-z0-9._-]*$"
                 },
                 "uniqueItems": true
+              },
+              "shared": {
+                "type": "boolean"
+              },
+              "discoverable_by": {
+                "type": ["array", "null"],
+                "items": {
+                  "enum": ["codex", "opencode", "claude"]
+                },
+                "uniqueItems": true
+              },
+              "discovery_notice": {
+                "type": "string"
               }
             },
             "additionalProperties": false
@@ -612,7 +627,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 7
+      "const": 8
     },
     "report": {
       "enum": [

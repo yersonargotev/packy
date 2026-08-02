@@ -1,5 +1,5 @@
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "report": "pack-status",
   "entries": [
     {
@@ -44,7 +44,9 @@
           "desired_fingerprint": "sha256:example",
           "contributors": [
             "pack:example-pack:skill:ask-matt"
-          ]
+          ],
+          "shared": false,
+          "discoverable_by": null
         }
       ],
       "contract": {

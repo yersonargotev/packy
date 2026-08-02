@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 8
+const LifecycleJSONSchemaVersion = 9
 
 type ResourceRole string
 
@@ -723,6 +723,12 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	shared := append([]SharedProjectionVisibility(nil), p.sharedProjections...)
 	if shared == nil {
 		shared = []SharedProjectionVisibility{}
+	}
+	for i := range shared {
+		const pathKeyPrefix = "path:"
+		if strings.HasPrefix(shared[i].ProjectionKey, pathKeyPrefix) {
+			shared[i].ProjectionKey = pathKeyPrefix + portableProjectionTarget(strings.TrimPrefix(shared[i].ProjectionKey, pathKeyPrefix))
+		}
 	}
 	selection, _ := canonicalSelection(p.selection)
 	providerChoices := p.ProviderChoices()

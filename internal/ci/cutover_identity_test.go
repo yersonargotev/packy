@@ -511,6 +511,7 @@ func normalizeV3PackTestCutover(data []byte) []byte {
 	// that contract; normalize the frozen rename gate to its original scope.
 	data = bytes.ReplaceAll(data, []byte("pack:engram:instruction:shared"), []byte("engram"))
 	data = bytes.ReplaceAll(data, []byte("pack:"+legacyProduct+":instruction:shared"), []byte(legacyProduct))
+	data = bytes.ReplaceAll(data, []byte("tool-host-setup"), []byte("executable-external"))
 	// Issue #417 seals Homebrew acquisition metadata before consent. Its
 	// read-only inspector seam and disclosure assertions deepen the current
 	// activation contract without changing the frozen product-rename suite.

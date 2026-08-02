@@ -2,7 +2,6 @@ package engrambin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,7 +13,10 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-const Formula = "gentleman-programming/tap/engram"
+const (
+	Formula        = "gentleman-programming/tap/engram"
+	FormulaVersion = "0.4.2"
+)
 
 const versionTimeout = 2 * time.Second
 
@@ -97,26 +99,6 @@ type FormulaMetadata struct {
 	Version string
 }
 
-// ParseHomebrewFormulaMetadata owns Homebrew's formula identity contract.
-// Process execution stays at the CLI boundary; interpreting its output does not.
-func ParseHomebrewFormulaMetadata(formula, output string) (FormulaMetadata, error) {
-	var document struct {
-		Formulae []struct {
-			FullName string `json:"full_name"`
-			Versions struct {
-				Stable string `json:"stable"`
-			} `json:"versions"`
-		} `json:"formulae"`
-	}
-	if err := json.Unmarshal([]byte(output), &document); err != nil {
-		return FormulaMetadata{}, fmt.Errorf("decode Homebrew formula %s: %w", formula, err)
-	}
-	if len(document.Formulae) != 1 || strings.TrimSpace(document.Formulae[0].FullName) != formula || strings.TrimSpace(document.Formulae[0].Versions.Stable) == "" {
-		return FormulaMetadata{}, fmt.Errorf("Homebrew formula %s did not resolve one exact source and stable version", formula)
-	}
-	return FormulaMetadata{Source: formula, Version: strings.TrimSpace(document.Formulae[0].Versions.Stable)}, nil
-}
-
 func NewResolver(homebrewPrefixEnv string, lookPath func(string) (string, error)) Resolver {
 	return Resolver{HomebrewPrefixEnv: homebrewPrefixEnv, LookPath: lookPath}
 }
@@ -138,7 +120,7 @@ func (r Resolver) Resolve(ctx context.Context, tool string) (capabilitypack.Exec
 		acquisitionArgs = []string{"install", Formula}
 	}
 	acquisitionSource := Formula
-	acquisitionVersion := ""
+	acquisitionVersion := FormulaVersion
 	if acquisitionSupported && r.FormulaInspector != nil {
 		metadata, err := r.FormulaInspector(ctx, Formula)
 		if err != nil {

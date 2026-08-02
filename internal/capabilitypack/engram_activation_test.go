@@ -95,6 +95,16 @@ func missingEngramResolution() ExecutableResolution {
 	}
 }
 
+func requiredApprovals(facade Facade, plan ReconciliationPlan) []ApprovalReceipt {
+	var approvals []ApprovalReceipt
+	for _, phase := range plan.Phases() {
+		if phase.ApprovalRequired {
+			approvals = append(approvals, facade.Approve(plan, phase.Kind))
+		}
+	}
+	return approvals
+}
+
 func TestEngramPreviewSealsGlobalExecutableAndSeparatesPhases(t *testing.T) {
 	resolver := &fakeExecutableResolver{resolutions: []ExecutableResolution{availableEngramResolution("/opt/homebrew/bin/engram")}}
 	executor := &fakeExternalExecutor{}
@@ -108,7 +118,7 @@ func TestEngramPreviewSealsGlobalExecutableAndSeparatesPhases(t *testing.T) {
 		t.Fatalf("resolutions = %#v", got)
 	}
 	phases := plan.Phases()
-	if len(phases) != 3 || phases[0].Kind != ConsentReversibleLocal || phases[1].Kind != ConsentExecutableExternal || phases[2].Kind != ConsentHostFollowUp {
+	if len(phases) != 3 || phases[0].Kind != ConsentReversibleLocal || phases[1].Kind != ConsentToolHostSetup || phases[2].Kind != ConsentHostFollowUp {
 		t.Fatalf("phases = %#v", phases)
 	}
 	if !phases[0].ApprovalRequired || !phases[1].ApprovalRequired || phases[2].ApprovalRequired {
@@ -129,27 +139,30 @@ func TestEngramMissingExecutableUsesSupportedAcquisitionAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actions := plan.Phases()[1].Actions
-	if len(actions) != 2 || actions[0].ID != "external:engram:acquire" || actions[1].ID != "external:engram:setup:opencode" {
-		t.Fatalf("external actions = %#v", actions)
+	acquisition := phaseActions(plan.Phases(), ConsentExecutableExternal)
+	setup := phaseActions(plan.Phases(), ConsentToolHostSetup)
+	if len(acquisition) != 1 || acquisition[0].ID != "external:engram:acquire" || len(setup) != 1 || setup[0].ID != "external:engram:setup:opencode" {
+		t.Fatalf("external actions = acquisition:%#v setup:%#v", acquisition, setup)
 	}
-	if actions[0].Command != "brew" || !strings.Contains(strings.Join(actions[0].Args, " "), "engram") {
-		t.Fatalf("acquisition = %#v", actions[0])
+	if acquisition[0].Command != "brew" || !strings.Contains(strings.Join(acquisition[0].Args, " "), "engram") {
+		t.Fatalf("acquisition = %#v", acquisition[0])
 	}
 }
 
 func TestEngramExternalPhaseDisclosesSeparateAcquisitionAndHostSetupAuthority(t *testing.T) {
 	resolver := &fakeExecutableResolver{resolutions: []ExecutableResolution{missingEngramResolution()}}
-	facade, _, _ := engramFacadeForTest(resolver, &fakeExternalExecutor{}, engramObservation("missing"))
+	executor := &fakeExternalExecutor{}
+	facade, adapter, store := engramFacadeForTest(resolver, executor, engramObservation("missing"))
 	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "engram", Surface: SurfaceCodex})
 	if err != nil {
 		t.Fatal(err)
 	}
-	actions := phaseActions(plan.Phases(), ConsentExecutableExternal)
-	if len(actions) != 2 {
-		t.Fatalf("external actions = %#v", actions)
+	acquisition := phaseActions(plan.Phases(), ConsentExecutableExternal)
+	setupActions := phaseActions(plan.Phases(), ConsentToolHostSetup)
+	if len(acquisition) != 1 || len(setupActions) != 1 {
+		t.Fatalf("external actions = acquisition:%#v setup:%#v", acquisition, setupActions)
 	}
-	acquire, setup := actions[0], actions[1]
+	acquire, setup := acquisition[0], setupActions[0]
 	if acquire.Source != "gentleman-programming/tap/engram" || acquire.Version != "0.4.2" || acquire.Command != "brew" ||
 		!strings.Contains(acquire.Consequences, "shared global executable") || !strings.Contains(acquire.RollbackLimits, "does not uninstall") {
 		t.Fatalf("acquisition disclosure = %#v", acquire)
@@ -158,8 +171,21 @@ func TestEngramExternalPhaseDisclosesSeparateAcquisitionAndHostSetupAuthority(t 
 		!strings.Contains(setup.Consequences, "Codex") || !strings.Contains(setup.RollbackLimits, "tool-owned") {
 		t.Fatalf("setup disclosure = %#v", setup)
 	}
-	if acquire.ID == setup.ID || acquire.Consent != ConsentExecutableExternal || setup.Consent != ConsentExecutableExternal {
+	if acquire.ID == setup.ID || acquire.Consent != ConsentExecutableExternal || setup.Consent != ConsentToolHostSetup {
 		t.Fatalf("external authorities were not separately sealed: acquire=%#v setup=%#v", acquire, setup)
+	}
+	for name, approvals := range map[string][]ApprovalReceipt{
+		"acquisition only": {facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)},
+		"host setup only":  {facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentToolHostSetup)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: approvals, Interactive: true}); !errors.Is(err, ErrApprovalMismatch) {
+				t.Fatalf("partial authority error = %v", err)
+			}
+			if len(store.saves) != 0 || len(adapter.actions) != 0 || len(executor.actions) != 0 {
+				t.Fatal("partial external authority caused effects")
+			}
+		})
 	}
 }
 
@@ -227,7 +253,7 @@ func TestEngramExternalCommandMutationInvalidatesApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan.phases[1].Actions[0].Command = "/tmp/unapproved-command"
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if !errors.Is(err, ErrApprovalMismatch) {
 		t.Fatalf("error = %v", err)
 	}
@@ -246,7 +272,7 @@ func TestEngramApplyVerifiesLocalBeforeExternalAndReportsPendingReadiness(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	result, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,11 +312,11 @@ func TestExternallyManagedEngramProjectionWaitsForCodexSetup(t *testing.T) {
 	if got := phaseActions(plan.phases, ConsentReversibleLocal); len(got) != 0 {
 		t.Fatalf("Packy planned competing local projections: %#v", got)
 	}
-	if got := phaseActions(plan.phases, ConsentExecutableExternal); len(got) != 1 {
+	if got := phaseActions(plan.phases, ConsentToolHostSetup); len(got) != 1 {
 		t.Fatalf("external setup actions = %#v", got)
 	}
 
-	result, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	result, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +337,7 @@ func TestEngramCodexVerificationFailureRetriesSetupFromFreshRecoveryPlan(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if !errors.Is(err, ErrVerificationFailed) || store.state.Journal == nil || store.state.Journal.FailedAction != "verify-after-external" {
 		t.Fatalf("error=%v state=%+v", err, store.state)
 	}
@@ -320,7 +346,7 @@ func TestEngramCodexVerificationFailureRetriesSetupFromFreshRecoveryPlan(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !recovery.Recovery() || len(phaseActions(recovery.phases, ConsentExecutableExternal)) != 1 || recovery.ID() == plan.ID() {
+	if !recovery.Recovery() || len(phaseActions(recovery.phases, ConsentToolHostSetup)) != 1 || recovery.ID() == plan.ID() {
 		t.Fatalf("fresh recovery plan = %+v", recovery)
 	}
 }
@@ -336,7 +362,7 @@ func TestEngramStaleExecutableResolutionExecutesZeroActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if !errors.Is(err, ErrStalePlan) || !strings.Contains(err.Error(), "executable resolution changed") {
 		t.Fatalf("error = %v", err)
 	}
@@ -354,7 +380,7 @@ func TestEngramStaleIntentExecutesZeroActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	store.state.Intent.Revision = 9
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if !errors.Is(err, ErrStalePlan) || !strings.Contains(err.Error(), "intent revision changed") {
 		t.Fatalf("error = %v", err)
 	}
@@ -372,7 +398,7 @@ func TestEngramLocalFailureRunsNoExternalEffect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if err == nil || len(executor.actions) != 0 || len(store.saves) != 2 || store.state.Journal == nil || store.state.Journal.FailedAction != "instruction:engram-memory" || !reflect.DeepEqual(store.state.Journal.NotStarted(), []string{"mcp_server:engram", "external:engram:setup:codex"}) {
 		t.Fatalf("local failure facts/effects: err=%v external=%d saves=%d", err, len(executor.actions), len(store.saves))
 	}
@@ -386,7 +412,7 @@ func TestEngramExternalFailureStopsLaterActionsAndKeepsRecoveryFacts(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if err == nil || !strings.Contains(err.Error(), "later actions stopped") {
 		t.Fatalf("error = %v", err)
 	}
@@ -405,16 +431,16 @@ func TestEngramExternalFailureStopsLaterActionsAndKeepsRecoveryFacts(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(phaseActions(recovery.phases, ConsentReversibleLocal)) != 0 || len(phaseActions(recovery.phases, ConsentExecutableExternal)) != 1 {
+	if len(phaseActions(recovery.phases, ConsentReversibleLocal)) != 0 || len(phaseActions(recovery.phases, ConsentToolHostSetup)) != 1 {
 		t.Fatalf("recovery phases = %#v", recovery.phases)
 	}
 	if !recovery.Recovery() || recovery.ID() == historical.PlanID || !reflect.DeepEqual(*recovery.HistoricalAttempt(), historical) {
 		t.Fatalf("fresh recovery/history = recovery:%t id:%s history:%+v", recovery.Recovery(), recovery.ID(), recovery.HistoricalAttempt())
 	}
-	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: recovery, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true}); !errors.Is(err, ErrApprovalMismatch) {
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: recovery, Approvals: requiredApprovals(facade, plan), Interactive: true}); !errors.Is(err, ErrApprovalMismatch) {
 		t.Fatalf("old approval accepted by recovery: %v", err)
 	}
-	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: recovery, Approvals: []ApprovalReceipt{facade.Approve(recovery, ConsentExecutableExternal)}, Interactive: true}); err != nil {
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: recovery, Approvals: requiredApprovals(facade, recovery), Interactive: true}); err != nil {
 		t.Fatal(err)
 	}
 	if store.state.Journal != nil || len(store.state.Ownership) != 2 || store.state.Intent.Revision != revision || len(store.state.History) != 1 || !reflect.DeepEqual(store.state.History[0], historical) {
@@ -430,7 +456,7 @@ func TestEngramVerificationFailureDoesNotClaimOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if !errors.Is(err, ErrVerificationFailed) {
 		t.Fatalf("error = %v", err)
 	}
@@ -447,7 +473,7 @@ func TestEngramPostExternalVerificationFailurePersistsRecoveryFacts(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if !errors.Is(err, ErrVerificationFailed) {
 		t.Fatalf("error = %v", err)
 	}
@@ -465,7 +491,7 @@ func TestEngramConvergedActivationIsNoOpAfterExternalEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true}); err != nil {
+	if _, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true}); err != nil {
 		t.Fatal(err)
 	}
 	saves, calls := len(store.saves), len(executor.actions)

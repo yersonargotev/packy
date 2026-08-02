@@ -103,29 +103,44 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 	assertSmokePathExists(t, filepath.Join(home, ".local", "share", "packy", "bundle", "skills"), "init should create only the Installed Source substrate")
 	assertSmokeExternalCalls(t, externalLog, nil)
 
-	preview := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "activate", "addy", "--surface", "codex", "--dry-run")
-	if !strings.Contains(preview, "Activation dry-run plan") || !strings.Contains(preview, "Surface: codex") {
-		t.Fatalf("activation preview omitted explicit surface intent:\n%s", preview)
+	projectionPaths := map[string]string{
+		"codex":    filepath.Join(home, ".agents", "skills", "api-and-interface-design"),
+		"opencode": filepath.Join(home, ".agents", "skills", "api-and-interface-design"),
+		"claude":   filepath.Join(home, ".claude", "skills", "api-and-interface-design"),
 	}
-	for path, want := range legacy {
-		data, err := os.ReadFile(path)
-		if err != nil || string(data) != want {
-			t.Fatalf("activation preview changed legacy surface %s: %q, %v", path, data, err)
+	packID := "addy"
+	for _, surface := range []string{"codex", "opencode", "claude"} {
+		var observedReadOnlyCommands []string
+		if surface == "claude" {
+			observedReadOnlyCommands = []string{"claude --version"}
 		}
-	}
-	assertSmokeExternalCalls(t, externalLog, nil)
+		preview := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "activate", packID, "--surface", surface, "--dry-run")
+		if !strings.Contains(preview, "Activation dry-run plan") || !strings.Contains(preview, "Surface: "+surface) {
+			t.Fatalf("%s activation preview omitted explicit surface intent:\n%s", surface, preview)
+		}
+		for path, want := range legacy {
+			data, err := os.ReadFile(path)
+			if err != nil || string(data) != want {
+				t.Fatalf("%s activation preview changed legacy surface %s: %q, %v", surface, path, data, err)
+			}
+		}
+		assertSmokeExternalCalls(t, externalLog, observedReadOnlyCommands)
 
-	activation := runSmokeInteractiveCommand(t, binary, outsideCheckout, env, "y\n", "pack", "activate", "addy", "--surface", "codex")
-	if !strings.Contains(activation, "Verified plan") || !strings.Contains(activation, "Apply result facts: verified=yes") {
-		t.Fatalf("explicit activation did not report a verified Apply:\n%s", activation)
-	}
-	assertSmokePathExists(t, filepath.Join(home, ".agents", "skills", "api-and-interface-design"), "explicit activation should project the representative shared skill")
-	assertSmokeExternalCalls(t, externalLog, nil)
+		activation := runSmokeInteractiveCommand(t, binary, outsideCheckout, env, "y\n", "pack", "activate", packID, "--surface", surface)
+		if !strings.Contains(activation, "Verified plan") || !strings.Contains(activation, "Apply result facts: verified=yes") {
+			t.Fatalf("%s explicit activation did not report a verified Apply:\n%s", surface, activation)
+		}
+		assertSmokePathExists(t, projectionPaths[surface], "explicit activation should project the representative skill")
+		if surface == "claude" {
+			observedReadOnlyCommands = []string{"claude --version", "claude --version", "claude --version", "claude --version"}
+		}
+		assertSmokeExternalCalls(t, externalLog, observedReadOnlyCommands)
 
-	status := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "status", "addy", "--surface", "codex")
-	for _, want := range []string{"configured", "authorized", "usable"} {
-		if !strings.Contains(status, want) {
-			t.Fatalf("status did not report readiness dimension %q separately from Apply:\n%s", want, status)
+		status := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "status", packID, "--surface", surface)
+		for _, want := range []string{"configured", "authorized", "usable"} {
+			if !strings.Contains(status, want) {
+				t.Fatalf("%s status did not report readiness dimension %q separately from Apply:\n%s", surface, want, status)
+			}
 		}
 	}
 }

@@ -1,10 +1,8 @@
 {
-  "schema_version": 8,
-  "report": "pack-lifecycle-failure",
-  "stage": "apply",
-  "error": "projection write failed",
+  "schema_version": 9,
+  "report": "pack-lifecycle-apply",
   "plan": {
-    "schema_version": 8,
+    "schema_version": 9,
     "report": "pack-lifecycle-preview",
     "plan_id": "plan-example",
     "operation": "activate",
@@ -14,6 +12,7 @@
     "pack_version": "3.0.0",
     "surface": "claude",
     "intent_revision": 1,
+    "document_revision": 1,
     "contract": {
       "compatibility": "complete",
       "logical_resource_counts": {
@@ -100,6 +99,7 @@
     },
     "migrations": [],
     "retained_projections": [],
+    "shared_projections": [],
     "removed_contributors": {},
     "dry_run": true,
     "selection": {
@@ -148,6 +148,21 @@
       "next_command": "packy pack reconcile example-pack --surface codex"
     }
   },
-  "actions_executed": 1,
-  "approval_requested": true
+  "verified": true,
+  "projections": 1,
+  "readiness": {
+    "configured": {
+      "state": "known",
+      "value": true
+    },
+    "authorized": {
+      "state": "known",
+      "value": true
+    },
+    "usable": {
+      "state": "known",
+      "value": true
+    }
+  },
+  "pending_human_actions": []
 }

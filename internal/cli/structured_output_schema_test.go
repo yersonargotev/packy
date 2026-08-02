@@ -50,6 +50,13 @@ var structuredOutputV8Fixtures = map[string]string{
 	"pack-lifecycle-apply.json":   "pack-lifecycle.schema.json",
 	"pack-lifecycle-failure.json": "pack-lifecycle.schema.json",
 	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
+	"pack-status.json":            "pack-status.schema.json",
+}
+
+var structuredOutputV9Fixtures = map[string]string{
+	"pack-lifecycle-apply.json":   "pack-lifecycle.schema.json",
+	"pack-lifecycle-failure.json": "pack-lifecycle.schema.json",
+	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
 }
 
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
@@ -145,6 +152,18 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		}
 		if err := validateCanonicalOperatorOrder(fixture); err != nil {
 			t.Fatalf("v8 fixture %s canonical order: %v", fixtureName, err)
+		}
+	}
+	for fixtureName, schemaName := range structuredOutputV9Fixtures {
+		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v9", fixtureName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
+			t.Fatalf("v9 fixture %s: %v", fixtureName, err)
+		}
+		if err := validateCanonicalOperatorOrder(fixture); err != nil {
+			t.Fatalf("v9 fixture %s canonical order: %v", fixtureName, err)
 		}
 	}
 

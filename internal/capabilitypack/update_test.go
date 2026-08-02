@@ -217,14 +217,14 @@ func TestUpdateExternalPhasesUseTypedApprovalsAndStopAtBarrier(t *testing.T) {
 		t.Fatal(err)
 	}
 	phases := plan.Phases()
-	if len(phases) != 3 || phases[0].Kind != ConsentReversibleLocal || phases[1].Kind != ConsentExecutableExternal || phases[2].Kind != ConsentHostFollowUp {
+	if len(phases) != 4 || phases[0].Kind != ConsentReversibleLocal || phases[1].Kind != ConsentExecutableExternal || phases[2].Kind != ConsentToolHostSetup || phases[3].Kind != ConsentHostFollowUp {
 		t.Fatalf("phases = %+v", phases)
 	}
 	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
 	if !errors.Is(err, ErrApprovalMismatch) || len(store.saves) != 0 {
 		t.Fatalf("local-only approval err=%v saves=%d", err, len(store.saves))
 	}
-	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err = facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if err == nil || len(executor.actions) != 2 || len(adapter.actions) == 0 || store.state.Journal == nil || store.state.Journal.FailedAction != "external:engram:setup:codex" {
 		t.Fatalf("barrier err=%v external=%+v state=%+v", err, executor.actions, store.state)
 	}
@@ -250,7 +250,7 @@ func TestUpdateRejectsChangedExecutableResolutionWithZeroEffects(t *testing.T) {
 	facade.catalog.packs[0].Version = "2.0.0"
 	store.state = ActivationState{Intent: ActivationIntent{PackID: "engram", Surface: SurfaceCodex, Version: "1.0.0", Active: true, Revision: 2}}
 	plan, _ := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "engram", Surface: SurfaceCodex})
-	_, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal), facade.Approve(plan, ConsentExecutableExternal)}, Interactive: true})
+	_, err := facade.Apply(context.Background(), ApplyRequest{Plan: plan, Approvals: requiredApprovals(facade, plan), Interactive: true})
 	if !errors.Is(err, ErrStalePlan) || len(store.saves) != 0 || len(adapter.actions) != 0 || len(executor.actions) != 0 {
 		t.Fatalf("executable stale err=%v saves=%d local=%d external=%d", err, len(store.saves), len(adapter.actions), len(executor.actions))
 	}

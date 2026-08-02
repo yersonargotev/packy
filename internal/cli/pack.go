@@ -415,17 +415,6 @@ type outputRunner interface {
 	RunOutput(context.Context, string, ...string) (string, string, int, error)
 }
 
-func inspectHomebrewFormula(ctx context.Context, runner outputRunner, formula string) (engrambin.FormulaMetadata, error) {
-	stdout, stderr, exitCode, err := runner.RunOutput(ctx, "brew", "info", "--json=v2", formula)
-	if err != nil {
-		return engrambin.FormulaMetadata{}, fmt.Errorf("inspect Homebrew formula %s: exit=%d: %s: %w", formula, exitCode, strings.TrimSpace(stderr), err)
-	}
-	if exitCode != 0 {
-		return engrambin.FormulaMetadata{}, fmt.Errorf("inspect Homebrew formula %s: exit=%d: %s", formula, exitCode, strings.TrimSpace(stderr))
-	}
-	return engrambin.ParseHomebrewFormulaMetadata(formula, stdout)
-}
-
 type claudeRunner struct{ runner Runner }
 
 func (r claudeRunner) Run(ctx context.Context, command claudecode.Command) claudecode.Result {
@@ -610,6 +599,11 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 	}
 	for _, retained := range plan.RetainedProjections() {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Retained shared projection: %s <- %s (no rewrite)\n", retained.ID, strings.Join(retained.Contributors, ", ")); err != nil {
+			return err
+		}
+	}
+	for _, shared := range structured.SharedProjections {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Shared projection: %s key=%s discoverable_by=%s — %s\n", shared.ID, shared.ProjectionKey, joinSurfaces(shared.DiscoverableBy), shared.DiscoveryNotice); err != nil {
 			return err
 		}
 	}
@@ -868,7 +862,7 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		}
 	}
 	for _, projection := range entry.ProjectionDetails {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s target=%s owner=%s health=%s observed=%s desired=%s contributors=%s\n", projection.ID, projection.Target, projection.Owner, projection.Health, projection.ObservedFingerprint, projection.DesiredFingerprint, joinFacts(projection.Contributors)); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s target=%s owner=%s health=%s observed=%s desired=%s contributors=%s shared=%s discoverable_by=%s discovery_notice=%s\n", projection.ID, projection.Target, projection.Owner, projection.Health, projection.ObservedFingerprint, projection.DesiredFingerprint, joinFacts(projection.Contributors), yesNo(projection.Shared), joinSurfaces(projection.DiscoverableBy), factOrNone(projection.DiscoveryNotice)); err != nil {
 			return err
 		}
 	}
@@ -1074,10 +1068,6 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 	engramResolver := engrambin.NewResolver(snapshot.HomebrewPrefix(), opts.Runner.LookPath)
 	if opts.EngramFormulaInspector != nil {
 		engramResolver = engramResolver.WithFormulaInspector(opts.EngramFormulaInspector)
-	} else if runner, ok := opts.Runner.(outputRunner); ok {
-		engramResolver = engramResolver.WithFormulaInspector(func(ctx context.Context, formula string) (engrambin.FormulaMetadata, error) {
-			return inspectHomebrewFormula(ctx, runner, formula)
-		})
 	}
 	return packComposition{
 		catalog:    catalog,

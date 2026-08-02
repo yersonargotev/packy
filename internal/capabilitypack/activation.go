@@ -46,6 +46,7 @@ type ProjectionActionMode string
 const (
 	ConsentReversibleLocal        ConsentKind          = "reversible-local"
 	ConsentExecutableExternal     ConsentKind          = "executable-external"
+	ConsentToolHostSetup          ConsentKind          = "tool-host-setup"
 	ConsentHostFollowUp           ConsentKind          = "host-follow-up"
 	ConsentDestructiveCleanup     ConsentKind          = "destructive-cleanup"
 	OperationActivate             Operation            = "activate"
@@ -1395,7 +1396,20 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		plan.phases = append(plan.phases, PlanPhase{Kind: ConsentReversibleLocal, ApprovalRequired: true, Actions: append([]ProjectionAction(nil), actions...)})
 	}
 	if len(externalActions) > 0 {
-		plan.phases = append(plan.phases, PlanPhase{Kind: ConsentExecutableExternal, ApprovalRequired: true, Actions: append([]ProjectionAction(nil), externalActions...)})
+		var acquisitionActions, setupActions []ProjectionAction
+		for _, action := range externalActions {
+			if action.Consent == ConsentToolHostSetup {
+				setupActions = append(setupActions, action)
+			} else {
+				acquisitionActions = append(acquisitionActions, action)
+			}
+		}
+		if len(acquisitionActions) > 0 {
+			plan.phases = append(plan.phases, PlanPhase{Kind: ConsentExecutableExternal, ApprovalRequired: true, Actions: acquisitionActions})
+		}
+		if len(setupActions) > 0 {
+			plan.phases = append(plan.phases, PlanPhase{Kind: ConsentToolHostSetup, ApprovalRequired: true, Actions: setupActions})
+		}
 	}
 	if len(destructiveActions) > 0 {
 		plan.phases = append(plan.phases, PlanPhase{Kind: ConsentDestructiveCleanup, ApprovalRequired: true, Actions: append([]ProjectionAction(nil), destructiveActions...)})
@@ -1544,7 +1558,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		return ApplyResult{}, err
 	}
 	localActions := phaseActions(request.Plan.phases, ConsentReversibleLocal)
-	externalActions := phaseActions(request.Plan.phases, ConsentExecutableExternal)
+	externalActions := externalEffectActions(request.Plan.phases)
 	adapterExternalActions := make([]ProjectionAction, 0, len(externalActions))
 	for _, action := range externalActions {
 		if action.Kind != ActionExternalCommand {
@@ -2384,12 +2398,17 @@ func appendPhaseAction(phases []PlanPhase, kind ConsentKind, action ProjectionAc
 }
 
 func hasExternalCommand(phases []PlanPhase) bool {
-	for _, action := range phaseActions(phases, ConsentExecutableExternal) {
+	for _, action := range externalEffectActions(phases) {
 		if action.Kind == ActionExternalCommand {
 			return true
 		}
 	}
 	return false
+}
+
+func externalEffectActions(phases []PlanPhase) []ProjectionAction {
+	actions := phaseActions(phases, ConsentExecutableExternal)
+	return append(actions, phaseActions(phases, ConsentToolHostSetup)...)
 }
 
 func cloneOwnership(values []ProjectionOwnership) []ProjectionOwnership {
@@ -2881,7 +2900,7 @@ func (f Facade) externalPlan(pack Pack, surface Surface, state ActivationState, 
 			continue
 		}
 		setup := ProjectionAction{
-			ID: "external:" + resolution.Tool + ":setup:" + string(surface), Kind: ActionExternalCommand, Consent: ConsentExecutableExternal,
+			ID: "external:" + resolution.Tool + ":setup:" + string(surface), Kind: ActionExternalCommand, Consent: ConsentToolHostSetup,
 			Source: resolution.Path, Version: resolution.AcquisitionVersion, Command: resolution.Path, Args: []string{"setup", string(surface)},
 			Description:    fmt.Sprintf("run %s setup %s", resolution.Path, surface),
 			Consequences:   fmt.Sprintf("allows %s to mutate the %s host configuration for its tool-owned setup", resolution.Tool, surfaceDisplayName(surface)),

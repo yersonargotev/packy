@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v8/pack-lifecycle.schema.json",
-  "title": "Packy capability-pack lifecycle reports v8",
+  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v9/pack-lifecycle.schema.json",
+  "title": "Packy capability-pack lifecycle reports v9",
   "$defs": {
     "action": {
       "type": "object",
@@ -120,6 +120,7 @@
         "pack_version",
         "surface",
         "intent_revision",
+        "document_revision",
         "selection",
         "contract",
         "aliases",
@@ -138,6 +139,7 @@
         "contract_diff",
         "migrations",
         "retained_projections",
+        "shared_projections",
         "removed_contributors",
         "dry_run",
         "resource_graph",
@@ -145,7 +147,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": 8
+          "const": 9
         },
         "report": {
           "const": "pack-lifecycle-preview"
@@ -186,6 +188,10 @@
           ]
         },
         "intent_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "document_revision": {
           "type": "integer",
           "minimum": 0
         },
@@ -458,6 +464,37 @@
                 "items": {
                   "type": "string"
                 }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "shared_projections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "projection_key",
+              "discoverable_by",
+              "discovery_notice"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "projection_key": {
+                "type": "string"
+              },
+              "discoverable_by": {
+                "type": ["array", "null"],
+                "items": {
+                  "enum": ["codex", "opencode", "claude"]
+                },
+                "uniqueItems": true
+              },
+              "discovery_notice": {
+                "type": "string"
               }
             },
             "additionalProperties": false
@@ -908,7 +945,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": 8
+          "const": 9
         },
         "report": {
           "const": "pack-lifecycle-apply"
@@ -945,7 +982,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": 8
+          "const": 9
         },
         "report": {
           "const": "pack-lifecycle-failure"

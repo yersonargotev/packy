@@ -12,7 +12,6 @@
     "pack_version": "3.0.0",
     "surface": "claude",
     "intent_revision": 1,
-    "document_revision": 1,
     "contract": {
       "compatibility": "complete",
       "logical_resource_counts": {
@@ -99,7 +98,6 @@
     },
     "migrations": [],
     "retained_projections": [],
-    "shared_projections": [],
     "removed_contributors": {},
     "dry_run": true,
     "selection": {
