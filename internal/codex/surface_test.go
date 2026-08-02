@@ -90,7 +90,7 @@ enabled = true
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(observed.Projections) != 5 {
+	if len(observed.Projections) != 7 {
 		t.Fatalf("projections = %#v", observed.Projections)
 	}
 	for _, projection := range observed.Projections {
@@ -102,8 +102,8 @@ enabled = true
 		name, id, config, instructions, compact string
 	}{
 		{"mcp args", "mcp", strings.Replace(configContent, `["mcp", "--tools=agent"]`, `["mcp"]`, 1), string(instructionsGolden), string(compactGolden)},
-		{"instructions", "instructions", configContent, "incomplete", string(compactGolden)},
-		{"compact prompt", "compact-prompt", configContent, string(instructionsGolden), "incomplete"},
+		{"instructions", "instructions-file", configContent, "incomplete", string(compactGolden)},
+		{"compact prompt", "compact-file", configContent, string(instructionsGolden), "incomplete"},
 		{"marketplace", "marketplace", strings.Replace(configContent, `ref = "main"`, `ref = "other"`, 1), string(instructionsGolden), string(compactGolden)},
 		{"plugin", "plugin", strings.Replace(configContent, `enabled = true`, `enabled = false`, 1), string(instructionsGolden), string(compactGolden)},
 	} {
@@ -147,8 +147,11 @@ mkdir -p "$HOME/.codex"
 cp "$ENGRAM_INSTRUCTIONS_GOLDEN" "$HOME/.codex/engram-instructions.md"
 cp "$ENGRAM_COMPACT_GOLDEN" "$HOME/.codex/engram-compact-prompt.md"
 cat > "$HOME/.codex/config.toml" <<EOF
+model = "keep-me"
 model_instructions_file = "$HOME/.codex/engram-instructions.md"
 experimental_compact_prompt_file = "$HOME/.codex/engram-compact-prompt.md"
+[mcp_servers.keep]
+command = "keep"
 [mcp_servers.engram]
 command = "$0"
 args = ["mcp", "--tools=agent"]
@@ -178,6 +181,35 @@ EOF
 	for _, projection := range observed.Projections {
 		if projection.ObservedFingerprint != projection.DesiredFingerprint {
 			t.Fatalf("external boundary contract mismatch: %+v", projection)
+		}
+	}
+	removal, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack, Desired: capabilitypack.Pack{ID: "remaining"}, ResolvedExecutables: []capabilitypack.ExecutableResolution{{Tool: "engram", Available: true, Path: engram}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removal.Projections) != 7 {
+		t.Fatalf("external reversal candidates = %#v", removal.Projections)
+	}
+	if err := adapter.ApplyProjections(context.Background(), projectionActions(removal.Projections)); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := os.ReadFile(filepath.Join(codexDir, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`model = "keep-me"`, "[mcp_servers.keep]", `command = "keep"`} {
+		if !strings.Contains(string(updated), want) {
+			t.Fatalf("Codex config lost unrelated contribution %q:\n%s", want, updated)
+		}
+	}
+	for _, removed := range []string{"model_instructions_file", "experimental_compact_prompt_file", "[mcp_servers.engram]", "[marketplaces.engram]", `[plugins."engram@engram"]`} {
+		if strings.Contains(string(updated), removed) {
+			t.Fatalf("receipt-backed Codex contribution %q remains:\n%s", removed, updated)
+		}
+	}
+	for _, removedFile := range []string{"engram-instructions.md", "engram-compact-prompt.md"} {
+		if _, err := os.Stat(filepath.Join(codexDir, removedFile)); !os.IsNotExist(err) {
+			t.Fatalf("receipt-backed Codex file %q remains: %v", removedFile, err)
 		}
 	}
 }

@@ -90,6 +90,16 @@ func (a *SurfaceAdapter) inspectReadiness(_ context.Context, pack capabilitypack
 func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
 	var projections []capabilitypack.ObservedProjection
 	var revisionParts []string
+	if hasEngramOpenCodeSetupResources(pack) {
+		external, err := a.inspectEngramSetupContract()
+		if err != nil {
+			return capabilitypack.SurfaceInspection{}, err
+		}
+		projections = append(projections, external...)
+		for _, projection := range external {
+			revisionParts = append(revisionParts, projection.ID+"="+projection.ExactFingerprint)
+		}
+	}
 	desiredConfig := ""
 	configLoaded := false
 	for _, resource := range pack.Resources {
@@ -300,6 +310,25 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 		}
 		mode := capabilitypack.ProjectionRemoveContent
 		projection.Action.Content = ""
+		if projection.ExternallyManaged {
+			switch strings.TrimPrefix(projection.ID, "external_setup:engram:opencode:") {
+			case "plugin":
+				mode = capabilitypack.ProjectionDeleteTarget
+			case "tui-plugin":
+				content, readErr := readExternalSetupFile(projection.Action.Target)
+				if readErr != nil {
+					return capabilitypack.SurfaceInspection{}, readErr
+				}
+				content, err = removeTopLevelStringArrayEntry(content, "plugin", openCodeSubagentStatuslinePlugin)
+				if err != nil {
+					return capabilitypack.SurfaceInspection{}, err
+				}
+				projection.Action.Content = content
+			}
+			projection = capabilitypack.RemovalCandidate(projection, mode, projection.Action.Content, fmt.Sprintf("remove exact receipt-backed OpenCode Engram setup contribution %s", projection.ID))
+			result.Projections = append(result.Projections, projection)
+			continue
+		}
 		switch projection.Action.Kind {
 		case capabilitypack.ActionOpenCodeSkillLink, capabilitypack.ActionOpenCodeInstructionFile, capabilitypack.ActionOpenCodeAgentFile, capabilitypack.ActionOpenCodeCommandFile, capabilitypack.ActionOpenCodeAssetFile:
 			mode = capabilitypack.ProjectionDeleteTarget

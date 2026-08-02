@@ -579,6 +579,20 @@ enabled = true
 			}
 		}
 	}
+	openCodeKey := engram + " setup opencode"
+	runner.after[openCodeKey] = func() {
+		dir := filepath.Join(env["XDG_CONFIG_HOME"], "opencode")
+		pluginDir := filepath.Join(dir, "plugins")
+		if err := os.MkdirAll(pluginDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(pluginDir, "engram.ts"), []byte("// sandboxed Engram OpenCode plugin\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "tui.json"), []byte("{\n  \"plugin\": [\"opencode-subagent-statusline\"]\n}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {

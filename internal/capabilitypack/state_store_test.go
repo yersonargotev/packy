@@ -82,6 +82,47 @@ func TestFileActivationStoreRoundTripsCanonicalProviderChoicesAndRole(t *testing
 	}
 }
 
+func TestFileActivationStorePreservesLegacyFingerprintWithoutInventingReceipt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "packs.json")
+	legacy := `{"schema_version":5,"revision":1,"activations":[{"schema_version":3,"intent":{"pack_id":"engram","surface":"codex","version":"1","active":true,"revision":1,"aliases":[],"selection":{"mode":"all","roots":[]}},"external_effects":[{"id":"external:engram:setup:codex","fingerprint":"legacy-only"}]}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := NewFileActivationStore(path).Load(context.Background(), SurfaceCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.External) != 1 || state.External[0].Receipt != nil {
+		t.Fatalf("legacy fingerprint acquired reversal authority: %#v", state.External)
+	}
+}
+
+func TestFileActivationStoreRoundTripsCanonicalExternalReceipt(t *testing.T) {
+	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
+	state := ActivationState{Intent: ActivationIntent{PackID: "engram", Surface: SurfaceCodex, Version: "1", Active: true, Revision: 1}, External: []ExternalEffect{{
+		ID: "external:engram:setup:codex", Fingerprint: "sealed", Receipt: &ExternalEffectReceipt{
+			SchemaVersion: 1, EffectID: "external:engram:setup:codex", EffectFingerprint: "sealed", Surface: SurfaceCodex,
+			Contributors:  []string{"surface:codex:pack:engram:external:engram"},
+			Contributions: []ExternalContribution{{ID: "external_setup:engram:codex:mcp", ObservedFingerprint: "exact", AdapterProvenance: "codex-engram-setup/v1/mcp"}},
+			Reversal:      ExternalReversalContract{SchemaVersion: 1, Consent: ConsentDestructiveCleanup, AuthorityLimits: []string{"configuration only"}},
+		},
+	}}}
+	if err := store.Save(context.Background(), SurfaceCodex, 0, state); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(context.Background(), SurfaceCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.External) != 1 || loaded.External[0].Receipt == nil || loaded.External[0].Receipt.Reversal.Consent != ConsentDestructiveCleanup {
+		t.Fatalf("receipt round trip = %#v", loaded.External)
+	}
+	loaded.External[0].Receipt.SchemaVersion = 99
+	if err := store.Save(context.Background(), SurfaceCodex, loaded.Intent.Revision, loaded); err == nil || !strings.Contains(err.Error(), "unsupported receipt schema") {
+		t.Fatalf("future receipt schema error = %v", err)
+	}
+}
+
 func TestFileActivationStoreRejectsInvalidAliases(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
