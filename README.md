@@ -26,6 +26,15 @@ packy pack activate engram --surface codex
 packy pack status engram --surface codex
 ```
 
+To activate only selected resource roots, repeat `--resource` for the roots the
+surface should receive, preview the dependency closure, and then apply the same
+selection explicitly:
+
+```sh
+packy pack activate <pack> --surface codex --resource <kind>:<id> --dry-run
+packy pack activate <pack> --surface codex --resource <kind>:<id>
+```
+
 `packy init` is required for Homebrew/GitHub Release installs because package
 managers install the binary only. It prepares Packy's Installed Source at
 `~/.local/share/packy` and causes no CLI-surface changes. Catalog discovery is
