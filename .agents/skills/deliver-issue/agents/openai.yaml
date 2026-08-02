@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deliver Issue"
+  short_description: "Deliver an approved Packy issue conventionally."
+  default_prompt: "Use $deliver-issue to deliver approved Packy issue #123 through review, CI, merge, and cleanup."
