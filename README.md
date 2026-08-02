@@ -60,6 +60,7 @@ packy pack activate <pack> --surface <surface>
 packy pack update <pack> --surface <surface> --dry-run
 packy pack status <pack> --surface <surface>
 packy pack deactivate <pack> --surface <surface> --dry-run
+packy pack deactivate <pack> --surface <surface>
 ```
 
 ## Capability packs
