@@ -13,6 +13,10 @@
 
 Issues are tracked in GitHub through the `gh` CLI; external pull requests are not a triage surface. See `docs/agents/issue-tracker.md`.
 
+Explicit requests to deliver one approved issue end to end use the project-local
+`.agents/skills/deliver-issue` gate and its canonical
+`workflows/issue-delivery.md` contract.
+
 ### Triage labels
 
 Canonical triage roles map to the repository's existing status vocabulary. See `docs/agents/triage-labels.md`.

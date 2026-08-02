@@ -15,9 +15,9 @@
 
 ## Canonical loops
 
-- **Issue delivery**: qualify locally, optionally diagnose uncertain bugs, then
-  repeat a local `implement -> code-review` loop whose review covers only the
-  preceding implementation delta; after local proof, create the PR, wait for
-  green CI, merge, and clean up.
+- **Issue delivery**: on an explicit request for one approved issue, qualify and
+  optionally diagnose it, implement with proportional local review, build and
+  exercise the Packy binary manually, then open a ready PR for required CI and
+  complete final Standards + Spec review before protected merge and cleanup.
 - **Release**: publication of a verified `main` commit through the existing
   `release-packy` gate.
