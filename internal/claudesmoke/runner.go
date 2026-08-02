@@ -507,11 +507,7 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 	e.Assertions.NoActivationStateAfterInitialization = e.Assertions.InitializationCausedNoSurfaceChange
 	claudeInvocations := readClaudeInvocations(claudeLog)
 	e.Commands = append(e.Commands, claudeInvocations...)
-	e.Assertions.NoClaudeMutationOperations = len(claudeInvocations) > 0
-	for _, invocation := range claudeInvocations {
-		e.Assertions.NoClaudeMutationOperations = e.Assertions.NoClaudeMutationOperations &&
-			reflect.DeepEqual(invocation, CommandEvidence{Name: "claude", Args: []string{"version"}, ExitCode: 0})
-	}
+	e.Assertions.NoClaudeMutationOperations = onlyClaudeVersionInvocations(claudeInvocations)
 	redacted := true
 	for _, command := range e.Commands {
 		redacted = redacted && !strings.Contains(command.Stdout, fixture.Sensitive) && !strings.Contains(command.Stderr, fixture.Sensitive)
@@ -550,7 +546,10 @@ func surfacesPreservedWithoutActivation(fixture workstationFixture, sandbox stri
 }
 
 func claudeVersionOnly(claudeLog string) bool {
-	invocations := readClaudeInvocations(claudeLog)
+	return onlyClaudeVersionInvocations(readClaudeInvocations(claudeLog))
+}
+
+func onlyClaudeVersionInvocations(invocations []CommandEvidence) bool {
 	if len(invocations) == 0 {
 		return false
 	}
@@ -826,10 +825,8 @@ func ValidateEvidence(e Evidence) error {
 			return errors.New("removed root command did not fail as unknown")
 		}
 	}
-	for _, normalizedClaude := range e.Commands[len(want):] {
-		if normalizedClaude.Name != "claude" || normalizedClaude.ExitCode != 0 || !reflect.DeepEqual(normalizedClaude.Args, []string{"version"}) {
-			return errors.New("unsafe normalized Claude operation")
-		}
+	if !onlyClaudeVersionInvocations(e.Commands[len(want):]) {
+		return errors.New("unsafe normalized Claude operation")
 	}
 	if e.RequestedClaudeVersion != ExactFloor && e.RequestedClaudeVersion != "stable" {
 		return errors.New("unsafe Claude selector evidence")
