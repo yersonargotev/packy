@@ -127,23 +127,43 @@ func TestPackageInstallSmokeRequiresExplicitPackActivation(t *testing.T) {
 		assertSmokeExternalCalls(t, externalLog, observedReadOnlyCommands)
 
 		activation := runSmokeInteractiveCommand(t, binary, outsideCheckout, env, "y\n", "pack", "activate", packID, "--surface", surface)
-		if !strings.Contains(activation, "Verified plan") || !strings.Contains(activation, "Apply result facts: verified=yes") {
+		if !strings.Contains(activation, "Verified plan") || !strings.Contains(activation, "Apply result facts: verified=yes projections=") {
 			t.Fatalf("%s explicit activation did not report a verified Apply:\n%s", surface, activation)
 		}
 		assertSmokePathExists(t, projectionPaths[surface], "explicit activation should project the representative skill")
+		assertSmokeProjectionMatchesSource(t, projectionPaths[surface], home)
 		if surface == "claude" {
 			observedReadOnlyCommands = []string{"claude --version", "claude --version", "claude --version", "claude --version"}
 		}
 		assertSmokeExternalCalls(t, externalLog, observedReadOnlyCommands)
 
 		status := runSmokeCommand(t, binary, outsideCheckout, env, "pack", "status", packID, "--surface", surface)
-		for _, want := range []string{"configured", "authorized", "usable"} {
-			if !strings.Contains(status, want) {
-				t.Fatalf("%s status did not report readiness dimension %q separately from Apply:\n%s", surface, want, status)
-			}
+		wantReadiness := map[string]string{
+			"codex":    "Readiness: configured=yes, authorized=no, usable=unknown",
+			"opencode": "Readiness: configured=yes, authorized=no, usable=unknown",
+			"claude":   "Readiness: configured=yes, authorized=unknown, usable=unknown",
+		}[surface]
+		if !strings.Contains(status, wantReadiness) {
+			t.Fatalf("%s status did not report expected readiness separately from Apply:\n%s", surface, status)
 		}
 	}
 }
+
+func assertSmokeProjectionMatchesSource(t *testing.T, projection, home string) {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(projection, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read representative projection: %v", err)
+	}
+	want, err := os.ReadFile(filepath.Join(home, ".local", "share", "packy", "bundle", "history", "addy", "1.1.0", "skills", "api-and-interface-design", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read representative Installed Source skill: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Fatal("representative projection content does not match the Installed Source")
+	}
+}
+
 func buildLocalReleaseBinary(t *testing.T, root, sandbox, version string) string {
 	t.Helper()
 	binary := filepath.Join(sandbox, "packy")

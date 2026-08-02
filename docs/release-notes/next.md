@@ -12,6 +12,21 @@ manually before using this release. Packy will neither read nor delete old
 classic state, prompts, links, MCP configuration, or ownership records; any
 leftovers are unowned and normal collision protections preserve them.
 
+Perform the cleanup before replacing the old binary:
+
+1. Inspect the removed classic state at `~/.packy/config.json`; use its
+   historical `managed_skills`, created-container, and Claude ownership records
+   as the inventory of the removed installation.
+2. Remove only the exact skill links and empty containers recorded there. Do
+   not remove foreign, modified, or contributor-owned files.
+3. Remove only Packy's classic marked blocks from `~/.codex/AGENTS.md` and
+   `~/.claude/CLAUDE.md`; remove the Packy prompt reference from
+   `$XDG_CONFIG_HOME/opencode/opencode.json` and its referenced `packy.md` file.
+4. Remove classic Packy-owned Claude hooks and user-scoped MCP entries recorded
+   by the old state, while preserving unrelated Claude and Engram data.
+5. After confirming those recorded artifacts are gone, archive or remove the
+   historical `~/.packy/config.json`. Do not infer new activations from it.
+
 After manual cleanup, install or upgrade the binary and start fresh:
 
 ```sh

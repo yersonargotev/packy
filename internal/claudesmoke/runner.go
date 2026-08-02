@@ -468,21 +468,19 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 			e.Assertions.RemovedUpdateRejected = true
 		case phaseRemovedUninstall:
 			e.Assertions.RemovedUninstallRejected = true
-			e.Assertions.InitializationCausedNoSurfaceChange = initializationPreserved(lc.Workstation, sandbox, claudeLog)
+			e.Assertions.InitializationCausedNoSurfaceChange = initializationPreserved(lc.Workstation, sandbox, claudeLog, e.Before)
 		case phaseActivationPreview:
 			projection := filepath.Join(sandbox, "home", ".claude", "skills", "api-and-interface-design")
 			_, projectionErr := os.Lstat(projection)
 			e.Assertions.ActivationPreviewCausedNoChange = strings.Contains(ce.Stdout, "Activation dry-run plan") &&
 				strings.Contains(ce.Stdout, "Surface: claude") && os.IsNotExist(projectionErr) &&
-				surfacesPreservedWithoutActivation(lc.Workstation, sandbox) && claudeVersionOnly(claudeLog)
+				surfacesPreservedWithoutActivation(lc.Workstation, sandbox, e.Before) && claudeVersionOnly(claudeLog)
 		case phaseActivationApply:
-			projection := filepath.Join(sandbox, "home", ".claude", "skills", "api-and-interface-design")
-			_, projectionErr := os.Lstat(projection)
-			e.Assertions.RepresentativePackActivated = projectionErr == nil && strings.Contains(ce.Stdout, "Verified plan") &&
-				strings.Contains(ce.Stdout, "Apply result facts: verified=yes")
+			e.Assertions.RepresentativePackActivated = addyProjectionMatchesInstalledSource(sandbox) &&
+				strings.Contains(ce.Stdout, "Verified plan") &&
+				strings.Contains(ce.Stdout, "Apply result facts: verified=yes projections=")
 		case phasePackStatus:
-			e.Assertions.ReadinessInspectedSeparately = strings.Contains(ce.Stdout, "configured") &&
-				strings.Contains(ce.Stdout, "authorized") && strings.Contains(ce.Stdout, "usable")
+			e.Assertions.ReadinessInspectedSeparately = strings.Contains(ce.Stdout, "Readiness: configured=yes, authorized=unknown, usable=unknown")
 		}
 	}
 
@@ -522,12 +520,12 @@ func executeCoreCutover(ctx context.Context, e Evidence, lc coreCutoverContext) 
 	return e, nil
 }
 
-func initializationPreserved(fixture workstationFixture, sandbox, claudeLog string) bool {
-	return surfacesPreservedWithoutActivation(fixture, sandbox) &&
+func initializationPreserved(fixture workstationFixture, sandbox, claudeLog string, before []FileEvidence) bool {
+	return surfacesPreservedWithoutActivation(fixture, sandbox, before) &&
 		reflect.DeepEqual(readClaudeInvocations(claudeLog), []CommandEvidence{{Name: "claude", Args: []string{"version"}, ExitCode: 0}})
 }
 
-func surfacesPreservedWithoutActivation(fixture workstationFixture, sandbox string) bool {
+func surfacesPreservedWithoutActivation(fixture workstationFixture, sandbox string, before []FileEvidence) bool {
 	for path, want := range map[string][]byte{
 		fixture.ClassicStatePath: fixture.ClassicState,
 		fixture.InstructionPath:  fixture.Instruction,
@@ -542,7 +540,31 @@ func surfacesPreservedWithoutActivation(fixture workstationFixture, sandbox stri
 	if _, err := os.Stat(filepath.Join(sandbox, "home", ".packy", "packs.json")); !os.IsNotExist(err) {
 		return false
 	}
-	return true
+	after, err := Manifest(sandbox)
+	return err == nil && reflect.DeepEqual(surfaceManifest(before), surfaceManifest(after))
+}
+
+func surfaceManifest(items []FileEvidence) []FileEvidence {
+	prefixes := []string{"home/.codex", "config/opencode", "home/.claude", "home/.claude.json", "home/.agents/skills"}
+	result := make([]FileEvidence, 0, len(items))
+	for _, item := range items {
+		for _, prefix := range prefixes {
+			if item.Path == prefix || strings.HasPrefix(item.Path, prefix+"/") {
+				result = append(result, item)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func addyProjectionMatchesInstalledSource(sandbox string) bool {
+	projection, err := os.ReadFile(filepath.Join(sandbox, "home", ".claude", "skills", "api-and-interface-design", "SKILL.md"))
+	if err != nil {
+		return false
+	}
+	source, err := os.ReadFile(filepath.Join(sandbox, "installed-source", "bundle", "history", "addy", "1.1.0", "skills", "api-and-interface-design", "SKILL.md"))
+	return err == nil && bytes.Equal(projection, source)
 }
 
 func claudeVersionOnly(claudeLog string) bool {

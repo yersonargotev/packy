@@ -25,6 +25,9 @@ func TestIssue422OperatorPathsTeachInitializationThenExplicitActivation(t *testi
 		"docs/release-notes/next.md": {
 			"cutover is intentionally incompatible",
 			"must remove the old installation's classic artifacts manually",
+			"historical `managed_skills`, created-container, and Claude ownership records",
+			"`~/.codex/AGENTS.md` and `~/.claude/CLAUDE.md`",
+			"`$XDG_CONFIG_HOME/opencode/opencode.json`",
 			"packy init",
 			"packy pack activate engram --surface codex",
 		},

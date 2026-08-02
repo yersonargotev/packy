@@ -349,6 +349,48 @@ func TestManifestDeterministicAndContentBound(t *testing.T) {
 	}
 }
 
+func TestSurfaceManifestCoversEverySupportedAndSharedTarget(t *testing.T) {
+	items := []FileEvidence{
+		{Path: "home/.codex/AGENTS.md"},
+		{Path: "config/opencode/opencode.json"},
+		{Path: "home/.claude/CLAUDE.md"},
+		{Path: "home/.claude.json"},
+		{Path: "home/.agents/skills/example/SKILL.md"},
+		{Path: "home/.packy/config.json"},
+	}
+	got := surfaceManifest(items)
+	if len(got) != 5 {
+		t.Fatalf("surface manifest = %#v", got)
+	}
+	changed := append(append([]FileEvidence(nil), got...), FileEvidence{Path: "home/.codex/new-surface-file"})
+	if reflect.DeepEqual(got, surfaceManifest(changed)) {
+		t.Fatal("surface manifest ignored a newly created Codex artifact")
+	}
+}
+
+func TestAddyProjectionMatchesInstalledSourceContent(t *testing.T) {
+	root := t.TempDir()
+	projection := filepath.Join(root, "home", ".claude", "skills", "api-and-interface-design", "SKILL.md")
+	source := filepath.Join(root, "installed-source", "bundle", "history", "addy", "1.1.0", "skills", "api-and-interface-design", "SKILL.md")
+	for _, path := range []string{projection, source} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("expected Addy skill\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !addyProjectionMatchesInstalledSource(root) {
+		t.Fatal("matching representative projection was rejected")
+	}
+	if err := os.WriteFile(projection, []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if addyProjectionMatchesInstalledSource(root) {
+		t.Fatal("mismatched representative projection was accepted")
+	}
+}
+
 func TestValidationFailureStillWritesDiagnosticEvidence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "evidence.json")
 	evidence := validEvidence()
