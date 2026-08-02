@@ -22,9 +22,8 @@ usability recommendation, not a timing gate or a second validation authority.
 
 This research does not propose a canonical receipt schema, JSON snapshot,
 candidate digest, result reuse lifecycle, or additional validation authority.
-Packy Delivery continues to own the candidate-bound exhaustive-validation
-receipt; Packy owns only its observable validator command, phases, output, and
-exit status.
+Packy owns the observable validator command, phases, output, and exit status;
+protected-branch CI binds those results to the pull-request candidate.
 
 ## Method and definitions
 

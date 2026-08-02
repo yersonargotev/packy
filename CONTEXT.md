@@ -101,6 +101,12 @@ time.
 A confirmed, unclassifiable, missing, failed, or stale disagreement between the
 governance expected-state contract and a governance observation.
 
+### Issue delivery
+The protected pull-request path for Packy changes. An approved issue provides
+the change authority; required CI, traceable Standards and Spec review, and
+resolved conversations protect integration. Release publication retains its
+separate workflow and authority.
+
 ### Installer/configurator
 Packy's v0 product shape: a tool that installs and configures Codex/OpenCode with the right skills, Engram memory hooks, and delegation conventions, rather than an active runtime orchestrator present in every agent session.
 
