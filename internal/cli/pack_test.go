@@ -2142,7 +2142,7 @@ func TestPackReconcileRepairRestoresOnlyTargetedReadinessPair(t *testing.T) {
 	}
 }
 
-func TestPackReconcileExternalConsentStopsOnCancellation(t *testing.T) {
+func TestPackReconcileCannotAcquireMissingExecutable(t *testing.T) {
 	seed := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _, runner := engramActivationOptions(t, seed)
 	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex"); err != nil {
@@ -2155,18 +2155,18 @@ func TestPackReconcileExternalConsentStopsOnCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner.path = map[string]string{}
-	terminal := &fakeTerminal{interactive: true, answers: []bool{false}}
+	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts.Terminal = terminal
 	beforeState := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
 	beforeCalls := len(runner.calls)
 	out, err := executeCommand(t, NewRootCommand(opts), "pack", "reconcile", "engram", "--surface", "codex")
 	if err == nil {
-		t.Fatalf("cancelled reconcile succeeded:\n%s", out)
+		t.Fatalf("blocked reconcile succeeded:\n%s", out)
 	}
-	if len(terminal.prompts) != 1 || !strings.Contains(terminal.prompts[0], "executable-external") {
-		t.Fatalf("external consent prompt missing: %v\n%s", terminal.prompts, out)
+	if len(terminal.prompts) != 0 || !strings.Contains(out, "executable acquisition requires an explicit activation or update") {
+		t.Fatalf("reconcile acquisition authority = prompts:%v\n%s", terminal.prompts, out)
 	}
 	if exists(filepath.Join(home, ".codex", "config.toml")) || len(runner.calls) != beforeCalls || readFileString(t, filepath.Join(home, ".packy", "packs.json")) != beforeState {
-		t.Fatal("cancellation before Apply caused local, external, or state effects")
+		t.Fatal("blocked reconcile caused local, external, or state effects")
 	}
 }
