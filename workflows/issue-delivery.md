@@ -137,6 +137,14 @@ proportional local review is clean, the working tree is clean, and canonical
 repository validation plus the applicable manual verification pass on the exact
 candidate commit.
 
+## Final candidate proof
+
+Whenever a later phase requires repeating **final candidate proof**, run focused
+proof for the changed surface, the applicable manual verification, canonical
+repository validation, remote CI, and both complete final review axes on the
+new exact HEAD. No result bound to an earlier candidate satisfies this
+invariant.
+
 ## Pull request and final review
 
 After local proof succeeds, push the issue branch without rewriting history and
@@ -153,8 +161,7 @@ source. Both bind their result to the exact pull-request HEAD.
 
 The primary agent adjudicates every finding. Accepted findings are repaired in
 new commits; pushed history is never rewritten. Any candidate change requires
-focused proof, applicable manual verification, canonical repository validation,
-remote CI, and both complete final review axes to pass again on the new HEAD.
+final candidate proof on the new HEAD.
 
 Publish one compact pull-request comment for the final HEAD containing its SHA,
 the Standards and Spec results, acceptance-criteria coverage, canonical
@@ -189,9 +196,8 @@ If `main` advances but GitHub still reports the pull request mergeable and does
 not require an update, do not create an unnecessary synchronization commit. If
 branch protection requires the branch to be current, merge the fetched
 `origin/main` into the issue branch. Never rebase or force-push published
-history. Treat the resulting commit as a new candidate and repeat focused
-proof, applicable manual verification, canonical validation, remote CI, and
-both final review axes.
+history. Treat the resulting commit as a new candidate and repeat final
+candidate proof.
 
 Merge through branch protection using a merge method currently enabled by the
 repository. Do not bypass a gate, use administrator override, or merge a SHA
