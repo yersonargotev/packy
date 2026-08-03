@@ -1485,6 +1485,80 @@ func TestPackUpdateRendersVersionsAndRetainedSharedResourcesOnBothSurfaces(t *te
 	}
 }
 
+func TestMattyThreeToFourUpdateRemovesOwnedInstructionsThroughEveryProductionAdapter(t *testing.T) {
+	for _, tc := range []struct {
+		surface     string
+		instruction func(string) []string
+		skill       func(string) string
+	}{
+		{
+			surface: "claude",
+			instruction: func(home string) []string {
+				return []string{filepath.Join(home, ".claude", "CLAUDE.md")}
+			},
+			skill: func(home string) string { return filepath.Join(home, ".claude", "skills", "ask-matt") },
+		},
+		{
+			surface: "codex",
+			instruction: func(home string) []string {
+				return []string{filepath.Join(home, ".codex", "AGENTS.md")}
+			},
+			skill: func(home string) string { return filepath.Join(home, ".agents", "skills", "ask-matt") },
+		},
+		{
+			surface: "opencode",
+			instruction: func(home string) []string {
+				return []string{
+					filepath.Join(home, "xdg", "opencode", "packy.md"),
+					filepath.Join(home, "xdg", "opencode", "matty-workflow-conventions.md"),
+					filepath.Join(home, "xdg", "opencode", "opencode.json"),
+				}
+			},
+			skill: func(home string) string { return filepath.Join(home, ".agents", "skills", "ask-matt") },
+		},
+	} {
+		t.Run(tc.surface, func(t *testing.T) {
+			terminal := &fakeTerminal{interactive: true, approve: true}
+			opts, home, repoRoot := legacyMattyActivationOptions(t, terminal)
+			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", tc.surface); err != nil {
+				t.Fatalf("seed Matty 3.0.0: %v\n%s", err, out)
+			}
+			opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(repoRoot, "bundle", "skills")
+
+			preview, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", tc.surface, "--dry-run")
+			if err != nil {
+				t.Fatalf("preview Matty 4.0.0: %v\n%s", err, preview)
+			}
+			for _, want := range []string{"Version: 3.0.0 -> 4.0.0", "Phase: destructive-cleanup", "matty-guidance", "matty-workflow-conventions"} {
+				if !strings.Contains(preview, want) {
+					t.Fatalf("update preview missing %q:\n%s", want, preview)
+				}
+			}
+
+			updated, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", tc.surface)
+			if err != nil || !strings.Contains(updated, "Verified plan") {
+				t.Fatalf("apply Matty 4.0.0: %v\n%s", err, updated)
+			}
+			if _, err := os.Lstat(tc.skill(home)); err != nil {
+				t.Fatalf("Matty skill did not survive update: %v", err)
+			}
+			for _, name := range tc.instruction(home) {
+				data, readErr := os.ReadFile(name)
+				if readErr != nil && !os.IsNotExist(readErr) {
+					t.Fatalf("read retired projection %s: %v", name, readErr)
+				}
+				if strings.Contains(string(data), "matty-guidance") || strings.Contains(string(data), "matty-workflow-conventions") {
+					t.Fatalf("retired Matty instruction survived in %s:\n%s", name, data)
+				}
+			}
+			state := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
+			if !strings.Contains(state, `"version": "4.0.0"`) {
+				t.Fatalf("activation state did not advance to Matty 4.0.0:\n%s", state)
+			}
+		})
+	}
+}
+
 func TestPackUpdateCancellationNonTTYAndStalePlanHaveZeroEffects(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

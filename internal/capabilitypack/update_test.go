@@ -65,6 +65,9 @@ func TestMattyThreeToFourUpdateRetiresOnlyExactOwnedInstructionsOnEverySurface(t
 			if plan.OldVersion() != "3.0.0" || plan.Pack().Version != "4.0.0" || !plan.Applicable() || len(cleanup) != 2 || len(plan.PendingHumanActions()) != 0 {
 				t.Fatalf("exact retirement plan = %#v", plan.JSONReport(true))
 			}
+			if len(adapter.calls) != 1 || len(adapter.calls[0].prior.Resources) != 25 || adapter.calls[0].prior.Resources[0].ID != "matty-guidance" || adapter.calls[0].desired.Version != "4.0.0" {
+				t.Fatalf("adapter update transition = %#v", adapter.calls)
+			}
 
 			inspection.Projections[0].ObservedFingerprint = "operator-drift"
 			adapter.observations = []SurfaceInspection{inspection}
@@ -77,6 +80,36 @@ func TestMattyThreeToFourUpdateRetiresOnlyExactOwnedInstructionsOnEverySurface(t
 			}
 			if drifted.Applicable() || len(drifted.blockers) != 1 || drifted.blockers[0].Kind != "ownership" || drifted.blockers[0].Subject != "instruction:matty-guidance" || !strings.Contains(drifted.blockers[0].Detail, "preserving existing") {
 				t.Fatalf("drift preservation blockers = %#v", drifted.blockers)
+			}
+
+			inspection.Projections[0].ObservedFingerprint = "guidance-exact"
+			for _, tc := range []struct {
+				name  string
+				owner *ProjectionOwnership
+			}{
+				{name: "unowned"},
+				{name: "foreign", owner: &ProjectionOwnership{ID: "instruction:matty-guidance", Contributors: []string{"foreign-pack"}, Fingerprint: "guidance-exact"}},
+				{name: "shared", owner: &ProjectionOwnership{ID: "instruction:matty-guidance", Contributors: []string{"matty", "foreign-pack"}, Fingerprint: "guidance-exact"}},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					guardedState := state
+					guardedState.Ownership = guardedState.Ownership[1:]
+					if tc.owner != nil {
+						guardedState.Ownership = append(guardedState.Ownership, *tc.owner)
+					}
+					guardedAdapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{inspection}}
+					guardedFacade := NewFacade(catalog, WithActivation(&fakeActivationStore{state: guardedState}, map[Surface]SurfaceAdapter{surface: guardedAdapter}))
+					guarded, err := guardedFacade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "matty", Surface: surface})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got := phaseActions(guarded.phases, ConsentDestructiveCleanup); len(got) != 1 || got[0].ID != "instruction:matty-workflow-conventions" {
+						t.Fatalf("guarded cleanup actions = %#v", got)
+					}
+					if guarded.Applicable() || len(guarded.blockers) != 1 || guarded.blockers[0].Subject != "instruction:matty-guidance" || !strings.Contains(guarded.blockers[0].Detail, "preserving existing") {
+						t.Fatalf("guarded blockers = %#v", guarded.blockers)
+					}
+				})
 			}
 		})
 	}

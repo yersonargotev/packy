@@ -1763,6 +1763,9 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		if request.Plan.operation == OperationReconcile && request.Plan.reconcileScope == ReconcileTargeted {
 			matches = verificationMatchesSubset(request.Plan.desired, verified.Projections)
 		}
+		if request.Plan.operation == OperationUpdate && len(destructiveActions) > 0 {
+			matches = verificationMatchesAfterCleanup(request.Plan.desired, verified.Projections, destructiveActions)
+		}
 		if request.Plan.operation == OperationDeactivate {
 			matches = verificationMatchesDeactivation(request.Plan.desired, verificationProjections)
 		}
@@ -1888,6 +1891,23 @@ func verificationMatchesSubset(desired []projectionExpectation, observed []Obser
 	return true
 }
 
+func verificationMatchesAfterCleanup(desired []projectionExpectation, observed []ObservedProjection, actions []ProjectionAction) bool {
+	if !verificationMatchesSubset(withoutActionExpectations(desired, actions), observed) {
+		return false
+	}
+	byID := make(map[string]ObservedProjection, len(observed))
+	for _, projection := range observed {
+		byID[projection.ID] = projection
+	}
+	for _, action := range actions {
+		projection, ok := byID[action.ID]
+		if !ok || projection.Exists {
+			return false
+		}
+	}
+	return true
+}
+
 func withoutActionExpectations(values []projectionExpectation, actions []ProjectionAction) []projectionExpectation {
 	ids := map[string]bool{}
 	for _, action := range actions {
@@ -1930,6 +1950,9 @@ type planPreflight struct {
 }
 
 func priorCombinedPack(plan ReconciliationPlan, requested Pack) Pack {
+	if plan.operation == OperationUpdate && len(plan.beforeCompositionFacts) == 0 {
+		return Pack{}
+	}
 	return composition{
 		requested:   requested,
 		packs:       plan.beforeCompositionFacts,
@@ -3167,7 +3190,7 @@ func surfaceTransitionFacts(surface Surface, operation Operation, prior, desired
 	adapterOwnership := adapterOwnershipForSurface(ownership, surface)
 	transition := SurfaceTransition{Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
 	switch operation {
-	case OperationDeactivate:
+	case OperationDeactivate, OperationUpdate:
 		transition.Prior = prior
 	case OperationReconcile:
 		transition.ResidualOwnership = adapterOwnership

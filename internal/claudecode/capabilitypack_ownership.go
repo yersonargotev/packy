@@ -58,7 +58,10 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 		}
 	}
 	for _, intent := range intents {
-		pack, ok := o.packs[intent.PackID]
+		pack, ok := o.packs[intent.PackID+"@"+intent.Version]
+		if !ok {
+			pack, ok = o.packs[intent.PackID]
+		}
 		if !ok || pack.Version != intent.Version {
 			return OwnershipSnapshot{}, fmt.Errorf("Claude ownership intent %s@%s has no exact registered adapter contract", intent.PackID, intent.Version)
 		}

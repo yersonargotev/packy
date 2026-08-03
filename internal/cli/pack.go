@@ -382,7 +382,26 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 	for _, pack := range composition.catalog.List() {
 		if slices.Contains(pack.Surfaces, capabilitypack.SurfaceClaude) {
 			claudePacks[pack.ID] = pack
+			claudePacks[pack.ID+"@"+pack.Version] = pack
 		}
+	}
+	claudeState, err := store.Load(context.Background(), capabilitypack.SurfaceClaude)
+	if err != nil {
+		return capabilitypack.Facade{}, fmt.Errorf("load Claude activation contracts: %w", err)
+	}
+	claudeIntents := claudeState.Intents
+	if len(claudeIntents) == 0 && claudeState.Intent.PackID != "" {
+		claudeIntents = []capabilitypack.ActivationIntent{claudeState.Intent}
+	}
+	for _, intent := range claudeIntents {
+		if !intent.Active || intent.Surface != capabilitypack.SurfaceClaude {
+			continue
+		}
+		pack, resolveErr := composition.catalog.ResolveIntentPack(intent.PackID, intent.Version)
+		if resolveErr != nil {
+			return capabilitypack.Facade{}, fmt.Errorf("resolve Claude activation contract %s@%s: %w", intent.PackID, intent.Version, resolveErr)
+		}
+		claudePacks[intent.PackID+"@"+intent.Version] = pack
 	}
 	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, claudePacks, claudeLayout, composition.bundleRoot)
 	var claudeAdapter *claudecode.SurfaceAdapter

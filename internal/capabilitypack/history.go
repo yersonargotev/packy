@@ -145,6 +145,12 @@ func (c Catalog) resolveIntentPack(id, version string) (Pack, error) {
 	return pack, nil
 }
 
+// ResolveIntentPack returns the exact current or immutable historical contract
+// named by a durable activation intent.
+func (c Catalog) ResolveIntentPack(id, version string) (Pack, error) {
+	return c.resolveIntentPack(id, version)
+}
+
 func (c Catalog) catalogEntry(id string) (catalogEntry, bool) {
 	for _, entry := range c.entries {
 		if entry.ID == id {
