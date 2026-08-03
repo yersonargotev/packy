@@ -85,15 +85,19 @@ if [[ -n "$state_output" ]]; then
   # GraphQL variables expand server-side.
   # shellcheck disable=SC2016
   expected_candidate="$(jq -r '.id // "<unresolved>"' "$candidate" 2>/dev/null || printf '<unresolved>')"
-  if ! release_id="$(gh api graphql \
-    -f query='query($owner:String!,$repository:String!,$tag:String!){repository(owner:$owner,name:$repository){release(tagName:$tag){id}}}' \
+  if ! release_database_id="$(gh api graphql \
+    -f query='query($owner:String!,$repository:String!,$tag:String!){repository(owner:$owner,name:$repository){release(tagName:$tag){databaseId}}}' \
     -f owner="$owner" -f repository="$repository_name" -f tag="$tag" \
-    --jq '.data.repository.release.id // ""')"; then
+    --jq '.data.repository.release.databaseId // ""')"; then
     echo "$boundary denied: expected candidate_id=$expected_candidate target_commit=$release_commit; observed release=unreadable" >&2
     exit 1
   fi
-  if [[ -z "$release_id" ]]; then
+  if [[ -z "$release_database_id" ]]; then
     echo "$boundary denied: expected candidate_id=$expected_candidate target_commit=$release_commit; observed release=missing" >&2
+    exit 1
+  fi
+  if [[ ! "$release_database_id" =~ ^[0-9]+$ ]]; then
+    echo "$boundary denied: expected candidate_id=$expected_candidate target_commit=$release_commit; observed release identity=invalid" >&2
     exit 1
   fi
   observed_release="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/release-boundary.XXXXXX")"
@@ -105,7 +109,7 @@ if [[ -n "$state_output" ]]; then
     echo "$boundary denied: expected candidate_id=$expected_candidate target_commit=$release_commit; observed release=unreadable" >&2
     exit 1
   fi
-  if ! gh api "repos/$repository/releases/tags/$tag" --jq 'if type=="object" and (.tag_name|type)=="string" and (.draft|type)=="boolean" and (.prerelease|type)=="boolean" and (.immutable|type)=="boolean" and (.author.login|type)=="string" and ((.published_at==null) or ((.published_at|type)=="string")) then {tag_name,draft,prerelease,immutable,published_at,author:.author.login} else error("unrecognized release policy shape") end' > "$observed_policy"; then
+  if ! gh api "repos/$repository/releases/$release_database_id" --jq 'if type=="object" and (.tag_name|type)=="string" and (.draft|type)=="boolean" and (.prerelease|type)=="boolean" and (.immutable|type)=="boolean" and (.author.login|type)=="string" and ((.published_at==null) or ((.published_at|type)=="string")) then {tag_name,draft,prerelease,immutable,published_at,author:.author.login} else error("unrecognized release policy shape") end' > "$observed_policy"; then
     echo "$boundary denied: expected target_commit=$release_commit bot-authored release policy for tag=$tag; observed release policy=unreadable" >&2
     exit 1
   fi

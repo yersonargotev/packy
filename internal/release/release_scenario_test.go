@@ -68,9 +68,12 @@ type releaseProcessObservation struct {
 	MainCommit         string
 	Ancestor           bool
 	Release            *release.Release
+	ReleaseDatabaseID  string
 	ReleaseAuthor      string
 	ReleaseImmutable   bool
 	ReleasePublishedAt string
+	ReleasePolicyError string
+	ReleasePolicyTag   string
 }
 
 type releaseProcessResult struct {
@@ -538,8 +541,9 @@ case "$args" in
   *"git/ref/heads/main"*) printf 'commit\t%s\n' "$FIXTURE_COMMIT" ;;
   *"git/ref/tags/"*) printf 'commit\t%s\n' "$FIXTURE_COMMIT" ;;
   *"compare/"*) printf 'ahead\n' ;;
-  "api graphql "*) [[ "$FIXTURE_DOWNLOAD_FAILURE" == disappeared-release ]] || printf 'R_release\n' ;;
-  "api repos/"*"/releases/tags/"*)
+  "api graphql "*) [[ "$FIXTURE_DOWNLOAD_FAILURE" == disappeared-release ]] || printf '12345\n' ;;
+  "api repos/"*"/releases/tags/"*) echo 'draft release is unavailable by tag' >&2; exit 1 ;;
+  "api repos/"*"/releases/12345 "*)
     jq -n --arg tag "$FIXTURE_TAG" --arg author "$FIXTURE_RELEASE_AUTHOR" \
       --arg published_at "$FIXTURE_RELEASE_PUBLISHED_AT" \
       --argjson immutable "$FIXTURE_RELEASE_IMMUTABLE" \
@@ -655,6 +659,75 @@ func TestReleaseScenarioAllowsExactPublishedContinuationAtPublication(t *testing
 	want := []string{"OIDC issuance", "draft creation", "asset upload", "publication", "Homebrew mutation"}
 	if !reflect.DeepEqual(result.Effects, want) {
 		t.Fatalf("effects = %#v, want %#v", result.Effects, want)
+	}
+}
+
+func TestReleaseScenarioReadsDraftPolicyByExactReleaseID(t *testing.T) {
+	result := runReleaseProcessScenario(t, releaseProcessFixture{
+		Name:            "draft policy by exact release ID",
+		Boundary:        "asset upload",
+		ReleaseMode:     "draft",
+		StartAtBoundary: true,
+	})
+	if result.err != nil {
+		t.Fatalf("exact draft policy read-back failed: %v\n%s", result.err, strings.Join(result.Diagnostics, "\n"))
+	}
+
+	var readByID bool
+	for _, observation := range result.Observations {
+		if observation.Tool != "gh" {
+			continue
+		}
+		if strings.Contains(observation.Args, "releases/tags/") {
+			t.Fatalf("draft policy used the release-by-tag endpoint: %#v", result.Observations)
+		}
+		if strings.Contains(observation.Args, "api repos/yersonargotev/packy/releases/12345 ") {
+			readByID = true
+		}
+	}
+	if !readByID {
+		t.Fatalf("draft policy did not use the exact release database ID: %#v", result.Observations)
+	}
+}
+
+func TestReleaseScenarioRejectsUnavailableOrConflictingDraftPolicy(t *testing.T) {
+	tests := []struct {
+		name   string
+		inject func(*releaseProcessObservation)
+	}{
+		{name: "release disappeared", inject: func(observed *releaseProcessObservation) {
+			observed.Release = nil
+			observed.ReleaseDatabaseID = ""
+		}},
+		{name: "invalid release identity", inject: func(observed *releaseProcessObservation) {
+			observed.ReleaseDatabaseID = "not-a-database-id"
+		}},
+		{name: "unreadable release policy", inject: func(observed *releaseProcessObservation) {
+			observed.ReleasePolicyError = "unreadable"
+		}},
+		{name: "malformed release policy", inject: func(observed *releaseProcessObservation) {
+			observed.ReleasePolicyError = "malformed"
+		}},
+		{name: "conflicting release tag", inject: func(observed *releaseProcessObservation) {
+			observed.ReleasePolicyTag = "v0.9.9"
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := runReleaseProcessScenario(t, releaseProcessFixture{
+				Name:            test.name,
+				Boundary:        "asset upload",
+				ReleaseMode:     "draft",
+				StartAtBoundary: true,
+				Inject:          test.inject,
+			})
+			if result.err == nil {
+				t.Fatalf("%s passed the draft policy boundary", test.name)
+			}
+			if len(result.Effects) != 0 {
+				t.Fatalf("%s attempted mutation: %#v", test.name, result.Effects)
+			}
+		})
 	}
 }
 
@@ -818,9 +891,11 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			TagCommit:          commit,
 			MainCommit:         commit,
 			Ancestor:           true,
+			ReleaseDatabaseID:  "12345",
 			ReleaseAuthor:      "github-actions[bot]",
 			ReleaseImmutable:   releaseMode == "published",
 			ReleasePublishedAt: "2026-01-02T03:04:05Z",
+			ReleasePolicyTag:   candidate.Version,
 		}
 		if releaseMode != "" {
 			state := releaseState
@@ -843,12 +918,14 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			"FIXTURE_RELEASE_AUTHOR="+observed.ReleaseAuthor,
 			"FIXTURE_RELEASE_IMMUTABLE="+fmt.Sprint(observed.ReleaseImmutable),
 			"FIXTURE_RELEASE_PUBLISHED_AT="+observed.ReleasePublishedAt,
+			"FIXTURE_RELEASE_POLICY_ERROR="+observed.ReleasePolicyError,
+			"FIXTURE_RELEASE_POLICY_TAG="+observed.ReleasePolicyTag,
 		)
 		if observed.Release == nil {
-			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=", "FIXTURE_RELEASE_JSON=")
+			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=", "FIXTURE_RELEASE_DATABASE_ID=", "FIXTURE_RELEASE_JSON=")
 		} else {
 			releaseJSON := writeReleaseProcessObservation(t, root, index, *observed.Release)
-			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=R_release", "FIXTURE_RELEASE_JSON="+releaseJSON)
+			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=R_release", "FIXTURE_RELEASE_DATABASE_ID="+observed.ReleaseDatabaseID, "FIXTURE_RELEASE_JSON="+releaseJSON)
 		}
 		refOutput := filepath.Join(root, fmt.Sprintf("verified-ref-%d.json", index))
 		arguments := []string{
@@ -1199,21 +1276,28 @@ set -euo pipefail
 printf 'gh\t%s\n' "$*" >> "$FIXTURE_EFFECT_LOG"
 args="$*"
 if [[ "${1:-}" == api && "${2:-}" == graphql ]]; then
-  expected_query='query($owner:String!,$repository:String!,$tag:String!){repository(owner:$owner,name:$repository){release(tagName:$tag){id}}}'
+  id_query='query($owner:String!,$repository:String!,$tag:String!){repository(owner:$owner,name:$repository){release(tagName:$tag){id}}}'
+  database_id_query='query($owner:String!,$repository:String!,$tag:String!){repository(owner:$owner,name:$repository){release(tagName:$tag){databaseId}}}'
+  query="${4#query=}"
   [[ "$#" -eq 12 &&
-     "$3" == -f && "$4" == "query=$expected_query" &&
+     "$3" == -f && ( "$query" == "$id_query" || "$query" == "$database_id_query" ) &&
      "$5" == -f && "$6" == "owner=yersonargotev" &&
      "$7" == -f && "$8" == "repository=packy" &&
-     "$9" == -f && "${10}" == "tag=$FIXTURE_TAG" &&
-     "${11}" == --jq && "${12}" == '.data.repository.release.id // ""' ]] || {
+     "$9" == -f && "${10}" == "tag=$FIXTURE_TAG" ]] || {
     echo "unexpected GraphQL invocation: $*" >&2
     exit 98
   }
-  [[ "$expected_query" != mutation* ]] || {
+  [[ "$query" != mutation* ]] || {
     echo "GraphQL mutation is forbidden" >&2
     exit 98
   }
-  [[ -z "$FIXTURE_RELEASE_ID" ]] || printf '%s\n' "$FIXTURE_RELEASE_ID"
+  if [[ "$query" == "$database_id_query" ]]; then
+    [[ "${11}" == --jq && "${12}" == '.data.repository.release.databaseId // ""' ]] || exit 98
+    [[ -z "${FIXTURE_RELEASE_DATABASE_ID:-}" ]] || printf '%s\n' "$FIXTURE_RELEASE_DATABASE_ID"
+  else
+    [[ "${11}" == --jq && "${12}" == '.data.repository.release.id // ""' ]] || exit 98
+    [[ -z "$FIXTURE_RELEASE_ID" ]] || printf '%s\n' "$FIXTURE_RELEASE_ID"
+  fi
   exit 0
 fi
 case "$args" in
@@ -1230,13 +1314,21 @@ case "$args" in
     if [[ "$FIXTURE_ANCESTOR" == true ]]; then printf 'ahead\n'; else printf 'diverged\n'; fi
     ;;
   api\ repos/*/releases/tags/*)
+    echo 'draft release is unavailable by tag' >&2
+    exit 1
+    ;;
+  api\ repos/*/releases/12345\ *)
+    case "${FIXTURE_RELEASE_POLICY_ERROR:-}" in
+      unreadable) echo 'release policy unavailable' >&2; exit 1 ;;
+      malformed) printf '%s\n' '{}'; exit 0 ;;
+    esac
     is_draft=false
     if [[ -n "${FIXTURE_RELEASE_JSON:-}" ]]; then
       is_draft="$(jq -r .isDraft "$FIXTURE_RELEASE_JSON")"
     elif [[ "${FIXTURE_RELEASE_STATE:-}" == draft ]]; then
       is_draft=true
     fi
-    jq -n --arg tag "$FIXTURE_TAG" --arg author "${FIXTURE_RELEASE_AUTHOR:-github-actions[bot]}" \
+    jq -n --arg tag "${FIXTURE_RELEASE_POLICY_TAG:-$FIXTURE_TAG}" --arg author "${FIXTURE_RELEASE_AUTHOR:-github-actions[bot]}" \
       --arg published_at "${FIXTURE_RELEASE_PUBLISHED_AT:-}" \
       --argjson draft "$is_draft" --argjson immutable "${FIXTURE_RELEASE_IMMUTABLE:-false}" \
       '{tag_name:$tag,draft:$draft,prerelease:false,immutable:$immutable,published_at:$published_at,author:$author}'
