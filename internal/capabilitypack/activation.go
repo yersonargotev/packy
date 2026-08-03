@@ -62,6 +62,7 @@ const (
 	ActionCodexAgentFile          ProjectionActionKind = "codex-agent-file"
 	ActionCodexWorkflowSkill      ProjectionActionKind = "codex-workflow-skill"
 	ActionCodexAssetFile          ProjectionActionKind = "codex-asset-file"
+	ActionCodexProjectSkillTree   ProjectionActionKind = "codex-project-skill-tree"
 	ActionOpenCodeMCPConfig       ProjectionActionKind = "opencode-mcp-config"
 	ActionOpenCodeAgentFile       ProjectionActionKind = "opencode-agent-file"
 	ActionOpenCodeCommandFile     ProjectionActionKind = "opencode-command-file"
@@ -219,6 +220,7 @@ type SurfaceTransition struct {
 	CurrentOwnership    []ProjectionOwnership
 	ResidualOwnership   []ProjectionOwnership
 	ResolvedExecutables []ExecutableResolution
+	ProjectRoot         string
 }
 
 type SurfaceInspection struct {
@@ -229,6 +231,12 @@ type SurfaceInspection struct {
 	RuntimeModeResults  []RuntimeModeResult
 	Readiness           ReadinessObservation
 	PendingHumanActions []string
+	Unrepresentable     []UnrepresentableResource
+}
+
+type UnrepresentableResource struct {
+	Resource ResourceIdentity
+	Reason   string
 }
 
 // OccupiedName is one freshly observed host namespace entry relied on by a
@@ -3089,6 +3097,14 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			return SurfaceInspection{}, fmt.Errorf("surface adapter returned unsupported consent %q for projection %q", projection.Action.Consent, projection.ID)
 		}
 		seen[projection.ID] = struct{}{}
+		if transition.ProjectRoot != "" {
+			if projection.Action.Target == "" {
+				return SurfaceInspection{}, fmt.Errorf("project surface adapter omitted target for projection %q", projection.ID)
+			}
+			if _, err := RelativeProjectTarget(transition.ProjectRoot, projection.Action.Target); err != nil {
+				return SurfaceInspection{}, err
+			}
+		}
 		switch projection.Goal {
 		case ProjectionPresent:
 			if projection.DesiredFingerprint == "" || projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent {
@@ -3101,6 +3117,17 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		default:
 			return SurfaceInspection{}, fmt.Errorf("surface adapter returned zero goal for projection %q", projection.ID)
 		}
+	}
+	unrepresentable := make(map[string]struct{}, len(observation.Unrepresentable))
+	for _, resource := range observation.Unrepresentable {
+		key := resource.Resource.String()
+		if resource.Resource.Kind == "" || resource.Resource.ID == "" || resource.Reason == "" {
+			return SurfaceInspection{}, fmt.Errorf("surface adapter returned malformed unrepresentable resource %q", key)
+		}
+		if _, duplicate := unrepresentable[key]; duplicate {
+			return SurfaceInspection{}, fmt.Errorf("surface adapter returned duplicate unrepresentable resource %q", key)
+		}
+		unrepresentable[key] = struct{}{}
 	}
 	occupied := make(map[string]struct{}, len(observation.OccupiedNames))
 	for _, name := range observation.OccupiedNames {
@@ -3164,6 +3191,9 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 	}
 	observation.RuntimeModeResults = results
 	sort.Slice(observation.Projections, func(i, j int) bool { return observation.Projections[i].ID < observation.Projections[j].ID })
+	sort.Slice(observation.Unrepresentable, func(i, j int) bool {
+		return observation.Unrepresentable[i].Resource.String() < observation.Unrepresentable[j].Resource.String()
+	})
 	sort.Slice(observation.OccupiedNames, func(i, j int) bool {
 		if observation.OccupiedNames[i].Namespace != observation.OccupiedNames[j].Namespace {
 			return observation.OccupiedNames[i].Namespace < observation.OccupiedNames[j].Namespace
@@ -3231,6 +3261,7 @@ func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
 		value.Projections[i].Action.Args = append([]string(nil), value.Projections[i].Action.Args...)
 	}
 	value.PendingHumanActions = append([]string(nil), value.PendingHumanActions...)
+	value.Unrepresentable = append([]UnrepresentableResource(nil), value.Unrepresentable...)
 	value.Readiness.PendingHumanActions = append([]string(nil), value.Readiness.PendingHumanActions...)
 	value.Readiness.Evidence = append([]string(nil), value.Readiness.Evidence...)
 	value.Readiness.OptionalAuthorities = cloneOptionalAuthorities(value.Readiness.OptionalAuthorities)

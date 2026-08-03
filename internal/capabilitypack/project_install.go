@@ -28,26 +28,6 @@ type ProjectInstallRequest struct {
 	ProjectRoot string
 }
 
-type ProjectSurfaceAdapter interface {
-	InspectProject(context.Context, Pack, string) (ProjectSurfaceObservation, error)
-}
-
-type ProjectSurfaceObservation struct {
-	Revision    string
-	Projections []ProjectProjectionObservation
-}
-
-type ProjectProjectionObservation struct {
-	Resource            ResourceIdentity
-	Target              string
-	Mode                string
-	DesiredFingerprint  string
-	ObservedFingerprint string
-	Exists              bool
-	Representable       bool
-	Reason              string
-}
-
 type ProjectInstallBlocker struct {
 	Code        string           `json:"code"`
 	Resource    ResourceIdentity `json:"resource,omitempty"`
@@ -69,17 +49,30 @@ type ProjectManifestPack struct {
 }
 
 type ProjectLockProposal struct {
-	Path                   string                  `json:"path"`
-	SchemaVersion          int                     `json:"schema_version"`
-	MinimumPackyCapability string                  `json:"minimum_packy_capability"`
-	Source                 PackSourceIdentity      `json:"source"`
-	ResourceGraph          ResourceGraph           `json:"resource_graph"`
-	Projections            []ProjectProjectionPlan `json:"projections"`
+	Path                   string                    `json:"path"`
+	SchemaVersion          int                       `json:"schema_version"`
+	MinimumPackyCapability string                    `json:"minimum_packy_capability"`
+	Source                 ProjectPackSourceIdentity `json:"source"`
+	ResourceGraph          ResourceGraph             `json:"resource_graph"`
+	Projections            []ProjectProjectionPlan   `json:"projections"`
 }
 
 type ProjectNoticesProposal struct {
 	Path          string                      `json:"path"`
 	Contributions []ProjectNoticeContribution `json:"contributions"`
+}
+
+type ProjectPackSourceIdentity struct {
+	PackID           string `json:"pack_id"`
+	PackVersion      string `json:"pack_version"`
+	ManifestSchema   int    `json:"manifest_schema"`
+	SourceID         string `json:"source_id"`
+	Provider         string `json:"provider"`
+	Repository       string `json:"repository"`
+	Commit           string `json:"commit"`
+	Tree             string `json:"tree"`
+	Reference        string `json:"reference,omitempty"`
+	SourceLockSHA256 string `json:"source_lock_sha256"`
 }
 
 type ProjectNoticeContribution struct {
@@ -132,56 +125,69 @@ type ProjectInstallFreshness struct {
 	Blockers    []ProjectInstallBlocker   `json:"blockers"`
 }
 
-func (f Facade) CheckProjectInstallFreshness(ctx context.Context, preview JSONProjectInstallPreview, adapter ProjectSurfaceAdapter) (ProjectInstallFreshness, error) {
+func (f Facade) CheckProjectInstallFreshness(ctx context.Context, preview JSONProjectInstallPreview, adapter SurfaceAdapter) (ProjectInstallFreshness, error) {
 	if preview.projectRoot == "" {
 		return ProjectInstallFreshness{}, errors.New("project install preview no longer carries its sealed project root")
 	}
-	pack, err := f.catalog.ResolveIntentPack(preview.Pack.ID, preview.Pack.Version)
+	fresh, err := f.PreviewProjectInstall(ctx, ProjectInstallRequest{PackID: preview.Pack.ID, Surface: preview.Surface, ProjectRoot: preview.projectRoot}, adapter)
 	if err != nil {
 		return ProjectInstallFreshness{}, err
 	}
-	observation, err := adapter.InspectProject(ctx, pack, preview.projectRoot)
-	if err != nil {
-		return ProjectInstallFreshness{}, err
-	}
-	if observation.Revision != preview.Observation {
+	if fresh.Observation != preview.Observation {
 		return ProjectInstallFreshness{Disposition: ProjectInstallBlocked, Blockers: []ProjectInstallBlocker{{Code: "stale_observation", Detail: "project targets changed after the preview was created", Remediation: "run the install dry-run again to obtain a fresh preview"}}}, nil
 	}
 	return ProjectInstallFreshness{Disposition: preview.Disposition, Blockers: append([]ProjectInstallBlocker(nil), preview.Blockers...)}, nil
 }
 
-func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter ProjectSurfaceAdapter) (JSONProjectInstallPreview, error) {
+func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
+	return withBundleObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
+		return locked.previewProjectInstall(ctx, request, adapter)
+	})
+}
+
+func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
 	if request.Surface != SurfaceCodex {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project installation preview does not support CLI surface %q", request.Surface)
 	}
 	if request.ProjectRoot == "" {
 		return JSONProjectInstallPreview{}, errors.New("project root is required")
 	}
-	pack, err := f.catalog.Show(request.PackID)
+	pack, err := f.catalog.showUnlocked(request.PackID)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
 	if !projectSupportsSurface(pack.Surfaces, request.Surface) {
 		return JSONProjectInstallPreview{}, fmt.Errorf("capability pack %q does not support CLI surface %q", request.PackID, request.Surface)
 	}
-	observation, err := adapter.InspectProject(ctx, pack, request.ProjectRoot)
+	source, err := f.catalog.projectPackSourceIdentity(pack)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: pack, ProjectRoot: request.ProjectRoot})
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
 	graph := ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, false)
 	projections := make([]ProjectProjectionPlan, 0, len(observation.Projections))
 	blockers := make([]ProjectInstallBlocker, 0)
+	for _, resource := range observation.Unrepresentable {
+		blockers = append(blockers, ProjectInstallBlocker{Code: "unrepresentable_resource", Resource: resource.Resource, Detail: resource.Reason, Remediation: "choose a surface with a declared project-native representation"})
+	}
 	for _, projection := range observation.Projections {
-		if !projection.Representable {
-			blockers = append(blockers, ProjectInstallBlocker{Code: "unrepresentable_resource", Resource: projection.Resource, Detail: projection.Reason, Remediation: "choose a surface with a declared project-native representation"})
-			continue
+		resource, err := ParseResourceIdentity(projection.ID)
+		if err != nil {
+			return JSONProjectInstallPreview{}, fmt.Errorf("project projection identity: %w", err)
+		}
+		target, err := RelativeProjectTarget(request.ProjectRoot, projection.Action.Target)
+		if err != nil {
+			return JSONProjectInstallPreview{}, err
 		}
 		state := "missing"
 		if projection.Exists {
 			state = "foreign"
-			blockers = append(blockers, ProjectInstallBlocker{Code: "foreign_target", Resource: projection.Resource, Target: projection.Target, Detail: "project target already exists without portable Packy ownership", Remediation: "move or remove the foreign target before installation"})
+			blockers = append(blockers, ProjectInstallBlocker{Code: "foreign_target", Resource: resource, Target: target, Detail: "project target already exists without portable Packy ownership", Remediation: "move or remove the foreign target before installation"})
 		}
-		projections = append(projections, ProjectProjectionPlan{Resource: projection.Resource, Target: projection.Target, Mode: projection.Mode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: "surface:" + string(request.Surface) + ":pack:" + pack.ID})
+		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: "copy_tree", DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: "surface:" + string(request.Surface) + ":pack:" + pack.ID})
 	}
 	sort.Slice(projections, func(i, j int) bool {
 		if projections[i].Target != projections[j].Target {
@@ -212,10 +218,11 @@ func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstal
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot,
 		Selection:   ProjectSelectionPreview{Mode: SelectionAll, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: 1, Packs: []ProjectManifestPack{manifestPack}},
-		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: PackSourceIdentity{PackID: pack.ID, Version: pack.Version, SchemaVersion: pack.manifestVersion, Limitation: packSourceIdentityLimitation}, ResourceGraph: graph, Projections: append([]ProjectProjectionPlan(nil), projections...)},
+		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, ResourceGraph: graph, Projections: append([]ProjectProjectionPlan(nil), projections...)},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
-		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition, Observation: observation.Revision,
+		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition,
 	}
+	report.Observation = sealProjectInstallPreview(report, observationDigest(observation))
 	return report, nil
 }
 
@@ -249,10 +256,74 @@ func projectSupportsSurface(surfaces []Surface, target Surface) bool {
 	return false
 }
 
-func ProjectObservationRevision(value any) string {
-	data, _ := json.Marshal(value)
+func sealProjectInstallPreview(report JSONProjectInstallPreview, surfaceObservation string) string {
+	report.Observation = ""
+	data, _ := json.Marshal(struct {
+		Report             JSONProjectInstallPreview
+		SurfaceObservation string
+	}{Report: report, SurfaceObservation: surfaceObservation})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func (c Catalog) projectPackSourceIdentity(pack Pack) (ProjectPackSourceIdentity, error) {
+	registryData, err := os.ReadFile(filepath.Join(c.bundleRoot, "sources.json"))
+	if err != nil {
+		return ProjectPackSourceIdentity{}, fmt.Errorf("read admitted Pack Source registry: %w", err)
+	}
+	var registry struct {
+		Sources []struct {
+			ID         string `json:"id"`
+			Provider   string `json:"provider"`
+			Repository string `json:"repository"`
+			Resources  []struct {
+				PackID string `json:"pack_id"`
+			} `json:"resources"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(registryData, &registry); err != nil {
+		return ProjectPackSourceIdentity{}, fmt.Errorf("decode admitted Pack Source registry: %w", err)
+	}
+	var matches []struct{ ID, Provider, Repository string }
+	for _, source := range registry.Sources {
+		for _, resource := range source.Resources {
+			if resource.PackID == pack.ID {
+				matches = append(matches, struct{ ID, Provider, Repository string }{source.ID, source.Provider, source.Repository})
+				break
+			}
+		}
+	}
+	if len(matches) != 1 {
+		return ProjectPackSourceIdentity{}, fmt.Errorf("pack %q does not resolve to one exact admitted Pack Source", pack.ID)
+	}
+	source := matches[0]
+	lockData, err := os.ReadFile(filepath.Join(c.bundleRoot, "sources", source.ID+".lock.json"))
+	if err != nil {
+		return ProjectPackSourceIdentity{}, fmt.Errorf("read admitted Pack Source lock %q: %w", source.ID, err)
+	}
+	var lock struct {
+		SourceID   string `json:"source_id"`
+		Provider   string `json:"provider"`
+		Repository string `json:"repository"`
+		Candidate  struct {
+			Commit     string `json:"commit"`
+			Tree       string `json:"tree"`
+			TagRefName string `json:"tag_ref_name"`
+		} `json:"candidate"`
+	}
+	if err := json.Unmarshal(lockData, &lock); err != nil {
+		return ProjectPackSourceIdentity{}, fmt.Errorf("decode admitted Pack Source lock %q: %w", source.ID, err)
+	}
+	if lock.SourceID != source.ID || lock.Provider != source.Provider || lock.Repository != source.Repository || lock.Candidate.Commit == "" || lock.Candidate.Tree == "" {
+		return ProjectPackSourceIdentity{}, fmt.Errorf("admitted Pack Source lock %q lacks an exact immutable identity", source.ID)
+	}
+	digest := sha256.Sum256(lockData)
+	return ProjectPackSourceIdentity{
+		PackID: pack.ID, PackVersion: pack.Version, ManifestSchema: pack.manifestVersion,
+		SourceID: source.ID, Provider: source.Provider, Repository: source.Repository,
+		Commit: lock.Candidate.Commit, Tree: lock.Candidate.Tree, Reference: lock.Candidate.TagRefName,
+		SourceLockSHA256: hex.EncodeToString(digest[:]),
+	}, nil
 }
 
 func DiscoverProjectRoot(currentDirectory string) (string, error) {

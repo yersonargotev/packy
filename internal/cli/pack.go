@@ -87,7 +87,8 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 				return err
 			}
 			facade := capabilitypack.NewFacade(composition.catalog)
-			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, codex.NewProjectSurfaceAdapter(composition.bundleRoot))
+			adapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, adapter)
 			if err != nil {
 				return err
 			}
@@ -115,8 +116,16 @@ func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONP
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Project install dry-run\nProject root: %s\nPack: %s %s\nSurface: %s\nSelection: %s (%d resources)\nManifest: %s (schema %d)\nLock: %s (schema %d)\nNotices: %s (%d contributions)\n", report.ProjectRoot, report.Pack.ID, report.Pack.Version, report.Surface, report.Selection.Mode, len(report.Selection.Resources), report.Manifest.Path, report.Manifest.SchemaVersion, report.Lock.Path, report.Lock.SchemaVersion, report.Notices.Path, len(report.Notices.Contributions)); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Admitted source: %s repository=%s commit=%s tree=%s lock_sha256=%s\nLock graph: %d resources, %d projections\n", report.Lock.Source.SourceID, report.Lock.Source.Repository, report.Lock.Source.Commit, report.Lock.Source.Tree, report.Lock.Source.SourceLockSHA256, len(report.Lock.ResourceGraph.Resources), len(report.Lock.Projections)); err != nil {
+		return err
+	}
 	for _, projection := range report.Projections {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s -> %s mode=%s observed=%s\n", projection.Resource, projection.Target, projection.Mode, projection.ObservedState); err != nil {
+			return err
+		}
+	}
+	for _, contribution := range report.Notices.Contributions {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Legal contribution: %s license=%s attribution=%s\n", contribution.Resource, contribution.License, contribution.Attribution); err != nil {
 			return err
 		}
 	}

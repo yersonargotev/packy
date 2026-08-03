@@ -9,8 +9,15 @@ import (
 
 type changingProjectAdapter struct{ revision string }
 
-func (a *changingProjectAdapter) InspectProject(_ context.Context, _ Pack, _ string) (ProjectSurfaceObservation, error) {
-	return ProjectSurfaceObservation{Revision: a.revision, Projections: []ProjectProjectionObservation{{Resource: ResourceIdentity{Kind: "skill", ID: "one"}, Target: ".agents/skills/one", Mode: "copy_tree", DesiredFingerprint: "safe", Representable: true}}}, nil
+func (a *changingProjectAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
+	return SurfaceInspection{Revision: a.revision, Projections: []ObservedProjection{{
+		ID: "skill:ask-matt", Goal: ProjectionPresent, DesiredFingerprint: "safe-" + a.revision,
+		Action: ProjectionAction{ID: "skill:ask-matt", Target: filepath.Join(transition.ProjectRoot, ".agents", "skills", "ask-matt")},
+	}}}, nil
+}
+
+func (a *changingProjectAdapter) ApplyProjections(context.Context, []ProjectionAction) *ProjectionActionError {
+	return nil
 }
 
 func TestDiscoverProjectRootResolvesNestedAndLinkedWorktrees(t *testing.T) {
@@ -42,10 +49,17 @@ func TestDiscoverProjectRootResolvesNestedAndLinkedWorktrees(t *testing.T) {
 }
 
 func TestProjectInstallStaleObservationIsNonActionable(t *testing.T) {
-	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "one"}}}
-	facade := NewFacade(Catalog{packs: []Pack{pack}, allowSyntheticHistory: true})
+	bundleRoot, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := DiscoverForDurableIntents(bundleRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facade := NewFacade(catalog)
 	adapter := &changingProjectAdapter{revision: "before"}
-	preview, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: "app", Surface: SurfaceCodex, ProjectRoot: "/project"}, adapter)
+	preview, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: "matty", Surface: SurfaceCodex, ProjectRoot: t.TempDir()}, adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
