@@ -26,6 +26,7 @@ type compatibilityEvidence struct {
 		InstructionSource string            `json:"instruction_source"`
 		ReplacementRules  []replacementRule `json:"replacement_rules"`
 		DivergentFiles    []replacementFile `json:"divergent_files"`
+		RetiredResources  []string          `json:"retired_resources,omitempty"`
 	} `json:"migration"`
 	HistoricalArtifact struct {
 		Path            string `json:"path"`
@@ -63,6 +64,7 @@ var acceptedCompatibilityContracts = []acceptedCompatibilityContract{
 	{PackID: "engram", FromVersion: "1.0.0", ToVersion: "2.0.0", EvidenceSHA256: "3964e953a05ba9ae7ffbc2e7c98a1a80fea6d5ffae1c550dc9d1aadfddd13cb5"},
 	{PackID: "matty", FromVersion: "1.0.0", ToVersion: "2.0.0", EvidenceSHA256: "fc15a7e2a3d14851356278d206b32cea5ea6b770cabc7a30267bd04e68b61bac"},
 	{PackID: "matty", FromVersion: "2.0.0", ToVersion: "3.0.0", EvidenceSHA256: "2f46f9aa84bc3c4dc52e60416b216dca4fba56591af06796c0b9979a08703bd5"},
+	{PackID: "matty", FromVersion: "3.0.0", ToVersion: "4.0.0", EvidenceSHA256: "b4740ca29d27c06262c4c343167b9686cf1ed777bdb84496d1271f02e230e729"},
 }
 
 func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, manifests map[string]packManifest) []string {
@@ -83,8 +85,10 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 		if current.SchemaVersion == 4 {
 			continue
 		}
+		currentRoot := filepath.Join(repositoryRoot, "bundle")
 		if current.Version != contract.ToVersion {
-			archived, err := readCompatibilityManifest(filepath.Join(repositoryRoot, "bundle", "history", contract.PackID, contract.ToVersion, "pack.json"))
+			currentRoot = filepath.Join(repositoryRoot, "bundle", "history", contract.PackID, contract.ToVersion)
+			archived, err := readCompatibilityManifest(filepath.Join(currentRoot, "pack.json"))
 			if err != nil || archived.ID != contract.PackID || archived.Version != contract.ToVersion {
 				continue
 			}
@@ -98,7 +102,7 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 		}
 		key := compatibilityKey(contract.PackID, contract.FromVersion, contract.ToVersion)
 		validated[key] = true
-		blockers = append(blockers, validateCompatibilityEvidence(repositoryRoot, snapshotRoot, source, bindings, current, historical, historyRoot, contract.EvidenceSHA256)...)
+		blockers = append(blockers, validateCompatibilityEvidence(repositoryRoot, snapshotRoot, source, bindings, current, historical, currentRoot, historyRoot, contract.EvidenceSHA256)...)
 	}
 
 	paths, err := filepath.Glob(filepath.Join(repositoryRoot, "bundle", "history", "*", "*", "pack.json"))
@@ -121,7 +125,7 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 		if acceptedCompatibilityRoute(validated, historical.ID, historical.Version, current.Version) {
 			continue
 		}
-		blockers = append(blockers, validateCompatibilityEvidence(repositoryRoot, snapshotRoot, source, bindings, current, historical, filepath.Dir(historyPath), "")...)
+		blockers = append(blockers, validateCompatibilityEvidence(repositoryRoot, snapshotRoot, source, bindings, current, historical, filepath.Join(repositoryRoot, "bundle"), filepath.Dir(historyPath), "")...)
 	}
 	return blockers
 }
@@ -138,7 +142,7 @@ func acceptedCompatibilityRoute(validated map[string]bool, packID, fromVersion, 
 	return false
 }
 
-func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, current, historical packManifest, historyRoot, trustedDigest string) []string {
+func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, current, historical packManifest, currentRoot, historyRoot, trustedDigest string) []string {
 	evidencePath := filepath.Join(repositoryRoot, "bundle", "compatibility", historical.ID, fmt.Sprintf("%s-to-%s.json", historical.Version, current.Version))
 	data, err := os.ReadFile(evidencePath)
 	if err != nil {
@@ -157,7 +161,7 @@ func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source S
 	if trustedDigest != "" && hashBytes(data) != trustedDigest {
 		failures = append(failures, "accepted compatibility evidence does not match its trusted digest")
 	}
-	if evidence.SchemaVersion != 1 || evidence.PackID != historical.ID || evidence.FromVersion != historical.Version || evidence.ToVersion != current.Version {
+	if (evidence.SchemaVersion != 1 && evidence.SchemaVersion != 2) || evidence.PackID != historical.ID || evidence.FromVersion != historical.Version || evidence.ToVersion != current.Version {
 		failures = append(failures, "identity and exact versions are incomplete")
 	}
 	if evidence.Classification.Level != "major" || evidence.Classification.DecidedBy != "human" || strings.TrimSpace(evidence.Rationale) == "" {
@@ -167,40 +171,51 @@ func validateCompatibilityEvidence(repositoryRoot, snapshotRoot string, source S
 		failures = append(failures, "migration evidence must not claim upstream provenance or replace the source lock")
 	}
 
+	selection, selectionFailures := compatibilitySelection(source, bindings, current, historical, evidence)
+	failures = append(failures, selectionFailures...)
 	rules := map[string]string{}
-	for _, rule := range evidence.Migration.ReplacementRules {
-		if rule.ID == "" || strings.TrimSpace(rule.Semantics) == "" || rules[rule.ID] != "" {
-			failures = append(failures, "replacement semantics are missing or duplicated")
-			continue
+	if evidence.SchemaVersion == 1 {
+		for _, rule := range evidence.Migration.ReplacementRules {
+			if rule.ID == "" || strings.TrimSpace(rule.Semantics) == "" || rules[rule.ID] != "" {
+				failures = append(failures, "replacement semantics are missing or duplicated")
+				continue
+			}
+			rules[rule.ID] = rule.Semantics
 		}
-		rules[rule.ID] = rule.Semantics
-	}
-	if len(rules) == 0 {
-		failures = append(failures, "replacement semantics are missing")
-	}
-	instruction, found := manifestResourceByKey(current, "instruction", evidence.Migration.InstructionID)
-	if !found || instruction.Source != evidence.Migration.InstructionSource || !safeSlashPath(instruction.Source) {
-		failures = append(failures, "replacement instruction is absent from the current pack")
-	} else {
-		instructionBytes, err := os.ReadFile(filepath.Join(repositoryRoot, "bundle", filepath.FromSlash(instruction.Source)))
-		if err != nil {
-			failures = append(failures, "replacement instruction bytes are unavailable")
+		if len(rules) == 0 {
+			failures = append(failures, "replacement semantics are missing")
+		}
+		instruction, found := manifestResourceByKey(current, "instruction", evidence.Migration.InstructionID)
+		if !found || instruction.Source != evidence.Migration.InstructionSource || !safeSlashPath(instruction.Source) {
+			failures = append(failures, "replacement instruction is absent from the current pack")
 		} else {
-			for _, semantics := range rules {
-				if !strings.Contains(string(instructionBytes), semantics) {
-					failures = append(failures, "replacement semantics are absent from the Packy-owned instruction")
-					break
+			instructionBytes, err := os.ReadFile(filepath.Join(currentRoot, filepath.FromSlash(instruction.Source)))
+			if err != nil {
+				failures = append(failures, "replacement instruction bytes are unavailable")
+			} else {
+				for _, semantics := range rules {
+					if !strings.Contains(string(instructionBytes), semantics) {
+						failures = append(failures, "replacement semantics are absent from the Packy-owned instruction")
+						break
+					}
 				}
 			}
 		}
+		if len(evidence.Migration.RetiredResources) != 0 {
+			failures = append(failures, "replacement migration must not declare retired resources")
+		}
+		failures = append(failures, validateManifestMigration(current, historical, evidence)...)
+	} else {
+		if evidence.Migration.InstructionID != "" || evidence.Migration.InstructionSource != "" || len(evidence.Migration.ReplacementRules) != 0 || len(evidence.Migration.DivergentFiles) != 0 {
+			failures = append(failures, "retirement migration must contain only exact retired resources")
+		}
+		failures = append(failures, validateManifestRetirement(current, historical, evidence.Migration.RetiredResources)...)
 	}
-
-	selection, selectionFailures := compatibilitySelection(source, bindings, current, historical, evidence)
-	failures = append(failures, selectionFailures...)
-	failures = append(failures, validateManifestMigration(current, historical, evidence)...)
 	expectedDivergence, err := historicalDivergence(snapshotRoot, historyRoot, selection)
 	if err != nil {
 		failures = append(failures, "inspect historical divergent files: "+err.Error())
+	} else if evidence.SchemaVersion == 2 && len(expectedDivergence) != 0 {
+		failures = append(failures, "retirement migration cannot hide upstream source drift")
 	} else if mappingFailures := validateReplacementMapping(evidence.Migration.DivergentFiles, rules, expectedDivergence); len(mappingFailures) > 0 {
 		failures = append(failures, mappingFailures...)
 	}
@@ -292,6 +307,34 @@ func validateManifestMigration(current, historical packManifest, evidence compat
 		if _, found := manifestResourceByKey(historical, "instruction", evidence.Migration.InstructionID); !found || len(evidence.Migration.DivergentFiles) != 0 {
 			return []string{"surface-only migration must retain its replacement instruction and have no divergent files"}
 		}
+	}
+	return nil
+}
+
+func validateManifestRetirement(current, historical packManifest, declared []string) []string {
+	currentResources := make(map[string]manifestResource, len(current.Resources))
+	for _, resource := range current.Resources {
+		currentResources[resource.Kind+":"+resource.ID] = resource
+	}
+	var retired []string
+	for _, resource := range historical.Resources {
+		key := resource.Kind + ":" + resource.ID
+		currentResource, retained := currentResources[key]
+		if !retained {
+			retired = append(retired, key)
+			continue
+		}
+		if currentResource.Source != resource.Source {
+			return []string{"pack resource selection or source changed during retirement"}
+		}
+		delete(currentResources, key)
+	}
+	if len(currentResources) != 0 {
+		return []string{"retirement migration must not add pack resources"}
+	}
+	sort.Strings(retired)
+	if len(declared) == 0 || !sort.StringsAreSorted(declared) || !reflect.DeepEqual(declared, retired) {
+		return []string{"retired-resource evidence is incomplete, duplicated, or not canonical"}
 	}
 	return nil
 }

@@ -49,7 +49,8 @@ surface. Initialization and catalog inspection cause no surface effects.
 
 - Claude Code stable **2.1.203 or newer** remains the supported floor, and
   existing installations remain on **state schema v2**.
-- **matty 3.0.0** has a complete Claude Code contract.
+- **matty 4.0.0** has a complete Claude Code contract and no longer injects
+  workflow guidance or planning-convention instructions on any CLI surface.
 - **engram 2.0.0** remains **degraded** on Claude Code where generic lifecycle
   translation is unsupported.
 - Pack health now distinguishes Packy core health from readiness of active packs.

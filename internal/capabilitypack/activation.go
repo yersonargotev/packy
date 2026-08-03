@@ -1320,6 +1320,8 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	sortBlockers(composition.blockers)
 	var beforeCompositionFacts []Pack
 	var beforeIntentFacts []ActivationIntent
+	var previousPack Pack
+	var ownedBeforeUpdate func(ObservedProjection, string) bool
 	if operation == OperationUpdate && hasTrustedHistoricalArtifact(requested.ID, oldVersion) {
 		before, err := f.compose(requested, state, request.Surface, true)
 		if err != nil {
@@ -1327,13 +1329,17 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		}
 		beforeCompositionFacts = before.packs
 		beforeIntentFacts = before.intentFacts
+		previousPack = before.combinedPack()
+		ownedBeforeUpdate = func(projection ObservedProjection, fingerprint string) bool {
+			return ownedAtComposition(state.Ownership, projection, fingerprint, before)
+		}
 	}
 	pack := composition.combinedPack()
 	resolutions, err := f.resolveExecutables(ctx, pack)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, operation, Pack{}, pack, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, operation, previousPack, pack, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect activation of pack %q on %s: %w", pack.ID, request.Surface, err)
 	}
@@ -1347,8 +1353,12 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 				continue
 			}
 			owned := ownedAtComposition(state.Ownership, projection, projection.ObservedFingerprint, composition)
+			removal := projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent
+			if operation == OperationUpdate && removal && !owned && ownedBeforeUpdate != nil {
+				owned = ownedBeforeUpdate(projection, projection.ObservedFingerprint)
+			}
 			managedDrift := operation == OperationReconcile && projection.Exists && repairEligible(state.Ownership, projection, composition)
-			if operation == OperationReconcile && (projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent) {
+			if operation == OperationReconcile && removal {
 				owner, ok := ownershipByID(state.Ownership, ownershipIDForState(state, request.Surface, projection))
 				owned = ok && owner.Fingerprint == projection.ObservedFingerprint
 			}
@@ -1359,7 +1369,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 			if managedDrift {
 				projection.Action.Description = "restore drifted Packy-managed projection " + projection.ID + " to intent-selected content: " + projection.Action.Description
 			}
-			if operation == OperationReconcile && (projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent) {
+			if (operation == OperationReconcile || operation == OperationUpdate) && removal {
 				destructiveActions = append(destructiveActions, projection.Action)
 			} else if projection.Action.Consent == ConsentExecutableExternal {
 				executableAdapterActions = append(executableAdapterActions, projection.Action)

@@ -157,7 +157,7 @@ if [[ "$(grep -Fo '{{TAG}}' "$notes_template" | wc -l | tr -d ' ')" != 1 ]]; the
   echo "release-note template must contain exactly one {{TAG}} placeholder" >&2
   exit 1
 fi
-for required in "2.1.203" "state schema v2" "matty 3.0.0" "engram 2.0.0" "degraded" "Limitations"; do
+for required in "2.1.203" "state schema v2" "matty 4.0.0" "engram 2.0.0" "degraded" "Limitations"; do
   grep -Fqi "$required" "$notes_template" || { echo "release notes missing required Claude support fact: $required" >&2; exit 1; }
 done
 mkdir -p "$(dirname "$notes_output")"

@@ -33,6 +33,30 @@ func TestCheckedInMattyHistoryIsExactSelfContainedAndDeterministic(t *testing.T)
 	}
 }
 
+func TestCheckedInMattyFourHistoryIsExactSelfContainedAndDeterministic(t *testing.T) {
+	bundleRoot := filepath.Join("..", "..", "bundle")
+	root := filepath.Join(bundleRoot, "history", "matty", "4.0.0")
+	pack, err := loadHistoricalArtifact(root, bundleRoot, "matty", "4.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Resources) != 23 {
+		t.Fatalf("Matty 4.0.0 resources = %d, want 23 skills", len(pack.Resources))
+	}
+	for _, resource := range pack.Resources {
+		if resource.Kind != "skill" || !strings.HasPrefix(resource.Source, "history/matty/4.0.0/") {
+			t.Fatalf("unexpected Matty 4.0.0 resource: %#v", resource)
+		}
+	}
+	expected, err := inspectHistoricalArtifact(root, mustDecodeHistoricalManifest(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkedIn := readHistoricalArtifact(t, root); !reflect.DeepEqual(expected, checkedIn) {
+		t.Fatal("checked-in Matty 4.0.0 artifact evidence is not deterministic")
+	}
+}
+
 func TestPreV3BuiltInManifestsRemainImmutableAfterCatalogCutover(t *testing.T) {
 	bundleRoot := filepath.Join("..", "..", "bundle")
 	workflowPackID := strings.Join([]string{"ma", "tty"}, "")
@@ -79,20 +103,29 @@ func TestCheckedInEngramTwoHistoryIsExactSelfContainedAndDeterministic(t *testin
 func TestV3UpdateRoutesPreserveExistingSurfaceIntent(t *testing.T) {
 	workflowPackID := strings.Join([]string{"ma", "tty"}, "")
 	production := Catalog{enforceUpdateRoutes: true}
-	for _, item := range []struct{ id, from, to string }{{workflowPackID, "2.0.0", "3.0.0"}, {"engram", "1.0.0", "2.0.0"}} {
-		for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode} {
+	for _, item := range []struct {
+		id, from, to string
+		surfaces     []Surface
+	}{
+		{workflowPackID, "2.0.0", "3.0.0", []Surface{SurfaceCodex, SurfaceOpenCode}},
+		{workflowPackID, "3.0.0", "4.0.0", []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
+		{"engram", "1.0.0", "2.0.0", []Surface{SurfaceCodex, SurfaceOpenCode}},
+	} {
+		for _, surface := range item.surfaces {
 			if err := production.validateUpdateRoute(item.id, item.from, item.to, manifestSchemaV3, surface); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if err := production.validateUpdateRoute(item.id, item.from, item.to, manifestSchemaV3, SurfaceClaude); err == nil || !strings.Contains(err.Error(), "does not add claude intent") {
-			t.Fatalf("Claude route error = %v", err)
+		if !containsSurface(item.surfaces, SurfaceClaude) {
+			if err := production.validateUpdateRoute(item.id, item.from, item.to, manifestSchemaV3, SurfaceClaude); err == nil || !strings.Contains(err.Error(), "does not add claude intent") {
+				t.Fatalf("Claude route error = %v", err)
+			}
 		}
 	}
-	if err := production.validateUpdateRoute(workflowPackID, "1.0.0", "3.0.0", manifestSchemaV3, SurfaceCodex); err == nil || !strings.Contains(err.Error(), "no supported update route") {
+	if err := production.validateUpdateRoute(workflowPackID, "1.0.0", "4.0.0", manifestSchemaV3, SurfaceCodex); err == nil || !strings.Contains(err.Error(), "no supported update route") {
 		t.Fatalf("gap error = %v", err)
 	}
-	for _, versions := range [][2]string{{"2.0.1", "3.0.0"}, {"2.0.0", "3.0.1"}} {
+	for _, versions := range [][2]string{{"3.0.1", "4.0.0"}, {"3.0.0", "4.0.1"}} {
 		if err := production.validateUpdateRoute(workflowPackID, versions[0], versions[1], manifestSchemaV3, SurfaceCodex); err == nil || !strings.Contains(err.Error(), "no supported update route") {
 			t.Fatalf("near-miss route %s -> %s error = %v", versions[0], versions[1], err)
 		}
@@ -100,18 +133,27 @@ func TestV3UpdateRoutesPreserveExistingSurfaceIntent(t *testing.T) {
 	if err := (Catalog{}).validateUpdateRoute("app", "1.0.0", "9.0.0", manifestSchemaV3, SurfaceCodex); err != nil {
 		t.Fatalf("synthetic catalog route rejected: %v", err)
 	}
-	if err := production.validateUpdateRoute(workflowPackID, "2.0.1", "3.0.0", manifestSchemaV2, SurfaceCodex); err != nil {
+	if err := production.validateUpdateRoute(workflowPackID, "3.0.1", "4.0.0", manifestSchemaV2, SurfaceCodex); err != nil {
 		t.Fatalf("pre-v3 catalog route was newly constrained: %v", err)
 	}
 }
 
-func TestCheckedInMattyTwoIntentStaysPinnedUntilExplicitThreeUpdate(t *testing.T) {
+func containsSurface(surfaces []Surface, target Surface) bool {
+	for _, surface := range surfaces {
+		if surface == target {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCheckedInMattyThreeIntentStaysPinnedUntilExplicitFourUpdate(t *testing.T) {
 	bundleRoot := filepath.Join("..", "..", "bundle")
 	catalog, err := DiscoverForDurableIntents(bundleRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent := ActivationIntent{PackID: "matty", Surface: SurfaceCodex, Version: "2.0.0", Active: true, Revision: 7}
+	intent := ActivationIntent{PackID: "matty", Surface: SurfaceCodex, Version: "3.0.0", Active: true, Revision: 7}
 	store := &fakeActivationStore{state: ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}}
 	adapter := &fakeSurfaceAdapter{inspect: func(SurfaceTransition) SurfaceInspection { return SurfaceInspection{Revision: "host"} }}
 	facade := NewFacade(catalog, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter, SurfaceClaude: adapter}))
@@ -119,14 +161,14 @@ func TestCheckedInMattyTwoIntentStaysPinnedUntilExplicitThreeUpdate(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Entries) != 1 || report.Entries[0].Intent.Version != "2.0.0" || !report.Entries[0].UpdateAvailable || report.Entries[0].Pack.Version != "3.0.0" {
+	if len(report.Entries) != 1 || report.Entries[0].Intent.Version != "3.0.0" || !report.Entries[0].UpdateAvailable || report.Entries[0].Pack.Version != "4.0.0" {
 		t.Fatalf("pinned status = %#v", report)
 	}
 	update, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "matty", Surface: SurfaceCodex})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if update.OldVersion() != "2.0.0" || update.Pack().Version != "3.0.0" || update.Surface() != SurfaceCodex {
+	if update.OldVersion() != "3.0.0" || update.Pack().Version != "4.0.0" || update.Surface() != SurfaceCodex {
 		t.Fatalf("explicit update = %#v", update.JSONReport(true))
 	}
 	if _, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "matty", Surface: SurfaceClaude}); err == nil || !strings.Contains(err.Error(), "not active") {
@@ -385,7 +427,7 @@ func TestHistoricalOperationsUseOnlyHistoryWhileSelectionStaysCatalogCurrent(t *
 	if selected, err := catalog.Show("matty"); err != nil || selected.Version != "2.0.0" {
 		t.Fatalf("catalog-current selection did not remain on 2.0.0: pack=%+v err=%v", selected, err)
 	}
-	if err := os.Remove(filepath.Join(bundle, "instructions", "matty-guidance.md")); err != nil {
+	if err := os.Remove(filepath.Join(bundle, "skills", "engineering", "ask-matt", "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
 

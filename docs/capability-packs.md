@@ -13,11 +13,11 @@ The selectable pack catalog currently contains `addy`, `engram`, and `matty`.
 
 | Current Pack | Purpose | Claude contract |
 | --- | --- | --- |
-| `matty` **3.0.0** | Workflow skills and guidance | **complete**: every skill and instruction has a native binding and no Claude exclusion. Projection does not prove runtime usability. |
+| `matty` **4.0.0** | Workflow skills | **complete**: every skill has a native binding and no Claude exclusion. Matty no longer contributes instructions on any surface. Projection does not prove runtime usability. |
 | `engram` **2.0.0** | Memory guidance and MCP | **degraded**, but activatable: its instruction and exact user MCP binding are native; `lifecycle:engram-memory` has the optional `generic-lifecycle-unsupported` exclusion because generic lifecycle translation is unsupported. Packy does not run `engram setup claude-code`. |
 | `addy` **1.1.0** | Addy agent skills | **complete**: its manifest-v3 resources have native Claude bindings and remain selectable on Claude, Codex, and OpenCode. |
 
-In plain release notation, the current contracts are **matty 3.0.0** and
+In plain release notation, the current contracts are **matty 4.0.0** and
 **engram 2.0.0**. Their Claude Code behavior is described in the table above.
 The selectable Addy contract is **addy 1.1.0**.
 
@@ -25,10 +25,12 @@ Addy's immutable history retains its exact manifest-v2 1.0.0 contract and its
 manifest-v3 1.1.0 contract. Its sole update route is 1.0.0 to 1.1.0 for existing
 Codex or OpenCode intent; it never adds Claude intent.
 
-Historical
-`matty` 2.0.0 and `engram` 1.0.0 activations remain pinned to their recorded
-versions and surfaces. Updating can select v3 for already-active surfaces, but
-never adds Claude intent. Claude activation is a separate explicit choice.
+Historical `matty` 2.0.0 and 3.0.0 and `engram` 1.0.0 activations remain pinned
+to their recorded versions and surfaces. Updating Matty 2.0.0 can select 3.0.0
+only for already-active Codex or OpenCode intent. Updating Matty 3.0.0 can
+select 4.0.0 on any already-active surface and removes the two retired
+instructions only when their exact Packy ownership still authorizes cleanup.
+Fresh Matty 4.0.0 activation projects only skills.
 
 Remote/third-party sources, marketplaces, signing, version selection,
 downgrades, unattended Apply, and background runtime management are excluded.

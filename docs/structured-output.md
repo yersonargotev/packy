@@ -43,7 +43,7 @@ nonzero process exit. Workstation context is not part of doctor JSON.
 
 `pack-show` publishes declared surfaces and, per surface, compatibility,
 bindings, exclusions, optional modes, prompt authorities, and aliases. For the
-current catalog it reports `matty` 3.0.0 as complete and `engram` 2.0.0 as
+current catalog it reports instruction-free `matty` 4.0.0 as complete and `engram` 2.0.0 as
 degraded on that surface, with the optional `lifecycle:engram-memory`
 exclusion. It
 does not claim observed readiness.
