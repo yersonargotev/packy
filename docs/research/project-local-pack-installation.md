@@ -131,14 +131,18 @@ sin resolver la declaración/versionado del proyecto.
 
 ## Recomendación incremental
 
+Esta sección conserva la progresión de la recomendación de investigación. Las
+decisiones posteriores fijaron nombres, versiones exactas y la closure completa;
+ADR 0027 es la autoridad para esos puntos.
+
 ### Primer incremento útil
 
-1. Introducir un archivo de declaración de proyecto con las dependencias
-   explícitas (pack, versión/rango inicial, recursos seleccionados y
-   superficies) y un lockfile con la identidad inmutable ya resuelta por
-   Packy: versión del Pack, fuente, commit/artefacto y digests de cada árbol.
-   El nombre y el formato quedan por decidir; no reutilizar `packs.json`, que
-   es estado personal de ownership y recuperación.
+1. Introducir `packy.json` como declaración de proyecto con dependencias
+   explícitas (pack, versión exacta, recursos seleccionados y superficies) y
+   `packy.lock.json` con la identidad inmutable ya resuelta por Packy: versión
+   del Pack, fuente, artefacto y digests de cada árbol. Ambos formatos tienen
+   esquemas versionados y no reutilizan `packs.json`, que es estado personal de
+   ownership y recuperación.
 2. Implementar `packy pack install <pack> --surface <host>` como operación
    desde la raíz Git. Debe resolver/refrescar el lock con consentimiento claro,
    previsualizar el diff y copiar una **closure completa, regular y
@@ -162,8 +166,8 @@ capacidad”. Una interfaz inicial coherente puede ser:
 packy pack install matty --surface codex
 # escribe declaración + lock; previsualiza y copia recursos declarativos
 
-packy pack activate matty --surface codex
-# conserva la semántica existente de consentimiento/runtime global
+packy pack activate matty --surface codex --project
+# obtiene por separado el consentimiento/runtime personal del proyecto
 ```
 
 Si posteriormente se desea activar los recursos materializados para el usuario

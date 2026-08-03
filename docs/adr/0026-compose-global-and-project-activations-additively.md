@@ -14,6 +14,6 @@ Global and project activations are independent contributions to a CLI surface. E
 
 ## Consequences
 
-- A globally active pack is effective in every project, including projects without their own activation.
+- A compatible globally active pack is effective in every project, including projects without their own activation; an incompatible project contribution blocks readiness as an activation scope conflict.
 - Project deactivation removes only the project's contribution.
 - Packy does not support project-local opt-outs from global activation.
