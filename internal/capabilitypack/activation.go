@@ -63,6 +63,9 @@ const (
 	ActionCodexWorkflowSkill      ProjectionActionKind = "codex-workflow-skill"
 	ActionCodexAssetFile          ProjectionActionKind = "codex-asset-file"
 	ActionCodexProjectSkillTree   ProjectionActionKind = "codex-project-skill-tree"
+	ActionProjectManifestFile     ProjectionActionKind = "project-manifest-file"
+	ActionProjectLockFile         ProjectionActionKind = "project-lock-file"
+	ActionProjectNoticesFile      ProjectionActionKind = "project-notices-file"
 	ActionOpenCodeMCPConfig       ProjectionActionKind = "opencode-mcp-config"
 	ActionOpenCodeAgentFile       ProjectionActionKind = "opencode-agent-file"
 	ActionOpenCodeCommandFile     ProjectionActionKind = "opencode-command-file"
@@ -165,6 +168,8 @@ type ProjectionAction struct {
 	Command           string               `json:"command,omitempty"`
 	Args              []string             `json:"args,omitempty"`
 	Version           string               `json:"version,omitempty"`
+	FileMode          uint32               `json:"file_mode,omitempty"`
+	Precondition      string               `json:"precondition,omitempty"`
 	Consequences      string               `json:"consequences,omitempty"`
 	RollbackLimits    string               `json:"rollback_limits,omitempty"`
 	Mode              ProjectionActionMode `json:"mode,omitempty"`

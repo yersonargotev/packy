@@ -20,6 +20,7 @@ type ProjectInstallDisposition string
 const (
 	ProjectInstallPreviewable ProjectInstallDisposition = "previewable"
 	ProjectInstallBlocked     ProjectInstallDisposition = "blocked"
+	ProjectInstallConverged   ProjectInstallDisposition = "converged"
 )
 
 type ProjectInstallRequest struct {
@@ -43,9 +44,12 @@ type ProjectContractProposal struct {
 }
 
 type ProjectManifestPack struct {
-	ID       string    `json:"id"`
-	Version  string    `json:"version"`
-	Surfaces []Surface `json:"surfaces"`
+	ID              string            `json:"id"`
+	Version         string            `json:"version"`
+	Surfaces        []Surface         `json:"surfaces"`
+	Selection       ResourceSelection `json:"selection"`
+	Aliases         []SurfaceAlias    `json:"aliases"`
+	ProviderChoices []ProviderChoice  `json:"provider_choices"`
 }
 
 type ProjectLockProposal struct {
@@ -54,6 +58,10 @@ type ProjectLockProposal struct {
 	MinimumPackyCapability string                    `json:"minimum_packy_capability"`
 	Source                 ProjectPackSourceIdentity `json:"source"`
 	ResourceGraph          ResourceGraph             `json:"resource_graph"`
+	Bindings               []LifecycleBinding        `json:"bindings"`
+	Modes                  []OptionalMode            `json:"modes"`
+	ManifestSHA256         string                    `json:"manifest_sha256"`
+	NoticesSHA256          string                    `json:"notices_sha256"`
 	Projections            []ProjectProjectionPlan   `json:"projections"`
 }
 
@@ -90,6 +98,7 @@ type ProjectProjectionPlan struct {
 	Resource           ResourceIdentity `json:"resource"`
 	Target             string           `json:"target"`
 	Mode               string           `json:"mode"`
+	FileMode           uint32           `json:"file_mode"`
 	DesiredFingerprint string           `json:"desired_fingerprint,omitempty"`
 	ObservedState      string           `json:"observed_state"`
 	Contributor        string           `json:"contributor"`
@@ -112,6 +121,8 @@ type JSONProjectInstallPreview struct {
 	Disposition   ProjectInstallDisposition `json:"disposition"`
 	Observation   string                    `json:"observation"`
 	projectRoot   string
+	pack          Pack
+	actions       []ProjectionAction
 }
 
 type ProjectInstallNotActionableError struct{ Disposition ProjectInstallDisposition }
@@ -169,7 +180,12 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	graph := ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, false)
 	projections := make([]ProjectProjectionPlan, 0, len(observation.Projections))
+	actions := make([]ProjectionAction, 0, len(observation.Projections))
 	blockers := make([]ProjectInstallBlocker, 0)
+	existingLock, lockExists, lockErr := readExistingProjectLock(request.ProjectRoot)
+	if lockErr != nil {
+		blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_lock", Target: "packy.lock.json", Detail: lockErr.Error(), Remediation: "restore or remove the invalid project lock before installation"})
+	}
 	for _, resource := range observation.Unrepresentable {
 		blockers = append(blockers, ProjectInstallBlocker{Code: "unrepresentable_resource", Resource: resource.Resource, Detail: resource.Reason, Remediation: "choose a surface with a declared project-native representation"})
 	}
@@ -182,12 +198,30 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		if err != nil {
 			return JSONProjectInstallPreview{}, err
 		}
+		if err := validateProjectTargetPath(request.ProjectRoot, projection.Action.Target); err != nil {
+			blockers = append(blockers, ProjectInstallBlocker{Code: "unsafe_path", Resource: resource, Target: target, Detail: err.Error(), Remediation: "remove the unsafe link or non-directory project path before installation"})
+		}
 		state := "missing"
 		if projection.Exists {
 			state = "foreign"
-			blockers = append(blockers, ProjectInstallBlocker{Code: "foreign_target", Resource: resource, Target: target, Detail: "project target already exists without portable Packy ownership", Remediation: "move or remove the foreign target before installation"})
+			if lockExists && projectLockOwnsProjection(existingLock, resource, target, projection.DesiredFingerprint) {
+				state = "owned"
+				if projection.ObservedFingerprint != projection.DesiredFingerprint {
+					state = "drifted"
+					blockers = append(blockers, ProjectInstallBlocker{Code: "owned_drift", Resource: resource, Target: target, Detail: "Packy-owned project target differs from the locked content", Remediation: "restore the locked content before installation"})
+				}
+			} else {
+				blockers = append(blockers, ProjectInstallBlocker{Code: "foreign_target", Resource: resource, Target: target, Detail: "project target already exists without portable Packy ownership", Remediation: "move or remove the foreign target before installation"})
+			}
 		}
-		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: "copy_tree", DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: "surface:" + string(request.Surface) + ":pack:" + pack.ID})
+		mode, fileMode := "copy_tree", uint32(0o700)
+		if projection.Action.Kind == ActionInstructionFile {
+			mode, fileMode = "merge_marked_file", projection.Action.FileMode
+		}
+		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: "surface:" + string(request.Surface) + ":pack:" + pack.ID})
+		action := projection.Action
+		action.PreviewOnly = false
+		actions = append(actions, action)
 	}
 	sort.Slice(projections, func(i, j int) bool {
 		if projections[i].Target != projections[j].Target {
@@ -208,19 +242,41 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		}
 	}
 	requirements := projectRequirements(pack)
-	manifestPack := ProjectManifestPack{ID: pack.ID, Version: pack.Version, Surfaces: []Surface{request.Surface}}
+	manifestPack := ProjectManifestPack{ID: pack.ID, Version: pack.Version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}
 	disposition := ProjectInstallPreviewable
 	if len(blockers) > 0 {
 		disposition = ProjectInstallBlocked
 	}
+	lockProjections := append([]ProjectProjectionPlan(nil), projections...)
+	for i := range lockProjections {
+		lockProjections[i].ObservedState = "installed"
+	}
 	report := JSONProjectInstallPreview{
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
-		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot,
+		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: pack, actions: actions,
 		Selection:   ProjectSelectionPreview{Mode: SelectionAll, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: 1, Packs: []ProjectManifestPack{manifestPack}},
-		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, ResourceGraph: graph, Projections: append([]ProjectProjectionPlan(nil), projections...)},
+		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, ResourceGraph: graph, Bindings: LifecycleContractFor(pack, request.Surface, nil).Bindings, Modes: LifecycleContractFor(pack, request.Surface, nil).OptionalModes, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
 		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition,
+	}
+	manifestBytes, err := marshalProjectManifest(report.Manifest)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	report.Lock.ManifestSHA256 = fingerprintProjectBytes(manifestBytes)
+	report.Lock.NoticesSHA256 = fingerprintProjectBytes([]byte(renderProjectNotices(report)))
+	if len(blockers) == 0 {
+		converged, contractBlockers, err := inspectProjectContract(report, existingLock, lockExists)
+		if err != nil {
+			return JSONProjectInstallPreview{}, err
+		}
+		report.Blockers = append(report.Blockers, contractBlockers...)
+		if len(contractBlockers) > 0 {
+			report.Disposition = ProjectInstallBlocked
+		} else if converged {
+			report.Disposition = ProjectInstallConverged
+		}
 	}
 	report.Observation = sealProjectInstallPreview(report, observationDigest(observation))
 	return report, nil
@@ -432,4 +488,34 @@ func RelativeProjectTarget(projectRoot, target string) (string, error) {
 		return "", fmt.Errorf("project target %q escapes the project root", target)
 	}
 	return filepath.Clean(relative), nil
+}
+
+func validateProjectTargetPath(projectRoot, target string) error {
+	relative, err := RelativeProjectTarget(projectRoot, target)
+	if err != nil {
+		return err
+	}
+	current := filepath.Clean(projectRoot)
+	parts := strings.Split(filepath.Clean(relative), string(filepath.Separator))
+	for _, part := range parts[:len(parts)-1] {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("project target ancestor %q is not a real directory", current)
+		}
+	}
+	if info, err := os.Lstat(filepath.Clean(target)); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+			return fmt.Errorf("project target %q is an unsafe filesystem object", target)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }

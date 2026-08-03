@@ -32,7 +32,7 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 		"Project install dry-run", "Project root: <project-root>", "Pack: matty 4.0.0", "Surface: codex",
 		"Selection: all (23 resources)", "Manifest: packy.json", "Lock: packy.lock.json",
 		"Notices: PACKY-NOTICES.md (0 contributions)", filepath.Join(".agents", "skills", "ask-matt"),
-		"Admitted source: mattpocock-skills", "commit=d574778f94cf620fcc8ce741584093bc650a61d3", "Lock graph: 23 resources, 23 projections",
+		"Admitted source: mattpocock-skills", "commit=d574778f94cf620fcc8ce741584093bc650a61d3", "Lock graph: 23 resources, 24 projections",
 		"Requirements: none", "Blockers: none", "Disposition: previewable",
 	} {
 		if !strings.Contains(human, want) {
@@ -48,7 +48,7 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 	if err := json.Unmarshal([]byte(structured), &report); err != nil {
 		t.Fatalf("decode JSON preview: %v\n%s", err, structured)
 	}
-	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != "matty" || report.Pack.Version != "4.0.0" || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != 23 || len(report.Projections) != 23 || report.Manifest.Path != "packy.json" || report.Lock.Path != "packy.lock.json" || report.Lock.Source.SourceID != "mattpocock-skills" || report.Lock.Source.Commit == "" || report.Lock.Source.Tree == "" || report.Lock.Source.SourceLockSHA256 == "" || report.Notices.Path != "PACKY-NOTICES.md" || report.Notices.Contributions == nil || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable {
+	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != "matty" || report.Pack.Version != "4.0.0" || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != 23 || len(report.Projections) != 24 || report.Manifest.Path != "packy.json" || report.Lock.Path != "packy.lock.json" || report.Lock.Source.SourceID != "mattpocock-skills" || report.Lock.Source.Commit == "" || report.Lock.Source.Tree == "" || report.Lock.Source.SourceLockSHA256 == "" || report.Notices.Path != "PACKY-NOTICES.md" || report.Notices.Contributions == nil || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable {
 		t.Fatalf("incomplete JSON preview: %#v", report)
 	}
 	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--dry-run", "--json"); repeatErr != nil || again != structured {
@@ -70,8 +70,8 @@ func TestIssue451ProjectInstallRequiresGitWorktreeAndDryRun(t *testing.T) {
 		t.Fatalf("outside-worktree error = %v", err)
 	}
 	writeTestGitWorktree(t, outside)
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "--dry-run") {
-		t.Fatalf("mutation guard error = %v", err)
+	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
+		t.Fatalf("non-interactive mutation error = %v", err)
 	}
 }
 
