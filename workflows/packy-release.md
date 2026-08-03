@@ -178,6 +178,13 @@ and require the support statement. When the user opted into real Homebrew
 verification, run it only in the disclosed controlled environment and record
 its result.
 
+Fetch protected `main` again and run the final governance publication-boundary
+gate against that fresh commit and its Release workflow definition. Require a
+clean current evaluation and an allowed gate, retain the sanitized evidence,
+and include it in the success brief. A non-clean result or collection ambiguity
+does not authorize release repair or rollback; produce an exception brief and
+follow the canonical governance-drift handling.
+
 Verify that the operator checkout retains its initial branch, HEAD, and
 pre-existing status. Retain evidence, remove any temporary worktree, and confirm
 that the selected release workspace leaves no uncommitted release output.
@@ -185,8 +192,9 @@ that the selected release workspace leaves no uncommitted release output.
 **Complete when:** workflow, tag, candidate SHA, GitHub Release, published notes,
 artifacts, checksum manifest, host binary checksum and version, Homebrew formula,
 and tap commit all agree; the controlled smoke passed; any approved real
-Homebrew check passed; temporary state is removed; operator state is preserved;
-and the success brief records links and evidence for every assertion.
+Homebrew check passed; the final governance publication-boundary rerun is clean;
+temporary state is removed; operator state is preserved; and the success brief
+records links and evidence for every assertion.
 
 ## Checkpoints and exceptions
 
@@ -208,8 +216,8 @@ links to detailed evidence rather than reproducing raw commands or logs.
 The success brief reports the tag and candidate SHA; GitHub Release, workflow,
 and tap commit links; release-note result; repository checks and exact-SHA CI;
 controlled and optional real Homebrew smoke results; artifact, manifest, host
-binary, and formula agreement; temporary-worktree cleanup; and preservation of
-operator state.
+binary, and formula agreement; the final governance publication-boundary result;
+temporary-worktree cleanup; and preservation of operator state.
 
 An exception brief presents the evidence, the invalidated phase, why safe
 continuation is impossible, concrete options, and one recommended decision. It

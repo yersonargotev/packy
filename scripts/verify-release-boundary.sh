@@ -97,11 +97,16 @@ if [[ -n "$state_output" ]]; then
     exit 1
   fi
   observed_release="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/release-boundary.XXXXXX")"
+  observed_policy="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/release-boundary-policy.XXXXXX")"
   observed_body="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/release-boundary-body.XXXXXX")"
   observed_metadata="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/release-boundary-metadata.XXXXXX")"
-  trap 'rm -f "$observed_release" "$observed_body" "$observed_metadata"' EXIT
+  trap 'rm -f "$observed_release" "$observed_policy" "$observed_body" "$observed_metadata"' EXIT
   if ! gh release view "$tag" --repo "$repository" --json tagName,isDraft,body,assets > "$observed_release"; then
     echo "$boundary denied: expected candidate_id=$expected_candidate target_commit=$release_commit; observed release=unreadable" >&2
+    exit 1
+  fi
+  if ! gh api "repos/$repository/releases/tags/$tag" --jq 'if type=="object" and (.tag_name|type)=="string" and (.draft|type)=="boolean" and (.prerelease|type)=="boolean" and (.immutable|type)=="boolean" and (.author.login|type)=="string" and ((.published_at==null) or ((.published_at|type)=="string")) then {tag_name,draft,prerelease,immutable,published_at,author:.author.login} else error("unrecognized release policy shape") end' > "$observed_policy"; then
+    echo "$boundary denied: expected target_commit=$release_commit bot-authored release policy for tag=$tag; observed release policy=unreadable" >&2
     exit 1
   fi
   jq -j .body "$observed_release" > "$observed_body"
@@ -131,6 +136,24 @@ if [[ -n "$state_output" ]]; then
   verify_mode="$mode"
   if [[ "$verify_mode" == current ]]; then
     if [[ "$(jq -r .draft "$state_output")" == true ]]; then verify_mode=draft; else verify_mode=published; fi
+  fi
+  expected_draft="$(jq -r .isDraft "$observed_release")"
+  published_timestamp_valid=true
+  if [[ "$verify_mode" == published ]] &&
+     ! jq -e '.published_at | type=="string" and (fromdateiso8601? != null)' "$observed_policy" >/dev/null; then
+    published_timestamp_valid=false
+  fi
+  if ! jq -e --arg tag "$tag" --argjson draft "$expected_draft" '
+    .tag_name==$tag and .draft==$draft and .prerelease==false and
+    .author=="github-actions[bot]"
+  ' "$observed_policy" >/dev/null ||
+     [[ "$verify_mode" == published && "$(jq -r .immutable "$observed_policy")" != true ]] ||
+     [[ "$published_timestamp_valid" != true ]]; then
+    observed_author="$(jq -r '.author // "<missing>"' "$observed_policy" 2>/dev/null || printf '<invalid>')"
+    observed_immutable="$(jq -r '.immutable // "<missing>"' "$observed_policy" 2>/dev/null || printf '<invalid>')"
+    observed_published_at="$(jq -r '.published_at // "<missing>"' "$observed_policy" 2>/dev/null || printf '<invalid>')"
+    echo "$boundary denied: expected target_commit=$release_commit tag=$tag bot-authored non-prerelease release and immutable RFC3339-dated published state; observed author=$observed_author immutable=$observed_immutable published_at=$observed_published_at mode=$verify_mode" >&2
+    exit 1
   fi
   if ! state_error="$("$verifier" verify-state --candidate "$candidate" --provenance "$provenance" \
     --state "$state_output" --mode "$verify_mode" > "$decision_output" 2>&1)"; then

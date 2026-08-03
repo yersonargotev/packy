@@ -64,10 +64,13 @@ type releaseProcessFixture struct {
 }
 
 type releaseProcessObservation struct {
-	TagCommit  string
-	MainCommit string
-	Ancestor   bool
-	Release    *release.Release
+	TagCommit          string
+	MainCommit         string
+	Ancestor           bool
+	Release            *release.Release
+	ReleaseAuthor      string
+	ReleaseImmutable   bool
+	ReleasePublishedAt string
 }
 
 type releaseProcessResult struct {
@@ -279,7 +282,29 @@ func TestReleaseScenarioRejectsIdentityDriftAtEveryPrivilegedBoundary(t *testing
 						observed.Release.CandidateID = strings.Repeat("f", 64)
 					},
 				},
+				releaseProcessFixture{
+					Name: "wrong release author", Boundary: boundary.Name,
+					Inject: func(observed *releaseProcessObservation) {
+						observed.ReleaseAuthor = "owner"
+					},
+				},
 			)
+			if boundary.ReleaseMode == "published" {
+				fixtures = append(fixtures,
+					releaseProcessFixture{
+						Name: "mutable published release", Boundary: boundary.Name,
+						Inject: func(observed *releaseProcessObservation) {
+							observed.ReleaseImmutable = false
+						},
+					},
+					releaseProcessFixture{
+						Name: "malformed publication timestamp", Boundary: boundary.Name,
+						Inject: func(observed *releaseProcessObservation) {
+							observed.ReleasePublishedAt = "not-a-timestamp"
+						},
+					},
+				)
+			}
 		}
 	}
 
@@ -514,6 +539,11 @@ case "$args" in
   *"git/ref/tags/"*) printf 'commit\t%s\n' "$FIXTURE_COMMIT" ;;
   *"compare/"*) printf 'ahead\n' ;;
   "api graphql "*) [[ "$FIXTURE_DOWNLOAD_FAILURE" == disappeared-release ]] || printf 'R_release\n' ;;
+  "api repos/"*"/releases/tags/"*)
+    jq -n --arg tag "$FIXTURE_TAG" --arg author "$FIXTURE_RELEASE_AUTHOR" \
+      --arg published_at "$FIXTURE_RELEASE_PUBLISHED_AT" \
+      --argjson immutable "$FIXTURE_RELEASE_IMMUTABLE" \
+      '{tag_name:$tag,draft:true,prerelease:false,immutable:$immutable,published_at:$published_at,author:$author}' ;;
   "release view "*) jq . "$FIXTURE_RELEASE_JSON" ;;
   "release edit "*) exit 0 ;;
   *) echo "unexpected gh invocation: $*" >&2; exit 98 ;;
@@ -550,7 +580,10 @@ esac
 		t.Fatal(err)
 	}
 	releaseJSON := writeReleaseProcessObservation(t, root, 0, releaseState)
-	boundaryEnv := append(baseEnv, "FIXTURE_RELEASE_JSON="+releaseJSON, "RUNNER_TEMP="+filepath.Join(root, "tmp"))
+	boundaryEnv := append(baseEnv, "FIXTURE_RELEASE_JSON="+releaseJSON,
+		"FIXTURE_RELEASE_AUTHOR=github-actions[bot]", "FIXTURE_RELEASE_IMMUTABLE=false",
+		"FIXTURE_RELEASE_PUBLISHED_AT=",
+		"RUNNER_TEMP="+filepath.Join(root, "tmp"))
 	boundary := exec.Command("/bin/bash", filepath.Join(repoRoot(t), "scripts", "verify-release-boundary.sh"), "--boundary", "publication", "--repository", release.PackyRepository, "--tag", tag, "--release-commit", commit, "--verifier", fakeVerifier, "--ref-output", filepath.Join(root, "refs.json"), "--candidate", filepath.Join(metadata, "candidate.json"), "--provenance", filepath.Join(metadata, "provenance.json"), "--state-output", filepath.Join(root, "state.json"), "--decision-output", filepath.Join(root, "decision.json"), "--expected-body", expectedBody, "--attestation", attestation, "--mode", "draft")
 	boundary.Env = boundaryEnv
 	if output, err := boundary.CombinedOutput(); err != nil {
@@ -782,9 +815,12 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			releaseMode = fixture.ReleaseMode
 		}
 		observed := releaseProcessObservation{
-			TagCommit:  commit,
-			MainCommit: commit,
-			Ancestor:   true,
+			TagCommit:          commit,
+			MainCommit:         commit,
+			Ancestor:           true,
+			ReleaseAuthor:      "github-actions[bot]",
+			ReleaseImmutable:   releaseMode == "published",
+			ReleasePublishedAt: "2026-01-02T03:04:05Z",
 		}
 		if releaseMode != "" {
 			state := releaseState
@@ -804,6 +840,9 @@ func runReleaseProcessScenario(t *testing.T, fixture releaseProcessFixture) rele
 			"FIXTURE_TAG_COMMIT="+observed.TagCommit,
 			"FIXTURE_MAIN_COMMIT="+observed.MainCommit,
 			"FIXTURE_ANCESTOR="+fmt.Sprint(observed.Ancestor),
+			"FIXTURE_RELEASE_AUTHOR="+observed.ReleaseAuthor,
+			"FIXTURE_RELEASE_IMMUTABLE="+fmt.Sprint(observed.ReleaseImmutable),
+			"FIXTURE_RELEASE_PUBLISHED_AT="+observed.ReleasePublishedAt,
 		)
 		if observed.Release == nil {
 			boundaryEnv = append(boundaryEnv, "FIXTURE_RELEASE_ID=", "FIXTURE_RELEASE_JSON=")
@@ -1189,6 +1228,18 @@ case "$args" in
   *"git/ref/tags/"*) printf 'commit\t%s\n' "$FIXTURE_TAG_COMMIT" ;;
   *"compare/"*)
     if [[ "$FIXTURE_ANCESTOR" == true ]]; then printf 'ahead\n'; else printf 'diverged\n'; fi
+    ;;
+  api\ repos/*/releases/tags/*)
+    is_draft=false
+    if [[ -n "${FIXTURE_RELEASE_JSON:-}" ]]; then
+      is_draft="$(jq -r .isDraft "$FIXTURE_RELEASE_JSON")"
+    elif [[ "${FIXTURE_RELEASE_STATE:-}" == draft ]]; then
+      is_draft=true
+    fi
+    jq -n --arg tag "$FIXTURE_TAG" --arg author "${FIXTURE_RELEASE_AUTHOR:-github-actions[bot]}" \
+      --arg published_at "${FIXTURE_RELEASE_PUBLISHED_AT:-}" \
+      --argjson draft "$is_draft" --argjson immutable "${FIXTURE_RELEASE_IMMUTABLE:-false}" \
+      '{tag_name:$tag,draft:$draft,prerelease:false,immutable:$immutable,published_at:$published_at,author:$author}'
     ;;
   *"releases?per_page=100&page=1"*) [[ -z "$FIXTURE_RELEASES" ]] || printf '%s\n' "$FIXTURE_RELEASES" ;;
   *"releases?per_page=100"*) [[ -z "$FIXTURE_RELEASES" ]] || printf '%s\n' "$FIXTURE_RELEASES" ;;

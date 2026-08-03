@@ -27,7 +27,6 @@ func TestGovernanceDriftContractAndSeededStates(t *testing.T) {
 		"credential-metadata",
 		"immutable-releases",
 		"installed-app-authority",
-		"latest-release",
 		"main-protection",
 		"protected-environments",
 		"repository-settings",
@@ -73,6 +72,10 @@ func TestGovernanceDriftContractAndSeededStates(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotIDs, wantIDs) {
 		t.Fatalf("contract controls = %v, want %v", gotIDs, wantIDs)
+	}
+	if strings.Contains(string(data), "latest-release") || strings.Contains(string(data), "published_at") ||
+		strings.Contains(string(data), "tag_name") {
+		t.Fatal("mutable release identity must not be part of the governance expected-state contract")
 	}
 	sha := strings.Repeat("a", 40)
 	observation := governancedrift.Observation{
@@ -174,15 +177,21 @@ func TestGovernanceDriftWorkflowSeparatesObservationReportingAndGates(t *testing
 		!strings.Contains(sync, "needs.governance-drift.result == 'success'") {
 		t.Fatal("affected workflows do not block their first action on governance drift")
 	}
-	gate := readFile(t, filepath.Join(root, "scripts", "gate-governance-drift.sh"))
-	for _, required := range []string{
-		"--recovery-tag",
-		"--mode recovery-contract",
-		"--release-tag \"$recovery_tag\"",
-		"--contract \"$contract\"",
+	governanceSurface := readFile(t, filepath.Join(root, "scripts", "gate-governance-drift.sh")) +
+		readFile(t, filepath.Join(root, "scripts", "collect-governance-drift.sh")) + release
+	for _, forbidden := range []string{"latest-release", "recovery-contract", "--recovery-tag", "--release-tag"} {
+		if strings.Contains(governanceSurface, forbidden) {
+			t.Fatalf("governance surface retains publication-instance special case %q", forbidden)
+		}
+	}
+	releaseContract := readFile(t, filepath.Join(root, "workflows", "packy-release.md"))
+	releaseSkill := readFile(t, filepath.Join(root, ".agents", "skills", "release-packy", "SKILL.md"))
+	for path, content := range map[string]string{
+		"release workflow": releaseContract,
+		"release skill":    releaseSkill,
 	} {
-		if !strings.Contains(gate, required) {
-			t.Fatalf("recovery-aware governance gate missing %q", required)
+		if !strings.Contains(content, "final governance publication-boundary") {
+			t.Fatalf("%s does not require the final governance publication-boundary rerun", path)
 		}
 	}
 }
