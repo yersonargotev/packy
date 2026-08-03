@@ -30,6 +30,9 @@ func NewSurfaceAdapterWithConfig(bundleRoot, skillsDir, promptFile, configFile s
 }
 
 func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
+	if transition.ProjectRoot != "" {
+		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)
+	}
 	var (
 		observation capabilitypack.SurfaceInspection
 		err         error
