@@ -43,3 +43,11 @@ Run **Verify and close** from the workflow contract.
 
 **Complete when:** the contract's Verify and close criterion is satisfied,
 including the clean final governance publication-boundary rerun.
+
+## Repository-change exception
+
+Run the workflow contract's repository-change exception through
+`deliver-issue`.
+
+**Complete when:** `deliver-issue` has reached its Definition of done and the
+workflow contract authorizes restarting **Establish**.

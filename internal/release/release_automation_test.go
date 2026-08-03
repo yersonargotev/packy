@@ -25,6 +25,26 @@ var supportedReleasePlatforms = []string{
 	"linux/arm64",
 }
 
+func TestReleaseSkillRoutesRepositoryChangesThroughIssueDelivery(t *testing.T) {
+	path := filepath.Join(repoRoot(t), ".agents", "skills", "release-packy", "SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"## Repository-change exception",
+		"workflow contract's repository-change exception",
+		"`deliver-issue`",
+		"Definition of done",
+		"restarting **Establish**",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("release skill should contain %q", want)
+		}
+	}
+}
+
 func TestReleaseWorkflowClassifiesTagPushAndManualModes(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 
