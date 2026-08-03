@@ -51,7 +51,8 @@ to repository code, scripts, workflows, or this skill, pause publication and
 recommend one explicit handoff: create one numbered `status:approved` issue and
 complete it through `deliver-issue`. Preserve the failed immutable version as
 evidence. After issue delivery reaches its Definition of done, restart
-**Establish** with a newer version.
+**Establish** with a monotonically newer version.
 
 **Complete when:** the failure needs no repository change, or the approved issue
-delivery is complete and a newer release has restarted from **Establish**.
+delivery is complete and a monotonically newer release has restarted from
+**Establish**.

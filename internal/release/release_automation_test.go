@@ -37,7 +37,7 @@ func TestReleaseSkillRoutesRepositoryChangesThroughIssueDelivery(t *testing.T) {
 		"`status:approved`",
 		"`deliver-issue`",
 		"Definition of done",
-		"newer version",
+		"monotonically newer version",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release skill should contain %q", want)
