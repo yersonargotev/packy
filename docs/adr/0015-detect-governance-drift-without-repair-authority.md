@@ -21,8 +21,12 @@ rejected by ADR 0013.
 
 ## Decision
 
-Packy owns one versioned governance expected-state contract and one pure domain
-evaluator. Every observation is sanitized and bound to the repository,
+Packy owns one versioned governance expected-state contract for stable security
+and repository controls and one pure domain evaluator. Mutable product
+publication state, including the latest release tag and publication timestamp,
+is not a fixed governance expectation. Exact release identity and correctness
+remain owned by the release workflow and ADR 0014. Every governance observation
+is sanitized and bound to the repository,
 protected ref, commit, workflow definition, and UTC collection time. Evaluation
 distinguishes clean state, confirmed drift, unclassifiable drift, and collection
 failure. Missing, malformed, stale, or wrong-identity evidence fails closed.
@@ -49,7 +53,10 @@ contains credential values, recovery material, or raw installation responses.
 The Release and pack-source workflows perform a fresh read-only evaluation
 before the first affected action. Release drift stops before build, OIDC,
 drafting, upload, publication, or Homebrew mutation, preserving ADR 0014's one
-candidate and no-repair rules. Private-security remains deterministically
+candidate and no-repair rules. After a successful release, final verification
+reruns the publication boundary against freshly fetched protected `main`; a
+normal publication remains clean, while unexpected remaining drift follows the
+canonical governance-drift path. Private-security remains deterministically
 denied; drift polling never authorizes it.
 
 ## Consequences
@@ -60,6 +67,9 @@ denied; drift polling never authorizes it.
 - Human-only surfaces remain explicit and time-bounded rather than being
   represented as automatically observable.
 - Expected-state changes use the protected PR path and receive CODEOWNER review.
+- Normal advancement of an exact, verified release does not require an
+  expected-state update; tag, timestamp, author, immutability, notes, artifact,
+  provenance, and Homebrew agreement remain release-instance verification.
 - A detector outage may block promotion or publication until current evidence
   can be collected; this is intentional fail-closed behavior.
 
@@ -68,6 +78,7 @@ denied; drift polling never authorizes it.
 Pure fixtures cover all evaluation states, stale evidence, affected-boundary
 gating, exact-evidence classification, canonical issue lifecycle, and absence
 of self-correction. Fake-GitHub tests prove projected GET-only collection and
-sanitization. Workflow trust-boundary tests keep observation authority separate
-from issue reporting and require fresh gates before Release and synchronization
-promotion.
+sanitization without collecting mutable latest-release identity. Workflow
+trust-boundary tests keep observation authority separate from issue reporting,
+require fresh gates before Release and synchronization promotion, and require
+Release final verification to rerun the publication boundary.

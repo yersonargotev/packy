@@ -28,7 +28,6 @@ case "$endpoint" in
   repos/*/environments*) raw='{"total_count":0,"environments":[]}' ;;
   repos/*/actions/secrets*) raw='{"total_count":1,"secrets":[{"name":"TOKEN","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","value":"raw-secret","url":"https://secret"}]}' ;;
   repos/*/immutable-releases) raw='{"enabled":true,"enforced_by_owner":true}' ;;
-  repos/*/releases/latest) raw='{"id":7,"tag_name":"v1","draft":false,"prerelease":false,"immutable":true,"published_at":"2026-01-01T00:00:00Z","author":{"login":"owner","id":3,"avatar_url":"https://secret"},"assets":[{"id":8,"url":"https://secret"}]}' ;;
   repos/*) raw='{"visibility":"public","default_branch":"main","archived":false,"token":"raw-secret","owner":{"avatar_url":"https://secret"}}' ;;
   *) exit 1 ;;
 esac
@@ -64,8 +63,8 @@ printf '%s\n' "$raw" | jq -c "$filter"
 	}
 	clean := run(t, false)
 	controls := clean["controls"].([]any)
-	if len(controls) != 12 {
-		t.Fatalf("controls=%d want 12", len(controls))
+	if len(controls) != 11 {
+		t.Fatalf("controls=%d want 11", len(controls))
 	}
 	for _, raw := range controls {
 		if raw.(map[string]any)["state"] != "observed" {
@@ -94,6 +93,9 @@ printf '%s\n' "$raw" | jq -c "$filter"
 	}
 	if !strings.Contains(string(requests), "token=governance-token args=api repos/owner/repo/actions/permissions") {
 		t.Fatalf("privileged governance projection did not use the dedicated token:\n%s", requests)
+	}
+	if strings.Contains(string(requests), "/releases/latest") {
+		t.Fatalf("mutable latest-release state was collected as governance:\n%s", requests)
 	}
 	for _, forbidden := range []string{"--method", " -X ", "gh issue", "gh secret", "gh release", "PATCH", "POST", "PUT", "DELETE"} {
 		if strings.Contains(string(requests), forbidden) {

@@ -41,4 +41,5 @@ Run **Publish once** from the workflow contract.
 
 Run **Verify and close** from the workflow contract.
 
-**Complete when:** the contract's Verify and close criterion is satisfied.
+**Complete when:** the contract's Verify and close criterion is satisfied,
+including the clean final governance publication-boundary rerun.

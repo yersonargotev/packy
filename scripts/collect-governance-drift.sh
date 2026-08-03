@@ -143,8 +143,6 @@ fi
 
 control immutable-releases "repos/$repo/immutable-releases" 'if type=="object" and (.enabled|type)=="boolean" and (.enforced_by_owner|type)=="boolean" then {valid:true,actual:{enabled,enforced_by_owner}} else {valid:false,actual:null} end'
 control workflow-identities "repos/$repo/actions/workflows?per_page=100" 'if type=="object" and (.workflows|type)=="array" then {valid:true,actual:[.workflows[]|{name,path,state}]|sort_by(.path,.name)} else {valid:false,actual:null} end'
-control latest-release "repos/$repo/releases/latest" 'if type=="object" and (.tag_name|type)=="string" and (.draft|type)=="boolean" and (.prerelease|type)=="boolean" then {valid:true,actual:{tag_name,draft,prerelease,immutable:(.immutable//false),published_at,author:(.author.login//null),asset_count:(.assets//[]|length)}} else {valid:false,actual:null} end'
-
 attestation="$root/docs/governance/evidence/issue-176/owner-attestation.json"
 if [[ ! -f "$attestation" ]] || ! jq -e '
   .schema_version==1 and

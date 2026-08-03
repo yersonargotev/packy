@@ -99,53 +99,6 @@ func TestGateReturnsDecisionAndErrorForAffectedDrift(t *testing.T) {
 	}
 }
 
-func TestRecoveryContractModeAdmitsOnlyExactPublishedTag(t *testing.T) {
-	root := t.TempDir()
-	sha := strings.Repeat("a", 40)
-	workflow := strings.Repeat("b", 40)
-	contract := writeFixture(t, root, "contract.json", `{
-  "schema_version": 1,
-  "controls": [{"id":"latest-release","boundaries":["publication"],"expected":{
-    "tag_name":"v0.1.10","draft":false,"prerelease":false,"immutable":true,
-    "published_at":"2026-07-23T04:34:23Z","author":"github-actions[bot]","asset_count":7
-  }}]
-}`)
-	observation := writeFixture(t, root, "observation.json", `{
-  "schema_version": 1,
-  "identity": {
-    "repository": "yersonargotev/packy",
-    "ref": "refs/heads/main",
-    "commit_sha": "`+sha+`",
-    "workflow_sha": "`+workflow+`",
-    "collected_at": "2026-07-31T04:35:00Z"
-  },
-  "controls": [{"id":"latest-release","state":"observed","actual":{
-    "tag_name":"v0.1.11","draft":false,"prerelease":false,"immutable":true,
-    "published_at":"2026-07-31T04:34:23Z","author":"github-actions[bot]","asset_count":7
-  }}]
-}`)
-	var output bytes.Buffer
-	if err := run([]string{
-		"--mode", "recovery-contract",
-		"--contract", contract,
-		"--observation", observation,
-		"--release-tag", "v0.1.11",
-	}, &output); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), `"tag_name": "v0.1.11"`) {
-		t.Fatalf("recovery contract output = %s", output.String())
-	}
-	if err := run([]string{
-		"--mode", "recovery-contract",
-		"--contract", contract,
-		"--observation", observation,
-		"--release-tag", "v0.1.12",
-	}, &bytes.Buffer{}); err == nil {
-		t.Fatal("different latest release was admitted")
-	}
-}
-
 func TestClassifyCommentsUsesExactDomainPolicy(t *testing.T) {
 	root := t.TempDir()
 	digest := "sha256:" + strings.Repeat("a", 64)

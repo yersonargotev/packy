@@ -9,7 +9,6 @@ commit=
 workflow=
 workflow_sha_override=
 output_dir=
-recovery_tag=
 while (($#)); do
   case "$1" in
     --boundary) boundary="${2:-}"; shift 2 ;;
@@ -19,7 +18,6 @@ while (($#)); do
     --workflow) workflow="${2:-}"; shift 2 ;;
     --workflow-sha) workflow_sha_override="${2:-}"; shift 2 ;;
     --output-dir) output_dir="${2:-}"; shift 2 ;;
-    --recovery-tag) recovery_tag="${2:-}"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -50,19 +48,6 @@ fi
   --workflow-sha "$workflow_sha" \
   --output "$output_dir/observation.json"
 contract=docs/governance/expected-state.v1.json
-if [[ -n "$recovery_tag" ]]; then
-  [[ "$boundary" == publication ]] || {
-    echo "--recovery-tag is valid only for the publication boundary" >&2
-    exit 2
-  }
-  go run ./internal/tools/governancedrift \
-    --mode recovery-contract \
-    --contract "$contract" \
-    --observation "$output_dir/observation.json" \
-    --release-tag "$recovery_tag" \
-    --output "$output_dir/effective-contract.json"
-  contract="$output_dir/effective-contract.json"
-fi
 go run ./internal/tools/governancedrift \
   --mode evaluate \
   --contract "$contract" \

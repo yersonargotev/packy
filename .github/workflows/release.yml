@@ -78,22 +78,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
           GH_METADATA_TOKEN: ${{ github.token }}
-          RELEASE_MODE: ${{ needs.normalize.outputs.mode }}
-          RELEASE_TAG: ${{ needs.normalize.outputs.tag }}
-          RELEASE_STATE: ${{ needs.normalize.outputs.release_state }}
         run: |
           set -euo pipefail
-          recovery_args=()
-          if [[ "$RELEASE_MODE" == recovery && "$RELEASE_STATE" == published ]]; then
-            recovery_args=(--recovery-tag "$RELEASE_TAG")
-          fi
           ./scripts/gate-governance-drift.sh \
             --boundary publication \
             --repo "$GITHUB_REPOSITORY" \
             --ref refs/heads/main \
             --commit "${{ needs.normalize.outputs.main_commit }}" \
             --workflow .github/workflows/release.yml \
-            "${recovery_args[@]}" \
             --output-dir "$RUNNER_TEMP/governance-drift"
       - name: Retain publication gate evidence
         if: always()

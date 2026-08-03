@@ -4,6 +4,9 @@ Packy's governance controls are compared with the versioned
 [`expected-state.v1.json`](expected-state.v1.json) contract. The comparison is
 read-only. It never repairs repository settings, refs, environments,
 credentials, Apps, releases, packages, Pages, workflows, or protection rules.
+The contract contains stable security and repository controls, not the mutable
+identity of the latest product release. Exact per-release identity and
+correctness remain owned by the release workflow.
 The architectural contract is [ADR 0015](../adr/0015-detect-governance-drift-without-repair-authority.md).
 
 ## Automated cadence
@@ -30,7 +33,11 @@ Release and pack-source synchronization repeat the same collection immediately
 before their first affected action. Publication drift stops Release before
 build, OIDC, draft creation, upload, publication, or Homebrew mutation.
 Promotion drift stops synchronization before inspection or proposal writes.
-An unaffected boundary remains available.
+After successful publication and Homebrew verification, Release reruns the
+publication boundary against freshly fetched protected `main`. A normal release
+must remain clean; unexpected remaining drift produces an exception and follows
+the canonical issue and classification path. An unaffected boundary remains
+available.
 
 ## Canonical issue and classification
 
@@ -111,4 +118,7 @@ governance result, protected environments, retained artifact hashes, SBOM,
 provenance/attestation, protected tag policy, immutable-release state, and the
 residual-authority policy. Drift detection does not rebuild, replace, reopen,
 delete, or repair release state and never enables `private-security`
-authorization through polling.
+authorization through polling. Release verification separately proves the
+exact tag and candidate SHA, immutable bot-authored release, notes, asset set,
+checksums, provenance, and Homebrew formula, then reruns governance after those
+published boundaries agree.

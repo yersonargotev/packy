@@ -84,19 +84,6 @@
       }
     },
     {
-      "id": "latest-release",
-      "boundaries": ["publication"],
-      "expected": {
-        "asset_count": 7,
-        "author": "github-actions[bot]",
-        "draft": false,
-        "immutable": true,
-        "prerelease": false,
-        "published_at": "2026-07-31T18:27:09Z",
-        "tag_name": "v0.1.11"
-      }
-    },
-    {
       "id": "main-protection",
       "boundaries": ["promotion", "publication"],
       "expected": {
