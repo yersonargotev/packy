@@ -43,3 +43,15 @@ Run **Verify and close** from the workflow contract.
 
 **Complete when:** the contract's Verify and close criterion is satisfied,
 including the clean final governance publication-boundary rerun.
+
+## Repository-change exception
+
+When the workflow contract classifies a release failure as requiring a change
+to repository code, scripts, workflows, or this skill, pause publication and
+recommend one explicit handoff: create one numbered `status:approved` issue and
+complete it through `deliver-issue`. Preserve the failed immutable version as
+evidence. After issue delivery reaches its Definition of done, restart
+**Establish** with a newer version.
+
+**Complete when:** the failure needs no repository change, or the approved issue
+delivery is complete and a newer release has restarted from **Establish**.
