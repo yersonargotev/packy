@@ -363,7 +363,7 @@ func DiscoverProjectRoot(currentDirectory string) (string, error) {
 
 func validGitWorktreeMarker(root, marker string, info os.FileInfo) (bool, error) {
 	if info.IsDir() {
-		return true, nil
+		return validGitDirectory(marker)
 	}
 	if !info.Mode().IsRegular() {
 		return false, nil
@@ -381,14 +381,46 @@ func validGitWorktreeMarker(root, marker string, info os.FileInfo) (bool, error)
 	if !filepath.IsAbs(gitDirectory) {
 		gitDirectory = filepath.Join(root, gitDirectory)
 	}
-	gitInfo, err := os.Stat(gitDirectory)
+	return validGitDirectory(gitDirectory)
+}
+
+func validGitDirectory(gitDirectory string) (bool, error) {
+	head, err := os.ReadFile(filepath.Join(gitDirectory, "HEAD"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("inspect linked Git worktree directory: %w", err)
+		return false, fmt.Errorf("read Git worktree HEAD: %w", err)
 	}
-	return gitInfo.IsDir(), nil
+	if strings.TrimSpace(string(head)) == "" {
+		return false, nil
+	}
+	commonDirectory := gitDirectory
+	commondir, err := os.ReadFile(filepath.Join(gitDirectory, "commondir"))
+	if err == nil {
+		commonDirectory = strings.TrimSpace(string(commondir))
+		if commonDirectory == "" {
+			return false, nil
+		}
+		if !filepath.IsAbs(commonDirectory) {
+			commonDirectory = filepath.Join(gitDirectory, commonDirectory)
+		}
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("read linked Git common directory: %w", err)
+	}
+	for _, name := range []string{"objects", "refs"} {
+		info, err := os.Stat(filepath.Join(commonDirectory, name))
+		if err != nil {
+			if os.IsNotExist(err) {
+				return false, nil
+			}
+			return false, fmt.Errorf("inspect Git %s directory: %w", name, err)
+		}
+		if !info.IsDir() {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func RelativeProjectTarget(projectRoot, target string) (string, error) {

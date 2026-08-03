@@ -174,6 +174,7 @@ type ProjectionAction struct {
 	ProjectionKey  string    `json:"projection_key,omitempty"`
 	Shared         bool      `json:"shared,omitempty"`
 	DiscoverableBy []Surface `json:"discoverable_by,omitempty"`
+	PreviewOnly    bool      `json:"preview_only,omitempty"`
 }
 
 func RemovalCandidate(projection ObservedProjection, mode ProjectionActionMode, content, description string) ObservedProjection {
@@ -3104,6 +3105,11 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			if _, err := RelativeProjectTarget(transition.ProjectRoot, projection.Action.Target); err != nil {
 				return SurfaceInspection{}, err
 			}
+			if !projection.Action.PreviewOnly {
+				return SurfaceInspection{}, fmt.Errorf("project preview adapter returned applicable projection %q before project mutation exists", projection.ID)
+			}
+		} else if projection.Action.PreviewOnly {
+			return SurfaceInspection{}, fmt.Errorf("surface adapter returned preview-only projection %q outside a project preview", projection.ID)
 		}
 		switch projection.Goal {
 		case ProjectionPresent:

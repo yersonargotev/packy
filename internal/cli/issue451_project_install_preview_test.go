@@ -15,11 +15,10 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 	runner := opts.Runner.(*fakeRunner)
 	project := filepath.Join(t.TempDir(), "project")
 	nested := filepath.Join(project, "one", "two")
-	for _, path := range []string{filepath.Join(project, ".git"), nested} {
-		if err := os.MkdirAll(path, 0o700); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
 	}
+	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return nested, nil }
 	beforeProject := snapshotTree(t, project)
 	beforeHome := snapshotTree(t, home)
@@ -70,9 +69,7 @@ func TestIssue451ProjectInstallRequiresGitWorktreeAndDryRun(t *testing.T) {
 	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--dry-run"); err == nil || !strings.Contains(err.Error(), "Git worktree") {
 		t.Fatalf("outside-worktree error = %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(outside, ".git"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeTestGitWorktree(t, outside)
 	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "--dry-run") {
 		t.Fatalf("mutation guard error = %v", err)
 	}
@@ -81,9 +78,7 @@ func TestIssue451ProjectInstallRequiresGitWorktreeAndDryRun(t *testing.T) {
 func TestIssue451UnrepresentableProjectResourceIsNonActionable(t *testing.T) {
 	opts, home, _ := packActivationOptions(t, &fakeTerminal{})
 	project := t.TempDir()
-	if err := os.Mkdir(filepath.Join(project, ".git"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
 	human, humanErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "codex", "--dry-run")
@@ -100,5 +95,18 @@ func TestIssue451UnrepresentableProjectResourceIsNonActionable(t *testing.T) {
 	}
 	if snapshotTree(t, project) != beforeProject || snapshotTree(t, home) != beforeHome || len(opts.Runner.(*fakeRunner).calls) != 0 {
 		t.Fatal("blocked preview caused effects")
+	}
+}
+
+func writeTestGitWorktree(t *testing.T, root string) {
+	t.Helper()
+	gitDirectory := filepath.Join(root, ".git")
+	for _, path := range []string{filepath.Join(gitDirectory, "objects"), filepath.Join(gitDirectory, "refs")} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(gitDirectory, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
