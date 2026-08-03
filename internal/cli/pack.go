@@ -43,6 +43,7 @@ automatically.`,
   packy pack status engram --surface claude --require usable --json
   packy pack status engram --surface codex
   packy pack status engram --surface codex --require usable
+  packy pack install matty --surface codex --dry-run
   packy pack activate matty --surface codex --dry-run
   packy pack activate example-pack --surface codex --resource skill:ask-matt --dry-run
   packy pack deactivate example-pack --surface codex --resource skill:ask-matt --dry-run
@@ -53,8 +54,95 @@ automatically.`,
   packy pack reconcile --surface codex
   packy pack deactivate matty --surface codex`,
 	}
-	cmd.AddCommand(newPackListCommand(opts, workstationResolver), newPackShowCommand(opts, workstationResolver), newPackStatusCommand(opts, workstationResolver), newPackActivateCommand(opts, workstationResolver), newPackUpdateCommand(opts, workstationResolver), newPackDeactivateCommand(opts, workstationResolver), newPackReconcileCommand(opts, workstationResolver))
+	cmd.AddCommand(newPackListCommand(opts, workstationResolver), newPackShowCommand(opts, workstationResolver), newPackStatusCommand(opts, workstationResolver), newPackInstallCommand(opts, workstationResolver), newPackActivateCommand(opts, workstationResolver), newPackUpdateCommand(opts, workstationResolver), newPackDeactivateCommand(opts, workstationResolver), newPackReconcileCommand(opts, workstationResolver))
 	return cmd
+}
+
+func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
+	var surface string
+	var dryRun bool
+	var jsonOutput bool
+	cmd := &cobra.Command{
+		Use:   "install <pack>",
+		Short: "Preview a capability-pack installation in the current Git project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !dryRun {
+				return fmt.Errorf("project installation mutation is not available yet; use --dry-run to preview")
+			}
+			snapshot, err := workstationResolver.Resolve(workstation.Options{})
+			if err != nil {
+				return err
+			}
+			cwd, err := snapshot.CurrentDirectory()
+			if err != nil {
+				return fmt.Errorf("resolve current directory: %w", err)
+			}
+			projectRoot, err := capabilitypack.DiscoverProjectRoot(cwd)
+			if err != nil {
+				return err
+			}
+			composition, err := resolvePackComposition(opts, workstationResolver)
+			if err != nil {
+				return err
+			}
+			facade := capabilitypack.NewFacade(composition.catalog)
+			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, codex.NewProjectSurfaceAdapter(composition.bundleRoot))
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
+					return err
+				}
+			} else if err := renderProjectInstallPreview(cmd, report); err != nil {
+				return err
+			}
+			if report.Disposition == capabilitypack.ProjectInstallBlocked {
+				return capabilitypack.ProjectInstallNotActionableError{Disposition: report.Disposition}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the project contract and projections without mutation")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
+	_ = cmd.MarkFlagRequired("surface")
+	return cmd
+}
+
+func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectInstallPreview) error {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Project install dry-run\nProject root: %s\nPack: %s %s\nSurface: %s\nSelection: %s (%d resources)\nManifest: %s (schema %d)\nLock: %s (schema %d)\nNotices: %s (%d contributions)\n", report.ProjectRoot, report.Pack.ID, report.Pack.Version, report.Surface, report.Selection.Mode, len(report.Selection.Resources), report.Manifest.Path, report.Manifest.SchemaVersion, report.Lock.Path, report.Lock.SchemaVersion, report.Notices.Path, len(report.Notices.Contributions)); err != nil {
+		return err
+	}
+	for _, projection := range report.Projections {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s -> %s mode=%s observed=%s\n", projection.Resource, projection.Target, projection.Mode, projection.ObservedState); err != nil {
+			return err
+		}
+	}
+	requirements := report.Requirements
+	if len(requirements) == 0 {
+		requirements = []string{"none"}
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Requirements: %s\n", strings.Join(requirements, ", ")); err != nil {
+		return err
+	}
+	if len(report.Blockers) == 0 {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Blockers: none"); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Blockers:"); err != nil {
+			return err
+		}
+		for _, blocker := range report.Blockers {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  - %s: %s; remediation: %s\n", blocker.Code, blocker.Detail, blocker.Remediation); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "Disposition: %s\n", report.Disposition)
+	return err
 }
 
 func newPackReconcileCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {

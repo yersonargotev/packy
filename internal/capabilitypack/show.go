@@ -12,10 +12,10 @@ const packSourceIdentityLimitation = "Packy records the trusted pack ID, version
 // PackSourceIdentity is the stable source identity Packy can derive from its
 // trusted domain facts. Upstream repository provenance is not part of Pack.
 type PackSourceIdentity struct {
-	PackID        string
-	Version       string
-	SchemaVersion int
-	Limitation    string
+	PackID        string `json:"pack_id"`
+	Version       string `json:"version"`
+	SchemaVersion int    `json:"schema_version"`
+	Limitation    string `json:"limitation"`
 }
 
 // ShowIntent reports the durable surface-local intent without observing a
