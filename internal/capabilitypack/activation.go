@@ -1320,6 +1320,8 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	sortBlockers(composition.blockers)
 	var beforeCompositionFacts []Pack
 	var beforeIntentFacts []ActivationIntent
+	var previousPack Pack
+	var ownedBeforeUpdate func(ObservedProjection, string) bool
 	if operation == OperationUpdate && hasTrustedHistoricalArtifact(requested.ID, oldVersion) {
 		before, err := f.compose(requested, state, request.Surface, true)
 		if err != nil {
@@ -1327,13 +1329,17 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		}
 		beforeCompositionFacts = before.packs
 		beforeIntentFacts = before.intentFacts
+		previousPack = before.combinedPack()
+		ownedBeforeUpdate = func(projection ObservedProjection, fingerprint string) bool {
+			return ownedAtComposition(state.Ownership, projection, fingerprint, before)
+		}
 	}
 	pack := composition.combinedPack()
 	resolutions, err := f.resolveExecutables(ctx, pack)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, operation, Pack{}, pack, state.Ownership, resolutions))
+	observation, err := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Surface, operation, previousPack, pack, state.Ownership, resolutions))
 	if err != nil {
 		return ReconciliationPlan{}, fmt.Errorf("inspect activation of pack %q on %s: %w", pack.ID, request.Surface, err)
 	}
@@ -1347,8 +1353,12 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 				continue
 			}
 			owned := ownedAtComposition(state.Ownership, projection, projection.ObservedFingerprint, composition)
+			removal := projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent
+			if operation == OperationUpdate && removal && !owned && ownedBeforeUpdate != nil {
+				owned = ownedBeforeUpdate(projection, projection.ObservedFingerprint)
+			}
 			managedDrift := operation == OperationReconcile && projection.Exists && repairEligible(state.Ownership, projection, composition)
-			if operation == OperationReconcile && (projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent) {
+			if operation == OperationReconcile && removal {
 				owner, ok := ownershipByID(state.Ownership, ownershipIDForState(state, request.Surface, projection))
 				owned = ok && owner.Fingerprint == projection.ObservedFingerprint
 			}
@@ -1359,7 +1369,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 			if managedDrift {
 				projection.Action.Description = "restore drifted Packy-managed projection " + projection.ID + " to intent-selected content: " + projection.Action.Description
 			}
-			if operation == OperationReconcile && (projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent) {
+			if (operation == OperationReconcile || operation == OperationUpdate) && removal {
 				destructiveActions = append(destructiveActions, projection.Action)
 			} else if projection.Action.Consent == ConsentExecutableExternal {
 				executableAdapterActions = append(executableAdapterActions, projection.Action)
@@ -1753,6 +1763,9 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		if request.Plan.operation == OperationReconcile && request.Plan.reconcileScope == ReconcileTargeted {
 			matches = verificationMatchesSubset(request.Plan.desired, verified.Projections)
 		}
+		if request.Plan.operation == OperationUpdate && len(destructiveActions) > 0 {
+			matches = verificationMatchesAfterCleanup(request.Plan.desired, verified.Projections, destructiveActions)
+		}
 		if request.Plan.operation == OperationDeactivate {
 			matches = verificationMatchesDeactivation(request.Plan.desired, verificationProjections)
 		}
@@ -1878,6 +1891,23 @@ func verificationMatchesSubset(desired []projectionExpectation, observed []Obser
 	return true
 }
 
+func verificationMatchesAfterCleanup(desired []projectionExpectation, observed []ObservedProjection, actions []ProjectionAction) bool {
+	if !verificationMatchesSubset(withoutActionExpectations(desired, actions), observed) {
+		return false
+	}
+	byID := make(map[string]ObservedProjection, len(observed))
+	for _, projection := range observed {
+		byID[projection.ID] = projection
+	}
+	for _, action := range actions {
+		projection, ok := byID[action.ID]
+		if !ok || projection.Exists {
+			return false
+		}
+	}
+	return true
+}
+
 func withoutActionExpectations(values []projectionExpectation, actions []ProjectionAction) []projectionExpectation {
 	ids := map[string]bool{}
 	for _, action := range actions {
@@ -1920,6 +1950,9 @@ type planPreflight struct {
 }
 
 func priorCombinedPack(plan ReconciliationPlan, requested Pack) Pack {
+	if plan.operation == OperationUpdate && len(plan.beforeCompositionFacts) == 0 {
+		return Pack{}
+	}
 	return composition{
 		requested:   requested,
 		packs:       plan.beforeCompositionFacts,
@@ -3157,7 +3190,7 @@ func surfaceTransitionFacts(surface Surface, operation Operation, prior, desired
 	adapterOwnership := adapterOwnershipForSurface(ownership, surface)
 	transition := SurfaceTransition{Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
 	switch operation {
-	case OperationDeactivate:
+	case OperationDeactivate, OperationUpdate:
 		transition.Prior = prior
 	case OperationReconcile:
 		transition.ResidualOwnership = adapterOwnership

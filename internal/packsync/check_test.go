@@ -235,6 +235,23 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceIsIncomplete(t *testing.T) {
 	assertBlocker(t, plan, "divergent-file mapping")
 }
 
+func TestCheckFailsClosedWhenRetiredResourceEvidenceIsIncomplete(t *testing.T) {
+	repository := repositoryRoot(t)
+	snapshot := realSnapshot(t, repository, true)
+	copyRoot := t.TempDir()
+	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
+	removeProductionLock(t, copyRoot)
+	mutateCompatibilityEvidenceAt(t, copyRoot, "3.0.0-to-4.0.0.json", func(evidence map[string]any) {
+		migration := evidence["migration"].(map[string]any)
+		resources := migration["retired_resources"].([]any)
+		migration["retired_resources"] = resources[:len(resources)-1]
+	})
+
+	plan := checkWith(t, copyRoot, &fixtureSource{root: snapshot, candidate: acceptedCandidate()})
+	assertBlocker(t, plan, "retired-resource evidence")
+}
+
 func TestCheckFailsClosedWhenAcceptedMigrationHistoryIsMissing(t *testing.T) {
 	repository := repositoryRoot(t)
 	snapshot := realSnapshot(t, repository, true)
@@ -261,7 +278,7 @@ func TestCheckRejectsCoordinatedReplacementEvidenceAndInstructionDrift(t *testin
 		rule := evidence["migration"].(map[string]any)["replacement_rules"].([]any)[0].(map[string]any)
 		rule["semantics"] = "Use arbitrary replacement vocabulary."
 	})
-	instruction := filepath.Join(copyRoot, "bundle", "instructions", "matty-workflow-conventions.md")
+	instruction := filepath.Join(copyRoot, "bundle", "history", "matty", "2.0.0", "instructions", "matty-workflow-conventions.md")
 	writeFile(t, instruction, strings.Replace(string(mustReadFile(t, instruction)), "Use **Specs and tickets** as the workflow vocabulary.", "Use arbitrary replacement vocabulary.", 1))
 
 	plan := checkWith(t, copyRoot, &fixtureSource{root: snapshot, candidate: acceptedCandidate()})
@@ -285,7 +302,7 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceOrReplacementSemanticsDrift(t
 			})
 		}},
 		{name: "instruction bytes", want: "replacement semantics", mutate: func(t *testing.T, root string) {
-			name := filepath.Join(root, "bundle", "instructions", "matty-workflow-conventions.md")
+			name := filepath.Join(root, "bundle", "history", "matty", "2.0.0", "instructions", "matty-workflow-conventions.md")
 			writeFile(t, name, strings.Replace(string(mustReadFile(t, name)), "Specs and tickets", "PRDs and issues", 2))
 		}},
 		{name: "historical artifact hash", want: "historical-artifact hash", mutate: func(t *testing.T, root string) {
@@ -1009,7 +1026,12 @@ func writeJSON(t *testing.T, name string, value any) {
 
 func mutateCompatibilityEvidence(t *testing.T, repository string, mutate func(map[string]any)) {
 	t.Helper()
-	name := filepath.Join(repository, "bundle", "compatibility", "matty", "1.0.0-to-2.0.0.json")
+	mutateCompatibilityEvidenceAt(t, repository, "1.0.0-to-2.0.0.json", mutate)
+}
+
+func mutateCompatibilityEvidenceAt(t *testing.T, repository, filename string, mutate func(map[string]any)) {
+	t.Helper()
+	name := filepath.Join(repository, "bundle", "compatibility", "matty", filename)
 	data, err := os.ReadFile(name)
 	if err != nil {
 		t.Fatal(err)

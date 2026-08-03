@@ -393,7 +393,7 @@ func TestCapabilityPackRolloutMatrixStaysInsideSandbox(t *testing.T) {
 				originalManifest := readFileString(t, manifestPath)
 				currentVersion, staleVersion := "2.0.0", "2.0.1"
 				if packID == "matty" {
-					currentVersion, staleVersion = "3.0.0", "3.0.1"
+					currentVersion, staleVersion = "4.0.0", "4.0.1"
 				}
 				terminal.onApprove = func() {
 					changed := strings.Replace(originalManifest, `"version": "`+currentVersion+`"`, `"version": "`+staleVersion+`"`, 1)
@@ -513,9 +513,34 @@ func packActivationOptions(t *testing.T, terminal Terminal) (Options, string, st
 	return Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}, Runner: &fakeRunner{}, Terminal: terminal}, home, repoRoot
 }
 
-func engramActivationOptions(t *testing.T, terminal Terminal) (Options, string, string, *fakeRunner) {
+func legacyMattyActivationOptions(t *testing.T, terminal Terminal) (Options, string, string) {
 	t.Helper()
 	opts, home, repoRoot := packActivationOptions(t, terminal)
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	historyRoot := filepath.Join(repoRoot, "bundle", "history", "matty", "3.0.0")
+	for _, relative := range []string{"pack.json", "instructions/matty-guidance.md", "instructions/matty-workflow-conventions.md"} {
+		data, err := os.ReadFile(filepath.Join(historyRoot, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(bundle, relative)
+		if relative == "pack.json" {
+			target = filepath.Join(bundle, "packs", "matty", "pack.json")
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	return opts, home, repoRoot
+}
+
+func engramActivationOptions(t *testing.T, terminal Terminal) (Options, string, string, *fakeRunner) {
+	t.Helper()
+	opts, home, repoRoot := legacyMattyActivationOptions(t, terminal)
 	prefix := filepath.Join(t.TempDir(), "homebrew")
 	engram := writeEngramExecutable(t, filepath.Join(prefix, "bin"), "engram version 1.19.0")
 	runner := &fakeRunner{path: map[string]string{"engram": engram}}
@@ -605,9 +630,14 @@ func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Activation dry-run plan plan-", "Digest:", "Phase: reversible-local", "link skill ask-matt", "write instruction matty-guidance"} {
+	for _, want := range []string{"Activation dry-run plan plan-", "Digest:", "Phase: reversible-local", "link skill ask-matt", "Logical resources: 23 skill, 0 instruction"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, retired := range []string{"matty-guidance", "matty-workflow-conventions", "write instruction"} {
+		if strings.Contains(out, retired) {
+			t.Fatalf("retired Matty instruction %q entered Codex preview:\n%s", retired, out)
 		}
 	}
 	if terminal.calls != 0 {
@@ -623,7 +653,7 @@ func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
 
 func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, repoRoot := packActivationOptions(t, terminal)
+	opts, home, repoRoot := legacyMattyActivationOptions(t, terminal)
 	bundle := copyPackBundleForUpdate(t, repoRoot)
 	manifestPath := filepath.Join(bundle, "packs", "matty", "pack.json")
 	rewriteManifestAsV4(t, manifestPath)
@@ -695,15 +725,15 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		t.Fatalf("selected JSON resources = %#v", report.Entries[0].ResourceSelections)
 	}
 
-	additive, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "instruction:matty-guidance")
+	additive, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:code-review")
 	if err != nil {
 		t.Fatalf("additive selection failed: %v\n%s", err, additive)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
-		t.Fatalf("additive instruction was not projected: %v", err)
+	if _, err := os.Lstat(filepath.Join(home, ".agents", "skills", "code-review")); err != nil {
+		t.Fatalf("additive skill was not projected: %v", err)
 	}
 	state = readFileString(t, filepath.Join(home, ".packy", "packs.json"))
-	for _, want := range []string{`"id": "ask-matt"`, `"id": "matty-guidance"`} {
+	for _, want := range []string{`"id": "ask-matt"`, `"id": "code-review"`} {
 		if !strings.Contains(state, want) {
 			t.Fatalf("additive selection missing %q:\n%s", want, state)
 		}
@@ -716,8 +746,8 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "ask-matt")); !os.IsNotExist(err) {
 		t.Fatalf("removed skill projection remains: %v\n%s", err, deactivated)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
-		t.Fatalf("remaining instruction projection was removed: %v", err)
+	if _, err := os.Lstat(filepath.Join(home, ".agents", "skills", "code-review")); err != nil {
+		t.Fatalf("remaining skill projection was removed: %v", err)
 	}
 }
 
@@ -820,7 +850,7 @@ func TestPackActivateCodexRejectsNonTTYBeforeEffects(t *testing.T) {
 
 func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	opts, home, _ := legacyMattyActivationOptions(t, terminal)
 	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("activate failed: %v\n%s", err, out)
@@ -828,7 +858,7 @@ func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 	if terminal.calls != 1 || !strings.Contains(out, "Verified plan") || !strings.Contains(out, "25 Codex projections") {
 		t.Fatalf("unexpected interaction/output: calls=%d\n%s", terminal.calls, out)
 	}
-	if target, err := os.Readlink(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil || !strings.HasSuffix(target, "bundle/skills/engineering/ask-matt") {
+	if target, err := os.Readlink(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil || !strings.HasSuffix(target, "/skills/engineering/ask-matt") {
 		t.Fatalf("ask-matt link = %q err=%v", target, err)
 	}
 	prompt, err := os.ReadFile(filepath.Join(home, ".codex", "AGENTS.md"))
@@ -851,7 +881,7 @@ func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 
 func TestPackActivateCodexStalePlanExecutesNoActions(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	opts, home, _ := legacyMattyActivationOptions(t, terminal)
 	terminal.onApprove = func() {
 		_ = os.MkdirAll(filepath.Join(home, ".codex"), 0o755)
 		_ = os.WriteFile(filepath.Join(home, ".codex", "AGENTS.md"), []byte("concurrent change\n"), 0o600)
@@ -1119,9 +1149,14 @@ func TestPackActivateOpenCodeDryRunIsCompletelySideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Activation dry-run plan plan-", "Surface: opencode", "link OpenCode skill ask-matt", "write OpenCode instruction matty-guidance", "add OpenCode instruction reference"} {
+	for _, want := range []string{"Activation dry-run plan plan-", "Surface: opencode", "link OpenCode skill ask-matt", "Logical resources: 23 skill, 0 instruction"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, retired := range []string{"matty-guidance", "matty-workflow-conventions", "write OpenCode instruction", "add OpenCode instruction reference"} {
+		if strings.Contains(out, retired) {
+			t.Fatalf("retired Matty instruction %q entered OpenCode preview:\n%s", retired, out)
 		}
 	}
 	if terminal.calls != 0 {
@@ -1132,6 +1167,37 @@ func TestPackActivateOpenCodeDryRunIsCompletelySideEffectFree(t *testing.T) {
 	}
 	if got := snapshotTree(t, filepath.Join(repoRoot, "bundle")); got != beforeBundle {
 		t.Fatal("dry-run mutated source bundle")
+	}
+}
+
+func TestCurrentMattyActivationProjectsSkillsWithoutInstructions(t *testing.T) {
+	for _, surface := range []string{"codex", "opencode"} {
+		t.Run(surface, func(t *testing.T) {
+			terminal := &fakeTerminal{interactive: true, approve: true}
+			opts, home, _ := packActivationOptions(t, terminal)
+			out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface)
+			if err != nil {
+				t.Fatalf("activate current Matty: %v\n%s", err, out)
+			}
+			if _, err := os.Lstat(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil {
+				t.Fatalf("Matty skill was not projected: %v", err)
+			}
+			for _, retired := range []string{"matty-guidance", "matty-workflow-conventions"} {
+				if strings.Contains(out, retired) {
+					t.Fatalf("retired instruction %q entered activation output:\n%s", retired, out)
+				}
+			}
+			for _, path := range []string{
+				filepath.Join(home, ".codex", "AGENTS.md"),
+				filepath.Join(home, "xdg", "opencode", "packy.md"),
+				filepath.Join(home, "xdg", "opencode", "opencode.json"),
+				filepath.Join(home, "xdg", "opencode", "matty-workflow-conventions.md"),
+			} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("current Matty wrote retired instruction target %s: %v", path, err)
+				}
+			}
+		})
 	}
 }
 
@@ -1154,7 +1220,7 @@ func TestPackActivateOpenCodeRejectsNonTTYBeforeEffects(t *testing.T) {
 
 func TestPackActivateOpenCodePreservesUnmanagedContentAndDoesNotMutateCodex(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	opts, home, _ := legacyMattyActivationOptions(t, terminal)
 	xdg := filepath.Join(home, "xdg", "opencode")
 	if err := os.MkdirAll(xdg, 0o755); err != nil {
 		t.Fatal(err)
@@ -1204,7 +1270,7 @@ func TestPackActivateOpenCodePreservesUnmanagedContentAndDoesNotMutateCodex(t *t
 
 func TestPackActivationKeepsCodexAndOpenCodeIndependentAndConverged(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	opts, home, _ := legacyMattyActivationOptions(t, terminal)
 	for _, args := range [][]string{
 		{"pack", "activate", "matty", "--surface", "codex"},
 		{"pack", "activate", "matty", "--surface", "opencode"},
@@ -1414,6 +1480,80 @@ func TestPackUpdateRendersVersionsAndRetainedSharedResourcesOnBothSurfaces(t *te
 			out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", surface)
 			if err != nil || !strings.Contains(out, "Already converged") {
 				t.Fatalf("update no-op: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
+func TestMattyThreeToFourUpdateRemovesOwnedInstructionsThroughEveryProductionAdapter(t *testing.T) {
+	for _, tc := range []struct {
+		surface     string
+		instruction func(string) []string
+		skill       func(string) string
+	}{
+		{
+			surface: "claude",
+			instruction: func(home string) []string {
+				return []string{filepath.Join(home, ".claude", "CLAUDE.md")}
+			},
+			skill: func(home string) string { return filepath.Join(home, ".claude", "skills", "ask-matt") },
+		},
+		{
+			surface: "codex",
+			instruction: func(home string) []string {
+				return []string{filepath.Join(home, ".codex", "AGENTS.md")}
+			},
+			skill: func(home string) string { return filepath.Join(home, ".agents", "skills", "ask-matt") },
+		},
+		{
+			surface: "opencode",
+			instruction: func(home string) []string {
+				return []string{
+					filepath.Join(home, "xdg", "opencode", "packy.md"),
+					filepath.Join(home, "xdg", "opencode", "matty-workflow-conventions.md"),
+					filepath.Join(home, "xdg", "opencode", "opencode.json"),
+				}
+			},
+			skill: func(home string) string { return filepath.Join(home, ".agents", "skills", "ask-matt") },
+		},
+	} {
+		t.Run(tc.surface, func(t *testing.T) {
+			terminal := &fakeTerminal{interactive: true, approve: true}
+			opts, home, repoRoot := legacyMattyActivationOptions(t, terminal)
+			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", tc.surface); err != nil {
+				t.Fatalf("seed Matty 3.0.0: %v\n%s", err, out)
+			}
+			opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(repoRoot, "bundle", "skills")
+
+			preview, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", tc.surface, "--dry-run")
+			if err != nil {
+				t.Fatalf("preview Matty 4.0.0: %v\n%s", err, preview)
+			}
+			for _, want := range []string{"Version: 3.0.0 -> 4.0.0", "Phase: destructive-cleanup", "matty-guidance", "matty-workflow-conventions"} {
+				if !strings.Contains(preview, want) {
+					t.Fatalf("update preview missing %q:\n%s", want, preview)
+				}
+			}
+
+			updated, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", tc.surface)
+			if err != nil || !strings.Contains(updated, "Verified plan") {
+				t.Fatalf("apply Matty 4.0.0: %v\n%s", err, updated)
+			}
+			if _, err := os.Lstat(tc.skill(home)); err != nil {
+				t.Fatalf("Matty skill did not survive update: %v", err)
+			}
+			for _, name := range tc.instruction(home) {
+				data, readErr := os.ReadFile(name)
+				if readErr != nil && !os.IsNotExist(readErr) {
+					t.Fatalf("read retired projection %s: %v", name, readErr)
+				}
+				if strings.Contains(string(data), "matty-guidance") || strings.Contains(string(data), "matty-workflow-conventions") {
+					t.Fatalf("retired Matty instruction survived in %s:\n%s", name, data)
+				}
+			}
+			state := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
+			if !strings.Contains(state, `"version": "4.0.0"`) {
+				t.Fatalf("activation state did not advance to Matty 4.0.0:\n%s", state)
 			}
 		})
 	}
@@ -1677,7 +1817,7 @@ func TestRuntimePackCompositionCanLoadHistoryWhenCurrentResourceIsMissing(t *tes
 		t.Fatal(err)
 	}
 	writeUpdateManifest(t, bundle, "2.0.0")
-	if err := os.Remove(filepath.Join(bundle, "instructions", "matty-guidance.md")); err != nil {
+	if err := os.Remove(filepath.Join(bundle, "instructions", "engram-memory.md")); err != nil {
 		t.Fatal(err)
 	}
 	home := t.TempDir()
@@ -1766,7 +1906,7 @@ func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
 			if err != nil {
 				t.Fatalf("dry-run: %v\n%s", err, out)
 			}
-			for _, want := range []string{"Deactivation dry-run plan plan-", "Active version: 3.0.0", "Intent revision:", "Contributor removed:", "Phase: destructive-cleanup"} {
+			for _, want := range []string{"Deactivation dry-run plan plan-", "Active version: 4.0.0", "Intent revision:", "Contributor removed:", "Phase: destructive-cleanup"} {
 				if !strings.Contains(out, want) {
 					t.Fatalf("missing %q:\n%s", want, out)
 				}
@@ -1882,7 +2022,7 @@ func TestPackDeactivateRendersRemovedAndRetainedSharedContributors(t *testing.T)
 
 func TestPackDeactivateKeepsOtherSurfaceIntentOwnershipAndConfigIndependent(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	opts, home, _ := legacyMattyActivationOptions(t, terminal)
 	for _, surface := range []string{"codex", "opencode"} {
 		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface); err != nil {
 			t.Fatalf("seed %s: %v\n%s", surface, err, out)
@@ -1948,7 +2088,7 @@ func TestPackReconcileTargetedAndSurfaceWideRenderSealedDesiredState(t *testing.
 
 func TestPackReconcileBlockedTargetedAndSurfaceWideExitNonzeroWithoutEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	opts, home, _ := legacyMattyActivationOptions(t, terminal)
 	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("seed: %v\n%s", err, out)
 	}
@@ -2027,7 +2167,7 @@ func TestPackReconcileCancellationNonTTYAndStaleHaveZeroEffects(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			seed := &fakeTerminal{interactive: true, approve: true}
-			opts, home, _ := packActivationOptions(t, seed)
+			opts, home, _ := legacyMattyActivationOptions(t, seed)
 			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
 				t.Fatalf("seed: %v\n%s", err, out)
 			}
@@ -2089,7 +2229,7 @@ func TestPackReconcileRepairsOwnedInstructionDriftOnBothSurfaces(t *testing.T) {
 	} {
 		t.Run(tc.surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
-			opts, home, _ := packActivationOptions(t, terminal)
+			opts, home, _ := legacyMattyActivationOptions(t, terminal)
 			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", tc.surface); err != nil {
 				t.Fatalf("seed: %v\n%s", err, out)
 			}

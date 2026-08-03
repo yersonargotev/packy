@@ -23,8 +23,13 @@ func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T)
 	beforePreview := snapshotTree(t, home)
 
 	preview, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "claude", "--dry-run")
-	if err != nil || !strings.Contains(preview, "skill:ask-matt") || !strings.Contains(preview, "instruction:matty-guidance") || !strings.Contains(preview, "Expected readiness: configured=yes, authorized=unknown, usable=unknown") || !strings.Contains(preview, "Pending evidence:") {
+	if err != nil || !strings.Contains(preview, "skill:ask-matt") || !strings.Contains(preview, "Logical resources: 23 skill, 0 instruction") || !strings.Contains(preview, "Expected readiness: configured=yes, authorized=unknown, usable=unknown") || !strings.Contains(preview, "Pending evidence:") {
 		t.Fatalf("Claude tracer preview: err=%v\n%s", err, preview)
+	}
+	for _, retired := range []string{"matty-guidance", "matty-workflow-conventions"} {
+		if strings.Contains(preview, retired) {
+			t.Fatalf("retired instruction %q entered Claude preview:\n%s", retired, preview)
+		}
 	}
 	if snapshotTree(t, home) != beforePreview {
 		t.Fatal("Claude dry-run mutated the sandbox")
@@ -37,8 +42,8 @@ func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T)
 		t.Fatalf("Claude workflow skill was not projected: %v", err)
 	}
 	instructions, err := os.ReadFile(filepath.Join(home, ".claude", "CLAUDE.md"))
-	if err != nil || !strings.Contains(string(instructions), "pack:matty:matty-guidance") {
-		t.Fatalf("Claude instruction contribution missing: %v\n%s", err, instructions)
+	if err != nil || string(instructions) != "operator-owned guidance\n" {
+		t.Fatalf("Claude activation changed foreign instructions: %v\n%s", err, instructions)
 	}
 	status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "claude")
 	if err != nil || !strings.Contains(status, "configured=yes") || !strings.Contains(status, "authorized=unknown") {

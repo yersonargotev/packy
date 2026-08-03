@@ -368,7 +368,7 @@ func TestPackLifecycleHumanOutputIncludesRedactedStructuredActionAndApplyFacts(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(applied, "Apply result facts: verified=yes projections=25") {
+	if !strings.Contains(applied, "Apply result facts: verified=yes projections=23") {
 		t.Fatalf("human apply omitted structured result facts:\n%s", applied)
 	}
 }
