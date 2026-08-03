@@ -34,10 +34,10 @@ func TestReleaseSkillRoutesRepositoryChangesThroughIssueDelivery(t *testing.T) {
 	text := string(data)
 	for _, want := range []string{
 		"## Repository-change exception",
-		"`status:approved`",
+		"workflow contract's repository-change exception",
 		"`deliver-issue`",
 		"Definition of done",
-		"monotonically newer version",
+		"restarting **Establish**",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release skill should contain %q", want)

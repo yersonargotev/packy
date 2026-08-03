@@ -46,13 +46,8 @@ including the clean final governance publication-boundary rerun.
 
 ## Repository-change exception
 
-When the workflow contract classifies a release failure as requiring a change
-to repository code, scripts, workflows, or this skill, pause publication and
-recommend one explicit handoff: create one numbered `status:approved` issue and
-complete it through `deliver-issue`. Preserve the failed immutable version as
-evidence. After issue delivery reaches its Definition of done, restart
-**Establish** with a monotonically newer version.
+Run the workflow contract's repository-change exception through
+`deliver-issue`.
 
-**Complete when:** the failure needs no repository change, or the approved issue
-delivery is complete and a monotonically newer release has restarted from
-**Establish**.
+**Complete when:** `deliver-issue` has reached its Definition of done and the
+workflow contract authorizes restarting **Establish**.
