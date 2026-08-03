@@ -7,7 +7,7 @@ A lightweight AI workflow toolkit inspired by Gentle AI, but intentionally centr
 
 ### Packy core
 The always-available installer/configurator that manages capability packs and their lifecycle. Packy core is distinct from the optional `matty` capability pack, so deactivating that pack never disables the tool needed to manage it.
-Without explicit pack or resource activation intent, it may mutate only Packy-owned non-surface substrate and never a CLI surface.
+Without explicit pack or resource activation intent or explicit project installation intent, it may mutate only Packy-owned non-surface substrate and never a CLI surface.
 
 ### CLI surface
 An AI coding host that Packy can integrate with.
@@ -37,7 +37,7 @@ The Packy-owned set of current capability-pack versions advertised by `packy pac
 One host-independent intent contributed by a capability pack. A CLI-surface adapter may realize one pack resource as multiple host-specific artifacts; host-native schemas, paths, and package formats are projections rather than pack resources.
 
 ### Shared projection
-A realization of a pack resource at a standard global target that more than one CLI surface may discover. It must remain attributable to explicit activation contributors, but discovery by another surface does not activate the pack on that surface.
+A realization of a pack resource at one standard global or project target that more than one CLI surface may discover. It remains attributable to explicit activation or installation contributors, but discovery by another surface does not activate or install the pack for that surface.
 
 ### Composite Pack Source Bundle
 The complete ordered set of two or more Pack Sources admitted together as the initial provenance of one previously absent capability pack. It is one sealed transactional value, not an additional persistent source identity.
@@ -49,7 +49,7 @@ A global prerequisite a capability pack consumes but does not contribute to a CL
 A pack resource that declares behavior triggered at CLI lifecycle points. It names the portable intent while each CLI-surface adapter owns its event names, handlers, trust model, and rendered artifacts; it is not a universal hook schema.
 
 ### Pack activation
-The user's explicit consent to a previewed reconciliation of either a complete capability pack or selected resource roots and their declared dependencies on one CLI surface. Activation does not itself grant host trust, authenticate accounts, authorize executable code, or consent to destructive cleanup.
+The user's explicit consent to a previewed reconciliation of either a complete capability pack or selected resource roots and their declared dependencies on one CLI surface. Global activation owns global projections and runtime effects; project activation owns only the personal runtime effects of an existing project installation. Activation does not itself grant host trust, authenticate accounts, authorize unpreviewed executable code, or consent to destructive cleanup.
 
 ### Pack readiness
 The progression from **configured** (Packy-owned projections are reconciled), through **authorized** (required human trust and authentication are complete), to **usable** (the host has loaded the capability under its runtime permissions). An active pack may remain pending human action between these stages.
@@ -112,8 +112,47 @@ Packy's v0 product shape: a tool that installs and configures Codex/OpenCode wit
 ### Golden path
 Packy v0's primary success path: given an existing repository, configure Codex and OpenCode with Matt Pocock-style skills, Engram memory, and delegation conventions while keeping the initial prompt minimal.
 
-### Global-first configuration
-Packy's default configuration model: install skills in `~/.agents/skills`, manage agent/system-prompt configuration in each CLI's global home/config surface, and avoid writing project-local files unless the user explicitly opts into project docs.
+### Activation scope
+The boundary within which an explicit pack activation contributes its resources. An activation scope is either global or belongs to one project.
+
+### Global activation
+An explicit activation whose contribution applies to every project for the selected CLI surface.
+
+### Project activation
+The current user's explicit consent to enable the personal runtime effects of one project installation in one checkout. It is sealed to the project pack lock, may add to global activation but cannot mask it, and is not transferred through the repository; already-installed declarative resources do not require an empty project activation.
+
+### Project root
+The root of the nearest Git worktree that identifies one project's activation scope. Directories outside a Git worktree do not define a project root.
+
+### Project installation
+A version-controlled declaration and materialization of a capability pack's complete selected resource closure within one project. It makes the project's expected capabilities reproducible for collaborators but does not transfer personal trust, credentials, or runtime consent.
+
+### Project pack manifest
+The human-reviewable `packy.json` at the project root that declares the project's direct pack, surface, and resource intent. It is distinct from generated resolution and personal lifecycle state.
+
+### Project pack lock
+The Packy-generated `packy.lock.json` at the project root that fixes the exact resolved pack closure and its project projections. It is committed with the project pack manifest and is not a hand-edited customization surface.
+
+### Pending project activation
+The state of a project installation whose shared resources are present but whose runtime effects still require the current user's explicit consent. It is an expected readiness state, not installation drift.
+
+### Project installation state
+The shared status of a project pack's declared and materialized resources, reported independently from personal runtime activation. Its states are absent, installed, drifted, or blocked.
+
+### Stale project activation
+A prior personal activation whose approved sensitive-resource identity no longer matches the project pack lock. It grants no authority to enable changed runtime effects and requires a newly previewed activation.
+
+### Orphaned project activation
+Personal activation state whose corresponding project installation has been removed. It preserves exact cleanup evidence but requires explicit deactivation and never authorizes automatic cleanup or renewed activation.
+
+### Activation scope conflict
+An incompatibility between global and project contributions for the same logical pack resource that prevents Packy from establishing one reliable effective capability for the current user. It blocks personal readiness without invalidating the project's version-controlled installation.
+
+### Effective activation
+The additive composition of compatible global and personal project activation that authorizes runtime effects within one project. Declarative project availability belongs to project installation, and compatible global activation can make runtime effective without a separate project activation.
+
+### Inherited global activation
+The personal runtime state in which an exact compatible global contribution satisfies one or more sensitive effects of a project installation. It creates no project receipt and becomes pending if the global contribution is removed.
 
 ### Packy Home
 The single workstation root reserved for Packy-owned state. Domains may own separate files beneath it without sharing ownership of those files.

@@ -4,6 +4,8 @@
 
 Accepted.
 
+Project installation intent is the explicit-authority exception for version-controlled project projections defined by [ADR 0027](0027-separate-project-installation-from-personal-activation.md). Runtime effects and personal surface mutation still require activation intent.
+
 ## Context
 
 Surface mutation must be attributable to an operator's explicit choice of pack,
