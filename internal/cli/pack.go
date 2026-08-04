@@ -199,11 +199,33 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	var surface string
 	var dryRun bool
 	var jsonOutput bool
+	var aliasValues []string
+	var resourceValues []string
+	var providerValues []string
 	cmd := &cobra.Command{
 		Use:   "install [pack]",
 		Short: "Install a capability pack in the current Git project",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			aliases, err := parseSurfaceAliases(aliasValues)
+			if err != nil {
+				return err
+			}
+			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}
+			if len(resourceValues) > 0 {
+				selection.Mode = capabilitypack.SelectionCustom
+				for _, value := range resourceValues {
+					resource, parseErr := capabilitypack.ParseResourceIdentity(value)
+					if parseErr != nil {
+						return parseErr
+					}
+					selection.Roots = append(selection.Roots, resource)
+				}
+			}
+			providerChoices, err := parseProviderChoices(providerValues)
+			if err != nil {
+				return err
+			}
 			snapshot, err := workstationResolver.Resolve(workstation.Options{})
 			if err != nil {
 				return err
@@ -221,6 +243,9 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			}
 			if len(args) == 0 && surface != "" {
 				return errors.New("--surface is not accepted when reconciling the complete project manifest")
+			}
+			if len(args) == 0 && (len(aliasValues) > 0 || len(resourceValues) > 0 || len(providerValues) > 0) {
+				return errors.New("--resource, --alias, and --provider are accepted only when installing a pack")
 			}
 			offlineAdapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
 			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
@@ -272,7 +297,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if len(args) == 0 {
 				report, err = facade.PreviewProjectReconcile(cmd.Context(), projectRoot, adapter)
 			} else {
-				report, err = facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, adapter)
+				report, err = facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, Selection: selection, Aliases: aliases, ProviderChoices: providerChoices}, adapter)
 			}
 			if err != nil {
 				return err
@@ -328,6 +353,9 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the project contract and projections without mutation")
+	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a project surface alias (<kind>:<logical-id>=<host-name>); repeatable")
+	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one operational project resource (<kind>:<id>); repeatable")
+	cmd.Flags().StringArrayVar(&providerValues, "provider", nil, "Select a project capability provider (<capability>=<pack>[/<kind>:<id>]); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	return cmd
 }

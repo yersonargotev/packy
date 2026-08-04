@@ -81,6 +81,25 @@ ambient provider. A provider activated only because it is required remains
 while it has consumers; an explicitly activated provider remains independently
 active. Invalid or stale persisted provider choices fail closed.
 
+Project installation uses the same explicit resource, alias, and provider
+intent without consulting global activation state:
+
+```sh
+packy pack install matty --surface codex \
+  --resource skill:ask-matt \
+  --alias skill:ask-matt=project-matt \
+  --dry-run
+```
+
+Omitting `--resource` installs the complete pack. Repeating `--resource`
+selects direct operational roots and installs their complete transitive
+resource, asset, and notice closure. Repeatable `--alias` resolves a native
+name collision explicitly, and repeatable `--provider` records a capability
+provider decision. `packy.json` keeps that direct intent; `packy.lock.json`
+fixes every requested and required pack version, admitted source, resource
+role and chain, native binding or degradation, and projection contributor.
+Packy does not use a machine-global provider to satisfy this project graph.
+
 ## Manifest v3 and v4 bindings and exclusions
 
 Only manifest v3 and v4 can declare Claude. V4 preserves that explicit surface

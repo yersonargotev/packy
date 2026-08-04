@@ -257,11 +257,19 @@ func (c composition) contributorSet(projectionID string) []string {
 }
 
 func (f Facade) compose(requested Pack, state ActivationState, surface Surface, useRequestedIntent bool) (composition, error) {
-	return f.composeWithPolicy(requested, state, surface, useRequestedIntent, "", nil)
+	return f.composeWithPolicy(requested, state, surface, useRequestedIntent, "", nil, false)
 }
 
-func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface Surface, useRequestedIntent bool, excludedPackID string, suppressedCapabilities map[string]bool) (composition, error) {
+func (f Facade) composeProject(requested Pack, state ActivationState, surface Surface) (composition, error) {
+	return f.composeWithPolicy(requested, state, surface, true, "", nil, true)
+}
+
+func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface Surface, useRequestedIntent bool, excludedPackID string, suppressedCapabilities map[string]bool, projectSelection bool) (composition, error) {
 	result := composition{requested: requested, surface: surface, contributors: map[string][]string{}}
+	selectResources := selectPackResources
+	if projectSelection {
+		selectResources = selectProjectPackResources
+	}
 	selected := map[string]Pack{}
 	active := activeIntents(state)
 	activeIDs := map[string]bool{}
@@ -277,7 +285,7 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 		if err != nil {
 			return composition{}, err
 		}
-		pack, err = selectPackResources(pack, intent.Selection)
+		pack, err = selectResources(pack, intent.Selection)
 		if err != nil {
 			return composition{}, fmt.Errorf("active pack %q has invalid resource selection: %w", intent.PackID, err)
 		}
@@ -309,7 +317,7 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 						result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
 						return
 					}
-					pack, err = selectPackResources(catalogPack, merged)
+					pack, err = selectResources(catalogPack, merged)
 					if err != nil {
 						result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
 						return
@@ -322,7 +330,7 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 			}
 		} else if pack.manifestVersion == manifestSchemaV4 {
 			var err error
-			pack, err = selectPackResources(pack, selection)
+			pack, err = selectResources(pack, selection)
 			if err != nil {
 				result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
 				return
@@ -375,7 +383,7 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 			visit(provider.pack, ActivationRequired, providerSelection)
 			requiredAuthority := append([]string(nil), requirement.authority...)
 			if provider.resource != (ResourceIdentity{}) {
-				providerClosure, err := selectPackResources(provider.pack, providerSelection)
+				providerClosure, err := selectResources(provider.pack, providerSelection)
 				if err == nil {
 					requiredAuthority = append(requiredAuthority, packAuthorities(providerClosure)...)
 				}
@@ -776,7 +784,7 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 	if err != nil {
 		return composition{}, nil, err
 	}
-	result, err := f.composeWithPolicy(root, targetState, surface, true, requested.ID, suppressed)
+	result, err := f.composeWithPolicy(root, targetState, surface, true, requested.ID, suppressed, false)
 	if err != nil {
 		return composition{}, nil, err
 	}
