@@ -1207,7 +1207,7 @@ func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.Surfac
 	if surface == "" {
 		return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
 			capabilitypack.SurfaceCodex: codex.NewSurfaceAdapterWithConfig("", "", "", ""), capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter("", "", "", ""),
-		})
+		}, capabilitypack.SurfaceCodex)
 	}
 	if surface == capabilitypack.SurfaceOpenCode {
 		return opencode.NewSurfaceAdapter("", "", "", "")

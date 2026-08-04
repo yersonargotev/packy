@@ -229,7 +229,7 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 	statuses := make([]ProjectProjectionStatus, 0, len(lock.Projections))
 	contributor := "surface:" + string(surface) + ":pack:" + packID
 	for _, locked := range lock.Projections {
-		if !projectProjectionHasContributor(locked, contributor) {
+		if !ProjectProjectionHasContributor(locked, contributor) {
 			continue
 		}
 		projection, ok := observed[locked.Resource]
@@ -302,6 +302,23 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	}
 	if err != nil || digestJSON(providerChoices) != digestJSON(pack.ProviderChoices) {
 		return errors.New("project manifest provider choices are invalid or non-canonical")
+	}
+	if len(pack.SurfaceIntents) > 0 {
+		if len(pack.SurfaceIntents) != len(pack.Surfaces) {
+			return errors.New("project manifest surface intents do not exactly cover installed surfaces")
+		}
+		for i, intent := range pack.SurfaceIntents {
+			canonical, selectionErr := canonicalSelection(intent.Selection)
+			intentAliases := cloneAliases(intent.Aliases)
+			aliasErr := canonicalizeAliases(&intentAliases)
+			intentProviders, providerErr := canonicalProviderChoices(intent.ProviderChoices)
+			if intentProviders == nil && intent.ProviderChoices != nil {
+				intentProviders = []ProviderChoice{}
+			}
+			if intent.Surface != pack.Surfaces[i] || intent.Selection.Roots == nil || intent.Aliases == nil || intent.ProviderChoices == nil || selectionErr != nil || aliasErr != nil || providerErr != nil || digestJSON(canonical) != digestJSON(intent.Selection) || digestJSON(intentAliases) != digestJSON(intent.Aliases) || digestJSON(intentProviders) != digestJSON(intent.ProviderChoices) {
+				return errors.New("project manifest surface intents are incomplete or non-canonical")
+			}
+		}
 	}
 	if lock.Path != "packy.lock.json" || lock.Source.PackID != pack.ID || lock.Source.PackVersion != pack.Version || lock.Source.ManifestSchema < manifestSchemaV1 || lock.Source.ManifestSchema > manifestSchemaV4 || lock.Source.SourceID == "" || lock.Source.Provider == "" || lock.Source.Repository == "" || lock.Source.Commit == "" || lock.Source.Tree == "" || !projectDigestPattern.MatchString(lock.Source.SourceLockSHA256) {
 		return errors.New("project lock source identity does not exactly match the manifest pack")
@@ -475,7 +492,9 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	return nil
 }
 
-func projectProjectionHasContributor(projection ProjectProjectionPlan, contributor string) bool {
+// ProjectProjectionHasContributor reports whether portable lock evidence names
+// the exact surface-and-pack contributor.
+func ProjectProjectionHasContributor(projection ProjectProjectionPlan, contributor string) bool {
 	if projection.Contributor == contributor {
 		return true
 	}

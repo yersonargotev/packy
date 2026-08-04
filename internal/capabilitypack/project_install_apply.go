@@ -523,7 +523,7 @@ func captureProjectReverseActions(actions []ProjectionAction, backupRoot string)
 	for index, action := range actions {
 		info, err := os.Lstat(action.Target)
 		if errors.Is(err, fs.ErrNotExist) {
-			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Target: action.Target, Mode: ProjectionDeleteTarget, Precondition: projectActionDesiredFingerprint(action)})
+			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Surface: action.Surface, Kind: action.Kind, Target: action.Target, Mode: ProjectionDeleteTarget, Precondition: projectActionDesiredFingerprint(action)})
 			continue
 		}
 		if err != nil {
@@ -536,7 +536,7 @@ func captureProjectReverseActions(actions []ProjectionAction, backupRoot string)
 				_ = os.RemoveAll(backupRoot)
 				return nil, err
 			}
-			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Source: backup, Target: action.Target, Version: action.Precondition, Precondition: "missing"})
+			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Surface: action.Surface, Kind: action.Kind, Source: backup, Target: action.Target, Version: action.Precondition, Precondition: "missing"})
 			continue
 		}
 		if !info.Mode().IsRegular() {
@@ -548,7 +548,7 @@ func captureProjectReverseActions(actions []ProjectionAction, backupRoot string)
 			_ = os.RemoveAll(backupRoot)
 			return nil, err
 		}
-		reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Target: action.Target, Content: string(data), FileMode: uint32(info.Mode().Perm()), Precondition: projectActionDesiredFingerprint(action)})
+		reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Surface: action.Surface, Kind: action.Kind, Target: action.Target, Content: string(data), FileMode: uint32(info.Mode().Perm()), Precondition: projectActionDesiredFingerprint(action)})
 	}
 	for i, j := 0, len(reverse)-1; i < j; i, j = i+1, j-1 {
 		reverse[i], reverse[j] = reverse[j], reverse[i]

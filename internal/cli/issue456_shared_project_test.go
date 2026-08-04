@@ -102,6 +102,53 @@ func TestIssue456DivergentSharedAliasesBlockWithoutDuplicateProjection(t *testin
 	}
 }
 
+func TestIssue456KeepsSelectionAndAliasesPerSurface(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, _, _ := packActivationOptions(t, terminal)
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	opts.Getwd = func() (string, error) { return project, nil }
+
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--alias", "skill:ask-matt=codex-ask"); err != nil {
+		t.Fatalf("install Codex selection: %v\n%s", err, out)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "opencode", "--resource", "skill:code-review", "--alias", "skill:code-review=opencode-review"); err != nil {
+		t.Fatalf("install OpenCode selection: %v\n%s", err, out)
+	}
+
+	installation, err := capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := installation.Manifest.Packs[0]
+	if len(pack.SurfaceIntents) != 2 {
+		t.Fatalf("surface intents = %#v, want one exact intent per surface", pack.SurfaceIntents)
+	}
+	if got, want := pack.SurfaceIntents[0].Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "ask-matt"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Codex roots = %v, want %v", got, want)
+	}
+	if got, want := pack.SurfaceIntents[1].Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "code-review"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("OpenCode roots = %v, want %v", got, want)
+	}
+	for _, relative := range []string{".agents/skills/codex-ask/SKILL.md", ".agents/skills/opencode-review/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(project, relative)); err != nil {
+			t.Fatalf("missing independently aliased project skill %s: %v", relative, err)
+		}
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "matty", "--surface", "opencode"); err != nil {
+		t.Fatalf("uninstall OpenCode selection: %v\n%s", err, out)
+	}
+	if _, err := capabilitypack.LoadProjectInstallation(project); err != nil {
+		t.Fatalf("remaining Codex contract is invalid: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "codex-ask", "SKILL.md")); err != nil {
+		t.Fatalf("Codex selection was not preserved: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(project, ".agents", "skills", "opencode-review")); !os.IsNotExist(err) {
+		t.Fatalf("OpenCode-only selection was retained: %v", err)
+	}
+}
+
 func TestIssue456RemovingOpenCodePreservesCodexSharedSkills(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)

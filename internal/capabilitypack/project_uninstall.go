@@ -139,7 +139,8 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 		}
 	}
 	if report.Scope == ProjectUninstallSurface && len(remainingSurfaces) > 0 {
-		pack.Surfaces = remainingSurfaces
+		pack = withoutProjectSurfaceIntent(pack, surface)
+		retainedLock = retainProjectSelection(retainedLock, pack.ID, pack.Selection)
 		report.Pack = pack
 		manifest := installation.Manifest
 		manifest.Packs[0] = pack
@@ -201,6 +202,64 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	report.actions = actions
 	report.Observation = sealProjectUninstallPreview(report)
 	return report, nil
+}
+
+func retainProjectSelection(lock ProjectLockProposal, packID string, selection ResourceSelection) ProjectLockProposal {
+	if selection.Mode == SelectionAll {
+		return lock
+	}
+	facts := make(map[ResourceIdentity]ResourceClosureFact, len(lock.ResourceGraph.Resources))
+	for _, fact := range lock.ResourceGraph.Resources {
+		facts[fact.Resource] = fact
+	}
+	kept := make(map[ResourceIdentity]bool, len(selection.Roots))
+	queue := append([]ResourceIdentity(nil), selection.Roots...)
+	for len(queue) > 0 {
+		resource := queue[0]
+		queue = queue[1:]
+		if kept[resource] {
+			continue
+		}
+		kept[resource] = true
+		fact, ok := facts[resource]
+		if !ok {
+			continue
+		}
+		queue = append(queue, fact.Requires...)
+		queue = append(queue, fact.Notices...)
+	}
+	filterGraph := func(graph ResourceGraph) ResourceGraph {
+		resources := make([]ResourceClosureFact, 0, len(graph.Resources))
+		for _, fact := range graph.Resources {
+			if kept[fact.Resource] {
+				resources = append(resources, fact)
+			}
+		}
+		return ResourceGraph{Resources: resources}
+	}
+	lock.ResourceGraph = filterGraph(lock.ResourceGraph)
+	for i := range lock.Packs {
+		lock.Packs[i].ResourceGraph = filterGraph(lock.Packs[i].ResourceGraph)
+		if lock.Packs[i].ID == packID {
+			lock.Packs[i].Selection = cloneSelection(selection)
+		}
+	}
+	bindings := make([]LifecycleBinding, 0, len(lock.Bindings))
+	for _, binding := range lock.Bindings {
+		if kept[ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] {
+			bindings = append(bindings, binding)
+		}
+	}
+	lock.Bindings = bindings
+	degradations := make([]LifecycleExclusion, 0, len(lock.Degradations))
+	for _, degradation := range lock.Degradations {
+		resource, err := ParseResourceIdentity(degradation.ID)
+		if degradation.ResourceKind == "" || err != nil || kept[resource] {
+			degradations = append(degradations, degradation)
+		}
+	}
+	lock.Degradations = degradations
+	return lock
 }
 
 func removeProjectSurface(surfaces []Surface, removed Surface) []Surface {

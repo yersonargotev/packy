@@ -61,7 +61,7 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("inspect %s target: %w", identity, err)
 		}
-		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v1/shared-copied-skill-tree", ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceCodex}, Action: capabilitypack.ProjectionAction{ID: identity.String(), Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the shared project skill tree", identity), PreviewOnly: true}}, true, nil
+		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v1/shared-copied-skill-tree", ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceCodex}, Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceOpenCode, Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the shared project skill tree", identity), PreviewOnly: true}}, true, nil
 	case "instruction":
 		if !bound || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
@@ -118,11 +118,14 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
-		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: inspection.Exists, ObservedFingerprint: inspection.ObservedFingerprint, DesiredFingerprint: inspection.DesiredFingerprint, AdapterProvenance: "opencode-project/v1/mcp-config", Action: capabilitypack.ProjectionAction{ID: identity.String(), Kind: capabilitypack.ActionOpenCodeMCPConfig, Target: target, Content: merged, Command: resource.Command, Args: append([]string(nil), resource.Args...), FileMode: 0o644, Description: "merge the OpenCode project MCP definition", PreviewOnly: true}}, true, nil
+		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: inspection.Exists, ObservedFingerprint: inspection.ObservedFingerprint, DesiredFingerprint: inspection.DesiredFingerprint, AdapterProvenance: "opencode-project/v1/mcp-config", Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceOpenCode, Kind: capabilitypack.ActionOpenCodeMCPConfig, Target: target, Content: merged, Command: resource.Command, Args: append([]string(nil), resource.Args...), FileMode: 0o644, Description: "merge the OpenCode project MCP definition", PreviewOnly: true}}, true, nil
 	case "lifecycle":
 		if !bound {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
+		// Keep the version-controlled hook definition inert. OpenCode project
+		// activation remains an explicit personal action; cloning the project
+		// must not execute Pack-provided lifecycle behavior.
 		definition := struct {
 			ID      string                 `json:"id"`
 			Binding capabilitypack.Binding `json:"binding"`
@@ -152,7 +155,7 @@ func projectRegularFileProjection(id string, kind capabilitypack.ProjectionActio
 		return capabilitypack.ObservedProjection{}, false, err
 	}
 	desired := localprojection.FingerprintBytes([]byte(content))
-	return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v1/copied-file", Action: capabilitypack.ProjectionAction{ID: id, Kind: kind, Target: target, Content: content, FileMode: 0o644, Precondition: observed, Description: "write OpenCode project projection " + id, PreviewOnly: true}}, true, nil
+	return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v1/copied-file", Action: capabilitypack.ProjectionAction{ID: id, Surface: capabilitypack.SurfaceOpenCode, Kind: kind, Target: target, Content: content, FileMode: 0o644, Precondition: observed, Description: "write OpenCode project projection " + id, PreviewOnly: true}}, true, nil
 }
 
 func projectMarkedFileProjection(id string, kind capabilitypack.ProjectionActionKind, target, block, start, end string) (capabilitypack.ObservedProjection, bool, error) {
@@ -179,7 +182,7 @@ func projectMarkedFileProjection(id string, kind capabilitypack.ProjectionAction
 	if found {
 		content = strings.Replace(text, fragment, block, 1)
 	}
-	return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionPresent, Exists: found, ObservedFingerprint: observed, DesiredFingerprint: localprojection.FingerprintBytes([]byte(block)), AdapterProvenance: "opencode-project/v1/composable-instruction", Action: capabilitypack.ProjectionAction{ID: id, Kind: kind, Target: target, Content: content, FileMode: fileMode, Precondition: precondition, PreviewOnly: true}}, true, nil
+	return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionPresent, Exists: found, ObservedFingerprint: observed, DesiredFingerprint: localprojection.FingerprintBytes([]byte(block)), AdapterProvenance: "opencode-project/v1/composable-instruction", Action: capabilitypack.ProjectionAction{ID: id, Surface: capabilitypack.SurfaceOpenCode, Kind: kind, Target: target, Content: content, FileMode: fileMode, Precondition: precondition, PreviewOnly: true}}, true, nil
 }
 
 func projectExtractBlock(content, start, end string) (string, bool) {
@@ -206,7 +209,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	var projections []capabilitypack.ObservedProjection
 	var revision []string
 	for _, projection := range lock.Projections {
-		if !containsProjectContributor(projection, contributor) {
+		if !capabilitypack.ProjectProjectionHasContributor(projection, contributor) {
 			continue
 		}
 		name := bindings[projection.Resource]
@@ -235,7 +238,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		}
 		target := filepath.Join(projectRoot, expected)
 		observed, exists := "missing", false
-		action := capabilitypack.ProjectionAction{ID: projection.Resource.String(), Target: target, PreviewOnly: true, Precondition: projection.DesiredFingerprint, Command: projection.Command, Args: append([]string(nil), projection.Args...)}
+		action := capabilitypack.ProjectionAction{ID: projection.Resource.String(), Surface: capabilitypack.SurfaceOpenCode, Target: target, PreviewOnly: true, Precondition: projection.DesiredFingerprint, Command: projection.Command, Args: append([]string(nil), projection.Args...)}
 		var err error
 		switch projection.Resource.Kind {
 		case "skill":
@@ -288,18 +291,6 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	}
 	sort.Strings(revision)
 	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections}, nil
-}
-
-func containsProjectContributor(projection capabilitypack.ProjectProjectionPlan, contributor string) bool {
-	if projection.Contributor == contributor {
-		return true
-	}
-	for _, value := range projection.Contributors {
-		if value == contributor {
-			return true
-		}
-	}
-	return false
 }
 
 func projectTreeFingerprint(target string) (string, bool, error) {

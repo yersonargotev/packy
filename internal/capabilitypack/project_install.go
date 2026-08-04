@@ -50,9 +50,17 @@ type ProjectContractProposal struct {
 }
 
 type ProjectManifestPack struct {
-	ID              string            `json:"id"`
-	Version         string            `json:"version"`
-	Surfaces        []Surface         `json:"surfaces"`
+	ID              string                 `json:"id"`
+	Version         string                 `json:"version"`
+	Surfaces        []Surface              `json:"surfaces"`
+	Selection       ResourceSelection      `json:"selection"`
+	Aliases         []SurfaceAlias         `json:"aliases"`
+	ProviderChoices []ProviderChoice       `json:"provider_choices"`
+	SurfaceIntents  []ProjectSurfaceIntent `json:"surface_intents,omitempty"`
+}
+
+type ProjectSurfaceIntent struct {
+	Surface         Surface           `json:"surface"`
 	Selection       ResourceSelection `json:"selection"`
 	Aliases         []SurfaceAlias    `json:"aliases"`
 	ProviderChoices []ProviderChoice  `json:"provider_choices"`
@@ -391,14 +399,12 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		prior := existingInstallation.Manifest.Packs[0]
 		if prior.ID != pack.ID || prior.Version != pack.Version {
 			blockers = append(blockers, ProjectInstallBlocker{Code: "project_pack_conflict", Detail: "the project already declares a different pack identity or exact version", Remediation: "use project update or uninstall the existing project pack first"})
-		} else if digestJSON(prior.Selection) != digestJSON(selection) || digestJSON(prior.ProviderChoices) != digestJSON(providerChoices) {
-			blockers = append(blockers, ProjectInstallBlocker{Code: "project_intent_conflict", Detail: "the new surface must install the same exact selected closure and provider choices", Remediation: "use the same resource roots and provider choices as the existing project installation"})
-		} else if !projectSupportsSurface(prior.Surfaces, request.Surface) && digestJSON(prior.Aliases) != digestJSON(aliases) {
-			blockers = append(blockers, ProjectInstallBlocker{Code: "divergent_shared_alias", Detail: "Codex and OpenCode aliases diverge for a shared project target", Remediation: "use the same alias for shared project resources"})
 		}
 		manifestPack = prior
-		manifestPack.Surfaces = append(manifestPack.Surfaces, request.Surface)
-		manifestPack.Surfaces = sortedProjectSurfaces(manifestPack.Surfaces)
+		if !projectSupportsSurface(prior.Surfaces, request.Surface) {
+			manifestPack = withProjectSurfaceIntent(manifestPack, ProjectSurfaceIntent{Surface: request.Surface, Selection: selection, Aliases: aliases, ProviderChoices: providerChoices})
+			blockers = append(blockers, divergentSharedProjectAliasBlockers(existingLock.Projections, projections)...)
+		}
 	}
 	disposition := ProjectInstallPreviewable
 	if len(blockers) > 0 {
@@ -413,6 +419,9 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	lockDegradations := append([]LifecycleExclusion{}, contract.Exclusions...)
 	lockModes := append([]OptionalMode{}, contract.OptionalModes...)
 	if existingContract && !request.reconcile {
+		graph = mergeProjectResourceGraphs(existingLock.ResourceGraph, graph)
+		resolvedPacks = mergeProjectResolvedPacks(existingLock.Packs, resolvedPacks, pack.ID)
+		sources = mergeProjectSources(existingLock.Sources, sources, pack.ID)
 		lockBindings = mergeProjectBindings(existingLock.Bindings, lockBindings)
 		lockDegradations = mergeProjectDegradations(existingLock.Degradations, lockDegradations)
 		lockModes = mergeProjectModes(existingLock.Modes, lockModes)
@@ -595,6 +604,173 @@ func sortedProjectSurfaces(values []Surface) []Surface {
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+
+func projectSurfaceIntents(pack ProjectManifestPack) []ProjectSurfaceIntent {
+	if len(pack.SurfaceIntents) > 0 {
+		result := append([]ProjectSurfaceIntent(nil), pack.SurfaceIntents...)
+		return result
+	}
+	result := make([]ProjectSurfaceIntent, 0, len(pack.Surfaces))
+	for _, surface := range pack.Surfaces {
+		result = append(result, ProjectSurfaceIntent{
+			Surface: surface, Selection: cloneSelection(pack.Selection), Aliases: cloneAliases(pack.Aliases), ProviderChoices: cloneProviderChoices(pack.ProviderChoices),
+		})
+	}
+	return result
+}
+
+func withProjectSurfaceIntent(pack ProjectManifestPack, intent ProjectSurfaceIntent) ProjectManifestPack {
+	intent.Selection, _ = canonicalSelection(intent.Selection)
+	if intent.Aliases == nil {
+		intent.Aliases = []SurfaceAlias{}
+	}
+	if intent.ProviderChoices == nil {
+		intent.ProviderChoices = []ProviderChoice{}
+	}
+	intents := projectSurfaceIntents(pack)
+	replaced := false
+	for i := range intents {
+		if intents[i].Surface == intent.Surface {
+			intents[i] = intent
+			replaced = true
+		}
+	}
+	if !replaced {
+		intents = append(intents, intent)
+	}
+	sort.Slice(intents, func(i, j int) bool { return intents[i].Surface < intents[j].Surface })
+	pack.SurfaceIntents = intents
+	pack.Surfaces = make([]Surface, 0, len(intents))
+	combined := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{}}
+	for _, value := range intents {
+		pack.Surfaces = append(pack.Surfaces, value.Surface)
+		if value.Selection.Mode == SelectionAll {
+			combined = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+		} else if combined.Mode != SelectionAll {
+			combined.Roots = append(combined.Roots, value.Selection.Roots...)
+		}
+	}
+	pack.Selection, _ = canonicalSelection(combined)
+	// These legacy aggregate fields remain canonical for schema-v1 readers. The
+	// exact host-specific aliases and provider decisions live in SurfaceIntents.
+	pack.Aliases = cloneAliases(intents[0].Aliases)
+	pack.ProviderChoices = cloneProviderChoices(intents[0].ProviderChoices)
+	return pack
+}
+
+func withoutProjectSurfaceIntent(pack ProjectManifestPack, surface Surface) ProjectManifestPack {
+	intents := projectSurfaceIntents(pack)
+	kept := intents[:0]
+	for _, intent := range intents {
+		if intent.Surface != surface {
+			kept = append(kept, intent)
+		}
+	}
+	pack.SurfaceIntents = nil
+	pack.Surfaces = nil
+	if len(kept) == 0 {
+		return pack
+	}
+	pack.Selection = kept[0].Selection
+	pack.Aliases = cloneAliases(kept[0].Aliases)
+	pack.ProviderChoices = cloneProviderChoices(kept[0].ProviderChoices)
+	for _, intent := range kept {
+		pack = withProjectSurfaceIntent(pack, intent)
+	}
+	if len(kept) == 1 {
+		pack.SurfaceIntents = nil
+	}
+	return pack
+}
+
+func divergentSharedProjectAliasBlockers(existing, added []ProjectProjectionPlan) []ProjectInstallBlocker {
+	var blockers []ProjectInstallBlocker
+	for _, candidate := range added {
+		for _, locked := range existing {
+			if candidate.Resource != locked.Resource || candidate.DesiredFingerprint != locked.DesiredFingerprint {
+				continue
+			}
+			if filepath.Clean(candidate.Target) == filepath.Clean(locked.Target) {
+				continue
+			}
+			if candidate.Resource.Kind == "skill" || len(candidate.DiscoverableBy) > 0 || len(locked.DiscoverableBy) > 0 {
+				blockers = append(blockers, ProjectInstallBlocker{Code: "divergent_shared_alias", Resource: candidate.Resource, Target: candidate.Target, Detail: "Codex and OpenCode aliases diverge for one shared project resource", Remediation: "use the same alias for this shared project resource"})
+			}
+		}
+	}
+	return blockers
+}
+
+func mergeProjectResourceGraphs(existing, added ResourceGraph) ResourceGraph {
+	byResource := make(map[ResourceIdentity]ResourceClosureFact, len(existing.Resources)+len(added.Resources))
+	for _, fact := range existing.Resources {
+		byResource[fact.Resource] = fact
+	}
+	for _, fact := range added.Resources {
+		byResource[fact.Resource] = fact
+	}
+	resources := make([]ResourceClosureFact, 0, len(byResource))
+	for _, fact := range byResource {
+		resources = append(resources, fact)
+	}
+	sort.Slice(resources, func(i, j int) bool { return resources[i].Resource.String() < resources[j].Resource.String() })
+	return ResourceGraph{Resources: resources}
+}
+
+func mergeProjectResolvedPacks(existing, added []ProjectResolvedPack, requestedID string) []ProjectResolvedPack {
+	byID := map[string]ProjectResolvedPack{}
+	for _, resolution := range existing {
+		byID[resolution.ID] = resolution
+	}
+	for _, resolution := range added {
+		if prior, ok := byID[resolution.ID]; ok {
+			resolution.ResourceGraph = mergeProjectResourceGraphs(prior.ResourceGraph, resolution.ResourceGraph)
+			if resolution.ID == requestedID {
+				if prior.Selection.Mode == SelectionAll || resolution.Selection.Mode == SelectionAll {
+					resolution.Selection = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+				} else {
+					resolution.Selection, _ = mergeCustomSelections(prior.Selection, resolution.Selection)
+				}
+			}
+		}
+		byID[resolution.ID] = resolution
+	}
+	result := make([]ProjectResolvedPack, 0, len(byID))
+	if requested, ok := byID[requestedID]; ok {
+		result = append(result, requested)
+		delete(byID, requestedID)
+	}
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		result = append(result, byID[id])
+	}
+	return result
+}
+
+func mergeProjectSources(existing, added []ProjectPackSourceIdentity, requestedID string) []ProjectPackSourceIdentity {
+	byID := map[string]ProjectPackSourceIdentity{}
+	for _, source := range append(append([]ProjectPackSourceIdentity(nil), existing...), added...) {
+		byID[source.PackID] = source
+	}
+	result := make([]ProjectPackSourceIdentity, 0, len(byID))
+	if source, ok := byID[requestedID]; ok {
+		result = append(result, source)
+		delete(byID, requestedID)
+	}
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		result = append(result, byID[id])
+	}
 	return result
 }
 

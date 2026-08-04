@@ -8,14 +8,19 @@ import (
 	"strings"
 )
 
-type projectSurfaceAdapterSet struct{ adapters map[Surface]SurfaceAdapter }
+type projectSurfaceAdapterSet struct {
+	adapters       map[Surface]SurfaceAdapter
+	contractWriter Surface
+}
 
-func NewProjectSurfaceAdapterSet(adapters map[Surface]SurfaceAdapter) SurfaceAdapter {
+// NewProjectSurfaceAdapterSet composes installed project hosts while keeping
+// each projection action owned by the adapter that produced it.
+func NewProjectSurfaceAdapterSet(adapters map[Surface]SurfaceAdapter, contractWriter Surface) SurfaceAdapter {
 	cloned := make(map[Surface]SurfaceAdapter, len(adapters))
 	for surface, adapter := range adapters {
 		cloned[surface] = adapter
 	}
-	return projectSurfaceAdapterSet{adapters: cloned}
+	return projectSurfaceAdapterSet{adapters: cloned, contractWriter: contractWriter}
 }
 
 func (a projectSurfaceAdapterSet) InspectSurface(ctx context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
@@ -51,14 +56,18 @@ func (a projectSurfaceAdapterSet) InspectSurface(ctx context.Context, transition
 func (a projectSurfaceAdapterSet) ApplyProjections(ctx context.Context, actions []ProjectionAction) *ProjectionActionError {
 	grouped := map[Surface][]ProjectionAction{}
 	for _, action := range actions {
-		surface := SurfaceCodex
-		switch action.Kind {
-		case ActionOpenCodeInstructionFile, ActionOpenCodeConfigReference, ActionOpenCodeMCPConfig, ActionOpenCodeAgentFile, ActionOpenCodeCommandFile, ActionOpenCodeAssetFile:
-			surface = SurfaceOpenCode
+		surface := action.Surface
+		if surface == "" {
+			surface = a.contractWriter
 		}
 		grouped[surface] = append(grouped[surface], action)
 	}
-	for _, surface := range []Surface{SurfaceOpenCode, SurfaceCodex} {
+	surfaces := make([]Surface, 0, len(grouped))
+	for surface := range grouped {
+		surfaces = append(surfaces, surface)
+	}
+	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i] < surfaces[j] })
+	for _, surface := range surfaces {
 		if len(grouped[surface]) == 0 {
 			continue
 		}
