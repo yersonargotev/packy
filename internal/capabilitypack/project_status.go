@@ -444,6 +444,11 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		}
 		seenTargets[projection.Target], seenResources[projection.Resource] = true, true
 	}
+	for resource := range bindings {
+		if !seenResources[resource] {
+			return fmt.Errorf("project lock native-bound operational resource %s has no projection plan", resource)
+		}
+	}
 	return nil
 }
 

@@ -161,9 +161,20 @@ func TestIssue455ProjectProvidersRequireAndPersistAnExplicitChoice(t *testing.T)
 	if roles[ResourceIdentity{Kind: "skill", ID: "root"}] != ResourceRoleRoot || roles[ResourceIdentity{Kind: "asset", ID: "data"}] != ResourceRoleAsset || roles[ResourceIdentity{Kind: "notice", ID: "license"}] != ResourceRoleNotice || len(chains[ResourceIdentity{Kind: "asset", ID: "data"}]) != 2 {
 		t.Fatalf("resolved roles and chains = %#v %#v", roles, chains)
 	}
-	chosen.Lock.Projections = []ProjectProjectionPlan{}
+	chosen.Lock.Projections = make([]ProjectProjectionPlan, 0, len(chosen.Lock.Bindings))
+	for _, binding := range chosen.Lock.Bindings {
+		chosen.Lock.Projections = append(chosen.Lock.Projections, ProjectProjectionPlan{
+			Resource: ResourceIdentity{Kind: binding.Kind, ID: binding.ID}, Target: ".agents/skills/" + binding.Name,
+			Mode: "copy_tree", FileMode: 0o700, DesiredFingerprint: strings.Repeat("c", 64), ObservedState: "installed", Contributor: "surface:codex:pack:consumer",
+		})
+	}
 	if err := validateProjectInstallation(chosen.Manifest, chosen.Lock); err != nil {
 		t.Fatalf("generated provider contract is invalid: %v", err)
+	}
+	missingNativeProjection := chosen.Lock
+	missingNativeProjection.Projections = append([]ProjectProjectionPlan(nil), chosen.Lock.Projections[1:]...)
+	if err := validateProjectInstallation(chosen.Manifest, missingNativeProjection); err == nil || !strings.Contains(err.Error(), "has no projection plan") {
+		t.Fatalf("missing native projection error = %v", err)
 	}
 	missingProviderResource := chosen.Lock
 	missingProviderResource.Packs = append([]ProjectResolvedPack(nil), chosen.Lock.Packs...)

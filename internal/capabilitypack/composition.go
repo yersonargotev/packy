@@ -188,10 +188,7 @@ func (c composition) combinedPack() Pack {
 	for _, pack := range c.packs {
 		preserveResourceOrder = preserveResourceOrder || pack.manifestVersion == manifestSchemaV4
 		intent := intentByPackID(c.intentFacts, pack.ID)
-		aliases := intent.Aliases
-		if c.projectAliases != nil {
-			aliases = c.projectAliases
-		}
+		aliases := compositionAliases(intent.Aliases, c.projectAliases)
 		for _, tool := range pack.Requires.Tools {
 			tools[tool] = true
 		}
@@ -480,10 +477,8 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 	projectedNames := map[string]string{}
 	for _, pack := range result.packs {
 		intent := intentByPackID(active, pack.ID)
-		aliases := intent.Aliases
-		if projectSelection {
-			aliases = projectAliases
-		} else {
+		aliases := compositionAliases(intent.Aliases, result.projectAliases)
+		if !projectSelection {
 			for _, alias := range aliases {
 				if !packHasAliasTarget(pack, alias, surface) {
 					result.blockers = append(result.blockers, PlanBlocker{BlockerAlias, alias.Kind + ":" + alias.ID, "saved surface alias no longer targets a bound portable resource"})
@@ -537,6 +532,13 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 		return a.Capability < b.Capability
 	})
 	return result, nil
+}
+
+func compositionAliases(intentAliases, projectAliases []SurfaceAlias) []SurfaceAlias {
+	if projectAliases != nil {
+		return projectAliases
+	}
+	return intentAliases
 }
 
 func intentIsExplicit(intent ActivationIntent) bool {
