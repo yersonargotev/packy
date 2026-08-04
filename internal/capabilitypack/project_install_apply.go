@@ -31,6 +31,33 @@ type ProjectInstallApplyResult struct {
 	Observation   string `json:"observation"`
 }
 
+type ProjectInstallRecoveryRequest struct {
+	ProjectRoot string
+	PackyHome   string
+	Adapter     SurfaceAdapter
+}
+
+func (f Facade) RecoverProjectInstall(ctx context.Context, request ProjectInstallRecoveryRequest) (bool, error) {
+	if request.Adapter == nil || request.ProjectRoot == "" || request.PackyHome == "" {
+		return false, errors.New("project installation recovery requires the project root, adapter, and Packy Home")
+	}
+	journalPath := projectInstallJournalPath(request.PackyHome, request.ProjectRoot)
+	if _, err := os.Stat(journalPath); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	guard, err := acquireProjectInstallGuard(ctx, request.ProjectRoot)
+	if err != nil {
+		return false, err
+	}
+	defer guard.Close()
+	if err := recoverProjectInstall(ctx, request.Adapter, journalPath, request.ProjectRoot); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 type projectInstallJournal struct {
 	SchemaVersion int                `json:"schema_version"`
 	Observation   string             `json:"observation"`
@@ -75,7 +102,7 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
 	}
-	notices := renderProjectNotices(fresh)
+	notices := fresh.noticeContent
 	lock, err := marshalProjectLock(fresh.Lock)
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
@@ -83,7 +110,7 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	nonLock := append([]ProjectionAction(nil), fresh.actions...)
 	nonLock = append(nonLock,
 		ProjectionAction{ID: "project-contract:manifest", Kind: ActionProjectManifestFile, Target: filepath.Join(fresh.projectRoot, fresh.Manifest.Path), Content: string(manifest), FileMode: 0o644, Precondition: "missing", Description: "write the project pack manifest"},
-		ProjectionAction{ID: "project-contract:notices", Kind: ActionProjectNoticesFile, Target: filepath.Join(fresh.projectRoot, fresh.Notices.Path), Content: notices, FileMode: 0o644, Precondition: "missing", Description: "write the project Packy notices"},
+		ProjectionAction{ID: "project-contract:notices", Kind: ActionProjectNoticesFile, Target: filepath.Join(fresh.projectRoot, fresh.Notices.Path), Content: notices, FileMode: fresh.noticeMode, Precondition: fresh.noticeBefore, Description: "merge the project Packy notice contribution"},
 	)
 	sort.SliceStable(nonLock, func(i, j int) bool { return nonLock[i].Target < nonLock[j].Target })
 	lockAction := ProjectionAction{ID: "project-contract:lock", Kind: ActionProjectLockFile, Target: filepath.Join(fresh.projectRoot, fresh.Lock.Path), Content: string(lock), FileMode: 0o644, Precondition: "missing", Description: "publish the verified project pack lock"}
@@ -122,7 +149,7 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	if err := verifyProjectRegularFile(filepath.Join(fresh.projectRoot, fresh.Manifest.Path), manifest, 0o644); err != nil {
 		return fail(err)
 	}
-	if err := verifyProjectRegularFile(filepath.Join(fresh.projectRoot, fresh.Notices.Path), []byte(notices), 0o644); err != nil {
+	if err := verifyProjectNoticeContribution(fresh); err != nil {
 		return fail(err)
 	}
 	if actionErr := request.Adapter.ApplyProjections(ctx, []ProjectionAction{lockAction}); actionErr != nil {
@@ -161,10 +188,10 @@ func marshalProjectLock(proposal ProjectLockProposal) ([]byte, error) {
 	return append(data, '\n'), err
 }
 
-func renderProjectNotices(preview JSONProjectInstallPreview) string {
+func renderProjectNoticeBlock(preview JSONProjectInstallPreview) string {
 	var out strings.Builder
-	out.WriteString("# Packy project notices\n\n")
 	fmt.Fprintf(&out, "<!-- packy:project:%s:notices:start -->\n", preview.Pack.ID)
+	out.WriteString("## Packy project notices\n\n")
 	fmt.Fprintf(&out, "Pack: %s %s\n\nAdmitted source: %s\n\n", preview.Pack.ID, preview.Pack.Version, preview.Lock.Source.Repository)
 	if len(preview.Notices.Contributions) == 0 {
 		out.WriteString("No additional downstream notice text is required by the admitted pack contract.\n")
@@ -172,8 +199,90 @@ func renderProjectNotices(preview JSONProjectInstallPreview) string {
 	for _, notice := range preview.Notices.Contributions {
 		fmt.Fprintf(&out, "## %s\n\nLicense: %s\n\n%s\n\n", notice.Resource, notice.License, notice.Attribution)
 	}
-	fmt.Fprintf(&out, "<!-- packy:project:%s:notices:end -->\n", preview.Pack.ID)
+	fmt.Fprintf(&out, "<!-- packy:project:%s:notices:end -->", preview.Pack.ID)
 	return out.String()
+}
+
+func projectNoticeMarkers(packID string) (string, string) {
+	return "<!-- packy:project:" + packID + ":notices:start -->", "<!-- packy:project:" + packID + ":notices:end -->"
+}
+
+func planProjectNotices(preview JSONProjectInstallPreview, lockExists bool) (string, uint32, string, bool, []ProjectInstallBlocker, error) {
+	path := filepath.Join(preview.projectRoot, preview.Notices.Path)
+	current, err := os.ReadFile(path)
+	before, mode := "missing", uint32(0o644)
+	if err == nil {
+		info, statErr := os.Lstat(path)
+		if statErr != nil {
+			return "", 0, "", false, nil, statErr
+		}
+		if !info.Mode().IsRegular() {
+			return "", 0, "", false, []ProjectInstallBlocker{{Code: "unsafe_path", Target: preview.Notices.Path, Detail: "project notices target is not a regular file", Remediation: "move or remove the unsafe target before installation"}}, nil
+		}
+		before, mode = fingerprintProjectBytes(current), uint32(info.Mode().Perm())
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", 0, "", false, nil, err
+	}
+	content := string(current)
+	start, end := projectNoticeMarkers(preview.Pack.ID)
+	starts, ends := strings.Count(content, start), strings.Count(content, end)
+	block := renderProjectNoticeBlock(preview)
+	if starts == 0 && ends == 0 {
+		if lockExists {
+			return content, mode, before, false, []ProjectInstallBlocker{{Code: "owned_drift", Target: preview.Notices.Path, Detail: "the locked Packy notice contribution is missing", Remediation: "restore the generated notice contribution before installation"}}, nil
+		}
+		return mergeProjectContribution(content, block, start, end), mode, before, false, nil, nil
+	}
+	if starts != 1 || ends != 1 {
+		return content, mode, before, false, []ProjectInstallBlocker{{Code: "ambiguous_packy_markers", Target: preview.Notices.Path, Detail: "the project notices contain malformed or duplicate Packy markers", Remediation: "restore one exact Packy notice contribution before installation"}}, nil
+	}
+	fragment, found := extractProjectContribution(content, start, end)
+	if !found {
+		return content, mode, before, false, []ProjectInstallBlocker{{Code: "ambiguous_packy_markers", Target: preview.Notices.Path, Detail: "the project notices contain malformed Packy markers", Remediation: "restore one exact Packy notice contribution before installation"}}, nil
+	}
+	if fragment != block {
+		code := "ambiguous_packy_markers"
+		if lockExists {
+			code = "owned_drift"
+		}
+		return content, mode, before, false, []ProjectInstallBlocker{{Code: code, Target: preview.Notices.Path, Detail: "the Packy notice contribution differs from the admitted content", Remediation: "restore the exact generated notice contribution before installation"}}, nil
+	}
+	if lockExists && mode != preview.Lock.NoticesFileMode {
+		return content, mode, before, false, []ProjectInstallBlocker{{Code: "owned_drift", Target: preview.Notices.Path, Detail: "the Packy notices file mode differs from the lock", Remediation: "restore the locked notices file mode before installation"}}, nil
+	}
+	return content, mode, before, true, nil, nil
+}
+
+func mergeProjectContribution(current, block, start, end string) string {
+	if fragment, found := extractProjectContribution(current, start, end); found {
+		return strings.Replace(current, fragment, block, 1)
+	}
+	trimmed := strings.TrimRight(current, "\n")
+	if trimmed == "" {
+		return block + "\n"
+	}
+	return trimmed + "\n\n" + block + "\n"
+}
+
+func extractProjectContribution(content, start, end string) (string, bool) {
+	startIndex := strings.Index(content, start)
+	if startIndex < 0 {
+		return "", false
+	}
+	relativeEnd := strings.Index(content[startIndex+len(start):], end)
+	if relativeEnd < 0 {
+		return "", false
+	}
+	endIndex := startIndex + len(start) + relativeEnd + len(end)
+	return content[startIndex:endIndex], true
+}
+
+func verifyProjectNoticeContribution(preview JSONProjectInstallPreview) error {
+	_, mode, _, intact, blockers, err := planProjectNotices(preview, true)
+	if err != nil || !intact || len(blockers) > 0 || mode != preview.Lock.NoticesFileMode {
+		return fmt.Errorf("verify project notice contribution: %w", ErrVerificationFailed)
+	}
+	return nil
 }
 
 func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, error) {
@@ -216,7 +325,7 @@ func inspectProjectContract(preview JSONProjectInstallPreview, existingLock Proj
 	targets := []struct {
 		name    string
 		content []byte
-	}{{preview.Manifest.Path, manifest}, {preview.Notices.Path, []byte(renderProjectNotices(preview))}, {preview.Lock.Path, lock}}
+	}{{preview.Manifest.Path, manifest}, {preview.Lock.Path, lock}}
 	if !lockExists {
 		var blockers []ProjectInstallBlocker
 		for _, target := range targets {
@@ -253,6 +362,9 @@ func inspectProjectContract(preview JSONProjectInstallPreview, existingLock Proj
 	}
 	if len(blockers) > 0 {
 		return false, blockers, nil
+	}
+	if !preview.noticeIntact {
+		return false, nil, nil
 	}
 	for _, projection := range preview.Projections {
 		if projection.ObservedState != "owned" {

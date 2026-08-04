@@ -62,6 +62,7 @@ type ProjectLockProposal struct {
 	Modes                  []OptionalMode            `json:"modes"`
 	ManifestSHA256         string                    `json:"manifest_sha256"`
 	NoticesSHA256          string                    `json:"notices_sha256"`
+	NoticesFileMode        uint32                    `json:"notices_file_mode"`
 	Projections            []ProjectProjectionPlan   `json:"projections"`
 }
 
@@ -123,6 +124,10 @@ type JSONProjectInstallPreview struct {
 	projectRoot   string
 	pack          Pack
 	actions       []ProjectionAction
+	noticeContent string
+	noticeMode    uint32
+	noticeBefore  string
+	noticeIntact  bool
 }
 
 type ProjectInstallNotActionableError struct{ Disposition ProjectInstallDisposition }
@@ -265,7 +270,22 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		return JSONProjectInstallPreview{}, err
 	}
 	report.Lock.ManifestSHA256 = fingerprintProjectBytes(manifestBytes)
-	report.Lock.NoticesSHA256 = fingerprintProjectBytes([]byte(renderProjectNotices(report)))
+	report.Lock.NoticesSHA256 = fingerprintProjectBytes([]byte(renderProjectNoticeBlock(report)))
+	if lockExists {
+		report.Lock.NoticesFileMode = existingLock.NoticesFileMode
+	}
+	noticeContent, noticeMode, noticeBefore, noticeIntact, noticeBlockers, err := planProjectNotices(report, lockExists)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	if !lockExists {
+		report.Lock.NoticesFileMode = noticeMode
+	}
+	report.noticeContent, report.noticeMode, report.noticeBefore, report.noticeIntact = noticeContent, noticeMode, noticeBefore, noticeIntact
+	report.Blockers = append(report.Blockers, noticeBlockers...)
+	if len(noticeBlockers) > 0 {
+		report.Disposition = ProjectInstallBlocked
+	}
 	if len(blockers) == 0 {
 		converged, contractBlockers, err := inspectProjectContract(report, existingLock, lockExists)
 		if err != nil {
@@ -278,7 +298,16 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			report.Disposition = ProjectInstallConverged
 		}
 	}
-	report.Observation = sealProjectInstallPreview(report, observationDigest(observation))
+	sort.Slice(report.Blockers, func(i, j int) bool {
+		if report.Blockers[i].Code != report.Blockers[j].Code {
+			return report.Blockers[i].Code < report.Blockers[j].Code
+		}
+		if report.Blockers[i].Target != report.Blockers[j].Target {
+			return report.Blockers[i].Target < report.Blockers[j].Target
+		}
+		return report.Blockers[i].Resource.String() < report.Blockers[j].Resource.String()
+	})
+	report.Observation = sealProjectInstallPreview(report, observationDigest(observation)+"\nnotices="+noticeBefore)
 	return report, nil
 }
 

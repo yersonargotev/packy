@@ -23,10 +23,14 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	opts.Getwd = func() (string, error) { return nested, nil }
 	dirtyPath := filepath.Join(project, "unrelated.txt")
 	agentsPath := filepath.Join(project, "AGENTS.md")
+	noticesPath := filepath.Join(project, "PACKY-NOTICES.md")
 	if err := os.WriteFile(dirtyPath, []byte("unrelated dirty content\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(agentsPath, []byte("foreign preamble\n\nforeign epilogue\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(noticesPath, []byte("foreign notice preamble\n\nforeign notice epilogue\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	gitBefore := snapshotTree(t, filepath.Join(project, ".git"))
@@ -72,12 +76,15 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 		t.Fatalf("lock = %#v", lock)
 	}
 
-	notices, err := os.ReadFile(filepath.Join(project, "PACKY-NOTICES.md"))
+	notices, err := os.ReadFile(noticesPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(notices), "Packy project notices") || !strings.Contains(string(notices), "mattpocock/skills") {
+	if !strings.Contains(string(notices), "foreign notice preamble") || !strings.Contains(string(notices), "Packy project notices") || !strings.Contains(string(notices), "mattpocock/skills") || !strings.Contains(string(notices), "foreign notice epilogue") {
 		t.Fatalf("notices = %q", notices)
+	}
+	if info, err := os.Stat(noticesPath); err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("PACKY-NOTICES.md mode = %v, %v; want 0640", info, err)
 	}
 	agents, err := os.ReadFile(agentsPath)
 	if err != nil {
@@ -116,6 +123,12 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 		t.Fatalf("install caused Git, Packy Home, or process effects: calls=%v", opts.Runner.(*fakeRunner).calls)
 	}
 
+	if err := os.WriteFile(agentsPath, []byte(strings.Replace(string(agents), "foreign epilogue", "changed foreign epilogue", 1)), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(noticesPath, []byte(strings.Replace(string(notices), "foreign notice epilogue", "changed foreign notice epilogue", 1)), 0o640); err != nil {
+		t.Fatal(err)
+	}
 	beforeRepeat := snapshotTree(t, project)
 	terminal.calls = 0
 	repeated, repeatErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")

@@ -86,6 +86,17 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			}
 			facade := capabilitypack.NewFacade(composition.catalog)
 			adapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			if !dryRun {
+				recovered, err := facade.RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+				if err != nil {
+					return err
+				}
+				if recovered && !jsonOutput {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Recovered the prior project installation attempt before preview"); err != nil {
+						return err
+					}
+				}
+			}
 			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, adapter)
 			if err != nil {
 				return err
