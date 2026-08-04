@@ -220,7 +220,7 @@ func (f Facade) previewCompleteProjectReconcile(ctx context.Context, projectRoot
 		if !found {
 			return JSONProjectInstallPreview{}, fmt.Errorf("complete project reconcile is missing the %s adapter", intent.Surface)
 		}
-		report, previewErr := f.PreviewProjectInstall(ctx, ProjectInstallRequest{
+		report, previewErr := f.previewProjectInstall(ctx, ProjectInstallRequest{
 			PackID: pack.ID, Version: pack.Version, Surface: intent.Surface, ProjectRoot: projectRoot,
 			Selection: intent.Selection, Aliases: intent.Aliases, ProviderChoices: intent.ProviderChoices,
 			manifestPack: pack, reconcile: true,
@@ -303,7 +303,9 @@ func (f Facade) previewCompleteProjectReconcile(ctx context.Context, projectRoot
 
 func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
 	if request.reconcileAll {
-		return f.previewCompleteProjectReconcile(ctx, request.ProjectRoot, adapter)
+		return withBundleObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
+			return locked.previewCompleteProjectReconcile(ctx, request.ProjectRoot, adapter)
+		})
 	}
 	return withBundleObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
 		return locked.previewProjectInstall(ctx, request, adapter)
