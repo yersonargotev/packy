@@ -102,7 +102,8 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 	if err := strictDecode(manifestData, &document); err != nil {
 		return ProjectInstallation{}, fmt.Errorf("decode project manifest: %w", err)
 	}
-	if document.SchemaVersion != 1 || document.MinimumPackyCapability != "project-installation-v1" {
+	legacyV1 := document.SchemaVersion == projectContractSchemaV1 && document.MinimumPackyCapability == ""
+	if !legacyV1 && !supportedProjectContractVersion(document.SchemaVersion, document.MinimumPackyCapability) {
 		return ProjectInstallation{}, errors.New("project manifest schema or minimum Packy capability is unsupported")
 	}
 	manifest := ProjectContractProposal{Path: "packy.json", SchemaVersion: document.SchemaVersion, Packs: document.Packs}
@@ -174,7 +175,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		if inspectErr != nil {
 			return report, inspectErr
 		}
-		projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation)
+		projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID)
 		if inspectErr != nil {
 			return report, inspectErr
 		}
@@ -217,7 +218,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 	return report, nil
 }
 
-func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLockProposal, observation SurfaceInspection) ([]ProjectProjectionStatus, error) {
+func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLockProposal, observation SurfaceInspection, surface Surface, packID string) ([]ProjectProjectionStatus, error) {
 	observed := make(map[ResourceIdentity]ObservedProjection, len(observation.Projections))
 	for _, projection := range observation.Projections {
 		resource, err := ParseResourceIdentity(projection.ID)
@@ -227,7 +228,11 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 		observed[resource] = projection
 	}
 	statuses := make([]ProjectProjectionStatus, 0, len(lock.Projections))
+	contributor := "surface:" + string(surface) + ":pack:" + packID
 	for _, locked := range lock.Projections {
+		if !ProjectProjectionHasContributor(locked, contributor) {
+			continue
+		}
 		projection, ok := observed[locked.Resource]
 		if !ok {
 			return nil, fmt.Errorf("project adapter omitted locked projection %s", locked.Resource)
@@ -273,11 +278,26 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		return errors.New("project manifest must contain exactly one pack in schema version 1")
 	}
 	pack := manifest.Packs[0]
+	minimumCapability := projectContractCapabilityV1
+	if manifest.SchemaVersion == projectContractSchemaV2 {
+		minimumCapability = projectContractCapabilityV2
+	}
+	if !supportedProjectContractVersion(manifest.SchemaVersion, minimumCapability) || lock.SchemaVersion != manifest.SchemaVersion || !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
+		return errors.New("project manifest and lock schema versions do not match")
+	}
+	if manifest.SchemaVersion == projectContractSchemaV1 && len(pack.SurfaceIntents) > 0 {
+		return errors.New("project manifest schema version 1 forbids per-surface intents")
+	}
 	if !idPattern.MatchString(pack.ID) || !semverPattern.MatchString(pack.Version) {
 		return errors.New("project manifest pack identity must use a valid ID and exact semantic version")
 	}
-	if len(pack.Surfaces) != 1 || pack.Surfaces[0] != SurfaceCodex {
-		return errors.New("project manifest schema version 1 supports exactly the Codex surface")
+	if len(pack.Surfaces) == 0 || digestJSON(pack.Surfaces) != digestJSON(sortedProjectSurfaces(pack.Surfaces)) {
+		return errors.New("project manifest surfaces are empty, duplicated, or unsorted")
+	}
+	for _, surface := range pack.Surfaces {
+		if surface != SurfaceCodex && surface != SurfaceOpenCode {
+			return fmt.Errorf("project manifest schema version 1 does not support CLI surface %q", surface)
+		}
 	}
 	selection, err := canonicalSelection(pack.Selection)
 	if err != nil || digestJSON(selection) != digestJSON(pack.Selection) || pack.Selection.Roots == nil || pack.Aliases == nil || pack.ProviderChoices == nil {
@@ -293,6 +313,23 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	}
 	if err != nil || digestJSON(providerChoices) != digestJSON(pack.ProviderChoices) {
 		return errors.New("project manifest provider choices are invalid or non-canonical")
+	}
+	if len(pack.SurfaceIntents) > 0 {
+		if len(pack.SurfaceIntents) != len(pack.Surfaces) {
+			return errors.New("project manifest surface intents do not exactly cover installed surfaces")
+		}
+		for i, intent := range pack.SurfaceIntents {
+			canonical, selectionErr := canonicalSelection(intent.Selection)
+			intentAliases := cloneAliases(intent.Aliases)
+			aliasErr := canonicalizeAliases(&intentAliases)
+			intentProviders, providerErr := canonicalProviderChoices(intent.ProviderChoices)
+			if intentProviders == nil && intent.ProviderChoices != nil {
+				intentProviders = []ProviderChoice{}
+			}
+			if intent.Surface != pack.Surfaces[i] || intent.Selection.Roots == nil || intent.Aliases == nil || intent.ProviderChoices == nil || selectionErr != nil || aliasErr != nil || providerErr != nil || digestJSON(canonical) != digestJSON(intent.Selection) || digestJSON(intentAliases) != digestJSON(intent.Aliases) || digestJSON(intentProviders) != digestJSON(intent.ProviderChoices) {
+				return errors.New("project manifest surface intents are incomplete or non-canonical")
+			}
+		}
 	}
 	if lock.Path != "packy.lock.json" || lock.Source.PackID != pack.ID || lock.Source.PackVersion != pack.Version || lock.Source.ManifestSchema < manifestSchemaV1 || lock.Source.ManifestSchema > manifestSchemaV4 || lock.Source.SourceID == "" || lock.Source.Provider == "" || lock.Source.Repository == "" || lock.Source.Commit == "" || lock.Source.Tree == "" || !projectDigestPattern.MatchString(lock.Source.SourceLockSHA256) {
 		return errors.New("project lock source identity does not exactly match the manifest pack")
@@ -390,7 +427,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 			continue
 		}
 		identity, err := ParseResourceIdentity(degradation.ID)
-		if err != nil || identity.Kind != degradation.ResourceKind || !resources[identity] || degradations[identity] || degradation.Surface != pack.Surfaces[0] || degradation.Mode != "optional" || degradation.Code == "" || degradation.Reason == "" || degradation.SourcePaths == nil {
+		if err != nil || identity.Kind != degradation.ResourceKind || !resources[identity] || degradations[identity] || !projectSupportsSurface(pack.Surfaces, degradation.Surface) || degradation.Mode != "optional" || degradation.Code == "" || degradation.Reason == "" || degradation.SourcePaths == nil {
 			return errors.New("project lock declared degradations are incomplete, duplicated, or outside the locked closure")
 		}
 		degradations[identity] = true
@@ -421,22 +458,36 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	}
 	seenTargets := make(map[string]bool, len(lock.Projections))
 	seenResources := make(map[ResourceIdentity]bool, len(lock.Projections))
-	contributor := "surface:" + string(pack.Surfaces[0]) + ":pack:" + pack.ID
+	validPackIDs := map[string]bool{pack.ID: true}
+	for _, resolved := range lock.Packs {
+		validPackIDs[resolved.ID] = true
+	}
+	validContributor := func(value string) bool {
+		for _, surface := range pack.Surfaces {
+			for packID := range validPackIDs {
+				prefix := "surface:" + string(surface) + ":pack:" + packID
+				if value == prefix || strings.HasPrefix(value, prefix+":") {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	for _, projection := range lock.Projections {
-		validContributors := projection.Contributor == contributor
+		validContributors := validContributor(projection.Contributor)
 		if projection.Contributors != nil {
 			validContributors = validContributors && len(projection.Contributors) > 0 && digestJSON(projection.Contributors) == digestJSON(sortedUnique(projection.Contributors))
 			for _, value := range projection.Contributors {
-				validContributors = validContributors && strings.HasPrefix(value, "surface:"+string(pack.Surfaces[0])+":pack:")
+				validContributors = validContributors && validContributor(value)
 			}
 		}
-		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[projection.Target] || seenResources[projection.Resource] || !validContributors || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
+		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[projection.Target] || !validContributors || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
 			return errors.New("project lock contains malformed, duplicate, or unauthorized projection evidence")
 		}
-		if projection.Mode != "copy_tree" && projection.Mode != "merge_marked_file" {
+		if projection.Mode != "copy_tree" && projection.Mode != "copy_file" && projection.Mode != "merge_marked_file" && projection.Mode != "merge_structured_file" {
 			return fmt.Errorf("project lock projection %s has unsupported mode %q", projection.Resource, projection.Mode)
 		}
-		if projection.Mode == "copy_tree" && (!resources[projection.Resource] || !bindings[projection.Resource]) {
+		if (projection.Mode == "copy_tree" || projection.Mode == "copy_file" || projection.Mode == "merge_structured_file") && (!resources[projection.Resource] || (projectOperationalResource(projection.Resource.Kind) && !bindings[projection.Resource])) {
 			return fmt.Errorf("project lock projection %s is outside the locked resource graph or bindings", projection.Resource)
 		}
 		if projection.FileMode == 0 || projection.FileMode&^0o777 != 0 {
@@ -450,6 +501,20 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		}
 	}
 	return nil
+}
+
+// ProjectProjectionHasContributor reports whether portable lock evidence names
+// the exact surface-and-pack contributor.
+func ProjectProjectionHasContributor(projection ProjectProjectionPlan, contributor string) bool {
+	if projection.Contributor == contributor {
+		return true
+	}
+	for _, value := range projection.Contributors {
+		if value == contributor {
+			return true
+		}
+	}
+	return false
 }
 
 func projectGraphContains(graph ResourceGraph, target ResourceIdentity) bool {

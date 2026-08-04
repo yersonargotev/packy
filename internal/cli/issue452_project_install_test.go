@@ -60,7 +60,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatalf("decode manifest: %v\n%s", err, manifestData)
 	}
-	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "project-installation-v1" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || manifest.Packs[0].Version != "4.0.0" || len(manifest.Packs[0].Surfaces) != 1 || manifest.Packs[0].Surfaces[0] != capabilitypack.SurfaceCodex {
+	if manifest.SchemaVersion != 2 || manifest.MinimumPackyCapability != "project-installation-v2" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || manifest.Packs[0].Version != "4.0.0" || len(manifest.Packs[0].Surfaces) != 1 || manifest.Packs[0].Surfaces[0] != capabilitypack.SurfaceCodex {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 
@@ -72,7 +72,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatalf("decode lock: %v\n%s", err, lockData)
 	}
-	if lock.SchemaVersion != 1 || lock.MinimumPackyCapability != "project-installation-v1" || lock.Source.SourceID != "mattpocock-skills" || len(lock.ResourceGraph.Resources) != 23 || len(lock.Projections) != 24 {
+	if lock.SchemaVersion != 2 || lock.MinimumPackyCapability != "project-installation-v2" || lock.Source.SourceID != "mattpocock-skills" || len(lock.ResourceGraph.Resources) != 23 || len(lock.Projections) != 24 {
 		t.Fatalf("lock = %#v", lock)
 	}
 

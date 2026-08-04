@@ -13,7 +13,13 @@ import (
 	"strings"
 )
 
-const ProjectInstallPreviewSchemaVersion = 1
+const (
+	ProjectInstallPreviewSchemaVersion = 1
+	projectContractSchemaV1            = 1
+	projectContractSchemaV2            = 2
+	projectContractCapabilityV1        = "project-installation-v1"
+	projectContractCapabilityV2        = "project-installation-v2"
+)
 
 type ProjectInstallDisposition string
 
@@ -50,9 +56,17 @@ type ProjectContractProposal struct {
 }
 
 type ProjectManifestPack struct {
-	ID              string            `json:"id"`
-	Version         string            `json:"version"`
-	Surfaces        []Surface         `json:"surfaces"`
+	ID              string                 `json:"id"`
+	Version         string                 `json:"version"`
+	Surfaces        []Surface              `json:"surfaces"`
+	Selection       ResourceSelection      `json:"selection"`
+	Aliases         []SurfaceAlias         `json:"aliases"`
+	ProviderChoices []ProviderChoice       `json:"provider_choices"`
+	SurfaceIntents  []ProjectSurfaceIntent `json:"surface_intents,omitempty"`
+}
+
+type ProjectSurfaceIntent struct {
+	Surface         Surface           `json:"surface"`
 	Selection       ResourceSelection `json:"selection"`
 	Aliases         []SurfaceAlias    `json:"aliases"`
 	ProviderChoices []ProviderChoice  `json:"provider_choices"`
@@ -122,6 +136,9 @@ type ProjectProjectionPlan struct {
 	ObservedState      string           `json:"observed_state"`
 	Contributor        string           `json:"contributor"`
 	Contributors       []string         `json:"contributors,omitempty"`
+	Command            string           `json:"command,omitempty"`
+	Args               []string         `json:"args,omitempty"`
+	DiscoverableBy     []Surface        `json:"discoverable_by,omitempty"`
 }
 
 type JSONProjectInstallPreview struct {
@@ -201,7 +218,7 @@ func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstal
 }
 
 func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
-	if request.Surface != SurfaceCodex {
+	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project installation preview does not support CLI surface %q", request.Surface)
 	}
 	if request.ProjectRoot == "" {
@@ -298,6 +315,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	actions := make([]ProjectionAction, 0, len(observation.Projections))
 	blockers := append([]ProjectInstallBlocker(nil), compositionBlockers...)
 	existingLock, lockExists, lockErr := readExistingProjectLock(request.ProjectRoot)
+	var existingInstallation ProjectInstallation
+	existingContract := false
 	if lockErr != nil {
 		blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_lock", Target: "packy.lock.json", Detail: lockErr.Error(), Remediation: "restore or remove the invalid project lock before installation"})
 	} else if lockExists {
@@ -307,6 +326,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			lockExists = false
 		} else {
 			existingLock = installation.Lock
+			existingInstallation, existingContract = installation, true
 		}
 	}
 	for _, resource := range observation.Unrepresentable {
@@ -337,15 +357,24 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 				blockers = append(blockers, ProjectInstallBlocker{Code: "foreign_target", Resource: resource, Target: target, Detail: "project target already exists without portable Packy ownership", Remediation: "move or remove the foreign target before installation"})
 			}
 		}
-		mode, fileMode := "copy_tree", uint32(0o700)
-		if projection.Action.Kind == ActionInstructionFile {
-			mode, fileMode = "merge_marked_file", projection.Action.FileMode
+		mode, fileMode := "copy_file", projection.Action.FileMode
+		if projection.Action.Kind == ActionCodexProjectSkillTree {
+			mode, fileMode = "copy_tree", 0o700
 		}
-		contributors := contributorsForSurface(request.Surface, composition.contributorSet(projection.ID))
-		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: "surface:" + string(request.Surface) + ":pack:" + pack.ID, Contributors: contributors})
-		action := projection.Action
-		action.PreviewOnly = false
-		actions = append(actions, action)
+		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionOpenCodeInstructionFile {
+			mode, fileMode = "merge_marked_file", projection.Action.FileMode
+		} else if projection.Action.Kind == ActionOpenCodeMCPConfig {
+			mode, fileMode = "merge_structured_file", projection.Action.FileMode
+		}
+		primaryContributor := "surface:" + string(request.Surface) + ":pack:" + pack.ID
+		contributors := append(contributorsForSurface(request.Surface, composition.contributorSet(projection.ID)), primaryContributor)
+		contributors = sortedUnique(contributors)
+		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: primaryContributor, Contributors: contributors, Command: projection.Action.Command, Args: append([]string(nil), projection.Action.Args...), DiscoverableBy: append([]Surface(nil), projection.DiscoverableBy...)})
+		if state != "owned" {
+			action := projection.Action
+			action.PreviewOnly = false
+			actions = append(actions, action)
+		}
 	}
 	sort.Slice(projections, func(i, j int) bool {
 		if projections[i].Target != projections[j].Target {
@@ -372,6 +401,16 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	manifestPack := ProjectManifestPack{ID: pack.ID, Version: pack.Version, Surfaces: []Surface{request.Surface}, Selection: selection, Aliases: aliases, ProviderChoices: providerChoices}
 	if request.reconcile {
 		manifestPack = request.manifestPack
+	} else if existingContract {
+		prior := existingInstallation.Manifest.Packs[0]
+		if prior.ID != pack.ID || prior.Version != pack.Version {
+			blockers = append(blockers, ProjectInstallBlocker{Code: "project_pack_conflict", Detail: "the project already declares a different pack identity or exact version", Remediation: "use project update or uninstall the existing project pack first"})
+		}
+		manifestPack = prior
+		if !projectSupportsSurface(prior.Surfaces, request.Surface) {
+			manifestPack = withProjectSurfaceIntent(manifestPack, ProjectSurfaceIntent{Surface: request.Surface, Selection: selection, Aliases: aliases, ProviderChoices: providerChoices})
+			blockers = append(blockers, divergentSharedProjectAliasBlockers(existingLock.Projections, projections)...)
+		}
 	}
 	disposition := ProjectInstallPreviewable
 	if len(blockers) > 0 {
@@ -382,12 +421,24 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		lockProjections[i].ObservedState = "installed"
 	}
 	contract := LifecycleContractFor(selectedPack, request.Surface, nil)
+	lockBindings := append([]LifecycleBinding{}, contract.Bindings...)
+	lockDegradations := append([]LifecycleExclusion{}, contract.Exclusions...)
+	lockModes := append([]OptionalMode{}, contract.OptionalModes...)
+	if existingContract && !request.reconcile {
+		graph = mergeProjectResourceGraphs(existingLock.ResourceGraph, graph)
+		resolvedPacks = mergeProjectResolvedPacks(existingLock.Packs, resolvedPacks, pack.ID)
+		sources = mergeProjectSources(existingLock.Sources, sources, pack.ID)
+		lockBindings = mergeProjectBindings(existingLock.Bindings, lockBindings)
+		lockDegradations = mergeProjectDegradations(existingLock.Degradations, lockDegradations)
+		lockModes = mergeProjectModes(existingLock.Modes, lockModes)
+		lockProjections, projections = mergeProjectProjections(existingLock.Projections, lockProjections, projections)
+	}
 	report := JSONProjectInstallPreview{
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
 		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
-		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: 1, Packs: []ProjectManifestPack{manifestPack}},
-		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: contract.Bindings, Degradations: contract.Exclusions, Modes: contract.OptionalModes, Projections: lockProjections},
+		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV2, Packs: []ProjectManifestPack{manifestPack}},
+		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV2, MinimumPackyCapability: projectContractCapabilityV2, Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
 		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition,
 	}
@@ -413,7 +464,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		report.Disposition = ProjectInstallBlocked
 	}
 	if len(blockers) == 0 {
-		converged, contractBlockers, err := inspectProjectContract(report, existingLock, lockExists, request.reconcile)
+		allowRefresh := request.reconcile || existingContract && !projectSupportsSurface(existingInstallation.Manifest.Packs[0].Surfaces, request.Surface)
+		converged, contractBlockers, err := inspectProjectContract(report, existingLock, lockExists, allowRefresh)
 		if err != nil {
 			return JSONProjectInstallPreview{}, err
 		}
@@ -546,6 +598,288 @@ func projectSupportsSurface(surfaces []Surface, target Surface) bool {
 		}
 	}
 	return false
+}
+
+func sortedProjectSurfaces(values []Surface) []Surface {
+	seen := map[Surface]bool{}
+	result := make([]Surface, 0, len(values))
+	for _, value := range values {
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+
+func projectSurfaceIntents(pack ProjectManifestPack) []ProjectSurfaceIntent {
+	if len(pack.SurfaceIntents) > 0 {
+		result := append([]ProjectSurfaceIntent(nil), pack.SurfaceIntents...)
+		return result
+	}
+	result := make([]ProjectSurfaceIntent, 0, len(pack.Surfaces))
+	for _, surface := range pack.Surfaces {
+		result = append(result, ProjectSurfaceIntent{
+			Surface: surface, Selection: cloneSelection(pack.Selection), Aliases: cloneAliases(pack.Aliases), ProviderChoices: cloneProviderChoices(pack.ProviderChoices),
+		})
+	}
+	return result
+}
+
+func withProjectSurfaceIntent(pack ProjectManifestPack, intent ProjectSurfaceIntent) ProjectManifestPack {
+	intent.Selection, _ = canonicalSelection(intent.Selection)
+	if intent.Aliases == nil {
+		intent.Aliases = []SurfaceAlias{}
+	}
+	if intent.ProviderChoices == nil {
+		intent.ProviderChoices = []ProviderChoice{}
+	}
+	intents := projectSurfaceIntents(pack)
+	replaced := false
+	for i := range intents {
+		if intents[i].Surface == intent.Surface {
+			intents[i] = intent
+			replaced = true
+		}
+	}
+	if !replaced {
+		intents = append(intents, intent)
+	}
+	sort.Slice(intents, func(i, j int) bool { return intents[i].Surface < intents[j].Surface })
+	pack.SurfaceIntents = intents
+	pack.Surfaces = make([]Surface, 0, len(intents))
+	combined := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{}}
+	for _, value := range intents {
+		pack.Surfaces = append(pack.Surfaces, value.Surface)
+		if value.Selection.Mode == SelectionAll {
+			combined = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+		} else if combined.Mode != SelectionAll {
+			combined.Roots = append(combined.Roots, value.Selection.Roots...)
+		}
+	}
+	pack.Selection, _ = canonicalSelection(combined)
+	// These legacy aggregate fields remain canonical for schema-v1 readers. The
+	// exact host-specific aliases and provider decisions live in SurfaceIntents.
+	pack.Aliases = cloneAliases(intents[0].Aliases)
+	pack.ProviderChoices = cloneProviderChoices(intents[0].ProviderChoices)
+	return pack
+}
+
+func withoutProjectSurfaceIntent(pack ProjectManifestPack, surface Surface) ProjectManifestPack {
+	intents := projectSurfaceIntents(pack)
+	kept := intents[:0]
+	for _, intent := range intents {
+		if intent.Surface != surface {
+			kept = append(kept, intent)
+		}
+	}
+	pack.SurfaceIntents = nil
+	pack.Surfaces = nil
+	if len(kept) == 0 {
+		return pack
+	}
+	pack.Selection = kept[0].Selection
+	pack.Aliases = cloneAliases(kept[0].Aliases)
+	pack.ProviderChoices = cloneProviderChoices(kept[0].ProviderChoices)
+	for _, intent := range kept {
+		pack = withProjectSurfaceIntent(pack, intent)
+	}
+	if len(kept) == 1 {
+		pack.SurfaceIntents = nil
+	}
+	return pack
+}
+
+func divergentSharedProjectAliasBlockers(existing, added []ProjectProjectionPlan) []ProjectInstallBlocker {
+	var blockers []ProjectInstallBlocker
+	for _, candidate := range added {
+		for _, locked := range existing {
+			if candidate.Resource != locked.Resource || candidate.DesiredFingerprint != locked.DesiredFingerprint {
+				continue
+			}
+			if filepath.Clean(candidate.Target) == filepath.Clean(locked.Target) {
+				continue
+			}
+			if candidate.Resource.Kind == "skill" || len(candidate.DiscoverableBy) > 0 || len(locked.DiscoverableBy) > 0 {
+				blockers = append(blockers, ProjectInstallBlocker{Code: "divergent_shared_alias", Resource: candidate.Resource, Target: candidate.Target, Detail: "Codex and OpenCode aliases diverge for one shared project resource", Remediation: "use the same alias for this shared project resource"})
+			}
+		}
+	}
+	return blockers
+}
+
+func mergeProjectResourceGraphs(existing, added ResourceGraph) ResourceGraph {
+	byResource := make(map[ResourceIdentity]ResourceClosureFact, len(existing.Resources)+len(added.Resources))
+	for _, fact := range existing.Resources {
+		byResource[fact.Resource] = fact
+	}
+	for _, fact := range added.Resources {
+		byResource[fact.Resource] = fact
+	}
+	resources := make([]ResourceClosureFact, 0, len(byResource))
+	for _, fact := range byResource {
+		resources = append(resources, fact)
+	}
+	sort.Slice(resources, func(i, j int) bool { return resources[i].Resource.String() < resources[j].Resource.String() })
+	return ResourceGraph{Resources: resources}
+}
+
+func mergeProjectResolvedPacks(existing, added []ProjectResolvedPack, requestedID string) []ProjectResolvedPack {
+	byID := map[string]ProjectResolvedPack{}
+	for _, resolution := range existing {
+		byID[resolution.ID] = resolution
+	}
+	for _, resolution := range added {
+		if prior, ok := byID[resolution.ID]; ok {
+			resolution.ResourceGraph = mergeProjectResourceGraphs(prior.ResourceGraph, resolution.ResourceGraph)
+			if resolution.ID == requestedID {
+				if prior.Selection.Mode == SelectionAll || resolution.Selection.Mode == SelectionAll {
+					resolution.Selection = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
+				} else {
+					resolution.Selection, _ = mergeCustomSelections(prior.Selection, resolution.Selection)
+				}
+			}
+		}
+		byID[resolution.ID] = resolution
+	}
+	result := make([]ProjectResolvedPack, 0, len(byID))
+	if requested, ok := byID[requestedID]; ok {
+		result = append(result, requested)
+		delete(byID, requestedID)
+	}
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		result = append(result, byID[id])
+	}
+	return result
+}
+
+func mergeProjectSources(existing, added []ProjectPackSourceIdentity, requestedID string) []ProjectPackSourceIdentity {
+	byID := map[string]ProjectPackSourceIdentity{}
+	for _, source := range append(append([]ProjectPackSourceIdentity(nil), existing...), added...) {
+		byID[source.PackID] = source
+	}
+	result := make([]ProjectPackSourceIdentity, 0, len(byID))
+	if source, ok := byID[requestedID]; ok {
+		result = append(result, source)
+		delete(byID, requestedID)
+	}
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		result = append(result, byID[id])
+	}
+	return result
+}
+
+func mergeProjectBindings(existing, added []LifecycleBinding) []LifecycleBinding {
+	result := append([]LifecycleBinding{}, existing...)
+	seen := map[string]bool{}
+	for _, value := range result {
+		seen[digestJSON(value)] = true
+	}
+	for _, value := range added {
+		if !seen[digestJSON(value)] {
+			result = append(result, value)
+			seen[digestJSON(value)] = true
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Kind != result[j].Kind {
+			return result[i].Kind < result[j].Kind
+		}
+		if result[i].ID != result[j].ID {
+			return result[i].ID < result[j].ID
+		}
+		if result[i].Projection != result[j].Projection {
+			return result[i].Projection < result[j].Projection
+		}
+		return result[i].Name < result[j].Name
+	})
+	return result
+}
+
+func mergeProjectDegradations(existing, added []LifecycleExclusion) []LifecycleExclusion {
+	result := append([]LifecycleExclusion(nil), existing...)
+	seen := map[string]bool{}
+	for _, value := range result {
+		seen[digestJSON(value)] = true
+	}
+	for _, value := range added {
+		if !seen[digestJSON(value)] {
+			result = append(result, value)
+			seen[digestJSON(value)] = true
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ID != result[j].ID {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].Surface < result[j].Surface
+	})
+	return result
+}
+
+func mergeProjectModes(existing, added []OptionalMode) []OptionalMode {
+	result := append([]OptionalMode{}, existing...)
+	seen := map[string]bool{}
+	for _, value := range result {
+		seen[value.ID] = true
+	}
+	for _, value := range added {
+		if !seen[value.ID] {
+			result = append(result, value)
+			seen[value.ID] = true
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func mergeProjectProjections(existing, added, preview []ProjectProjectionPlan) ([]ProjectProjectionPlan, []ProjectProjectionPlan) {
+	result := append([]ProjectProjectionPlan(nil), existing...)
+	for i := range added {
+		match := -1
+		for j := range result {
+			if result[j].Resource == added[i].Resource && filepath.Clean(result[j].Target) == filepath.Clean(added[i].Target) && result[j].DesiredFingerprint == added[i].DesiredFingerprint {
+				match = j
+				break
+			}
+		}
+		if match < 0 {
+			result = append(result, added[i])
+			continue
+		}
+		contributors := append([]string(nil), result[match].Contributors...)
+		if len(contributors) == 0 && result[match].Contributor != "" {
+			contributors = append(contributors, result[match].Contributor)
+		}
+		contributors = append(contributors, added[i].Contributors...)
+		contributors = append(contributors, added[i].Contributor)
+		contributors = sortedUnique(contributors)
+		result[match].Contributors = contributors
+		for j := range preview {
+			if preview[j].Resource == added[i].Resource && filepath.Clean(preview[j].Target) == filepath.Clean(added[i].Target) {
+				preview[j].Contributor = result[match].Contributor
+				preview[j].Contributors = append([]string(nil), contributors...)
+			}
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Target != result[j].Target {
+			return result[i].Target < result[j].Target
+		}
+		return result[i].Resource.String() < result[j].Resource.String()
+	})
+	return result, preview
 }
 
 func sealProjectInstallPreview(report JSONProjectInstallPreview, surfaceObservation string) string {

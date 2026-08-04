@@ -159,6 +159,7 @@ type ExternalExecutor interface {
 // Capability-pack policy orders and approves it; only the matching adapter executes it.
 type ProjectionAction struct {
 	ID                string               `json:"id"`
+	Surface           Surface              `json:"surface,omitempty"`
 	Description       string               `json:"description"`
 	Kind              ProjectionActionKind `json:"kind,omitempty"`
 	Consent           ConsentKind          `json:"consent,omitempty"`
@@ -2926,7 +2927,7 @@ func cloneProviderChoices(values []ProviderChoice) []ProviderChoice {
 	if values == nil {
 		return nil
 	}
-	result := append([]ProviderChoice(nil), values...)
+	result := append([]ProviderChoice{}, values...)
 	for i := range result {
 		if result[i].ProviderResource != nil {
 			resource := *result[i].ProviderResource

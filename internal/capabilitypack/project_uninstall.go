@@ -92,10 +92,10 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 		}
 		report.Scope, report.Surface = ProjectUninstallSurface, request.Surface
 	}
-	// Schema v1 has one pack on one surface. Keeping the selected surface
-	// explicit here makes the subtraction boundary stable when the manifest
-	// grows additional contributors.
-	surface := pack.Surfaces[0]
+	surface := request.Surface
+	if surface == "" {
+		surface = pack.Surfaces[0]
+	}
 	status, err := InspectProjectStatus(ctx, ProjectStatusRequest{
 		ProjectRoot: request.ProjectRoot, PackID: pack.ID, Surface: surface, RequireInstalled: true,
 		Adapters: map[Surface]SurfaceAdapter{surface: adapter},
@@ -114,7 +114,7 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	if err != nil {
 		return report, err
 	}
-	uninstallStatuses, err := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation)
+	uninstallStatuses, err := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID)
 	if err != nil {
 		return report, err
 	}
@@ -122,8 +122,58 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 		return report, errors.New("project uninstall adapter returned inconsistent portable ownership evidence")
 	}
 	actions := make([]ProjectionAction, 0, len(observation.Projections)+3)
+	remainingSurfaces := removeProjectSurface(pack.Surfaces, surface)
+	retainedLock := installation.Lock
+	retainedLock.Projections = subtractProjectContributor(retainedLock.Projections, surface)
+	retainedTargets := map[string]bool{}
+	for _, projection := range retainedLock.Projections {
+		retainedTargets[projection.Resource.String()+"\x00"+filepath.Clean(projection.Target)] = true
+	}
 	for _, projection := range observation.Projections {
-		actions = append(actions, projection.Action)
+		target, targetErr := RelativeProjectTarget(request.ProjectRoot, projection.Action.Target)
+		if targetErr != nil {
+			return report, targetErr
+		}
+		if !retainedTargets[projection.ID+"\x00"+filepath.Clean(target)] {
+			actions = append(actions, projection.Action)
+		}
+	}
+	if report.Scope == ProjectUninstallSurface && len(remainingSurfaces) > 0 {
+		pack = withoutProjectSurfaceIntent(pack, surface)
+		retainedLock = retainProjectSelection(retainedLock, pack.ID, pack.Selection)
+		report.Pack = pack
+		manifest := installation.Manifest
+		manifest.Packs[0] = pack
+		manifestData, marshalErr := marshalProjectManifest(manifest)
+		if marshalErr != nil {
+			return report, marshalErr
+		}
+		retainedLock.ManifestSHA256 = fingerprintProjectBytes(manifestData)
+		retainedLock.Degradations = filterProjectDegradations(retainedLock.Degradations, remainingSurfaces)
+		lockData, marshalErr := marshalProjectLock(retainedLock)
+		if marshalErr != nil {
+			return report, marshalErr
+		}
+		manifestPath := filepath.Join(request.ProjectRoot, "packy.json")
+		lockPath := filepath.Join(request.ProjectRoot, "packy.lock.json")
+		actions = append(actions,
+			ProjectionAction{ID: "project-contract:manifest", Kind: ActionProjectManifestFile, Target: manifestPath, Content: string(manifestData), FileMode: 0o644, Precondition: projectTargetFingerprint(manifestPath), Description: "remove the selected project surface intent"},
+			ProjectionAction{ID: "project-contract:lock", Kind: ActionProjectLockFile, Target: lockPath, Content: string(lockData), FileMode: 0o644, Precondition: projectTargetFingerprint(lockPath), Description: "publish the remaining project contributors"},
+		)
+		report.Contracts = []string{"packy.json", "packy.lock.json"}
+		for _, projection := range report.Projections {
+			if projection.Health != "verified" {
+				report.Blockers = append(report.Blockers, ProjectInstallBlocker{Code: "project_drift", Resource: projection.Resource, Target: projection.Target, Detail: "the installed project projection is " + projection.Health, Remediation: "restore the exact locked projection before uninstalling"})
+			}
+		}
+		report.Blockers = deduplicateProjectUninstallBlockers(report.Blockers)
+		report.Disposition = ProjectInstallPreviewable
+		if len(report.Blockers) > 0 || !status.Packs[0].RequirementSatisfied {
+			report.Disposition = ProjectInstallBlocked
+		}
+		report.actions = actions
+		report.Observation = sealProjectUninstallPreview(report)
+		return report, nil
 	}
 	noticeAction, noticeBlockers, err := planProjectNoticeRemoval(request.ProjectRoot, pack, installation.Lock)
 	if err != nil {
@@ -152,6 +202,106 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	report.actions = actions
 	report.Observation = sealProjectUninstallPreview(report)
 	return report, nil
+}
+
+func retainProjectSelection(lock ProjectLockProposal, packID string, selection ResourceSelection) ProjectLockProposal {
+	if selection.Mode == SelectionAll {
+		return lock
+	}
+	facts := make(map[ResourceIdentity]ResourceClosureFact, len(lock.ResourceGraph.Resources))
+	for _, fact := range lock.ResourceGraph.Resources {
+		facts[fact.Resource] = fact
+	}
+	kept := make(map[ResourceIdentity]bool, len(selection.Roots))
+	queue := append([]ResourceIdentity(nil), selection.Roots...)
+	for len(queue) > 0 {
+		resource := queue[0]
+		queue = queue[1:]
+		if kept[resource] {
+			continue
+		}
+		kept[resource] = true
+		fact, ok := facts[resource]
+		if !ok {
+			continue
+		}
+		queue = append(queue, fact.Requires...)
+		queue = append(queue, fact.Notices...)
+	}
+	filterGraph := func(graph ResourceGraph) ResourceGraph {
+		resources := make([]ResourceClosureFact, 0, len(graph.Resources))
+		for _, fact := range graph.Resources {
+			if kept[fact.Resource] {
+				resources = append(resources, fact)
+			}
+		}
+		return ResourceGraph{Resources: resources}
+	}
+	lock.ResourceGraph = filterGraph(lock.ResourceGraph)
+	for i := range lock.Packs {
+		lock.Packs[i].ResourceGraph = filterGraph(lock.Packs[i].ResourceGraph)
+		if lock.Packs[i].ID == packID {
+			lock.Packs[i].Selection = cloneSelection(selection)
+		}
+	}
+	bindings := make([]LifecycleBinding, 0, len(lock.Bindings))
+	for _, binding := range lock.Bindings {
+		if kept[ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] {
+			bindings = append(bindings, binding)
+		}
+	}
+	lock.Bindings = bindings
+	degradations := make([]LifecycleExclusion, 0, len(lock.Degradations))
+	for _, degradation := range lock.Degradations {
+		resource, err := ParseResourceIdentity(degradation.ID)
+		if degradation.ResourceKind == "" || err != nil || kept[resource] {
+			degradations = append(degradations, degradation)
+		}
+	}
+	lock.Degradations = degradations
+	return lock
+}
+
+func removeProjectSurface(surfaces []Surface, removed Surface) []Surface {
+	result := make([]Surface, 0, len(surfaces))
+	for _, surface := range surfaces {
+		if surface != removed {
+			result = append(result, surface)
+		}
+	}
+	return sortedProjectSurfaces(result)
+}
+
+func subtractProjectContributor(projections []ProjectProjectionPlan, surface Surface) []ProjectProjectionPlan {
+	prefix := "surface:" + string(surface) + ":"
+	result := make([]ProjectProjectionPlan, 0, len(projections))
+	for _, projection := range projections {
+		contributors := make([]string, 0, len(projection.Contributors))
+		for _, contributor := range projection.Contributors {
+			if !strings.HasPrefix(contributor, prefix) {
+				contributors = append(contributors, contributor)
+			}
+		}
+		if len(contributors) == 0 {
+			continue
+		}
+		projection.Contributors = sortedUnique(contributors)
+		if strings.HasPrefix(projection.Contributor, prefix) {
+			projection.Contributor = projection.Contributors[0]
+		}
+		result = append(result, projection)
+	}
+	return result
+}
+
+func filterProjectDegradations(values []LifecycleExclusion, surfaces []Surface) []LifecycleExclusion {
+	result := make([]LifecycleExclusion, 0, len(values))
+	for _, value := range values {
+		if value.Surface == "" || projectSupportsSurface(surfaces, value.Surface) {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func ApplyProjectUninstall(ctx context.Context, request ProjectUninstallApplyRequest) (ProjectUninstallApplyResult, error) {
@@ -217,10 +367,14 @@ func ApplyProjectUninstall(ctx context.Context, request ProjectUninstallApplyReq
 	if actionErr := request.Adapter.ApplyProjections(ctx, []ProjectionAction{lockAction}); actionErr != nil {
 		return fail(actionErr)
 	}
-	if missing, err := projectPathMissing(lockAction.Target); err != nil || !missing {
-		if err == nil {
-			err = ErrVerificationFailed
+	if lockAction.Mode == ProjectionDeleteTarget {
+		if missing, err := projectPathMissing(lockAction.Target); err != nil || !missing {
+			if err == nil {
+				err = ErrVerificationFailed
+			}
+			return fail(err)
 		}
+	} else if err := verifyProjectRegularFile(lockAction.Target, []byte(lockAction.Content), fs.FileMode(lockAction.FileMode)); err != nil {
 		return fail(err)
 	}
 	if err := removeProjectInstallJournal(journalPath); err != nil {

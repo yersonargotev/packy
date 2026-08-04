@@ -226,11 +226,15 @@ func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, revers
 }
 
 func marshalProjectManifest(proposal ProjectContractProposal) ([]byte, error) {
+	minimumCapability := projectContractCapabilityV1
+	if proposal.SchemaVersion == projectContractSchemaV2 {
+		minimumCapability = projectContractCapabilityV2
+	}
 	value := struct {
 		SchemaVersion          int                   `json:"schema_version"`
 		MinimumPackyCapability string                `json:"minimum_packy_capability"`
 		Packs                  []ProjectManifestPack `json:"packs"`
-	}{SchemaVersion: proposal.SchemaVersion, MinimumPackyCapability: "project-installation-v1", Packs: proposal.Packs}
+	}{SchemaVersion: proposal.SchemaVersion, MinimumPackyCapability: minimumCapability, Packs: proposal.Packs}
 	data, err := json.MarshalIndent(value, "", "  ")
 	return append(data, '\n'), err
 }
@@ -362,10 +366,15 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 	if err := strictDecode(data, &lock); err != nil {
 		return ProjectLockProposal{}, false, fmt.Errorf("decode project lock: %w", err)
 	}
-	if lock.SchemaVersion != 1 || lock.MinimumPackyCapability != "project-installation-v1" {
+	if !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
 		return ProjectLockProposal{}, false, errors.New("project lock schema or minimum Packy capability is unsupported")
 	}
 	return lock, true, nil
+}
+
+func supportedProjectContractVersion(schemaVersion int, minimumCapability string) bool {
+	return schemaVersion == projectContractSchemaV1 && minimumCapability == projectContractCapabilityV1 ||
+		schemaVersion == projectContractSchemaV2 && minimumCapability == projectContractCapabilityV2
 }
 
 func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdentity, target, fingerprint string) bool {
@@ -523,7 +532,7 @@ func captureProjectReverseActions(actions []ProjectionAction, backupRoot string)
 	for index, action := range actions {
 		info, err := os.Lstat(action.Target)
 		if errors.Is(err, fs.ErrNotExist) {
-			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Target: action.Target, Mode: ProjectionDeleteTarget, Precondition: projectActionDesiredFingerprint(action)})
+			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Surface: action.Surface, Kind: action.Kind, Target: action.Target, Mode: ProjectionDeleteTarget, Precondition: projectActionDesiredFingerprint(action)})
 			continue
 		}
 		if err != nil {
@@ -536,7 +545,7 @@ func captureProjectReverseActions(actions []ProjectionAction, backupRoot string)
 				_ = os.RemoveAll(backupRoot)
 				return nil, err
 			}
-			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Source: backup, Target: action.Target, Version: action.Precondition, Precondition: "missing"})
+			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Surface: action.Surface, Kind: action.Kind, Source: backup, Target: action.Target, Version: action.Precondition, Precondition: "missing"})
 			continue
 		}
 		if !info.Mode().IsRegular() {
@@ -548,7 +557,7 @@ func captureProjectReverseActions(actions []ProjectionAction, backupRoot string)
 			_ = os.RemoveAll(backupRoot)
 			return nil, err
 		}
-		reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Target: action.Target, Content: string(data), FileMode: uint32(info.Mode().Perm()), Precondition: projectActionDesiredFingerprint(action)})
+		reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Surface: action.Surface, Kind: action.Kind, Target: action.Target, Content: string(data), FileMode: uint32(info.Mode().Perm()), Precondition: projectActionDesiredFingerprint(action)})
 	}
 	for i, j := 0, len(reverse)-1; i < j; i, j = i+1, j-1 {
 		reverse[i], reverse[j] = reverse[j], reverse[i]
@@ -827,6 +836,7 @@ func recoverProjectInstall(ctx context.Context, adapter SurfaceAdapter, path, pr
 	}
 	allowedKinds := map[ProjectionActionKind]bool{
 		ActionCodexProjectSkillTree: true, ActionInstructionFile: true,
+		ActionOpenCodeInstructionFile: true, ActionOpenCodeMCPConfig: true, ActionOpenCodeAgentFile: true, ActionOpenCodeCommandFile: true, ActionOpenCodeAssetFile: true,
 		ActionProjectManifestFile: true, ActionProjectLockFile: true, ActionProjectNoticesFile: true,
 	}
 	for _, action := range journal.Reverse {

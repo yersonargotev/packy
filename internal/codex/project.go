@@ -39,7 +39,8 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		projections = append(projections, capabilitypack.ObservedProjection{
 			ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
 			ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/copied-skill-tree",
-			Action: capabilitypack.ProjectionAction{ID: identity.String(), Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the Codex project skill tree", identity), PreviewOnly: true},
+			ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
+			Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the Codex project skill tree", identity), PreviewOnly: true},
 		})
 	}
 	if pack.ID == "matty" {
@@ -72,7 +73,11 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	}
 	projections := make([]capabilitypack.ObservedProjection, 0, len(lock.Projections))
 	var revision []string
+	contributor := "surface:codex:pack:" + pack.ID
 	for _, projection := range lock.Projections {
+		if !capabilitypack.ProjectProjectionHasContributor(projection, contributor) {
+			continue
+		}
 		expected := ""
 		switch projection.Mode {
 		case "copy_tree":
@@ -97,7 +102,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has unsafe Codex target: %w", projection.Resource, err)
 		}
 		observed, exists := "missing", false
-		action := capabilitypack.ProjectionAction{ID: projection.Resource.String(), Target: target, PreviewOnly: true}
+		action := capabilitypack.ProjectionAction{ID: projection.Resource.String(), Surface: capabilitypack.SurfaceCodex, Target: target, PreviewOnly: true}
 		if projection.Mode == "copy_tree" {
 			fingerprint, found, err := projectTreeFingerprint(target)
 			if err != nil {
@@ -191,7 +196,7 @@ func projectMattyInstruction(projectRoot string) (capabilitypack.ObservedProject
 	projection := capabilitypack.ObservedProjection{
 		ID: projectMattyInstructionID, Goal: capabilitypack.ProjectionPresent,
 		DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/composable-instruction/" + state,
-		Action: capabilitypack.ProjectionAction{ID: projectMattyInstructionID, Kind: capabilitypack.ActionInstructionFile, Target: target, FileMode: 0o644, Description: "merge Packy Matty Codex instructions into the project AGENTS.md", PreviewOnly: true},
+		Action: capabilitypack.ProjectionAction{ID: projectMattyInstructionID, Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionInstructionFile, Target: target, FileMode: 0o644, Description: "merge Packy Matty Codex instructions into the project AGENTS.md", PreviewOnly: true},
 	}
 	projection.Action.Precondition = "missing"
 	if err == nil {

@@ -28,6 +28,15 @@ func NewSurfaceAdapter(bundleRoot, skillsDir, configFile, promptFile string) *Su
 }
 
 func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
+	if transition.ProjectInstallation != nil {
+		if transition.ProjectRoot == "" || len(transition.ProjectInstallation.Manifest.Packs) != 1 {
+			return capabilitypack.SurfaceInspection{}, fmt.Errorf("locked OpenCode project inspection requires one manifest pack and the project root")
+		}
+		return a.inspectLockedProject(transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectGoal)
+	}
+	if transition.ProjectRoot != "" {
+		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)
+	}
 	var (
 		observation capabilitypack.SurfaceInspection
 		err         error
@@ -493,9 +502,11 @@ func (a *SurfaceAdapter) ApplyProjections(_ context.Context, actions []capabilit
 	executor := localprojection.Executor{
 		Host:         "OpenCode",
 		SymlinkKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionOpenCodeSkillLink: true},
+		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionCodexProjectSkillTree: true},
 		FileKinds: map[capabilitypack.ProjectionActionKind]bool{
 			capabilitypack.ActionOpenCodeInstructionFile: true, capabilitypack.ActionOpenCodeConfigReference: true, capabilitypack.ActionOpenCodeMCPConfig: true,
 			capabilitypack.ActionOpenCodeAgentFile: true, capabilitypack.ActionOpenCodeCommandFile: true, capabilitypack.ActionOpenCodeAssetFile: true,
+			capabilitypack.ActionProjectManifestFile: true, capabilitypack.ActionProjectLockFile: true, capabilitypack.ActionProjectNoticesFile: true,
 		},
 	}
 	err := executor.Apply(actions)

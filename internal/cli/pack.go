@@ -81,7 +81,7 @@ func newPackUninstallCommand(opts Options, workstationResolver *workstation.Reso
 			if err != nil {
 				return err
 			}
-			adapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
+			adapter := projectOfflineAdapter(capabilitypack.Surface(surface))
 			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
 			if err != nil {
 				return err
@@ -292,7 +292,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 				return err
 			}
 			facade := capabilitypack.NewFacade(composition.catalog)
-			adapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 			var report capabilitypack.JSONProjectInstallPreview
 			if len(args) == 0 {
 				report, err = facade.PreviewProjectReconcile(cmd.Context(), projectRoot, adapter)
@@ -374,6 +374,11 @@ func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONP
 	for _, projection := range report.Projections {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s -> %s mode=%s observed=%s\n", projection.Resource, projection.Target, projection.Mode, projection.ObservedState); err != nil {
 			return err
+		}
+		for _, discovered := range projection.DiscoverableBy {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Incidentally discoverable by %s; no installation or activation intent recorded\n", discovered); err != nil {
+				return err
+			}
 		}
 	}
 	for _, contribution := range report.Notices.Contributions {
@@ -1128,10 +1133,12 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				if err != nil {
 					return err
 				}
-				adapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed",
-					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter},
+					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+						capabilitypack.SurfaceCodex:    projectOfflineAdapter(capabilitypack.SurfaceCodex),
+						capabilitypack.SurfaceOpenCode: projectOfflineAdapter(capabilitypack.SurfaceOpenCode),
+					},
 				})
 				if err != nil {
 					return err
@@ -1194,6 +1201,25 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	cmd.Flags().BoolVar(&project, "project", false, "Inspect the shared project installation and personal runtime axes")
 	return cmd
+}
+
+func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.SurfaceAdapter {
+	if surface == "" {
+		return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+			capabilitypack.SurfaceCodex: codex.NewSurfaceAdapterWithConfig("", "", "", ""), capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter("", "", "", ""),
+		}, capabilitypack.SurfaceCodex)
+	}
+	if surface == capabilitypack.SurfaceOpenCode {
+		return opencode.NewSurfaceAdapter("", "", "", "")
+	}
+	return codex.NewSurfaceAdapterWithConfig("", "", "", "")
+}
+
+func projectInstallAdapter(surface capabilitypack.Surface, bundleRoot, skillsRoot, codexPrompt, codexConfig, openCodeConfig, openCodePrompt string) capabilitypack.SurfaceAdapter {
+	if surface == capabilitypack.SurfaceOpenCode {
+		return opencode.NewSurfaceAdapter(bundleRoot, skillsRoot, openCodeConfig, openCodePrompt)
+	}
+	return codex.NewSurfaceAdapterWithConfig(bundleRoot, skillsRoot, codexPrompt, codexConfig)
 }
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
