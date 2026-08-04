@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -293,7 +294,79 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		revision = append(revision, item.ID+"="+observed+"\x00"+action.Precondition)
 	}
 	sort.Strings(revision)
-	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections}, nil
+	readiness := capabilitypack.ReadinessObservation{}
+	if goal == capabilitypack.ProjectionPresent {
+		readiness = inspectOpenCodeProjectRuntime(lock, projections)
+	}
+	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections, Readiness: readiness}, nil
+}
+
+// inspectOpenCodeProjectRuntime deliberately has no activation actions. OpenCode
+// stores project definitions in the checkout, but its runtime permission prompts,
+// OAuth state, credentials, and any remembered approval remain host-owned. In
+// particular, Packy only materializes lifecycle definitions as inert artifacts;
+// it has no hook executor that could run changed bytes.
+func inspectOpenCodeProjectRuntime(lock capabilitypack.ProjectLockProposal, projections []capabilitypack.ObservedProjection) capabilitypack.ReadinessObservation {
+	var disclosures []capabilitypack.ProjectSensitiveDisclosure
+	for _, disclosure := range lock.Sensitive {
+		if disclosure.Surface == capabilitypack.SurfaceOpenCode {
+			disclosures = append(disclosures, disclosure)
+		}
+	}
+	if len(disclosures) == 0 {
+		return capabilitypack.ReadinessObservation{}
+	}
+
+	definitionsMatch := true
+	for _, projection := range projections {
+		if projection.ObservedFingerprint != projection.DesiredFingerprint {
+			definitionsMatch = false
+			break
+		}
+	}
+	pending := make([]string, 0, len(disclosures))
+	evidence := []string{"OpenCode project definitions were inspected against the lock; runtime permissions, trust, OAuth, and credentials are host-owned and not observable from project files"}
+	if definitionsMatch {
+		evidence = append(evidence, "OpenCode project definitions match the lock")
+	} else {
+		evidence = append(evidence, "OpenCode project definitions differ from the lock")
+	}
+	externalCommands := map[string]bool{}
+	for _, disclosure := range disclosures {
+		identity := disclosure.Resource.String()
+		evidence = append(evidence, fmt.Sprintf("locked OpenCode %s effect %s (%s)", disclosure.Category, identity, disclosure.Detail))
+		switch disclosure.Category {
+		case capabilitypack.ProjectActivationMCP:
+			pending = append(pending, "approve the locked OpenCode MCP definition "+identity+" in a fresh runtime session")
+		case capabilitypack.ProjectActivationHooks:
+			pending = append(pending, "approve the locked OpenCode hook "+identity+" in a fresh runtime session after its installed digest is verified")
+			evidence = append(evidence, "OpenCode hook artifact remains inert; Packy does not execute hooks or grant runtime authority")
+		case capabilitypack.ProjectActivationPlugins:
+			pending = append(pending, "approve the locked OpenCode plugin "+identity+" in a fresh runtime session")
+		case capabilitypack.ProjectActivationTrust:
+			pending = append(pending, "approve the host-owned OpenCode authority for "+identity+" in a fresh runtime session")
+		case capabilitypack.ProjectActivationAuthentication:
+			pending = append(pending, "complete the host-owned OpenCode authentication for "+identity)
+		case capabilitypack.ProjectActivationExternalRequirements:
+			parts := strings.Split(disclosure.Detail, ":")
+			if len(parts) >= 2 && parts[len(parts)-1] != "" {
+				externalCommands[parts[len(parts)-1]] = true
+			}
+		}
+	}
+	for command := range externalCommands {
+		if _, err := exec.LookPath(command); err != nil {
+			pending = append(pending, "install external requirement "+command)
+		} else {
+			evidence = append(evidence, "external requirement available: "+command)
+		}
+	}
+	for _, projection := range projections {
+		if projection.ObservedFingerprint != projection.DesiredFingerprint {
+			pending = append(pending, "restore the exact locked OpenCode project definition "+projection.ID+" before activating runtime effects")
+		}
+	}
+	return capabilitypack.ReadinessObservation{PendingHumanActions: pending, Evidence: evidence}
 }
 
 func projectTreeFingerprint(target string) (string, bool, error) {

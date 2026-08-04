@@ -4,10 +4,89 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/localprojection"
 )
+
+func TestLockedProjectRuntimeKeepsOpenCodeConsentAndSecretsHostOwned(t *testing.T) {
+	project := t.TempDir()
+	config := filepath.Join(project, "opencode.json")
+	if err := os.WriteFile(config, []byte("{\n  \"mcp\": {\n    \"memory\": {\"type\": \"local\", \"command\": [\"engram\", \"mcp\"], \"enabled\": true}\n  }\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(project, ".opencode", "packy-hooks", "memory.json")
+	if err := os.MkdirAll(filepath.Dir(hook), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hook, []byte("{\"id\":\"memory\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mcp, err := InspectMCPProjection(config, "memory", "engram", []string{"mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hookDigest := localprojection.FingerprintBytes([]byte("{\"id\":\"memory\"}\n"))
+	installation := capabilitypack.ProjectInstallation{
+		Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "memory", Version: "1.0.0", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}}}},
+		Lock: capabilitypack.ProjectLockProposal{
+			Source: capabilitypack.ProjectPackSourceIdentity{PackID: "memory", PackVersion: "1.0.0"},
+			Sensitive: []capabilitypack.ProjectSensitiveDisclosure{
+				{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceOpenCode, Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp_server"},
+				{Category: capabilitypack.ProjectActivationHooks, Surface: capabilitypack.SurfaceOpenCode, Resource: capabilitypack.ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "command_hook"},
+				{Category: capabilitypack.ProjectActivationAuthentication, Surface: capabilitypack.SurfaceOpenCode, Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "runtime:oauth"},
+			},
+			Bindings: []capabilitypack.LifecycleBinding{
+				{Surface: capabilitypack.SurfaceOpenCode, Kind: "mcp_server", ID: "memory", Projection: "mcp_server", Name: "memory"},
+				{Surface: capabilitypack.SurfaceOpenCode, Kind: "lifecycle", ID: "memory", Projection: "command_hook", Name: "memory"},
+			},
+			Projections: []capabilitypack.ProjectProjectionPlan{
+				{Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Target: "opencode.json", DesiredFingerprint: mcp.DesiredFingerprint, Contributor: "surface:opencode:pack:memory", Command: "engram", Args: []string{"mcp"}},
+				{Resource: capabilitypack.ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Target: ".opencode/packy-hooks/memory.json", DesiredFingerprint: hookDigest, Contributor: "surface:opencode:pack:memory"},
+			},
+		},
+	}
+	adapter := NewSurfaceAdapter("", "", "", "")
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionPresent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inspection.Projections) != 2 || len(inspection.ProjectActivationActions) != 0 || inspection.Readiness.AuthorizationObserved || inspection.Readiness.UsabilityObserved {
+		t.Fatalf("OpenCode runtime inspection = %#v", inspection)
+	}
+	for _, want := range []string{"approve the locked OpenCode MCP definition", "approve the locked OpenCode hook", "complete the host-owned OpenCode authentication"} {
+		if !containsOpenCodeDetail(inspection.Readiness.PendingHumanActions, want) {
+			t.Fatalf("pending actions = %#v; missing %q", inspection.Readiness.PendingHumanActions, want)
+		}
+	}
+	if !containsOpenCodeDetail(inspection.Readiness.Evidence, "OpenCode project definitions match the lock") || !containsOpenCodeDetail(inspection.Readiness.Evidence, "hook artifact remains inert") {
+		t.Fatalf("runtime evidence = %#v", inspection.Readiness.Evidence)
+	}
+	if data, readErr := os.ReadFile(config); readErr != nil || strings.Contains(string(data), "token") {
+		t.Fatalf("project MCP declaration changed or included credentials: %q, %v", data, readErr)
+	}
+	if err := os.WriteFile(hook, []byte("{\"id\":\"memory\",\"changed\":true}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionPresent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.Readiness.AuthorizationObserved || changed.Readiness.Authorized || !containsOpenCodeDetail(changed.Readiness.PendingHumanActions, "restore the exact locked OpenCode project definition lifecycle:memory") || !containsOpenCodeDetail(changed.Readiness.Evidence, "definitions differ from the lock") {
+		t.Fatalf("changed OpenCode hook was treated as runnable: %#v", changed.Readiness)
+	}
+}
+
+func containsOpenCodeDetail(values []string, want string) bool {
+	for _, value := range values {
+		if strings.Contains(value, want) {
+			return true
+		}
+	}
+	return false
+}
 
 func TestProjectInspectionRepresentsEverySupportedOpenCodeResourceKind(t *testing.T) {
 	root := t.TempDir()

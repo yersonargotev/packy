@@ -1,10 +1,22 @@
 package capabilitypack
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestProjectActivationRecognizesEverySupportedSurface(t *testing.T) {
+	facade := NewFacade(Catalog{})
+	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
+		_, err := facade.PreviewProjectActivation(context.Background(), ProjectActivationRequest{Surface: surface})
+		if err == nil || strings.Contains(err.Error(), "supports only") {
+			t.Fatalf("%s activation qualification error = %v", surface, err)
+		}
+	}
+}
 
 func TestProjectActivationIdentityIsCanonicalAndCheckoutLocal(t *testing.T) {
 	root := t.TempDir()
@@ -82,6 +94,29 @@ func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
 	lock.Projections[0].Command = "changed-codex-command"
 	if changed := projectSensitiveLockIdentity(lock, categories); changed == original {
 		t.Fatal("Codex-sensitive change retained Codex consent")
+	}
+}
+
+func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	rootDigest, err := projectActivationRootDigest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval := []ProjectActivationApproval{{Category: ProjectActivationMCP, Digest: "approved"}}
+	receipt := []projectActivationReceipt{{Category: ProjectActivationMCP, Digest: "approved"}}
+	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
+		state := projectActivationState{SchemaVersion: 1, PackID: "pack", Version: "1.0.0", Surface: surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: "lock-" + string(surface)}
+		if err := saveProjectActivationRecords(home, root, state, approval, receipt, nil, "clean"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
+		document, exists, err := loadProjectActivationDocumentForSurface(home, root, surface)
+		if err != nil || !exists || document.State.Surface != surface || document.SensitiveLockIdentity != "lock-"+string(surface) {
+			t.Fatalf("%s document = %+v exists=%v err=%v", surface, document, exists, err)
+		}
 	}
 }
 

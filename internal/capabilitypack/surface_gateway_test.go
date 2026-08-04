@@ -32,9 +32,27 @@ func TestSurfaceGatewayValidatesAndClonesProjectActivationActions(t *testing.T) 
 		func() ProjectionAction { value := action; value.Surface = SurfaceOpenCode; return value }(),
 	} {
 		_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{malformed}}}, transition)
-		if err == nil || !strings.Contains(err.Error(), "personal Codex project action") {
+		if err == nil || !strings.Contains(err.Error(), "personal") || !strings.Contains(err.Error(), "project action") {
 			t.Fatalf("malformed personal action accepted: %+v, %v", malformed, err)
 		}
+	}
+}
+
+func TestSurfaceGatewayAcceptsExactClaudeProjectHookAction(t *testing.T) {
+	project := t.TempDir()
+	action := ProjectionAction{
+		ID: "project_hook:claude", Surface: SurfaceClaude, Kind: ActionClaudeProjectHook,
+		Description: "enable exact approved Claude project hooks",
+		Target:      filepath.Join(project, ".claude", "settings.local.json"), Content: "{\"hooks\":{}}\n",
+		Version: "exact-hook-identity", FileMode: 0o600, Precondition: "missing", PreviewOnly: true,
+	}
+	transition := SurfaceTransition{ProjectRoot: project, ProjectInstallation: &ProjectInstallation{Manifest: ProjectContractProposal{Packs: []ProjectManifestPack{{ID: "pack"}}}}}
+	got, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{action}}}, transition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.ProjectActivationActions) != 1 || got.ProjectActivationActions[0].Kind != ActionClaudeProjectHook {
+		t.Fatalf("Claude personal action = %+v", got.ProjectActivationActions)
 	}
 }
 

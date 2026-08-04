@@ -350,10 +350,10 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			} else {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified project installation")
 			}
-			if err != nil || jsonOutput || result.Status == "no-op" || len(args) == 0 || report.Surface != capabilitypack.SurfaceCodex {
+			if err != nil || jsonOutput || result.Status == "no-op" || len(args) == 0 {
 				return err
 			}
-			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), adapter)
+			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), projectRuntimeAdapter(opts, report.Surface, snapshot.Home()))
 		},
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
@@ -716,6 +716,20 @@ func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, home st
 	if surface == capabilitypack.SurfaceCodex && home != "" {
 		layout := codex.NewCanonicalLayout(home)
 		return codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile())
+	}
+	if surface == capabilitypack.SurfaceClaude && home != "" {
+		executable, _ := opts.ClaudeLookPath("claude")
+		layout := claudecode.NewCanonicalLayout(home)
+		var adapter *claudecode.SurfaceAdapter
+		if opts.ClaudeAuthorization != nil {
+			adapter = claudecode.NewSurfaceAdapterWithAuthorization("", layout, filepath.Join(home, ".packy"), executable, opts.ClaudeRunner, nil, opts.ClaudeAuthorization)
+		} else {
+			adapter = claudecode.NewSurfaceAdapter("", layout, filepath.Join(home, ".packy"), executable, opts.ClaudeRunner, nil)
+		}
+		if opts.ClaudeRuntimeEvidence != nil {
+			adapter = adapter.WithRuntimeEvidence(opts.ClaudeRuntimeEvidence)
+		}
+		return adapter
 	}
 	return projectOfflineAdapter(surface)
 }
@@ -1380,7 +1394,7 @@ func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
 	for _, status := range report.Packs {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers)); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers), renderPendingAction(status.PendingHumanActions), renderPendingAction(status.Evidence)); err != nil {
 			return err
 		}
 	}

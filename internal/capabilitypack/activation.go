@@ -61,6 +61,7 @@ const (
 	ActionOpenCodeConfigReference  ProjectionActionKind = "opencode-config-reference"
 	ActionCodexMCPConfig           ProjectionActionKind = "codex-mcp-config"
 	ActionCodexProjectTrust        ProjectionActionKind = "codex-project-trust"
+	ActionClaudeProjectHook        ProjectionActionKind = "claude-project-hook"
 	ActionCodexAgentFile           ProjectionActionKind = "codex-agent-file"
 	ActionCodexWorkflowSkill       ProjectionActionKind = "codex-workflow-skill"
 	ActionCodexAssetFile           ProjectionActionKind = "codex-asset-file"
@@ -230,14 +231,15 @@ const (
 // inspection. Capability-pack decides which facts are relevant to each use
 // case; adapters only translate those facts into host projections.
 type SurfaceTransition struct {
-	Prior               Pack
-	Desired             Pack
-	CurrentOwnership    []ProjectionOwnership
-	ResidualOwnership   []ProjectionOwnership
-	ResolvedExecutables []ExecutableResolution
-	ProjectRoot         string
-	ProjectInstallation *ProjectInstallation
-	ProjectGoal         ProjectionGoal
+	Prior                    Pack
+	Desired                  Pack
+	CurrentOwnership         []ProjectionOwnership
+	ResidualOwnership        []ProjectionOwnership
+	ResolvedExecutables      []ExecutableResolution
+	ProjectRoot              string
+	ProjectInstallation      *ProjectInstallation
+	ProjectActivationEffects []ProjectActivationEffectReceipt
+	ProjectGoal              ProjectionGoal
 }
 
 type SurfaceInspection struct {
@@ -3147,8 +3149,8 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		if transition.ProjectRoot == "" || transition.ProjectInstallation == nil {
 			return SurfaceInspection{}, errors.New("surface adapter returned a personal project action outside locked project inspection")
 		}
-		if action.ID != "project_trust:codex" || action.Surface != SurfaceCodex || action.Kind != ActionCodexProjectTrust || !action.PreviewOnly || action.Target == "" || !filepath.IsAbs(action.Target) || action.Content == "" || action.Version == "" || action.Precondition == "" || action.FileMode == 0 || action.ContributionStartMarker == "" || action.ContributionEndMarker == "" || action.Mode != "" || action.Consent != "" || action.Source != "" || action.Command != "" || len(action.Args) != 0 {
-			return SurfaceInspection{}, errors.New("surface adapter returned a malformed personal Codex project action")
+		if err := validatePersonalProjectAction(action); err != nil {
+			return SurfaceInspection{}, err
 		}
 		if _, duplicate := activationActions[key]; duplicate {
 			return SurfaceInspection{}, errors.New("surface adapter returned a duplicate personal Codex project action")
@@ -3256,6 +3258,23 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 	return observation, nil
 }
 
+func validatePersonalProjectAction(action ProjectionAction) error {
+	commonMalformed := !action.PreviewOnly || action.Target == "" || !filepath.IsAbs(action.Target) || action.Content == "" || action.Version == "" || action.Precondition == "" || action.FileMode == 0 || action.Mode != "" || action.Consent != "" || action.Source != "" || action.Command != "" || len(action.Args) != 0
+	switch action.Kind {
+	case ActionCodexProjectTrust:
+		if commonMalformed || action.ID != "project_trust:codex" || action.Surface != SurfaceCodex || action.ContributionStartMarker == "" || action.ContributionEndMarker == "" {
+			return errors.New("surface adapter returned a malformed personal Codex project action")
+		}
+	case ActionClaudeProjectHook:
+		if commonMalformed || action.ID != "project_hook:claude" || action.Surface != SurfaceClaude || action.ContributionStartMarker != "" || action.ContributionEndMarker != "" {
+			return errors.New("surface adapter returned a malformed personal Claude project action")
+		}
+	default:
+		return errors.New("surface adapter returned an unsupported personal project action")
+	}
+	return nil
+}
+
 func surfaceTransitionFacts(surface Surface, operation Operation, prior, desired Pack, ownership []ProjectionOwnership, resolutions []ExecutableResolution) SurfaceTransition {
 	adapterOwnership := adapterOwnershipForSurface(ownership, surface)
 	transition := SurfaceTransition{Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
@@ -3295,6 +3314,7 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 		_ = json.Unmarshal(data, &installation)
 		value.ProjectInstallation = &installation
 	}
+	value.ProjectActivationEffects = append([]ProjectActivationEffectReceipt(nil), value.ProjectActivationEffects...)
 	return value
 }
 
