@@ -198,7 +198,7 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	verified, err := f.PreviewProjectInstall(ctx, freshRequest, request.Adapter)
 	if err != nil || verified.Disposition != ProjectInstallConverged {
 		if err == nil {
-			err = ErrVerificationFailed
+			err = fmt.Errorf("%w: disposition=%s blockers=%v", ErrVerificationFailed, verified.Disposition, verified.Blockers)
 		}
 		return fail(err)
 	}
@@ -370,7 +370,7 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 
 func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdentity, target, fingerprint string) bool {
 	for _, projection := range lock.Projections {
-		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && projection.DesiredFingerprint == fingerprint && projection.Contributor != "" {
+		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && projection.DesiredFingerprint == fingerprint && (projection.Contributor != "" || len(projection.Contributors) > 0) {
 			return true
 		}
 	}

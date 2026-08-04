@@ -279,11 +279,91 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	if len(pack.Surfaces) != 1 || pack.Surfaces[0] != SurfaceCodex {
 		return errors.New("project manifest schema version 1 supports exactly the Codex surface")
 	}
-	if pack.Selection.Mode != SelectionAll || pack.Selection.Roots == nil || pack.Aliases == nil || pack.ProviderChoices == nil {
+	selection, err := canonicalSelection(pack.Selection)
+	if err != nil || digestJSON(selection) != digestJSON(pack.Selection) || pack.Selection.Roots == nil || pack.Aliases == nil || pack.ProviderChoices == nil {
 		return errors.New("project manifest selection, aliases, and provider choices are incomplete")
+	}
+	aliases := cloneAliases(pack.Aliases)
+	if err := canonicalizeAliases(&aliases); err != nil || digestJSON(aliases) != digestJSON(pack.Aliases) {
+		return errors.New("project manifest aliases are invalid or non-canonical")
+	}
+	providerChoices, err := canonicalProviderChoices(pack.ProviderChoices)
+	if providerChoices == nil && pack.ProviderChoices != nil {
+		providerChoices = []ProviderChoice{}
+	}
+	if err != nil || digestJSON(providerChoices) != digestJSON(pack.ProviderChoices) {
+		return errors.New("project manifest provider choices are invalid or non-canonical")
 	}
 	if lock.Path != "packy.lock.json" || lock.Source.PackID != pack.ID || lock.Source.PackVersion != pack.Version || lock.Source.ManifestSchema < manifestSchemaV1 || lock.Source.ManifestSchema > manifestSchemaV4 || lock.Source.SourceID == "" || lock.Source.Provider == "" || lock.Source.Repository == "" || lock.Source.Commit == "" || lock.Source.Tree == "" || !projectDigestPattern.MatchString(lock.Source.SourceLockSHA256) {
 		return errors.New("project lock source identity does not exactly match the manifest pack")
+	}
+	if (lock.Sources == nil) != (lock.Packs == nil) {
+		return errors.New("project lock resolved packs and sources must be present together")
+	}
+	if lock.Packs != nil {
+		if len(lock.Packs) == 0 || len(lock.Packs) != len(lock.Sources) {
+			return errors.New("project lock resolved packs and sources are incomplete")
+		}
+		sources := make(map[string]ProjectPackSourceIdentity, len(lock.Sources))
+		for _, source := range lock.Sources {
+			if source.PackID == "" || sources[source.PackID].PackID != "" || source.PackVersion == "" || source.SourceID == "" || source.Provider == "" || source.Repository == "" || source.Commit == "" || source.Tree == "" || !projectDigestPattern.MatchString(source.SourceLockSHA256) {
+				return errors.New("project lock contains an incomplete or duplicate admitted source")
+			}
+			sources[source.PackID] = source
+		}
+		requested := false
+		resolved := make(map[string]ProjectResolvedPack, len(lock.Packs))
+		for _, resolution := range lock.Packs {
+			canonical, selectionErr := canonicalSelection(resolution.Selection)
+			choices, choicesErr := canonicalProviderChoices(resolution.ProviderChoices)
+			if choices == nil && resolution.ProviderChoices != nil {
+				choices = []ProviderChoice{}
+			}
+			source, sourceExists := sources[resolution.ID]
+			if resolution.ID == "" || resolved[resolution.ID].ID != "" || !semverPattern.MatchString(resolution.Version) || !sourceExists || source.PackVersion != resolution.Version || selectionErr != nil || digestJSON(canonical) != digestJSON(resolution.Selection) || resolution.ProviderChoices == nil || choicesErr != nil || digestJSON(choices) != digestJSON(resolution.ProviderChoices) || resolution.ResourceGraph.Resources == nil {
+				return errors.New("project lock contains an incomplete or duplicate resolved pack")
+			}
+			if resolution.ID == pack.ID {
+				if resolution.Role != ActivationRequested || resolution.Version != pack.Version || digestJSON(resolution.Selection) != digestJSON(pack.Selection) || digestJSON(resolution.ProviderChoices) != digestJSON(pack.ProviderChoices) {
+					return errors.New("project lock requested resolution does not match manifest intent")
+				}
+				requested = true
+			} else if resolution.Role != ActivationRequired {
+				return errors.New("project lock provider resolution has an invalid role")
+			}
+			resolved[resolution.ID] = resolution
+		}
+		if !requested || digestJSON(lock.Sources[0]) != digestJSON(lock.Source) {
+			return errors.New("project lock does not lead with the exact requested pack source")
+		}
+		for _, resolution := range lock.Packs {
+			for _, choice := range resolution.ProviderChoices {
+				provider, exists := resolved[choice.ProviderPack]
+				if !exists || provider.Role != ActivationRequired {
+					return fmt.Errorf("project lock provider choice %s does not name a required resolved pack", choice.Capability)
+				}
+				if choice.ProviderResource != nil && !projectGraphContains(provider.ResourceGraph, *choice.ProviderResource) {
+					return fmt.Errorf("project lock provider choice %s does not bind its exact provider resource", choice.Capability)
+				}
+			}
+		}
+		expectedGraph := make(map[ResourceIdentity]ResourceClosureFact)
+		for _, resolution := range lock.Packs {
+			for _, fact := range resolution.ResourceGraph.Resources {
+				if previous, exists := expectedGraph[fact.Resource]; exists && digestJSON(previous) != digestJSON(fact) {
+					return fmt.Errorf("project lock resolved packs disagree on shared resource %s", fact.Resource)
+				}
+				expectedGraph[fact.Resource] = fact
+			}
+		}
+		if len(expectedGraph) != len(lock.ResourceGraph.Resources) {
+			return errors.New("project lock combined resource graph does not match resolved pack graphs")
+		}
+		for _, fact := range lock.ResourceGraph.Resources {
+			if expected, exists := expectedGraph[fact.Resource]; !exists || digestJSON(expected) != digestJSON(fact) {
+				return fmt.Errorf("project lock combined resource %s does not match resolved pack graphs", fact.Resource)
+			}
+		}
 	}
 	if lock.ResourceGraph.Resources == nil || lock.Bindings == nil || lock.Modes == nil || lock.Projections == nil || !projectDigestPattern.MatchString(lock.ManifestSHA256) || !projectDigestPattern.MatchString(lock.NoticesSHA256) || lock.NoticesFileMode == 0 {
 		return errors.New("project lock omits required closure, identity, mode, or notice evidence")
@@ -298,10 +378,27 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	bindings := make(map[ResourceIdentity]bool, len(lock.Bindings))
 	for _, binding := range lock.Bindings {
 		identity := ResourceIdentity{Kind: binding.Kind, ID: binding.ID}
-		if !resources[identity] || bindings[identity] || binding.Projection == "" || binding.Name == "" || binding.Mode == "" || binding.Sharing == "" {
+		validMode := binding.Mode == "native" && binding.Degradation == "" || binding.Mode == "degraded" && binding.Degradation != ""
+		if !resources[identity] || bindings[identity] || binding.Projection == "" || binding.Name == "" || !validMode || binding.Sharing == "" {
 			return errors.New("project lock bindings are incomplete, duplicated, or outside the locked closure")
 		}
 		bindings[identity] = true
+	}
+	degradations := make(map[ResourceIdentity]bool)
+	for _, degradation := range lock.Degradations {
+		if degradation.ResourceKind == "" {
+			continue
+		}
+		identity, err := ParseResourceIdentity(degradation.ID)
+		if err != nil || identity.Kind != degradation.ResourceKind || !resources[identity] || degradations[identity] || degradation.Surface != pack.Surfaces[0] || degradation.Mode != "optional" || degradation.Code == "" || degradation.Reason == "" || degradation.SourcePaths == nil {
+			return errors.New("project lock declared degradations are incomplete, duplicated, or outside the locked closure")
+		}
+		degradations[identity] = true
+	}
+	for resource := range resources {
+		if projectOperationalResource(resource.Kind) && !bindings[resource] && !degradations[resource] {
+			return fmt.Errorf("project lock operational resource %s has no native binding or declared degradation", resource)
+		}
 	}
 	modeIDs := make(map[string]bool, len(lock.Modes))
 	for _, mode := range lock.Modes {
@@ -326,7 +423,14 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	seenResources := make(map[ResourceIdentity]bool, len(lock.Projections))
 	contributor := "surface:" + string(pack.Surfaces[0]) + ":pack:" + pack.ID
 	for _, projection := range lock.Projections {
-		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[projection.Target] || seenResources[projection.Resource] || projection.Contributor != contributor || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
+		validContributors := projection.Contributor == contributor
+		if projection.Contributors != nil {
+			validContributors = validContributors && len(projection.Contributors) > 0 && digestJSON(projection.Contributors) == digestJSON(sortedUnique(projection.Contributors))
+			for _, value := range projection.Contributors {
+				validContributors = validContributors && strings.HasPrefix(value, "surface:"+string(pack.Surfaces[0])+":pack:")
+			}
+		}
+		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[projection.Target] || seenResources[projection.Resource] || !validContributors || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
 			return errors.New("project lock contains malformed, duplicate, or unauthorized projection evidence")
 		}
 		if projection.Mode != "copy_tree" && projection.Mode != "merge_marked_file" {
@@ -340,7 +444,30 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		}
 		seenTargets[projection.Target], seenResources[projection.Resource] = true, true
 	}
+	for resource := range bindings {
+		if !seenResources[resource] {
+			return fmt.Errorf("project lock native-bound operational resource %s has no projection plan", resource)
+		}
+	}
 	return nil
+}
+
+func projectGraphContains(graph ResourceGraph, target ResourceIdentity) bool {
+	for _, fact := range graph.Resources {
+		if fact.Resource == target {
+			return true
+		}
+	}
+	return false
+}
+
+func projectOperationalResource(kind string) bool {
+	switch kind {
+	case "skill", "instruction", "mcp_server", "agent", "command", "lifecycle":
+		return true
+	default:
+		return false
+	}
 }
 
 func validProjectResourceRole(role ResourceRole) bool {

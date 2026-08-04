@@ -24,12 +24,15 @@ const (
 )
 
 type ProjectInstallRequest struct {
-	PackID       string
-	Version      string
-	Surface      Surface
-	ProjectRoot  string
-	manifestPack ProjectManifestPack
-	reconcile    bool
+	PackID          string
+	Version         string
+	Surface         Surface
+	ProjectRoot     string
+	Selection       ResourceSelection
+	Aliases         []SurfaceAlias
+	ProviderChoices []ProviderChoice
+	manifestPack    ProjectManifestPack
+	reconcile       bool
 }
 
 type ProjectInstallBlocker struct {
@@ -56,17 +59,29 @@ type ProjectManifestPack struct {
 }
 
 type ProjectLockProposal struct {
-	Path                   string                    `json:"path"`
-	SchemaVersion          int                       `json:"schema_version"`
-	MinimumPackyCapability string                    `json:"minimum_packy_capability"`
-	Source                 ProjectPackSourceIdentity `json:"source"`
-	ResourceGraph          ResourceGraph             `json:"resource_graph"`
-	Bindings               []LifecycleBinding        `json:"bindings"`
-	Modes                  []OptionalMode            `json:"modes"`
-	ManifestSHA256         string                    `json:"manifest_sha256"`
-	NoticesSHA256          string                    `json:"notices_sha256"`
-	NoticesFileMode        uint32                    `json:"notices_file_mode"`
-	Projections            []ProjectProjectionPlan   `json:"projections"`
+	Path                   string                      `json:"path"`
+	SchemaVersion          int                         `json:"schema_version"`
+	MinimumPackyCapability string                      `json:"minimum_packy_capability"`
+	Source                 ProjectPackSourceIdentity   `json:"source"`
+	Sources                []ProjectPackSourceIdentity `json:"sources,omitempty"`
+	Packs                  []ProjectResolvedPack       `json:"packs,omitempty"`
+	ResourceGraph          ResourceGraph               `json:"resource_graph"`
+	Bindings               []LifecycleBinding          `json:"bindings"`
+	Degradations           []LifecycleExclusion        `json:"degradations,omitempty"`
+	Modes                  []OptionalMode              `json:"modes"`
+	ManifestSHA256         string                      `json:"manifest_sha256"`
+	NoticesSHA256          string                      `json:"notices_sha256"`
+	NoticesFileMode        uint32                      `json:"notices_file_mode"`
+	Projections            []ProjectProjectionPlan     `json:"projections"`
+}
+
+type ProjectResolvedPack struct {
+	ID              string            `json:"id"`
+	Version         string            `json:"version"`
+	Role            ActivationRole    `json:"role"`
+	Selection       ResourceSelection `json:"selection"`
+	ProviderChoices []ProviderChoice  `json:"provider_choices"`
+	ResourceGraph   ResourceGraph     `json:"resource_graph"`
 }
 
 type ProjectNoticesProposal struct {
@@ -106,6 +121,7 @@ type ProjectProjectionPlan struct {
 	DesiredFingerprint string           `json:"desired_fingerprint,omitempty"`
 	ObservedState      string           `json:"observed_state"`
 	Contributor        string           `json:"contributor"`
+	Contributors       []string         `json:"contributors,omitempty"`
 }
 
 type JSONProjectInstallPreview struct {
@@ -173,6 +189,7 @@ func (f Facade) PreviewProjectReconcile(ctx context.Context, projectRoot string,
 	pack := installation.Manifest.Packs[0]
 	return f.PreviewProjectInstall(ctx, ProjectInstallRequest{
 		PackID: pack.ID, Version: pack.Version, Surface: pack.Surfaces[0], ProjectRoot: projectRoot,
+		Selection: pack.Selection, Aliases: pack.Aliases, ProviderChoices: pack.ProviderChoices,
 		manifestPack: pack, reconcile: true,
 	}, adapter)
 }
@@ -197,18 +214,89 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if !projectSupportsSurface(pack.Surfaces, request.Surface) {
 		return JSONProjectInstallPreview{}, fmt.Errorf("capability pack %q does not support CLI surface %q", request.PackID, request.Surface)
 	}
+	selection, err := canonicalSelection(request.Selection)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	selectedPack, err := selectProjectPackResources(pack, selection)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	aliases := cloneAliases(request.Aliases)
+	if err := canonicalizeAliases(&aliases); err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	for _, alias := range aliases {
+		if !idPattern.MatchString(alias.Name) {
+			return JSONProjectInstallPreview{}, fmt.Errorf("project alias name %q is invalid", alias.Name)
+		}
+	}
+	providerChoices, err := canonicalProviderChoices(request.ProviderChoices)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	if providerChoices == nil {
+		providerChoices = []ProviderChoice{}
+	}
+	explicit := true
+	intent := ActivationIntent{PackID: pack.ID, Surface: request.Surface, Version: pack.Version, Active: true, Aliases: aliases, Selection: selection, ProviderChoices: providerChoices, Explicit: &explicit}
+	composition, err := f.composeProject(pack, ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}, request.Surface, aliases)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	for _, alias := range aliases {
+		matched := false
+		for _, composedPack := range composition.packs {
+			matched = matched || packHasAliasTarget(composedPack, alias, request.Surface)
+		}
+		if !matched {
+			return JSONProjectInstallPreview{}, fmt.Errorf("project alias %s:%s does not identify a resource in the resulting selected closure bound to %s", alias.Kind, alias.ID, request.Surface)
+		}
+	}
+	selectedPack = composition.combinedPack()
+	compositionBlockers := projectCompositionBlockers(composition.blockers)
 	source, err := f.catalog.projectPackSourceIdentity(pack)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: pack, ProjectRoot: request.ProjectRoot})
+	resolvedPacks := make([]ProjectResolvedPack, 0, len(composition.activations))
+	sources := make([]ProjectPackSourceIdentity, 0, len(composition.activations))
+	graph := ResourceGraph{Resources: []ResourceClosureFact{}}
+	graphResources := map[ResourceIdentity]bool{}
+	for _, activation := range composition.activations {
+		resolvedGraph := ResourceGraphFor(activation.Pack, activation.Selection, false)
+		resolvedChoices := cloneProviderChoices(activation.ProviderChoices)
+		if resolvedChoices == nil {
+			resolvedChoices = []ProviderChoice{}
+		}
+		resolvedPacks = append(resolvedPacks, ProjectResolvedPack{ID: activation.Pack.ID, Version: activation.Pack.Version, Role: activation.Role, Selection: activation.Selection, ProviderChoices: resolvedChoices, ResourceGraph: resolvedGraph})
+		resolvedSource, sourceErr := f.catalog.projectPackSourceIdentity(activation.Pack)
+		if sourceErr != nil {
+			return JSONProjectInstallPreview{}, sourceErr
+		}
+		sources = append(sources, resolvedSource)
+		for _, fact := range resolvedGraph.Resources {
+			if !graphResources[fact.Resource] {
+				graph.Resources = append(graph.Resources, fact)
+				graphResources[fact.Resource] = true
+			}
+		}
+	}
+	sort.Slice(resolvedPacks, func(i, j int) bool { return projectResolvedPackLess(resolvedPacks[i], resolvedPacks[j], pack.ID) })
+	sort.Slice(sources, func(i, j int) bool { return projectSourceLess(sources[i], sources[j], pack.ID) })
+	if len(resolvedPacks) > 0 && resolvedPacks[0].ID == pack.ID {
+		providerChoices = cloneProviderChoices(resolvedPacks[0].ProviderChoices)
+		if providerChoices == nil {
+			providerChoices = []ProviderChoice{}
+		}
+	}
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: selectedPack, ProjectRoot: request.ProjectRoot})
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
-	graph := ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, false)
 	projections := make([]ProjectProjectionPlan, 0, len(observation.Projections))
 	actions := make([]ProjectionAction, 0, len(observation.Projections))
-	blockers := make([]ProjectInstallBlocker, 0)
+	blockers := append([]ProjectInstallBlocker(nil), compositionBlockers...)
 	existingLock, lockExists, lockErr := readExistingProjectLock(request.ProjectRoot)
 	if lockErr != nil {
 		blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_lock", Target: "packy.lock.json", Detail: lockErr.Error(), Remediation: "restore or remove the invalid project lock before installation"})
@@ -253,7 +341,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		if projection.Action.Kind == ActionInstructionFile {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
 		}
-		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: "surface:" + string(request.Surface) + ":pack:" + pack.ID})
+		contributors := contributorsForSurface(request.Surface, composition.contributorSet(projection.ID))
+		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: "surface:" + string(request.Surface) + ":pack:" + pack.ID, Contributors: contributors})
 		action := projection.Action
 		action.PreviewOnly = false
 		actions = append(actions, action)
@@ -271,13 +360,16 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		return blockers[i].Resource.String() < blockers[j].Resource.String()
 	})
 	notices := make([]ProjectNoticeContribution, 0)
-	for _, resource := range pack.Resources {
+	for _, resource := range selectedPack.Resources {
 		if resource.Kind == "notice" {
 			notices = append(notices, ProjectNoticeContribution{Resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, License: resource.License, Attribution: resource.Attribution})
 		}
 	}
-	requirements := projectRequirements(pack)
-	manifestPack := ProjectManifestPack{ID: pack.ID, Version: pack.Version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}
+	requirements := projectRequirements(selectedPack)
+	if aliases == nil {
+		aliases = []SurfaceAlias{}
+	}
+	manifestPack := ProjectManifestPack{ID: pack.ID, Version: pack.Version, Surfaces: []Surface{request.Surface}, Selection: selection, Aliases: aliases, ProviderChoices: providerChoices}
 	if request.reconcile {
 		manifestPack = request.manifestPack
 	}
@@ -289,12 +381,13 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	for i := range lockProjections {
 		lockProjections[i].ObservedState = "installed"
 	}
+	contract := LifecycleContractFor(selectedPack, request.Surface, nil)
 	report := JSONProjectInstallPreview{
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
-		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: pack, actions: actions, request: request,
-		Selection:   ProjectSelectionPreview{Mode: SelectionAll, Resources: graph.Resources},
+		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
+		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: 1, Packs: []ProjectManifestPack{manifestPack}},
-		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, ResourceGraph: graph, Bindings: LifecycleContractFor(pack, request.Surface, nil).Bindings, Modes: LifecycleContractFor(pack, request.Surface, nil).OptionalModes, Projections: lockProjections},
+		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: contract.Bindings, Degradations: contract.Exclusions, Modes: contract.OptionalModes, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
 		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition,
 	}
@@ -342,6 +435,61 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	})
 	report.Observation = sealProjectInstallPreview(report, observationDigest(observation)+"\nnotices="+noticeBefore)
 	return report, nil
+}
+
+func projectCompositionBlockers(values []PlanBlocker) []ProjectInstallBlocker {
+	result := make([]ProjectInstallBlocker, 0, len(values))
+	for _, blocker := range values {
+		code := "project_dependency"
+		remediation := "repair the admitted project pack graph before installation"
+		switch {
+		case blocker.Kind == BlockerDependency && strings.Contains(blocker.Detail, "multiple eligible providers"):
+			code = "ambiguous_provider"
+			remediation = "select one eligible provider with --provider"
+		case blocker.Kind == BlockerDependency && strings.Contains(blocker.Detail, "no provider"):
+			code = "missing_provider"
+			remediation = "admit a compatible provider before installation"
+		case blocker.Kind == BlockerDependency && strings.Contains(blocker.Detail, "provider choice"):
+			code = "invalid_provider_choice"
+			remediation = "select an eligible admitted provider"
+		case blocker.Kind == BlockerAlias:
+			code = "native_name_collision"
+			remediation = "supply an explicit valid --alias for one colliding resource"
+		case blocker.Kind == BlockerCompatibility:
+			code = "unrepresentable_resource"
+			remediation = "choose a surface whose native binding or declared degradation represents the complete closure"
+		case blocker.Kind == BlockerSharing || blocker.Kind == BlockerIncompatibleContribution || blocker.Kind == BlockerResourceConflict:
+			code = "resource_conflict"
+			remediation = "repair the conflicting admitted resource contracts before installation"
+		}
+		result = append(result, ProjectInstallBlocker{Code: code, Detail: blocker.Subject + ": " + blocker.Detail, Remediation: remediation})
+	}
+	return result
+}
+
+func projectResolvedPackLess(left, right ProjectResolvedPack, requestedID string) bool {
+	if left.ID == requestedID || right.ID == requestedID {
+		return left.ID == requestedID && right.ID != requestedID
+	}
+	return left.ID < right.ID
+}
+
+func projectSourceLess(left, right ProjectPackSourceIdentity, requestedID string) bool {
+	if left.PackID == requestedID || right.PackID == requestedID {
+		return left.PackID == requestedID && right.PackID != requestedID
+	}
+	return left.PackID < right.PackID
+}
+
+func selectProjectPackResources(pack Pack, selection ResourceSelection) (Pack, error) {
+	selection, err := canonicalSelection(selection)
+	if err != nil {
+		return Pack{}, err
+	}
+	if selection.Mode == SelectionAll {
+		return clonePack(pack), nil
+	}
+	return selectPackResourceClosure(pack, selection)
 }
 
 func (f Facade) resolveProjectPackUnlocked(id, version string) (Pack, error) {

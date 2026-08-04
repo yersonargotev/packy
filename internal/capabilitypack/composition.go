@@ -68,6 +68,7 @@ type composition struct {
 	blockers        []PlanBlocker
 	intentFacts     []ActivationIntent
 	capabilityFacts []CapabilityRequirementFact
+	projectAliases  []SurfaceAlias
 }
 
 func resourceContributor(packID string, resource ResourceIdentity) string {
@@ -187,6 +188,7 @@ func (c composition) combinedPack() Pack {
 	for _, pack := range c.packs {
 		preserveResourceOrder = preserveResourceOrder || pack.manifestVersion == manifestSchemaV4
 		intent := intentByPackID(c.intentFacts, pack.ID)
+		aliases := compositionAliases(intent.Aliases, c.projectAliases)
 		for _, tool := range pack.Requires.Tools {
 			tools[tool] = true
 		}
@@ -196,7 +198,7 @@ func (c composition) combinedPack() Pack {
 					tools[tool] = true
 				}
 			}
-			r = resourceWithSurfaceAlias(r, intent.Aliases, c.surface)
+			r = resourceWithSurfaceAlias(r, aliases, c.surface)
 			key := r.Kind + ":" + r.ID
 			if _, ok := resources[key]; !ok {
 				resources[key] = r
@@ -257,11 +259,19 @@ func (c composition) contributorSet(projectionID string) []string {
 }
 
 func (f Facade) compose(requested Pack, state ActivationState, surface Surface, useRequestedIntent bool) (composition, error) {
-	return f.composeWithPolicy(requested, state, surface, useRequestedIntent, "", nil)
+	return f.composeWithPolicy(requested, state, surface, useRequestedIntent, "", nil, false, nil)
 }
 
-func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface Surface, useRequestedIntent bool, excludedPackID string, suppressedCapabilities map[string]bool) (composition, error) {
-	result := composition{requested: requested, surface: surface, contributors: map[string][]string{}}
+func (f Facade) composeProject(requested Pack, state ActivationState, surface Surface, aliases []SurfaceAlias) (composition, error) {
+	return f.composeWithPolicy(requested, state, surface, true, "", nil, true, aliases)
+}
+
+func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface Surface, useRequestedIntent bool, excludedPackID string, suppressedCapabilities map[string]bool, projectSelection bool, projectAliases []SurfaceAlias) (composition, error) {
+	result := composition{requested: requested, surface: surface, contributors: map[string][]string{}, projectAliases: projectAliases}
+	selectResources := selectPackResources
+	if projectSelection {
+		selectResources = selectProjectPackResources
+	}
 	selected := map[string]Pack{}
 	active := activeIntents(state)
 	activeIDs := map[string]bool{}
@@ -277,7 +287,7 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 		if err != nil {
 			return composition{}, err
 		}
-		pack, err = selectPackResources(pack, intent.Selection)
+		pack, err = selectResources(pack, intent.Selection)
 		if err != nil {
 			return composition{}, fmt.Errorf("active pack %q has invalid resource selection: %w", intent.PackID, err)
 		}
@@ -309,7 +319,7 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 						result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
 						return
 					}
-					pack, err = selectPackResources(catalogPack, merged)
+					pack, err = selectResources(catalogPack, merged)
 					if err != nil {
 						result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
 						return
@@ -322,7 +332,7 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 			}
 		} else if pack.manifestVersion == manifestSchemaV4 {
 			var err error
-			pack, err = selectPackResources(pack, selection)
+			pack, err = selectResources(pack, selection)
 			if err != nil {
 				result.blockers = append(result.blockers, PlanBlocker{BlockerDependency, pack.ID, err.Error()})
 				return
@@ -375,7 +385,7 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 			visit(provider.pack, ActivationRequired, providerSelection)
 			requiredAuthority := append([]string(nil), requirement.authority...)
 			if provider.resource != (ResourceIdentity{}) {
-				providerClosure, err := selectPackResources(provider.pack, providerSelection)
+				providerClosure, err := selectResources(provider.pack, providerSelection)
 				if err == nil {
 					requiredAuthority = append(requiredAuthority, packAuthorities(providerClosure)...)
 				}
@@ -467,13 +477,16 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 	projectedNames := map[string]string{}
 	for _, pack := range result.packs {
 		intent := intentByPackID(active, pack.ID)
-		for _, alias := range intent.Aliases {
-			if !packHasAliasTarget(pack, alias, surface) {
-				result.blockers = append(result.blockers, PlanBlocker{BlockerAlias, alias.Kind + ":" + alias.ID, "saved surface alias no longer targets a bound portable resource"})
+		aliases := compositionAliases(intent.Aliases, result.projectAliases)
+		if !projectSelection {
+			for _, alias := range aliases {
+				if !packHasAliasTarget(pack, alias, surface) {
+					result.blockers = append(result.blockers, PlanBlocker{BlockerAlias, alias.Kind + ":" + alias.ID, "saved surface alias no longer targets a bound portable resource"})
+				}
 			}
 		}
 		for _, resource := range pack.Resources {
-			resolved := resourceWithSurfaceAlias(resource, intent.Aliases, surface)
+			resolved := resourceWithSurfaceAlias(resource, aliases, surface)
 			key := resource.Kind + ":" + resource.ID
 			if previous, ok := resources[key]; ok {
 				if digestJSON(previous) != digestJSON(resource) {
@@ -519,6 +532,13 @@ func (f Facade) composeWithPolicy(requested Pack, state ActivationState, surface
 		return a.Capability < b.Capability
 	})
 	return result, nil
+}
+
+func compositionAliases(intentAliases, projectAliases []SurfaceAlias) []SurfaceAlias {
+	if projectAliases != nil {
+		return projectAliases
+	}
+	return intentAliases
 }
 
 func intentIsExplicit(intent ActivationIntent) bool {
@@ -776,7 +796,7 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 	if err != nil {
 		return composition{}, nil, err
 	}
-	result, err := f.composeWithPolicy(root, targetState, surface, true, requested.ID, suppressed)
+	result, err := f.composeWithPolicy(root, targetState, surface, true, requested.ID, suppressed, false, nil)
 	if err != nil {
 		return composition{}, nil, err
 	}
@@ -786,12 +806,13 @@ func (f Facade) composeWithout(requested Pack, state ActivationState, surface Su
 
 func (c composition) identityDigest() string {
 	return digestJSON(struct {
-		Packs        []Pack
-		Activations  []PlannedActivation
-		Contributors map[string][]string
-		Blockers     []PlanBlocker
-		Intents      []ActivationIntent
-	}{c.packs, c.activations, c.contributors, c.blockers, c.intentFacts})
+		Packs          []Pack
+		Activations    []PlannedActivation
+		Contributors   map[string][]string
+		Blockers       []PlanBlocker
+		Intents        []ActivationIntent
+		ProjectAliases []SurfaceAlias
+	}{c.packs, c.activations, c.contributors, c.blockers, c.intentFacts, c.projectAliases})
 }
 
 type capabilityProvider struct {
