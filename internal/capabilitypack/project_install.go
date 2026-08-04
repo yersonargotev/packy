@@ -363,7 +363,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		}
 		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionOpenCodeInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
-		} else if projection.Action.Kind == ActionOpenCodeMCPConfig || projection.Action.Kind == ActionClaudeProjectMCP || projection.Action.Kind == ActionClaudeProjectHook {
+		} else if projection.Action.Kind == ActionOpenCodeMCPConfig || projection.Action.Kind == ActionClaudeProjectMCP {
 			mode, fileMode = "merge_structured_file", projection.Action.FileMode
 		}
 		primaryContributor := "surface:" + string(request.Surface) + ":pack:" + pack.ID

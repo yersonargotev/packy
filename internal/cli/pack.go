@@ -294,7 +294,15 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 				return err
 			}
 			facade := capabilitypack.NewFacade(composition.catalog)
-			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+			adapterSurface := capabilitypack.Surface(surface)
+			if len(args) == 0 {
+				installation, loadErr := capabilitypack.LoadProjectInstallation(projectRoot)
+				if loadErr != nil {
+					return loadErr
+				}
+				adapterSurface = installation.Manifest.Packs[0].Surfaces[0]
+			}
+			adapter := projectInstallAdapter(adapterSurface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 			var report capabilitypack.JSONProjectInstallPreview
 			if len(args) == 0 {
 				report, err = facade.PreviewProjectReconcile(cmd.Context(), projectRoot, adapter)

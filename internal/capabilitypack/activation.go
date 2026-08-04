@@ -67,7 +67,6 @@ const (
 	ActionClaudeProjectFile        ProjectionActionKind = "claude-project-file"
 	ActionClaudeProjectInstruction ProjectionActionKind = "claude-project-instruction"
 	ActionClaudeProjectMCP         ProjectionActionKind = "claude-project-mcp"
-	ActionClaudeProjectHook        ProjectionActionKind = "claude-project-hook"
 	ActionProjectManifestFile      ProjectionActionKind = "project-manifest-file"
 	ActionProjectLockFile          ProjectionActionKind = "project-lock-file"
 	ActionProjectNoticesFile       ProjectionActionKind = "project-notices-file"

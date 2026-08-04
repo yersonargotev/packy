@@ -18,10 +18,16 @@ func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) 
 	if err := os.MkdirAll(filepath.Join(bundle, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(bundle, "assets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(bundle, "instructions", "memory.md"), []byte("Use durable memory.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "assets", "checklist.md"), []byte("# Checklist\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(project, "CLAUDE.md"), []byte("# Team instructions\n"), 0o644); err != nil {
@@ -34,6 +40,7 @@ func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) 
 		{Kind: "instruction", ID: "memory", Source: "instructions/memory.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "instruction", Name: "memory"}}},
 		{Kind: "mcp_server", ID: "memory", Command: "engram", Args: []string{"mcp"}, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "mcp_server", Name: "memory"}}},
 		{Kind: "lifecycle", ID: "session", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "command_hook", Name: "session", Hook: &capabilitypack.CommandHook{Type: "command", Event: "SessionStart", Matcher: "", Command: "engram", Args: []string{"session"}, TimeoutSeconds: 10, Failure: "warn"}}}},
+		{Kind: "asset", ID: "checklist", Source: "assets/checklist.md"},
 	}}
 	adapter := NewSurfaceAdapter(bundle, NewCanonicalLayout(""), "", "", nil, nil)
 	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ProjectRoot: project})
@@ -60,9 +67,13 @@ func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) 
 	if err := json.Unmarshal(mcpBytes, &mcp); err != nil || mcp["foreign"] != true || mcp["mcpServers"].(map[string]any)["memory"] == nil {
 		t.Fatalf("mcp = %#v, err=%v", mcp, err)
 	}
-	settings, err := os.ReadFile(filepath.Join(project, ".claude", "settings.json"))
-	if err != nil || !strings.Contains(string(settings), "SessionStart") {
-		t.Fatalf("settings = %q, err=%v", settings, err)
+	hookDefinition := filepath.Join(project, ".claude", "packy-hooks", "session.json")
+	hookBytes, err := os.ReadFile(hookDefinition)
+	if err != nil || !strings.Contains(string(hookBytes), "SessionStart") {
+		t.Fatalf("inert hook definition = %q, err=%v", hookBytes, err)
+	}
+	if _, err := os.Lstat(filepath.Join(project, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("project install activated the hook through shared Claude settings: %v", err)
 	}
 
 	lock := capabilitypack.ProjectLockProposal{Bindings: []capabilitypack.LifecycleBinding{
@@ -82,6 +93,16 @@ func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) 
 		})
 	}
 	installation := capabilitypack.ProjectInstallation{Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "portable", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceClaude}}}}, Lock: lock}
+	tampered := installation
+	tampered.Lock.Projections = append([]capabilitypack.ProjectProjectionPlan(nil), lock.Projections...)
+	for i := range tampered.Lock.Projections {
+		if tampered.Lock.Projections[i].Resource.Kind == "asset" {
+			tampered.Lock.Projections[i].Target = ".claude/other/checklist.md"
+		}
+	}
+	if _, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &tampered}); err == nil {
+		t.Fatal("Claude locked inspection trusted a tampered asset target")
+	}
 	removal, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionAbsent})
 	if err != nil {
 		t.Fatal(err)
@@ -101,11 +122,8 @@ func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) 
 	if err != nil || json.Unmarshal(mcpBytes, &mcp) != nil || mcp["foreign"] != true {
 		t.Fatalf("removed MCP = %q, err=%v", mcpBytes, err)
 	}
-	settings, err = os.ReadFile(filepath.Join(project, ".claude", "settings.json"))
-	hook := fromBindingHook(capabilitypack.Binding{Hook: pack.Resources[2].Bindings[0].Hook})
-	observedSettings := ObserveSettings(filepath.Join(project, ".claude", "settings.json"), nil)
-	if err != nil || observedSettings.Err != nil || len(EnrichHookObservation(observedSettings, hook).MatchingEntries) != 0 {
-		t.Fatalf("removed settings = %q, err=%v", settings, err)
+	if _, err := os.Lstat(hookDefinition); !os.IsNotExist(err) {
+		t.Fatalf("uninstall retained the inert hook definition: %v", err)
 	}
 
 	removed, err := removeProjectMCP(mcpBytes, "memory")

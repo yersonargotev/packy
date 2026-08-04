@@ -29,20 +29,13 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		return capabilitypack.SurfaceInspection{}, err
 	}
 	mcpDocument := append([]byte(nil), mcpOriginal...)
-	settingsPath := filepath.Join(projectRoot, ".claude", "settings.json")
-	settingsOriginal, err := readOptional(settingsPath)
-	if err != nil {
-		return capabilitypack.SurfaceInspection{}, err
-	}
-	settingsDocument := append([]byte(nil), settingsOriginal...)
-
 	for _, resource := range pack.Resources {
 		identity := capabilitypack.ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
 		if resource.Kind == "notice" {
 			continue
 		}
 		binding, bound := claudeBinding(resource)
-		projection, represented, projectErr := a.claudeProjectProjection(pack, resource, binding, bound, projectRoot, instructionPath, &instructionDocument, mcpPath, &mcpDocument, settingsPath, &settingsDocument)
+		projection, represented, projectErr := a.claudeProjectProjection(pack, resource, binding, bound, projectRoot, instructionPath, &instructionDocument, mcpPath, &mcpDocument)
 		if projectErr != nil {
 			return capabilitypack.SurfaceInspection{}, projectErr
 		}
@@ -60,8 +53,6 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			projections[i].Action.Content = string(instructionDocument)
 		case capabilitypack.ActionClaudeProjectMCP:
 			projections[i].Action.Content = string(mcpDocument)
-		case capabilitypack.ActionClaudeProjectHook:
-			projections[i].Action.Content = string(settingsDocument)
 		}
 	}
 	sort.Slice(projections, func(i, j int) bool { return projections[i].ID < projections[j].ID })
@@ -70,13 +61,13 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		return capabilitypack.SurfaceInspection{}, err
 	}
 	return capabilitypack.SurfaceInspection{
-		Revision:    localprojection.FingerprintBytes([]byte(projectRoot + "\x00" + string(instructionOriginal) + "\x00" + string(mcpOriginal) + "\x00" + string(settingsOriginal))),
+		Revision:    localprojection.FingerprintBytes([]byte(projectRoot + "\x00" + string(instructionOriginal) + "\x00" + string(mcpOriginal))),
 		Projections: projections, Unrepresentable: unrepresentable,
 		Readiness: capabilitypack.ReadinessObservation{OptionalAuthorities: capabilitypack.UnknownOptionalAuthorities(pack)}, RuntimeModeEvidence: evidence,
 	}, nil
 }
 
-func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bound bool, projectRoot, instructionPath string, instructionDocument *[]byte, mcpPath string, mcpDocument *[]byte, settingsPath string, settingsDocument *[]byte) (capabilitypack.ObservedProjection, bool, error) {
+func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bound bool, projectRoot, instructionPath string, instructionDocument *[]byte, mcpPath string, mcpDocument *[]byte) (capabilitypack.ObservedProjection, bool, error) {
 	identity := capabilitypack.ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
 	regular := func(kind capabilitypack.ProjectionActionKind, target, content string) (capabilitypack.ObservedProjection, bool, error) {
 		observed, exists, err := localprojection.FingerprintPath(target)
@@ -131,7 +122,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 			return capabilitypack.ObservedProjection{}, false, err
 		}
 		return regular(capabilitypack.ActionClaudeProjectFile, filepath.Join(projectRoot, ".claude", "agents", binding.Name+".md"), string(content))
-	case "asset", "rule":
+	case "asset":
 		if resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
@@ -139,11 +130,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
-		directory := "assets"
-		if resource.Kind == "rule" {
-			directory = "rules"
-		}
-		return regular(capabilitypack.ActionClaudeProjectFile, filepath.Join(projectRoot, ".claude", directory, resource.ID, filepath.Base(resource.Source)), string(content))
+		return regular(capabilitypack.ActionClaudeProjectFile, filepath.Join(projectRoot, ".claude", "assets", resource.ID, "RESOURCE"), string(content))
 	case "instruction":
 		if !bound || binding.Projection != "instruction" || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
@@ -179,26 +166,11 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if !bound || binding.Projection != "command_hook" || binding.Hook == nil {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
-		hook := fromBindingHook(binding)
-		definition, err := json.Marshal(binding.Hook)
+		definition, err := json.MarshalIndent(binding.Hook, "", "  ")
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
-		merged, _, err := MergeCommandHookWithProvenance(*settingsDocument, hook, false, HookMergeProvenance{})
-		if err != nil {
-			return capabilitypack.ObservedProjection{}, false, err
-		}
-		observation := ObserveSettings(settingsPath, nil)
-		if observation.Err != nil {
-			return capabilitypack.ObservedProjection{}, false, observation.Err
-		}
-		hookObservation := EnrichHookObservation(observation, hook)
-		observed, exists := "missing", len(hookObservation.MatchingEntries) == 1
-		if exists {
-			observed = HookOwnershipFingerprint(hook.Event, hookObservation.EntryFingerprint)
-		}
-		*settingsDocument = merged
-		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: HookOwnershipFingerprint(hook.Event, canonicalFingerprint(hookJSON(hook))), AdapterProvenance: "claude-project/v1/hook-config", Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceClaude, Kind: capabilitypack.ActionClaudeProjectHook, Target: settingsPath, Command: string(definition), FileMode: 0o644, Precondition: projectFileFingerprint(settingsPath), PreviewOnly: true}}, true, nil
+		return regular(capabilitypack.ActionClaudeProjectFile, filepath.Join(projectRoot, ".claude", "packy-hooks", binding.Name+".json"), string(append(definition, '\n')))
 	default:
 		return capabilitypack.ObservedProjection{}, false, nil
 	}
@@ -271,28 +243,6 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 				err = removeErr
 				action.Content, action.Precondition, action.FileMode, action.Mode = string(removed), localprojection.FingerprintBytes(current), projectFileMode(target), capabilitypack.ProjectionRemoveContent
 			}
-		case "lifecycle":
-			action.Kind = capabilitypack.ActionClaudeProjectHook
-			var definition capabilitypack.CommandHook
-			if err = json.Unmarshal([]byte(locked.Command), &definition); err != nil {
-				break
-			}
-			hook := fromBindingHook(capabilitypack.Binding{Hook: &definition})
-			settings := ObserveSettings(target, nil)
-			if settings.Err != nil {
-				err = settings.Err
-				break
-			}
-			hookObservation := EnrichHookObservation(settings, hook)
-			exists = len(hookObservation.MatchingEntries) == 1
-			if exists {
-				observed = HookOwnershipFingerprint(hook.Event, hookObservation.EntryFingerprint)
-			}
-			if goal == capabilitypack.ProjectionAbsent && exists {
-				removed, _, removeErr := MergeCommandHookWithProvenance(settings.Raw, hook, true, HookMergeProvenance{})
-				err = removeErr
-				action.Content, action.Precondition, action.FileMode, action.Mode = string(removed), localprojection.FingerprintBytes(settings.Raw), projectFileMode(target), capabilitypack.ProjectionRemoveContent
-			}
 		default:
 			action.Kind = capabilitypack.ActionClaudeProjectFile
 			observed, exists, err = localprojection.FingerprintPath(target)
@@ -326,9 +276,9 @@ func claudeLockedProjectTarget(locked capabilitypack.ProjectProjectionPlan, bind
 	case "mcp_server":
 		return ".mcp.json"
 	case "lifecycle":
-		return filepath.Join(".claude", "settings.json")
-	case "asset", "rule":
-		return filepath.FromSlash(locked.Target)
+		return filepath.Join(".claude", "packy-hooks", binding.Name+".json")
+	case "asset":
+		return filepath.Join(".claude", "assets", locked.Resource.ID, "RESOURCE")
 	default:
 		return ""
 	}
