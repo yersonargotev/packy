@@ -1,0 +1,115 @@
+package claudecode
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/yersonargotev/packy/internal/capabilitypack"
+)
+
+func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "bundle")
+	project := filepath.Join(root, "project")
+	if err := os.MkdirAll(filepath.Join(bundle, "instructions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "instructions", "memory.md"), []byte("Use durable memory.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "CLAUDE.md"), []byte("# Team instructions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".mcp.json"), []byte("{\n  \"foreign\": true\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pack := capabilitypack.Pack{ID: "portable", Resources: []capabilitypack.Resource{
+		{Kind: "instruction", ID: "memory", Source: "instructions/memory.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "instruction", Name: "memory"}}},
+		{Kind: "mcp_server", ID: "memory", Command: "engram", Args: []string{"mcp"}, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "mcp_server", Name: "memory"}}},
+		{Kind: "lifecycle", ID: "session", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "command_hook", Name: "session", Hook: &capabilitypack.CommandHook{Type: "command", Event: "SessionStart", Matcher: "", Command: "engram", Args: []string{"session"}, TimeoutSeconds: 10, Failure: "warn"}}}},
+	}}
+	adapter := NewSurfaceAdapter(bundle, NewCanonicalLayout(""), "", "", nil, nil)
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := make([]capabilitypack.ProjectionAction, len(inspection.Projections))
+	for i := range inspection.Projections {
+		actions[i] = inspection.Projections[i].Action
+		actions[i].PreviewOnly = false
+	}
+	if actionErr := adapter.ApplyProjections(context.Background(), actions); actionErr != nil {
+		t.Fatal(actionErr)
+	}
+	instructions, err := os.ReadFile(filepath.Join(project, "CLAUDE.md"))
+	if err != nil || !strings.Contains(string(instructions), "# Team instructions") || !strings.Contains(string(instructions), "pack:portable:memory") {
+		t.Fatalf("instructions = %q, err=%v", instructions, err)
+	}
+	mcpBytes, err := os.ReadFile(filepath.Join(project, ".mcp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mcp map[string]any
+	if err := json.Unmarshal(mcpBytes, &mcp); err != nil || mcp["foreign"] != true || mcp["mcpServers"].(map[string]any)["memory"] == nil {
+		t.Fatalf("mcp = %#v, err=%v", mcp, err)
+	}
+	settings, err := os.ReadFile(filepath.Join(project, ".claude", "settings.json"))
+	if err != nil || !strings.Contains(string(settings), "SessionStart") {
+		t.Fatalf("settings = %q, err=%v", settings, err)
+	}
+
+	lock := capabilitypack.ProjectLockProposal{Bindings: []capabilitypack.LifecycleBinding{
+		{Kind: "instruction", ID: "memory", Projection: "instruction", Name: "memory"},
+		{Kind: "mcp_server", ID: "memory", Projection: "mcp_server", Name: "memory"},
+		{Kind: "lifecycle", ID: "session", Projection: "command_hook", Name: "session"},
+	}}
+	for _, projection := range inspection.Projections {
+		relative, relErr := filepath.Rel(project, projection.Action.Target)
+		if relErr != nil {
+			t.Fatal(relErr)
+		}
+		lock.Projections = append(lock.Projections, capabilitypack.ProjectProjectionPlan{
+			Resource: capabilitypack.ResourceIdentity{Kind: strings.SplitN(projection.ID, ":", 2)[0], ID: strings.SplitN(projection.ID, ":", 2)[1]},
+			Target:   filepath.ToSlash(relative), DesiredFingerprint: projection.DesiredFingerprint, Command: projection.Action.Command, Args: projection.Action.Args,
+			Contributors: []string{"surface:claude:pack:portable"},
+		})
+	}
+	installation := capabilitypack.ProjectInstallation{Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "portable", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceClaude}}}}, Lock: lock}
+	removal, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionAbsent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeActions := make([]capabilitypack.ProjectionAction, len(removal.Projections))
+	for i := range removal.Projections {
+		removeActions[i] = removal.Projections[i].Action
+	}
+	if actionErr := adapter.ApplyProjections(context.Background(), removeActions); actionErr != nil {
+		t.Fatal(actionErr)
+	}
+	instructions, err = os.ReadFile(filepath.Join(project, "CLAUDE.md"))
+	if err != nil || string(instructions) != "# Team instructions\n" {
+		t.Fatalf("removed instructions = %q, err=%v", instructions, err)
+	}
+	mcpBytes, err = os.ReadFile(filepath.Join(project, ".mcp.json"))
+	if err != nil || json.Unmarshal(mcpBytes, &mcp) != nil || mcp["foreign"] != true {
+		t.Fatalf("removed MCP = %q, err=%v", mcpBytes, err)
+	}
+	settings, err = os.ReadFile(filepath.Join(project, ".claude", "settings.json"))
+	hook := fromBindingHook(capabilitypack.Binding{Hook: pack.Resources[2].Bindings[0].Hook})
+	observedSettings := ObserveSettings(filepath.Join(project, ".claude", "settings.json"), nil)
+	if err != nil || observedSettings.Err != nil || len(EnrichHookObservation(observedSettings, hook).MatchingEntries) != 0 {
+		t.Fatalf("removed settings = %q, err=%v", settings, err)
+	}
+
+	removed, err := removeProjectMCP(mcpBytes, "memory")
+	if err != nil || json.Unmarshal(removed, &mcp) != nil || mcp["foreign"] != true {
+		t.Fatalf("removed MCP = %q, err=%v", removed, err)
+	}
+}

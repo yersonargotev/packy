@@ -218,7 +218,7 @@ func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstal
 }
 
 func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
-	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode {
+	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project installation preview does not support CLI surface %q", request.Surface)
 	}
 	if request.ProjectRoot == "" {
@@ -358,12 +358,12 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			}
 		}
 		mode, fileMode := "copy_file", projection.Action.FileMode
-		if projection.Action.Kind == ActionCodexProjectSkillTree {
+		if projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
 			mode, fileMode = "copy_tree", 0o700
 		}
-		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionOpenCodeInstructionFile {
+		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionOpenCodeInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
-		} else if projection.Action.Kind == ActionOpenCodeMCPConfig {
+		} else if projection.Action.Kind == ActionOpenCodeMCPConfig || projection.Action.Kind == ActionClaudeProjectMCP || projection.Action.Kind == ActionClaudeProjectHook {
 			mode, fileMode = "merge_structured_file", projection.Action.FileMode
 		}
 		primaryContributor := "surface:" + string(request.Surface) + ":pack:" + pack.ID

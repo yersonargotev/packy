@@ -295,7 +295,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		return errors.New("project manifest surfaces are empty, duplicated, or unsorted")
 	}
 	for _, surface := range pack.Surfaces {
-		if surface != SurfaceCodex && surface != SurfaceOpenCode {
+		if surface != SurfaceCodex && surface != SurfaceOpenCode && surface != SurfaceClaude {
 			return fmt.Errorf("project manifest schema version 1 does not support CLI surface %q", surface)
 		}
 	}

@@ -376,7 +376,7 @@ var initialCatalog = []catalogEntry{
 	{
 		ID:                 "addy",
 		Description:        "Addy agent skills",
-		Surfaces:           []Surface{SurfaceCodex, SurfaceOpenCode},
+		Surfaces:           []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode},
 		HistoricalVersions: []string{"1.0.0", "1.1.0"},
 		UpdateRoutes: []UpdateRoute{{
 			FromVersion:      "1.0.0",
@@ -385,7 +385,7 @@ var initialCatalog = []catalogEntry{
 		}},
 	},
 	{ID: "engram", Description: "Persistent memory for agent work", Surfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
-	{ID: "matty", Description: "Matty workflow", Surfaces: []Surface{SurfaceCodex, SurfaceOpenCode}},
+	{ID: "matty", Description: "Matty workflow", Surfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
 }
 
 // Discover loads the strict initial catalog from a Packy-owned bundle root.

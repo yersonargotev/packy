@@ -539,7 +539,7 @@ func captureProjectReverseActions(actions []ProjectionAction, backupRoot string)
 			_ = os.RemoveAll(backupRoot)
 			return nil, err
 		}
-		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 && action.Kind == ActionCodexProjectSkillTree {
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 && projectTreeAction(action.Kind) {
 			backup := filepath.Join(backupRoot, fmt.Sprintf("%03d", index))
 			if err := copyProjectTreeBackup(action.Target, backup); err != nil {
 				_ = os.RemoveAll(backupRoot)
@@ -569,17 +569,21 @@ func projectActionDesiredFingerprint(action ProjectionAction) string {
 	if action.Mode == ProjectionDeleteTarget {
 		return "missing"
 	}
-	if action.Kind == ActionCodexProjectSkillTree {
+	if projectTreeAction(action.Kind) {
 		return action.Version
 	}
 	return fingerprintProjectBytes([]byte(action.Content))
+}
+
+func projectTreeAction(kind ProjectionActionKind) bool {
+	return kind == ActionCodexProjectSkillTree || kind == ActionClaudeProjectSkillTree
 }
 
 func pendingProjectReverse(reverse []ProjectionAction) ([]ProjectionAction, error) {
 	pending := make([]ProjectionAction, 0, len(reverse))
 	for _, action := range reverse {
 		info, err := os.Lstat(action.Target)
-		if action.Kind == ActionCodexProjectSkillTree && action.Mode != ProjectionDeleteTarget {
+		if projectTreeAction(action.Kind) && action.Mode != ProjectionDeleteTarget {
 			if errors.Is(err, fs.ErrNotExist) {
 				pending = append(pending, action)
 				continue
@@ -625,7 +629,7 @@ func pendingProjectReverse(reverse []ProjectionAction) ([]ProjectionAction, erro
 
 func verifyProjectReverse(reverse []ProjectionAction) error {
 	for _, action := range reverse {
-		if action.Kind == ActionCodexProjectSkillTree && action.Mode != ProjectionDeleteTarget {
+		if projectTreeAction(action.Kind) && action.Mode != ProjectionDeleteTarget {
 			equal, err := projectTreesEqual(action.Source, action.Target)
 			if err != nil || !equal {
 				return fmt.Errorf("rollback did not restore project tree %s", action.Target)
@@ -835,7 +839,8 @@ func recoverProjectInstall(ctx context.Context, adapter SurfaceAdapter, path, pr
 		return errors.New("project installation recovery journal belongs to a different project root")
 	}
 	allowedKinds := map[ProjectionActionKind]bool{
-		ActionCodexProjectSkillTree: true, ActionInstructionFile: true,
+		ActionCodexProjectSkillTree: true, ActionClaudeProjectSkillTree: true, ActionInstructionFile: true,
+		ActionClaudeProjectFile: true, ActionClaudeProjectInstruction: true, ActionClaudeProjectMCP: true, ActionClaudeProjectHook: true,
 		ActionOpenCodeInstructionFile: true, ActionOpenCodeMCPConfig: true, ActionOpenCodeAgentFile: true, ActionOpenCodeCommandFile: true, ActionOpenCodeAssetFile: true,
 		ActionProjectManifestFile: true, ActionProjectLockFile: true, ActionProjectNoticesFile: true,
 	}
@@ -849,7 +854,7 @@ func recoverProjectInstall(ctx context.Context, adapter SurfaceAdapter, path, pr
 		if err := validateProjectTargetPath(projectRoot, action.Target); err != nil {
 			return fmt.Errorf("project installation recovery journal contains an unsafe target: %w", err)
 		}
-		if action.Kind == ActionCodexProjectSkillTree && action.Mode != ProjectionDeleteTarget {
+		if projectTreeAction(action.Kind) && action.Mode != ProjectionDeleteTarget {
 			backupRoot := projectInstallBackupRoot(path)
 			relative, err := filepath.Rel(backupRoot, action.Source)
 			if err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
