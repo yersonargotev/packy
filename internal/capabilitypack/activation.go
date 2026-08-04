@@ -3147,8 +3147,8 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		if transition.ProjectRoot == "" || transition.ProjectInstallation == nil {
 			return SurfaceInspection{}, errors.New("surface adapter returned a personal project action outside locked project inspection")
 		}
-		if action.ID != "project_trust:codex" || action.Surface != SurfaceCodex || action.Kind != ActionCodexProjectTrust || !action.PreviewOnly || action.Target == "" || !filepath.IsAbs(action.Target) || action.Content == "" || action.Version == "" || action.Precondition == "" || action.FileMode == 0 || action.ContributionStartMarker == "" || action.ContributionEndMarker == "" || action.Mode != "" || action.Consent != "" || action.Source != "" || action.Command != "" || len(action.Args) != 0 {
-			return SurfaceInspection{}, errors.New("surface adapter returned a malformed personal Codex project action")
+		if err := validatePersonalProjectAction(action); err != nil {
+			return SurfaceInspection{}, err
 		}
 		if _, duplicate := activationActions[key]; duplicate {
 			return SurfaceInspection{}, errors.New("surface adapter returned a duplicate personal Codex project action")
@@ -3254,6 +3254,19 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			runtimeModeEvidenceKey(observation.RuntimeModeEvidence[j].ResourceID, observation.RuntimeModeEvidence[j].ModeID)
 	})
 	return observation, nil
+}
+
+func validatePersonalProjectAction(action ProjectionAction) error {
+	commonMalformed := !action.PreviewOnly || action.Target == "" || !filepath.IsAbs(action.Target) || action.Content == "" || action.Version == "" || action.Precondition == "" || action.FileMode == 0 || action.Mode != "" || action.Consent != "" || action.Source != "" || action.Command != "" || len(action.Args) != 0
+	switch action.Kind {
+	case ActionCodexProjectTrust:
+		if commonMalformed || action.ID != "project_trust:codex" || action.Surface != SurfaceCodex || action.ContributionStartMarker == "" || action.ContributionEndMarker == "" {
+			return errors.New("surface adapter returned a malformed personal Codex project action")
+		}
+	default:
+		return errors.New("surface adapter returned an unsupported personal project action")
+	}
+	return nil
 }
 
 func surfaceTransitionFacts(surface Surface, operation Operation, prior, desired Pack, ownership []ProjectionOwnership, resolutions []ExecutableResolution) SurfaceTransition {

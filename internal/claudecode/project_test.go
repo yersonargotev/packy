@@ -131,3 +131,55 @@ func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) 
 		t.Fatalf("removed MCP = %q, err=%v", removed, err)
 	}
 }
+
+func TestLockedClaudeProjectInspectionRequiresNativeEvidenceForExactHookIdentity(t *testing.T) {
+	project := t.TempDir()
+	layout := NewCanonicalLayout(t.TempDir())
+	if err := os.MkdirAll(filepath.Join(project, ".claude", "packy-hooks"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hook := capabilitypack.CommandHook{Type: "command", Event: "SessionStart", Command: "engram", Args: []string{"session"}, TimeoutSeconds: 10, Failure: "warn"}
+	definition, err := json.MarshalIndent(struct {
+		ID      string                 `json:"id"`
+		Binding capabilitypack.Binding `json:"binding"`
+	}{ID: "session", Binding: capabilitypack.Binding{Surface: capabilitypack.SurfaceClaude, Projection: "command_hook", Name: "session", Hook: &hook}}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition = append(definition, '\n')
+	hookPath := filepath.Join(project, ".claude", "packy-hooks", "session.json")
+	if err := os.WriteFile(hookPath, definition, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock := capabilitypack.ProjectLockProposal{
+		Bindings:    []capabilitypack.LifecycleBinding{{Surface: capabilitypack.SurfaceClaude, Kind: "lifecycle", ID: "session", Projection: "command_hook", Name: "session"}},
+		Projections: []capabilitypack.ProjectProjectionPlan{{Resource: capabilitypack.ResourceIdentity{Kind: "lifecycle", ID: "session"}, Target: ".claude/packy-hooks/session.json", DesiredFingerprint: Fingerprint(definition), Contributors: []string{"surface:claude:pack:portable"}}},
+	}
+	installation := capabilitypack.ProjectInstallation{Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "portable", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceClaude}}}}, Lock: lock}
+	a := NewSurfaceAdapterWithAuthorization("", layout, "", "", nil, nil, AuthorizationObserverFunc(func(context.Context) AuthorizationObservation {
+		return AuthorizationObservation{PolicyObserved: true, ToolPermissionObserved: true}
+	}))
+	inspection, err := a.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inspection.ProjectActivationActions) != 0 || !inspection.Readiness.AuthorizationObserved || !inspection.Readiness.Authorized || inspection.Readiness.UsabilityObserved || len(inspection.Readiness.PendingHumanActions) == 0 {
+		t.Fatalf("inspection=%+v", inspection)
+	}
+	identity := Fingerprint([]byte("lifecycle:session=" + Fingerprint(definition)))
+	a.WithRuntimeEvidence(staticRuntimeEvidence([]RuntimeEvidence{{Kind: claudeProjectRuntimeEvidenceKind, ID: "project_runtime:claude", Signal: "usable", Revision: identity}}))
+	inspection, err = a.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation})
+	if err != nil || !inspection.Readiness.AuthorizationObserved || !inspection.Readiness.Authorized || !inspection.Readiness.UsabilityObserved || !inspection.Readiness.Usable || len(inspection.ProjectActivationActions) != 0 {
+		t.Fatalf("inspection=%+v err=%v", inspection, err)
+	}
+	if _, err := os.Lstat(filepath.Join(project, ".claude", "settings.local.json")); !os.IsNotExist(err) {
+		t.Fatalf("runtime inspection wrote personal state into the project: %v", err)
+	}
+	if err := os.WriteFile(hookPath, append([]byte("changed"), definition...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err = a.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation})
+	if err != nil || inspection.Readiness.Authorized || len(inspection.ProjectActivationActions) != 0 || len(inspection.Readiness.PendingHumanActions) == 0 {
+		t.Fatalf("changed hook inspection=%+v err=%v", inspection, err)
+	}
+}

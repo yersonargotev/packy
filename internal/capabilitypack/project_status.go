@@ -61,6 +61,8 @@ type JSONProjectPackStatus struct {
 	Readiness            ProjectReadinessStatus    `json:"readiness"`
 	Projections          []ProjectProjectionStatus `json:"projections"`
 	Blockers             []ProjectInstallBlocker   `json:"blockers"`
+	PendingHumanActions  []string                  `json:"pending_human_actions"`
+	Evidence             []string                  `json:"evidence"`
 	Requirement          string                    `json:"requirement,omitempty"`
 	RequirementSatisfied bool                      `json:"requirement_satisfied"`
 }
@@ -154,7 +156,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
 				Pack:    ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}},
 				Surface: request.Surface, Installation: ProjectInstallationAbsent, Runtime: ProjectRuntimePending,
-				Projections: []ProjectProjectionStatus{}, Blockers: []ProjectInstallBlocker{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
+				Projections: []ProjectProjectionStatus{}, Blockers: []ProjectInstallBlocker{}, PendingHumanActions: []string{}, Evidence: []string{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
 			})
 		}
 		return report, nil
@@ -234,7 +236,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		if runtimeRequired {
 			runtime = projectRuntimeStatus(request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories)
 		}
-		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, Readiness: readiness, Projections: projections, Blockers: blockers, RequirementSatisfied: true}
+		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
 		if request.RequireInstalled {
 			status.Requirement = "installed"
 			status.RequirementSatisfied = state == ProjectInstallationInstalled
@@ -305,7 +307,7 @@ func projectRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPac
 	if packyHome == "" {
 		return ProjectRuntimePending
 	}
-	document, exists, err := loadProjectActivationDocument(packyHome, projectRoot)
+	document, exists, err := loadProjectActivationDocumentForSurface(packyHome, projectRoot, surface)
 	if err != nil {
 		return ProjectRuntimeBlocked
 	}

@@ -176,7 +176,7 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 	}
 }
 
-func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal) (capabilitypack.SurfaceInspection, error) {
+func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal) (capabilitypack.SurfaceInspection, error) {
 	if goal == "" {
 		goal = capabilitypack.ProjectionPresent
 	}
@@ -263,7 +263,130 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		revision = append(revision, item.ID+"="+observed)
 	}
 	sort.Strings(revision)
-	return capabilitypack.SurfaceInspection{Revision: Fingerprint([]byte(strings.Join(revision, "\n"))), Projections: projections}, nil
+	readiness := capabilitypack.ReadinessObservation{}
+	activationActions := []capabilitypack.ProjectionAction(nil)
+	if goal == capabilitypack.ProjectionPresent {
+		var runtimeRevision string
+		var runtimeErr error
+		readiness, activationActions, runtimeRevision, runtimeErr = a.inspectLockedProjectRuntime(ctx, projectRoot, pack, lock)
+		if runtimeErr != nil {
+			return capabilitypack.SurfaceInspection{}, runtimeErr
+		}
+		if runtimeRevision != "" {
+			revision = append(revision, runtimeRevision)
+			sort.Strings(revision)
+		}
+	}
+	return capabilitypack.SurfaceInspection{Revision: Fingerprint([]byte(strings.Join(revision, "\n"))), Projections: projections, Readiness: readiness, ProjectActivationActions: activationActions}, nil
+}
+
+// inspectLockedProjectRuntime leaves Claude trust, credentials, and personal
+// settings host-owned. Packy verifies the installed definitions and accepts
+// only runtime evidence sealed to their exact aggregate identity.
+func (a *SurfaceAdapter) inspectLockedProjectRuntime(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) (capabilitypack.ReadinessObservation, []capabilitypack.ProjectionAction, string, error) {
+	sensitive := false
+	for _, disclosure := range lock.Sensitive {
+		if disclosure.Surface == capabilitypack.SurfaceClaude {
+			sensitive = true
+			break
+		}
+	}
+	contributor := "surface:claude:pack:" + pack.ID
+	var identities []string
+	for _, projection := range lock.Projections {
+		if !capabilitypack.ProjectProjectionHasContributor(projection, contributor) {
+			continue
+		}
+		if projection.Resource.Kind == "mcp_server" || projection.Resource.Kind == "lifecycle" {
+			identities = append(identities, projection.Resource.String()+"="+projection.DesiredFingerprint)
+		}
+		if projection.Resource.Kind != "lifecycle" {
+			continue
+		}
+		sensitive = true
+		expected := filepath.Join(".claude", "packy-hooks", lockedBindingName(lock, projection.Resource)+".json")
+		if lockedBindingName(lock, projection.Resource) == "" || filepath.Clean(filepath.FromSlash(projection.Target)) != filepath.Clean(expected) {
+			return capabilitypack.ReadinessObservation{}, nil, "", fmt.Errorf("project lock lifecycle %s has no exact Claude hook target", projection.Resource)
+		}
+		path := filepath.Join(projectRoot, expected)
+		data, err := readOptional(path)
+		if err != nil {
+			return capabilitypack.ReadinessObservation{}, nil, "", err
+		}
+		if Fingerprint(data) != projection.DesiredFingerprint {
+			return lockedClaudeRuntimePending("restore the exact locked Claude hook definition before activating it"), nil, "hook=" + projection.Resource.String() + "=changed", nil
+		}
+		var definition struct {
+			ID      string                 `json:"id"`
+			Binding capabilitypack.Binding `json:"binding"`
+		}
+		if err := json.Unmarshal(data, &definition); err != nil || definition.ID != projection.Resource.ID || definition.Binding.Surface != capabilitypack.SurfaceClaude || definition.Binding.Projection != "command_hook" || definition.Binding.Hook == nil {
+			return lockedClaudeRuntimePending("restore the exact locked Claude hook definition before activating it"), nil, "hook=" + projection.Resource.String() + "=invalid", nil
+		}
+		hook := fromBindingHook(definition.Binding)
+		if err := hook.Validate(); err != nil {
+			return lockedClaudeRuntimePending("restore the exact locked Claude hook definition before activating it"), nil, "hook=" + projection.Resource.String() + "=invalid", nil
+		}
+	}
+	for _, binding := range lock.Bindings {
+		if binding.Surface == capabilitypack.SurfaceClaude && binding.Kind == "mcp_server" {
+			sensitive = true
+		}
+	}
+	for _, disclosure := range lock.Sensitive {
+		if disclosure.Surface == capabilitypack.SurfaceClaude {
+			identities = append(identities, string(disclosure.Category)+"="+disclosure.Resource.String()+"="+disclosure.Detail)
+		}
+	}
+	if !sensitive {
+		return capabilitypack.ReadinessObservation{}, nil, "", nil
+	}
+	sort.Strings(identities)
+	identity := Fingerprint([]byte(strings.Join(identities, "\n")))
+	auth := AuthorizationObservation{}
+	if a.authorization != nil {
+		auth = a.authorization.ObserveAuthorization(ctx)
+	}
+	authorizationObserved := auth.Err == nil && auth.PolicyObserved && auth.ToolPermissionObserved
+	pending := []string{}
+	evidenceFacts := []string{"Claude project runtime definitions and host policy evidence inspected without reading credentials or personal settings"}
+	for _, disclosure := range lock.Sensitive {
+		if disclosure.Surface == capabilitypack.SurfaceClaude {
+			evidenceFacts = append(evidenceFacts, fmt.Sprintf("locked Claude %s effect %s (%s)", disclosure.Category, disclosure.Resource, disclosure.Detail))
+		}
+	}
+	if !authorizationObserved || auth.Disabled || auth.Shadowed {
+		pending = append(pending, "provide explicit observable Claude Code policy and tool-permission evidence")
+	}
+	authorized := authorizationObserved && !auth.Disabled && !auth.Shadowed
+	usabilityObserved, usable := false, false
+	if authorized && a.runtimeEvidence != nil {
+		for _, evidence := range a.runtimeEvidence.ObserveRuntimeEvidence(ctx) {
+			if evidence.Kind == claudeProjectRuntimeEvidenceKind && evidence.ID == "project_runtime:claude" && evidence.Signal == "usable" && evidence.Revision == identity {
+				usabilityObserved, usable = true, true
+				break
+			}
+		}
+	}
+	if authorized && !usabilityObserved {
+		pending = append(pending, "approve the exact locked Claude project runtime in Claude Code and supply current native runtime evidence")
+	}
+	return capabilitypack.ReadinessObservation{AuthorizationObserved: authorizationObserved, Authorized: authorized, UsabilityObserved: usabilityObserved, Usable: usable, PendingHumanActions: pending, Evidence: evidenceFacts}, nil, "project-runtime=" + identity, nil
+}
+
+const claudeProjectRuntimeEvidenceKind = "claude-project-runtime"
+
+func lockedClaudeRuntimePending(action string) capabilitypack.ReadinessObservation {
+	return capabilitypack.ReadinessObservation{PendingHumanActions: []string{action}, Evidence: []string{"Claude project runtime definition identity did not match its lock"}}
+}
+
+func lockedBindingName(lock capabilitypack.ProjectLockProposal, resource capabilitypack.ResourceIdentity) string {
+	for _, binding := range lock.Bindings {
+		if binding.Surface == capabilitypack.SurfaceClaude && binding.Kind == resource.Kind && binding.ID == resource.ID {
+			return binding.Name
+		}
+	}
+	return ""
 }
 
 func claudeLockedProjectTarget(locked capabilitypack.ProjectProjectionPlan, binding capabilitypack.LifecycleBinding) string {

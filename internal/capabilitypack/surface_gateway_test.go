@@ -32,7 +32,7 @@ func TestSurfaceGatewayValidatesAndClonesProjectActivationActions(t *testing.T) 
 		func() ProjectionAction { value := action; value.Surface = SurfaceOpenCode; return value }(),
 	} {
 		_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{malformed}}}, transition)
-		if err == nil || !strings.Contains(err.Error(), "personal Codex project action") {
+		if err == nil || !strings.Contains(err.Error(), "personal") || !strings.Contains(err.Error(), "project action") {
 			t.Fatalf("malformed personal action accepted: %+v, %v", malformed, err)
 		}
 	}

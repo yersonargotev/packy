@@ -350,10 +350,10 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			} else {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified project installation")
 			}
-			if err != nil || jsonOutput || result.Status == "no-op" || len(args) == 0 || report.Surface != capabilitypack.SurfaceCodex {
+			if err != nil || jsonOutput || result.Status == "no-op" || len(args) == 0 {
 				return err
 			}
-			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), adapter)
+			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), projectRuntimeAdapter(opts, report.Surface, snapshot))
 		},
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
@@ -640,7 +640,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 					return err
 				}
 				facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
-				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot.Home())
+				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot)
 				preview, err := facade.PreviewProjectActivation(cmd.Context(), capabilitypack.ProjectActivationRequest{
 					PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot,
 					PackyHome: snapshot.PackyHome(), Adapter: adapter,
@@ -709,13 +709,28 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	return cmd
 }
 
-func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, home string) capabilitypack.SurfaceAdapter {
+func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, snapshot workstation.Snapshot) capabilitypack.SurfaceAdapter {
 	if adapter := opts.SurfaceAdapters[surface]; adapter != nil {
 		return adapter
 	}
+	home := snapshot.Home()
 	if surface == capabilitypack.SurfaceCodex && home != "" {
 		layout := codex.NewCanonicalLayout(home)
 		return codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile())
+	}
+	if surface == capabilitypack.SurfaceClaude && home != "" {
+		executable, _ := opts.ClaudeLookPath("claude")
+		layout := claudecode.NewCanonicalLayout(home)
+		var adapter *claudecode.SurfaceAdapter
+		if opts.ClaudeAuthorization != nil {
+			adapter = claudecode.NewSurfaceAdapterWithAuthorization("", layout, snapshot.PackyHome(), executable, opts.ClaudeRunner, nil, opts.ClaudeAuthorization)
+		} else {
+			adapter = claudecode.NewSurfaceAdapter("", layout, snapshot.PackyHome(), executable, opts.ClaudeRunner, nil)
+		}
+		if opts.ClaudeRuntimeEvidence != nil {
+			adapter = adapter.WithRuntimeEvidence(opts.ClaudeRuntimeEvidence)
+		}
+		return adapter
 	}
 	return projectOfflineAdapter(surface)
 }
@@ -1268,9 +1283,9 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
 					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot.Home()),
-						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot.Home()),
-						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot.Home()),
+						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot),
+						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot),
+						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot),
 					},
 				})
 				if err != nil {
@@ -1380,7 +1395,7 @@ func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
 	for _, status := range report.Packs {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers)); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers), renderPendingAction(status.PendingHumanActions), renderPendingAction(status.Evidence)); err != nil {
 			return err
 		}
 	}

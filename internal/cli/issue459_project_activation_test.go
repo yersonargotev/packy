@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/workstation"
 )
 
 func TestIssue459ProjectActivationRequiresAnInstalledPack(t *testing.T) {
@@ -56,7 +57,11 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 
 	install := capabilitypack.JSONProjectInstallPreview{Pack: installation.Manifest.Packs[0], Surface: capabilitypack.SurfaceCodex}
 	facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
-	adapter := projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, home)
+	snapshot, err := workstation.Resolve(workstation.Inputs{Home: home}, workstation.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot)
 	command := &cobra.Command{}
 	var output strings.Builder
 	command.SetOut(&output)
