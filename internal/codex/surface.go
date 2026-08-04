@@ -30,6 +30,12 @@ func NewSurfaceAdapterWithConfig(bundleRoot, skillsDir, promptFile, configFile s
 }
 
 func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
+	if transition.ProjectInstallation != nil {
+		if transition.ProjectRoot == "" || len(transition.ProjectInstallation.Manifest.Packs) != 1 {
+			return capabilitypack.SurfaceInspection{}, fmt.Errorf("locked Codex project inspection requires one manifest pack and the project root")
+		}
+		return a.inspectLockedProject(transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectGoal)
+	}
 	if transition.ProjectRoot != "" {
 		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)
 	}

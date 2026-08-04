@@ -45,6 +45,7 @@ automatically.`,
   packy pack status engram --surface codex
   packy pack status engram --surface codex --require usable
   packy pack install matty --surface codex --dry-run
+  packy pack uninstall matty --dry-run
   packy pack activate matty --surface codex --dry-run
   packy pack activate example-pack --surface codex --resource skill:ask-matt --dry-run
   packy pack deactivate example-pack --surface codex --resource skill:ask-matt --dry-run
@@ -55,8 +56,143 @@ automatically.`,
   packy pack reconcile --surface codex
   packy pack deactivate matty --surface codex`,
 	}
-	cmd.AddCommand(newPackListCommand(opts, workstationResolver), newPackShowCommand(opts, workstationResolver), newPackStatusCommand(opts, workstationResolver), newPackInstallCommand(opts, workstationResolver), newPackActivateCommand(opts, workstationResolver), newPackUpdateCommand(opts, workstationResolver), newPackDeactivateCommand(opts, workstationResolver), newPackReconcileCommand(opts, workstationResolver))
+	cmd.AddCommand(newPackListCommand(opts, workstationResolver), newPackShowCommand(opts, workstationResolver), newPackStatusCommand(opts, workstationResolver), newPackInstallCommand(opts, workstationResolver), newPackUninstallCommand(opts, workstationResolver), newPackActivateCommand(opts, workstationResolver), newPackUpdateCommand(opts, workstationResolver), newPackDeactivateCommand(opts, workstationResolver), newPackReconcileCommand(opts, workstationResolver))
 	return cmd
+}
+
+func newPackUninstallCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
+	var surface string
+	var dryRun bool
+	var jsonOutput bool
+	cmd := &cobra.Command{
+		Use:   "uninstall <pack>",
+		Short: "Uninstall exact owned projections from the current Git project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			snapshot, err := workstationResolver.Resolve(workstation.Options{})
+			if err != nil {
+				return err
+			}
+			cwd, err := snapshot.CurrentDirectory()
+			if err != nil {
+				return fmt.Errorf("resolve current directory: %w", err)
+			}
+			projectRoot, err := capabilitypack.DiscoverProjectRoot(cwd)
+			if err != nil {
+				return err
+			}
+			adapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
+			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
+			if err != nil {
+				return err
+			}
+			if dryRun && pendingRecovery {
+				return errors.New("project installation is recovery-required; rerun `packy pack uninstall` without --dry-run before requesting another preview")
+			}
+			if !dryRun {
+				recovered, recoveryErr := capabilitypack.NewFacade(capabilitypack.Catalog{}).RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+				if recoveryErr != nil {
+					return recoveryErr
+				}
+				if recovered && !jsonOutput {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Recovered the prior project mutation before preview"); err != nil {
+						return err
+					}
+				}
+			}
+			report, err := capabilitypack.PreviewProjectUninstall(cmd.Context(), capabilitypack.ProjectUninstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, adapter)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				outputReport := report
+				outputReport.DryRun = dryRun
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(outputReport); err != nil {
+					return err
+				}
+			} else if err := renderProjectUninstallPreview(cmd, report, dryRun); err != nil {
+				return err
+			}
+			if report.Disposition == capabilitypack.ProjectInstallBlocked {
+				return capabilitypack.ProjectUninstallNotActionableError{Disposition: report.Disposition}
+			}
+			if dryRun {
+				return nil
+			}
+			if !opts.Terminal.Interactive(cmd.InOrStdin()) {
+				return capabilitypack.ErrInteractiveRequired
+			}
+			prompt := fmt.Sprintf("Approve project surface uninstall for exact preview %s?", report.Observation)
+			if report.Scope == capabilitypack.ProjectUninstallPack {
+				prompt = fmt.Sprintf("Approve complete project pack uninstall for exact preview %s?", report.Observation)
+			}
+			if !jsonOutput {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), prompt); err != nil {
+					return err
+				}
+			}
+			approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), prompt)
+			if err != nil {
+				return err
+			}
+			if !approved {
+				return errors.New("project uninstall was not approved")
+			}
+			result, err := capabilitypack.ApplyProjectUninstall(cmd.Context(), capabilitypack.ProjectUninstallApplyRequest{Preview: report, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified project uninstall")
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&surface, "surface", "", "Remove only one installed CLI surface (codex)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview every exact removal without mutation")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
+	return cmd
+}
+
+func renderProjectUninstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectUninstallPreview, dryRun bool) error {
+	header := "PROJECT SURFACE UNINSTALL PREVIEW"
+	scope := "surface " + string(report.Surface)
+	if report.Scope == capabilitypack.ProjectUninstallPack {
+		header, scope = "COMPLETE PROJECT PACK UNINSTALL PREVIEW", "complete pack"
+	}
+	if dryRun {
+		header = strings.Replace(header, "PREVIEW", "DRY-RUN", 1)
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\nProject root: %s\nPack: %s %s\nScope: %s\n", header, report.ProjectRoot, report.Pack.ID, report.Pack.Version, scope); err != nil {
+		return err
+	}
+	for _, projection := range report.Projections {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Remove projection: %s -> %s mode=%s health=%s\n", projection.Resource, projection.Target, projection.Mode, projection.Health); err != nil {
+			return err
+		}
+	}
+	for _, contract := range report.Contracts {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Remove project contract contribution: %s\n", contract); err != nil {
+			return err
+		}
+	}
+	if len(report.Blockers) == 0 {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Blockers: none"); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Blockers:"); err != nil {
+			return err
+		}
+		for _, blocker := range report.Blockers {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  - %s: %s; remediation: %s\n", blocker.Code, blocker.Detail, blocker.Remediation); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "Disposition: %s\n", report.Disposition)
+	return err
 }
 
 func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
@@ -109,7 +245,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if len(args) == 0 {
 				status, statusErr := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot,
-					Adapters:    map[capabilitypack.Surface]capabilitypack.ProjectInstallationAdapter{capabilitypack.SurfaceCodex: offlineAdapter},
+					Adapters:    map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: offlineAdapter},
 				})
 				if statusErr != nil {
 					return statusErr
@@ -967,7 +1103,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				adapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed",
-					Adapters: map[capabilitypack.Surface]capabilitypack.ProjectInstallationAdapter{capabilitypack.SurfaceCodex: adapter},
+					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter},
 				})
 				if err != nil {
 					return err
