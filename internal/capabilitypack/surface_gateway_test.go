@@ -52,6 +52,7 @@ func TestSurfaceGatewayClonesAndCanonicalizesTransitionAndInspection(t *testing.
 		Desired:             Pack{ID: "app", Resources: []Resource{{ID: "guide", Args: []string{"original"}}}},
 		ResidualOwnership:   []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}}},
 		ResolvedExecutables: []ExecutableResolution{{Tool: "tool", AcquisitionArgs: []string{"install"}}},
+		ProjectInstallation: &ProjectInstallation{Manifest: ProjectContractProposal{Packs: []ProjectManifestPack{{ID: "project-app"}}}},
 	}
 	adapter := &gatewayAdapter{
 		inspection: SurfaceInspection{
@@ -67,6 +68,7 @@ func TestSurfaceGatewayClonesAndCanonicalizesTransitionAndInspection(t *testing.
 			value.Desired.Resources[0].Args[0] = "mutated"
 			value.ResidualOwnership[0].Contributors[0] = "mutated"
 			value.ResolvedExecutables[0].AcquisitionArgs[0] = "mutated"
+			value.ProjectInstallation.Manifest.Packs[0].ID = "mutated"
 		},
 	}
 	got, err := inspectSurface(context.Background(), adapter, transition)
@@ -74,7 +76,7 @@ func TestSurfaceGatewayClonesAndCanonicalizesTransitionAndInspection(t *testing.
 		t.Fatal(err)
 	}
 	adapter.inspection.Projections[0].Action.Args[0] = "mutated"
-	if transition.Desired.Resources[0].Args[0] != "original" || transition.ResidualOwnership[0].Contributors[0] != "app" || transition.ResolvedExecutables[0].AcquisitionArgs[0] != "install" {
+	if transition.Desired.Resources[0].Args[0] != "original" || transition.ResidualOwnership[0].Contributors[0] != "app" || transition.ResolvedExecutables[0].AcquisitionArgs[0] != "install" || transition.ProjectInstallation.Manifest.Packs[0].ID != "project-app" {
 		t.Fatalf("adapter mutated gateway input: %+v", transition)
 	}
 	if got.Projections[0].ID != "a" || got.Projections[1].ID != "z" || got.Projections[1].Action.Args[0] != "z" || got.OccupiedNames[0].Namespace != "agent" || got.OccupiedNames[1].Name != "z" || got.PendingHumanActions[0] != "a" || got.Readiness.PendingHumanActions[0] != "a" || got.Readiness.Evidence[0] != "a" {

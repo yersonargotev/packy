@@ -22,19 +22,6 @@ type ProjectUninstallRequest struct {
 	ProjectRoot string
 }
 
-type ProjectUninstallInspection struct {
-	Projections []ProjectProjectionStatus
-	Actions     []ProjectionAction
-}
-
-// ProjectUninstallAdapter freshly re-derives removable host targets from the
-// portable lock and returns exact, preconditioned removal actions.
-type ProjectUninstallAdapter interface {
-	SurfaceAdapter
-	ProjectInstallationAdapter
-	InspectProjectUninstall(context.Context, string, ProjectManifestPack, ProjectLockProposal) (ProjectUninstallInspection, error)
-}
-
 type ProjectUninstallScope string
 
 const (
@@ -63,7 +50,7 @@ type JSONProjectUninstallPreview struct {
 type ProjectUninstallApplyRequest struct {
 	Preview   JSONProjectUninstallPreview
 	PackyHome string
-	Adapter   ProjectUninstallAdapter
+	Adapter   SurfaceAdapter
 }
 
 type ProjectUninstallApplyResult struct {
@@ -79,7 +66,7 @@ func (e ProjectUninstallNotActionableError) Error() string {
 	return fmt.Sprintf("project uninstall preview is not actionable: %s", e.Disposition)
 }
 
-func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallRequest, adapter ProjectUninstallAdapter) (JSONProjectUninstallPreview, error) {
+func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallRequest, adapter SurfaceAdapter) (JSONProjectUninstallPreview, error) {
 	report := JSONProjectUninstallPreview{
 		SchemaVersion: ProjectUninstallPreviewSchemaVersion, Report: "project-uninstall-preview", DryRun: true,
 		ProjectRoot: "<project-root>", projectRoot: request.ProjectRoot, request: request,
@@ -111,7 +98,7 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	surface := pack.Surfaces[0]
 	status, err := InspectProjectStatus(ctx, ProjectStatusRequest{
 		ProjectRoot: request.ProjectRoot, PackID: pack.ID, Surface: surface, RequireInstalled: true,
-		Adapters: map[Surface]ProjectInstallationAdapter{surface: adapter},
+		Adapters: map[Surface]SurfaceAdapter{surface: adapter},
 	})
 	if err != nil {
 		return report, err
@@ -121,14 +108,23 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	}
 	report.Projections = append([]ProjectProjectionStatus(nil), status.Packs[0].Projections...)
 	report.Blockers = append(report.Blockers, status.Packs[0].Blockers...)
-	inspection, err := adapter.InspectProjectUninstall(ctx, request.ProjectRoot, pack, installation.Lock)
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{
+		ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionAbsent,
+	})
 	if err != nil {
 		return report, err
 	}
-	if !sameProjectProjectionStatuses(report.Projections, inspection.Projections) {
+	uninstallStatuses, err := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation)
+	if err != nil {
+		return report, err
+	}
+	if !sameProjectProjectionStatuses(report.Projections, uninstallStatuses) {
 		return report, errors.New("project uninstall adapter returned inconsistent portable ownership evidence")
 	}
-	actions := append([]ProjectionAction(nil), inspection.Actions...)
+	actions := make([]ProjectionAction, 0, len(observation.Projections)+3)
+	for _, projection := range observation.Projections {
+		actions = append(actions, projection.Action)
+	}
 	noticeAction, noticeBlockers, err := planProjectNoticeRemoval(request.ProjectRoot, pack, installation.Lock)
 	if err != nil {
 		return report, err
@@ -210,20 +206,7 @@ func ApplyProjectUninstall(ctx context.Context, request ProjectUninstallApplyReq
 		return ProjectUninstallApplyResult{}, err
 	}
 	fail := func(cause error) (ProjectUninstallApplyResult, error) {
-		pending, pendingErr := pendingProjectReverse(reverse)
-		if pendingErr != nil {
-			return ProjectUninstallApplyResult{}, fmt.Errorf("project installation is recovery-required after %v: %w", cause, pendingErr)
-		}
-		if actionErr := request.Adapter.ApplyProjections(ctx, pending); actionErr != nil {
-			return ProjectUninstallApplyResult{}, fmt.Errorf("project installation is recovery-required after %v: %w", cause, actionErr)
-		}
-		if err := verifyProjectReverse(reverse); err != nil {
-			return ProjectUninstallApplyResult{}, fmt.Errorf("project installation is recovery-required after %v: %w", cause, err)
-		}
-		if err := removeProjectInstallJournal(journalPath); err != nil {
-			return ProjectUninstallApplyResult{}, fmt.Errorf("project installation restored prior state but journal cleanup failed: %w", err)
-		}
-		return ProjectUninstallApplyResult{}, cause
+		return ProjectUninstallApplyResult{}, rollbackProjectMutation(ctx, request.Adapter, reverse, journalPath, cause)
 	}
 	if actionErr := request.Adapter.ApplyProjections(ctx, nonLock); actionErr != nil {
 		return fail(actionErr)

@@ -176,20 +176,7 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 		return ProjectInstallApplyResult{}, err
 	}
 	fail := func(cause error) (ProjectInstallApplyResult, error) {
-		pending, pendingErr := pendingProjectReverse(reverse)
-		if pendingErr != nil {
-			return ProjectInstallApplyResult{}, fmt.Errorf("project installation is recovery-required after %v: %w", cause, pendingErr)
-		}
-		if rollbackErr := request.Adapter.ApplyProjections(ctx, pending); rollbackErr != nil {
-			return ProjectInstallApplyResult{}, fmt.Errorf("project installation is recovery-required after %v: %w", cause, rollbackErr)
-		}
-		if err := verifyProjectReverse(reverse); err != nil {
-			return ProjectInstallApplyResult{}, fmt.Errorf("project installation is recovery-required after %v: %w", cause, err)
-		}
-		if err := removeProjectInstallJournal(journalPath); err != nil {
-			return ProjectInstallApplyResult{}, fmt.Errorf("project installation restored prior state but journal cleanup failed: %w", err)
-		}
-		return ProjectInstallApplyResult{}, cause
+		return ProjectInstallApplyResult{}, rollbackProjectMutation(ctx, request.Adapter, reverse, journalPath, cause)
 	}
 	if actionErr := request.Adapter.ApplyProjections(ctx, nonLock); actionErr != nil {
 		return fail(actionErr)
@@ -219,6 +206,23 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 		return ProjectInstallApplyResult{}, err
 	}
 	return ProjectInstallApplyResult{SchemaVersion: projectInstallApplySchemaVersion, Report: "project-install-apply", Status: "verified", Observation: verified.Observation}, nil
+}
+
+func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, reverse []ProjectionAction, journalPath string, cause error) error {
+	pending, err := pendingProjectReverse(reverse)
+	if err != nil {
+		return fmt.Errorf("project installation is recovery-required after %v: %w", cause, err)
+	}
+	if actionErr := adapter.ApplyProjections(ctx, pending); actionErr != nil {
+		return fmt.Errorf("project installation is recovery-required after %v: %w", cause, actionErr)
+	}
+	if err := verifyProjectReverse(reverse); err != nil {
+		return fmt.Errorf("project installation is recovery-required after %v: %w", cause, err)
+	}
+	if err := removeProjectInstallJournal(journalPath); err != nil {
+		return fmt.Errorf("project installation restored prior state but journal cleanup failed: %w", err)
+	}
+	return cause
 }
 
 func marshalProjectManifest(proposal ProjectContractProposal) ([]byte, error) {

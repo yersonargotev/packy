@@ -60,136 +60,99 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 	}, nil
 }
 
-// InspectProjectInstallation validates a supported committed project lock
-// without consulting Packy's catalog or the source trees that produced it.
-func (a *SurfaceAdapter) InspectProjectInstallation(_ context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) ([]capabilitypack.ProjectProjectionStatus, error) {
+// inspectLockedProject validates and translates a supported committed project
+// lock without consulting Packy's catalog or original source trees.
+func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal) (capabilitypack.SurfaceInspection, error) {
+	if goal == "" {
+		goal = capabilitypack.ProjectionPresent
+	}
 	bindings := make(map[capabilitypack.ResourceIdentity]string, len(lock.Bindings))
 	for _, binding := range lock.Bindings {
 		bindings[capabilitypack.ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] = binding.Name
 	}
-	statuses := make([]capabilitypack.ProjectProjectionStatus, 0, len(lock.Projections))
+	projections := make([]capabilitypack.ObservedProjection, 0, len(lock.Projections))
+	var revision []string
 	for _, projection := range lock.Projections {
 		expected := ""
 		switch projection.Mode {
 		case "copy_tree":
 			name := bindings[projection.Resource]
 			if projection.Resource.Kind != "skill" || name == "" {
-				return nil, fmt.Errorf("project lock projection %s has no Codex project binding", projection.Resource)
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has no Codex project binding", projection.Resource)
 			}
 			expected = filepath.Join(".agents", "skills", name)
 		case "merge_marked_file":
 			if pack.ID != "matty" || projection.Resource.String() != projectMattyInstructionID {
-				return nil, fmt.Errorf("project lock projection %s has no supported Codex marked-file target", projection.Resource)
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has no supported Codex marked-file target", projection.Resource)
 			}
 			expected = "AGENTS.md"
 		default:
-			return nil, fmt.Errorf("project lock projection %s has unsupported Codex mode %q", projection.Resource, projection.Mode)
+			return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has unsupported Codex mode %q", projection.Resource, projection.Mode)
 		}
 		if filepath.Clean(filepath.FromSlash(projection.Target)) != filepath.Clean(expected) {
-			return nil, fmt.Errorf("project lock projection %s target %q does not match the re-derived Codex target %q", projection.Resource, projection.Target, filepath.ToSlash(expected))
+			return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s target %q does not match the re-derived Codex target %q", projection.Resource, projection.Target, filepath.ToSlash(expected))
 		}
 		target := filepath.Join(projectRoot, expected)
 		if _, err := capabilitypack.RelativeProjectTarget(projectRoot, target); err != nil {
-			return nil, fmt.Errorf("project lock projection %s has unsafe Codex target: %w", projection.Resource, err)
+			return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has unsafe Codex target: %w", projection.Resource, err)
 		}
-		observed, health := "missing", "missing"
+		observed, exists := "missing", false
+		action := capabilitypack.ProjectionAction{ID: projection.Resource.String(), Target: target, PreviewOnly: true}
 		if projection.Mode == "copy_tree" {
-			fingerprint, exists, err := projectTreeFingerprint(target)
+			fingerprint, found, err := projectTreeFingerprint(target)
 			if err != nil {
-				return nil, err
+				return capabilitypack.SurfaceInspection{}, err
 			}
-			observed = fingerprint
-			if exists {
-				health = "drifted"
-				if fingerprint == projection.DesiredFingerprint {
-					health = "verified"
-				}
-			}
+			observed, exists = fingerprint, found
+			action.Kind = capabilitypack.ActionCodexProjectSkillTree
+			action.Precondition = projection.DesiredFingerprint
 		} else {
 			inspection, err := projectMattyInstruction(projectRoot)
 			if err != nil {
-				return nil, err
+				return capabilitypack.SurfaceInspection{}, err
 			}
-			observed = inspection.ObservedFingerprint
-			if inspection.Exists {
-				health = "drifted"
-				if observed == projection.DesiredFingerprint {
-					health = "verified"
+			observed, exists = inspection.ObservedFingerprint, inspection.Exists
+			action.Kind = capabilitypack.ActionInstructionFile
+			if goal == capabilitypack.ProjectionAbsent && exists && observed == projection.DesiredFingerprint {
+				current, readErr := os.ReadFile(target)
+				if readErr != nil {
+					return capabilitypack.SurfaceInspection{}, readErr
+				}
+				fragment, found := extractBlock(string(current), projectMattyInstructionStart, projectMattyInstructionEnd)
+				if !found {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("Codex project instruction contribution is not exact and removable")
+				}
+				remaining := strings.Replace(string(current), fragment, "", 1)
+				info, statErr := os.Lstat(target)
+				if statErr != nil || !info.Mode().IsRegular() {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("Codex project instruction target is not a regular file")
+				}
+				action.Content, action.FileMode, action.Precondition = remaining, uint32(info.Mode().Perm()), localprojection.FingerprintBytes(current)
+				if strings.TrimSpace(remaining) == "" {
+					action.Content, action.Mode = "", capabilitypack.ProjectionDeleteTarget
+				} else {
+					action.Mode = capabilitypack.ProjectionRemoveContent
 				}
 			}
 		}
-		statuses = append(statuses, capabilitypack.ProjectProjectionStatus{
-			Resource: projection.Resource, Target: projection.Target, Mode: projection.Mode, Health: health,
-			ObservedFingerprint: observed, DesiredFingerprint: projection.DesiredFingerprint, Contributor: projection.Contributor,
-		})
-	}
-	sort.Slice(statuses, func(i, j int) bool {
-		if statuses[i].Target != statuses[j].Target {
-			return statuses[i].Target < statuses[j].Target
+		item := capabilitypack.ObservedProjection{
+			ID: projection.Resource.String(), Goal: goal, Exists: exists, ObservedFingerprint: observed,
+			AdapterProvenance: "codex-project/v1/locked-" + projection.Mode, Action: action,
 		}
-		return statuses[i].Resource.String() < statuses[j].Resource.String()
-	})
-	return statuses, nil
-}
-
-// InspectProjectUninstall re-derives every Codex project target before
-// returning an exact removal action. The committed lock supplies ownership
-// evidence, but never supplies a physical deletion path by itself.
-func (a *SurfaceAdapter) InspectProjectUninstall(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) (capabilitypack.ProjectUninstallInspection, error) {
-	statuses, err := a.InspectProjectInstallation(ctx, projectRoot, pack, lock)
-	if err != nil {
-		return capabilitypack.ProjectUninstallInspection{}, err
-	}
-	locked := make(map[capabilitypack.ResourceIdentity]capabilitypack.ProjectProjectionPlan, len(lock.Projections))
-	for _, projection := range lock.Projections {
-		locked[projection.Resource] = projection
-	}
-	actions := make([]capabilitypack.ProjectionAction, 0, len(statuses))
-	for _, status := range statuses {
-		projection, ok := locked[status.Resource]
-		if !ok || filepath.Clean(projection.Target) != filepath.Clean(status.Target) {
-			return capabilitypack.ProjectUninstallInspection{}, fmt.Errorf("Codex project projection %s lacks exact portable ownership evidence", status.Resource)
+		if goal == capabilitypack.ProjectionPresent {
+			item.DesiredFingerprint = projection.DesiredFingerprint
+		} else {
+			if action.Mode == "" {
+				action.Mode = capabilitypack.ProjectionDeleteTarget
+				item.Action = action
+			}
+			item.Action.Description = fmt.Sprintf("remove exact Codex project projection %s", projection.Resource)
 		}
-		target := filepath.Join(projectRoot, filepath.FromSlash(status.Target))
-		if status.Health != "verified" {
-			continue
-		}
-		switch projection.Mode {
-		case "copy_tree":
-			actions = append(actions, capabilitypack.ProjectionAction{
-				ID: status.Resource.String(), Kind: capabilitypack.ActionCodexProjectSkillTree, Target: target,
-				Mode: capabilitypack.ProjectionDeleteTarget, Precondition: projection.DesiredFingerprint,
-				Description: fmt.Sprintf("remove exact Codex project projection %s", status.Resource),
-			})
-		case "merge_marked_file":
-			current, readErr := os.ReadFile(target)
-			if readErr != nil {
-				return capabilitypack.ProjectUninstallInspection{}, readErr
-			}
-			fragment, found := extractBlock(string(current), projectMattyInstructionStart, projectMattyInstructionEnd)
-			if !found {
-				return capabilitypack.ProjectUninstallInspection{}, fmt.Errorf("Codex project instruction contribution is not exact and removable")
-			}
-			remaining := strings.Replace(string(current), fragment, "", 1)
-			info, statErr := os.Lstat(target)
-			if statErr != nil || !info.Mode().IsRegular() {
-				return capabilitypack.ProjectUninstallInspection{}, fmt.Errorf("Codex project instruction target is not a regular file")
-			}
-			action := capabilitypack.ProjectionAction{
-				ID: status.Resource.String(), Kind: capabilitypack.ActionInstructionFile, Target: target,
-				Content: remaining, FileMode: uint32(info.Mode().Perm()), Precondition: localprojection.FingerprintBytes(current),
-				Description: "remove the exact Packy contribution from the Codex project instructions",
-			}
-			if strings.TrimSpace(remaining) == "" {
-				action.Content, action.Mode = "", capabilitypack.ProjectionDeleteTarget
-			}
-			actions = append(actions, action)
-		default:
-			return capabilitypack.ProjectUninstallInspection{}, fmt.Errorf("Codex project projection %s has unsupported removal mode %q", status.Resource, projection.Mode)
-		}
+		projections = append(projections, item)
+		revision = append(revision, item.ID+"="+observed+"\x00"+action.Precondition)
 	}
-	sort.SliceStable(actions, func(i, j int) bool { return actions[i].Target < actions[j].Target })
-	return capabilitypack.ProjectUninstallInspection{Projections: statuses, Actions: actions}, nil
+	sort.Strings(revision)
+	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections}, nil
 }
 
 func projectTreeFingerprint(target string) (string, bool, error) {

@@ -67,13 +67,7 @@ type ProjectStatusRequest struct {
 	PackID           string
 	Surface          Surface
 	RequireInstalled bool
-	Adapters         map[Surface]ProjectInstallationAdapter
-}
-
-// ProjectInstallationAdapter re-derives host-owned project targets from the
-// portable lock and inspects them without requiring catalog or source bytes.
-type ProjectInstallationAdapter interface {
-	InspectProjectInstallation(context.Context, string, ProjectManifestPack, ProjectLockProposal) ([]ProjectProjectionStatus, error)
+	Adapters         map[Surface]SurfaceAdapter
 }
 
 type ProjectInstallation struct {
@@ -174,7 +168,13 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		if adapter == nil {
 			return report, fmt.Errorf("project installation inspection does not support CLI surface %q", surface)
 		}
-		projections, inspectErr := adapter.InspectProjectInstallation(ctx, request.ProjectRoot, pack, installation.Lock)
+		observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{
+			ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionPresent,
+		})
+		if inspectErr != nil {
+			return report, inspectErr
+		}
+		projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation)
 		if inspectErr != nil {
 			return report, inspectErr
 		}
@@ -215,6 +215,49 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		return report, fmt.Errorf("pack %q on %s is not declared by this project installation", request.PackID, request.Surface)
 	}
 	return report, nil
+}
+
+func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLockProposal, observation SurfaceInspection) ([]ProjectProjectionStatus, error) {
+	observed := make(map[ResourceIdentity]ObservedProjection, len(observation.Projections))
+	for _, projection := range observation.Projections {
+		resource, err := ParseResourceIdentity(projection.ID)
+		if err != nil {
+			return nil, fmt.Errorf("project projection identity: %w", err)
+		}
+		observed[resource] = projection
+	}
+	statuses := make([]ProjectProjectionStatus, 0, len(lock.Projections))
+	for _, locked := range lock.Projections {
+		projection, ok := observed[locked.Resource]
+		if !ok {
+			return nil, fmt.Errorf("project adapter omitted locked projection %s", locked.Resource)
+		}
+		target, err := RelativeProjectTarget(projectRoot, projection.Action.Target)
+		if err != nil {
+			return nil, err
+		}
+		if filepath.Clean(filepath.FromSlash(locked.Target)) != filepath.Clean(target) {
+			return nil, fmt.Errorf("project lock projection %s target %q does not match the re-derived target %q", locked.Resource, locked.Target, filepath.ToSlash(target))
+		}
+		health := "missing"
+		if projection.Exists {
+			health = "drifted"
+			if projection.ObservedFingerprint == locked.DesiredFingerprint {
+				health = "verified"
+			}
+		}
+		statuses = append(statuses, ProjectProjectionStatus{
+			Resource: locked.Resource, Target: locked.Target, Mode: locked.Mode, Health: health,
+			ObservedFingerprint: projection.ObservedFingerprint, DesiredFingerprint: locked.DesiredFingerprint, Contributor: locked.Contributor,
+		})
+	}
+	sort.Slice(statuses, func(i, j int) bool {
+		if statuses[i].Target != statuses[j].Target {
+			return statuses[i].Target < statuses[j].Target
+		}
+		return statuses[i].Resource.String() < statuses[j].Resource.String()
+	})
+	return statuses, nil
 }
 
 func projectPathMissing(path string) (bool, error) {

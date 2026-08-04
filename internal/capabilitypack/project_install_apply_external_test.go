@@ -24,14 +24,6 @@ func (a *faultingProjectAdapter) InspectSurface(ctx context.Context, transition 
 	return a.delegate.InspectSurface(ctx, transition)
 }
 
-func (a *faultingProjectAdapter) InspectProjectInstallation(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) ([]capabilitypack.ProjectProjectionStatus, error) {
-	return a.delegate.(capabilitypack.ProjectInstallationAdapter).InspectProjectInstallation(ctx, projectRoot, pack, lock)
-}
-
-func (a *faultingProjectAdapter) InspectProjectUninstall(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) (capabilitypack.ProjectUninstallInspection, error) {
-	return a.delegate.(capabilitypack.ProjectUninstallAdapter).InspectProjectUninstall(ctx, projectRoot, pack, lock)
-}
-
 func (a *faultingProjectAdapter) ApplyProjections(ctx context.Context, actions []capabilitypack.ProjectionAction) *capabilitypack.ProjectionActionError {
 	for _, action := range actions {
 		if a.failLock && action.Kind == capabilitypack.ActionProjectLockFile && !strings.HasPrefix(action.ID, "restore:") {

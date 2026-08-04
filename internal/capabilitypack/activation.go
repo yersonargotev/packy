@@ -227,6 +227,8 @@ type SurfaceTransition struct {
 	ResidualOwnership   []ProjectionOwnership
 	ResolvedExecutables []ExecutableResolution
 	ProjectRoot         string
+	ProjectInstallation *ProjectInstallation
+	ProjectGoal         ProjectionGoal
 }
 
 type SurfaceInspection struct {
@@ -3260,6 +3262,12 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 	value.CurrentOwnership = cloneOwnership(value.CurrentOwnership)
 	value.ResidualOwnership = cloneOwnership(value.ResidualOwnership)
 	value.ResolvedExecutables = cloneResolutions(value.ResolvedExecutables)
+	if value.ProjectInstallation != nil {
+		data, _ := json.Marshal(value.ProjectInstallation)
+		var installation ProjectInstallation
+		_ = json.Unmarshal(data, &installation)
+		value.ProjectInstallation = &installation
+	}
 	return value
 }
 

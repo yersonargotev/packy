@@ -245,7 +245,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if len(args) == 0 {
 				status, statusErr := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot,
-					Adapters:    map[capabilitypack.Surface]capabilitypack.ProjectInstallationAdapter{capabilitypack.SurfaceCodex: offlineAdapter},
+					Adapters:    map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: offlineAdapter},
 				})
 				if statusErr != nil {
 					return statusErr
@@ -1103,7 +1103,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				adapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed",
-					Adapters: map[capabilitypack.Surface]capabilitypack.ProjectInstallationAdapter{capabilitypack.SurfaceCodex: adapter},
+					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter},
 				})
 				if err != nil {
 					return err
