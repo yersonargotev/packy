@@ -59,6 +59,7 @@ const (
 	ActionOpenCodeInstructionFile  ProjectionActionKind = "opencode-instruction-file"
 	ActionOpenCodeConfigReference  ProjectionActionKind = "opencode-config-reference"
 	ActionCodexMCPConfig           ProjectionActionKind = "codex-mcp-config"
+	ActionCodexProjectTrust        ProjectionActionKind = "codex-project-trust"
 	ActionCodexAgentFile           ProjectionActionKind = "codex-agent-file"
 	ActionCodexWorkflowSkill       ProjectionActionKind = "codex-workflow-skill"
 	ActionCodexAssetFile           ProjectionActionKind = "codex-asset-file"
@@ -237,14 +238,15 @@ type SurfaceTransition struct {
 }
 
 type SurfaceInspection struct {
-	Revision            string
-	Projections         []ObservedProjection
-	OccupiedNames       []OccupiedName
-	RuntimeModeEvidence []RuntimeModeEvidence
-	RuntimeModeResults  []RuntimeModeResult
-	Readiness           ReadinessObservation
-	PendingHumanActions []string
-	Unrepresentable     []UnrepresentableResource
+	Revision                 string
+	Projections              []ObservedProjection
+	OccupiedNames            []OccupiedName
+	RuntimeModeEvidence      []RuntimeModeEvidence
+	RuntimeModeResults       []RuntimeModeResult
+	Readiness                ReadinessObservation
+	PendingHumanActions      []string
+	Unrepresentable          []UnrepresentableResource
+	ProjectActivationActions []ProjectionAction
 }
 
 type UnrepresentableResource struct {

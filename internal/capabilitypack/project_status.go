@@ -310,6 +310,9 @@ func projectRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPac
 		return ProjectRuntimeBlocked
 	}
 	state := document.State
+	if exists && document.Recovery.Status != "clean" {
+		return ProjectRuntimeBlocked
+	}
 	if !exists || !state.Active {
 		return ProjectRuntimePending
 	}

@@ -640,7 +640,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 					return err
 				}
 				facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
-				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface))
+				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot.Home())
 				preview, err := facade.PreviewProjectActivation(cmd.Context(), capabilitypack.ProjectActivationRequest{
 					PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot,
 					PackyHome: snapshot.PackyHome(), Adapter: adapter,
@@ -709,9 +709,13 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	return cmd
 }
 
-func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface) capabilitypack.SurfaceAdapter {
+func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, home string) capabilitypack.SurfaceAdapter {
 	if adapter := opts.SurfaceAdapters[surface]; adapter != nil {
 		return adapter
+	}
+	if surface == capabilitypack.SurfaceCodex && home != "" {
+		layout := codex.NewCanonicalLayout(home)
+		return codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile())
 	}
 	return projectOfflineAdapter(surface)
 }
@@ -751,6 +755,11 @@ func renderProjectActivationPreview(cmd *cobra.Command, preview capabilitypack.J
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  - %s: %s\n", detail.Resource, detail.Detail); err != nil {
 				return err
 			}
+		}
+	}
+	for _, effect := range preview.Effects {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Personal effect: %s -> %s identity=%s\n", effect.Action, effect.Target, effect.Identity); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1259,9 +1268,9 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
 					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude),
-						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex),
-						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode),
+						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot.Home()),
+						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot.Home()),
+						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot.Home()),
 					},
 				})
 				if err != nil {

@@ -42,12 +42,10 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	installation.Lock.Sensitive = []capabilitypack.ProjectSensitiveDisclosure{{
-		Category: capabilitypack.ProjectActivationMCP,
-		Surface:  capabilitypack.SurfaceCodex,
-		Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"},
-		Detail:   "mcp_server",
-	}}
+	installation.Lock.Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
+		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "mcp_server"},
+		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "project-trust"},
+	}
 	lock, err := json.MarshalIndent(installation.Lock, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +56,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 
 	install := capabilitypack.JSONProjectInstallPreview{Pack: installation.Manifest.Packs[0], Surface: capabilitypack.SurfaceCodex}
 	facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
-	adapter := projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex)
+	adapter := projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, home)
 	command := &cobra.Command{}
 	var output strings.Builder
 	command.SetOut(&output)
@@ -82,14 +80,20 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	if err := offerProjectActivation(command, opts, facade, install, project, filepath.Join(home, ".packy"), adapter); err != nil {
 		t.Fatalf("accept activation offer: %v", err)
 	}
-	if terminal.calls != 2 || !strings.Contains(output.String(), "Verified personal project activation") {
+	if terminal.calls != 3 || !strings.Contains(output.String(), "Verified personal project activation") {
 		t.Fatalf("accepted offer prompts=%d output=%q", terminal.calls, output.String())
 	}
-	if _, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{
+	trust, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+	if err != nil || !strings.Contains(string(trust), "trust_level = \"trusted\"") || !strings.Contains(string(trust), project) {
+		t.Fatalf("personal Codex project trust = %q, %v", trust, err)
+	}
+	status, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{
 		ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: filepath.Join(home, ".packy"),
-		Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter},
-	}); err != nil {
-		t.Fatal(err)
+		RequireUsable: true,
+		Adapters:      map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter},
+	})
+	if err != nil || len(status.Packs) != 1 || !status.Packs[0].RequirementSatisfied || !status.Packs[0].Readiness.Authorized || !status.Packs[0].Readiness.Usable {
+		t.Fatalf("personally trusted Codex project is not usable: %+v, %v", status, err)
 	}
 }
 

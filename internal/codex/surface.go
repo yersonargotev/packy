@@ -525,6 +525,7 @@ func (a *SurfaceAdapter) ApplyProjections(_ context.Context, actions []capabilit
 			capabilitypack.ActionProjectLockFile:     true,
 			capabilitypack.ActionProjectNoticesFile:  true,
 			capabilitypack.ActionCodexMCPConfig:      true,
+			capabilitypack.ActionCodexProjectTrust:   true,
 			capabilitypack.ActionCodexAgentFile:      true,
 			capabilitypack.ActionCodexWorkflowSkill:  true,
 			capabilitypack.ActionCodexAssetFile:      true,

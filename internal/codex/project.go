@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -225,7 +227,90 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		revision = append(revision, item.ID+"="+observed+"\x00"+action.Precondition)
 	}
 	sort.Strings(revision)
-	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections}, nil
+	readiness, activationActions, err := a.inspectProjectRuntime(projectRoot, lock)
+	if err != nil {
+		return capabilitypack.SurfaceInspection{}, err
+	}
+	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections, Readiness: readiness, ProjectActivationActions: activationActions}, nil
+}
+
+func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabilitypack.ProjectLockProposal) (capabilitypack.ReadinessObservation, []capabilitypack.ProjectionAction, error) {
+	sensitive := false
+	for _, disclosure := range lock.Sensitive {
+		if disclosure.Surface == capabilitypack.SurfaceCodex {
+			sensitive = true
+			break
+		}
+	}
+	if !sensitive {
+		for _, binding := range lock.Bindings {
+			if binding.Surface == capabilitypack.SurfaceCodex && (binding.Kind == "mcp_server" || binding.Kind == "lifecycle" || binding.Projection == "plugin") {
+				sensitive = true
+				break
+			}
+		}
+	}
+	if !sensitive {
+		return capabilitypack.ReadinessObservation{}, nil, nil
+	}
+	if a.configFile == "" {
+		return capabilitypack.ReadinessObservation{AuthorizationObserved: true, UsabilityObserved: true, PendingHumanActions: []string{"configure a writable Codex home to activate project trust"}}, nil, nil
+	}
+	canonical, err := filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return capabilitypack.ReadinessObservation{}, nil, err
+	}
+	canonical, err = filepath.Abs(canonical)
+	if err != nil {
+		return capabilitypack.ReadinessObservation{}, nil, err
+	}
+	canonical = filepath.Clean(canonical)
+	section := "projects." + strconv.Quote(canonical)
+	identity := localprojection.FingerprintBytes([]byte(canonical))[:16]
+	start, end := "# packy:project-trust:"+identity+":start", "# packy:project-trust:"+identity+":end"
+	desiredBlock := start + "\n[" + section + "]\ntrust_level = \"trusted\"\n" + end
+	current, err := readOptionalFile(a.configFile)
+	if err != nil {
+		return capabilitypack.ReadinessObservation{}, nil, err
+	}
+	fragment, owned := extractBlock(current, start, end)
+	trusted := owned && fragment == desiredBlock
+	if !owned {
+		trusted = tomlSectionHas(current, section, map[string]string{"trust_level": "trusted"})
+	}
+	actions := []capabilitypack.ProjectionAction{}
+	pending := []string{}
+	if !trusted {
+		if tomlSectionExists(current, section) {
+			pending = append(pending, "the existing Codex project trust entry is not trusted; review it in Codex before retrying activation")
+		} else {
+			mode := uint32(0o600)
+			precondition := "missing"
+			if info, statErr := os.Stat(a.configFile); statErr == nil {
+				mode = uint32(info.Mode().Perm())
+				precondition = localprojection.FingerprintBytes([]byte(current))
+			} else if !os.IsNotExist(statErr) {
+				return capabilitypack.ReadinessObservation{}, nil, statErr
+			}
+			actions = append(actions, capabilitypack.ProjectionAction{ID: "project_trust:codex", Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectTrust, Target: a.configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: mode, Precondition: precondition, Version: localprojection.FingerprintBytes([]byte(desiredBlock)), Description: "trust the exact Codex project so its installed runtime definitions can load", PreviewOnly: true})
+		}
+	}
+	externalReady := true
+	for _, projection := range lock.Projections {
+		if projection.Resource.Kind != "mcp_server" || !capabilitypack.ProjectProjectionHasContributor(projection, "surface:codex:pack:"+lock.Source.PackID) || projection.Command == "" {
+			continue
+		}
+		if _, lookErr := exec.LookPath(projection.Command); lookErr != nil {
+			externalReady = false
+			pending = append(pending, fmt.Sprintf("install external requirement %s for %s", projection.Command, projection.Resource))
+		}
+	}
+	return capabilitypack.ReadinessObservation{
+		AuthorizationObserved: true, Authorized: trusted,
+		UsabilityObserved: true, Usable: trusted && externalReady,
+		PendingHumanActions: pending,
+		Evidence:            []string{"Codex project trust, locked runtime definitions, and external commands inspected"},
+	}, actions, nil
 }
 
 func projectTreeFingerprint(target string) (string, bool, error) {
