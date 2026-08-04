@@ -229,6 +229,8 @@ func marshalProjectManifest(proposal ProjectContractProposal) ([]byte, error) {
 	minimumCapability := projectContractCapabilityV1
 	if proposal.SchemaVersion == projectContractSchemaV2 {
 		minimumCapability = projectContractCapabilityV2
+	} else if proposal.SchemaVersion == projectContractSchemaV3 {
+		minimumCapability = projectContractCapabilityV3
 	}
 	value := struct {
 		SchemaVersion          int                   `json:"schema_version"`
@@ -374,7 +376,8 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 
 func supportedProjectContractVersion(schemaVersion int, minimumCapability string) bool {
 	return schemaVersion == projectContractSchemaV1 && minimumCapability == projectContractCapabilityV1 ||
-		schemaVersion == projectContractSchemaV2 && minimumCapability == projectContractCapabilityV2
+		schemaVersion == projectContractSchemaV2 && minimumCapability == projectContractCapabilityV2 ||
+		schemaVersion == projectContractSchemaV3 && minimumCapability == projectContractCapabilityV3
 }
 
 func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdentity, target, fingerprint string) bool {

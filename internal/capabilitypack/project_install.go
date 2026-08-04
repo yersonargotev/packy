@@ -17,8 +17,10 @@ const (
 	ProjectInstallPreviewSchemaVersion = 1
 	projectContractSchemaV1            = 1
 	projectContractSchemaV2            = 2
+	projectContractSchemaV3            = 3
 	projectContractCapabilityV1        = "project-installation-v1"
 	projectContractCapabilityV2        = "project-installation-v2"
+	projectContractCapabilityV3        = "project-activation-v1"
 )
 
 type ProjectInstallDisposition string
@@ -74,20 +76,21 @@ type ProjectSurfaceIntent struct {
 }
 
 type ProjectLockProposal struct {
-	Path                   string                      `json:"path"`
-	SchemaVersion          int                         `json:"schema_version"`
-	MinimumPackyCapability string                      `json:"minimum_packy_capability"`
-	Source                 ProjectPackSourceIdentity   `json:"source"`
-	Sources                []ProjectPackSourceIdentity `json:"sources,omitempty"`
-	Packs                  []ProjectResolvedPack       `json:"packs,omitempty"`
-	ResourceGraph          ResourceGraph               `json:"resource_graph"`
-	Bindings               []LifecycleBinding          `json:"bindings"`
-	Degradations           []LifecycleExclusion        `json:"degradations,omitempty"`
-	Modes                  []OptionalMode              `json:"modes"`
-	ManifestSHA256         string                      `json:"manifest_sha256"`
-	NoticesSHA256          string                      `json:"notices_sha256"`
-	NoticesFileMode        uint32                      `json:"notices_file_mode"`
-	Projections            []ProjectProjectionPlan     `json:"projections"`
+	Path                   string                       `json:"path"`
+	SchemaVersion          int                          `json:"schema_version"`
+	MinimumPackyCapability string                       `json:"minimum_packy_capability"`
+	Source                 ProjectPackSourceIdentity    `json:"source"`
+	Sources                []ProjectPackSourceIdentity  `json:"sources,omitempty"`
+	Packs                  []ProjectResolvedPack        `json:"packs,omitempty"`
+	ResourceGraph          ResourceGraph                `json:"resource_graph"`
+	Bindings               []LifecycleBinding           `json:"bindings"`
+	Degradations           []LifecycleExclusion         `json:"degradations,omitempty"`
+	Modes                  []OptionalMode               `json:"modes"`
+	Sensitive              []ProjectSensitiveDisclosure `json:"sensitive"`
+	ManifestSHA256         string                       `json:"manifest_sha256"`
+	NoticesSHA256          string                       `json:"notices_sha256"`
+	NoticesFileMode        uint32                       `json:"notices_file_mode"`
+	Projections            []ProjectProjectionPlan      `json:"projections"`
 }
 
 type ProjectResolvedPack struct {
@@ -522,6 +525,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	lockDegradations := append([]LifecycleExclusion{}, contract.Exclusions...)
 	lockModes := append([]OptionalMode{}, contract.OptionalModes...)
+	lockSensitive := projectSensitiveDisclosures(selectedPack)
 	if existingContract {
 		graph = mergeProjectResourceGraphs(existingLock.ResourceGraph, graph)
 		resolvedPacks = mergeProjectResolvedPacks(existingLock.Packs, resolvedPacks, pack.ID)
@@ -529,14 +533,15 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		lockBindings = mergeProjectBindings(existingLock.Bindings, lockBindings)
 		lockDegradations = mergeProjectDegradations(existingLock.Degradations, lockDegradations)
 		lockModes = mergeProjectModes(existingLock.Modes, lockModes)
+		lockSensitive = mergeProjectSensitiveDisclosures(existingLock.Sensitive, lockSensitive)
 		lockProjections, projections = mergeProjectProjections(existingLock.Projections, lockProjections, projections)
 	}
 	report := JSONProjectInstallPreview{
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
 		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
-		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV2, Packs: []ProjectManifestPack{manifestPack}},
-		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV2, MinimumPackyCapability: projectContractCapabilityV2, Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Projections: lockProjections},
+		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV3, Packs: []ProjectManifestPack{manifestPack}},
+		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV3, MinimumPackyCapability: projectContractCapabilityV3, Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Sensitive: lockSensitive, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
 		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition,
 	}
@@ -973,6 +978,10 @@ func mergeProjectModes(existing, added []OptionalMode) []OptionalMode {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func mergeProjectSensitiveDisclosures(existing, added []ProjectSensitiveDisclosure) []ProjectSensitiveDisclosure {
+	return deduplicateProjectSensitiveDisclosures(append(append([]ProjectSensitiveDisclosure{}, existing...), added...))
 }
 
 func mergeProjectProjections(existing, added, preview []ProjectProjectionPlan) ([]ProjectProjectionPlan, []ProjectProjectionPlan) {
