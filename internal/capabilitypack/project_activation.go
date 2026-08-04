@@ -203,7 +203,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 		return report, err
 	}
 	state := document.State
-	if exists && document.Recovery.Status == "clean" && projectActivationDocumentMatches(document, categories) && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
+	if exists && document.Recovery.Status == "clean" && len(report.actions) == 0 && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized && projectActivationDocumentMatches(document, categories) && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
 		report.Disposition = ProjectActivationConverged
 	} else {
 		report.Disposition = ProjectActivationPreviewable

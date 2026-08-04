@@ -95,6 +95,21 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	if err != nil || len(status.Packs) != 1 || !status.Packs[0].RequirementSatisfied || !status.Packs[0].Readiness.Authorized || !status.Packs[0].Readiness.Usable {
 		t.Fatalf("personally trusted Codex project is not usable: %+v, %v", status, err)
 	}
+	if err := os.WriteFile(filepath.Join(home, ".codex", "config.toml"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	terminal.calls = 0
+	driftPreview, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--project", "--dry-run")
+	if err != nil || !strings.Contains(driftPreview, "Runtime activation: previewable") || !strings.Contains(driftPreview, "Personal effect: codex-project-trust") || terminal.calls != 0 {
+		t.Fatalf("drifted trust preview prompts=%d: %v\n%s", terminal.calls, err, driftPreview)
+	}
+	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--project"); err != nil {
+		t.Fatalf("repair drifted trust: %v", err)
+	}
+	trust, err = os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+	if err != nil || !strings.Contains(string(trust), "trust_level = \"trusted\"") {
+		t.Fatalf("repaired personal Codex project trust = %q, %v", trust, err)
+	}
 }
 
 func TestIssue459DeclarativeProjectActivationIsNotRequired(t *testing.T) {
