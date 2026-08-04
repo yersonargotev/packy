@@ -86,8 +86,15 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if len(args) == 0 && surface != "" {
 				return errors.New("--surface is not accepted when reconciling the complete project manifest")
 			}
-			if len(args) == 0 {
-				offlineAdapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
+			offlineAdapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
+			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
+			if err != nil {
+				return err
+			}
+			if dryRun && pendingRecovery {
+				return errors.New("project installation is recovery-required; rerun `packy pack install` without --dry-run before requesting another preview")
+			}
+			if !dryRun {
 				recoveryFacade := capabilitypack.NewFacade(capabilitypack.Catalog{})
 				recovered, recoveryErr := recoveryFacade.RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: offlineAdapter})
 				if recoveryErr != nil {
@@ -98,6 +105,8 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 						return err
 					}
 				}
+			}
+			if len(args) == 0 {
 				status, statusErr := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot,
 					Adapters:    map[capabilitypack.Surface]capabilitypack.ProjectInstallationAdapter{capabilitypack.SurfaceCodex: offlineAdapter},
@@ -123,17 +132,6 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			}
 			facade := capabilitypack.NewFacade(composition.catalog)
 			adapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
-			if !dryRun {
-				recovered, err := facade.RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
-				if err != nil {
-					return err
-				}
-				if recovered && !jsonOutput {
-					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Recovered the prior project installation attempt before preview"); err != nil {
-						return err
-					}
-				}
-			}
 			var report capabilitypack.JSONProjectInstallPreview
 			if len(args) == 0 {
 				report, err = facade.PreviewProjectReconcile(cmd.Context(), projectRoot, adapter)

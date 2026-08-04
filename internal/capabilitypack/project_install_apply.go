@@ -37,6 +37,23 @@ type ProjectInstallRecoveryRequest struct {
 	Adapter     SurfaceAdapter
 }
 
+// ProjectInstallRecoveryPending reports durable recovery state without
+// reading, applying, or deleting the journal.
+func ProjectInstallRecoveryPending(packyHome, projectRoot string) (bool, error) {
+	path := projectInstallJournalPath(packyHome, projectRoot)
+	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, errors.New("project installation recovery journal is not a regular file")
+	}
+	return true, nil
+}
+
 func (f Facade) RecoverProjectInstall(ctx context.Context, request ProjectInstallRecoveryRequest) (bool, error) {
 	if request.Adapter == nil || request.ProjectRoot == "" || request.PackyHome == "" {
 		return false, errors.New("project installation recovery requires the project root, adapter, and Packy Home")

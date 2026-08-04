@@ -68,9 +68,15 @@ func TestProjectInstallRetainsAndConsumesRecoveryJournalWhenRollbackCannotBeVeri
 	if err != nil || len(journals) != 1 {
 		t.Fatalf("recovery journals = %v, %v", journals, err)
 	}
+	if pending, err := capabilitypack.ProjectInstallRecoveryPending(packyHome, project); err != nil || !pending {
+		t.Fatalf("read-only recovery observation = %t, %v", pending, err)
+	}
 	recovered, err := facade.RecoverProjectInstall(context.Background(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
 	if err != nil || !recovered {
 		t.Fatalf("recovery = %t, %v", recovered, err)
+	}
+	if pending, err := capabilitypack.ProjectInstallRecoveryPending(packyHome, project); err != nil || pending {
+		t.Fatalf("recovery observation after cleanup = %t, %v", pending, err)
 	}
 	preview, err = facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project}, adapter)
 	if err != nil {
