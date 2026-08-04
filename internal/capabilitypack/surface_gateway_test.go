@@ -2,6 +2,7 @@ package capabilitypack
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -9,6 +10,32 @@ import (
 type gatewayAdapter struct {
 	inspection SurfaceInspection
 	inspect    func(SurfaceTransition)
+}
+
+func TestSurfaceGatewayValidatesAndClonesProjectActivationActions(t *testing.T) {
+	project := t.TempDir()
+	action := ProjectionAction{ID: "project_trust:codex", Surface: SurfaceCodex, Kind: ActionCodexProjectTrust, Description: "trust project", Target: filepath.Join(t.TempDir(), ".codex", "config.toml"), Content: "trusted", Version: "contribution", FileMode: 0o600, Precondition: "missing", ContributionStartMarker: "start", ContributionEndMarker: "end", PreviewOnly: true}
+	transition := SurfaceTransition{ProjectRoot: project, ProjectInstallation: &ProjectInstallation{Manifest: ProjectContractProposal{Packs: []ProjectManifestPack{{ID: "pack"}}}}}
+	adapter := &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{action}}}
+	got, err := inspectSurface(context.Background(), adapter, transition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter.inspection.ProjectActivationActions[0].Content = "mutated"
+	if len(got.ProjectActivationActions) != 1 || got.ProjectActivationActions[0].Content != "trusted" {
+		t.Fatalf("personal action was not cloned: %+v", got.ProjectActivationActions)
+	}
+	for _, malformed := range []ProjectionAction{
+		{},
+		func() ProjectionAction { value := action; value.PreviewOnly = false; return value }(),
+		func() ProjectionAction { value := action; value.Precondition = ""; return value }(),
+		func() ProjectionAction { value := action; value.Surface = SurfaceOpenCode; return value }(),
+	} {
+		_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{malformed}}}, transition)
+		if err == nil || !strings.Contains(err.Error(), "personal Codex project action") {
+			t.Fatalf("malformed personal action accepted: %+v, %v", malformed, err)
+		}
+	}
 }
 
 func (a *gatewayAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {

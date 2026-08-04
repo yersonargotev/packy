@@ -53,7 +53,7 @@ func TestIssue456CodexAndOpenCodeShareProjectSkillsByExplicitContribution(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if installation.Manifest.SchemaVersion != 2 || installation.Lock.SchemaVersion != 2 || installation.Lock.MinimumPackyCapability != "project-installation-v2" {
+	if installation.Manifest.SchemaVersion != 3 || installation.Lock.SchemaVersion != 3 || installation.Lock.MinimumPackyCapability != "project-activation-v1" {
 		t.Fatalf("adding OpenCode did not explicitly migrate the project contract to v2: %#v", installation)
 	}
 	if got, want := installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceOpenCode}; !reflect.DeepEqual(got, want) {
@@ -234,8 +234,8 @@ func rewriteProjectContractAsV1(t *testing.T, project string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest = []byte(strings.Replace(string(manifest), `"schema_version": 2`, `"schema_version": 1`, 1))
-	manifest = []byte(strings.Replace(string(manifest), "  \"minimum_packy_capability\": \"project-installation-v2\",\n", "", 1))
+	manifest = []byte(strings.Replace(string(manifest), `"schema_version": 3`, `"schema_version": 1`, 1))
+	manifest = []byte(strings.Replace(string(manifest), "  \"minimum_packy_capability\": \"project-activation-v1\",\n", "", 1))
 	if strings.Contains(string(manifest), "minimum_packy_capability") {
 		t.Fatal("historical v1 manifest fixture unexpectedly declares a minimum capability")
 	}
@@ -253,6 +253,7 @@ func rewriteProjectContractAsV1(t *testing.T, project string) {
 	}
 	lock.SchemaVersion = 1
 	lock.MinimumPackyCapability = "project-installation-v1"
+	lock.Sensitive = nil
 	digest := sha256.Sum256(manifest)
 	lock.ManifestSHA256 = hex.EncodeToString(digest[:])
 	lockData, err = json.MarshalIndent(lock, "", "  ")

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +21,37 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 	for _, resource := range pack.Resources {
 		identity := capabilitypack.ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
 		if resource.Kind == "notice" {
+			continue
+		}
+		if resource.Kind == "mcp_server" {
+			bindingName, bound := codexBindingName(resource, "mcp_server")
+			if !bound || resource.Command == "" {
+				unrepresentable = append(unrepresentable, capabilitypack.UnrepresentableResource{Resource: identity, Reason: fmt.Sprintf("%s has no Codex project-native representation in this installation preview", identity)})
+				continue
+			}
+			configFile := filepath.Join(projectRoot, ".codex", "config.toml")
+			current, err := readOptionalFile(configFile)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			projectResource := resource
+			projectResource.ID = bindingName
+			desiredBlock := mcpBlock(projectResource, resource.Command)
+			start, end := mcpMarkers(bindingName)
+			fragment, exists := extractBlock(current, start, end)
+			observed := "missing"
+			if exists {
+				observed = localprojection.FingerprintBytes([]byte(fragment))
+			} else if codexMCPTableExists(current, bindingName) {
+				exists = true
+				observed = localprojection.FingerprintBytes([]byte("unmanaged:" + bindingName))
+			}
+			desired := localprojection.FingerprintBytes([]byte(desiredBlock))
+			projections = append(projections, capabilitypack.ObservedProjection{
+				ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
+				ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/marked-mcp",
+				Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexMCPConfig, Target: configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: 0o644, Precondition: localprojection.FingerprintBytes([]byte(current)), Command: resource.Command, Args: append([]string(nil), resource.Args...), Description: fmt.Sprintf("configure %s in the Codex project", identity), PreviewOnly: true},
+			})
 			continue
 		}
 		bindingName, bound := codexProjectBinding(resource)
@@ -90,10 +123,17 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 			}
 			expected = filepath.Join(".agents", "skills", name)
 		case "merge_marked_file":
-			if pack.ID != "matty" || projection.Resource.String() != projectMattyInstructionID {
+			if projection.Resource.Kind == "mcp_server" {
+				name := bindings[projection.Resource]
+				if name == "" {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has no Codex project binding", projection.Resource)
+				}
+				expected = filepath.Join(".codex", "config.toml")
+			} else if pack.ID == "matty" && projection.Resource.String() == projectMattyInstructionID {
+				expected = "AGENTS.md"
+			} else {
 				return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has no supported Codex marked-file target", projection.Resource)
 			}
-			expected = "AGENTS.md"
 		default:
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has unsupported Codex mode %q", projection.Resource, projection.Mode)
 		}
@@ -114,6 +154,33 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 			observed, exists = fingerprint, found
 			action.Kind = capabilitypack.ActionCodexProjectSkillTree
 			action.Precondition = projection.DesiredFingerprint
+		} else if projection.Resource.Kind == "mcp_server" {
+			current, err := readOptionalFile(target)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			name := bindings[projection.Resource]
+			start, end := mcpMarkers(name)
+			fragment, found := extractBlock(current, start, end)
+			if found {
+				observed, exists = localprojection.FingerprintBytes([]byte(fragment)), true
+			} else if codexMCPTableExists(current, name) {
+				observed, exists = localprojection.FingerprintBytes([]byte("unmanaged:"+name)), true
+			}
+			action.Kind = capabilitypack.ActionCodexMCPConfig
+			if goal == capabilitypack.ProjectionAbsent && exists && observed == projection.DesiredFingerprint {
+				remaining := removeBlock(current, start, end)
+				info, statErr := os.Lstat(target)
+				if statErr != nil || !info.Mode().IsRegular() {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("Codex project MCP target is not a regular file")
+				}
+				action.Content, action.FileMode, action.Precondition = remaining, uint32(info.Mode().Perm()), localprojection.FingerprintBytes([]byte(current))
+				if strings.TrimSpace(remaining) == "" {
+					action.Content, action.Mode = "", capabilitypack.ProjectionDeleteTarget
+				} else {
+					action.Mode = capabilitypack.ProjectionRemoveContent
+				}
+			}
 		} else {
 			inspection, err := projectMattyInstruction(projectRoot)
 			if err != nil {
@@ -160,7 +227,126 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		revision = append(revision, item.ID+"="+observed+"\x00"+action.Precondition)
 	}
 	sort.Strings(revision)
-	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections}, nil
+	readiness := capabilitypack.ReadinessObservation{}
+	activationActions := []capabilitypack.ProjectionAction(nil)
+	if goal == capabilitypack.ProjectionPresent {
+		var err error
+		readiness, activationActions, err = a.inspectProjectRuntime(projectRoot, lock)
+		if err != nil {
+			return capabilitypack.SurfaceInspection{}, err
+		}
+	}
+	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections, Readiness: readiness, ProjectActivationActions: activationActions}, nil
+}
+
+func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabilitypack.ProjectLockProposal) (capabilitypack.ReadinessObservation, []capabilitypack.ProjectionAction, error) {
+	sensitive := false
+	additionalTrustReady := true
+	authenticationReady := true
+	externalCommands := map[string]bool{}
+	for _, disclosure := range lock.Sensitive {
+		if disclosure.Surface == capabilitypack.SurfaceCodex {
+			sensitive = true
+			switch disclosure.Category {
+			case capabilitypack.ProjectActivationTrust:
+				if disclosure.Detail != "project-trust" {
+					additionalTrustReady = false
+				}
+			case capabilitypack.ProjectActivationAuthentication:
+				authenticationReady = false
+			case capabilitypack.ProjectActivationExternalRequirements:
+				parts := strings.Split(disclosure.Detail, ":")
+				if len(parts) >= 2 {
+					externalCommands[parts[len(parts)-1]] = true
+				}
+			}
+		}
+	}
+	if !sensitive {
+		for _, binding := range lock.Bindings {
+			if binding.Surface == capabilitypack.SurfaceCodex && (binding.Kind == "mcp_server" || binding.Kind == "lifecycle" || binding.Projection == "plugin") {
+				sensitive = true
+				break
+			}
+		}
+	}
+	if !sensitive {
+		return capabilitypack.ReadinessObservation{}, nil, nil
+	}
+	if a.configFile == "" {
+		return capabilitypack.ReadinessObservation{AuthorizationObserved: true, UsabilityObserved: true, PendingHumanActions: []string{"configure a writable Codex home to activate project trust"}}, nil, nil
+	}
+	canonical, err := filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return capabilitypack.ReadinessObservation{}, nil, err
+	}
+	canonical, err = filepath.Abs(canonical)
+	if err != nil {
+		return capabilitypack.ReadinessObservation{}, nil, err
+	}
+	canonical = filepath.Clean(canonical)
+	section := "projects." + strconv.Quote(canonical)
+	identity := localprojection.FingerprintBytes([]byte(canonical))[:16]
+	start, end := "# packy:project-trust:"+identity+":start", "# packy:project-trust:"+identity+":end"
+	desiredBlock := start + "\n[" + section + "]\ntrust_level = \"trusted\"\n" + end
+	current, err := readOptionalFile(a.configFile)
+	if err != nil {
+		return capabilitypack.ReadinessObservation{}, nil, err
+	}
+	fragment, owned := extractBlock(current, start, end)
+	trusted := owned && fragment == desiredBlock
+	if !owned {
+		trusted = tomlSectionHas(current, section, map[string]string{"trust_level": "trusted"})
+	}
+	actions := []capabilitypack.ProjectionAction{}
+	pending := []string{}
+	if !trusted {
+		if tomlSectionExists(current, section) {
+			pending = append(pending, "the existing Codex project trust entry is not trusted; review it in Codex before retrying activation")
+		} else {
+			mode := uint32(0o600)
+			precondition := "missing"
+			if info, statErr := os.Stat(a.configFile); statErr == nil {
+				mode = uint32(info.Mode().Perm())
+				precondition = localprojection.FingerprintBytes([]byte(current))
+			} else if !os.IsNotExist(statErr) {
+				return capabilitypack.ReadinessObservation{}, nil, statErr
+			}
+			actions = append(actions, capabilitypack.ProjectionAction{ID: "project_trust:codex", Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectTrust, Target: a.configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: mode, Precondition: precondition, Version: localprojection.FingerprintBytes([]byte(desiredBlock)), Description: "trust the exact Codex project so its installed runtime definitions can load", ContributionStartMarker: start, ContributionEndMarker: end, PreviewOnly: true})
+		}
+	}
+	if !additionalTrustReady {
+		pending = append(pending, "approve the remaining host-owned Codex authority in a fresh runtime session")
+	}
+	if !authenticationReady {
+		pending = append(pending, "complete the declared host-owned authentication requirement in Codex")
+	}
+	for _, projection := range lock.Projections {
+		if projection.Resource.Kind != "mcp_server" || !capabilitypack.ProjectProjectionHasContributor(projection, "surface:codex:pack:"+lock.Source.PackID) || projection.Command == "" {
+			continue
+		}
+		delete(externalCommands, filepath.Base(projection.Command))
+		externalCommands[projection.Command] = true
+	}
+	externalReady := true
+	commands := make([]string, 0, len(externalCommands))
+	for command := range externalCommands {
+		commands = append(commands, command)
+	}
+	sort.Strings(commands)
+	for _, command := range commands {
+		if _, lookErr := exec.LookPath(command); lookErr != nil {
+			externalReady = false
+			pending = append(pending, "install external requirement "+command)
+		}
+	}
+	authorized := trusted && additionalTrustReady
+	return capabilitypack.ReadinessObservation{
+		AuthorizationObserved: true, Authorized: authorized,
+		UsabilityObserved: true, Usable: authorized && externalReady && authenticationReady,
+		PendingHumanActions: pending,
+		Evidence:            []string{"Codex project trust, locked runtime definitions, and external commands inspected"},
+	}, actions, nil
 }
 
 func projectTreeFingerprint(target string) (string, bool, error) {

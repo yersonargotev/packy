@@ -44,11 +44,21 @@ type ProjectProjectionStatus struct {
 	Contributor         string           `json:"contributor"`
 }
 
+// ProjectReadinessStatus is intentionally project-report specific so its
+// stable JSON vocabulary does not alter the global capability status contract.
+type ProjectReadinessStatus struct {
+	Configured bool `json:"configured"`
+	Authorized bool `json:"authorized"`
+	Usable     bool `json:"usable"`
+}
+
 type JSONProjectPackStatus struct {
 	Pack                 ProjectManifestPack       `json:"pack"`
 	Surface              Surface                   `json:"surface"`
 	Installation         ProjectInstallationState  `json:"installation"`
 	Runtime              ProjectRuntimeState       `json:"runtime"`
+	RuntimeRequired      bool                      `json:"runtime_required"`
+	Readiness            ProjectReadinessStatus    `json:"readiness"`
 	Projections          []ProjectProjectionStatus `json:"projections"`
 	Blockers             []ProjectInstallBlocker   `json:"blockers"`
 	Requirement          string                    `json:"requirement,omitempty"`
@@ -67,6 +77,8 @@ type ProjectStatusRequest struct {
 	PackID           string
 	Surface          Surface
 	RequireInstalled bool
+	RequireUsable    bool
+	PackyHome        string
 	Adapters         map[Surface]SurfaceAdapter
 }
 
@@ -132,11 +144,17 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 	}
 	if manifestMissing && lockMissing {
 		if request.PackID != "" && request.Surface != "" {
-			requirementSatisfied := !request.RequireInstalled
+			requirement, requirementSatisfied := "", true
+			if request.RequireInstalled {
+				requirement, requirementSatisfied = "installed", false
+			}
+			if request.RequireUsable {
+				requirement, requirementSatisfied = "usable", false
+			}
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
 				Pack:    ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}},
 				Surface: request.Surface, Installation: ProjectInstallationAbsent, Runtime: ProjectRuntimePending,
-				Projections: []ProjectProjectionStatus{}, Blockers: []ProjectInstallBlocker{}, Requirement: map[bool]string{true: "installed"}[request.RequireInstalled], RequirementSatisfied: requirementSatisfied,
+				Projections: []ProjectProjectionStatus{}, Blockers: []ProjectInstallBlocker{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
 			})
 		}
 		return report, nil
@@ -201,14 +219,29 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			}
 			return blockers[i].Target < blockers[j].Target
 		})
-		runtime := ProjectRuntimeNotRequired
-		if len(installation.Lock.Modes) > 0 {
-			runtime = ProjectRuntimePending
+		categories := projectActivationCategories(installation.Lock, surface)
+		runtimeRequired := len(categories) != 0
+		readiness := ProjectReadinessStatus{Configured: state == ProjectInstallationInstalled}
+		if runtimeRequired {
+			readiness.Authorized = readiness.Configured && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
+			readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
+		} else {
+			// Declarative project availability is established by installation;
+			// it does not inherit a personal host-runtime prerequisite.
+			readiness.Authorized, readiness.Usable = readiness.Configured, readiness.Configured
 		}
-		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, Projections: projections, Blockers: blockers, RequirementSatisfied: true}
+		runtime := ProjectRuntimeNotRequired
+		if runtimeRequired {
+			runtime = projectRuntimeStatus(request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories)
+		}
+		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, Readiness: readiness, Projections: projections, Blockers: blockers, RequirementSatisfied: true}
 		if request.RequireInstalled {
 			status.Requirement = "installed"
 			status.RequirementSatisfied = state == ProjectInstallationInstalled
+		}
+		if request.RequireUsable {
+			status.Requirement = "usable"
+			status.RequirementSatisfied = state == ProjectInstallationInstalled && readiness.Usable && (!runtimeRequired || runtime == ProjectRuntimeActive)
 		}
 		report.Packs = append(report.Packs, status)
 	}
@@ -265,6 +298,30 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 	return statuses, nil
 }
 
+func projectRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPack, surface Surface, installation ProjectInstallationState, lock ProjectLockProposal, categories []ProjectActivationCategoryPreview) ProjectRuntimeState {
+	if installation != ProjectInstallationInstalled {
+		return ProjectRuntimeBlocked
+	}
+	if packyHome == "" {
+		return ProjectRuntimePending
+	}
+	document, exists, err := loadProjectActivationDocument(packyHome, projectRoot)
+	if err != nil {
+		return ProjectRuntimeBlocked
+	}
+	state := document.State
+	if exists && document.Recovery.Status != "clean" {
+		return ProjectRuntimeBlocked
+	}
+	if !exists || !state.Active {
+		return ProjectRuntimePending
+	}
+	if !projectActivationDocumentMatches(document, categories) || state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, categories) {
+		return ProjectRuntimeStale
+	}
+	return ProjectRuntimeActive
+}
+
 func projectPathMissing(path string) (bool, error) {
 	_, err := os.Lstat(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -281,6 +338,8 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	minimumCapability := projectContractCapabilityV1
 	if manifest.SchemaVersion == projectContractSchemaV2 {
 		minimumCapability = projectContractCapabilityV2
+	} else if manifest.SchemaVersion == projectContractSchemaV3 {
+		minimumCapability = projectContractCapabilityV3
 	}
 	if !supportedProjectContractVersion(manifest.SchemaVersion, minimumCapability) || lock.SchemaVersion != manifest.SchemaVersion || !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
 		return errors.New("project manifest and lock schema versions do not match")
@@ -447,6 +506,21 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		}
 		modeIDs[mode.ID] = true
 	}
+	if manifest.SchemaVersion == projectContractSchemaV3 && lock.Sensitive == nil {
+		return errors.New("project activation lock omits sensitive runtime disclosure evidence")
+	}
+	if lock.Sensitive != nil {
+		canonicalSensitive := deduplicateProjectSensitiveDisclosures(lock.Sensitive)
+		if digestJSON(canonicalSensitive) != digestJSON(lock.Sensitive) {
+			return errors.New("project lock sensitive disclosures are malformed or non-canonical")
+		}
+		for _, disclosure := range lock.Sensitive {
+			packRequirement := disclosure.Category == ProjectActivationExternalRequirements && disclosure.Resource == (ResourceIdentity{Kind: "pack", ID: pack.ID})
+			if !resources[disclosure.Resource] && !packRequirement || disclosure.Detail == "" || !projectSupportsSurface(pack.Surfaces, disclosure.Surface) || !validProjectActivationCategory(disclosure.Category) {
+				return errors.New("project lock sensitive disclosure is outside the locked closure")
+			}
+		}
+	}
 	for _, fact := range lock.ResourceGraph.Resources {
 		for _, dependency := range append(append([]ResourceIdentity(nil), fact.Requires...), fact.Notices...) {
 			if !resources[dependency] {
@@ -541,6 +615,15 @@ func projectOperationalResource(kind string) bool {
 func validProjectResourceRole(role ResourceRole) bool {
 	switch role {
 	case ResourceRoleRoot, ResourceRoleDependency, ResourceRoleAsset, ResourceRoleNotice:
+		return true
+	default:
+		return false
+	}
+}
+
+func validProjectActivationCategory(category ProjectActivationCategory) bool {
+	switch category {
+	case ProjectActivationMCP, ProjectActivationHooks, ProjectActivationPlugins, ProjectActivationExternalRequirements, ProjectActivationTrust, ProjectActivationAuthentication:
 		return true
 	default:
 		return false

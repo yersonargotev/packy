@@ -350,7 +350,10 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			} else {
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified project installation")
 			}
-			return err
+			if err != nil || jsonOutput || result.Status == "no-op" || len(args) == 0 || report.Surface != capabilitypack.SurfaceCodex {
+				return err
+			}
+			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), adapter)
 		},
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
@@ -360,6 +363,30 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	cmd.Flags().StringArrayVar(&providerValues, "provider", nil, "Select a project capability provider (<capability>=<pack>[/<kind>:<id>]); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	return cmd
+}
+
+func offerProjectActivation(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, install capabilitypack.JSONProjectInstallPreview, projectRoot, packyHome string, adapter capabilitypack.SurfaceAdapter) error {
+	preview, err := facade.PreviewProjectActivation(cmd.Context(), capabilitypack.ProjectActivationRequest{
+		PackID: install.Pack.ID, Surface: install.Surface, ProjectRoot: projectRoot, PackyHome: packyHome, Adapter: adapter,
+	})
+	if err != nil {
+		return err
+	}
+	if !preview.RuntimeRequired || preview.Disposition == capabilitypack.ProjectActivationConverged {
+		return nil
+	}
+	if err := renderProjectActivationPreview(cmd, preview); err != nil {
+		return err
+	}
+	approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), "Continue with the separately previewed personal project activation?")
+	if err != nil {
+		return err
+	}
+	if !approved {
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Project installation remains installed; activate later with `packy pack activate %s --surface %s --project`\n", preview.Pack.ID, preview.Surface)
+		return err
+	}
+	return approveAndApplyProjectActivation(cmd, opts, facade, preview, adapter, false, "project installation succeeded but activation was cancelled")
 }
 
 func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectInstallPreview, dryRun bool) error {
@@ -588,6 +615,7 @@ func applyPackPlan(cmd *cobra.Command, opts Options, facade capabilitypack.Facad
 func newPackActivateCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var surface string
 	var dryRun bool
+	var project bool
 	var aliasValues []string
 	var resourceValues []string
 	var providerValues []string
@@ -595,6 +623,48 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	cmd := &cobra.Command{
 		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if project {
+				if len(aliasValues) > 0 || len(resourceValues) > 0 || len(providerValues) > 0 {
+					return errors.New("--alias, --resource, and --provider are not accepted with --project; project activation consumes the exact installed lock")
+				}
+				snapshot, err := workstationResolver.Resolve(workstation.Options{})
+				if err != nil {
+					return err
+				}
+				cwd, err := snapshot.CurrentDirectory()
+				if err != nil {
+					return fmt.Errorf("resolve current directory: %w", err)
+				}
+				projectRoot, err := capabilitypack.DiscoverProjectRoot(cwd)
+				if err != nil {
+					return err
+				}
+				facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
+				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot.Home())
+				preview, err := facade.PreviewProjectActivation(cmd.Context(), capabilitypack.ProjectActivationRequest{
+					PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot,
+					PackyHome: snapshot.PackyHome(), Adapter: adapter,
+				})
+				if err != nil {
+					return err
+				}
+				if jsonOutput {
+					outputPreview := preview
+					outputPreview.DryRun = dryRun
+					if err := json.NewEncoder(cmd.OutOrStdout()).Encode(outputPreview); err != nil {
+						return err
+					}
+				} else if err := renderProjectActivationPreview(cmd, preview); err != nil {
+					return err
+				}
+				if !preview.RuntimeRequired || dryRun || preview.Disposition == capabilitypack.ProjectActivationConverged {
+					return nil
+				}
+				if !opts.Terminal.Interactive(cmd.InOrStdin()) {
+					return capabilitypack.ErrInteractiveRequired
+				}
+				return approveAndApplyProjectActivation(cmd, opts, facade, preview, adapter, jsonOutput, "project activation cancelled")
+			}
 			aliases, err := parseSurfaceAliases(aliasValues)
 			if err != nil {
 				return err
@@ -630,12 +700,69 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
+	cmd.Flags().BoolVar(&project, "project", false, "Activate personal runtime effects from the current project installation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one manifest-v4 operational resource (<kind>:<id>); repeatable")
 	cmd.Flags().StringArrayVar(&providerValues, "provider", nil, "Select a capability provider (<capability>=<pack>[/<kind>:<id>]); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd
+}
+
+func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, home string) capabilitypack.SurfaceAdapter {
+	if adapter := opts.SurfaceAdapters[surface]; adapter != nil {
+		return adapter
+	}
+	if surface == capabilitypack.SurfaceCodex && home != "" {
+		layout := codex.NewCanonicalLayout(home)
+		return codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile())
+	}
+	return projectOfflineAdapter(surface)
+}
+
+func approveAndApplyProjectActivation(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, preview capabilitypack.JSONProjectActivationPreview, adapter capabilitypack.SurfaceAdapter, jsonOutput bool, cancellation string) error {
+	approvals := make([]capabilitypack.ProjectActivationApproval, 0, len(preview.Categories))
+	for _, category := range preview.Categories {
+		approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve project %s for exact activation %s?", category.Kind, preview.Digest))
+		if err != nil {
+			return err
+		}
+		if !approved {
+			return fmt.Errorf("%s; %s was not approved", cancellation, category.Kind)
+		}
+		approvals = append(approvals, facade.ApproveProjectActivation(preview, category.Kind))
+	}
+	result, err := facade.ApplyProjectActivation(cmd.Context(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Approvals: approvals, Adapter: adapter, Interactive: true})
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Verified personal project activation %s\n", result.Digest)
+	return err
+}
+
+func renderProjectActivationPreview(cmd *cobra.Command, preview capabilitypack.JSONProjectActivationPreview) error {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Project activation preview\nProject root: %s\nPack: %s %s\nSurface: %s\nRuntime activation: %s\nSensitive lock identity: %s\n", preview.ProjectRoot, preview.Pack.ID, preview.Pack.Version, preview.Surface, preview.Disposition, preview.SensitiveLockIdentity); err != nil {
+		return err
+	}
+	for _, category := range preview.Categories {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Approval category: %s (%d declared facts)\n", category.Kind, len(category.Details)); err != nil {
+			return err
+		}
+		for _, detail := range category.Details {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  - %s: %s\n", detail.Resource, detail.Detail); err != nil {
+				return err
+			}
+		}
+	}
+	for _, effect := range preview.Effects {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Personal effect: %s -> %s identity=%s\n", effect.Action, effect.Target, effect.Identity); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func parseProviderChoices(values []string) ([]capabilitypack.ProviderChoice, error) {
@@ -1120,8 +1247,11 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				if resource != "" {
 					return errors.New("--resource is not yet supported with --project")
 				}
-				if require != "" && require != "installed" {
-					return errors.New("--require installed is the supported project installation gate")
+				if require != "" && require != "installed" && require != "usable" {
+					return errors.New("--require with --project accepts installed or usable")
+				}
+				if require == "usable" && (packID == "" || surface == "") {
+					return errors.New("--require usable with --project requires one pack and --surface")
 				}
 				snapshot, err := workstationResolver.Resolve(workstation.Options{})
 				if err != nil {
@@ -1136,11 +1266,11 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 					return err
 				}
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
-					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed",
+					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
 					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-						capabilitypack.SurfaceClaude:   projectOfflineAdapter(capabilitypack.SurfaceClaude),
-						capabilitypack.SurfaceCodex:    projectOfflineAdapter(capabilitypack.SurfaceCodex),
-						capabilitypack.SurfaceOpenCode: projectOfflineAdapter(capabilitypack.SurfaceOpenCode),
+						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot.Home()),
+						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot.Home()),
+						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot.Home()),
 					},
 				})
 				if err != nil {
@@ -1157,9 +1287,15 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 					if require == "installed" && !status.RequirementSatisfied {
 						return fmt.Errorf("pack %q on %s is not installed", status.Pack.ID, status.Surface)
 					}
+					if require == "usable" && !status.RequirementSatisfied {
+						return fmt.Errorf("pack %q on %s is not usable", status.Pack.ID, status.Surface)
+					}
 				}
 				if require == "installed" && len(report.Packs) == 0 {
 					return errors.New("project has no installed capability packs")
+				}
+				if require == "usable" && len(report.Packs) == 0 {
+					return errors.New("project has no usable capability packs")
 				}
 				return nil
 			}
@@ -1244,7 +1380,7 @@ func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
 	for _, status := range report.Packs {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nProjections: %d\nBlockers: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, len(status.Projections), renderProjectInstallBlockers(status.Blockers)); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers)); err != nil {
 			return err
 		}
 	}
