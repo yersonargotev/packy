@@ -191,6 +191,10 @@ func selectPackResources(pack Pack, selection ResourceSelection) (Pack, error) {
 	if pack.manifestVersion != manifestSchemaV4 {
 		return Pack{}, fmt.Errorf("custom resource selection requires manifest schema_version 4")
 	}
+	return selectPackResourceClosure(pack, selection)
+}
+
+func selectPackResourceClosure(pack Pack, selection ResourceSelection) (Pack, error) {
 	roots, err := resourceSelectionRoots(pack, selection)
 	if err != nil {
 		return Pack{}, err

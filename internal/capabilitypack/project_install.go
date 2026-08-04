@@ -67,6 +67,7 @@ type ProjectLockProposal struct {
 	Packs                  []ProjectResolvedPack       `json:"packs,omitempty"`
 	ResourceGraph          ResourceGraph               `json:"resource_graph"`
 	Bindings               []LifecycleBinding          `json:"bindings"`
+	Degradations           []LifecycleExclusion        `json:"degradations,omitempty"`
 	Modes                  []OptionalMode              `json:"modes"`
 	ManifestSHA256         string                      `json:"manifest_sha256"`
 	NoticesSHA256          string                      `json:"notices_sha256"`
@@ -366,12 +367,13 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	for i := range lockProjections {
 		lockProjections[i].ObservedState = "installed"
 	}
+	contract := LifecycleContractFor(selectedPack, request.Surface, nil)
 	report := JSONProjectInstallPreview{
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
 		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: 1, Packs: []ProjectManifestPack{manifestPack}},
-		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: LifecycleContractFor(selectedPack, request.Surface, nil).Bindings, Modes: LifecycleContractFor(selectedPack, request.Surface, nil).OptionalModes, Projections: lockProjections},
+		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: contract.Bindings, Degradations: contract.Exclusions, Modes: contract.OptionalModes, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
 		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition,
 	}
@@ -473,17 +475,7 @@ func selectProjectPackResources(pack Pack, selection ResourceSelection) (Pack, e
 	if selection.Mode == SelectionAll {
 		return clonePack(pack), nil
 	}
-	roots, err := resourceSelectionRoots(pack, selection)
-	if err != nil {
-		return Pack{}, err
-	}
-	resources, _, err := resolveResourceClosure(pack, roots)
-	if err != nil {
-		return Pack{}, err
-	}
-	selected := clonePack(pack)
-	selected.Resources = resources
-	return selected, nil
+	return selectPackResourceClosure(pack, selection)
 }
 
 func (f Facade) resolveProjectPackUnlocked(id, version string) (Pack, error) {

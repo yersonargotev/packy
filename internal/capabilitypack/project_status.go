@@ -336,10 +336,32 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		if !requested || digestJSON(lock.Sources[0]) != digestJSON(lock.Source) {
 			return errors.New("project lock does not lead with the exact requested pack source")
 		}
-		for _, choice := range pack.ProviderChoices {
-			provider, exists := resolved[choice.ProviderPack]
-			if !exists || provider.Role != ActivationRequired {
-				return fmt.Errorf("project lock provider choice %s does not name a required resolved pack", choice.Capability)
+		for _, resolution := range lock.Packs {
+			for _, choice := range resolution.ProviderChoices {
+				provider, exists := resolved[choice.ProviderPack]
+				if !exists || provider.Role != ActivationRequired {
+					return fmt.Errorf("project lock provider choice %s does not name a required resolved pack", choice.Capability)
+				}
+				if choice.ProviderResource != nil && !projectGraphContains(provider.ResourceGraph, *choice.ProviderResource) {
+					return fmt.Errorf("project lock provider choice %s does not bind its exact provider resource", choice.Capability)
+				}
+			}
+		}
+		expectedGraph := make(map[ResourceIdentity]ResourceClosureFact)
+		for _, resolution := range lock.Packs {
+			for _, fact := range resolution.ResourceGraph.Resources {
+				if previous, exists := expectedGraph[fact.Resource]; exists && digestJSON(previous) != digestJSON(fact) {
+					return fmt.Errorf("project lock resolved packs disagree on shared resource %s", fact.Resource)
+				}
+				expectedGraph[fact.Resource] = fact
+			}
+		}
+		if len(expectedGraph) != len(lock.ResourceGraph.Resources) {
+			return errors.New("project lock combined resource graph does not match resolved pack graphs")
+		}
+		for _, fact := range lock.ResourceGraph.Resources {
+			if expected, exists := expectedGraph[fact.Resource]; !exists || digestJSON(expected) != digestJSON(fact) {
+				return fmt.Errorf("project lock combined resource %s does not match resolved pack graphs", fact.Resource)
 			}
 		}
 	}
@@ -356,10 +378,27 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	bindings := make(map[ResourceIdentity]bool, len(lock.Bindings))
 	for _, binding := range lock.Bindings {
 		identity := ResourceIdentity{Kind: binding.Kind, ID: binding.ID}
-		if !resources[identity] || bindings[identity] || binding.Projection == "" || binding.Name == "" || binding.Mode == "" || binding.Sharing == "" {
+		validMode := binding.Mode == "native" && binding.Degradation == "" || binding.Mode == "degraded" && binding.Degradation != ""
+		if !resources[identity] || bindings[identity] || binding.Projection == "" || binding.Name == "" || !validMode || binding.Sharing == "" {
 			return errors.New("project lock bindings are incomplete, duplicated, or outside the locked closure")
 		}
 		bindings[identity] = true
+	}
+	degradations := make(map[ResourceIdentity]bool)
+	for _, degradation := range lock.Degradations {
+		if degradation.ResourceKind == "" {
+			continue
+		}
+		identity, err := ParseResourceIdentity(degradation.ID)
+		if err != nil || identity.Kind != degradation.ResourceKind || !resources[identity] || degradations[identity] || degradation.Surface != pack.Surfaces[0] || degradation.Mode != "optional" || degradation.Code == "" || degradation.Reason == "" || degradation.SourcePaths == nil {
+			return errors.New("project lock declared degradations are incomplete, duplicated, or outside the locked closure")
+		}
+		degradations[identity] = true
+	}
+	for resource := range resources {
+		if projectOperationalResource(resource.Kind) && !bindings[resource] && !degradations[resource] {
+			return fmt.Errorf("project lock operational resource %s has no native binding or declared degradation", resource)
+		}
 	}
 	modeIDs := make(map[string]bool, len(lock.Modes))
 	for _, mode := range lock.Modes {
@@ -406,6 +445,24 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		seenTargets[projection.Target], seenResources[projection.Resource] = true, true
 	}
 	return nil
+}
+
+func projectGraphContains(graph ResourceGraph, target ResourceIdentity) bool {
+	for _, fact := range graph.Resources {
+		if fact.Resource == target {
+			return true
+		}
+	}
+	return false
+}
+
+func projectOperationalResource(kind string) bool {
+	switch kind {
+	case "skill", "instruction", "mcp_server", "agent", "command", "lifecycle":
+		return true
+	default:
+		return false
+	}
 }
 
 func validProjectResourceRole(role ResourceRole) bool {

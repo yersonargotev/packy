@@ -159,6 +159,23 @@ func TestIssue455ProjectProvidersRequireAndPersistAnExplicitChoice(t *testing.T)
 	if err := validateProjectInstallation(chosen.Manifest, chosen.Lock); err != nil {
 		t.Fatalf("generated provider contract is invalid: %v", err)
 	}
+	missingProviderResource := chosen.Lock
+	missingProviderResource.Packs = append([]ProjectResolvedPack(nil), chosen.Lock.Packs...)
+	missingProviderResource.Packs[1].ResourceGraph.Resources = []ResourceClosureFact{}
+	if err := validateProjectInstallation(chosen.Manifest, missingProviderResource); err == nil || !strings.Contains(err.Error(), "provider resource") {
+		t.Fatalf("missing exact provider resource error = %v", err)
+	}
+	missingOperationalBinding := chosen.Lock
+	missingOperationalBinding.Bindings = append([]LifecycleBinding(nil), chosen.Lock.Bindings...)
+	for i, binding := range missingOperationalBinding.Bindings {
+		if binding.Kind == "skill" && binding.ID == "root" {
+			missingOperationalBinding.Bindings = append(missingOperationalBinding.Bindings[:i], missingOperationalBinding.Bindings[i+1:]...)
+			break
+		}
+	}
+	if err := validateProjectInstallation(chosen.Manifest, missingOperationalBinding); err == nil || !strings.Contains(err.Error(), "binding or declared degradation") {
+		t.Fatalf("missing operational binding error = %v", err)
+	}
 	substituted := chosen.Manifest
 	substituted.Packs = append([]ProjectManifestPack(nil), chosen.Manifest.Packs...)
 	substituted.Packs[0].ProviderChoices = cloneProviderChoices(chosen.Manifest.Packs[0].ProviderChoices)
