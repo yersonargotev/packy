@@ -39,6 +39,7 @@ type ProjectInstallRequest struct {
 	ProviderChoices []ProviderChoice
 	manifestPack    ProjectManifestPack
 	reconcile       bool
+	reconcileAll    bool
 }
 
 type ProjectInstallBlocker struct {
@@ -199,19 +200,111 @@ func (f Facade) CheckProjectInstallFreshness(ctx context.Context, preview JSONPr
 // PreviewProjectReconcile derives a repair plan from the exact manifest and
 // portable lock already committed to the project. It never floats a version.
 func (f Facade) PreviewProjectReconcile(ctx context.Context, projectRoot string, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
+	return f.PreviewProjectInstall(ctx, ProjectInstallRequest{ProjectRoot: projectRoot, reconcileAll: true}, adapter)
+}
+
+func (f Facade) previewCompleteProjectReconcile(ctx context.Context, projectRoot string, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
 	installation, err := LoadProjectInstallation(projectRoot)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
+	resolver, ok := adapter.(projectSurfaceAdapterResolver)
+	if !ok {
+		return JSONProjectInstallPreview{}, errors.New("complete project reconcile requires the installed surface adapter set")
+	}
 	pack := installation.Manifest.Packs[0]
-	return f.PreviewProjectInstall(ctx, ProjectInstallRequest{
-		PackID: pack.ID, Version: pack.Version, Surface: pack.Surfaces[0], ProjectRoot: projectRoot,
-		Selection: pack.Selection, Aliases: pack.Aliases, ProviderChoices: pack.ProviderChoices,
-		manifestPack: pack, reconcile: true,
-	}, adapter)
+	intents := projectSurfaceIntents(pack)
+	reports := make([]JSONProjectInstallPreview, 0, len(intents))
+	for _, intent := range intents {
+		surfaceAdapter, found := resolver.projectSurfaceAdapter(intent.Surface)
+		if !found {
+			return JSONProjectInstallPreview{}, fmt.Errorf("complete project reconcile is missing the %s adapter", intent.Surface)
+		}
+		report, previewErr := f.PreviewProjectInstall(ctx, ProjectInstallRequest{
+			PackID: pack.ID, Version: pack.Version, Surface: intent.Surface, ProjectRoot: projectRoot,
+			Selection: intent.Selection, Aliases: intent.Aliases, ProviderChoices: intent.ProviderChoices,
+			manifestPack: pack, reconcile: true,
+		}, surfaceAdapter)
+		if previewErr != nil {
+			return JSONProjectInstallPreview{}, previewErr
+		}
+		reports = append(reports, report)
+	}
+	if len(reports) == 0 {
+		return JSONProjectInstallPreview{}, errors.New("complete project reconcile has no installed surfaces")
+	}
+	combined := reports[0]
+	combined.Surface = ""
+	combined.Pack = pack
+	combined.Selection = ProjectSelectionPreview{Mode: pack.Selection.Mode, Resources: append([]ResourceClosureFact(nil), installation.Lock.ResourceGraph.Resources...)}
+	combined.Projections = nil
+	combined.actions = nil
+	combined.Requirements = nil
+	combined.Blockers = nil
+	combined.Notices.Contributions = nil
+	combined.pack.Resources = nil
+	combined.request = ProjectInstallRequest{ProjectRoot: projectRoot, reconcileAll: true}
+	combined.projectRoot = projectRoot
+	combined.Disposition = ProjectInstallConverged
+	seenProjection := map[string]bool{}
+	seenAction := map[string]bool{}
+	seenResource := map[string]bool{}
+	seenNotice := map[string]bool{}
+	var observations []string
+	for _, report := range reports {
+		observations = append(observations, string(report.Surface)+"="+report.Observation)
+		if report.Disposition == ProjectInstallBlocked {
+			combined.Disposition = ProjectInstallBlocked
+		} else if report.Disposition == ProjectInstallPreviewable && combined.Disposition == ProjectInstallConverged {
+			combined.Disposition = ProjectInstallPreviewable
+		}
+		combined.Blockers = append(combined.Blockers, report.Blockers...)
+		combined.Requirements = append(combined.Requirements, report.Requirements...)
+		for _, projection := range report.Projections {
+			key := projection.Resource.String() + "\x00" + filepath.Clean(projection.Target)
+			if !seenProjection[key] {
+				combined.Projections = append(combined.Projections, projection)
+				seenProjection[key] = true
+			}
+		}
+		for _, action := range report.actions {
+			key := action.ID + "\x00" + filepath.Clean(action.Target)
+			if !seenAction[key] {
+				combined.actions = append(combined.actions, action)
+				seenAction[key] = true
+			}
+		}
+		for _, resource := range report.pack.Resources {
+			key := resource.Kind + ":" + resource.ID
+			if !seenResource[key] {
+				combined.pack.Resources = append(combined.pack.Resources, resource)
+				seenResource[key] = true
+			}
+		}
+		for _, notice := range report.Notices.Contributions {
+			key := notice.Resource.String()
+			if !seenNotice[key] {
+				combined.Notices.Contributions = append(combined.Notices.Contributions, notice)
+				seenNotice[key] = true
+			}
+		}
+	}
+	combined.Requirements = sortedUnique(combined.Requirements)
+	sort.Slice(combined.Projections, func(i, j int) bool {
+		if combined.Projections[i].Target != combined.Projections[j].Target {
+			return combined.Projections[i].Target < combined.Projections[j].Target
+		}
+		return combined.Projections[i].Resource.String() < combined.Projections[j].Resource.String()
+	})
+	sort.Strings(observations)
+	combined.Observation = sealProjectInstallPreview(combined, strings.Join(observations, "\n"))
+	return combined, nil
 }
 
 func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
+	if request.reconcileAll {
+		return f.previewCompleteProjectReconcile(ctx, request.ProjectRoot, adapter)
+	}
 	return withBundleObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
 		return locked.previewProjectInstall(ctx, request, adapter)
 	})
@@ -422,9 +515,12 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	contract := LifecycleContractFor(selectedPack, request.Surface, nil)
 	lockBindings := append([]LifecycleBinding{}, contract.Bindings...)
+	for i := range lockBindings {
+		lockBindings[i].Surface = request.Surface
+	}
 	lockDegradations := append([]LifecycleExclusion{}, contract.Exclusions...)
 	lockModes := append([]OptionalMode{}, contract.OptionalModes...)
-	if existingContract && !request.reconcile {
+	if existingContract {
 		graph = mergeProjectResourceGraphs(existingLock.ResourceGraph, graph)
 		resolvedPacks = mergeProjectResolvedPacks(existingLock.Packs, resolvedPacks, pack.ID)
 		sources = mergeProjectSources(existingLock.Sources, sources, pack.ID)
@@ -701,12 +797,45 @@ func divergentSharedProjectAliasBlockers(existing, added []ProjectProjectionPlan
 			if filepath.Clean(candidate.Target) == filepath.Clean(locked.Target) {
 				continue
 			}
-			if candidate.Resource.Kind == "skill" || len(candidate.DiscoverableBy) > 0 || len(locked.DiscoverableBy) > 0 {
+			if projectionsShareDiscovery(candidate, locked) {
 				blockers = append(blockers, ProjectInstallBlocker{Code: "divergent_shared_alias", Resource: candidate.Resource, Target: candidate.Target, Detail: "Codex and OpenCode aliases diverge for one shared project resource", Remediation: "use the same alias for this shared project resource"})
 			}
 		}
 	}
 	return blockers
+}
+
+func projectionsShareDiscovery(left, right ProjectProjectionPlan) bool {
+	for _, surface := range projectProjectionContributorSurfaces(right) {
+		if projectSupportsSurface(left.DiscoverableBy, surface) {
+			return true
+		}
+	}
+	for _, surface := range projectProjectionContributorSurfaces(left) {
+		if projectSupportsSurface(right.DiscoverableBy, surface) {
+			return true
+		}
+	}
+	return false
+}
+
+func projectProjectionContributorSurfaces(projection ProjectProjectionPlan) []Surface {
+	contributors := append([]string(nil), projection.Contributors...)
+	if projection.Contributor != "" {
+		contributors = append(contributors, projection.Contributor)
+	}
+	var surfaces []Surface
+	for _, contributor := range contributors {
+		if !strings.HasPrefix(contributor, "surface:") {
+			continue
+		}
+		value := strings.TrimPrefix(contributor, "surface:")
+		surface, _, ok := strings.Cut(value, ":")
+		if ok {
+			surfaces = append(surfaces, Surface(surface))
+		}
+	}
+	return sortedProjectSurfaces(surfaces)
 }
 
 func mergeProjectResourceGraphs(existing, added ResourceGraph) ResourceGraph {

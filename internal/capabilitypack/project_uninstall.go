@@ -141,6 +141,7 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	if report.Scope == ProjectUninstallSurface && len(remainingSurfaces) > 0 {
 		pack = withoutProjectSurfaceIntent(pack, surface)
 		retainedLock = retainProjectSelection(retainedLock, pack.ID, pack.Selection)
+		retainedLock.Bindings = filterProjectBindings(retainedLock.Bindings, remainingSurfaces)
 		report.Pack = pack
 		manifest := installation.Manifest
 		manifest.Packs[0] = pack
@@ -296,6 +297,16 @@ func subtractProjectContributor(projections []ProjectProjectionPlan, surface Sur
 
 func filterProjectDegradations(values []LifecycleExclusion, surfaces []Surface) []LifecycleExclusion {
 	result := make([]LifecycleExclusion, 0, len(values))
+	for _, value := range values {
+		if value.Surface == "" || projectSupportsSurface(surfaces, value.Surface) {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func filterProjectBindings(values []LifecycleBinding, surfaces []Surface) []LifecycleBinding {
+	result := make([]LifecycleBinding, 0, len(values))
 	for _, value := range values {
 		if value.Surface == "" || projectSupportsSurface(surfaces, value.Surface) {
 			result = append(result, value)

@@ -112,14 +112,15 @@ const (
 )
 
 type LifecycleBinding struct {
-	Kind        string `json:"kind"`
-	ID          string `json:"id"`
-	Projection  string `json:"projection"`
-	Name        string `json:"name"`
-	Invocation  string `json:"invocation"`
-	Mode        string `json:"mode"`
-	Degradation string `json:"degradation,omitempty"`
-	Sharing     string `json:"sharing"`
+	Surface     Surface `json:"surface,omitempty"`
+	Kind        string  `json:"kind"`
+	ID          string  `json:"id"`
+	Projection  string  `json:"projection"`
+	Name        string  `json:"name"`
+	Invocation  string  `json:"invocation"`
+	Mode        string  `json:"mode"`
+	Degradation string  `json:"degradation,omitempty"`
+	Sharing     string  `json:"sharing"`
 }
 
 // LifecycleContractFor derives the complete portable contract for one

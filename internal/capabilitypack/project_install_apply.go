@@ -503,20 +503,58 @@ func projectLocksEqual(left, right ProjectLockProposal) bool {
 }
 
 func verifyProjectInstallSurface(ctx context.Context, adapter SurfaceAdapter, preview JSONProjectInstallPreview) error {
+	if preview.request.reconcileAll {
+		resolver, ok := adapter.(projectSurfaceAdapterResolver)
+		if !ok {
+			return errors.New("complete project reconcile verification requires the installed surface adapter set")
+		}
+		for _, surface := range preview.Pack.Surfaces {
+			surfaceAdapter, found := resolver.projectSurfaceAdapter(surface)
+			if !found {
+				return fmt.Errorf("complete project reconcile verification is missing the %s adapter", surface)
+			}
+			observation, err := inspectSurface(ctx, surfaceAdapter, SurfaceTransition{Desired: preview.pack, ProjectRoot: preview.projectRoot})
+			if err != nil {
+				return err
+			}
+			var expected []ProjectProjectionPlan
+			for _, projection := range preview.Projections {
+				for _, contributorSurface := range projectProjectionContributorSurfaces(projection) {
+					if contributorSurface == surface {
+						expected = append(expected, projection)
+						break
+					}
+				}
+			}
+			if err := verifyProjectProjectionObservation(preview.projectRoot, expected, observation); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: preview.pack, ProjectRoot: preview.projectRoot})
 	if err != nil {
 		return err
 	}
-	want := make(map[string]string, len(preview.Projections))
-	for _, projection := range preview.Projections {
-		want[projection.Resource.String()] = projection.DesiredFingerprint
+	return verifyProjectProjectionObservation(preview.projectRoot, preview.Projections, observation)
+}
+
+func verifyProjectProjectionObservation(projectRoot string, expected []ProjectProjectionPlan, observation SurfaceInspection) error {
+	want := make(map[string]string, len(expected))
+	for _, projection := range expected {
+		want[projection.Resource.String()+"\x00"+filepath.Clean(filepath.FromSlash(projection.Target))] = projection.DesiredFingerprint
 	}
 	for _, projection := range observation.Projections {
-		desired, ok := want[projection.ID]
+		relative, relativeErr := RelativeProjectTarget(projectRoot, projection.Action.Target)
+		if relativeErr != nil {
+			return relativeErr
+		}
+		key := projection.ID + "\x00" + filepath.Clean(filepath.FromSlash(relative))
+		desired, ok := want[key]
 		if ok && (!projection.Exists || projection.ObservedFingerprint != desired) {
 			return fmt.Errorf("verify project projection %s: %w", projection.ID, ErrVerificationFailed)
 		}
-		delete(want, projection.ID)
+		delete(want, key)
 	}
 	if len(want) > 0 {
 		return fmt.Errorf("verify project projections: %w", ErrVerificationFailed)

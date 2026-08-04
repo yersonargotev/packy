@@ -182,6 +182,9 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	}
 	bindings := make(map[capabilitypack.ResourceIdentity]capabilitypack.LifecycleBinding, len(lock.Bindings))
 	for _, binding := range lock.Bindings {
+		if binding.Surface != "" && binding.Surface != capabilitypack.SurfaceClaude {
+			continue
+		}
 		bindings[capabilitypack.ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] = binding
 	}
 	contributor := "surface:claude:pack:" + pack.ID
