@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -163,23 +164,25 @@ type ExternalExecutor interface {
 // ProjectionAction is an adapter-produced, host-specific local projection.
 // Capability-pack policy orders and approves it; only the matching adapter executes it.
 type ProjectionAction struct {
-	ID                string               `json:"id"`
-	Surface           Surface              `json:"surface,omitempty"`
-	Description       string               `json:"description"`
-	Kind              ProjectionActionKind `json:"kind,omitempty"`
-	Consent           ConsentKind          `json:"consent,omitempty"`
-	Source            string               `json:"source,omitempty"`
-	Target            string               `json:"target,omitempty"`
-	Content           string               `json:"content,omitempty"`
-	Command           string               `json:"command,omitempty"`
-	Args              []string             `json:"args,omitempty"`
-	Version           string               `json:"version,omitempty"`
-	FileMode          uint32               `json:"file_mode,omitempty"`
-	Precondition      string               `json:"precondition,omitempty"`
-	Consequences      string               `json:"consequences,omitempty"`
-	RollbackLimits    string               `json:"rollback_limits,omitempty"`
-	Mode              ProjectionActionMode `json:"mode,omitempty"`
-	AdapterProvenance string               `json:"adapter_provenance,omitempty"`
+	ID                      string               `json:"id"`
+	Surface                 Surface              `json:"surface,omitempty"`
+	Description             string               `json:"description"`
+	Kind                    ProjectionActionKind `json:"kind,omitempty"`
+	Consent                 ConsentKind          `json:"consent,omitempty"`
+	Source                  string               `json:"source,omitempty"`
+	Target                  string               `json:"target,omitempty"`
+	Content                 string               `json:"content,omitempty"`
+	Command                 string               `json:"command,omitempty"`
+	Args                    []string             `json:"args,omitempty"`
+	Version                 string               `json:"version,omitempty"`
+	FileMode                uint32               `json:"file_mode,omitempty"`
+	Precondition            string               `json:"precondition,omitempty"`
+	Consequences            string               `json:"consequences,omitempty"`
+	RollbackLimits          string               `json:"rollback_limits,omitempty"`
+	Mode                    ProjectionActionMode `json:"mode,omitempty"`
+	AdapterProvenance       string               `json:"adapter_provenance,omitempty"`
+	ContributionStartMarker string               `json:"contribution_start_marker,omitempty"`
+	ContributionEndMarker   string               `json:"contribution_end_marker,omitempty"`
 	// ProjectionKey identifies the physical target when several surface
 	// adapters translate different logical projection IDs to one shared target.
 	ProjectionKey  string    `json:"projection_key,omitempty"`
@@ -3138,6 +3141,20 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 			return SurfaceInspection{}, fmt.Errorf("surface adapter returned zero goal for projection %q", projection.ID)
 		}
 	}
+	activationActions := make(map[string]struct{}, len(observation.ProjectActivationActions))
+	for _, action := range observation.ProjectActivationActions {
+		key := action.ID + "\x00" + action.Target
+		if transition.ProjectRoot == "" || transition.ProjectInstallation == nil {
+			return SurfaceInspection{}, errors.New("surface adapter returned a personal project action outside locked project inspection")
+		}
+		if action.ID != "project_trust:codex" || action.Surface != SurfaceCodex || action.Kind != ActionCodexProjectTrust || !action.PreviewOnly || action.Target == "" || !filepath.IsAbs(action.Target) || action.Content == "" || action.Version == "" || action.Precondition == "" || action.FileMode == 0 || action.ContributionStartMarker == "" || action.ContributionEndMarker == "" || action.Mode != "" || action.Consent != "" || action.Source != "" || action.Command != "" || len(action.Args) != 0 {
+			return SurfaceInspection{}, errors.New("surface adapter returned a malformed personal Codex project action")
+		}
+		if _, duplicate := activationActions[key]; duplicate {
+			return SurfaceInspection{}, errors.New("surface adapter returned a duplicate personal Codex project action")
+		}
+		activationActions[key] = struct{}{}
+	}
 	unrepresentable := make(map[string]struct{}, len(observation.Unrepresentable))
 	for _, resource := range observation.Unrepresentable {
 		key := resource.Resource.String()
@@ -3220,6 +3237,9 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		}
 		return observation.OccupiedNames[i].Name < observation.OccupiedNames[j].Name
 	})
+	sort.Slice(observation.ProjectActivationActions, func(i, j int) bool {
+		return observation.ProjectActivationActions[i].ID+"\x00"+observation.ProjectActivationActions[i].Target < observation.ProjectActivationActions[j].ID+"\x00"+observation.ProjectActivationActions[j].Target
+	})
 	sort.Strings(observation.PendingHumanActions)
 	sort.Strings(observation.Readiness.PendingHumanActions)
 	sort.Strings(observation.Readiness.Evidence)
@@ -3285,6 +3305,10 @@ func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
 	value.RuntimeModeResults = cloneRuntimeModeResults(value.RuntimeModeResults)
 	for i := range value.Projections {
 		value.Projections[i].Action.Args = append([]string(nil), value.Projections[i].Action.Args...)
+	}
+	value.ProjectActivationActions = append([]ProjectionAction(nil), value.ProjectActivationActions...)
+	for i := range value.ProjectActivationActions {
+		value.ProjectActivationActions[i].Args = append([]string(nil), value.ProjectActivationActions[i].Args...)
 	}
 	value.PendingHumanActions = append([]string(nil), value.PendingHumanActions...)
 	value.Unrepresentable = append([]UnrepresentableResource(nil), value.Unrepresentable...)

@@ -58,7 +58,7 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if preview.ProjectRoot != "<project-root>" || preview.Disposition != capabilitypack.ProjectActivationPreviewable || !preview.RuntimeRequired || preview.Digest == "" {
 		t.Fatalf("preview = %+v", preview)
 	}
-	if len(preview.Effects) != 1 || preview.Effects[0].Category != capabilitypack.ProjectActivationTrust || preview.Effects[0].Target != "<codex-home>/config.toml" || preview.Effects[0].Identity == "" {
+	if len(preview.Effects) != 1 || preview.Effects[0].Category != capabilitypack.ProjectActivationTrust || preview.Effects[0].Target != "<codex-home>/config.toml" || preview.Effects[0].Identity == "" || preview.Effects[0].Observation == "" {
 		t.Fatalf("personal effect preview = %+v", preview.Effects)
 	}
 	wantCategories := []capabilitypack.ProjectActivationCategory{
@@ -137,13 +137,16 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{`"approvals"`, `"receipts"`, `"sensitive_lock_identity"`, `"recovery"`} {
+	for _, field := range []string{`"approvals"`, `"receipts"`, `"effects"`, `"sensitive_lock_identity"`, `"recovery"`} {
 		if !strings.Contains(string(state), field) {
 			t.Fatalf("personal state omitted %s: %s", field, state)
 		}
 	}
 	if strings.Contains(string(state), "TOKEN=") {
 		t.Fatalf("personal state must be secret-safe: %q", state)
+	}
+	if strings.Contains(string(state), "trust_level") || strings.Contains(string(state), "model =") {
+		t.Fatalf("effect receipt persisted Codex config content: %q", state)
 	}
 }
 

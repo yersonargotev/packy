@@ -84,3 +84,19 @@ func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
 		t.Fatal("Codex-sensitive change retained Codex consent")
 	}
 }
+
+func TestProjectActivationSealIncludesPersonalTargetObservation(t *testing.T) {
+	action := ProjectionAction{ID: "project_trust:codex", Kind: ActionCodexProjectTrust, Target: "/personal/config.toml", Version: "exact-contribution", FileMode: 0o600, Precondition: "before"}
+	first := projectActivationActionObservation(action)
+	action.Precondition = "changed"
+	second := projectActivationActionObservation(action)
+	if first == second {
+		t.Fatal("personal target change retained the approved observation identity")
+	}
+	preview := JSONProjectActivationPreview{SchemaVersion: 1, Report: "project-activation-preview", Effects: []ProjectActivationEffectPreview{{Category: ProjectActivationTrust, Action: ActionCodexProjectTrust, Target: "<codex-home>/config.toml", Identity: action.Version, Observation: first}}}
+	approved := sealProjectActivationPreview(preview)
+	preview.Effects[0].Observation = second
+	if sealProjectActivationPreview(preview) == approved {
+		t.Fatal("personal target change retained the activation preview seal")
+	}
+}

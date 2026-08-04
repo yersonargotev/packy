@@ -227,19 +227,39 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		revision = append(revision, item.ID+"="+observed+"\x00"+action.Precondition)
 	}
 	sort.Strings(revision)
-	readiness, activationActions, err := a.inspectProjectRuntime(projectRoot, lock)
-	if err != nil {
-		return capabilitypack.SurfaceInspection{}, err
+	readiness := capabilitypack.ReadinessObservation{}
+	activationActions := []capabilitypack.ProjectionAction(nil)
+	if goal == capabilitypack.ProjectionPresent {
+		var err error
+		readiness, activationActions, err = a.inspectProjectRuntime(projectRoot, lock)
+		if err != nil {
+			return capabilitypack.SurfaceInspection{}, err
+		}
 	}
 	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections, Readiness: readiness, ProjectActivationActions: activationActions}, nil
 }
 
 func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabilitypack.ProjectLockProposal) (capabilitypack.ReadinessObservation, []capabilitypack.ProjectionAction, error) {
 	sensitive := false
+	additionalTrustReady := true
+	authenticationReady := true
+	externalCommands := map[string]bool{}
 	for _, disclosure := range lock.Sensitive {
 		if disclosure.Surface == capabilitypack.SurfaceCodex {
 			sensitive = true
-			break
+			switch disclosure.Category {
+			case capabilitypack.ProjectActivationTrust:
+				if disclosure.Detail != "project-trust" {
+					additionalTrustReady = false
+				}
+			case capabilitypack.ProjectActivationAuthentication:
+				authenticationReady = false
+			case capabilitypack.ProjectActivationExternalRequirements:
+				parts := strings.Split(disclosure.Detail, ":")
+				if len(parts) >= 2 {
+					externalCommands[parts[len(parts)-1]] = true
+				}
+			}
 		}
 	}
 	if !sensitive {
@@ -292,22 +312,38 @@ func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabili
 			} else if !os.IsNotExist(statErr) {
 				return capabilitypack.ReadinessObservation{}, nil, statErr
 			}
-			actions = append(actions, capabilitypack.ProjectionAction{ID: "project_trust:codex", Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectTrust, Target: a.configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: mode, Precondition: precondition, Version: localprojection.FingerprintBytes([]byte(desiredBlock)), Description: "trust the exact Codex project so its installed runtime definitions can load", PreviewOnly: true})
+			actions = append(actions, capabilitypack.ProjectionAction{ID: "project_trust:codex", Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectTrust, Target: a.configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: mode, Precondition: precondition, Version: localprojection.FingerprintBytes([]byte(desiredBlock)), Description: "trust the exact Codex project so its installed runtime definitions can load", ContributionStartMarker: start, ContributionEndMarker: end, PreviewOnly: true})
 		}
 	}
-	externalReady := true
+	if !additionalTrustReady {
+		pending = append(pending, "approve the remaining host-owned Codex authority in a fresh runtime session")
+	}
+	if !authenticationReady {
+		pending = append(pending, "complete the declared host-owned authentication requirement in Codex")
+	}
 	for _, projection := range lock.Projections {
 		if projection.Resource.Kind != "mcp_server" || !capabilitypack.ProjectProjectionHasContributor(projection, "surface:codex:pack:"+lock.Source.PackID) || projection.Command == "" {
 			continue
 		}
-		if _, lookErr := exec.LookPath(projection.Command); lookErr != nil {
+		delete(externalCommands, filepath.Base(projection.Command))
+		externalCommands[projection.Command] = true
+	}
+	externalReady := true
+	commands := make([]string, 0, len(externalCommands))
+	for command := range externalCommands {
+		commands = append(commands, command)
+	}
+	sort.Strings(commands)
+	for _, command := range commands {
+		if _, lookErr := exec.LookPath(command); lookErr != nil {
 			externalReady = false
-			pending = append(pending, fmt.Sprintf("install external requirement %s for %s", projection.Command, projection.Resource))
+			pending = append(pending, "install external requirement "+command)
 		}
 	}
+	authorized := trusted && additionalTrustReady
 	return capabilitypack.ReadinessObservation{
-		AuthorizationObserved: true, Authorized: trusted,
-		UsabilityObserved: true, Usable: trusted && externalReady,
+		AuthorizationObserved: true, Authorized: authorized,
+		UsabilityObserved: true, Usable: authorized && externalReady && authenticationReady,
 		PendingHumanActions: pending,
 		Evidence:            []string{"Codex project trust, locked runtime definitions, and external commands inspected"},
 	}, actions, nil
