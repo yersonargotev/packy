@@ -58,7 +58,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		if transition.ProjectRoot == "" || len(transition.ProjectInstallation.Manifest.Packs) != 1 {
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("locked Claude project inspection requires one manifest pack and the project root")
 		}
-		return a.inspectLockedProject(ctx, transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectActivationEffects, transition.ProjectGoal)
+		return a.inspectLockedProject(ctx, transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectGoal)
 	}
 	if transition.ProjectRoot != "" {
 		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)
@@ -532,7 +532,7 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabilitypack.ProjectionAction) *capabilitypack.ProjectionActionError {
 	if claudeProjectActions(actions) {
 		executor := localprojection.Executor{Host: "Claude project", TreeKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionClaudeProjectSkillTree: true}, FileKinds: map[capabilitypack.ProjectionActionKind]bool{
-			capabilitypack.ActionClaudeProjectFile: true, capabilitypack.ActionClaudeProjectInstruction: true, capabilitypack.ActionClaudeProjectMCP: true, capabilitypack.ActionClaudeProjectHook: true,
+			capabilitypack.ActionClaudeProjectFile: true, capabilitypack.ActionClaudeProjectInstruction: true, capabilitypack.ActionClaudeProjectMCP: true,
 			capabilitypack.ActionProjectManifestFile: true, capabilitypack.ActionProjectLockFile: true, capabilitypack.ActionProjectNoticesFile: true,
 		}}
 		if err := executor.Apply(actions); err != nil {
@@ -621,7 +621,6 @@ func claudeProjectActions(actions []capabilitypack.ProjectionAction) bool {
 	for _, action := range actions {
 		switch action.Kind {
 		case capabilitypack.ActionClaudeProjectSkillTree, capabilitypack.ActionClaudeProjectFile, capabilitypack.ActionClaudeProjectInstruction, capabilitypack.ActionClaudeProjectMCP,
-			capabilitypack.ActionClaudeProjectHook,
 			capabilitypack.ActionProjectManifestFile, capabilitypack.ActionProjectLockFile, capabilitypack.ActionProjectNoticesFile:
 		default:
 			return false

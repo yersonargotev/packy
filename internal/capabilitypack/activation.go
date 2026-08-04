@@ -61,7 +61,6 @@ const (
 	ActionOpenCodeConfigReference  ProjectionActionKind = "opencode-config-reference"
 	ActionCodexMCPConfig           ProjectionActionKind = "codex-mcp-config"
 	ActionCodexProjectTrust        ProjectionActionKind = "codex-project-trust"
-	ActionClaudeProjectHook        ProjectionActionKind = "claude-project-hook"
 	ActionCodexAgentFile           ProjectionActionKind = "codex-agent-file"
 	ActionCodexWorkflowSkill       ProjectionActionKind = "codex-workflow-skill"
 	ActionCodexAssetFile           ProjectionActionKind = "codex-asset-file"
@@ -231,15 +230,14 @@ const (
 // inspection. Capability-pack decides which facts are relevant to each use
 // case; adapters only translate those facts into host projections.
 type SurfaceTransition struct {
-	Prior                    Pack
-	Desired                  Pack
-	CurrentOwnership         []ProjectionOwnership
-	ResidualOwnership        []ProjectionOwnership
-	ResolvedExecutables      []ExecutableResolution
-	ProjectRoot              string
-	ProjectInstallation      *ProjectInstallation
-	ProjectActivationEffects []ProjectActivationEffectReceipt
-	ProjectGoal              ProjectionGoal
+	Prior               Pack
+	Desired             Pack
+	CurrentOwnership    []ProjectionOwnership
+	ResidualOwnership   []ProjectionOwnership
+	ResolvedExecutables []ExecutableResolution
+	ProjectRoot         string
+	ProjectInstallation *ProjectInstallation
+	ProjectGoal         ProjectionGoal
 }
 
 type SurfaceInspection struct {
@@ -3265,10 +3263,6 @@ func validatePersonalProjectAction(action ProjectionAction) error {
 		if commonMalformed || action.ID != "project_trust:codex" || action.Surface != SurfaceCodex || action.ContributionStartMarker == "" || action.ContributionEndMarker == "" {
 			return errors.New("surface adapter returned a malformed personal Codex project action")
 		}
-	case ActionClaudeProjectHook:
-		if commonMalformed || action.ID != "project_hook:claude" || action.Surface != SurfaceClaude || action.ContributionStartMarker != "" || action.ContributionEndMarker != "" {
-			return errors.New("surface adapter returned a malformed personal Claude project action")
-		}
 	default:
 		return errors.New("surface adapter returned an unsupported personal project action")
 	}
@@ -3314,7 +3308,6 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 		_ = json.Unmarshal(data, &installation)
 		value.ProjectInstallation = &installation
 	}
-	value.ProjectActivationEffects = append([]ProjectActivationEffectReceipt(nil), value.ProjectActivationEffects...)
 	return value
 }
 

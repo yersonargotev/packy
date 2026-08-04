@@ -123,10 +123,7 @@ type projectActivationReceipt struct {
 	Digest   string                    `json:"digest"`
 }
 
-// ProjectActivationEffectReceipt is the secret-safe exact ownership evidence
-// a host adapter may use to distinguish a Packy-created personal effect from
-// matching foreign configuration.
-type ProjectActivationEffectReceipt struct {
+type projectActivationEffectReceipt struct {
 	Action               ProjectionActionKind `json:"action"`
 	Target               string               `json:"target"`
 	ContributionIdentity string               `json:"contribution_identity"`
@@ -144,7 +141,7 @@ type projectActivationDocument struct {
 	State                 projectActivationState           `json:"state"`
 	Approvals             []ProjectActivationApproval      `json:"approvals"`
 	Receipts              []projectActivationReceipt       `json:"receipts"`
-	Effects               []ProjectActivationEffectReceipt `json:"effects"`
+	Effects               []projectActivationEffectReceipt `json:"effects"`
 	SensitiveLockIdentity string                           `json:"sensitive_lock_identity"`
 	Recovery              projectActivationRecovery        `json:"recovery"`
 }
@@ -187,7 +184,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if err != nil {
 		return report, err
 	}
-	observation, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectActivationEffects: document.Effects, ProjectGoal: ProjectionPresent})
+	observation, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionPresent})
 	if err != nil {
 		return report, err
 	}
@@ -224,8 +221,6 @@ func projectActivationEffectPreview(action ProjectionAction) (ProjectActivationE
 	switch action.Kind {
 	case ActionCodexProjectTrust:
 		effect.Category, effect.Target = ProjectActivationTrust, "<codex-home>/config.toml"
-	case ActionClaudeProjectHook:
-		effect.Category, effect.Target = ProjectActivationHooks, "<project-root>/.claude/settings.local.json"
 	default:
 		return ProjectActivationEffectPreview{}, false
 	}
@@ -297,7 +292,7 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 		_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, state, request.Approvals, receipts, effectReceipts, "required")
 		return ProjectActivationApplyResult{}, err
 	}
-	verified, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: preview.projectRoot, ProjectInstallation: &installation, ProjectActivationEffects: effectReceipts, ProjectGoal: ProjectionPresent})
+	verified, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: preview.projectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionPresent})
 	if err != nil || !projectActivationEffectsConverged(preview.Surface, verified) {
 		_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, state, request.Approvals, receipts, effectReceipts, "required")
 		if err != nil {
@@ -509,20 +504,20 @@ func projectActivationActionObservation(action ProjectionAction) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func projectActivationEffectReceipts(actions []ProjectionAction) []ProjectActivationEffectReceipt {
-	receipts := make([]ProjectActivationEffectReceipt, 0, len(actions))
+func projectActivationEffectReceipts(actions []ProjectionAction) []projectActivationEffectReceipt {
+	receipts := make([]projectActivationEffectReceipt, 0, len(actions))
 	for _, action := range actions {
-		receipts = append(receipts, ProjectActivationEffectReceipt{Action: action.Kind, Target: action.Target, ContributionIdentity: action.Version, StartMarker: action.ContributionStartMarker, EndMarker: action.ContributionEndMarker, PriorState: "absent"})
+		receipts = append(receipts, projectActivationEffectReceipt{Action: action.Kind, Target: action.Target, ContributionIdentity: action.Version, StartMarker: action.ContributionStartMarker, EndMarker: action.ContributionEndMarker, PriorState: "absent"})
 	}
 	return receipts
 }
 
-func mergeProjectActivationEffectReceipts(left, right []ProjectActivationEffectReceipt) []ProjectActivationEffectReceipt {
-	byTarget := map[string]ProjectActivationEffectReceipt{}
-	for _, receipt := range append(append([]ProjectActivationEffectReceipt(nil), left...), right...) {
+func mergeProjectActivationEffectReceipts(left, right []projectActivationEffectReceipt) []projectActivationEffectReceipt {
+	byTarget := map[string]projectActivationEffectReceipt{}
+	for _, receipt := range append(append([]projectActivationEffectReceipt(nil), left...), right...) {
 		byTarget[string(receipt.Action)+"\x00"+receipt.Target] = receipt
 	}
-	result := make([]ProjectActivationEffectReceipt, 0, len(byTarget))
+	result := make([]projectActivationEffectReceipt, 0, len(byTarget))
 	for _, receipt := range byTarget {
 		result = append(result, receipt)
 	}
@@ -621,15 +616,13 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot string, surf
 	return document, true, nil
 }
 
-func validProjectActivationEffectReceipt(effect ProjectActivationEffectReceipt) bool {
+func validProjectActivationEffectReceipt(effect projectActivationEffectReceipt) bool {
 	if !filepath.IsAbs(effect.Target) || effect.ContributionIdentity == "" || effect.PriorState != "absent" {
 		return false
 	}
 	switch effect.Action {
 	case ActionCodexProjectTrust:
 		return effect.StartMarker != "" && effect.EndMarker != ""
-	case ActionClaudeProjectHook:
-		return effect.StartMarker == "" && effect.EndMarker == ""
 	default:
 		return false
 	}
@@ -656,7 +649,7 @@ func projectActivationDocumentMatches(document projectActivationDocument, catego
 	return len(want) == 0
 }
 
-func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt, effects []ProjectActivationEffectReceipt, recovery string) error {
+func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt, effects []projectActivationEffectReceipt, recovery string) error {
 	directory, err := projectActivationDirectory(packyHome, projectRoot)
 	if err != nil {
 		return err

@@ -189,14 +189,8 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		if adapter == nil {
 			return report, fmt.Errorf("project installation inspection does not support CLI surface %q", surface)
 		}
-		activation := projectActivationDocument{}
-		if request.PackyHome != "" {
-			if loaded, _, loadErr := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, surface); loadErr == nil {
-				activation = loaded
-			}
-		}
 		observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{
-			ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectActivationEffects: activation.Effects, ProjectGoal: ProjectionPresent,
+			ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionPresent,
 		})
 		if inspectErr != nil {
 			return report, inspectErr
