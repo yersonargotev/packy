@@ -212,6 +212,14 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	existingLock, lockExists, lockErr := readExistingProjectLock(request.ProjectRoot)
 	if lockErr != nil {
 		blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_lock", Target: "packy.lock.json", Detail: lockErr.Error(), Remediation: "restore or remove the invalid project lock before installation"})
+	} else if lockExists {
+		installation, contractErr := LoadProjectInstallation(request.ProjectRoot)
+		if contractErr != nil {
+			blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_contract", Target: "packy.json", Detail: contractErr.Error(), Remediation: "restore the supported project manifest and lock before installation"})
+			lockExists = false
+		} else {
+			existingLock = installation.Lock
+		}
 	}
 	for _, resource := range observation.Unrepresentable {
 		blockers = append(blockers, ProjectInstallBlocker{Code: "unrepresentable_resource", Resource: resource.Resource, Detail: resource.Reason, Remediation: "choose a surface with a declared project-native representation"})

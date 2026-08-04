@@ -92,7 +92,15 @@ var projectDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // LoadProjectInstallation interprets the supported self-contained project
 // contract without consulting Packy's catalog, network, or personal state.
 func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
-	manifestData, err := os.ReadFile(filepath.Join(projectRoot, "packy.json"))
+	manifestPath := filepath.Join(projectRoot, "packy.json")
+	manifestInfo, err := os.Lstat(manifestPath)
+	if err != nil {
+		return ProjectInstallation{}, fmt.Errorf("inspect project manifest: %w", err)
+	}
+	if !manifestInfo.Mode().IsRegular() {
+		return ProjectInstallation{}, errors.New("project manifest is not a regular file")
+	}
+	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return ProjectInstallation{}, fmt.Errorf("read project manifest: %w", err)
 	}
@@ -192,7 +200,11 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			}
 			return blockers[i].Target < blockers[j].Target
 		})
-		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: ProjectRuntimeNotRequired, Projections: projections, Blockers: blockers, RequirementSatisfied: true}
+		runtime := ProjectRuntimeNotRequired
+		if len(installation.Lock.Modes) > 0 {
+			runtime = ProjectRuntimePending
+		}
+		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, Projections: projections, Blockers: blockers, RequirementSatisfied: true}
 		if request.RequireInstalled {
 			status.Requirement = "installed"
 			status.RequirementSatisfied = state == ProjectInstallationInstalled
@@ -227,7 +239,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	if pack.Selection.Mode != SelectionAll || pack.Selection.Roots == nil || pack.Aliases == nil || pack.ProviderChoices == nil {
 		return errors.New("project manifest selection, aliases, and provider choices are incomplete")
 	}
-	if lock.Source.PackID != pack.ID || lock.Source.PackVersion != pack.Version || lock.Source.ManifestSchema < manifestSchemaV1 || lock.Source.SourceID == "" || lock.Source.Provider == "" || lock.Source.Repository == "" || lock.Source.Commit == "" || lock.Source.Tree == "" || !projectDigestPattern.MatchString(lock.Source.SourceLockSHA256) {
+	if lock.Path != "packy.lock.json" || lock.Source.PackID != pack.ID || lock.Source.PackVersion != pack.Version || lock.Source.ManifestSchema < manifestSchemaV1 || lock.Source.ManifestSchema > manifestSchemaV4 || lock.Source.SourceID == "" || lock.Source.Provider == "" || lock.Source.Repository == "" || lock.Source.Commit == "" || lock.Source.Tree == "" || !projectDigestPattern.MatchString(lock.Source.SourceLockSHA256) {
 		return errors.New("project lock source identity does not exactly match the manifest pack")
 	}
 	if lock.ResourceGraph.Resources == nil || lock.Bindings == nil || lock.Modes == nil || lock.Projections == nil || !projectDigestPattern.MatchString(lock.ManifestSHA256) || !projectDigestPattern.MatchString(lock.NoticesSHA256) || lock.NoticesFileMode == 0 {
@@ -324,18 +336,23 @@ func inspectOfflineProjectFiles(projectRoot string, installation ProjectInstalla
 	}
 	_ = manifestBytes
 	noticesPath := filepath.Join(projectRoot, "PACKY-NOTICES.md")
-	noticesData, readErr := os.ReadFile(noticesPath)
-	if readErr != nil {
-		if !errors.Is(readErr, fs.ErrNotExist) {
-			return false, nil, readErr
-		}
+	noticesInfo, statErr := os.Lstat(noticesPath)
+	if errors.Is(statErr, fs.ErrNotExist) {
 		healthy = false
 		blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notices are missing", Remediation: "restore the exact locked notice contribution"})
+	} else if statErr != nil {
+		return false, nil, statErr
+	} else if !noticesInfo.Mode().IsRegular() {
+		healthy = false
+		blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notices target is unsafe", Remediation: "restore the exact locked notice contribution"})
 	} else {
+		noticesData, readErr := os.ReadFile(noticesPath)
+		if readErr != nil {
+			return false, nil, readErr
+		}
 		start, end := projectNoticeMarkers(installation.Manifest.Packs[0].ID)
 		fragment, found := extractProjectContribution(string(noticesData), start, end)
-		info, statErr := os.Lstat(noticesPath)
-		if !found || statErr != nil || !info.Mode().IsRegular() || uint32(info.Mode().Perm()) != installation.Lock.NoticesFileMode || fingerprintProjectBytes([]byte(fragment)) != installation.Lock.NoticesSHA256 {
+		if !found || uint32(noticesInfo.Mode().Perm()) != installation.Lock.NoticesFileMode || fingerprintProjectBytes([]byte(fragment)) != installation.Lock.NoticesSHA256 {
 			healthy = false
 			blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution or mode differs from the lock", Remediation: "restore the exact locked notice contribution"})
 		}

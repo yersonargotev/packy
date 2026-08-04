@@ -139,11 +139,11 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	sort.SliceStable(nonLock, func(i, j int) bool { return nonLock[i].Target < nonLock[j].Target })
 	lockPath := filepath.Join(fresh.projectRoot, fresh.Lock.Path)
 	lockAction := ProjectionAction{ID: "project-contract:lock", Kind: ActionProjectLockFile, Target: lockPath, Content: string(lock), FileMode: 0o644, Precondition: projectTargetFingerprint(lockPath), Description: "publish the verified project pack lock"}
-	writeLock, err := projectRegularFileMatches(lockPath, lock, 0o644)
+	lockMatches, err := projectRegularFileMatches(lockPath, lock, 0o644)
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
 	}
-	writeLock = !writeLock
+	writeLock := !lockMatches
 
 	forward := append([]ProjectionAction(nil), nonLock...)
 	if writeLock {
@@ -323,15 +323,22 @@ func verifyProjectNoticeContribution(preview JSONProjectInstallPreview) error {
 
 func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, error) {
 	path := filepath.Join(projectRoot, "packy.lock.json")
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
+	info, statErr := os.Lstat(path)
+	if errors.Is(statErr, fs.ErrNotExist) {
 		return ProjectLockProposal{}, false, nil
 	}
+	if statErr != nil {
+		return ProjectLockProposal{}, false, statErr
+	}
+	if !info.Mode().IsRegular() {
+		return ProjectLockProposal{}, false, errors.New("project lock is not a regular file")
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return ProjectLockProposal{}, false, err
 	}
 	var lock ProjectLockProposal
-	if err := json.Unmarshal(data, &lock); err != nil {
+	if err := strictDecode(data, &lock); err != nil {
 		return ProjectLockProposal{}, false, fmt.Errorf("decode project lock: %w", err)
 	}
 	if lock.SchemaVersion != 1 || lock.MinimumPackyCapability != "project-installation-v1" {

@@ -88,6 +88,16 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			}
 			if len(args) == 0 {
 				offlineAdapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
+				recoveryFacade := capabilitypack.NewFacade(capabilitypack.Catalog{})
+				recovered, recoveryErr := recoveryFacade.RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: offlineAdapter})
+				if recoveryErr != nil {
+					return recoveryErr
+				}
+				if recovered && !jsonOutput {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Recovered the prior project installation attempt before preview"); err != nil {
+						return err
+					}
+				}
 				status, statusErr := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot,
 					Adapters:    map[capabilitypack.Surface]capabilitypack.ProjectInstallationAdapter{capabilitypack.SurfaceCodex: offlineAdapter},
@@ -975,6 +985,9 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 					if require == "installed" && !status.RequirementSatisfied {
 						return fmt.Errorf("pack %q on %s is not installed", status.Pack.ID, status.Surface)
 					}
+				}
+				if require == "installed" && len(report.Packs) == 0 {
+					return errors.New("project has no installed capability packs")
 				}
 				return nil
 			}

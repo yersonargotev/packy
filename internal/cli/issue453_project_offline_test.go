@@ -71,6 +71,10 @@ func TestIssue453ProjectStatusReportsAbsentInstallationSeparately(t *testing.T) 
 	if err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("absent installed gate = %v", err)
 	}
+	_, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "--project", "--require", "installed")
+	if err == nil || !strings.Contains(err.Error(), "no installed capability packs") {
+		t.Fatalf("absent whole-project installed gate = %v", err)
+	}
 }
 
 func TestIssue453InstalledEnforcementDetectsDriftWithoutMutation(t *testing.T) {
