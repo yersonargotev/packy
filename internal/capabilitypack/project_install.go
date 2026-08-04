@@ -459,7 +459,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		if projection.Action.Kind == ActionCodexProjectSkillTree || projection.Action.Kind == ActionClaudeProjectSkillTree {
 			mode, fileMode = "copy_tree", 0o700
 		}
-		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionOpenCodeInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
+		if projection.Action.Kind == ActionInstructionFile || projection.Action.Kind == ActionCodexMCPConfig || projection.Action.Kind == ActionOpenCodeInstructionFile || projection.Action.Kind == ActionClaudeProjectInstruction {
 			mode, fileMode = "merge_marked_file", projection.Action.FileMode
 		} else if projection.Action.Kind == ActionOpenCodeMCPConfig || projection.Action.Kind == ActionClaudeProjectMCP {
 			mode, fileMode = "merge_structured_file", projection.Action.FileMode
@@ -525,7 +525,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	lockDegradations := append([]LifecycleExclusion{}, contract.Exclusions...)
 	lockModes := append([]OptionalMode{}, contract.OptionalModes...)
-	lockSensitive := projectSensitiveDisclosures(selectedPack)
+	lockSensitive := projectSensitiveDisclosures(selectedPack, request.Surface)
 	if existingContract {
 		graph = mergeProjectResourceGraphs(existingLock.ResourceGraph, graph)
 		resolvedPacks = mergeProjectResolvedPacks(existingLock.Packs, resolvedPacks, pack.ID)

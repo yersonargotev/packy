@@ -219,7 +219,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			}
 			return blockers[i].Target < blockers[j].Target
 		})
-		categories := projectActivationCategories(installation.Lock)
+		categories := projectActivationCategories(installation.Lock, surface)
 		runtimeRequired := len(categories) != 0
 		readiness := ProjectReadinessStatus{Configured: state == ProjectInstallationInstalled}
 		if runtimeRequired {
@@ -305,14 +305,15 @@ func projectRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPac
 	if packyHome == "" {
 		return ProjectRuntimePending
 	}
-	state, exists, err := loadProjectActivationState(packyHome, projectRoot)
+	document, exists, err := loadProjectActivationDocument(packyHome, projectRoot)
 	if err != nil {
 		return ProjectRuntimeBlocked
 	}
+	state := document.State
 	if !exists || !state.Active {
 		return ProjectRuntimePending
 	}
-	if state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, categories) {
+	if !projectActivationDocumentMatches(document, categories) || state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, categories) {
 		return ProjectRuntimeStale
 	}
 	return ProjectRuntimeActive
@@ -511,7 +512,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 			return errors.New("project lock sensitive disclosures are malformed or non-canonical")
 		}
 		for _, disclosure := range lock.Sensitive {
-			if !resources[disclosure.Resource] || disclosure.Detail == "" || !validProjectActivationCategory(disclosure.Category) {
+			if !resources[disclosure.Resource] || disclosure.Detail == "" || !projectSupportsSurface(pack.Surfaces, disclosure.Surface) || !validProjectActivationCategory(disclosure.Category) {
 				return errors.New("project lock sensitive disclosure is outside the locked closure")
 			}
 		}

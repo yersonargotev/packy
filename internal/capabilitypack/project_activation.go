@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const ProjectActivationPreviewSchemaVersion = 1
@@ -42,6 +43,7 @@ const (
 // path.
 type ProjectSensitiveDisclosure struct {
 	Category ProjectActivationCategory `json:"category"`
+	Surface  Surface                   `json:"surface"`
 	Resource ResourceIdentity          `json:"resource"`
 	Detail   string                    `json:"detail"`
 }
@@ -158,7 +160,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if len(status.Packs) != 1 || !status.Packs[0].RequirementSatisfied {
 		return report, errors.New("project activation requires a healthy installed project projection")
 	}
-	categories := projectActivationCategories(installation.Lock)
+	categories := projectActivationCategories(installation.Lock, request.Surface)
 	report.Pack, report.Surface, report.Categories = pack, request.Surface, categories
 	report.RuntimeRequired = len(categories) != 0
 	report.SensitiveLockIdentity = projectSensitiveLockIdentity(installation.Lock, categories)
@@ -166,11 +168,12 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 		report.Disposition, report.Digest = ProjectActivationNotRequired, sealProjectActivationPreview(report)
 		return report, nil
 	}
-	state, exists, err := loadProjectActivationState(request.PackyHome, request.ProjectRoot)
+	document, exists, err := loadProjectActivationDocument(request.PackyHome, request.ProjectRoot)
 	if err != nil {
 		return report, err
 	}
-	if exists && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
+	state := document.State
+	if exists && projectActivationDocumentMatches(document, categories) && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
 		report.Disposition = ProjectActivationConverged
 	} else {
 		report.Disposition = ProjectActivationPreviewable
@@ -222,12 +225,17 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 	return ProjectActivationApplyResult{SchemaVersion: 1, Report: "project-activation-apply", Status: "active", Digest: preview.Digest}, nil
 }
 
-func projectActivationCategories(lock ProjectLockProposal) []ProjectActivationCategoryPreview {
+func projectActivationCategories(lock ProjectLockProposal, surface Surface) []ProjectActivationCategoryPreview {
 	byCategory := map[ProjectActivationCategory][]ProjectSensitiveDisclosure{}
 	for _, disclosure := range lock.Sensitive {
-		byCategory[disclosure.Category] = append(byCategory[disclosure.Category], disclosure)
+		if disclosure.Surface == surface {
+			byCategory[disclosure.Category] = append(byCategory[disclosure.Category], disclosure)
+		}
 	}
 	for _, binding := range lock.Bindings {
+		if binding.Surface != surface {
+			continue
+		}
 		category := ProjectActivationCategory("")
 		switch {
 		case binding.Kind == "mcp_server" || binding.Projection == "mcp_server":
@@ -238,7 +246,7 @@ func projectActivationCategories(lock ProjectLockProposal) []ProjectActivationCa
 			category = ProjectActivationPlugins
 		}
 		if category != "" {
-			byCategory[category] = append(byCategory[category], ProjectSensitiveDisclosure{Category: category, Resource: ResourceIdentity{Kind: binding.Kind, ID: binding.ID}, Detail: binding.Projection})
+			byCategory[category] = append(byCategory[category], ProjectSensitiveDisclosure{Category: category, Surface: surface, Resource: ResourceIdentity{Kind: binding.Kind, ID: binding.ID}, Detail: binding.Projection})
 		}
 	}
 	order := []ProjectActivationCategory{ProjectActivationMCP, ProjectActivationHooks, ProjectActivationPlugins, ProjectActivationExternalRequirements, ProjectActivationTrust, ProjectActivationAuthentication}
@@ -254,12 +262,17 @@ func projectActivationCategories(lock ProjectLockProposal) []ProjectActivationCa
 
 // projectSensitiveDisclosures records every non-declarative concern in the
 // portable project lock while the full selected pack is still available.
-func projectSensitiveDisclosures(pack Pack) []ProjectSensitiveDisclosure {
+func projectSensitiveDisclosures(pack Pack, surface Surface) []ProjectSensitiveDisclosure {
 	values := []ProjectSensitiveDisclosure{}
 	for _, resource := range pack.Resources {
 		identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+		for _, binding := range resource.Bindings {
+			if binding.Surface == surface && (resource.Kind == "mcp_server" || binding.Projection == "mcp_server") {
+				values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: surface, Resource: identity, Detail: "project-trust"})
+			}
+		}
 		for _, permission := range resource.Permissions {
-			values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Resource: identity, Detail: permission})
+			values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: surface, Resource: identity, Detail: permission})
 		}
 		for _, mode := range resource.RuntimeModes {
 			for _, requirement := range mode.Requirements {
@@ -267,15 +280,23 @@ func projectSensitiveDisclosures(pack Pack) []ProjectSensitiveDisclosure {
 				if requirement.Kind == RuntimeRequirementAuthentication {
 					category = ProjectActivationAuthentication
 				}
-				values = append(values, ProjectSensitiveDisclosure{Category: category, Resource: identity, Detail: "runtime:" + mode.ID + ":" + string(requirement.Kind) + ":" + requirement.ID})
+				values = append(values, ProjectSensitiveDisclosure{Category: category, Surface: surface, Resource: identity, Detail: "runtime:" + mode.ID + ":" + string(requirement.Kind) + ":" + requirement.ID})
 			}
 			for _, authority := range mode.Authorities {
-				values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Resource: identity, Detail: "runtime:" + mode.ID + ":" + string(authority.Kind) + ":" + string(authority.Scope)})
+				values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: surface, Resource: identity, Detail: "runtime:" + mode.ID + ":" + string(authority.Kind) + ":" + string(authority.Scope)})
 			}
 			for _, effect := range mode.Effects {
 				if effect.Kind == RuntimeEffectAuthenticationStateChange {
-					values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationAuthentication, Resource: identity, Detail: "runtime:" + mode.ID + ":" + string(effect.Kind) + ":" + string(effect.Scope)})
+					values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationAuthentication, Surface: surface, Resource: identity, Detail: "runtime:" + mode.ID + ":" + string(effect.Kind) + ":" + string(effect.Scope)})
 				}
+			}
+		}
+	}
+	for _, tool := range pack.Requires.Tools {
+		for _, resource := range pack.Resources {
+			if resource.Kind == "mcp_server" && resource.Command == tool {
+				values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationExternalRequirements, Surface: surface, Resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, Detail: "tool:" + tool})
+				break
 			}
 		}
 	}
@@ -286,15 +307,15 @@ func deduplicateProjectSensitiveDisclosures(values []ProjectSensitiveDisclosure)
 	seen := map[string]bool{}
 	result := make([]ProjectSensitiveDisclosure, 0, len(values))
 	for _, value := range values {
-		key := string(value.Category) + "\x00" + value.Resource.String() + "\x00" + value.Detail
+		key := string(value.Category) + "\x00" + string(value.Surface) + "\x00" + value.Resource.String() + "\x00" + value.Detail
 		if !seen[key] {
 			seen[key] = true
 			result = append(result, value)
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {
-		left := fmt.Sprintf("%d\x00%s\x00%s", projectActivationCategoryIndex(result[i].Category), result[i].Resource.String(), result[i].Detail)
-		right := fmt.Sprintf("%d\x00%s\x00%s", projectActivationCategoryIndex(result[j].Category), result[j].Resource.String(), result[j].Detail)
+		left := fmt.Sprintf("%s\x00%d\x00%s\x00%s", result[i].Surface, projectActivationCategoryIndex(result[i].Category), result[i].Resource.String(), result[i].Detail)
+		right := fmt.Sprintf("%s\x00%d\x00%s\x00%s", result[j].Surface, projectActivationCategoryIndex(result[j].Category), result[j].Resource.String(), result[j].Detail)
 		return left < right
 	})
 	return result
@@ -320,6 +341,10 @@ func projectActivationCategoryIndex(category ProjectActivationCategory) int {
 }
 
 func projectSensitiveLockIdentity(lock ProjectLockProposal, categories []ProjectActivationCategoryPreview) string {
+	surface := Surface("")
+	if len(categories) > 0 && len(categories[0].Details) > 0 {
+		surface = categories[0].Details[0].Surface
+	}
 	resources := map[ResourceIdentity]bool{}
 	for _, category := range categories {
 		for _, detail := range category.Details {
@@ -328,13 +353,25 @@ func projectSensitiveLockIdentity(lock ProjectLockProposal, categories []Project
 	}
 	projections := make([]ProjectProjectionPlan, 0)
 	for _, projection := range lock.Projections {
-		if resources[projection.Resource] {
+		if resources[projection.Resource] && projectProjectionHasSurfaceContributor(projection, surface) {
 			projections = append(projections, projection)
 		}
 	}
 	sort.Slice(projections, func(i, j int) bool {
 		return projections[i].Resource.String()+"\x00"+projections[i].Target < projections[j].Resource.String()+"\x00"+projections[j].Target
 	})
+	sensitive := make([]ProjectSensitiveDisclosure, 0)
+	for _, disclosure := range lock.Sensitive {
+		if disclosure.Surface == surface {
+			sensitive = append(sensitive, disclosure)
+		}
+	}
+	bindings := make([]LifecycleBinding, 0)
+	for _, binding := range lock.Bindings {
+		if binding.Surface == surface {
+			bindings = append(bindings, binding)
+		}
+	}
 	data, _ := json.Marshal(struct {
 		Source      ProjectPackSourceIdentity          `json:"source"`
 		Sensitive   []ProjectSensitiveDisclosure       `json:"sensitive"`
@@ -342,9 +379,22 @@ func projectSensitiveLockIdentity(lock ProjectLockProposal, categories []Project
 		Modes       []OptionalMode                     `json:"modes"`
 		Projections []ProjectProjectionPlan            `json:"sensitive_projections"`
 		Categories  []ProjectActivationCategoryPreview `json:"categories"`
-	}{lock.Source, lock.Sensitive, lock.Bindings, lock.Modes, projections, categories})
+	}{lock.Source, sensitive, bindings, lock.Modes, projections, categories})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func projectProjectionHasSurfaceContributor(projection ProjectProjectionPlan, surface Surface) bool {
+	prefix := "surface:" + string(surface) + ":"
+	if strings.HasPrefix(projection.Contributor, prefix) {
+		return true
+	}
+	for _, contributor := range projection.Contributors {
+		if strings.HasPrefix(contributor, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func sealProjectActivationPreview(preview JSONProjectActivationPreview) string {
@@ -395,26 +445,61 @@ func projectActivationDirectory(packyHome, projectRoot string) (string, error) {
 	return filepath.Join(packyHome, "projects", digest), nil
 }
 
-func loadProjectActivationState(packyHome, projectRoot string) (projectActivationState, bool, error) {
+func loadProjectActivationDocument(packyHome, projectRoot string) (projectActivationDocument, bool, error) {
 	directory, err := projectActivationDirectory(packyHome, projectRoot)
 	if err != nil {
-		return projectActivationState{}, false, err
+		return projectActivationDocument{}, false, err
 	}
 	data, err := os.ReadFile(filepath.Join(directory, "state.json"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return projectActivationState{}, false, nil
+		return projectActivationDocument{}, false, nil
 	}
 	if err != nil {
-		return projectActivationState{}, false, err
+		return projectActivationDocument{}, false, err
 	}
 	var document projectActivationDocument
 	if err := strictDecode(data, &document); err != nil {
-		return projectActivationState{}, false, fmt.Errorf("decode project activation state: %w", err)
+		return projectActivationDocument{}, false, fmt.Errorf("decode project activation state: %w", err)
 	}
-	if document.SchemaVersion != 1 || document.State.SchemaVersion != 1 || document.SensitiveLockIdentity == "" || document.SensitiveLockIdentity != document.State.SensitiveLockIdentity || document.Recovery.Status != "clean" || len(document.Approvals) == 0 || len(document.Receipts) == 0 {
-		return projectActivationState{}, false, errors.New("project activation state is incomplete or recovery-required")
+	rootDigest, err := projectActivationRootDigest(projectRoot)
+	if err != nil {
+		return projectActivationDocument{}, false, err
 	}
-	return document.State, true, nil
+	if document.SchemaVersion != 1 || document.State.SchemaVersion != 1 || document.State.ProjectRootDigest != rootDigest || document.SensitiveLockIdentity == "" || document.SensitiveLockIdentity != document.State.SensitiveLockIdentity || document.Recovery.Status != "clean" || len(document.Approvals) == 0 || len(document.Approvals) != len(document.Receipts) {
+		return projectActivationDocument{}, false, errors.New("project activation state is incomplete or recovery-required")
+	}
+	approvalDigests := map[ProjectActivationCategory]string{}
+	for _, approval := range document.Approvals {
+		if !validProjectActivationCategory(approval.Category) || approval.Digest == "" || approvalDigests[approval.Category] != "" {
+			return projectActivationDocument{}, false, errors.New("project activation approvals are incomplete or duplicated")
+		}
+		approvalDigests[approval.Category] = approval.Digest
+	}
+	receipts := map[ProjectActivationCategory]bool{}
+	for _, receipt := range document.Receipts {
+		if receipts[receipt.Category] || approvalDigests[receipt.Category] == "" || receipt.Digest != approvalDigests[receipt.Category] {
+			return projectActivationDocument{}, false, errors.New("project activation receipts do not match exact approvals")
+		}
+		receipts[receipt.Category] = true
+	}
+	return document, true, nil
+}
+
+func projectActivationDocumentMatches(document projectActivationDocument, categories []ProjectActivationCategoryPreview) bool {
+	if len(document.Approvals) != len(categories) {
+		return false
+	}
+	want := map[ProjectActivationCategory]bool{}
+	for _, category := range categories {
+		want[category.Kind] = true
+	}
+	for _, approval := range document.Approvals {
+		if !want[approval.Category] {
+			return false
+		}
+		delete(want, approval.Category)
+	}
+	return len(want) == 0
 }
 
 func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt) error {

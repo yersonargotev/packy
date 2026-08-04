@@ -11,6 +11,20 @@ import (
 
 type changingProjectAdapter struct{ revision string }
 
+type projectMCPAdapter struct{}
+
+func (projectMCPAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
+	target := filepath.Join(transition.ProjectRoot, ".codex", "config.toml")
+	return SurfaceInspection{Revision: "mcp-preview", Projections: []ObservedProjection{{
+		ID: "mcp_server:memory", Goal: ProjectionPresent, ObservedFingerprint: "missing", DesiredFingerprint: "mcp-definition-v1",
+		Action: ProjectionAction{ID: "mcp_server:memory", Surface: SurfaceCodex, Kind: ActionCodexMCPConfig, Target: target, Content: "[mcp_servers.memory]\ncommand = \"memory\"\n", FileMode: 0o644, Command: "memory", PreviewOnly: true},
+	}}}, nil
+}
+
+func (projectMCPAdapter) ApplyProjections(context.Context, []ProjectionAction) *ProjectionActionError {
+	return nil
+}
+
 func (a *changingProjectAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
 	return SurfaceInspection{Revision: a.revision, Projections: []ObservedProjection{{
 		ID: "skill:ask-matt", Goal: ProjectionPresent, DesiredFingerprint: "safe-" + a.revision,
@@ -225,6 +239,28 @@ func TestIssue455ProjectNativeNameCollisionRequiresExplicitAlias(t *testing.T) {
 	}
 	if len(resolved.Pack.Aliases) != 1 || resolved.Pack.Aliases[0].Name != "second-project" {
 		t.Fatalf("persisted aliases = %#v", resolved.Pack.Aliases)
+	}
+}
+
+func TestProjectInstallLocksCodexMCPAsSensitiveDeclarativeDefinition(t *testing.T) {
+	empty := []string{}
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "project-memory", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Requires: Requirements{Capabilities: empty, Tools: []string{"memory"}}, Resources: []Resource{{
+		Kind: "mcp_server", ID: "memory", Command: "memory", Args: []string{"serve"},
+		Bindings:             []Binding{{Surface: SurfaceCodex, Projection: "mcp_server", Name: "memory", Mode: "native", Sharing: "exclusive"}},
+		ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty,
+	}}}
+	bundleRoot := writeProjectProviderSourceFixture(t, []Pack{pack})
+	facade := NewFacade(Catalog{packs: []Pack{pack}, entries: []catalogEntry{{ID: pack.ID, Surfaces: pack.Surfaces}}, bundleRoot: bundleRoot})
+	preview, err := facade.previewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: t.TempDir(), Selection: ResourceSelection{Mode: SelectionAll}}, projectMCPAdapter{})
+	if err != nil || preview.Disposition != ProjectInstallPreviewable || len(preview.Projections) != 1 {
+		t.Fatalf("Codex MCP project preview = %+v, %v", preview, err)
+	}
+	if projection := preview.Projections[0]; projection.Mode != "merge_marked_file" || projection.Target != ".codex/config.toml" || projection.Command != "memory" {
+		t.Fatalf("locked Codex MCP projection = %+v", projection)
+	}
+	categories := projectActivationCategories(preview.Lock, SurfaceCodex)
+	if len(categories) != 3 || categories[0].Kind != ProjectActivationMCP || categories[1].Kind != ProjectActivationExternalRequirements || categories[2].Kind != ProjectActivationTrust {
+		t.Fatalf("Codex MCP activation categories = %+v", categories)
 	}
 }
 

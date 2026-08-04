@@ -24,8 +24,6 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: packyHome, Adapter: adapter}); err != nil {
 		t.Fatal(err)
 	}
-	// The portable lock is the only preview input for sensitive behavior. This
-	// simulates a lock whose installed declarative pack includes MCP and hooks.
 	lockPath := filepath.Join(project, "packy.lock.json")
 	var lock capabilitypack.ProjectLockProposal
 	lockData, err := os.ReadFile(lockPath)
@@ -36,12 +34,12 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 		t.Fatal(err)
 	}
 	lock.Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
-		{Category: capabilitypack.ProjectActivationMCP, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "mcp_server"},
-		{Category: capabilitypack.ProjectActivationHooks, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "lifecycle"},
-		{Category: capabilitypack.ProjectActivationPlugins, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "plugin"},
-		{Category: capabilitypack.ProjectActivationExternalRequirements, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "tool:node"},
-		{Category: capabilitypack.ProjectActivationTrust, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "project-trust"},
-		{Category: capabilitypack.ProjectActivationAuthentication, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "environment-reference:PACKY_TEST_TOKEN"},
+		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "mcp_server"},
+		{Category: capabilitypack.ProjectActivationHooks, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "lifecycle"},
+		{Category: capabilitypack.ProjectActivationPlugins, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "plugin"},
+		{Category: capabilitypack.ProjectActivationExternalRequirements, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "tool:node"},
+		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "project-trust"},
+		{Category: capabilitypack.ProjectActivationAuthentication, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "environment-reference:PACKY_TEST_TOKEN"},
 	}
 	updatedLock, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
@@ -88,6 +86,30 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeActive {
 		t.Fatalf("status = %+v, %v", status, err)
 	}
+	statePath := filepath.Join(packyHome, "projects", projectActivationDigest(t, project), "state.json")
+	state, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var incomplete map[string]any
+	if err := json.Unmarshal(state, &incomplete); err != nil {
+		t.Fatal(err)
+	}
+	incomplete["receipts"] = []any{}
+	incompleteState, err := json.Marshal(incomplete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, incompleteState, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: packyHome, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}})
+	if err != nil || len(blocked.Packs) != 1 || blocked.Packs[0].Runtime != capabilitypack.ProjectRuntimeBlocked {
+		t.Fatalf("incomplete personal state did not fail closed: %+v, %v", blocked, err)
+	}
+	if err := os.WriteFile(statePath, state, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for i := range lock.Projections {
 		if lock.Projections[i].Resource == (capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}) {
 			lock.Projections[i].Command = "changed-sensitive-command"
@@ -104,12 +126,11 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeStale {
 		t.Fatalf("changed sensitive lock status = %+v, %v", status, err)
 	}
-	statePath := filepath.Join(packyHome, "projects", projectActivationDigest(t, project), "state.json")
 	info, err := os.Stat(statePath)
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("personal state mode = %v, %v", info.Mode(), err)
 	}
-	state, err := os.ReadFile(statePath)
+	state, err = os.ReadFile(statePath)
 	if err != nil {
 		t.Fatal(err)
 	}

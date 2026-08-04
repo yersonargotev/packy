@@ -44,6 +44,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	}
 	installation.Lock.Sensitive = []capabilitypack.ProjectSensitiveDisclosure{{
 		Category: capabilitypack.ProjectActivationMCP,
+		Surface:  capabilitypack.SurfaceCodex,
 		Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"},
 		Detail:   "mcp_server",
 	}}

@@ -386,23 +386,7 @@ func offerProjectActivation(cmd *cobra.Command, opts Options, facade capabilityp
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Project installation remains installed; activate later with `packy pack activate %s --surface %s --project`\n", preview.Pack.ID, preview.Surface)
 		return err
 	}
-	approvals := make([]capabilitypack.ProjectActivationApproval, 0, len(preview.Categories))
-	for _, category := range preview.Categories {
-		approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve project %s for exact activation %s?", category.Kind, preview.Digest))
-		if err != nil {
-			return err
-		}
-		if !approved {
-			return fmt.Errorf("project installation succeeded but activation was cancelled; %s was not approved", category.Kind)
-		}
-		approvals = append(approvals, facade.ApproveProjectActivation(preview, category.Kind))
-	}
-	result, err := facade.ApplyProjectActivation(cmd.Context(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Approvals: approvals, Adapter: adapter, Interactive: true})
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Verified personal project activation %s\n", result.Digest)
-	return err
+	return approveAndApplyProjectActivation(cmd, opts, facade, preview, adapter, false, "project installation succeeded but activation was cancelled")
 }
 
 func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectInstallPreview, dryRun bool) error {
@@ -679,26 +663,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				if !opts.Terminal.Interactive(cmd.InOrStdin()) {
 					return capabilitypack.ErrInteractiveRequired
 				}
-				approvals := make([]capabilitypack.ProjectActivationApproval, 0, len(preview.Categories))
-				for _, category := range preview.Categories {
-					approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve project %s for exact activation %s?", category.Kind, preview.Digest))
-					if err != nil {
-						return err
-					}
-					if !approved {
-						return fmt.Errorf("project activation cancelled; %s was not approved", category.Kind)
-					}
-					approvals = append(approvals, facade.ApproveProjectActivation(preview, category.Kind))
-				}
-				result, err := facade.ApplyProjectActivation(cmd.Context(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Approvals: approvals, Adapter: adapter, Interactive: true})
-				if err != nil {
-					return err
-				}
-				if jsonOutput {
-					return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
-				}
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Verified personal project activation %s\n", result.Digest)
-				return err
+				return approveAndApplyProjectActivation(cmd, opts, facade, preview, adapter, jsonOutput, "project activation cancelled")
 			}
 			aliases, err := parseSurfaceAliases(aliasValues)
 			if err != nil {
@@ -749,6 +714,29 @@ func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface) capabil
 		return adapter
 	}
 	return projectOfflineAdapter(surface)
+}
+
+func approveAndApplyProjectActivation(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, preview capabilitypack.JSONProjectActivationPreview, adapter capabilitypack.SurfaceAdapter, jsonOutput bool, cancellation string) error {
+	approvals := make([]capabilitypack.ProjectActivationApproval, 0, len(preview.Categories))
+	for _, category := range preview.Categories {
+		approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve project %s for exact activation %s?", category.Kind, preview.Digest))
+		if err != nil {
+			return err
+		}
+		if !approved {
+			return fmt.Errorf("%s; %s was not approved", cancellation, category.Kind)
+		}
+		approvals = append(approvals, facade.ApproveProjectActivation(preview, category.Kind))
+	}
+	result, err := facade.ApplyProjectActivation(cmd.Context(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Approvals: approvals, Adapter: adapter, Interactive: true})
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Verified personal project activation %s\n", result.Digest)
+	return err
 }
 
 func renderProjectActivationPreview(cmd *cobra.Command, preview capabilitypack.JSONProjectActivationPreview) error {

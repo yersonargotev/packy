@@ -52,3 +52,35 @@ func TestProjectActivationIdentityIsCanonicalAndCheckoutLocal(t *testing.T) {
 		t.Fatal("moved checkout retained personal activation identity")
 	}
 }
+
+func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
+	resource := ResourceIdentity{Kind: "mcp_server", ID: "memory"}
+	lock := ProjectLockProposal{
+		Source: ProjectPackSourceIdentity{PackID: "pack", PackVersion: "1.0.0"},
+		Sensitive: []ProjectSensitiveDisclosure{
+			{Category: ProjectActivationMCP, Surface: SurfaceCodex, Resource: resource, Detail: "codex-mcp"},
+			{Category: ProjectActivationMCP, Surface: SurfaceOpenCode, Resource: resource, Detail: "opencode-mcp"},
+		},
+		Bindings: []LifecycleBinding{
+			{Surface: SurfaceCodex, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
+			{Surface: SurfaceOpenCode, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
+		},
+		Projections: []ProjectProjectionPlan{
+			{Resource: resource, Target: ".codex/config.toml", Contributor: "surface:codex:pack:pack", Command: "codex-command"},
+			{Resource: resource, Target: "opencode.json", Contributor: "surface:opencode:pack:pack", Command: "opencode-command"},
+		},
+	}
+	categories := projectActivationCategories(lock, SurfaceCodex)
+	if len(categories) != 1 || len(categories[0].Details) != 2 {
+		t.Fatalf("Codex categories included the wrong surface: %+v", categories)
+	}
+	original := projectSensitiveLockIdentity(lock, categories)
+	lock.Projections[1].Command = "changed-opencode-command"
+	if changed := projectSensitiveLockIdentity(lock, categories); changed != original {
+		t.Fatal("OpenCode-only change invalidated Codex consent")
+	}
+	lock.Projections[0].Command = "changed-codex-command"
+	if changed := projectSensitiveLockIdentity(lock, categories); changed == original {
+		t.Fatal("Codex-sensitive change retained Codex consent")
+	}
+}

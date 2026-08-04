@@ -21,6 +21,37 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		if resource.Kind == "notice" {
 			continue
 		}
+		if resource.Kind == "mcp_server" {
+			bindingName, bound := codexBindingName(resource, "mcp_server")
+			if !bound || resource.Command == "" {
+				unrepresentable = append(unrepresentable, capabilitypack.UnrepresentableResource{Resource: identity, Reason: fmt.Sprintf("%s has no Codex project-native representation in this installation preview", identity)})
+				continue
+			}
+			configFile := filepath.Join(projectRoot, ".codex", "config.toml")
+			current, err := readOptionalFile(configFile)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			projectResource := resource
+			projectResource.ID = bindingName
+			desiredBlock := mcpBlock(projectResource, resource.Command)
+			start, end := mcpMarkers(bindingName)
+			fragment, exists := extractBlock(current, start, end)
+			observed := "missing"
+			if exists {
+				observed = localprojection.FingerprintBytes([]byte(fragment))
+			} else if codexMCPTableExists(current, bindingName) {
+				exists = true
+				observed = localprojection.FingerprintBytes([]byte("unmanaged:" + bindingName))
+			}
+			desired := localprojection.FingerprintBytes([]byte(desiredBlock))
+			projections = append(projections, capabilitypack.ObservedProjection{
+				ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
+				ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/marked-mcp",
+				Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexMCPConfig, Target: configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: 0o644, Precondition: localprojection.FingerprintBytes([]byte(current)), Command: resource.Command, Args: append([]string(nil), resource.Args...), Description: fmt.Sprintf("configure %s in the Codex project", identity), PreviewOnly: true},
+			})
+			continue
+		}
 		bindingName, bound := codexProjectBinding(resource)
 		if !bound || resource.Kind != "skill" || resource.Source == "" {
 			unrepresentable = append(unrepresentable, capabilitypack.UnrepresentableResource{Resource: identity, Reason: fmt.Sprintf("%s has no Codex project-native representation in this installation preview", identity)})
@@ -90,10 +121,17 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 			}
 			expected = filepath.Join(".agents", "skills", name)
 		case "merge_marked_file":
-			if pack.ID != "matty" || projection.Resource.String() != projectMattyInstructionID {
+			if projection.Resource.Kind == "mcp_server" {
+				name := bindings[projection.Resource]
+				if name == "" {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has no Codex project binding", projection.Resource)
+				}
+				expected = filepath.Join(".codex", "config.toml")
+			} else if pack.ID == "matty" && projection.Resource.String() == projectMattyInstructionID {
+				expected = "AGENTS.md"
+			} else {
 				return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has no supported Codex marked-file target", projection.Resource)
 			}
-			expected = "AGENTS.md"
 		default:
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("project lock projection %s has unsupported Codex mode %q", projection.Resource, projection.Mode)
 		}
@@ -114,6 +152,33 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 			observed, exists = fingerprint, found
 			action.Kind = capabilitypack.ActionCodexProjectSkillTree
 			action.Precondition = projection.DesiredFingerprint
+		} else if projection.Resource.Kind == "mcp_server" {
+			current, err := readOptionalFile(target)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			name := bindings[projection.Resource]
+			start, end := mcpMarkers(name)
+			fragment, found := extractBlock(current, start, end)
+			if found {
+				observed, exists = localprojection.FingerprintBytes([]byte(fragment)), true
+			} else if codexMCPTableExists(current, name) {
+				observed, exists = localprojection.FingerprintBytes([]byte("unmanaged:"+name)), true
+			}
+			action.Kind = capabilitypack.ActionCodexMCPConfig
+			if goal == capabilitypack.ProjectionAbsent && exists && observed == projection.DesiredFingerprint {
+				remaining := removeBlock(current, start, end)
+				info, statErr := os.Lstat(target)
+				if statErr != nil || !info.Mode().IsRegular() {
+					return capabilitypack.SurfaceInspection{}, fmt.Errorf("Codex project MCP target is not a regular file")
+				}
+				action.Content, action.FileMode, action.Precondition = remaining, uint32(info.Mode().Perm()), localprojection.FingerprintBytes([]byte(current))
+				if strings.TrimSpace(remaining) == "" {
+					action.Content, action.Mode = "", capabilitypack.ProjectionDeleteTarget
+				} else {
+					action.Mode = capabilitypack.ProjectionRemoveContent
+				}
+			}
 		} else {
 			inspection, err := projectMattyInstruction(projectRoot)
 			if err != nil {
