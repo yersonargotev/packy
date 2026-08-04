@@ -234,7 +234,11 @@ func rewriteProjectContractAsV1(t *testing.T, project string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest = []byte(strings.ReplaceAll(strings.ReplaceAll(string(manifest), `"schema_version": 2`, `"schema_version": 1`), `"minimum_packy_capability": "project-installation-v2"`, `"minimum_packy_capability": "project-installation-v1"`))
+	manifest = []byte(strings.Replace(string(manifest), `"schema_version": 2`, `"schema_version": 1`, 1))
+	manifest = []byte(strings.Replace(string(manifest), "  \"minimum_packy_capability\": \"project-installation-v2\",\n", "", 1))
+	if strings.Contains(string(manifest), "minimum_packy_capability") {
+		t.Fatal("historical v1 manifest fixture unexpectedly declares a minimum capability")
+	}
 	if err := os.WriteFile(manifestPath, manifest, 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -102,7 +102,8 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 	if err := strictDecode(manifestData, &document); err != nil {
 		return ProjectInstallation{}, fmt.Errorf("decode project manifest: %w", err)
 	}
-	if !supportedProjectContractVersion(document.SchemaVersion, document.MinimumPackyCapability) {
+	legacyV1 := document.SchemaVersion == projectContractSchemaV1 && document.MinimumPackyCapability == ""
+	if !legacyV1 && !supportedProjectContractVersion(document.SchemaVersion, document.MinimumPackyCapability) {
 		return ProjectInstallation{}, errors.New("project manifest schema or minimum Packy capability is unsupported")
 	}
 	manifest := ProjectContractProposal{Path: "packy.json", SchemaVersion: document.SchemaVersion, Packs: document.Packs}
