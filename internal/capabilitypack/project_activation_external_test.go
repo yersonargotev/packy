@@ -58,6 +58,9 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if preview.ProjectRoot != "<project-root>" || preview.Disposition != capabilitypack.ProjectActivationPreviewable || !preview.RuntimeRequired || preview.Digest == "" {
 		t.Fatalf("preview = %+v", preview)
 	}
+	if len(preview.Effects) != 1 || preview.Effects[0].Category != capabilitypack.ProjectActivationTrust || preview.Effects[0].Target != "<codex-home>/config.toml" || preview.Effects[0].Identity == "" {
+		t.Fatalf("personal effect preview = %+v", preview.Effects)
+	}
 	wantCategories := []capabilitypack.ProjectActivationCategory{
 		capabilitypack.ProjectActivationMCP, capabilitypack.ProjectActivationHooks, capabilitypack.ProjectActivationPlugins,
 		capabilitypack.ProjectActivationExternalRequirements, capabilitypack.ProjectActivationTrust, capabilitypack.ProjectActivationAuthentication,
