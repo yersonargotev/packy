@@ -222,9 +222,14 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
-	aliases, err := requestedAliases(selectedPack, request.Surface, request.Aliases, ActivationState{}, OperationActivate)
-	if err != nil {
+	aliases := cloneAliases(request.Aliases)
+	if err := canonicalizeAliases(&aliases); err != nil {
 		return JSONProjectInstallPreview{}, err
+	}
+	for _, alias := range aliases {
+		if !idPattern.MatchString(alias.Name) {
+			return JSONProjectInstallPreview{}, fmt.Errorf("project alias name %q is invalid", alias.Name)
+		}
 	}
 	providerChoices, err := canonicalProviderChoices(request.ProviderChoices)
 	if err != nil {
@@ -235,9 +240,18 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	explicit := true
 	intent := ActivationIntent{PackID: pack.ID, Surface: request.Surface, Version: pack.Version, Active: true, Aliases: aliases, Selection: selection, ProviderChoices: providerChoices, Explicit: &explicit}
-	composition, err := f.composeProject(pack, ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}, request.Surface)
+	composition, err := f.composeProject(pack, ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}, request.Surface, aliases)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
+	}
+	for _, alias := range aliases {
+		matched := false
+		for _, composedPack := range composition.packs {
+			matched = matched || packHasAliasTarget(composedPack, alias, request.Surface)
+		}
+		if !matched {
+			return JSONProjectInstallPreview{}, fmt.Errorf("project alias %s:%s does not identify a resource in the resulting selected closure bound to %s", alias.Kind, alias.ID, request.Surface)
+		}
 	}
 	selectedPack = composition.combinedPack()
 	compositionBlockers := projectCompositionBlockers(composition.blockers)

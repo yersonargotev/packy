@@ -93,6 +93,7 @@ func TestIssue455ProjectProvidersRequireAndPersistAnExplicitChoice(t *testing.T)
 		Resource{Kind: "asset", ID: "data", Requires: empty, Conflicts: empty, Notices: empty, Bindings: []Binding{}, SurfaceExclusions: []SurfaceExclusion{}, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
 		Resource{Kind: "notice", ID: "license", Requires: empty, Bindings: []Binding{}, SurfaceExclusions: []SurfaceExclusion{}, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
 	)
+	second.Resources[0].Bindings[0].Name = "root"
 	bundleRoot := writeProjectProviderSourceFixture(t, []Pack{consumer, first, second})
 	adapter := &fakeSurfaceAdapter{}
 	entries := []catalogEntry{{ID: consumer.ID, Surfaces: consumer.Surfaces}, {ID: first.ID, Surfaces: first.Surfaces}, {ID: second.ID, Surfaces: second.Surfaces}}
@@ -115,6 +116,11 @@ func TestIssue455ProjectProvidersRequireAndPersistAnExplicitChoice(t *testing.T)
 
 	providerResource := ResourceIdentity{Kind: "skill", ID: "storage"}
 	request.ProviderChoices = []ProviderChoice{{Capability: "cap:storage", ProviderPack: second.ID, ProviderResource: &providerResource}}
+	collision, err := facade.previewProjectInstall(context.Background(), request, adapter)
+	if err != nil || collision.Disposition != ProjectInstallBlocked || len(collision.Blockers) != 1 || collision.Blockers[0].Code != "native_name_collision" {
+		t.Fatalf("provider collision = err:%v blockers:%#v", err, collision.Blockers)
+	}
+	request.Aliases = []SurfaceAlias{{Kind: "skill", ID: "storage", Name: "provider-storage"}}
 	chosen, err := facade.previewProjectInstall(context.Background(), request, adapter)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +136,7 @@ func TestIssue455ProjectProvidersRequireAndPersistAnExplicitChoice(t *testing.T)
 	}
 	foundProviderBinding := false
 	for _, binding := range chosen.Lock.Bindings {
-		if binding.Kind == "skill" && binding.ID == "storage" && binding.Name == second.ID {
+		if binding.Kind == "skill" && binding.ID == "storage" && binding.Name == "provider-storage" {
 			foundProviderBinding = true
 		}
 	}
