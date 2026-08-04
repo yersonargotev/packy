@@ -166,7 +166,7 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	if writeLock {
 		forward = append(forward, lockAction)
 	}
-	reverse, err := captureProjectReverseActions(forward)
+	reverse, err := captureProjectReverseActions(forward, projectInstallBackupRoot(journalPath))
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
 	}
@@ -511,22 +511,37 @@ func verifyProjectInstallSurface(ctx context.Context, adapter SurfaceAdapter, pr
 	return nil
 }
 
-func captureProjectReverseActions(actions []ProjectionAction) ([]ProjectionAction, error) {
+func captureProjectReverseActions(actions []ProjectionAction, backupRoot string) ([]ProjectionAction, error) {
+	if err := os.RemoveAll(backupRoot); err != nil {
+		return nil, err
+	}
 	reverse := make([]ProjectionAction, 0, len(actions))
-	for _, action := range actions {
+	for index, action := range actions {
 		info, err := os.Lstat(action.Target)
 		if errors.Is(err, fs.ErrNotExist) {
 			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Target: action.Target, Mode: ProjectionDeleteTarget, Precondition: projectActionDesiredFingerprint(action)})
 			continue
 		}
 		if err != nil {
+			_ = os.RemoveAll(backupRoot)
 			return nil, err
 		}
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 && action.Kind == ActionCodexProjectSkillTree {
+			backup := filepath.Join(backupRoot, fmt.Sprintf("%03d", index))
+			if err := copyProjectTreeBackup(action.Target, backup); err != nil {
+				_ = os.RemoveAll(backupRoot)
+				return nil, err
+			}
+			reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Source: backup, Target: action.Target, Version: action.Precondition, Precondition: "missing"})
+			continue
+		}
 		if !info.Mode().IsRegular() {
+			_ = os.RemoveAll(backupRoot)
 			return nil, fmt.Errorf("cannot replace existing non-regular project target %s", action.Target)
 		}
 		data, err := os.ReadFile(action.Target)
 		if err != nil {
+			_ = os.RemoveAll(backupRoot)
 			return nil, err
 		}
 		reverse = append(reverse, ProjectionAction{ID: "restore:" + action.ID, Kind: action.Kind, Target: action.Target, Content: string(data), FileMode: uint32(info.Mode().Perm()), Precondition: projectActionDesiredFingerprint(action)})
@@ -551,7 +566,31 @@ func pendingProjectReverse(reverse []ProjectionAction) ([]ProjectionAction, erro
 	pending := make([]ProjectionAction, 0, len(reverse))
 	for _, action := range reverse {
 		info, err := os.Lstat(action.Target)
+		if action.Kind == ActionCodexProjectSkillTree && action.Mode != ProjectionDeleteTarget {
+			if errors.Is(err, fs.ErrNotExist) {
+				pending = append(pending, action)
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("project recovery target %s changed after mutation", action.Target)
+			}
+			equal, err := projectTreesEqual(action.Source, action.Target)
+			if err != nil {
+				return nil, err
+			}
+			if !equal {
+				return nil, fmt.Errorf("project recovery target %s changed after mutation", action.Target)
+			}
+			continue
+		}
 		if action.Mode == ProjectionDeleteTarget && errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if action.Mode != ProjectionDeleteTarget && errors.Is(err, fs.ErrNotExist) {
+			pending = append(pending, action)
 			continue
 		}
 		if err != nil {
@@ -573,6 +612,13 @@ func pendingProjectReverse(reverse []ProjectionAction) ([]ProjectionAction, erro
 
 func verifyProjectReverse(reverse []ProjectionAction) error {
 	for _, action := range reverse {
+		if action.Kind == ActionCodexProjectSkillTree && action.Mode != ProjectionDeleteTarget {
+			equal, err := projectTreesEqual(action.Source, action.Target)
+			if err != nil || !equal {
+				return fmt.Errorf("rollback did not restore project tree %s", action.Target)
+			}
+			continue
+		}
 		data, err := os.ReadFile(action.Target)
 		if action.Mode == ProjectionDeleteTarget {
 			if errors.Is(err, fs.ErrNotExist) {
@@ -597,6 +643,124 @@ func verifyProjectReverse(reverse []ProjectionAction) error {
 func projectInstallJournalPath(packyHome, projectRoot string) string {
 	sum := sha256.Sum256([]byte(filepath.Clean(projectRoot)))
 	return filepath.Join(packyHome, "projects", hex.EncodeToString(sum[:]), "install-journal.json")
+}
+
+func projectInstallBackupRoot(journalPath string) string {
+	return journalPath + ".backups"
+}
+
+func copyProjectTreeBackup(source, target string) error {
+	var directories []string
+	err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+			return fmt.Errorf("cannot back up non-regular project tree path %s", path)
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		destination := filepath.Join(target, relative)
+		if info.IsDir() {
+			if err := os.MkdirAll(destination, info.Mode().Perm()); err != nil {
+				return err
+			}
+			if err := os.Chmod(destination, info.Mode().Perm()); err != nil {
+				return err
+			}
+			directories = append(directories, destination)
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		file, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+		if err != nil {
+			return err
+		}
+		if _, err = file.Write(data); err == nil {
+			err = file.Sync()
+		}
+		closeErr := file.Close()
+		if err != nil {
+			return err
+		}
+		return closeErr
+	})
+	if err != nil {
+		_ = os.RemoveAll(target)
+		return err
+	}
+	for i := len(directories) - 1; i >= 0; i-- {
+		if err := syncProjectDirectory(directories[i]); err != nil {
+			_ = os.RemoveAll(target)
+			return err
+		}
+	}
+	return nil
+}
+
+func projectTreesEqual(left, right string) (bool, error) {
+	type fact struct {
+		path string
+		mode fs.FileMode
+		dir  bool
+		data string
+	}
+	read := func(root string) ([]fact, error) {
+		var facts []fact
+		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+				return fmt.Errorf("project tree contains non-regular path %s", path)
+			}
+			relative, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			item := fact{path: filepath.ToSlash(relative), mode: info.Mode().Perm(), dir: info.IsDir()}
+			if info.Mode().IsRegular() {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				item.data = string(data)
+			}
+			facts = append(facts, item)
+			return nil
+		})
+		return facts, err
+	}
+	leftFacts, err := read(left)
+	if err != nil {
+		return false, err
+	}
+	rightFacts, err := read(right)
+	if err != nil {
+		return false, err
+	}
+	if len(leftFacts) != len(rightFacts) {
+		return false, nil
+	}
+	for i := range leftFacts {
+		if leftFacts[i] != rightFacts[i] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func sealProjectInstallJournal(journal projectInstallJournal) string {
@@ -671,6 +835,13 @@ func recoverProjectInstall(ctx context.Context, adapter SurfaceAdapter, path, pr
 		if err := validateProjectTargetPath(projectRoot, action.Target); err != nil {
 			return fmt.Errorf("project installation recovery journal contains an unsafe target: %w", err)
 		}
+		if action.Kind == ActionCodexProjectSkillTree && action.Mode != ProjectionDeleteTarget {
+			backupRoot := projectInstallBackupRoot(path)
+			relative, err := filepath.Rel(backupRoot, action.Source)
+			if err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				return errors.New("project installation recovery journal contains an unsafe tree backup")
+			}
+		}
 	}
 	pending, err := pendingProjectReverse(journal.Reverse)
 	if err != nil {
@@ -686,6 +857,9 @@ func recoverProjectInstall(ctx context.Context, adapter SurfaceAdapter, path, pr
 }
 
 func removeProjectInstallJournal(path string) error {
+	if err := os.RemoveAll(projectInstallBackupRoot(path)); err != nil {
+		return err
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}

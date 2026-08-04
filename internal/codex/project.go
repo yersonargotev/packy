@@ -132,6 +132,66 @@ func (a *SurfaceAdapter) InspectProjectInstallation(_ context.Context, projectRo
 	return statuses, nil
 }
 
+// InspectProjectUninstall re-derives every Codex project target before
+// returning an exact removal action. The committed lock supplies ownership
+// evidence, but never supplies a physical deletion path by itself.
+func (a *SurfaceAdapter) InspectProjectUninstall(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) (capabilitypack.ProjectUninstallInspection, error) {
+	statuses, err := a.InspectProjectInstallation(ctx, projectRoot, pack, lock)
+	if err != nil {
+		return capabilitypack.ProjectUninstallInspection{}, err
+	}
+	locked := make(map[capabilitypack.ResourceIdentity]capabilitypack.ProjectProjectionPlan, len(lock.Projections))
+	for _, projection := range lock.Projections {
+		locked[projection.Resource] = projection
+	}
+	actions := make([]capabilitypack.ProjectionAction, 0, len(statuses))
+	for _, status := range statuses {
+		projection, ok := locked[status.Resource]
+		if !ok || filepath.Clean(projection.Target) != filepath.Clean(status.Target) {
+			return capabilitypack.ProjectUninstallInspection{}, fmt.Errorf("Codex project projection %s lacks exact portable ownership evidence", status.Resource)
+		}
+		target := filepath.Join(projectRoot, filepath.FromSlash(status.Target))
+		if status.Health != "verified" {
+			continue
+		}
+		switch projection.Mode {
+		case "copy_tree":
+			actions = append(actions, capabilitypack.ProjectionAction{
+				ID: status.Resource.String(), Kind: capabilitypack.ActionCodexProjectSkillTree, Target: target,
+				Mode: capabilitypack.ProjectionDeleteTarget, Precondition: projection.DesiredFingerprint,
+				Description: fmt.Sprintf("remove exact Codex project projection %s", status.Resource),
+			})
+		case "merge_marked_file":
+			current, readErr := os.ReadFile(target)
+			if readErr != nil {
+				return capabilitypack.ProjectUninstallInspection{}, readErr
+			}
+			fragment, found := extractBlock(string(current), projectMattyInstructionStart, projectMattyInstructionEnd)
+			if !found {
+				return capabilitypack.ProjectUninstallInspection{}, fmt.Errorf("Codex project instruction contribution is not exact and removable")
+			}
+			remaining := strings.Replace(string(current), fragment, "", 1)
+			info, statErr := os.Lstat(target)
+			if statErr != nil || !info.Mode().IsRegular() {
+				return capabilitypack.ProjectUninstallInspection{}, fmt.Errorf("Codex project instruction target is not a regular file")
+			}
+			action := capabilitypack.ProjectionAction{
+				ID: status.Resource.String(), Kind: capabilitypack.ActionInstructionFile, Target: target,
+				Content: remaining, FileMode: uint32(info.Mode().Perm()), Precondition: localprojection.FingerprintBytes(current),
+				Description: "remove the exact Packy contribution from the Codex project instructions",
+			}
+			if strings.TrimSpace(remaining) == "" {
+				action.Content, action.Mode = "", capabilitypack.ProjectionDeleteTarget
+			}
+			actions = append(actions, action)
+		default:
+			return capabilitypack.ProjectUninstallInspection{}, fmt.Errorf("Codex project projection %s has unsupported removal mode %q", status.Resource, projection.Mode)
+		}
+	}
+	sort.SliceStable(actions, func(i, j int) bool { return actions[i].Target < actions[j].Target })
+	return capabilitypack.ProjectUninstallInspection{Projections: statuses, Actions: actions}, nil
+}
+
 func projectTreeFingerprint(target string) (string, bool, error) {
 	info, err := os.Lstat(target)
 	if os.IsNotExist(err) {

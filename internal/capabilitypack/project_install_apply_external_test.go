@@ -3,8 +3,10 @@ package capabilitypack_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -20,6 +22,14 @@ type faultingProjectAdapter struct {
 
 func (a *faultingProjectAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
 	return a.delegate.InspectSurface(ctx, transition)
+}
+
+func (a *faultingProjectAdapter) InspectProjectInstallation(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) ([]capabilitypack.ProjectProjectionStatus, error) {
+	return a.delegate.(capabilitypack.ProjectInstallationAdapter).InspectProjectInstallation(ctx, projectRoot, pack, lock)
+}
+
+func (a *faultingProjectAdapter) InspectProjectUninstall(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) (capabilitypack.ProjectUninstallInspection, error) {
+	return a.delegate.(capabilitypack.ProjectUninstallAdapter).InspectProjectUninstall(ctx, projectRoot, pack, lock)
 }
 
 func (a *faultingProjectAdapter) ApplyProjections(ctx context.Context, actions []capabilitypack.ProjectionAction) *capabilitypack.ProjectionActionError {
@@ -92,6 +102,95 @@ func TestProjectInstallRetainsAndConsumesRecoveryJournalWhenRollbackCannotBeVeri
 	if _, err := os.Stat(filepath.Join(project, "packy.lock.json")); err != nil {
 		t.Fatalf("verified recovery did not publish lock: %v", err)
 	}
+}
+
+func TestProjectUninstallRollsBackEveryRemovedProjectionWhenFinalLockRemovalFails(t *testing.T) {
+	facade, adapter, project, packyHome := projectInstallFixture(t)
+	install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project}, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: packyHome, Adapter: adapter}); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotProjectTree(t, project)
+	fault := &faultingProjectAdapter{delegate: adapter, failLock: true}
+	preview, err := capabilitypack.PreviewProjectUninstall(context.Background(), capabilitypack.ProjectUninstallRequest{PackID: "matty", ProjectRoot: project}, fault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := capabilitypack.ApplyProjectUninstall(context.Background(), capabilitypack.ProjectUninstallApplyRequest{Preview: preview, PackyHome: packyHome, Adapter: fault}); err == nil || !strings.Contains(err.Error(), "lock publication") {
+		t.Fatalf("Apply uninstall error = %v", err)
+	}
+	if got := snapshotProjectTree(t, project); got != before {
+		t.Fatal("failed uninstall did not restore the exact prior project tree")
+	}
+	if pending, err := capabilitypack.ProjectInstallRecoveryPending(packyHome, project); err != nil || pending {
+		t.Fatalf("verified rollback retained recovery state: pending=%t err=%v", pending, err)
+	}
+}
+
+func TestProjectUninstallRecoveryRestoresTreeBackupsAfterInterruptedRollback(t *testing.T) {
+	facade, adapter, project, packyHome := projectInstallFixture(t)
+	install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project}, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: packyHome, Adapter: adapter}); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotProjectTree(t, project)
+	fault := &faultingProjectAdapter{delegate: adapter, failLock: true, failRollback: true}
+	preview, err := capabilitypack.PreviewProjectUninstall(context.Background(), capabilitypack.ProjectUninstallRequest{PackID: "matty", ProjectRoot: project}, fault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := capabilitypack.ApplyProjectUninstall(context.Background(), capabilitypack.ProjectUninstallApplyRequest{Preview: preview, PackyHome: packyHome, Adapter: fault}); err == nil || !strings.Contains(err.Error(), "recovery-required") {
+		t.Fatalf("Apply uninstall error = %v", err)
+	}
+	if pending, err := capabilitypack.ProjectInstallRecoveryPending(packyHome, project); err != nil || !pending {
+		t.Fatalf("interrupted rollback recovery state: pending=%t err=%v", pending, err)
+	}
+	recovered, err := facade.RecoverProjectInstall(context.Background(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
+	if err != nil || !recovered {
+		t.Fatalf("recover uninstall = %t, %v", recovered, err)
+	}
+	if got := snapshotProjectTree(t, project); got != before {
+		t.Fatal("recovery did not restore the exact project tree")
+	}
+}
+
+func snapshotProjectTree(t *testing.T, root string) string {
+	t.Helper()
+	var facts []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			facts = append(facts, "d:"+filepath.ToSlash(relative))
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		facts = append(facts, fmt.Sprintf("f:%s:%04o:%s", filepath.ToSlash(relative), info.Mode().Perm(), data))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(facts)
+	return strings.Join(facts, "\n")
 }
 
 func projectInstallFixture(t *testing.T) (capabilitypack.Facade, capabilitypack.SurfaceAdapter, string, string) {
