@@ -13,7 +13,13 @@ import (
 	"strings"
 )
 
-const ProjectInstallPreviewSchemaVersion = 1
+const (
+	ProjectInstallPreviewSchemaVersion = 1
+	projectContractSchemaV1            = 1
+	projectContractSchemaV2            = 2
+	projectContractCapabilityV1        = "project-installation-v1"
+	projectContractCapabilityV2        = "project-installation-v2"
+)
 
 type ProjectInstallDisposition string
 
@@ -431,8 +437,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
 		Selection:   ProjectSelectionPreview{Mode: selection.Mode, Resources: graph.Resources},
-		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: 1, Packs: []ProjectManifestPack{manifestPack}},
-		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Projections: lockProjections},
+		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV2, Packs: []ProjectManifestPack{manifestPack}},
+		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV2, MinimumPackyCapability: projectContractCapabilityV2, Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
 		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition,
 	}

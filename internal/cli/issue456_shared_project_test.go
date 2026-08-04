@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -31,6 +33,7 @@ func TestIssue456CodexAndOpenCodeShareProjectSkillsByExplicitContribution(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	rewriteProjectContractAsV1(t, project)
 
 	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "opencode"); err != nil {
 		t.Fatalf("install OpenCode: %v\n%s", err, out)
@@ -49,6 +52,9 @@ func TestIssue456CodexAndOpenCodeShareProjectSkillsByExplicitContribution(t *tes
 	installation, err := capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if installation.Manifest.SchemaVersion != 2 || installation.Lock.SchemaVersion != 2 || installation.Lock.MinimumPackyCapability != "project-installation-v2" {
+		t.Fatalf("adding OpenCode did not explicitly migrate the project contract to v2: %#v", installation)
 	}
 	if got, want := installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceOpenCode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("explicit installed surfaces = %v, want %v", got, want)
@@ -219,4 +225,38 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func rewriteProjectContractAsV1(t *testing.T, project string) {
+	t.Helper()
+	manifestPath := filepath.Join(project, "packy.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest = []byte(strings.ReplaceAll(strings.ReplaceAll(string(manifest), `"schema_version": 2`, `"schema_version": 1`), `"minimum_packy_capability": "project-installation-v2"`, `"minimum_packy_capability": "project-installation-v1"`))
+	if err := os.WriteFile(manifestPath, manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(project, "packy.lock.json")
+	lockData, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock capabilitypack.ProjectLockProposal
+	if err := json.Unmarshal(lockData, &lock); err != nil {
+		t.Fatal(err)
+	}
+	lock.SchemaVersion = 1
+	lock.MinimumPackyCapability = "project-installation-v1"
+	digest := sha256.Sum256(manifest)
+	lock.ManifestSHA256 = hex.EncodeToString(digest[:])
+	lockData, err = json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockData = append(lockData, '\n')
+	if err := os.WriteFile(lockPath, lockData, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

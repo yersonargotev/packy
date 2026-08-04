@@ -177,7 +177,7 @@ func TestIssue453StatusFailsClosedOnUnsupportedContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	unsupported := strings.Replace(string(data), `"schema_version": 1`, `"schema_version": 99`, 1)
+	unsupported := strings.Replace(string(data), `"schema_version": 2`, `"schema_version": 99`, 1)
 	if err := os.WriteFile(manifestPath, []byte(unsupported), 0o644); err != nil {
 		t.Fatal(err)
 	}

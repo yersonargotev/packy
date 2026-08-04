@@ -226,11 +226,15 @@ func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, revers
 }
 
 func marshalProjectManifest(proposal ProjectContractProposal) ([]byte, error) {
+	minimumCapability := projectContractCapabilityV1
+	if proposal.SchemaVersion == projectContractSchemaV2 {
+		minimumCapability = projectContractCapabilityV2
+	}
 	value := struct {
 		SchemaVersion          int                   `json:"schema_version"`
 		MinimumPackyCapability string                `json:"minimum_packy_capability"`
 		Packs                  []ProjectManifestPack `json:"packs"`
-	}{SchemaVersion: proposal.SchemaVersion, MinimumPackyCapability: "project-installation-v1", Packs: proposal.Packs}
+	}{SchemaVersion: proposal.SchemaVersion, MinimumPackyCapability: minimumCapability, Packs: proposal.Packs}
 	data, err := json.MarshalIndent(value, "", "  ")
 	return append(data, '\n'), err
 }
@@ -362,10 +366,15 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 	if err := strictDecode(data, &lock); err != nil {
 		return ProjectLockProposal{}, false, fmt.Errorf("decode project lock: %w", err)
 	}
-	if lock.SchemaVersion != 1 || lock.MinimumPackyCapability != "project-installation-v1" {
+	if !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
 		return ProjectLockProposal{}, false, errors.New("project lock schema or minimum Packy capability is unsupported")
 	}
 	return lock, true, nil
+}
+
+func supportedProjectContractVersion(schemaVersion int, minimumCapability string) bool {
+	return schemaVersion == projectContractSchemaV1 && minimumCapability == projectContractCapabilityV1 ||
+		schemaVersion == projectContractSchemaV2 && minimumCapability == projectContractCapabilityV2
 }
 
 func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdentity, target, fingerprint string) bool {

@@ -102,7 +102,7 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 	if err := strictDecode(manifestData, &document); err != nil {
 		return ProjectInstallation{}, fmt.Errorf("decode project manifest: %w", err)
 	}
-	if document.SchemaVersion != 1 || document.MinimumPackyCapability != "project-installation-v1" {
+	if !supportedProjectContractVersion(document.SchemaVersion, document.MinimumPackyCapability) {
 		return ProjectInstallation{}, errors.New("project manifest schema or minimum Packy capability is unsupported")
 	}
 	manifest := ProjectContractProposal{Path: "packy.json", SchemaVersion: document.SchemaVersion, Packs: document.Packs}
@@ -277,6 +277,16 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		return errors.New("project manifest must contain exactly one pack in schema version 1")
 	}
 	pack := manifest.Packs[0]
+	minimumCapability := projectContractCapabilityV1
+	if manifest.SchemaVersion == projectContractSchemaV2 {
+		minimumCapability = projectContractCapabilityV2
+	}
+	if !supportedProjectContractVersion(manifest.SchemaVersion, minimumCapability) || lock.SchemaVersion != manifest.SchemaVersion || !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
+		return errors.New("project manifest and lock schema versions do not match")
+	}
+	if manifest.SchemaVersion == projectContractSchemaV1 && len(pack.SurfaceIntents) > 0 {
+		return errors.New("project manifest schema version 1 forbids per-surface intents")
+	}
 	if !idPattern.MatchString(pack.ID) || !semverPattern.MatchString(pack.Version) {
 		return errors.New("project manifest pack identity must use a valid ID and exact semantic version")
 	}
