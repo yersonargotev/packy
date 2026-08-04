@@ -327,6 +327,9 @@ func projectSensitiveDisclosures(pack Pack, surface Surface) []ProjectSensitiveD
 	values := []ProjectSensitiveDisclosure{}
 	for _, resource := range pack.Resources {
 		identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+		for _, tool := range resource.RequiresTools {
+			values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationExternalRequirements, Surface: surface, Resource: identity, Detail: "tool:" + tool})
+		}
 		for _, binding := range resource.Bindings {
 			if binding.Surface == surface && (resource.Kind == "mcp_server" || binding.Projection == "mcp_server") {
 				values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: surface, Resource: identity, Detail: "project-trust"})

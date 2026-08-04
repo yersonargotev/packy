@@ -100,3 +100,24 @@ func TestProjectActivationSealIncludesPersonalTargetObservation(t *testing.T) {
 		t.Fatal("personal target change retained the activation preview seal")
 	}
 }
+
+func TestProjectSensitiveDisclosuresIncludeEveryResourceToolRequirement(t *testing.T) {
+	pack := Pack{Resources: []Resource{
+		{Kind: "skill", ID: "helper", RequiresTools: []string{"helper-cli"}},
+		{Kind: "lifecycle", ID: "hook", RequiresTools: []string{"hook-cli"}},
+	}}
+
+	disclosures := projectSensitiveDisclosures(pack, SurfaceCodex)
+	want := []ProjectSensitiveDisclosure{
+		{Category: ProjectActivationExternalRequirements, Surface: SurfaceCodex, Resource: ResourceIdentity{Kind: "lifecycle", ID: "hook"}, Detail: "tool:hook-cli"},
+		{Category: ProjectActivationExternalRequirements, Surface: SurfaceCodex, Resource: ResourceIdentity{Kind: "skill", ID: "helper"}, Detail: "tool:helper-cli"},
+	}
+	if len(disclosures) != len(want) {
+		t.Fatalf("resource tool disclosures = %+v, want %+v", disclosures, want)
+	}
+	for i := range want {
+		if disclosures[i] != want[i] {
+			t.Fatalf("resource tool disclosure %d = %+v, want %+v", i, disclosures[i], want[i])
+		}
+	}
+}
