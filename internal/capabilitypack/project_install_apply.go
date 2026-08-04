@@ -827,6 +827,7 @@ func recoverProjectInstall(ctx context.Context, adapter SurfaceAdapter, path, pr
 	}
 	allowedKinds := map[ProjectionActionKind]bool{
 		ActionCodexProjectSkillTree: true, ActionInstructionFile: true,
+		ActionOpenCodeInstructionFile: true, ActionOpenCodeMCPConfig: true, ActionOpenCodeAgentFile: true, ActionOpenCodeCommandFile: true, ActionOpenCodeAssetFile: true,
 		ActionProjectManifestFile: true, ActionProjectLockFile: true, ActionProjectNoticesFile: true,
 	}
 	for _, action := range journal.Reverse {

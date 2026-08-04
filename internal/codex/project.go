@@ -39,6 +39,7 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		projections = append(projections, capabilitypack.ObservedProjection{
 			ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists,
 			ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/copied-skill-tree",
+			ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
 			Action: capabilitypack.ProjectionAction{ID: identity.String(), Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the Codex project skill tree", identity), PreviewOnly: true},
 		})
 	}
@@ -72,7 +73,11 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	}
 	projections := make([]capabilitypack.ObservedProjection, 0, len(lock.Projections))
 	var revision []string
+	contributor := "surface:codex:pack:" + pack.ID
 	for _, projection := range lock.Projections {
+		if !codexProjectContributor(projection, contributor) {
+			continue
+		}
 		expected := ""
 		switch projection.Mode {
 		case "copy_tree":
@@ -153,6 +158,18 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	}
 	sort.Strings(revision)
 	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections}, nil
+}
+
+func codexProjectContributor(projection capabilitypack.ProjectProjectionPlan, contributor string) bool {
+	if projection.Contributor == contributor {
+		return true
+	}
+	for _, value := range projection.Contributors {
+		if value == contributor {
+			return true
+		}
+	}
+	return false
 }
 
 func projectTreeFingerprint(target string) (string, bool, error) {
