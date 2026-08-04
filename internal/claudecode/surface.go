@@ -54,6 +54,15 @@ func NewSurfaceAdapter(bundleRoot string, layout CanonicalLayout, stateRoot, exe
 }
 
 func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
+	if transition.ProjectInstallation != nil {
+		if transition.ProjectRoot == "" || len(transition.ProjectInstallation.Manifest.Packs) != 1 {
+			return capabilitypack.SurfaceInspection{}, fmt.Errorf("locked Claude project inspection requires one manifest pack and the project root")
+		}
+		return a.inspectLockedProject(transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectGoal)
+	}
+	if transition.ProjectRoot != "" {
+		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)
+	}
 	ownership := OwnershipSnapshot{}
 	if a.ownership != nil {
 		var err error
@@ -521,6 +530,20 @@ func (a *SurfaceAdapter) inspectRemoval(pack capabilitypack.Pack, r capabilitypa
 }
 
 func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabilitypack.ProjectionAction) *capabilitypack.ProjectionActionError {
+	if claudeProjectActions(actions) {
+		executor := localprojection.Executor{Host: "Claude project", TreeKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionClaudeProjectSkillTree: true}, FileKinds: map[capabilitypack.ProjectionActionKind]bool{
+			capabilitypack.ActionClaudeProjectFile: true, capabilitypack.ActionClaudeProjectInstruction: true, capabilitypack.ActionClaudeProjectMCP: true,
+			capabilitypack.ActionProjectManifestFile: true, capabilitypack.ActionProjectLockFile: true, capabilitypack.ActionProjectNoticesFile: true,
+		}}
+		if err := executor.Apply(actions); err != nil {
+			var actionErr capabilitypack.ProjectionActionError
+			if errors.As(err, &actionErr) {
+				return &actionErr
+			}
+			return &capabilitypack.ProjectionActionError{ID: firstID(actions), Err: err}
+		}
+		return nil
+	}
 	if err := a.validateActions(actions); err != nil {
 		return &capabilitypack.ProjectionActionError{ID: firstID(actions), Err: err}
 	}
@@ -589,6 +612,21 @@ func (a *SurfaceAdapter) ApplyProjections(ctx context.Context, actions []capabil
 		}
 	}
 	return nil
+}
+
+func claudeProjectActions(actions []capabilitypack.ProjectionAction) bool {
+	if len(actions) == 0 {
+		return true
+	}
+	for _, action := range actions {
+		switch action.Kind {
+		case capabilitypack.ActionClaudeProjectSkillTree, capabilitypack.ActionClaudeProjectFile, capabilitypack.ActionClaudeProjectInstruction, capabilitypack.ActionClaudeProjectMCP,
+			capabilitypack.ActionProjectManifestFile, capabilitypack.ActionProjectLockFile, capabilitypack.ActionProjectNoticesFile:
+		default:
+			return false
+		}
+	}
+	return true
 }
 func (a *SurfaceAdapter) validateActions(actions []capabilitypack.ProjectionAction) error {
 	seen := map[string]bool{}

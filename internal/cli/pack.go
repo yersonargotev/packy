@@ -247,7 +247,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if len(args) == 0 && (len(aliasValues) > 0 || len(resourceValues) > 0 || len(providerValues) > 0) {
 				return errors.New("--resource, --alias, and --provider are accepted only when installing a pack")
 			}
-			offlineAdapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
+			offlineAdapter := projectOfflineAdapter("")
 			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
 			if err != nil {
 				return err
@@ -270,7 +270,9 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if len(args) == 0 {
 				status, statusErr := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot,
-					Adapters:    map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: offlineAdapter},
+					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+						capabilitypack.SurfaceClaude: projectOfflineAdapter(capabilitypack.SurfaceClaude), capabilitypack.SurfaceCodex: projectOfflineAdapter(capabilitypack.SurfaceCodex), capabilitypack.SurfaceOpenCode: projectOfflineAdapter(capabilitypack.SurfaceOpenCode),
+					},
 				})
 				if statusErr != nil {
 					return statusErr
@@ -1136,6 +1138,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed",
 					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+						capabilitypack.SurfaceClaude:   projectOfflineAdapter(capabilitypack.SurfaceClaude),
 						capabilitypack.SurfaceCodex:    projectOfflineAdapter(capabilitypack.SurfaceCodex),
 						capabilitypack.SurfaceOpenCode: projectOfflineAdapter(capabilitypack.SurfaceOpenCode),
 					},
@@ -1206,8 +1209,11 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.SurfaceAdapter {
 	if surface == "" {
 		return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceCodex: codex.NewSurfaceAdapterWithConfig("", "", "", ""), capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter("", "", "", ""),
+			capabilitypack.SurfaceClaude: claudeProjectAdapter(""), capabilitypack.SurfaceCodex: codex.NewSurfaceAdapterWithConfig("", "", "", ""), capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter("", "", "", ""),
 		}, capabilitypack.SurfaceCodex)
+	}
+	if surface == capabilitypack.SurfaceClaude {
+		return claudeProjectAdapter("")
 	}
 	if surface == capabilitypack.SurfaceOpenCode {
 		return opencode.NewSurfaceAdapter("", "", "", "")
@@ -1216,10 +1222,24 @@ func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.Surfac
 }
 
 func projectInstallAdapter(surface capabilitypack.Surface, bundleRoot, skillsRoot, codexPrompt, codexConfig, openCodeConfig, openCodePrompt string) capabilitypack.SurfaceAdapter {
+	if surface == "" {
+		return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+			capabilitypack.SurfaceClaude:   claudeProjectAdapter(bundleRoot),
+			capabilitypack.SurfaceCodex:    codex.NewSurfaceAdapterWithConfig(bundleRoot, skillsRoot, codexPrompt, codexConfig),
+			capabilitypack.SurfaceOpenCode: opencode.NewSurfaceAdapter(bundleRoot, skillsRoot, openCodeConfig, openCodePrompt),
+		}, capabilitypack.SurfaceCodex)
+	}
+	if surface == capabilitypack.SurfaceClaude {
+		return claudeProjectAdapter(bundleRoot)
+	}
 	if surface == capabilitypack.SurfaceOpenCode {
 		return opencode.NewSurfaceAdapter(bundleRoot, skillsRoot, openCodeConfig, openCodePrompt)
 	}
 	return codex.NewSurfaceAdapterWithConfig(bundleRoot, skillsRoot, codexPrompt, codexConfig)
+}
+
+func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
+	return claudecode.NewSurfaceAdapter(bundleRoot, claudecode.NewCanonicalLayout(""), "", "", nil, nil)
 }
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {

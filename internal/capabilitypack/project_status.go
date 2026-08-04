@@ -295,7 +295,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		return errors.New("project manifest surfaces are empty, duplicated, or unsorted")
 	}
 	for _, surface := range pack.Surfaces {
-		if surface != SurfaceCodex && surface != SurfaceOpenCode {
+		if surface != SurfaceCodex && surface != SurfaceOpenCode && surface != SurfaceClaude {
 			return fmt.Errorf("project manifest schema version 1 does not support CLI surface %q", surface)
 		}
 	}
@@ -413,12 +413,15 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		resources[fact.Resource] = true
 	}
 	bindings := make(map[ResourceIdentity]bool, len(lock.Bindings))
+	bindingKeys := make(map[string]bool, len(lock.Bindings))
 	for _, binding := range lock.Bindings {
 		identity := ResourceIdentity{Kind: binding.Kind, ID: binding.ID}
+		key := identity.String() + "\x00" + string(binding.Surface)
 		validMode := binding.Mode == "native" && binding.Degradation == "" || binding.Mode == "degraded" && binding.Degradation != ""
-		if !resources[identity] || bindings[identity] || binding.Projection == "" || binding.Name == "" || !validMode || binding.Sharing == "" {
+		if !resources[identity] || bindingKeys[key] || binding.Surface != "" && !projectSupportsSurface(pack.Surfaces, binding.Surface) || binding.Projection == "" || binding.Name == "" || !validMode || binding.Sharing == "" {
 			return errors.New("project lock bindings are incomplete, duplicated, or outside the locked closure")
 		}
+		bindingKeys[key] = true
 		bindings[identity] = true
 	}
 	degradations := make(map[ResourceIdentity]bool)

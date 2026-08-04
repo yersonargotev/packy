@@ -203,6 +203,9 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	}
 	bindings := make(map[capabilitypack.ResourceIdentity]string, len(lock.Bindings))
 	for _, binding := range lock.Bindings {
+		if binding.Surface != "" && binding.Surface != capabilitypack.SurfaceOpenCode {
+			continue
+		}
 		bindings[capabilitypack.ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] = binding.Name
 	}
 	contributor := "surface:opencode:pack:" + pack.ID
