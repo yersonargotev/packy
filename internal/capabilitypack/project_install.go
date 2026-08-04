@@ -24,9 +24,12 @@ const (
 )
 
 type ProjectInstallRequest struct {
-	PackID      string
-	Surface     Surface
-	ProjectRoot string
+	PackID       string
+	Version      string
+	Surface      Surface
+	ProjectRoot  string
+	manifestPack ProjectManifestPack
+	reconcile    bool
 }
 
 type ProjectInstallBlocker struct {
@@ -128,6 +131,7 @@ type JSONProjectInstallPreview struct {
 	noticeMode    uint32
 	noticeBefore  string
 	noticeIntact  bool
+	request       ProjectInstallRequest
 }
 
 type ProjectInstallNotActionableError struct{ Disposition ProjectInstallDisposition }
@@ -145,7 +149,11 @@ func (f Facade) CheckProjectInstallFreshness(ctx context.Context, preview JSONPr
 	if preview.projectRoot == "" {
 		return ProjectInstallFreshness{}, errors.New("project install preview no longer carries its sealed project root")
 	}
-	fresh, err := f.PreviewProjectInstall(ctx, ProjectInstallRequest{PackID: preview.Pack.ID, Surface: preview.Surface, ProjectRoot: preview.projectRoot}, adapter)
+	request := preview.request
+	if request.ProjectRoot == "" {
+		request = ProjectInstallRequest{PackID: preview.Pack.ID, Surface: preview.Surface, ProjectRoot: preview.projectRoot}
+	}
+	fresh, err := f.PreviewProjectInstall(ctx, request, adapter)
 	if err != nil {
 		return ProjectInstallFreshness{}, err
 	}
@@ -153,6 +161,20 @@ func (f Facade) CheckProjectInstallFreshness(ctx context.Context, preview JSONPr
 		return ProjectInstallFreshness{Disposition: ProjectInstallBlocked, Blockers: []ProjectInstallBlocker{{Code: "stale_observation", Detail: "project targets changed after the preview was created", Remediation: "run the install dry-run again to obtain a fresh preview"}}}, nil
 	}
 	return ProjectInstallFreshness{Disposition: preview.Disposition, Blockers: append([]ProjectInstallBlocker(nil), preview.Blockers...)}, nil
+}
+
+// PreviewProjectReconcile derives a repair plan from the exact manifest and
+// portable lock already committed to the project. It never floats a version.
+func (f Facade) PreviewProjectReconcile(ctx context.Context, projectRoot string, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
+	installation, err := LoadProjectInstallation(projectRoot)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	pack := installation.Manifest.Packs[0]
+	return f.PreviewProjectInstall(ctx, ProjectInstallRequest{
+		PackID: pack.ID, Version: pack.Version, Surface: pack.Surfaces[0], ProjectRoot: projectRoot,
+		manifestPack: pack, reconcile: true,
+	}, adapter)
 }
 
 func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
@@ -168,7 +190,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if request.ProjectRoot == "" {
 		return JSONProjectInstallPreview{}, errors.New("project root is required")
 	}
-	pack, err := f.catalog.showUnlocked(request.PackID)
+	pack, err := f.resolveProjectPackUnlocked(request.PackID, request.Version)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
@@ -190,6 +212,14 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	existingLock, lockExists, lockErr := readExistingProjectLock(request.ProjectRoot)
 	if lockErr != nil {
 		blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_lock", Target: "packy.lock.json", Detail: lockErr.Error(), Remediation: "restore or remove the invalid project lock before installation"})
+	} else if lockExists {
+		installation, contractErr := LoadProjectInstallation(request.ProjectRoot)
+		if contractErr != nil {
+			blockers = append(blockers, ProjectInstallBlocker{Code: "invalid_project_contract", Target: "packy.json", Detail: contractErr.Error(), Remediation: "restore the supported project manifest and lock before installation"})
+			lockExists = false
+		} else {
+			existingLock = installation.Lock
+		}
 	}
 	for _, resource := range observation.Unrepresentable {
 		blockers = append(blockers, ProjectInstallBlocker{Code: "unrepresentable_resource", Resource: resource.Resource, Detail: resource.Reason, Remediation: "choose a surface with a declared project-native representation"})
@@ -248,6 +278,9 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	requirements := projectRequirements(pack)
 	manifestPack := ProjectManifestPack{ID: pack.ID, Version: pack.Version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}
+	if request.reconcile {
+		manifestPack = request.manifestPack
+	}
 	disposition := ProjectInstallPreviewable
 	if len(blockers) > 0 {
 		disposition = ProjectInstallBlocked
@@ -258,7 +291,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	report := JSONProjectInstallPreview{
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
-		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: pack, actions: actions,
+		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: pack, actions: actions, request: request,
 		Selection:   ProjectSelectionPreview{Mode: SelectionAll, Resources: graph.Resources},
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: 1, Packs: []ProjectManifestPack{manifestPack}},
 		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: 1, MinimumPackyCapability: "project-installation-v1", Source: source, ResourceGraph: graph, Bindings: LifecycleContractFor(pack, request.Surface, nil).Bindings, Modes: LifecycleContractFor(pack, request.Surface, nil).OptionalModes, Projections: lockProjections},
@@ -274,7 +307,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if lockExists {
 		report.Lock.NoticesFileMode = existingLock.NoticesFileMode
 	}
-	noticeContent, noticeMode, noticeBefore, noticeIntact, noticeBlockers, err := planProjectNotices(report, lockExists)
+	noticeContent, noticeMode, noticeBefore, noticeIntact, noticeBlockers, err := planProjectNotices(report, lockExists, request.reconcile)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
@@ -287,7 +320,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		report.Disposition = ProjectInstallBlocked
 	}
 	if len(blockers) == 0 {
-		converged, contractBlockers, err := inspectProjectContract(report, existingLock, lockExists)
+		converged, contractBlockers, err := inspectProjectContract(report, existingLock, lockExists, request.reconcile)
 		if err != nil {
 			return JSONProjectInstallPreview{}, err
 		}
@@ -309,6 +342,32 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	})
 	report.Observation = sealProjectInstallPreview(report, observationDigest(observation)+"\nnotices="+noticeBefore)
 	return report, nil
+}
+
+func (f Facade) resolveProjectPackUnlocked(id, version string) (Pack, error) {
+	current, err := f.catalog.catalogMetadata(id)
+	if err != nil {
+		return Pack{}, err
+	}
+	if version == "" || version == current.Version {
+		return f.catalog.showUnlocked(id)
+	}
+	if f.catalog.bundleRoot == "" || !validSemver(version) {
+		return Pack{}, fmt.Errorf("capability pack %q targets unavailable exact version %q", id, version)
+	}
+	pack, err := loadHistoricalArtifact(filepath.Join(f.catalog.bundleRoot, "history", id, version), f.catalog.bundleRoot, id, version)
+	if err != nil {
+		return Pack{}, fmt.Errorf("load exact project capability pack %s@%s: %w", id, version, err)
+	}
+	pack.Description = current.Description
+	if pack.manifestVersion < manifestSchemaV3 {
+		entry, ok := f.catalog.catalogEntry(id)
+		if !ok {
+			return Pack{}, fmt.Errorf("capability pack %q has no immutable catalog entry", id)
+		}
+		pack.Surfaces = append([]Surface(nil), entry.Surfaces...)
+	}
+	return pack, nil
 }
 
 func projectRequirements(pack Pack) []string {

@@ -60,6 +60,78 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 	}, nil
 }
 
+// InspectProjectInstallation validates a supported committed project lock
+// without consulting Packy's catalog or the source trees that produced it.
+func (a *SurfaceAdapter) InspectProjectInstallation(_ context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal) ([]capabilitypack.ProjectProjectionStatus, error) {
+	bindings := make(map[capabilitypack.ResourceIdentity]string, len(lock.Bindings))
+	for _, binding := range lock.Bindings {
+		bindings[capabilitypack.ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] = binding.Name
+	}
+	statuses := make([]capabilitypack.ProjectProjectionStatus, 0, len(lock.Projections))
+	for _, projection := range lock.Projections {
+		expected := ""
+		switch projection.Mode {
+		case "copy_tree":
+			name := bindings[projection.Resource]
+			if projection.Resource.Kind != "skill" || name == "" {
+				return nil, fmt.Errorf("project lock projection %s has no Codex project binding", projection.Resource)
+			}
+			expected = filepath.Join(".agents", "skills", name)
+		case "merge_marked_file":
+			if pack.ID != "matty" || projection.Resource.String() != projectMattyInstructionID {
+				return nil, fmt.Errorf("project lock projection %s has no supported Codex marked-file target", projection.Resource)
+			}
+			expected = "AGENTS.md"
+		default:
+			return nil, fmt.Errorf("project lock projection %s has unsupported Codex mode %q", projection.Resource, projection.Mode)
+		}
+		if filepath.Clean(filepath.FromSlash(projection.Target)) != filepath.Clean(expected) {
+			return nil, fmt.Errorf("project lock projection %s target %q does not match the re-derived Codex target %q", projection.Resource, projection.Target, filepath.ToSlash(expected))
+		}
+		target := filepath.Join(projectRoot, expected)
+		if _, err := capabilitypack.RelativeProjectTarget(projectRoot, target); err != nil {
+			return nil, fmt.Errorf("project lock projection %s has unsafe Codex target: %w", projection.Resource, err)
+		}
+		observed, health := "missing", "missing"
+		if projection.Mode == "copy_tree" {
+			fingerprint, exists, err := projectTreeFingerprint(target)
+			if err != nil {
+				return nil, err
+			}
+			observed = fingerprint
+			if exists {
+				health = "drifted"
+				if fingerprint == projection.DesiredFingerprint {
+					health = "verified"
+				}
+			}
+		} else {
+			inspection, err := projectMattyInstruction(projectRoot)
+			if err != nil {
+				return nil, err
+			}
+			observed = inspection.ObservedFingerprint
+			if inspection.Exists {
+				health = "drifted"
+				if observed == projection.DesiredFingerprint {
+					health = "verified"
+				}
+			}
+		}
+		statuses = append(statuses, capabilitypack.ProjectProjectionStatus{
+			Resource: projection.Resource, Target: projection.Target, Mode: projection.Mode, Health: health,
+			ObservedFingerprint: observed, DesiredFingerprint: projection.DesiredFingerprint, Contributor: projection.Contributor,
+		})
+	}
+	sort.Slice(statuses, func(i, j int) bool {
+		if statuses[i].Target != statuses[j].Target {
+			return statuses[i].Target < statuses[j].Target
+		}
+		return statuses[i].Resource.String() < statuses[j].Resource.String()
+	})
+	return statuses, nil
+}
+
 func projectTreeFingerprint(target string) (string, bool, error) {
 	info, err := os.Lstat(target)
 	if os.IsNotExist(err) {

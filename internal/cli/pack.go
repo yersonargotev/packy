@@ -64,9 +64,9 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	var dryRun bool
 	var jsonOutput bool
 	cmd := &cobra.Command{
-		Use:   "install <pack>",
+		Use:   "install [pack]",
 		Short: "Install a capability pack in the current Git project",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			snapshot, err := workstationResolver.Resolve(workstation.Options{})
 			if err != nil {
@@ -80,16 +80,25 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if err != nil {
 				return err
 			}
-			composition, err := resolvePackComposition(opts, workstationResolver)
+			if len(args) == 1 && surface == "" {
+				return errors.New("--surface is required when installing a pack")
+			}
+			if len(args) == 0 && surface != "" {
+				return errors.New("--surface is not accepted when reconciling the complete project manifest")
+			}
+			offlineAdapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
+			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
 			if err != nil {
 				return err
 			}
-			facade := capabilitypack.NewFacade(composition.catalog)
-			adapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			if dryRun && pendingRecovery {
+				return errors.New("project installation is recovery-required; rerun `packy pack install` without --dry-run before requesting another preview")
+			}
 			if !dryRun {
-				recovered, err := facade.RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
-				if err != nil {
-					return err
+				recoveryFacade := capabilitypack.NewFacade(capabilitypack.Catalog{})
+				recovered, recoveryErr := recoveryFacade.RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: offlineAdapter})
+				if recoveryErr != nil {
+					return recoveryErr
 				}
 				if recovered && !jsonOutput {
 					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Recovered the prior project installation attempt before preview"); err != nil {
@@ -97,7 +106,38 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 					}
 				}
 			}
-			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, adapter)
+			if len(args) == 0 {
+				status, statusErr := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
+					ProjectRoot: projectRoot,
+					Adapters:    map[capabilitypack.Surface]capabilitypack.ProjectInstallationAdapter{capabilitypack.SurfaceCodex: offlineAdapter},
+				})
+				if statusErr != nil {
+					return statusErr
+				}
+				converged := len(status.Packs) > 0
+				for _, pack := range status.Packs {
+					converged = converged && pack.Installation == capabilitypack.ProjectInstallationInstalled
+				}
+				if converged {
+					if jsonOutput {
+						return json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.ProjectInstallApplyResult{SchemaVersion: 1, Report: "project-install-apply", Status: "no-op"})
+					}
+					_, err := fmt.Fprintln(cmd.OutOrStdout(), "Verified no-op: the exact project installation is already present")
+					return err
+				}
+			}
+			composition, err := resolvePackComposition(opts, workstationResolver)
+			if err != nil {
+				return err
+			}
+			facade := capabilitypack.NewFacade(composition.catalog)
+			adapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			var report capabilitypack.JSONProjectInstallPreview
+			if len(args) == 0 {
+				report, err = facade.PreviewProjectReconcile(cmd.Context(), projectRoot, adapter)
+			} else {
+				report, err = facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, adapter)
+			}
 			if err != nil {
 				return err
 			}
@@ -153,7 +193,6 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the project contract and projections without mutation")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
-	_ = cmd.MarkFlagRequired("surface")
 	return cmd
 }
 
@@ -898,12 +937,57 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 	var resource string
 	var require string
 	var jsonOutput bool
+	var project bool
 	cmd := &cobra.Command{
 		Use: "status [pack]", Short: "Inspect capability pack status", Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			packID := ""
 			if len(args) == 1 {
 				packID = args[0]
+			}
+			if project {
+				if resource != "" {
+					return errors.New("--resource is not yet supported with --project")
+				}
+				if require != "" && require != "installed" {
+					return errors.New("--require installed is the supported project installation gate")
+				}
+				snapshot, err := workstationResolver.Resolve(workstation.Options{})
+				if err != nil {
+					return err
+				}
+				cwd, err := snapshot.CurrentDirectory()
+				if err != nil {
+					return fmt.Errorf("resolve current directory: %w", err)
+				}
+				projectRoot, err := capabilitypack.DiscoverProjectRoot(cwd)
+				if err != nil {
+					return err
+				}
+				adapter := codex.NewSurfaceAdapterWithConfig("", "", "", "")
+				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
+					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed",
+					Adapters: map[capabilitypack.Surface]capabilitypack.ProjectInstallationAdapter{capabilitypack.SurfaceCodex: adapter},
+				})
+				if err != nil {
+					return err
+				}
+				if jsonOutput {
+					if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
+						return err
+					}
+				} else if err := renderProjectStatus(cmd, report); err != nil {
+					return err
+				}
+				for _, status := range report.Packs {
+					if require == "installed" && !status.RequirementSatisfied {
+						return fmt.Errorf("pack %q on %s is not installed", status.Pack.ID, status.Surface)
+					}
+				}
+				if require == "installed" && len(report.Packs) == 0 {
+					return errors.New("project has no installed capability packs")
+				}
+				return nil
 			}
 			if require != "" && (require != "usable" || packID == "" || surface == "") {
 				return fmt.Errorf("--require usable is valid only for status of one pack and surface")
@@ -944,7 +1028,28 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 	cmd.Flags().StringVar(&resource, "resource", "", "Inspect one selected resource (<kind>:<id>)")
 	cmd.Flags().StringVar(&require, "require", "", "Require a readiness dimension (usable)")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
+	cmd.Flags().BoolVar(&project, "project", false, "Inspect the shared project installation and personal runtime axes")
 	return cmd
+}
+
+func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
+	for _, status := range report.Packs {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nProjections: %d\nBlockers: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, len(status.Projections), renderProjectInstallBlockers(status.Blockers)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func renderProjectInstallBlockers(blockers []capabilitypack.ProjectInstallBlocker) string {
+	if len(blockers) == 0 {
+		return "none"
+	}
+	values := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		values = append(values, blocker.Code+": "+blocker.Detail)
+	}
+	return strings.Join(values, "; ")
 }
 
 func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusReport) error {
