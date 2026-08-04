@@ -353,7 +353,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if err != nil || jsonOutput || result.Status == "no-op" || len(args) == 0 {
 				return err
 			}
-			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), projectRuntimeAdapter(opts, report.Surface, snapshot.Home()))
+			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), projectRuntimeAdapter(opts, report.Surface, snapshot))
 		},
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
@@ -640,7 +640,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 					return err
 				}
 				facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
-				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot.Home())
+				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot)
 				preview, err := facade.PreviewProjectActivation(cmd.Context(), capabilitypack.ProjectActivationRequest{
 					PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot,
 					PackyHome: snapshot.PackyHome(), Adapter: adapter,
@@ -709,10 +709,11 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	return cmd
 }
 
-func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, home string) capabilitypack.SurfaceAdapter {
+func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, snapshot workstation.Snapshot) capabilitypack.SurfaceAdapter {
 	if adapter := opts.SurfaceAdapters[surface]; adapter != nil {
 		return adapter
 	}
+	home := snapshot.Home()
 	if surface == capabilitypack.SurfaceCodex && home != "" {
 		layout := codex.NewCanonicalLayout(home)
 		return codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile())
@@ -722,9 +723,9 @@ func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, home st
 		layout := claudecode.NewCanonicalLayout(home)
 		var adapter *claudecode.SurfaceAdapter
 		if opts.ClaudeAuthorization != nil {
-			adapter = claudecode.NewSurfaceAdapterWithAuthorization("", layout, filepath.Join(home, ".packy"), executable, opts.ClaudeRunner, nil, opts.ClaudeAuthorization)
+			adapter = claudecode.NewSurfaceAdapterWithAuthorization("", layout, snapshot.PackyHome(), executable, opts.ClaudeRunner, nil, opts.ClaudeAuthorization)
 		} else {
-			adapter = claudecode.NewSurfaceAdapter("", layout, filepath.Join(home, ".packy"), executable, opts.ClaudeRunner, nil)
+			adapter = claudecode.NewSurfaceAdapter("", layout, snapshot.PackyHome(), executable, opts.ClaudeRunner, nil)
 		}
 		if opts.ClaudeRuntimeEvidence != nil {
 			adapter = adapter.WithRuntimeEvidence(opts.ClaudeRuntimeEvidence)
@@ -1282,9 +1283,9 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
 					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot.Home()),
-						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot.Home()),
-						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot.Home()),
+						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot),
+						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot),
+						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot),
 					},
 				})
 				if err != nil {
