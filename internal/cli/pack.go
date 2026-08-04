@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -64,12 +65,9 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "install <pack>",
-		Short: "Preview a capability-pack installation in the current Git project",
+		Short: "Install a capability pack in the current Git project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !dryRun {
-				return fmt.Errorf("project installation mutation is not available yet; use --dry-run to preview")
-			}
 			snapshot, err := workstationResolver.Resolve(workstation.Options{})
 			if err != nil {
 				return err
@@ -88,21 +86,68 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			}
 			facade := capabilitypack.NewFacade(composition.catalog)
 			adapter := codex.NewSurfaceAdapterWithConfig(composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile())
+			if !dryRun {
+				recovered, err := facade.RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+				if err != nil {
+					return err
+				}
+				if recovered && !jsonOutput {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Recovered the prior project installation attempt before preview"); err != nil {
+						return err
+					}
+				}
+			}
 			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, adapter)
 			if err != nil {
 				return err
 			}
 			if jsonOutput {
-				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
+				outputReport := report
+				outputReport.DryRun = dryRun
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(outputReport); err != nil {
 					return err
 				}
-			} else if err := renderProjectInstallPreview(cmd, report); err != nil {
+			} else if err := renderProjectInstallPreview(cmd, report, dryRun); err != nil {
 				return err
 			}
 			if report.Disposition == capabilitypack.ProjectInstallBlocked {
 				return capabilitypack.ProjectInstallNotActionableError{Disposition: report.Disposition}
 			}
-			return nil
+			if dryRun {
+				return nil
+			}
+			if report.Disposition == capabilitypack.ProjectInstallConverged {
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), "Verified no-op: the exact project installation is already present")
+				return err
+			}
+			if !opts.Terminal.Interactive(cmd.InOrStdin()) {
+				return capabilitypack.ErrInteractiveRequired
+			}
+			if !jsonOutput {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Approve project installation for exact preview %s?\n", report.Observation); err != nil {
+					return err
+				}
+			}
+			approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve project installation for exact preview %s?", report.Observation))
+			if err != nil {
+				return err
+			}
+			if !approved {
+				return errors.New("project installation was not approved")
+			}
+			result, err := facade.ApplyProjectInstall(cmd.Context(), capabilitypack.ProjectInstallApplyRequest{Preview: report, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+			}
+			if result.Status == "no-op" {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified no-op: the exact project installation is already present")
+			} else {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified project installation")
+			}
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
@@ -112,8 +157,12 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	return cmd
 }
 
-func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectInstallPreview) error {
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Project install dry-run\nProject root: %s\nPack: %s %s\nSurface: %s\nSelection: %s (%d resources)\nManifest: %s (schema %d)\nLock: %s (schema %d)\nNotices: %s (%d contributions)\n", report.ProjectRoot, report.Pack.ID, report.Pack.Version, report.Surface, report.Selection.Mode, len(report.Selection.Resources), report.Manifest.Path, report.Manifest.SchemaVersion, report.Lock.Path, report.Lock.SchemaVersion, report.Notices.Path, len(report.Notices.Contributions)); err != nil {
+func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectInstallPreview, dryRun bool) error {
+	header := "Project install preview"
+	if dryRun {
+		header = "Project install dry-run"
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\nProject root: %s\nPack: %s %s\nSurface: %s\nSelection: %s (%d resources)\nManifest: %s (schema %d)\nLock: %s (schema %d)\nNotices: %s (%d contributions)\n", header, report.ProjectRoot, report.Pack.ID, report.Pack.Version, report.Surface, report.Selection.Mode, len(report.Selection.Resources), report.Manifest.Path, report.Manifest.SchemaVersion, report.Lock.Path, report.Lock.SchemaVersion, report.Notices.Path, len(report.Notices.Contributions)); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Admitted source: %s repository=%s commit=%s tree=%s lock_sha256=%s\nLock graph: %d resources, %d projections\n", report.Lock.Source.SourceID, report.Lock.Source.Repository, report.Lock.Source.Commit, report.Lock.Source.Tree, report.Lock.Source.SourceLockSHA256, len(report.Lock.ResourceGraph.Resources), len(report.Lock.Projections)); err != nil {

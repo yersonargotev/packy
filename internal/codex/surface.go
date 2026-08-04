@@ -512,12 +512,16 @@ func (a *SurfaceAdapter) ApplyProjections(_ context.Context, actions []capabilit
 	executor := localprojection.Executor{
 		Host:         "Codex",
 		SymlinkKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionSkillLink: true},
+		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionCodexProjectSkillTree: true},
 		FileKinds: map[capabilitypack.ProjectionActionKind]bool{
-			capabilitypack.ActionInstructionFile:    true,
-			capabilitypack.ActionCodexMCPConfig:     true,
-			capabilitypack.ActionCodexAgentFile:     true,
-			capabilitypack.ActionCodexWorkflowSkill: true,
-			capabilitypack.ActionCodexAssetFile:     true,
+			capabilitypack.ActionInstructionFile:     true,
+			capabilitypack.ActionProjectManifestFile: true,
+			capabilitypack.ActionProjectLockFile:     true,
+			capabilitypack.ActionProjectNoticesFile:  true,
+			capabilitypack.ActionCodexMCPConfig:      true,
+			capabilitypack.ActionCodexAgentFile:      true,
+			capabilitypack.ActionCodexWorkflowSkill:  true,
+			capabilitypack.ActionCodexAssetFile:      true,
 		},
 	}
 	err := executor.Apply(actions)

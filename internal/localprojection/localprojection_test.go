@@ -27,6 +27,26 @@ func TestStagingFailureRemovesOnlyTransactionCreatedDirectories(t *testing.T) {
 	}
 }
 
+func TestExecutorRejectsConcurrentTargetChangeBeforePublication(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "target.txt")
+	if err := os.WriteFile(target, []byte("fresh observation\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	precondition := FingerprintBytes([]byte("fresh observation\n"))
+	if err := os.WriteFile(target, []byte("concurrent foreign change\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	executor := Executor{Host: "test", FileKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionInstructionFile: true}}
+	err := executor.Apply([]capabilitypack.ProjectionAction{{ID: "instruction:test", Kind: capabilitypack.ActionInstructionFile, Target: target, Content: "desired\n", Precondition: precondition}})
+	if err == nil || !strings.Contains(err.Error(), "target changed after preflight") {
+		t.Fatalf("Apply error = %v", err)
+	}
+	data, readErr := os.ReadFile(target)
+	if readErr != nil || string(data) != "concurrent foreign change\n" {
+		t.Fatalf("concurrent target = %q, %v", data, readErr)
+	}
+}
+
 func TestExecutorDeletesOnlyExplicitTarget(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "managed")

@@ -18,6 +18,7 @@ type Executor struct {
 	Host         string
 	SymlinkKinds map[capabilitypack.ProjectionActionKind]bool
 	FileKinds    map[capabilitypack.ProjectionActionKind]bool
+	TreeKinds    map[capabilitypack.ProjectionActionKind]bool
 }
 
 // TreeFile is one inert regular file in a staged local projection tree.
@@ -48,14 +49,26 @@ func (e Executor) Apply(actions []capabilitypack.ProjectionAction) error {
 	targets := map[string]int{}
 	for _, action := range actions {
 		change := FilesystemChange{ID: action.ID, Target: action.Target, Delete: action.Mode == capabilitypack.ProjectionDeleteTarget, stagePrefix: ".packy-stage-", stageKey: string(action.Kind) + ":" + action.ID, errorVerb: "commit"}
+		change.ExpectedTargetFingerprint = action.Precondition
+		change.ExactTreeTarget = e.TreeKinds[action.Kind]
 		if !change.Delete {
 			switch {
 			case e.SymlinkKinds[action.Kind]:
 				change.SymlinkSource = action.Source
+			case e.TreeKinds[action.Kind]:
+				files, err := exactTreeFiles(action.Source)
+				if err != nil {
+					return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("read copied tree: %w", err)}
+				}
+				change.TreeFiles = files
+				change.ExpectedTreeFingerprint = action.Version
 			case e.FileKinds[action.Kind]:
 				change.RegularFile = true
 				change.FileContent = []byte(action.Content)
-				change.FileMode = 0o600
+				change.FileMode = fs.FileMode(action.FileMode)
+				if change.FileMode == 0 {
+					change.FileMode = 0o600
+				}
 			default:
 				return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("unsupported %s projection action %q", e.Host, action.Kind)}
 			}
@@ -69,6 +82,52 @@ func (e Executor) Apply(actions []capabilitypack.ProjectionAction) error {
 		changes = append(changes, change)
 	}
 	return ApplyFilesystemChanges(changes)
+}
+
+// exactTreeFiles converts an immutable source tree into the inert file payload
+// required by ApplyFilesystemChanges. Its sealed fingerprint is carried by the
+// action's Version field and verified before any target is published.
+func exactTreeFiles(root string) ([]TreeFile, error) {
+	files := make([]TreeFile, 0)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("source tree contains non-regular path %s", path)
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files = append(files, TreeFile{Path: filepath.ToSlash(relative), Content: content, Mode: info.Mode().Perm()})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// FingerprintCopiedTree returns the exact fingerprint a regular source tree
+// will have after Packy materializes it with project-owned directory modes.
+func FingerprintCopiedTree(root string) (string, error) {
+	files, err := exactTreeFiles(root)
+	if err != nil {
+		return "", err
+	}
+	return FingerprintTreeFiles(files)
 }
 
 func ensureDir(dir string) ([]string, error) {
@@ -279,18 +338,20 @@ type TreeChange struct {
 // FilesystemChange is one neutral symlink or exact-tree replacement in a
 // coherent host-local transaction.
 type FilesystemChange struct {
-	ID                      string
-	Target                  string
-	SymlinkSource           string
-	TreeFiles               []TreeFile
-	ExpectedTreeFingerprint string
-	RegularFile             bool
-	FileContent             []byte
-	FileMode                fs.FileMode
-	Delete                  bool
-	stagePrefix             string
-	stageKey                string
-	errorVerb               string
+	ID                        string
+	Target                    string
+	SymlinkSource             string
+	TreeFiles                 []TreeFile
+	ExpectedTreeFingerprint   string
+	ExpectedTargetFingerprint string
+	ExactTreeTarget           bool
+	RegularFile               bool
+	FileContent               []byte
+	FileMode                  fs.FileMode
+	Delete                    bool
+	stagePrefix               string
+	stageKey                  string
+	errorVerb                 string
 }
 
 type stagedFilesystemChange struct {
@@ -403,6 +464,15 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 	committed := 0
 	for i := range items {
 		item := &items[i]
+		if item.change.ExpectedTargetFingerprint != "" {
+			actual, err := filesystemChangeTargetFingerprint(item.change)
+			if err != nil {
+				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: err}
+			}
+			if actual != item.change.ExpectedTargetFingerprint {
+				return capabilitypack.ProjectionActionError{ID: item.change.ID, Err: fmt.Errorf("target changed after preflight: expected %s, observed %s", item.change.ExpectedTargetFingerprint, actual)}
+			}
+		}
 		verb := item.change.errorVerb
 		if verb == "" {
 			verb = "backup"
@@ -437,6 +507,25 @@ func ApplyFilesystemChanges(changes []FilesystemChange) error {
 	}
 	succeeded = true
 	return nil
+}
+
+func filesystemChangeTargetFingerprint(change FilesystemChange) (string, error) {
+	info, err := os.Lstat(change.Target)
+	if os.IsNotExist(err) {
+		return "missing", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if change.ExactTreeTarget || len(change.TreeFiles) > 0 || change.ExpectedTreeFingerprint != "" {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			fingerprint, _, err := FingerprintPath(change.Target)
+			return fingerprint, err
+		}
+		return FingerprintExactTree(change.Target)
+	}
+	fingerprint, _, err := FingerprintPath(change.Target)
+	return fingerprint, err
 }
 
 func rollbackFilesystemChanges(items []stagedFilesystemChange) error {
