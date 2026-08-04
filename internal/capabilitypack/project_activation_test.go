@@ -121,3 +121,24 @@ func TestProjectSensitiveDisclosuresIncludeEveryResourceToolRequirement(t *testi
 		}
 	}
 }
+
+func TestProjectSensitiveDisclosuresIncludeUnmatchedPackToolRequirement(t *testing.T) {
+	pack := Pack{
+		ID:       "helper-pack",
+		Requires: Requirements{Tools: []string{"pack-cli"}},
+		Resources: []Resource{
+			{Kind: "skill", ID: "helper"},
+		},
+	}
+
+	disclosures := projectSensitiveDisclosures(pack, SurfaceCodex)
+	want := ProjectSensitiveDisclosure{
+		Category: ProjectActivationExternalRequirements,
+		Surface:  SurfaceCodex,
+		Resource: ResourceIdentity{Kind: "pack", ID: "helper-pack"},
+		Detail:   "tool:pack-cli",
+	}
+	if len(disclosures) != 1 || disclosures[0] != want {
+		t.Fatalf("pack tool disclosures = %+v, want %+v", disclosures, want)
+	}
+}

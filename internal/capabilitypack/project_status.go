@@ -515,7 +515,8 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 			return errors.New("project lock sensitive disclosures are malformed or non-canonical")
 		}
 		for _, disclosure := range lock.Sensitive {
-			if !resources[disclosure.Resource] || disclosure.Detail == "" || !projectSupportsSurface(pack.Surfaces, disclosure.Surface) || !validProjectActivationCategory(disclosure.Category) {
+			packRequirement := disclosure.Category == ProjectActivationExternalRequirements && disclosure.Resource == (ResourceIdentity{Kind: "pack", ID: pack.ID})
+			if !resources[disclosure.Resource] && !packRequirement || disclosure.Detail == "" || !projectSupportsSurface(pack.Surfaces, disclosure.Surface) || !validProjectActivationCategory(disclosure.Category) {
 				return errors.New("project lock sensitive disclosure is outside the locked closure")
 			}
 		}

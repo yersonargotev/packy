@@ -357,11 +357,16 @@ func projectSensitiveDisclosures(pack Pack, surface Surface) []ProjectSensitiveD
 		}
 	}
 	for _, tool := range pack.Requires.Tools {
+		matchedResource := false
 		for _, resource := range pack.Resources {
 			if resource.Kind == "mcp_server" && resource.Command == tool {
 				values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationExternalRequirements, Surface: surface, Resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}, Detail: "tool:" + tool})
+				matchedResource = true
 				break
 			}
+		}
+		if !matchedResource {
+			values = append(values, ProjectSensitiveDisclosure{Category: ProjectActivationExternalRequirements, Surface: surface, Resource: ResourceIdentity{Kind: "pack", ID: pack.ID}, Detail: "tool:" + tool})
 		}
 	}
 	return deduplicateProjectSensitiveDisclosures(values)
