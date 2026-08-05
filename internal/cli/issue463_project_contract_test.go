@@ -33,9 +33,13 @@ func TestIssue463PublishedProjectSchemasCoverLiveContractsAndCanonicalNegatives(
 	if err != nil {
 		t.Fatalf("project status: %v\n%s", err, status)
 	}
-	failureOutput, failureErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--alias", "invalid", "--json")
+	const secretArgument = "TOKEN=issue-463-secret"
+	failureOutput, failureErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--alias", secretArgument, "--json")
 	if failureErr == nil {
 		t.Fatalf("invalid project intent unexpectedly succeeded: %s", failureOutput)
+	}
+	if strings.Contains(failureOutput, secretArgument) || strings.Contains(failureErr.Error(), secretArgument) {
+		t.Fatalf("project failure disclosed a raw argument: %s / %v", failureOutput, failureErr)
 	}
 	failure := lastJSONDocument(t, failureOutput)
 	projectRoot, err := capabilitypack.DiscoverProjectRoot(project)
@@ -48,6 +52,15 @@ func TestIssue463PublishedProjectSchemasCoverLiveContractsAndCanonicalNegatives(
 		t.Fatalf("project recovery: %v\n%s", err, recoveryEvents)
 	}
 	recovery := firstJSONDocument(t, recoveryEvents)
+	seedProjectRecoveryJournal(t, filepath.Join(home, ".packy"), projectRoot)
+	updateRecovery, updateErr := executeCommand(t, NewRootCommand(opts), "pack", "update", "PACK-TOKEN-issue-463", "--project", "--version", "VERSION-TOKEN-issue-463", "--json")
+	if updateErr == nil {
+		t.Fatalf("unknown project update unexpectedly succeeded: %s", updateRecovery)
+	}
+	firstUpdateEvent := string(firstJSONDocument(t, updateRecovery))
+	if strings.Contains(firstUpdateEvent, "TOKEN-issue-463") || !strings.Contains(firstUpdateEvent, `"next_command":"packy pack update \u003cpack\u003e --project --version \u003cversion\u003e"`) {
+		t.Fatalf("project recovery command is not safely templated: %s", firstUpdateEvent)
+	}
 
 	documents := map[string][]byte{
 		"project-manifest.schema.json": mustReadProjectContract(t, filepath.Join(project, "packy.json")),
@@ -128,6 +141,36 @@ func TestIssue463ProjectHelpExplainsTheTwoPhaseLifecycle(t *testing.T) {
 				t.Fatalf("%v help does not distinguish the two phases; missing %q:\n%s", args, want, out)
 			}
 		}
+	}
+}
+
+func TestIssue463ProjectArgumentFailuresEmitTerminalJSON(t *testing.T) {
+	opts, _, _ := packActivationOptions(t, &fakeTerminal{})
+	tests := []struct {
+		operation string
+		args      []string
+	}{
+		{"install", []string{"pack", "install", "one", "two", "--json"}},
+		{"uninstall", []string{"pack", "uninstall", "--json"}},
+		{"activate", []string{"pack", "activate", "--project", "--json"}},
+		{"deactivate", []string{"pack", "deactivate", "--project", "--json"}},
+		{"update", []string{"pack", "update", "--project", "--json"}},
+		{"status", []string{"pack", "status", "one", "two", "--project", "--json"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.operation, func(t *testing.T) {
+			output, err := executeCommand(t, NewRootCommand(opts), tt.args...)
+			if err == nil {
+				t.Fatalf("argument failure unexpectedly succeeded: %s", output)
+			}
+			var failure capabilitypack.JSONProjectFailure
+			if err := json.Unmarshal(lastJSONDocument(t, output), &failure); err != nil {
+				t.Fatal(err)
+			}
+			if failure.Report != "project-lifecycle-failure" || failure.Operation != tt.operation || failure.Stage != "command" {
+				t.Fatalf("terminal failure = %+v", failure)
+			}
+		})
 	}
 }
 

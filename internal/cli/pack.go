@@ -18,6 +18,7 @@ import (
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
+	"github.com/yersonargotev/packy/internal/reportredaction"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -74,7 +75,9 @@ func newPackUninstallCommand(opts Options, workstationResolver *workstation.Reso
 		Use:   "uninstall <pack>",
 		Short: "Uninstall exact owned projections from the current Git project",
 		Long:  "Uninstall exact owned projections from the current Git project.\n\n" + projectLifecycleHelp,
-		Args:  cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, true, "uninstall")
+		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			defer func() {
 				if runErr != nil {
@@ -263,7 +266,9 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 		Use:   "install [pack]",
 		Short: "Install a capability pack in the current Git project",
 		Long:  "Install a capability pack in the current Git project.\n\n" + projectLifecycleHelp,
-		Args:  cobra.MaximumNArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			return projectLifecycleArgs(cmd, args, cobra.MaximumNArgs(1), jsonOutput, true, "install")
+		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			defer func() {
 				if runErr != nil {
@@ -578,7 +583,9 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	var resourceValues []string
 	var jsonOutput bool
 	var project bool
-	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Long: "Deactivate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Long: "Deactivate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
+		return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, project, "deactivate")
+	}, RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 		defer func() {
 			if project && runErr != nil {
 				runErr = projectLifecycleFailure(cmd, jsonOutput, "deactivate", "command", runErr)
@@ -707,7 +714,9 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	var project bool
 	var version string
 	cmd := &cobra.Command{
-		Use: "update <pack>", Short: "Update an active capability pack to the catalog-current version", Long: "Update an active capability pack to the catalog-current version.\n\n" + projectLifecycleHelp, Args: cobra.ExactArgs(1),
+		Use: "update <pack>", Short: "Update an active capability pack to the catalog-current version", Long: "Update an active capability pack to the catalog-current version.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
+			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, project, "update")
+		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			defer func() {
 				if project && runErr != nil {
@@ -786,7 +795,7 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 			return recoveryErr
 		}
 		if recovered {
-			if err := renderProjectRecovery(cmd, jsonOutput, "update", "packy pack update "+packID+" --project --version "+version, "Recovered the prior project installation attempt before preview"); err != nil {
+			if err := renderProjectRecovery(cmd, jsonOutput, "update", "packy pack update <pack> --project --version <version>", "Recovered the prior project installation attempt before preview"); err != nil {
 				return err
 			}
 		}
@@ -922,7 +931,9 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	var providerValues []string
 	var jsonOutput bool
 	cmd := &cobra.Command{
-		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Long: "Activate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: cobra.ExactArgs(1),
+		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Long: "Activate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
+			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, project, "activate")
+		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			defer func() {
 				if project && runErr != nil {
@@ -1152,10 +1163,44 @@ func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err err
 }
 
 func projectLifecycleFailure(cmd *cobra.Command, jsonOutput bool, operation, stage string, err error) error {
+	err = reportredaction.Error(err, nil, projectLifecycleArgumentValues(cmd))
 	if jsonOutput {
 		_ = json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.JSONProjectFailureFor(operation, stage, err))
 	}
 	return err
+}
+
+func projectLifecycleArgs(cmd *cobra.Command, args []string, validate cobra.PositionalArgs, jsonOutput, project bool, operation string) error {
+	err := validate(cmd, args)
+	if err == nil || !project {
+		return err
+	}
+	return projectLifecycleFailure(cmd, jsonOutput, operation, "command", err)
+}
+
+func projectLifecycleArgumentValues(cmd *cobra.Command) []string {
+	values := append([]string(nil), cmd.Flags().Args()...)
+	for _, name := range []string{"alias", "provider", "resource"} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil || !flag.Changed {
+			continue
+		}
+		entries, err := cmd.Flags().GetStringArray(name)
+		if err == nil {
+			values = append(values, entries...)
+		}
+	}
+	for _, name := range []string{"surface", "version"} {
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil || !flag.Changed {
+			continue
+		}
+		value, err := cmd.Flags().GetString(name)
+		if err == nil {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func renderProjectRecovery(cmd *cobra.Command, jsonOutput bool, operation, nextCommand, human string) error {
@@ -1594,7 +1639,9 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 	var jsonOutput bool
 	var project bool
 	cmd := &cobra.Command{
-		Use: "status [pack]", Short: "Inspect capability pack status", Long: "Inspect capability pack status.\n\n" + projectLifecycleHelp, Args: cobra.MaximumNArgs(1),
+		Use: "status [pack]", Short: "Inspect capability pack status", Long: "Inspect capability pack status.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
+			return projectLifecycleArgs(cmd, args, cobra.MaximumNArgs(1), jsonOutput, project, "status")
+		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			defer func() {
 				if project && runErr != nil {
