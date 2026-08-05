@@ -201,7 +201,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	}
 	categories := projectActivationCategories(installation.Lock, request.Surface)
 	report.Pack, report.Surface, report.RuntimeEffects = pack, request.Surface, status.Packs[0].RuntimeEffects
-	if status.Packs[0].Runtime == ProjectRuntimeBlocked {
+	if status.Packs[0].Runtime == ProjectRuntimeBlocked || status.Packs[0].Runtime == ProjectRuntimeRecoveryRequired {
 		report.Categories, report.RuntimeRequired, report.Disposition = categories, len(categories) != 0, ProjectActivationBlocked
 		report.SensitiveLockIdentity = projectSensitiveLockIdentity(installation.Lock, categories)
 		report.Digest = sealProjectActivationPreview(report)

@@ -100,6 +100,9 @@ func newPackUninstallCommand(opts Options, workstationResolver *workstation.Reso
 					}
 				}
 			}
+			if err := deactivateBeforeProjectUninstall(cmd, opts, snapshot, args[0], capabilitypack.Surface(surface), projectRoot, dryRun, jsonOutput); err != nil {
+				return err
+			}
 			report, err := capabilitypack.PreviewProjectUninstall(cmd.Context(), capabilitypack.ProjectUninstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot}, adapter)
 			if err != nil {
 				return err
@@ -153,6 +156,48 @@ func newPackUninstallCommand(opts Options, workstationResolver *workstation.Reso
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview every exact removal without mutation")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	return cmd
+}
+
+func deactivateBeforeProjectUninstall(cmd *cobra.Command, opts Options, snapshot workstation.Snapshot, packID string, selected capabilitypack.Surface, projectRoot string, dryRun, jsonOutput bool) error {
+	installation, err := capabilitypack.LoadProjectInstallation(projectRoot)
+	if err != nil {
+		return err
+	}
+	surfaces := installation.Manifest.Packs[0].Surfaces
+	if selected != "" {
+		surfaces = []capabilitypack.Surface{selected}
+	}
+	for _, projectSurface := range surfaces {
+		adapter := projectRuntimeAdapter(opts, projectSurface, snapshot)
+		preview, previewErr := capabilitypack.PreviewProjectDeactivation(cmd.Context(), capabilitypack.ProjectDeactivationRequest{
+			PackID: packID, Surface: projectSurface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter,
+		})
+		if previewErr != nil {
+			return previewErr
+		}
+		if preview.Disposition == capabilitypack.ProjectDeactivationConverged {
+			continue
+		}
+		if jsonOutput {
+			output := preview
+			output.DryRun = dryRun
+			if err := json.NewEncoder(cmd.OutOrStdout()).Encode(output); err != nil {
+				return err
+			}
+		} else if err := renderProjectDeactivationPreview(cmd, preview, dryRun); err != nil {
+			return err
+		}
+		if preview.Disposition == capabilitypack.ProjectDeactivationBlocked {
+			return errors.New("personal project deactivation is blocked")
+		}
+		if dryRun {
+			continue
+		}
+		if err := approveAndApplyProjectDeactivation(cmd, opts, preview, adapter, jsonOutput); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func renderProjectUninstallPreview(cmd *cobra.Command, report capabilitypack.JSONProjectUninstallPreview, dryRun bool) error {
@@ -506,7 +551,46 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	var dryRun bool
 	var resourceValues []string
 	var jsonOutput bool
+	var project bool
 	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if project {
+			if len(resourceValues) > 0 {
+				return errors.New("--resource is not accepted with --project; personal project deactivation consumes exact receipts")
+			}
+			snapshot, err := workstationResolver.Resolve(workstation.Options{})
+			if err != nil {
+				return err
+			}
+			cwd, err := snapshot.CurrentDirectory()
+			if err != nil {
+				return fmt.Errorf("resolve current directory: %w", err)
+			}
+			projectRoot, err := capabilitypack.DiscoverProjectRoot(cwd)
+			if err != nil {
+				return err
+			}
+			adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot)
+			preview, err := capabilitypack.PreviewProjectDeactivation(cmd.Context(), capabilitypack.ProjectDeactivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				output := preview
+				output.DryRun = dryRun
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(output); err != nil {
+					return err
+				}
+			} else if err := renderProjectDeactivationPreview(cmd, preview, dryRun); err != nil {
+				return err
+			}
+			if preview.Disposition == capabilitypack.ProjectDeactivationBlocked {
+				return errors.New("personal project deactivation is blocked")
+			}
+			if dryRun || preview.Disposition == capabilitypack.ProjectDeactivationConverged {
+				return nil
+			}
+			return approveAndApplyProjectDeactivation(cmd, opts, preview, adapter, jsonOutput)
+		}
 		resources := make([]capabilitypack.ResourceIdentity, 0, len(resourceValues))
 		for _, value := range resourceValues {
 			resource, err := capabilitypack.ParseResourceIdentity(value)
@@ -532,8 +616,56 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Remove a manifest-v4 operational resource root (<kind>:<id>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
+	cmd.Flags().BoolVar(&project, "project", false, "Deactivate exact personal runtime effects for the current project")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd
+}
+
+func renderProjectDeactivationPreview(cmd *cobra.Command, preview capabilitypack.JSONProjectDeactivationPreview, dryRun bool) error {
+	header := "PERSONAL PROJECT DEACTIVATION PREVIEW"
+	if dryRun {
+		header = "PERSONAL PROJECT DEACTIVATION DRY-RUN"
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\nProject root: %s\nPack: %s %s\nSurface: %s\nRuntime activation: %s\n", header, preview.ProjectRoot, preview.Pack.ID, preview.Pack.Version, preview.Surface, preview.Runtime); err != nil {
+		return err
+	}
+	for _, effect := range preview.Effects {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Remove personal effect: %s target=%s identity=%s\n", effect.Action, effect.Target, effect.Identity); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Blockers: %s\nDisposition: %s\n", renderProjectInstallBlockers(preview.Blockers), preview.Disposition); err != nil {
+		return err
+	}
+	return nil
+}
+
+func approveAndApplyProjectDeactivation(cmd *cobra.Command, opts Options, preview capabilitypack.JSONProjectDeactivationPreview, adapter capabilitypack.SurfaceAdapter, jsonOutput bool) error {
+	if !opts.Terminal.Interactive(cmd.InOrStdin()) {
+		return capabilitypack.ErrInteractiveRequired
+	}
+	prompt := fmt.Sprintf("Approve personal project deactivation for exact preview %s?", preview.Digest)
+	if !jsonOutput {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), prompt); err != nil {
+			return err
+		}
+	}
+	approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), prompt)
+	if err != nil {
+		return err
+	}
+	if !approved {
+		return errors.New("personal project deactivation was not approved")
+	}
+	result, err := capabilitypack.ApplyProjectDeactivation(cmd.Context(), capabilitypack.ProjectDeactivationApplyRequest{Preview: preview, Adapter: adapter, Interactive: true})
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified personal project deactivation")
+	return err
 }
 
 func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
