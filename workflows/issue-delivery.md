@@ -120,11 +120,18 @@ generated state outside the candidate working tree and real user configuration.
 
 Derive the tracer scenario from the approved issue criteria. Verify its exit
 status, operator-visible output, and required filesystem or other durable
-effects. Transition scenarios also assert that retired or prohibited effects
-are absent. Destructive and composite transitions cover every affected
-contribution and shared owner at the final observable boundary, while
-host-specific projections are checked independently. Include interactive
-approval when it is part of the observable contract.
+effects. Assert the complete final observable state after the command: every
+required contribution remains, and every previewed retired contribution or
+target in a destructive transition is absent. For a composite file, verify the
+complete final document rather than only the effect of the last planned action.
+For a shared projection, verify retained contributor accounting and that one
+CLI surface did not remove another surface's required projection. Assert every
+affected host-specific projection independently. Exercise the interactive
+destructive-consent phase when it is part of the observable command contract.
+
+A tracer-discovered residual effect fails the delivery before canonical
+validation. Diagnose it, add focused regression coverage that reproduces the
+residual, and repair the candidate before rerunning the tracer.
 
 Record the candidate SHA and exercised scenario with the tracer result. Any
 candidate change invalidates that evidence and requires the applicable tracer
@@ -184,8 +191,10 @@ final candidate proof on the new HEAD.
 
 Publish one compact pull-request comment for the final HEAD containing its SHA,
 the Standards and Spec results, acceptance-criteria coverage, canonical
-validation result, and manual-verification result. Link detailed evidence or
-logs instead of copying raw output.
+validation result, and manual-verification result. For an applicable transition
+tracer, summarize both the required effects observed and the retired or
+prohibited effects proved absent. Link detailed evidence or logs instead of
+copying raw output, and do not create a new evidence schema.
 
 **Complete when:** the ready pull request names and closes exactly the approved
 issue, required CI and both final review axes pass on its unchanged HEAD, all
