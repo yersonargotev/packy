@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-const ProjectStatusSchemaVersion = 2
+const ProjectStatusSchemaVersion = 3
 
 type ProjectInstallationState string
 
@@ -27,12 +27,14 @@ const (
 type ProjectRuntimeState string
 
 const (
-	ProjectRuntimeNotRequired     ProjectRuntimeState = "not-required"
-	ProjectRuntimePending         ProjectRuntimeState = "pending"
-	ProjectRuntimeActive          ProjectRuntimeState = "active"
-	ProjectRuntimeInheritedGlobal ProjectRuntimeState = "inherited-global"
-	ProjectRuntimeStale           ProjectRuntimeState = "stale"
-	ProjectRuntimeBlocked         ProjectRuntimeState = "blocked"
+	ProjectRuntimeNotRequired      ProjectRuntimeState = "not-required"
+	ProjectRuntimePending          ProjectRuntimeState = "pending"
+	ProjectRuntimeActive           ProjectRuntimeState = "active"
+	ProjectRuntimeInheritedGlobal  ProjectRuntimeState = "inherited-global"
+	ProjectRuntimeStale            ProjectRuntimeState = "stale"
+	ProjectRuntimeOrphaned         ProjectRuntimeState = "orphaned"
+	ProjectRuntimeRecoveryRequired ProjectRuntimeState = "recovery-required"
+	ProjectRuntimeBlocked          ProjectRuntimeState = "blocked"
 )
 
 type ProjectRuntimeCoverage string
@@ -89,10 +91,12 @@ type JSONProjectPackStatus struct {
 }
 
 type JSONProjectStatusReport struct {
-	SchemaVersion int                     `json:"schema_version"`
-	Report        string                  `json:"report"`
-	ProjectRoot   string                  `json:"project_root"`
-	Packs         []JSONProjectPackStatus `json:"packs"`
+	SchemaVersion    int                     `json:"schema_version"`
+	Report           string                  `json:"report"`
+	ProjectRoot      string                  `json:"project_root"`
+	RecoveryRequired bool                    `json:"recovery_required"`
+	RecoveryCommand  string                  `json:"recovery_command,omitempty"`
+	Packs            []JSONProjectPackStatus `json:"packs"`
 }
 
 type ProjectStatusRequest struct {
@@ -157,6 +161,18 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 
 func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JSONProjectStatusReport, error) {
 	report := JSONProjectStatusReport{SchemaVersion: ProjectStatusSchemaVersion, Report: "project-status", ProjectRoot: "<project-root>", Packs: []JSONProjectPackStatus{}}
+	recoveryPending := false
+	if request.PackyHome != "" {
+		var err error
+		recoveryPending, err = ProjectInstallRecoveryPending(request.PackyHome, request.ProjectRoot)
+		if err != nil {
+			return report, err
+		}
+		if recoveryPending {
+			report.RecoveryRequired = true
+			report.RecoveryCommand = "packy pack install"
+		}
+	}
 	manifestMissing, err := projectPathMissing(filepath.Join(request.ProjectRoot, "packy.json"))
 	if err != nil {
 		return report, err
@@ -174,10 +190,84 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			if request.RequireUsable {
 				requirement, requirementSatisfied = "usable", false
 			}
+			runtime := ProjectRuntimePending
+			version := ""
+			pendingActions := []string{}
+			effects := []ProjectRuntimeEffectStatus{}
+			blockers := []ProjectInstallBlocker{}
+			if recoveryPending {
+				runtime = ProjectRuntimeRecoveryRequired
+				blockers = append(blockers, ProjectInstallBlocker{Code: "recovery_required", Detail: "an interrupted shared project mutation must be recovered before new intent", Remediation: "run `packy pack install` to recover before previewing new project intent"})
+				pendingActions = append(pendingActions, "packy pack install")
+			}
+			if request.PackyHome != "" {
+				document, exists, loadErr := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.Surface)
+				if loadErr != nil {
+					return report, loadErr
+				}
+				if exists {
+					if document.State.PackID != request.PackID {
+						return report, fmt.Errorf("personal project activation belongs to capability pack %q, not %q", document.State.PackID, request.PackID)
+					}
+					version = document.State.Version
+					runtime = ProjectRuntimeOrphaned
+					if document.Recovery.Status != "clean" {
+						runtime = ProjectRuntimeRecoveryRequired
+					}
+					for _, receipt := range document.Receipts {
+						for _, detail := range receipt.Details {
+							effects = append(effects, ProjectRuntimeEffectStatus{Category: receipt.Category, Resource: detail.Resource, Detail: detail.Detail, Coverage: ProjectRuntimeCoverageProject})
+						}
+					}
+					adapter := request.Adapters[request.Surface]
+					if adapter == nil && len(document.Effects) > 0 {
+						return report, fmt.Errorf("project activation inspection does not support CLI surface %q", request.Surface)
+					}
+					observed, inspectErr := inspectProjectEffectReceipts(ctx, adapter, request.ProjectRoot, document.Effects)
+					if inspectErr != nil {
+						return report, inspectErr
+					}
+					for _, effect := range observed {
+						if effect.State == ProjectEffectDrifted {
+							runtime = ProjectRuntimeBlocked
+							blockers = append(blockers, ProjectInstallBlocker{Code: "personal_effect_drift", Target: "<personal-host-path>", Detail: "the receipted personal contribution differs from exact adapter evidence", Remediation: "restore the exact receipted contribution before retrying project deactivation"})
+						}
+					}
+					pendingActions = append(pendingActions, fmt.Sprintf("packy pack deactivate %s --surface %s --project", request.PackID, request.Surface))
+				}
+			}
+			if recoveryPending {
+				runtime = ProjectRuntimeRecoveryRequired
+				pendingActions = []string{"packy pack install"}
+			}
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
-				Pack:    ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}},
-				Surface: request.Surface, Installation: ProjectInstallationAbsent, Runtime: ProjectRuntimePending,
-				RuntimeEffects: []ProjectRuntimeEffectStatus{}, Projections: []ProjectProjectionStatus{}, Blockers: []ProjectInstallBlocker{}, PendingHumanActions: []string{}, Evidence: []string{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
+				Pack:    ProjectManifestPack{ID: request.PackID, Version: version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}},
+				Surface: request.Surface, Installation: ProjectInstallationAbsent, Runtime: runtime, RuntimeRequired: len(effects) > 0,
+				RuntimeEffects: effects, Projections: []ProjectProjectionStatus{}, Blockers: blockers, PendingHumanActions: sortedUnique(pendingActions), Evidence: []string{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
+			})
+		} else if request.PackyHome != "" {
+			orphaned, orphanErr := inspectOrphanedProjectActivations(ctx, request)
+			if orphanErr != nil {
+				return report, orphanErr
+			}
+			report.Packs = append(report.Packs, orphaned...)
+		}
+		return report, nil
+	}
+	if recoveryPending {
+		if request.PackID != "" && request.Surface != "" {
+			requirement := ""
+			if request.RequireInstalled {
+				requirement = "installed"
+			}
+			if request.RequireUsable {
+				requirement = "usable"
+			}
+			report.Packs = append(report.Packs, JSONProjectPackStatus{
+				Pack: ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}, Surface: request.Surface,
+				Installation: ProjectInstallationBlocked, Runtime: ProjectRuntimeRecoveryRequired, RuntimeEffects: []ProjectRuntimeEffectStatus{}, Projections: []ProjectProjectionStatus{},
+				Blockers:            []ProjectInstallBlocker{{Code: "recovery_required", Detail: "an interrupted shared project mutation must be recovered before inspection or new intent", Remediation: "run `packy pack install` to recover before previewing new project intent"}},
+				PendingHumanActions: []string{"packy pack install"}, Evidence: []string{}, Requirement: requirement, RequirementSatisfied: false,
 			})
 		}
 		return report, nil
@@ -256,9 +346,21 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		runtime := ProjectRuntimeNotRequired
 		effects := pendingProjectRuntimeEffects(categories)
 		if runtimeRequired {
-			runtime, effects = projectPersonalRuntimeStatus(request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories)
+			runtime, effects = projectPersonalRuntimeStatus(ctx, adapter, request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories)
 		}
 		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
+		switch runtime {
+		case ProjectRuntimePending, ProjectRuntimeStale:
+			if runtimeRequired {
+				status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack activate %s --surface %s --project", pack.ID, surface))
+			}
+		case ProjectRuntimeBlocked, ProjectRuntimeRecoveryRequired:
+			status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack deactivate %s --surface %s --project", pack.ID, surface))
+		}
+		if state != ProjectInstallationInstalled {
+			status.PendingHumanActions = append(status.PendingHumanActions, "packy pack install")
+		}
+		status.PendingHumanActions = sortedUnique(status.PendingHumanActions)
 		if request.RequireInstalled {
 			status.Requirement = "installed"
 			status.RequirementSatisfied = state == ProjectInstallationInstalled
@@ -273,6 +375,55 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		return report, fmt.Errorf("pack %q on %s is not declared by this project installation", request.PackID, request.Surface)
 	}
 	return report, nil
+}
+
+func inspectOrphanedProjectActivations(ctx context.Context, request ProjectStatusRequest) ([]JSONProjectPackStatus, error) {
+	directory, err := projectActivationDirectory(request.PackyHome, request.ProjectRoot)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(directory)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []JSONProjectPackStatus{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	statuses := make([]JSONProjectPackStatus, 0, len(entries))
+	for _, entry := range entries {
+		var surface Surface
+		switch entry.Name() {
+		case "state.json":
+			surface = SurfaceCodex
+		case "state-opencode.json":
+			surface = SurfaceOpenCode
+		case "state-claude.json":
+			surface = SurfaceClaude
+		default:
+			continue
+		}
+		document, exists, loadErr := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, surface)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if !exists {
+			continue
+		}
+		focused := request
+		focused.PackID, focused.Surface = document.State.PackID, surface
+		focusedReport, inspectErr := InspectProjectStatus(ctx, focused)
+		if inspectErr != nil {
+			return nil, inspectErr
+		}
+		statuses = append(statuses, focusedReport.Packs...)
+	}
+	sort.Slice(statuses, func(i, j int) bool {
+		if statuses[i].Pack.ID != statuses[j].Pack.ID {
+			return statuses[i].Pack.ID < statuses[j].Pack.ID
+		}
+		return statuses[i].Surface < statuses[j].Surface
+	})
+	return statuses, nil
 }
 
 func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JSONProjectStatusReport, error) {
@@ -319,9 +470,26 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		if composition.conflict {
 			status.Runtime = ProjectRuntimeBlocked
 			status.Blockers = append(status.Blockers, ProjectInstallBlocker{Code: "activation_scope_conflict", Detail: composition.conflictDetail, Remediation: "deactivate the incompatible global contribution or align the global and project contracts"})
-		} else if personalRuntime != ProjectRuntimeBlocked && personalRuntime != ProjectRuntimeStale {
+		} else if personalRuntime != ProjectRuntimeBlocked && personalRuntime != ProjectRuntimeStale && personalRuntime != ProjectRuntimeRecoveryRequired {
 			status.Runtime = composedProjectRuntimeState(status.RuntimeEffects)
 		}
+		activateCommand := fmt.Sprintf("packy pack activate %s --surface %s --project", status.Pack.ID, status.Surface)
+		deactivateCommand := fmt.Sprintf("packy pack deactivate %s --surface %s --project", status.Pack.ID, status.Surface)
+		pendingActions := make([]string, 0, len(status.PendingHumanActions)+1)
+		for _, action := range status.PendingHumanActions {
+			if action != activateCommand && action != deactivateCommand {
+				pendingActions = append(pendingActions, action)
+			}
+		}
+		switch {
+		case composition.conflict:
+			pendingActions = append(pendingActions, fmt.Sprintf("packy pack deactivate %s --surface %s", status.Pack.ID, status.Surface))
+		case personalRuntime == ProjectRuntimeBlocked || personalRuntime == ProjectRuntimeRecoveryRequired:
+			pendingActions = append(pendingActions, deactivateCommand)
+		case status.Runtime == ProjectRuntimePending || status.Runtime == ProjectRuntimeStale:
+			pendingActions = append(pendingActions, activateCommand)
+		}
+		status.PendingHumanActions = sortedUnique(pendingActions)
 		if request.RequireUsable {
 			status.RequirementSatisfied = status.Installation == ProjectInstallationInstalled && status.Readiness.Usable && (status.Runtime == ProjectRuntimeActive || status.Runtime == ProjectRuntimeInheritedGlobal)
 		}
@@ -386,7 +554,7 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 	return statuses, nil
 }
 
-func projectPersonalRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPack, surface Surface, installation ProjectInstallationState, lock ProjectLockProposal, categories []ProjectActivationCategoryPreview) (ProjectRuntimeState, []ProjectRuntimeEffectStatus) {
+func projectPersonalRuntimeStatus(ctx context.Context, adapter SurfaceAdapter, packyHome, projectRoot string, pack ProjectManifestPack, surface Surface, installation ProjectInstallationState, lock ProjectLockProposal, categories []ProjectActivationCategoryPreview) (ProjectRuntimeState, []ProjectRuntimeEffectStatus) {
 	effects := pendingProjectRuntimeEffects(categories)
 	if installation != ProjectInstallationInstalled {
 		return ProjectRuntimeBlocked, effects
@@ -400,10 +568,22 @@ func projectPersonalRuntimeStatus(packyHome, projectRoot string, pack ProjectMan
 	}
 	state := document.State
 	if exists && document.Recovery.Status != "clean" {
-		return ProjectRuntimeBlocked, effects
+		return ProjectRuntimeRecoveryRequired, effects
 	}
 	if !exists || !state.Active {
 		return ProjectRuntimePending, effects
+	}
+	observed, inspectErr := inspectProjectEffectReceipts(ctx, adapter, projectRoot, document.Effects)
+	if inspectErr != nil {
+		return ProjectRuntimeBlocked, effects
+	}
+	for _, effect := range observed {
+		if effect.State == ProjectEffectDrifted {
+			return ProjectRuntimeBlocked, effects
+		}
+		if effect.State == ProjectEffectAbsent {
+			return ProjectRuntimeStale, effects
+		}
 	}
 	if state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, categories) {
 		return ProjectRuntimeStale, effects

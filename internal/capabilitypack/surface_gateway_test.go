@@ -14,7 +14,7 @@ type gatewayAdapter struct {
 
 func TestSurfaceGatewayValidatesAndClonesProjectActivationActions(t *testing.T) {
 	project := t.TempDir()
-	action := ProjectionAction{ID: "project_trust:codex", Surface: SurfaceCodex, Kind: ActionCodexProjectTrust, Description: "trust project", Target: filepath.Join(t.TempDir(), ".codex", "config.toml"), Content: "trusted", Version: "contribution", FileMode: 0o600, Precondition: "missing", ContributionStartMarker: "start", ContributionEndMarker: "end", PreviewOnly: true}
+	action := ProjectionAction{ID: "project_trust:codex", Surface: SurfaceCodex, Kind: ActionCodexProjectTrust, Description: "trust project", Target: filepath.Join(t.TempDir(), ".codex", "config.toml"), Content: "trusted", Version: "contribution", AdapterProvenance: "codex-project/v1/project-trust", FileMode: 0o600, Precondition: "missing", ContributionStartMarker: "start", ContributionEndMarker: "end", PreviewOnly: true}
 	transition := SurfaceTransition{ProjectRoot: project, ProjectInstallation: &ProjectInstallation{Manifest: ProjectContractProposal{Packs: []ProjectManifestPack{{ID: "pack"}}}}}
 	adapter := &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{action}}}
 	got, err := inspectSurface(context.Background(), adapter, transition)
@@ -34,6 +34,28 @@ func TestSurfaceGatewayValidatesAndClonesProjectActivationActions(t *testing.T) 
 		_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectActivationActions: []ProjectionAction{malformed}}}, transition)
 		if err == nil || !strings.Contains(err.Error(), "personal") || !strings.Contains(err.Error(), "project action") {
 			t.Fatalf("malformed personal action accepted: %+v, %v", malformed, err)
+		}
+	}
+}
+
+func TestSurfaceGatewayAllowsOnlyExactReceiptedProjectReversals(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "config.toml")
+	receipt := ProjectActivationEffectReceipt{Action: ActionCodexProjectTrust, Surface: SurfaceCodex, Target: target, ContributionIdentity: "contribution", AdapterProvenance: "codex-project/v1/project-trust", StartMarker: "start", EndMarker: "end", PriorState: "absent"}
+	action := ProjectionAction{ID: "deactivate:codex-project-trust", Surface: SurfaceCodex, Kind: ActionCodexProjectTrust, Target: target, Content: "foreign", FileMode: 0o600, Precondition: "before", AdapterProvenance: receipt.AdapterProvenance, Consent: ConsentDestructiveCleanup, PreviewOnly: true}
+	effect := ObservedProjectEffect{Kind: receipt.Action, Target: target, State: ProjectEffectExact, ObservedFingerprint: "before", AdapterProvenance: receipt.AdapterProvenance, Action: action}
+	transition := SurfaceTransition{ProjectRoot: t.TempDir(), ProjectEffectReceipts: []ProjectActivationEffectReceipt{receipt}}
+	got, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectDeactivationEffects: []ObservedProjectEffect{effect}}}, transition)
+	if err != nil || len(got.ProjectDeactivationEffects) != 1 || got.ProjectDeactivationEffects[0].Action.Consent != ConsentDestructiveCleanup {
+		t.Fatalf("exact receipted reversal = %+v, %v", got.ProjectDeactivationEffects, err)
+	}
+	for _, malformed := range []ObservedProjectEffect{
+		func() ObservedProjectEffect { value := effect; value.State = ProjectEffectDrifted; return value }(),
+		func() ObservedProjectEffect { value := effect; value.Action.Consent = ""; return value }(),
+		func() ObservedProjectEffect { value := effect; value.AdapterProvenance = "other-adapter"; return value }(),
+	} {
+		_, err := inspectSurface(context.Background(), &gatewayAdapter{inspection: SurfaceInspection{ProjectDeactivationEffects: []ObservedProjectEffect{malformed}}}, transition)
+		if err == nil {
+			t.Fatalf("malformed personal project reversal accepted: %+v", malformed)
 		}
 	}
 }
