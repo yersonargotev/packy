@@ -15,6 +15,62 @@ import (
 	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
+const codexProjectTrustProvenance = "codex-project/v1/project-trust"
+
+func (a *SurfaceAdapter) inspectProjectDeactivation(projectRoot string, receipts []capabilitypack.ProjectActivationEffectReceipt) (capabilitypack.SurfaceInspection, error) {
+	start, end, _, err := codexProjectTrustMarkers(projectRoot)
+	if err != nil {
+		return capabilitypack.SurfaceInspection{}, err
+	}
+	effects := make([]capabilitypack.ObservedProjectEffect, 0, len(receipts))
+	for _, receipt := range receipts {
+		effect := capabilitypack.ObservedProjectEffect{Kind: receipt.Action, Target: receipt.Target, State: capabilitypack.ProjectEffectDrifted, AdapterProvenance: codexProjectTrustProvenance}
+		if receipt.Action != capabilitypack.ActionCodexProjectTrust || receipt.Surface != capabilitypack.SurfaceCodex || receipt.AdapterProvenance != codexProjectTrustProvenance || filepath.Clean(receipt.Target) != filepath.Clean(a.configFile) || receipt.StartMarker != start || receipt.EndMarker != end {
+			effects = append(effects, effect)
+			continue
+		}
+		info, statErr := os.Lstat(a.configFile)
+		if os.IsNotExist(statErr) {
+			effect.State = capabilitypack.ProjectEffectAbsent
+			effects = append(effects, effect)
+			continue
+		}
+		if statErr != nil {
+			return capabilitypack.SurfaceInspection{}, statErr
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			effects = append(effects, effect)
+			continue
+		}
+		data, readErr := os.ReadFile(a.configFile)
+		if readErr != nil {
+			return capabilitypack.SurfaceInspection{}, readErr
+		}
+		effect.ObservedFingerprint = localprojection.FingerprintBytes(data)
+		fragment, found := extractBlock(string(data), start, end)
+		if !found {
+			if !strings.Contains(string(data), start) && !strings.Contains(string(data), end) {
+				effect.State = capabilitypack.ProjectEffectAbsent
+			}
+			effects = append(effects, effect)
+			continue
+		}
+		if localprojection.FingerprintBytes([]byte(fragment)) != receipt.ContributionIdentity || strings.Count(string(data), start) != 1 || strings.Count(string(data), end) != 1 {
+			effects = append(effects, effect)
+			continue
+		}
+		effect.State = capabilitypack.ProjectEffectExact
+		effect.Action = capabilitypack.ProjectionAction{
+			ID: "deactivate:codex-project-trust", Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectTrust,
+			Target: a.configFile, Content: strings.Replace(string(data), fragment, "", 1), FileMode: uint32(info.Mode().Perm()), Precondition: effect.ObservedFingerprint,
+			AdapterProvenance: codexProjectTrustProvenance, Consent: capabilitypack.ConsentDestructiveCleanup, PreviewOnly: true,
+			Description: "remove the exact receipted Codex project trust contribution",
+		}
+		effects = append(effects, effect)
+	}
+	return capabilitypack.SurfaceInspection{ProjectDeactivationEffects: effects}, nil
+}
+
 func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.Pack, projectRoot string) (capabilitypack.SurfaceInspection, error) {
 	projections := make([]capabilitypack.ObservedProjection, 0, len(pack.Resources))
 	unrepresentable := make([]capabilitypack.UnrepresentableResource, 0)
@@ -276,18 +332,11 @@ func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabili
 	if a.configFile == "" {
 		return capabilitypack.ReadinessObservation{AuthorizationObserved: true, UsabilityObserved: true, PendingHumanActions: []string{"configure a writable Codex home to activate project trust"}}, nil, nil
 	}
-	canonical, err := filepath.EvalSymlinks(projectRoot)
+	start, end, canonical, err := codexProjectTrustMarkers(projectRoot)
 	if err != nil {
 		return capabilitypack.ReadinessObservation{}, nil, err
 	}
-	canonical, err = filepath.Abs(canonical)
-	if err != nil {
-		return capabilitypack.ReadinessObservation{}, nil, err
-	}
-	canonical = filepath.Clean(canonical)
 	section := "projects." + strconv.Quote(canonical)
-	identity := localprojection.FingerprintBytes([]byte(canonical))[:16]
-	start, end := "# packy:project-trust:"+identity+":start", "# packy:project-trust:"+identity+":end"
 	desiredBlock := start + "\n[" + section + "]\ntrust_level = \"trusted\"\n" + end
 	current, err := readOptionalFile(a.configFile)
 	if err != nil {
@@ -312,7 +361,7 @@ func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabili
 			} else if !os.IsNotExist(statErr) {
 				return capabilitypack.ReadinessObservation{}, nil, statErr
 			}
-			actions = append(actions, capabilitypack.ProjectionAction{ID: "project_trust:codex", Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectTrust, Target: a.configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: mode, Precondition: precondition, Version: localprojection.FingerprintBytes([]byte(desiredBlock)), Description: "trust the exact Codex project so its installed runtime definitions can load", ContributionStartMarker: start, ContributionEndMarker: end, PreviewOnly: true})
+			actions = append(actions, capabilitypack.ProjectionAction{ID: "project_trust:codex", Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectTrust, Target: a.configFile, Content: mergeBlock(current, desiredBlock, start, end), FileMode: mode, Precondition: precondition, Version: localprojection.FingerprintBytes([]byte(desiredBlock)), AdapterProvenance: codexProjectTrustProvenance, Description: "trust the exact Codex project so its installed runtime definitions can load", ContributionStartMarker: start, ContributionEndMarker: end, PreviewOnly: true})
 		}
 	}
 	if !additionalTrustReady {
@@ -347,6 +396,20 @@ func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabili
 		PendingHumanActions: pending,
 		Evidence:            []string{"Codex project trust, locked runtime definitions, and external commands inspected"},
 	}, actions, nil
+}
+
+func codexProjectTrustMarkers(projectRoot string) (string, string, string, error) {
+	canonical, err := filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return "", "", "", err
+	}
+	canonical, err = filepath.Abs(canonical)
+	if err != nil {
+		return "", "", "", err
+	}
+	canonical = filepath.Clean(canonical)
+	identity := localprojection.FingerprintBytes([]byte(canonical))[:16]
+	return "# packy:project-trust:" + identity + ":start", "# packy:project-trust:" + identity + ":end", canonical, nil
 }
 
 func projectTreeFingerprint(target string) (string, bool, error) {

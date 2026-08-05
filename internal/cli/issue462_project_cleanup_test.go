@@ -23,6 +23,8 @@ func TestIssue462UninstallSeparatelyDeactivatesPersonalProjectEffects(t *testing
 		"PERSONAL PROJECT DEACTIVATION PREVIEW",
 		"Runtime activation: active",
 		"Remove personal effect: codex-project-trust",
+		"consent=destructive-cleanup",
+		"adapter_provenance=codex-project/v1/project-trust",
 		"Approve personal project deactivation",
 		"Verified personal project deactivation",
 		"COMPLETE PROJECT PACK UNINSTALL PREVIEW",
@@ -104,6 +106,19 @@ func TestIssue462OrphanedActivationIsExplicitAndDeactivatesFromReceipts(t *testi
 	}
 	if readFileString(t, trustPath) != beforeTrust || readFileString(t, statePath) != beforeState {
 		t.Fatal("orphan observation mutated personal effects or receipts")
+	}
+	deactivationJSON, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", "codex", "--project", "--dry-run", "--json")
+	var deactivation capabilitypack.JSONProjectDeactivationPreview
+	if err != nil || json.Unmarshal([]byte(deactivationJSON), &deactivation) != nil || len(deactivation.Effects) != 1 || deactivation.Effects[0].Consent != capabilitypack.ConsentDestructiveCleanup || deactivation.Effects[0].AdapterProvenance != "codex-project/v1/project-trust" {
+		t.Fatalf("typed orphan deactivation preview = %+v, %v\n%s", deactivation, err, deactivationJSON)
+	}
+	if readFileString(t, trustPath) != beforeTrust || readFileString(t, statePath) != beforeState {
+		t.Fatal("orphan deactivation dry-run mutated personal effects or receipts")
+	}
+	out, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "--project", "--json")
+	report = capabilitypack.JSONProjectStatusReport{}
+	if err != nil || json.Unmarshal([]byte(out), &report) != nil || len(report.Packs) != 1 || report.Packs[0].Runtime != capabilitypack.ProjectRuntimeOrphaned {
+		t.Fatalf("unfocused orphan status = %+v, %v\n%s", report, err, out)
 	}
 
 	if err := os.WriteFile(trustPath, []byte(strings.Replace(trusted, "trust_level = \"trusted\"", "trust_level = \"untrusted\"", 1)), 0o600); err != nil {

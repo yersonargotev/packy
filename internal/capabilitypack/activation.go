@@ -230,26 +230,45 @@ const (
 // inspection. Capability-pack decides which facts are relevant to each use
 // case; adapters only translate those facts into host projections.
 type SurfaceTransition struct {
-	Prior               Pack
-	Desired             Pack
-	CurrentOwnership    []ProjectionOwnership
-	ResidualOwnership   []ProjectionOwnership
-	ResolvedExecutables []ExecutableResolution
-	ProjectRoot         string
-	ProjectInstallation *ProjectInstallation
-	ProjectGoal         ProjectionGoal
+	Prior                 Pack
+	Desired               Pack
+	CurrentOwnership      []ProjectionOwnership
+	ResidualOwnership     []ProjectionOwnership
+	ResolvedExecutables   []ExecutableResolution
+	ProjectRoot           string
+	ProjectInstallation   *ProjectInstallation
+	ProjectGoal           ProjectionGoal
+	ProjectEffectReceipts []ProjectActivationEffectReceipt
+}
+
+type ProjectEffectState string
+
+const (
+	ProjectEffectAbsent  ProjectEffectState = "absent"
+	ProjectEffectExact   ProjectEffectState = "exact"
+	ProjectEffectDrifted ProjectEffectState = "drifted"
+)
+
+type ObservedProjectEffect struct {
+	Kind                ProjectionActionKind
+	Target              string
+	State               ProjectEffectState
+	ObservedFingerprint string
+	AdapterProvenance   string
+	Action              ProjectionAction
 }
 
 type SurfaceInspection struct {
-	Revision                 string
-	Projections              []ObservedProjection
-	OccupiedNames            []OccupiedName
-	RuntimeModeEvidence      []RuntimeModeEvidence
-	RuntimeModeResults       []RuntimeModeResult
-	Readiness                ReadinessObservation
-	PendingHumanActions      []string
-	Unrepresentable          []UnrepresentableResource
-	ProjectActivationActions []ProjectionAction
+	Revision                   string
+	Projections                []ObservedProjection
+	OccupiedNames              []OccupiedName
+	RuntimeModeEvidence        []RuntimeModeEvidence
+	RuntimeModeResults         []RuntimeModeResult
+	Readiness                  ReadinessObservation
+	PendingHumanActions        []string
+	Unrepresentable            []UnrepresentableResource
+	ProjectActivationActions   []ProjectionAction
+	ProjectDeactivationEffects []ObservedProjectEffect
 }
 
 type UnrepresentableResource struct {
@@ -3155,6 +3174,42 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		}
 		activationActions[key] = struct{}{}
 	}
+	expectedEffects := make(map[string]ProjectActivationEffectReceipt, len(transition.ProjectEffectReceipts))
+	for _, receipt := range transition.ProjectEffectReceipts {
+		key := string(receipt.Action) + "\x00" + receipt.Target
+		if _, duplicate := expectedEffects[key]; duplicate || !validProjectActivationEffectReceipt(receipt) {
+			return SurfaceInspection{}, errors.New("project effect transition contains malformed or duplicate receipts")
+		}
+		expectedEffects[key] = receipt
+	}
+	observedEffects := make(map[string]struct{}, len(observation.ProjectDeactivationEffects))
+	for _, effect := range observation.ProjectDeactivationEffects {
+		key := string(effect.Kind) + "\x00" + effect.Target
+		receipt, expected := expectedEffects[key]
+		if !expected {
+			return SurfaceInspection{}, errors.New("surface adapter returned an unreceipted personal project effect")
+		}
+		if _, duplicate := observedEffects[key]; duplicate || effect.AdapterProvenance == "" {
+			return SurfaceInspection{}, errors.New("surface adapter returned a malformed or duplicate personal project effect")
+		}
+		observedEffects[key] = struct{}{}
+		switch effect.State {
+		case ProjectEffectAbsent, ProjectEffectDrifted:
+			if effect.Action.Kind != "" {
+				return SurfaceInspection{}, errors.New("surface adapter granted a reversal action for a non-exact personal project effect")
+			}
+		case ProjectEffectExact:
+			action := effect.Action
+			if effect.AdapterProvenance != receipt.AdapterProvenance || action.Kind != receipt.Action || action.Surface != receipt.Surface || filepath.Clean(action.Target) != filepath.Clean(receipt.Target) || action.AdapterProvenance != receipt.AdapterProvenance || action.Consent != ConsentDestructiveCleanup || !action.PreviewOnly || action.Content == "" || action.Precondition == "" || action.FileMode == 0 || action.Mode != "" {
+				return SurfaceInspection{}, errors.New("surface adapter returned a malformed receipted personal project reversal")
+			}
+		default:
+			return SurfaceInspection{}, errors.New("surface adapter returned an unsupported personal project effect state")
+		}
+	}
+	if len(observedEffects) != len(expectedEffects) {
+		return SurfaceInspection{}, errors.New("surface adapter omitted a receipted personal project effect")
+	}
 	unrepresentable := make(map[string]struct{}, len(observation.Unrepresentable))
 	for _, resource := range observation.Unrepresentable {
 		key := resource.Resource.String()
@@ -3240,6 +3295,9 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 	sort.Slice(observation.ProjectActivationActions, func(i, j int) bool {
 		return observation.ProjectActivationActions[i].ID+"\x00"+observation.ProjectActivationActions[i].Target < observation.ProjectActivationActions[j].ID+"\x00"+observation.ProjectActivationActions[j].Target
 	})
+	sort.Slice(observation.ProjectDeactivationEffects, func(i, j int) bool {
+		return string(observation.ProjectDeactivationEffects[i].Kind)+"\x00"+observation.ProjectDeactivationEffects[i].Target < string(observation.ProjectDeactivationEffects[j].Kind)+"\x00"+observation.ProjectDeactivationEffects[j].Target
+	})
 	sort.Strings(observation.PendingHumanActions)
 	sort.Strings(observation.Readiness.PendingHumanActions)
 	sort.Strings(observation.Readiness.Evidence)
@@ -3257,7 +3315,7 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 }
 
 func validatePersonalProjectAction(action ProjectionAction) error {
-	commonMalformed := !action.PreviewOnly || action.Target == "" || !filepath.IsAbs(action.Target) || action.Content == "" || action.Version == "" || action.Precondition == "" || action.FileMode == 0 || action.Mode != "" || action.Consent != "" || action.Source != "" || action.Command != "" || len(action.Args) != 0
+	commonMalformed := !action.PreviewOnly || action.Target == "" || !filepath.IsAbs(action.Target) || action.Content == "" || action.Version == "" || action.Precondition == "" || action.FileMode == 0 || action.Mode != "" || action.Consent != "" || action.AdapterProvenance == "" || action.Source != "" || action.Command != "" || len(action.Args) != 0
 	switch action.Kind {
 	case ActionCodexProjectTrust:
 		if commonMalformed || action.ID != "project_trust:codex" || action.Surface != SurfaceCodex || action.ContributionStartMarker == "" || action.ContributionEndMarker == "" {
@@ -3302,6 +3360,7 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 	value.CurrentOwnership = cloneOwnership(value.CurrentOwnership)
 	value.ResidualOwnership = cloneOwnership(value.ResidualOwnership)
 	value.ResolvedExecutables = cloneResolutions(value.ResolvedExecutables)
+	value.ProjectEffectReceipts = append([]ProjectActivationEffectReceipt(nil), value.ProjectEffectReceipts...)
 	if value.ProjectInstallation != nil {
 		data, _ := json.Marshal(value.ProjectInstallation)
 		var installation ProjectInstallation
@@ -3322,6 +3381,10 @@ func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
 	value.ProjectActivationActions = append([]ProjectionAction(nil), value.ProjectActivationActions...)
 	for i := range value.ProjectActivationActions {
 		value.ProjectActivationActions[i].Args = append([]string(nil), value.ProjectActivationActions[i].Args...)
+	}
+	value.ProjectDeactivationEffects = append([]ObservedProjectEffect(nil), value.ProjectDeactivationEffects...)
+	for i := range value.ProjectDeactivationEffects {
+		value.ProjectDeactivationEffects[i].Action.Args = append([]string(nil), value.ProjectDeactivationEffects[i].Action.Args...)
 	}
 	value.PendingHumanActions = append([]string(nil), value.PendingHumanActions...)
 	value.Unrepresentable = append([]UnrepresentableResource(nil), value.Unrepresentable...)

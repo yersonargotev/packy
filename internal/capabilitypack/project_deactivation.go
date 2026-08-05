@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 const ProjectDeactivationPreviewSchemaVersion = 1
@@ -50,9 +49,9 @@ type JSONProjectDeactivationPreview struct {
 }
 
 type ProjectDeactivationApplyRequest struct {
-	Preview     JSONProjectDeactivationPreview
-	Adapter     SurfaceAdapter
-	Interactive bool
+	Preview                    JSONProjectDeactivationPreview
+	Adapter                    SurfaceAdapter
+	DestructiveCleanupApproved bool
 }
 
 type ProjectDeactivationApplyResult struct {
@@ -62,7 +61,7 @@ type ProjectDeactivationApplyResult struct {
 	Digest        string `json:"digest"`
 }
 
-func PreviewProjectDeactivation(_ context.Context, request ProjectDeactivationRequest) (JSONProjectDeactivationPreview, error) {
+func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivationRequest) (JSONProjectDeactivationPreview, error) {
 	report := JSONProjectDeactivationPreview{
 		SchemaVersion: ProjectDeactivationPreviewSchemaVersion, Report: "project-deactivation-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Surface: request.Surface, Effects: []ProjectActivationEffectPreview{}, Blockers: []ProjectInstallBlocker{},
@@ -70,6 +69,13 @@ func PreviewProjectDeactivation(_ context.Context, request ProjectDeactivationRe
 	}
 	if request.ProjectRoot == "" || request.PackyHome == "" || request.PackID == "" || request.Adapter == nil {
 		return report, errors.New("project deactivation preview requires the project root, Packy Home, pack, and surface adapter")
+	}
+	recoveryPending, err := ProjectInstallRecoveryPending(request.PackyHome, request.ProjectRoot)
+	if err != nil {
+		return report, err
+	}
+	if recoveryPending {
+		return report, errors.New("shared project recovery is required; run `packy pack install` before previewing personal project deactivation")
 	}
 	document, exists, err := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.Surface)
 	if err != nil {
@@ -100,31 +106,33 @@ func PreviewProjectDeactivation(_ context.Context, request ProjectDeactivationRe
 	if document.Recovery.Status != "clean" {
 		report.Runtime = ProjectRuntimeRecoveryRequired
 	}
+	observedEffects, err := inspectProjectEffectReceipts(ctx, request.Adapter, request.ProjectRoot, document.Effects)
+	if err != nil {
+		return report, err
+	}
+	observedByReceipt := make(map[string]ObservedProjectEffect, len(observedEffects))
+	for _, observed := range observedEffects {
+		observedByReceipt[string(observed.Kind)+"\x00"+observed.Target] = observed
+	}
 	for _, receipt := range document.Effects {
-		effect := ProjectActivationEffectPreview{Category: ProjectActivationTrust, Action: receipt.Action, Target: "<personal-host-path>", Identity: receipt.ContributionIdentity}
+		observed := observedByReceipt[string(receipt.Action)+"\x00"+receipt.Target]
+		effect := ProjectActivationEffectPreview{Category: ProjectActivationTrust, Action: receipt.Action, Target: "<personal-host-path>", Identity: receipt.ContributionIdentity, AdapterProvenance: observed.AdapterProvenance, Consent: ConsentDestructiveCleanup}
 		if receipt.Action == ActionCodexProjectTrust {
 			effect.Target = "<codex-home>/config.toml"
 		}
-		action, absent, blocker, inspectErr := projectDeactivationAction(receipt)
-		if inspectErr != nil {
-			return report, inspectErr
-		}
-		if absent {
+		switch observed.State {
+		case ProjectEffectAbsent:
 			effect.Observation = digestJSON(struct {
-				Receipt projectActivationEffectReceipt
+				Receipt ProjectActivationEffectReceipt
 				State   string
 			}{Receipt: receipt, State: "absent"})
-		} else if blocker == nil {
-			effect.Observation = projectActivationActionObservation(action)
+		case ProjectEffectExact:
+			effect.Observation = projectActivationActionObservation(observed.Action)
+			report.actions = append(report.actions, observed.Action)
+		case ProjectEffectDrifted:
+			report.Blockers = append(report.Blockers, ProjectInstallBlocker{Code: "personal_effect_drift", Target: "<personal-host-path>", Detail: "the receipted personal contribution differs from exact adapter evidence", Remediation: "restore the exact receipted contribution before retrying project deactivation"})
 		}
 		report.Effects = append(report.Effects, effect)
-		if blocker != nil {
-			report.Blockers = append(report.Blockers, *blocker)
-			continue
-		}
-		if !absent {
-			report.actions = append(report.actions, action)
-		}
 	}
 	if len(report.Blockers) > 0 {
 		report.Disposition = ProjectDeactivationBlocked
@@ -135,42 +143,21 @@ func PreviewProjectDeactivation(_ context.Context, request ProjectDeactivationRe
 	return report, nil
 }
 
-func projectDeactivationAction(receipt projectActivationEffectReceipt) (ProjectionAction, bool, *ProjectInstallBlocker, error) {
-	info, err := os.Lstat(receipt.Target)
-	if errors.Is(err, fs.ErrNotExist) {
-		return ProjectionAction{}, true, nil, nil
+func inspectProjectEffectReceipts(ctx context.Context, adapter SurfaceAdapter, projectRoot string, receipts []ProjectActivationEffectReceipt) ([]ObservedProjectEffect, error) {
+	if len(receipts) == 0 {
+		return []ObservedProjectEffect{}, nil
 	}
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ProjectRoot: projectRoot, ProjectEffectReceipts: receipts})
 	if err != nil {
-		return ProjectionAction{}, false, nil, err
+		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return ProjectionAction{}, false, &ProjectInstallBlocker{Code: "personal_effect_drift", Target: receipt.Target, Detail: "the receipted personal target is not a regular file", Remediation: "restore the exact receipted contribution before retrying project deactivation"}, nil
-	}
-	data, err := os.ReadFile(receipt.Target)
-	if err != nil {
-		return ProjectionAction{}, false, nil, err
-	}
-	fragment, found := extractProjectContribution(string(data), receipt.StartMarker, receipt.EndMarker)
-	if !found {
-		if !strings.Contains(string(data), receipt.StartMarker) && !strings.Contains(string(data), receipt.EndMarker) {
-			return ProjectionAction{}, true, nil, nil
-		}
-		return ProjectionAction{}, false, &ProjectInstallBlocker{Code: "personal_effect_drift", Target: receipt.Target, Detail: "the receipted personal contribution markers are incomplete", Remediation: "restore the exact receipted contribution before retrying project deactivation"}, nil
-	}
-	if fingerprintProjectBytes([]byte(fragment)) != receipt.ContributionIdentity || strings.Count(string(data), receipt.StartMarker) != 1 || strings.Count(string(data), receipt.EndMarker) != 1 {
-		return ProjectionAction{}, false, &ProjectInstallBlocker{Code: "personal_effect_drift", Target: receipt.Target, Detail: "the receipted personal contribution differs from its exact activation evidence", Remediation: "restore the exact receipted contribution before retrying project deactivation"}, nil
-	}
-	return ProjectionAction{
-		ID: "deactivate:" + string(receipt.Action), Kind: receipt.Action, Target: receipt.Target,
-		Content: strings.Replace(string(data), fragment, "", 1), FileMode: uint32(info.Mode().Perm()), Precondition: fingerprintProjectBytes(data),
-		Description: "remove the exact receipted personal project contribution",
-	}, false, nil, nil
+	return observation.ProjectDeactivationEffects, nil
 }
 
 func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationApplyRequest) (ProjectDeactivationApplyResult, error) {
 	preview := request.Preview
-	if !request.Interactive {
-		return ProjectDeactivationApplyResult{}, errors.New("project deactivation requires interactive destructive consent")
+	if !request.DestructiveCleanupApproved {
+		return ProjectDeactivationApplyResult{}, errors.New("project deactivation requires approval of the exact destructive-cleanup phase")
 	}
 	if preview.projectRoot == "" || preview.packyHome == "" || request.Adapter == nil {
 		return ProjectDeactivationApplyResult{}, errors.New("project deactivation Apply requires the exact preview and surface adapter")
@@ -195,17 +182,22 @@ func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationAp
 	if err := saveProjectActivationRecords(preview.packyHome, preview.projectRoot, document.State, document.Approvals, document.Receipts, document.Effects, "applying"); err != nil {
 		return ProjectDeactivationApplyResult{}, err
 	}
-	if actionErr := request.Adapter.ApplyProjections(ctx, fresh.actions); actionErr != nil {
+	actions := append([]ProjectionAction(nil), fresh.actions...)
+	for i := range actions {
+		actions[i].PreviewOnly = false
+	}
+	if actionErr := request.Adapter.ApplyProjections(ctx, actions); actionErr != nil {
 		_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, document.State, document.Approvals, document.Receipts, document.Effects, "required")
 		return ProjectDeactivationApplyResult{}, actionErr
 	}
-	for _, receipt := range document.Effects {
-		_, absent, blocker, inspectErr := projectDeactivationAction(receipt)
-		if inspectErr != nil || !absent || blocker != nil {
+	verified, inspectErr := inspectProjectEffectReceipts(ctx, request.Adapter, preview.projectRoot, document.Effects)
+	if inspectErr != nil {
+		_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, document.State, document.Approvals, document.Receipts, document.Effects, "required")
+		return ProjectDeactivationApplyResult{}, inspectErr
+	}
+	for _, effect := range verified {
+		if effect.State != ProjectEffectAbsent {
 			_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, document.State, document.Approvals, document.Receipts, document.Effects, "required")
-			if inspectErr != nil {
-				return ProjectDeactivationApplyResult{}, inspectErr
-			}
 			return ProjectDeactivationApplyResult{}, errors.New("personal project contribution was not verified absent after deactivation")
 		}
 	}

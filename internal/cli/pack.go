@@ -630,7 +630,7 @@ func renderProjectDeactivationPreview(cmd *cobra.Command, preview capabilitypack
 		return err
 	}
 	for _, effect := range preview.Effects {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Remove personal effect: %s target=%s identity=%s\n", effect.Action, effect.Target, effect.Identity); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Remove personal effect: %s target=%s identity=%s consent=%s adapter_provenance=%s\n", effect.Action, effect.Target, effect.Identity, effect.Consent, effect.AdapterProvenance); err != nil {
 			return err
 		}
 	}
@@ -657,7 +657,7 @@ func approveAndApplyProjectDeactivation(cmd *cobra.Command, opts Options, previe
 	if !approved {
 		return errors.New("personal project deactivation was not approved")
 	}
-	result, err := capabilitypack.ApplyProjectDeactivation(cmd.Context(), capabilitypack.ProjectDeactivationApplyRequest{Preview: preview, Adapter: adapter, Interactive: true})
+	result, err := capabilitypack.ApplyProjectDeactivation(cmd.Context(), capabilitypack.ProjectDeactivationApplyRequest{Preview: preview, Adapter: adapter, DestructiveCleanupApproved: true})
 	if err != nil {
 		return err
 	}
@@ -1598,6 +1598,9 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				} else if err := renderProjectStatus(cmd, report); err != nil {
 					return err
 				}
+				if require != "" && report.RecoveryRequired {
+					return fmt.Errorf("project recovery is required; run `%s`", report.RecoveryCommand)
+				}
 				for _, status := range report.Packs {
 					if require == "installed" && !status.RequirementSatisfied {
 						return fmt.Errorf("pack %q on %s is not installed", status.Pack.ID, status.Surface)
@@ -1694,6 +1697,11 @@ func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
 }
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
+	if report.RecoveryRequired {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Project recovery: required\nRecovery command: %s\n", report.RecoveryCommand); err != nil {
+			return err
+		}
+	}
 	for _, status := range report.Packs {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers), renderPendingAction(status.PendingHumanActions), renderPendingAction(status.Evidence)); err != nil {
 			return err

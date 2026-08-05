@@ -56,11 +56,13 @@ type ProjectActivationCategoryPreview struct {
 }
 
 type ProjectActivationEffectPreview struct {
-	Category    ProjectActivationCategory `json:"category"`
-	Action      ProjectionActionKind      `json:"action"`
-	Target      string                    `json:"target"`
-	Identity    string                    `json:"identity"`
-	Observation string                    `json:"observation"`
+	Category          ProjectActivationCategory `json:"category"`
+	Action            ProjectionActionKind      `json:"action"`
+	Target            string                    `json:"target"`
+	Identity          string                    `json:"identity"`
+	Observation       string                    `json:"observation"`
+	AdapterProvenance string                    `json:"adapter_provenance,omitempty"`
+	Consent           ConsentKind               `json:"consent,omitempty"`
 }
 
 type ProjectActivationRequest struct {
@@ -110,7 +112,7 @@ type ProjectActivationApplyResult struct {
 	Digest        string `json:"digest"`
 }
 
-const projectActivationDocumentSchemaVersion = 2
+const projectActivationDocumentSchemaVersion = 3
 
 type projectActivationState struct {
 	SchemaVersion         int     `json:"schema_version"`
@@ -128,10 +130,12 @@ type projectActivationReceipt struct {
 	Details  []ProjectSensitiveDisclosure `json:"details"`
 }
 
-type projectActivationEffectReceipt struct {
+type ProjectActivationEffectReceipt struct {
 	Action               ProjectionActionKind `json:"action"`
+	Surface              Surface              `json:"surface"`
 	Target               string               `json:"target"`
 	ContributionIdentity string               `json:"contribution_identity"`
+	AdapterProvenance    string               `json:"adapter_provenance"`
 	StartMarker          string               `json:"start_marker"`
 	EndMarker            string               `json:"end_marker"`
 	PriorState           string               `json:"prior_state"`
@@ -146,7 +150,7 @@ type projectActivationDocument struct {
 	State                 projectActivationState           `json:"state"`
 	Approvals             []ProjectActivationApproval      `json:"approvals"`
 	Receipts              []projectActivationReceipt       `json:"receipts"`
-	Effects               []projectActivationEffectReceipt `json:"effects"`
+	Effects               []ProjectActivationEffectReceipt `json:"effects"`
 	SensitiveLockIdentity string                           `json:"sensitive_lock_identity"`
 	Recovery              projectActivationRecovery        `json:"recovery"`
 }
@@ -233,7 +237,7 @@ func (f Facade) ApproveProjectActivation(preview JSONProjectActivationPreview, c
 }
 
 func projectActivationEffectPreview(action ProjectionAction) (ProjectActivationEffectPreview, bool) {
-	effect := ProjectActivationEffectPreview{Action: action.Kind, Identity: action.Version, Observation: projectActivationActionObservation(action)}
+	effect := ProjectActivationEffectPreview{Action: action.Kind, Identity: action.Version, Observation: projectActivationActionObservation(action), AdapterProvenance: action.AdapterProvenance, Consent: action.Consent}
 	switch action.Kind {
 	case ActionCodexProjectTrust:
 		effect.Category, effect.Target = ProjectActivationTrust, "<codex-home>/config.toml"
@@ -515,28 +519,29 @@ func sealProjectActivationPreview(preview JSONProjectActivationPreview) string {
 
 func projectActivationActionObservation(action ProjectionAction) string {
 	data, _ := json.Marshal(struct {
-		ID, Target, Version, Precondition string
-		Kind                              ProjectionActionKind
-		FileMode                          uint32
-	}{action.ID, action.Target, action.Version, action.Precondition, action.Kind, action.FileMode})
+		ID, Target, Version, Precondition, AdapterProvenance string
+		Kind                                                 ProjectionActionKind
+		Consent                                              ConsentKind
+		FileMode                                             uint32
+	}{action.ID, action.Target, action.Version, action.Precondition, action.AdapterProvenance, action.Kind, action.Consent, action.FileMode})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
 
-func projectActivationEffectReceipts(actions []ProjectionAction) []projectActivationEffectReceipt {
-	receipts := make([]projectActivationEffectReceipt, 0, len(actions))
+func projectActivationEffectReceipts(actions []ProjectionAction) []ProjectActivationEffectReceipt {
+	receipts := make([]ProjectActivationEffectReceipt, 0, len(actions))
 	for _, action := range actions {
-		receipts = append(receipts, projectActivationEffectReceipt{Action: action.Kind, Target: action.Target, ContributionIdentity: action.Version, StartMarker: action.ContributionStartMarker, EndMarker: action.ContributionEndMarker, PriorState: "absent"})
+		receipts = append(receipts, ProjectActivationEffectReceipt{Action: action.Kind, Surface: action.Surface, Target: action.Target, ContributionIdentity: action.Version, AdapterProvenance: action.AdapterProvenance, StartMarker: action.ContributionStartMarker, EndMarker: action.ContributionEndMarker, PriorState: "absent"})
 	}
 	return receipts
 }
 
-func mergeProjectActivationEffectReceipts(left, right []projectActivationEffectReceipt) []projectActivationEffectReceipt {
-	byTarget := map[string]projectActivationEffectReceipt{}
-	for _, receipt := range append(append([]projectActivationEffectReceipt(nil), left...), right...) {
+func mergeProjectActivationEffectReceipts(left, right []ProjectActivationEffectReceipt) []ProjectActivationEffectReceipt {
+	byTarget := map[string]ProjectActivationEffectReceipt{}
+	for _, receipt := range append(append([]ProjectActivationEffectReceipt(nil), left...), right...) {
 		byTarget[string(receipt.Action)+"\x00"+receipt.Target] = receipt
 	}
-	result := make([]projectActivationEffectReceipt, 0, len(byTarget))
+	result := make([]ProjectActivationEffectReceipt, 0, len(byTarget))
 	for _, receipt := range byTarget {
 		result = append(result, receipt)
 	}
@@ -640,8 +645,8 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot string, surf
 	return document, true, nil
 }
 
-func validProjectActivationEffectReceipt(effect projectActivationEffectReceipt) bool {
-	if !filepath.IsAbs(effect.Target) || effect.ContributionIdentity == "" || effect.PriorState != "absent" {
+func validProjectActivationEffectReceipt(effect ProjectActivationEffectReceipt) bool {
+	if (effect.Surface != SurfaceCodex && effect.Surface != SurfaceOpenCode && effect.Surface != SurfaceClaude) || !filepath.IsAbs(effect.Target) || effect.ContributionIdentity == "" || effect.AdapterProvenance == "" || effect.PriorState != "absent" {
 		return false
 	}
 	switch effect.Action {
@@ -656,7 +661,7 @@ func validProjectActivationRecovery(status string) bool {
 	return status == "clean" || status == "applying" || status == "required"
 }
 
-func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt, effects []projectActivationEffectReceipt, recovery string) error {
+func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt, effects []ProjectActivationEffectReceipt, recovery string) error {
 	directory, err := projectActivationDirectory(packyHome, projectRoot)
 	if err != nil {
 		return err
