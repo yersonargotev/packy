@@ -410,6 +410,16 @@ func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONP
 			}
 		}
 	}
+	for _, projection := range report.Retirements {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Retirement: %s -> %s observed=%s\n", projection.Resource, projection.Target, projection.ObservedState); err != nil {
+			return err
+		}
+	}
+	for _, change := range report.SensitiveChanges {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Sensitive change: %s %s on %s (%s); %s\n", change.Change, change.Resource, change.Surface, change.Category, change.Detail); err != nil {
+			return err
+		}
+	}
 	for _, contribution := range report.Notices.Contributions {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Legal contribution: %s license=%s attribution=%s\n", contribution.Resource, contribution.License, contribution.Attribution); err != nil {
 			return err
@@ -521,9 +531,29 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	var dryRun bool
 	var aliasValues []string
 	var jsonOutput bool
+	var project bool
+	var version string
 	cmd := &cobra.Command{
 		Use: "update <pack>", Short: "Update an active capability pack to the catalog-current version", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if project {
+				if surface != "" {
+					return errors.New("--surface is not accepted for project update")
+				}
+				if len(aliasValues) > 0 {
+					return errors.New("--alias is not accepted for project update")
+				}
+				if version == "" {
+					return errors.New("--version is required for project update")
+				}
+				return runProjectPackUpdate(cmd, opts, workstationResolver, args[0], version, dryRun, jsonOutput)
+			}
+			if version != "" {
+				return errors.New("--version is accepted only for project update")
+			}
+			if surface == "" {
+				return errors.New("--surface is required for global update")
+			}
 			aliases, err := parseSurfaceAliases(aliasValues)
 			if err != nil {
 				return err
@@ -546,8 +576,101 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
-	_ = cmd.MarkFlagRequired("surface")
+	cmd.Flags().BoolVar(&project, "project", false, "Update the shared project installation across every installed surface")
+	cmd.Flags().StringVar(&version, "version", "", "Exact admitted project pack version")
 	return cmd
+}
+
+func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver *workstation.Resolver, packID, version string, dryRun, jsonOutput bool) error {
+	snapshot, err := workstationResolver.Resolve(workstation.Options{})
+	if err != nil {
+		return err
+	}
+	cwd, err := snapshot.CurrentDirectory()
+	if err != nil {
+		return fmt.Errorf("resolve current directory: %w", err)
+	}
+	projectRoot, err := capabilitypack.DiscoverProjectRoot(cwd)
+	if err != nil {
+		return err
+	}
+	adapter := projectOfflineAdapter("")
+	pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
+	if err != nil {
+		return err
+	}
+	if dryRun && pendingRecovery {
+		return errors.New("project installation is recovery-required; rerun the project update without --dry-run before requesting another preview")
+	}
+	if !dryRun {
+		recovered, recoveryErr := capabilitypack.NewFacade(capabilitypack.Catalog{}).RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+		if recoveryErr != nil {
+			return recoveryErr
+		}
+		if recovered && !jsonOutput {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Recovered the prior project installation attempt before preview"); err != nil {
+				return err
+			}
+		}
+	}
+	composition, err := resolvePackComposition(opts, workstationResolver)
+	if err != nil {
+		return err
+	}
+	facade := capabilitypack.NewFacade(composition.catalog)
+	adapter = projectInstallAdapter("", composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, Version: version, ProjectRoot: projectRoot}, adapter)
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		output := report
+		output.DryRun = dryRun
+		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(output); err != nil {
+			return err
+		}
+	} else if err := renderProjectInstallPreview(cmd, report, dryRun); err != nil {
+		return err
+	}
+	if report.Disposition == capabilitypack.ProjectInstallBlocked {
+		return capabilitypack.ProjectInstallNotActionableError{Disposition: report.Disposition}
+	}
+	if dryRun {
+		return nil
+	}
+	if report.Disposition == capabilitypack.ProjectInstallConverged {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), "Verified no-op: the exact project installation is already present")
+		return err
+	}
+	if !opts.Terminal.Interactive(cmd.InOrStdin()) {
+		return capabilitypack.ErrInteractiveRequired
+	}
+	approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve project update for exact preview %s?", report.Observation))
+	if err != nil {
+		return err
+	}
+	if !approved {
+		return errors.New("project update was not approved")
+	}
+	destructiveCleanupApproved := false
+	if len(report.Retirements) > 0 {
+		destructiveCleanupApproved, err = opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve destructive-cleanup phase for exact project update preview %s?", report.Observation))
+		if err != nil {
+			return err
+		}
+		if !destructiveCleanupApproved {
+			return errors.New("project update destructive-cleanup phase was not approved")
+		}
+	}
+	result, err := facade.ApplyProjectInstall(cmd.Context(), capabilitypack.ProjectInstallApplyRequest{Preview: report, PackyHome: snapshot.PackyHome(), Adapter: adapter, DestructiveCleanupApproved: destructiveCleanupApproved})
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), "Verified project update")
+	return err
 }
 
 func applyPackPlan(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, plan capabilitypack.ReconciliationPlan, dryRun, jsonOutput bool) error {

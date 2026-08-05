@@ -19,9 +19,10 @@ import (
 const projectInstallApplySchemaVersion = 1
 
 type ProjectInstallApplyRequest struct {
-	Preview   JSONProjectInstallPreview
-	PackyHome string
-	Adapter   SurfaceAdapter
+	Preview                    JSONProjectInstallPreview
+	PackyHome                  string
+	Adapter                    SurfaceAdapter
+	DestructiveCleanupApproved bool
 }
 
 type ProjectInstallApplyResult struct {
@@ -91,6 +92,9 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	if preview.Disposition == ProjectInstallBlocked {
 		return ProjectInstallApplyResult{}, ProjectInstallNotActionableError{Disposition: preview.Disposition}
 	}
+	if len(preview.Retirements) > 0 && !request.DestructiveCleanupApproved {
+		return ProjectInstallApplyResult{}, errors.New("project update retirement requires approval of the exact destructive-cleanup phase")
+	}
 	guard, err := acquireProjectInstallGuard(ctx, preview.projectRoot)
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
@@ -102,15 +106,23 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 		return ProjectInstallApplyResult{}, err
 	}
 	freshRequest := preview.request
-	if freshRequest.ProjectRoot == "" {
-		freshRequest = ProjectInstallRequest{PackID: preview.Pack.ID, Surface: preview.Surface, ProjectRoot: preview.projectRoot}
+	var fresh JSONProjectInstallPreview
+	if preview.updateRequest.PackID != "" {
+		fresh, err = f.PreviewProjectUpdate(ctx, preview.updateRequest, request.Adapter)
+	} else {
+		if freshRequest.ProjectRoot == "" {
+			freshRequest = ProjectInstallRequest{PackID: preview.Pack.ID, Surface: preview.Surface, ProjectRoot: preview.projectRoot}
+		}
+		fresh, err = f.PreviewProjectInstall(ctx, freshRequest, request.Adapter)
 	}
-	fresh, err := f.PreviewProjectInstall(ctx, freshRequest, request.Adapter)
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
 	}
 	if fresh.Observation != preview.Observation {
 		return ProjectInstallApplyResult{}, StalePlanError{Precondition: "project targets changed after preview"}
+	}
+	if len(fresh.Retirements) > 0 && !request.DestructiveCleanupApproved {
+		return ProjectInstallApplyResult{}, errors.New("project update retirement requires approval of the exact destructive-cleanup phase")
 	}
 	if fresh.Disposition == ProjectInstallConverged {
 		return ProjectInstallApplyResult{SchemaVersion: projectInstallApplySchemaVersion, Report: "project-install-apply", Status: "no-op", Observation: fresh.Observation}, nil
@@ -195,7 +207,12 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 			return fail(actionErr)
 		}
 	}
-	verified, err := f.PreviewProjectInstall(ctx, freshRequest, request.Adapter)
+	var verified JSONProjectInstallPreview
+	if fresh.updateRequest.PackID != "" {
+		verified, err = f.PreviewProjectUpdate(ctx, fresh.updateRequest, request.Adapter)
+	} else {
+		verified, err = f.PreviewProjectInstall(ctx, freshRequest, request.Adapter)
+	}
 	if err != nil || verified.Disposition != ProjectInstallConverged {
 		if err == nil {
 			err = fmt.Errorf("%w: disposition=%s blockers=%v", ErrVerificationFailed, verified.Disposition, verified.Blockers)
@@ -270,7 +287,7 @@ func projectNoticeMarkers(packID string) (string, string) {
 	return "<!-- packy:project:" + packID + ":notices:start -->", "<!-- packy:project:" + packID + ":notices:end -->"
 }
 
-func planProjectNotices(preview JSONProjectInstallPreview, lockExists, allowMissingRestore bool) (string, uint32, string, bool, []ProjectInstallBlocker, error) {
+func planProjectNotices(preview JSONProjectInstallPreview, lockExists, allowMissingRestore bool, priorNoticeSHA256 string) (string, uint32, string, bool, []ProjectInstallBlocker, error) {
 	path := filepath.Join(preview.projectRoot, preview.Notices.Path)
 	current, err := os.ReadFile(path)
 	before, mode := "missing", uint32(0o644)
@@ -304,6 +321,9 @@ func planProjectNotices(preview JSONProjectInstallPreview, lockExists, allowMiss
 		return content, mode, before, false, []ProjectInstallBlocker{{Code: "ambiguous_packy_markers", Target: preview.Notices.Path, Detail: "the project notices contain malformed Packy markers", Remediation: "restore one exact Packy notice contribution before installation"}}, nil
 	}
 	if fragment != block {
+		if allowMissingRestore && priorNoticeSHA256 != "" && fingerprintProjectBytes([]byte(fragment)) == priorNoticeSHA256 {
+			return mergeProjectContribution(content, block, start, end), mode, before, false, nil, nil
+		}
 		code := "ambiguous_packy_markers"
 		if lockExists {
 			code = "owned_drift"
@@ -341,7 +361,7 @@ func extractProjectContribution(content, start, end string) (string, bool) {
 }
 
 func verifyProjectNoticeContribution(preview JSONProjectInstallPreview) error {
-	_, mode, _, intact, blockers, err := planProjectNotices(preview, true, false)
+	_, mode, _, intact, blockers, err := planProjectNotices(preview, true, false, preview.Lock.NoticesSHA256)
 	if err != nil || !intact || len(blockers) > 0 || mode != preview.Lock.NoticesFileMode {
 		return fmt.Errorf("verify project notice contribution: %w", ErrVerificationFailed)
 	}
@@ -387,6 +407,15 @@ func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdenti
 		}
 	}
 	return false
+}
+
+func findProjectLockProjection(lock ProjectLockProposal, resource ResourceIdentity, target string) (ProjectProjectionPlan, bool) {
+	for _, projection := range lock.Projections {
+		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && (projection.Contributor != "" || len(projection.Contributors) > 0) {
+			return projection, true
+		}
+	}
+	return ProjectProjectionPlan{}, false
 }
 
 func inspectProjectContract(preview JSONProjectInstallPreview, existingLock ProjectLockProposal, lockExists, allowRefresh bool) (bool, []ProjectInstallBlocker, error) {
@@ -506,7 +535,7 @@ func projectLocksEqual(left, right ProjectLockProposal) bool {
 }
 
 func verifyProjectInstallSurface(ctx context.Context, adapter SurfaceAdapter, preview JSONProjectInstallPreview) error {
-	if preview.request.reconcileAll {
+	if preview.request.reconcileAll || preview.updateRequest.PackID != "" {
 		resolver, ok := adapter.(projectSurfaceAdapterResolver)
 		if !ok {
 			return errors.New("complete project reconcile verification requires the installed surface adapter set")
@@ -554,7 +583,7 @@ func verifyProjectProjectionObservation(projectRoot string, expected []ProjectPr
 		}
 		key := projection.ID + "\x00" + filepath.Clean(filepath.FromSlash(relative))
 		desired, ok := want[key]
-		if ok && (!projection.Exists || projection.ObservedFingerprint != desired) {
+		if ok && (!projection.Exists || normalizeProjectProjectionFingerprint(projection.ObservedFingerprint) != desired) {
 			return fmt.Errorf("verify project projection %s: %w", projection.ID, ErrVerificationFailed)
 		}
 		delete(want, key)

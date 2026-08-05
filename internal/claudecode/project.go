@@ -190,6 +190,13 @@ func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot s
 	contributor := "surface:claude:pack:" + pack.ID
 	var projections []capabilitypack.ObservedProjection
 	var revision []string
+	instructionTarget := filepath.Join(projectRoot, "CLAUDE.md")
+	instructionOriginal, err := readOptional(instructionTarget)
+	if err != nil {
+		return capabilitypack.SurfaceInspection{}, err
+	}
+	instructionDocument := string(instructionOriginal)
+	instructionPrecondition := projectFileFingerprint(instructionTarget)
 	for _, locked := range lock.Projections {
 		if !capabilitypack.ProjectProjectionHasContributor(locked, contributor) {
 			continue
@@ -215,12 +222,10 @@ func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot s
 			contribution := "pack:" + pack.ID + ":" + locked.Resource.ID
 			observed, exists = observeInstructionContribution(target, contribution)
 			if goal == capabilitypack.ProjectionAbsent && exists {
-				current, readErr := readOptional(target)
-				if readErr != nil {
-					err = readErr
-				} else {
-					action.Content, err = RemoveInstructionContribution(string(current), contribution)
-					action.Precondition = localprojection.FingerprintBytes(current)
+				action.Content, err = RemoveInstructionContribution(instructionDocument, contribution)
+				if err == nil {
+					instructionDocument = action.Content
+					action.Precondition = instructionPrecondition
 					action.FileMode = projectFileMode(target)
 					action.Mode = capabilitypack.ProjectionRemoveContent
 					if strings.TrimSpace(action.Content) == "" {
