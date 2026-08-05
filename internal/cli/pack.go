@@ -652,7 +652,17 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 	if !approved {
 		return errors.New("project update was not approved")
 	}
-	result, err := facade.ApplyProjectInstall(cmd.Context(), capabilitypack.ProjectInstallApplyRequest{Preview: report, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+	destructiveCleanupApproved := false
+	if len(report.Retirements) > 0 {
+		destructiveCleanupApproved, err = opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Approve destructive-cleanup phase for exact project update preview %s?", report.Observation))
+		if err != nil {
+			return err
+		}
+		if !destructiveCleanupApproved {
+			return errors.New("project update destructive-cleanup phase was not approved")
+		}
+	}
+	result, err := facade.ApplyProjectInstall(cmd.Context(), capabilitypack.ProjectInstallApplyRequest{Preview: report, PackyHome: snapshot.PackyHome(), Adapter: adapter, DestructiveCleanupApproved: destructiveCleanupApproved})
 	if err != nil {
 		return err
 	}

@@ -19,9 +19,10 @@ import (
 const projectInstallApplySchemaVersion = 1
 
 type ProjectInstallApplyRequest struct {
-	Preview   JSONProjectInstallPreview
-	PackyHome string
-	Adapter   SurfaceAdapter
+	Preview                    JSONProjectInstallPreview
+	PackyHome                  string
+	Adapter                    SurfaceAdapter
+	DestructiveCleanupApproved bool
 }
 
 type ProjectInstallApplyResult struct {
@@ -91,6 +92,9 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	if preview.Disposition == ProjectInstallBlocked {
 		return ProjectInstallApplyResult{}, ProjectInstallNotActionableError{Disposition: preview.Disposition}
 	}
+	if len(preview.Retirements) > 0 && !request.DestructiveCleanupApproved {
+		return ProjectInstallApplyResult{}, errors.New("project update retirement requires approval of the exact destructive-cleanup phase")
+	}
 	guard, err := acquireProjectInstallGuard(ctx, preview.projectRoot)
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
@@ -116,6 +120,9 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	}
 	if fresh.Observation != preview.Observation {
 		return ProjectInstallApplyResult{}, StalePlanError{Precondition: "project targets changed after preview"}
+	}
+	if len(fresh.Retirements) > 0 && !request.DestructiveCleanupApproved {
+		return ProjectInstallApplyResult{}, errors.New("project update retirement requires approval of the exact destructive-cleanup phase")
 	}
 	if fresh.Disposition == ProjectInstallConverged {
 		return ProjectInstallApplyResult{SchemaVersion: projectInstallApplySchemaVersion, Report: "project-install-apply", Status: "no-op", Observation: fresh.Observation}, nil
@@ -576,7 +583,7 @@ func verifyProjectProjectionObservation(projectRoot string, expected []ProjectPr
 		}
 		key := projection.ID + "\x00" + filepath.Clean(filepath.FromSlash(relative))
 		desired, ok := want[key]
-		if ok && (!projection.Exists || projection.ObservedFingerprint != desired) {
+		if ok && (!projection.Exists || normalizeProjectProjectionFingerprint(projection.ObservedFingerprint) != desired) {
 			return fmt.Errorf("verify project projection %s: %w", projection.ID, ErrVerificationFailed)
 		}
 		delete(want, key)

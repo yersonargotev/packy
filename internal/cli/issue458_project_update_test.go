@@ -21,15 +21,10 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	for _, surface := range []string{"codex", "opencode"} {
+	for _, surface := range []string{"claude", "opencode"} {
 		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", surface); err != nil {
 			t.Fatalf("install Matty for %s: %v\n%s", surface, err, out)
 		}
-	}
-	sharedSkill := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
-	before, err := os.Stat(sharedSkill)
-	if err != nil {
-		t.Fatal(err)
 	}
 
 	out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "3.0.0", "--dry-run", "--json")
@@ -43,10 +38,9 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 	if preview.Pack.ID != "matty" || preview.Pack.Version != "3.0.0" || preview.Surface != "" || preview.Disposition != capabilitypack.ProjectInstallPreviewable {
 		t.Fatalf("project update preview = %#v", preview)
 	}
-	if got := preview.Pack.Surfaces; len(got) != 2 || got[0] != capabilitypack.SurfaceCodex || got[1] != capabilitypack.SurfaceOpenCode {
-		t.Fatalf("affected surfaces = %v, want [codex opencode]", got)
+	if got := preview.Pack.Surfaces; len(got) != 2 || got[0] != capabilitypack.SurfaceClaude || got[1] != capabilitypack.SurfaceOpenCode {
+		t.Fatalf("affected surfaces = %v, want [claude opencode]", got)
 	}
-
 	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "3.0.0")
 	if err != nil {
 		t.Fatalf("apply exact project update: %v\n%s", err, out)
@@ -61,48 +55,62 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 	if got, want := installation.Manifest.Packs[0].SurfaceIntents, preview.Pack.SurfaceIntents; !reflect.DeepEqual(got, want) {
 		t.Fatalf("surface intents changed during update: got %#v want %#v", got, want)
 	}
-	after, err := os.Stat(sharedSkill)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !before.ModTime().Equal(after.ModTime()) {
-		t.Fatal("update rewrote an already-correct shared projection")
-	}
-	agents, err := os.ReadFile(filepath.Join(project, "AGENTS.md"))
-	if err != nil || !strings.Contains(string(agents), "matty-guidance") || !strings.Contains(string(agents), "matty-workflow-conventions") {
-		t.Fatalf("host-specific updated instructions were not materialized independently: %v\n%s", err, agents)
-	}
-	for _, projection := range installation.Lock.Projections {
-		if projection.Resource.Kind == "skill" && (!containsString(projection.Contributors, "surface:codex:pack:matty") || !containsString(projection.Contributors, "surface:opencode:pack:matty")) {
-			t.Fatalf("updated shared projection %s lost contributors: %v", projection.Resource, projection.Contributors)
+	for _, relative := range []string{".claude/skills/ask-matt/SKILL.md", ".agents/skills/ask-matt/SKILL.md", "CLAUDE.md", "AGENTS.md"} {
+		if _, err := os.Stat(filepath.Join(project, relative)); err != nil {
+			t.Fatalf("host-specific updated projection %s is missing: %v", relative, err)
 		}
 	}
 
 	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "4.0.0")
 	if err != nil {
-		t.Fatalf("apply project resource retirement: %v\n%s", err, out)
+		t.Fatalf("apply exact catalog-current project update: %v\n%s", err, out)
 	}
 	installation, err = capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if installation.Manifest.Packs[0].Version != "4.0.0" || len(installation.Lock.ResourceGraph.Resources) != 23 {
-		t.Fatalf("retired project closure = %#v", installation)
+		t.Fatalf("catalog-current project closure = %#v", installation)
 	}
-	agents, err = os.ReadFile(filepath.Join(project, "AGENTS.md"))
+
+	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "3.0.0", "--surface", "opencode", "--dry-run")
+	if err == nil || !strings.Contains(out+err.Error(), "--surface is not accepted for project update") {
+		t.Fatalf("project update accepted a surface selector: %v\n%s", err, out)
+	}
+}
+
+func TestIssue458ProjectUpdateDoesNotRewriteAnExactSharedProjection(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, _, _ := packActivationOptions(t, terminal)
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	opts.Getwd = func() (string, error) { return project, nil }
+	for _, surface := range []string{"codex", "opencode"} {
+		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", surface); err != nil {
+			t.Fatalf("install Matty for %s: %v\n%s", surface, err, out)
+		}
+	}
+	shared := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
+	before, err := os.Stat(shared)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(agents), "packy:project:opencode:matty-guidance") || strings.Contains(string(agents), "packy:project:opencode:matty-workflow-conventions") {
-		t.Fatalf("retired OpenCode instruction contributions remain active:\n%s", agents)
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "4.0.0")
+	if err != nil || !strings.Contains(out, "Verified no-op") {
+		t.Fatalf("exact shared update: %v\n%s", err, out)
 	}
-	if !strings.Contains(string(agents), "packy:project:matty:codex:start") {
-		t.Fatalf("host-specific Codex projection was not preserved:\n%s", agents)
+	after, err := os.Stat(shared)
+	if err != nil || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatalf("exact shared projection was rewritten: before=%v after=%v err=%v", before.ModTime(), after.ModTime(), err)
 	}
-
-	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "3.0.0", "--surface", "codex", "--dry-run")
-	if err == nil || !strings.Contains(out+err.Error(), "--surface is not accepted for project update") {
-		t.Fatalf("project update accepted a surface selector: %v\n%s", err, out)
+	installation, err := capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range installation.Lock.Projections {
+		if projection.Resource.Kind == "skill" && (!containsString(projection.Contributors, "surface:codex:pack:matty") || !containsString(projection.Contributors, "surface:opencode:pack:matty")) {
+			t.Fatalf("shared projection %s lost contributors: %v", projection.Resource, projection.Contributors)
+		}
 	}
 }
 
@@ -112,7 +120,7 @@ func TestIssue458ProjectUpdateRejectsAStaleMultiSurfacePlanBeforeEffects(t *test
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	for _, surface := range []string{"codex", "opencode"} {
+	for _, surface := range []string{"claude", "opencode"} {
 		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", surface); err != nil {
 			t.Fatalf("install Matty for %s: %v\n%s", surface, err, out)
 		}
@@ -154,22 +162,22 @@ func TestIssue458ProjectUpdateBlocksDriftAndUnavailableExactVersionsWithoutMutat
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err != nil {
-		t.Fatalf("install Matty for Codex: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "opencode"); err != nil {
+		t.Fatalf("install Addy for OpenCode: %v\n%s", err, out)
 	}
 
 	before := snapshotTree(t, project)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "9.9.9", "--dry-run")
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "addy", "--project", "--version", "9.9.9", "--dry-run")
 	if err == nil || !strings.Contains(out+err.Error(), "unavailable exact version") || snapshotTree(t, project) != before {
 		t.Fatalf("unavailable exact update was not safely rejected: %v\n%s", err, out)
 	}
 
-	skill := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
+	skill := filepath.Join(project, ".agents", "skills", "using-agent-skills", "SKILL.md")
 	if err := os.WriteFile(skill, []byte("manual edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	before = snapshotTree(t, project)
-	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "3.0.0", "--dry-run")
+	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "addy", "--project", "--version", "1.0.0", "--dry-run")
 	if err == nil || !strings.Contains(out+err.Error(), "owned_drift") || snapshotTree(t, project) != before {
 		t.Fatalf("drifted update was not safely blocked: %v\n%s", err, out)
 	}

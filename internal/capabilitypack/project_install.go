@@ -353,9 +353,15 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 	if prior.ID != request.PackID {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project declares capability pack %q, not %q", prior.ID, request.PackID)
 	}
-	if _, err := f.resolveProjectPackUnlocked(request.PackID, request.Version); err != nil {
+	targetPack, err := f.resolveExactProjectUpdatePackUnlocked(request.PackID, request.Version)
+	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
+	exactCatalog, err := f.catalog.withExactHistoricalCurrentPacks()
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	f.catalog = exactCatalog
 	resolver, ok := adapter.(projectSurfaceAdapterResolver)
 	if !ok {
 		return JSONProjectInstallPreview{}, errors.New("project update requires the installed surface adapter set")
@@ -383,10 +389,10 @@ func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateR
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
-	return addProjectUpdateRetirements(ctx, installation, combined, resolver)
+	return f.addProjectUpdateRetirements(ctx, installation, targetPack, combined, resolver)
 }
 
-func addProjectUpdateRetirements(ctx context.Context, prior ProjectInstallation, combined JSONProjectInstallPreview, resolver projectSurfaceAdapterResolver) (JSONProjectInstallPreview, error) {
+func (f Facade) addProjectUpdateRetirements(ctx context.Context, prior ProjectInstallation, target Pack, combined JSONProjectInstallPreview, resolver projectSurfaceAdapterResolver) (JSONProjectInstallPreview, error) {
 	desired := map[string]bool{}
 	for _, projection := range combined.Lock.Projections {
 		for _, surface := range projectProjectionContributorSurfaces(projection) {
@@ -395,6 +401,7 @@ func addProjectUpdateRetirements(ctx context.Context, prior ProjectInstallation,
 	}
 	var removals []ProjectionAction
 	seenRetirement := map[string]bool{}
+	priorHistoryVerified := false
 	for _, surface := range prior.Manifest.Packs[0].Surfaces {
 		adapter, found := resolver.projectSurfaceAdapter(surface)
 		if !found {
@@ -409,20 +416,29 @@ func addProjectUpdateRetirements(ctx context.Context, prior ProjectInstallation,
 			if err != nil {
 				return JSONProjectInstallPreview{}, err
 			}
-			target, err := RelativeProjectTarget(combined.projectRoot, observed.Action.Target)
+			relativeTarget, err := RelativeProjectTarget(combined.projectRoot, observed.Action.Target)
 			if err != nil {
 				return JSONProjectInstallPreview{}, err
 			}
-			key := string(surface) + "\x00" + resource.String() + "\x00" + filepath.Clean(target)
+			key := string(surface) + "\x00" + resource.String() + "\x00" + filepath.Clean(relativeTarget)
 			if desired[key] {
 				continue
 			}
-			locked, owned := findProjectLockProjection(prior.Lock, resource, target)
-			if !owned || !observed.Exists || observed.ObservedFingerprint != locked.DesiredFingerprint {
-				combined.Blockers = append(combined.Blockers, ProjectInstallBlocker{Code: "owned_drift", Resource: resource, Target: target, Detail: "retiring Packy-owned project target differs from the locked content", Remediation: "restore the locked content before project update"})
+			if !priorHistoryVerified {
+				if _, err := f.resolveExactProjectUpdatePackUnlocked(prior.Manifest.Packs[0].ID, prior.Manifest.Packs[0].Version); err != nil {
+					return JSONProjectInstallPreview{}, fmt.Errorf("project update retirement requires the exact immutable prior artifact: %w", err)
+				}
+				priorHistoryVerified = true
+			}
+			if err := f.catalog.validateUpdateRoute(target.ID, prior.Manifest.Packs[0].Version, target.Version, target.manifestVersion, surface); err != nil {
+				return JSONProjectInstallPreview{}, err
+			}
+			locked, owned := findProjectLockProjection(prior.Lock, resource, relativeTarget)
+			if !owned || !observed.Exists || normalizeProjectProjectionFingerprint(observed.ObservedFingerprint) != locked.DesiredFingerprint {
+				combined.Blockers = append(combined.Blockers, ProjectInstallBlocker{Code: "owned_drift", Resource: resource, Target: relativeTarget, Detail: "retiring Packy-owned project target differs from the locked content", Remediation: "restore the locked content before project update"})
 				continue
 			}
-			retirementKey := resource.String() + "\x00" + filepath.Clean(target)
+			retirementKey := resource.String() + "\x00" + filepath.Clean(relativeTarget)
 			if !seenRetirement[retirementKey] {
 				retired := locked
 				retired.ObservedState = "retire"
@@ -732,6 +748,8 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		blockers = append(blockers, ProjectInstallBlocker{Code: "unrepresentable_resource", Resource: resource.Resource, Detail: resource.Reason, Remediation: "choose a surface with a declared project-native representation"})
 	}
 	for _, projection := range observation.Projections {
+		projection.ObservedFingerprint = normalizeProjectProjectionFingerprint(projection.ObservedFingerprint)
+		projection.DesiredFingerprint = normalizeProjectProjectionFingerprint(projection.DesiredFingerprint)
 		resource, err := ParseResourceIdentity(projection.ID)
 		if err != nil {
 			return JSONProjectInstallPreview{}, fmt.Errorf("project projection identity: %w", err)
@@ -897,6 +915,10 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	return report, nil
 }
 
+func normalizeProjectProjectionFingerprint(value string) string {
+	return strings.TrimPrefix(value, "sha256:")
+}
+
 func projectCompositionBlockers(values []PlanBlocker) []ProjectInstallBlocker {
 	result := make([]ProjectInstallBlocker, 0, len(values))
 	for _, blocker := range values {
@@ -976,6 +998,40 @@ func (f Facade) resolveProjectPackUnlocked(id, version string) (Pack, error) {
 		pack.Surfaces = append([]Surface(nil), entry.Surfaces...)
 	}
 	return pack, nil
+}
+
+func (f Facade) resolveExactProjectUpdatePackUnlocked(id, version string) (Pack, error) {
+	current, err := f.catalog.catalogMetadata(id)
+	if err != nil {
+		return Pack{}, err
+	}
+	entry, ok := f.catalog.catalogEntry(id)
+	if !ok || f.catalog.bundleRoot == "" || !validSemver(version) {
+		return Pack{}, fmt.Errorf("capability pack %q targets unavailable exact version %q", id, version)
+	}
+	pack, err := loadHistoricalArtifact(filepath.Join(f.catalog.bundleRoot, "history", id, version), f.catalog.bundleRoot, id, version)
+	if err != nil {
+		return Pack{}, fmt.Errorf("capability pack %q targets unavailable exact version %q: %w", id, version, err)
+	}
+	pack.Description = current.Description
+	if pack.manifestVersion < manifestSchemaV3 {
+		pack.Surfaces = append([]Surface(nil), entry.Surfaces...)
+	}
+	return pack, nil
+}
+
+func (c Catalog) withExactHistoricalCurrentPacks() (Catalog, error) {
+	exact := c
+	exact.packs = make([]Pack, 0, len(c.packs))
+	for _, metadata := range c.packs {
+		facade := Facade{catalog: c}
+		pack, err := facade.resolveExactProjectUpdatePackUnlocked(metadata.ID, metadata.Version)
+		if err != nil {
+			return Catalog{}, err
+		}
+		exact.packs = append(exact.packs, pack)
+	}
+	return exact, nil
 }
 
 func projectRequirements(pack Pack) []string {

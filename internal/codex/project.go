@@ -56,9 +56,6 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		}
 		bindingName, bound := codexProjectBinding(resource)
 		if !bound || resource.Kind != "skill" || resource.Source == "" {
-			if pack.ID == "matty" && resource.Kind == "instruction" {
-				continue
-			}
 			unrepresentable = append(unrepresentable, capabilitypack.UnrepresentableResource{Resource: identity, Reason: fmt.Sprintf("%s has no Codex project-native representation in this installation preview", identity)})
 			continue
 		}
