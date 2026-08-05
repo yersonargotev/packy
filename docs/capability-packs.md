@@ -99,6 +99,8 @@ provider decision. `packy.json` keeps that direct intent; `packy.lock.json`
 fixes every requested and required pack version, admitted source, resource
 role and chain, native binding or degradation, and projection contributor.
 Packy does not use a machine-global provider to satisfy this project graph.
+The complete installation, personal activation, status, update, recovery, and
+uninstall workflow is documented in [Project capability-pack lifecycle](project-pack-lifecycle.md).
 
 ## Manifest v3 and v4 bindings and exclusions
 

@@ -98,6 +98,11 @@ Then follow the explicit [manual capability-pack transition](docs/capability-pac
 It documents dry-run, typed approvals, readiness gating, update, reconcile,
 recovery, and contributor-safe deactivation for all three supported surfaces.
 
+For a version-controlled project dependency, follow the
+[project capability-pack lifecycle](docs/project-pack-lifecycle.md). It covers
+the guided installation/activation phases, Git and offline behavior, CI gates,
+updates, shared projections, secrets, notices, recovery, and cleanup.
+
 ## Global paths
 
 | Path | Purpose |

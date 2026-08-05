@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-failure.schema.json",
+  "title": "Packy project lifecycle failure report v1",
+  "type": "object",
+  "required": ["schema_version", "report", "operation", "stage", "error"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report": { "const": "project-lifecycle-failure" },
+    "operation": { "enum": ["install", "uninstall", "activate", "deactivate", "update", "status"] },
+    "stage": { "enum": ["command", "preview", "blocked", "approval", "apply", "recovery"] },
+    "error": { "type": "string", "minLength": 1 },
+    "actions_executed": { "type": "integer", "minimum": 0 },
+    "approval_requested": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

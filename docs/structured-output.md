@@ -2,11 +2,12 @@
 
 Packy emits versioned JSON when `--json` is present. Doctor retains
 `schema_version: 2`. Pack show uses `schema_version: 4`.
-Capability-Pack lifecycle uses `schema_version: 8`, adding structured
-`recovery_guidance` to the v7 closure-bound sensitive-effect plan. The guidance
+Capability-Pack lifecycle uses `schema_version: 9`, adding update-time retired
+resource evidence to the v8 structured recovery contract. Recovery guidance
 names the originating operation, affected resources, consumers, truthful
 completed/failed/not-started effects, and the next explicit lifecycle command.
-Capability-Pack status uses `schema_version: 7`, adding the explicit
+Capability-Pack status uses `schema_version: 8`, adding retired-resource
+inventory to the v7 explicit
 `lifecycle_state` values `active`, `inactive-clean`,
 `inactive-with-residuals`, and `recovery-required` to the v6 activation-role
 and canonical-consumer contract. Earlier versions remain unchanged.
@@ -22,11 +23,20 @@ and canonical-consumer contract. Earlier versions remain unchanged.
 | targeted `packy pack status PACK --surface SURFACE --json` | `pack-status` |
 
 The exact offline schemas are under `schemas/cli/v2/` through
-`schemas/cli/v8/`.
+`schemas/cli/v9/`.
 Canonical redacted fixtures use the matching directories under
 `internal/cli/testdata/structured-output/`; repository validation compiles the
 schema selected by each document's `schema_version` and validates both the
 fixtures and live producer examples.
+
+Project lifecycle JSON is a newline-delimited event stream because one command
+may recover, preview, and apply as separate phases. The immutable published
+suite under `schemas/project/v1.0.0/` covers `packy.json`, `packy.lock.json`,
+project status, every project preview and apply result, terminal failure, and
+recovery events. Live producers and the canonical negative fixtures under
+`internal/cli/testdata/project-contract/v1.0.0/negative/` are validated offline.
+Installation reports shared version-controlled state; activation reports only
+personal runtime consent and effects.
 
 ## Doctor
 

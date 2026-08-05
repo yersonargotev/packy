@@ -1018,5 +1018,8 @@ func (r JSONProjectStatusReport) MarshalJSON() ([]byte, error) {
 	if packs == nil {
 		packs = []JSONProjectPackStatus{}
 	}
-	return json.Marshal(report{SchemaVersion: r.SchemaVersion, Report: r.Report, ProjectRoot: r.ProjectRoot, Packs: packs})
+	return json.Marshal(report{
+		SchemaVersion: r.SchemaVersion, Report: r.Report, ProjectRoot: r.ProjectRoot,
+		RecoveryRequired: r.RecoveryRequired, RecoveryCommand: r.RecoveryCommand, Packs: packs,
+	})
 }
