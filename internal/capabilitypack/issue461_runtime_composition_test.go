@@ -131,7 +131,8 @@ func TestIssue461PartialGlobalCoverageLeavesOnlyUncoveredEffectsPending(t *testi
 		Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "lifecycle", ID: "memory-hook"}}},
 		Aliases:   []SurfaceAlias{}, ProviderChoices: []ProviderChoice{},
 	}
-	facade := NewFacade(catalog, WithActivation(&fakeActivationStore{state: ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}}, nil))
+	store := &fakeActivationStore{state: ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}}
+	facade := NewFacade(catalog, WithActivation(store, nil))
 	status, err := facade.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: project, PackID: pack.ID, Surface: SurfaceOpenCode, PackyHome: packyHome, Adapters: map[Surface]SurfaceAdapter{SurfaceOpenCode: adapter}})
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +168,64 @@ func TestIssue461PartialGlobalCoverageLeavesOnlyUncoveredEffectsPending(t *testi
 	active, err := facade.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: project, PackID: pack.ID, Surface: SurfaceOpenCode, PackyHome: packyHome, Adapters: map[Surface]SurfaceAdapter{SurfaceOpenCode: adapter}})
 	if err != nil || active.Packs[0].Runtime != ProjectRuntimeActive {
 		t.Fatalf("partial project activation status = %+v, %v", active, err)
+	}
+	store.state.Intent.Active = false
+	store.state.Intents[0].Active = false
+	withoutGlobal, err := facade.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: project, PackID: pack.ID, Surface: SurfaceOpenCode, PackyHome: packyHome, Adapters: map[Surface]SurfaceAdapter{SurfaceOpenCode: adapter}})
+	if err != nil || withoutGlobal.Packs[0].Runtime != ProjectRuntimePending {
+		t.Fatalf("status after removing partial global coverage = %+v, %v", withoutGlobal, err)
+	}
+	coverage = map[ResourceIdentity]ProjectRuntimeCoverage{}
+	for _, effect := range withoutGlobal.Packs[0].RuntimeEffects {
+		coverage[effect.Resource] = effect.Coverage
+	}
+	if coverage[ResourceIdentity{Kind: "lifecycle", ID: "memory-hook"}] != ProjectRuntimeCoveragePending || coverage[ResourceIdentity{Kind: "mcp_server", ID: "memory"}] != ProjectRuntimeCoverageProject {
+		t.Fatalf("coverage after removing partial global activation = %+v", coverage)
+	}
+}
+
+func TestIssue461AddingAndRemovingGlobalCoveragePreservesProjectActivation(t *testing.T) {
+	ctx, catalog, adapter, project, packyHome, pack := issue461InstalledRuntimeProject(t)
+	local := NewFacade(catalog)
+	preview, err := local.PreviewProjectActivation(ctx, ProjectActivationRequest{PackID: pack.ID, Surface: SurfaceOpenCode, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvals := make([]ProjectActivationApproval, 0, len(preview.Categories))
+	for _, category := range preview.Categories {
+		approvals = append(approvals, local.ApproveProjectActivation(preview, category.Kind))
+	}
+	if _, err := local.ApplyProjectActivation(ctx, ProjectActivationApplyRequest{Preview: preview, Approvals: approvals, Adapter: adapter, Interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	intent := ActivationIntent{PackID: pack.ID, Surface: SurfaceOpenCode, Version: pack.Version, Active: true, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}
+	store := &fakeActivationStore{state: ActivationState{Intent: intent, Intents: []ActivationIntent{intent}}}
+	facade := NewFacade(catalog, WithActivation(store, nil))
+	combined, err := facade.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: project, PackID: pack.ID, Surface: SurfaceOpenCode, PackyHome: packyHome, Adapters: map[Surface]SurfaceAdapter{SurfaceOpenCode: adapter}})
+	if err != nil || combined.Packs[0].Runtime != ProjectRuntimeActive {
+		t.Fatalf("combined status = %+v, %v", combined, err)
+	}
+	for _, effect := range combined.Packs[0].RuntimeEffects {
+		if effect.Coverage != ProjectRuntimeCoverageGlobalAndProject {
+			t.Fatalf("combined effect = %+v", effect)
+		}
+	}
+	converged, err := facade.PreviewProjectActivation(ctx, ProjectActivationRequest{PackID: pack.ID, Surface: SurfaceOpenCode, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
+	if err != nil || converged.Disposition != ProjectActivationConverged || len(converged.Categories) != 0 {
+		t.Fatalf("combined activation preview = %+v, %v", converged, err)
+	}
+
+	store.state.Intent.Active = false
+	store.state.Intents[0].Active = false
+	personal, err := facade.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: project, PackID: pack.ID, Surface: SurfaceOpenCode, PackyHome: packyHome, Adapters: map[Surface]SurfaceAdapter{SurfaceOpenCode: adapter}})
+	if err != nil || personal.Packs[0].Runtime != ProjectRuntimeActive {
+		t.Fatalf("personal status after removing global coverage = %+v, %v", personal, err)
+	}
+	for _, effect := range personal.Packs[0].RuntimeEffects {
+		if effect.Coverage != ProjectRuntimeCoverageProject {
+			t.Fatalf("personal effect = %+v", effect)
+		}
 	}
 }
 

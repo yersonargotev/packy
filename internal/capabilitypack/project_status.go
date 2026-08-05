@@ -38,10 +38,11 @@ const (
 type ProjectRuntimeCoverage string
 
 const (
-	ProjectRuntimeCoveragePending         ProjectRuntimeCoverage = "pending"
-	ProjectRuntimeCoverageProject         ProjectRuntimeCoverage = "project"
-	ProjectRuntimeCoverageInheritedGlobal ProjectRuntimeCoverage = "inherited-global"
-	ProjectRuntimeCoverageConflict        ProjectRuntimeCoverage = "conflict"
+	ProjectRuntimeCoveragePending          ProjectRuntimeCoverage = "pending"
+	ProjectRuntimeCoverageProject          ProjectRuntimeCoverage = "project"
+	ProjectRuntimeCoverageInheritedGlobal  ProjectRuntimeCoverage = "inherited-global"
+	ProjectRuntimeCoverageGlobalAndProject ProjectRuntimeCoverage = "global-and-project"
+	ProjectRuntimeCoverageConflict         ProjectRuntimeCoverage = "conflict"
 )
 
 type ProjectRuntimeEffectStatus struct {
@@ -253,10 +254,10 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			readiness.Authorized, readiness.Usable = readiness.Configured, readiness.Configured
 		}
 		runtime := ProjectRuntimeNotRequired
-		if runtimeRequired {
-			runtime = projectRuntimeStatus(request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories, categories)
-		}
 		effects := pendingProjectRuntimeEffects(categories)
+		if runtimeRequired {
+			runtime, effects = projectPersonalRuntimeStatus(request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories)
+		}
 		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
 		if request.RequireInstalled {
 			status.Requirement = "installed"
@@ -299,22 +300,27 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		if composeErr != nil {
 			return report, composeErr
 		}
+		personalRuntime := status.Runtime
+		personalCoverage := make(map[string]ProjectRuntimeCoverage, len(status.RuntimeEffects))
+		for _, effect := range status.RuntimeEffects {
+			personalCoverage[projectRuntimeDisclosureKey(effect.Category, effect.Resource, effect.Detail)] = effect.Coverage
+		}
 		status.RuntimeEffects = composition.effects
-		allCategories := projectActivationCategories(installation.Lock, status.Surface)
-		pendingCategories := projectRuntimePendingCategories(allCategories, composition.effects)
-		status.Runtime = projectRuntimeStatus(request.PackyHome, request.ProjectRoot, status.Pack, status.Surface, status.Installation, installation.Lock, allCategories, pendingCategories)
+		for j := range status.RuntimeEffects {
+			effect := &status.RuntimeEffects[j]
+			coverage := personalCoverage[projectRuntimeDisclosureKey(effect.Category, effect.Resource, effect.Detail)]
+			if effect.Coverage == ProjectRuntimeCoverageInheritedGlobal && coverage == ProjectRuntimeCoverageProject {
+				effect.Coverage = ProjectRuntimeCoverageGlobalAndProject
+			} else if effect.Coverage == ProjectRuntimeCoveragePending && coverage == ProjectRuntimeCoverageProject {
+				effect.Coverage = ProjectRuntimeCoverageProject
+			}
+		}
+		status.Runtime = personalRuntime
 		if composition.conflict {
 			status.Runtime = ProjectRuntimeBlocked
 			status.Blockers = append(status.Blockers, ProjectInstallBlocker{Code: "activation_scope_conflict", Detail: composition.conflictDetail, Remediation: "deactivate the incompatible global contribution or align the global and project contracts"})
-		} else if composition.allInherited && status.Runtime == ProjectRuntimePending {
-			status.Runtime = ProjectRuntimeInheritedGlobal
-		}
-		if status.Runtime == ProjectRuntimeActive {
-			for j := range status.RuntimeEffects {
-				if status.RuntimeEffects[j].Coverage == ProjectRuntimeCoveragePending {
-					status.RuntimeEffects[j].Coverage = ProjectRuntimeCoverageProject
-				}
-			}
+		} else if personalRuntime != ProjectRuntimeBlocked && personalRuntime != ProjectRuntimeStale {
+			status.Runtime = composedProjectRuntimeState(status.RuntimeEffects)
 		}
 		if request.RequireUsable {
 			status.RequirementSatisfied = status.Installation == ProjectInstallationInstalled && status.Readiness.Usable && (status.Runtime == ProjectRuntimeActive || status.Runtime == ProjectRuntimeInheritedGlobal)
@@ -380,28 +386,65 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 	return statuses, nil
 }
 
-func projectRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPack, surface Surface, installation ProjectInstallationState, lock ProjectLockProposal, identityCategories, approvalCategories []ProjectActivationCategoryPreview) ProjectRuntimeState {
+func projectPersonalRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPack, surface Surface, installation ProjectInstallationState, lock ProjectLockProposal, categories []ProjectActivationCategoryPreview) (ProjectRuntimeState, []ProjectRuntimeEffectStatus) {
+	effects := pendingProjectRuntimeEffects(categories)
 	if installation != ProjectInstallationInstalled {
-		return ProjectRuntimeBlocked
+		return ProjectRuntimeBlocked, effects
 	}
 	if packyHome == "" {
-		return ProjectRuntimePending
+		return ProjectRuntimePending, effects
 	}
 	document, exists, err := loadProjectActivationDocumentForSurface(packyHome, projectRoot, surface)
 	if err != nil {
-		return ProjectRuntimeBlocked
+		return ProjectRuntimeBlocked, effects
 	}
 	state := document.State
 	if exists && document.Recovery.Status != "clean" {
-		return ProjectRuntimeBlocked
+		return ProjectRuntimeBlocked, effects
 	}
 	if !exists || !state.Active {
-		return ProjectRuntimePending
+		return ProjectRuntimePending, effects
 	}
-	if !projectActivationDocumentMatches(document, approvalCategories) || state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, identityCategories) {
-		return ProjectRuntimeStale
+	if state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, categories) {
+		return ProjectRuntimeStale, effects
 	}
-	return ProjectRuntimeActive
+	approved := map[string]bool{}
+	for _, receipt := range document.Receipts {
+		for _, detail := range receipt.Details {
+			approved[projectRuntimeDisclosureKey(receipt.Category, detail.Resource, detail.Detail)] = true
+		}
+	}
+	matched := 0
+	for i := range effects {
+		key := projectRuntimeDisclosureKey(effects[i].Category, effects[i].Resource, effects[i].Detail)
+		if approved[key] {
+			effects[i].Coverage = ProjectRuntimeCoverageProject
+			matched++
+		}
+	}
+	if matched != len(approved) {
+		return ProjectRuntimeStale, pendingProjectRuntimeEffects(categories)
+	}
+	if matched == len(effects) {
+		return ProjectRuntimeActive, effects
+	}
+	return ProjectRuntimePending, effects
+}
+
+func composedProjectRuntimeState(effects []ProjectRuntimeEffectStatus) ProjectRuntimeState {
+	hasProject := false
+	for _, effect := range effects {
+		switch effect.Coverage {
+		case ProjectRuntimeCoveragePending:
+			return ProjectRuntimePending
+		case ProjectRuntimeCoverageProject, ProjectRuntimeCoverageGlobalAndProject:
+			hasProject = true
+		}
+	}
+	if hasProject {
+		return ProjectRuntimeActive
+	}
+	return ProjectRuntimeInheritedGlobal
 }
 
 func projectRuntimePendingCategories(categories []ProjectActivationCategoryPreview, effects []ProjectRuntimeEffectStatus) []ProjectActivationCategoryPreview {

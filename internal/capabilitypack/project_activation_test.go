@@ -105,9 +105,9 @@ func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	approval := []ProjectActivationApproval{{Category: ProjectActivationMCP, Digest: "approved"}}
-	receipt := []projectActivationReceipt{{Category: ProjectActivationMCP, Digest: "approved"}}
 	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
-		state := projectActivationState{SchemaVersion: 1, PackID: "pack", Version: "1.0.0", Surface: surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: "lock-" + string(surface)}
+		receipt := []projectActivationReceipt{{Category: ProjectActivationMCP, Digest: "approved", Details: []ProjectSensitiveDisclosure{{Category: ProjectActivationMCP, Surface: surface, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "command:memory"}}}}
+		state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: "pack", Version: "1.0.0", Surface: surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: "lock-" + string(surface)}
 		if err := saveProjectActivationRecords(home, root, state, approval, receipt, nil, "clean"); err != nil {
 			t.Fatal(err)
 		}

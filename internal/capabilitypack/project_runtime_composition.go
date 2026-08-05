@@ -8,7 +8,6 @@ import (
 
 type projectRuntimeComposition struct {
 	effects        []ProjectRuntimeEffectStatus
-	allInherited   bool
 	conflict       bool
 	conflictDetail string
 }
@@ -92,9 +91,7 @@ func (f Facade) composeProjectRuntime(ctx context.Context, installation ProjectI
 		}
 		effect.Coverage = ProjectRuntimeCoverageInheritedGlobal
 	}
-	result.allInherited = len(result.effects) > 0
 	for _, effect := range result.effects {
-		result.allInherited = result.allInherited && effect.Coverage == ProjectRuntimeCoverageInheritedGlobal
 		result.conflict = result.conflict || effect.Coverage == ProjectRuntimeCoverageConflict
 	}
 	if len(conflicts) > 0 {

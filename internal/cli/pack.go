@@ -917,23 +917,8 @@ func renderProjectActivationPreview(cmd *cobra.Command, preview capabilitypack.J
 			}
 		}
 	}
-	for _, effect := range preview.RuntimeEffects {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Runtime effect: %s %s %s coverage=%s", effect.Category, effect.Resource, effect.Detail, effect.Coverage); err != nil {
-			return err
-		}
-		if effect.GlobalVersion != "" {
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), " global_version=%s", effect.GlobalVersion); err != nil {
-				return err
-			}
-		}
-		if effect.Conflict != "" {
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), " conflict=%s", effect.Conflict); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-			return err
-		}
+	if err := renderProjectRuntimeEffects(cmd.OutOrStdout(), preview.RuntimeEffects); err != nil {
+		return err
 	}
 	for _, effect := range preview.Effects {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Personal effect: %s -> %s identity=%s\n", effect.Action, effect.Target, effect.Identity); err != nil {
@@ -1581,23 +1566,30 @@ func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectSt
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers), renderPendingAction(status.PendingHumanActions), renderPendingAction(status.Evidence)); err != nil {
 			return err
 		}
-		for _, effect := range status.RuntimeEffects {
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Runtime effect: %s %s %s coverage=%s", effect.Category, effect.Resource, effect.Detail, effect.Coverage); err != nil {
+		if err := renderProjectRuntimeEffects(cmd.OutOrStdout(), status.RuntimeEffects); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func renderProjectRuntimeEffects(w io.Writer, effects []capabilitypack.ProjectRuntimeEffectStatus) error {
+	for _, effect := range effects {
+		if _, err := fmt.Fprintf(w, "Runtime effect: %s %s %s coverage=%s", effect.Category, effect.Resource, effect.Detail, effect.Coverage); err != nil {
+			return err
+		}
+		if effect.GlobalVersion != "" {
+			if _, err := fmt.Fprintf(w, " global_version=%s", effect.GlobalVersion); err != nil {
 				return err
 			}
-			if effect.GlobalVersion != "" {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), " global_version=%s", effect.GlobalVersion); err != nil {
-					return err
-				}
-			}
-			if effect.Conflict != "" {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), " conflict=%s", effect.Conflict); err != nil {
-					return err
-				}
-			}
-			if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+		}
+		if effect.Conflict != "" {
+			if _, err := fmt.Fprintf(w, " conflict=%s", effect.Conflict); err != nil {
 				return err
 			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
 		}
 	}
 	return nil
