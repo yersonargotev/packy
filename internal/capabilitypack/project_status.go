@@ -553,6 +553,13 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		return false
 	}
 	for _, projection := range lock.Projections {
+		if projection.Mode != "copy_tree" && projection.Mode != "copy_file" && projection.Mode != "merge_marked_file" && projection.Mode != "merge_structured_file" {
+			return fmt.Errorf("project lock projection %s has unsupported mode %q", projection.Resource, projection.Mode)
+		}
+		targetKey := projection.Target
+		if projection.Mode == "merge_marked_file" || projection.Mode == "merge_structured_file" {
+			targetKey = projection.Resource.String() + "\x00" + projection.Target
+		}
 		validContributors := validContributor(projection.Contributor)
 		if projection.Contributors != nil {
 			validContributors = validContributors && len(projection.Contributors) > 0 && digestJSON(projection.Contributors) == digestJSON(sortedUnique(projection.Contributors))
@@ -560,11 +567,8 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 				validContributors = validContributors && validContributor(value)
 			}
 		}
-		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[projection.Target] || !validContributors || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
+		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[targetKey] || !validContributors || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
 			return errors.New("project lock contains malformed, duplicate, or unauthorized projection evidence")
-		}
-		if projection.Mode != "copy_tree" && projection.Mode != "copy_file" && projection.Mode != "merge_marked_file" && projection.Mode != "merge_structured_file" {
-			return fmt.Errorf("project lock projection %s has unsupported mode %q", projection.Resource, projection.Mode)
 		}
 		if (projection.Mode == "copy_tree" || projection.Mode == "copy_file" || projection.Mode == "merge_structured_file") && (!resources[projection.Resource] || (projectOperationalResource(projection.Resource.Kind) && !bindings[projection.Resource])) {
 			return fmt.Errorf("project lock projection %s is outside the locked resource graph or bindings", projection.Resource)
@@ -572,7 +576,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		if projection.FileMode == 0 || projection.FileMode&^0o777 != 0 {
 			return fmt.Errorf("project lock projection %s has unsupported file mode", projection.Resource)
 		}
-		seenTargets[projection.Target], seenResources[projection.Resource] = true, true
+		seenTargets[targetKey], seenResources[projection.Resource] = true, true
 	}
 	for resource := range bindings {
 		if !seenResources[resource] {

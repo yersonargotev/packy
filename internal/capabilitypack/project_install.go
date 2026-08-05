@@ -42,6 +42,13 @@ type ProjectInstallRequest struct {
 	manifestPack    ProjectManifestPack
 	reconcile       bool
 	reconcileAll    bool
+	replaceContract bool
+}
+
+type ProjectUpdateRequest struct {
+	PackID      string
+	Version     string
+	ProjectRoot string
 }
 
 type ProjectInstallBlocker struct {
@@ -107,6 +114,14 @@ type ProjectNoticesProposal struct {
 	Contributions []ProjectNoticeContribution `json:"contributions"`
 }
 
+type ProjectSensitiveChange struct {
+	Change   string                    `json:"change"`
+	Category ProjectActivationCategory `json:"category"`
+	Surface  Surface                   `json:"surface"`
+	Resource ResourceIdentity          `json:"resource"`
+	Detail   string                    `json:"detail"`
+}
+
 type ProjectPackSourceIdentity struct {
 	PackID           string `json:"pack_id"`
 	PackVersion      string `json:"pack_version"`
@@ -146,29 +161,32 @@ type ProjectProjectionPlan struct {
 }
 
 type JSONProjectInstallPreview struct {
-	SchemaVersion int                       `json:"schema_version"`
-	Report        string                    `json:"report"`
-	DryRun        bool                      `json:"dry_run"`
-	ProjectRoot   string                    `json:"project_root"`
-	Pack          ProjectManifestPack       `json:"pack"`
-	Surface       Surface                   `json:"surface"`
-	Selection     ProjectSelectionPreview   `json:"selection"`
-	Manifest      ProjectContractProposal   `json:"manifest"`
-	Lock          ProjectLockProposal       `json:"lock"`
-	Notices       ProjectNoticesProposal    `json:"notices"`
-	Projections   []ProjectProjectionPlan   `json:"projections"`
-	Requirements  []string                  `json:"requirements"`
-	Blockers      []ProjectInstallBlocker   `json:"blockers"`
-	Disposition   ProjectInstallDisposition `json:"disposition"`
-	Observation   string                    `json:"observation"`
-	projectRoot   string
-	pack          Pack
-	actions       []ProjectionAction
-	noticeContent string
-	noticeMode    uint32
-	noticeBefore  string
-	noticeIntact  bool
-	request       ProjectInstallRequest
+	SchemaVersion    int                       `json:"schema_version"`
+	Report           string                    `json:"report"`
+	DryRun           bool                      `json:"dry_run"`
+	ProjectRoot      string                    `json:"project_root"`
+	Pack             ProjectManifestPack       `json:"pack"`
+	Surface          Surface                   `json:"surface"`
+	Selection        ProjectSelectionPreview   `json:"selection"`
+	Manifest         ProjectContractProposal   `json:"manifest"`
+	Lock             ProjectLockProposal       `json:"lock"`
+	Notices          ProjectNoticesProposal    `json:"notices"`
+	Projections      []ProjectProjectionPlan   `json:"projections"`
+	Retirements      []ProjectProjectionPlan   `json:"retirements,omitempty"`
+	SensitiveChanges []ProjectSensitiveChange  `json:"sensitive_changes,omitempty"`
+	Requirements     []string                  `json:"requirements"`
+	Blockers         []ProjectInstallBlocker   `json:"blockers"`
+	Disposition      ProjectInstallDisposition `json:"disposition"`
+	Observation      string                    `json:"observation"`
+	projectRoot      string
+	pack             Pack
+	actions          []ProjectionAction
+	noticeContent    string
+	noticeMode       uint32
+	noticeBefore     string
+	noticeIntact     bool
+	request          ProjectInstallRequest
+	updateRequest    ProjectUpdateRequest
 }
 
 type ProjectInstallNotActionableError struct{ Disposition ProjectInstallDisposition }
@@ -315,6 +333,289 @@ func (f Facade) PreviewProjectInstall(ctx context.Context, request ProjectInstal
 	})
 }
 
+// PreviewProjectUpdate changes one exact project pack version across every
+// installed surface while preserving each surface's selected intent.
+func (f Facade) PreviewProjectUpdate(ctx context.Context, request ProjectUpdateRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
+	return withBundleObservation(ctx, f, func(locked Facade) (JSONProjectInstallPreview, error) {
+		return locked.previewProjectUpdate(ctx, request, adapter)
+	})
+}
+
+func (f Facade) previewProjectUpdate(ctx context.Context, request ProjectUpdateRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
+	if request.ProjectRoot == "" || request.PackID == "" || request.Version == "" {
+		return JSONProjectInstallPreview{}, errors.New("project update requires the project root, pack, and exact version")
+	}
+	installation, err := LoadProjectInstallation(request.ProjectRoot)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	prior := installation.Manifest.Packs[0]
+	if prior.ID != request.PackID {
+		return JSONProjectInstallPreview{}, fmt.Errorf("project declares capability pack %q, not %q", prior.ID, request.PackID)
+	}
+	if _, err := f.resolveProjectPackUnlocked(request.PackID, request.Version); err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	resolver, ok := adapter.(projectSurfaceAdapterResolver)
+	if !ok {
+		return JSONProjectInstallPreview{}, errors.New("project update requires the installed surface adapter set")
+	}
+	target := prior
+	target.Version = request.Version
+	intents := projectSurfaceIntents(prior)
+	reports := make([]JSONProjectInstallPreview, 0, len(intents))
+	for _, intent := range intents {
+		surfaceAdapter, found := resolver.projectSurfaceAdapter(intent.Surface)
+		if !found {
+			return JSONProjectInstallPreview{}, fmt.Errorf("project update is missing the %s adapter", intent.Surface)
+		}
+		report, previewErr := f.previewProjectInstall(ctx, ProjectInstallRequest{
+			PackID: request.PackID, Version: request.Version, Surface: intent.Surface, ProjectRoot: request.ProjectRoot,
+			Selection: intent.Selection, Aliases: intent.Aliases, ProviderChoices: intent.ProviderChoices,
+			manifestPack: target, reconcile: true, replaceContract: true,
+		}, surfaceAdapter)
+		if previewErr != nil {
+			return JSONProjectInstallPreview{}, previewErr
+		}
+		reports = append(reports, report)
+	}
+	combined, err := combineProjectUpdateReports(request.ProjectRoot, target, reports)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	return addProjectUpdateRetirements(ctx, installation, combined, resolver)
+}
+
+func addProjectUpdateRetirements(ctx context.Context, prior ProjectInstallation, combined JSONProjectInstallPreview, resolver projectSurfaceAdapterResolver) (JSONProjectInstallPreview, error) {
+	desired := map[string]bool{}
+	for _, projection := range combined.Lock.Projections {
+		for _, surface := range projectProjectionContributorSurfaces(projection) {
+			desired[string(surface)+"\x00"+projection.Resource.String()+"\x00"+filepath.Clean(projection.Target)] = true
+		}
+	}
+	var removals []ProjectionAction
+	seenRetirement := map[string]bool{}
+	for _, surface := range prior.Manifest.Packs[0].Surfaces {
+		adapter, found := resolver.projectSurfaceAdapter(surface)
+		if !found {
+			return JSONProjectInstallPreview{}, fmt.Errorf("project update is missing the %s adapter", surface)
+		}
+		observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ProjectRoot: combined.projectRoot, ProjectInstallation: &prior, ProjectGoal: ProjectionAbsent})
+		if err != nil {
+			return JSONProjectInstallPreview{}, err
+		}
+		for _, observed := range observation.Projections {
+			resource, err := ParseResourceIdentity(observed.ID)
+			if err != nil {
+				return JSONProjectInstallPreview{}, err
+			}
+			target, err := RelativeProjectTarget(combined.projectRoot, observed.Action.Target)
+			if err != nil {
+				return JSONProjectInstallPreview{}, err
+			}
+			key := string(surface) + "\x00" + resource.String() + "\x00" + filepath.Clean(target)
+			if desired[key] {
+				continue
+			}
+			locked, owned := findProjectLockProjection(prior.Lock, resource, target)
+			if !owned || !observed.Exists || observed.ObservedFingerprint != locked.DesiredFingerprint {
+				combined.Blockers = append(combined.Blockers, ProjectInstallBlocker{Code: "owned_drift", Resource: resource, Target: target, Detail: "retiring Packy-owned project target differs from the locked content", Remediation: "restore the locked content before project update"})
+				continue
+			}
+			retirementKey := resource.String() + "\x00" + filepath.Clean(target)
+			if !seenRetirement[retirementKey] {
+				retired := locked
+				retired.ObservedState = "retire"
+				combined.Retirements = append(combined.Retirements, retired)
+				seenRetirement[retirementKey] = true
+			}
+			action := observed.Action
+			action.PreviewOnly = false
+			removals = append(removals, action)
+		}
+	}
+	removals = coalesceProjectComposableActions(removals)
+	seenAction := map[string]bool{}
+	for _, action := range combined.actions {
+		seenAction[action.ID+"\x00"+filepath.Clean(action.Target)] = true
+	}
+	for _, action := range removals {
+		key := action.ID + "\x00" + filepath.Clean(action.Target)
+		if !seenAction[key] {
+			combined.actions = append(combined.actions, action)
+			seenAction[key] = true
+		}
+	}
+	if len(combined.Blockers) > 0 {
+		combined.Disposition = ProjectInstallBlocked
+	}
+	combined.Observation = sealProjectInstallPreview(combined, combined.Observation)
+	return combined, nil
+}
+
+func combineProjectUpdateReports(projectRoot string, target ProjectManifestPack, reports []JSONProjectInstallPreview) (JSONProjectInstallPreview, error) {
+	if len(reports) == 0 {
+		return JSONProjectInstallPreview{}, errors.New("project update has no installed surfaces")
+	}
+	installation, err := LoadProjectInstallation(projectRoot)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	combined := reports[0]
+	combined.Surface = ""
+	combined.Pack = target
+	combined.Manifest = ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV3, Packs: []ProjectManifestPack{target}}
+	combined.Lock = ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV3, MinimumPackyCapability: projectContractCapabilityV3, Source: reports[0].Lock.Source, NoticesFileMode: installation.Lock.NoticesFileMode}
+	combined.Selection = ProjectSelectionPreview{Mode: target.Selection.Mode, Resources: []ResourceClosureFact{}}
+	combined.Notices = ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: []ProjectNoticeContribution{}}
+	combined.Projections = nil
+	combined.Requirements = nil
+	combined.Blockers = nil
+	combined.actions = nil
+	combined.pack.Resources = nil
+	combined.request = ProjectInstallRequest{}
+	combined.updateRequest = ProjectUpdateRequest{PackID: target.ID, Version: target.Version, ProjectRoot: projectRoot}
+	combined.projectRoot = projectRoot
+	combined.Disposition = ProjectInstallPreviewable
+	seenAction := map[string]bool{}
+	seenResource := map[string]bool{}
+	seenNotice := map[string]bool{}
+	var observations []string
+	for _, report := range reports {
+		observations = append(observations, string(report.Surface)+"="+report.Observation)
+		combined.Blockers = append(combined.Blockers, report.Blockers...)
+		combined.Requirements = append(combined.Requirements, report.Requirements...)
+		combined.Lock.Sources = mergeProjectSources(combined.Lock.Sources, report.Lock.Sources, target.ID)
+		combined.Lock.Packs = mergeProjectResolvedPacks(combined.Lock.Packs, report.Lock.Packs, target.ID)
+		combined.Lock.ResourceGraph = mergeProjectResourceGraphs(combined.Lock.ResourceGraph, report.Lock.ResourceGraph)
+		combined.Lock.Bindings = mergeProjectBindings(combined.Lock.Bindings, report.Lock.Bindings)
+		combined.Lock.Degradations = mergeProjectDegradations(combined.Lock.Degradations, report.Lock.Degradations)
+		combined.Lock.Modes = mergeProjectModes(combined.Lock.Modes, report.Lock.Modes)
+		combined.Lock.Sensitive = mergeProjectSensitiveDisclosures(combined.Lock.Sensitive, report.Lock.Sensitive)
+		combined.Lock.Projections, report.Projections = mergeProjectProjections(combined.Lock.Projections, report.Lock.Projections, report.Projections)
+		combined.Projections, _ = mergeProjectProjections(combined.Projections, report.Projections, nil)
+		for _, action := range report.actions {
+			key := action.ID + "\x00" + filepath.Clean(action.Target)
+			if !seenAction[key] {
+				combined.actions = append(combined.actions, action)
+				seenAction[key] = true
+			}
+		}
+		for _, resource := range report.pack.Resources {
+			key := resource.Kind + ":" + resource.ID
+			if !seenResource[key] {
+				combined.pack.Resources = append(combined.pack.Resources, resource)
+				seenResource[key] = true
+			}
+		}
+		for _, notice := range report.Notices.Contributions {
+			key := notice.Resource.String()
+			if !seenNotice[key] {
+				combined.Notices.Contributions = append(combined.Notices.Contributions, notice)
+				seenNotice[key] = true
+			}
+		}
+	}
+	combined.Selection.Resources = append([]ResourceClosureFact(nil), combined.Lock.ResourceGraph.Resources...)
+	combined.Requirements = sortedUnique(combined.Requirements)
+	manifestBytes, err := marshalProjectManifest(combined.Manifest)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	combined.Lock.ManifestSHA256 = fingerprintProjectBytes(manifestBytes)
+	combined.Lock.NoticesSHA256 = fingerprintProjectBytes([]byte(renderProjectNoticeBlock(combined)))
+	combined.SensitiveChanges = projectSensitiveChanges(installation.Lock, combined.Lock)
+	combined.noticeContent, combined.noticeMode, combined.noticeBefore, combined.noticeIntact, combined.Blockers, err = planCombinedProjectUpdateNotices(combined, installation.Lock, combined.Blockers)
+	if err != nil {
+		return JSONProjectInstallPreview{}, err
+	}
+	if len(combined.Blockers) > 0 {
+		combined.Disposition = ProjectInstallBlocked
+	} else {
+		converged, contractBlockers, inspectErr := inspectProjectContract(combined, installation.Lock, true, true)
+		if inspectErr != nil {
+			return JSONProjectInstallPreview{}, inspectErr
+		}
+		combined.Blockers = append(combined.Blockers, contractBlockers...)
+		if len(contractBlockers) > 0 {
+			combined.Disposition = ProjectInstallBlocked
+		} else if converged {
+			combined.Disposition = ProjectInstallConverged
+		}
+	}
+	sort.Strings(observations)
+	combined.Observation = sealProjectInstallPreview(combined, strings.Join(observations, "\n")+"\nnotices="+combined.noticeBefore)
+	return combined, nil
+}
+
+func projectSensitiveChanges(prior, desired ProjectLockProposal) []ProjectSensitiveChange {
+	key := func(value ProjectSensitiveDisclosure) string {
+		return string(value.Surface) + "\x00" + string(value.Category) + "\x00" + value.Resource.String()
+	}
+	before := map[string]ProjectSensitiveDisclosure{}
+	after := map[string]ProjectSensitiveDisclosure{}
+	for _, value := range prior.Sensitive {
+		before[key(value)] = value
+	}
+	for _, value := range desired.Sensitive {
+		after[key(value)] = value
+	}
+	keys := map[string]bool{}
+	for value := range before {
+		keys[value] = true
+	}
+	for value := range after {
+		keys[value] = true
+	}
+	result := make([]ProjectSensitiveChange, 0, len(keys))
+	for value := range keys {
+		old, hadOld := before[value]
+		current, hasCurrent := after[value]
+		change := "changed"
+		disclosure := current
+		switch {
+		case !hadOld:
+			change = "added"
+		case !hasCurrent:
+			change, disclosure = "removed", old
+		case digestJSON(old) == digestJSON(current) && digestJSON(prior.Source) == digestJSON(desired.Source):
+			continue
+		}
+		result = append(result, ProjectSensitiveChange{Change: change, Category: disclosure.Category, Surface: disclosure.Surface, Resource: disclosure.Resource, Detail: "requires fresh personal project activation before the changed runtime effect can be used"})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		left := string(result[i].Surface) + "\x00" + string(result[i].Category) + "\x00" + result[i].Resource.String()
+		right := string(result[j].Surface) + "\x00" + string(result[j].Category) + "\x00" + result[j].Resource.String()
+		return left < right
+	})
+	return result
+}
+
+func planCombinedProjectUpdateNotices(preview JSONProjectInstallPreview, prior ProjectLockProposal, blockers []ProjectInstallBlocker) (string, uint32, string, bool, []ProjectInstallBlocker, error) {
+	content, mode, before, intact, noticeBlockers, err := planProjectNotices(preview, true, true, prior.NoticesSHA256)
+	return content, mode, before, intact, append(blockers, noticeBlockers...), err
+}
+
+func coalesceProjectComposableActions(actions []ProjectionAction) []ProjectionAction {
+	result := make([]ProjectionAction, 0, len(actions))
+	indices := map[string]int{}
+	for _, action := range actions {
+		composable := action.Kind == ActionOpenCodeInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
+		if !composable {
+			result = append(result, action)
+			continue
+		}
+		key := string(action.Surface) + "\x00" + filepath.Clean(action.Target)
+		if index, ok := indices[key]; ok {
+			result[index] = action
+			continue
+		}
+		indices[key] = len(result)
+		result = append(result, action)
+	}
+	return result
+}
+
 func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstallRequest, adapter SurfaceAdapter) (JSONProjectInstallPreview, error) {
 	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
 		return JSONProjectInstallPreview{}, fmt.Errorf("project installation preview does not support CLI surface %q", request.Surface)
@@ -445,11 +746,14 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		state := "missing"
 		if projection.Exists {
 			state = "foreign"
-			if lockExists && projectLockOwnsProjection(existingLock, resource, target, projection.DesiredFingerprint) {
+			lockedProjection, owned := findProjectLockProjection(existingLock, resource, target)
+			if lockExists && owned && (request.replaceContract || lockedProjection.DesiredFingerprint == projection.DesiredFingerprint) {
 				state = "owned"
-				if projection.ObservedFingerprint != projection.DesiredFingerprint {
+				if projection.ObservedFingerprint != lockedProjection.DesiredFingerprint {
 					state = "drifted"
 					blockers = append(blockers, ProjectInstallBlocker{Code: "owned_drift", Resource: resource, Target: target, Detail: "Packy-owned project target differs from the locked content", Remediation: "restore the locked content before installation"})
+				} else if lockedProjection.DesiredFingerprint != projection.DesiredFingerprint {
+					state = "outdated"
 				}
 			} else {
 				blockers = append(blockers, ProjectInstallBlocker{Code: "foreign_target", Resource: resource, Target: target, Detail: "project target already exists without portable Packy ownership", Remediation: "move or remove the foreign target before installation"})
@@ -468,12 +772,13 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		contributors := append(contributorsForSurface(request.Surface, composition.contributorSet(projection.ID)), primaryContributor)
 		contributors = sortedUnique(contributors)
 		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, Contributor: primaryContributor, Contributors: contributors, Command: projection.Action.Command, Args: append([]string(nil), projection.Action.Args...), DiscoverableBy: append([]Surface(nil), projection.DiscoverableBy...)})
-		if state != "owned" {
+		if state != "owned" && state != "drifted" {
 			action := projection.Action
 			action.PreviewOnly = false
 			actions = append(actions, action)
 		}
 	}
+	actions = coalesceProjectComposableActions(actions)
 	sort.Slice(projections, func(i, j int) bool {
 		if projections[i].Target != projections[j].Target {
 			return projections[i].Target < projections[j].Target
@@ -526,7 +831,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	lockDegradations := append([]LifecycleExclusion{}, contract.Exclusions...)
 	lockModes := append([]OptionalMode{}, contract.OptionalModes...)
 	lockSensitive := projectSensitiveDisclosures(selectedPack, request.Surface)
-	if existingContract {
+	if existingContract && !request.replaceContract {
 		graph = mergeProjectResourceGraphs(existingLock.ResourceGraph, graph)
 		resolvedPacks = mergeProjectResolvedPacks(existingLock.Packs, resolvedPacks, pack.ID)
 		sources = mergeProjectSources(existingLock.Sources, sources, pack.ID)
@@ -554,7 +859,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if lockExists {
 		report.Lock.NoticesFileMode = existingLock.NoticesFileMode
 	}
-	noticeContent, noticeMode, noticeBefore, noticeIntact, noticeBlockers, err := planProjectNotices(report, lockExists, request.reconcile)
+	noticeContent, noticeMode, noticeBefore, noticeIntact, noticeBlockers, err := planProjectNotices(report, lockExists, request.reconcile, existingLock.NoticesSHA256)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
@@ -660,7 +965,7 @@ func (f Facade) resolveProjectPackUnlocked(id, version string) (Pack, error) {
 	}
 	pack, err := loadHistoricalArtifact(filepath.Join(f.catalog.bundleRoot, "history", id, version), f.catalog.bundleRoot, id, version)
 	if err != nil {
-		return Pack{}, fmt.Errorf("load exact project capability pack %s@%s: %w", id, version, err)
+		return Pack{}, fmt.Errorf("capability pack %q targets unavailable exact version %q: %w", id, version, err)
 	}
 	pack.Description = current.Description
 	if pack.manifestVersion < manifestSchemaV3 {
