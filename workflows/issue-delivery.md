@@ -105,26 +105,44 @@ For each delta:
    commands with user paths sandboxed where applicable;
 3. commit the coherent delta.
 
+Do not rewrite pushed history. Before the first push, locally reviewed repair
+commits may remain separate; preserving review boundaries is preferred over
+collapsing evidence into one large commit.
+
+For a change to CLI behavior, run an acceptance tracer as soon as focused proof
+first establishes a coherent end-to-end behavior. Commit that coherent delta,
+record its exact candidate SHA, and run the tracer before canonical validation.
+Build the actual Packy binary from that commit into a temporary location with
+`go build -o <temporary-directory>/packy ./cmd/packy`. Create a disposable Git
+project, `HOME`, and `XDG_CONFIG_HOME`, and run the exact binary from the
+disposable project. Keep the binary, project, workstation paths, and all other
+generated state outside the candidate working tree and real user configuration.
+
+Derive the tracer scenario from the approved issue criteria. Verify its exit
+status, operator-visible output, and required filesystem or other durable
+effects. Transition scenarios also assert that retired or prohibited effects
+are absent. Destructive and composite transitions cover every affected
+contribution and shared owner at the final observable boundary, while
+host-specific projections are checked independently. Include interactive
+approval when it is part of the observable contract.
+
+Record the candidate SHA and exercised scenario with the tracer result. Any
+candidate change invalidates that evidence and requires the applicable tracer
+again after focused proof and before canonical validation. While the candidate
+SHA remains unchanged, the early tracer result satisfies the applicable manual
+verification requirement and is not rerun solely because validation or review
+ran afterward.
+
 Local Standards and Spec review is proportional, not universal. Run it over
 the commits since the preceding accepted review boundary when a delta is large,
 complex, sensitive, crosses multiple owning seams, or would make delayed
 feedback costly. Adjudicate every finding and repair accepted findings before
 continuing. Small, well-bounded deltas may proceed with focused proof alone.
 
-Do not rewrite pushed history. Before the first push, locally reviewed repair
-commits may remain separate; preserving review boundaries is preferred over
-collapsing evidence into one large commit.
-
-After every acceptance criterion has implementation and focused proof, run
-`./scripts/validate-packy.sh` once with sandboxed `HOME` and
-`XDG_CONFIG_HOME` on the stable exact HEAD.
-
-Build the actual Packy binary from that same HEAD into a temporary location with
-`go build -o <temporary-directory>/packy ./cmd/packy` and run that exact binary
-with disposable `HOME` and `XDG_CONFIG_HOME`. Exercise at least one end-to-end
-scenario derived from the issue's acceptance criteria and verify its exit
-status, observable output, and filesystem effects. Keep generated state outside
-the repository and real user configuration.
+After every acceptance criterion has implementation and focused proof, every
+applicable tracer result is valid for the stable exact HEAD, and every required
+proportional local review is clean, run `./scripts/validate-packy.sh` once with
+sandboxed `HOME` and `XDG_CONFIG_HOME` on that HEAD.
 
 When the issue changes no CLI behavior, still build the binary and run its
 `version` command as a sanity check, then manually verify the actual changed
@@ -140,10 +158,11 @@ candidate commit.
 ## Final candidate proof
 
 Whenever a later phase requires repeating **final candidate proof**, run focused
-proof for the changed surface, the applicable manual verification, canonical
-repository validation, remote CI, and both complete final review axes on the
-new exact HEAD. No result bound to an earlier candidate satisfies this
-invariant.
+proof for the changed surface, the applicable exact-binary tracer or non-CLI
+manual verification, canonical repository validation, remote CI, and both
+complete final review axes on the new exact HEAD. Reuse applicable tracer
+evidence only when its candidate SHA and scenario remain unchanged. No result
+bound to an earlier candidate satisfies this invariant.
 
 ## Pull request and final review
 
