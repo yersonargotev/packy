@@ -72,6 +72,15 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 	if installation.Manifest.Packs[0].Version != "4.0.0" || len(installation.Lock.ResourceGraph.Resources) != 23 {
 		t.Fatalf("catalog-current project closure = %#v", installation)
 	}
+	for _, relative := range []string{"AGENTS.md", "CLAUDE.md"} {
+		content, readErr := os.ReadFile(filepath.Join(project, relative))
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			t.Fatal(readErr)
+		}
+		if strings.Contains(string(content), "contributor:pack:matty:") {
+			t.Fatalf("retired Matty instruction remains in %s", relative)
+		}
+	}
 
 	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "3.0.0", "--surface", "opencode", "--dry-run")
 	if err == nil || !strings.Contains(out+err.Error(), "--surface is not accepted for project update") {
