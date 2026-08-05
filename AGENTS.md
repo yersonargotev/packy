@@ -7,6 +7,25 @@
   before committing or reporting success. Keep `go test ./...` green while the
   repository has no vendored upstream Go content.
 
+## Engineering principles
+
+- Do not preserve backward compatibility. Optimize for the current
+  requirements and remove obsolete paths instead of adding compatibility
+  layers, fallbacks, or migrations.
+- Choose the simplest implementation that fully meets the current
+  requirements. Avoid speculative abstractions, configuration, and
+  indirection.
+- Build in small, end-to-end increments. Keep the product working after each
+  meaningful change.
+- Give each component clear ownership of a cohesive concern. Introduce a new
+  boundary or module only when it provides a concrete separation benefit.
+- Before implementing common functionality, inspect the project's existing
+  dependencies, documentation, and types. Use an existing capability when it
+  fits; otherwise prefer an established, well-maintained library when it
+  reduces total complexity or materially improves reliability.
+- Design for every known requirement without planning a later replacement.
+  When requirements are uncertain, prefer simple and reversible decisions.
+
 ## Agent skills
 
 ### Issue tracker
