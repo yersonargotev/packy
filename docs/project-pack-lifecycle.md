@@ -77,10 +77,6 @@ packy pack update example-pack --project --version 2.0.0 --dry-run
 packy pack update example-pack --project --version 2.0.0
 ```
 
-Retired projections receive a separately approved destructive-cleanup phase.
-Drifted, foreign, ambiguous, or still-shared content is preserved and blocks
-the affected retirement.
-
 ## Status and automation
 
 Project status always reports shared installation and personal runtime as two

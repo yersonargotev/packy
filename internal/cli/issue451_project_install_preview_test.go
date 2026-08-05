@@ -90,7 +90,7 @@ func TestIssue451UnrepresentableProjectResourceIsNonActionable(t *testing.T) {
 		t.Fatalf("unrepresentable preview error = %v\n%s", err, out)
 	}
 	var report capabilitypack.JSONProjectInstallPreview
-	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil || report.Disposition != capabilitypack.ProjectInstallBlocked || len(report.Blockers) == 0 || report.Blockers[0].Code != "unrepresentable_resource" {
+	if decodeErr := json.Unmarshal(firstJSONDocument(t, out), &report); decodeErr != nil || report.Disposition != capabilitypack.ProjectInstallBlocked || len(report.Blockers) == 0 || report.Blockers[0].Code != "unrepresentable_resource" {
 		t.Fatalf("blocked preview = %#v; decode=%v\n%s", report, decodeErr, out)
 	}
 	if snapshotTree(t, project) != beforeProject || snapshotTree(t, home) != beforeHome || len(opts.Runner.(*fakeRunner).calls) != 0 {

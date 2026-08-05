@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -36,14 +38,16 @@ func TestIssue463PublishedProjectSchemasCoverLiveContractsAndCanonicalNegatives(
 		t.Fatalf("invalid project intent unexpectedly succeeded: %s", failureOutput)
 	}
 	failure := lastJSONDocument(t, failureOutput)
-	recoveryBytes, err := json.Marshal(capabilitypack.JSONProjectRecovery{
-		SchemaVersion: capabilitypack.ProjectLifecycleJSONSchemaVersion,
-		Report:        "project-recovery", Operation: "install", Status: "recovered",
-		NextCommand: "packy pack install",
-	})
+	projectRoot, err := capabilitypack.DiscoverProjectRoot(project)
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedProjectRecoveryJournal(t, filepath.Join(home, ".packy"), projectRoot)
+	recoveryEvents, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--json")
+	if err != nil {
+		t.Fatalf("project recovery: %v\n%s", err, recoveryEvents)
+	}
+	recovery := firstJSONDocument(t, recoveryEvents)
 
 	documents := map[string][]byte{
 		"project-manifest.schema.json": mustReadProjectContract(t, filepath.Join(project, "packy.json")),
@@ -52,7 +56,7 @@ func TestIssue463PublishedProjectSchemasCoverLiveContractsAndCanonicalNegatives(
 		"project-preview.schema.json":  []byte(preview),
 		"project-apply.schema.json":    apply,
 		"project-failure.schema.json":  failure,
-		"project-recovery.schema.json": recoveryBytes,
+		"project-recovery.schema.json": recovery,
 	}
 	for schemaName, document := range documents {
 		if err := validateProjectContractSchema(repoRoot, schemaName, document); err != nil {
@@ -82,6 +86,36 @@ func TestIssue463PublishedProjectSchemasCoverLiveContractsAndCanonicalNegatives(
 	}
 }
 
+func seedProjectRecoveryJournal(t *testing.T, packyHome, projectRoot string) {
+	t.Helper()
+	type recoveryJournal struct {
+		SchemaVersion int                               `json:"schema_version"`
+		Observation   string                            `json:"observation"`
+		ProjectRoot   string                            `json:"project_root"`
+		Reverse       []capabilitypack.ProjectionAction `json:"reverse"`
+		Seal          string                            `json:"seal"`
+	}
+	journal := recoveryJournal{SchemaVersion: 1, Observation: "issue-463-recovery", ProjectRoot: projectRoot, Reverse: []capabilitypack.ProjectionAction{}}
+	unsigned, err := json.Marshal(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seal := sha256.Sum256(unsigned)
+	journal.Seal = hex.EncodeToString(seal[:])
+	data, err := json.MarshalIndent(journal, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectDigest := sha256.Sum256([]byte(filepath.Clean(projectRoot)))
+	journalPath := filepath.Join(packyHome, "projects", hex.EncodeToString(projectDigest[:]), "install-journal.json")
+	if err := os.MkdirAll(filepath.Dir(journalPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(journalPath, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIssue463ProjectHelpExplainsTheTwoPhaseLifecycle(t *testing.T) {
 	opts, _, _ := packActivationOptions(t, &fakeTerminal{})
 	for _, args := range [][]string{{"pack", "--help"}, {"pack", "install", "--help"}, {"pack", "activate", "--help"}, {"pack", "status", "--help"}, {"pack", "uninstall", "--help"}} {
@@ -104,6 +138,15 @@ func lastJSONDocument(t *testing.T, stream string) []byte {
 		t.Fatalf("missing final JSON document:\n%s", stream)
 	}
 	return []byte(lines[len(lines)-1])
+}
+
+func firstJSONDocument(t *testing.T, stream string) []byte {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(stream), "\n")
+	if len(lines) == 0 || !json.Valid([]byte(lines[0])) {
+		t.Fatalf("missing first JSON document:\n%s", stream)
+	}
+	return []byte(lines[0])
 }
 
 func mustReadProjectContract(t *testing.T, path string) []byte {

@@ -75,7 +75,12 @@ func newPackUninstallCommand(opts Options, workstationResolver *workstation.Reso
 		Short: "Uninstall exact owned projections from the current Git project",
 		Long:  "Uninstall exact owned projections from the current Git project.\n\n" + projectLifecycleHelp,
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+			defer func() {
+				if runErr != nil {
+					runErr = projectLifecycleFailure(cmd, jsonOutput, "uninstall", "command", runErr)
+				}
+			}()
 			snapshot, err := workstationResolver.Resolve(workstation.Options{})
 			if err != nil {
 				return err
@@ -259,10 +264,15 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 		Short: "Install a capability pack in the current Git project",
 		Long:  "Install a capability pack in the current Git project.\n\n" + projectLifecycleHelp,
 		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+			defer func() {
+				if runErr != nil {
+					runErr = projectLifecycleFailure(cmd, jsonOutput, "install", "command", runErr)
+				}
+			}()
 			aliases, err := parseSurfaceAliases(aliasValues)
 			if err != nil {
-				return projectLifecycleFailure(cmd, jsonOutput, "install", "preview", err)
+				return err
 			}
 			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}
 			if len(resourceValues) > 0 {
@@ -270,14 +280,14 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 				for _, value := range resourceValues {
 					resource, parseErr := capabilitypack.ParseResourceIdentity(value)
 					if parseErr != nil {
-						return projectLifecycleFailure(cmd, jsonOutput, "install", "preview", parseErr)
+						return parseErr
 					}
 					selection.Roots = append(selection.Roots, resource)
 				}
 			}
 			providerChoices, err := parseProviderChoices(providerValues)
 			if err != nil {
-				return projectLifecycleFailure(cmd, jsonOutput, "install", "preview", err)
+				return err
 			}
 			snapshot, err := workstationResolver.Resolve(workstation.Options{})
 			if err != nil {
@@ -373,6 +383,14 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 				return nil
 			}
 			if report.Disposition == capabilitypack.ProjectInstallConverged {
+				if jsonOutput {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.ProjectInstallApplyResult{
+						SchemaVersion: capabilitypack.ProjectLifecycleJSONSchemaVersion,
+						Report:        "project-install-apply",
+						Status:        "no-op",
+						Observation:   report.Observation,
+					})
+				}
 				_, err := fmt.Fprintln(cmd.OutOrStdout(), "Verified no-op: the exact project installation is already present")
 				return err
 			}
@@ -560,7 +578,12 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	var resourceValues []string
 	var jsonOutput bool
 	var project bool
-	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Long: "Deactivate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Long: "Deactivate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+		defer func() {
+			if project && runErr != nil {
+				runErr = projectLifecycleFailure(cmd, jsonOutput, "deactivate", "command", runErr)
+			}
+		}()
 		if project {
 			if len(resourceValues) > 0 {
 				return errors.New("--resource is not accepted with --project; personal project deactivation consumes exact receipts")
@@ -685,7 +708,12 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	var version string
 	cmd := &cobra.Command{
 		Use: "update <pack>", Short: "Update an active capability pack to the catalog-current version", Long: "Update an active capability pack to the catalog-current version.\n\n" + projectLifecycleHelp, Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+			defer func() {
+				if project && runErr != nil {
+					runErr = projectLifecycleFailure(cmd, jsonOutput, "update", "command", runErr)
+				}
+			}()
 			if project {
 				if surface != "" {
 					return errors.New("--surface is not accepted for project update")
@@ -895,7 +923,12 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Long: "Activate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+			defer func() {
+				if project && runErr != nil {
+					runErr = projectLifecycleFailure(cmd, jsonOutput, "activate", "command", runErr)
+				}
+			}()
 			if project {
 				if len(aliasValues) > 0 || len(resourceValues) > 0 || len(providerValues) > 0 {
 					return errors.New("--alias, --resource, and --provider are not accepted with --project; project activation consumes the exact installed lock")
@@ -1562,7 +1595,12 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 	var project bool
 	cmd := &cobra.Command{
 		Use: "status [pack]", Short: "Inspect capability pack status", Long: "Inspect capability pack status.\n\n" + projectLifecycleHelp, Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+			defer func() {
+				if project && runErr != nil {
+					runErr = projectLifecycleFailure(cmd, jsonOutput, "status", "command", runErr)
+				}
+			}()
 			packID := ""
 			if len(args) == 1 {
 				packID = args[0]

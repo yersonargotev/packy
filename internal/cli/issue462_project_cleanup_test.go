@@ -172,7 +172,7 @@ func TestIssue462StaleAndRecoveryStatusProvideStableExactCommands(t *testing.T) 
 
 	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project", "--require", "usable", "--json")
 	var report capabilitypack.JSONProjectStatusReport
-	if err == nil || json.Unmarshal([]byte(out), &report) != nil || report.Packs[0].Runtime != capabilitypack.ProjectRuntimeStale || !containsString(report.Packs[0].PendingHumanActions, "packy pack activate matty --surface codex --project") {
+	if err == nil || json.Unmarshal(firstJSONDocument(t, out), &report) != nil || report.Packs[0].Runtime != capabilitypack.ProjectRuntimeStale || !containsString(report.Packs[0].PendingHumanActions, "packy pack activate matty --surface codex --project") {
 		t.Fatalf("stale usable status = %+v, %v\n%s", report, err, out)
 	}
 
@@ -190,7 +190,7 @@ func TestIssue462StaleAndRecoveryStatusProvideStableExactCommands(t *testing.T) 
 	}
 	out, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project", "--require", "usable", "--json")
 	report = capabilitypack.JSONProjectStatusReport{}
-	if err == nil || json.Unmarshal([]byte(out), &report) != nil || report.Packs[0].Runtime != capabilitypack.ProjectRuntimeRecoveryRequired || !containsString(report.Packs[0].PendingHumanActions, "packy pack deactivate matty --surface codex --project") {
+	if err == nil || json.Unmarshal(firstJSONDocument(t, out), &report) != nil || report.Packs[0].Runtime != capabilitypack.ProjectRuntimeRecoveryRequired || !containsString(report.Packs[0].PendingHumanActions, "packy pack deactivate matty --surface codex --project") {
 		t.Fatalf("recovery-required usable status = %+v, %v\n%s", report, err, out)
 	}
 	out, err = executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--project", "--dry-run", "--json")

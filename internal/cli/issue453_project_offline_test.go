@@ -89,7 +89,7 @@ func TestIssue453InstalledEnforcementDetectsDriftWithoutMutation(t *testing.T) {
 		t.Fatalf("installed enforcement error = %v\n%s", err, out)
 	}
 	var report capabilitypack.JSONProjectStatusReport
-	if json.Unmarshal([]byte(out), &report) != nil || len(report.Packs) != 1 || report.Packs[0].Installation != capabilitypack.ProjectInstallationDrifted || report.Packs[0].RequirementSatisfied {
+	if json.Unmarshal(firstJSONDocument(t, out), &report) != nil || len(report.Packs) != 1 || report.Packs[0].Installation != capabilitypack.ProjectInstallationDrifted || report.Packs[0].RequirementSatisfied {
 		t.Fatalf("drift status = %#v\n%s", report, out)
 	}
 	if snapshotTree(t, project) != before {
