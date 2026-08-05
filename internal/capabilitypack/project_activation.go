@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const ProjectActivationPreviewSchemaVersion = 1
+const ProjectActivationPreviewSchemaVersion = 2
 
 // ProjectActivationCategory separates consent for each class of sensitive
 // project runtime behavior. Its values are portable lock identities.
@@ -32,10 +32,11 @@ const (
 type ProjectActivationDisposition string
 
 const (
-	ProjectActivationPreviewable ProjectActivationDisposition = "previewable"
-	ProjectActivationNotRequired ProjectActivationDisposition = "not-required"
-	ProjectActivationConverged   ProjectActivationDisposition = "converged"
-	ProjectActivationBlocked     ProjectActivationDisposition = "blocked"
+	ProjectActivationPreviewable     ProjectActivationDisposition = "previewable"
+	ProjectActivationNotRequired     ProjectActivationDisposition = "not-required"
+	ProjectActivationConverged       ProjectActivationDisposition = "converged"
+	ProjectActivationInheritedGlobal ProjectActivationDisposition = "inherited-global"
+	ProjectActivationBlocked         ProjectActivationDisposition = "blocked"
 )
 
 // ProjectSensitiveDisclosure is carried in the portable lock. Detail is a
@@ -82,6 +83,7 @@ type JSONProjectActivationPreview struct {
 	Categories            []ProjectActivationCategoryPreview `json:"categories"`
 	Effects               []ProjectActivationEffectPreview   `json:"effects"`
 	SensitiveLockIdentity string                             `json:"sensitive_lock_identity"`
+	RuntimeEffects        []ProjectRuntimeEffectStatus       `json:"runtime_effects"`
 	Digest                string                             `json:"digest"`
 	projectRoot           string
 	packyHome             string
@@ -108,6 +110,8 @@ type ProjectActivationApplyResult struct {
 	Digest        string `json:"digest"`
 }
 
+const projectActivationDocumentSchemaVersion = 2
+
 type projectActivationState struct {
 	SchemaVersion         int     `json:"schema_version"`
 	PackID                string  `json:"pack_id"`
@@ -119,8 +123,9 @@ type projectActivationState struct {
 }
 
 type projectActivationReceipt struct {
-	Category ProjectActivationCategory `json:"category"`
-	Digest   string                    `json:"digest"`
+	Category ProjectActivationCategory    `json:"category"`
+	Digest   string                       `json:"digest"`
+	Details  []ProjectSensitiveDisclosure `json:"details"`
 }
 
 type projectActivationEffectReceipt struct {
@@ -147,7 +152,7 @@ type projectActivationDocument struct {
 }
 
 func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectActivationRequest) (JSONProjectActivationPreview, error) {
-	report := JSONProjectActivationPreview{SchemaVersion: ProjectActivationPreviewSchemaVersion, Report: "project-activation-preview", DryRun: true, ProjectRoot: "<project-root>", Categories: []ProjectActivationCategoryPreview{}, Effects: []ProjectActivationEffectPreview{}, projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request}
+	report := JSONProjectActivationPreview{SchemaVersion: ProjectActivationPreviewSchemaVersion, Report: "project-activation-preview", DryRun: true, ProjectRoot: "<project-root>", Categories: []ProjectActivationCategoryPreview{}, Effects: []ProjectActivationEffectPreview{}, RuntimeEffects: []ProjectRuntimeEffectStatus{}, projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request}
 	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
 		return report, fmt.Errorf("project activation preview does not support CLI surface %q", request.Surface)
 	}
@@ -173,7 +178,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if pack.ID != request.PackID || !projectSupportsSurface(pack.Surfaces, request.Surface) {
 		return report, fmt.Errorf("capability pack %q is not installed for CLI surface %q", request.PackID, request.Surface)
 	}
-	status, err := InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: request.ProjectRoot, PackID: request.PackID, Surface: request.Surface, RequireInstalled: true, Adapters: map[Surface]SurfaceAdapter{request.Surface: request.Adapter}})
+	status, err := f.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: request.ProjectRoot, PackID: request.PackID, Surface: request.Surface, PackyHome: request.PackyHome, RequireInstalled: true, Adapters: map[Surface]SurfaceAdapter{request.Surface: request.Adapter}})
 	if err != nil {
 		return report, err
 	}
@@ -195,15 +200,26 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 		}
 	}
 	categories := projectActivationCategories(installation.Lock, request.Surface)
-	report.Pack, report.Surface, report.Categories = pack, request.Surface, categories
+	report.Pack, report.Surface, report.RuntimeEffects = pack, request.Surface, status.Packs[0].RuntimeEffects
+	if status.Packs[0].Runtime == ProjectRuntimeBlocked {
+		report.Categories, report.RuntimeRequired, report.Disposition = categories, len(categories) != 0, ProjectActivationBlocked
+		report.SensitiveLockIdentity = projectSensitiveLockIdentity(installation.Lock, categories)
+		report.Digest = sealProjectActivationPreview(report)
+		return report, nil
+	}
+	report.Categories = projectRuntimePendingCategories(categories, report.RuntimeEffects)
 	report.RuntimeRequired = len(categories) != 0
 	report.SensitiveLockIdentity = projectSensitiveLockIdentity(installation.Lock, categories)
 	if !report.RuntimeRequired {
 		report.Disposition, report.Digest = ProjectActivationNotRequired, sealProjectActivationPreview(report)
 		return report, nil
 	}
+	if status.Packs[0].Runtime == ProjectRuntimeInheritedGlobal {
+		report.Disposition, report.Digest = ProjectActivationInheritedGlobal, sealProjectActivationPreview(report)
+		return report, nil
+	}
 	state := document.State
-	if exists && document.Recovery.Status == "clean" && projectActivationEffectsConverged(request.Surface, observation) && projectActivationDocumentMatches(document, categories) && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
+	if exists && document.Recovery.Status == "clean" && projectActivationEffectsConverged(request.Surface, observation) && status.Packs[0].Runtime == ProjectRuntimeActive && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
 		report.Disposition = ProjectActivationConverged
 	} else {
 		report.Disposition = ProjectActivationPreviewable
@@ -248,6 +264,9 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 	if preview.Disposition == ProjectActivationNotRequired {
 		return ProjectActivationApplyResult{}, errors.New("project activation is not-required and cannot create empty personal state")
 	}
+	if preview.Disposition == ProjectActivationInheritedGlobal {
+		return ProjectActivationApplyResult{}, errors.New("project activation is inherited-global and cannot create redundant personal state")
+	}
 	if preview.Disposition == ProjectActivationBlocked {
 		return ProjectActivationApplyResult{}, errors.New("project activation preview is blocked")
 	}
@@ -265,10 +284,10 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 	if err != nil {
 		return ProjectActivationApplyResult{}, err
 	}
-	state := projectActivationState{SchemaVersion: 1, PackID: preview.Pack.ID, Version: preview.Pack.Version, Surface: preview.Surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: preview.SensitiveLockIdentity}
+	state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: preview.Pack.ID, Version: preview.Pack.Version, Surface: preview.Surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: preview.SensitiveLockIdentity}
 	receipts := make([]projectActivationReceipt, 0, len(preview.Categories))
 	for _, category := range preview.Categories {
-		receipts = append(receipts, projectActivationReceipt{Category: category.Kind, Digest: preview.Digest})
+		receipts = append(receipts, projectActivationReceipt{Category: category.Kind, Digest: preview.Digest, Details: append([]ProjectSensitiveDisclosure(nil), category.Details...)})
 	}
 	effectReceipts := projectActivationEffectReceipts(fresh.actions)
 	if existing, exists, loadErr := loadProjectActivationDocumentForSurface(preview.packyHome, preview.projectRoot, preview.Surface); loadErr != nil {
@@ -588,7 +607,7 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot string, surf
 	if err != nil {
 		return projectActivationDocument{}, false, err
 	}
-	if document.SchemaVersion != 1 || document.State.SchemaVersion != 1 || document.State.Surface != surface || document.State.ProjectRootDigest != rootDigest || document.SensitiveLockIdentity == "" || document.SensitiveLockIdentity != document.State.SensitiveLockIdentity || !validProjectActivationRecovery(document.Recovery.Status) || len(document.Approvals) == 0 || len(document.Approvals) != len(document.Receipts) {
+	if document.SchemaVersion != projectActivationDocumentSchemaVersion || document.State.SchemaVersion != projectActivationDocumentSchemaVersion || document.State.Surface != surface || document.State.ProjectRootDigest != rootDigest || document.SensitiveLockIdentity == "" || document.SensitiveLockIdentity != document.State.SensitiveLockIdentity || !validProjectActivationRecovery(document.Recovery.Status) || len(document.Approvals) == 0 || len(document.Approvals) != len(document.Receipts) {
 		return projectActivationDocument{}, false, errors.New("project activation state is incomplete or recovery-required")
 	}
 	approvalDigests := map[ProjectActivationCategory]string{}
@@ -600,7 +619,12 @@ func loadProjectActivationDocumentForSurface(packyHome, projectRoot string, surf
 	}
 	receipts := map[ProjectActivationCategory]bool{}
 	for _, receipt := range document.Receipts {
-		if receipts[receipt.Category] || approvalDigests[receipt.Category] == "" || receipt.Digest != approvalDigests[receipt.Category] {
+		canonicalDetails := deduplicateProjectSensitiveDisclosures(receipt.Details)
+		validDetails := len(receipt.Details) > 0 && digestJSON(canonicalDetails) == digestJSON(receipt.Details)
+		for _, detail := range receipt.Details {
+			validDetails = validDetails && detail.Category == receipt.Category && detail.Surface == surface && detail.Detail != ""
+		}
+		if receipts[receipt.Category] || approvalDigests[receipt.Category] == "" || receipt.Digest != approvalDigests[receipt.Category] || !validDetails {
 			return projectActivationDocument{}, false, errors.New("project activation receipts do not match exact approvals")
 		}
 		receipts[receipt.Category] = true
@@ -632,23 +656,6 @@ func validProjectActivationRecovery(status string) bool {
 	return status == "clean" || status == "applying" || status == "required"
 }
 
-func projectActivationDocumentMatches(document projectActivationDocument, categories []ProjectActivationCategoryPreview) bool {
-	if len(document.Approvals) != len(categories) {
-		return false
-	}
-	want := map[ProjectActivationCategory]bool{}
-	for _, category := range categories {
-		want[category.Kind] = true
-	}
-	for _, approval := range document.Approvals {
-		if !want[approval.Category] {
-			return false
-		}
-		delete(want, approval.Category)
-	}
-	return len(want) == 0
-}
-
 func saveProjectActivationRecords(packyHome, projectRoot string, state projectActivationState, approvals []ProjectActivationApproval, receipts []projectActivationReceipt, effects []projectActivationEffectReceipt, recovery string) error {
 	directory, err := projectActivationDirectory(packyHome, projectRoot)
 	if err != nil {
@@ -658,7 +665,7 @@ func saveProjectActivationRecords(packyHome, projectRoot string, state projectAc
 		return err
 	}
 	document := projectActivationDocument{
-		SchemaVersion: 1, State: state, Approvals: approvals, Receipts: receipts, Effects: effects,
+		SchemaVersion: projectActivationDocumentSchemaVersion, State: state, Approvals: approvals, Receipts: receipts, Effects: effects,
 		SensitiveLockIdentity: state.SensitiveLockIdentity, Recovery: projectActivationRecovery{Status: recovery},
 	}
 	data, err := json.Marshal(document)

@@ -293,7 +293,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if err != nil {
 				return err
 			}
-			facade := capabilitypack.NewFacade(composition.catalog)
+			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil))
 			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 			var report capabilitypack.JSONProjectInstallPreview
 			if len(args) == 0 {
@@ -373,6 +373,16 @@ func offerProjectActivation(cmd *cobra.Command, opts Options, facade capabilityp
 		return err
 	}
 	if !preview.RuntimeRequired || preview.Disposition == capabilitypack.ProjectActivationConverged {
+		return nil
+	}
+	if preview.Disposition == capabilitypack.ProjectActivationInheritedGlobal || preview.Disposition == capabilitypack.ProjectActivationBlocked {
+		if err := renderProjectActivationPreview(cmd, preview); err != nil {
+			return err
+		}
+		if preview.Disposition == capabilitypack.ProjectActivationBlocked {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Project installation remains installed; personal runtime readiness is blocked by the activation scope conflict")
+			return err
+		}
 		return nil
 	}
 	if err := renderProjectActivationPreview(cmd, preview); err != nil {
@@ -763,6 +773,18 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 					return err
 				}
 				facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
+				store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
+				global := capabilitypack.ObserveActiveIntents(cmd.Context(), store)
+				globalRelevant := slices.Contains(global.FailedSurfaces, capabilitypack.Surface(surface))
+				for _, intent := range global.Intents {
+					globalRelevant = globalRelevant || intent.PackID == args[0] && intent.Surface == capabilitypack.Surface(surface)
+				}
+				if globalRelevant {
+					facade, err = activationFacade(opts, workstationResolver)
+					if err != nil {
+						return err
+					}
+				}
 				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot)
 				preview, err := facade.PreviewProjectActivation(cmd.Context(), capabilitypack.ProjectActivationRequest{
 					PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot,
@@ -780,7 +802,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				} else if err := renderProjectActivationPreview(cmd, preview); err != nil {
 					return err
 				}
-				if !preview.RuntimeRequired || dryRun || preview.Disposition == capabilitypack.ProjectActivationConverged {
+				if !preview.RuntimeRequired || dryRun || preview.Disposition == capabilitypack.ProjectActivationConverged || preview.Disposition == capabilitypack.ProjectActivationInheritedGlobal {
 					return nil
 				}
 				if !opts.Terminal.Interactive(cmd.InOrStdin()) {
@@ -894,6 +916,9 @@ func renderProjectActivationPreview(cmd *cobra.Command, preview capabilitypack.J
 				return err
 			}
 		}
+	}
+	if err := renderProjectRuntimeEffects(cmd.OutOrStdout(), preview.RuntimeEffects); err != nil {
+		return err
 	}
 	for _, effect := range preview.Effects {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Personal effect: %s -> %s identity=%s\n", effect.Action, effect.Target, effect.Identity); err != nil {
@@ -1403,16 +1428,36 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				if err != nil {
 					return err
 				}
-				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
+				statusRequest := capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
 					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
 						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot),
 						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot),
 						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot),
 					},
-				})
+				}
+				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), statusRequest)
 				if err != nil {
 					return err
+				}
+				store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
+				global := capabilitypack.ObserveActiveIntents(cmd.Context(), store)
+				globalRelevant := packID == "" && (len(global.FailedSurfaces) > 0 || len(global.Intents) > 0)
+				for _, failed := range global.FailedSurfaces {
+					globalRelevant = globalRelevant || surface == "" || failed == capabilitypack.Surface(surface)
+				}
+				for _, intent := range global.Intents {
+					globalRelevant = globalRelevant || intent.PackID == packID && (surface == "" || intent.Surface == capabilitypack.Surface(surface))
+				}
+				if globalRelevant {
+					facade, facadeErr := activationFacade(opts, workstationResolver)
+					if facadeErr != nil {
+						return facadeErr
+					}
+					report, err = facade.InspectProjectStatus(cmd.Context(), statusRequest)
+					if err != nil {
+						return err
+					}
 				}
 				if jsonOutput {
 					if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
@@ -1519,6 +1564,31 @@ func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
 	for _, status := range report.Packs {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers), renderPendingAction(status.PendingHumanActions), renderPendingAction(status.Evidence)); err != nil {
+			return err
+		}
+		if err := renderProjectRuntimeEffects(cmd.OutOrStdout(), status.RuntimeEffects); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func renderProjectRuntimeEffects(w io.Writer, effects []capabilitypack.ProjectRuntimeEffectStatus) error {
+	for _, effect := range effects {
+		if _, err := fmt.Fprintf(w, "Runtime effect: %s %s %s coverage=%s", effect.Category, effect.Resource, effect.Detail, effect.Coverage); err != nil {
+			return err
+		}
+		if effect.GlobalVersion != "" {
+			if _, err := fmt.Fprintf(w, " global_version=%s", effect.GlobalVersion); err != nil {
+				return err
+			}
+		}
+		if effect.Conflict != "" {
+			if _, err := fmt.Fprintf(w, " conflict=%s", effect.Conflict); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
 	}
