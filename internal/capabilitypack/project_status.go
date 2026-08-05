@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-const ProjectStatusSchemaVersion = 1
+const ProjectStatusSchemaVersion = 2
 
 type ProjectInstallationState string
 
@@ -27,12 +27,31 @@ const (
 type ProjectRuntimeState string
 
 const (
-	ProjectRuntimeNotRequired ProjectRuntimeState = "not-required"
-	ProjectRuntimePending     ProjectRuntimeState = "pending"
-	ProjectRuntimeActive      ProjectRuntimeState = "active"
-	ProjectRuntimeStale       ProjectRuntimeState = "stale"
-	ProjectRuntimeBlocked     ProjectRuntimeState = "blocked"
+	ProjectRuntimeNotRequired     ProjectRuntimeState = "not-required"
+	ProjectRuntimePending         ProjectRuntimeState = "pending"
+	ProjectRuntimeActive          ProjectRuntimeState = "active"
+	ProjectRuntimeInheritedGlobal ProjectRuntimeState = "inherited-global"
+	ProjectRuntimeStale           ProjectRuntimeState = "stale"
+	ProjectRuntimeBlocked         ProjectRuntimeState = "blocked"
 )
+
+type ProjectRuntimeCoverage string
+
+const (
+	ProjectRuntimeCoveragePending         ProjectRuntimeCoverage = "pending"
+	ProjectRuntimeCoverageProject         ProjectRuntimeCoverage = "project"
+	ProjectRuntimeCoverageInheritedGlobal ProjectRuntimeCoverage = "inherited-global"
+	ProjectRuntimeCoverageConflict        ProjectRuntimeCoverage = "conflict"
+)
+
+type ProjectRuntimeEffectStatus struct {
+	Category      ProjectActivationCategory `json:"category"`
+	Resource      ResourceIdentity          `json:"resource"`
+	Detail        string                    `json:"detail"`
+	Coverage      ProjectRuntimeCoverage    `json:"coverage"`
+	GlobalVersion string                    `json:"global_version,omitempty"`
+	Conflict      string                    `json:"conflict,omitempty"`
+}
 
 type ProjectProjectionStatus struct {
 	Resource            ResourceIdentity `json:"resource"`
@@ -53,18 +72,19 @@ type ProjectReadinessStatus struct {
 }
 
 type JSONProjectPackStatus struct {
-	Pack                 ProjectManifestPack       `json:"pack"`
-	Surface              Surface                   `json:"surface"`
-	Installation         ProjectInstallationState  `json:"installation"`
-	Runtime              ProjectRuntimeState       `json:"runtime"`
-	RuntimeRequired      bool                      `json:"runtime_required"`
-	Readiness            ProjectReadinessStatus    `json:"readiness"`
-	Projections          []ProjectProjectionStatus `json:"projections"`
-	Blockers             []ProjectInstallBlocker   `json:"blockers"`
-	PendingHumanActions  []string                  `json:"pending_human_actions"`
-	Evidence             []string                  `json:"evidence"`
-	Requirement          string                    `json:"requirement,omitempty"`
-	RequirementSatisfied bool                      `json:"requirement_satisfied"`
+	Pack                 ProjectManifestPack          `json:"pack"`
+	Surface              Surface                      `json:"surface"`
+	Installation         ProjectInstallationState     `json:"installation"`
+	Runtime              ProjectRuntimeState          `json:"runtime"`
+	RuntimeRequired      bool                         `json:"runtime_required"`
+	RuntimeEffects       []ProjectRuntimeEffectStatus `json:"runtime_effects"`
+	Readiness            ProjectReadinessStatus       `json:"readiness"`
+	Projections          []ProjectProjectionStatus    `json:"projections"`
+	Blockers             []ProjectInstallBlocker      `json:"blockers"`
+	PendingHumanActions  []string                     `json:"pending_human_actions"`
+	Evidence             []string                     `json:"evidence"`
+	Requirement          string                       `json:"requirement,omitempty"`
+	RequirementSatisfied bool                         `json:"requirement_satisfied"`
 }
 
 type JSONProjectStatusReport struct {
@@ -156,7 +176,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
 				Pack:    ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}},
 				Surface: request.Surface, Installation: ProjectInstallationAbsent, Runtime: ProjectRuntimePending,
-				Projections: []ProjectProjectionStatus{}, Blockers: []ProjectInstallBlocker{}, PendingHumanActions: []string{}, Evidence: []string{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
+				RuntimeEffects: []ProjectRuntimeEffectStatus{}, Projections: []ProjectProjectionStatus{}, Blockers: []ProjectInstallBlocker{}, PendingHumanActions: []string{}, Evidence: []string{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
 			})
 		}
 		return report, nil
@@ -234,9 +254,10 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		}
 		runtime := ProjectRuntimeNotRequired
 		if runtimeRequired {
-			runtime = projectRuntimeStatus(request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories)
+			runtime = projectRuntimeStatus(request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories, categories)
 		}
-		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
+		effects := pendingProjectRuntimeEffects(categories)
+		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
 		if request.RequireInstalled {
 			status.Requirement = "installed"
 			status.RequirementSatisfied = state == ProjectInstallationInstalled
@@ -251,6 +272,65 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		return report, fmt.Errorf("pack %q on %s is not declared by this project installation", request.PackID, request.Surface)
 	}
 	return report, nil
+}
+
+func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JSONProjectStatusReport, error) {
+	report, err := InspectProjectStatus(ctx, request)
+	if err != nil || f.activation == nil || f.activation.store == nil {
+		return report, err
+	}
+	hasInstalledRuntime := false
+	for _, status := range report.Packs {
+		hasInstalledRuntime = hasInstalledRuntime || status.Installation != ProjectInstallationAbsent && status.RuntimeRequired
+	}
+	if !hasInstalledRuntime {
+		return report, nil
+	}
+	installation, err := LoadProjectInstallation(request.ProjectRoot)
+	if err != nil {
+		return report, err
+	}
+	for i := range report.Packs {
+		status := &report.Packs[i]
+		if !status.RuntimeRequired || status.Installation != ProjectInstallationInstalled {
+			continue
+		}
+		composition, composeErr := f.composeProjectRuntime(ctx, installation, status.Surface)
+		if composeErr != nil {
+			return report, composeErr
+		}
+		status.RuntimeEffects = composition.effects
+		allCategories := projectActivationCategories(installation.Lock, status.Surface)
+		pendingCategories := projectRuntimePendingCategories(allCategories, composition.effects)
+		status.Runtime = projectRuntimeStatus(request.PackyHome, request.ProjectRoot, status.Pack, status.Surface, status.Installation, installation.Lock, allCategories, pendingCategories)
+		if composition.conflict {
+			status.Runtime = ProjectRuntimeBlocked
+			status.Blockers = append(status.Blockers, ProjectInstallBlocker{Code: "activation_scope_conflict", Detail: composition.conflictDetail, Remediation: "deactivate the incompatible global contribution or align the global and project contracts"})
+		} else if composition.allInherited && status.Runtime == ProjectRuntimePending {
+			status.Runtime = ProjectRuntimeInheritedGlobal
+		}
+		if status.Runtime == ProjectRuntimeActive {
+			for j := range status.RuntimeEffects {
+				if status.RuntimeEffects[j].Coverage == ProjectRuntimeCoveragePending {
+					status.RuntimeEffects[j].Coverage = ProjectRuntimeCoverageProject
+				}
+			}
+		}
+		if request.RequireUsable {
+			status.RequirementSatisfied = status.Installation == ProjectInstallationInstalled && status.Readiness.Usable && (status.Runtime == ProjectRuntimeActive || status.Runtime == ProjectRuntimeInheritedGlobal)
+		}
+	}
+	return report, nil
+}
+
+func pendingProjectRuntimeEffects(categories []ProjectActivationCategoryPreview) []ProjectRuntimeEffectStatus {
+	result := make([]ProjectRuntimeEffectStatus, 0)
+	for _, category := range categories {
+		for _, detail := range category.Details {
+			result = append(result, ProjectRuntimeEffectStatus{Category: category.Kind, Resource: detail.Resource, Detail: detail.Detail, Coverage: ProjectRuntimeCoveragePending})
+		}
+	}
+	return result
 }
 
 func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLockProposal, observation SurfaceInspection, surface Surface, packID string) ([]ProjectProjectionStatus, error) {
@@ -300,7 +380,7 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 	return statuses, nil
 }
 
-func projectRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPack, surface Surface, installation ProjectInstallationState, lock ProjectLockProposal, categories []ProjectActivationCategoryPreview) ProjectRuntimeState {
+func projectRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPack, surface Surface, installation ProjectInstallationState, lock ProjectLockProposal, identityCategories, approvalCategories []ProjectActivationCategoryPreview) ProjectRuntimeState {
 	if installation != ProjectInstallationInstalled {
 		return ProjectRuntimeBlocked
 	}
@@ -318,10 +398,32 @@ func projectRuntimeStatus(packyHome, projectRoot string, pack ProjectManifestPac
 	if !exists || !state.Active {
 		return ProjectRuntimePending
 	}
-	if !projectActivationDocumentMatches(document, categories) || state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, categories) {
+	if !projectActivationDocumentMatches(document, approvalCategories) || state.PackID != pack.ID || state.Version != pack.Version || state.Surface != surface || state.SensitiveLockIdentity != projectSensitiveLockIdentity(lock, identityCategories) {
 		return ProjectRuntimeStale
 	}
 	return ProjectRuntimeActive
+}
+
+func projectRuntimePendingCategories(categories []ProjectActivationCategoryPreview, effects []ProjectRuntimeEffectStatus) []ProjectActivationCategoryPreview {
+	pending := map[string]bool{}
+	for _, effect := range effects {
+		if effect.Coverage == ProjectRuntimeCoveragePending {
+			pending[projectRuntimeDisclosureKey(effect.Category, effect.Resource, effect.Detail)] = true
+		}
+	}
+	result := make([]ProjectActivationCategoryPreview, 0, len(categories))
+	for _, category := range categories {
+		filtered := ProjectActivationCategoryPreview{Kind: category.Kind, ApprovalRequired: category.ApprovalRequired}
+		for _, detail := range category.Details {
+			if pending[projectRuntimeDisclosureKey(category.Kind, detail.Resource, detail.Detail)] {
+				filtered.Details = append(filtered.Details, detail)
+			}
+		}
+		if len(filtered.Details) > 0 {
+			result = append(result, filtered)
+		}
+	}
+	return result
 }
 
 func projectPathMissing(path string) (bool, error) {

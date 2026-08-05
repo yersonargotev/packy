@@ -113,6 +113,25 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err := os.WriteFile(statePath, state, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	declarativeLock := lock
+	declarativeLock.Projections = append([]capabilitypack.ProjectProjectionPlan(nil), lock.Projections...)
+	for i := range declarativeLock.Projections {
+		if declarativeLock.Projections[i].Resource != (capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}) {
+			declarativeLock.Projections[i].Command = "declarative-only-metadata-change"
+			break
+		}
+	}
+	declarativeData, err := json.MarshalIndent(declarativeLock, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockPath, append(declarativeData, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, err = capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: packyHome, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}})
+	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeActive {
+		t.Fatalf("purely declarative lock change fabricated renewed consent: %+v, %v", status, err)
+	}
 	for i := range lock.Projections {
 		if lock.Projections[i].Resource == (capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}) {
 			lock.Projections[i].Command = "changed-sensitive-command"

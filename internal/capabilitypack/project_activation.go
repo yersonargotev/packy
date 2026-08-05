@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const ProjectActivationPreviewSchemaVersion = 1
+const ProjectActivationPreviewSchemaVersion = 2
 
 // ProjectActivationCategory separates consent for each class of sensitive
 // project runtime behavior. Its values are portable lock identities.
@@ -32,10 +32,11 @@ const (
 type ProjectActivationDisposition string
 
 const (
-	ProjectActivationPreviewable ProjectActivationDisposition = "previewable"
-	ProjectActivationNotRequired ProjectActivationDisposition = "not-required"
-	ProjectActivationConverged   ProjectActivationDisposition = "converged"
-	ProjectActivationBlocked     ProjectActivationDisposition = "blocked"
+	ProjectActivationPreviewable     ProjectActivationDisposition = "previewable"
+	ProjectActivationNotRequired     ProjectActivationDisposition = "not-required"
+	ProjectActivationConverged       ProjectActivationDisposition = "converged"
+	ProjectActivationInheritedGlobal ProjectActivationDisposition = "inherited-global"
+	ProjectActivationBlocked         ProjectActivationDisposition = "blocked"
 )
 
 // ProjectSensitiveDisclosure is carried in the portable lock. Detail is a
@@ -82,6 +83,7 @@ type JSONProjectActivationPreview struct {
 	Categories            []ProjectActivationCategoryPreview `json:"categories"`
 	Effects               []ProjectActivationEffectPreview   `json:"effects"`
 	SensitiveLockIdentity string                             `json:"sensitive_lock_identity"`
+	RuntimeEffects        []ProjectRuntimeEffectStatus       `json:"runtime_effects"`
 	Digest                string                             `json:"digest"`
 	projectRoot           string
 	packyHome             string
@@ -147,7 +149,7 @@ type projectActivationDocument struct {
 }
 
 func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectActivationRequest) (JSONProjectActivationPreview, error) {
-	report := JSONProjectActivationPreview{SchemaVersion: ProjectActivationPreviewSchemaVersion, Report: "project-activation-preview", DryRun: true, ProjectRoot: "<project-root>", Categories: []ProjectActivationCategoryPreview{}, Effects: []ProjectActivationEffectPreview{}, projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request}
+	report := JSONProjectActivationPreview{SchemaVersion: ProjectActivationPreviewSchemaVersion, Report: "project-activation-preview", DryRun: true, ProjectRoot: "<project-root>", Categories: []ProjectActivationCategoryPreview{}, Effects: []ProjectActivationEffectPreview{}, RuntimeEffects: []ProjectRuntimeEffectStatus{}, projectRoot: request.ProjectRoot, packyHome: request.PackyHome, request: request}
 	if request.Surface != SurfaceCodex && request.Surface != SurfaceOpenCode && request.Surface != SurfaceClaude {
 		return report, fmt.Errorf("project activation preview does not support CLI surface %q", request.Surface)
 	}
@@ -173,7 +175,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if pack.ID != request.PackID || !projectSupportsSurface(pack.Surfaces, request.Surface) {
 		return report, fmt.Errorf("capability pack %q is not installed for CLI surface %q", request.PackID, request.Surface)
 	}
-	status, err := InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: request.ProjectRoot, PackID: request.PackID, Surface: request.Surface, RequireInstalled: true, Adapters: map[Surface]SurfaceAdapter{request.Surface: request.Adapter}})
+	status, err := f.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: request.ProjectRoot, PackID: request.PackID, Surface: request.Surface, PackyHome: request.PackyHome, RequireInstalled: true, Adapters: map[Surface]SurfaceAdapter{request.Surface: request.Adapter}})
 	if err != nil {
 		return report, err
 	}
@@ -195,15 +197,26 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 		}
 	}
 	categories := projectActivationCategories(installation.Lock, request.Surface)
-	report.Pack, report.Surface, report.Categories = pack, request.Surface, categories
+	report.Pack, report.Surface, report.RuntimeEffects = pack, request.Surface, status.Packs[0].RuntimeEffects
+	if status.Packs[0].Runtime == ProjectRuntimeBlocked {
+		report.Categories, report.RuntimeRequired, report.Disposition = categories, len(categories) != 0, ProjectActivationBlocked
+		report.SensitiveLockIdentity = projectSensitiveLockIdentity(installation.Lock, categories)
+		report.Digest = sealProjectActivationPreview(report)
+		return report, nil
+	}
+	report.Categories = projectRuntimePendingCategories(categories, report.RuntimeEffects)
 	report.RuntimeRequired = len(categories) != 0
 	report.SensitiveLockIdentity = projectSensitiveLockIdentity(installation.Lock, categories)
 	if !report.RuntimeRequired {
 		report.Disposition, report.Digest = ProjectActivationNotRequired, sealProjectActivationPreview(report)
 		return report, nil
 	}
+	if status.Packs[0].Runtime == ProjectRuntimeInheritedGlobal {
+		report.Disposition, report.Digest = ProjectActivationInheritedGlobal, sealProjectActivationPreview(report)
+		return report, nil
+	}
 	state := document.State
-	if exists && document.Recovery.Status == "clean" && projectActivationEffectsConverged(request.Surface, observation) && projectActivationDocumentMatches(document, categories) && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
+	if exists && document.Recovery.Status == "clean" && projectActivationEffectsConverged(request.Surface, observation) && projectActivationDocumentMatches(document, report.Categories) && state.Active && state.PackID == pack.ID && state.Version == pack.Version && state.Surface == request.Surface && state.SensitiveLockIdentity == report.SensitiveLockIdentity {
 		report.Disposition = ProjectActivationConverged
 	} else {
 		report.Disposition = ProjectActivationPreviewable
@@ -247,6 +260,9 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 	}
 	if preview.Disposition == ProjectActivationNotRequired {
 		return ProjectActivationApplyResult{}, errors.New("project activation is not-required and cannot create empty personal state")
+	}
+	if preview.Disposition == ProjectActivationInheritedGlobal {
+		return ProjectActivationApplyResult{}, errors.New("project activation is inherited-global and cannot create redundant personal state")
 	}
 	if preview.Disposition == ProjectActivationBlocked {
 		return ProjectActivationApplyResult{}, errors.New("project activation preview is blocked")
