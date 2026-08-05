@@ -866,7 +866,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		Manifest:    ProjectContractProposal{Path: "packy.json", SchemaVersion: projectContractSchemaV3, Packs: []ProjectManifestPack{manifestPack}},
 		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV3, MinimumPackyCapability: projectContractCapabilityV3, Source: source, Sources: sources, Packs: resolvedPacks, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Sensitive: lockSensitive, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
-		Projections: projections, Requirements: requirements, Blockers: blockers, Disposition: disposition,
+		Projections: projections, Requirements: append([]string{}, requirements...), Blockers: append([]ProjectInstallBlocker{}, blockers...), Disposition: disposition,
 	}
 	manifestBytes, err := marshalProjectManifest(report.Manifest)
 	if err != nil {

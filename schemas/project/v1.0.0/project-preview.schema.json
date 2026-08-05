@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-preview.schema.json",
+  "title": "Packy project lifecycle preview reports",
+  "type": "object",
+  "required": ["schema_version", "report", "dry_run", "project_root", "pack", "disposition"],
+  "properties": {
+    "schema_version": { "enum": [1, 2] },
+    "report": { "enum": ["project-install-preview", "project-uninstall-preview", "project-activation-preview", "project-deactivation-preview"] },
+    "dry_run": { "type": "boolean" },
+    "project_root": { "const": "<project-root>" },
+    "pack": { "$ref": "project-contract-defs.schema.json#/$defs/pack" },
+    "surface": { "$ref": "project-contract-defs.schema.json#/$defs/surface" },
+    "scope": { "enum": ["surface", "pack"] },
+    "selection": {
+      "type": "object",
+      "required": ["mode", "resources"],
+      "properties": {
+        "mode": { "enum": ["all", "custom"] },
+        "resources": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/resource_fact" } }
+      },
+      "additionalProperties": false
+    },
+    "manifest": {
+      "type": "object",
+      "required": ["path", "schema_version", "packs"],
+      "properties": {
+        "path": { "const": "packy.json" },
+        "schema_version": { "const": 3 },
+        "packs": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/pack" } }
+      },
+      "additionalProperties": false
+    },
+    "lock": { "$ref": "project-lock.schema.json" },
+    "notices": { "type": "object" },
+    "projections": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/projection_plan" } },
+    "retirements": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/projection_plan" } },
+    "sensitive_changes": { "type": "array", "items": { "type": "object" } },
+    "requirements": { "type": "array", "items": { "type": "string" } },
+    "contracts": { "type": "array", "items": { "type": "string" } },
+    "runtime": { "type": "string" },
+    "runtime_required": { "type": "boolean" },
+    "runtime_effects": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/runtime_effect" } },
+    "categories": { "type": "array", "items": { "type": "object" } },
+    "effects": { "type": "array", "items": { "type": "object" } },
+    "sensitive_lock_identity": { "type": "string" },
+    "blockers": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/blocker" } },
+    "disposition": { "type": "string", "minLength": 1 },
+    "observation": { "type": "string" },
+    "digest": { "type": "string" }
+  },
+  "additionalProperties": false
+}

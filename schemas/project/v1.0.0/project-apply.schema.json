@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-apply.schema.json",
+  "title": "Packy project lifecycle apply reports",
+  "type": "object",
+  "required": ["schema_version", "report", "status"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report": { "enum": ["project-install-apply", "project-uninstall-apply", "project-activation-apply", "project-deactivation-apply"] },
+    "status": { "type": "string", "minLength": 1 },
+    "observation": { "type": "string" },
+    "digest": { "type": "string" }
+  },
+  "additionalProperties": false
+}

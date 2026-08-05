@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-manifest.schema.json",
+  "title": "Packy project manifest contract v3",
+  "type": "object",
+  "required": ["schema_version", "minimum_packy_capability", "packs"],
+  "properties": {
+    "schema_version": { "const": 3 },
+    "minimum_packy_capability": { "const": "project-activation-v1" },
+    "packs": { "type": "array", "minItems": 1, "items": { "$ref": "project-contract-defs.schema.json#/$defs/pack" } }
+  },
+  "additionalProperties": false
+}
