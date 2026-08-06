@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -350,6 +351,7 @@ func TestPackShowContractRendersPerSurfaceSelectionValidity(t *testing.T) {
 }
 
 func TestPackLifecycleHumanOutputIncludesRedactedStructuredActionAndApplyFacts(t *testing.T) {
+	_, resources := checkedInMattyFacts(t)
 	opts, home, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
 	preview, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "ma"+"tty", "--surface", "codex", "--dry-run")
 	if err != nil {
@@ -368,7 +370,7 @@ func TestPackLifecycleHumanOutputIncludesRedactedStructuredActionAndApplyFacts(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(applied, "Apply result facts: verified=yes projections=23") {
+	if !strings.Contains(applied, fmt.Sprintf("Apply result facts: verified=yes projections=%d", resources)) {
 		t.Fatalf("human apply omitted structured result facts:\n%s", applied)
 	}
 }

@@ -75,21 +75,23 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 }
 
 func TestIssue455ProjectManifestRejectsMovingAndMachineSpecificAuthority(t *testing.T) {
+	version, _ := checkedInMattyFacts(t)
+	versionField := `"version": "` + version + `"`
 	for _, test := range []struct {
 		name   string
 		mutate func(string) string
 	}{
 		{name: "moving version", mutate: func(value string) string {
-			return strings.Replace(value, `"version": "4.0.0"`, `"version": "latest"`, 1)
+			return strings.Replace(value, versionField, `"version": "latest"`, 1)
 		}},
 		{name: "arbitrary source URL", mutate: func(value string) string {
-			return strings.Replace(value, `"version": "4.0.0",`, `"version": "4.0.0", "source_url": "https://example.invalid/pack",`, 1)
+			return strings.Replace(value, versionField+`,`, versionField+`, "source_url": "https://example.invalid/pack",`, 1)
 		}},
 		{name: "machine source override", mutate: func(value string) string {
-			return strings.Replace(value, `"version": "4.0.0",`, `"version": "4.0.0", "source_override": "/tmp/local-pack",`, 1)
+			return strings.Replace(value, versionField+`,`, versionField+`, "source_override": "/tmp/local-pack",`, 1)
 		}},
 		{name: "literal secret", mutate: func(value string) string {
-			return strings.Replace(value, `"version": "4.0.0",`, `"version": "4.0.0", "token": "literal-secret",`, 1)
+			return strings.Replace(value, versionField+`,`, versionField+`, "token": "literal-secret",`, 1)
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 )
 
 func TestIssue454PackWideUninstallPreviewsEveryRemovalWithoutMutation(t *testing.T) {
+	version, _ := checkedInMattyFacts(t)
 	opts, project := installIssue453Project(t)
 	before := snapshotTree(t, project)
 	terminal := opts.Terminal.(*fakeTerminal)
@@ -19,7 +20,7 @@ func TestIssue454PackWideUninstallPreviewsEveryRemovalWithoutMutation(t *testing
 	}
 	for _, want := range []string{
 		"COMPLETE PROJECT PACK UNINSTALL DRY-RUN",
-		"Pack: matty 4.0.0",
+		"Pack: matty " + version,
 		"Scope: complete pack",
 		"packy.json",
 		"packy.lock.json",

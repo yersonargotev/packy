@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -393,7 +395,8 @@ func TestCapabilityPackRolloutMatrixStaysInsideSandbox(t *testing.T) {
 				originalManifest := readFileString(t, manifestPath)
 				currentVersion, staleVersion := "2.0.0", "2.0.1"
 				if packID == "matty" {
-					currentVersion, staleVersion = "4.0.0", "4.0.1"
+					currentVersion, _ = checkedInMattyFacts(t)
+					staleVersion = strings.TrimSuffix(currentVersion, ".0") + ".1"
 				}
 				terminal.onApprove = func() {
 					changed := strings.Replace(originalManifest, `"version": "`+currentVersion+`"`, `"version": "`+staleVersion+`"`, 1)
@@ -513,26 +516,52 @@ func packActivationOptions(t *testing.T, terminal Terminal) (Options, string, st
 	return Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}, Runner: &fakeRunner{}, Terminal: terminal}, home, repoRoot
 }
 
+func checkedInMattyFacts(t *testing.T) (string, int) {
+	t.Helper()
+	var manifest struct {
+		Version   string            `json:"version"`
+		Resources []json.RawMessage `json:"resources"`
+	}
+	data, err := os.ReadFile(filepath.Join("..", "..", "bundle", "packs", "matty", "pack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	return manifest.Version, len(manifest.Resources)
+}
+
 func legacyMattyActivationOptions(t *testing.T, terminal Terminal) (Options, string, string) {
 	t.Helper()
 	opts, home, repoRoot := packActivationOptions(t, terminal)
 	bundle := copyPackBundleForUpdate(t, repoRoot)
 	historyRoot := filepath.Join(repoRoot, "bundle", "history", "matty", "3.0.0")
-	for _, relative := range []string{"pack.json", "instructions/matty-guidance.md", "instructions/matty-workflow-conventions.md"} {
-		data, err := os.ReadFile(filepath.Join(historyRoot, relative))
-		if err != nil {
-			t.Fatal(err)
+	if err := filepath.WalkDir(historyRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(historyRoot, path)
+		if err != nil || relative == "." || relative == "artifact.json" {
+			return err
 		}
 		target := filepath.Join(bundle, relative)
 		if relative == "pack.json" {
 			target = filepath.Join(bundle, "packs", "matty", "pack.json")
 		}
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o700)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-			t.Fatal(err)
+			return err
 		}
-		if err := os.WriteFile(target, data, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		return os.WriteFile(target, data, 0o600)
+	}); err != nil {
+		t.Fatal(err)
 	}
 	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
 	return opts, home, repoRoot
@@ -630,7 +659,8 @@ func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Activation dry-run plan plan-", "Digest:", "Phase: reversible-local", "link skill ask-matt", "Logical resources: 23 skill, 0 instruction"} {
+	_, resources := checkedInMattyFacts(t)
+	for _, want := range []string{"Activation dry-run plan plan-", "Digest:", "Phase: reversible-local", "link skill ask-matt", fmt.Sprintf("Logical resources: %d skill, 0 instruction", resources)} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -1149,7 +1179,8 @@ func TestPackActivateOpenCodeDryRunIsCompletelySideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Activation dry-run plan plan-", "Surface: opencode", "link OpenCode skill ask-matt", "Logical resources: 23 skill, 0 instruction"} {
+	_, resources := checkedInMattyFacts(t)
+	for _, want := range []string{"Activation dry-run plan plan-", "Surface: opencode", "link OpenCode skill ask-matt", fmt.Sprintf("Logical resources: %d skill, 0 instruction", resources)} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -1485,7 +1516,8 @@ func TestPackUpdateRendersVersionsAndRetainedSharedResourcesOnBothSurfaces(t *te
 	}
 }
 
-func TestMattyThreeToFourUpdateRemovesOwnedInstructionsThroughEveryProductionAdapter(t *testing.T) {
+func TestMattyThreeToCurrentUpdateRemovesOwnedInstructionsThroughEveryProductionAdapter(t *testing.T) {
+	currentVersion, _ := checkedInMattyFacts(t)
 	for _, tc := range []struct {
 		surface     string
 		instruction func(string) []string
@@ -1527,9 +1559,9 @@ func TestMattyThreeToFourUpdateRemovesOwnedInstructionsThroughEveryProductionAda
 
 			preview, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", tc.surface, "--dry-run")
 			if err != nil {
-				t.Fatalf("preview Matty 4.0.0: %v\n%s", err, preview)
+				t.Fatalf("preview Matty %s: %v\n%s", currentVersion, err, preview)
 			}
-			for _, want := range []string{"Version: 3.0.0 -> 4.0.0", "Phase: destructive-cleanup", "matty-guidance", "matty-workflow-conventions"} {
+			for _, want := range []string{"Version: 3.0.0 -> " + currentVersion, "Phase: destructive-cleanup", "matty-guidance", "matty-workflow-conventions"} {
 				if !strings.Contains(preview, want) {
 					t.Fatalf("update preview missing %q:\n%s", want, preview)
 				}
@@ -1537,7 +1569,7 @@ func TestMattyThreeToFourUpdateRemovesOwnedInstructionsThroughEveryProductionAda
 
 			updated, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", tc.surface)
 			if err != nil || !strings.Contains(updated, "Verified plan") {
-				t.Fatalf("apply Matty 4.0.0: %v\n%s", err, updated)
+				t.Fatalf("apply Matty %s: %v\n%s", currentVersion, err, updated)
 			}
 			if _, err := os.Lstat(tc.skill(home)); err != nil {
 				t.Fatalf("Matty skill did not survive update: %v", err)
@@ -1552,8 +1584,8 @@ func TestMattyThreeToFourUpdateRemovesOwnedInstructionsThroughEveryProductionAda
 				}
 			}
 			state := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
-			if !strings.Contains(state, `"version": "4.0.0"`) {
-				t.Fatalf("activation state did not advance to Matty 4.0.0:\n%s", state)
+			if !strings.Contains(state, `"version": "`+currentVersion+`"`) {
+				t.Fatalf("activation state did not advance to Matty %s:\n%s", currentVersion, state)
 			}
 		})
 	}
@@ -1893,6 +1925,7 @@ func writeCompositionBundle(t *testing.T, blocked bool) string {
 }
 
 func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
+	currentVersion, _ := checkedInMattyFacts(t)
 	for _, surface := range []string{"codex", "opencode"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
@@ -1906,7 +1939,7 @@ func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
 			if err != nil {
 				t.Fatalf("dry-run: %v\n%s", err, out)
 			}
-			for _, want := range []string{"Deactivation dry-run plan plan-", "Active version: 4.0.0", "Intent revision:", "Contributor removed:", "Phase: destructive-cleanup"} {
+			for _, want := range []string{"Deactivation dry-run plan plan-", "Active version: " + currentVersion, "Intent revision:", "Contributor removed:", "Phase: destructive-cleanup"} {
 				if !strings.Contains(out, want) {
 					t.Fatalf("missing %q:\n%s", want, out)
 				}

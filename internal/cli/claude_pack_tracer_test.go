@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,8 @@ func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T)
 	beforePreview := snapshotTree(t, home)
 
 	preview, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "claude", "--dry-run")
-	if err != nil || !strings.Contains(preview, "skill:ask-matt") || !strings.Contains(preview, "Logical resources: 23 skill, 0 instruction") || !strings.Contains(preview, "Expected readiness: configured=yes, authorized=unknown, usable=unknown") || !strings.Contains(preview, "Pending evidence:") {
+	_, resources := checkedInMattyFacts(t)
+	if err != nil || !strings.Contains(preview, "skill:ask-matt") || !strings.Contains(preview, fmt.Sprintf("Logical resources: %d skill, 0 instruction", resources)) || !strings.Contains(preview, "Expected readiness: configured=yes, authorized=unknown, usable=unknown") || !strings.Contains(preview, "Pending evidence:") {
 		t.Fatalf("Claude tracer preview: err=%v\n%s", err, preview)
 	}
 	for _, retired := range []string{"matty-guidance", "matty-workflow-conventions"} {
