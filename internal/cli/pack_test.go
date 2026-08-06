@@ -536,6 +536,18 @@ func legacyMattyActivationOptions(t *testing.T, terminal Terminal) (Options, str
 	t.Helper()
 	opts, home, repoRoot := packActivationOptions(t, terminal)
 	bundle := copyPackBundleForUpdate(t, repoRoot)
+	for _, directory := range []string{"compatibility", "history", "sources"} {
+		if err := os.CopyFS(filepath.Join(bundle, directory), os.DirFS(filepath.Join(repoRoot, "bundle", directory))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry, err := os.ReadFile(filepath.Join(repoRoot, "bundle", "sources.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "sources.json"), registry, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	historyRoot := filepath.Join(repoRoot, "bundle", "history", "matty", "3.0.0")
 	if err := filepath.WalkDir(historyRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -1555,7 +1567,7 @@ func TestMattyThreeToCurrentUpdateRemovesOwnedInstructionsThroughEveryProduction
 			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", tc.surface); err != nil {
 				t.Fatalf("seed Matty 3.0.0: %v\n%s", err, out)
 			}
-			opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(repoRoot, "bundle", "skills")
+			promoteMattyFixtureToCurrent(t, filepath.Dir(opts.Env.Getenv("PACKY_SKILLS_SOURCE")), repoRoot)
 
 			preview, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", tc.surface, "--dry-run")
 			if err != nil {
@@ -1588,6 +1600,38 @@ func TestMattyThreeToCurrentUpdateRemovesOwnedInstructionsThroughEveryProduction
 				t.Fatalf("activation state did not advance to Matty %s:\n%s", currentVersion, state)
 			}
 		})
+	}
+}
+
+func promoteMattyFixtureToCurrent(t *testing.T, bundle, repoRoot string) {
+	t.Helper()
+	source := filepath.Join(repoRoot, "bundle", "skills")
+	if err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil || relative == "." {
+			return err
+		}
+		target := filepath.Join(bundle, "skills", relative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o700)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o600)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := os.ReadFile(filepath.Join(repoRoot, "bundle", "packs", "matty", "pack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "packs", "matty", "pack.json"), manifest, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

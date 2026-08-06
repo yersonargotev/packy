@@ -248,6 +248,7 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceIsMissing(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	if err := os.Remove(filepath.Join(copyRoot, "bundle", "compatibility", "matty", "1.0.0-to-2.0.0.json")); err != nil {
@@ -263,6 +264,7 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceIsIncomplete(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	mutateCompatibilityEvidence(t, copyRoot, func(evidence map[string]any) {
@@ -280,6 +282,7 @@ func TestCheckFailsClosedWhenRetiredResourceEvidenceIsIncomplete(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	mutateCompatibilityEvidenceAt(t, copyRoot, "3.0.0-to-4.0.0.json", func(evidence map[string]any) {
@@ -297,6 +300,7 @@ func TestCheckFailsClosedWhenAcceptedMigrationHistoryIsMissing(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	if err := os.RemoveAll(filepath.Join(copyRoot, "bundle", "history", "matty", "1.0.0")); err != nil {
@@ -312,6 +316,7 @@ func TestCheckRejectsCoordinatedReplacementEvidenceAndInstructionDrift(t *testin
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	mutateCompatibilityEvidence(t, copyRoot, func(evidence map[string]any) {
@@ -392,6 +397,7 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceOrReplacementSemanticsDrift(t
 		t.Run(test.name, func(t *testing.T) {
 			copyRoot := t.TempDir()
 			copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+			pinMattyFourBundle(t, copyRoot)
 			writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 			removeProductionLock(t, copyRoot)
 			test.mutate(t, copyRoot)
@@ -406,6 +412,7 @@ func TestCheckFailsClosedWhenRestoredSelectedByteDrifts(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	name := filepath.Join(copyRoot, "bundle", "skills", "engineering", "wayfinder", "SKILL.md")

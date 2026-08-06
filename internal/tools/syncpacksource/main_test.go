@@ -217,6 +217,7 @@ func prepareInspectFixture(t *testing.T) (string, string, packsync.Lock) {
 	var lock packsync.Lock
 	lockPath := filepath.Join(repository, "bundle", "sources/mattpocock-skills.lock.json")
 	readJSONForTest(t, lockPath, &lock)
+	lock.Selector = packsync.Selector{Mode: packsync.SelectorStableRelease}
 	lock.Candidate = fixtureCandidateWithRelease(lock.Candidate)
 	writeFixtureLock(t, lockPath, lock)
 	initForTest(t, repository)
