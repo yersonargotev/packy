@@ -77,6 +77,7 @@ func init() {
 	trustedHistoricalAggregates[strings.Join([]string{"ma", "tty@2.0.0"}, "")] = "b04e745e59562a3f0f65585af775ee22d68c4b54b43a795b2030557eb5f406c2"
 	trustedHistoricalAggregates[strings.Join([]string{"ma", "tty@3.0.0"}, "")] = "055f9d0d20715c72e792464723ef183e06b1f845fe31fed5468a87530e762258"
 	trustedHistoricalAggregates[strings.Join([]string{"ma", "tty@4.0.0"}, "")] = "dd614cd0788c6c8659f09801126d37bf67883278fb8c9cdfed5c6a80a713797b"
+	trustedHistoricalAggregates[strings.Join([]string{"ma", "tty@5.0.0"}, "")] = "fbee9e8eeaa28200a7600102eae5a82f4dee4a556fa5c378a2d1ecbdcda49941"
 	trustedHistoricalAggregates["engram@1.0.0"] = "78a02bd523d1c0383921d58507b595b4e0391023c12e666f1fd5d26dfb7c083f"
 	trustedHistoricalAggregates["engram@2.0.0"] = "13cf0dfa342ea07a808523a9ccadd25ddb66db3b3c42deea0b4c07ccbde98e01"
 }

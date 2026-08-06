@@ -24,6 +24,7 @@ func installIssue453Project(t *testing.T) (Options, string) {
 }
 
 func TestIssue453ProjectStatusReportsIndependentAxesOffline(t *testing.T) {
+	_, resources := checkedInMattyFacts(t)
 	opts, project := installIssue453Project(t)
 	opts.Env = MapEnv{
 		"HOME": opts.Env.Getenv("HOME"), "XDG_CONFIG_HOME": opts.Env.Getenv("XDG_CONFIG_HOME"),
@@ -45,7 +46,7 @@ func TestIssue453ProjectStatusReportsIndependentAxesOffline(t *testing.T) {
 	if status.Pack.ID != "matty" || status.Surface != capabilitypack.SurfaceCodex || status.Installation != capabilitypack.ProjectInstallationInstalled || status.Runtime != capabilitypack.ProjectRuntimeNotRequired || !status.RequirementSatisfied {
 		t.Fatalf("project status axes = %#v", status)
 	}
-	if status.Projections == nil || status.Blockers == nil || len(status.Projections) != 24 {
+	if status.Projections == nil || status.Blockers == nil || len(status.Projections) != resources+1 {
 		t.Fatalf("project status omitted portable evidence: %#v", status)
 	}
 	if _, err := os.Stat(filepath.Join(project, "packy.lock.json")); err != nil {
@@ -118,6 +119,7 @@ func TestIssue453NoArgumentInstallRestoresAuthorizedMissingBytes(t *testing.T) {
 }
 
 func TestIssue453NoArgumentInstallRegeneratesStaleLockWithoutFloatingVersion(t *testing.T) {
+	version, _ := checkedInMattyFacts(t)
 	opts, project := installIssue453Project(t)
 	lockPath := filepath.Join(project, "packy.lock.json")
 	data, err := os.ReadFile(lockPath)
@@ -145,7 +147,7 @@ func TestIssue453NoArgumentInstallRegeneratesStaleLockWithoutFloatingVersion(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if installation.Manifest.Packs[0].Version != "4.0.0" || installation.Lock.Source.PackVersion != "4.0.0" || installation.Lock.ManifestSHA256 == strings.Repeat("0", 64) {
+	if installation.Manifest.Packs[0].Version != version || installation.Lock.Source.PackVersion != version || installation.Lock.ManifestSHA256 == strings.Repeat("0", 64) {
 		t.Fatalf("reconciliation floated or retained stale identity: %#v", installation)
 	}
 }

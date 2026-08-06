@@ -69,13 +69,37 @@ var acceptedCompatibilityContracts = []acceptedCompatibilityContract{
 
 func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, manifests map[string]packManifest) []string {
 	validated := map[string]bool{}
+	changedRoutes, blockers := checkedInChangedSelectionRoutes(repositoryRoot, source, bindings, manifests)
+	changedPacks := map[string]bool{}
+	for key := range changedRoutes {
+		validated[key] = true
+		for packID, current := range manifests {
+			if strings.HasPrefix(key, packID+"@") && strings.HasSuffix(key, "->"+current.Version) {
+				changedPacks[packID] = true
+			}
+		}
+	}
 	targetPacks := map[string]bool{}
 	for _, binding := range bindings {
 		targetPacks[binding.PackID] = true
 	}
-	var blockers []string
 	for _, contract := range acceptedCompatibilityContracts {
 		if !targetPacks[contract.PackID] {
+			continue
+		}
+		if changedPacks[contract.PackID] {
+			path := filepath.Join(repositoryRoot, "bundle", "compatibility", contract.PackID, contract.FromVersion+"-to-"+contract.ToVersion+".json")
+			data, err := os.ReadFile(path)
+			if err != nil || hashBytes(data) != contract.EvidenceSHA256 {
+				blockers = append(blockers, fmt.Sprintf("accepted compatibility evidence does not match its trusted digest for %s %s to %s", contract.PackID, contract.FromVersion, contract.ToVersion))
+				continue
+			}
+			for _, version := range []string{contract.FromVersion, contract.ToVersion} {
+				if _, err := readCompatibilityManifest(filepath.Join(repositoryRoot, "bundle", "history", contract.PackID, version, "pack.json")); err != nil {
+					blockers = append(blockers, fmt.Sprintf("accepted compatibility history is missing or invalid for %s %s", contract.PackID, version))
+				}
+			}
+			validated[compatibilityKey(contract.PackID, contract.FromVersion, contract.ToVersion)] = true
 			continue
 		}
 		current, ok := manifests[contract.PackID]
@@ -128,6 +152,85 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 		blockers = append(blockers, validateCompatibilityEvidence(repositoryRoot, snapshotRoot, source, bindings, current, historical, filepath.Join(repositoryRoot, "bundle"), filepath.Dir(historyPath), "")...)
 	}
 	return blockers
+}
+
+func checkedInChangedSelectionRoutes(repositoryRoot string, source SourceConfig, bindings []Binding, manifests map[string]packManifest) (map[string]bool, []string) {
+	routes := map[string]bool{}
+	var blockers []string
+	for packID, current := range manifests {
+		paths, err := filepath.Glob(filepath.Join(repositoryRoot, "bundle", "compatibility", packID, "*-to-"+current.Version+".json"))
+		if err != nil {
+			return routes, append(blockers, "inspect changed-selection compatibility evidence: "+err.Error())
+		}
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				blockers = append(blockers, "read changed-selection compatibility evidence: "+err.Error())
+				continue
+			}
+			var identity struct {
+				SchemaVersion int    `json:"schema_version"`
+				SourceID      string `json:"source_id"`
+			}
+			if json.Unmarshal(data, &identity) != nil || identity.SchemaVersion != 3 || identity.SourceID != source.ID {
+				continue
+			}
+			var evidence changedSelectionEvidence
+			decoder := json.NewDecoder(strings.NewReader(string(data)))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&evidence); err != nil {
+				blockers = append(blockers, "changed-selection compatibility evidence is invalid: "+err.Error())
+				continue
+			}
+			historyPath := filepath.Join(repositoryRoot, "bundle", "history", packID, evidence.FromVersion, "pack.json")
+			historyBytes, err := os.ReadFile(historyPath)
+			if err != nil {
+				blockers = append(blockers, "changed-selection compatibility history is missing: "+err.Error())
+				continue
+			}
+			var historical packManifest
+			if err := json.Unmarshal(historyBytes, &historical); err != nil {
+				blockers = append(blockers, "changed-selection compatibility history is invalid: "+err.Error())
+				continue
+			}
+			currentBytes, err := os.ReadFile(filepath.Join(repositoryRoot, "bundle", "packs", packID, "pack.json"))
+			if err != nil {
+				blockers = append(blockers, "read current manifest for changed-selection compatibility: "+err.Error())
+				continue
+			}
+			before := manifestBindingKeys(historical)
+			after := bindingKeysForPack(bindings, packID)
+			manifestAfter := manifestBindingKeys(current)
+			added, removed := stringSetDelta(before, after)
+			var sealedManifest map[string]any
+			if err := json.Unmarshal(currentBytes, &sealedManifest); err != nil {
+				blockers = append(blockers, "current manifest for changed-selection compatibility is invalid: "+err.Error())
+				continue
+			}
+			sealedManifest["version"] = historical.Version
+			sealedBytes, err := json.MarshalIndent(sealedManifest, "", "  ")
+			if err != nil {
+				blockers = append(blockers, "canonicalize current manifest for changed-selection compatibility: "+err.Error())
+				continue
+			}
+			sealedBytes = append(sealedBytes, '\n')
+			if evidence.PackID != packID || evidence.FromVersion != historical.Version || evidence.ToVersion != current.Version || evidence.FinalVersion != current.Version || evidence.SourceID != source.ID || evidence.BeforeManifestSHA256 != hashBytes(historyBytes) || evidence.AfterManifestSHA256 != hashBytes(sealedBytes) || evidence.PlanID == "" || evidence.BaseSHA == "" || evidence.CandidateSHA == "" || evidence.ClaimsUpstreamProvenance || evidence.ReplacesSourceLock || !reflect.DeepEqual(evidence.Before, before) || !reflect.DeepEqual(evidence.After, after) || !reflect.DeepEqual(evidence.After, manifestAfter) || !reflect.DeepEqual(evidence.Added, added) || !reflect.DeepEqual(evidence.Removed, removed) {
+				blockers = append(blockers, "changed-selection compatibility evidence is stale, partial, or contradictory")
+				continue
+			}
+			routes[compatibilityKey(packID, historical.Version, current.Version)] = true
+		}
+	}
+	return routes, blockers
+}
+
+func manifestBindingKeys(manifest packManifest) []string {
+	keys := make([]string, 0, len(manifest.Resources))
+	for _, resource := range manifest.Resources {
+		keys = append(keys, strings.Join([]string{manifest.ID, resource.Kind, resource.ID}, "/"))
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func acceptedCompatibilityRoute(validated map[string]bool, packID, fromVersion, toVersion string) bool {

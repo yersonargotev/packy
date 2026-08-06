@@ -28,7 +28,6 @@ func TestSandboxTracerRunsInspectClassifyPublishWithOnePackContentValidation(t *
 	for _, binding := range sourceResourcesForTest(t, config.Sources, "mattpocock-skills") {
 		copyTreeForTest(t, filepath.Join(base, "bundle", filepath.FromSlash(binding.UpstreamPath)), filepath.Join(snapshot, filepath.FromSlash(binding.UpstreamPath)))
 	}
-	copyTreeForTest(t, filepath.Join(root, "internal", "packsync", "testdata", "real-upstream"), snapshot)
 	oldSnapshot := t.TempDir()
 	copyTreeForTest(t, snapshot, oldSnapshot)
 	if err := os.MkdirAll(filepath.Join(snapshot, "skills", "in-progress", "sandbox-discovery"), 0o755); err != nil {
@@ -38,14 +37,15 @@ func TestSandboxTracerRunsInspectClassifyPublishWithOnePackContentValidation(t *
 		t.Fatal(err)
 	}
 	var lock packsync.Lock
-	readJSONForTest(t, filepath.Join(base, "bundle", "sources/mattpocock-skills.lock.json"), &lock)
+	lockPath := filepath.Join(base, "bundle", "sources/mattpocock-skills.lock.json")
+	readJSONForTest(t, lockPath, &lock)
+	lock.Selector = packsync.Selector{Mode: packsync.SelectorStableRelease}
+	lock.Candidate = fixtureCandidateWithRelease(lock.Candidate)
+	writeFixtureLock(t, lockPath, lock)
 	candidate := lock.Candidate
 	candidate.Commit = candidateA
 	candidate.Tree = strings.Repeat("f", 40)
 	candidate.CommitNodeID = "sandbox-candidate"
-	if candidate.Release == nil {
-		t.Fatal("fixture lock has no release")
-	}
 	release := *candidate.Release
 	release.ID++
 	release.Tag, release.Name = "v9.9.9", "v9.9.9"
@@ -142,6 +142,34 @@ type sandboxSource struct {
 	oldRoot      string
 	oldCandidate packsync.Candidate
 	candidate    packsync.Candidate
+}
+
+func fixtureCandidateWithRelease(candidate packsync.Candidate) packsync.Candidate {
+	if candidate.Release != nil {
+		return candidate
+	}
+	release := packsync.Release{
+		ID: 1, NodeID: "fixture-release", Tag: "v-fixture-current", Name: "v-fixture-current", Target: "main",
+		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), PublishedAt: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC),
+		Author: packsync.Actor{Login: "fixture", ID: 1, NodeID: "fixture-actor"},
+	}
+	candidate.Release = &release
+	candidate.TagRefName = "refs/tags/" + release.Tag
+	candidate.TagRefType = "tag"
+	candidate.TagRefSHA = strings.Repeat("c", 40)
+	candidate.TagObjects = []packsync.TagObject{{SHA: candidate.TagRefSHA, Name: release.Tag, TargetSHA: candidate.Commit, TargetType: "commit", Verification: packsync.Verification{Reason: "unsigned"}}}
+	return candidate
+}
+
+func writeFixtureLock(t *testing.T, path string, lock packsync.Lock) {
+	t.Helper()
+	data, _, err := packsync.CanonicalSourceLock(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (source *sandboxSource) Releases(context.Context, packsync.SourceConfig) ([]packsync.Release, error) {

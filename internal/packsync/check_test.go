@@ -248,6 +248,7 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceIsMissing(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	if err := os.Remove(filepath.Join(copyRoot, "bundle", "compatibility", "matty", "1.0.0-to-2.0.0.json")); err != nil {
@@ -263,6 +264,7 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceIsIncomplete(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	mutateCompatibilityEvidence(t, copyRoot, func(evidence map[string]any) {
@@ -280,6 +282,7 @@ func TestCheckFailsClosedWhenRetiredResourceEvidenceIsIncomplete(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	mutateCompatibilityEvidenceAt(t, copyRoot, "3.0.0-to-4.0.0.json", func(evidence map[string]any) {
@@ -297,6 +300,7 @@ func TestCheckFailsClosedWhenAcceptedMigrationHistoryIsMissing(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	if err := os.RemoveAll(filepath.Join(copyRoot, "bundle", "history", "matty", "1.0.0")); err != nil {
@@ -312,6 +316,7 @@ func TestCheckRejectsCoordinatedReplacementEvidenceAndInstructionDrift(t *testin
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	mutateCompatibilityEvidence(t, copyRoot, func(evidence map[string]any) {
@@ -392,6 +397,7 @@ func TestCheckFailsClosedWhenMajorMigrationEvidenceOrReplacementSemanticsDrift(t
 		t.Run(test.name, func(t *testing.T) {
 			copyRoot := t.TempDir()
 			copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+			pinMattyFourBundle(t, copyRoot)
 			writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 			removeProductionLock(t, copyRoot)
 			test.mutate(t, copyRoot)
@@ -406,6 +412,7 @@ func TestCheckFailsClosedWhenRestoredSelectedByteDrifts(t *testing.T) {
 	snapshot := realSnapshot(t, repository, true)
 	copyRoot := t.TempDir()
 	copyTree(t, filepath.Join(repository, "bundle"), filepath.Join(copyRoot, "bundle"))
+	pinMattyFourBundle(t, copyRoot)
 	writeFile(t, filepath.Join(copyRoot, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, copyRoot)
 	name := filepath.Join(copyRoot, "bundle", "skills", "engineering", "wayfinder", "SKILL.md")
@@ -956,26 +963,9 @@ func checkWith(t *testing.T, repository string, source Source) Plan {
 func realSnapshot(t *testing.T, repository string, upstreamChanges bool) string {
 	t.Helper()
 	root := t.TempDir()
-	data, err := os.ReadFile(filepath.Join(repository, "bundle", "sources.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	config, err := LoadConfig(strings.NewReader(string(data)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var resources []Binding
-	for _, source := range config.Sources {
-		if source.ID == "mattpocock-skills" {
-			resources = source.Resources
-			break
-		}
-	}
-	if resources == nil {
-		t.Fatal("mattpocock-skills source is missing")
-	}
+	resources := mattyFourBindings(t, repository)
 	for _, binding := range resources {
-		copyTree(t, filepath.Join(repository, "bundle", filepath.FromSlash(binding.UpstreamPath)), filepath.Join(root, filepath.FromSlash(binding.UpstreamPath)))
+		copyTree(t, filepath.Join(repository, "bundle", "history", "matty", "4.0.0", filepath.FromSlash(binding.UpstreamPath)), filepath.Join(root, filepath.FromSlash(binding.UpstreamPath)))
 	}
 	if upstreamChanges {
 		copyTree(t, filepath.Join(repository, "internal", "packsync", "testdata", "real-upstream"), root)
@@ -1042,9 +1032,75 @@ func bootstrapRepository(t *testing.T, source string) string {
 	t.Helper()
 	repository := t.TempDir()
 	copyTree(t, filepath.Join(source, "bundle"), filepath.Join(repository, "bundle"))
+	pinMattyFourBundle(t, repository)
 	writeFile(t, filepath.Join(repository, "skills-lock.json"), "{}\n")
 	removeProductionLock(t, repository)
 	return repository
+}
+
+func mattyFourBindings(t *testing.T, repository string) []Binding {
+	t.Helper()
+	var manifest struct {
+		Resources []struct {
+			Kind   string `json:"kind"`
+			ID     string `json:"id"`
+			Source string `json:"source"`
+		} `json:"resources"`
+	}
+	data := mustReadFile(t, filepath.Join(repository, "bundle", "history", "matty", "4.0.0", "pack.json"))
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	bindings := make([]Binding, 0, len(manifest.Resources))
+	for _, resource := range manifest.Resources {
+		bindings = append(bindings, Binding{PackID: "matty", Kind: resource.Kind, ResourceID: resource.ID, UpstreamPath: resource.Source})
+	}
+	return bindings
+}
+
+func pinMattyFourBundle(t *testing.T, repository string) {
+	t.Helper()
+	configPath := filepath.Join(repository, "bundle", "sources.json")
+	data := mustReadFile(t, configPath)
+	config, err := LoadConfig(strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings := mattyFourBindings(t, repository)
+	oldPaths := make(map[string]bool, len(bindings))
+	for _, binding := range bindings {
+		oldPaths[binding.UpstreamPath] = true
+	}
+	for i := range config.Sources {
+		if config.Sources[i].ID != "mattpocock-skills" {
+			continue
+		}
+		for _, binding := range config.Sources[i].Resources {
+			if !oldPaths[binding.UpstreamPath] {
+				if err := os.RemoveAll(filepath.Join(repository, "bundle", filepath.FromSlash(binding.UpstreamPath))); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		config.Sources[i].Resources = bindings
+	}
+	writeJSON(t, configPath, config)
+	for _, binding := range bindings {
+		target := filepath.Join(repository, "bundle", filepath.FromSlash(binding.UpstreamPath))
+		if err := os.RemoveAll(target); err != nil {
+			t.Fatal(err)
+		}
+		copyTree(t, filepath.Join(repository, "bundle", "history", "matty", "4.0.0", filepath.FromSlash(binding.UpstreamPath)), target)
+	}
+	copyTree(t, filepath.Join(repository, "bundle", "history", "matty", "4.0.0", "pack.json"), filepath.Join(repository, "bundle", "packs", "matty", "pack.json"))
+	for _, path := range []string{
+		filepath.Join(repository, "bundle", "history", "matty", "5.0.0"),
+		filepath.Join(repository, "bundle", "compatibility", "matty", "4.0.0-to-5.0.0.json"),
+	} {
+		if err := os.RemoveAll(path); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func removeProductionLock(t *testing.T, repository string) {

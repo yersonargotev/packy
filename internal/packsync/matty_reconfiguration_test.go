@@ -16,18 +16,7 @@ func TestApprovedMattyReconfigurationInventoryIsCompleteAndClosed(t *testing.T) 
 		"skills/in-progress/claude-handoff", "skills/in-progress/loop-me", "skills/in-progress/setup-ts-deep-modules", "skills/in-progress/writing-beats", "skills/in-progress/writing-fragments", "skills/in-progress/writing-shape",
 		"skills/productivity/grill-me", "skills/productivity/grilling", "skills/productivity/handoff", "skills/productivity/teach", "skills/productivity/to-questionnaire", "skills/productivity/wait-what", "skills/productivity/writing-for-agents",
 	}
-	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "bundle", "sources.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	config, err := LoadConfig(strings.NewReader(string(data)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, err := selectSource(config, "mattpocock-skills")
-	if err != nil {
-		t.Fatal(err)
-	}
+	current := SourceConfig{ID: "mattpocock-skills", Provider: "github", Repository: "mattpocock/skills", Selector: Selector{Mode: SelectorStableRelease}, Resources: mattyFourBindings(t, repositoryRoot(t))}
 	proposal := current
 	proposal.Resources = make([]Binding, 0, len(desired))
 	for _, path := range desired {

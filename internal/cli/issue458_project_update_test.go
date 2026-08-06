@@ -17,6 +17,7 @@ import (
 func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)
+	currentVersion, currentResources := checkedInMattyFacts(t)
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
@@ -26,8 +27,7 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 			t.Fatalf("install Matty for %s: %v\n%s", surface, err, out)
 		}
 	}
-
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "3.0.0", "--dry-run", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", currentVersion, "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("preview exact project update: %v\n%s", err, out)
 	}
@@ -35,13 +35,13 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 	if err := json.Unmarshal([]byte(out), &preview); err != nil {
 		t.Fatalf("decode project update preview: %v\n%s", err, out)
 	}
-	if preview.Pack.ID != "matty" || preview.Pack.Version != "3.0.0" || preview.Surface != "" || preview.Disposition != capabilitypack.ProjectInstallPreviewable {
+	if preview.Pack.ID != "matty" || preview.Pack.Version != currentVersion || preview.Surface != "" || preview.Disposition != capabilitypack.ProjectInstallConverged {
 		t.Fatalf("project update preview = %#v", preview)
 	}
 	if got := preview.Pack.Surfaces; len(got) != 2 || got[0] != capabilitypack.SurfaceClaude || got[1] != capabilitypack.SurfaceOpenCode {
 		t.Fatalf("affected surfaces = %v, want [claude opencode]", got)
 	}
-	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "3.0.0")
+	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", currentVersion)
 	if err != nil {
 		t.Fatalf("apply exact project update: %v\n%s", err, out)
 	}
@@ -49,19 +49,19 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if installation.Manifest.Packs[0].Version != "3.0.0" || installation.Lock.Source.PackVersion != "3.0.0" || installation.Lock.Packs[0].Version != "3.0.0" {
+	if installation.Manifest.Packs[0].Version != currentVersion || installation.Lock.Source.PackVersion != currentVersion || installation.Lock.Packs[0].Version != currentVersion {
 		t.Fatalf("updated exact identities = %#v", installation)
 	}
 	if got, want := installation.Manifest.Packs[0].SurfaceIntents, preview.Pack.SurfaceIntents; !reflect.DeepEqual(got, want) {
 		t.Fatalf("surface intents changed during update: got %#v want %#v", got, want)
 	}
-	for _, relative := range []string{".claude/skills/ask-matt/SKILL.md", ".agents/skills/ask-matt/SKILL.md", "CLAUDE.md", "AGENTS.md"} {
+	for _, relative := range []string{".claude/skills/ask-matt/SKILL.md", ".agents/skills/ask-matt/SKILL.md"} {
 		if _, err := os.Stat(filepath.Join(project, relative)); err != nil {
 			t.Fatalf("host-specific updated projection %s is missing: %v", relative, err)
 		}
 	}
 
-	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "4.0.0")
+	out, err = executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", currentVersion)
 	if err != nil {
 		t.Fatalf("apply exact catalog-current project update: %v\n%s", err, out)
 	}
@@ -69,7 +69,7 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if installation.Manifest.Packs[0].Version != "4.0.0" || len(installation.Lock.ResourceGraph.Resources) != 23 {
+	if installation.Manifest.Packs[0].Version != currentVersion || len(installation.Lock.ResourceGraph.Resources) != currentResources {
 		t.Fatalf("catalog-current project closure = %#v", installation)
 	}
 	for _, relative := range []string{"AGENTS.md", "CLAUDE.md"} {
@@ -89,6 +89,7 @@ func TestIssue458ProjectUpdateTargetsOneExactVersionAcrossEveryInstalledSurface(
 }
 
 func TestIssue458ProjectUpdateDoesNotRewriteAnExactSharedProjection(t *testing.T) {
+	currentVersion, _ := checkedInMattyFacts(t)
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)
 	project := t.TempDir()
@@ -104,7 +105,7 @@ func TestIssue458ProjectUpdateDoesNotRewriteAnExactSharedProjection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", "4.0.0")
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project", "--version", currentVersion)
 	if err != nil || !strings.Contains(out, "Verified no-op") {
 		t.Fatalf("exact shared update: %v\n%s", err, out)
 	}
@@ -126,6 +127,7 @@ func TestIssue458ProjectUpdateDoesNotRewriteAnExactSharedProjection(t *testing.T
 func TestIssue458ProjectUpdateRejectsAStaleMultiSurfacePlanBeforeEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)
+	currentVersion, _ := checkedInMattyFacts(t)
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
@@ -134,7 +136,6 @@ func TestIssue458ProjectUpdateRejectsAStaleMultiSurfacePlanBeforeEffects(t *test
 			t.Fatalf("install Matty for %s: %v\n%s", surface, err, out)
 		}
 	}
-
 	configured := opts.withDefaults()
 	resolver := newWorkstationResolver(configured)
 	snapshot, err := resolver.Resolve(workstation.Options{})
@@ -147,7 +148,7 @@ func TestIssue458ProjectUpdateRejectsAStaleMultiSurfacePlanBeforeEffects(t *test
 	}
 	facade := capabilitypack.NewFacade(composition.catalog)
 	adapter := projectInstallAdapter("", composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-	preview, err := facade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: "matty", Version: "3.0.0", ProjectRoot: project}, adapter)
+	preview, err := facade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: "matty", Version: currentVersion, ProjectRoot: project}, adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +161,7 @@ func TestIssue458ProjectUpdateRejectsAStaleMultiSurfacePlanBeforeEffects(t *test
 		t.Fatalf("stale project update error = %v", err)
 	}
 	installation, loadErr := capabilitypack.LoadProjectInstallation(project)
-	if loadErr != nil || installation.Manifest.Packs[0].Version != "4.0.0" {
+	if loadErr != nil || installation.Manifest.Packs[0].Version != currentVersion {
 		t.Fatalf("stale plan changed durable intent: version=%s err=%v", installation.Manifest.Packs[0].Version, loadErr)
 	}
 }

@@ -109,8 +109,15 @@ func TestApplyCommitsExistingSourceReconfigurationAsOneGeneration(t *testing.T) 
 	sourceRepository := repositoryRoot(t)
 	repository := t.TempDir()
 	copyTree(t, filepath.Join(sourceRepository, "bundle"), filepath.Join(repository, "bundle"))
-	initializeFixtureGit(t, repository)
+	pinMattyFourBundle(t, repository)
+	removeProductionLock(t, repository)
 	snapshot := realSnapshot(t, sourceRepository, false)
+	bootstrapSource := &fixtureSource{root: snapshot, candidate: acceptedCandidate()}
+	bootstrap := checkWith(t, repository, bootstrapSource)
+	if _, err := (Engine{allowBootstrap: true, Source: bootstrapSource, Validate: acceptingBundleValidator()}).Apply(context.Background(), ApplyRequest{CheckRequest: newCheckRequest(t, repository), Plan: bootstrap}); err != nil {
+		t.Fatal(err)
+	}
+	initializeFixtureGit(t, repository)
 	copyTree(t, filepath.Join(snapshot, "skills", "productivity", "writing-great-skills"), filepath.Join(snapshot, "skills", "productivity", "writing-for-agents"))
 
 	configFile, err := os.Open(filepath.Join(repository, "bundle", "sources.json"))
