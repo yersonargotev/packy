@@ -2,7 +2,8 @@
 
 Packy is a lightweight macOS-first installer/configurator for explicit capability
 packs. It discovers packaged capabilities and projects only the packs or resource
-roots that an operator activates for Codex, OpenCode, or Claude Code.
+roots that an operator explicitly activates globally or installs in a project for
+Codex, OpenCode, or Claude Code.
 
 Packy is not a runtime orchestrator and does not copy workflow files into every project.
 
@@ -143,7 +144,7 @@ If `XDG_CONFIG_HOME` is unset or relative, Packy uses `~/.config`.
 - `init`, catalog discovery, and `doctor` do not activate packs or change CLI surfaces.
 - `doctor` is read-only and separates Packy core health from active-pack readiness.
 - `--dry-run` reports planned actions without writing files or running external commands.
-- Capability-pack projections carry activation ownership; shared projections remain until their final contributor is removed.
+- Capability-pack projections carry ownership for the explicit activation or project installation that contributed them; shared projections remain until their final contributor is removed.
 - Deactivation removes only exact, unchanged projections owned by the selected activation and does not uninstall shared external executables.
 - Packy warns about `gentle-ai:*` content but does not delete or rewrite Gentle AI-managed content.
 - Tests use sandboxed `HOME` and `XDG_CONFIG_HOME`; they must not write to the operator's real home config.
