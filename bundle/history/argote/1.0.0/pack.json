@@ -1,0 +1,140 @@
+{
+  "schema_version": 4,
+  "id": "argote",
+  "version": "1.0.0",
+  "surfaces": [
+    "claude",
+    "codex",
+    "opencode"
+  ],
+  "provides": [],
+  "requires": {
+    "capabilities": [],
+    "tools": []
+  },
+  "conflicts": [],
+  "resources": [
+    {
+      "kind": "instruction",
+      "id": "engineering-principles",
+      "source": "instructions/argote-engineering-principles.md",
+      "requires": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": [],
+      "conflicts": [],
+      "notices": [],
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "instruction",
+          "name": "engineering-principles",
+          "invocation": "engineering-principles",
+          "mode": "native",
+          "sharing": "shared"
+        },
+        {
+          "surface": "codex",
+          "projection": "instruction",
+          "name": "engineering-principles",
+          "invocation": "engineering-principles",
+          "mode": "native",
+          "sharing": "shared"
+        },
+        {
+          "surface": "opencode",
+          "projection": "instruction",
+          "name": "engineering-principles",
+          "invocation": "engineering-principles",
+          "mode": "native",
+          "sharing": "shared"
+        }
+      ],
+      "surface_exclusions": []
+    },
+    {
+      "kind": "instruction",
+      "id": "neutral-spanish",
+      "source": "instructions/argote-neutral-spanish.md",
+      "requires": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": [],
+      "conflicts": [],
+      "notices": [],
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "instruction",
+          "name": "neutral-spanish",
+          "invocation": "neutral-spanish",
+          "mode": "native",
+          "sharing": "shared"
+        },
+        {
+          "surface": "codex",
+          "projection": "instruction",
+          "name": "neutral-spanish",
+          "invocation": "neutral-spanish",
+          "mode": "native",
+          "sharing": "shared"
+        },
+        {
+          "surface": "opencode",
+          "projection": "instruction",
+          "name": "neutral-spanish",
+          "invocation": "neutral-spanish",
+          "mode": "native",
+          "sharing": "shared"
+        }
+      ],
+      "surface_exclusions": []
+    },
+    {
+      "kind": "skill",
+      "id": "espera-que",
+      "source": "skills/productivity/espera-que",
+      "requires": [],
+      "provides_capabilities": [],
+      "requires_capabilities": [],
+      "requires_tools": [],
+      "capability_conflicts": [],
+      "conflicts": [],
+      "notices": [],
+      "bindings": [
+        {
+          "surface": "claude",
+          "projection": "skill",
+          "name": "espera-que",
+          "invocation": "/espera-que",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "espera-que",
+          "invocation": "$espera-que",
+          "mode": "native",
+          "sharing": "exclusive"
+        },
+        {
+          "surface": "opencode",
+          "projection": "skill",
+          "name": "espera-que",
+          "invocation": "espera-que",
+          "mode": "native",
+          "sharing": "exclusive"
+        }
+      ],
+      "surface_exclusions": [],
+      "runtime_modes": []
+    }
+  ],
+  "root_migrations": [],
+  "contract": {
+    "exclusions": []
+  }
+}

@@ -9,10 +9,11 @@ catalog presence authorizes any host projection. A complete pack or selected
 operational roots and their dependency closure must be activated explicitly for
 each surface before Packy can change that surface.
 
-The selectable pack catalog currently contains `addy`, `engram`, and `matty`.
+The selectable pack catalog currently contains `addy`, `argote`, `engram`, and `matty`.
 
 | Current Pack | Purpose | Claude contract |
 | --- | --- | --- |
+| `argote` **1.0.0** | Yerson Argote's engineering and communication guidance | **complete**: every independent instruction or skill has a native binding and no Claude exclusion. |
 | `matty` **4.0.0** | Workflow skills | **complete**: every skill has a native binding and no Claude exclusion. Matty no longer contributes instructions on any surface. Projection does not prove runtime usability. |
 | `engram` **2.0.0** | Memory guidance and MCP | **degraded**, but activatable: its instruction and exact user MCP binding are native; `lifecycle:engram-memory` has the optional `generic-lifecycle-unsupported` exclusion because generic lifecycle translation is unsupported. Packy does not run `engram setup claude-code`. |
 | `addy` **1.1.0** | Addy agent skills | **complete**: its manifest-v3 resources have native Claude bindings and remain selectable on Claude, Codex, and OpenCode. |

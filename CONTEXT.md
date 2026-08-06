@@ -30,6 +30,14 @@ The user-owned Packy checkout initialized for package-installed operation. It is
 ### Capability pack
 A named, composable set of AI workflow capabilities that can remain available while being activated or deactivated as a unit. A capability pack may contribute skills, memory, tools, agents, rules, or other host-supported behavior; it is not a runtime configuration profile.
 
+### Personal guidance pack
+A publicly selectable capability pack that expresses one author's cross-project working preferences. Its resources remain independently selectable and may be activated globally or installed in a project.
+_Avoid_: Personal rules package, private pack
+
+### Argote pack
+The personal guidance pack authored by Yerson Argote. It contributes independent engineering-principles, neutral-Spanish, and explanation-repair resources.
+_Avoid_: Argote profile, Argote rules package
+
 ### Selectable pack catalog
 The Packy-owned set of current capability-pack versions advertised by `packy pack list` and available for fresh activation or update. Bundled or historical pack artifacts are not selectable merely because their bytes exist in the distribution.
 

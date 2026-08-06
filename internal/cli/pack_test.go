@@ -955,7 +955,7 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"PACK", "engram", "matty", "Persistent memory", "codex, opencode"} {
+	for _, want := range []string{"PACK", "argote", "engram", "matty", "Yerson Argote's engineering and communication guidance", "Persistent memory", "codex, opencode"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("list missing %q:\n%s", want, out)
 		}
@@ -967,6 +967,18 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 	for _, want := range []string{"Provides capabilities: memory:persistent", "Requires global tools: engram", "Conflicts with capabilities: none", "0 skill, 1 instruction, 1 mcp_server, 1 lifecycle"} {
 		if !strings.Contains(show, want) {
 			t.Fatalf("show missing %q:\n%s", want, show)
+		}
+	}
+	argoteShow, err := executeCommand(t, NewRootCommand(opts), "pack", "show", "argote")
+	if err != nil {
+		t.Fatalf("show Argote failed: %v\n%s", err, argoteShow)
+	}
+	for _, want := range []string{
+		"argote 1.0.0", "Supported CLI surfaces: claude, codex, opencode", "Resources: 1 skill, 2 instruction",
+		"Resource: instruction:engineering-principles role=root", "Resource: instruction:neutral-spanish role=root", "Resource: skill:espera-que role=root",
+	} {
+		if !strings.Contains(argoteShow, want) {
+			t.Fatalf("Argote show missing %q:\n%s", want, argoteShow)
 		}
 	}
 	if len(runner.calls) != 0 {
@@ -1012,7 +1024,7 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 	}
 	for _, want := range []string{
 		"PACK", "SURFACE", "INTENT", "ATTEMPT", "CONFIGURED", "AUTHORIZED", "USABLE", "ACTION",
-		"engram  claude", "engram  codex", "engram  opencode", "matty   claude", "matty   codex", "matty   opencode", "inactive",
+		"argote  claude", "argote  codex", "argote  opencode", "engram  claude", "engram  codex", "engram  opencode", "matty   claude", "matty   codex", "matty   opencode", "inactive",
 	} {
 		if !strings.Contains(overview, want) {
 			t.Fatalf("overview missing %q:\n%s", want, overview)
@@ -1058,7 +1070,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	if err := json.Unmarshal([]byte(overview), &report); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, overview)
 	}
-	if report.SchemaVersion != capabilitypack.StatusSchemaVersion || report.Report != "pack-status-overview" || len(report.Entries) != 9 {
+	if report.SchemaVersion != capabilitypack.StatusSchemaVersion || report.Report != "pack-status-overview" || len(report.Entries) != 12 {
 		t.Fatalf("report=%#v", report)
 	}
 	for i, entry := range report.Entries {
