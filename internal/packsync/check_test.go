@@ -141,6 +141,11 @@ func TestCheckRejectsReconfigurationIdentityMutationAndOwnershipTransfer(t *test
 			value.Selector = Selector{Mode: SelectorCommit, Ref: strings.Repeat("a", 40)}
 			return value
 		}()},
+		{name: "owned Pack identity", sourceID: base.ID, proposal: func() SourceConfig {
+			value := base
+			value.Resources = []Binding{{PackID: "other-pack", Kind: "skill", ResourceID: "one", UpstreamPath: "skills/engineering/one"}}
+			return value
+		}()},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

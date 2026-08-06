@@ -256,6 +256,9 @@ func readCheckInputsUnlocked(request CheckRequest, allowMissing bool) (checkInpu
 		if normalized.Provider != originalSource.Provider || normalized.Repository != originalSource.Repository || normalized.Selector != originalSource.Selector {
 			return checkInputs{}, errors.New("reconfiguration must preserve provider, repository, and configured selector")
 		}
+		if !reflect.DeepEqual(bindingPackIDs(normalized.Resources), bindingPackIDs(originalSource.Resources)) {
+			return checkInputs{}, errors.New("reconfiguration must preserve the exact owned Pack identity")
+		}
 		for i := range config.Sources {
 			if config.Sources[i].ID == request.SourceID {
 				config.Sources[i] = normalized
@@ -315,6 +318,19 @@ func readCheckInputsUnlocked(request CheckRequest, allowMissing bool) (checkInpu
 		}
 	}
 	return checkInputs{configBytes: configBytes, originalConfigBytes: configBytes, source: source, selector: selector, lock: lock, lockBytes: lockBytes, lockPresent: lockPresent, lockSet: lockSet, registration: registration, registrationSHA256: registrationSHA256, reconfiguration: reconfiguration, reconfigurationSHA256: reconfigurationSHA256, originalSource: originalSource, proposedManifest: proposedManifest, proposedManifestBytes: proposedManifestBytes, proposedManifestSHA256: proposedManifestSHA256, currentManifestSHA256: currentManifestSHA256, currentManifestBytes: currentManifestBytes, existingPacks: existingPacks}, nil
+}
+
+func bindingPackIDs(bindings []Binding) []string {
+	seen := make(map[string]bool)
+	for _, binding := range bindings {
+		seen[binding.PackID] = true
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func raisePackImpact(plan *Plan, packID, currentVersion string, floor ClassificationLevel, reasons ...string) {
