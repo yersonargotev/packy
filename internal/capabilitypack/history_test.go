@@ -109,6 +109,8 @@ func TestV3UpdateRoutesPreserveExistingSurfaceIntent(t *testing.T) {
 	}{
 		{workflowPackID, "2.0.0", "3.0.0", []Surface{SurfaceCodex, SurfaceOpenCode}},
 		{workflowPackID, "3.0.0", "4.0.0", []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
+		{workflowPackID, "3.0.0", "5.0.0", []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
+		{workflowPackID, "4.0.0", "5.0.0", []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
 		{"engram", "1.0.0", "2.0.0", []Surface{SurfaceCodex, SurfaceOpenCode}},
 	} {
 		for _, surface := range item.surfaces {

@@ -29,6 +29,8 @@ var supportedUpdateRoutes = func() map[string]supportedUpdateRoute {
 	return map[string]supportedUpdateRoute{
 		workflowPackID + "@2.0.0->3.0.0": {ExistingSurfaces: []Surface{SurfaceCodex, SurfaceOpenCode}},
 		workflowPackID + "@3.0.0->4.0.0": {ExistingSurfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
+		workflowPackID + "@3.0.0->5.0.0": {ExistingSurfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
+		workflowPackID + "@4.0.0->5.0.0": {ExistingSurfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
 		"engram@1.0.0->2.0.0":            {ExistingSurfaces: []Surface{SurfaceCodex, SurfaceOpenCode}},
 	}
 }()
