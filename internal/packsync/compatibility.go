@@ -148,9 +148,10 @@ func checkedInChangedSelectionRoutes(repositoryRoot string, source SourceConfig,
 				continue
 			}
 			var identity struct {
-				SchemaVersion int `json:"schema_version"`
+				SchemaVersion int    `json:"schema_version"`
+				SourceID      string `json:"source_id"`
 			}
-			if json.Unmarshal(data, &identity) != nil || identity.SchemaVersion != 3 {
+			if json.Unmarshal(data, &identity) != nil || identity.SchemaVersion != 3 || identity.SourceID != source.ID {
 				continue
 			}
 			var evidence changedSelectionEvidence
@@ -180,7 +181,19 @@ func checkedInChangedSelectionRoutes(repositoryRoot string, source SourceConfig,
 			after := bindingKeysForPack(bindings, packID)
 			manifestAfter := manifestBindingKeys(current)
 			added, removed := stringSetDelta(before, after)
-			if evidence.PackID != packID || evidence.FromVersion != historical.Version || evidence.ToVersion != current.Version || evidence.FinalVersion != current.Version || evidence.SourceID != source.ID || evidence.BeforeManifestSHA256 != hashBytes(historyBytes) || evidence.AfterManifestSHA256 != hashBytes(currentBytes) || evidence.PlanID == "" || evidence.BaseSHA == "" || evidence.CandidateSHA == "" || evidence.ClaimsUpstreamProvenance || evidence.ReplacesSourceLock || !reflect.DeepEqual(evidence.Before, before) || !reflect.DeepEqual(evidence.After, after) || !reflect.DeepEqual(evidence.After, manifestAfter) || !reflect.DeepEqual(evidence.Added, added) || !reflect.DeepEqual(evidence.Removed, removed) {
+			var sealedManifest map[string]any
+			if err := json.Unmarshal(currentBytes, &sealedManifest); err != nil {
+				blockers = append(blockers, "current manifest for changed-selection compatibility is invalid: "+err.Error())
+				continue
+			}
+			sealedManifest["version"] = historical.Version
+			sealedBytes, err := json.MarshalIndent(sealedManifest, "", "  ")
+			if err != nil {
+				blockers = append(blockers, "canonicalize current manifest for changed-selection compatibility: "+err.Error())
+				continue
+			}
+			sealedBytes = append(sealedBytes, '\n')
+			if evidence.PackID != packID || evidence.FromVersion != historical.Version || evidence.ToVersion != current.Version || evidence.FinalVersion != current.Version || evidence.SourceID != source.ID || evidence.BeforeManifestSHA256 != hashBytes(historyBytes) || evidence.AfterManifestSHA256 != hashBytes(sealedBytes) || evidence.PlanID == "" || evidence.BaseSHA == "" || evidence.CandidateSHA == "" || evidence.ClaimsUpstreamProvenance || evidence.ReplacesSourceLock || !reflect.DeepEqual(evidence.Before, before) || !reflect.DeepEqual(evidence.After, after) || !reflect.DeepEqual(evidence.After, manifestAfter) || !reflect.DeepEqual(evidence.Added, added) || !reflect.DeepEqual(evidence.Removed, removed) {
 				blockers = append(blockers, "changed-selection compatibility evidence is stale, partial, or contradictory")
 				continue
 			}

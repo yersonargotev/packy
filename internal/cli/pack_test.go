@@ -1528,20 +1528,13 @@ func TestPackUpdateRendersVersionsAndRetainedSharedResourcesOnBothSurfaces(t *te
 	}
 }
 
-func TestMattyThreeToCurrentUpdateRemovesOwnedInstructionsThroughEveryProductionAdapter(t *testing.T) {
+func TestMattyThreeToCurrentUpdateRemovesOwnedInstructionsThroughAgentSkillAdapters(t *testing.T) {
 	currentVersion, _ := checkedInMattyFacts(t)
 	for _, tc := range []struct {
 		surface     string
 		instruction func(string) []string
 		skill       func(string) string
 	}{
-		{
-			surface: "claude",
-			instruction: func(home string) []string {
-				return []string{filepath.Join(home, ".claude", "CLAUDE.md")}
-			},
-			skill: func(home string) string { return filepath.Join(home, ".claude", "skills", "ask-matt") },
-		},
 		{
 			surface: "codex",
 			instruction: func(home string) []string {

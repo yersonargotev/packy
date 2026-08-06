@@ -1086,7 +1086,11 @@ func pinMattyFourBundle(t *testing.T, repository string) {
 	}
 	writeJSON(t, configPath, config)
 	for _, binding := range bindings {
-		copyTree(t, filepath.Join(repository, "bundle", "history", "matty", "4.0.0", filepath.FromSlash(binding.UpstreamPath)), filepath.Join(repository, "bundle", filepath.FromSlash(binding.UpstreamPath)))
+		target := filepath.Join(repository, "bundle", filepath.FromSlash(binding.UpstreamPath))
+		if err := os.RemoveAll(target); err != nil {
+			t.Fatal(err)
+		}
+		copyTree(t, filepath.Join(repository, "bundle", "history", "matty", "4.0.0", filepath.FromSlash(binding.UpstreamPath)), target)
 	}
 	copyTree(t, filepath.Join(repository, "bundle", "history", "matty", "4.0.0", "pack.json"), filepath.Join(repository, "bundle", "packs", "matty", "pack.json"))
 	for _, path := range []string{
