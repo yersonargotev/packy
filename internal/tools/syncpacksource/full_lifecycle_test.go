@@ -28,7 +28,6 @@ func TestSandboxTracerRunsInspectClassifyPublishWithOnePackContentValidation(t *
 	for _, binding := range sourceResourcesForTest(t, config.Sources, "mattpocock-skills") {
 		copyTreeForTest(t, filepath.Join(base, "bundle", filepath.FromSlash(binding.UpstreamPath)), filepath.Join(snapshot, filepath.FromSlash(binding.UpstreamPath)))
 	}
-	copyTreeForTest(t, filepath.Join(root, "internal", "packsync", "testdata", "real-upstream"), snapshot)
 	oldSnapshot := t.TempDir()
 	copyTreeForTest(t, snapshot, oldSnapshot)
 	if err := os.MkdirAll(filepath.Join(snapshot, "skills", "in-progress", "sandbox-discovery"), 0o755); err != nil {
