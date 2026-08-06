@@ -125,6 +125,41 @@ func TestCheckRejectsRegistrationWithExistingSourceOrBindingOwner(t *testing.T) 
 	}
 }
 
+func TestCheckRejectsReconfigurationIdentityMutationAndOwnershipTransfer(t *testing.T) {
+	repository, snapshot := tinyRepository(t)
+	base := SourceConfig{ID: "mattpocock-skills", Provider: "github", Repository: "mattpocock/skills", Selector: Selector{Mode: SelectorStableRelease}, Resources: []Binding{{PackID: "matty", Kind: "skill", ResourceID: "one", UpstreamPath: "skills/engineering/one"}}}
+	tests := []struct {
+		name     string
+		sourceID string
+		proposal SourceConfig
+	}{
+		{name: "absent source", sourceID: "absent", proposal: SourceConfig{ID: "absent", Provider: "github", Repository: "example/absent", Selector: Selector{Mode: SelectorStableRelease}, Resources: []Binding{}}},
+		{name: "provider", sourceID: base.ID, proposal: func() SourceConfig { value := base; value.Provider = "other"; return value }()},
+		{name: "repository", sourceID: base.ID, proposal: func() SourceConfig { value := base; value.Repository = "other/skills"; return value }()},
+		{name: "configured selector", sourceID: base.ID, proposal: func() SourceConfig {
+			value := base
+			value.Selector = Selector{Mode: SelectorCommit, Ref: strings.Repeat("a", 40)}
+			return value
+		}()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := (Engine{Source: &fixtureSource{root: snapshot, candidate: acceptedCandidate()}}).Check(context.Background(), CheckRequest{RepositoryRoot: repository, SourceID: test.sourceID, Reconfiguration: &test.proposal, ProposedManifest: json.RawMessage(`{}`), AcquisitionDir: t.TempDir()})
+			if err == nil {
+				t.Fatal("invalid reconfiguration accepted")
+			}
+		})
+	}
+
+	writeFile(t, filepath.Join(repository, "bundle", "sources.json"), `{"schema_version":1,"sources":[{"id":"mattpocock-skills","provider":"github","repository":"mattpocock/skills","selector":{"mode":"stable-release"},"resources":[{"pack_id":"matty","kind":"skill","resource_id":"one","upstream_path":"skills/engineering/one"}]},{"id":"other","provider":"github","repository":"example/other","selector":{"mode":"stable-release"},"resources":[{"pack_id":"matty","kind":"skill","resource_id":"owned","upstream_path":"skills/owned"}]}]}`)
+	transfer := base
+	transfer.Resources = append(transfer.Resources, Binding{PackID: "matty", Kind: "skill", ResourceID: "owned", UpstreamPath: "skills/owned"})
+	_, err := (Engine{Source: &fixtureSource{root: snapshot, candidate: acceptedCandidate()}}).Check(context.Background(), CheckRequest{RepositoryRoot: repository, SourceID: base.ID, Reconfiguration: &transfer, ProposedManifest: json.RawMessage(`{}`), AcquisitionDir: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "multiple source owners") {
+		t.Fatalf("ownership transfer error = %v", err)
+	}
+}
+
 func TestCheckValidatesAcceptedMattyMajorMigrationWithoutWritingRepository(t *testing.T) {
 	sourceRepository := repositoryRoot(t)
 	snapshot := realSnapshot(t, sourceRepository, true)

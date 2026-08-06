@@ -52,7 +52,7 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	if err := readJSON(option.evidencePath, &evidence); err != nil {
 		return err
 	}
-	if plan.SourceID != dispatch.SourceID || plan.Candidate.Commit == "" || plan.Preconditions.BaseCommit == "" {
+	if validateDispatchPlanIdentity(dispatch, plan) != nil || plan.Candidate.Commit == "" || plan.Preconditions.BaseCommit == "" {
 		return errors.New("dispatch and sealed plan identity contradict")
 	}
 	if err := validateWorkflowEvidence(plan, evidence); err != nil {
@@ -65,7 +65,7 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	defer os.RemoveAll(acquisition)
 	validator := workflowValidatorFactory()
 	engine := packsync.Engine{Source: workflowSourceFactory(), Validate: validator}
-	apply := packsync.ApplyRequest{CheckRequest: packsync.CheckRequest{RepositoryRoot: option.repositoryRoot, SourceID: dispatch.SourceID, AcquisitionDir: acquisition, Registration: plan.Registration}, Plan: plan, ClassificationEvidence: evidence}
+	apply := packsync.ApplyRequest{CheckRequest: packsync.CheckRequest{RepositoryRoot: option.repositoryRoot, SourceID: dispatch.SourceID, AcquisitionDir: acquisition, Registration: plan.Registration, Reconfiguration: plan.Reconfiguration, ProposedManifest: plan.ProposedManifest}, Plan: plan, ClassificationEvidence: evidence}
 	if plan.Status == "no-op" {
 		return writeNoopArtifact(option.outputDir, dispatch.SourceID, plan)
 	}
@@ -130,7 +130,7 @@ func validateSandbox(ctx context.Context, option options, output io.Writer) erro
 	if err := readJSON(option.evidencePath, &evidence); err != nil {
 		return err
 	}
-	if err := dispatch.Validate(); err != nil || plan.SourceID != dispatch.SourceID || plan.Preconditions.BaseCommit == "" || plan.Candidate.Commit == "" {
+	if err := dispatch.Validate(); err != nil || validateDispatchPlanIdentity(dispatch, plan) != nil || plan.Preconditions.BaseCommit == "" || plan.Candidate.Commit == "" {
 		return errors.New("validation inputs contradict the sealed dispatch")
 	}
 	if err := validateWorkflowEvidence(plan, evidence); err != nil {
@@ -143,7 +143,7 @@ func validateSandbox(ctx context.Context, option options, output io.Writer) erro
 	defer os.RemoveAll(acquisition)
 	validator := workflowValidatorFactory()
 	engine := packsync.Engine{Source: workflowSourceFactory(), Validate: validator}
-	apply := packsync.ApplyRequest{CheckRequest: packsync.CheckRequest{RepositoryRoot: option.repositoryRoot, SourceID: dispatch.SourceID, AcquisitionDir: acquisition, Registration: plan.Registration}, Plan: plan, ClassificationEvidence: evidence}
+	apply := packsync.ApplyRequest{CheckRequest: packsync.CheckRequest{RepositoryRoot: option.repositoryRoot, SourceID: dispatch.SourceID, AcquisitionDir: acquisition, Registration: plan.Registration, Reconfiguration: plan.Reconfiguration, ProposedManifest: plan.ProposedManifest}, Plan: plan, ClassificationEvidence: evidence}
 	if _, err := engine.Apply(ctx, apply); err != nil {
 		return err
 	}

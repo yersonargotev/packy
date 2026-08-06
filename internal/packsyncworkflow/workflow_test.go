@@ -82,6 +82,35 @@ func TestDispatchV2RequiresOneExactOperationAndCanonicalRegistration(t *testing.
 	}
 }
 
+func TestDispatchV21ReconfigureSealsCompleteConfigurationAndManifest(t *testing.T) {
+	reconfiguration := packsync.SourceConfig{ID: "matty", Provider: "github", Repository: "mattpocock/skills", Selector: packsync.Selector{Mode: packsync.SelectorStableRelease}, Resources: []packsync.Binding{{PackID: "matty", Kind: "skill", ResourceID: "writing-for-agents", UpstreamPath: "skills/productivity/writing-for-agents"}}}
+	configDigest, err := CanonicalReconfigurationSHA256(reconfiguration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, manifestDigest, err := CanonicalProposedManifest(json.RawMessage(`{"schema_version":3,"id":"matty","version":"4.0.0","provides":[],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := DispatchRequest{SchemaVersion: 2, Operation: OperationReconfigure, SourceID: "matty", Selector: SelectorLatestStable, ClassificationMode: ClassificationAI, RequestReason: "adopt the approved complete selection", Reconfiguration: &reconfiguration, ReconfigurationSHA256: configDigest, ProposedManifest: manifest, ProposedManifestSHA256: manifestDigest}
+	if err := request.Validate(); err != nil {
+		t.Fatalf("valid reconfiguration rejected: %v", err)
+	}
+	for _, mutate := range []func(*DispatchRequest){
+		func(value *DispatchRequest) { value.Reconfiguration = nil },
+		func(value *DispatchRequest) { value.ReconfigurationSHA256 = strings.Repeat("0", 64) },
+		func(value *DispatchRequest) { value.ProposedManifest = json.RawMessage(`{"schema_version":3}`) },
+		func(value *DispatchRequest) { value.ProposedManifestSHA256 = strings.Repeat("0", 64) },
+		func(value *DispatchRequest) { value.Registration = &reconfiguration },
+	} {
+		invalid := request
+		mutate(&invalid)
+		if err := invalid.Validate(); err == nil {
+			t.Fatalf("invalid reconfiguration accepted: %#v", invalid)
+		}
+	}
+}
+
 func TestV1DispatchMeaningAndDigestRemainUnchanged(t *testing.T) {
 	request := DispatchRequest{SchemaVersion: 1, SourceID: "source", Selector: SelectorLatestStable, ClassificationMode: ClassificationAI, RequestReason: "fixture"}
 	if err := request.Validate(); err != nil {

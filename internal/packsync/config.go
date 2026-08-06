@@ -13,16 +13,20 @@ import (
 )
 
 func canonicalRegistration(registration SourceConfig) (SourceConfig, string, error) {
-	if registration.Resources == nil {
-		return SourceConfig{}, "", errors.New("registration resources is a required array")
+	return canonicalSourceConfig(registration, "registration")
+}
+
+func canonicalSourceConfig(source SourceConfig, label string) (SourceConfig, string, error) {
+	if source.Resources == nil {
+		return SourceConfig{}, "", fmt.Errorf("%s resources is a required array", label)
 	}
-	data, err := json.Marshal(Config{SchemaVersion: 1, Sources: []SourceConfig{registration}})
+	data, err := json.Marshal(Config{SchemaVersion: 1, Sources: []SourceConfig{source}})
 	if err != nil {
 		return SourceConfig{}, "", err
 	}
 	config, err := LoadConfig(bytes.NewReader(data))
 	if err != nil {
-		return SourceConfig{}, "", fmt.Errorf("invalid registration: %w", err)
+		return SourceConfig{}, "", fmt.Errorf("invalid %s: %w", label, err)
 	}
 	canonical, err := json.MarshalIndent(config.Sources[0], "", "  ")
 	if err != nil {

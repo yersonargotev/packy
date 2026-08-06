@@ -239,6 +239,24 @@ func inspectRequest(option options) (packsyncworkflow.DispatchRequest, packsync.
 				request.Registration = &registration
 				request.RegistrationSHA256 = os.Getenv("PACKY_REGISTRATION_SHA256")
 			}
+			if raw := os.Getenv("PACKY_RECONFIGURATION_JSON"); raw != "" {
+				var reconfiguration packsync.SourceConfig
+				decoder := json.NewDecoder(strings.NewReader(raw))
+				decoder.DisallowUnknownFields()
+				if err := decoder.Decode(&reconfiguration); err != nil {
+					return request, packsync.CheckRequest{}, fmt.Errorf("decode reconfiguration: %w", err)
+				}
+				request.Reconfiguration = &reconfiguration
+				request.ReconfigurationSHA256 = os.Getenv("PACKY_RECONFIGURATION_SHA256")
+			}
+			if raw := os.Getenv("PACKY_PROPOSED_MANIFEST_JSON"); raw != "" {
+				canonical, _, err := packsyncworkflow.CanonicalProposedManifest(json.RawMessage(raw))
+				if err != nil {
+					return request, packsync.CheckRequest{}, err
+				}
+				request.ProposedManifest = canonical
+				request.ProposedManifestSHA256 = os.Getenv("PACKY_PROPOSED_MANIFEST_SHA256")
+			}
 			if raw := os.Getenv("PACKY_HUMAN_EVIDENCE_JSON"); raw != "" {
 				request.HumanEvidence = json.RawMessage(raw)
 			}
@@ -288,7 +306,7 @@ func checkRequestForDispatch(repositoryRoot string, request packsyncworkflow.Dis
 		} else {
 			selector.Mode, selector.Ref = packsync.SelectorCommit, evidence.Candidate.Commit
 		}
-		return packsync.CheckRequest{RepositoryRoot: repositoryRoot, SourceID: request.SourceID, Selector: &selector, Registration: request.Registration}, nil
+		return checkRequestFromDispatch(repositoryRoot, request, selector), nil
 	}
 	switch request.Selector {
 	case packsyncworkflow.SelectorLatestStable:
@@ -298,7 +316,11 @@ func checkRequestForDispatch(repositoryRoot string, request packsyncworkflow.Dis
 	case packsyncworkflow.SelectorCommit:
 		selector.Mode, selector.Ref = packsync.SelectorCommit, request.SelectorRef
 	}
-	return packsync.CheckRequest{RepositoryRoot: repositoryRoot, SourceID: request.SourceID, Selector: &selector, Registration: request.Registration}, nil
+	return checkRequestFromDispatch(repositoryRoot, request, selector), nil
+}
+
+func checkRequestFromDispatch(repositoryRoot string, request packsyncworkflow.DispatchRequest, selector packsync.Selector) packsync.CheckRequest {
+	return packsync.CheckRequest{RepositoryRoot: repositoryRoot, SourceID: request.SourceID, Selector: &selector, Registration: request.Registration, Reconfiguration: request.Reconfiguration, ProposedManifest: request.ProposedManifest}
 }
 
 func classify(ctx context.Context, option options, output io.Writer) error {
@@ -314,6 +336,9 @@ func classify(ctx context.Context, option options, output io.Writer) error {
 		return err
 	}
 	if err := readJSON(option.planPath, &plan); err != nil {
+		return err
+	}
+	if err := validateDispatchPlanIdentity(request, plan); err != nil {
 		return err
 	}
 	if request.ExpectedPlanID != "" && (request.ExpectedPlanID != plan.PlanID || request.ExpectedBaseSHA != plan.Preconditions.BaseCommit || request.SelectorRef != plan.Candidate.Commit) {
@@ -377,6 +402,29 @@ func classify(ctx context.Context, option options, output io.Writer) error {
 	}
 	_, err = fmt.Fprintln(output, name)
 	return err
+}
+
+func validateDispatchPlanIdentity(request packsyncworkflow.DispatchRequest, plan packsync.Plan) error {
+	if !plan.VerifySeal() || plan.SourceID != request.SourceID {
+		return errors.New("dispatch and sealed plan identity contradict")
+	}
+	switch request.Operation {
+	case "", packsyncworkflow.OperationSynchronize:
+		if plan.Registration != nil || plan.Reconfiguration != nil {
+			return errors.New("synchronization dispatch contradicts a configuration-changing plan")
+		}
+	case packsyncworkflow.OperationRegister:
+		if plan.Registration == nil || plan.RegistrationSHA256 != request.RegistrationSHA256 || plan.Reconfiguration != nil {
+			return errors.New("registration dispatch contradicts the sealed registration plan")
+		}
+	case packsyncworkflow.OperationReconfigure:
+		if plan.Reconfiguration == nil || plan.ReconfigurationSHA256 != request.ReconfigurationSHA256 || plan.ProposedManifestSHA256 != request.ProposedManifestSHA256 || plan.Registration != nil {
+			return errors.New("reconfiguration dispatch contradicts the sealed reconfiguration plan")
+		}
+	default:
+		return errors.New("dispatch operation contradicts the sealed plan")
+	}
+	return nil
 }
 
 func classificationFailure(err error) error {

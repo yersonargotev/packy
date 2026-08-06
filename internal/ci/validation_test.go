@@ -71,7 +71,7 @@ type packSourceSchemaSuite struct {
 	major   int
 }
 
-var packSourceSchemaSuites = []packSourceSchemaSuite{{version: "v1.0.0", major: 1}, {version: "v2.0.0", major: 2}, {version: "v3.0.0", major: 3}}
+var packSourceSchemaSuites = []packSourceSchemaSuite{{version: "v1.0.0", major: 1}, {version: "v2.0.0", major: 2}, {version: "v2.1.0", major: 2}, {version: "v3.0.0", major: 3}}
 
 var packSourceSchemaNames = []string{
 	"pack-source-dispatch.schema.json",
@@ -1348,11 +1348,11 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 		"workflow_dispatch:", "permissions: {}", "sync-pack-source-prepare-{0}-{1}", "format('sync-pack-source-{0}'", "cancel-in-progress: false",
 		"run-name: sync-pack-source / ${{ inputs.pack_id || inputs.source_id }} / ${{ inputs.request_digest }}", "PACKY_REQUEST_DIGEST: ${{ inputs.request_digest }}",
 		"prepare_only:", "Admit protected publication or read-only preparation", "Enforce the ref, mode, and operation boundary",
-		"Enforce input and transport bounds before acquisition", "inputs_bytes <= 61440", "registration_json exceeds 16 KiB",
+		"Enforce input and transport bounds before acquisition", "inputs_bytes <= 61440", "registration_json exceeds 16 KiB", "reconfiguration_json exceeds 16 KiB",
 		"registrations_json exceeds 16 KiB", "proposed_manifest_json exceeds 48 KiB", "human_evidence_json exceeds 16 KiB",
 		"request_reason exceeds 2 KiB", "register_bundle requires 2..8 members",
-		"operation:", "register_bundle", "pack_id:", "registrations_json:", "registration_bundle_sha256:", "proposed_version:", "proposed_manifest_json:", "proposed_manifest_sha256:",
-		"registration_json:", "registration_sha256:", "PACKY_OPERATION: ${{ inputs.operation }}", "PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}", "PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}",
+		"operation:", "reconfigure", "register_bundle", "pack_id:", "reconfiguration_json:", "reconfiguration_sha256:", "registrations_json:", "registration_bundle_sha256:", "proposed_version:", "proposed_manifest_json:", "proposed_manifest_sha256:",
+		"registration_json:", "registration_sha256:", "PACKY_OPERATION: ${{ inputs.operation }}", "PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}", "PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}", "PACKY_RECONFIGURATION_JSON: ${{ inputs.reconfiguration_json }}", "PACKY_RECONFIGURATION_SHA256: ${{ inputs.reconfiguration_sha256 }}",
 		"PACKY_PACK_ID: ${{ inputs.pack_id }}", "PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}", "PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}",
 		"PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}", "PACKY_PROPOSED_MANIFEST_JSON: ${{ inputs.proposed_manifest_json }}", "PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}",
 		"inspect:", "classify:", "prepare:", "publish:", "needs: [inspect, classify]", "contents: write", "pull-requests: write",
@@ -1422,7 +1422,7 @@ func TestSyncWorkflowAdmitRejectsMalformedJSONBeforeLaterJobs(t *testing.T) {
 	}
 
 	baseInputs := map[string]any{
-		"registration_json": "", "registrations_json": `[{},{}]`,
+		"registration_json": "", "reconfiguration_json": "", "registrations_json": `[{},{}]`,
 		"proposed_manifest_json": `{}`, "human_evidence_json": "",
 		"request_reason": "bounded admission",
 	}
@@ -1443,6 +1443,14 @@ func TestSyncWorkflowAdmitRejectsMalformedJSONBeforeLaterJobs(t *testing.T) {
 	if output, err := runAdmission(t, "register_bundle", baseInputs); err != nil {
 		t.Fatalf("valid bounded bundle admission failed: %v: %s", err, output)
 	}
+	reconfigureInputs := make(map[string]any, len(baseInputs))
+	for key, value := range baseInputs {
+		reconfigureInputs[key] = value
+	}
+	reconfigureInputs["reconfiguration_json"] = `{}`
+	if output, err := runAdmission(t, "reconfigure", reconfigureInputs); err != nil {
+		t.Fatalf("valid bounded reconfiguration admission failed: %v: %s", err, output)
+	}
 	tests := []struct {
 		name      string
 		operation string
@@ -1451,6 +1459,7 @@ func TestSyncWorkflowAdmitRejectsMalformedJSONBeforeLaterJobs(t *testing.T) {
 		want      string
 	}{
 		{name: "registration malformed", operation: "register", key: "registration_json", value: `{`, want: "registration_json is malformed JSON"},
+		{name: "reconfiguration malformed", operation: "reconfigure", key: "reconfiguration_json", value: `[`, want: "reconfiguration_json is malformed JSON"},
 		{name: "registrations wrong shape", operation: "register_bundle", key: "registrations_json", value: `{}`, want: "registrations_json must be a JSON array"},
 		{name: "manifest wrong shape", operation: "register_bundle", key: "proposed_manifest_json", value: `[]`, want: "proposed_manifest_json must be a JSON object"},
 		{name: "human evidence malformed", operation: "register_bundle", key: "human_evidence_json", value: `{`, want: "human_evidence_json is malformed JSON"},
@@ -1997,6 +2006,38 @@ func TestPackSourceV2RegistrationSemanticAndNullArrayValidation(t *testing.T) {
 	}
 }
 
+func TestPackSourceV21ReconfigurationSchemaMatchesRuntimeContract(t *testing.T) {
+	reconfiguration := packsync.SourceConfig{ID: "matty", Provider: "github", Repository: "mattpocock/skills", Selector: packsync.Selector{Mode: packsync.SelectorStableRelease}, Resources: []packsync.Binding{{PackID: "matty", Kind: "skill", ResourceID: "writing-for-agents", UpstreamPath: "skills/productivity/writing-for-agents"}}}
+	configDigest, err := packsyncworkflow.CanonicalReconfigurationSHA256(reconfiguration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, manifestDigest, err := packsyncworkflow.CanonicalProposedManifest(json.RawMessage(`{"schema_version":3,"id":"matty","version":"4.0.0","resources":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationReconfigure, SourceID: "matty", Selector: packsyncworkflow.SelectorLatestStable, ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "approved reconfiguration", Reconfiguration: &reconfiguration, ReconfigurationSHA256: configDigest, ProposedManifest: manifest, ProposedManifestSHA256: manifestDigest}
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := request.Validate(); err != nil {
+		t.Fatalf("runtime rejected valid reconfiguration: %v", err)
+	}
+	if err := validateSchemaInstanceForSuite(t, "v2.1.0", "pack-source-dispatch.schema.json", data); err != nil {
+		t.Fatalf("v2.1 schema rejected valid reconfiguration: %v", err)
+	}
+
+	request.ProposedManifestSHA256 = strings.Repeat("0", 64)
+	data, _ = json.Marshal(request)
+	if err := request.Validate(); err == nil {
+		t.Fatal("runtime accepted stale proposed manifest digest")
+	}
+	if err := validateSchemaInstanceForSuite(t, "v2.1.0", "pack-source-dispatch.schema.json", data); err != nil {
+		t.Fatalf("structural schema should defer canonical digest equality to runtime: %v", err)
+	}
+}
+
 func assertV2RuntimeSchemaParity(t *testing.T, name string, value any, runtimeErr error) {
 	t.Helper()
 	data, err := json.Marshal(value)
@@ -2256,17 +2297,45 @@ echo https://github.com/yersonargotev/packy/actions/runs/42
 		t.Fatalf("workflow inputs = %#v", inputs)
 	}
 	if canonical.SchemaVersion == 2 {
-		registration, _ := json.Marshal(canonical.Registration)
-		if inputs["operation"] != string(canonical.Operation) || inputs["registration_json"] != string(registration) || inputs["registration_sha256"] != canonical.RegistrationSHA256 {
-			t.Fatalf("registration workflow inputs = %#v", inputs)
+		if inputs["operation"] != string(canonical.Operation) {
+			t.Fatalf("operation workflow input = %#v", inputs)
+		}
+		if canonical.Operation == packsyncworkflow.OperationRegister {
+			registration, _ := json.Marshal(canonical.Registration)
+			if inputs["registration_json"] != string(registration) || inputs["registration_sha256"] != canonical.RegistrationSHA256 {
+				t.Fatalf("registration workflow inputs = %#v", inputs)
+			}
+		} else if canonical.Operation == packsyncworkflow.OperationReconfigure {
+			reconfiguration, _ := json.Marshal(canonical.Reconfiguration)
+			var renderedManifest, canonicalManifest any
+			_ = json.Unmarshal([]byte(inputs["proposed_manifest_json"]), &renderedManifest)
+			_ = json.Unmarshal(canonical.ProposedManifest, &canonicalManifest)
+			if inputs["reconfiguration_json"] != string(reconfiguration) || inputs["reconfiguration_sha256"] != canonical.ReconfigurationSHA256 || !reflect.DeepEqual(renderedManifest, canonicalManifest) || inputs["proposed_manifest_sha256"] != canonical.ProposedManifestSHA256 {
+				t.Fatalf("reconfiguration workflow inputs = %#v", inputs)
+			}
 		}
 		if _, present := inputs["registration"]; present {
 			t.Fatal("workflow transport contains unmapped registration")
+		}
+		if _, present := inputs["reconfiguration"]; present {
+			t.Fatal("workflow transport contains unmapped reconfiguration")
 		}
 	}
 	if _, present := inputs["schema_version"]; present {
 		t.Fatal("workflow transport contains schema_version")
 	}
+}
+
+func TestMaintainerRendererMapsCanonicalReconfigurationTransport(t *testing.T) {
+	reconfiguration := packsync.SourceConfig{ID: "matty", Provider: "github", Repository: "mattpocock/skills", Selector: packsync.Selector{Mode: packsync.SelectorStableRelease}, Resources: []packsync.Binding{}}
+	configDigest, _ := packsyncworkflow.CanonicalReconfigurationSHA256(reconfiguration)
+	manifest, manifestDigest, _ := packsyncworkflow.CanonicalProposedManifest(json.RawMessage(`{"schema_version":3,"id":"matty","version":"4.0.0","resources":[]}`))
+	request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationReconfigure, SourceID: "matty", Selector: packsyncworkflow.SelectorLatestStable, ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "approved reconfiguration", Reconfiguration: &reconfiguration, ReconfigurationSHA256: configDigest, ProposedManifest: manifest, ProposedManifestSHA256: manifestDigest}
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testMaintainerDispatchRenderer(t, data)
 }
 
 func TestMaintainerPreparationRendererIsBranchScopedAndTransportOnly(t *testing.T) {

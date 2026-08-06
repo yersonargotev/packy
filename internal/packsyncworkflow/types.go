@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"regexp"
 	"strings"
@@ -45,22 +46,27 @@ type DispatchOperation string
 const (
 	OperationSynchronize DispatchOperation = "synchronize"
 	OperationRegister    DispatchOperation = "register"
+	OperationReconfigure DispatchOperation = "reconfigure"
 )
 
 type DispatchRequest struct {
-	SchemaVersion      int                    `json:"schema_version"`
-	Operation          DispatchOperation      `json:"operation,omitempty"`
-	SourceID           string                 `json:"source_id"`
-	Selector           Selector               `json:"selector"`
-	SelectorRef        string                 `json:"selector_ref,omitempty"`
-	ClassificationMode ClassificationMode     `json:"classification_mode"`
-	RequestReason      string                 `json:"request_reason"`
-	RetryOfRun         string                 `json:"retry_of_run,omitempty"`
-	ExpectedPlanID     string                 `json:"expected_plan_id,omitempty"`
-	ExpectedBaseSHA    string                 `json:"expected_base_sha,omitempty"`
-	HumanEvidence      json.RawMessage        `json:"human_evidence,omitempty"`
-	Registration       *packsync.SourceConfig `json:"registration,omitempty"`
-	RegistrationSHA256 string                 `json:"registration_sha256,omitempty"`
+	SchemaVersion          int                    `json:"schema_version"`
+	Operation              DispatchOperation      `json:"operation,omitempty"`
+	SourceID               string                 `json:"source_id"`
+	Selector               Selector               `json:"selector"`
+	SelectorRef            string                 `json:"selector_ref,omitempty"`
+	ClassificationMode     ClassificationMode     `json:"classification_mode"`
+	RequestReason          string                 `json:"request_reason"`
+	RetryOfRun             string                 `json:"retry_of_run,omitempty"`
+	ExpectedPlanID         string                 `json:"expected_plan_id,omitempty"`
+	ExpectedBaseSHA        string                 `json:"expected_base_sha,omitempty"`
+	HumanEvidence          json.RawMessage        `json:"human_evidence,omitempty"`
+	Registration           *packsync.SourceConfig `json:"registration,omitempty"`
+	RegistrationSHA256     string                 `json:"registration_sha256,omitempty"`
+	Reconfiguration        *packsync.SourceConfig `json:"reconfiguration,omitempty"`
+	ReconfigurationSHA256  string                 `json:"reconfiguration_sha256,omitempty"`
+	ProposedManifest       json.RawMessage        `json:"proposed_manifest,omitempty"`
+	ProposedManifestSHA256 string                 `json:"proposed_manifest_sha256,omitempty"`
 }
 
 // Digest returns the stable request identity used only to attach maintainers to
@@ -103,13 +109,17 @@ func (request *DispatchRequest) UnmarshalJSON(data []byte) error {
 		allowed["operation"] = true
 		allowed["registration"] = true
 		allowed["registration_sha256"] = true
+		allowed["reconfiguration"] = true
+		allowed["reconfiguration_sha256"] = true
+		allowed["proposed_manifest"] = true
+		allowed["proposed_manifest_sha256"] = true
 	}
 	for name := range fields {
 		if !allowed[name] {
 			return fmt.Errorf("dispatch contains unknown field %q", name)
 		}
 	}
-	for _, name := range []string{"operation", "selector_ref", "retry_of_run", "expected_plan_id", "expected_base_sha", "registration_sha256"} {
+	for _, name := range []string{"operation", "selector_ref", "retry_of_run", "expected_plan_id", "expected_base_sha", "registration_sha256", "reconfiguration_sha256", "proposed_manifest_sha256"} {
 		value, present := fields[name]
 		if !present {
 			continue
@@ -127,6 +137,15 @@ func (request *DispatchRequest) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("decode registration: %w", err)
 		}
 		decoded.Registration = &registration
+	}
+	if raw, present := fields["reconfiguration"]; present {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		var reconfiguration packsync.SourceConfig
+		if err := decoder.Decode(&reconfiguration); err != nil {
+			return fmt.Errorf("decode reconfiguration: %w", err)
+		}
+		decoded.Reconfiguration = &reconfiguration
 	}
 	*request = DispatchRequest(decoded)
 	return nil
@@ -149,9 +168,57 @@ func CanonicalRegistrationSHA256(registration packsync.SourceConfig) (string, er
 	return fmt.Sprintf("%x", sum), nil
 }
 
+func CanonicalReconfigurationSHA256(reconfiguration packsync.SourceConfig) (string, error) {
+	return canonicalSourceConfigSHA256(reconfiguration, "reconfiguration")
+}
+
+func CanonicalProposedManifest(proposed json.RawMessage) (json.RawMessage, string, error) {
+	if len(proposed) == 0 {
+		return nil, "", errors.New("proposed manifest is required")
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(proposed))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return nil, "", fmt.Errorf("decode proposed manifest: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, "", errors.New("proposed manifest contains multiple JSON values")
+		}
+		return nil, "", fmt.Errorf("decode trailing proposed manifest: %w", err)
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return nil, "", err
+	}
+	data = append(data, '\n')
+	sum := sha256.Sum256(data)
+	return data, fmt.Sprintf("%x", sum), nil
+}
+
+func canonicalSourceConfigSHA256(source packsync.SourceConfig, label string) (string, error) {
+	normalized, err := normalizeSourceConfig(source, label)
+	if err != nil {
+		return "", err
+	}
+	data, err := json.MarshalIndent(normalized, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	data = append(data, '\n')
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum), nil
+}
+
 func normalizeRegistration(registration packsync.SourceConfig) (packsync.SourceConfig, error) {
+	return normalizeSourceConfig(registration, "registration")
+}
+
+func normalizeSourceConfig(registration packsync.SourceConfig, label string) (packsync.SourceConfig, error) {
 	if registration.Resources == nil {
-		return packsync.SourceConfig{}, errors.New("registration resources is a required array")
+		return packsync.SourceConfig{}, fmt.Errorf("%s resources is a required array", label)
 	}
 	data, err := json.Marshal(packsync.Config{SchemaVersion: 1, Sources: []packsync.SourceConfig{registration}})
 	if err != nil {
@@ -159,10 +226,10 @@ func normalizeRegistration(registration packsync.SourceConfig) (packsync.SourceC
 	}
 	config, err := packsync.LoadConfig(bytes.NewReader(data))
 	if err != nil {
-		return packsync.SourceConfig{}, fmt.Errorf("invalid registration: %w", err)
+		return packsync.SourceConfig{}, fmt.Errorf("invalid %s: %w", label, err)
 	}
 	if !sourceIDPattern.MatchString(config.Sources[0].ID) {
-		return packsync.SourceConfig{}, errors.New("registration source id is not canonical")
+		return packsync.SourceConfig{}, fmt.Errorf("%s source id is not canonical", label)
 	}
 	return config.Sources[0], nil
 }
@@ -254,17 +321,17 @@ func (request DispatchRequest) Validate() error {
 		return errors.New("dispatch schema, source id, and request reason are required")
 	}
 	if request.SchemaVersion == 1 {
-		if request.Operation != "" || request.Registration != nil || request.RegistrationSHA256 != "" {
+		if request.Operation != "" || request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" {
 			return errors.New("v1 dispatch forbids v2 operation fields")
 		}
 	} else {
 		switch request.Operation {
 		case OperationSynchronize:
-			if request.Registration != nil || request.RegistrationSHA256 != "" {
-				return errors.New("synchronize dispatch forbids registration")
+			if request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" {
+				return errors.New("synchronize dispatch forbids configuration proposals")
 			}
 		case OperationRegister:
-			if request.Registration == nil || request.RegistrationSHA256 == "" {
+			if request.Registration == nil || request.RegistrationSHA256 == "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" {
 				return errors.New("register dispatch requires registration and its SHA-256")
 			}
 			if request.Registration.ID != request.SourceID {
@@ -274,8 +341,23 @@ func (request DispatchRequest) Validate() error {
 			if err != nil || digest != request.RegistrationSHA256 {
 				return errors.New("registration SHA-256 does not match canonical registration")
 			}
+		case OperationReconfigure:
+			if request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration == nil || request.ReconfigurationSHA256 == "" || len(request.ProposedManifest) == 0 || request.ProposedManifestSHA256 == "" {
+				return errors.New("reconfigure dispatch requires the complete reconfiguration and proposed manifest with their SHA-256 digests")
+			}
+			if request.Reconfiguration.ID != request.SourceID {
+				return errors.New("reconfiguration id must equal dispatch source id")
+			}
+			digest, err := CanonicalReconfigurationSHA256(*request.Reconfiguration)
+			if err != nil || digest != request.ReconfigurationSHA256 {
+				return errors.New("reconfiguration SHA-256 does not match canonical reconfiguration")
+			}
+			_, manifestDigest, err := CanonicalProposedManifest(request.ProposedManifest)
+			if err != nil || manifestDigest != request.ProposedManifestSHA256 {
+				return errors.New("proposed manifest SHA-256 or canonical bytes do not match")
+			}
 		default:
-			return errors.New("v2 dispatch operation must be synchronize or register")
+			return errors.New("v2 dispatch operation must be synchronize, register, or reconfigure")
 		}
 	}
 	switch request.Selector {

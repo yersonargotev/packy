@@ -297,6 +297,39 @@ func TestInspectCarriesStrictRegistrationIntoCheck(t *testing.T) {
 	}
 }
 
+func TestInspectCarriesStrictReconfigurationAndManifestIntoCheck(t *testing.T) {
+	clearPackyEnvironment(t)
+	reconfiguration := packsync.SourceConfig{ID: "matty", Provider: "github", Repository: "mattpocock/skills", Selector: packsync.Selector{Mode: packsync.SelectorStableRelease}, Resources: []packsync.Binding{{PackID: "matty", Kind: "skill", ResourceID: "writing-for-agents", UpstreamPath: "skills/productivity/writing-for-agents"}}}
+	configDigest, err := packsyncworkflow.CanonicalReconfigurationSHA256(reconfiguration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, manifestDigest, err := packsyncworkflow.CanonicalProposedManifest(json.RawMessage(`{"schema_version":3,"id":"matty","version":"4.0.0","provides":[],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configJSON, _ := json.Marshal(reconfiguration)
+	t.Setenv("PACKY_SOURCE_ID", "matty")
+	t.Setenv("PACKY_OPERATION", "reconfigure")
+	t.Setenv("PACKY_RECONFIGURATION_JSON", string(configJSON))
+	t.Setenv("PACKY_RECONFIGURATION_SHA256", configDigest)
+	t.Setenv("PACKY_PROPOSED_MANIFEST_JSON", string(manifest))
+	t.Setenv("PACKY_PROPOSED_MANIFEST_SHA256", manifestDigest)
+	t.Setenv("PACKY_SELECTOR", "latest-stable")
+	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
+	t.Setenv("PACKY_REQUEST_REASON", "approved complete Matty selection")
+	request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationReconfigure, SourceID: "matty", Selector: packsyncworkflow.SelectorLatestStable, ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "approved complete Matty selection", Reconfiguration: &reconfiguration, ReconfigurationSHA256: configDigest, ProposedManifest: manifest, ProposedManifestSHA256: manifestDigest}
+	requestDigest, _ := request.Digest()
+	t.Setenv("PACKY_REQUEST_DIGEST", requestDigest)
+	got, check, err := inspectRequest(options{repositoryRoot: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Operation != packsyncworkflow.OperationReconfigure || check.Reconfiguration == nil || !reflect.DeepEqual(*check.Reconfiguration, reconfiguration) || !reflect.DeepEqual(check.ProposedManifest, manifest) {
+		t.Fatalf("reconfiguration dispatch lost authority: request=%#v check=%#v", got, check)
+	}
+}
+
 func TestInspectRejectsMismatchedWorkflowRequestDigest(t *testing.T) {
 	clearPackyEnvironment(t)
 	t.Setenv("PACKY_SOURCE_ID", "source")

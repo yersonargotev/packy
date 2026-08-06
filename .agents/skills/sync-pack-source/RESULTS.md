@@ -15,6 +15,9 @@ URL, and last observed state.
 Download artifacts by exact run ID into a fresh temporary directory. Validate
 each claimed terminal artifact against its canonical schema fetched from remote
 `main`. Logs are diagnostic only and never substitute for an artifact.
+Use the v2.1.0 schema suite for a `reconfigure` request and its v2 artifacts;
+use v2.0.0 for `register`, v1.0.0 for routine synchronization, and v3.0.0 for
+`register_bundle`. Instance `schema_version` remains 2 for both v2 suites.
 After validation, use the remote-main `result-state.sh` with the exact run
 observation, artifact directory, freshly observed live PR JSON, and the current
 remote-main SHA. Publication is decision-ready only when its base is still

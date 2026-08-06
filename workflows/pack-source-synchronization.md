@@ -17,11 +17,14 @@ owned by `internal/packsync` and `internal/packclassification` under ADR 0007
 and ADR 0008.
 
 The complete immutable schema suites are checked in under
-`schemas/pack-source/v1.0.0/`, `schemas/pack-source/v2.0.0/`, and
+`schemas/pack-source/v1.0.0/`, `schemas/pack-source/v2.0.0/`,
+`schemas/pack-source/v2.1.0/`, and
 `schemas/pack-source/v3.0.0/`. Each consists
 of the dispatch, validation, no-op, operational-artifact, and publication
 schema files. Version 1 remains the synchronization contract; version 2 adds
-sealed source registration and source-scoped provenance. Version 3 is the
+sealed source registration and source-scoped provenance; its v2.1 suite adds
+explicit existing-source reconfiguration without changing instance
+`schema_version: 2`. Version 3 is the
 distinct Pack-scoped `register_bundle` contract for atomic initial admission of
 two or more exact-commit sources and cannot consume or emit v1/v2 artifacts.
 Repository validation
@@ -32,11 +35,19 @@ validates domain values directly and never resolves schemas over the network.
 
 Every request conforms to the dispatch schema for its declared version. A
 version 1 request synchronizes one configured `source_id`. A version 2 request
-also names an explicit `synchronize` or `register` operation. Registration is
+also names an explicit `synchronize`, `register`, or `reconfigure` operation. Registration is
 allowed only when the source is absent and seals the complete strict source
 configuration plus its canonical SHA-256. Every v1/v2 request carries an
 explicit candidate selector. Every request carries an explicit `ai` or `human`
 classification mode and an operator reason. There are no automatic triggers.
+
+Reconfiguration is allowed only for an existing source and seals one complete
+replacement `SourceConfig` plus one complete canonical current-version Pack
+manifest. It preserves source/provider/repository/selector/Pack identity,
+requires exact bidirectional binding-to-manifest equality, and applies the
+configuration, classified manifest, changed-selection evidence, immutable
+history, source lock, and selected bytes as one bundle generation. It cannot
+transfer ownership or infer omitted bindings.
 
 The workflow transport additionally requires `request_digest`, the lowercase
 SHA-256 of the sorted compact canonical request JSON including its trailing

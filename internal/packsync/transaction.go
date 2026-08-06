@@ -51,7 +51,7 @@ func (engine Engine) Apply(ctx context.Context, request ApplyRequest) (ApplyResu
 	if !request.Plan.VerifySeal() {
 		return ApplyResult{}, errors.New("sealed plan identity is invalid")
 	}
-	if err := validateRegistrationRequest(request); err != nil {
+	if err := validateOperationRequest(request); err != nil {
 		return ApplyResult{}, err
 	}
 	if err := validateApplyClassification(request.Plan, request.ClassificationEvidence); err != nil {
@@ -146,7 +146,7 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 	legacy := filepath.Join(request.RepositoryRoot, "skills-lock.json")
 	if converged, err := convergedBootstrap(bundle, legacy, plan); err != nil {
 		return ApplyResult{}, err
-	} else if converged && plan.Registration == nil {
+	} else if converged && plan.Registration == nil && plan.Reconfiguration == nil {
 		if ok, err := classifiedVersionsConverged(bundle, plan, request.ClassificationEvidence); err != nil {
 			return ApplyResult{}, err
 		} else if !ok {
@@ -178,6 +178,14 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 			return ApplyResult{}, err
 		}
 	}
+	if plan.Reconfiguration != nil {
+		if err := materializeReconfiguration(staged, *plan.Reconfiguration); err != nil {
+			return ApplyResult{}, err
+		}
+		if err := materializeProposedManifest(staged, plan); err != nil {
+			return ApplyResult{}, err
+		}
+	}
 	cleanupStaged := true
 	defer func() {
 		if cleanupStaged {
@@ -195,6 +203,9 @@ func (engine Engine) applyLocked(ctx context.Context, request ApplyRequest, cand
 		return ApplyResult{}, err
 	}
 	if err := materializeClassifiedHistory(staged, plan, request.ClassificationEvidence); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := materializeChangedSelectionEvidence(staged, plan, request.ClassificationEvidence); err != nil {
 		return ApplyResult{}, err
 	}
 	if err := writeCanonicalLock(filepath.Join(staged, "sources", plan.SourceID+".lock.json"), plan.ProposedLock); err != nil {
@@ -312,7 +323,7 @@ func materializeClassifiedVersions(staged string, plan Plan, set ClassificationE
 func materializeClassifiedHistory(staged string, plan Plan, set ClassificationEvidenceSet) error {
 	versions := classificationVersions(set)
 	for _, impact := range plan.AffectedPacks {
-		if impact.Contract == nil || impact.Contract.SchemaVersion != 4 {
+		if plan.Reconfiguration == nil && (impact.Contract == nil || impact.Contract.SchemaVersion != 4) {
 			continue
 		}
 		version := versions[impact.PackID]
@@ -323,7 +334,7 @@ func materializeClassifiedHistory(staged string, plan Plan, set ClassificationEv
 		}
 		var manifest packManifest
 		if err := json.Unmarshal(manifestBytes, &manifest); err != nil ||
-			manifest.SchemaVersion != 4 || manifest.ID != impact.PackID || manifest.Version != version {
+			manifest.ID != impact.PackID || manifest.Version != version {
 			return fmt.Errorf("classified Pack manifest contradicts history identity for %s", impact.PackID)
 		}
 		if err := materializePackHistory(staged, impact.PackID, version, manifestBytes, manifest); err != nil {
@@ -409,11 +420,11 @@ func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged,
 	if err != nil {
 		return err
 	}
-	if plan.Registration == nil {
+	if plan.Registration == nil && plan.Reconfiguration == nil {
 		if hashBytes(configBytes) != plan.Preconditions.ConfigSHA256 {
 			return errors.New("staged source configuration changed from the sealed plan")
 		}
-	} else {
+	} else if plan.Registration != nil {
 		registered, err := selectSource(config, plan.SourceID)
 		if err != nil || !reflect.DeepEqual(registered, *plan.Registration) {
 			return errors.New("staged registration does not match the sealed plan")
@@ -421,6 +432,15 @@ func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged,
 		_, digest, err := canonicalRegistration(registered)
 		if err != nil || digest != plan.RegistrationSHA256 {
 			return errors.New("staged registration digest does not match the sealed plan")
+		}
+	} else {
+		reconfigured, err := selectSource(config, plan.SourceID)
+		if err != nil || !reflect.DeepEqual(reconfigured, *plan.Reconfiguration) {
+			return errors.New("staged reconfiguration does not match the sealed plan")
+		}
+		_, digest, err := canonicalSourceConfig(reconfigured, "reconfiguration")
+		if err != nil || digest != plan.ReconfigurationSHA256 {
+			return errors.New("staged reconfiguration digest does not match the sealed plan")
 		}
 	}
 	source, err := selectSource(config, plan.SourceID)
@@ -432,6 +452,9 @@ func (engine Engine) validateStaged(ctx context.Context, repositoryRoot, staged,
 		return err
 	}
 	if err := verifyStagedManifestContracts(viewBundle, plan, classifications); err != nil {
+		return err
+	}
+	if err := verifyStagedProposedManifest(viewBundle, plan, classifications); err != nil {
 		return err
 	}
 	bindings, blockers := deriveDestinations(source.Resources, manifests)
@@ -589,8 +612,27 @@ func (engine Engine) applicablePlan(plan Plan) bool {
 	return engine.allowBootstrap && plan.Status == "blocked" && !plan.Authoritative && len(plan.Changes) == 0 && len(plan.Blockers) == 1 && strings.Contains(plan.Blockers[0], "production provenance lock is absent")
 }
 
-func validateRegistrationRequest(request ApplyRequest) error {
+func validateOperationRequest(request ApplyRequest) error {
 	plan := request.Plan
+	if plan.Registration != nil && plan.Reconfiguration != nil {
+		return errors.New("sealed plan cannot combine registration and reconfiguration")
+	}
+	if plan.Reconfiguration == nil {
+		if request.Reconfiguration != nil || len(request.ProposedManifest) != 0 {
+			return errors.New("non-reconfiguration plan forbids reconfiguration inputs")
+		}
+	} else {
+		if request.Reconfiguration == nil || len(request.ProposedManifest) == 0 {
+			return errors.New("reconfiguration plan requires the sealed reconfiguration and proposed manifest")
+		}
+		_, digest, err := canonicalSourceConfig(*request.Reconfiguration, "reconfiguration")
+		if err != nil || digest != plan.ReconfigurationSHA256 || !reflect.DeepEqual(*request.Reconfiguration, *plan.Reconfiguration) {
+			return errors.New("reconfiguration changed after Check")
+		}
+		if hashBytes(request.ProposedManifest) != plan.ProposedManifestSHA256 || !bytes.Equal(request.ProposedManifest, plan.ProposedManifest) {
+			return errors.New("proposed manifest changed after Check")
+		}
+	}
 	if plan.Registration == nil {
 		if request.Registration != nil {
 			return errors.New("synchronize plan forbids registration")
@@ -605,6 +647,59 @@ func validateRegistrationRequest(request ApplyRequest) error {
 		return errors.New("registration changed after Check")
 	}
 	return nil
+}
+
+func materializeReconfiguration(staged string, proposed SourceConfig) error {
+	name := filepath.Join(staged, "sources.json")
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	config, err := LoadConfig(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	found := false
+	for i := range config.Sources {
+		if config.Sources[i].ID == proposed.ID {
+			config.Sources[i] = proposed
+			found = true
+		}
+	}
+	if !found {
+		return errors.New("stale plan: source disappeared after Check")
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	config, err = LoadConfig(bytes.NewReader(encoded))
+	if err != nil {
+		return fmt.Errorf("staged reconfiguration conflicts with current configuration: %w", err)
+	}
+	encoded, err = canonicalConfig(config)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(name, encoded, 0o644)
+}
+
+func materializeProposedManifest(staged string, plan Plan) error {
+	if plan.Reconfiguration == nil || len(plan.ProposedManifest) == 0 || hashBytes(plan.ProposedManifest) != plan.ProposedManifestSHA256 {
+		return errors.New("sealed proposed manifest is absent or invalid")
+	}
+	packID := ""
+	for _, binding := range plan.Reconfiguration.Resources {
+		if packID == "" {
+			packID = binding.PackID
+		} else if packID != binding.PackID {
+			return errors.New("sealed reconfiguration spans multiple Packs")
+		}
+	}
+	if packID == "" {
+		return errors.New("sealed reconfiguration has no Pack")
+	}
+	return os.WriteFile(filepath.Join(staged, "packs", packID, "pack.json"), plan.ProposedManifest, 0o644)
 }
 
 func materializeRegistration(staged string, registration SourceConfig) error {

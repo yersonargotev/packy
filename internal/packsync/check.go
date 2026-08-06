@@ -81,6 +81,10 @@ func (engine Engine) Check(ctx context.Context, request CheckRequest) (Plan, err
 		if err != nil {
 			return err
 		}
+		if fresh.reconfiguration != nil {
+			manifests = cloneManifests(manifests)
+			manifests[fresh.proposedManifest.ID] = fresh.proposedManifest
+		}
 		bindings, bindingBlockers := deriveDestinations(fresh.source.Resources, manifests)
 		bundleHash, err := treeHash(filepath.Join(request.RepositoryRoot, "bundle"))
 		if err != nil {
@@ -90,7 +94,7 @@ func (engine Engine) Check(ctx context.Context, request CheckRequest) (Plan, err
 		if err != nil {
 			return fmt.Errorf("resolve repository base: %w", err)
 		}
-		plan = Plan{SchemaVersion: 1, Status: "blocked", Authoritative: fresh.lockPresent || fresh.registration != nil, SourceID: fresh.source.ID, Selector: fresh.selector, Candidate: candidate, Blockers: append([]string(nil), bindingBlockers...), Preconditions: Preconditions{BaseCommit: baseCommit, ConfigSHA256: hashBytes(fresh.originalConfigBytes), ManifestsSHA256: manifestsHash, BundleSHA256: bundleHash, SourceLockSHA256: fresh.lockSet.Digests[fresh.source.ID], LockSetSHA256: fresh.lockSet.LockSetSHA256}, LegacyEvidence: fileExists(filepath.Join(request.RepositoryRoot, "skills-lock.json")), Registration: fresh.registration, RegistrationSHA256: fresh.registrationSHA256}
+		plan = Plan{SchemaVersion: 1, Status: "blocked", Authoritative: fresh.lockPresent || fresh.registration != nil, SourceID: fresh.source.ID, Selector: fresh.selector, Candidate: candidate, Blockers: append([]string(nil), bindingBlockers...), Preconditions: Preconditions{BaseCommit: baseCommit, ConfigSHA256: hashBytes(fresh.originalConfigBytes), ManifestsSHA256: manifestsHash, BundleSHA256: bundleHash, SourceLockSHA256: fresh.lockSet.Digests[fresh.source.ID], LockSetSHA256: fresh.lockSet.LockSetSHA256}, LegacyEvidence: fileExists(filepath.Join(request.RepositoryRoot, "skills-lock.json")), Registration: fresh.registration, RegistrationSHA256: fresh.registrationSHA256, Reconfiguration: fresh.reconfiguration, ReconfigurationSHA256: fresh.reconfigurationSHA256, ProposedManifest: fresh.proposedManifestBytes, ProposedManifestSHA256: fresh.proposedManifestSHA256, PreviousBindings: append([]Binding(nil), fresh.originalSource.Resources...), PreviousManifestSHA256: fresh.currentManifestSHA256}
 		if fresh.lockPresent {
 			plan.PreviousSnapshotSHA256 = fresh.lock.Snapshot
 		}
@@ -107,8 +111,22 @@ func (engine Engine) Check(ctx context.Context, request CheckRequest) (Plan, err
 		if err := buildPlan(snapshotRoot, request.RepositoryRoot, fresh.source, bindings, manifests, fresh.lock, fresh.lockPresent, fresh.existingPacks, buildPlanCheck, &plan); err != nil {
 			return err
 		}
+		if fresh.reconfiguration != nil {
+			floor, reasons, floorErr := manifestReconfigurationFloor(fresh.currentManifestBytes, fresh.proposedManifestBytes)
+			if floorErr != nil {
+				return floorErr
+			}
+			raisePackImpact(&plan, fresh.proposedManifest.ID, fresh.proposedManifest.Version, floor, reasons...)
+		}
 		if fresh.registration != nil {
 			plan.Changes = append(plan.Changes, Change{Kind: "source-registered", Path: "bundle/sources.json", After: fresh.registrationSHA256})
+		}
+		if fresh.reconfiguration != nil {
+			_, beforeDigest, _ := canonicalSourceConfig(fresh.originalSource, "source configuration")
+			plan.Changes = append(plan.Changes,
+				Change{Kind: "source-reconfigured", Path: "bundle/sources.json", Before: beforeDigest, After: fresh.reconfigurationSHA256},
+				Change{Kind: "manifest-reconfigured", PackID: fresh.proposedManifest.ID, Path: "bundle/packs/" + fresh.proposedManifest.ID + "/pack.json", Before: fresh.currentManifestSHA256, After: fresh.proposedManifestSHA256},
+			)
 		}
 		_, proposedDigest, err := CanonicalSourceLock(plan.ProposedLock)
 		if err != nil {
@@ -143,17 +161,25 @@ func (engine Engine) Check(ctx context.Context, request CheckRequest) (Plan, err
 }
 
 type checkInputs struct {
-	configBytes         []byte
-	originalConfigBytes []byte
-	source              SourceConfig
-	selector            Selector
-	lock                Lock
-	lockBytes           []byte
-	lockPresent         bool
-	lockSet             sourceLockSet
-	registration        *SourceConfig
-	registrationSHA256  string
-	existingPacks       map[string]bool
+	configBytes            []byte
+	originalConfigBytes    []byte
+	source                 SourceConfig
+	selector               Selector
+	lock                   Lock
+	lockBytes              []byte
+	lockPresent            bool
+	lockSet                sourceLockSet
+	registration           *SourceConfig
+	registrationSHA256     string
+	reconfiguration        *SourceConfig
+	reconfigurationSHA256  string
+	originalSource         SourceConfig
+	proposedManifest       packManifest
+	proposedManifestBytes  []byte
+	proposedManifestSHA256 string
+	currentManifestSHA256  string
+	currentManifestBytes   []byte
+	existingPacks          map[string]bool
 }
 
 func readCheckInputs(ctx context.Context, request CheckRequest, allowMissing bool) (checkInputs, error) {
@@ -183,6 +209,17 @@ func readCheckInputsUnlocked(request CheckRequest, allowMissing bool) (checkInpu
 	var source SourceConfig
 	var registration *SourceConfig
 	var registrationSHA256 string
+	var reconfiguration *SourceConfig
+	var reconfigurationSHA256 string
+	var originalSource SourceConfig
+	var proposedManifest packManifest
+	var proposedManifestBytes []byte
+	var proposedManifestSHA256 string
+	var currentManifestSHA256 string
+	var currentManifestBytes []byte
+	if request.Registration != nil && request.Reconfiguration != nil {
+		return checkInputs{}, errors.New("registration and reconfiguration are mutually exclusive")
+	}
 	if request.Registration != nil {
 		if _, foundErr := selectSource(config, request.SourceID); foundErr == nil {
 			return checkInputs{}, fmt.Errorf("source %q is already configured", request.SourceID)
@@ -204,6 +241,54 @@ func readCheckInputsUnlocked(request CheckRequest, allowMissing bool) (checkInpu
 		}
 		source, err = selectSource(config, request.SourceID)
 		registration, registrationSHA256 = &normalized, digest
+	} else if request.Reconfiguration != nil {
+		originalSource, err = selectSource(config, request.SourceID)
+		if err != nil {
+			return checkInputs{}, fmt.Errorf("reconfiguration requires an existing source: %w", err)
+		}
+		normalized, digest, normalizeErr := canonicalSourceConfig(*request.Reconfiguration, "reconfiguration")
+		if normalizeErr != nil {
+			return checkInputs{}, normalizeErr
+		}
+		if normalized.ID != request.SourceID {
+			return checkInputs{}, errors.New("reconfiguration id must equal requested source id")
+		}
+		if normalized.Provider != originalSource.Provider || normalized.Repository != originalSource.Repository || normalized.Selector != originalSource.Selector {
+			return checkInputs{}, errors.New("reconfiguration must preserve provider, repository, and configured selector")
+		}
+		for i := range config.Sources {
+			if config.Sources[i].ID == request.SourceID {
+				config.Sources[i] = normalized
+			}
+		}
+		combined, marshalErr := json.Marshal(config)
+		if marshalErr != nil {
+			return checkInputs{}, marshalErr
+		}
+		config, err = LoadConfig(bytes.NewReader(combined))
+		if err != nil {
+			return checkInputs{}, fmt.Errorf("proposed source configuration: %w", err)
+		}
+		source, err = selectSource(config, request.SourceID)
+		currentManifests, _, manifestErr := loadManifests(request.RepositoryRoot)
+		if manifestErr != nil {
+			return checkInputs{}, manifestErr
+		}
+		proposedManifest, proposedManifestBytes, manifestErr = canonicalProposedManifest(request.RepositoryRoot, request.ProposedManifest, source, currentManifests)
+		if manifestErr != nil {
+			return checkInputs{}, manifestErr
+		}
+		currentBytes, readErr := os.ReadFile(filepath.Join(request.RepositoryRoot, "bundle", "packs", proposedManifest.ID, "pack.json"))
+		if readErr != nil {
+			return checkInputs{}, readErr
+		}
+		currentManifestSHA256 = hashBytes(currentBytes)
+		currentManifestBytes = currentBytes
+		if historyErr := validateCurrentHistoricalGeneration(request.RepositoryRoot, proposedManifest.ID, proposedManifest.Version, currentManifests[proposedManifest.ID], currentBytes); historyErr != nil {
+			return checkInputs{}, historyErr
+		}
+		proposedManifestSHA256 = hashBytes(proposedManifestBytes)
+		reconfiguration, reconfigurationSHA256 = &normalized, digest
 	} else {
 		source, err = selectSource(config, request.SourceID)
 	}
@@ -217,7 +302,7 @@ func readCheckInputsUnlocked(request CheckRequest, allowMissing bool) (checkInpu
 	if err := validateSelector(selector); err != nil {
 		return checkInputs{}, err
 	}
-	lockSet, err := loadSourceLockSetForTarget(filepath.Join(request.RepositoryRoot, "bundle"), config, source.ID, allowMissing || registration != nil)
+	lockSet, err := loadSourceLockSetForTarget(filepath.Join(request.RepositoryRoot, "bundle"), config, source.ID, allowMissing || registration != nil || reconfiguration != nil)
 	if err != nil {
 		return checkInputs{}, err
 	}
@@ -229,7 +314,32 @@ func readCheckInputsUnlocked(request CheckRequest, allowMissing bool) (checkInpu
 			return checkInputs{}, err
 		}
 	}
-	return checkInputs{configBytes: configBytes, originalConfigBytes: configBytes, source: source, selector: selector, lock: lock, lockBytes: lockBytes, lockPresent: lockPresent, lockSet: lockSet, registration: registration, registrationSHA256: registrationSHA256, existingPacks: existingPacks}, nil
+	return checkInputs{configBytes: configBytes, originalConfigBytes: configBytes, source: source, selector: selector, lock: lock, lockBytes: lockBytes, lockPresent: lockPresent, lockSet: lockSet, registration: registration, registrationSHA256: registrationSHA256, reconfiguration: reconfiguration, reconfigurationSHA256: reconfigurationSHA256, originalSource: originalSource, proposedManifest: proposedManifest, proposedManifestBytes: proposedManifestBytes, proposedManifestSHA256: proposedManifestSHA256, currentManifestSHA256: currentManifestSHA256, currentManifestBytes: currentManifestBytes, existingPacks: existingPacks}, nil
+}
+
+func raisePackImpact(plan *Plan, packID, currentVersion string, floor ClassificationLevel, reasons ...string) {
+	for i := range plan.AffectedPacks {
+		if plan.AffectedPacks[i].PackID == packID {
+			raiseImpact(&plan.AffectedPacks[i], floor, reasons...)
+			sort.Strings(plan.AffectedPacks[i].Reasons)
+			plan.AffectedPacks[i].Reasons = unique(plan.AffectedPacks[i].Reasons)
+			return
+		}
+	}
+	impact := PackImpact{PackID: packID, CurrentVersion: currentVersion}
+	raiseImpact(&impact, floor, reasons...)
+	sort.Strings(impact.Reasons)
+	impact.Reasons = unique(impact.Reasons)
+	plan.AffectedPacks = append(plan.AffectedPacks, impact)
+	sort.Slice(plan.AffectedPacks, func(i, j int) bool { return plan.AffectedPacks[i].PackID < plan.AffectedPacks[j].PackID })
+}
+
+func cloneManifests(source map[string]packManifest) map[string]packManifest {
+	result := make(map[string]packManifest, len(source))
+	for id, manifest := range source {
+		result[id] = manifest
+	}
+	return result
 }
 
 func sourceLockPath(repositoryRoot, sourceID string) string {
@@ -345,7 +455,7 @@ func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, binding
 		}
 		localFiles, err := inventory(filepath.Join(repositoryRoot, filepath.FromSlash(binding.VendoredPath)))
 		if err != nil {
-			if plan.Registration != nil && errors.Is(err, fs.ErrNotExist) {
+			if (plan.Registration != nil || plan.Reconfiguration != nil) && errors.Is(err, fs.ErrNotExist) {
 				localFiles = []FileEvidence{}
 			} else {
 				plan.Blockers = append(plan.Blockers, "vendored resource unavailable or unsafe: "+bindingKey(binding)+": "+err.Error())
@@ -423,7 +533,7 @@ func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, binding
 			sort.Strings(plan.AffectedPacks[i].Reasons)
 		}
 	}
-	if mode == buildPlanCheck {
+	if mode == buildPlanCheck && plan.Reconfiguration == nil {
 		plan.Blockers = append(plan.Blockers, compatibilityBlockers(repositoryRoot, snapshotRoot, source, bindings, manifests)...)
 	}
 	return nil
