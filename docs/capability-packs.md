@@ -18,9 +18,9 @@ The selectable pack catalog currently contains `addy`, `argote`, `engram`, and `
 | `engram` **2.0.0** | Memory guidance and MCP | **degraded**, but activatable: its instruction and exact user MCP binding are native; `lifecycle:engram-memory` has the optional `generic-lifecycle-unsupported` exclusion because generic lifecycle translation is unsupported. Packy does not run `engram setup claude-code`. |
 | `addy` **1.1.0** | Addy agent skills | **complete**: its manifest-v3 resources have native Claude bindings and remain selectable on Claude, Codex, and OpenCode. |
 
-In plain release notation, the current contracts are **matty 4.0.0** and
-**engram 2.0.0**. Their Claude Code behavior is described in the table above.
-The selectable Addy contract is **addy 1.1.0**.
+In plain release notation, the current contracts are **addy 1.1.0**,
+**argote 1.0.0**, **engram 2.0.0**, and **matty 4.0.0**. Their Claude Code
+behavior is described in the table above.
 
 Addy's immutable history retains its exact manifest-v2 1.0.0 contract and its
 manifest-v3 1.1.0 contract. Its sole update route is 1.0.0 to 1.1.0 for existing
