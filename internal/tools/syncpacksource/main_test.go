@@ -252,18 +252,19 @@ func TestWorkflowAcceptsOnlyEmptyEvidenceWhenNoPackIsAffected(t *testing.T) {
 func TestInspectNormalizesWorkflowEnvironmentThroughCanonicalDispatch(t *testing.T) {
 	clearPackyEnvironment(t)
 	t.Setenv("PACKY_SOURCE_ID", "source")
+	t.Setenv("PACKY_OPERATION", "synchronize")
 	t.Setenv("PACKY_SELECTOR", "commit")
 	t.Setenv("PACKY_SELECTOR_REF", strings.Repeat("a", 40))
 	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
 	t.Setenv("PACKY_REQUEST_REASON", "fixture")
-	request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationSynchronize, SourceID: "source", Selector: packsyncworkflow.SelectorCommit, SelectorRef: strings.Repeat("a", 40), ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "fixture"}
+	request := packsyncworkflow.DispatchRequest{SchemaVersion: 1, SourceID: "source", Selector: packsyncworkflow.SelectorCommit, SelectorRef: strings.Repeat("a", 40), ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "fixture"}
 	digest, err := request.Digest()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PACKY_REQUEST_DIGEST", digest)
 	got, check, err := inspectRequest(options{repositoryRoot: t.TempDir()})
-	if err != nil || got.SourceID != "source" || check.Selector == nil || check.Selector.Mode != packsync.SelectorCommit {
+	if err != nil || !reflect.DeepEqual(got, request) || check.Selector == nil || check.Selector.Mode != packsync.SelectorCommit {
 		t.Fatalf("normalized request = %#v, %#v, %v", got, check, err)
 	}
 }
