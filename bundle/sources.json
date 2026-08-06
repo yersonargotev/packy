@@ -292,6 +292,12 @@
         {
           "pack_id": "matty",
           "kind": "skill",
+          "resource_id": "claude-handoff",
+          "upstream_path": "skills/in-progress/claude-handoff"
+        },
+        {
+          "pack_id": "matty",
+          "kind": "skill",
           "resource_id": "code-review",
           "upstream_path": "skills/engineering/code-review"
         },
@@ -382,6 +388,12 @@
         {
           "pack_id": "matty",
           "kind": "skill",
+          "resource_id": "setup-ts-deep-modules",
+          "upstream_path": "skills/in-progress/setup-ts-deep-modules"
+        },
+        {
+          "pack_id": "matty",
+          "kind": "skill",
           "resource_id": "tdd",
           "upstream_path": "skills/engineering/tdd"
         },
@@ -390,6 +402,12 @@
           "kind": "skill",
           "resource_id": "teach",
           "upstream_path": "skills/productivity/teach"
+        },
+        {
+          "pack_id": "matty",
+          "kind": "skill",
+          "resource_id": "to-questionnaire",
+          "upstream_path": "skills/productivity/to-questionnaire"
         },
         {
           "pack_id": "matty",
@@ -412,14 +430,44 @@
         {
           "pack_id": "matty",
           "kind": "skill",
+          "resource_id": "wait-what",
+          "upstream_path": "skills/productivity/wait-what"
+        },
+        {
+          "pack_id": "matty",
+          "kind": "skill",
           "resource_id": "wayfinder",
           "upstream_path": "skills/engineering/wayfinder"
         },
         {
           "pack_id": "matty",
           "kind": "skill",
-          "resource_id": "writing-great-skills",
-          "upstream_path": "skills/productivity/writing-great-skills"
+          "resource_id": "wizard",
+          "upstream_path": "skills/engineering/wizard"
+        },
+        {
+          "pack_id": "matty",
+          "kind": "skill",
+          "resource_id": "writing-beats",
+          "upstream_path": "skills/in-progress/writing-beats"
+        },
+        {
+          "pack_id": "matty",
+          "kind": "skill",
+          "resource_id": "writing-for-agents",
+          "upstream_path": "skills/productivity/writing-for-agents"
+        },
+        {
+          "pack_id": "matty",
+          "kind": "skill",
+          "resource_id": "writing-fragments",
+          "upstream_path": "skills/in-progress/writing-fragments"
+        },
+        {
+          "pack_id": "matty",
+          "kind": "skill",
+          "resource_id": "writing-shape",
+          "upstream_path": "skills/in-progress/writing-shape"
         }
       ]
     },
