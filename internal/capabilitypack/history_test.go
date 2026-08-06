@@ -147,7 +147,7 @@ func containsSurface(surfaces []Surface, target Surface) bool {
 	return false
 }
 
-func TestCheckedInMattyThreeIntentStaysPinnedUntilExplicitFourUpdate(t *testing.T) {
+func TestCheckedInMattyThreeIntentStaysPinnedUntilExplicitUpdate(t *testing.T) {
 	bundleRoot := filepath.Join("..", "..", "bundle")
 	catalog, err := DiscoverForDurableIntents(bundleRoot)
 	if err != nil {
@@ -161,14 +161,15 @@ func TestCheckedInMattyThreeIntentStaysPinnedUntilExplicitFourUpdate(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Entries) != 1 || report.Entries[0].Intent.Version != "3.0.0" || !report.Entries[0].UpdateAvailable || report.Entries[0].Pack.Version != "4.0.0" {
+	if len(report.Entries) != 1 || report.Entries[0].Intent.Version != "3.0.0" || !report.Entries[0].UpdateAvailable {
 		t.Fatalf("pinned status = %#v", report)
 	}
+	availableVersion := report.Entries[0].Pack.Version
 	update, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "matty", Surface: SurfaceCodex})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if update.OldVersion() != "3.0.0" || update.Pack().Version != "4.0.0" || update.Surface() != SurfaceCodex {
+	if update.OldVersion() != "3.0.0" || update.Pack().Version != availableVersion || update.Surface() != SurfaceCodex {
 		t.Fatalf("explicit update = %#v", update.JSONReport(true))
 	}
 	if _, err := facade.PreviewUpdate(context.Background(), UpdateRequest{PackID: "matty", Surface: SurfaceClaude}); err == nil || !strings.Contains(err.Error(), "not active") {
