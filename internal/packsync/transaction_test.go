@@ -105,6 +105,121 @@ func TestApplyCommitsRegistrationConfigurationLockAndContributionAtomically(t *t
 	}
 }
 
+func TestApplyCommitsExistingSourceReconfigurationAsOneGeneration(t *testing.T) {
+	sourceRepository := repositoryRoot(t)
+	repository := t.TempDir()
+	copyTree(t, filepath.Join(sourceRepository, "bundle"), filepath.Join(repository, "bundle"))
+	initializeFixtureGit(t, repository)
+	snapshot := realSnapshot(t, sourceRepository, false)
+	copyTree(t, filepath.Join(snapshot, "skills", "productivity", "writing-great-skills"), filepath.Join(snapshot, "skills", "productivity", "writing-for-agents"))
+
+	configFile, err := os.Open(filepath.Join(repository, "bundle", "sources.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadConfig(configFile)
+	configFile.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proposed SourceConfig
+	for _, source := range config.Sources {
+		if source.ID != "mattpocock-skills" {
+			continue
+		}
+		proposed = source
+		proposed.Resources = append([]Binding(nil), source.Resources...)
+		for i := range proposed.Resources {
+			if proposed.Resources[i].ResourceID == "writing-great-skills" {
+				proposed.Resources[i].ResourceID = "writing-for-agents"
+				proposed.Resources[i].UpstreamPath = "skills/productivity/writing-for-agents"
+			}
+		}
+	}
+	if proposed.ID == "" {
+		t.Fatal("fixture source is absent")
+	}
+
+	manifestBytes := mustReadFile(t, filepath.Join(repository, "bundle", "packs", "matty", "pack.json"))
+	var manifest map[string]any
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range manifest["resources"].([]any) {
+		resource := raw.(map[string]any)
+		if resource["id"] != "writing-great-skills" {
+			continue
+		}
+		resource["id"] = "writing-for-agents"
+		resource["source"] = "skills/productivity/writing-for-agents"
+		for _, rawBinding := range resource["bindings"].([]any) {
+			binding := rawBinding.(map[string]any)
+			binding["name"] = "writing-for-agents"
+			binding["invocation"] = "writing-for-agents"
+		}
+	}
+	canonicalManifest, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalManifest = append(canonicalManifest, '\n')
+
+	locked, _, present, err := readLock(sourceLockPath(repository, "mattpocock-skills"))
+	if err != nil || !present {
+		t.Fatalf("fixture lock: present=%t err=%v", present, err)
+	}
+	provider := &fixtureSource{root: snapshot, candidate: locked.Candidate}
+	engine := Engine{Source: provider, Validate: acceptingBundleValidator()}
+	check := CheckRequest{RepositoryRoot: repository, SourceID: proposed.ID, AcquisitionDir: t.TempDir(), Reconfiguration: &proposed, ProposedManifest: canonicalManifest}
+	plan, err := engine.Check(context.Background(), check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Status != "review-required" || plan.Reconfiguration == nil || !plan.VerifySeal() || len(plan.AffectedPacks) != 1 || plan.AffectedPacks[0].MechanicalFloor != LevelMajor {
+		t.Fatalf("reconfiguration plan = %#v", plan)
+	}
+	assertChange(t, plan, "source-reconfigured")
+	assertChange(t, plan, "manifest-reconfigured")
+	assertChange(t, plan, "resource-added")
+	assertChange(t, plan, "resource-removed")
+	evidence := classificationEvidenceForPlan(t, plan, ClassifierHuman, "maintainer", LevelMajor)
+	evidence.HumanInspectionID, err = HumanInspectionID(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := ApplyRequest{CheckRequest: CheckRequest{RepositoryRoot: repository, SourceID: proposed.ID, AcquisitionDir: t.TempDir(), Reconfiguration: &proposed, ProposedManifest: plan.ProposedManifest}, Plan: plan, ClassificationEvidence: evidence}
+	result, err := engine.Apply(context.Background(), apply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "applied" || !result.Changed {
+		t.Fatalf("result = %#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(repository, "bundle", "skills", "productivity", "writing-great-skills")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("retired skill remains: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repository, "bundle", "skills", "productivity", "writing-for-agents", "SKILL.md")); err != nil {
+		t.Fatalf("replacement skill missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repository, "bundle", "history", "matty", "5.0.0", "artifact.json")); err != nil {
+		t.Fatalf("classified history missing: %v", err)
+	}
+	changedEvidence := filepath.Join(repository, "bundle", "compatibility", "matty", "4.0.0-to-5.0.0.json")
+	data, err := os.ReadFile(changedEvidence)
+	if err != nil || validateChangedSelectionEvidence(data, plan, evidence) != nil {
+		t.Fatalf("changed-selection evidence invalid: %v", err)
+	}
+	var partial map[string]any
+	if err := json.Unmarshal(data, &partial); err != nil {
+		t.Fatal(err)
+	}
+	delete(partial, "added")
+	partialData, _ := json.Marshal(partial)
+	if err := validateChangedSelectionEvidence(partialData, plan, evidence); err == nil {
+		t.Fatal("partial changed-selection evidence was accepted")
+	}
+}
+
 func acceptedCandidateFor(repository string) Candidate {
 	candidate := acceptedCandidate()
 	candidate.Repository = repository

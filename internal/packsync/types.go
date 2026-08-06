@@ -6,6 +6,7 @@ package packsync
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -215,34 +216,42 @@ type Preconditions struct {
 }
 
 type Plan struct {
-	SchemaVersion          int           `json:"schema_version"`
-	PlanID                 string        `json:"plan_id"`
-	Status                 string        `json:"status"`
-	Authoritative          bool          `json:"authoritative"`
-	SourceID               string        `json:"source_id"`
-	Selector               Selector      `json:"selector"`
-	Candidate              Candidate     `json:"candidate"`
-	Counts                 Counts        `json:"counts"`
-	Changes                []Change      `json:"changes"`
-	AffectedPacks          []PackImpact  `json:"affected_packs"`
-	Discoveries            []string      `json:"unselected_discoveries"`
-	Blockers               []string      `json:"blockers"`
-	Preconditions          Preconditions `json:"preconditions"`
-	SourceLockSHA256       string        `json:"source_lock_sha256"`
-	LockSetSHA256          string        `json:"lock_set_sha256"`
-	PreviousSnapshotSHA256 string        `json:"previous_snapshot_sha256,omitempty"`
-	ProposedLock           Lock          `json:"proposed_lock"`
-	LegacyEvidence         bool          `json:"legacy_root_lock_present"`
-	Registration           *SourceConfig `json:"registration,omitempty"`
-	RegistrationSHA256     string        `json:"registration_sha256,omitempty"`
+	SchemaVersion          int             `json:"schema_version"`
+	PlanID                 string          `json:"plan_id"`
+	Status                 string          `json:"status"`
+	Authoritative          bool            `json:"authoritative"`
+	SourceID               string          `json:"source_id"`
+	Selector               Selector        `json:"selector"`
+	Candidate              Candidate       `json:"candidate"`
+	Counts                 Counts          `json:"counts"`
+	Changes                []Change        `json:"changes"`
+	AffectedPacks          []PackImpact    `json:"affected_packs"`
+	Discoveries            []string        `json:"unselected_discoveries"`
+	Blockers               []string        `json:"blockers"`
+	Preconditions          Preconditions   `json:"preconditions"`
+	SourceLockSHA256       string          `json:"source_lock_sha256"`
+	LockSetSHA256          string          `json:"lock_set_sha256"`
+	PreviousSnapshotSHA256 string          `json:"previous_snapshot_sha256,omitempty"`
+	ProposedLock           Lock            `json:"proposed_lock"`
+	LegacyEvidence         bool            `json:"legacy_root_lock_present"`
+	Registration           *SourceConfig   `json:"registration,omitempty"`
+	RegistrationSHA256     string          `json:"registration_sha256,omitempty"`
+	Reconfiguration        *SourceConfig   `json:"reconfiguration,omitempty"`
+	ReconfigurationSHA256  string          `json:"reconfiguration_sha256,omitempty"`
+	ProposedManifest       json.RawMessage `json:"proposed_manifest,omitempty"`
+	ProposedManifestSHA256 string          `json:"proposed_manifest_sha256,omitempty"`
+	PreviousBindings       []Binding       `json:"previous_bindings,omitempty"`
+	PreviousManifestSHA256 string          `json:"previous_manifest_sha256,omitempty"`
 }
 
 type CheckRequest struct {
-	RepositoryRoot string
-	SourceID       string
-	Selector       *Selector
-	AcquisitionDir string
-	Registration   *SourceConfig
+	RepositoryRoot   string
+	SourceID         string
+	Selector         *Selector
+	AcquisitionDir   string
+	Registration     *SourceConfig
+	Reconfiguration  *SourceConfig
+	ProposedManifest json.RawMessage
 }
 
 type Engine struct {

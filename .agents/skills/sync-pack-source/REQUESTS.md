@@ -8,7 +8,7 @@ Load this reference for normalization, preflight, attachment, or dispatch.
   `yersonargotev/packy`, but read authority with `gh api` from remote `main`.
 - Require `git`, `gh`, `jq`, active authentication, read access to repository
   contents/Actions/branches/pull requests, and actual workflow-dispatch access.
-- Read `bundle/sources.json`, all three versioned dispatch schemas, and
+- Read `bundle/sources.json`, all four versioned dispatch schema suites, and
   `.github/workflows/sync-pack-source.yml` through GitHub's contents API at
   `ref=main`. Confirm the workflow is active and remote `main` resolves.
 - Download `scripts/request.sh`, `attach.sh`, `dispatch.sh`, and
@@ -56,6 +56,17 @@ source, repository, or pack has exactly one match in remote
 registration, require the named source to be absent and derive its complete
 configuration from an already reviewed, Packy-owned manifest or specification;
 ambiguity in any binding blocks before dispatch.
+
+Use schema version 2 with `operation: reconfigure` only for an explicitly
+approved complete replacement of one existing source's binding set. Carry the
+complete strict `SourceConfig` as `reconfiguration`, preserving its source ID,
+provider, repository, and configured selector. Canonicalize and seal it exactly
+like a registration in `reconfiguration_sha256`. Also carry the complete
+canonical current-version Pack manifest as `proposed_manifest` and seal its
+exact two-space-indented, trailing-LF bytes in `proposed_manifest_sha256`.
+Require exact bidirectional equality between the proposed bindings and manifest
+resources. Never infer retained bindings, change another source or Pack, or use
+reconfiguration to transfer ownership.
 
 Use schema version 3 with `operation: register_bundle` only for the initial
 atomic admission of two or more absent Pack Sources into exactly one declared,
@@ -108,7 +119,7 @@ exactly those in the matching versioned dispatch schema. Validate it against
 that checked-in schema by its canonical `$id`; do not resolve it over the
 network. Show the exact JSON before dispatch. Map `human_evidence` to the
 workflow transport input `human_evidence_json` and `registration` to
-`registration_json`; map the v3 member array to `registrations_json` and the
+`registration_json`, and `reconfiguration` to `reconfiguration_json`; map the v3 member array to `registrations_json` and the
 manifest to `proposed_manifest_json` without changing either canonical value.
 
 ## Attach or dispatch

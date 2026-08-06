@@ -13,13 +13,14 @@ on:
         required: false
         type: string
       operation:
-        description: Synchronize/register one source or atomically register a source bundle
+        description: Synchronize, register, or reconfigure one source; or atomically register a source bundle
         required: true
         type: choice
         default: synchronize
         options:
           - synchronize
           - register
+          - reconfigure
           - register_bundle
       registration_json:
         description: Register only; complete strict SourceConfig JSON
@@ -27,6 +28,14 @@ on:
         type: string
       registration_sha256:
         description: Register only; canonical SourceConfig SHA-256
+        required: false
+        type: string
+      reconfiguration_json:
+        description: Reconfigure only; complete strict replacement SourceConfig JSON
+        required: false
+        type: string
+      reconfiguration_sha256:
+        description: Reconfigure only; canonical replacement SourceConfig SHA-256
         required: false
         type: string
       registrations_json:
@@ -42,11 +51,11 @@ on:
         required: false
         type: string
       proposed_manifest_json:
-        description: Register bundle only; canonical initial Pack manifest JSON
+        description: Reconfigure or register bundle; canonical complete Pack manifest JSON
         required: false
         type: string
       proposed_manifest_sha256:
-        description: Register bundle only; canonical initial Pack manifest SHA-256
+        description: Reconfigure or register bundle; canonical complete Pack manifest SHA-256
         required: false
         type: string
       request_digest:
@@ -125,6 +134,7 @@ jobs:
           (( inputs_bytes <= 61440 )) || { echo "workflow inputs exceed the 60 KiB Packy admission bound" >&2; exit 1; }
           input_bytes() { jq -r --arg key "$1" '(.inputs[$key] // "") | if type == "string" then utf8bytelength else (tostring | utf8bytelength) end' "$GITHUB_EVENT_PATH"; }
           (( $(input_bytes registration_json) <= 16384 )) || { echo "registration_json exceeds 16 KiB" >&2; exit 1; }
+          (( $(input_bytes reconfiguration_json) <= 16384 )) || { echo "reconfiguration_json exceeds 16 KiB" >&2; exit 1; }
           (( $(input_bytes registrations_json) <= 16384 )) || { echo "registrations_json exceeds 16 KiB" >&2; exit 1; }
           (( $(input_bytes proposed_manifest_json) <= 49152 )) || { echo "proposed_manifest_json exceeds 48 KiB" >&2; exit 1; }
           (( $(input_bytes human_evidence_json) <= 16384 )) || { echo "human_evidence_json exceeds 16 KiB" >&2; exit 1; }
@@ -147,6 +157,7 @@ jobs:
             [[ "$actual" == "$expected" ]] || { echo "$key must be a JSON $expected" >&2; exit 1; }
           }
           require_json_shape registration_json object
+          require_json_shape reconfiguration_json object
           require_json_shape registrations_json array
           require_json_shape proposed_manifest_json object
           require_json_shape human_evidence_json object
@@ -157,6 +168,9 @@ jobs:
             (( member_count >= 2 && member_count <= 8 )) || { echo "register_bundle requires 2..8 members" >&2; exit 1; }
           elif [[ "$PACKY_OPERATION" == "register" ]]; then
             require_json_shape registration_json object true
+          elif [[ "$PACKY_OPERATION" == "reconfigure" ]]; then
+            require_json_shape reconfiguration_json object true
+            require_json_shape proposed_manifest_json object true
           fi
       - name: Enforce the ref, mode, and operation boundary
         env:
@@ -286,6 +300,8 @@ jobs:
           PACKY_OPERATION: ${{ inputs.operation }}
           PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}
           PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}
+          PACKY_RECONFIGURATION_JSON: ${{ inputs.reconfiguration_json }}
+          PACKY_RECONFIGURATION_SHA256: ${{ inputs.reconfiguration_sha256 }}
           PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}
           PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
           PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
