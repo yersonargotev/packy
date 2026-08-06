@@ -70,8 +70,14 @@ var acceptedCompatibilityContracts = []acceptedCompatibilityContract{
 func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceConfig, bindings []Binding, manifests map[string]packManifest) []string {
 	validated := map[string]bool{}
 	changedRoutes, blockers := checkedInChangedSelectionRoutes(repositoryRoot, source, bindings, manifests)
+	changedPacks := map[string]bool{}
 	for key := range changedRoutes {
 		validated[key] = true
+		for packID, current := range manifests {
+			if strings.HasPrefix(key, packID+"@") && strings.HasSuffix(key, "->"+current.Version) {
+				changedPacks[packID] = true
+			}
+		}
 	}
 	targetPacks := map[string]bool{}
 	for _, binding := range bindings {
@@ -79,6 +85,21 @@ func compatibilityBlockers(repositoryRoot, snapshotRoot string, source SourceCon
 	}
 	for _, contract := range acceptedCompatibilityContracts {
 		if !targetPacks[contract.PackID] {
+			continue
+		}
+		if changedPacks[contract.PackID] {
+			path := filepath.Join(repositoryRoot, "bundle", "compatibility", contract.PackID, contract.FromVersion+"-to-"+contract.ToVersion+".json")
+			data, err := os.ReadFile(path)
+			if err != nil || hashBytes(data) != contract.EvidenceSHA256 {
+				blockers = append(blockers, fmt.Sprintf("accepted compatibility evidence does not match its trusted digest for %s %s to %s", contract.PackID, contract.FromVersion, contract.ToVersion))
+				continue
+			}
+			for _, version := range []string{contract.FromVersion, contract.ToVersion} {
+				if _, err := readCompatibilityManifest(filepath.Join(repositoryRoot, "bundle", "history", contract.PackID, version, "pack.json")); err != nil {
+					blockers = append(blockers, fmt.Sprintf("accepted compatibility history is missing or invalid for %s %s", contract.PackID, version))
+				}
+			}
+			validated[compatibilityKey(contract.PackID, contract.FromVersion, contract.ToVersion)] = true
 			continue
 		}
 		current, ok := manifests[contract.PackID]
