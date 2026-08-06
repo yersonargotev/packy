@@ -81,10 +81,10 @@ func TestV1AndV2FixturesIgnoreHostileValidV3Environment(t *testing.T) {
 	t.Setenv("PACKY_SOURCE_ID", "source")
 	t.Setenv("PACKY_SELECTOR", "latest-stable")
 	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
-	t.Setenv("PACKY_REQUEST_REASON", "isolated v2 fixture")
-	v2, check, err := inspectRequest(options{repositoryRoot: repository})
-	if err != nil || v2.SchemaVersion != 2 || v2.Operation != packsyncworkflow.OperationSynchronize || check.SourceID != "source" {
-		t.Fatalf("v2 fixture routing: request=%#v check=%#v err=%v", v2, check, err)
+	t.Setenv("PACKY_REQUEST_REASON", "isolated v1 fixture")
+	v1, check, err = inspectRequest(options{repositoryRoot: repository})
+	if err != nil || v1.SchemaVersion != 1 || v1.Operation != "" || check.SourceID != "source" {
+		t.Fatalf("v1 workflow routing: request=%#v check=%#v err=%v", v1, check, err)
 	}
 }
 

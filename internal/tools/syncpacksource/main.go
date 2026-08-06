@@ -224,10 +224,11 @@ func inspectRequest(option options) (packsyncworkflow.DispatchRequest, packsync.
 	if option.requestPath == "" {
 		if os.Getenv("PACKY_SOURCE_ID") != "" {
 			operation := packsyncworkflow.DispatchOperation(os.Getenv("PACKY_OPERATION"))
-			if operation == "" {
-				operation = packsyncworkflow.OperationSynchronize
+			request := packsyncworkflow.DispatchRequest{SchemaVersion: 1, SourceID: os.Getenv("PACKY_SOURCE_ID"), Selector: packsyncworkflow.Selector(os.Getenv("PACKY_SELECTOR")), SelectorRef: os.Getenv("PACKY_SELECTOR_REF"), ClassificationMode: packsyncworkflow.ClassificationMode(os.Getenv("PACKY_CLASSIFICATION_MODE")), RequestReason: os.Getenv("PACKY_REQUEST_REASON"), RetryOfRun: os.Getenv("PACKY_RETRY_OF_RUN"), ExpectedPlanID: os.Getenv("PACKY_EXPECTED_PLAN_ID"), ExpectedBaseSHA: os.Getenv("PACKY_EXPECTED_BASE_SHA")}
+			if operation != "" && operation != packsyncworkflow.OperationSynchronize {
+				request.SchemaVersion = 2
+				request.Operation = operation
 			}
-			request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: operation, SourceID: os.Getenv("PACKY_SOURCE_ID"), Selector: packsyncworkflow.Selector(os.Getenv("PACKY_SELECTOR")), SelectorRef: os.Getenv("PACKY_SELECTOR_REF"), ClassificationMode: packsyncworkflow.ClassificationMode(os.Getenv("PACKY_CLASSIFICATION_MODE")), RequestReason: os.Getenv("PACKY_REQUEST_REASON"), RetryOfRun: os.Getenv("PACKY_RETRY_OF_RUN"), ExpectedPlanID: os.Getenv("PACKY_EXPECTED_PLAN_ID"), ExpectedBaseSHA: os.Getenv("PACKY_EXPECTED_BASE_SHA")}
 			if raw := os.Getenv("PACKY_REGISTRATION_JSON"); raw != "" {
 				var registration packsync.SourceConfig
 				decoder := json.NewDecoder(strings.NewReader(raw))
