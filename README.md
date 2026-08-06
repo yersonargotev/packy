@@ -2,7 +2,8 @@
 
 Packy is a lightweight macOS-first installer/configurator for explicit capability
 packs. It discovers packaged capabilities and projects only the packs or resource
-roots that an operator activates for Codex, OpenCode, or Claude Code.
+roots that an operator explicitly activates globally or installs in a project for
+Codex, OpenCode, or Claude Code.
 
 Packy is not a runtime orchestrator and does not copy workflow files into every project.
 
@@ -13,8 +14,9 @@ Packy does not install or upgrade Claude Code. See the canonical
 [Claude Code guide](docs/claude-code.md) for the global layout, migration,
 readiness, preservation, and no-auth/no-model boundary.
 
-Install Packy from the Homebrew tap, initialize the package-installed source,
-inspect the catalog, then preview and activate a chosen pack on a chosen surface:
+Install the Packy binary from the Homebrew tap, initialize the package-installed
+source, inspect the catalog, then preview and globally activate a chosen pack on
+a chosen surface:
 
 ```sh
 brew install yersonargotev/tap/packy
@@ -25,6 +27,20 @@ packy pack activate engram --surface codex --dry-run
 packy pack activate engram --surface codex
 packy pack status engram --surface codex
 ```
+
+Installing a capability pack in a project is separate from installing or
+upgrading the Packy binary. From inside a Git worktree, preview and apply the
+shared, version-controlled project contract:
+
+```sh
+packy pack install <pack> --surface <surface> --dry-run
+packy pack install <pack> --surface <surface>
+```
+
+Project installation does not grant personal runtime consent. When the pack has
+runtime effects, activate them separately for the current user with
+`packy pack activate <pack> --surface <surface> --project`. The detailed flow is
+in the [project capability-pack lifecycle](docs/project-pack-lifecycle.md).
 
 To activate only selected resource roots, repeat `--resource` for the roots the
 surface should receive, preview the dependency closure, and then apply the same
@@ -64,12 +80,16 @@ packy init             # initialize the package-installed source checkout
 packy doctor           # read-only core health and active-pack summary
 packy pack list        # discover available packs without activation
 packy pack show <pack>
+packy pack install <pack> --surface <surface> --dry-run
+packy pack install <pack> --surface <surface>
 packy pack activate <pack> --surface <surface> --dry-run
 packy pack activate <pack> --surface <surface>
 packy pack update <pack> --surface <surface> --dry-run
 packy pack status <pack> --surface <surface>
 packy pack deactivate <pack> --surface <surface> --dry-run
 packy pack deactivate <pack> --surface <surface>
+packy pack uninstall <pack> --surface <surface> --dry-run
+packy pack uninstall <pack> --surface <surface>
 ```
 
 ## Capability packs
@@ -124,7 +144,7 @@ If `XDG_CONFIG_HOME` is unset or relative, Packy uses `~/.config`.
 - `init`, catalog discovery, and `doctor` do not activate packs or change CLI surfaces.
 - `doctor` is read-only and separates Packy core health from active-pack readiness.
 - `--dry-run` reports planned actions without writing files or running external commands.
-- Capability-pack projections carry activation ownership; shared projections remain until their final contributor is removed.
+- Capability-pack projections carry ownership for the explicit activation or project installation that contributed them; shared projections remain until their final contributor is removed.
 - Deactivation removes only exact, unchanged projections owned by the selected activation and does not uninstall shared external executables.
 - Packy warns about `gentle-ai:*` content but does not delete or rewrite Gentle AI-managed content.
 - Tests use sandboxed `HOME` and `XDG_CONFIG_HOME`; they must not write to the operator's real home config.
