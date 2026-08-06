@@ -32,9 +32,13 @@ func TestProductionCatalogRejectsUnsupportedVersionGapBeforePlanning(t *testing.
 	}
 }
 
-func TestMattyThreeToFourUpdateRetiresOnlyExactOwnedInstructionsOnEverySurface(t *testing.T) {
+func TestMattyThreeToCurrentUpdateRetiresOnlyExactOwnedInstructionsOnEverySurface(t *testing.T) {
 	bundleRoot := filepath.Join("..", "..", "bundle")
 	catalog, err := DiscoverForDurableIntents(bundleRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := catalog.Show("matty")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,10 +66,10 @@ func TestMattyThreeToFourUpdateRetiresOnlyExactOwnedInstructionsOnEverySurface(t
 				t.Fatal(err)
 			}
 			cleanup := phaseActions(plan.phases, ConsentDestructiveCleanup)
-			if plan.OldVersion() != "3.0.0" || plan.Pack().Version != "4.0.0" || !plan.Applicable() || len(cleanup) != 2 || len(plan.PendingHumanActions()) != 0 {
+			if plan.OldVersion() != "3.0.0" || plan.Pack().Version != current.Version || !plan.Applicable() || len(cleanup) != 2 || len(plan.PendingHumanActions()) != 0 {
 				t.Fatalf("exact retirement plan = %#v", plan.JSONReport(true))
 			}
-			if len(adapter.calls) != 1 || len(adapter.calls[0].prior.Resources) != 25 || adapter.calls[0].prior.Resources[0].ID != "matty-guidance" || adapter.calls[0].desired.Version != "4.0.0" {
+			if len(adapter.calls) != 1 || len(adapter.calls[0].prior.Resources) != 25 || adapter.calls[0].prior.Resources[0].ID != "matty-guidance" || adapter.calls[0].desired.Version != current.Version {
 				t.Fatalf("adapter update transition = %#v", adapter.calls)
 			}
 
