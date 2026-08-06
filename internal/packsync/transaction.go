@@ -51,7 +51,7 @@ func (engine Engine) Apply(ctx context.Context, request ApplyRequest) (ApplyResu
 	if !request.Plan.VerifySeal() {
 		return ApplyResult{}, errors.New("sealed plan identity is invalid")
 	}
-	if err := validateOperationRequest(request); err != nil {
+	if err := validateOperationRequest(&request); err != nil {
 		return ApplyResult{}, err
 	}
 	if err := validateApplyClassification(request.Plan, request.ClassificationEvidence); err != nil {
@@ -612,7 +612,7 @@ func (engine Engine) applicablePlan(plan Plan) bool {
 	return engine.allowBootstrap && plan.Status == "blocked" && !plan.Authoritative && len(plan.Changes) == 0 && len(plan.Blockers) == 1 && strings.Contains(plan.Blockers[0], "production provenance lock is absent")
 }
 
-func validateOperationRequest(request ApplyRequest) error {
+func validateOperationRequest(request *ApplyRequest) error {
 	plan := request.Plan
 	if plan.Registration != nil && plan.Reconfiguration != nil {
 		return errors.New("sealed plan cannot combine registration and reconfiguration")
@@ -629,9 +629,17 @@ func validateOperationRequest(request ApplyRequest) error {
 		if err != nil || digest != plan.ReconfigurationSHA256 || !reflect.DeepEqual(*request.Reconfiguration, *plan.Reconfiguration) {
 			return errors.New("reconfiguration changed after Check")
 		}
-		if hashBytes(request.ProposedManifest) != plan.ProposedManifestSHA256 || !bytes.Equal(request.ProposedManifest, plan.ProposedManifest) {
+		manifests, _, err := loadManifests(request.RepositoryRoot)
+		if err != nil {
+			return err
+		}
+		_, canonicalRequest, requestErr := canonicalProposedManifest(request.RepositoryRoot, request.ProposedManifest, *request.Reconfiguration, manifests)
+		_, canonicalPlan, planErr := canonicalProposedManifest(request.RepositoryRoot, plan.ProposedManifest, *plan.Reconfiguration, manifests)
+		if requestErr != nil || planErr != nil || hashBytes(canonicalRequest) != plan.ProposedManifestSHA256 || hashBytes(canonicalPlan) != plan.ProposedManifestSHA256 || !bytes.Equal(canonicalRequest, canonicalPlan) {
 			return errors.New("proposed manifest changed after Check")
 		}
+		request.ProposedManifest = canonicalRequest
+		request.Plan.ProposedManifest = canonicalPlan
 	}
 	if plan.Registration == nil {
 		if request.Registration != nil {

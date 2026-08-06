@@ -182,12 +182,31 @@ func TestApplyCommitsExistingSourceReconfigurationAsOneGeneration(t *testing.T) 
 	assertChange(t, plan, "manifest-reconfigured")
 	assertChange(t, plan, "resource-added")
 	assertChange(t, plan, "resource-removed")
+	transportedJSON, err := plan.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var transported Plan
+	if err := json.Unmarshal(transportedJSON, &transported); err != nil {
+		t.Fatal(err)
+	}
+	plan = transported
 	evidence := classificationEvidenceForPlan(t, plan, ClassifierHuman, "maintainer", LevelMajor)
 	evidence.HumanInspectionID, err = HumanInspectionID(plan)
 	if err != nil {
 		t.Fatal(err)
 	}
-	apply := ApplyRequest{CheckRequest: CheckRequest{RepositoryRoot: repository, SourceID: proposed.ID, AcquisitionDir: t.TempDir(), Reconfiguration: &proposed, ProposedManifest: plan.ProposedManifest}, Plan: plan, ClassificationEvidence: evidence}
+	manifest["description"] = "changed after Check"
+	semanticallyChanged, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	semanticallyChanged = append(semanticallyChanged, '\n')
+	rejected := ApplyRequest{CheckRequest: CheckRequest{RepositoryRoot: repository, SourceID: proposed.ID, AcquisitionDir: t.TempDir(), Reconfiguration: &proposed, ProposedManifest: semanticallyChanged}, Plan: plan, ClassificationEvidence: evidence}
+	if _, err := engine.Apply(context.Background(), rejected); err == nil || !strings.Contains(err.Error(), "proposed manifest changed after Check") {
+		t.Fatalf("semantic manifest change = %v", err)
+	}
+	apply := ApplyRequest{CheckRequest: CheckRequest{RepositoryRoot: repository, SourceID: proposed.ID, AcquisitionDir: t.TempDir(), Reconfiguration: &proposed, ProposedManifest: canonicalManifest}, Plan: plan, ClassificationEvidence: evidence}
 	result, err := engine.Apply(context.Background(), apply)
 	if err != nil {
 		t.Fatal(err)
