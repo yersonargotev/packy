@@ -58,15 +58,21 @@ echo "==> vet"
 go vet ./...
 
 echo "==> tests"
-if [[ "$ci" == true ]]; then
-  ci_packages=()
-  while IFS= read -r package; do
+test_packages=()
+while IFS= read -r package; do
+  if [[ "$ci" == true && "$package" == github.com/yersonargotev/packy/internal/capabilitypack ]]; then
+    continue
+  fi
+  if [[ "$ci" == false ]]; then
     case "$package" in
-      github.com/yersonargotev/packy/internal/capabilitypack) ;;
-      *) ci_packages+=("$package") ;;
+      github.com/yersonargotev/packy/internal/cli | github.com/yersonargotev/packy/internal/release) continue ;;
     esac
-  done < <(go list ./...)
-  go test "${ci_packages[@]}" &
+  fi
+  test_packages+=("$package")
+done < <(go list ./...)
+
+if [[ "$ci" == true ]]; then
+  go test "${test_packages[@]}" &
   tests_pid=$!
   echo "==> race"
   go test -race ./internal/capabilitypack &
@@ -77,12 +83,5 @@ if [[ "$ci" == true ]]; then
   wait "$race_pid" || race_status=$?
   ((tests_status == 0 && race_status == 0))
 else
-  general_packages=()
-  while IFS= read -r package; do
-    case "$package" in
-      github.com/yersonargotev/packy/internal/cli | github.com/yersonargotev/packy/internal/release) ;;
-      *) general_packages+=("$package") ;;
-    esac
-  done < <(go list ./...)
-  go test "${general_packages[@]}"
+  go test "${test_packages[@]}"
 fi
