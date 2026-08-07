@@ -717,7 +717,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 			}
 		}
 	}
-	if lock.Path != "packy.lock.json" || lock.Source.PackID != pack.ID || lock.Source.PackVersion != pack.Version || lock.Source.ManifestSchema < manifestSchemaV1 || lock.Source.ManifestSchema > manifestSchemaV4 || lock.Source.SourceID == "" || lock.Source.Provider == "" || lock.Source.Repository == "" || lock.Source.Commit == "" || lock.Source.Tree == "" || !projectDigestPattern.MatchString(lock.Source.SourceLockSHA256) {
+	if lock.Path != "packy.lock.json" || lock.Source.PackID != pack.ID || lock.Source.PackVersion != pack.Version || lock.Source.ManifestSchema < manifestSchemaV1 || lock.Source.ManifestSchema > manifestSchemaV4 {
 		return errors.New("project lock source identity does not exactly match the manifest pack")
 	}
 	if (lock.Sources == nil) != (lock.Packs == nil) {
@@ -729,7 +729,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		}
 		sources := make(map[string]ProjectPackSourceIdentity, len(lock.Sources))
 		for _, source := range lock.Sources {
-			if source.PackID == "" || sources[source.PackID].PackID != "" || source.PackVersion == "" || source.SourceID == "" || source.Provider == "" || source.Repository == "" || source.Commit == "" || source.Tree == "" || !projectDigestPattern.MatchString(source.SourceLockSHA256) {
+			if source.PackID == "" || sources[source.PackID].PackID != "" || source.PackVersion == "" {
 				return errors.New("project lock contains an incomplete or duplicate admitted source")
 			}
 			sources[source.PackID] = source

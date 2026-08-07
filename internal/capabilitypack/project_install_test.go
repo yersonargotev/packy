@@ -2,7 +2,6 @@ package capabilitypack
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,7 +107,7 @@ func TestIssue455ProjectProvidersRequireAndPersistAnExplicitChoice(t *testing.T)
 		Resource{Kind: "notice", ID: "license", Requires: empty, Bindings: []Binding{}, SurfaceExclusions: []SurfaceExclusion{}, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
 	)
 	second.Resources[0].Bindings[0].Name = "root"
-	bundleRoot := writeProjectProviderSourceFixture(t, []Pack{consumer, first, second})
+	bundleRoot := writeProjectBundleFixture(t)
 	adapter := &fakeSurfaceAdapter{}
 	entries := []catalogEntry{{ID: consumer.ID, Surfaces: consumer.Surfaces}, {ID: first.ID, Surfaces: first.Surfaces}, {ID: second.ID, Surfaces: second.Surfaces}}
 	globalProvider := ActivationIntent{PackID: second.ID, Surface: SurfaceCodex, Version: second.Version, Active: true, Selection: ResourceSelection{Mode: SelectionAll}}
@@ -222,7 +221,7 @@ func TestIssue455ProjectNativeNameCollisionRequiresExplicitAlias(t *testing.T) {
 		{Kind: "skill", ID: "first", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "shared", Mode: "native", Sharing: "exclusive"}}, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
 		{Kind: "skill", ID: "second", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "shared", Mode: "native", Sharing: "exclusive"}}, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
 	}}
-	bundleRoot := writeProjectProviderSourceFixture(t, []Pack{pack})
+	bundleRoot := writeProjectBundleFixture(t)
 	facade := NewFacade(Catalog{packs: []Pack{pack}, entries: []catalogEntry{{ID: pack.ID, Surfaces: pack.Surfaces}}, bundleRoot: bundleRoot})
 	request := ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: t.TempDir(), Selection: ResourceSelection{Mode: SelectionAll}}
 	blocked, err := facade.previewProjectInstall(context.Background(), request, &fakeSurfaceAdapter{})
@@ -249,7 +248,7 @@ func TestProjectInstallLocksCodexMCPAsSensitiveDeclarativeDefinition(t *testing.
 		Bindings:             []Binding{{Surface: SurfaceCodex, Projection: "mcp_server", Name: "memory", Mode: "native", Sharing: "exclusive"}},
 		ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty,
 	}}}
-	bundleRoot := writeProjectProviderSourceFixture(t, []Pack{pack})
+	bundleRoot := writeProjectBundleFixture(t)
 	facade := NewFacade(Catalog{packs: []Pack{pack}, entries: []catalogEntry{{ID: pack.ID, Surfaces: pack.Surfaces}}, bundleRoot: bundleRoot})
 	preview, err := facade.previewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: t.TempDir(), Selection: ResourceSelection{Mode: SelectionAll}}, projectMCPAdapter{})
 	if err != nil || preview.Disposition != ProjectInstallPreviewable || len(preview.Projections) != 1 {
@@ -264,38 +263,7 @@ func TestProjectInstallLocksCodexMCPAsSensitiveDeclarativeDefinition(t *testing.
 	}
 }
 
-func writeProjectProviderSourceFixture(t *testing.T, packs []Pack) string {
+func writeProjectBundleFixture(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	type sourceResource struct {
-		PackID string `json:"pack_id"`
-	}
-	type source struct {
-		ID         string           `json:"id"`
-		Provider   string           `json:"provider"`
-		Repository string           `json:"repository"`
-		Resources  []sourceResource `json:"resources"`
-	}
-	registry := struct {
-		Sources []source `json:"sources"`
-	}{}
-	for _, pack := range packs {
-		sourceID := "source-" + pack.ID
-		registry.Sources = append(registry.Sources, source{ID: sourceID, Provider: "github", Repository: "example/" + pack.ID, Resources: []sourceResource{{PackID: pack.ID}}})
-		lock := `{"source_id":"` + sourceID + `","provider":"github","repository":"example/` + pack.ID + `","candidate":{"commit":"` + strings.Repeat("a", 40) + `","tree":"` + strings.Repeat("b", 40) + `","tag_ref_name":"refs/tags/v1.0.0"}}`
-		if err := os.MkdirAll(filepath.Join(root, "sources"), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, "sources", sourceID+".lock.json"), []byte(lock), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	data, err := json.Marshal(registry)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "sources.json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return root
+	return t.TempDir()
 }

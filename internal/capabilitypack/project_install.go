@@ -123,16 +123,9 @@ type ProjectSensitiveChange struct {
 }
 
 type ProjectPackSourceIdentity struct {
-	PackID           string `json:"pack_id"`
-	PackVersion      string `json:"pack_version"`
-	ManifestSchema   int    `json:"manifest_schema"`
-	SourceID         string `json:"source_id"`
-	Provider         string `json:"provider"`
-	Repository       string `json:"repository"`
-	Commit           string `json:"commit"`
-	Tree             string `json:"tree"`
-	Reference        string `json:"reference,omitempty"`
-	SourceLockSHA256 string `json:"source_lock_sha256"`
+	PackID         string `json:"pack_id"`
+	PackVersion    string `json:"pack_version"`
+	ManifestSchema int    `json:"manifest_schema"`
 }
 
 type ProjectNoticeContribution struct {
@@ -1401,62 +1394,8 @@ func sealProjectInstallPreview(report JSONProjectInstallPreview, surfaceObservat
 }
 
 func (c Catalog) projectPackSourceIdentity(pack Pack) (ProjectPackSourceIdentity, error) {
-	registryData, err := os.ReadFile(filepath.Join(c.bundleRoot, "sources.json"))
-	if err != nil {
-		return ProjectPackSourceIdentity{}, fmt.Errorf("read admitted Pack Source registry: %w", err)
-	}
-	var registry struct {
-		Sources []struct {
-			ID         string `json:"id"`
-			Provider   string `json:"provider"`
-			Repository string `json:"repository"`
-			Resources  []struct {
-				PackID string `json:"pack_id"`
-			} `json:"resources"`
-		} `json:"sources"`
-	}
-	if err := json.Unmarshal(registryData, &registry); err != nil {
-		return ProjectPackSourceIdentity{}, fmt.Errorf("decode admitted Pack Source registry: %w", err)
-	}
-	var matches []struct{ ID, Provider, Repository string }
-	for _, source := range registry.Sources {
-		for _, resource := range source.Resources {
-			if resource.PackID == pack.ID {
-				matches = append(matches, struct{ ID, Provider, Repository string }{source.ID, source.Provider, source.Repository})
-				break
-			}
-		}
-	}
-	if len(matches) != 1 {
-		return ProjectPackSourceIdentity{}, fmt.Errorf("pack %q does not resolve to one exact admitted Pack Source", pack.ID)
-	}
-	source := matches[0]
-	lockData, err := os.ReadFile(filepath.Join(c.bundleRoot, "sources", source.ID+".lock.json"))
-	if err != nil {
-		return ProjectPackSourceIdentity{}, fmt.Errorf("read admitted Pack Source lock %q: %w", source.ID, err)
-	}
-	var lock struct {
-		SourceID   string `json:"source_id"`
-		Provider   string `json:"provider"`
-		Repository string `json:"repository"`
-		Candidate  struct {
-			Commit     string `json:"commit"`
-			Tree       string `json:"tree"`
-			TagRefName string `json:"tag_ref_name"`
-		} `json:"candidate"`
-	}
-	if err := json.Unmarshal(lockData, &lock); err != nil {
-		return ProjectPackSourceIdentity{}, fmt.Errorf("decode admitted Pack Source lock %q: %w", source.ID, err)
-	}
-	if lock.SourceID != source.ID || lock.Provider != source.Provider || lock.Repository != source.Repository || lock.Candidate.Commit == "" || lock.Candidate.Tree == "" {
-		return ProjectPackSourceIdentity{}, fmt.Errorf("admitted Pack Source lock %q lacks an exact immutable identity", source.ID)
-	}
-	digest := sha256.Sum256(lockData)
 	return ProjectPackSourceIdentity{
 		PackID: pack.ID, PackVersion: pack.Version, ManifestSchema: pack.manifestVersion,
-		SourceID: source.ID, Provider: source.Provider, Repository: source.Repository,
-		Commit: lock.Candidate.Commit, Tree: lock.Candidate.Tree, Reference: lock.Candidate.TagRefName,
-		SourceLockSHA256: hex.EncodeToString(digest[:]),
 	}, nil
 }
 

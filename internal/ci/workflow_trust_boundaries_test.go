@@ -128,7 +128,7 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	root := repositoryRoot(t)
 	workflows := make(map[string]workflowDocument)
-	for _, name := range []string{"ci.yml", "claude-canary.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
+	for _, name := range []string{"ci.yml", "claude-canary.yml", "release.yml", "security.yml", "security-pr.yml"} {
 		workflows[name] = readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
 	}
 
@@ -149,8 +149,6 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 		job      string
 	}{
 		{workflow: "claude-canary.yml", job: "stable-smoke"},
-		{workflow: "sync-pack-source.yml", job: "inspect"},
-		{workflow: "sync-pack-source.yml", job: "publish"},
 	} {
 		block := strings.Join(workflows[boundary.workflow].jobs[boundary.job], "\n")
 		for _, marker := range []string{"github.repository == 'yersonargotev/packy'", "github.ref == 'refs/heads/main'"} {
@@ -160,18 +158,6 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 		}
 		if strings.Contains(block, "github.actor ==") {
 			t.Errorf("%s job %q replaces workflow_dispatch's Owner/delegated-write authorization with a hard-coded actor", boundary.workflow, boundary.job)
-		}
-	}
-
-	prepare := strings.Join(workflows["sync-pack-source.yml"].jobs["prepare"], "\n")
-	for _, marker := range []string{"inputs.prepare_only == true", "github.ref != 'refs/heads/main'", "contents: read", "pull-requests: read", "persist-credentials: false"} {
-		if !strings.Contains(prepare, marker) {
-			t.Errorf("sync-pack-source.yml job %q lacks read-only branch preparation boundary %q", "prepare", marker)
-		}
-	}
-	for _, forbidden := range []string{"contents: write", "pull-requests: write", "gh pr create", "gh pr edit", "gh pr ready", "git push", "gh pr comment"} {
-		if strings.Contains(prepare, forbidden) {
-			t.Errorf("sync-pack-source.yml job %q contains forbidden mutation capability %q", "prepare", forbidden)
 		}
 	}
 
@@ -331,13 +317,6 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"codeql":            {"contents": "read", "packages": "read"},
 		"dependency-review": {"contents": "read"},
 	},
-	".github/workflows/sync-pack-source.yml": {
-		"admit":    {"contents": "read"},
-		"inspect":  {"contents": "read"},
-		"classify": {"contents": "read", "models": "read"},
-		"prepare":  {"contents": "read", "pull-requests": "read"},
-		"publish":  {"contents": "write", "issues": "read", "pull-requests": "write"},
-	},
 }
 
 func assertCheckoutCredentials(t errorReporter, workflow workflowDocument) {
@@ -361,11 +340,10 @@ func assertCheckoutCredentials(t errorReporter, workflow workflowDocument) {
 	}
 }
 
-// These are the only checkouts admitted to retain a credential: synchronization
-// publishes its owned proposal branch, and release publishes the proved formula
-// to the dedicated Homebrew tap. Every new exception requires review here.
+// This is the only checkout admitted to retain a credential: release publishes
+// the proved formula to the dedicated Homebrew tap. Every new exception requires
+// review here.
 var admittedWriteCheckouts = map[string]string{
-	".github/workflows/sync-pack-source.yml|publish|":                   "publish only the canonical automation-owned proposal branch and matching pull request",
 	".github/workflows/release.yml|homebrew|yersonargotev/homebrew-tap": "publish only the proved formula to the dedicated Homebrew tap",
 }
 
@@ -478,10 +456,6 @@ var trustedExecutionMarkers = map[string][]string{
 	".github/workflows/security-pr.yml|codeql": {
 		"upload: false",
 		"persist-credentials: false",
-	},
-	".github/workflows/sync-pack-source.yml|publish": {
-		"github.repository == 'yersonargotev/packy'",
-		"refs/heads/main",
 	},
 }
 

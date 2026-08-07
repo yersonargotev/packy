@@ -78,18 +78,11 @@
     },
     "source": {
       "type": "object",
-      "required": ["pack_id", "pack_version", "manifest_schema", "source_id", "provider", "repository", "commit", "tree", "source_lock_sha256"],
+      "required": ["pack_id", "pack_version", "manifest_schema"],
       "properties": {
         "pack_id": { "type": "string", "minLength": 1 },
         "pack_version": { "type": "string", "minLength": 1 },
-        "manifest_schema": { "type": "integer", "minimum": 1 },
-        "source_id": { "type": "string", "minLength": 1 },
-        "provider": { "type": "string", "minLength": 1 },
-        "repository": { "type": "string", "minLength": 1 },
-        "commit": { "type": "string", "minLength": 1 },
-        "tree": { "type": "string", "minLength": 1 },
-        "reference": { "type": "string" },
-        "source_lock_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        "manifest_schema": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },

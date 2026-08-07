@@ -1,12 +1,8 @@
 package claudecode
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"context"
-	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,32 +107,19 @@ func TestAddyCommandStrictTOMLAndDependencies(t *testing.T) {
 	}
 }
 
-func TestAddyCommandStrictDecoderAcceptsExactUpstreamCommandBytes(t *testing.T) {
-	archive, err := os.Open(filepath.Join("..", "addyacceptance", "testdata", "addy-0.6.4.tar.gz"))
+func TestAddyCommandStrictDecoderAcceptsReviewedCommandBytes(t *testing.T) {
+	commands := filepath.Join("..", "..", "bundle", "commands")
+	entries, err := os.ReadDir(commands)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer archive.Close()
-	compressed, err := gzip.NewReader(archive)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer compressed.Close()
-	reader := tar.NewReader(compressed)
 	count := 0
-	for {
-		header, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		path := filepath.ToSlash(header.Name)
-		if strings.Contains(path, "/.gemini/") || !strings.Contains(path, "/commands/") || filepath.Ext(path) != ".toml" {
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".toml" {
 			continue
 		}
-		content, err := io.ReadAll(reader)
+		path := filepath.Join(commands, entry.Name())
+		content, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}

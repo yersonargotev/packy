@@ -96,20 +96,6 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 	return pack, nil
 }
 
-func readCurrentManifestMarker(path string) (*bool, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read Pack manifest %s: %w", path, err)
-	}
-	var marker struct {
-		Selectable *bool `json:"selectable"`
-	}
-	if err := json.Unmarshal(data, &marker); err != nil {
-		return nil, fmt.Errorf("decode Pack manifest %s: %w", path, err)
-	}
-	return marker.Selectable, nil
-}
-
 func validateCurrentPack(pack Pack) error {
 	if !idPattern.MatchString(pack.ID) {
 		return fmt.Errorf("Pack %q field id must be lowercase kebab-case", pack.ID)

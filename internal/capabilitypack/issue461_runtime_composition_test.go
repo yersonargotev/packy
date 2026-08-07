@@ -53,7 +53,7 @@ func (issue461ProjectAdapter) ApplyProjections(_ context.Context, actions []Proj
 func TestIssue461ExactGlobalRuntimeEffectsCoverProjectWithoutPersonalReceipts(t *testing.T) {
 	ctx := context.Background()
 	pack := issue461RuntimePack()
-	bundleRoot := writeProjectProviderSourceFixture(t, []Pack{pack})
+	bundleRoot := writeProjectBundleFixture(t)
 	manifest := `{
   "schema_version": 4,
   "id": "runtime-pack",
@@ -319,7 +319,7 @@ func issue461InstalledRuntimeProject(t *testing.T) (context.Context, Catalog, Su
 	t.Helper()
 	ctx := context.Background()
 	pack := issue461RuntimePack()
-	bundleRoot := writeProjectProviderSourceFixture(t, []Pack{pack})
+	bundleRoot := writeProjectBundleFixture(t)
 	catalog := Catalog{packs: []Pack{pack}, entries: []catalogEntry{{ID: pack.ID, Surfaces: pack.Surfaces}}, bundleRoot: bundleRoot, allowSyntheticHistory: true}
 	project := t.TempDir()
 	packyHome := filepath.Join(t.TempDir(), ".packy")

@@ -416,13 +416,6 @@ func discoverCurrentCatalogUnlocked(bundleRoot string, validateSources bool) (Ca
 			return Catalog{}, fmt.Errorf("unexpected Pack catalog entry %q", entry.Name())
 		}
 		path := filepath.Join(bundleRoot, "packs", entry.Name(), "pack.json")
-		marker, err := readCurrentManifestMarker(path)
-		if err != nil {
-			return Catalog{}, err
-		}
-		if marker == nil && entry.Name() == "vercel" {
-			continue
-		}
 		pack, err := LoadCurrentManifest(path, bundleRoot, validateSources)
 		if err != nil {
 			return Catalog{}, err

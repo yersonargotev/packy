@@ -73,7 +73,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatalf("decode lock: %v\n%s", err, lockData)
 	}
-	if lock.SchemaVersion != 3 || lock.MinimumPackyCapability != "project-activation-v1" || lock.Source.SourceID != "mattpocock-skills" || len(lock.ResourceGraph.Resources) != resources || len(lock.Projections) != resources+1 || lock.Sensitive == nil {
+	if lock.SchemaVersion != 3 || lock.MinimumPackyCapability != "project-activation-v1" || lock.Source.PackID != "matty" || len(lock.ResourceGraph.Resources) != resources || len(lock.Projections) != resources+1 || lock.Sensitive == nil {
 		t.Fatalf("lock = %#v", lock)
 	}
 
@@ -81,7 +81,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(notices), "foreign notice preamble") || !strings.Contains(string(notices), "Packy project notices") || !strings.Contains(string(notices), "mattpocock/skills") || !strings.Contains(string(notices), "foreign notice epilogue") {
+	if !strings.Contains(string(notices), "foreign notice preamble") || !strings.Contains(string(notices), "Packy project notices") || !strings.Contains(string(notices), "Reviewed Pack content is authoritative") || !strings.Contains(string(notices), "foreign notice epilogue") {
 		t.Fatalf("notices = %q", notices)
 	}
 	if info, err := os.Stat(noticesPath); err != nil || info.Mode().Perm() != 0o640 {

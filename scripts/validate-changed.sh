@@ -9,7 +9,6 @@ cd "$root"
 # inferred into the trusted set merely because a directory happens to exist.
 readonly packages=(
   ./cmd/packy
-  ./internal/addyacceptance
   ./internal/bootstrap
   ./internal/bundletransaction
   ./internal/capabilitypack
@@ -17,27 +16,14 @@ readonly packages=(
   ./internal/cli
   ./internal/claudesmoke
   ./internal/codex
-  ./internal/codexsmoke
   ./internal/engrambin
   ./internal/localprojection
   ./internal/opencode
-  ./internal/opencodesmoke
-  ./internal/packclassification
-  ./internal/packsync
-  ./internal/packsync/githubsource
-  ./internal/packsyncworkflow
   ./internal/prompt
   ./internal/setuphealth
   ./internal/skillbundle
-  ./internal/tools/addypromotiongate
   ./internal/tools/claudesmoke
-  ./internal/tools/claudevercelsmoke
-  ./internal/tools/codexsmoke
-  ./internal/tools/opencodesmoke
   ./internal/tools/packcontentvalidate
-  ./internal/tools/syncpacksource
-  ./internal/tools/vercelacceptance
-  ./internal/vercelacceptance
   ./internal/version
   ./internal/workstation
 )
