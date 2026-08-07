@@ -14,13 +14,13 @@ func TestIssue422OperatorPathsTeachInitializationThenExplicitActivation(t *testi
 			"packy init",
 			"packy pack activate engram --surface codex --dry-run",
 			"packy pack activate engram --surface codex",
-			"To activate only selected resource roots",
+			"Repeat `--resource` to select specific resource roots",
 			"--resource <kind>:<id>",
-			"discovery is not activation on that surface",
+			"Inspection and `--dry-run` do not mutate Pack state or CLI surfaces",
 		},
 		"docs/product/packy-v0.md": {
-			"Initialization leaves every Codex/OpenCode/Claude Code surface unchanged.",
-			"it does not create activation intent for those surfaces",
+			"`packy init`, catalog inspection, `doctor`, and `--dry-run` do not change a CLI surface.",
+			"Every mutation names one Pack and uses a fresh preview.",
 		},
 		"docs/release-notes/next.md": {
 			"packy init",

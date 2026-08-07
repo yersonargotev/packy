@@ -11,8 +11,8 @@ cleanup.
 
 ## Source contracts
 
-- `docs/adr/0023-use-conventional-issue-delivery.md` owns the architectural
-  decision to use one conventional issue workflow.
+- `docs/adr/0031-simplify-packy-around-reviewed-packs.md` owns the decision to
+  use native GitHub integration controls.
 - `docs/agents/issue-tracker.md` owns issue-tracker and authorization
   conventions.
 - Ordinary Packy CI and CodeQL are the required integration checks.

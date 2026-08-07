@@ -1,50 +1,30 @@
 # Packy roadmap
 
-Packy v0 is an installable installer/configurator for Codex, OpenCode, and
-user-global Claude Code 2.1.203+. It
-ships through GitHub Releases and Homebrew, supports package-installed use
-through `packy init`, and manages opt-in `matty` and `engram` capability packs.
+Packy `v0.2.0` establishes the current product: four reviewed Packs, installed
+Pack receipts, Codex/OpenCode/Claude Code support, proportional validation,
+native GitHub integration controls, and an immutable binary release.
+Claude Code support requires stable version **2.1.203 or newer**.
 
-## Next checkpoint
+## Current checkpoint
 
-Prepare the accumulated post-v0.1.5 behavior and architecture hardening for the
-next verified v0.x release. The release gate and package-install smoke contract
-are defined in [the release guide](release.md); the user install and upgrade
-paths remain canonical in the [README](../README.md).
+- Addy, Argote, Engram, and Matty each use one manifest at Pack version `1.0.0`.
+- Global and project lifecycles operate on independent installed Pack receipts.
+- Pack maintainers use the standard template and focused Pack validator.
+- General CI uses formatting, vet, Packy-owned tests, and focused race coverage.
+- Version tags publish four platform archives, `SHA256SUMS`, one GitHub
+  Release, and a matching Homebrew formula.
+- The sole current user adopts the generation through the
+  [manual v0.2 reset](reset-v0.2.md).
 
-No unresolved implementation frontier remains in the current tracker indexes.
-The completed work includes:
+## Future decisions
 
-- GitHub Release and Homebrew distribution with a version-aligned Installed
-  Source;
-- the opt-in capability-pack lifecycle for Codex, OpenCode, and Claude Code;
-- structured doctor and pack-status output;
-- deep internal ownership for core lifecycle, setup health, host surfaces, and
-  workstation layout.
+The following are outside the current product until a separate decision is
+accepted:
 
-## Near-term follow-ups
+- another CLI surface beyond Codex, OpenCode, and Claude Code;
+- another reviewed Pack beyond the current four;
+- a different binary distribution channel; or
+- broader platform support beyond the published Darwin and Linux artifacts.
 
-| Topic | Question to answer |
-| --- | --- |
-| Token budget | What measurement proves Packy is materially lighter than Gentle AI at session start? |
-| Review workflow | Is Matt Pocock `review`/`code-review` sufficient, or does Packy need a distinct review layer later? |
-| Engram ambiguity | What user-facing guidance is needed when Engram project detection is ambiguous? |
-| Next adapter | What evidence should be required before adding another host beyond Codex, OpenCode, and Claude Code? |
-
-## Future adapters
-
-These remain outside v0. Adding one requires an explicit product decision and
-evidence for its host-specific paths, projections, trust model, and readiness:
-
-- Antigravity.
-- GitHub Copilot CLI.
-- Gemini, Cursor, or other host CLIs.
-
-When adding adapters, keep the same boundary: Packy should configure host-specific prompts/state through narrow adapters and avoid growing the core prompt.
-
-## Historical planning source
-
-The completed maps and tickets under `.scratch/` preserve planning history; they
-are not active roadmaps or runtime documentation. Durable product behavior lives
-in the README and product docs, while accepted architecture lives in
-[`docs/adr/`](adr/).
+Current behavior belongs in the README and product guides. Current architecture
+belongs in [ADR 0031](adr/0031-simplify-packy-around-reviewed-packs.md).

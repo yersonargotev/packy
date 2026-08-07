@@ -12,14 +12,14 @@ import (
 func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 	root := repositoryRoot(t)
 	documents := map[string][]string{
-		"CONTEXT.md":                 {"### CLI surface", "### Supported CLI surface", "### Target CLI surface", "The supported CLI surfaces are Codex, OpenCode, and Claude Code;", "Antigravity and GitHub Copilot CLI remain future candidates."},
+		"CONTEXT.md":                 {"### CLI surface", "The supported surfaces are Codex", "OpenCode", "Claude Code", "Antigravity and GitHub Copilot CLI remain outside"},
 		"README.md":                  {"Claude Code", "docs/claude-code.md", claudecode.MinimumSupportedVersion},
-		"docs/claude-code.md":        {"Prerequisite", "Global projections", "Explicit activation", "Preservation", "recovery", "readiness", "cleanup", "No authentication or model calls", claudecode.MinimumSupportedVersion},
+		"docs/claude-code.md":        {"Prerequisite", "Global projections", "Explicit activation", "Preservation and cleanup", "Readiness", "No authentication or model calls", claudecode.MinimumSupportedVersion},
 		"docs/product/packy-v0.md":   {"Claude Code", claudecode.MinimumSupportedVersion},
 		"docs/roadmap.md":            {"Claude Code", claudecode.MinimumSupportedVersion},
-		"docs/capability-packs.md":   {"manifest v3", "Claude Code", "matty 4.0.0", "Matty no longer contributes instructions", "engram 2.0.0"},
-		"docs/structured-output.md":  {"schema_version: 2", "packy-core"},
-		"docs/release.md":            {"./scripts/validate-packy.sh", "Publication boundaries"},
+		"docs/capability-packs.md":   {"one `pack.json` manifest", "Claude", "`matty`", "`1.0.0`", "`engram`"},
+		"docs/structured-output.md":  {"`schema_version`", "Current-state contract"},
+		"docs/release.md":            {"./scripts/validate-packy.sh", "Publication boundaries", "newer version"},
 		"docs/release-notes/next.md": {"{{TAG}}", claudecode.MinimumSupportedVersion, "Addy", "Argote", "Engram", "Matty", "SHA256SUMS"},
 	}
 

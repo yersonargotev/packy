@@ -1,51 +1,44 @@
 # Publish a Packy release
 
-Packy uses one conventional, immutable tag-driven release flow. A version tag
-whose commit is on `main` builds and publishes the supported archives, one
-`SHA256SUMS` file, one GitHub Release, and the matching Homebrew formula.
+Packy uses one immutable, version-tag publication flow. A version tag on the
+current `main` commit builds Darwin and Linux binaries for amd64 and arm64,
+`SHA256SUMS`, one GitHub Release, and a matching Homebrew formula.
 
-Published tags, releases, assets, and formulas are never repaired in place. If
-a published release is faulty or incomplete, fix the cause on `main` and
-publish a newer version.
+If a published release is faulty, fix the cause on `main` and publish a newer version.
+Published tags and assets never change.
 
 ## User install and upgrade
 
-The [README quickstart](../README.md#quickstart) is the canonical Homebrew
-installation path. Direct-download users choose the archive matching their OS
-and architecture, verify it with `SHA256SUMS`, extract `packy` onto `PATH`, and
-then follow the same `packy init` flow.
+Homebrew users install or upgrade Packy, then prepare the packaged content:
 
-Homebrew users upgrade the binary and align the Installed Source before
-updating an active Pack:
-
-```bash
-brew upgrade packy
+```sh
+brew install yersonargotev/tap/packy
 packy init
-packy pack update engram --surface codex --dry-run
-packy pack update engram --surface codex
 ```
+
+Direct-download users choose the archive matching their OS and architecture,
+verify it with `SHA256SUMS`, extract `packy` onto `PATH`, and run `packy init`.
+
+Users moving from `v0.1.x` first follow the
+[one-time v0.2 reset](reset-v0.2.md).
 
 ## Maintainer flow
 
-1. Choose a new `vX.Y.Z` version. It must not reuse any existing tag or GitHub
-   Release.
-2. Finalize `docs/release-notes/next.md` on `main` and keep its single
+1. Choose an unused `vX.Y.Z` version.
+2. Finalize `docs/release-notes/next.md` on `main`, retaining its single
    `{{TAG}}` placeholder.
-3. Run focused checks for the changed code, then run the general local check:
+3. Run focused checks, then the general local validation:
 
-   ```bash
+   ```sh
    ./scripts/validate-packy.sh
    ```
 
 4. Create the version tag on the current `main` commit and push that tag.
-5. Wait for the Release workflow. It validates the tagged source, builds and
-   verifies the distribution, creates the GitHub Release once, updates
-   `yersonargotev/homebrew-tap`, and tests the installed Homebrew binary.
-6. Confirm that the workflow, GitHub Release, and tap all name the same version.
-
-There is no manual publication, candidate sealing, admission, recovery,
-provenance, SBOM, or attestation path. Never rerun publication to mutate an
-existing version. Correct failures after publication with a newer version.
+5. Wait for the Release workflow to build and validate the artifacts, create
+   the GitHub Release, update `yersonargotev/homebrew-tap`, and test the
+   installed Homebrew binary.
+6. Confirm that the tag, GitHub Release, checksums, formula, and installed
+   binary all name the same version.
 
 ## Artifact contract
 
@@ -59,31 +52,22 @@ packy_<tag>_linux_arm64.tar.gz
 SHA256SUMS
 ```
 
-Each archive contains one executable named `packy`. `SHA256SUMS` contains
-exactly one digest for each archive. The workflow builds this directory once
-and passes the same bytes to validation and publication.
+Each archive contains one executable named `packy`. `SHA256SUMS` contains one
+digest for each archive.
 
-`scripts/validate-release-artifacts.sh` is release-only validation. It rejects
-missing or extra artifacts, malformed or mismatched checksums, and archives
-whose contents differ from the contract. It extracts the current runner's
-archive into a temporary installation root and requires the installed binary's
-`--version` output to match the tag.
-
+`scripts/validate-release-artifacts.sh` verifies the artifact names, archive
+contents, checksums, and the installed binary's `--version` output.
 `scripts/generate-homebrew-formula.sh` generates `Formula/packy.rb` from the
-same tag and checksum manifest. After the GitHub Release and formula are
-published, the macOS package-smoke job runs `brew install --formula` and checks
-the installed binary again.
+same version and checksum manifest. The release workflow then tests the
+published Homebrew installation.
 
 ## Publication boundaries
 
-The workflow starts only on a version-tag push and verifies that the tagged
-commit is the current `main` commit. Read-only preparation has `contents: read`; GitHub
-publication alone has `contents: write`; the tap credential is available only
-to the protected `homebrew` job. External actions are pinned to immutable
-commits.
+The workflow starts only on a version-tag push and requires that the tagged
+commit is the current `main` commit. Read-only build steps have `contents:
+read`; GitHub publication alone has `contents: write`; the tap credential is
+available only to the protected Homebrew job. External actions are pinned to
+immutable commits.
 
-`gh release create` is invoked once without asset clobbering. The workflow has
-no path to edit, delete, recreate, resume, or recover a release. The Homebrew
-job publishes only `Formula/packy.rb`, and the final package smoke is downstream
-of both publication steps. Publication reads the GitHub assets and tap formula
-back from their providers and requires them to match the validated bytes.
+The workflow creates each version once. The final package smoke runs only after
+the GitHub Release and Homebrew formula are published and verified.
