@@ -165,7 +165,11 @@ jobs:
       - name: Install formula and verify installed binary
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          HOME: ${{ runner.temp }}/home
+          XDG_CONFIG_HOME: ${{ runner.temp }}/xdg
+          HOMEBREW_CACHE: ${{ runner.temp }}/homebrew-cache
         run: |
           set -euo pipefail
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HOMEBREW_CACHE"
           brew install --formula bundle/release-metadata/packy.rb
           [[ "$(packy --version)" == "packy version $RELEASE_TAG" ]]

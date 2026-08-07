@@ -25,6 +25,8 @@ func TestReleaseWorkflowUsesConventionalImmutableTagPublication(t *testing.T) {
 		"SHA256SUMS",
 		"brew install --formula",
 		`"packy version $RELEASE_TAG"`,
+		"HOME: ${{ runner.temp }}/home",
+		"XDG_CONFIG_HOME: ${{ runner.temp }}/xdg",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Errorf("release workflow is missing %q", required)
