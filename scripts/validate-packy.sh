@@ -59,9 +59,16 @@ go vet ./...
 
 echo "==> tests"
 if [[ "$ci" == true ]]; then
-  go test ./...
+  go test ./... &
+  tests_pid=$!
   echo "==> race"
-  go test -race ./internal/capabilitypack
+  go test -race ./internal/capabilitypack &
+  race_pid=$!
+  tests_status=0
+  race_status=0
+  wait "$tests_pid" || tests_status=$?
+  wait "$race_pid" || race_status=$?
+  ((tests_status == 0 && race_status == 0))
 else
   general_packages=()
   while IFS= read -r package; do
