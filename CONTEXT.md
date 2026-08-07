@@ -1,13 +1,14 @@
 # Context
 
+> **Transition to Packy v0.2:** This glossary defines the accepted target domain model in [specification #513](https://github.com/yersonargotev/packy/issues/513) and [ADR 0031](docs/adr/0031-simplify-packy-around-reviewed-packs.md). The v0.1 implementation remains authoritative for current runtime behavior until the approved implementation tickets land.
+
 ## Glossary
 
 ### Packy
-A lightweight AI workflow toolkit inspired by Gentle AI, but intentionally centred on Matt Pocock-style skills, Engram memory, and explicit subagent delegation instead of SDD-first orchestration.
+A command-line installer and configurator that manages capability packs for Claude Code, Codex, and OpenCode. Repository governance, upstream synchronization automation, and release publication are supporting development concerns rather than Packy product capabilities.
 
 ### Packy core
-The always-available installer/configurator that manages capability packs and their lifecycle. Packy core is distinct from the optional `matty` capability pack, so deactivating that pack never disables the tool needed to manage it.
-Without explicit pack or resource activation intent or explicit project installation intent, it may mutate only Packy-owned non-surface substrate and never a CLI surface.
+The always-available CLI behavior that discovers, installs, activates, updates, inspects, and removes capability packs. It is distinct from every optional pack, so changing a pack never disables the tool needed to manage it.
 
 ### CLI surface
 An AI coding host that Packy can integrate with.
@@ -24,11 +25,18 @@ The curated set of agent skills Packy installs or exposes for a workflow. The cu
 ### Skill source
 The single resolved source from which Packy reads its skill bundle. Its origin may be an explicit operator override, the current Packy repository checkout, or the Installed Source, but every consumer uses the same selection.
 
+### Pack source reference
+Informational upstream repository and revision metadata recorded with a capability pack. The reviewed Pack content in Git is authoritative; a source reference grants no separate admission or synchronization authority.
+_Avoid_: Pack Source, provenance lock
+
 ### Installed Source
 The user-owned Packy checkout initialized for package-installed operation. It is one candidate for Skill Source selection and remains distinct from the selected Skill Source itself.
 
 ### Capability pack
 A named, composable set of AI workflow capabilities that can remain available while being activated or deactivated as a unit. A capability pack may contribute skills, memory, tools, agents, rules, or other host-supported behavior; it is not a runtime configuration profile.
+
+### Capability pack manifest
+The single current data contract that owns a Pack's identity, version, description, selectability, surfaces, resources, bindings, intra-Pack dependencies, external requirements, concrete conflicts, and exclusions. Packs neither provide nor require capabilities from other Packs; Packy has no provider resolver, legacy manifest readers, or catalog metadata encoded separately in Go.
 
 ### Personal guidance pack
 A publicly selectable capability pack that expresses one author's cross-project working preferences. Its resources remain independently selectable and may be activated globally or installed in a project.
@@ -39,16 +47,13 @@ The personal guidance pack authored by Yerson Argote. It contributes independent
 _Avoid_: Argote profile, Argote rules package
 
 ### Selectable pack catalog
-The Packy-owned set of current capability-pack versions advertised by `packy pack list` and available for fresh activation or update. Bundled or historical pack artifacts are not selectable merely because their bytes exist in the distribution.
+The Packy-owned set of current capability-pack versions advertised by `packy pack list` and available for fresh activation or update. Its clean manifest generation begins with Addy, Argote, Engram, and Matty at pack version `1.0.0`; no unpublished Pack content ships alongside it.
 
 ### Pack resource
 One host-independent intent contributed by a capability pack. A CLI-surface adapter may realize one pack resource as multiple host-specific artifacts; host-native schemas, paths, and package formats are projections rather than pack resources.
 
 ### Shared projection
 A realization of a pack resource at one standard global or project target that more than one CLI surface may discover. It remains attributable to explicit activation or installation contributors, but discovery by another surface does not activate or install the pack for that surface.
-
-### Composite Pack Source Bundle
-The complete ordered set of two or more Pack Sources admitted together as the initial provenance of one previously absent capability pack. It is one sealed transactional value, not an additional persistent source identity.
 
 ### Pack requirement
 A global prerequisite a capability pack consumes but does not contribute to a CLI surface. Packy core may detect an external tool, but acquisition requires a separately approved phase originating from explicit pack activation or update intent.
@@ -69,25 +74,28 @@ The read-only assessment of Packy core plus a summary of active-pack drift, requ
 The complete logical outcome Packy computes from the active capability packs on each CLI surface, including required shared resources and readiness, before translating that outcome into host-specific artifacts.
 
 ### Pack ownership
-Packy's recorded authority over a projected resource or config fragment. Ownership determines whether Packy may update or remove it and is distinct from the host's trust, authentication, and runtime authorization.
+Packy's recorded authority over a projected resource or config fragment. Ownership is established by an installed Pack receipt and determines whether Packy may update or remove the exact recorded content; it is distinct from the host's trust, authentication, and runtime authorization.
+
+### Owned projection drift
+The condition in which a path recorded by an installed Pack receipt no longer contains the recorded content. Ordinary update and removal stop before changing anything; an explicit destructive override may affect only paths whose ownership is established by that receipt and never grants authority over unrecorded content.
+
+### Pack projection conflict
+An attempted installation in which distinct Pack resources target the same path. It blocks the operation before any write even when the proposed bytes are identical; Packy does not select a winner or maintain shared ownership between resources.
+
+### Installed Pack receipt
+The minimal current-state record created by a successful global activation or project installation. It identifies the Pack and version, target CLI surface, projected paths, and content digests needed to update or remove only unchanged Packy-owned content. Global state and `packy.lock.json` use the same receipt model; receipts contain no upstream provenance, version history, compatibility evidence, or persisted reconciliation plan.
+
+### Independent Pack composition
+The coexistence of multiple directly selected Packs without relationships between them. Each operation installs, updates, activates, deactivates, or removes one Pack and owns one receipt; Packy performs no cross-Pack dependency resolution, provider selection, graph transaction, or implicit composition.
 
 ### External-effect receipt
 A versioned record of one exact external configuration contribution that Packy initiated and freshly verified. It grants reversal authority only while the same contribution and host surface still match; a command fingerprint, tool installation, service, data, credential, or unrelated configuration is never a receipt.
 
 ### Pack observable contract
-The complete user-visible behavior of a capability pack, including its skill content, declared resources, requirements, capabilities, and activation or update experience. A pack version describes this contract rather than its upstream source version or textual diff size.
-
-### Pack compatibility
-Whether a newer pack observable contract preserves the workflows and expectations of an active older version without an incompatible migration or newly mandatory user action.
-
-### Decision-ready synchronization proposal
-A source update whose exact identity, provenance, content changes, pack compatibility evidence, migrations, and validations are complete and unchanged, leaving human acceptance as the only remaining decision.
+The complete user-visible behavior of a capability pack, including its skill content, declared resources, external requirements, and activation or update experience. A pack version describes this contract rather than its upstream source version or textual diff size.
 
 ### Reconciliation plan
-An immutable preview of the exact ordered changes needed to move one approved pack operation from freshly observed state toward pack desired state. Its identity covers the activation intent revision, relied-on observations, actions, and human-consent phases; changed inputs require a new plan and approval.
-
-### Reconciliation attempt
-One application of an approved reconciliation plan. An attempt ends verified when its outcome matches desired state, stale when its preconditions changed before any action, or recovery-required when completed and remaining effects must be reconciled from a fresh observation.
+An in-memory preview of the exact changes needed to move one requested Pack operation from freshly observed state toward Pack desired state. It exists only for the command invocation that displays and applies it; Packy persists the resulting installed Pack receipt, not plans, attempts, or recovery history.
 
 ### Memory layer
 The Engram-backed persistence and recall behaviour Packy provides across supported CLI surfaces.
@@ -95,27 +103,17 @@ The Engram-backed persistence and recall behaviour Packy provides across support
 ### Delegation layer
 The subagent orchestration behaviour Packy exposes, including read-only exploration and bounded implementation workers where the host CLI supports them.
 
-### Governance expected-state contract
-The versioned, reviewable description of Packy's accepted repository and
-publication controls and the promotion or publication boundaries they protect.
-
-### Governance observation
-One read-only, sanitized projection of the effective controls bound to a
-repository, protected ref, commit, workflow definition, and UTC collection
-time.
-
-### Governance drift
-A confirmed, unclassifiable, missing, failed, or stale disagreement between the
-governance expected-state contract and a governance observation.
-
 ### Issue delivery
-The protected pull-request path for Packy changes. An approved issue provides
-the change authority; required CI, traceable Standards and Spec review, and
-resolved conversations protect integration. Release publication retains its
-separate workflow and authority.
+The ordinary pull-request path for Packy changes. Issues organize work; native GitHub branch protection, required CI, review, and human merge protect integration without a Packy-owned authorization system.
+
+### Packy release
+An immutable Packy distribution published from one version tag. A faulty published release is corrected by a newer version rather than mutation or recovery.
+
+### Pack authoring workflow
+The repository workflow for creating or changing one Pack: copy the standard Pack directory template when needed, add or edit reviewed resources, update the single manifest and maintainer-selected SemVer, then run the focused validator for that Pack. It performs no upstream import, synchronization, classification, compatibility analysis, or version-history archival.
 
 ### Installer/configurator
-Packy's v0 product shape: a tool that installs and configures Codex/OpenCode with the right skills, Engram memory hooks, and delegation conventions, rather than an active runtime orchestrator present in every agent session.
+Packy's product shape: a tool that configures supported CLI surfaces with selected capability-pack behavior rather than an active runtime orchestrator present in every agent session.
 
 ### Golden path
 Packy v0's primary success path: given an existing repository, configure Codex and OpenCode with Matt Pocock-style skills, Engram memory, and delegation conventions while keeping the initial prompt minimal.
@@ -136,10 +134,10 @@ The root of the nearest Git worktree that identifies one project's activation sc
 A version-controlled declaration and materialization of a capability pack's complete selected resource closure within one project. It makes the project's expected capabilities reproducible for collaborators but does not transfer personal trust, credentials, or runtime consent.
 
 ### Project pack manifest
-The human-reviewable `packy.json` at the project root that declares the project's direct pack, surface, and resource intent. It is distinct from generated resolution and personal lifecycle state.
+The human-reviewable `packy.json` at the project root that declares the project's direct Packs, surfaces, and resource intent. Multiple Packs remain independent entries; the manifest is distinct from generated receipts and personal lifecycle state.
 
 ### Project pack lock
-The Packy-generated `packy.lock.json` at the project root that fixes the exact resolved pack closure and its project projections. It is committed with the project pack manifest and is not a hand-edited customization surface.
+The Packy-generated `packy.lock.json` at the project root that records the exact current Pack version, selected resource closure, project projections, and content digests. It is committed with the project pack manifest, uses the installed Pack receipt model, and contains no provider resolution, upstream source authority, compatibility evidence, or history.
 
 ### Pending project activation
 The state of a project installation whose shared resources are present but whose runtime effects still require the current user's explicit consent. It is an expected readiness state, not installation drift.
