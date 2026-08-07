@@ -518,7 +518,7 @@ This is an impact guide, not permission to move ownership between modules.
   consent, tri-state status, failure, update, recovery, and readiness gates.
 - `bundle/packs/addy/**` and `bundle/history/addy/**`: produced only by the
   admitted synchronization result, never by an installer or ad hoc copy.
-- `scripts/validate-packy.sh` and `internal/ci`: repository validation authority,
+- `scripts/validate-packy.sh` and `internal/ci`: the then-current validation
   suite structure, inertness, and acceptance orchestration.
 
 ## Decision-closure audit

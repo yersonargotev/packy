@@ -59,10 +59,6 @@ Accepted architecture continues to govern ownership:
 - [ADR 0014](../adr/0014-build-once-release-publication.md): release
   publication reuses one retained candidate and separates GitHub/Homebrew
   authority.
-- [ADR 0015](../adr/0015-detect-governance-drift-without-repair-authority.md):
-  fresh governance observation may block promotion or publication but cannot
-  repair external state.
-
 No new ADR is required. This promotion extends accepted seams. If
 implementation discovers a contradiction, it must stop for an explicit
 architecture decision rather than introduce a generic host framework, a

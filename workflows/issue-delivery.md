@@ -15,7 +15,7 @@ cleanup.
   decision to use one conventional issue workflow.
 - `docs/agents/issue-tracker.md` owns issue-tracker and authorization
   conventions.
-- `scripts/validate-packy.sh` is the repository validation authority.
+- Ordinary Packy CI and CodeQL are the required integration checks.
 - Release publication remains outside this workflow and follows
   `workflows/packy-release.md`.
 
@@ -148,8 +148,9 @@ continuing. Small, well-bounded deltas may proceed with focused proof alone.
 
 After every acceptance criterion has implementation and focused proof, every
 applicable tracer result is valid for the stable exact HEAD, and every required
-proportional local review is clean, run `./scripts/validate-packy.sh` once with
-sandboxed `HOME` and `XDG_CONFIG_HOME` on that HEAD.
+proportional local review is clean, run the applicable focused checks. Use
+`./scripts/validate-packy.sh` for cross-cutting changes. Keep `HOME` and
+`XDG_CONFIG_HOME` sandboxed for checks that resolve or write user paths.
 
 When the issue changes no CLI behavior, still build the binary and run its
 `version` command as a sanity check, then manually verify the actual changed

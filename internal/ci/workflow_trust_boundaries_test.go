@@ -102,7 +102,6 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 		{name: "persisted pull request credential", workflow: "ci.yml", mutate: func(text string) string {
 			return strings.Replace(text, "persist-credentials: false", "persist-credentials: true", 1)
 		}, check: assertCheckoutCredentials},
-		{name: "pull request head execution", workflow: "governance.yml", mutate: func(text string) string { return text + "\n# ref: ${{ github.event.pull_request.head.sha }}\n" }, check: assertPullRequestTargetDoesNotExecutePRHead},
 		{name: "manual branch privilege", workflow: "claude-canary.yml", mutate: func(text string) string {
 			return strings.Replace(text, "github.ref == 'refs/heads/main'", "github.ref != ''", 1)
 		}, check: assertTrustedPrivilegedExecution},
@@ -129,7 +128,7 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	root := repositoryRoot(t)
 	workflows := make(map[string]workflowDocument)
-	for _, name := range []string{"ci.yml", "claude-canary.yml", "governance.yml", "governance-drift.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
+	for _, name := range []string{"ci.yml", "claude-canary.yml", "release.yml", "security.yml", "security-pr.yml", "sync-pack-source.yml"} {
 		workflows[name] = readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
 	}
 
@@ -140,9 +139,6 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	for job, lines := range ci.jobs {
 		permissions, _ := permissionBlock(lines, 4)
 		want := map[string]string{"contents": "read"}
-		if job == "vercel-acceptance-gate" {
-			want = map[string]string{"actions": "read", "contents": "read"}
-		}
 		if !reflect.DeepEqual(permissions, want) || strings.Contains(strings.Join(lines, "\n"), "secrets:") || strings.Contains(strings.Join(lines, "\n"), "environment:") {
 			t.Fatalf("CI job %q does not keep fork and Dependabot work read-only and secretless", job)
 		}
@@ -184,12 +180,6 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 			if strings.Contains(workflow.content, forbidden) {
 				t.Errorf("%s grants unintegrated Pages authority %q", name, forbidden)
 			}
-		}
-	}
-
-	for _, fixture := range []string{"approved.json", "dependabot-exception.json", "automation-exception.json", "unapproved.json", "wrong-base.json", "cross-repository.json", "partial-exception.json"} {
-		if _, err := os.Stat(filepath.Join(root, "internal", "governanceauth", "testdata", fixture)); err != nil {
-			t.Errorf("actor/ref negative fixture %q is missing: %v", fixture, err)
 		}
 	}
 }
@@ -323,27 +313,13 @@ func permissionBlock(lines []string, indent int) (map[string]string, string) {
 
 var minimumJobPermissions = map[string]map[string]map[string]string{
 	".github/workflows/ci.yml": {
-		"validate":                  {"contents": "read"},
-		"claude-floor-smoke":        {"contents": "read"},
-		"claude-vercel-floor-smoke": {"contents": "read"},
-		"codex-floor-smoke":         {"contents": "read"},
-		"opencode-floor-smoke":      {"contents": "read"},
-		"vercel-acceptance-gate":    {"actions": "read", "contents": "read"},
+		"validate": {"contents": "read"},
 	},
 	".github/workflows/claude-canary.yml": {
 		"stable-smoke": {"contents": "read", "issues": "write"},
 	},
-	".github/workflows/governance.yml": {
-		"targets":                {"actions": "read", "contents": "read", "issues": "read", "pull-requests": "read"},
-		"validate-authorization": {"actions": "read", "contents": "read", "issues": "read", "pull-requests": "read", "statuses": "write"},
-	},
-	".github/workflows/governance-drift.yml": {
-		"observe": {"actions": "read", "contents": "read", "deployments": "read"},
-		"report":  {"actions": "read", "contents": "read", "issues": "write"},
-	},
 	".github/workflows/release.yml": {
 		"normalize":                 {"contents": "read"},
-		"governance-drift":          {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
 		"build":                     {"actions": "read", "contents": "read"},
 		"claude-smoke":              {"contents": "read"},
 		"validate-release-evidence": {"actions": "read", "contents": "read"},
@@ -362,12 +338,11 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"dependency-review": {"contents": "read"},
 	},
 	".github/workflows/sync-pack-source.yml": {
-		"admit":            {"contents": "read"},
-		"governance-drift": {"actions": "read", "contents": "read", "deployments": "read", "issues": "read"},
-		"inspect":          {"contents": "read"},
-		"classify":         {"contents": "read", "models": "read"},
-		"prepare":          {"contents": "read", "pull-requests": "read"},
-		"publish":          {"contents": "write", "issues": "read", "pull-requests": "write"},
+		"admit":    {"contents": "read"},
+		"inspect":  {"contents": "read"},
+		"classify": {"contents": "read", "models": "read"},
+		"prepare":  {"contents": "read", "pull-requests": "read"},
+		"publish":  {"contents": "write", "issues": "read", "pull-requests": "write"},
 	},
 }
 
@@ -483,20 +458,10 @@ func assertTrustedPrivilegedExecution(t errorReporter, workflow workflowDocument
 }
 
 // Write-capable or secret-bearing jobs must name the trusted repository and a
-// protected ref boundary in their job-level gate. Governance checks out only
-// the protected base/default branch; proposed-head identity may be compared as
-// data but is never fetched or executed. Release publication consumes only the
+// protected ref boundary in their job-level gate. Release publication consumes only the
 // mode and candidate identity admitted by its read-only normalization gate.
 var trustedExecutionMarkers = map[string][]string{
 	".github/workflows/claude-canary.yml|stable-smoke": {
-		"github.repository == 'yersonargotev/packy'",
-		"refs/heads/main",
-	},
-	".github/workflows/governance.yml|validate-authorization": {
-		"github.repository == 'yersonargotev/packy'",
-		"ref: ${{ github.sha }}",
-	},
-	".github/workflows/governance-drift.yml|report": {
 		"github.repository == 'yersonargotev/packy'",
 		"refs/heads/main",
 	},

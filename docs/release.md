@@ -6,13 +6,6 @@ and direct GitHub Release installs distribute the binary only; first-run users
 must run `packy init` so the binary can clone the Packy Source of Truth into the
 default Installed Source at `~/.local/share/packy`.
 
-Release starts and finishes with the current read-only governance publication
-gate described in
-[`governance/reverification.md`](governance/reverification.md). Missing, stale,
-failed, unclassifiable, confirmed, or exact-evidence-unclassified drift stops
-before build or publication authority is used. After the release-specific
-boundaries agree, a final clean rerun is required before reporting success.
-
 ## User install path
 
 The [README quickstart](../README.md#quickstart) is the canonical user-facing
@@ -258,17 +251,12 @@ rechecked immediately before draft creation, every asset upload, OIDC issuance,
 publication, and the final tap push. Initial sealing requires the tag and
 protected-main tip to equal the retained commit; later checks require unchanged
 tag identity and the retained commit to remain in protected-main history. The
-governance gate always evaluates the freshly observed protected-main contract,
-not the historical release checkout. Mutable product publication state such as
-the latest tag and publication time is not a fixed governance baseline. The
-release boundary instead verifies the exact release as bot-authored and, once
+release boundary verifies the exact release as bot-authored and, once
 published, immutable, while retaining all sealed tag, candidate, notes,
 seven-asset, checksum, provenance, and Homebrew checks. The tap stage also reads
 remote `main` and `Formula/packy.rb` back after pushing and compares the remote
 commit and formula digest with the sealed destination plan. Final verification
-then reruns the current governance publication boundary; unexpected remaining
-drift follows canonical governance handling and does not authorize release
-mutation or repair.
+confirms the published release and tap still match the sealed candidate.
 
 After publication, the Homebrew job independently reads the release again,
 checks its version, commit, body, exact inventory, server digests, and
@@ -327,5 +315,3 @@ readiness inspection for OpenCode and Claude Code.
 - [ ] A sandboxed package install proves initialization alone has zero surface
       effects, then explicitly activates a representative pack and checks readiness.
 - [ ] Release notes retain the macOS-first support statement and Linux limitation.
-- [ ] The final live governance publication-boundary rerun is clean against
-      freshly fetched protected `main`.

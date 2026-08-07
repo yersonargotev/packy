@@ -124,8 +124,8 @@ The workflow starts with `permissions: {}`. Every external action is pinned by
 one full commit SHA. Admit rejects transport above the ADR 0019 bounds before
 checkout, acquisition, or model use. Every job has a timeout, Go dependency
 caching is enabled, and the normal critical-path timeout budget is ten minutes.
-Ordinary pull-request CI, not this operational workflow, runs the exhaustive
-`validate-packy.sh` repository suite.
+Ordinary pull-request CI, not this operational workflow, runs general Go and
+static validation.
 
 ### Inspect — `contents: read`
 
@@ -187,7 +187,7 @@ the repository and GitHub state. Only a proposal whose exact identity passes
 all gates can reach the write operation. A first PR is created as a blocked
 draft, reobserved, converted to ready, finalized with decision-ready metadata,
 and reobserved again before readiness is recorded. The operational path never
-runs the exhaustive repository suite; its final Apply owns the staged-content
+runs general repository validation; its final Apply owns the staged-content
 validation and exact sealed result-tree comparison.
 
 A normal operation performs no more than two independent Pack-content

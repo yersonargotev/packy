@@ -172,8 +172,8 @@ non-draft, auto-merge-disabled pull request awaiting human merge.
 
 Current reusable foundations include:
 
-- the sandboxed repository validation authority in
-  `scripts/validate-packy.sh` and its structural tests in `internal/ci`;
+- the then-current sandboxed validation path in `scripts/validate-packy.sh`
+  and its structural tests in `internal/ci`;
 - exact inert acquisition, inventory, sealing, Apply, and Recover in
   `internal/packsync`;
 - classification admission in `internal/packsync` and

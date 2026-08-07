@@ -173,7 +173,7 @@ func TestPromotionHarnessAggregateRequiresExactCandidate(t *testing.T) {
 	if exact.Qualified || exact.productionBound {
 		t.Fatal("synthetic evaluator was accepted in exact-candidate mode")
 	}
-	authority, err := NewProductionPromotionAuthority(ctx, harnessAcceptanceRows(), strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64))
+	authority, err := NewProductionPromotionAuthority(ctx, harnessAcceptanceRows(), strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("4", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestPromotionHarnessAggregateRequiresExactCandidate(t *testing.T) {
 	if _, err := tagReport.BuildAggregate(tagContext, facts); err == nil {
 		t.Fatal("PR production authority was reusable as tag authority")
 	}
-	tagAuthority, err := NewProductionPromotionAuthority(tagContext, harnessAcceptanceRows(), strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64))
+	tagAuthority, err := NewProductionPromotionAuthority(tagContext, harnessAcceptanceRows(), strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("4", 64))
 	if err != nil {
 		t.Fatal(err)
 	}

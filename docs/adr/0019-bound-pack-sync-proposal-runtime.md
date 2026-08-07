@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by [ADR 0031](0031-simplify-packy-around-reviewed-packs.md).
 
 ## Context
 
