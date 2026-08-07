@@ -34,6 +34,12 @@ The single `pack.json` contract for a Pack. It declares identity, version,
 description, selectability, supported surfaces, resources, bindings,
 intra-Pack dependencies, external requirements, conflicts, and exclusions.
 
+### Pack Source
+
+One upstream provenance declaration for selected Pack resources and legal
+notices. Its configuration identifies a stable release, while its lock records
+the exact selected content used to reproduce and review a bundle generation.
+
 ### Pack resource
 
 One host-independent capability contributed by a Pack. A surface adapter turns

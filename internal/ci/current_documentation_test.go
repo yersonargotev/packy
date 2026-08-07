@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestV02DocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
+func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	root := repositoryRoot(t)
 
 	adrs, err := filepath.Glob(filepath.Join(root, "docs", "adr", "*.md"))
