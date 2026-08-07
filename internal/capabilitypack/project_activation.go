@@ -178,8 +178,8 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if err != nil {
 		return report, err
 	}
-	pack := installation.Manifest.Packs[0]
-	if pack.ID != request.PackID || !projectSupportsSurface(pack.Surfaces, request.Surface) {
+	pack, installed := findProjectManifestPack(installation.Manifest.Packs, request.PackID)
+	if !installed || !projectSupportsSurface(pack.Surfaces, request.Surface) {
 		return report, fmt.Errorf("capability pack %q is not installed for CLI surface %q", request.PackID, request.Surface)
 	}
 	status, err := f.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: request.ProjectRoot, PackID: request.PackID, Surface: request.Surface, PackyHome: request.PackyHome, RequireInstalled: true, Adapters: map[Surface]SurfaceAdapter{request.Surface: request.Adapter}})
@@ -189,11 +189,12 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if len(status.Packs) != 1 || !status.Packs[0].RequirementSatisfied {
 		return report, errors.New("project activation requires a healthy installed project projection")
 	}
-	document, exists, err := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.Surface)
+	document, exists, err := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.PackID, request.Surface)
 	if err != nil {
 		return report, err
 	}
-	observation, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionPresent})
+	scopedInstallation := projectInstallationForPack(installation, pack.ID)
+	observation, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent})
 	if err != nil {
 		return report, err
 	}
@@ -203,17 +204,17 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 			report.Effects = append(report.Effects, effect)
 		}
 	}
-	categories := projectActivationCategories(installation.Lock, request.Surface)
+	categories := projectActivationCategories(scopedInstallation.Lock, request.Surface)
 	report.Pack, report.Surface, report.RuntimeEffects = pack, request.Surface, status.Packs[0].RuntimeEffects
 	if status.Packs[0].Runtime == ProjectRuntimeBlocked || status.Packs[0].Runtime == ProjectRuntimeRecoveryRequired {
 		report.Categories, report.RuntimeRequired, report.Disposition = categories, len(categories) != 0, ProjectActivationBlocked
-		report.SensitiveLockIdentity = projectSensitiveLockIdentity(installation.Lock, categories)
+		report.SensitiveLockIdentity = projectSensitiveLockIdentity(scopedInstallation.Lock, categories)
 		report.Digest = sealProjectActivationPreview(report)
 		return report, nil
 	}
 	report.Categories = projectRuntimePendingCategories(categories, report.RuntimeEffects)
 	report.RuntimeRequired = len(categories) != 0
-	report.SensitiveLockIdentity = projectSensitiveLockIdentity(installation.Lock, categories)
+	report.SensitiveLockIdentity = projectSensitiveLockIdentity(scopedInstallation.Lock, categories)
 	if !report.RuntimeRequired {
 		report.Disposition, report.Digest = ProjectActivationNotRequired, sealProjectActivationPreview(report)
 		return report, nil
@@ -230,6 +231,15 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	}
 	report.Digest = sealProjectActivationPreview(report)
 	return report, nil
+}
+
+// ProjectPackRequiresActivation reports whether one installed Pack receipt
+// carries personal runtime effects for the selected surface.
+func ProjectPackRequiresActivation(lock ProjectLockProposal, packID string, surface Surface) bool {
+	if hydrated, err := hydrateProjectLock(lock); err == nil {
+		lock = hydrated
+	}
+	return len(projectActivationCategories(projectLockForPack(lock, packID), surface)) > 0
 }
 
 func (f Facade) ApproveProjectActivation(preview JSONProjectActivationPreview, category ProjectActivationCategory) ProjectActivationApproval {
@@ -294,7 +304,7 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 		receipts = append(receipts, projectActivationReceipt{Category: category.Kind, Digest: preview.Digest, Details: append([]ProjectSensitiveDisclosure(nil), category.Details...)})
 	}
 	effectReceipts := projectActivationEffectReceipts(fresh.actions)
-	if existing, exists, loadErr := loadProjectActivationDocumentForSurface(preview.packyHome, preview.projectRoot, preview.Surface); loadErr != nil {
+	if existing, exists, loadErr := loadProjectActivationDocumentForSurface(preview.packyHome, preview.projectRoot, preview.Pack.ID, preview.Surface); loadErr != nil {
 		return ProjectActivationApplyResult{}, loadErr
 	} else if exists {
 		effectReceipts = mergeProjectActivationEffectReceipts(existing.Effects, effectReceipts)
@@ -315,7 +325,8 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 		_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, state, request.Approvals, receipts, effectReceipts, "required")
 		return ProjectActivationApplyResult{}, err
 	}
-	verified, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: preview.projectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionPresent})
+	scopedInstallation := projectInstallationForPack(installation, preview.Pack.ID)
+	verified, err := inspectSurface(ctx, request.Adapter, SurfaceTransition{ProjectRoot: preview.projectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent})
 	if err != nil || !projectActivationEffectsConverged(preview.Surface, verified) {
 		_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, state, request.Approvals, receipts, effectReceipts, "required")
 		if err != nil {
@@ -486,13 +497,12 @@ func projectSensitiveLockIdentity(lock ProjectLockProposal, categories []Project
 		}
 	}
 	data, _ := json.Marshal(struct {
-		Source      ProjectPackSourceIdentity          `json:"source"`
 		Sensitive   []ProjectSensitiveDisclosure       `json:"sensitive"`
 		Bindings    []LifecycleBinding                 `json:"bindings"`
 		Modes       []OptionalMode                     `json:"modes"`
 		Projections []ProjectProjectionPlan            `json:"sensitive_projections"`
 		Categories  []ProjectActivationCategoryPreview `json:"categories"`
-	}{lock.Source, sensitive, bindings, lock.Modes, projections, categories})
+	}{sensitive, bindings, lock.Modes, projections, categories})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
@@ -592,12 +602,12 @@ func projectActivationDirectory(packyHome, projectRoot string) (string, error) {
 	return filepath.Join(packyHome, "projects", digest), nil
 }
 
-func loadProjectActivationDocumentForSurface(packyHome, projectRoot string, surface Surface) (projectActivationDocument, bool, error) {
+func loadProjectActivationDocumentForSurface(packyHome, projectRoot, packID string, surface Surface) (projectActivationDocument, bool, error) {
 	directory, err := projectActivationDirectory(packyHome, projectRoot)
 	if err != nil {
 		return projectActivationDocument{}, false, err
 	}
-	data, err := os.ReadFile(filepath.Join(directory, projectActivationStateFile(surface)))
+	data, err := os.ReadFile(filepath.Join(directory, projectActivationStateFile(packID, surface)))
 	if errors.Is(err, fs.ErrNotExist) {
 		return projectActivationDocument{}, false, nil
 	}
@@ -677,14 +687,11 @@ func saveProjectActivationRecords(packyHome, projectRoot string, state projectAc
 	if err != nil {
 		return err
 	}
-	return writeProjectActivationRecord(filepath.Join(directory, projectActivationStateFile(state.Surface)), data)
+	return writeProjectActivationRecord(filepath.Join(directory, projectActivationStateFile(state.PackID, state.Surface)), data)
 }
 
-func projectActivationStateFile(surface Surface) string {
-	if surface == SurfaceCodex {
-		return "state.json"
-	}
-	return "state-" + string(surface) + ".json"
+func projectActivationStateFile(packID string, surface Surface) string {
+	return "state-" + packID + "-" + string(surface) + ".json"
 }
 
 func writeProjectActivationRecord(path string, data []byte) error {

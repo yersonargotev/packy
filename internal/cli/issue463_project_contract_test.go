@@ -53,12 +53,12 @@ func TestIssue463PublishedProjectSchemasCoverLiveContractsAndCanonicalNegatives(
 	}
 	recovery := firstJSONDocument(t, recoveryEvents)
 	seedProjectRecoveryJournal(t, filepath.Join(home, ".packy"), projectRoot)
-	updateRecovery, updateErr := executeCommand(t, NewRootCommand(opts), "pack", "update", "PACK-TOKEN-issue-463", "--project", "--version", "VERSION-TOKEN-issue-463", "--json")
+	updateRecovery, updateErr := executeCommand(t, NewRootCommand(opts), "pack", "update", "PACK-TOKEN-issue-463", "--project", "--json")
 	if updateErr == nil {
 		t.Fatalf("unknown project update unexpectedly succeeded: %s", updateRecovery)
 	}
 	firstUpdateEvent := string(firstJSONDocument(t, updateRecovery))
-	if strings.Contains(firstUpdateEvent, "TOKEN-issue-463") || !strings.Contains(firstUpdateEvent, `"next_command":"packy pack update \u003cpack\u003e --project --version \u003cversion\u003e"`) {
+	if strings.Contains(firstUpdateEvent, "TOKEN-issue-463") || !strings.Contains(firstUpdateEvent, `"next_command":"packy pack update \u003cpack\u003e --project"`) {
 		t.Fatalf("project recovery command is not safely templated: %s", firstUpdateEvent)
 	}
 

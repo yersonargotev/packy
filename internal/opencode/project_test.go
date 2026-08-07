@@ -32,7 +32,6 @@ func TestLockedProjectRuntimeKeepsOpenCodeConsentAndSecretsHostOwned(t *testing.
 	installation := capabilitypack.ProjectInstallation{
 		Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "memory", Version: "1.0.0", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}}}},
 		Lock: capabilitypack.ProjectLockProposal{
-			Source: capabilitypack.ProjectPackSourceIdentity{PackID: "memory", PackVersion: "1.0.0"},
 			Sensitive: []capabilitypack.ProjectSensitiveDisclosure{
 				{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceOpenCode, Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp_server"},
 				{Category: capabilitypack.ProjectActivationHooks, Surface: capabilitypack.SurfaceOpenCode, Resource: capabilitypack.ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "command_hook"},

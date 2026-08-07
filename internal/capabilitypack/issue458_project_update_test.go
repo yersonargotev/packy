@@ -9,8 +9,8 @@ import (
 func TestIssue458ClassifiesSensitiveVersionChangesForFreshPersonalActivation(t *testing.T) {
 	oldHook := ProjectSensitiveDisclosure{Category: ProjectActivationHooks, Surface: SurfaceCodex, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "hook:memory"}
 	newMCP := ProjectSensitiveDisclosure{Category: ProjectActivationMCP, Surface: SurfaceOpenCode, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp:memory"}
-	prior := ProjectLockProposal{Source: ProjectPackSourceIdentity{PackID: "memory", PackVersion: "1.0.0"}, Sensitive: []ProjectSensitiveDisclosure{oldHook}}
-	desired := ProjectLockProposal{Source: ProjectPackSourceIdentity{PackID: "memory", PackVersion: "2.0.0"}, Sensitive: []ProjectSensitiveDisclosure{oldHook, newMCP}}
+	prior := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "1.0.0"}}}, Sensitive: []ProjectSensitiveDisclosure{oldHook}}
+	desired := ProjectLockProposal{Receipts: []installedPackReceipt{{Pack: installedPackIdentity{ID: "memory", Version: "2.0.0"}}}, Sensitive: []ProjectSensitiveDisclosure{oldHook, newMCP}}
 
 	changes := projectSensitiveChanges(prior, desired)
 	if len(changes) != 2 || changes[0].Change != "changed" || changes[0].Resource != oldHook.Resource || changes[1].Change != "added" || changes[1].Resource != newMCP.Resource {

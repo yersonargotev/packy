@@ -161,7 +161,7 @@ func TestIssue462StaleAndRecoveryStatusProvideStableExactCommands(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	installation.Lock.Sensitive[0].Detail = "changed-project-trust"
+	installation.Lock.Receipts[0].Sensitive[0].Detail = "changed-project-trust"
 	data, err := json.MarshalIndent(installation.Lock, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +214,7 @@ func installAndActivateIssue462Project(t *testing.T) (Options, string, string, s
 	if err != nil {
 		t.Fatal(err)
 	}
-	installation.Lock.Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
+	installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
 		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "project-trust"},
 	}
 	data, err := json.MarshalIndent(installation.Lock, "", "  ")
@@ -227,7 +227,7 @@ func installAndActivateIssue462Project(t *testing.T) (Options, string, string, s
 	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--project"); err != nil {
 		t.Fatalf("activate: %v\n%s", err, out)
 	}
-	stateMatches, err := filepath.Glob(filepath.Join(home, ".packy", "projects", "*", "state.json"))
+	stateMatches, err := filepath.Glob(filepath.Join(home, ".packy", "projects", "*", "state-matty-codex.json"))
 	if err != nil || len(stateMatches) != 1 {
 		t.Fatalf("project activation state = %v, %v", stateMatches, err)
 	}

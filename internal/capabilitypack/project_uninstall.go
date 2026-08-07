@@ -79,8 +79,8 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	if err != nil {
 		return report, err
 	}
-	pack := installation.Manifest.Packs[0]
-	if pack.ID != request.PackID {
+	pack, installed := findProjectManifestPack(installation.Manifest.Packs, request.PackID)
+	if !installed {
 		return report, fmt.Errorf("capability pack %q is not declared by this project installation", request.PackID)
 	}
 	report.Pack = pack
@@ -108,13 +108,14 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	}
 	report.Projections = append([]ProjectProjectionStatus(nil), status.Packs[0].Projections...)
 	report.Blockers = append(report.Blockers, status.Packs[0].Blockers...)
+	scopedInstallation := projectInstallationForPack(installation, pack.ID)
 	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{
-		ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionAbsent,
+		ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionAbsent,
 	})
 	if err != nil {
 		return report, err
 	}
-	uninstallStatuses, err := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID)
+	uninstallStatuses, err := projectProjectionStatusesFromObservation(request.ProjectRoot, scopedInstallation.Lock, observation, surface, pack.ID)
 	if err != nil {
 		return report, err
 	}
@@ -138,19 +139,26 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 			actions = append(actions, projection.Action)
 		}
 	}
+	actions, err = coalesceProjectRemovalActions(actions)
+	if err != nil {
+		return report, err
+	}
 	if report.Scope == ProjectUninstallSurface && len(remainingSurfaces) > 0 {
 		pack = withoutProjectSurfaceIntent(pack, surface)
-		retainedLock = retainProjectSelection(retainedLock, pack.ID, pack.Selection)
-		retainedLock.Bindings = filterProjectBindings(retainedLock.Bindings, remainingSurfaces)
+		retainedLock.Receipts = removeProjectReceipt(retainedLock.Receipts, pack.ID, surface)
+		retainedLock, err = hydrateProjectLock(retainedLock)
+		if err != nil {
+			return report, err
+		}
+		retainedLock = filterProjectLockMetadataToReceipts(retainedLock)
 		report.Pack = pack
 		manifest := installation.Manifest
-		manifest.Packs[0] = pack
+		manifest.Packs = replaceProjectManifestPack(manifest.Packs, pack)
 		manifestData, marshalErr := marshalProjectManifest(manifest)
 		if marshalErr != nil {
 			return report, marshalErr
 		}
 		retainedLock.ManifestSHA256 = fingerprintProjectBytes(manifestData)
-		retainedLock.Degradations = filterProjectDegradations(retainedLock.Degradations, remainingSurfaces)
 		lockData, marshalErr := marshalProjectLock(retainedLock)
 		if marshalErr != nil {
 			return report, marshalErr
@@ -186,6 +194,41 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	}
 	manifestPath := filepath.Join(request.ProjectRoot, "packy.json")
 	lockPath := filepath.Join(request.ProjectRoot, "packy.lock.json")
+	if len(installation.Manifest.Packs) > 1 {
+		manifest := installation.Manifest
+		manifest.Packs = removeProjectManifestPack(manifest.Packs, pack.ID)
+		manifestData, marshalErr := marshalProjectManifest(manifest)
+		if marshalErr != nil {
+			return report, marshalErr
+		}
+		retainedLock, retainErr := projectLockWithoutPack(installation.Lock, pack.ID)
+		if retainErr != nil {
+			return report, retainErr
+		}
+		retainedLock.ManifestSHA256 = fingerprintProjectBytes(manifestData)
+		lockData, marshalErr := marshalProjectLock(retainedLock)
+		if marshalErr != nil {
+			return report, marshalErr
+		}
+		actions = append(actions,
+			ProjectionAction{ID: "project-contract:manifest", Kind: ActionProjectManifestFile, Target: manifestPath, Content: string(manifestData), FileMode: 0o644, Precondition: projectTargetFingerprint(manifestPath), Description: "remove one direct Pack from the project manifest"},
+			ProjectionAction{ID: "project-contract:lock", Kind: ActionProjectLockFile, Target: lockPath, Content: string(lockData), FileMode: 0o644, Precondition: projectTargetFingerprint(lockPath), Description: "publish the remaining independent Pack receipts"},
+		)
+		report.Contracts = []string{"PACKY-NOTICES.md", "packy.json", "packy.lock.json"}
+		for _, projection := range report.Projections {
+			if projection.Health != "verified" {
+				report.Blockers = append(report.Blockers, ProjectInstallBlocker{Code: "project_drift", Resource: projection.Resource, Target: projection.Target, Detail: "the installed project projection is " + projection.Health, Remediation: "restore the exact locked projection before uninstalling"})
+			}
+		}
+		report.Blockers = deduplicateProjectUninstallBlockers(report.Blockers)
+		report.Disposition = ProjectInstallPreviewable
+		if len(report.Blockers) > 0 || !status.Packs[0].RequirementSatisfied {
+			report.Disposition = ProjectInstallBlocked
+		}
+		report.actions = actions
+		report.Observation = sealProjectUninstallPreview(report)
+		return report, nil
+	}
 	actions = append(actions,
 		ProjectionAction{ID: "project-contract:manifest", Kind: ActionProjectManifestFile, Target: manifestPath, Mode: ProjectionDeleteTarget, Precondition: projectTargetFingerprint(manifestPath), Description: "remove the project pack manifest"},
 		ProjectionAction{ID: "project-contract:lock", Kind: ActionProjectLockFile, Target: lockPath, Mode: ProjectionDeleteTarget, Precondition: projectTargetFingerprint(lockPath), Description: "remove the project pack lock after all owned projections verify absent"},
@@ -205,49 +248,33 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	return report, nil
 }
 
-func retainProjectSelection(lock ProjectLockProposal, packID string, selection ResourceSelection) ProjectLockProposal {
-	if selection.Mode == SelectionAll {
-		return lock
-	}
-	facts := make(map[ResourceIdentity]ResourceClosureFact, len(lock.ResourceGraph.Resources))
-	for _, fact := range lock.ResourceGraph.Resources {
-		facts[fact.Resource] = fact
-	}
-	kept := make(map[ResourceIdentity]bool, len(selection.Roots))
-	queue := append([]ResourceIdentity(nil), selection.Roots...)
-	for len(queue) > 0 {
-		resource := queue[0]
-		queue = queue[1:]
-		if kept[resource] {
-			continue
+func removeProjectReceipt(receipts []installedPackReceipt, packID string, surface Surface) []installedPackReceipt {
+	result := make([]installedPackReceipt, 0, len(receipts)-1)
+	for _, receipt := range receipts {
+		if receipt.Pack.ID != packID || receipt.Surface != surface {
+			result = append(result, receipt)
 		}
-		kept[resource] = true
-		fact, ok := facts[resource]
-		if !ok {
-			continue
-		}
-		queue = append(queue, fact.Requires...)
-		queue = append(queue, fact.Notices...)
 	}
-	filterGraph := func(graph ResourceGraph) ResourceGraph {
-		resources := make([]ResourceClosureFact, 0, len(graph.Resources))
-		for _, fact := range graph.Resources {
-			if kept[fact.Resource] {
-				resources = append(resources, fact)
+	return result
+}
+
+func filterProjectLockMetadataToReceipts(lock ProjectLockProposal) ProjectLockProposal {
+	owns := func(resource ResourceIdentity, surface Surface) bool {
+		for _, receipt := range lock.Receipts {
+			if receipt.Surface != surface {
+				continue
+			}
+			for _, candidate := range receipt.Resources {
+				if candidate == resource {
+					return true
+				}
 			}
 		}
-		return ResourceGraph{Resources: resources}
-	}
-	lock.ResourceGraph = filterGraph(lock.ResourceGraph)
-	for i := range lock.Packs {
-		lock.Packs[i].ResourceGraph = filterGraph(lock.Packs[i].ResourceGraph)
-		if lock.Packs[i].ID == packID {
-			lock.Packs[i].Selection = cloneSelection(selection)
-		}
+		return false
 	}
 	bindings := make([]LifecycleBinding, 0, len(lock.Bindings))
 	for _, binding := range lock.Bindings {
-		if kept[ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] {
+		if owns(ResourceIdentity{Kind: binding.Kind, ID: binding.ID}, binding.Surface) {
 			bindings = append(bindings, binding)
 		}
 	}
@@ -255,12 +282,104 @@ func retainProjectSelection(lock ProjectLockProposal, packID string, selection R
 	degradations := make([]LifecycleExclusion, 0, len(lock.Degradations))
 	for _, degradation := range lock.Degradations {
 		resource, err := ParseResourceIdentity(degradation.ID)
-		if degradation.ResourceKind == "" || err != nil || kept[resource] {
+		if degradation.ResourceKind == "" || err == nil && owns(resource, degradation.Surface) {
 			degradations = append(degradations, degradation)
 		}
 	}
 	lock.Degradations = degradations
+	sensitive := make([]ProjectSensitiveDisclosure, 0, len(lock.Sensitive))
+	for _, disclosure := range lock.Sensitive {
+		keep := owns(disclosure.Resource, disclosure.Surface)
+		if disclosure.Resource.Kind == "pack" {
+			for _, receipt := range lock.Receipts {
+				keep = keep || receipt.Pack.ID == disclosure.Resource.ID && receipt.Surface == disclosure.Surface
+			}
+		}
+		if keep {
+			sensitive = append(sensitive, disclosure)
+		}
+	}
+	lock.Sensitive = sensitive
 	return lock
+}
+
+func coalesceProjectRemovalActions(actions []ProjectionAction) ([]ProjectionAction, error) {
+	result := make([]ProjectionAction, 0, len(actions))
+	groups := map[string]int{}
+	originals := map[string]string{}
+	for _, action := range actions {
+		composable := action.Kind == ActionInstructionFile || action.Kind == ActionOpenCodeInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
+		if !composable {
+			result = append(result, action)
+			continue
+		}
+		key := string(action.Surface) + "\x00" + filepath.Clean(action.Target)
+		index, grouped := groups[key]
+		if !grouped {
+			data, err := os.ReadFile(action.Target)
+			if err != nil {
+				return nil, err
+			}
+			originals[key] = string(data)
+			groups[key] = len(result)
+			result = append(result, action)
+			index = len(result) - 1
+		}
+		removed, ok := removedProjectContribution(originals[key], action.Content)
+		if !ok {
+			return nil, fmt.Errorf("project removal action %s does not describe one exact contribution", action.ID)
+		}
+		combined := strings.Replace(result[index].Content, removed, "", 1)
+		if !grouped {
+			combined = strings.Replace(originals[key], removed, "", 1)
+		}
+		result[index].Content = combined
+		result[index].Mode = ProjectionRemoveContent
+		if strings.TrimSpace(combined) == "" {
+			result[index].Content, result[index].Mode = "", ProjectionDeleteTarget
+		}
+	}
+	return result, nil
+}
+
+func removedProjectContribution(original, remaining string) (string, bool) {
+	prefix := 0
+	for prefix < len(original) && prefix < len(remaining) && original[prefix] == remaining[prefix] {
+		prefix++
+	}
+	suffix := 0
+	for suffix < len(original)-prefix && suffix < len(remaining)-prefix && original[len(original)-1-suffix] == remaining[len(remaining)-1-suffix] {
+		suffix++
+	}
+	if len(original)-prefix-suffix <= 0 || original[:prefix]+original[len(original)-suffix:] != remaining {
+		return "", false
+	}
+	return original[prefix : len(original)-suffix], true
+}
+
+func removeProjectManifestPack(packs []ProjectManifestPack, packID string) []ProjectManifestPack {
+	result := make([]ProjectManifestPack, 0, len(packs)-1)
+	for _, pack := range packs {
+		if pack.ID != packID {
+			result = append(result, pack)
+		}
+	}
+	return result
+}
+
+func projectLockWithoutPack(lock ProjectLockProposal, packID string) (ProjectLockProposal, error) {
+	receipts := make([]installedPackReceipt, 0, len(lock.Receipts))
+	for _, receipt := range lock.Receipts {
+		if receipt.Pack.ID != packID {
+			receipts = append(receipts, receipt)
+		}
+	}
+	lock.Receipts = receipts
+	hydrated, err := hydrateProjectLock(lock)
+	if err != nil {
+		return ProjectLockProposal{}, err
+	}
+	return filterProjectLockMetadataToReceipts(hydrated), nil
 }
 
 func removeProjectSurface(surfaces []Surface, removed Surface) []Surface {
@@ -291,26 +410,6 @@ func subtractProjectContributor(projections []ProjectProjectionPlan, surface Sur
 			projection.Contributor = projection.Contributors[0]
 		}
 		result = append(result, projection)
-	}
-	return result
-}
-
-func filterProjectDegradations(values []LifecycleExclusion, surfaces []Surface) []LifecycleExclusion {
-	result := make([]LifecycleExclusion, 0, len(values))
-	for _, value := range values {
-		if value.Surface == "" || projectSupportsSurface(surfaces, value.Surface) {
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
-func filterProjectBindings(values []LifecycleBinding, surfaces []Surface) []LifecycleBinding {
-	result := make([]LifecycleBinding, 0, len(values))
-	for _, value := range values {
-		if value.Surface == "" || projectSupportsSurface(surfaces, value.Surface) {
-			result = append(result, value)
-		}
 	}
 	return result
 }
@@ -407,12 +506,13 @@ func planProjectNoticeRemoval(projectRoot string, pack ProjectManifestPack, lock
 	if err != nil {
 		return ProjectionAction{}, nil, err
 	}
-	if !info.Mode().IsRegular() || uint32(info.Mode().Perm()) != lock.NoticesFileMode {
+	if !info.Mode().IsRegular() {
 		return ProjectionAction{}, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the project notices target or mode differs from the lock", Remediation: "restore the exact locked notice contribution before uninstalling"}}, nil
 	}
 	start, end := projectNoticeMarkers(pack.ID)
 	fragment, found := extractProjectContribution(string(data), start, end)
-	if !found || fingerprintProjectBytes([]byte(fragment)) != lock.NoticesSHA256 || strings.Count(string(data), start) != 1 || strings.Count(string(data), end) != 1 {
+	lockedNotice, receiptFound := projectNoticeReceiptProjection(lock.Receipts, pack.ID)
+	if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != lockedNotice.Digest || uint32(info.Mode().Perm()) != lockedNotice.FileMode || strings.Count(string(data), start) != 1 || strings.Count(string(data), end) != 1 {
 		return ProjectionAction{}, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution differs from the lock", Remediation: "restore the exact locked notice contribution before uninstalling"}}, nil
 	}
 	remaining := strings.Replace(string(data), fragment, "", 1)

@@ -75,9 +75,9 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 		return report, err
 	}
 	if recoveryPending {
-		return report, errors.New("shared project recovery is required; run `packy pack install` before previewing personal project deactivation")
+		return report, errors.New("shared project recovery is required; rerun the interrupted named `packy pack install <pack> --surface <surface>` before previewing personal project deactivation")
 	}
-	document, exists, err := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.Surface)
+	document, exists, err := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.PackID, request.Surface)
 	if err != nil {
 		return report, err
 	}
@@ -175,7 +175,7 @@ func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationAp
 	if fresh.Digest != preview.Digest {
 		return ProjectDeactivationApplyResult{}, errors.New("project deactivation preview is stale; run the deactivation preview again")
 	}
-	document, _, err := loadProjectActivationDocumentForSurface(preview.packyHome, preview.projectRoot, preview.Surface)
+	document, _, err := loadProjectActivationDocumentForSurface(preview.packyHome, preview.projectRoot, preview.Pack.ID, preview.Surface)
 	if err != nil {
 		return ProjectDeactivationApplyResult{}, err
 	}
@@ -201,18 +201,18 @@ func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationAp
 			return ProjectDeactivationApplyResult{}, errors.New("personal project contribution was not verified absent after deactivation")
 		}
 	}
-	if err := removeProjectActivationRecord(preview.packyHome, preview.projectRoot, preview.Surface); err != nil {
+	if err := removeProjectActivationRecord(preview.packyHome, preview.projectRoot, preview.Pack.ID, preview.Surface); err != nil {
 		return ProjectDeactivationApplyResult{}, err
 	}
 	return ProjectDeactivationApplyResult{SchemaVersion: 1, Report: "project-deactivation-apply", Status: "inactive", Digest: preview.Digest}, nil
 }
 
-func removeProjectActivationRecord(packyHome, projectRoot string, surface Surface) error {
+func removeProjectActivationRecord(packyHome, projectRoot, packID string, surface Surface) error {
 	directory, err := projectActivationDirectory(packyHome, projectRoot)
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(filepath.Join(directory, projectActivationStateFile(surface))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(filepath.Join(directory, projectActivationStateFile(packID, surface))); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	_ = os.Remove(directory)

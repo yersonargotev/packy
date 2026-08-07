@@ -177,7 +177,16 @@ func deactivateBeforeProjectUninstall(cmd *cobra.Command, opts Options, snapshot
 	if err != nil {
 		return err
 	}
-	surfaces := installation.Manifest.Packs[0].Surfaces
+	var surfaces []capabilitypack.Surface
+	for _, pack := range installation.Manifest.Packs {
+		if pack.ID == packID {
+			surfaces = append(surfaces, pack.Surfaces...)
+			break
+		}
+	}
+	if len(surfaces) == 0 {
+		return fmt.Errorf("capability pack %q is not declared by this project installation", packID)
+	}
 	if selected != "" {
 		surfaces = []capabilitypack.Surface{selected}
 	}
@@ -260,13 +269,12 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	var jsonOutput bool
 	var aliasValues []string
 	var resourceValues []string
-	var providerValues []string
 	cmd := &cobra.Command{
-		Use:   "install [pack]",
+		Use:   "install <pack>",
 		Short: "Install a capability pack in the current Git project",
 		Long:  "Install a capability pack in the current Git project.\n\n" + projectLifecycleHelp,
 		Args: func(cmd *cobra.Command, args []string) error {
-			return projectLifecycleArgs(cmd, args, cobra.MaximumNArgs(1), jsonOutput, true, "install")
+			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, true, "install")
 		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			defer func() {
@@ -289,10 +297,6 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 					selection.Roots = append(selection.Roots, resource)
 				}
 			}
-			providerChoices, err := parseProviderChoices(providerValues)
-			if err != nil {
-				return err
-			}
 			snapshot, err := workstationResolver.Resolve(workstation.Options{})
 			if err != nil {
 				return err
@@ -305,14 +309,8 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if err != nil {
 				return err
 			}
-			if len(args) == 1 && surface == "" {
+			if surface == "" {
 				return errors.New("--surface is required when installing a pack")
-			}
-			if len(args) == 0 && surface != "" {
-				return errors.New("--surface is not accepted when reconciling the complete project manifest")
-			}
-			if len(args) == 0 && (len(aliasValues) > 0 || len(resourceValues) > 0 || len(providerValues) > 0) {
-				return errors.New("--resource, --alias, and --provider are accepted only when installing a pack")
 			}
 			offlineAdapter := projectOfflineAdapter("")
 			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
@@ -320,7 +318,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 				return err
 			}
 			if dryRun && pendingRecovery {
-				return errors.New("project installation is recovery-required; rerun `packy pack install` without --dry-run before requesting another preview")
+				return errors.New("project installation is recovery-required; rerun this named install without --dry-run before requesting another preview")
 			}
 			if !dryRun {
 				recoveryFacade := capabilitypack.NewFacade(capabilitypack.Catalog{})
@@ -329,31 +327,9 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 					return recoveryErr
 				}
 				if recovered {
-					if err := renderProjectRecovery(cmd, jsonOutput, "install", "packy pack install", "Recovered the prior project installation attempt before preview"); err != nil {
+					if err := renderProjectRecovery(cmd, jsonOutput, "install", "packy pack install <pack> --surface <surface>", "Recovered the prior project installation attempt before preview"); err != nil {
 						return err
 					}
-				}
-			}
-			if len(args) == 0 {
-				status, statusErr := capabilitypack.InspectProjectStatus(cmd.Context(), capabilitypack.ProjectStatusRequest{
-					ProjectRoot: projectRoot,
-					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-						capabilitypack.SurfaceClaude: projectOfflineAdapter(capabilitypack.SurfaceClaude), capabilitypack.SurfaceCodex: projectOfflineAdapter(capabilitypack.SurfaceCodex), capabilitypack.SurfaceOpenCode: projectOfflineAdapter(capabilitypack.SurfaceOpenCode),
-					},
-				})
-				if statusErr != nil {
-					return statusErr
-				}
-				converged := len(status.Packs) > 0
-				for _, pack := range status.Packs {
-					converged = converged && pack.Installation == capabilitypack.ProjectInstallationInstalled
-				}
-				if converged {
-					if jsonOutput {
-						return json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.ProjectInstallApplyResult{SchemaVersion: 1, Report: "project-install-apply", Status: "no-op"})
-					}
-					_, err := fmt.Fprintln(cmd.OutOrStdout(), "Verified no-op: the exact project installation is already present")
-					return err
 				}
 			}
 			composition, err := resolvePackComposition(opts, workstationResolver)
@@ -362,12 +338,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			}
 			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil))
 			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-			var report capabilitypack.JSONProjectInstallPreview
-			if len(args) == 0 {
-				report, err = facade.PreviewProjectReconcile(cmd.Context(), projectRoot, adapter)
-			} else {
-				report, err = facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, Selection: selection, Aliases: aliases, ProviderChoices: providerChoices}, adapter)
-			}
+			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, Selection: selection, Aliases: aliases}, adapter)
 			if err != nil {
 				return err
 			}
@@ -435,12 +406,14 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the project contract and projections without mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a project surface alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one operational project resource (<kind>:<id>); repeatable")
-	cmd.Flags().StringArrayVar(&providerValues, "provider", nil, "Select a project capability provider (<capability>=<pack>[/<kind>:<id>]); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
 	return cmd
 }
 
 func offerProjectActivation(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, install capabilitypack.JSONProjectInstallPreview, projectRoot, packyHome string, adapter capabilitypack.SurfaceAdapter) error {
+	if !capabilitypack.ProjectPackRequiresActivation(install.Lock, install.Pack.ID, install.Surface) {
+		return nil
+	}
 	preview, err := facade.PreviewProjectActivation(cmd.Context(), capabilitypack.ProjectActivationRequest{
 		PackID: install.Pack.ID, Surface: install.Surface, ProjectRoot: projectRoot, PackyHome: packyHome, Adapter: adapter,
 	})
@@ -482,7 +455,7 @@ func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONP
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\nProject root: %s\nPack: %s %s\nSurface: %s\nSelection: %s (%d resources)\nManifest: %s (schema %d)\nLock: %s (schema %d)\nNotices: %s (%d contributions)\n", header, report.ProjectRoot, report.Pack.ID, report.Pack.Version, report.Surface, report.Selection.Mode, len(report.Selection.Resources), report.Manifest.Path, report.Manifest.SchemaVersion, report.Lock.Path, report.Lock.SchemaVersion, report.Notices.Path, len(report.Notices.Contributions)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Reviewed Pack: %s@%s manifest=%d\nLock graph: %d resources, %d projections\n", report.Lock.Source.PackID, report.Lock.Source.PackVersion, report.Lock.Source.ManifestSchema, len(report.Lock.ResourceGraph.Resources), len(report.Lock.Projections)); err != nil {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Reviewed Pack: %s@%s\nLock receipt: %d resources, %d projections\n", report.Pack.ID, report.Pack.Version, len(report.Lock.ResourceGraph.Resources), len(report.Lock.Projections)); err != nil {
 		return err
 	}
 	for _, projection := range report.Projections {
@@ -716,7 +689,6 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	var aliasValues []string
 	var jsonOutput bool
 	var project bool
-	var version string
 	var force bool
 	cmd := &cobra.Command{
 		Use: "update <pack>", Short: "Update an active capability pack to the catalog-current version", Long: "Update an active capability pack to the catalog-current version.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
@@ -729,22 +701,13 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 				}
 			}()
 			if project {
-				if force {
-					return errors.New("--force is accepted only for global update")
-				}
 				if surface != "" {
 					return errors.New("--surface is not accepted for project update")
 				}
 				if len(aliasValues) > 0 {
 					return errors.New("--alias is not accepted for project update")
 				}
-				if version == "" {
-					return errors.New("--version is required for project update")
-				}
-				return runProjectPackUpdate(cmd, opts, workstationResolver, args[0], version, dryRun, jsonOutput)
-			}
-			if version != "" {
-				return errors.New("--version is accepted only for project update")
+				return runProjectPackUpdate(cmd, opts, workstationResolver, args[0], force, dryRun, jsonOutput)
 			}
 			if surface == "" {
 				return errors.New("--surface is required for global update")
@@ -772,12 +735,11 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	cmd.Flags().BoolVar(&project, "project", false, "Update the shared project installation across every installed surface")
-	cmd.Flags().StringVar(&version, "version", "", "Exact admitted project pack version")
 	cmd.Flags().BoolVar(&force, "force", false, "Replace drifted paths proven to belong to this installed Pack receipt")
 	return cmd
 }
 
-func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver *workstation.Resolver, packID, version string, dryRun, jsonOutput bool) error {
+func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver *workstation.Resolver, packID string, force, dryRun, jsonOutput bool) error {
 	snapshot, err := workstationResolver.Resolve(workstation.Options{})
 	if err != nil {
 		return err
@@ -804,7 +766,7 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 			return recoveryErr
 		}
 		if recovered {
-			if err := renderProjectRecovery(cmd, jsonOutput, "update", "packy pack update <pack> --project --version <version>", "Recovered the prior project installation attempt before preview"); err != nil {
+			if err := renderProjectRecovery(cmd, jsonOutput, "update", "packy pack update <pack> --project", "Recovered the prior project installation attempt before preview"); err != nil {
 				return err
 			}
 		}
@@ -815,7 +777,7 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 	}
 	facade := capabilitypack.NewFacade(composition.catalog)
 	adapter = projectInstallAdapter("", composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, Version: version, ProjectRoot: projectRoot}, adapter)
+	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, ProjectRoot: projectRoot, Force: force}, adapter)
 	if err != nil {
 		return err
 	}

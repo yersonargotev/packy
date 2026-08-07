@@ -68,7 +68,6 @@ func TestProjectActivationIdentityIsCanonicalAndCheckoutLocal(t *testing.T) {
 func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
 	resource := ResourceIdentity{Kind: "mcp_server", ID: "memory"}
 	lock := ProjectLockProposal{
-		Source: ProjectPackSourceIdentity{PackID: "pack", PackVersion: "1.0.0"},
 		Sensitive: []ProjectSensitiveDisclosure{
 			{Category: ProjectActivationMCP, Surface: SurfaceCodex, Resource: resource, Detail: "codex-mcp"},
 			{Category: ProjectActivationMCP, Surface: SurfaceOpenCode, Resource: resource, Detail: "opencode-mcp"},
@@ -113,7 +112,7 @@ func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
 		}
 	}
 	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
-		document, exists, err := loadProjectActivationDocumentForSurface(home, root, surface)
+		document, exists, err := loadProjectActivationDocumentForSurface(home, root, "pack", surface)
 		if err != nil || !exists || document.State.Surface != surface || document.SensitiveLockIdentity != "lock-"+string(surface) {
 			t.Fatalf("%s document = %+v exists=%v err=%v", surface, document, exists, err)
 		}

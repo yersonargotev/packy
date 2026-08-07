@@ -43,7 +43,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	installation.Lock.Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
+	installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
 		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "mcp_server"},
 		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "project-trust"},
 	}
@@ -55,7 +55,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	install := capabilitypack.JSONProjectInstallPreview{Pack: installation.Manifest.Packs[0], Surface: capabilitypack.SurfaceCodex}
+	install := capabilitypack.JSONProjectInstallPreview{Pack: installation.Manifest.Packs[0], Surface: capabilitypack.SurfaceCodex, Lock: installation.Lock}
 	facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
 	snapshot, err := workstation.Resolve(workstation.Inputs{Home: home}, workstation.Options{})
 	if err != nil {
@@ -75,7 +75,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	if terminal.calls != 1 || !strings.Contains(output.String(), "activate later") {
 		t.Fatalf("declined offer prompts=%d output=%q", terminal.calls, output.String())
 	}
-	if matches, _ := filepath.Glob(filepath.Join(home, ".packy", "projects", "*", "state.json")); len(matches) != 0 {
+	if matches, _ := filepath.Glob(filepath.Join(home, ".packy", "projects", "*", "state-*-*.json")); len(matches) != 0 {
 		t.Fatalf("declined activation persisted personal state: %v", matches)
 	}
 

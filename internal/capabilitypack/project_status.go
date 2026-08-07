@@ -114,10 +114,93 @@ type ProjectInstallation struct {
 	Lock     ProjectLockProposal
 }
 
+func projectInstallationForPack(installation ProjectInstallation, packID string) ProjectInstallation {
+	pack, found := findProjectManifestPack(installation.Manifest.Packs, packID)
+	if !found {
+		return ProjectInstallation{}
+	}
+	installation.Manifest.Packs = []ProjectManifestPack{pack}
+	installation.Lock = projectLockForPack(installation.Lock, packID)
+	return installation
+}
+
+func projectLockForPack(lock ProjectLockProposal, packID string) ProjectLockProposal {
+	resources := map[ResourceIdentity]bool{}
+	receipts := make([]installedPackReceipt, 0)
+	for _, receipt := range lock.Receipts {
+		if receipt.Pack.ID == packID {
+			receipts = append(receipts, receipt)
+			for _, resource := range receipt.Resources {
+				resources[resource] = true
+			}
+		}
+	}
+	lock.Receipts = receipts
+	facts := make([]ResourceClosureFact, 0, len(resources))
+	for resource := range resources {
+		facts = append(facts, ResourceClosureFact{Resource: resource, Role: ResourceRoleRoot, DependencyChain: []ResourceIdentity{resource}, Requires: []ResourceIdentity{}, Notices: []ResourceIdentity{}})
+	}
+	sort.Slice(facts, func(i, j int) bool { return facts[i].Resource.String() < facts[j].Resource.String() })
+	lock.ResourceGraph = ResourceGraph{Resources: facts}
+	filterResource := func(identity ResourceIdentity) bool { return resources[identity] }
+	bindings := make([]LifecycleBinding, 0, len(lock.Bindings))
+	for _, binding := range lock.Bindings {
+		if filterResource(ResourceIdentity{Kind: binding.Kind, ID: binding.ID}) {
+			bindings = append(bindings, binding)
+		}
+	}
+	lock.Bindings = bindings
+	degradations := make([]LifecycleExclusion, 0, len(lock.Degradations))
+	for _, degradation := range lock.Degradations {
+		identity, err := ParseResourceIdentity(degradation.ID)
+		if degradation.ResourceKind == "" || err == nil && filterResource(identity) {
+			degradations = append(degradations, degradation)
+		}
+	}
+	lock.Degradations = degradations
+	sensitive := make([]ProjectSensitiveDisclosure, 0, len(lock.Sensitive))
+	for _, disclosure := range lock.Sensitive {
+		if filterResource(disclosure.Resource) || disclosure.Resource == (ResourceIdentity{Kind: "pack", ID: packID}) {
+			sensitive = append(sensitive, disclosure)
+		}
+	}
+	lock.Sensitive = sensitive
+	projections := make([]ProjectProjectionPlan, 0, len(lock.Projections))
+	for _, projection := range lock.Projections {
+		if projectProjectionHasPackContributor(projection, packID) {
+			projections = append(projections, projection)
+		}
+	}
+	lock.Projections = projections
+	return lock
+}
+
+func projectResourceSet(facts []ResourceClosureFact) map[ResourceIdentity]bool {
+	result := make(map[ResourceIdentity]bool, len(facts))
+	for _, fact := range facts {
+		result[fact.Resource] = true
+	}
+	return result
+}
+
+func projectProjectionHasPackContributor(projection ProjectProjectionPlan, packID string) bool {
+	match := func(value string) bool {
+		return strings.Contains(value, ":pack:"+packID) && (strings.HasSuffix(value, ":pack:"+packID) || strings.Contains(value, ":pack:"+packID+":"))
+	}
+	if match(projection.Contributor) {
+		return true
+	}
+	for _, contributor := range projection.Contributors {
+		if match(contributor) {
+			return true
+		}
+	}
+	return false
+}
+
 type projectManifestDocument struct {
-	SchemaVersion          int                   `json:"schema_version"`
-	MinimumPackyCapability string                `json:"minimum_packy_capability"`
-	Packs                  []ProjectManifestPack `json:"packs"`
+	SchemaVersion int                   `json:"schema_version"`
+	Packs         []ProjectManifestPack `json:"packs"`
 }
 
 var projectDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -141,9 +224,14 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 	if err := strictDecode(manifestData, &document); err != nil {
 		return ProjectInstallation{}, fmt.Errorf("decode project manifest: %w", err)
 	}
-	legacyV1 := document.SchemaVersion == projectContractSchemaV1 && document.MinimumPackyCapability == ""
-	if !legacyV1 && !supportedProjectContractVersion(document.SchemaVersion, document.MinimumPackyCapability) {
+	if !supportedProjectContractVersion(document.SchemaVersion, "") {
 		return ProjectInstallation{}, errors.New("project manifest schema or minimum Packy capability is unsupported")
+	}
+	for i := range document.Packs {
+		document.Packs[i].ProviderChoices = []ProviderChoice{}
+		for j := range document.Packs[i].SurfaceIntents {
+			document.Packs[i].SurfaceIntents[j].ProviderChoices = []ProviderChoice{}
+		}
 	}
 	manifest := ProjectContractProposal{Path: "packy.json", SchemaVersion: document.SchemaVersion, Packs: document.Packs}
 	lock, exists, err := readExistingProjectLock(projectRoot)
@@ -170,7 +258,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 		}
 		if recoveryPending {
 			report.RecoveryRequired = true
-			report.RecoveryCommand = "packy pack install"
+			report.RecoveryCommand = "packy pack install <pack> --surface <surface>"
 		}
 	}
 	manifestMissing, err := projectPathMissing(filepath.Join(request.ProjectRoot, "packy.json"))
@@ -197,11 +285,11 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			blockers := []ProjectInstallBlocker{}
 			if recoveryPending {
 				runtime = ProjectRuntimeRecoveryRequired
-				blockers = append(blockers, ProjectInstallBlocker{Code: "recovery_required", Detail: "an interrupted shared project mutation must be recovered before new intent", Remediation: "run `packy pack install` to recover before previewing new project intent"})
-				pendingActions = append(pendingActions, "packy pack install")
+				blockers = append(blockers, ProjectInstallBlocker{Code: "recovery_required", Detail: "an interrupted shared project mutation must be recovered before new intent", Remediation: "rerun the interrupted named `packy pack install <pack> --surface <surface>`"})
+				pendingActions = append(pendingActions, "packy pack install <pack> --surface <surface>")
 			}
 			if request.PackyHome != "" {
-				document, exists, loadErr := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.Surface)
+				document, exists, loadErr := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.PackID, request.Surface)
 				if loadErr != nil {
 					return report, loadErr
 				}
@@ -238,7 +326,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			}
 			if recoveryPending {
 				runtime = ProjectRuntimeRecoveryRequired
-				pendingActions = []string{"packy pack install"}
+				pendingActions = []string{"packy pack install <pack> --surface <surface>"}
 			}
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
 				Pack:    ProjectManifestPack{ID: request.PackID, Version: version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}},
@@ -266,8 +354,8 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
 				Pack: ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}, Surface: request.Surface,
 				Installation: ProjectInstallationBlocked, Runtime: ProjectRuntimeRecoveryRequired, RuntimeEffects: []ProjectRuntimeEffectStatus{}, Projections: []ProjectProjectionStatus{},
-				Blockers:            []ProjectInstallBlocker{{Code: "recovery_required", Detail: "an interrupted shared project mutation must be recovered before inspection or new intent", Remediation: "run `packy pack install` to recover before previewing new project intent"}},
-				PendingHumanActions: []string{"packy pack install"}, Evidence: []string{}, Requirement: requirement, RequirementSatisfied: false,
+				Blockers:            []ProjectInstallBlocker{{Code: "recovery_required", Detail: "an interrupted shared project mutation must be recovered before inspection or new intent", Remediation: "rerun the interrupted named `packy pack install <pack> --surface <surface>`"}},
+				PendingHumanActions: []string{"packy pack install <pack> --surface <surface>"}, Evidence: []string{}, Requirement: requirement, RequirementSatisfied: false,
 			})
 		}
 		return report, nil
@@ -283,93 +371,97 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 	if err != nil {
 		return report, err
 	}
-	manifestHealthy := fingerprintProjectBytes(manifestBytes) == installation.Lock.ManifestSHA256
+	actualManifest, readErr := os.ReadFile(filepath.Join(request.ProjectRoot, "packy.json"))
+	manifestHealthy := readErr == nil && string(actualManifest) == string(manifestBytes)
 	contractHealthy, contractBlockers, err := inspectOfflineProjectFiles(request.ProjectRoot, installation, manifestBytes)
 	if err != nil {
 		return report, err
 	}
-	pack := installation.Manifest.Packs[0]
-	for _, surface := range pack.Surfaces {
-		if request.PackID != "" && request.PackID != pack.ID {
-			continue
-		}
-		if request.Surface != "" && request.Surface != surface {
-			continue
-		}
-		adapter := request.Adapters[surface]
-		if adapter == nil {
-			return report, fmt.Errorf("project installation inspection does not support CLI surface %q", surface)
-		}
-		observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{
-			ProjectRoot: request.ProjectRoot, ProjectInstallation: &installation, ProjectGoal: ProjectionPresent,
-		})
-		if inspectErr != nil {
-			return report, inspectErr
-		}
-		projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID)
-		if inspectErr != nil {
-			return report, inspectErr
-		}
-		blockers := append([]ProjectInstallBlocker{}, contractBlockers...)
-		state := ProjectInstallationInstalled
-		if !manifestHealthy {
-			state = ProjectInstallationBlocked
-			blockers = append(blockers, ProjectInstallBlocker{Code: "manifest_lock_mismatch", Target: "packy.json", Detail: "the human manifest does not match the exact generated lock", Remediation: "run `packy pack install` to reconcile the project contract"})
-		} else if !contractHealthy {
-			state = ProjectInstallationDrifted
-		}
-		for _, projection := range projections {
-			if projection.Health != "verified" && state == ProjectInstallationInstalled {
+	for _, pack := range installation.Manifest.Packs {
+		packLock := projectLockForPack(installation.Lock, pack.ID)
+		for _, surface := range pack.Surfaces {
+			if request.PackID != "" && request.PackID != pack.ID {
+				continue
+			}
+			if request.Surface != "" && request.Surface != surface {
+				continue
+			}
+			adapter := request.Adapters[surface]
+			if adapter == nil {
+				return report, fmt.Errorf("project installation inspection does not support CLI surface %q", surface)
+			}
+			scopedInstallation := projectInstallationForPack(installation, pack.ID)
+			observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{
+				ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent,
+			})
+			if inspectErr != nil {
+				return report, inspectErr
+			}
+			projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID)
+			if inspectErr != nil {
+				return report, inspectErr
+			}
+			blockers := append([]ProjectInstallBlocker{}, contractBlockers...)
+			state := ProjectInstallationInstalled
+			if !manifestHealthy {
+				state = ProjectInstallationBlocked
+				blockers = append(blockers, ProjectInstallBlocker{Code: "manifest_lock_mismatch", Target: "packy.json", Detail: "the human manifest does not match the exact generated lock", Remediation: "run the named Pack install again to reconcile its receipt"})
+			} else if !contractHealthy {
 				state = ProjectInstallationDrifted
 			}
-			if projection.Health != "verified" {
-				blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Resource: projection.Resource, Target: projection.Target, Detail: "the installed project projection is " + projection.Health, Remediation: "restore the exact locked projection with `packy pack install`"})
+			for _, projection := range projections {
+				if projection.Health != "verified" && state == ProjectInstallationInstalled {
+					state = ProjectInstallationDrifted
+				}
+				if projection.Health != "verified" {
+					blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Resource: projection.Resource, Target: projection.Target, Detail: "the installed project projection is " + projection.Health, Remediation: "restore the exact locked projection with the named Pack install"})
+				}
 			}
-		}
-		sort.Slice(blockers, func(i, j int) bool {
-			if blockers[i].Code != blockers[j].Code {
-				return blockers[i].Code < blockers[j].Code
-			}
-			return blockers[i].Target < blockers[j].Target
-		})
-		categories := projectActivationCategories(installation.Lock, surface)
-		runtimeRequired := len(categories) != 0
-		readiness := ProjectReadinessStatus{Configured: state == ProjectInstallationInstalled}
-		if runtimeRequired {
-			readiness.Authorized = readiness.Configured && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
-			readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
-		} else {
-			// Declarative project availability is established by installation;
-			// it does not inherit a personal host-runtime prerequisite.
-			readiness.Authorized, readiness.Usable = readiness.Configured, readiness.Configured
-		}
-		runtime := ProjectRuntimeNotRequired
-		effects := pendingProjectRuntimeEffects(categories)
-		if runtimeRequired {
-			runtime, effects = projectPersonalRuntimeStatus(ctx, adapter, request.PackyHome, request.ProjectRoot, pack, surface, state, installation.Lock, categories)
-		}
-		status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
-		switch runtime {
-		case ProjectRuntimePending, ProjectRuntimeStale:
+			sort.Slice(blockers, func(i, j int) bool {
+				if blockers[i].Code != blockers[j].Code {
+					return blockers[i].Code < blockers[j].Code
+				}
+				return blockers[i].Target < blockers[j].Target
+			})
+			categories := projectActivationCategories(packLock, surface)
+			runtimeRequired := len(categories) != 0
+			readiness := ProjectReadinessStatus{Configured: state == ProjectInstallationInstalled}
 			if runtimeRequired {
-				status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack activate %s --surface %s --project", pack.ID, surface))
+				readiness.Authorized = readiness.Configured && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
+				readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
+			} else {
+				// Declarative project availability is established by installation;
+				// it does not inherit a personal host-runtime prerequisite.
+				readiness.Authorized, readiness.Usable = readiness.Configured, readiness.Configured
 			}
-		case ProjectRuntimeBlocked, ProjectRuntimeRecoveryRequired:
-			status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack deactivate %s --surface %s --project", pack.ID, surface))
+			runtime := ProjectRuntimeNotRequired
+			effects := pendingProjectRuntimeEffects(categories)
+			if runtimeRequired {
+				runtime, effects = projectPersonalRuntimeStatus(ctx, adapter, request.PackyHome, request.ProjectRoot, pack, surface, state, packLock, categories)
+			}
+			status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
+			switch runtime {
+			case ProjectRuntimePending, ProjectRuntimeStale:
+				if runtimeRequired {
+					status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack activate %s --surface %s --project", pack.ID, surface))
+				}
+			case ProjectRuntimeBlocked, ProjectRuntimeRecoveryRequired:
+				status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack deactivate %s --surface %s --project", pack.ID, surface))
+			}
+			if state != ProjectInstallationInstalled {
+				status.PendingHumanActions = append(status.PendingHumanActions, "packy pack install "+pack.ID+" --surface "+string(surface))
+			}
+			status.PendingHumanActions = sortedUnique(status.PendingHumanActions)
+			if request.RequireInstalled {
+				status.Requirement = "installed"
+				status.RequirementSatisfied = state == ProjectInstallationInstalled
+			}
+			if request.RequireUsable {
+				status.Requirement = "usable"
+				status.RequirementSatisfied = state == ProjectInstallationInstalled && readiness.Usable && (!runtimeRequired || runtime == ProjectRuntimeActive)
+			}
+			report.Packs = append(report.Packs, status)
 		}
-		if state != ProjectInstallationInstalled {
-			status.PendingHumanActions = append(status.PendingHumanActions, "packy pack install")
-		}
-		status.PendingHumanActions = sortedUnique(status.PendingHumanActions)
-		if request.RequireInstalled {
-			status.Requirement = "installed"
-			status.RequirementSatisfied = state == ProjectInstallationInstalled
-		}
-		if request.RequireUsable {
-			status.Requirement = "usable"
-			status.RequirementSatisfied = state == ProjectInstallationInstalled && readiness.Usable && (!runtimeRequired || runtime == ProjectRuntimeActive)
-		}
-		report.Packs = append(report.Packs, status)
 	}
 	if len(report.Packs) == 0 {
 		return report, fmt.Errorf("pack %q on %s is not declared by this project installation", request.PackID, request.Surface)
@@ -391,18 +483,22 @@ func inspectOrphanedProjectActivations(ctx context.Context, request ProjectStatu
 	}
 	statuses := make([]JSONProjectPackStatus, 0, len(entries))
 	for _, entry := range entries {
-		var surface Surface
-		switch entry.Name() {
-		case "state.json":
-			surface = SurfaceCodex
-		case "state-opencode.json":
-			surface = SurfaceOpenCode
-		case "state-claude.json":
-			surface = SurfaceClaude
-		default:
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "state-") || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		document, exists, loadErr := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, surface)
+		data, readErr := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if readErr != nil {
+			return nil, readErr
+		}
+		var candidate projectActivationDocument
+		if strictDecode(data, &candidate) != nil {
+			continue
+		}
+		surface := candidate.State.Surface
+		if surface != SurfaceCodex && surface != SurfaceOpenCode && surface != SurfaceClaude {
+			continue
+		}
+		document, exists, loadErr := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, candidate.State.PackID, surface)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -447,7 +543,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		if !status.RuntimeRequired || status.Installation != ProjectInstallationInstalled {
 			continue
 		}
-		composition, composeErr := f.composeProjectRuntime(ctx, installation, status.Surface)
+		composition, composeErr := f.composeProjectRuntime(ctx, projectInstallationForPack(installation, status.Pack.ID), status.Surface)
 		if composeErr != nil {
 			return report, composeErr
 		}
@@ -524,7 +620,7 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 		}
 		projection, ok := observed[locked.Resource]
 		if !ok {
-			return nil, fmt.Errorf("project adapter omitted locked projection %s", locked.Resource)
+			return nil, fmt.Errorf("project adapter omitted locked projection %s (observed %d projections)", locked.Resource, len(observed))
 		}
 		target, err := RelativeProjectTarget(projectRoot, projection.Action.Target)
 		if err != nil {
@@ -562,7 +658,7 @@ func projectPersonalRuntimeStatus(ctx context.Context, adapter SurfaceAdapter, p
 	if packyHome == "" {
 		return ProjectRuntimePending, effects
 	}
-	document, exists, err := loadProjectActivationDocumentForSurface(packyHome, projectRoot, surface)
+	document, exists, err := loadProjectActivationDocumentForSurface(packyHome, projectRoot, pack.ID, surface)
 	if err != nil {
 		return ProjectRuntimeBlocked, effects
 	}
@@ -657,25 +753,9 @@ func projectPathMissing(path string) (bool, error) {
 	return false, err
 }
 
-func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectLockProposal) error {
-	if len(manifest.Packs) != 1 {
-		return errors.New("project manifest must contain exactly one pack in schema version 1")
-	}
-	pack := manifest.Packs[0]
-	minimumCapability := projectContractCapabilityV1
-	if manifest.SchemaVersion == projectContractSchemaV2 {
-		minimumCapability = projectContractCapabilityV2
-	} else if manifest.SchemaVersion == projectContractSchemaV3 {
-		minimumCapability = projectContractCapabilityV3
-	}
-	if !supportedProjectContractVersion(manifest.SchemaVersion, minimumCapability) || lock.SchemaVersion != manifest.SchemaVersion || !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
-		return errors.New("project manifest and lock schema versions do not match")
-	}
-	if manifest.SchemaVersion == projectContractSchemaV1 && len(pack.SurfaceIntents) > 0 {
-		return errors.New("project manifest schema version 1 forbids per-surface intents")
-	}
+func validateProjectManifestPack(pack ProjectManifestPack) error {
 	if !idPattern.MatchString(pack.ID) || !semverPattern.MatchString(pack.Version) {
-		return errors.New("project manifest pack identity must use a valid ID and exact semantic version")
+		return errors.New("project manifest Pack identity must use a valid ID and exact semantic version")
 	}
 	if len(pack.Surfaces) == 0 || digestJSON(pack.Surfaces) != digestJSON(sortedProjectSurfaces(pack.Surfaces)) {
 		return errors.New("project manifest surfaces are empty, duplicated, or unsorted")
@@ -686,188 +766,108 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		}
 	}
 	selection, err := canonicalSelection(pack.Selection)
-	if err != nil || digestJSON(selection) != digestJSON(pack.Selection) || pack.Selection.Roots == nil || pack.Aliases == nil || pack.ProviderChoices == nil {
-		return errors.New("project manifest selection, aliases, and provider choices are incomplete")
+	if err != nil || digestJSON(selection) != digestJSON(pack.Selection) || pack.Selection.Roots == nil || pack.Aliases == nil || len(pack.ProviderChoices) != 0 {
+		return errors.New("project manifest selection and aliases are incomplete or non-canonical")
 	}
 	aliases := cloneAliases(pack.Aliases)
 	if err := canonicalizeAliases(&aliases); err != nil || digestJSON(aliases) != digestJSON(pack.Aliases) {
 		return errors.New("project manifest aliases are invalid or non-canonical")
 	}
-	providerChoices, err := canonicalProviderChoices(pack.ProviderChoices)
-	if providerChoices == nil && pack.ProviderChoices != nil {
-		providerChoices = []ProviderChoice{}
+	if len(pack.SurfaceIntents) == 0 {
+		return nil
 	}
-	if err != nil || digestJSON(providerChoices) != digestJSON(pack.ProviderChoices) {
-		return errors.New("project manifest provider choices are invalid or non-canonical")
+	if len(pack.SurfaceIntents) != len(pack.Surfaces) {
+		return errors.New("project manifest surface intents do not exactly cover installed surfaces")
 	}
-	if len(pack.SurfaceIntents) > 0 {
-		if len(pack.SurfaceIntents) != len(pack.Surfaces) {
-			return errors.New("project manifest surface intents do not exactly cover installed surfaces")
-		}
-		for i, intent := range pack.SurfaceIntents {
-			canonical, selectionErr := canonicalSelection(intent.Selection)
-			intentAliases := cloneAliases(intent.Aliases)
-			aliasErr := canonicalizeAliases(&intentAliases)
-			intentProviders, providerErr := canonicalProviderChoices(intent.ProviderChoices)
-			if intentProviders == nil && intent.ProviderChoices != nil {
-				intentProviders = []ProviderChoice{}
-			}
-			if intent.Surface != pack.Surfaces[i] || intent.Selection.Roots == nil || intent.Aliases == nil || intent.ProviderChoices == nil || selectionErr != nil || aliasErr != nil || providerErr != nil || digestJSON(canonical) != digestJSON(intent.Selection) || digestJSON(intentAliases) != digestJSON(intent.Aliases) || digestJSON(intentProviders) != digestJSON(intent.ProviderChoices) {
-				return errors.New("project manifest surface intents are incomplete or non-canonical")
-			}
+	for i, intent := range pack.SurfaceIntents {
+		canonical, selectionErr := canonicalSelection(intent.Selection)
+		intentAliases := cloneAliases(intent.Aliases)
+		aliasErr := canonicalizeAliases(&intentAliases)
+		if intent.Surface != pack.Surfaces[i] || intent.Selection.Roots == nil || intent.Aliases == nil || len(intent.ProviderChoices) != 0 || selectionErr != nil || aliasErr != nil || digestJSON(canonical) != digestJSON(intent.Selection) || digestJSON(intentAliases) != digestJSON(intent.Aliases) {
+			return errors.New("project manifest surface intents are incomplete or non-canonical")
 		}
 	}
-	if lock.Path != "packy.lock.json" || lock.Source.PackID != pack.ID || lock.Source.PackVersion != pack.Version || lock.Source.ManifestSchema < manifestSchemaV1 || lock.Source.ManifestSchema > manifestSchemaV4 {
-		return errors.New("project lock source identity does not exactly match the manifest pack")
+	return nil
+}
+
+func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectLockProposal) error {
+	if len(manifest.Packs) == 0 {
+		return errors.New("project manifest must contain at least one direct Pack")
 	}
-	if (lock.Sources == nil) != (lock.Packs == nil) {
-		return errors.New("project lock resolved packs and sources must be present together")
+	manifestPacks := make(map[string]ProjectManifestPack, len(manifest.Packs))
+	for i, candidate := range manifest.Packs {
+		if candidate.ID == "" || manifestPacks[candidate.ID].ID != "" || i > 0 && manifest.Packs[i-1].ID >= candidate.ID {
+			return errors.New("project manifest Packs must be unique and sorted by ID")
+		}
+		if err := validateProjectManifestPack(candidate); err != nil {
+			return err
+		}
+		manifestPacks[candidate.ID] = candidate
 	}
-	if lock.Packs != nil {
-		if len(lock.Packs) == 0 || len(lock.Packs) != len(lock.Sources) {
-			return errors.New("project lock resolved packs and sources are incomplete")
+	if !supportedProjectContractVersion(manifest.SchemaVersion, "") || lock.SchemaVersion != manifest.SchemaVersion || !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
+		return errors.New("project manifest and lock schema versions do not match")
+	}
+	if lock.Path != "packy.lock.json" {
+		return errors.New("project lock path is invalid")
+	}
+	receiptSelections := map[string]ResourceSelection{}
+	receiptSurfaces := map[string]map[Surface]bool{}
+	for _, receipt := range lock.Receipts {
+		direct, found := manifestPacks[receipt.Pack.ID]
+		if !found || receipt.Pack.Version != direct.Version || !projectSupportsSurface(direct.Surfaces, receipt.Surface) {
+			return errors.New("project receipt identity does not match direct manifest intent")
 		}
-		sources := make(map[string]ProjectPackSourceIdentity, len(lock.Sources))
-		for _, source := range lock.Sources {
-			if source.PackID == "" || sources[source.PackID].PackID != "" || source.PackVersion == "" {
-				return errors.New("project lock contains an incomplete or duplicate admitted source")
+		intents := projectSurfaceIntents(direct)
+		matchedIntent := false
+		for _, intent := range intents {
+			if intent.Surface != receipt.Surface {
+				continue
 			}
-			sources[source.PackID] = source
+			receiptAliases := cloneAliases(receipt.Aliases)
+			_ = canonicalizeAliases(&receiptAliases)
+			if digestJSON(intent.Selection) != digestJSON(receipt.Selection) || digestJSON(intent.Aliases) != digestJSON(receiptAliases) {
+				return errors.New("project receipt selection or aliases do not match manifest intent")
+			}
+			matchedIntent = true
+			break
 		}
-		requested := false
-		resolved := make(map[string]ProjectResolvedPack, len(lock.Packs))
-		for _, resolution := range lock.Packs {
-			canonical, selectionErr := canonicalSelection(resolution.Selection)
-			choices, choicesErr := canonicalProviderChoices(resolution.ProviderChoices)
-			if choices == nil && resolution.ProviderChoices != nil {
-				choices = []ProviderChoice{}
-			}
-			source, sourceExists := sources[resolution.ID]
-			if resolution.ID == "" || resolved[resolution.ID].ID != "" || !semverPattern.MatchString(resolution.Version) || !sourceExists || source.PackVersion != resolution.Version || selectionErr != nil || digestJSON(canonical) != digestJSON(resolution.Selection) || resolution.ProviderChoices == nil || choicesErr != nil || digestJSON(choices) != digestJSON(resolution.ProviderChoices) || resolution.ResourceGraph.Resources == nil {
-				return errors.New("project lock contains an incomplete or duplicate resolved pack")
-			}
-			if resolution.ID == pack.ID {
-				if resolution.Role != ActivationRequested || resolution.Version != pack.Version || digestJSON(resolution.Selection) != digestJSON(pack.Selection) || digestJSON(resolution.ProviderChoices) != digestJSON(pack.ProviderChoices) {
-					return errors.New("project lock requested resolution does not match manifest intent")
-				}
-				requested = true
-			} else if resolution.Role != ActivationRequired {
-				return errors.New("project lock provider resolution has an invalid role")
-			}
-			resolved[resolution.ID] = resolution
+		if !matchedIntent {
+			return errors.New("project receipt surface has no direct manifest intent")
 		}
-		if !requested || digestJSON(lock.Sources[0]) != digestJSON(lock.Source) {
-			return errors.New("project lock does not lead with the exact requested pack source")
+		if receiptSurfaces[receipt.Pack.ID] == nil {
+			receiptSurfaces[receipt.Pack.ID] = map[Surface]bool{}
+			receiptSelections[receipt.Pack.ID] = cloneSelection(receipt.Selection)
+		} else {
+			receiptSelections[receipt.Pack.ID] = mergeProjectReceiptSelections(receiptSelections[receipt.Pack.ID], receipt.Selection)
 		}
-		for _, resolution := range lock.Packs {
-			for _, choice := range resolution.ProviderChoices {
-				provider, exists := resolved[choice.ProviderPack]
-				if !exists || provider.Role != ActivationRequired {
-					return fmt.Errorf("project lock provider choice %s does not name a required resolved pack", choice.Capability)
-				}
-				if choice.ProviderResource != nil && !projectGraphContains(provider.ResourceGraph, *choice.ProviderResource) {
-					return fmt.Errorf("project lock provider choice %s does not bind its exact provider resource", choice.Capability)
-				}
-			}
-		}
-		expectedGraph := make(map[ResourceIdentity]ResourceClosureFact)
-		for _, resolution := range lock.Packs {
-			for _, fact := range resolution.ResourceGraph.Resources {
-				if previous, exists := expectedGraph[fact.Resource]; exists && digestJSON(previous) != digestJSON(fact) {
-					return fmt.Errorf("project lock resolved packs disagree on shared resource %s", fact.Resource)
-				}
-				expectedGraph[fact.Resource] = fact
-			}
-		}
-		if len(expectedGraph) != len(lock.ResourceGraph.Resources) {
-			return errors.New("project lock combined resource graph does not match resolved pack graphs")
-		}
-		for _, fact := range lock.ResourceGraph.Resources {
-			if expected, exists := expectedGraph[fact.Resource]; !exists || digestJSON(expected) != digestJSON(fact) {
-				return fmt.Errorf("project lock combined resource %s does not match resolved pack graphs", fact.Resource)
-			}
+		receiptSurfaces[receipt.Pack.ID][receipt.Surface] = true
+	}
+	for _, direct := range manifest.Packs {
+		if len(receiptSurfaces[direct.ID]) != len(direct.Surfaces) || digestJSON(receiptSelections[direct.ID]) != digestJSON(direct.Selection) {
+			return errors.New("project receipts do not exactly cover direct manifest intent")
 		}
 	}
-	if lock.ResourceGraph.Resources == nil || lock.Bindings == nil || lock.Modes == nil || lock.Projections == nil || !projectDigestPattern.MatchString(lock.ManifestSHA256) || !projectDigestPattern.MatchString(lock.NoticesSHA256) || lock.NoticesFileMode == 0 {
-		return errors.New("project lock omits required closure, identity, mode, or notice evidence")
+	if lock.ResourceGraph.Resources == nil || lock.Projections == nil {
+		return errors.New("project lock omits required receipt evidence")
 	}
 	resources := make(map[ResourceIdentity]bool, len(lock.ResourceGraph.Resources))
 	for _, fact := range lock.ResourceGraph.Resources {
-		if fact.Resource.Kind == "" || fact.Resource.ID == "" || resources[fact.Resource] || !validProjectResourceRole(fact.Role) || fact.DependencyChain == nil || fact.Requires == nil || fact.Notices == nil {
+		if fact.Resource.Kind == "" || fact.Resource.ID == "" || resources[fact.Resource] {
 			return errors.New("project lock resource graph is malformed or contains duplicate identities")
 		}
 		resources[fact.Resource] = true
 	}
-	bindings := make(map[ResourceIdentity]bool, len(lock.Bindings))
-	bindingKeys := make(map[string]bool, len(lock.Bindings))
-	for _, binding := range lock.Bindings {
-		identity := ResourceIdentity{Kind: binding.Kind, ID: binding.ID}
-		key := identity.String() + "\x00" + string(binding.Surface)
-		validMode := binding.Mode == "native" && binding.Degradation == "" || binding.Mode == "degraded" && binding.Degradation != ""
-		if !resources[identity] || bindingKeys[key] || binding.Surface != "" && !projectSupportsSurface(pack.Surfaces, binding.Surface) || binding.Projection == "" || binding.Name == "" || !validMode || binding.Sharing == "" {
-			return errors.New("project lock bindings are incomplete, duplicated, or outside the locked closure")
-		}
-		bindingKeys[key] = true
-		bindings[identity] = true
-	}
-	degradations := make(map[ResourceIdentity]bool)
-	for _, degradation := range lock.Degradations {
-		if degradation.ResourceKind == "" {
-			continue
-		}
-		identity, err := ParseResourceIdentity(degradation.ID)
-		if err != nil || identity.Kind != degradation.ResourceKind || !resources[identity] || degradations[identity] || !projectSupportsSurface(pack.Surfaces, degradation.Surface) || degradation.Mode != "optional" || degradation.Code == "" || degradation.Reason == "" || degradation.SourcePaths == nil {
-			return errors.New("project lock declared degradations are incomplete, duplicated, or outside the locked closure")
-		}
-		degradations[identity] = true
-	}
-	for resource := range resources {
-		if projectOperationalResource(resource.Kind) && !bindings[resource] && !degradations[resource] {
-			return fmt.Errorf("project lock operational resource %s has no native binding or declared degradation", resource)
-		}
-	}
-	modeIDs := make(map[string]bool, len(lock.Modes))
-	for _, mode := range lock.Modes {
-		if mode.ID == "" || modeIDs[mode.ID] || mode.Authorities == nil || mode.Fallback == "" {
-			return errors.New("project lock runtime modes are incomplete or duplicated")
-		}
-		modeIDs[mode.ID] = true
-	}
-	if manifest.SchemaVersion == projectContractSchemaV3 && lock.Sensitive == nil {
-		return errors.New("project activation lock omits sensitive runtime disclosure evidence")
-	}
-	if lock.Sensitive != nil {
-		canonicalSensitive := deduplicateProjectSensitiveDisclosures(lock.Sensitive)
-		if digestJSON(canonicalSensitive) != digestJSON(lock.Sensitive) {
-			return errors.New("project lock sensitive disclosures are malformed or non-canonical")
-		}
-		for _, disclosure := range lock.Sensitive {
-			packRequirement := disclosure.Category == ProjectActivationExternalRequirements && disclosure.Resource == (ResourceIdentity{Kind: "pack", ID: pack.ID})
-			if !resources[disclosure.Resource] && !packRequirement || disclosure.Detail == "" || !projectSupportsSurface(pack.Surfaces, disclosure.Surface) || !validProjectActivationCategory(disclosure.Category) {
-				return errors.New("project lock sensitive disclosure is outside the locked closure")
-			}
-		}
-	}
-	for _, fact := range lock.ResourceGraph.Resources {
-		for _, dependency := range append(append([]ResourceIdentity(nil), fact.Requires...), fact.Notices...) {
-			if !resources[dependency] {
-				return fmt.Errorf("project lock resource graph references missing dependency %s", dependency)
-			}
-		}
-		for _, member := range fact.DependencyChain {
-			if !resources[member] {
-				return fmt.Errorf("project lock dependency chain references missing resource %s", member)
-			}
-		}
-	}
 	seenTargets := make(map[string]bool, len(lock.Projections))
-	seenResources := make(map[ResourceIdentity]bool, len(lock.Projections))
-	validPackIDs := map[string]bool{pack.ID: true}
-	for _, resolved := range lock.Packs {
-		validPackIDs[resolved.ID] = true
+	validPackIDs := map[string]bool{}
+	validSurfaces := map[Surface]bool{}
+	for _, direct := range manifest.Packs {
+		validPackIDs[direct.ID] = true
+		for _, surface := range direct.Surfaces {
+			validSurfaces[surface] = true
+		}
 	}
 	validContributor := func(value string) bool {
-		for _, surface := range pack.Surfaces {
+		for surface := range validSurfaces {
 			for packID := range validPackIDs {
 				prefix := "surface:" + string(surface) + ":pack:" + packID
 				if value == prefix || strings.HasPrefix(value, prefix+":") {
@@ -895,18 +895,13 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[targetKey] || !validContributors || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
 			return errors.New("project lock contains malformed, duplicate, or unauthorized projection evidence")
 		}
-		if (projection.Mode == "copy_tree" || projection.Mode == "copy_file" || projection.Mode == "merge_structured_file") && (!resources[projection.Resource] || (projectOperationalResource(projection.Resource.Kind) && !bindings[projection.Resource])) {
-			return fmt.Errorf("project lock projection %s is outside the locked resource graph or bindings", projection.Resource)
+		if (projection.Mode == "copy_tree" || projection.Mode == "copy_file" || projection.Mode == "merge_structured_file") && !resources[projection.Resource] {
+			return fmt.Errorf("project lock projection %s is outside the receipt resource closure", projection.Resource)
 		}
 		if projection.FileMode == 0 || projection.FileMode&^0o777 != 0 {
 			return fmt.Errorf("project lock projection %s has unsupported file mode", projection.Resource)
 		}
-		seenTargets[targetKey], seenResources[projection.Resource] = true, true
-	}
-	for resource := range bindings {
-		if !seenResources[resource] {
-			return fmt.Errorf("project lock native-bound operational resource %s has no projection plan", resource)
-		}
+		seenTargets[targetKey] = true
 	}
 	return nil
 }
@@ -919,15 +914,6 @@ func ProjectProjectionHasContributor(projection ProjectProjectionPlan, contribut
 	}
 	for _, value := range projection.Contributors {
 		if value == contributor {
-			return true
-		}
-	}
-	return false
-}
-
-func projectGraphContains(graph ResourceGraph, target ResourceIdentity) bool {
-	for _, fact := range graph.Resources {
-		if fact.Resource == target {
 			return true
 		}
 	}
@@ -984,7 +970,7 @@ func inspectOfflineProjectFiles(projectRoot string, installation ProjectInstalla
 	}
 	if info, statErr := os.Lstat(lockPath); statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o644 || string(lockData) != string(canonicalLock) {
 		healthy = false
-		blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "packy.lock.json", Detail: "the generated project lock bytes or mode have changed", Remediation: "run `packy pack install` to regenerate the exact lock"})
+		blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "packy.lock.json", Detail: "the generated project lock bytes or mode have changed", Remediation: "rerun the named Pack install to regenerate its exact receipt"})
 	}
 	_ = manifestBytes
 	noticesPath := filepath.Join(projectRoot, "PACKY-NOTICES.md")
@@ -1002,9 +988,17 @@ func inspectOfflineProjectFiles(projectRoot string, installation ProjectInstalla
 		if readErr != nil {
 			return false, nil, readErr
 		}
-		start, end := projectNoticeMarkers(installation.Manifest.Packs[0].ID)
-		fragment, found := extractProjectContribution(string(noticesData), start, end)
-		if !found || uint32(noticesInfo.Mode().Perm()) != installation.Lock.NoticesFileMode || fingerprintProjectBytes([]byte(fragment)) != installation.Lock.NoticesSHA256 {
+		allContributionsPresent := true
+		for _, pack := range installation.Manifest.Packs {
+			start, end := projectNoticeMarkers(pack.ID)
+			fragment, found := extractProjectContribution(string(noticesData), start, end)
+			locked, receiptFound := projectNoticeReceiptProjection(installation.Lock.Receipts, pack.ID)
+			if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest || uint32(noticesInfo.Mode().Perm()) != locked.FileMode {
+				allContributionsPresent = false
+				break
+			}
+		}
+		if !allContributionsPresent {
 			healthy = false
 			blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution or mode differs from the lock", Remediation: "restore the exact locked notice contribution"})
 		}

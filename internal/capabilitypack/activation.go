@@ -3526,6 +3526,9 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 		data, _ := json.Marshal(value.ProjectInstallation)
 		var installation ProjectInstallation
 		_ = json.Unmarshal(data, &installation)
+		if hydrated, err := hydrateProjectLock(installation.Lock); err == nil {
+			installation.Lock = hydrated
+		}
 		value.ProjectInstallation = &installation
 	}
 	return value
