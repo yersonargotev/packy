@@ -319,16 +319,10 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"stable-smoke": {"contents": "read", "issues": "write"},
 	},
 	".github/workflows/release.yml": {
-		"normalize":                 {"contents": "read"},
-		"build":                     {"actions": "read", "contents": "read"},
-		"claude-smoke":              {"contents": "read"},
-		"validate-release-evidence": {"actions": "read", "contents": "read"},
-		"dry-run":                   {"contents": "read"},
-		"inspect-release":           {"actions": "read", "contents": "read"},
-		"attest":                    {"actions": "read", "attestations": "write", "contents": "read", "id-token": "write"},
-		"publish-github":            {"actions": "read", "contents": "write"},
-		"homebrew":                  {"actions": "read", "contents": "read"},
-		"release-summary":           {"contents": "read"},
+		"prepare":       {"contents": "read"},
+		"publish":       {"actions": "read", "contents": "write"},
+		"homebrew":      {"actions": "read", "contents": "read"},
+		"package-smoke": {"actions": "read", "contents": "read"},
 	},
 	".github/workflows/security.yml": {
 		"codeql": {"contents": "read", "packages": "read", "security-events": "write"},
@@ -458,29 +452,20 @@ func assertTrustedPrivilegedExecution(t errorReporter, workflow workflowDocument
 }
 
 // Write-capable or secret-bearing jobs must name the trusted repository and a
-// protected ref boundary in their job-level gate. Release publication consumes only the
-// mode and candidate identity admitted by its read-only normalization gate.
+// protected ref boundary in their job-level gate.
 var trustedExecutionMarkers = map[string][]string{
 	".github/workflows/claude-canary.yml|stable-smoke": {
 		"github.repository == 'yersonargotev/packy'",
 		"refs/heads/main",
 	},
-	".github/workflows/release.yml|attest": {
+	".github/workflows/release.yml|publish": {
 		"github.repository == 'yersonargotev/packy'",
-		"needs.normalize.outputs.mode == 'fresh'",
-		"needs.normalize.outputs.mode == 'recovery'",
-		"environment: release",
-	},
-	".github/workflows/release.yml|publish-github": {
-		"github.repository == 'yersonargotev/packy'",
-		"needs.normalize.outputs.mode == 'fresh'",
-		"needs.normalize.outputs.mode == 'recovery'",
+		"startsWith(github.ref, 'refs/tags/v')",
 		"environment: release",
 	},
 	".github/workflows/release.yml|homebrew": {
 		"github.repository == 'yersonargotev/packy'",
-		"needs.normalize.outputs.mode == 'fresh'",
-		"needs.normalize.outputs.mode == 'recovery'",
+		"startsWith(github.ref, 'refs/tags/v')",
 		"environment: homebrew",
 	},
 	".github/workflows/security.yml|codeql": {

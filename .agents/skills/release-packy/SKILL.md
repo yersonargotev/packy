@@ -1,6 +1,6 @@
 ---
 name: release-packy
-description: Release Packy end to end. Use when the user asks to publish a new Packy release from origin/main or recover an incomplete publication for an existing immutable tag.
+description: Release Packy end to end. Use when the user asks to publish a new immutable Packy release from origin/main.
 ---
 
 # Release Packy
@@ -34,6 +34,9 @@ the only routine checkpoint.
 ## 4. Publish once
 
 Run **Publish once** from the workflow contract.
+
+The workflow has no recovery branch. A faulty or incomplete published version
+is followed by a newer version.
 
 **Complete when:** the contract's Publish once criterion is satisfied.
 

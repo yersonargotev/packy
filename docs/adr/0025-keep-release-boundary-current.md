@@ -18,10 +18,9 @@ selectable capability packs. It does not ship product-identity transition
 fixtures, frozen transition evidence, retired command contracts, or release
 steps that inspect and delete unrelated distribution paths.
 
-The Homebrew publication boundary updates only `Formula/packy.rb`. Current
-validation proves initialization, explicit capability-pack activation,
-operator-file preservation, readiness, and release publication without replaying
-retired product transitions.
+The Homebrew publication boundary updates only `Formula/packy.rb`. Release-only
+validation proves archive contents, checksums, temporary installation, and the
+installed binary without replaying retired product transitions.
 
 ## Consequences
 

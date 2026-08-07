@@ -1,317 +1,88 @@
-# Publish a v0.x Release
+# Publish a Packy release
 
-This workflow publishes Packy release artifacts to GitHub Releases and updates
-`yersonargotev/homebrew-tap` from the same `SHA256SUMS` manifest. Homebrew
-and direct GitHub Release installs distribute the binary only; first-run users
-must run `packy init` so the binary can clone the Packy Source of Truth into the
-default Installed Source at `~/.local/share/packy`.
+Packy uses one conventional, immutable tag-driven release flow. A version tag
+whose commit is on `main` builds and publishes the supported archives, one
+`SHA256SUMS` file, one GitHub Release, and the matching Homebrew formula.
 
-## User install path
+Published tags, releases, assets, and formulas are never repaired in place. If
+a published release is faulty or incomplete, fix the cause on `main` and
+publish a newer version.
 
-The [README quickstart](../README.md#quickstart) is the canonical user-facing
-Homebrew path. Keep the exact binary-install/init/discover/activate command sequence there
-so release docs do not drift from the first-run instructions users see first.
+## User install and upgrade
 
-Direct GitHub Release users may download the matching `packy_<version>_<goos>_<goarch>`
-asset, verify it against `SHA256SUMS`, put it on `PATH`, then follow the same
-first-run sequence from the README quickstart.
+The [README quickstart](../README.md#quickstart) is the canonical Homebrew
+installation path. Direct-download users choose the archive matching their OS
+and architecture, verify it with `SHA256SUMS`, extract `packy` onto `PATH`, and
+then follow the same `packy init` flow.
 
-## User upgrade path
-
-Capability-pack update is not a binary upgrade operation. Homebrew users upgrade
-Packy itself, align the Installed Source, then preview updates for each explicitly
-active pack and surface:
+Homebrew users upgrade the binary and align the Installed Source before
+updating an active Pack:
 
 ```bash
 brew upgrade packy
 packy init
 packy pack update engram --surface codex --dry-run
 packy pack update engram --surface codex
-packy pack status engram --surface codex
 ```
 
-Direct GitHub Release users replace the `packy` binary with the newer release
-artifact, then run the same `packy init` and per-activation update sequence.
-`packy init` is the command that aligns the Installed Source checkout to the
-running release. Pack dry-runs must not mutate that checkout; if the Installed
-Source is missing or stale, run `packy init` first.
+## Maintainer flow
 
-## Maintainer quick path
+1. Choose a new `vX.Y.Z` version. It must not reuse any existing tag or GitHub
+   Release.
+2. Finalize `docs/release-notes/next.md` on `main` and keep its single
+   `{{TAG}}` placeholder.
+3. Run focused checks for the changed code, then run the general local check:
 
-Fresh publication is tag-triggered. Pushing one authorized exact `v0.x.y` tag
-starts the workflow; manual dispatch is only a non-mutating dry-run or recovery
-for that exact tag and sealed candidate. The workflow never creates, moves, or
-pushes a tag.
-
-1. Confirm the protected-main candidate passes validation:
    ```bash
-   ./scripts/validate-packy.sh --ci
+   ./scripts/validate-packy.sh
    ```
-2. Finalize `docs/release-notes/next.md`, including the support statement, on
-   this exact protected-main candidate. It must contain exactly one `{{TAG}}`
-   placeholder. Release notes cannot be repaired after publication.
-3. Confirm the protected `homebrew` environment's `HOMEBREW_TAP_TOKEN` has
-   write access only to `yersonargotev/homebrew-tap`.
-4. Create and push the exact tag through the repository's authorized process.
-   The tag-triggered run is the only fresh-publication path.
-5. If that run is interrupted, dispatch the same tag and sealed candidate with
-   **dry_run** disabled to recover it. Do not dispatch a different candidate.
-6. Verify the published release has exactly these seven assets:
-   - four `packy_<tag>_<goos>_<goarch>` binaries;
-   - `SHA256SUMS`;
-   - `sbom.spdx.json`; and
-   - `attestation.bundle.jsonl`.
-7. Verify `yersonargotev/homebrew-tap` has a `Formula/packy.rb` commit for the
-   same immutable tag and binary hashes.
-8. Run a sandboxed package-install smoke test before announcing the release.
 
-## Manual dispatch and recovery
+4. Create the version tag on the intended `main` commit and push that tag.
+5. Wait for the Release workflow. It validates the tagged source, builds and
+   verifies the distribution, creates the GitHub Release once, updates
+   `yersonargotev/homebrew-tap`, and tests the installed Homebrew binary.
+6. Confirm that the workflow, GitHub Release, and tap all name the same version.
 
-A fresh tag-triggered run is initially accepted only when the workflow checkout,
-freshly fetched `origin/main`, and the selected tag all resolve to one commit.
-Once that exact candidate is sealed, later protected-main advancement is allowed
-only while the sealed commit remains in protected-main history and the tag still
-resolves to it. A manual real run is accepted only to recover that same tag and
-candidate. All platform binaries are built once. Validation, Claude smoke,
-draft preparation, publication, and Homebrew consume those retained bytes
-without rebuilding.
+There is no manual publication, candidate sealing, admission, recovery,
+provenance, SBOM, or attestation path. Never rerun publication to mutate an
+existing version. Correct failures after publication with a newer version.
 
-For an existing exact tag, the default manual dry-run completes every safe,
-non-mutating check and read-only inspection available before stopping. It does
-not authorize fresh publication. If the version already has an attestation
-bundle, dry-run downloads and verifies it against the rebuilt candidate without
-requesting a new token. It does not request an OIDC token or
-create/change a tag, attestation, draft, release, asset, or tap commit.
+## Artifact contract
 
-A fresh tag-triggered run creates a draft only when the version is absent.
-Manual recovery requires an existing exact draft or published release whose
-sealed metadata identifies the original workflow run and candidate. Recovery
-downloads that run's retained candidate and publication metadata; it never
-invokes the build or smoke jobs again. If the retained artifacts expired or are
-missing, recovery fails closed instead of rebuilding. An exact draft is
-revalidated against its target commit, notes, provenance, source run, and every
-server-reported asset digest before uploading only missing retained assets.
-Divergent or ambiguous state fails closed. An already-published exact release
-is read and verified, never edited or recreated; that recovery path may continue
-to the independently verified Homebrew stage. Its title, body, assets, and tag
-are immutable workflow outputs. Any mismatch fails closed and is corrected only
-by a newer version.
-
-## `HOMEBREW_TAP_TOKEN` setup
-
-The release workflow cannot use this repository's `GITHUB_TOKEN` to push to the
-separate tap repository. Maintainers must create a token that can write to
-`yersonargotev/homebrew-tap` and store it as the `HOMEBREW_TAP_TOKEN`
-environment secret in the protected `homebrew` environment.
-
-The token should have the narrowest practical scope that allows checkout and
-push access to `yersonargotev/homebrew-tap`. Configure it under this
-repository's **Settings → Environments → homebrew → Environment secrets**.
-Do not create a repository-level fallback secret. The token is not exposed
-until the exact GitHub Release is published, independently read back, and the
-Owner approves the `homebrew` deployment. If it is missing, only the tap stage
-fails; rerunning the same version revalidates the immutable published release
-before retrying Homebrew.
-
-## Release artifact contract
-
-`scripts/build-release-artifacts.sh` accepts exact `v0.x.y` tags and emits one
-closed six-file candidate directory:
+`scripts/build-release-artifacts.sh --version <tag> --out-dir <dir>` builds:
 
 ```text
-packy_<version>_darwin_amd64
-packy_<version>_darwin_arm64
-packy_<version>_linux_amd64
-packy_<version>_linux_arm64
+packy_<tag>_darwin_amd64.tar.gz
+packy_<tag>_darwin_arm64.tar.gz
+packy_<tag>_linux_amd64.tar.gz
+packy_<tag>_linux_arm64.tar.gz
 SHA256SUMS
-sbom.spdx.json
 ```
 
-`SHA256SUMS` contains exactly the four binary digests plus the SBOM digest. The
-SPDX 2.3 JSON document is deterministic for the version, commit timestamp, and
-binary bytes. Verification rejects any missing, extra, duplicate, stale,
-non-regular, symlinked, or mismatched file. The publication stage adds the
-separately verified `attestation.bundle.jsonl` as the seventh release asset.
+Each archive contains one executable named `packy`. `SHA256SUMS` contains
+exactly one digest for each archive. The workflow builds this directory once
+and passes the same bytes to validation and publication.
 
-The sealed candidate binds the version, protected-main commit/ref, repository,
-release workflow path and content digest, final reviewed notes digest, exact subjects,
-and the reviewed union of effective GitHub permissions. Its deterministic
-provenance document and hidden draft-body metadata must round-trip exactly from
-GitHub before publication. After OIDC issuance, the final release-set identity
-also binds the exact attestation bundle digest and complete destination plan;
-that envelope is the body verified for draft recovery and publication. The
-bundle bytes are encoded in the hidden envelope so an interrupted draft can
-recover the identical bundle even when failure happened before asset upload.
-The destination plan identifies the tap repository/path and the exact generated
-formula SHA-256, so the Homebrew mutation is part of the same release identity.
+`scripts/validate-release-artifacts.sh` is release-only validation. It rejects
+missing or extra artifacts, malformed or mismatched checksums, and archives
+whose contents differ from the contract. It extracts the current runner's
+archive into a temporary installation root and requires the installed binary's
+`--version` output to match the tag.
 
-`scripts/generate-homebrew-formula.sh` accepts the complete manifest but derives
-URLs and hashes only for the four binaries. Packy v0 remains macOS-first. Darwin
-Homebrew installs are the supported user path; Linux artifacts remain published
-for future support rather than the current golden path.
+`scripts/generate-homebrew-formula.sh` generates `Formula/packy.rb` from the
+same tag and checksum manifest. After the GitHub Release and formula are
+published, the macOS package-smoke job runs `brew install --formula` and checks
+the installed binary again.
 
-## Real-Claude package smoke gates
+## Publication boundaries
 
-Packy owns two package-installed, credential-free real-Claude gates:
+The workflow starts only on a version-tag push and verifies that the tagged
+commit belongs to `main`. Read-only preparation has `contents: read`; GitHub
+publication alone has `contents: write`; the tap credential is available only
+to the protected `homebrew` job. External actions are pinned to immutable
+commits.
 
-| Gate | Claude selection | Trigger | Effect |
-| --- | --- | --- | --- |
-| Exact floor | `2.1.203` | Every pull request and release | A failure blocks that pull request or release. |
-| Current stable | npm's recorded stable version | Daily canary and every release | A canary failure opens compatibility work without attaching to unrelated pull requests; a release failure blocks publication. |
-
-Release validation runs both selectors against the corresponding Darwin artifact
-on Intel (`amd64`) and Apple Silicon (`arm64`) before the publication job can
-create a GitHub Release, upload assets, or push the tap update. The release
-workflow resolves the tag to one immutable commit, validates that commit once,
-builds and checksums one candidate set, passes those same Darwin binaries and
-commit SHA through smoke, and publishes that same proved artifact set without
-rebuilding it. Publication stops if the tag no longer resolves to the proved
-commit.
-
-Run either contract locally from a clean checkout with:
-
-```bash
-./scripts/run-claude-smoke.sh \
-  --claude-version 2.1.203 \
-  --packy-ref "$(git rev-parse HEAD)" \
-  --evidence-dir "$PWD/.scratch/claude-smoke-evidence"
-```
-
-Use `--claude-version stable` for the moving-stable variant. The runner acquires
-Claude before restricting execution, installs a release-like Packy binary away
-from the checkout, and then exposes only disposable `HOME`, `XDG_CONFIG_HOME`,
-`CLAUDE_CONFIG_DIR`, cache, data, temporary, Homebrew, Installed Source, and work
-roots. Its environment allowlist omits credentials and provider variables.
-Homebrew and Engram are deterministic inert stubs; Claude is real.
-
-The Claude interposer permits only version inspection and bounded user-scoped
-MCP list/get/add/remove operations. It rejects login, authentication, REPL,
-print/model mode, project/local MCP mutation, and malformed commands before the
-real executable can observe them. The package-installed Packy sequence initializes
-source without surface effects, then previews and applies a representative
-explicit activation. Its evidence states directly that source initialization
-caused zero surface changes:
-
-```text
-packy version
-packy init --repository-url <local-checkout> --repository-ref <proved-ref>
-packy doctor
-packy pack list
-packy pack show addy
-packy pack activate addy --surface claude --dry-run
-packy pack activate addy --surface claude
-packy pack status addy --surface claude
-```
-
-Every run retains canonical JSON evidence with `schema_version: 3`. It binds the Packy version, ref and
-commit; OS and architecture; requested and resolved Claude version; npm
-integrity and executable digest; each Packy command and normalized nested Claude
-operation with its exit; deterministic before/after sandbox manifests; and
-explicit assertions for disposable roots, allowlisted environment, credential
-scrubbing, command confinement, unchanged source checkout, zero initialization
-effects, a non-mutating activation preview, a verified representative activation,
-separate readiness inspection, and no interactive Claude invocation. Missing,
-malformed, failed, or unsafe evidence fails closed.
-
-## Fail-closed publication gate
-
-Build, evidence validation, attestation, GitHub publication, and Homebrew are
-separate jobs with separate authority:
-
-- build, validation, inspection, and dry-run use read-only repository access;
-- attestation and GitHub publication wait on Owner approval in the protected
-  `release` environment;
-- Homebrew publication waits separately on Owner approval in the protected
-  `homebrew` environment;
-- only the attestation job receives `id-token: write` and
-  `attestations: write`;
-- only GitHub draft/publication receives `contents: write`; and
-- only the Homebrew job receives `HOMEBREW_TAP_TOKEN`, after exact published
-  GitHub bytes have been read back and verified.
-
-The read-only build, validation, inspection, and dry-run jobs do not reference
-either publication environment. Environment approval therefore gates only the
-destination authority that the approved job is about to exercise.
-
-The OIDC bundle is verified against the exact repository, fully-qualified signer
-workflow, sealed tag-trigger source ref, source commit, signer commit, and every
-retained candidate file, including `SHA256SUMS` itself. Candidate eligibility
-still binds that commit to protected `main`; the attestation source-ref claim
-binds the GitHub run that was actually triggered by `refs/tags/<version>`.
-Verification uses the retained bundle and an explicit trusted-root document
-rather than fetching an arbitrary attestation.
-
-Before the draft becomes public, the workflow reads back the complete draft,
-requires the exact body metadata and seven-asset inventory, compares every
-server-reported SHA-256 digest with the retained bytes, and asks the domain
-verifier for the one-time `publish-draft` decision. There is no clobber, delete,
-recreate, replacement, tag movement, or published-version mutation path.
-The tag and protected-main refs are peeled through the Git object API and
-rechecked immediately before draft creation, every asset upload, OIDC issuance,
-publication, and the final tap push. Initial sealing requires the tag and
-protected-main tip to equal the retained commit; later checks require unchanged
-tag identity and the retained commit to remain in protected-main history. The
-release boundary verifies the exact release as bot-authored and, once
-published, immutable, while retaining all sealed tag, candidate, notes,
-seven-asset, checksum, provenance, and Homebrew checks. The tap stage also reads
-remote `main` and `Formula/packy.rb` back after pushing and compares the remote
-commit and formula digest with the sealed destination plan. Final verification
-confirms the published release and tap still match the sealed candidate.
-
-After publication, the Homebrew job independently reads the release again,
-checks its version, commit, body, exact inventory, server digests, and
-`SHA256SUMS`, and only then checks out and pushes the tap. Missing, failed,
-stale, duplicated, partial, or ambiguous evidence has no waiver path.
-
-The automated local-release smoke test is:
-
-```bash
-go test ./internal/release -run TestPackageInstallSmokeRequiresExplicitPackActivation -count=1
-```
-
-That test builds a temporary release-like `./cmd/packy` binary with an injected
-version, runs it from a temporary directory outside the repo checkout, clones a
-local Packy Source fixture, and places inert external executables ahead of the
-real `PATH`. It first proves initialization and inspection preserve byte-for-byte
-legacy/user surfaces and execute no external command. It then previews and
-applies a representative activation and inspects readiness separately on each supported surface:
-
-```bash
-packy init --repository-url <local-fixture-repo>
-packy doctor
-packy pack activate addy --surface codex --dry-run
-packy pack activate addy --surface codex
-packy pack status addy --surface codex
-```
-
-The test repeats the same `addy` preview, activation, projection check, and
-readiness inspection for OpenCode and Claude Code.
-
-## First v0.x checklist
-
-- [ ] The candidate passed `./scripts/validate-packy.sh --ci` on protected `main`.
-- [ ] Final support notes are committed on the exact candidate before tag push.
-- [ ] On initial sealing, the exact `v0.x.y` tag, workflow checkout, and freshly
-      fetched `origin/main` resolve to one commit.
-- [ ] On later recovery, the tag identity is unchanged and the sealed commit
-      remains in protected-main history.
-- [ ] The protected `homebrew` environment's `HOMEBREW_TAP_TOKEN` is configured
-      only for the dedicated tap, with no repository-level fallback secret.
-- [ ] A default dry-run completed and reported the planned external mutations
-      without requesting OIDC or changing tag, release, attestation, or tap state.
-- [ ] Exact Claude `2.1.203` and recorded-current-stable evidence is green for
-      Darwin `amd64` and `arm64`.
-- [ ] `SHA256SUMS` binds exactly four binaries and `sbom.spdx.json`.
-- [ ] OIDC provenance verifies the exact protected-main commit, signer workflow,
-      signer digest, and all six retained candidate files.
-- [ ] The draft read-back exactly matches its candidate identity, notes,
-      provenance, target commit, seven assets, and server hashes before publish.
-- [ ] The published release contains exactly four binaries, `SHA256SUMS`,
-      `sbom.spdx.json`, and `attestation.bundle.jsonl`.
-- [ ] The published release title, body, assets, and tag match their sealed
-      immutable values; no post-publication repair was used.
-- [ ] Homebrew began only after an independent exact published-release read-back.
-- [ ] `Formula/packy.rb` points at the same immutable tag and binary hashes.
-- [ ] A sandboxed package install proves initialization alone has zero surface
-      effects, then explicitly activates a representative pack and checks readiness.
-- [ ] Release notes retain the macOS-first support statement and Linux limitation.
+`gh release create` is invoked once without asset clobbering. The workflow has
+no path to edit, delete, recreate, resume, or recover a release. The Homebrew
+job publishes only `Formula/packy.rb`, and the final package smoke is downstream
+of both publication steps.

@@ -65,7 +65,7 @@ while IFS= read -r package; do
   fi
   if [[ "$ci" == false ]]; then
     case "$package" in
-      github.com/yersonargotev/packy/internal/cli | github.com/yersonargotev/packy/internal/release) continue ;;
+      github.com/yersonargotev/packy/internal/cli) continue ;;
     esac
   fi
   test_packages+=("$package")

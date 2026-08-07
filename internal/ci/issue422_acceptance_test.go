@@ -41,26 +41,6 @@ func TestIssue422OperatorPathsTeachInitializationThenExplicitActivation(t *testi
 	}
 }
 
-func TestIssue422ReleaseGuideMatchesPackageAndReleaseSmoke(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "docs", "release.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := strings.Join(strings.Fields(string(data)), " ")
-	for _, want := range []string{
-		"source initialization caused zero surface changes",
-		"packy pack activate addy --surface claude --dry-run",
-		"packy pack activate addy --surface claude",
-		"packy pack status addy --surface claude",
-		"on each supported surface",
-		"`schema_version: 3`",
-	} {
-		if !strings.Contains(text, want) {
-			t.Errorf("release guide does not bind smoke behavior %q", want)
-		}
-	}
-}
-
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
