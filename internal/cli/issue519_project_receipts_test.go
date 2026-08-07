@@ -19,7 +19,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 
 	installs := [][]string{
 		{"pack", "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"},
-		{"pack", "install", "argote", "--surface", "codex", "--resource", "instruction:engineering-principles"},
+		{"pack", "install", "argote", "--surface", "codex", "--resource", "instruction:guidance"},
 	}
 	for _, args := range installs {
 		if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
@@ -73,7 +73,11 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 		t.Fatalf("project receipt document = %#v\n%s", lock, lockData)
 	}
 	for _, receipt := range lock.Receipts {
-		if receipt.Pack.ID == "" || receipt.Pack.Version != "1.0.0" || receipt.Surface != "codex" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
+		wantVersion := "1.0.0"
+		if receipt.Pack.ID == "argote" {
+			wantVersion = "1.0.1"
+		}
+		if receipt.Pack.ID == "" || receipt.Pack.Version != wantVersion || receipt.Surface != "codex" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
 			t.Fatalf("incomplete project Pack receipt = %#v\n%s", receipt, lockData)
 		}
 		for _, projection := range receipt.Projections {
@@ -186,7 +190,7 @@ func TestIssue519CrossPackProjectionCollisionBlocksWithoutMutation(t *testing.T)
 		t.Fatalf("install Matty: %v\n%s", err, out)
 	}
 	before := snapshotTree(t, project)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "argote", "--surface", "codex", "--resource", "instruction:engineering-principles")
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "argote", "--surface", "codex", "--resource", "instruction:guidance")
 	if err == nil || !strings.Contains(out, "projection_collision") {
 		t.Fatalf("cross-Pack collision was not blocked: %v\n%s", err, out)
 	}

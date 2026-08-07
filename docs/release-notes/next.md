@@ -5,8 +5,9 @@ Git-reviewed capability Packs on Codex, OpenCode, and Claude Code.
 
 ## Highlights
 
-- Addy, Argote, Engram, and Matty each start at Pack version `1.0.0` with one
-  current manifest.
+- Argote `1.0.1` projects its engineering and communication guidance as one
+  cohesive instruction, so complete activation is collision-free on every
+  supported surface. Addy, Engram, and Matty remain at Pack version `1.0.0`.
 - Installed Pack receipts contain only current ownership, projection, and
   digest data.
 - GitHub branch protection, CI, CodeQL, review, and human merge protect

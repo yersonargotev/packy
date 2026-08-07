@@ -1,6 +1,6 @@
 {
   "id": "argote",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Yerson Argote's engineering and communication guidance",
   "selectable": true,
   "surfaces": [
@@ -12,8 +12,8 @@
   "resources": [
     {
       "kind": "instruction",
-      "id": "engineering-principles",
-      "source": "instructions/argote-engineering-principles.md",
+      "id": "guidance",
+      "source": "instructions/argote-guidance.md",
       "requires": [],
       "conflicts": [],
       "notices": [],
@@ -21,59 +21,24 @@
         {
           "surface": "claude",
           "projection": "instruction",
-          "name": "engineering-principles",
-          "invocation": "engineering-principles",
+          "name": "guidance",
+          "invocation": "guidance",
           "mode": "native",
           "sharing": "shared"
         },
         {
           "surface": "codex",
           "projection": "instruction",
-          "name": "engineering-principles",
-          "invocation": "engineering-principles",
+          "name": "guidance",
+          "invocation": "guidance",
           "mode": "native",
           "sharing": "shared"
         },
         {
           "surface": "opencode",
           "projection": "instruction",
-          "name": "engineering-principles",
-          "invocation": "engineering-principles",
-          "mode": "native",
-          "sharing": "shared"
-        }
-      ],
-      "surface_exclusions": []
-    },
-    {
-      "kind": "instruction",
-      "id": "neutral-spanish",
-      "source": "instructions/argote-neutral-spanish.md",
-      "requires": [],
-      "conflicts": [],
-      "notices": [],
-      "bindings": [
-        {
-          "surface": "claude",
-          "projection": "instruction",
-          "name": "neutral-spanish",
-          "invocation": "neutral-spanish",
-          "mode": "native",
-          "sharing": "shared"
-        },
-        {
-          "surface": "codex",
-          "projection": "instruction",
-          "name": "neutral-spanish",
-          "invocation": "neutral-spanish",
-          "mode": "native",
-          "sharing": "shared"
-        },
-        {
-          "surface": "opencode",
-          "projection": "instruction",
-          "name": "neutral-spanish",
-          "invocation": "neutral-spanish",
+          "name": "guidance",
+          "invocation": "guidance",
           "mode": "native",
           "sharing": "shared"
         }

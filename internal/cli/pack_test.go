@@ -408,6 +408,70 @@ func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
 	}
 }
 
+func TestArgoteActivationPreviewIsApplicableOnEverySurface(t *testing.T) {
+	for _, surface := range []string{"claude", "codex", "opencode"} {
+		t.Run(surface, func(t *testing.T) {
+			terminal := &fakeTerminal{interactive: true, approve: true}
+			opts, home, _ := packActivationOptions(t, terminal)
+			beforeHome := snapshotTree(t, home)
+
+			out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "argote", "--surface", surface, "--dry-run")
+			if err != nil {
+				t.Fatalf("Argote %s dry-run failed: %v\n%s", surface, err, out)
+			}
+			for _, want := range []string{"Plan disposition: applicable", "Logical resources: 1 skill, 1 instruction", "instruction:guidance", "skill:espera-que"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("Argote %s preview missing %q:\n%s", surface, want, out)
+				}
+			}
+			if strings.Contains(out, "target-collision") {
+				t.Fatalf("Argote %s preview contains a target collision:\n%s", surface, out)
+			}
+			if terminal.calls != 0 || snapshotTree(t, home) != beforeHome {
+				t.Fatalf("Argote %s dry-run prompted or mutated HOME", surface)
+			}
+		})
+	}
+}
+
+func TestArgoteCodexActivationSurvivesReceiptReloadAndCanBeDeactivated(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, _ := packActivationOptions(t, terminal)
+
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "argote", "--surface", "codex"); err != nil {
+		t.Fatalf("activate Argote: %v\n%s", err, out)
+	}
+	status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "argote", "--surface", "codex")
+	if err != nil {
+		t.Fatalf("inspect Argote: %v\n%s", err, status)
+	}
+	for _, want := range []string{"Lifecycle state: active", "Readiness: configured=yes", "Projections: 2 verified; 0 drifted; 0 ambiguous; 0 missing; 0 unmanaged"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("active Argote status missing %q:\n%s", want, status)
+		}
+	}
+
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "argote", "--surface", "codex"); err != nil {
+		t.Fatalf("deactivate Argote: %v\n%s", err, out)
+	}
+	if prompt, err := os.ReadFile(filepath.Join(home, ".codex", "AGENTS.md")); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	} else if strings.Contains(string(prompt), "packy:pack:guidance") || strings.Contains(string(prompt), "# Argote guidance") {
+		t.Fatalf("deactivation retained Argote instruction block:\n%s", prompt)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".agents", "skills", "espera-que")); !os.IsNotExist(err) {
+		t.Fatalf("deactivation retained Argote skill: %v", err)
+	}
+
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "argote", "--surface", "codex"); err != nil {
+		t.Fatalf("reactivate Argote: %v\n%s", err, out)
+	}
+	status, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "argote", "--surface", "codex")
+	if err != nil || !strings.Contains(status, "Projections: 2 verified; 0 drifted; 0 ambiguous; 0 missing; 0 unmanaged") {
+		t.Fatalf("reactivated Argote is not verified: %v\n%s", err, status)
+	}
+}
+
 func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, repoRoot := currentPackActivationOptions(t, terminal)
@@ -685,8 +749,8 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 		t.Fatalf("show Argote failed: %v\n%s", err, argoteShow)
 	}
 	for _, want := range []string{
-		"argote 1.0.0", "Supported CLI surfaces: claude, codex, opencode", "Resources: 1 skill, 2 instruction",
-		"Resource: instruction:engineering-principles role=root", "Resource: instruction:neutral-spanish role=root", "Resource: skill:espera-que role=root",
+		"argote 1.0.1", "Supported CLI surfaces: claude, codex, opencode", "Resources: 1 skill, 1 instruction",
+		"Resource: instruction:guidance role=root", "Resource: skill:espera-que role=root",
 	} {
 		if !strings.Contains(argoteShow, want) {
 			t.Fatalf("Argote show missing %q:\n%s", want, argoteShow)

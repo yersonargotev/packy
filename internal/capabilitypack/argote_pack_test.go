@@ -1,12 +1,14 @@
 package capabilitypack
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
-func TestCheckedInArgotePackHasIndependentNativeRoots(t *testing.T) {
+func TestCheckedInArgotePackHasCollisionFreeNativeRoots(t *testing.T) {
 	catalog, err := Discover(filepath.Join("..", "..", "bundle"))
 	if err != nil {
 		t.Fatal(err)
@@ -15,14 +17,14 @@ func TestCheckedInArgotePackHasIndependentNativeRoots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.Version != "1.0.0" || pack.manifestVersion != manifestSchemaV4 {
+	if pack.Version != "1.0.1" || pack.manifestVersion != manifestSchemaV4 {
 		t.Fatalf("argote identity = version %q schema %d", pack.Version, pack.manifestVersion)
 	}
 	if got, want := pack.Surfaces, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("argote surfaces = %v want %v", got, want)
 	}
 
-	wantRoots := []string{"instruction:engineering-principles", "instruction:neutral-spanish", "skill:espera-que"}
+	wantRoots := []string{"instruction:guidance", "skill:espera-que"}
 	if len(pack.Resources) != len(wantRoots) {
 		t.Fatalf("argote resources = %+v", pack.Resources)
 	}
@@ -52,6 +54,16 @@ func TestCheckedInArgotePackHasIndependentNativeRoots(t *testing.T) {
 		}
 		if len(selected.Resources) != 1 || selected.Resources[0].Kind != resource.Kind || selected.Resources[0].ID != resource.ID {
 			t.Fatalf("selected argote root %q closure = %+v", identity, selected.Resources)
+		}
+	}
+
+	guidance, err := os.ReadFile(filepath.Join("..", "..", "bundle", "instructions", "argote-guidance.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Choose the simplest implementation", "Use neutral, international Spanish", "Write code, identifiers, comments, documentation, plans, ADRs, and commit messages in English"} {
+		if !strings.Contains(string(guidance), want) {
+			t.Fatalf("Argote guidance missing %q", want)
 		}
 	}
 }
