@@ -107,10 +107,7 @@ The subagent orchestration behaviour Packy exposes, including read-only explorat
 The ordinary pull-request path for Packy changes. Issues organize work; native GitHub branch protection, required CI, review, and human merge protect integration without a Packy-owned authorization system.
 
 ### Packy release
-An immutable published distribution derived from one version tag on `main`, containing Darwin and Linux binaries for amd64 and arm64, `SHA256SUMS`, a GitHub Release, and the matching Homebrew formula. The simplified generation begins at `v0.2.0`; existing `v0.1.x` tags and releases remain immutable history but define no compatibility requirement. Release validation performs the package-install smoke; a faulty published release is corrected by a newer version rather than mutation or recovery.
-
-### Developer validation
-Fast feedback proportional to the current change, targeting under ten seconds for focused tests, under thirty seconds for general local validation, and under three minutes for required CI. Release builds, publication checks, package-install smoke, and supported-CLI package smoke belong to release or scheduled validation rather than ordinary development.
+An immutable Packy distribution published from one version tag. A faulty published release is corrected by a newer version rather than mutation or recovery.
 
 ### Pack authoring workflow
 The repository workflow for creating or changing one Pack: copy the standard Pack directory template when needed, add or edit reviewed resources, update the single manifest and maintainer-selected SemVer, then run the focused validator for that Pack. It performs no upstream import, synchronization, classification, compatibility analysis, or version-history archival.

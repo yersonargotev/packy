@@ -8,6 +8,10 @@ from `v0.1.16` (`35d8090`, 2026-08-06) through `main` at `3317aa7`.
 All evidence is first-party: repository history and checked-in contracts, plus
 the Packy GitHub issue and pull-request records linked below.
 
+This historical report uses **Pack Source** only when naming the v0.1 domain
+concept or its checked-in contracts. The accepted v0.2 vocabulary uses **Pack
+source reference** for informational upstream metadata.
+
 There has **not** been a post-registration Argote content update in this
 interval: the only `argote` source-sync commit is the initial registration at
 the same upstream commit used by the initial pack issue.  Therefore, claims
@@ -158,42 +162,14 @@ was not a dominant runtime cost (both governance packages completed in under
 two seconds in the ordinary phase), but it added fixtures, workflow gates, and
 rework to every delivery.
 
-## Accepted direction
+## Decision resulting from this research
 
 After reviewing this evidence, the maintainer accepted [specification
 #513](https://github.com/yersonargotev/packy/issues/513) and [ADR
-0031](../adr/0031-simplify-packy-around-reviewed-packs.md). The chosen response
-is a clean Packy `v0.2.0` generation, not an incremental optimization of the
-source-management architecture described above:
+0031](../adr/0031-simplify-packy-around-reviewed-packs.md). Those records own
+the resulting architecture and implementation scope.
 
-1. Git-reviewed Pack content becomes authoritative; an upstream source
-   reference is informational only.
-2. Addy, Argote, Engram, and Matty begin one current manifest generation at
-   Pack version `1.0.0`; Vercel, legacy manifests, history, locks, and
-   compatibility routes are removed.
-3. Pack synchronization, classification, workflow orchestration, custom
-   governance authorization/drift, and the custom release candidate/recovery
-   domain are removed.
-4. Installed Pack receipts retain only the current version, scope, projections,
-   and digests needed for safe update and removal.
-5. Developer validation becomes proportional: focused Pack proof targets under
-   ten seconds, general local validation under thirty seconds, and required CI
-   under three minutes. Cross-build and package-install smoke move to release.
-6. Existing `v0.1.x` tags and releases remain immutable history, while the
-   only current workstation performs a documented clean reset instead of a
-   migration.
-
-This direction deliberately rejects the report's earlier candidate remedies
-such as generalizing source admission or adding request renderers. Those ideas
-would reduce individual workflow steps but retain the dominant architecture
-and maintenance surface that the accepted decision removes.
-
-## Success measures
-
-The simplification succeeds when adding or updating a Pack requires only
-reviewed resources, one current manifest, a maintainer-selected SemVer, and one
-focused validation command; no Pack change requires source registration,
-history generation, compatibility classification, custom authorization
-evidence, or release validation. Runtime safety remains observable through
-current installed Pack receipts, drift detection, collision preflight, and
-receipt-bounded removal.
+They supersede candidate remedies that would optimize the former source
+admission system, such as generalizing source registration or adding request
+renderers. This report remains the evidence for the decision rather than a
+second architectural contract.
