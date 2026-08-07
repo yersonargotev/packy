@@ -1,11 +1,20 @@
 # Pack authoring template
 
-Copy this directory to `bundle/packs/<pack-id>`, then update `pack.json`:
+Copy this directory to `bundle/packs/<pack-id>`. A Pack has reviewed content and
+one `pack.json` manifest.
 
-1. Set the Pack identity, description, selectability, supported surfaces, and maintainer-selected SemVer.
-2. Change resource `source` paths to their reviewed paths beneath `bundle/`.
-3. Declare only intra-Pack `requires`, external tool requirements, concrete resource conflicts, bindings, and intentional exclusions.
-4. Remove `source_reference` when no informational upstream reference is useful.
-5. Run `./scripts/validate-pack-content.sh <pack-id>`.
+1. Set the Pack identity, description, selectability, supported surfaces, and
+   maintainer-selected SemVer in `pack.json`.
+2. Replace the example with the Pack's reviewed content beneath its Pack
+   directory.
+3. Point each resource `source` at that reviewed content.
+4. Declare only intra-Pack dependencies, external requirements, concrete
+   conflicts, bindings, and intentional exclusions.
+5. Run the focused validator:
 
-The reviewed files in this repository are authoritative. Source references do not authorize synchronization or admission.
+   ```sh
+   ./scripts/validate-pack-content.sh <pack-id>
+   ```
+
+Review the content and manifest together. The checked-in Pack is the complete
+authoring authority.
