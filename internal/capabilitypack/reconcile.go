@@ -51,7 +51,7 @@ func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) 
 				return ReconciliationPlan{}, fmt.Errorf("reconcile preserves the persisted provider choice and cannot switch providers")
 			}
 		}
-		plan, err := f.preview(ctx, activation, OperationReconcile, "")
+		plan, err := f.preview(ctx, activation, OperationReconcile, "", false)
 		if err != nil {
 			return ReconciliationPlan{}, err
 		}
@@ -90,7 +90,7 @@ func (f Facade) previewReconcile(ctx context.Context, request ReconcileRequest) 
 		return ReconciliationPlan{}, fmt.Errorf("no active capability packs on %s; reconcile does not activate packs", request.Surface)
 	}
 	firstIntent, _ := intentForPack(state, ids[0], request.Surface)
-	plan, err := f.preview(ctx, ActivationRequest{PackID: ids[0], Surface: request.Surface, Selection: selections[ids[0]], ProviderChoices: cloneProviderChoices(firstIntent.ProviderChoices)}, OperationReconcile, "")
+	plan, err := f.preview(ctx, ActivationRequest{PackID: ids[0], Surface: request.Surface, Selection: selections[ids[0]], ProviderChoices: cloneProviderChoices(firstIntent.ProviderChoices)}, OperationReconcile, "", false)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}

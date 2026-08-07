@@ -314,7 +314,7 @@ func TestFileActivationStoreRejectsInvalidV4SelectionWithoutRewrite(t *testing.T
 		t.Fatal(err)
 	}
 	store := NewFileActivationStore(path)
-	if _, err := store.Load(context.Background(), SurfaceCodex); err == nil || !strings.Contains(err.Error(), "invalid resource selection") {
+	if _, err := store.Load(context.Background(), SurfaceCodex); err == nil || !strings.Contains(err.Error(), "invalid installed receipt document") {
 		t.Fatalf("Load error = %v", err)
 	}
 	after, err := os.ReadFile(path)

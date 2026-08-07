@@ -37,11 +37,6 @@ type CapabilityConsumerFact struct {
 	Capability       string
 }
 
-type AttemptStatus struct {
-	Outcome string
-	PlanID  string
-}
-
 type ReadinessStatus struct {
 	Configured bool
 	Authorized bool
@@ -149,7 +144,6 @@ type StatusEntry struct {
 	Intent              IntentStatus
 	IntentPresent       bool
 	UpdateAvailable     bool
-	LatestAttempt       *AttemptStatus
 	Readiness           ReadinessStatus
 	ReadinessObserved   ReadinessObservationStatus
 	OptionalAuthorities []OptionalAuthorityObservation
@@ -524,7 +518,6 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 			entry.ResourceSelections[i].DependencyChain = []ResourceIdentity{}
 		}
 	}
-	entry.LatestAttempt = latestAttemptStatus(state, pack.ID, surface)
 	surfaceComposition, err := f.compose(evidencePack, state, surface, true)
 	if err != nil {
 		return StatusEntry{}, err
@@ -604,9 +597,6 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 }
 
 func lifecycleStateForStatus(entry StatusEntry, state ActivationState, packID string, projections []ObservedProjection) PackLifecycleState {
-	if entry.LatestAttempt != nil && AttemptOutcome(entry.LatestAttempt.Outcome) == AttemptRecoveryRequired {
-		return PackLifecycleRecoveryRequired
-	}
 	if entry.IntentPresent && entry.Intent.Active {
 		return PackLifecycleActive
 	}
@@ -805,25 +795,4 @@ func portableProjectionTarget(target string) string {
 		return target
 	}
 	return filepath.Join("<host-path>", filepath.Base(filepath.Clean(target)))
-}
-
-func latestAttemptStatus(state ActivationState, packID string, surface Surface) *AttemptStatus {
-	var candidate *ApplyingJournal
-	for i := range state.History {
-		if state.History[i].PackID == packID && state.History[i].Surface == surface {
-			candidate = &state.History[i]
-		}
-	}
-	for i := range state.LastAttempts {
-		if state.LastAttempts[i].PackID == packID && state.LastAttempts[i].Surface == surface {
-			candidate = &state.LastAttempts[i]
-		}
-	}
-	if state.Journal != nil && state.Journal.PackID == packID && state.Journal.Surface == surface {
-		candidate = state.Journal
-	}
-	if candidate == nil {
-		return nil
-	}
-	return &AttemptStatus{Outcome: string(candidate.Outcome), PlanID: candidate.PlanID}
 }

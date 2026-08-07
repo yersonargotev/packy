@@ -106,7 +106,6 @@
         "activation_role",
         "consumers",
         "update_available",
-        "latest_attempt",
         "projection_summary",
         "projection_details",
         "resource_selections",
@@ -186,34 +185,6 @@
         },
         "update_available": {
           "type": "boolean"
-        },
-        "latest_attempt": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "object",
-              "required": [
-                "outcome",
-                "plan_id"
-              ],
-              "properties": {
-                "outcome": {
-                  "enum": [
-                    "applying",
-                    "verified",
-                    "recovery-required",
-                    "unknown"
-                  ]
-                },
-                "plan_id": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
         },
         "projection_summary": {
           "type": "object",

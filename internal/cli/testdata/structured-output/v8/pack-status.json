@@ -23,10 +23,6 @@
         "provider_choices": []
       },
       "update_available": false,
-      "latest_attempt": {
-        "outcome": "verified",
-        "plan_id": "plan-example"
-      },
       "projection_summary": {
         "verified": 1,
         "missing": 0,

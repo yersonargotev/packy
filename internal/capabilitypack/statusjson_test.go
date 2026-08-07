@@ -42,13 +42,6 @@ func TestStatusJSONDistinguishesObservedFalseFromUnknownAndSorts(t *testing.T) {
 	}
 }
 
-func TestStatusJSONNormalizesUnknownAttemptOutcome(t *testing.T) {
-	report := (StatusReport{Entries: []StatusEntry{{Pack: Pack{ID: "matty"}, Surface: SurfaceCodex, LatestAttempt: &AttemptStatus{Outcome: "future-value", PlanID: "plan-1"}}}}).JSONReport(true)
-	if got := report.Entries[0].LatestAttempt; got == nil || got.Outcome != "unknown" || got.PlanID != "plan-1" {
-		t.Fatalf("attempt = %#v", got)
-	}
-}
-
 func TestStatusJSONCarriesFocusedResourceReadinessAndRequirement(t *testing.T) {
 	resource := ResourceStatus{
 		Resource: ResourceIdentity{Kind: "skill", ID: "shared"}, Role: ResourceRoleDependency,
