@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "pack_id": "argote",
+  "pack_version": "1.0.0",
+  "manifest": {
+    "path": "pack.json",
+    "size": 3570,
+    "mode": 420,
+    "sha256": "5e5bbd19e8ebfa8993752271aa2303f026287b81233dec7013926af7ebd4152c"
+  },
+  "resources": [
+    {
+      "kind": "instruction",
+      "id": "engineering-principles",
+      "source": "instructions/argote-engineering-principles.md",
+      "files": [
+        {
+          "path": "instructions/argote-engineering-principles.md",
+          "size": 1097,
+          "mode": 420,
+          "sha256": "c8573eaf3dff96e960b6cff40bef6adc356b46df62d6ad73998cbbf91588e1cc"
+        }
+      ],
+      "sha256": "39392adb989e0799ad2dcf9e3baae7ffdbe6295d8946e333963033743b621630"
+    },
+    {
+      "kind": "instruction",
+      "id": "neutral-spanish",
+      "source": "instructions/argote-neutral-spanish.md",
+      "files": [
+        {
+          "path": "instructions/argote-neutral-spanish.md",
+          "size": 677,
+          "mode": 420,
+          "sha256": "586d66db7345c32af0836e731240ac1be5955c6700f80a31b7f498a7f98b1dfd"
+        }
+      ],
+      "sha256": "6dcbd3751ba7df1fa7cb3de1570a70d12cc5f91f9e11cfe66c733afa5813c912"
+    },
+    {
+      "kind": "skill",
+      "id": "espera-que",
+      "source": "skills/productivity/espera-que",
+      "files": [
+        {
+          "path": "skills/productivity/espera-que/SKILL.md",
+          "size": 654,
+          "mode": 420,
+          "sha256": "81b0025987f4bb873e7cd63a83b58880af379b111caefac05115dd5bd084d7f6"
+        }
+      ],
+      "sha256": "936b4cee778812f7ae53c48249112ce066e33d043ae330ae46c032ea78f613e3"
+    }
+  ],
+  "aggregate_sha256": "da50fd55ab2d11ae9aacbb0e4ec69d22072213b5011e08fdbfdf4123b22c57e8"
+}

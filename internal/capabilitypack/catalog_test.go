@@ -187,9 +187,13 @@ func TestDeferredCatalogRefreshesAfterBundleSwap(t *testing.T) {
 	stage := filepath.Join(repository, "bundle-stage")
 	for _, path := range []string{
 		"instructions/addy.md",
+		"instructions/argote-engineering.md",
+		"instructions/argote-spanish.md",
 		"instructions/engram.md",
 		"instructions/matty.md",
+		"skills/espera-que/SKILL.md",
 		"packs/addy/pack.json",
+		"packs/argote/pack.json",
 		"packs/engram/pack.json",
 		"packs/matty/pack.json",
 	} {
@@ -234,7 +238,7 @@ func TestDeferredCatalogRefreshesAfterBundleSwap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if packs[2].ID != "matty" || packs[2].Version != "2.0.0" {
+	if packs[3].ID != "matty" || packs[3].Version != "2.0.0" {
 		t.Fatalf("ListCurrent packs=%+v, want complete new generation", packs)
 	}
 }
@@ -246,8 +250,15 @@ func TestDiscoverLoadsInitialStrictCatalog(t *testing.T) {
 		t.Fatalf("Discover failed: %v", err)
 	}
 	packs := catalog.List()
-	if len(packs) != 3 || packs[0].ID != "addy" || packs[1].ID != "engram" || packs[2].ID != "matty" {
+	if len(packs) != 4 || packs[0].ID != "addy" || packs[1].ID != "argote" || packs[2].ID != "engram" || packs[3].ID != "matty" {
 		t.Fatalf("packs = %#v", packs)
+	}
+	argote, err := catalog.Show("argote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := argote.ResourceCounts(); got != (ResourceCounts{Skills: 1, Instructions: 2}) {
+		t.Fatalf("argote counts = %#v", got)
 	}
 	engram, err := catalog.Show("engram")
 	if err != nil {
@@ -317,7 +328,7 @@ func writeCatalogFixture(t *testing.T) string {
 	bundle := filepath.Join(t.TempDir(), "bundle")
 	skillRoot := filepath.Join(bundle, "skills")
 	instructionRoot := filepath.Join(bundle, "instructions")
-	for _, dir := range []string{skillRoot, instructionRoot, filepath.Join(bundle, "packs", "addy"), filepath.Join(bundle, "packs", "engram"), filepath.Join(bundle, "packs", "matty")} {
+	for _, dir := range []string{skillRoot, instructionRoot, filepath.Join(skillRoot, "espera-que"), filepath.Join(bundle, "packs", "addy"), filepath.Join(bundle, "packs", "argote"), filepath.Join(bundle, "packs", "engram"), filepath.Join(bundle, "packs", "matty")} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -331,10 +342,20 @@ func writeCatalogFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(instructionRoot, "matty.md"), []byte("matty"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(instructionRoot, "argote-engineering.md"), []byte("engineering"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(instructionRoot, "argote-spanish.md"), []byte("spanish"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillRoot, "espera-que", "SKILL.md"), []byte("---\nname: espera-que\n---\n\nRepitch.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	addy := `{"schema_version":1,"id":"addy","version":"1.1.0","provides":["workflow:addy"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"addy-guidance","source":"instructions/addy.md"}]}`
+	argote := `{"schema_version":4,"id":"argote","version":"1.0.0","surfaces":["claude","codex","opencode"],"provides":[],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"engineering-principles","source":"instructions/argote-engineering.md","requires":[],"provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[],"conflicts":[],"notices":[],"bindings":[{"surface":"claude","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"},{"surface":"codex","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"},{"surface":"opencode","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"}],"surface_exclusions":[]},{"kind":"instruction","id":"neutral-spanish","source":"instructions/argote-spanish.md","requires":[],"provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[],"conflicts":[],"notices":[],"bindings":[{"surface":"claude","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"},{"surface":"codex","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"},{"surface":"opencode","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"}],"surface_exclusions":[]},{"kind":"skill","id":"espera-que","source":"skills/espera-que","requires":[],"provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[],"conflicts":[],"notices":[],"bindings":[{"surface":"claude","projection":"skill","name":"espera-que","invocation":"/espera-que","mode":"native","sharing":"exclusive"},{"surface":"codex","projection":"skill","name":"espera-que","invocation":"$espera-que","mode":"native","sharing":"exclusive"},{"surface":"opencode","projection":"skill","name":"espera-que","invocation":"espera-que","mode":"native","sharing":"exclusive"}],"surface_exclusions":[],"runtime_modes":[]}],"root_migrations":[],"contract":{"exclusions":[]}}`
 	engram := `{"schema_version":1,"id":"engram","version":"1.0.0","provides":["memory:persistent"],"requires":{"capabilities":[],"tools":["engram"]},"conflicts":[],"resources":[{"kind":"instruction","id":"engram-memory","source":"instructions/engram.md"},{"kind":"mcp_server","id":"engram","command":"engram","args":["mcp"]},{"kind":"lifecycle","id":"engram-memory"}]}`
 	matty := `{"schema_version":1,"id":"matty","version":"1.0.0","provides":["workflow:matty"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"matty-guidance","source":"instructions/matty.md"}]}`
-	for name, data := range map[string]string{"addy": addy, "engram": engram, "matty": matty} {
+	for name, data := range map[string]string{"addy": addy, "argote": argote, "engram": engram, "matty": matty} {
 		if err := os.WriteFile(filepath.Join(bundle, "packs", name, "pack.json"), []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}

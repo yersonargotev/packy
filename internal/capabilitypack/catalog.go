@@ -384,6 +384,7 @@ var initialCatalog = []catalogEntry{
 			ExistingSurfaces: []Surface{SurfaceCodex, SurfaceOpenCode},
 		}},
 	},
+	{ID: "argote", Description: "Yerson Argote's engineering and communication guidance", Surfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
 	{ID: "engram", Description: "Persistent memory for agent work", Surfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
 	{ID: "matty", Description: "Matty workflow", Surfaces: []Surface{SurfaceCodex, SurfaceOpenCode}},
 }

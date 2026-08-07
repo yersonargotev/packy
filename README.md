@@ -97,7 +97,7 @@ packy pack uninstall <pack> --surface <surface>
 Packy core remains available even when the optional `matty` capability pack is
 inactive.
 
-The selectable pack catalog currently contains `addy`, `engram`, and `matty`.
+The selectable pack catalog currently contains `addy`, `argote`, `engram`, and `matty`.
 
 The catalog supports the `codex`, `opencode`, and `claude` surfaces when a pack
 explicitly declares them. Activation intent is per surface. A skill projected
