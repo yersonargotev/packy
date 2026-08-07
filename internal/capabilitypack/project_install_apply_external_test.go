@@ -74,7 +74,7 @@ func TestProjectInstallRetainsAndConsumesRecoveryJournalWhenRollbackCannotBeVeri
 		t.Fatalf("read-only recovery observation = %t, %v", pending, err)
 	}
 	status, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: project, PackyHome: packyHome, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}})
-	if err != nil || !status.RecoveryRequired || status.RecoveryCommand != "packy pack install" || len(status.Packs) != 0 {
+	if err != nil || !status.RecoveryRequired || status.RecoveryCommand != "packy pack install <pack> --surface <surface>" || len(status.Packs) != 0 {
 		t.Fatalf("unfocused recovery status = %+v, %v", status, err)
 	}
 	if _, err := capabilitypack.PreviewProjectDeactivation(context.Background(), capabilitypack.ProjectDeactivationRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter}); err == nil || !strings.Contains(err.Error(), "packy pack install") {

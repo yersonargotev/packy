@@ -29,37 +29,25 @@
       },
       "additionalProperties": false
     },
-    "provider_choice": {
-      "type": "object",
-      "required": ["capability", "provider_pack"],
-      "properties": {
-        "capability": { "type": "string", "minLength": 1 },
-        "provider_pack": { "type": "string", "minLength": 1 },
-        "provider_resource": { "$ref": "#/$defs/resource" }
-      },
-      "additionalProperties": false
-    },
     "surface_intent": {
       "type": "object",
-      "required": ["surface", "selection", "aliases", "provider_choices"],
+      "required": ["surface", "selection", "aliases"],
       "properties": {
         "surface": { "$ref": "#/$defs/surface" },
         "selection": { "$ref": "#/$defs/selection" },
-        "aliases": { "type": "array", "items": { "$ref": "#/$defs/alias" } },
-        "provider_choices": { "type": "array", "items": { "$ref": "#/$defs/provider_choice" } }
+        "aliases": { "type": "array", "items": { "$ref": "#/$defs/alias" } }
       },
       "additionalProperties": false
     },
     "pack": {
       "type": "object",
-      "required": ["id", "version", "surfaces", "selection", "aliases", "provider_choices"],
+      "required": ["id", "version", "surfaces", "selection", "aliases"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "version": { "type": "string", "minLength": 1 },
         "surfaces": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/surface" } },
         "selection": { "$ref": "#/$defs/selection" },
         "aliases": { "type": "array", "items": { "$ref": "#/$defs/alias" } },
-        "provider_choices": { "type": "array", "items": { "$ref": "#/$defs/provider_choice" } },
         "surface_intents": { "type": "array", "items": { "$ref": "#/$defs/surface_intent" } }
       },
       "additionalProperties": false
@@ -76,13 +64,12 @@
       },
       "additionalProperties": false
     },
-    "source": {
+    "installed_pack": {
       "type": "object",
-      "required": ["pack_id", "pack_version", "manifest_schema"],
+      "required": ["id", "version"],
       "properties": {
-        "pack_id": { "type": "string", "minLength": 1 },
-        "pack_version": { "type": "string", "minLength": 1 },
-        "manifest_schema": { "type": "integer", "minimum": 1 }
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
@@ -98,10 +85,35 @@
       },
       "additionalProperties": false
     },
-    "resource_graph": {
+    "installed_projection": {
       "type": "object",
-      "required": ["resources"],
-      "properties": { "resources": { "type": "array", "items": { "$ref": "#/$defs/resource_fact" } } },
+      "required": ["id", "physical_id", "target", "digest", "contributors"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "physical_id": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "contributors": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "mode": { "enum": ["copy_tree", "copy_file", "merge_marked_file", "merge_structured_file"] },
+        "file_mode": { "type": "integer", "minimum": 1 },
+        "command": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "discoverable_by": { "type": "array", "items": { "$ref": "#/$defs/surface" } }
+      },
+      "additionalProperties": false
+    },
+    "installed_receipt": {
+      "type": "object",
+      "required": ["pack", "surface", "selection", "resources", "projections"],
+      "properties": {
+        "pack": { "$ref": "#/$defs/installed_pack" },
+        "surface": { "$ref": "#/$defs/surface" },
+        "selection": { "$ref": "#/$defs/selection" },
+        "aliases": { "type": "array", "items": { "$ref": "#/$defs/alias" } },
+        "resources": { "type": "array", "items": { "$ref": "#/$defs/resource" } },
+        "projections": { "type": "array", "items": { "$ref": "#/$defs/installed_projection" } },
+        "sensitive": { "type": "array", "items": { "$ref": "#/$defs/sensitive" } }
+      },
       "additionalProperties": false
     },
     "projection_plan": {

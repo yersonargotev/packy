@@ -30,7 +30,7 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyAcrossOpenCodeAndClaude(t *testi
 				t.Fatal("installed project lock has no selected resources")
 			}
 			resource := installation.Lock.ResourceGraph.Resources[0].Resource
-			installation.Lock.Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
+			installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
 				{Category: capabilitypack.ProjectActivationMCP, Surface: surface, Resource: resource, Detail: "host-owned-runtime-consent"},
 			}
 			lock, err := json.MarshalIndent(installation.Lock, "", "  ")
@@ -57,7 +57,7 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyAcrossOpenCodeAndClaude(t *testi
 			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", string(surface), "--project"); err != nil || !strings.Contains(out, "Verified personal project activation") {
 				t.Fatalf("activate: %v\n%s", err, out)
 			}
-			state := "state-" + string(surface) + ".json"
+			state := "state-matty-" + string(surface) + ".json"
 			matches, err := filepath.Glob(filepath.Join(home, ".packy", "projects", "*", state))
 			if err != nil || len(matches) != 1 {
 				t.Fatalf("surface-scoped personal state %s = %v, %v", state, matches, err)

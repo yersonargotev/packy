@@ -427,7 +427,7 @@ func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabili
 		pending = append(pending, "complete the declared host-owned authentication requirement in Codex")
 	}
 	for _, projection := range lock.Projections {
-		if projection.Resource.Kind != "mcp_server" || !capabilitypack.ProjectProjectionHasContributor(projection, "surface:codex:pack:"+lock.Source.PackID) || projection.Command == "" {
+		if projection.Resource.Kind != "mcp_server" || !projectProjectionHasContributorPrefix(projection, "surface:codex:pack:") || projection.Command == "" {
 			continue
 		}
 		delete(externalCommands, filepath.Base(projection.Command))
@@ -452,6 +452,18 @@ func (a *SurfaceAdapter) inspectProjectRuntime(projectRoot string, lock capabili
 		PendingHumanActions: pending,
 		Evidence:            []string{"Codex project trust, locked runtime definitions, and external commands inspected"},
 	}, actions, nil
+}
+
+func projectProjectionHasContributorPrefix(projection capabilitypack.ProjectProjectionPlan, prefix string) bool {
+	if strings.HasPrefix(projection.Contributor, prefix) {
+		return true
+	}
+	for _, contributor := range projection.Contributors {
+		if strings.HasPrefix(contributor, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func codexProjectTrustMarkers(projectRoot string) (string, string, string, error) {

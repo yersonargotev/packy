@@ -1,25 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-lock.schema.json",
-  "title": "Packy project lock contract v3",
+  "title": "Packy project receipt lock contract v1",
   "type": "object",
-  "required": ["path", "schema_version", "minimum_packy_capability", "source", "resource_graph", "bindings", "modes", "sensitive", "manifest_sha256", "notices_sha256", "notices_file_mode", "projections"],
+  "required": ["schema_version", "receipts"],
   "properties": {
-    "path": { "const": "packy.lock.json" },
-    "schema_version": { "const": 3 },
-    "minimum_packy_capability": { "const": "project-activation-v1" },
-    "source": { "$ref": "project-contract-defs.schema.json#/$defs/source" },
-    "sources": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/source" } },
-    "packs": { "type": "array", "items": { "type": "object" } },
-    "resource_graph": { "$ref": "project-contract-defs.schema.json#/$defs/resource_graph" },
-    "bindings": { "type": "array", "items": { "type": "object" } },
-    "degradations": { "type": "array", "items": { "type": "object" } },
-    "modes": { "type": "array", "items": { "type": "object" } },
-    "sensitive": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/sensitive" } },
-    "manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "notices_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "notices_file_mode": { "type": "integer", "minimum": 0 },
-    "projections": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/projection_plan" } }
+    "schema_version": { "const": 1 },
+    "receipts": { "type": "array", "minItems": 1, "items": { "$ref": "project-contract-defs.schema.json#/$defs/installed_receipt" } }
   },
   "additionalProperties": false
 }

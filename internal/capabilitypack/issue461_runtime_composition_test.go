@@ -119,7 +119,7 @@ func TestIssue461ExactGlobalRuntimeEffectsCoverProjectWithoutPersonalReceipts(t 
 	if _, err := facade.ApplyProjectActivation(ctx, ProjectActivationApplyRequest{Preview: preview, Adapter: adapter, Interactive: true}); err == nil {
 		t.Fatal("inherited global coverage created a redundant project activation")
 	}
-	if matches, err := filepath.Glob(filepath.Join(packyHome, "projects", "*", "state-opencode.json")); err != nil || len(matches) != 0 {
+	if matches, err := filepath.Glob(filepath.Join(packyHome, "projects", "*", "state-*-opencode.json")); err != nil || len(matches) != 0 {
 		t.Fatalf("inherited coverage created personal receipts: %v, %v", matches, err)
 	}
 }
@@ -273,7 +273,7 @@ func TestIssue461IncompatibleGlobalContractAndSensitiveDefinitionBlockRuntime(t 
 		if err != nil {
 			t.Fatal(err)
 		}
-		installation.Lock.Sensitive = deduplicateProjectSensitiveDisclosures(append(installation.Lock.Sensitive, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: SurfaceOpenCode, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory-hook"}, Detail: "changed-sensitive-definition"}))
+		installation.Lock.Receipts[0].Sensitive = deduplicateProjectSensitiveDisclosures(append(installation.Lock.Receipts[0].Sensitive, ProjectSensitiveDisclosure{Category: ProjectActivationTrust, Surface: SurfaceOpenCode, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory-hook"}, Detail: "changed-sensitive-definition"}))
 		lock, err := marshalProjectLock(installation.Lock)
 		if err != nil {
 			t.Fatal(err)
@@ -310,7 +310,7 @@ func TestIssue461RemovingGlobalCoverageReturnsEffectsToPendingWithoutLocalActiva
 			t.Fatalf("deactivation retained coverage: %+v", pending.Packs[0].RuntimeEffects)
 		}
 	}
-	if matches, err := filepath.Glob(filepath.Join(packyHome, "projects", "*", "state-opencode.json")); err != nil || len(matches) != 0 {
+	if matches, err := filepath.Glob(filepath.Join(packyHome, "projects", "*", "state-*-opencode.json")); err != nil || len(matches) != 0 {
 		t.Fatalf("global deactivation fabricated local activation: %v, %v", matches, err)
 	}
 }

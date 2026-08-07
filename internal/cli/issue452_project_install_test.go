@@ -61,7 +61,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatalf("decode manifest: %v\n%s", err, manifestData)
 	}
-	if manifest.SchemaVersion != 3 || manifest.MinimumPackyCapability != "project-activation-v1" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || manifest.Packs[0].Version != version || len(manifest.Packs[0].Surfaces) != 1 || manifest.Packs[0].Surfaces[0] != capabilitypack.SurfaceCodex {
+	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || manifest.Packs[0].Version != version || len(manifest.Packs[0].Surfaces) != 1 || manifest.Packs[0].Surfaces[0] != capabilitypack.SurfaceCodex {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 
@@ -73,7 +73,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatalf("decode lock: %v\n%s", err, lockData)
 	}
-	if lock.SchemaVersion != 3 || lock.MinimumPackyCapability != "project-activation-v1" || lock.Source.PackID != "matty" || len(lock.ResourceGraph.Resources) != resources || len(lock.Projections) != resources+1 || lock.Sensitive == nil {
+	if lock.SchemaVersion != 1 || len(lock.Receipts) != 1 || len(lock.Receipts[0].Resources) != resources+1 || len(lock.Receipts[0].Projections) != resources+2 {
 		t.Fatalf("lock = %#v", lock)
 	}
 

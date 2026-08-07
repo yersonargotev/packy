@@ -26,7 +26,7 @@
       "required": ["path", "schema_version", "packs"],
       "properties": {
         "path": { "const": "packy.json" },
-        "schema_version": { "const": 3 },
+        "schema_version": { "const": 1 },
         "packs": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/pack" } }
       },
       "additionalProperties": false

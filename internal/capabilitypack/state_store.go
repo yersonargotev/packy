@@ -38,16 +38,22 @@ type installedProjection struct {
 	Contributors      []string              `json:"contributors"`
 	AdapterProvenance string                `json:"adapter_provenance,omitempty"`
 	Authorities       []ProjectionAuthority `json:"authorities,omitempty"`
+	Mode              string                `json:"mode,omitempty"`
+	FileMode          uint32                `json:"file_mode,omitempty"`
+	Command           string                `json:"command,omitempty"`
+	Args              []string              `json:"args,omitempty"`
+	DiscoverableBy    []Surface             `json:"discoverable_by,omitempty"`
 }
 
 type installedPackReceipt struct {
-	Pack            installedPackIdentity `json:"pack"`
-	Surface         Surface               `json:"surface"`
-	Selection       ResourceSelection     `json:"selection"`
-	Aliases         []SurfaceAlias        `json:"aliases,omitempty"`
-	Resources       []ResourceIdentity    `json:"resources"`
-	Projections     []installedProjection `json:"projections"`
-	ExternalEffects []ExternalEffect      `json:"external_effects,omitempty"`
+	Pack            installedPackIdentity        `json:"pack"`
+	Surface         Surface                      `json:"surface"`
+	Selection       ResourceSelection            `json:"selection"`
+	Aliases         []SurfaceAlias               `json:"aliases,omitempty"`
+	Resources       []ResourceIdentity           `json:"resources"`
+	Projections     []installedProjection        `json:"projections"`
+	Sensitive       []ProjectSensitiveDisclosure `json:"sensitive,omitempty"`
+	ExternalEffects []ExternalEffect             `json:"external_effects,omitempty"`
 }
 
 type installedReceiptDocument struct {

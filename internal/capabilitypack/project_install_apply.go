@@ -140,21 +140,12 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
 	}
-	missingTargets := map[string]bool{}
-	for _, projection := range fresh.Projections {
-		if projection.ObservedState == "missing" {
-			missingTargets[filepath.Clean(filepath.FromSlash(projection.Target))] = true
-		}
-	}
 	nonLock := make([]ProjectionAction, 0, len(fresh.actions)+2)
 	for _, action := range fresh.actions {
-		relative, relErr := RelativeProjectTarget(fresh.projectRoot, action.Target)
-		if relErr != nil {
+		if _, relErr := RelativeProjectTarget(fresh.projectRoot, action.Target); relErr != nil {
 			return ProjectInstallApplyResult{}, relErr
 		}
-		if !fresh.request.reconcile || missingTargets[filepath.Clean(filepath.FromSlash(relative))] {
-			nonLock = append(nonLock, action)
-		}
+		nonLock = append(nonLock, action)
 	}
 	manifestPath := filepath.Join(fresh.projectRoot, fresh.Manifest.Path)
 	if matches, matchErr := projectRegularFileMatches(manifestPath, manifest, 0o644); matchErr != nil {
@@ -243,17 +234,10 @@ func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, revers
 }
 
 func marshalProjectManifest(proposal ProjectContractProposal) ([]byte, error) {
-	minimumCapability := projectContractCapabilityV1
-	if proposal.SchemaVersion == projectContractSchemaV2 {
-		minimumCapability = projectContractCapabilityV2
-	} else if proposal.SchemaVersion == projectContractSchemaV3 {
-		minimumCapability = projectContractCapabilityV3
-	}
 	value := struct {
-		SchemaVersion          int                   `json:"schema_version"`
-		MinimumPackyCapability string                `json:"minimum_packy_capability"`
-		Packs                  []ProjectManifestPack `json:"packs"`
-	}{SchemaVersion: proposal.SchemaVersion, MinimumPackyCapability: minimumCapability, Packs: proposal.Packs}
+		SchemaVersion int                   `json:"schema_version"`
+		Packs         []ProjectManifestPack `json:"packs"`
+	}{SchemaVersion: proposal.SchemaVersion, Packs: proposal.Packs}
 	data, err := json.MarshalIndent(value, "", "  ")
 	return append(data, '\n'), err
 }
@@ -361,7 +345,11 @@ func extractProjectContribution(content, start, end string) (string, bool) {
 }
 
 func verifyProjectNoticeContribution(preview JSONProjectInstallPreview) error {
-	_, mode, _, intact, blockers, err := planProjectNotices(preview, true, false, preview.Lock.NoticesSHA256)
+	lockedNotice, found := projectNoticeReceiptProjection(preview.Lock.Receipts, preview.Pack.ID)
+	if !found {
+		return fmt.Errorf("verify project notice contribution: %w", ErrVerificationFailed)
+	}
+	_, mode, _, intact, blockers, err := planProjectNotices(preview, true, false, lockedNotice.Digest)
 	if err != nil || !intact || len(blockers) > 0 || mode != preview.Lock.NoticesFileMode {
 		return fmt.Errorf("verify project notice contribution: %w", ErrVerificationFailed)
 	}
@@ -388,6 +376,10 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 	if err := strictDecode(data, &lock); err != nil {
 		return ProjectLockProposal{}, false, fmt.Errorf("decode project lock: %w", err)
 	}
+	lock, err = hydrateProjectLock(lock)
+	if err != nil {
+		return ProjectLockProposal{}, false, err
+	}
 	if !supportedProjectContractVersion(lock.SchemaVersion, lock.MinimumPackyCapability) {
 		return ProjectLockProposal{}, false, errors.New("project lock schema or minimum Packy capability is unsupported")
 	}
@@ -395,9 +387,7 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 }
 
 func supportedProjectContractVersion(schemaVersion int, minimumCapability string) bool {
-	return schemaVersion == projectContractSchemaV1 && minimumCapability == projectContractCapabilityV1 ||
-		schemaVersion == projectContractSchemaV2 && minimumCapability == projectContractCapabilityV2 ||
-		schemaVersion == projectContractSchemaV3 && minimumCapability == projectContractCapabilityV3
+	return schemaVersion == projectContractSchemaV1 && minimumCapability == ""
 }
 
 func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdentity, target, fingerprint string) bool {
@@ -535,12 +525,13 @@ func projectLocksEqual(left, right ProjectLockProposal) bool {
 }
 
 func verifyProjectInstallSurface(ctx context.Context, adapter SurfaceAdapter, preview JSONProjectInstallPreview) error {
-	if preview.request.reconcileAll || preview.updateRequest.PackID != "" {
+	if preview.updateRequest.PackID != "" {
 		resolver, ok := adapter.(projectSurfaceAdapterResolver)
 		if !ok {
 			return errors.New("complete project reconcile verification requires the installed surface adapter set")
 		}
-		for _, surface := range preview.Pack.Surfaces {
+		surfaces := append([]Surface(nil), preview.Pack.Surfaces...)
+		for _, surface := range surfaces {
 			surfaceAdapter, found := resolver.projectSurfaceAdapter(surface)
 			if !found {
 				return fmt.Errorf("complete project reconcile verification is missing the %s adapter", surface)

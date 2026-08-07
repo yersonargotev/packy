@@ -34,7 +34,7 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 		"Project install dry-run", "Project root: <project-root>", "Pack: matty " + version, "Surface: codex",
 		fmt.Sprintf("Selection: all (%d resources)", resources), "Manifest: packy.json", "Lock: packy.lock.json",
 		"Notices: PACKY-NOTICES.md (0 contributions)", filepath.Join(".agents", "skills", "ask-matt"),
-		"Reviewed Pack: matty@" + version, fmt.Sprintf("Lock graph: %d resources, %d projections", resources, resources+1),
+		"Reviewed Pack: matty@" + version, fmt.Sprintf("Lock receipt: %d resources, %d projections", resources, resources+1),
 		"Requirements: none", "Blockers: none", "Disposition: previewable",
 	} {
 		if !strings.Contains(human, want) {
@@ -50,7 +50,7 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 	if err := json.Unmarshal([]byte(structured), &report); err != nil {
 		t.Fatalf("decode JSON preview: %v\n%s", err, structured)
 	}
-	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != "matty" || report.Pack.Version != version || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != resources || len(report.Projections) != resources+1 || report.Manifest.Path != "packy.json" || report.Lock.Path != "packy.lock.json" || report.Lock.Source.PackID != "matty" || report.Lock.Source.PackVersion != version || report.Notices.Path != "PACKY-NOTICES.md" || report.Notices.Contributions == nil || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable {
+	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != "matty" || report.Pack.Version != version || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != resources || len(report.Projections) != resources+1 || report.Manifest.Path != "packy.json" || report.Lock.SchemaVersion != 1 || len(report.Lock.Receipts) != 1 || report.Notices.Path != "PACKY-NOTICES.md" || report.Notices.Contributions == nil || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable {
 		t.Fatalf("incomplete JSON preview: %#v", report)
 	}
 	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--dry-run", "--json"); repeatErr != nil || again != structured {

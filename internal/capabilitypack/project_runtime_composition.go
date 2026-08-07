@@ -47,16 +47,6 @@ func (f Facade) composeProjectRuntime(ctx context.Context, installation ProjectI
 	}
 	globalBindingMap := projectRuntimeBindings(globalBindings, surface)
 	globalDetails := projectRuntimeDisclosureSet(globalSelected, surface, globalBindings)
-	globalSource, err := f.catalog.projectPackSourceIdentity(globalPack)
-	if err != nil {
-		return result, fmt.Errorf("resolve global activation source identity: %w", err)
-	}
-	contractConflict := ""
-	if digestJSON(globalSource) != digestJSON(installation.Lock.Source) {
-		contractConflict = fmt.Sprintf("global and project admitted source contracts differ for %s", pack.ID)
-	} else if digestJSON(globalContract.OptionalModes) != digestJSON(installation.Lock.Modes) {
-		contractConflict = fmt.Sprintf("global and project runtime mode contracts differ for %s", pack.ID)
-	}
 	conflicts := make([]string, 0)
 	for i := range result.effects {
 		effect := &result.effects[i]
@@ -67,12 +57,6 @@ func (f Facade) composeProjectRuntime(ctx context.Context, installation ProjectI
 		if intent.Version != pack.Version {
 			effect.Coverage = ProjectRuntimeCoverageConflict
 			effect.Conflict = fmt.Sprintf("global %s@%s and project %s@%s select %s with different exact contracts", intent.PackID, intent.Version, pack.ID, pack.Version, effect.Resource)
-			conflicts = append(conflicts, effect.Conflict)
-			continue
-		}
-		if contractConflict != "" {
-			effect.Coverage = ProjectRuntimeCoverageConflict
-			effect.Conflict = contractConflict
 			conflicts = append(conflicts, effect.Conflict)
 			continue
 		}

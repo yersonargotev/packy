@@ -53,14 +53,17 @@ func TestIssue457ClaudeProjectInstallUsesNativeDeclarativeSurfaces(t *testing.T)
 	if err := os.Remove(missingOpenCodeAgent); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install"); err != nil {
-		t.Fatalf("reconcile complete multi-surface project: %v\n%s", err, out)
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "claude"); err != nil {
+		t.Fatalf("reconcile Claude receipt: %v\n%s", err, out)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "opencode"); err != nil {
+		t.Fatalf("reconcile OpenCode receipt: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(filepath.Join(missingSkill, "SKILL.md")); err != nil {
 		t.Fatalf("Claude project reconcile did not restore the locked skill: %v", err)
 	}
 	if _, err := os.Stat(missingOpenCodeAgent); err != nil {
-		t.Fatalf("complete reconcile did not restore the OpenCode projection: %v", err)
+		t.Fatalf("OpenCode receipt reconcile did not restore its projection: %v", err)
 	}
 	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "addy", "--surface", "claude"); err != nil {
 		t.Fatalf("uninstall Addy for Claude: %v\n%s", err, out)

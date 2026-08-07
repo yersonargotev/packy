@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -92,126 +91,6 @@ func TestProjectInstallStaleObservationIsNonActionable(t *testing.T) {
 	}
 	if freshness.Disposition != ProjectInstallBlocked || len(freshness.Blockers) != 1 || freshness.Blockers[0].Code != "stale_observation" {
 		t.Fatalf("freshness = %#v", freshness)
-	}
-}
-
-func TestIssue455ProjectProvidersRequireAndPersistAnExplicitChoice(t *testing.T) {
-	consumer, first, second := providerStatusFixture()
-	consumer.Resources[0].Requires = []string{"asset:data"}
-	consumer.Resources[0].Notices = []string{"notice:license"}
-	consumer.Resources[0].Bindings[0].Mode = "degraded"
-	consumer.Resources[0].Bindings[0].Degradation = "project-test-degradation"
-	empty := []string{}
-	consumer.Resources = append(consumer.Resources,
-		Resource{Kind: "asset", ID: "data", Requires: empty, Conflicts: empty, Notices: empty, Bindings: []Binding{}, SurfaceExclusions: []SurfaceExclusion{}, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
-		Resource{Kind: "notice", ID: "license", Requires: empty, Bindings: []Binding{}, SurfaceExclusions: []SurfaceExclusion{}, ProvidesCapabilities: empty, RequiresCapabilities: empty, RequiresTools: empty, CapabilityConflicts: empty},
-	)
-	second.Resources[0].Bindings[0].Name = "root"
-	bundleRoot := writeProjectBundleFixture(t)
-	adapter := &fakeSurfaceAdapter{}
-	entries := []catalogEntry{{ID: consumer.ID, Surfaces: consumer.Surfaces}, {ID: first.ID, Surfaces: first.Surfaces}, {ID: second.ID, Surfaces: second.Surfaces}}
-	globalProvider := ActivationIntent{PackID: second.ID, Surface: SurfaceCodex, Version: second.Version, Active: true, Selection: ResourceSelection{Mode: SelectionAll}}
-	facade := NewFacade(Catalog{packs: []Pack{consumer, first, second}, entries: entries, bundleRoot: bundleRoot}, WithActivation(&fakeActivationStore{state: ActivationState{Intent: globalProvider, Intents: []ActivationIntent{globalProvider}}}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
-	request := ProjectInstallRequest{PackID: consumer.ID, Surface: SurfaceCodex, ProjectRoot: t.TempDir(), Selection: ResourceSelection{Mode: SelectionAll}}
-	unambiguousFacade := NewFacade(Catalog{packs: []Pack{consumer, first}, entries: entries[:2], bundleRoot: bundleRoot})
-	unambiguous, err := unambiguousFacade.previewProjectInstall(context.Background(), request, adapter)
-	if err != nil || unambiguous.Disposition != ProjectInstallPreviewable || len(unambiguous.Pack.ProviderChoices) != 1 || unambiguous.Pack.ProviderChoices[0].ProviderPack != first.ID {
-		t.Fatalf("unambiguous provider intent = err:%v pack:%#v blockers:%#v", err, unambiguous.Pack, unambiguous.Blockers)
-	}
-
-	ambiguous, err := facade.previewProjectInstall(context.Background(), request, adapter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ambiguous.Disposition != ProjectInstallBlocked || len(ambiguous.Blockers) != 1 || ambiguous.Blockers[0].Code != "ambiguous_provider" {
-		t.Fatalf("ambiguous provider preview = %#v", ambiguous.Blockers)
-	}
-
-	providerResource := ResourceIdentity{Kind: "skill", ID: "storage"}
-	request.ProviderChoices = []ProviderChoice{{Capability: "cap:storage", ProviderPack: second.ID, ProviderResource: &providerResource}}
-	collision, err := facade.previewProjectInstall(context.Background(), request, adapter)
-	if err != nil || collision.Disposition != ProjectInstallBlocked || len(collision.Blockers) != 1 || collision.Blockers[0].Code != "native_name_collision" {
-		t.Fatalf("provider collision = err:%v blockers:%#v", err, collision.Blockers)
-	}
-	request.Aliases = []SurfaceAlias{{Kind: "skill", ID: "storage", Name: "provider-storage"}}
-	chosen, err := facade.previewProjectInstall(context.Background(), request, adapter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if chosen.Disposition != ProjectInstallPreviewable || len(chosen.Pack.ProviderChoices) != 1 || chosen.Pack.ProviderChoices[0].ProviderPack != second.ID {
-		t.Fatalf("chosen provider intent = %#v blockers=%#v", chosen.Pack.ProviderChoices, chosen.Blockers)
-	}
-	if len(chosen.Lock.Packs) != 2 || chosen.Lock.Packs[0].ID != consumer.ID || chosen.Lock.Packs[0].Role != ActivationRequested || chosen.Lock.Packs[1].ID != second.ID || chosen.Lock.Packs[1].Role != ActivationRequired {
-		t.Fatalf("resolved pack roles = %#v", chosen.Lock.Packs)
-	}
-	if len(chosen.Lock.Sources) != 2 || chosen.Lock.Sources[0].PackID != consumer.ID || chosen.Lock.Sources[1].PackID != second.ID {
-		t.Fatalf("resolved provider sources = %#v", chosen.Lock.Sources)
-	}
-	foundProviderBinding := false
-	for _, binding := range chosen.Lock.Bindings {
-		if binding.Kind == "skill" && binding.ID == "storage" && binding.Name == "provider-storage" {
-			foundProviderBinding = true
-		}
-	}
-	if !foundProviderBinding {
-		t.Fatalf("provider binding missing from lock: %#v", chosen.Lock.Bindings)
-	}
-	foundDegradation := false
-	for _, binding := range chosen.Lock.Bindings {
-		if binding.Kind == "skill" && binding.ID == "root" && binding.Mode == "degraded" && binding.Degradation == "project-test-degradation" {
-			foundDegradation = true
-		}
-	}
-	if !foundDegradation {
-		t.Fatalf("declared degradation missing from lock: %#v", chosen.Lock.Bindings)
-	}
-	rootGraph := chosen.Lock.Packs[0].ResourceGraph.Resources
-	roles := map[ResourceIdentity]ResourceRole{}
-	chains := map[ResourceIdentity][]ResourceIdentity{}
-	for _, fact := range rootGraph {
-		roles[fact.Resource], chains[fact.Resource] = fact.Role, fact.DependencyChain
-	}
-	if roles[ResourceIdentity{Kind: "skill", ID: "root"}] != ResourceRoleRoot || roles[ResourceIdentity{Kind: "asset", ID: "data"}] != ResourceRoleAsset || roles[ResourceIdentity{Kind: "notice", ID: "license"}] != ResourceRoleNotice || len(chains[ResourceIdentity{Kind: "asset", ID: "data"}]) != 2 {
-		t.Fatalf("resolved roles and chains = %#v %#v", roles, chains)
-	}
-	chosen.Lock.Projections = make([]ProjectProjectionPlan, 0, len(chosen.Lock.Bindings))
-	for _, binding := range chosen.Lock.Bindings {
-		chosen.Lock.Projections = append(chosen.Lock.Projections, ProjectProjectionPlan{
-			Resource: ResourceIdentity{Kind: binding.Kind, ID: binding.ID}, Target: ".agents/skills/" + binding.Name,
-			Mode: "copy_tree", FileMode: 0o700, DesiredFingerprint: strings.Repeat("c", 64), ObservedState: "installed", Contributor: "surface:codex:pack:consumer",
-		})
-	}
-	if err := validateProjectInstallation(chosen.Manifest, chosen.Lock); err != nil {
-		t.Fatalf("generated provider contract is invalid: %v", err)
-	}
-	missingNativeProjection := chosen.Lock
-	missingNativeProjection.Projections = append([]ProjectProjectionPlan(nil), chosen.Lock.Projections[1:]...)
-	if err := validateProjectInstallation(chosen.Manifest, missingNativeProjection); err == nil || !strings.Contains(err.Error(), "has no projection plan") {
-		t.Fatalf("missing native projection error = %v", err)
-	}
-	missingProviderResource := chosen.Lock
-	missingProviderResource.Packs = append([]ProjectResolvedPack(nil), chosen.Lock.Packs...)
-	missingProviderResource.Packs[1].ResourceGraph.Resources = []ResourceClosureFact{}
-	if err := validateProjectInstallation(chosen.Manifest, missingProviderResource); err == nil || !strings.Contains(err.Error(), "provider resource") {
-		t.Fatalf("missing exact provider resource error = %v", err)
-	}
-	missingOperationalBinding := chosen.Lock
-	missingOperationalBinding.Bindings = append([]LifecycleBinding(nil), chosen.Lock.Bindings...)
-	for i, binding := range missingOperationalBinding.Bindings {
-		if binding.Kind == "skill" && binding.ID == "root" {
-			missingOperationalBinding.Bindings = append(missingOperationalBinding.Bindings[:i], missingOperationalBinding.Bindings[i+1:]...)
-			break
-		}
-	}
-	if err := validateProjectInstallation(chosen.Manifest, missingOperationalBinding); err == nil || !strings.Contains(err.Error(), "binding or declared degradation") {
-		t.Fatalf("missing operational binding error = %v", err)
-	}
-	substituted := chosen.Manifest
-	substituted.Packs = append([]ProjectManifestPack(nil), chosen.Manifest.Packs...)
-	substituted.Packs[0].ProviderChoices = cloneProviderChoices(chosen.Manifest.Packs[0].ProviderChoices)
-	substituted.Packs[0].ProviderChoices[0].ProviderPack = first.ID
-	if err := validateProjectInstallation(substituted, chosen.Lock); err == nil || !strings.Contains(err.Error(), "requested resolution") {
-		t.Fatalf("silent provider substitution error = %v", err)
 	}
 }
 

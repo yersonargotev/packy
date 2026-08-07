@@ -8,8 +8,8 @@ personal host configuration.
 
 ## Guided two-phase flow
 
-From anywhere inside a Git worktree, preview and install one exact admitted
-pack version for a CLI surface:
+From anywhere inside a Git worktree, preview and install a Pack from the
+current bundled catalog for a CLI surface:
 
 ```sh
 packy pack install matty --surface codex --dry-run
@@ -32,11 +32,13 @@ runtime activation as `not-required` and does not create empty personal state.
 Installation writes reviewable, version-controlled files at the nearest Git
 worktree root:
 
-- `packy.json` records direct pack, surface, resource, alias, and provider
+- `packy.json` records every direct Pack plus its surface, resource, and alias
   intent.
-- `packy.lock.json` fixes admitted source identity, exact versions, the
-  transitive graph, bindings, degradations, sensitive identities, projection
-  fingerprints, and contributors.
+- `packy.lock.json` records one independent receipt per Pack and surface. Each
+  receipt contains the exact Pack identity, selected resources, projected
+  targets, digests, modes, contributors, and any personal-activation
+  disclosures needed to inspect, activate, or remove that Pack. The lock has
+  no project-wide graph or lifecycle-plan fields.
 - `PACKY-NOTICES.md` carries mandatory Pack Source licensing and attribution
   contributions.
 - Host-native project paths contain copied declarative resources and exact
@@ -46,7 +48,7 @@ Packy never stages, commits, resets, restores, or checks out Git content. It
 may operate beside unrelated working-tree changes, but foreign targets, owned
 drift, unsafe paths, and changes made after preview block mutation.
 
-## Selection, aliases, providers, and surfaces
+## Multiple Packs, selections, aliases, and surfaces
 
 Omitting `--resource` installs the complete pack. Repeat `--resource` to select
 operational roots; Packy locks their complete dependency, asset, and notice
@@ -56,25 +58,29 @@ closure:
 packy pack install example-pack --surface codex \
   --resource skill:build \
   --alias skill:build=project-build \
-  --provider cap:storage=storage-pack/skill:storage \
   --dry-run
 ```
 
-Aliases and provider choices are explicit project intent. Packy never invents
-a collision name, chooses among ambiguous providers, or satisfies a project
-dependency from global workstation state.
+Aliases are explicit project intent. Packy never invents a collision name or
+satisfies a project dependency from global workstation state. Install another
+Pack with another `pack install` command; it receives a separate manifest
+entry and receipt. There is no project-wide provider graph or cross-Pack
+transaction.
 
 Codex and OpenCode may contribute to one physical `.agents/skills` projection.
-The lock records every contributor, and removing one surface preserves the
+Its receipts record every contributor, and removing one surface preserves the
 projection until its final contributor is removed. Claude Code retains its
 host-native project representation. Add another surface with another install;
 all installed surfaces share one exact pack version.
 
-Update changes that one version across every installed surface:
+Update reconciles one Pack to the current bundled catalog across its installed
+surfaces. Ordinary update blocks owned drift; `--force` restores only the
+targeted receipt's owned content:
 
 ```sh
-packy pack update example-pack --project --version 2.0.0 --dry-run
-packy pack update example-pack --project --version 2.0.0
+packy pack update example-pack --project --dry-run
+packy pack update example-pack --project
+packy pack update example-pack --project --force
 ```
 
 ## Status and automation
@@ -114,10 +120,9 @@ not a portable CI requirement.
 ## Offline operation, secrets, and recovery
 
 Status, installed enforcement, personal activation and deactivation, and exact
-owned uninstall use only the manifest, lock, vendored resources, and personal
-receipts. They remain available offline. Adding dependencies, updating, or
-restoring absent bytes may acquire only the exact admitted immutable source;
-Packy never invents bytes from a digest.
+owned uninstall use only the manifest, lock, bundled resources, and personal
+receipts. They remain available offline. Packy never invents bytes from a
+digest.
 
 Project files may contain secret references such as environment-variable names,
 but never secret values, OAuth tokens, credentials, or host trust decisions.
@@ -173,11 +178,12 @@ failure, and recovery documents. Canonical negative fixtures live under
 compile the checked-in schemas offline, validate live producers, reject every
 negative fixture, and assert that paths and secret-shaped values are absent.
 
-The sandboxed CLI acceptance series `issue451` through `issue463` covers full
-and selected installs, aliases, provider closure, shared contributors, all
-three host representations, updates, guided activation, inherited and
-conflicting global coverage, stale activation, uninstall, orphan cleanup, and
-recovery. `internal/capabilitypack` fault tests prove sealed-plan and journal
-recovery invariants. Architecture tests prove that `capabilitypack` remains the
-sole semantic caller of projection application while Codex, OpenCode, and
-Claude Code retain project representation ownership.
+The sandboxed CLI acceptance series `issue451` through `issue463`, plus the
+multi-Pack receipt coverage for issue `519`, covers full and selected installs,
+aliases, shared contributors, all three host representations, targeted updates,
+guided activation, inherited and conflicting global coverage, stale
+activation, uninstall, orphan cleanup, and recovery. `internal/capabilitypack`
+fault tests prove sealed-plan and journal recovery invariants. Architecture
+tests prove that `capabilitypack` remains the sole semantic caller of projection
+application while Codex, OpenCode, and Claude Code retain project
+representation ownership.

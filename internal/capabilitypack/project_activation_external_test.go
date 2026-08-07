@@ -33,7 +33,7 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatal(err)
 	}
-	lock.Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
+	lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
 		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "mcp_server"},
 		{Category: capabilitypack.ProjectActivationHooks, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "lifecycle"},
 		{Category: capabilitypack.ProjectActivationPlugins, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "plugin"},
@@ -89,7 +89,7 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeActive {
 		t.Fatalf("status = %+v, %v", status, err)
 	}
-	statePath := filepath.Join(packyHome, "projects", projectActivationDigest(t, project), "state.json")
+	statePath := filepath.Join(packyHome, "projects", projectActivationDigest(t, project), "state-matty-codex.json")
 	state, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatal(err)
@@ -114,10 +114,9 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 		t.Fatal(err)
 	}
 	declarativeLock := lock
-	declarativeLock.Projections = append([]capabilitypack.ProjectProjectionPlan(nil), lock.Projections...)
-	for i := range declarativeLock.Projections {
-		if declarativeLock.Projections[i].Resource != (capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}) {
-			declarativeLock.Projections[i].Command = "declarative-only-metadata-change"
+	for i := range declarativeLock.Receipts[0].Projections {
+		if declarativeLock.Receipts[0].Projections[i].ID != "skill:ask-matt" {
+			declarativeLock.Receipts[0].Projections[i].Command = "declarative-only-metadata-change"
 			break
 		}
 	}
@@ -132,9 +131,9 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeActive {
 		t.Fatalf("purely declarative lock change fabricated renewed consent: %+v, %v", status, err)
 	}
-	for i := range lock.Projections {
-		if lock.Projections[i].Resource == (capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}) {
-			lock.Projections[i].Command = "changed-sensitive-command"
+	for i := range lock.Receipts[0].Projections {
+		if lock.Receipts[0].Projections[i].ID == "skill:ask-matt" {
+			lock.Receipts[0].Projections[i].Command = "changed-sensitive-command"
 		}
 	}
 	changedLock, err := json.MarshalIndent(lock, "", "  ")

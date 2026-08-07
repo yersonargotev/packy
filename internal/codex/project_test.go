@@ -100,7 +100,6 @@ func TestCodexProjectInspectionBuildsComposableMCPDefinition(t *testing.T) {
 	installation := capabilitypack.ProjectInstallation{
 		Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "engram", Version: "1.0.0", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceCodex}}}},
 		Lock: capabilitypack.ProjectLockProposal{
-			Source: capabilitypack.ProjectPackSourceIdentity{PackID: "engram", PackVersion: "1.0.0"},
 			Sensitive: []capabilitypack.ProjectSensitiveDisclosure{
 				{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "engram"}, Detail: "mcp_server"},
 				{Category: capabilitypack.ProjectActivationExternalRequirements, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "engram"}, Detail: "tool:memory"},

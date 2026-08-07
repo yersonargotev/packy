@@ -98,7 +98,7 @@ func TestIssue453InstalledEnforcementDetectsDriftWithoutMutation(t *testing.T) {
 	}
 }
 
-func TestIssue453NoArgumentInstallRestoresAuthorizedMissingBytes(t *testing.T) {
+func TestIssue453NamedInstallRestoresAuthorizedMissingBytes(t *testing.T) {
 	opts, project := installIssue453Project(t)
 	missing := filepath.Join(project, ".agents", "skills", "ask-matt")
 	if err := os.RemoveAll(missing); err != nil {
@@ -106,7 +106,7 @@ func TestIssue453NoArgumentInstallRestoresAuthorizedMissingBytes(t *testing.T) {
 	}
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install")
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("reconcile project: %v\n%s", err, out)
 	}
@@ -118,41 +118,7 @@ func TestIssue453NoArgumentInstallRestoresAuthorizedMissingBytes(t *testing.T) {
 	}
 }
 
-func TestIssue453NoArgumentInstallRegeneratesStaleLockWithoutFloatingVersion(t *testing.T) {
-	version, _ := checkedInMattyFacts(t)
-	opts, project := installIssue453Project(t)
-	lockPath := filepath.Join(project, "packy.lock.json")
-	data, err := os.ReadFile(lockPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var lock capabilitypack.ProjectLockProposal
-	if err := json.Unmarshal(data, &lock); err != nil {
-		t.Fatal(err)
-	}
-	lock.ManifestSHA256 = strings.Repeat("0", 64)
-	stale, err := json.MarshalIndent(lock, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(lockPath, append(stale, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install")
-	if err != nil {
-		t.Fatalf("regenerate stale lock: %v\n%s", err, out)
-	}
-	installation, err := capabilitypack.LoadProjectInstallation(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if installation.Manifest.Packs[0].Version != version || installation.Lock.Source.PackVersion != version || installation.Lock.ManifestSHA256 == strings.Repeat("0", 64) {
-		t.Fatalf("reconciliation floated or retained stale identity: %#v", installation)
-	}
-}
-
-func TestIssue453NoArgumentInstallNeverInventsMissingBytesFromDigest(t *testing.T) {
+func TestIssue453NamedInstallNeverInventsMissingBytesFromDigest(t *testing.T) {
 	opts, project := installIssue453Project(t)
 	missing := filepath.Join(project, ".agents", "skills", "ask-matt")
 	if err := os.RemoveAll(missing); err != nil {
@@ -163,7 +129,7 @@ func TestIssue453NoArgumentInstallNeverInventsMissingBytesFromDigest(t *testing.
 		"PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(t.TempDir(), "missing-catalog"),
 	}
 	before := snapshotTree(t, project)
-	_, err := executeCommand(t, NewRootCommand(opts), "pack", "install")
+	_, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
 	if err == nil {
 		t.Fatal("reconcile invented missing bytes without an exact local source")
 	}
@@ -179,7 +145,7 @@ func TestIssue453StatusFailsClosedOnUnsupportedContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	unsupported := strings.Replace(string(data), `"schema_version": 3`, `"schema_version": 99`, 1)
+	unsupported := strings.Replace(string(data), `"schema_version": 1`, `"schema_version": 99`, 1)
 	if err := os.WriteFile(manifestPath, []byte(unsupported), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -198,12 +164,13 @@ func TestIssue453InstalledEnforcementCoversThePortableContract(t *testing.T) {
 		name   string
 		mutate func(*capabilitypack.ProjectLockProposal)
 	}{
-		{name: "manifest-to-lock identity", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.ManifestSHA256 = strings.Repeat("0", 64) }},
-		{name: "closure", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.ResourceGraph.Resources = nil }},
-		{name: "target", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Projections[0].Target = "../escape" }},
-		{name: "mode", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Projections[0].Mode = "invented" }},
-		{name: "contributor", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Projections[0].Contributor = "" }},
-		{name: "notices", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.NoticesSHA256 = strings.Repeat("0", 64) }},
+		{name: "manifest-to-lock identity", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Receipts[0].Pack.Version = "0.0.0" }},
+		{name: "closure", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Receipts[0].Resources = nil }},
+		{name: "target", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Receipts[0].Projections[0].Target = "../escape" }},
+		{name: "mode", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Receipts[0].Projections[0].Mode = "invented" }},
+		{name: "contributor", mutate: func(lock *capabilitypack.ProjectLockProposal) {
+			lock.Receipts[0].Projections[0].Contributors = []string{"surface:codex:pack:other"}
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			opts, project := installIssue453Project(t)
