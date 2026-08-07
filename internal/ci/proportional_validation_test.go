@@ -36,9 +36,9 @@ func TestOrdinaryPullRequestCIContainsOnlyGeneralValidation(t *testing.T) {
 	if strings.Count(script, "go test -race") != 1 || !strings.Contains(script, "go test -race ./internal/capabilitypack") {
 		t.Fatal("CI validation must race-test only the concurrent capability state store package")
 	}
-	for _, concurrent := range []string{"go test ./... &", "go test -race ./internal/capabilitypack &", `wait "$tests_pid"`, `wait "$race_pid"`} {
+	for _, concurrent := range []string{`github.com/yersonargotev/packy/internal/capabilitypack) ;;`, `go test "${ci_packages[@]}" &`, "go test -race ./internal/capabilitypack &", `wait "$tests_pid"`, `wait "$race_pid"`} {
 		if !strings.Contains(script, concurrent) {
-			t.Errorf("CI validation does not keep full and race tests concurrent: missing %q", concurrent)
+			t.Errorf("CI validation does not cover each package once while running regular and race tests concurrently: missing %q", concurrent)
 		}
 	}
 }

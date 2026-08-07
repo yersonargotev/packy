@@ -59,7 +59,14 @@ go vet ./...
 
 echo "==> tests"
 if [[ "$ci" == true ]]; then
-  go test ./... &
+  ci_packages=()
+  while IFS= read -r package; do
+    case "$package" in
+      github.com/yersonargotev/packy/internal/capabilitypack) ;;
+      *) ci_packages+=("$package") ;;
+    esac
+  done < <(go list ./...)
+  go test "${ci_packages[@]}" &
   tests_pid=$!
   echo "==> race"
   go test -race ./internal/capabilitypack &
