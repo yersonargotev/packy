@@ -2,7 +2,6 @@ package capabilitypack
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -21,25 +20,6 @@ func TestIssue458ClassifiesSensitiveVersionChangesForFreshPersonalActivation(t *
 		if !strings.Contains(change.Detail, "fresh personal project activation") {
 			t.Fatalf("sensitive change omitted reactivation disclosure: %#v", change)
 		}
-	}
-}
-
-func TestIssue458ExactProjectUpdateIgnoresMachineSelectedCurrentBytes(t *testing.T) {
-	catalog, err := DiscoverForDurableIntents(filepath.Join("..", "..", "bundle"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := range catalog.packs {
-		if catalog.packs[i].ID == "matty" {
-			catalog.packs[i].Resources[0].Source = "machine-selected-content"
-		}
-	}
-	pack, err := (Facade{catalog: catalog}).resolveExactProjectUpdatePackUnlocked("matty", "4.0.0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pack.Resources) == 0 || pack.Resources[0].Source == "machine-selected-content" {
-		t.Fatalf("exact update used machine-selected current bytes: %#v", pack.Resources)
 	}
 }
 

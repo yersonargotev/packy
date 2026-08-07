@@ -272,9 +272,9 @@ func renderProjectNoticeBlock(preview JSONProjectInstallPreview) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "<!-- packy:project:%s:notices:start -->\n", preview.Pack.ID)
 	out.WriteString("## Packy project notices\n\n")
-	fmt.Fprintf(&out, "Pack: %s %s\n\nAdmitted source: %s\n\n", preview.Pack.ID, preview.Pack.Version, preview.Lock.Source.Repository)
+	fmt.Fprintf(&out, "Pack: %s %s\n\nReviewed Pack content is authoritative.\n\n", preview.Pack.ID, preview.Pack.Version)
 	if len(preview.Notices.Contributions) == 0 {
-		out.WriteString("No additional downstream notice text is required by the admitted pack contract.\n")
+		out.WriteString("No additional downstream notice text is required by the reviewed Pack contract.\n")
 	}
 	for _, notice := range preview.Notices.Contributions {
 		fmt.Fprintf(&out, "## %s\n\nLicense: %s\n\n%s\n\n", notice.Resource, notice.License, notice.Attribution)

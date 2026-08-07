@@ -3,7 +3,6 @@ package capabilitypack
 import (
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -53,27 +52,6 @@ func TestCheckedInArgotePackHasIndependentNativeRoots(t *testing.T) {
 		}
 		if len(selected.Resources) != 1 || selected.Resources[0].Kind != resource.Kind || selected.Resources[0].ID != resource.ID {
 			t.Fatalf("selected argote root %q closure = %+v", identity, selected.Resources)
-		}
-	}
-}
-
-func TestCheckedInArgoteHistoryIsExactSelfContainedAndDeterministic(t *testing.T) {
-	bundleRoot := filepath.Join("..", "..", "bundle")
-	root := filepath.Join(bundleRoot, "history", "argote", "1.0.0")
-	expected, err := inspectHistoricalArtifact(root, mustDecodeHistoricalManifest(t, root))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if checkedIn := readHistoricalArtifact(t, root); !reflect.DeepEqual(expected, checkedIn) {
-		t.Fatalf("checked-in Argote artifact evidence is not deterministic\nexpected: %#v\nchecked in: %#v", expected, checkedIn)
-	}
-	pack, err := loadHistoricalArtifact(root, bundleRoot, "argote", "1.0.0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, resource := range pack.Resources {
-		if resource.Source != "" && !strings.HasPrefix(resource.Source, "history/argote/1.0.0/") {
-			t.Fatalf("historical Argote resource %s:%s escaped its artifact root: %q", resource.Kind, resource.ID, resource.Source)
 		}
 	}
 }

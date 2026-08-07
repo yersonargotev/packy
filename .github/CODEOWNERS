@@ -7,9 +7,6 @@
 /scripts/ @yersonargotev
 /go.mod @yersonargotev
 /go.sum @yersonargotev
-/bundle/sources.json @yersonargotev
 /internal/ci/ @yersonargotev
 /internal/claudesmoke/ @yersonargotev
-/internal/packsync/ @yersonargotev
-/internal/packsyncworkflow/ @yersonargotev
 /internal/tools/ @yersonargotev

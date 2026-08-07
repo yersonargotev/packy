@@ -24,6 +24,23 @@ func TestValidatePortableContentValidatesEveryManifestAndReferencedResource(t *t
 	}
 }
 
+func TestValidatePortableContentRejectsRetiredPackDirectories(t *testing.T) {
+	bundle := t.TempDir()
+	writePortableFixture(t, bundle, "current", "instructions/current.md")
+	vercelDir := filepath.Join(bundle, "packs", "vercel")
+	if err := os.MkdirAll(vercelDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vercelDir, "pack.json"), []byte(`{"schema_version":4,"id":"vercel"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ValidatePortableContent(bundle)
+	if err == nil || !strings.Contains(err.Error(), "vercel") {
+		t.Fatalf("retired Pack error = %v", err)
+	}
+}
+
 func TestValidatePackContentAcceptsCurrentManifest(t *testing.T) {
 	bundle := t.TempDir()
 	packDir := writeCurrentPackFixture(t, bundle, "example-pack")

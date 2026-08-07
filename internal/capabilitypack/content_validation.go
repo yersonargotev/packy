@@ -37,16 +37,6 @@ func ValidatePortableContent(bundleRoot string) error {
 		if !entry.IsDir() {
 			return fmt.Errorf("unexpected portable Pack manifest entry %q", entry.Name())
 		}
-		manifestPath := filepath.Join(packsRoot, entry.Name(), "pack.json")
-		marker, err := readCurrentManifestMarker(manifestPath)
-		if err != nil {
-			return err
-		}
-		// Directories from the retired bundle generation remain outside the
-		// current authoring set until their owning cleanup issue removes them.
-		if marker == nil && entry.Name() == "vercel" {
-			continue
-		}
 		if _, err := ValidatePackContent(bundleRoot, entry.Name()); err != nil {
 			return err
 		}

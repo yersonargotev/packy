@@ -124,7 +124,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 
 	t.Run("active drift warns with current remediation", func(t *testing.T) {
 		terminal := &fakeTerminal{interactive: true, approve: true}
-		opts, home, _ := legacyMattyActivationOptions(t, terminal)
+		opts, home, _ := currentPackActivationOptions(t, terminal)
 		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
