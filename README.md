@@ -184,4 +184,5 @@ cross-cutting or unknown path changed.
 
 Focused checks target under ten seconds, general local validation under thirty
 seconds, and required CI under three minutes. These are operational targets,
-not wall-clock test assertions.
+not wall-clock test assertions. CI adds the slower CLI and release packages plus
+a race pass for the concurrent capability state store.

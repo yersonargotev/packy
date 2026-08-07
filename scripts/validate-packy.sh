@@ -5,6 +5,15 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+ci=false
+if (($#)); then
+  if [[ "$1" != "--ci" || $# -ne 1 ]]; then
+    echo "usage: $0 [--ci]" >&2
+    exit 2
+  fi
+  ci=true
+fi
+
 # Tests that resolve workstation paths must never inherit the operator's real
 # configuration roots. Preserve only Go's caches across the sandbox.
 go_cache="${GOCACHE:-$(go env GOCACHE)}"
@@ -49,4 +58,17 @@ echo "==> vet"
 go vet ./...
 
 echo "==> tests"
-go test ./...
+if [[ "$ci" == true ]]; then
+  go test ./...
+  echo "==> race"
+  go test -race ./internal/capabilitypack
+else
+  general_packages=()
+  while IFS= read -r package; do
+    case "$package" in
+      github.com/yersonargotev/packy/internal/cli | github.com/yersonargotev/packy/internal/release) ;;
+      *) general_packages+=("$package") ;;
+    esac
+  done < <(go list ./...)
+  go test "${general_packages[@]}"
+fi

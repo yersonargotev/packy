@@ -45,7 +45,7 @@ pushes a tag.
 
 1. Confirm the protected-main candidate passes validation:
    ```bash
-   ./scripts/validate-packy.sh
+   ./scripts/validate-packy.sh --ci
    ```
 2. Finalize `docs/release-notes/next.md`, including the support statement, on
    this exact protected-main candidate. It must contain exactly one `{{TAG}}`
@@ -289,7 +289,7 @@ readiness inspection for OpenCode and Claude Code.
 
 ## First v0.x checklist
 
-- [ ] The candidate passed `./scripts/validate-packy.sh` on protected `main`.
+- [ ] The candidate passed `./scripts/validate-packy.sh --ci` on protected `main`.
 - [ ] Final support notes are committed on the exact candidate before tag push.
 - [ ] On initial sealing, the exact `v0.x.y` tag, workflow checkout, and freshly
       fetched `origin/main` resolve to one commit.

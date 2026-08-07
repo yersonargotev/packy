@@ -96,7 +96,7 @@ jobs:
 
       - name: Validate exact tag commit
         if: needs.normalize.outputs.mode != 'recovery'
-        run: ./scripts/validate-packy.sh
+        run: ./scripts/validate-packy.sh --ci
 
       - name: Build four binaries, deterministic SBOM, and SHA256SUMS once
         if: needs.normalize.outputs.mode != 'recovery'

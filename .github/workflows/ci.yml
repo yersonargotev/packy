@@ -34,5 +34,5 @@ jobs:
       - name: Restore verified Go cache
         uses: ./.github/actions/go-cache
 
-      - name: Run general validation
-        run: ./scripts/validate-packy.sh
+      - name: Run CI validation
+        run: ./scripts/validate-packy.sh --ci

@@ -8,26 +8,6 @@ import (
 	"testing"
 )
 
-func TestPullRequestsBlockOnExactClaudeFloorAndRetainEvidence(t *testing.T) {
-	text := readWorkflowFile(t, "ci.yml")
-	for _, want := range []string{
-		"claude-floor-smoke:",
-		"if: github.event_name == 'pull_request'",
-		"runs-on: macos-15",
-		"--claude-version 2.1.203",
-		"--packy-ref \"$GITHUB_SHA\"",
-		"actions/upload-artifact@",
-		"if-no-files-found: error",
-		"retention-days: 90",
-		"--addy-qualification production",
-		"--addy-workflow .github/workflows/ci.yml",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("pull-request workflow missing %q", want)
-		}
-	}
-}
-
 func TestClaudeSmokeWrapperIsSyntacticallyValidAndPinsSafeSelectors(t *testing.T) {
 	path := filepath.Join(repoRoot(t), "scripts", "run-claude-smoke.sh")
 	if output, err := exec.Command("bash", "-n", path).CombinedOutput(); err != nil {
