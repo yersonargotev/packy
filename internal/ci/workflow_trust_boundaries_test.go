@@ -367,7 +367,7 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 		"inspect":          {"contents": "read"},
 		"classify":         {"contents": "read", "models": "read"},
 		"prepare":          {"contents": "read", "pull-requests": "read"},
-		"publish":          {"contents": "write", "pull-requests": "write"},
+		"publish":          {"contents": "write", "issues": "read", "pull-requests": "write"},
 	},
 }
 

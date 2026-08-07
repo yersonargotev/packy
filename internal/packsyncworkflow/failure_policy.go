@@ -15,8 +15,9 @@ type FailureArtifactContext struct {
 	BaseSHA      string
 	CandidateSHA string
 	ArtifactProvenance
-	RunURL   string
-	Blockers []string
+	RunURL       string
+	Blockers     []string
+	ClosingIssue string
 }
 
 func NewFailureArtifact(context FailureArtifactContext, err error) FailureArtifact {
@@ -31,6 +32,9 @@ func NewFailureArtifact(context FailureArtifactContext, err error) FailureArtifa
 	}
 	if !validOptionalURI(context.RunURL) {
 		context.RunURL = ""
+	}
+	if _, _, ok := ParseClosingIssue(context.ClosingIssue); context.ClosingIssue != "" && !ok {
+		context.ClosingIssue = ""
 	}
 	kind := FailureIntegrity
 	var failure Failure
@@ -51,10 +55,10 @@ func NewFailureArtifact(context FailureArtifactContext, err error) FailureArtifa
 	}
 	schemaVersion := 1
 	provenance := ArtifactProvenance{}
-	if context.PlanID != "" {
+	if context.PlanID != "" || context.ClosingIssue != "" {
 		schemaVersion, provenance = 2, context.ArtifactProvenance
 	}
-	return FailureArtifact{SchemaVersion: schemaVersion, State: "blocked", SourceID: context.SourceID, PlanID: context.PlanID, BaseSHA: context.BaseSHA, CandidateSHA: context.CandidateSHA, ArtifactProvenance: provenance, Blockers: blockers, Recovery: []string{recovery}, RunURL: context.RunURL, ContainsSecrets: false, ContainsUpstreamBytes: false}
+	return FailureArtifact{SchemaVersion: schemaVersion, State: "blocked", SourceID: context.SourceID, PlanID: context.PlanID, BaseSHA: context.BaseSHA, CandidateSHA: context.CandidateSHA, ArtifactProvenance: provenance, Blockers: blockers, Recovery: []string{recovery}, RunURL: context.RunURL, ContainsSecrets: false, ContainsUpstreamBytes: false, ClosingIssue: context.ClosingIssue}
 }
 
 func uniqueNonEmptyStrings(values []string) []string {

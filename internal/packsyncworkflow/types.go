@@ -67,6 +67,7 @@ type DispatchRequest struct {
 	ReconfigurationSHA256  string                 `json:"reconfiguration_sha256,omitempty"`
 	ProposedManifest       json.RawMessage        `json:"proposed_manifest,omitempty"`
 	ProposedManifestSHA256 string                 `json:"proposed_manifest_sha256,omitempty"`
+	ClosingIssue           string                 `json:"closing_issue,omitempty"`
 }
 
 // Digest returns the stable request identity used only to attach maintainers to
@@ -113,13 +114,14 @@ func (request *DispatchRequest) UnmarshalJSON(data []byte) error {
 		allowed["reconfiguration_sha256"] = true
 		allowed["proposed_manifest"] = true
 		allowed["proposed_manifest_sha256"] = true
+		allowed["closing_issue"] = true
 	}
 	for name := range fields {
 		if !allowed[name] {
 			return fmt.Errorf("dispatch contains unknown field %q", name)
 		}
 	}
-	for _, name := range []string{"operation", "selector_ref", "retry_of_run", "expected_plan_id", "expected_base_sha", "registration_sha256", "reconfiguration_sha256", "proposed_manifest_sha256"} {
+	for _, name := range []string{"operation", "selector_ref", "retry_of_run", "expected_plan_id", "expected_base_sha", "registration_sha256", "reconfiguration_sha256", "proposed_manifest_sha256", "closing_issue"} {
 		value, present := fields[name]
 		if !present {
 			continue
@@ -245,6 +247,7 @@ type ValidationArtifact struct {
 	PackySuite    bool   `json:"packy_suite"`
 	Apply         bool   `json:"apply"`
 	UpstreamBytes bool   `json:"contains_upstream_bytes"`
+	ClosingIssue  string `json:"closing_issue,omitempty"`
 }
 
 func (artifact ValidationArtifact) Validate() error {
@@ -255,13 +258,18 @@ func (artifact ValidationArtifact) Validate() error {
 		return errors.New("sandbox validation proof is incomplete or contradictory")
 	}
 	if artifact.SchemaVersion == 1 {
-		if !artifact.ArtifactProvenance.empty() || artifact.ResultTreeSHA != "" {
+		if !artifact.ArtifactProvenance.empty() || artifact.ResultTreeSHA != "" || artifact.ClosingIssue != "" {
 			return errors.New("v1 sandbox validation proof forbids v2 provenance")
 		}
 		return nil
 	}
 	if !artifact.ArtifactProvenance.valid() || requireFullSHA("result tree", artifact.ResultTreeSHA) != nil {
 		return errors.New("v2 sandbox validation proof lacks complete provenance")
+	}
+	if artifact.ClosingIssue != "" {
+		if _, _, ok := ParseClosingIssue(artifact.ClosingIssue); !ok {
+			return errors.New("v2 sandbox validation proof has an invalid closing issue")
+		}
 	}
 	return nil
 }
@@ -294,13 +302,19 @@ type NoopArtifact struct {
 	BaseSHA       string `json:"base_sha"`
 	CandidateSHA  string `json:"candidate_sha"`
 	ArtifactProvenance
-	ContainsSecrets       bool `json:"contains_secrets"`
-	ContainsUpstreamBytes bool `json:"contains_upstream_bytes"`
+	ContainsSecrets       bool   `json:"contains_secrets"`
+	ContainsUpstreamBytes bool   `json:"contains_upstream_bytes"`
+	ClosingIssue          string `json:"closing_issue,omitempty"`
 }
 
 func (artifact NoopArtifact) Validate() error {
 	if artifact.SchemaVersion != 2 || artifact.State != "no-op" || !ValidSourceID(artifact.SourceID) || artifact.PlanID == "" || requireFullSHA("base", artifact.BaseSHA) != nil || requireFullSHA("candidate", artifact.CandidateSHA) != nil || !artifact.ArtifactProvenance.valid() || artifact.ContainsSecrets || artifact.ContainsUpstreamBytes {
 		return errors.New("v2 no-op artifact is incomplete or contradictory")
+	}
+	if artifact.ClosingIssue != "" {
+		if _, _, ok := ParseClosingIssue(artifact.ClosingIssue); !ok {
+			return errors.New("v2 no-op artifact has an invalid closing issue")
+		}
 	}
 	return nil
 }
@@ -321,10 +335,15 @@ func (request DispatchRequest) Validate() error {
 		return errors.New("dispatch schema, source id, and request reason are required")
 	}
 	if request.SchemaVersion == 1 {
-		if request.Operation != "" || request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" {
+		if request.Operation != "" || request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" || request.ClosingIssue != "" {
 			return errors.New("v1 dispatch forbids v2 operation fields")
 		}
 	} else {
+		if request.ClosingIssue != "" {
+			if _, _, ok := ParseClosingIssue(request.ClosingIssue); !ok {
+				return errors.New("closing issue must be one canonical GitHub issue URL")
+			}
+		}
 		switch request.Operation {
 		case OperationSynchronize:
 			if request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" {
@@ -420,6 +439,7 @@ type FailureArtifact struct {
 	RunURL                string   `json:"run_url,omitempty"`
 	ContainsSecrets       bool     `json:"contains_secrets"`
 	ContainsUpstreamBytes bool     `json:"contains_upstream_bytes"`
+	ClosingIssue          string   `json:"closing_issue,omitempty"`
 }
 
 func (artifact FailureArtifact) CanonicalJSON() ([]byte, error) {
@@ -431,6 +451,14 @@ func (artifact FailureArtifact) CanonicalJSON() ([]byte, error) {
 	}
 	if artifact.SchemaVersion == 1 && !artifact.ArtifactProvenance.empty() {
 		return nil, errors.New("v1 operational artifact forbids v2 provenance")
+	}
+	if artifact.ClosingIssue != "" {
+		if artifact.SchemaVersion != 2 {
+			return nil, errors.New("v1 operational artifact forbids a closing issue")
+		}
+		if _, _, ok := ParseClosingIssue(artifact.ClosingIssue); !ok {
+			return nil, errors.New("operational artifact has an invalid closing issue")
+		}
 	}
 	if artifact.SchemaVersion == 2 && ((artifact.PlanID != "" && !artifact.ArtifactProvenance.valid()) || (artifact.PlanID == "" && !artifact.ArtifactProvenance.empty())) {
 		return nil, errors.New("v2 operational artifact provenance contradicts plan state")
@@ -471,20 +499,29 @@ type PublicationArtifact struct {
 	ManualMergeRequired     bool            `json:"manual_merge_required"`
 	UpstreamContentExecuted bool            `json:"upstream_content_executed"`
 	InvalidationConditions  []string        `json:"invalidation_conditions"`
+	ClosingIssue            string          `json:"closing_issue,omitempty"`
 }
 
 func (artifact PublicationArtifact) Validate() error {
 	if artifact.SchemaVersion != 2 || !ValidSourceID(artifact.SourceID) || artifact.PlanID == "" || requireFullSHA("base", artifact.BaseSHA) != nil || requireFullSHA("candidate", artifact.CandidateSHA) != nil || !artifact.ArtifactProvenance.valid() || requireFullSHA("result tree", artifact.ResultTreeSHA) != nil || requireFullSHA("head", artifact.HeadSHA) != nil || requireSHA256("provenance", artifact.ProvenanceSHA256) != nil || artifact.BranchName != "sync/"+artifact.SourceID || artifact.PRNumber < 1 || requireSHA256("pull request state", artifact.PRStateSHA256) != nil || artifact.ManagedTitle == "" || requireSHA256("managed metadata", artifact.ManagedMetadataHash) != nil {
 		return errors.New("v2 publication identity is incomplete")
 	}
-	if !artifact.Validation.Complete() || !artifact.DecisionReady || artifact.AutoMerge || !artifact.ManualMergeRequired || artifact.UpstreamContentExecuted || !validInvalidationConditions(artifact.InvalidationConditions) {
+	if !artifact.Validation.Complete() || !artifact.DecisionReady || artifact.AutoMerge || !artifact.ManualMergeRequired || artifact.UpstreamContentExecuted || !validInvalidationConditions(artifact.InvalidationConditions, artifact.ClosingIssue != "") {
 		return errors.New("v2 publication is not decision ready")
+	}
+	if artifact.ClosingIssue != "" {
+		if _, _, ok := ParseClosingIssue(artifact.ClosingIssue); !ok {
+			return errors.New("v2 publication has an invalid closing issue")
+		}
 	}
 	return nil
 }
 
-func validInvalidationConditions(values []string) bool {
+func validInvalidationConditions(values []string, closingIssue bool) bool {
 	want := map[string]bool{"base_changed": true, "candidate_changed": true, "provenance_changed": true, "head_changed": true, "pr_state_changed": true}
+	if closingIssue {
+		want["issue_changed"] = true
+	}
 	if len(values) != len(want) {
 		return false
 	}

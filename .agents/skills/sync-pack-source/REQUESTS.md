@@ -8,7 +8,7 @@ Load this reference for normalization, preflight, attachment, or dispatch.
   `yersonargotev/packy`, but read authority with `gh api` from remote `main`.
 - Require `git`, `gh`, `jq`, active authentication, read access to repository
   contents/Actions/branches/pull requests, and actual workflow-dispatch access.
-- Read `bundle/sources.json`, all four versioned dispatch schema suites, and
+- Read `bundle/sources.json`, all five versioned dispatch schema suites, and
   `.github/workflows/sync-pack-source.yml` through GitHub's contents API at
   `ref=main`. Confirm the workflow is active and remote `main` resolves.
 - Download `scripts/request.sh`, `attach.sh`, `dispatch.sh`, and
@@ -67,6 +67,13 @@ exact two-space-indented, trailing-LF bytes in `proposed_manifest_sha256`.
 Require exact bidirectional equality between the proposed bindings and manifest
 resources. Never infer retained bindings, change another source or Pack, or use
 reconfiguration to transfer ownership.
+
+When the maintainer explicitly names one approved issue for conventional
+delivery, seal its exact canonical URL as `closing_issue`. Require the issue to
+belong to `yersonargotev/packy`, remain open, carry `status:approved`, and be the
+only issue the synchronization PR will close. Omit the field for ordinary
+synchronization. Never infer it from a reason, branch, map, dependency, or
+nearby issue, and never encode arbitrary PR-body text.
 
 Use schema version 3 with `operation: register_bundle` only for the initial
 atomic admission of two or more absent Pack Sources into exactly one declared,

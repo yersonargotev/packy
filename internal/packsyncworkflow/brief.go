@@ -92,6 +92,25 @@ func parseActionsRunURL(value string) (string, string, bool) {
 	return parts[0] + "/" + parts[1], parts[4], true
 }
 
+// ParseClosingIssue admits only one exact repository issue identity. Query,
+// fragment, pull-request, shorthand, and non-canonical numeric forms are
+// intentionally not delivery authority.
+func ParseClosingIssue(value string) (string, int, bool) {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.String() != value || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.RawFragment != "" || parsed.RawPath != "" {
+		return "", 0, false
+	}
+	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/"), "/")
+	if len(parts) != 4 || parts[2] != "issues" || !githubOwnerPattern.MatchString(parts[0]) || strings.Contains(parts[0], "--") || !githubRepositoryPattern.MatchString(parts[1]) || parts[1] == "." || parts[1] == ".." {
+		return "", 0, false
+	}
+	number, err := strconv.Atoi(parts[3])
+	if err != nil || number < 1 || strconv.Itoa(number) != parts[3] {
+		return "", 0, false
+	}
+	return parts[0] + "/" + parts[1], number, true
+}
+
 // Markdown renders only the canonical JSON plus a fixed summary. It never
 // recomputes plan, provenance, classification, or readiness facts.
 func (brief ReviewBrief) Markdown() (string, error) {
@@ -117,5 +136,9 @@ func (brief ReviewBrief) ManagedMarkdown() (string, error) {
 	if brief.DecisionReady {
 		status = "decision-ready"
 	}
-	return fmt.Sprintf("## Packy pack synchronization\n\n- Source: `%s`\n- Candidate: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Complete canonical evidence: [workflow run](%s)\n- Auto-merge: disabled; manual merge required.\n\nAuthorization-Exception: automation\nAuthorization-Record: %s\n", brief.Request.SourceID, brief.Candidate.Commit, brief.PlanID, brief.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, brief.RunURL), nil
+	closing := ""
+	if brief.Request.ClosingIssue != "" {
+		closing = "\nCloses " + brief.Request.ClosingIssue + "\n"
+	}
+	return fmt.Sprintf("## Packy pack synchronization\n\n- Source: `%s`\n- Candidate: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Complete canonical evidence: [workflow run](%s)\n- Auto-merge: disabled; manual merge required.\n%s\nAuthorization-Exception: automation\nAuthorization-Record: %s\n", brief.Request.SourceID, brief.Candidate.Commit, brief.PlanID, brief.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, closing, brief.RunURL), nil
 }

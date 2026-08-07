@@ -18,13 +18,14 @@ and ADR 0008.
 
 The complete immutable schema suites are checked in under
 `schemas/pack-source/v1.0.0/`, `schemas/pack-source/v2.0.0/`,
-`schemas/pack-source/v2.1.0/`, and
+`schemas/pack-source/v2.1.0/`, `schemas/pack-source/v2.2.0/`, and
 `schemas/pack-source/v3.0.0/`. Each consists
 of the dispatch, validation, no-op, operational-artifact, and publication
 schema files. Version 1 remains the synchronization contract; version 2 adds
 sealed source registration and source-scoped provenance; its v2.1 suite adds
 explicit existing-source reconfiguration without changing instance
-`schema_version: 2`. Version 3 is the
+`schema_version: 2`; v2.2 adds exact approved-issue delivery authority without
+changing that instance version. Version 3 is the
 distinct Pack-scoped `register_bundle` contract for atomic initial admission of
 two or more exact-commit sources and cannot consume or emit v1/v2 artifacts.
 Repository validation
@@ -40,6 +41,15 @@ allowed only when the source is absent and seals the complete strict source
 configuration plus its canonical SHA-256. Every v1/v2 request carries an
 explicit candidate selector. Every request carries an explicit `ai` or `human`
 classification mode and an operator reason. There are no automatic triggers.
+
+A v2 request may additionally seal one canonical `closing_issue` URL in the
+same repository. This is the only issue-delivery authority available to Pack
+Source automation. Publication freshly requires that exact issue to be open
+and carry `status:approved`, records the identity in its artifacts and managed
+ownership metadata, and renders exactly one `Closes <URL>` line. A request
+without this field cannot render a closing keyword. Missing, changed,
+cross-repository, closed, or unapproved issue state blocks before publication
+and decision readiness.
 
 Reconfiguration is allowed only for an existing source and seals one complete
 replacement `SourceConfig` plus one complete canonical current-version Pack
@@ -158,7 +168,7 @@ evidence digest and complete plan identity; neither member evidence nor a
 member subplan carries authority. The classifier has no publication authority
 and never writes a branch or pull request.
 
-### Publish — `contents: write`, `pull-requests: write`
+### Publish — `contents: write`, `issues: read`, `pull-requests: write`
 
 Publish is gated by Inspect and Classify. It downloads only their sealed artifacts
 and invokes:
