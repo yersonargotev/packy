@@ -37,7 +37,7 @@ packy pack update engram --surface codex
    ./scripts/validate-packy.sh
    ```
 
-4. Create the version tag on the intended `main` commit and push that tag.
+4. Create the version tag on the current `main` commit and push that tag.
 5. Wait for the Release workflow. It validates the tagged source, builds and
    verifies the distribution, creates the GitHub Release once, updates
    `yersonargotev/homebrew-tap`, and tests the installed Homebrew binary.
@@ -77,7 +77,7 @@ the installed binary again.
 ## Publication boundaries
 
 The workflow starts only on a version-tag push and verifies that the tagged
-commit belongs to `main`. Read-only preparation has `contents: read`; GitHub
+commit is the current `main` commit. Read-only preparation has `contents: read`; GitHub
 publication alone has `contents: write`; the tap credential is available only
 to the protected `homebrew` job. External actions are pinned to immutable
 commits.
@@ -85,4 +85,5 @@ commits.
 `gh release create` is invoked once without asset clobbering. The workflow has
 no path to edit, delete, recreate, resume, or recover a release. The Homebrew
 job publishes only `Formula/packy.rb`, and the final package smoke is downstream
-of both publication steps.
+of both publication steps. Publication reads the GitHub assets and tap formula
+back from their providers and requires them to match the validated bytes.

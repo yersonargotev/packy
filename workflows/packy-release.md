@@ -10,7 +10,7 @@ GitHub Release and matching Homebrew installation.
 ## Establish
 
 Fetch `origin` and tags. Select a new `vX.Y.Z` version that is absent from local
-tags, remote tags, and GitHub Releases. Freeze the intended commit from
+tags, remote tags, and GitHub Releases. Freeze the current commit from
 `origin/main`, prepare the release notes, and use a clean workspace without
 changing unrelated operator state.
 
@@ -31,8 +31,8 @@ exact version and commit.
 
 ## Publish once
 
-Re-fetch immediately before mutation. Require the selected commit still belongs
-to `origin/main` and the version remains unused. Create the tag at that commit
+Re-fetch immediately before mutation. Require the selected commit still equals
+`origin/main` and the version remains unused. Create the tag at that commit
 and push only that tag. The tag-triggered Release workflow owns all publication.
 
 Never move, delete, or reuse a published tag. Never edit, replace, clobber, or

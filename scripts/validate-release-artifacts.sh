@@ -84,7 +84,7 @@ tar -C "$scratch/extracted" -xzf "$dist/packy_${version}_${host_platform}.tar.gz
   exit 1
 }
 install -m 0755 "$scratch/extracted/packy" "$install_root/bin/packy"
-[[ "$($install_root/bin/packy --version)" == "packy version $version" ]] || {
+[[ "$("$install_root/bin/packy" --version)" == "packy version $version" ]] || {
   echo "installed binary did not report packy version $version" >&2
   exit 1
 }

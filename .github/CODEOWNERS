@@ -9,7 +9,6 @@
 /go.sum @yersonargotev
 /bundle/sources.json @yersonargotev
 /internal/ci/ @yersonargotev
-/internal/release/ @yersonargotev
 /internal/claudesmoke/ @yersonargotev
 /internal/packsync/ @yersonargotev
 /internal/packsyncworkflow/ @yersonargotev

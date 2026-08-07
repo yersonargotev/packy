@@ -32,8 +32,8 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF#refs/tags/}"
           [[ "$GITHUB_REF" == refs/tags/* && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          [[ "$GITHUB_SHA" == "$(git rev-parse origin/main)" ]]
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
       - name: Validate tagged source
         run: ./scripts/validate-packy.sh --ci
@@ -89,6 +89,25 @@ jobs:
             --verify-tag \
             --title "$RELEASE_TAG" \
             --notes-file release-metadata/release-notes.md
+      - name: Read back immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,assets > "$RUNNER_TEMP/release.json"
+          [[ "$(jq -r .tagName "$RUNNER_TEMP/release.json")" == "$RELEASE_TAG" ]]
+          [[ "$(jq -r .isDraft "$RUNNER_TEMP/release.json")" == false ]]
+          mkdir "$RUNNER_TEMP/published"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/published"
+          find dist -mindepth 1 -maxdepth 1 -exec basename {} \; | sort > "$RUNNER_TEMP/expected-assets"
+          find "$RUNNER_TEMP/published" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort > "$RUNNER_TEMP/published-assets"
+          cmp "$RUNNER_TEMP/expected-assets" "$RUNNER_TEMP/published-assets"
+          while IFS= read -r asset; do
+            cmp "dist/$asset" "$RUNNER_TEMP/published/$asset"
+          done < "$RUNNER_TEMP/expected-assets"
 
   homebrew:
     name: Publish matching Homebrew formula
@@ -123,6 +142,12 @@ jobs:
             -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
             commit -m "packy ${RELEASE_TAG}"
           git -C tap push origin HEAD:main
+      - name: Read back published formula
+        run: |
+          set -euo pipefail
+          git -C tap fetch origin main:refs/remotes/origin/main
+          git -C tap show origin/main:Formula/packy.rb > "$RUNNER_TEMP/packy.rb"
+          cmp bundle/release-metadata/packy.rb "$RUNNER_TEMP/packy.rb"
 
   package-smoke:
     name: Verify Homebrew installation
