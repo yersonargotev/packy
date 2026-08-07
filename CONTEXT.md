@@ -20,11 +20,25 @@ declared supported surfaces, and a maintainer-selected SemVer.
 The four Packs bundled with this generation: Addy, Argote, Engram, and Matty.
 Each begins at Pack version `1.0.0` and is independently selectable.
 
+### Orchestrate Pack
+
+The accepted Codex-only Pack that contributes the exact upstream
+`$orchestrate` coordination skill and its MIT notice. Its canonical source is a
+stable release of `yersonargotev/orchestrate-skill`; Packy preserves Eric
+Provencher's attribution and treats configured projection separately from
+runtime usability.
+
 ### Pack manifest
 
 The single `pack.json` contract for a Pack. It declares identity, version,
 description, selectability, supported surfaces, resources, bindings,
 intra-Pack dependencies, external requirements, conflicts, and exclusions.
+
+### Pack Source
+
+One upstream provenance declaration for selected Pack resources and legal
+notices. Its configuration identifies a stable release, while its lock records
+the exact selected content used to reproduce and review a bundle generation.
 
 ### Pack resource
 
@@ -84,6 +98,19 @@ It fails before mutation, even when the proposed bytes match.
 Copy the standard Pack template when needed, add or edit reviewed content,
 update the one manifest and maintainer-selected SemVer, then run the focused
 validator for that Pack.
+
+### Single-source Pack admission
+
+The atomic initial transition that creates one previously absent Pack and its
+one Pack Source as a complete bundle generation. It admits the source and
+selected content, legal notice, Pack manifest, catalog entry, and initial
+history together or publishes none of them.
+
+### Composite Pack Source Bundle
+
+The two-or-more-source unit used to admit a previously absent Pack whose
+initial provenance spans multiple Pack Sources. It is distinct from
+single-source Pack admission.
 
 ### External requirement
 
