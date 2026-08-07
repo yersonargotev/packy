@@ -27,6 +27,9 @@ func TestOrdinaryPullRequestCIContainsOnlyGeneralValidation(t *testing.T) {
 	if strings.Count(workflow, "\n  validate:") != 1 || strings.Count(workflow, "./scripts/validate-packy.sh --ci") != 1 {
 		t.Fatal("ordinary CI must expose one general validation job and invoke it once")
 	}
+	if !strings.Contains(workflow, "timeout-minutes: 4") {
+		t.Fatal("ordinary CI must leave cleanup headroom beyond its three-minute validation target")
+	}
 	for _, retired := range []string{"floor-smoke", "vercel-acceptance-gate", "run-claude-smoke.sh", "run-codex-smoke.sh", "run-opencode-smoke.sh", "upload-artifact"} {
 		if strings.Contains(workflow, retired) {
 			t.Errorf("ordinary CI retains release or supported-CLI work %q", retired)

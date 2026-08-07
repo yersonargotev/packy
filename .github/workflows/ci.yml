@@ -16,7 +16,7 @@ jobs:
   validate:
     name: Validate Packy-owned code
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     permissions:
       contents: read
     steps:
