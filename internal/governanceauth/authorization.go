@@ -115,13 +115,36 @@ func Validate(event Event, metadata Metadata) error {
 	}
 	if declared {
 		if len(metadata.ClosingIssuesReferences) != 0 || len(metadata.Issues) != 0 {
-			return errors.New("approved-issue and exception authorization cannot be mixed")
+			if !isPackSourceAutomation(event, declaration, metadata.Exception) {
+				return errors.New("approved-issue and exception authorization cannot be mixed")
+			}
+			if err := validateException(event, declaration, metadata.Exception); err != nil {
+				return err
+			}
+			if len(metadata.ClosingIssuesReferences) != 1 {
+				return errors.New("Pack Source automation must close exactly one approved issue")
+			}
+			return validateApprovedIssues(event, metadata)
 		}
 		return validateException(event, declaration, metadata.Exception)
 	}
 	if metadata.Exception != nil {
 		return errors.New("exception metadata exists without a declaration")
 	}
+	return validateApprovedIssues(event, metadata)
+}
+
+func isPackSourceAutomation(event Event, declaration ExceptionDeclaration, record *ExceptionRecord) bool {
+	return declaration.Type == "automation" &&
+		record != nil &&
+		record.Type == "automation" &&
+		record.Kind == "actions-run" &&
+		record.Workflow == "Synchronize pack source" &&
+		record.Path == ".github/workflows/sync-pack-source.yml" &&
+		strings.HasPrefix(event.PullRequest.HeadRef, "sync/")
+}
+
+func validateApprovedIssues(event Event, metadata Metadata) error {
 	if len(metadata.ClosingIssuesReferences) == 0 {
 		return errors.New("no closing issue reference found")
 	}

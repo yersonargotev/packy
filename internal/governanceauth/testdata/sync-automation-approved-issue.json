@@ -1,0 +1,59 @@
+{
+  "event": {
+    "action": "recompute",
+    "repository": {
+      "full_name": "yersonargotev/packy",
+      "default_branch": "main"
+    },
+    "pull_request": {
+      "number": 508,
+      "body": "Authorization-Exception: automation\nAuthorization-Record: https://github.com/yersonargotev/packy/actions/runs/31148212545\n\nCloses https://github.com/yersonargotev/packy/issues/506",
+      "base": {
+        "ref": "main",
+        "sha": "3266da816a5b9d63b465b2dd9acb974321c7942b"
+      },
+      "created_at": "2026-08-06T14:00:00Z",
+      "author": "app/github-actions",
+      "head_ref": "sync/argote",
+      "head_sha": "c53c20430a7f7a4693cb68b08e8bf715c92c14da"
+    }
+  },
+  "metadata": {
+    "closingIssuesReferences": [
+      {
+        "number": 506,
+        "repository": {
+          "name": "packy",
+          "owner": {"login": "yersonargotev"}
+        }
+      }
+    ],
+    "issues": [
+      {
+        "number": 506,
+        "state": "OPEN",
+        "labels": [{"name": "enhancement"}, {"name": "status:approved"}]
+      }
+    ],
+    "exception": {
+      "type": "automation",
+      "url": "https://github.com/yersonargotev/packy/actions/runs/31148212545",
+      "kind": "actions-run",
+      "repository": "yersonargotev/packy",
+      "state": "completed",
+      "conclusion": "success",
+      "accessible": true,
+      "workflow": "Synchronize pack source",
+      "path": ".github/workflows/sync-pack-source.yml",
+      "event": "workflow_dispatch",
+      "head_branch": "main",
+      "head_sha": "3266da816a5b9d63b465b2dd9acb974321c7942b",
+      "actor": "yersonargotev",
+      "proposal_head_sha": "c53c20430a7f7a4693cb68b08e8bf715c92c14da",
+      "pull_request_number": 508,
+      "proposal_run_url": "https://github.com/yersonargotev/packy/actions/runs/31148212545",
+      "binding_comment_author_id": 41898282
+    }
+  },
+  "want_error": ""
+}

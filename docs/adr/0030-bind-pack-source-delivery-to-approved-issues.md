@@ -24,6 +24,12 @@ GitHub-recognized `Closes <URL>` line. The request digest, canonical evidence,
 publication record, metadata hash, and readiness identity bind that same URL;
 issue-state change invalidates readiness.
 
+Governance treats the two records as conjunctive authority only for canonical
+Pack Source proposals: the successful bound synchronization run proves who
+produced the exact proposal head, while the one approved closing issue provides
+change authority. Other automation, urgent-revert, and private-security
+exceptions remain mutually exclusive with approved-issue authorization.
+
 Requests that omit `closing_issue` render no closing keyword. Missing,
 malformed, cross-repository, closed, unapproved, changed, or ambiguous issue
 identity fails closed. Automation retains no authority to create or explicitly

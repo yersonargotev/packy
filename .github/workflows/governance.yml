@@ -188,12 +188,9 @@ jobs:
 
           echo 'null' >"$directory/exception.json"
           if ((result == 0)) && jq -e '. != null' "$directory/declaration.json" >/dev/null; then
-            if ((${#issue_files[@]} != 0)); then
-              result=1
-            else
-              exception_type="$(jq -r '.type' "$directory/declaration.json")"
-              record_url="$(jq -r '.url' "$directory/declaration.json")"
-              case "$exception_type" in
+            exception_type="$(jq -r '.type' "$directory/declaration.json")"
+            record_url="$(jq -r '.url' "$directory/declaration.json")"
+            case "$exception_type" in
                 private-security)
                   # GitHub Actions has no repository_advisory trigger. Deny
                   # until authorized external infrastructure can recompute on
@@ -262,8 +259,7 @@ jobs:
                 *)
                   result=1
                   ;;
-              esac
-            fi
+            esac
           fi
 
           if ((result == 0)); then
