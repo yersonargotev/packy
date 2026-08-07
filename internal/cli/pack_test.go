@@ -209,47 +209,6 @@ func TestPackListUsesOneCapturedWorkstationForSkillSource(t *testing.T) {
 	}
 }
 
-func TestPackRecoveryDryRunRendersTruthfulHistoryWithoutPromptsOrEffects(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _, runner := engramActivationOptions(t, terminal)
-	setup := runner.path["engram"] + " setup codex"
-	runner.fail = map[string]error{setup: errors.New("setup interrupted")}
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "recovery is required") {
-		t.Fatalf("initial failure = %v", err)
-	}
-	before := snapshotTree(t, home)
-	previousCalls := len(runner.calls)
-	terminal.calls, terminal.prompts = 0, nil
-	delete(runner.fail, setup)
-
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex", "--dry-run")
-	if err != nil {
-		t.Fatalf("recovery dry-run: %v\n%s", err, out)
-	}
-	for _, want := range []string{"Recovery: fresh activate Preview", "Historical outcome: recovery-required", "Completed:", "Failed: external:engram:setup:codex", "Not started: none", "historical plan", "is not replayed", "repeat `packy pack activate engram --surface codex`", "new Preview and approvals are required"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("output missing %q:\n%s", want, out)
-		}
-	}
-	if terminal.calls != 0 || len(runner.calls) != previousCalls || snapshotTree(t, home) != before {
-		t.Fatalf("dry-run caused effects: prompts=%d calls=%v", terminal.calls, runner.calls[previousCalls:])
-	}
-	terminal.interactive = false
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
-		t.Fatalf("non-TTY recovery = %v", err)
-	}
-	if len(runner.calls) != previousCalls || snapshotTree(t, home) != before {
-		t.Fatal("non-TTY recovery caused effects")
-	}
-	terminal.interactive, terminal.approve, terminal.calls = true, false, 0
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "cancelled") {
-		t.Fatalf("cancelled recovery = %v", err)
-	}
-	if terminal.calls != 1 || len(runner.calls) != previousCalls || snapshotTree(t, home) != before {
-		t.Fatal("cancelled recovery caused effects")
-	}
-}
-
 func TestPackLifecycleRejectsInvalidBundleResourceBeforeMutation(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, repoRoot := packActivationOptions(t, terminal)
@@ -777,7 +736,7 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 		t.Fatalf("status failed: %v\n%s", err, overview)
 	}
 	for _, want := range []string{
-		"PACK", "SURFACE", "INTENT", "ATTEMPT", "CONFIGURED", "AUTHORIZED", "USABLE", "ACTION",
+		"PACK", "SURFACE", "INTENT", "CONFIGURED", "AUTHORIZED", "USABLE", "ACTION",
 		"argote  claude", "argote  codex", "argote  opencode", "engram  claude", "engram  codex", "engram  opencode", "matty   claude", "matty   codex", "matty   opencode", "inactive",
 	} {
 		if !strings.Contains(overview, want) {
@@ -790,7 +749,7 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 		t.Fatalf("targeted status failed: %v\n%s", err, detail)
 	}
 	for _, want := range []string{
-		"engram 1.0.0 on codex", "Intent: inactive", "Latest attempt: none",
+		"engram 1.0.0 on codex", "Intent: inactive", "Resources: 0 selected", "Receipt ownership: 0 projected paths", "Drift: 0 projections",
 		"Readiness: configured=no, authorized=no, usable=unknown",
 		"Projections: 0 verified; 0 drifted; 0 ambiguous", "Pending human actions: none",
 	} {
@@ -840,7 +799,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	entry := report.Entries[0]
-	if report.Report != "pack-status" || entry.Intent.State != "absent" || entry.Intent.Active != nil || entry.LatestAttempt != nil || entry.Readiness.Authorized.State != "known" || entry.Readiness.Authorized.Value == nil || *entry.Readiness.Authorized.Value || entry.Readiness.Usable.State != "unknown" || entry.Readiness.Usable.Value != nil || entry.Blockers == nil || entry.Evidence == nil || entry.PendingHumanActions == nil {
+	if report.Report != "pack-status" || entry.Intent.State != "absent" || entry.Intent.Active != nil || entry.Readiness.Authorized.State != "known" || entry.Readiness.Authorized.Value == nil || *entry.Readiness.Authorized.Value || entry.Readiness.Usable.State != "unknown" || entry.Readiness.Usable.Value != nil || entry.Blockers == nil || entry.Evidence == nil || entry.PendingHumanActions == nil {
 		t.Fatalf("absence contract: %#v", entry)
 	}
 	if strings.Contains(detail, "Intent:") {
@@ -1216,11 +1175,10 @@ func ownershipForSurface(t *testing.T, statePath, surface string) string {
 	if err := json.Unmarshal([]byte(readFileString(t, statePath)), &document); err != nil {
 		t.Fatal(err)
 	}
-	for _, raw := range document["activations"].([]any) {
-		activation := raw.(map[string]any)
-		intent := activation["intent"].(map[string]any)
-		if intent["surface"] == surface {
-			encoded, err := json.Marshal(activation["ownership"])
+	for _, raw := range document["receipts"].([]any) {
+		receipt := raw.(map[string]any)
+		if receipt["surface"] == surface {
+			encoded, err := json.Marshal(receipt["projections"])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1386,10 +1344,7 @@ func TestPackReconcileBlockedTargetedAndSurfaceWideExitNonzeroWithoutEffects(t *
 
 func clearSurfaceOwnership(t *testing.T, path string, surface capabilitypack.Surface) {
 	t.Helper()
-	var document struct {
-		SchemaVersion int                              `json:"schema_version"`
-		Activations   []capabilitypack.ActivationState `json:"activations"`
-	}
+	var document map[string]any
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -1397,9 +1352,10 @@ func clearSurfaceOwnership(t *testing.T, path string, surface capabilitypack.Sur
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	for i := range document.Activations {
-		if document.Activations[i].Intent.Surface == surface {
-			document.Activations[i].Ownership = nil
+	for _, raw := range document["receipts"].([]any) {
+		receipt := raw.(map[string]any)
+		if receipt["surface"] == string(surface) {
+			receipt["projections"] = []any{}
 		}
 	}
 	data, err = json.MarshalIndent(document, "", "  ")

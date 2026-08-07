@@ -24,11 +24,6 @@ type JSONCapabilityConsumer struct {
 	Capability       string            `json:"capability"`
 }
 
-type JSONAttempt struct {
-	Outcome string `json:"outcome"`
-	PlanID  string `json:"plan_id"`
-}
-
 type JSONReadiness struct {
 	Configured JSONOptionalBool `json:"configured"`
 	Authorized JSONOptionalBool `json:"authorized"`
@@ -91,7 +86,6 @@ type JSONStatusEntry struct {
 	Surface             Surface                       `json:"surface"`
 	Intent              JSONIntent                    `json:"intent"`
 	UpdateAvailable     bool                          `json:"update_available"`
-	LatestAttempt       *JSONAttempt                  `json:"latest_attempt"`
 	Projections         JSONProjectionSummary         `json:"projection_summary"`
 	ProjectionDetails   []JSONProjectionStatus        `json:"projection_details"`
 	ResourceSelections  []JSONResourceSelectionStatus `json:"resource_selections"`
@@ -133,19 +127,9 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			}
 			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version, Selection: selection, ProviderChoices: choices}
 		}
-		var attempt *JSONAttempt
-		if entry.LatestAttempt != nil {
-			outcome := entry.LatestAttempt.Outcome
-			switch AttemptOutcome(outcome) {
-			case AttemptApplying, AttemptVerified, AttemptRecoveryRequired:
-			default:
-				outcome = "unknown"
-			}
-			attempt = &JSONAttempt{Outcome: outcome, PlanID: entry.LatestAttempt.PlanID}
-		}
 		entries = append(entries, JSONStatusEntry{
 			Pack: entry.Pack.ID, PackVersion: entry.Pack.Version, Surface: entry.Surface,
-			Intent: intent, UpdateAvailable: entry.UpdateAvailable, LatestAttempt: attempt, Projections: JSONProjectionSummary{Verified: entry.Projections.Verified, Missing: entry.Projections.Missing, Drifted: entry.Projections.Drifted, Ambiguous: entry.Projections.Ambiguous, Unmanaged: entry.Projections.Unmanaged},
+			Intent: intent, UpdateAvailable: entry.UpdateAvailable, Projections: JSONProjectionSummary{Verified: entry.Projections.Verified, Missing: entry.Projections.Missing, Drifted: entry.Projections.Drifted, Ambiguous: entry.Projections.Ambiguous, Unmanaged: entry.Projections.Unmanaged},
 			Readiness:           JSONReadiness{optionalBool(entry.ReadinessObserved.Configured, entry.Readiness.Configured), optionalBool(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized), optionalBool(entry.ReadinessObserved.Usability, entry.Readiness.Usable)},
 			OptionalAuthorities: jsonOptionalAuthorities(entry.OptionalAuthorities),
 			RuntimeModes:        sortedRuntimeModeResults(entry.RuntimeModes),
@@ -181,9 +165,6 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 func normalizedLifecycleState(entry StatusEntry) PackLifecycleState {
 	if entry.LifecycleState != "" {
 		return entry.LifecycleState
-	}
-	if entry.LatestAttempt != nil && AttemptOutcome(entry.LatestAttempt.Outcome) == AttemptRecoveryRequired {
-		return PackLifecycleRecoveryRequired
 	}
 	if entry.IntentPresent && entry.Intent.Active {
 		return PackLifecycleActive

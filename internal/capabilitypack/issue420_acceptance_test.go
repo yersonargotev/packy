@@ -319,10 +319,11 @@ func TestIssue420SharedProjectionCollisionsArePreservedAndReported(t *testing.T)
 		name      string
 		observed  string
 		ownership []ProjectionOwnership
+		blocked   bool
 	}{
-		{name: "modified", observed: "operator-content", ownership: []ProjectionOwnership{exact}},
+		{name: "modified", observed: "operator-content", ownership: []ProjectionOwnership{exact}, blocked: true},
 		{name: "ambiguous", observed: "same", ownership: []ProjectionOwnership{ambiguous}},
-		{name: "unowned", observed: "same"},
+		{name: "unowned", observed: "same", blocked: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state := ActivationState{Intent: intent, Intents: []ActivationIntent{intent}, Ownership: tc.ownership, snapshotManaged: true}
@@ -335,8 +336,14 @@ func TestIssue420SharedProjectionCollisionsArePreservedAndReported(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
+			if !tc.blocked {
+				if !plan.Applicable() || len(plan.PendingHumanActions()) != 0 || len(plan.Phases()) != 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+					t.Fatalf("shared projection was not retained safely: applicable=%v blockers=%+v pending=%+v actions=%+v saves=%d", plan.Applicable(), plan.Blockers(), plan.PendingHumanActions(), adapter.actions, len(store.saves))
+				}
+				return
+			}
 			want := "preserved skill:shared because it is drifted, ambiguous, unmanaged, or ownership no longer matches"
-			if !plan.Applicable() || len(plan.PendingHumanActions()) != 1 || plan.PendingHumanActions()[0] != want || len(plan.Phases()) != 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
+			if plan.Applicable() || len(plan.Blockers()) != 1 || len(plan.PendingHumanActions()) != 1 || plan.PendingHumanActions()[0] != want || len(plan.Phases()) != 0 || len(adapter.actions) != 0 || len(store.saves) != 0 {
 				t.Fatalf("collision was not preserved: applicable=%v blockers=%+v pending=%+v actions=%+v saves=%d", plan.Applicable(), plan.Blockers(), plan.PendingHumanActions(), adapter.actions, len(store.saves))
 			}
 		})

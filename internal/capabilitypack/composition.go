@@ -27,6 +27,7 @@ const (
 	BlockerCompatibility            BlockerKind    = "compatibility"
 	BlockerResourceConflict         BlockerKind    = "resource-conflict"
 	BlockerSelectionUnavailable     BlockerKind    = "selection-unavailable"
+	BlockerTargetCollision          BlockerKind    = "target-collision"
 )
 
 type PlannedActivation struct {

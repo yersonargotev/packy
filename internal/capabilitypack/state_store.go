@@ -22,6 +22,39 @@ type activationDocument struct {
 	Revision      int                   `json:"revision"`
 	Activations   []ActivationState     `json:"activations"`
 	Ownership     []ProjectionOwnership `json:"ownership,omitempty"`
+	External      []ExternalEffect      `json:"-"`
+}
+
+type installedPackIdentity struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+type installedProjection struct {
+	ID                string                `json:"id"`
+	PhysicalID        string                `json:"physical_id"`
+	Target            string                `json:"target"`
+	Digest            string                `json:"digest"`
+	Contributors      []string              `json:"contributors"`
+	AdapterProvenance string                `json:"adapter_provenance,omitempty"`
+	Authorities       []ProjectionAuthority `json:"authorities,omitempty"`
+}
+
+type installedPackReceipt struct {
+	Pack            installedPackIdentity `json:"pack"`
+	Surface         Surface               `json:"surface"`
+	Selection       ResourceSelection     `json:"selection"`
+	Aliases         []SurfaceAlias        `json:"aliases,omitempty"`
+	Resources       []ResourceIdentity    `json:"resources"`
+	Projections     []installedProjection `json:"projections"`
+	ExternalEffects []ExternalEffect      `json:"external_effects,omitempty"`
+}
+
+type installedReceiptDocument struct {
+	SchemaVersion   int                    `json:"schema_version"`
+	Revision        int                    `json:"revision"`
+	Receipts        []installedPackReceipt `json:"receipts"`
+	ExternalEffects []ExternalEffect       `json:"external_effects,omitempty"`
 }
 
 func NewFileActivationStore(path string) *FileActivationStore {
@@ -50,7 +83,79 @@ func (s *FileActivationStore) Save(_ context.Context, surface Surface, expectedR
 }
 
 func (s *FileActivationStore) SaveSnapshot(_ context.Context, surface Surface, expectedDocumentRevision int, state ActivationState) (int, error) {
+	// Plans and attempts are deliberately memory-only. Verified external-effect
+	// receipts are durable independently so a later failure cannot erase the
+	// exact reversal authority for an effect that already occurred.
+	if state.Journal != nil {
+		return s.saveVerifiedExternalReceipts(expectedDocumentRevision, state)
+	}
 	return s.save(surface, expectedDocumentRevision, state.Intent.Revision, state, true)
+}
+
+func (s *FileActivationStore) saveVerifiedExternalReceipts(expectedDocumentRevision int, state ActivationState) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return 0, fmt.Errorf("create capability-pack state directory: %w", err)
+	}
+	lock, err := os.OpenFile(s.path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return 0, fmt.Errorf("open capability-pack state lock: %w", err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return 0, fmt.Errorf("lock capability-pack state: %w", err)
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	document, err := s.load()
+	if err != nil {
+		return 0, err
+	}
+	if document.Revision != expectedDocumentRevision {
+		return document.Revision, StalePlanError{Precondition: fmt.Sprintf("capability-pack state revision changed from %d to %d before persistence; rerun activation to preview a fresh plan", expectedDocumentRevision, document.Revision)}
+	}
+	durable := receiptDocumentFromActivation(document)
+	existing := map[string]string{}
+	for _, effect := range document.External {
+		if effect.Receipt != nil {
+			existing[effect.ID] = digestJSON(effect)
+		}
+	}
+	changed := false
+	for _, effect := range state.External {
+		if effect.Receipt == nil || existing[effect.ID] == digestJSON(effect) {
+			continue
+		}
+		if err := canonicalizeExternalReceipt(&effect, effect.Receipt.Surface); err != nil {
+			return document.Revision, err
+		}
+		replaced := false
+		for i := range durable.ExternalEffects {
+			if durable.ExternalEffects[i].ID == effect.ID {
+				durable.ExternalEffects[i] = cloneExternalEffects([]ExternalEffect{effect})[0]
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			durable.ExternalEffects = append(durable.ExternalEffects, cloneExternalEffects([]ExternalEffect{effect})[0])
+		}
+		existing[effect.ID] = digestJSON(effect)
+		changed = true
+	}
+	if !changed {
+		return document.Revision, nil
+	}
+	sort.Slice(durable.ExternalEffects, func(i, j int) bool { return durable.ExternalEffects[i].ID < durable.ExternalEffects[j].ID })
+	durable.Revision++
+	data, err := json.MarshalIndent(durable, "", "  ")
+	if err != nil {
+		return document.Revision, fmt.Errorf("encode capability-pack state: %w", err)
+	}
+	if err := atomicWriteState(s.path, append(data, '\n')); err != nil {
+		return document.Revision, err
+	}
+	return durable.Revision, nil
 }
 
 func (s *FileActivationStore) save(surface Surface, expectedDocumentRevision, expectedIntentRevision int, state ActivationState, compareDocument bool) (int, error) {
@@ -98,13 +203,14 @@ func (s *FileActivationStore) save(surface Surface, expectedDocumentRevision, ex
 	sort.Slice(document.Activations, func(i, j int) bool {
 		return document.Activations[i].Intent.Surface < document.Activations[j].Intent.Surface
 	})
-	document.SchemaVersion = 5
+	document.SchemaVersion = 1
 	document.Revision++
 	document.Ownership = cloneOwnership(state.Ownership)
+	document.External = verifiedExternalEffects(state.External)
 	for i := range document.Activations {
 		document.Activations[i].Ownership = nil
 	}
-	data, err := json.MarshalIndent(document, "", "  ")
+	data, err := json.MarshalIndent(receiptDocumentFromActivation(document), "", "  ")
 	if err != nil {
 		return document.Revision, fmt.Errorf("encode capability-pack state: %w", err)
 	}
@@ -117,6 +223,7 @@ func (s *FileActivationStore) save(surface Surface, expectedDocumentRevision, ex
 func snapshotStateForSurface(document activationDocument, surface Surface) ActivationState {
 	state := activationForSurface(document, surface)
 	state.Ownership = cloneOwnership(document.Ownership)
+	state.External = cloneExternalEffects(document.External)
 	state.documentRevision = document.Revision
 	state.snapshotManaged = true
 	return state
@@ -139,95 +246,155 @@ func (s *FileActivationStore) load() (activationDocument, error) {
 	if err != nil {
 		return activationDocument{}, fmt.Errorf("read capability-pack state %s: %w", s.path, err)
 	}
-	var header struct {
-		SchemaVersion int `json:"schema_version"`
+	var receipts installedReceiptDocument
+	if err := strictDecode(data, &receipts); err != nil {
+		return activationDocument{}, fmt.Errorf("read capability-pack state %s: invalid installed receipt document: %w", s.path, err)
 	}
-	if err := json.Unmarshal(data, &header); err != nil {
-		return activationDocument{}, fmt.Errorf("read capability-pack state %s: invalid JSON: %w", s.path, err)
+	if receipts.SchemaVersion != 1 {
+		return activationDocument{}, fmt.Errorf("read capability-pack state %s: unsupported schema_version %d", s.path, receipts.SchemaVersion)
 	}
-	switch header.SchemaVersion {
-	case 1:
-		var legacy ActivationState
-		if err := json.Unmarshal(data, &legacy); err != nil {
-			return activationDocument{}, err
-		}
-		document := activationDocument{SchemaVersion: 4, Activations: []ActivationState{legacy}}
-		defaultLegacySelections(&document)
-		migrateV4Ownership(&document)
-		if err := canonicalizeActivationDocument(&document); err != nil {
-			return activationDocument{}, err
-		}
-		return document, nil
-	case 2:
-		var document activationDocument
-		if err := json.Unmarshal(data, &document); err != nil {
-			return activationDocument{}, err
-		}
-		for _, state := range document.Activations {
-			if state.SchemaVersion != 1 {
-				return activationDocument{}, fmt.Errorf("read capability-pack state %s: document v2 contains unsupported activation schema_version %d", s.path, state.SchemaVersion)
-			}
-		}
-		defaultLegacySelections(&document)
-		migrateV4Ownership(&document)
-		if err := canonicalizeActivationDocument(&document); err != nil {
-			return activationDocument{}, err
-		}
-		return document, nil
-	case 3:
-		var document activationDocument
-		if err := json.Unmarshal(data, &document); err != nil {
-			return activationDocument{}, err
-		}
-		for _, state := range document.Activations {
-			if state.SchemaVersion != 2 {
-				return activationDocument{}, fmt.Errorf("read capability-pack state %s: document v3 contains unsupported activation schema_version %d", s.path, state.SchemaVersion)
-			}
-		}
-		defaultLegacySelections(&document)
-		migrateV4Ownership(&document)
-		if err := canonicalizeActivationDocument(&document); err != nil {
-			return activationDocument{}, err
-		}
-		return document, nil
-	case 4:
-		var document activationDocument
-		if err := strictDecode(data, &document); err != nil {
-			return activationDocument{}, fmt.Errorf("read capability-pack state %s: invalid document v4: %w", s.path, err)
-		}
-		for _, state := range document.Activations {
-			if state.SchemaVersion != 3 {
-				return activationDocument{}, fmt.Errorf("read capability-pack state %s: document v4 contains unsupported activation schema_version %d", s.path, state.SchemaVersion)
-			}
-			if err := validateExplicitSelections(state); err != nil {
-				return activationDocument{}, fmt.Errorf("read capability-pack state %s: %w", s.path, err)
-			}
-		}
-		if err := canonicalizeActivationDocument(&document); err != nil {
-			return activationDocument{}, err
-		}
-		migrateV4Ownership(&document)
-		return document, nil
-	case 5:
-		var document activationDocument
-		if err := strictDecode(data, &document); err != nil {
-			return activationDocument{}, fmt.Errorf("read capability-pack state %s: invalid document v5: %w", s.path, err)
-		}
-		for _, state := range document.Activations {
-			if state.SchemaVersion != 3 {
-				return activationDocument{}, fmt.Errorf("read capability-pack state %s: document v5 contains unsupported activation schema_version %d", s.path, state.SchemaVersion)
-			}
-			if err := validateExplicitSelections(state); err != nil {
-				return activationDocument{}, fmt.Errorf("read capability-pack state %s: %w", s.path, err)
-			}
-		}
-		if err := canonicalizeActivationDocument(&document); err != nil {
-			return activationDocument{}, err
-		}
-		return document, nil
-	default:
-		return activationDocument{}, fmt.Errorf("read capability-pack state %s: unsupported schema_version %d", s.path, header.SchemaVersion)
+	document, err := activationDocumentFromReceipts(receipts)
+	if err != nil {
+		return activationDocument{}, fmt.Errorf("read capability-pack state %s: %w", s.path, err)
 	}
+	return document, nil
+}
+
+func receiptDocumentFromActivation(document activationDocument) installedReceiptDocument {
+	receipts := installedReceiptDocument{SchemaVersion: 1, Revision: document.Revision, Receipts: []installedPackReceipt{}}
+	recordedEffects := map[string]bool{}
+	for _, state := range document.Activations {
+		for _, intent := range activeIntents(state) {
+			if !intent.Active {
+				continue
+			}
+			receipt := installedPackReceipt{
+				Pack: installedPackIdentity{ID: intent.PackID, Version: intent.Version}, Surface: intent.Surface,
+				Selection: cloneSelection(intent.Selection), Aliases: cloneAliases(intent.Aliases),
+				Resources: append([]ResourceIdentity(nil), intent.Resources...),
+			}
+			for _, owner := range document.Ownership {
+				if !ownershipBelongsToReceipt(owner, intent.PackID, intent.Surface) {
+					continue
+				}
+				receipt.Projections = append(receipt.Projections, installedProjection{
+					ID: owner.ProjectionID, PhysicalID: owner.ID, Target: owner.Target, Digest: owner.Fingerprint,
+					Contributors: append([]string(nil), owner.Contributors...), AdapterProvenance: owner.AdapterProvenance,
+					Authorities: append([]ProjectionAuthority(nil), owner.Authorities...),
+				})
+			}
+			for _, effect := range document.External {
+				if effect.Receipt != nil && effect.Receipt.Surface == intent.Surface && contributorsContainPack(effect.Receipt.Contributors, intent.PackID) {
+					receipt.ExternalEffects = append(receipt.ExternalEffects, cloneExternalEffects([]ExternalEffect{effect})[0])
+					recordedEffects[effect.ID] = true
+				}
+			}
+			sort.Slice(receipt.Resources, func(i, j int) bool { return receipt.Resources[i].String() < receipt.Resources[j].String() })
+			sort.Slice(receipt.Projections, func(i, j int) bool { return receipt.Projections[i].Target < receipt.Projections[j].Target })
+			receipts.Receipts = append(receipts.Receipts, receipt)
+		}
+	}
+	sort.Slice(receipts.Receipts, func(i, j int) bool {
+		if receipts.Receipts[i].Pack.ID != receipts.Receipts[j].Pack.ID {
+			return receipts.Receipts[i].Pack.ID < receipts.Receipts[j].Pack.ID
+		}
+		return receipts.Receipts[i].Surface < receipts.Receipts[j].Surface
+	})
+	for _, effect := range document.External {
+		if effect.Receipt != nil && !recordedEffects[effect.ID] {
+			receipts.ExternalEffects = append(receipts.ExternalEffects, cloneExternalEffects([]ExternalEffect{effect})[0])
+		}
+	}
+	sort.Slice(receipts.ExternalEffects, func(i, j int) bool { return receipts.ExternalEffects[i].ID < receipts.ExternalEffects[j].ID })
+	return receipts
+}
+
+func activationDocumentFromReceipts(receipts installedReceiptDocument) (activationDocument, error) {
+	document := activationDocument{SchemaVersion: 1, Revision: receipts.Revision, Activations: []ActivationState{}, Ownership: []ProjectionOwnership{}}
+	bySurface := map[Surface]*ActivationState{}
+	owners := map[string]ProjectionOwnership{}
+	external := map[string]ExternalEffect{}
+	for _, receipt := range receipts.Receipts {
+		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" {
+			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, and surface")
+		}
+		state := bySurface[receipt.Surface]
+		if state == nil {
+			state = &ActivationState{SchemaVersion: 3}
+			bySurface[receipt.Surface] = state
+		}
+		explicit := true
+		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
+		state.Intents = append(state.Intents, intent)
+		state.Intent = intent
+		for _, projection := range receipt.Projections {
+			owner := ProjectionOwnership{ID: projection.PhysicalID, ProjectionID: projection.ID, Target: projection.Target, Fingerprint: projection.Digest, Contributors: append([]string(nil), projection.Contributors...), AdapterProvenance: projection.AdapterProvenance, Authorities: append([]ProjectionAuthority(nil), projection.Authorities...)}
+			if owner.ID == "" {
+				owner.ID = projectionOwnershipKey(projection)
+			}
+			if existing, ok := owners[owner.ID]; ok {
+				existing.Contributors = sortedUnique(append(existing.Contributors, owner.Contributors...))
+				owners[owner.ID] = existing
+			} else {
+				owners[owner.ID] = owner
+			}
+		}
+		for _, effect := range receipt.ExternalEffects {
+			external[effect.ID] = effect
+		}
+	}
+	for _, state := range bySurface {
+		sort.Slice(state.Intents, func(i, j int) bool { return state.Intents[i].PackID < state.Intents[j].PackID })
+		document.Activations = append(document.Activations, *state)
+	}
+	for _, effect := range receipts.ExternalEffects {
+		external[effect.ID] = effect
+	}
+	for _, effect := range external {
+		document.External = append(document.External, effect)
+	}
+	for _, owner := range owners {
+		document.Ownership = append(document.Ownership, owner)
+	}
+	if err := canonicalizeActivationDocument(&document); err != nil {
+		return activationDocument{}, err
+	}
+	return document, nil
+}
+
+func projectionOwnershipKey(projection installedProjection) string {
+	if projection.Target != "" {
+		return "path:" + filepath.Clean(projection.Target)
+	}
+	return projection.ID
+}
+
+func ownershipBelongsToReceipt(owner ProjectionOwnership, packID string, surface Surface) bool {
+	for _, contributor := range owner.Contributors {
+		if contributorBelongsToPack(contributor, packID) && strings.HasPrefix(contributor, "surface:"+string(surface)+":") {
+			return true
+		}
+	}
+	return false
+}
+
+func contributorsContainPack(contributors []string, packID string) bool {
+	for _, contributor := range contributors {
+		if contributorBelongsToPack(contributor, packID) {
+			return true
+		}
+	}
+	return false
+}
+
+func verifiedExternalEffects(effects []ExternalEffect) []ExternalEffect {
+	verified := make([]ExternalEffect, 0, len(effects))
+	for _, effect := range effects {
+		if effect.Receipt != nil {
+			verified = append(verified, cloneExternalEffects([]ExternalEffect{effect})[0])
+		}
+	}
+	return verified
 }
 
 func canonicalizeActivationDocument(document *activationDocument) error {
@@ -246,50 +413,16 @@ func canonicalizeActivationDocument(document *activationDocument) error {
 		})
 	}
 	sort.Slice(document.Ownership, func(i, j int) bool { return document.Ownership[i].ID < document.Ownership[j].ID })
+	for i := range document.External {
+		if document.External[i].Receipt == nil {
+			return fmt.Errorf("external effect %q is missing its verified receipt", document.External[i].ID)
+		}
+		if err := canonicalizeExternalReceipt(&document.External[i], document.External[i].Receipt.Surface); err != nil {
+			return err
+		}
+	}
+	sort.Slice(document.External, func(i, j int) bool { return document.External[i].ID < document.External[j].ID })
 	return nil
-}
-
-// migrateV4Ownership migrates capability-pack ownership. Conflicting facts for
-// the same physical identity are dropped so the target remains conservatively
-// unowned until an explicit activation resolves the collision.
-func migrateV4Ownership(document *activationDocument) {
-	type candidate struct {
-		owner ProjectionOwnership
-		ok    bool
-	}
-	byID := map[string]candidate{}
-	for _, state := range document.Activations {
-		surface := state.Intent.Surface
-		for _, owner := range state.Ownership {
-			physicalID := "surface:" + string(surface) + ":" + owner.ID
-			current, exists := byID[physicalID]
-			if exists && (!current.ok || current.owner.Fingerprint != owner.Fingerprint) {
-				byID[physicalID] = candidate{}
-				continue
-			}
-			if !exists {
-				current = candidate{owner: ProjectionOwnership{ID: physicalID, ProjectionID: owner.ID, Fingerprint: owner.Fingerprint}, ok: true}
-			}
-			for _, contributor := range owner.Contributors {
-				current.owner.Contributors = append(current.owner.Contributors, qualifyContributor(surface, contributor))
-			}
-			provenance := owner.AdapterProvenance
-			if provenance != "" {
-				current.owner.Authorities = append(current.owner.Authorities, ProjectionAuthority{Surface: surface, AdapterProvenance: provenance})
-			}
-			byID[physicalID] = current
-		}
-		state.Ownership = nil
-	}
-	document.Ownership = nil
-	for _, value := range byID {
-		if value.ok {
-			value.owner.Contributors = sortedUnique(value.owner.Contributors)
-			document.Ownership = append(document.Ownership, value.owner)
-		}
-	}
-	sort.Slice(document.Ownership, func(i, j int) bool { return document.Ownership[i].ID < document.Ownership[j].ID })
-	document.SchemaVersion = 5
 }
 
 func canonicalizeActivationState(state *ActivationState) error {
@@ -329,7 +462,7 @@ func canonicalizeActivationState(state *ActivationState) error {
 		if effect.Receipt == nil {
 			continue
 		}
-		if err := canonicalizeExternalReceipt(effect, state.Intent.Surface); err != nil {
+		if err := canonicalizeExternalReceipt(effect, effect.Receipt.Surface); err != nil {
 			return err
 		}
 	}
@@ -364,29 +497,6 @@ func canonicalizeExternalReceipt(effect *ExternalEffect, surface Surface) error 
 	}
 	sort.Slice(receipt.Contributions, func(i, j int) bool { return receipt.Contributions[i].ID < receipt.Contributions[j].ID })
 	receipt.Reversal.AuthorityLimits = sortedUnique(receipt.Reversal.AuthorityLimits)
-	return nil
-}
-
-func defaultLegacySelections(document *activationDocument) {
-	all := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
-	for i := range document.Activations {
-		document.Activations[i].Intent.Selection = all
-		for j := range document.Activations[i].Intents {
-			document.Activations[i].Intents[j].Selection = all
-		}
-	}
-}
-
-func validateExplicitSelections(state ActivationState) error {
-	intents := append([]ActivationIntent{state.Intent}, state.Intents...)
-	for _, intent := range intents {
-		if intent.Selection.Mode == "" {
-			return fmt.Errorf("activation intent for pack %q is missing explicit resource selection", intent.PackID)
-		}
-		if _, err := canonicalSelection(intent.Selection); err != nil {
-			return fmt.Errorf("activation intent for pack %q has invalid resource selection: %w", intent.PackID, err)
-		}
-	}
 	return nil
 }
 

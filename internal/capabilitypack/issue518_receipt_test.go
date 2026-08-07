@@ -1,0 +1,234 @@
+package capabilitypack
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestIssue518VerifiedExternalEffectSurvivesLaterApplicationFailure(t *testing.T) {
+	ctx := context.Background()
+	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
+	effect := ExternalEffect{ID: "external:engram:setup:codex", Fingerprint: "sealed"}
+	effect.Receipt = &ExternalEffectReceipt{
+		SchemaVersion: 1, EffectID: effect.ID, EffectFingerprint: effect.Fingerprint, Surface: SurfaceCodex,
+		Contributors:  []string{"surface:codex:pack:engram:external:engram"},
+		Contributions: []ExternalContribution{{ID: "external_setup:engram:codex:mcp", ObservedFingerprint: "exact", AdapterProvenance: "test-adapter/v1"}},
+		Reversal:      ExternalReversalContract{SchemaVersion: 1, Consent: ConsentDestructiveCleanup, AuthorityLimits: []string{"recorded configuration only"}},
+	}
+	failed := ActivationState{Journal: &ApplyingJournal{PlanID: "memory-only", Outcome: AttemptRecoveryRequired}, External: []ExternalEffect{effect}}
+	revision, err := store.SaveSnapshot(ctx, SurfaceCodex, 0, failed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revision != 1 {
+		t.Fatalf("external receipt revision = %d, want 1", revision)
+	}
+	data, err := os.ReadFile(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var durable installedReceiptDocument
+	if err := json.Unmarshal(data, &durable); err != nil {
+		t.Fatal(err)
+	}
+	if len(durable.Receipts) != 0 || len(durable.ExternalEffects) != 1 {
+		t.Fatalf("failed application durable state = %+v", durable)
+	}
+	loaded, err := store.LoadSnapshot(ctx, SurfaceCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Journal != nil || len(loaded.External) != 1 || loaded.External[0].Receipt == nil {
+		t.Fatalf("verified reversal authority was not retained without recovery state: %+v", loaded)
+	}
+}
+
+func TestIssue518FailedApplicationDoesNotReplaceInstalledReceipt(t *testing.T) {
+	ctx := context.Background()
+	target := filepath.Join(t.TempDir(), "guide.md")
+	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
+	explicit := true
+	state := ActivationState{
+		Intent: ActivationIntent{
+			PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1,
+			Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}},
+			Resources: []ResourceIdentity{{Kind: "instruction", ID: "guide"}}, Explicit: &explicit,
+		},
+		Ownership: []ProjectionOwnership{{
+			ID: "path:" + target, ProjectionID: "instruction:guide", Target: target, Fingerprint: "old",
+			Contributors: []string{"surface:codex:pack:app:instruction:guide"}, AdapterProvenance: "test-adapter/v1",
+			Authorities: []ProjectionAuthority{{Surface: SurfaceCodex, AdapterProvenance: "test-adapter/v1"}},
+		}},
+	}
+	state.Intents = []ActivationIntent{state.Intent}
+	if _, err := store.SaveSnapshot(ctx, SurfaceCodex, 0, state); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{
+		ID: "instruction:guide", Exists: true, ObservedFingerprint: "old", DesiredFingerprint: "new", AdapterProvenance: "test-adapter/v1",
+		Action: ProjectionAction{ID: "instruction:guide", Target: target, Content: "new", Description: "write guide", AdapterProvenance: "test-adapter/v1"},
+	}}}
+	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation, observation}, applyErr: errors.New("disk full")}
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+	plan, err := facade.PreviewUpdate(ctx, UpdateRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = facade.Apply(ctx, ApplyRequest{Plan: plan, Approvals: []ApprovalReceipt{facade.Approve(plan, ConsentReversibleLocal)}, Interactive: true})
+	if err == nil {
+		t.Fatal("failed application unexpectedly succeeded")
+	}
+	after, readErr := os.ReadFile(store.path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("failed application replaced installed receipt\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestIssue518DistinctResourcesTargetingOnePathBlockBeforeMutation(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "shared.md")
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+		{Kind: "instruction", ID: "one", Source: "one.md"},
+		{Kind: "instruction", ID: "two", Source: "two.md"},
+	}}
+	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{
+		{ID: "instruction:one", DesiredFingerprint: "same", Action: ProjectionAction{ID: "instruction:one", Target: target, Content: "same"}},
+		{ID: "instruction:two", DesiredFingerprint: "same", Action: ProjectionAction{ID: "instruction:two", Target: target, Content: "same"}},
+	}}
+	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
+	store := &fakeActivationStore{}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+
+	plan, err := facade.Preview(context.Background(), ActivationRequest{PackID: "app", Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Applicable() || len(plan.Blockers()) == 0 || len(plan.Phases()) != 0 {
+		t.Fatalf("target collision was not blocked: disposition=%s blockers=%+v phases=%+v", plan.Disposition(), plan.Blockers(), plan.Phases())
+	}
+	if len(adapter.actions) != 0 || len(store.saves) != 0 {
+		t.Fatalf("target collision mutated state: actions=%+v saves=%d", adapter.actions, len(store.saves))
+	}
+
+	intent := ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}}
+	deactivationStore := &fakeActivationStore{state: ActivationState{Intent: intent, Intents: []ActivationIntent{intent}, snapshotManaged: true}}
+	deactivationAdapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
+	deactivationFacade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(deactivationStore, map[Surface]SurfaceAdapter{SurfaceCodex: deactivationAdapter}))
+	deactivationPlan, err := deactivationFacade.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: pack.ID, Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deactivationPlan.Applicable() || len(deactivationPlan.Blockers()) == 0 || len(deactivationPlan.Phases()) != 0 || len(deactivationAdapter.actions) != 0 || len(deactivationStore.saves) != 0 {
+		t.Fatalf("deactivation target collision was not blocked before mutation: disposition=%s blockers=%+v phases=%+v", deactivationPlan.Disposition(), deactivationPlan.Blockers(), deactivationPlan.Phases())
+	}
+}
+
+func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "guide.md")
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
+	state := ActivationState{
+		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
+		Ownership: []ProjectionOwnership{{
+			ID: "path:" + target, ProjectionID: "skill:guide", Target: target, Fingerprint: "receipt-digest",
+			Contributors: []string{"surface:codex:pack:app:skill:guide"}, AdapterProvenance: "test-adapter/v1",
+			Authorities: []ProjectionAuthority{{Surface: SurfaceCodex, AdapterProvenance: "test-adapter/v1"}},
+		}},
+		snapshotManaged: true,
+	}
+	state.Intents = []ActivationIntent{state.Intent}
+	drifted := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{
+		ID: "skill:guide", Exists: true, ObservedFingerprint: "user-edit", DesiredFingerprint: "catalog-current", AdapterProvenance: "test-adapter/v1",
+		Action: ProjectionAction{ID: "skill:guide", Target: target, Content: "catalog-current", Description: "write guide", AdapterProvenance: "test-adapter/v1"},
+	}}}
+
+	ordinary, _, _ := updateFixture([]Pack{pack}, state, drifted)
+	ordinaryPlan, err := ordinary.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ordinaryPlan.Applicable() || len(ordinaryPlan.Phases()) != 0 {
+		t.Fatalf("ordinary drift was writable: disposition=%s phases=%+v", ordinaryPlan.Disposition(), ordinaryPlan.Phases())
+	}
+
+	forced, _, _ := updateFixture([]Pack{pack}, state, drifted)
+	forcedPlan, err := forced.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !forcedPlan.Applicable() || len(forcedPlan.Phases()) != 1 || len(forcedPlan.Phases()[0].Actions) != 1 {
+		t.Fatalf("receipt-owned force was not actionable: disposition=%s blockers=%+v phases=%+v", forcedPlan.Disposition(), forcedPlan.Blockers(), forcedPlan.Phases())
+	}
+
+	foreignObservation := drifted
+	foreignObservation.Projections = append([]ObservedProjection(nil), drifted.Projections...)
+	foreignObservation.Projections[0].Action.Target = filepath.Join(t.TempDir(), "foreign.md")
+	foreign, _, _ := updateFixture([]Pack{pack}, state, foreignObservation)
+	foreignPlan, err := foreign.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foreignPlan.Applicable() || len(foreignPlan.Phases()) != 0 {
+		t.Fatalf("force escaped receipt ownership: disposition=%s phases=%+v", foreignPlan.Disposition(), foreignPlan.Phases())
+	}
+}
+
+func TestIssue518ForceDeactivationIsLimitedToReceiptOwnedTargets(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "guide")
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
+	state := ActivationState{
+		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
+		Ownership: []ProjectionOwnership{{
+			ID: "path:" + target, ProjectionID: "skill:guide", Target: target, Fingerprint: "receipt-digest",
+			Contributors: []string{"surface:codex:pack:app:skill:guide"}, AdapterProvenance: "test-adapter/v1",
+			Authorities: []ProjectionAuthority{{Surface: SurfaceCodex, AdapterProvenance: "test-adapter/v1"}},
+		}},
+		snapshotManaged: true,
+	}
+	state.Intents = []ActivationIntent{state.Intent}
+	drifted := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{{
+		ID: "skill:guide", Exists: true, ObservedFingerprint: "user-edit", AdapterProvenance: "test-adapter/v1",
+		Action: ProjectionAction{ID: "skill:guide", Target: target, Description: "remove guide", AdapterProvenance: "test-adapter/v1"},
+	}}}
+
+	ordinary, _, _ := deactivationFixture([]Pack{pack}, state, drifted)
+	ordinaryPlan, err := ordinary.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ordinaryPlan.Applicable() || len(ordinaryPlan.Phases()) != 0 {
+		t.Fatalf("ordinary drift was removable: disposition=%s phases=%+v", ordinaryPlan.Disposition(), ordinaryPlan.Phases())
+	}
+
+	forced, _, _ := deactivationFixture([]Pack{pack}, state, drifted)
+	forcedPlan, err := forced.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !forcedPlan.Applicable() || len(forcedPlan.Phases()) != 1 || forcedPlan.Phases()[0].Kind != ConsentDestructiveCleanup {
+		t.Fatalf("receipt-owned force deactivation was not actionable: disposition=%s blockers=%+v phases=%+v", forcedPlan.Disposition(), forcedPlan.Blockers(), forcedPlan.Phases())
+	}
+
+	foreignObservation := drifted
+	foreignObservation.Projections = append([]ObservedProjection(nil), drifted.Projections...)
+	foreignObservation.Projections[0].Action.Target = filepath.Join(t.TempDir(), "foreign")
+	foreign, _, _ := deactivationFixture([]Pack{pack}, state, foreignObservation)
+	foreignPlan, err := foreign.PreviewDeactivate(context.Background(), DeactivationRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foreignPlan.Applicable() || len(foreignPlan.Phases()) != 0 {
+		t.Fatalf("force deactivation escaped receipt ownership: disposition=%s phases=%+v", foreignPlan.Disposition(), foreignPlan.Phases())
+	}
+}

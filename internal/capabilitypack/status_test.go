@@ -289,12 +289,12 @@ func TestStatusRejectsOwnershipProblemsAndDoesNotInventRecoveryReadiness(t *test
 		t.Fatal(err)
 	}
 	entry := report.Entries[0]
-	if entry.Readiness != (ReadinessStatus{}) || entry.Projections.Ambiguous != 1 || entry.LatestAttempt == nil || entry.LatestAttempt.Outcome != "recovery-required" {
+	if entry.Readiness != (ReadinessStatus{}) || entry.Projections.Ambiguous != 1 {
 		t.Fatalf("entry=%+v", entry)
 	}
 }
 
-func TestStatusConfiguredDoesNotDependOnIntentAndLatestAttemptIsPairSpecific(t *testing.T) {
+func TestStatusConfiguredDoesNotDependOnIntentOrHistoricalAttempts(t *testing.T) {
 	pack := Pack{ID: "matty", Version: "1", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "instruction", ID: "guide"}}}
 	projection := ObservedProjection{Goal: ProjectionPresent, ID: "instruction:guide", Exists: true, ObservedFingerprint: "same", DesiredFingerprint: "same", Action: ProjectionAction{ID: "instruction:guide"}}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{Projections: []ObservedProjection{projection}}}}
@@ -305,7 +305,7 @@ func TestStatusConfiguredDoesNotDependOnIntentAndLatestAttemptIsPairSpecific(t *
 		t.Fatal(err)
 	}
 	entry := report.Entries[0]
-	if !entry.Readiness.Configured || entry.Intent.Active || entry.LatestAttempt == nil || entry.LatestAttempt.PlanID != "matty-plan" {
+	if !entry.Readiness.Configured || entry.Intent.Active {
 		t.Fatalf("entry=%+v", entry)
 	}
 }
@@ -328,7 +328,7 @@ func TestStatusInspectsEveryPackSurfaceAndReportsInactiveBaseline(t *testing.T) 
 		t.Fatalf("entries = %d, want 4", len(report.Entries))
 	}
 	for _, entry := range report.Entries {
-		if entry.Intent.Active || entry.Intent.Revision != 0 || entry.LatestAttempt != nil {
+		if entry.Intent.Active || entry.Intent.Revision != 0 {
 			t.Fatalf("invented lifecycle state: %+v", entry)
 		}
 		if entry.Readiness.Configured || entry.Readiness.Authorized || entry.Readiness.Usable {

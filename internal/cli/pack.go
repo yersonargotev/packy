@@ -38,9 +38,8 @@ are requested separately for each consent kind. A verified Apply can succeed whi
 login, trust, permissions, reload, or runtime loading remain pending; use targeted
 status with --require usable as the separate automation gate.
 
-After a stale plan or recovery-required attempt, repeat the original lifecycle
-verb to inspect fresh state and receive a new Preview. Packy never retries it
-automatically.
+After a stale plan, repeat the original lifecycle verb to inspect fresh state
+and receive a new Preview. Packy never retries it automatically.
 
 ` + projectLifecycleHelp,
 		Example: `  packy pack list
@@ -583,6 +582,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	var resourceValues []string
 	var jsonOutput bool
 	var project bool
+	var force bool
 	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Long: "Deactivate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
 		return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, project, "deactivate")
 	}, RunE: func(cmd *cobra.Command, args []string) (runErr error) {
@@ -592,6 +592,9 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 			}
 		}()
 		if project {
+			if force {
+				return errors.New("--force is accepted only for global deactivation")
+			}
 			if len(resourceValues) > 0 {
 				return errors.New("--resource is not accepted with --project; personal project deactivation consumes exact receipts")
 			}
@@ -641,7 +644,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 		if err != nil {
 			return err
 		}
-		plan, err := facade.PreviewDeactivate(cmd.Context(), capabilitypack.DeactivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Resources: resources})
+		plan, err := facade.PreviewDeactivate(cmd.Context(), capabilitypack.DeactivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Resources: resources, Force: force})
 		if err != nil {
 			return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 		}
@@ -655,6 +658,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Remove a manifest-v4 operational resource root (<kind>:<id>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	cmd.Flags().BoolVar(&project, "project", false, "Deactivate exact personal runtime effects for the current project")
+	cmd.Flags().BoolVar(&force, "force", false, "Remove drifted paths proven to belong to this installed Pack receipt")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd
 }
@@ -713,6 +717,7 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	var jsonOutput bool
 	var project bool
 	var version string
+	var force bool
 	cmd := &cobra.Command{
 		Use: "update <pack>", Short: "Update an active capability pack to the catalog-current version", Long: "Update an active capability pack to the catalog-current version.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
 			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, project, "update")
@@ -724,6 +729,9 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 				}
 			}()
 			if project {
+				if force {
+					return errors.New("--force is accepted only for global update")
+				}
 				if surface != "" {
 					return errors.New("--surface is not accepted for project update")
 				}
@@ -749,7 +757,7 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 			if err != nil {
 				return err
 			}
-			plan, err := facade.PreviewUpdate(cmd.Context(), capabilitypack.UpdateRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Aliases: aliases})
+			plan, err := facade.PreviewUpdate(cmd.Context(), capabilitypack.UpdateRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Aliases: aliases, Force: force})
 			if err != nil {
 				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 			}
@@ -765,6 +773,7 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	cmd.Flags().BoolVar(&project, "project", false, "Update the shared project installation across every installed surface")
 	cmd.Flags().StringVar(&version, "version", "", "Exact admitted project pack version")
+	cmd.Flags().BoolVar(&force, "force", false, "Replace drifted paths proven to belong to this installed Pack receipt")
 	return cmd
 }
 
@@ -1862,7 +1871,7 @@ func renderProjectInstallBlockers(blockers []capabilitypack.ProjectInstallBlocke
 
 func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusReport) error {
 	writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "PACK\tSURFACE\tINTENT\tATTEMPT\tCONFIGURED\tAUTHORIZED\tUSABLE\tACTION")
+	fmt.Fprintln(writer, "PACK\tSURFACE\tINTENT\tCONFIGURED\tAUTHORIZED\tUSABLE\tACTION")
 	for _, entry := range report.Entries {
 		configured := readinessValue(entry.ReadinessObserved.Configured, entry.Readiness.Configured)
 		authorized := readinessValue(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized)
@@ -1871,13 +1880,13 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 		if entry.LifecycleState == capabilitypack.PackLifecycleInactiveWithResiduals {
 			intent = string(entry.LifecycleState)
 		}
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", entry.Pack.ID, entry.Surface, intent, renderAttempt(entry.LatestAttempt), configured, authorized, usable, renderStatusAction(entry))
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", entry.Pack.ID, entry.Surface, intent, configured, authorized, usable, renderStatusAction(entry))
 	}
 	return writer.Flush()
 }
 
 func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry, focused *capabilitypack.ResourceStatus) error {
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nLatest attempt: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), renderAttempt(entry.LatestAttempt), readinessValue(entry.ReadinessObserved.Configured, entry.Readiness.Configured), readinessValue(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized), readinessValue(entry.ReadinessObserved.Usability, entry.Readiness.Usable), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), len(entry.Resources), readinessValue(entry.ReadinessObserved.Configured, entry.Readiness.Configured), readinessValue(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized), readinessValue(entry.ReadinessObserved.Usability, entry.Readiness.Usable), receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
 	}
 	if entry.Intent.Active {
@@ -1948,6 +1957,26 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		return err
 	}
 	return renderRuntimeModes(cmd, entry.RuntimeModes)
+}
+
+func receiptOwnershipCount(projections []capabilitypack.ProjectionStatus) int {
+	count := 0
+	for _, projection := range projections {
+		if projection.Owner == "packy" {
+			count++
+		}
+	}
+	return count
+}
+
+func receiptDriftCount(projections []capabilitypack.ProjectionStatus) int {
+	count := 0
+	for _, projection := range projections {
+		if projection.Owner == "packy" && projection.Health != capabilitypack.ProjectionVerified {
+			count++
+		}
+	}
+	return count
 }
 
 func projectionCount(summary capabilitypack.ProjectionSummary) int {
@@ -2040,16 +2069,6 @@ func renderIntent(intent capabilitypack.IntentStatus) string {
 		return fmt.Sprintf("active at revision %d", intent.Revision)
 	}
 	return fmt.Sprintf("active at version %s, revision %d", intent.Version, intent.Revision)
-}
-
-func renderAttempt(attempt *capabilitypack.AttemptStatus) string {
-	if attempt == nil {
-		return "none"
-	}
-	if attempt.PlanID == "" {
-		return attempt.Outcome
-	}
-	return fmt.Sprintf("%s (%s)", attempt.Outcome, attempt.PlanID)
 }
 
 func yesNo(value bool) string {
