@@ -276,6 +276,35 @@
       ]
     },
     {
+      "id": "argote",
+      "provider": "github",
+      "repository": "yersonargotev/argote",
+      "selector": {
+        "mode": "commit",
+        "ref": "02762547c0c312f3cc7519ac7044964c43657cbb"
+      },
+      "resources": [
+        {
+          "pack_id": "argote",
+          "kind": "instruction",
+          "resource_id": "engineering-principles",
+          "upstream_path": "instructions/engineering-principles.md"
+        },
+        {
+          "pack_id": "argote",
+          "kind": "instruction",
+          "resource_id": "neutral-spanish",
+          "upstream_path": "instructions/neutral-spanish.md"
+        },
+        {
+          "pack_id": "argote",
+          "kind": "skill",
+          "resource_id": "espera-que",
+          "upstream_path": "skills/espera-que"
+        }
+      ]
+    },
+    {
       "id": "mattpocock-skills",
       "provider": "github",
       "repository": "mattpocock/skills",
