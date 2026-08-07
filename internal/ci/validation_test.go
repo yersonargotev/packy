@@ -71,7 +71,7 @@ type packSourceSchemaSuite struct {
 	major   int
 }
 
-var packSourceSchemaSuites = []packSourceSchemaSuite{{version: "v1.0.0", major: 1}, {version: "v2.0.0", major: 2}, {version: "v2.1.0", major: 2}, {version: "v3.0.0", major: 3}}
+var packSourceSchemaSuites = []packSourceSchemaSuite{{version: "v1.0.0", major: 1}, {version: "v2.0.0", major: 2}, {version: "v2.1.0", major: 2}, {version: "v2.2.0", major: 2}, {version: "v3.0.0", major: 3}}
 
 var packSourceSchemaNames = []string{
 	"pack-source-dispatch.schema.json",
@@ -1350,8 +1350,8 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 		"prepare_only:", "Admit protected publication or read-only preparation", "Enforce the ref, mode, and operation boundary",
 		"Enforce input and transport bounds before acquisition", "inputs_bytes <= 61440", "registration_json exceeds 16 KiB", "reconfiguration_json exceeds 16 KiB",
 		"registrations_json exceeds 16 KiB", "proposed_manifest_json exceeds 48 KiB", "human_evidence_json exceeds 16 KiB",
-		"request_reason exceeds 2 KiB", "register_bundle requires 2..8 members",
-		"operation:", "reconfigure", "register_bundle", "pack_id:", "reconfiguration_json:", "reconfiguration_sha256:", "registrations_json:", "registration_bundle_sha256:", "proposed_version:", "proposed_manifest_json:", "proposed_manifest_sha256:",
+		"request_reason exceeds 2 KiB", "closing_issue exceeds 256 bytes", "closing_issue must use string transport", "closing_issue must be one canonical GitHub issue URL", "issue_owner", "issue_repository", "register_bundle requires 2..8 members",
+		"operation:", "reconfigure", "register_bundle", "pack_id:", "closing_issue:", "PACKY_CLOSING_ISSUE: ${{ inputs.closing_issue }}", "reconfiguration_json:", "reconfiguration_sha256:", "registrations_json:", "registration_bundle_sha256:", "proposed_version:", "proposed_manifest_json:", "proposed_manifest_sha256:",
 		"registration_json:", "registration_sha256:", "PACKY_OPERATION: ${{ inputs.operation }}", "PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}", "PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}", "PACKY_RECONFIGURATION_JSON: ${{ inputs.reconfiguration_json }}", "PACKY_RECONFIGURATION_SHA256: ${{ inputs.reconfiguration_sha256 }}",
 		"PACKY_PACK_ID: ${{ inputs.pack_id }}", "PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}", "PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}",
 		"PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}", "PACKY_PROPOSED_MANIFEST_JSON: ${{ inputs.proposed_manifest_json }}", "PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}",
@@ -1398,7 +1398,7 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 	}
 	if !strings.Contains(classify, "models: read") || !strings.Contains(prepare, "pull-requests: read") ||
 		!strings.Contains(prepare, "inputs.prepare_only == true") || !strings.Contains(prepare, "github.ref != 'refs/heads/main'") ||
-		!strings.Contains(publish, "contents: write") || !strings.Contains(publish, "pull-requests: write") ||
+		!strings.Contains(publish, "contents: write") || !strings.Contains(publish, "issues: read") || !strings.Contains(publish, "pull-requests: write") ||
 		!strings.Contains(publish, "github.ref == 'refs/heads/main'") || !strings.Contains(publish, "inputs.prepare_only == false") {
 		t.Fatal("phase permissions do not match the accepted minimum")
 	}
@@ -2038,13 +2038,35 @@ func TestPackSourceV21ReconfigurationSchemaMatchesRuntimeContract(t *testing.T) 
 	}
 }
 
+func TestPackSourceV22ClosingIssueSchemaMatchesRuntimeContract(t *testing.T) {
+	request := packsyncworkflow.DispatchRequest{SchemaVersion: 2, Operation: packsyncworkflow.OperationSynchronize, SourceID: "argote", Selector: packsyncworkflow.SelectorLatestStable, ClassificationMode: packsyncworkflow.ClassificationAI, RequestReason: "deliver approved registration", ClosingIssue: "https://github.com/yersonargotev/packy/issues/506"}
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := request.Validate(); err != nil {
+		t.Fatalf("runtime rejected closing issue: %v", err)
+	}
+	if err := validateSchemaInstanceForSuite(t, "v2.2.0", "pack-source-dispatch.schema.json", data); err != nil {
+		t.Fatalf("v2.2 schema rejected closing issue: %v", err)
+	}
+	request.ClosingIssue = "https://github.com/yersonargotev/packy/issues/0506"
+	data, _ = json.Marshal(request)
+	if err := request.Validate(); err == nil {
+		t.Fatal("runtime accepted non-canonical closing issue")
+	}
+	if err := validateSchemaInstanceForSuite(t, "v2.2.0", "pack-source-dispatch.schema.json", data); err == nil {
+		t.Fatal("v2.2 schema accepted non-canonical closing issue")
+	}
+}
+
 func assertV2RuntimeSchemaParity(t *testing.T, name string, value any, runtimeErr error) {
 	t.Helper()
 	data, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
-	schemaErr := validateSchemaInstanceForSuite(t, "v2.0.0", name, data)
+	schemaErr := validateSchemaInstanceForSuite(t, "v2.2.0", name, data)
 	if (runtimeErr == nil) != (schemaErr == nil) {
 		t.Fatalf("v2 runtime/schema disagreement for %s: runtime=%v schema=%v document=%s", name, runtimeErr, schemaErr, data)
 	}

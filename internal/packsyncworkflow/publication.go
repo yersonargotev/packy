@@ -45,10 +45,15 @@ type Proposal struct {
 	ManagedMetadataHash    string
 	Validation             ValidationGates
 	InvalidationConditions []string
+	ClosingIssue           string
 }
 
 func DecisionReadyInvalidationConditions() []string {
 	return []string{"base_changed", "candidate_changed", "provenance_changed", "head_changed", "pr_state_changed"}
+}
+
+func ClosingIssueInvalidationConditions() []string {
+	return append(DecisionReadyInvalidationConditions(), "issue_changed")
 }
 
 type BranchState struct {
@@ -83,6 +88,7 @@ type PublicationRecord struct {
 	ResultTreeSHA    string `json:"result_tree_sha"`
 	ProvenanceSHA256 string `json:"provenance_sha256"`
 	MetadataHash     string `json:"metadata_hash"`
+	ClosingIssue     string `json:"closing_issue,omitempty"`
 }
 
 type PublicationState struct {
@@ -93,6 +99,8 @@ type PublicationState struct {
 	PR                PRState
 	Record            PublicationRecord
 	Writes            int
+	ClosingIssue      string
+	IssueApproved     bool
 }
 
 type PublicationAction string
@@ -123,6 +131,9 @@ func EvaluatePublication(proposal Proposal, state PublicationState) (Publication
 	}
 	if !state.ProvenanceCurrent {
 		return blocked(decision, "candidate provenance moved after inspection")
+	}
+	if proposal.ClosingIssue != "" && (state.ClosingIssue != proposal.ClosingIssue || !state.IssueApproved) {
+		return blocked(decision, "approved closing issue identity is missing, changed, or unauthorized")
 	}
 	if state.CandidateRelation == CandidateRegressive {
 		return blocked(decision, "candidate would regress the currently proposed source")
@@ -161,7 +172,7 @@ func EvaluatePublication(proposal Proposal, state PublicationState) (Publication
 	if state.Record.ProvenanceSHA256 == "" {
 		return blocked(decision, "publication record base or provenance is stale")
 	}
-	exact := state.Record.PlanID == proposal.PlanID && state.Record.BaseSHA == proposal.BaseSHA && state.Record.CandidateSHA == proposal.CandidateSHA && state.Record.HeadSHA == proposal.HeadSHA && state.Record.ResultTreeSHA == proposal.ResultTreeSHA && state.Record.ProvenanceSHA256 == proposal.ProvenanceSHA256
+	exact := state.Record.PlanID == proposal.PlanID && state.Record.BaseSHA == proposal.BaseSHA && state.Record.CandidateSHA == proposal.CandidateSHA && state.Record.HeadSHA == proposal.HeadSHA && state.Record.ResultTreeSHA == proposal.ResultTreeSHA && state.Record.ProvenanceSHA256 == proposal.ProvenanceSHA256 && state.Record.ClosingIssue == proposal.ClosingIssue
 	if exact {
 		decision.Action = PublicationNoop
 		return decision, nil
@@ -197,6 +208,11 @@ func validateProposal(proposal Proposal) error {
 	}
 	if err := requireSHA256("managed metadata hash", proposal.ManagedMetadataHash); err != nil {
 		return err
+	}
+	if proposal.ClosingIssue != "" {
+		if _, _, ok := ParseClosingIssue(proposal.ClosingIssue); !ok {
+			return errors.New("proposal closing issue is invalid")
+		}
 	}
 	return nil
 }
@@ -239,6 +255,8 @@ type ReadinessIdentity struct {
 	ProvenanceSHA256 string `json:"provenance_sha256"`
 	PRNumber         int    `json:"pr_number"`
 	PRStateSHA256    string `json:"pr_state_sha256"`
+	ClosingIssue     string `json:"closing_issue,omitempty"`
+	IssueApproved    bool   `json:"issue_approved,omitempty"`
 }
 
 type Readiness struct {
@@ -253,6 +271,11 @@ func MarkDecisionReady(identity ReadinessIdentity, gates ValidationGates, draft,
 	ready := Readiness{Identity: identity, Gates: gates, AutoMerge: autoMerge, ManualMergeRequired: true}
 	if identity.PlanID == "" || identity.PRNumber < 1 || requireFullSHA("base", identity.BaseSHA) != nil || requireFullSHA("head", identity.HeadSHA) != nil || requireFullSHA("candidate", identity.CandidateSHA) != nil || requireSHA256("readiness provenance", identity.ProvenanceSHA256) != nil || requireSHA256("pull request state hash", identity.PRStateSHA256) != nil {
 		return ready, errors.New("readiness identity is incomplete")
+	}
+	if identity.ClosingIssue != "" {
+		if _, _, ok := ParseClosingIssue(identity.ClosingIssue); !ok || !identity.IssueApproved {
+			return ready, errors.New("decision readiness requires the exact approved closing issue")
+		}
 	}
 	if !gates.Complete() || draft || autoMerge {
 		return ready, errors.New("decision readiness requires every gate, a non-draft PR, and disabled auto-merge")

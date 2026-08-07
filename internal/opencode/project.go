@@ -85,10 +85,14 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 			return capabilitypack.ObservedProjection{}, false, err
 		}
 		target := filepath.Join(projectRoot, "AGENTS.md")
-		start, end := "<!-- packy:project:opencode:"+resource.ID+":start -->", "<!-- packy:project:opencode:"+resource.ID+":end -->"
+		start, end := projectInstructionMarkers(resource.ID)
 		block := start + "\n" + strings.TrimSpace(string(content)) + "\n" + end
 		projection, represented, err := projectMarkedFileProjectionFromContent(identity.String(), capabilitypack.ActionOpenCodeInstructionFile, target, block, start, end, instructionDocument)
 		projection.Action.Precondition = instructionPrecondition
+		key := "path:" + filepath.Clean(target) + "#packy-project-instruction:" + resource.ID
+		projection.AdapterProvenance = "opencode-project/v1/shared-composable-instruction"
+		projection.ProjectionKey, projection.Shared, projection.DiscoverableBy = key, true, []capabilitypack.Surface{capabilitypack.SurfaceCodex}
+		projection.Action.ProjectionKey, projection.Action.Shared, projection.Action.DiscoverableBy = key, true, []capabilitypack.Surface{capabilitypack.SurfaceCodex}
 		return projection, represented, err
 	case "agent":
 		if !bound || resource.Source == "" {
@@ -189,8 +193,12 @@ func projectMarkedFileProjection(id string, kind capabilitypack.ProjectionAction
 func projectMarkedFileProjectionFromContent(id string, kind capabilitypack.ProjectionActionKind, target, block, start, end, text string) (capabilitypack.ObservedProjection, bool, error) {
 	fragment, found := projectExtractBlock(text, start, end)
 	observed := "missing"
+	exists := found
 	if found {
 		observed = localprojection.FingerprintBytes([]byte(fragment))
+	} else if strings.Contains(text, start) || strings.Contains(text, end) {
+		exists = true
+		observed = "malformed:" + localprojection.FingerprintBytes([]byte(text))
 	}
 	fileMode := uint32(0o644)
 	precondition := "missing"
@@ -198,14 +206,17 @@ func projectMarkedFileProjectionFromContent(id string, kind capabilitypack.Proje
 		fileMode = uint32(info.Mode().Perm())
 		precondition = localprojection.FingerprintBytes([]byte(text))
 	}
-	content := block + "\n"
-	if strings.TrimSpace(text) != "" {
-		content = strings.TrimRight(text, "\n") + "\n\n" + block + "\n"
+	content := ""
+	if !exists {
+		content = block + "\n"
+		if strings.TrimSpace(text) != "" {
+			content = strings.TrimRight(text, "\n") + "\n\n" + block + "\n"
+		}
 	}
 	if found {
 		content = strings.Replace(text, fragment, block, 1)
 	}
-	return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionPresent, Exists: found, ObservedFingerprint: observed, DesiredFingerprint: localprojection.FingerprintBytes([]byte(block)), AdapterProvenance: "opencode-project/v1/composable-instruction", Action: capabilitypack.ProjectionAction{ID: id, Surface: capabilitypack.SurfaceOpenCode, Kind: kind, Target: target, Content: content, FileMode: fileMode, Precondition: precondition, PreviewOnly: true}}, true, nil
+	return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: localprojection.FingerprintBytes([]byte(block)), AdapterProvenance: "opencode-project/v1/composable-instruction", Action: capabilitypack.ProjectionAction{ID: id, Surface: capabilitypack.SurfaceOpenCode, Kind: kind, Target: target, Content: content, FileMode: fileMode, Precondition: precondition, PreviewOnly: true}}, true, nil
 }
 
 func projectExtractBlock(content, start, end string) (string, bool) {
@@ -218,6 +229,10 @@ func projectExtractBlock(content, start, end string) (string, bool) {
 		return "", false
 	}
 	return content[startIndex : startIndex+len(start)+relativeEnd+len(end)], true
+}
+
+func projectInstructionMarkers(id string) (string, string) {
+	return "<!-- packy:project:instruction:" + id + ":start -->", "<!-- packy:project:instruction:" + id + ":end -->"
 }
 
 func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal) (capabilitypack.SurfaceInspection, error) {
@@ -282,7 +297,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 			observed, exists, err = projectTreeFingerprint(target)
 		case "instruction":
 			action.Kind = capabilitypack.ActionOpenCodeInstructionFile
-			start, end := "<!-- packy:project:opencode:"+projection.Resource.ID+":start -->", "<!-- packy:project:opencode:"+projection.Resource.ID+":end -->"
+			start, end := projectInstructionMarkers(projection.Resource.ID)
 			fragment, found := projectExtractBlock(string(instructionOriginal), start, end)
 			exists = found
 			if found {

@@ -111,6 +111,48 @@ func TestDispatchV21ReconfigureSealsCompleteConfigurationAndManifest(t *testing.
 	}
 }
 
+func TestV22ClosingIssueAuthorityIsExactSealedAndFailClosed(t *testing.T) {
+	issue := "https://github.com/owner/repo/issues/509"
+	request := DispatchRequest{SchemaVersion: 2, Operation: OperationSynchronize, SourceID: "source", Selector: SelectorLatestStable, ClassificationMode: ClassificationAI, RequestReason: "deliver approved source synchronization", ClosingIssue: issue}
+	if err := request.Validate(); err != nil {
+		t.Fatalf("valid closing issue request: %v", err)
+	}
+	for _, invalid := range []string{"#509", "https://github.com/owner/repo/pull/509", "https://github.com/owner/repo/issues/0509", "https://github.com/owner/repo/issues/509?x=1", "https://example.com/owner/repo/issues/509"} {
+		changed := request
+		changed.ClosingIssue = invalid
+		if err := changed.Validate(); err == nil {
+			t.Fatalf("invalid closing issue accepted: %q", invalid)
+		}
+	}
+	v1 := DispatchRequest{SchemaVersion: 1, SourceID: "source", Selector: SelectorLatestStable, ClassificationMode: ClassificationAI, RequestReason: "no delivery authority", ClosingIssue: issue}
+	if err := v1.Validate(); err == nil {
+		t.Fatal("v1 request claimed issue-closing authority")
+	}
+
+	proposal := validProposal()
+	proposal.ClosingIssue = issue
+	state := PublicationState{BaseSHA: baseA, ProvenanceCurrent: true, ClosingIssue: issue, IssueApproved: true}
+	decision, err := EvaluatePublication(proposal, state)
+	if err != nil || decision.Action != PublicationCreate {
+		t.Fatalf("approved closing issue publication = %#v, %v", decision, err)
+	}
+	state.IssueApproved = false
+	if decision, err = EvaluatePublication(proposal, state); err == nil || decision.Action != PublicationBlock {
+		t.Fatalf("unauthorized closing issue publication = %#v, %v", decision, err)
+	}
+
+	brief := ReviewBrief{SchemaVersion: 1, Actor: "maintainer", RunID: "1", RunAttempt: "1", RunURL: "https://github.com/owner/repo/actions/runs/1", Repository: "owner/repo", Request: request, Candidate: packsync.Candidate{Commit: candidateA}, PlanID: "plan", BaseSHA: baseA, HeadSHA: headA, ResultTreeSHA: treeA, Branch: "sync/source", SelectedResources: []packsync.ResourceEvidence{{SHA256: strings.Repeat("4", 64)}}, PreviousSnapshotSHA256: strings.Repeat("3", 64), ProposedSnapshotSHA256: strings.Repeat("5", 64), ApplyStatus: "applied", Validation: ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}, DecisionReady: true, ManualMergeRequired: true, InvalidationConditions: DecisionReadyInvalidationConditions()}
+	managed, err := brief.ManagedMarkdown()
+	if err != nil || strings.Count(managed, "Closes "+issue) != 1 {
+		t.Fatalf("managed closing issue body = %q, %v", managed, err)
+	}
+	brief.Request.ClosingIssue = ""
+	managed, err = brief.ManagedMarkdown()
+	if err != nil || strings.Contains(managed, "Closes ") {
+		t.Fatalf("unprivileged request rendered closing keyword = %q, %v", managed, err)
+	}
+}
+
 func TestV1DispatchMeaningAndDigestRemainUnchanged(t *testing.T) {
 	request := DispatchRequest{SchemaVersion: 1, SourceID: "source", Selector: SelectorLatestStable, ClassificationMode: ClassificationAI, RequestReason: "fixture"}
 	if err := request.Validate(); err != nil {

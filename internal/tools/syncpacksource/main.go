@@ -133,7 +133,7 @@ func writeFailureArtifact(option options, failure error) error {
 	if !packsyncworkflow.ValidSourceID(sourceID) {
 		sourceID = "unknown"
 	}
-	context := packsyncworkflow.FailureArtifactContext{SourceID: sourceID, RunURL: actionsRunURL()}
+	context := packsyncworkflow.FailureArtifactContext{SourceID: sourceID, RunURL: actionsRunURL(), ClosingIssue: request.ClosingIssue}
 	planPath := option.planPath
 	if planPath == "" {
 		planPath = filepath.Join(option.outputDir, "plan.json")
@@ -188,7 +188,7 @@ func inspect(ctx context.Context, option options, output io.Writer) error {
 		return err
 	}
 	if plan.Status == "no-op" {
-		if err := writeNoopArtifact(option.outputDir, request.SourceID, plan); err != nil {
+		if err := writeNoopArtifact(option.outputDir, request.SourceID, request.ClosingIssue, plan); err != nil {
 			return err
 		}
 	}
@@ -208,8 +208,8 @@ func inspect(ctx context.Context, option options, output io.Writer) error {
 	return err
 }
 
-func writeNoopArtifact(outputDir, sourceID string, plan packsync.Plan) error {
-	artifact := packsyncworkflow.NoopArtifact{SchemaVersion: 2, State: "no-op", SourceID: sourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, ArtifactProvenance: artifactProvenance(plan)}
+func writeNoopArtifact(outputDir, sourceID, closingIssue string, plan packsync.Plan) error {
+	artifact := packsyncworkflow.NoopArtifact{SchemaVersion: 2, State: "no-op", SourceID: sourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, ArtifactProvenance: artifactProvenance(plan), ClosingIssue: closingIssue}
 	if err := artifact.Validate(); err != nil {
 		return err
 	}
@@ -225,7 +225,8 @@ func inspectRequest(option options) (packsyncworkflow.DispatchRequest, packsync.
 		if os.Getenv("PACKY_SOURCE_ID") != "" {
 			operation := packsyncworkflow.DispatchOperation(os.Getenv("PACKY_OPERATION"))
 			request := packsyncworkflow.DispatchRequest{SchemaVersion: 1, SourceID: os.Getenv("PACKY_SOURCE_ID"), Selector: packsyncworkflow.Selector(os.Getenv("PACKY_SELECTOR")), SelectorRef: os.Getenv("PACKY_SELECTOR_REF"), ClassificationMode: packsyncworkflow.ClassificationMode(os.Getenv("PACKY_CLASSIFICATION_MODE")), RequestReason: os.Getenv("PACKY_REQUEST_REASON"), RetryOfRun: os.Getenv("PACKY_RETRY_OF_RUN"), ExpectedPlanID: os.Getenv("PACKY_EXPECTED_PLAN_ID"), ExpectedBaseSHA: os.Getenv("PACKY_EXPECTED_BASE_SHA")}
-			if operation != "" && operation != packsyncworkflow.OperationSynchronize {
+			request.ClosingIssue = os.Getenv("PACKY_CLOSING_ISSUE")
+			if operation != "" && (operation != packsyncworkflow.OperationSynchronize || request.ClosingIssue != "") {
 				request.SchemaVersion = 2
 				request.Operation = operation
 			}

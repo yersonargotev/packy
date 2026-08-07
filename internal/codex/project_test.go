@@ -197,3 +197,53 @@ func TestMattyProjectInstructionInspectionPreservesOnlyIntactContribution(t *tes
 		})
 	}
 }
+
+func TestCodexProjectInspectionBuildsSharedComposableInstructions(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "bundle")
+	if err := os.MkdirAll(filepath.Join(bundle, "instructions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"one.md": "First guidance\n", "two.md": "Second guidance\n"} {
+		if err := os.WriteFile(filepath.Join(bundle, "instructions", name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	project := filepath.Join(root, "project")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(project, "AGENTS.md")
+	if err := os.WriteFile(target, []byte("# Team guidance\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	pack := capabilitypack.Pack{ID: "guide", Resources: []capabilitypack.Resource{
+		{Kind: "instruction", ID: "one", Source: "instructions/one.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "instruction", Name: "one"}}},
+		{Kind: "instruction", ID: "two", Source: "instructions/two.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "instruction", Name: "two"}}},
+	}}
+	adapter := NewSurfaceAdapter(bundle, "", "")
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inspection.Unrepresentable) != 0 || len(inspection.Projections) != 2 {
+		t.Fatalf("instruction inspection = %#v", inspection)
+	}
+	one := findProjectProjection(t, inspection.Projections, "instruction:one")
+	two := findProjectProjection(t, inspection.Projections, "instruction:two")
+	for _, projection := range []capabilitypack.ObservedProjection{one, two} {
+		if projection.Action.Target != target || projection.Action.Kind != capabilitypack.ActionInstructionFile || !projection.Shared || len(projection.DiscoverableBy) != 1 || projection.DiscoverableBy[0] != capabilitypack.SurfaceOpenCode {
+			t.Fatalf("shared instruction projection = %#v", projection)
+		}
+	}
+	if !strings.Contains(two.Action.Content, "# Team guidance") || !strings.Contains(two.Action.Content, "First guidance") || !strings.Contains(two.Action.Content, "Second guidance") {
+		t.Fatalf("composed AGENTS.md = %q", two.Action.Content)
+	}
+	if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{two.Action}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil || string(content) != two.Action.Content {
+		t.Fatalf("project instructions = %q, want %q: %v", content, two.Action.Content, err)
+	}
+}

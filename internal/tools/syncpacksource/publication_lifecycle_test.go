@@ -982,3 +982,28 @@ func assertBodyFileRemoved(t *testing.T, name string) {
 		t.Fatalf("pull-request body file remains after publication: %v", err)
 	}
 }
+
+func TestClosingIssueObservationRequiresExactOpenApprovedIssue(t *testing.T) {
+	issue := "https://github.com/owner/repo/issues/509"
+	for name, response := range map[string]string{
+		"approved":   `{"url":"https://github.com/owner/repo/issues/509","state":"OPEN","labels":[{"name":"status:approved"}]}`,
+		"closed":     `{"url":"https://github.com/owner/repo/issues/509","state":"CLOSED","labels":[{"name":"status:approved"}]}`,
+		"unapproved": `{"url":"https://github.com/owner/repo/issues/509","state":"OPEN","labels":[]}`,
+		"changed":    `{"url":"https://github.com/owner/repo/issues/510","state":"OPEN","labels":[{"name":"status:approved"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			gateway := &githubGateway{repository: "owner/repo", repositoryRoot: t.TempDir(), run: func(context.Context, string, string, ...string) (string, error) { return response, nil }}
+			approved, err := gateway.observeClosingIssueOnce(context.Background(), issue)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if approved != (name == "approved") {
+				t.Fatalf("approved = %v for %s", approved, name)
+			}
+		})
+	}
+	gateway := &githubGateway{repository: "other/repo", repositoryRoot: t.TempDir(), run: command}
+	if _, err := gateway.observeClosingIssueOnce(context.Background(), issue); err == nil {
+		t.Fatal("cross-repository closing issue accepted")
+	}
+}

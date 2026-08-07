@@ -67,7 +67,7 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	engine := packsync.Engine{Source: workflowSourceFactory(), Validate: validator}
 	apply := packsync.ApplyRequest{CheckRequest: packsync.CheckRequest{RepositoryRoot: option.repositoryRoot, SourceID: dispatch.SourceID, AcquisitionDir: acquisition, Registration: plan.Registration, Reconfiguration: plan.Reconfiguration, ProposedManifest: plan.ProposedManifest}, Plan: plan, ClassificationEvidence: evidence}
 	if plan.Status == "no-op" {
-		return writeNoopArtifact(option.outputDir, dispatch.SourceID, plan)
+		return writeNoopArtifact(option.outputDir, dispatch.SourceID, dispatch.ClosingIssue, plan)
 	}
 	if err := os.MkdirAll(option.outputDir, 0o755); err != nil {
 		return err
@@ -103,7 +103,7 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	if err := os.WriteFile(filepath.Join(option.outputDir, "proposal-brief.md"), []byte(markdown), 0o600); err != nil {
 		return err
 	}
-	artifact := packsyncworkflow.PublicationArtifact{SchemaVersion: 2, SourceID: dispatch.SourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, ArtifactProvenance: artifactProvenance(plan), ResultTreeSHA: result.Proposal.ResultTreeSHA, HeadSHA: result.Proposal.HeadSHA, ProvenanceSHA256: builder.provenance, BranchName: result.Decision.Branch, PRNumber: result.PullRequest.Number, PRStateSHA256: result.PullRequest.MetadataHash, ManagedTitle: result.Proposal.ManagedTitle, ManagedMetadataHash: result.PullRequest.MetadataHash, Validation: result.Readiness.Gates, DecisionReady: result.Readiness.DecisionReady, AutoMerge: false, ManualMergeRequired: true, UpstreamContentExecuted: false, InvalidationConditions: result.Proposal.InvalidationConditions}
+	artifact := packsyncworkflow.PublicationArtifact{SchemaVersion: 2, SourceID: dispatch.SourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, ArtifactProvenance: artifactProvenance(plan), ResultTreeSHA: result.Proposal.ResultTreeSHA, HeadSHA: result.Proposal.HeadSHA, ProvenanceSHA256: builder.provenance, BranchName: result.Decision.Branch, PRNumber: result.PullRequest.Number, PRStateSHA256: result.PullRequest.MetadataHash, ManagedTitle: result.Proposal.ManagedTitle, ManagedMetadataHash: result.PullRequest.MetadataHash, Validation: result.Readiness.Gates, DecisionReady: result.Readiness.DecisionReady, AutoMerge: false, ManualMergeRequired: true, UpstreamContentExecuted: false, InvalidationConditions: result.Proposal.InvalidationConditions, ClosingIssue: dispatch.ClosingIssue}
 	if err := artifact.Validate(); err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func validateSandbox(ctx context.Context, option options, output io.Writer) erro
 	if err != nil {
 		return err
 	}
-	artifact := packsyncworkflow.ValidationArtifact{SchemaVersion: 2, SourceID: dispatch.SourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, ArtifactProvenance: artifactProvenance(plan), ResultTreeSHA: strings.TrimSpace(resultTree), PackySuite: true, Apply: true, UpstreamBytes: false}
+	artifact := packsyncworkflow.ValidationArtifact{SchemaVersion: 2, SourceID: dispatch.SourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, ArtifactProvenance: artifactProvenance(plan), ResultTreeSHA: strings.TrimSpace(resultTree), PackySuite: true, Apply: true, UpstreamBytes: false, ClosingIssue: dispatch.ClosingIssue}
 	if err := artifact.Validate(); err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func (builder *publicationBuilder) Build(ctx context.Context, repositoryRoot str
 	_ = readJSON(filepath.Join(filepath.Dir(builder.evidencePath), "classifier-trace.json"), &traces)
 	brief := packsyncworkflow.ReviewBrief{SchemaVersion: 1, Actor: os.Getenv("GITHUB_ACTOR"), RunID: os.Getenv("GITHUB_RUN_ID"), RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"), RunURL: actionsRunURL(), Repository: os.Getenv("GITHUB_REPOSITORY"), Request: builder.dispatch, Candidate: builder.plan.Candidate, PlanID: builder.plan.PlanID, BaseSHA: builder.plan.Preconditions.BaseCommit, HeadSHA: head, Branch: "sync/" + builder.dispatch.SourceID, Changes: builder.plan.Changes, Discoveries: builder.plan.Discoveries, SelectedResources: builder.plan.ProposedLock.Resources, PreviousSnapshotSHA256: builder.plan.PreviousSnapshotSHA256, ProposedSnapshotSHA256: builder.plan.ProposedLock.Snapshot, Classification: builder.evidence.Evidence, ClassifierTrace: traces, ApplyStatus: applyResult.Status, UpstreamContentExecuted: false, DecisionReady: false, AutoMerge: false, ManualMergeRequired: true, Recovery: []string{"Review the canonical evidence and diff, then merge manually only while readiness remains valid."}}
 	title := fmt.Sprintf("sync(%s): %s", builder.dispatch.SourceID, builder.plan.Candidate.Commit[:12])
-	proposal := packsyncworkflow.Proposal{SourceID: builder.dispatch.SourceID, PlanID: builder.plan.PlanID, BaseSHA: builder.plan.Preconditions.BaseCommit, CandidateSHA: builder.plan.Candidate.Commit, HeadSHA: head, ProvenanceSHA256: provenance, ManagedTitle: title}
+	proposal := packsyncworkflow.Proposal{SourceID: builder.dispatch.SourceID, PlanID: builder.plan.PlanID, BaseSHA: builder.plan.Preconditions.BaseCommit, CandidateSHA: builder.plan.Candidate.Commit, HeadSHA: head, ProvenanceSHA256: provenance, ManagedTitle: title, ClosingIssue: builder.dispatch.ClosingIssue}
 	builder.proposal, builder.brief, builder.provenance = proposal, brief, provenance
 	builder.github.title = title
 	builder.github.brief = singleSourcePublicationBrief{brief: &builder.brief}
@@ -281,6 +281,7 @@ type githubGateway struct {
 	retry             packsyncworkflow.RetryPolicy
 	run               func(context.Context, string, string, ...string) (string, error)
 	candidateRelation func(string) packsyncworkflow.CandidateRelation
+	closingIssue      string
 }
 
 type publicationBrief interface {
@@ -337,6 +338,7 @@ func (gateway *githubGateway) Prepare(proposal packsyncworkflow.Proposal) (packs
 		return packsyncworkflow.Proposal{}, errors.New("managed pull-request title exceeds the transport bound")
 	}
 	gateway.title, gateway.bodyPrefix = proposal.ManagedTitle, prefix
+	gateway.closingIssue = proposal.ClosingIssue
 	return proposal, nil
 }
 
@@ -419,6 +421,13 @@ func (gateway *githubGateway) Observe(ctx context.Context, sourceID string) (pac
 		return packsyncworkflow.PublicationState{}, err
 	}
 	state := packsyncworkflow.PublicationState{BaseSHA: strings.TrimSpace(base)}
+	if gateway.closingIssue != "" {
+		approved, issueErr := gateway.observeClosingIssue(ctx, gateway.closingIssue)
+		if issueErr != nil {
+			return state, issueErr
+		}
+		state.ClosingIssue, state.IssueApproved = gateway.closingIssue, approved
+	}
 	remote, err := gateway.retryCommand(ctx, "git", "ls-remote", "origin", "refs/heads/"+branch)
 	if err != nil {
 		return state, err
@@ -664,15 +673,25 @@ type commitIdentity struct {
 }
 
 type mutationObservation struct {
-	BaseSHA    string
-	BranchHead string
-	PRs        []ghPR
-	Commit     commitIdentity
-	LastEditor string
+	BaseSHA       string
+	BranchHead    string
+	PRs           []ghPR
+	Commit        commitIdentity
+	LastEditor    string
+	ClosingIssue  string
+	IssueApproved bool
 }
 
 func (gateway *githubGateway) observeMutationOnce(ctx context.Context, proposal packsyncworkflow.Proposal) (mutationObservation, error) {
 	branch := "sync/" + proposal.SourceID
+	issueApproved := false
+	if proposal.ClosingIssue != "" {
+		var issueErr error
+		issueApproved, issueErr = gateway.observeClosingIssueOnce(ctx, proposal.ClosingIssue)
+		if issueErr != nil {
+			return mutationObservation{}, issueErr
+		}
+	}
 	base, err := gateway.run(ctx, gateway.repositoryRoot, "gh", "api", "repos/"+gateway.repository+"/git/ref/heads/main", "--jq", ".object.sha")
 	if err != nil {
 		return mutationObservation{}, err
@@ -704,12 +723,53 @@ func (gateway *githubGateway) observeMutationOnce(ctx context.Context, proposal 
 	if err := json.Unmarshal([]byte(identityJSON), &identity); err != nil {
 		return mutationObservation{}, errors.New("commit ownership identity is malformed")
 	}
-	return mutationObservation{BaseSHA: strings.TrimSpace(base), BranchHead: fields[0], PRs: prs, Commit: identity, LastEditor: lastEditor}, nil
+	return mutationObservation{BaseSHA: strings.TrimSpace(base), BranchHead: fields[0], PRs: prs, Commit: identity, LastEditor: lastEditor, ClosingIssue: proposal.ClosingIssue, IssueApproved: issueApproved}, nil
 }
 
 func (state mutationObservation) matchesCommon(proposal packsyncworkflow.Proposal) bool {
 	expectedMessage := fmt.Sprintf("sync(%s): %s [%s]", proposal.SourceID, proposal.CandidateSHA[:12], proposal.PlanID)
-	return state.BaseSHA == proposal.BaseSHA && state.BranchHead == proposal.HeadSHA && state.Commit.Author == packsyncworkflow.AutomationOwner && state.Commit.Committer == packsyncworkflow.AutomationOwner && state.Commit.Message == expectedMessage && len(state.Commit.Parents) == 1 && state.Commit.Parents[0] == proposal.BaseSHA
+	return state.BaseSHA == proposal.BaseSHA && state.BranchHead == proposal.HeadSHA && (proposal.ClosingIssue == "" || state.ClosingIssue == proposal.ClosingIssue && state.IssueApproved) && state.Commit.Author == packsyncworkflow.AutomationOwner && state.Commit.Committer == packsyncworkflow.AutomationOwner && state.Commit.Message == expectedMessage && len(state.Commit.Parents) == 1 && state.Commit.Parents[0] == proposal.BaseSHA
+}
+
+type closingIssueObservation struct {
+	URL    string `json:"url"`
+	State  string `json:"state"`
+	Labels []struct {
+		Name string `json:"name"`
+	} `json:"labels"`
+}
+
+func (gateway *githubGateway) observeClosingIssue(ctx context.Context, issue string) (approved bool, err error) {
+	err = gateway.retry.Do(ctx, func() error {
+		approved, err = gateway.observeClosingIssueOnce(ctx, issue)
+		if err == nil {
+			return nil
+		}
+		return packsyncworkflow.ClassifyNetworkFailure(err)
+	})
+	return approved, err
+}
+
+func (gateway *githubGateway) observeClosingIssueOnce(ctx context.Context, issue string) (bool, error) {
+	repository, number, ok := packsyncworkflow.ParseClosingIssue(issue)
+	if !ok || repository != gateway.repository {
+		return false, errors.New("closing issue does not belong to the publication repository")
+	}
+	data, err := gateway.run(ctx, gateway.repositoryRoot, "gh", "issue", "view", fmt.Sprint(number), "--repo", gateway.repository, "--json", "url,state,labels")
+	if err != nil {
+		return false, err
+	}
+	var observed closingIssueObservation
+	if err := json.Unmarshal([]byte(data), &observed); err != nil {
+		return false, errors.New("closing issue observation is malformed")
+	}
+	approvedLabels := 0
+	for _, label := range observed.Labels {
+		if label.Name == "status:approved" {
+			approvedLabels++
+		}
+	}
+	return observed.URL == issue && observed.State == "OPEN" && approvedLabels == 1, nil
 }
 
 func (state mutationObservation) matchesPR(proposal packsyncworkflow.Proposal, expected packsyncworkflow.PRState, record packsyncworkflow.PublicationRecord) bool {

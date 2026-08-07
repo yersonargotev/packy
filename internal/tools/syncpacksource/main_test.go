@@ -375,7 +375,7 @@ func TestInvalidDispatchStillEmitsCanonicalFailureArtifact(t *testing.T) {
 func TestInspectBoundaryEmitsCanonicalNoopArtifact(t *testing.T) {
 	output := t.TempDir()
 	plan := packsync.Plan{SchemaVersion: 1, PlanID: "plan-noop", Status: "no-op", SourceID: "source", Candidate: packsync.Candidate{Commit: strings.Repeat("a", 40)}, SourceLockSHA256: strings.Repeat("c", 64), LockSetSHA256: strings.Repeat("d", 64), Preconditions: packsync.Preconditions{BaseCommit: strings.Repeat("b", 40), ConfigSHA256: strings.Repeat("e", 64), ManifestsSHA256: strings.Repeat("f", 64)}}
-	if err := writeNoopArtifact(output, plan.SourceID, plan); err != nil {
+	if err := writeNoopArtifact(output, plan.SourceID, "", plan); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(output, "no-op.json"))

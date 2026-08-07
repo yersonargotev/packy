@@ -85,6 +85,10 @@ on:
         description: Operator reason recorded with the request
         required: true
         type: string
+      closing_issue:
+        description: Optional exact approved GitHub issue URL closed by the synchronization PR
+        required: false
+        type: string
       retry_of_run:
         description: Explicit retry only; prior workflow run ID
         required: false
@@ -139,6 +143,16 @@ jobs:
           (( $(input_bytes proposed_manifest_json) <= 49152 )) || { echo "proposed_manifest_json exceeds 48 KiB" >&2; exit 1; }
           (( $(input_bytes human_evidence_json) <= 16384 )) || { echo "human_evidence_json exceeds 16 KiB" >&2; exit 1; }
           (( $(input_bytes request_reason) <= 2048 )) || { echo "request_reason exceeds 2 KiB" >&2; exit 1; }
+          (( $(input_bytes closing_issue) <= 256 )) || { echo "closing_issue exceeds 256 bytes" >&2; exit 1; }
+          closing_issue="$(jq -er '(.inputs.closing_issue // "") | if type == "string" then . else error("closing_issue must use string transport") end' "$GITHUB_EVENT_PATH")"
+          if [[ -n "$closing_issue" ]]; then
+            [[ "$closing_issue" =~ ^https://github\.com/[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9_.-]{1,100}/issues/[1-9][0-9]*$ ]] || { echo "closing_issue must be one canonical GitHub issue URL" >&2; exit 1; }
+            issue_path="${closing_issue#https://github.com/}"
+            issue_owner="${issue_path%%/*}"
+            issue_repository="${issue_path#*/}"
+            issue_repository="${issue_repository%%/*}"
+            [[ "$issue_owner" != *--* && "$issue_repository" != "." && "$issue_repository" != ".." ]] || { echo "closing_issue must be one canonical GitHub issue URL" >&2; exit 1; }
+          fi
           json_input_type() {
             jq -er --arg key "$1" '
               (.inputs[$key] // "") |
@@ -250,6 +264,7 @@ jobs:
           PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
           PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
           PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
+          PACKY_CLOSING_ISSUE: ${{ inputs.closing_issue }}
         run: |
           mkdir -p "$RUNNER_TEMP/packy-sync/inspect"
           if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
@@ -276,7 +291,7 @@ jobs:
           fi
           source_id="$PACKY_SOURCE_ID"
           [[ "$source_id" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || source_id=unknown
-          jq -n --arg source_id "$source_id" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Inspect job ended before a canonical result was produced."],recovery:["Start a fresh manual dispatch after checking the failed job."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/inspect/operational-artifact.json"
+          jq -n --arg source_id "$source_id" --arg closing_issue "$PACKY_CLOSING_ISSUE" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Inspect job ended before a canonical result was produced."],recovery:["Start a fresh manual dispatch after checking the failed job."],contains_secrets:false,contains_upstream_bytes:false} | if $closing_issue == "" then . else .schema_version=2 | .closing_issue=$closing_issue end' > "$RUNNER_TEMP/packy-sync/inspect/operational-artifact.json"
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
@@ -311,6 +326,7 @@ jobs:
           PACKY_SELECTOR_REF: ${{ inputs.selector_ref }}
           PACKY_CLASSIFICATION_MODE: ${{ inputs.classification_mode }}
           PACKY_REQUEST_REASON: ${{ inputs.request_reason }}
+          PACKY_CLOSING_ISSUE: ${{ inputs.closing_issue }}
           PACKY_REQUEST_DIGEST: ${{ inputs.request_digest }}
           PACKY_RETRY_OF_RUN: ${{ inputs.retry_of_run }}
           PACKY_EXPECTED_PLAN_ID: ${{ inputs.expected_plan_id }}
@@ -390,6 +406,7 @@ jobs:
           PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
           PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
           PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
+          PACKY_CLOSING_ISSUE: ${{ inputs.closing_issue }}
         run: |
           mkdir -p "$RUNNER_TEMP/packy-sync/classification"
           if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
@@ -399,7 +416,7 @@ jobs:
               '{schema_version:3,state:"blocked",pack_id:$pack_id,source_ids:$source_ids,registration_bundle_sha256:$registration_bundle_sha256,proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,members:$members,blockers:["The Classify job ended before canonical evidence was produced."],recovery:["Start a fresh complete bundle dispatch; do not reuse partial or member-level classification."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/classification/operational-artifact.json"
             exit 0
           fi
-          jq -n --arg source_id "$PACKY_SOURCE_ID" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Classify job ended before canonical evidence was produced."],recovery:["Start a fresh dispatch for the exact sealed candidate; do not fall back between AI and human classification."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/classification/operational-artifact.json"
+          jq -n --arg source_id "$PACKY_SOURCE_ID" --arg closing_issue "$PACKY_CLOSING_ISSUE" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Classify job ended before canonical evidence was produced."],recovery:["Start a fresh dispatch for the exact sealed candidate; do not fall back between AI and human classification."],contains_secrets:false,contains_upstream_bytes:false} | if $closing_issue == "" then . else .schema_version=2 | .closing_issue=$closing_issue end' > "$RUNNER_TEMP/packy-sync/classification/operational-artifact.json"
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
@@ -553,6 +570,7 @@ jobs:
     timeout-minutes: 4
     permissions:
       contents: write
+      issues: read
       pull-requests: write
     steps:
       - name: Initialize fail-closed operational artifact
@@ -564,6 +582,7 @@ jobs:
           PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}
           PACKY_PROPOSED_VERSION: ${{ inputs.proposed_version }}
           PACKY_PROPOSED_MANIFEST_SHA256: ${{ inputs.proposed_manifest_sha256 }}
+          PACKY_CLOSING_ISSUE: ${{ inputs.closing_issue }}
         run: |
           mkdir -p "$RUNNER_TEMP/packy-sync/publication"
           if [[ "$PACKY_OPERATION" == "register_bundle" ]]; then
@@ -573,7 +592,7 @@ jobs:
               '{schema_version:3,state:"blocked",pack_id:$pack_id,source_ids:$source_ids,registration_bundle_sha256:$registration_bundle_sha256,proposed_version:$proposed_version,proposed_manifest_sha256:$proposed_manifest_sha256,members:$members,blockers:["The Publish job ended before exact Pack-scoped publication state was established."],recovery:["Inspect the stable Pack branch and pull request; preserve reviewer work and start a fresh Inspect."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/publication/operational-artifact.json"
             exit 0
           fi
-          jq -n --arg source_id "$PACKY_SOURCE_ID" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Publish job ended before exact publication state was established."],recovery:["Inspect the stable branch and pull request; preserve reviewer work and start a fresh Check."],contains_secrets:false,contains_upstream_bytes:false}' > "$RUNNER_TEMP/packy-sync/publication/operational-artifact.json"
+          jq -n --arg source_id "$PACKY_SOURCE_ID" --arg closing_issue "$PACKY_CLOSING_ISSUE" '{schema_version:1,state:"blocked",source_id:$source_id,blockers:["The Publish job ended before exact publication state was established."],recovery:["Inspect the stable branch and pull request; preserve reviewer work and start a fresh Check."],contains_secrets:false,contains_upstream_bytes:false} | if $closing_issue == "" then . else .schema_version=2 | .closing_issue=$closing_issue end' > "$RUNNER_TEMP/packy-sync/publication/operational-artifact.json"
       # This reviewed publication checkout persists only the job-scoped token
       # used after the ownership and exact-state admission checks pass.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1

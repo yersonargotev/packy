@@ -429,7 +429,7 @@ func (a BundlePublicationArtifact) Validate() error {
 		requireSHA256("provenance", a.ProvenanceSHA256) != nil || a.ManagedTitle == "" ||
 		requireSHA256("managed metadata", a.ManagedMetadataHash) != nil || !a.Validation.Complete() ||
 		!a.DecisionReady || a.AutoMerge || !a.ManualMergeRequired || a.UpstreamContentExecuted ||
-		!validInvalidationConditions(a.InvalidationConditions) {
+		!validInvalidationConditions(a.InvalidationConditions, false) {
 		return errors.New("v3 bundle publication is not decision ready")
 	}
 	return nil
