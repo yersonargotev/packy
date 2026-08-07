@@ -139,3 +139,30 @@ func TestProjectInspectionRepresentsEverySupportedOpenCodeResourceKind(t *testin
 		}
 	}
 }
+
+func TestOpenCodeProjectInstructionUsesSharedSurfaceNeutralContribution(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "bundle")
+	if err := os.MkdirAll(filepath.Join(bundle, "instructions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "instructions", "guide.md"), []byte("Shared guidance\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(root, "project")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pack := capabilitypack.Pack{ID: "guide", Resources: []capabilitypack.Resource{{Kind: "instruction", ID: "guide", Source: "instructions/guide.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: "instruction", Name: "guide"}}}}}
+	inspection, err := NewSurfaceAdapter(bundle, "", "", "").InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inspection.Projections) != 1 {
+		t.Fatalf("instruction projections = %#v", inspection.Projections)
+	}
+	projection := inspection.Projections[0]
+	if !projection.Shared || len(projection.DiscoverableBy) != 1 || projection.DiscoverableBy[0] != capabilitypack.SurfaceCodex || !strings.Contains(projection.Action.Content, "<!-- packy:project:instruction:guide:start -->") {
+		t.Fatalf("shared instruction projection = %#v", projection)
+	}
+}

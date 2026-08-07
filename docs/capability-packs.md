@@ -157,11 +157,13 @@ executes zero effects.
 
 ## Shared discovery is not activation
 
-Some resources use the standard global `~/.agents/skills` target shared by
-compatible agents. An activation on one surface may therefore make the physical
-resource discoverable from another surface. That incidental visibility does not
-activate the pack on the other surface, does not authorize its surface-specific
-instructions or configuration, and does not create readiness there.
+Some resources use targets shared by compatible agents: the standard global
+`~/.agents/skills` tree and resource-scoped marked instruction contributions in
+a project's `AGENTS.md`. Codex and OpenCode project activation compose identical
+instruction bytes in that file. An activation on one surface may therefore make
+the physical resource discoverable from another surface. That incidental
+visibility does not activate the pack on the other surface, does not authorize
+its surface-specific configuration, and does not create readiness there.
 
 Every activation that requires the shared resource is recorded as a contributor.
 Deactivation preserves the physical projection while any contributor remains
