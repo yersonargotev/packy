@@ -17,7 +17,10 @@ func TestV02DocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantADR := []string{filepath.Join(root, "docs", "adr", "0031-simplify-packy-around-reviewed-packs.md")}
+	wantADR := []string{
+		filepath.Join(root, "docs", "adr", "0031-simplify-packy-around-reviewed-packs.md"),
+		filepath.Join(root, "docs", "adr", "0032-admit-single-source-packs-atomically.md"),
+	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
 	}
@@ -47,6 +50,11 @@ func TestV02DocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	requireDocumentationText(t, root, "docs/adr/0031-simplify-packy-around-reviewed-packs.md", []string{
 		"`v0.2.0`", "`addy`", "`argote`", "`engram`", "`matty`", "Pack version `1.0.0`",
 		"installed Pack receipt", "branch protection", "CodeQL", "human merge", "immutable",
+	})
+	requireDocumentationText(t, root, "docs/adr/0032-admit-single-source-packs-atomically.md", []string{
+		"immutable Pack Source v2.3.0", "single-source Pack admission", "immutable initial history",
+		"fail closed", "previous bundle", "two or more sources", "`yersonargotev/orchestrate-skill`",
+		"canonical exact-content source", "Eric Provencher",
 	})
 	requireDocumentationText(t, root, "bundle/pack-template/README.md", []string{
 		"Copy this directory", "one `pack.json`", "maintainer-selected SemVer", "reviewed content",
