@@ -122,11 +122,10 @@ work:
   it generalizes project instructions, and the project lifecycle documents a
   separate installation/activation contract. Local Git commit `cf3413a`;
   [`project-pack-lifecycle.md`](../project-pack-lifecycle.md#L1-L30).
-- `6f0d64b`, `937cac9`, and `d990fc4` introduced/fixed approved-issue binding
-  for synchronization proposals. ADR 0030 says this is governance authority for
-  managed PR metadata, not an Argote resource or source mapping. [ADR
-  0030](../adr/0030-bind-pack-source-delivery-to-approved-issues.md); [workflow
-  contract, lines 45-52](../../workflows/pack-source-synchronization.md#L45-L52).
+- `6f0d64b`, `937cac9`, and `d990fc4` introduced/fixed the now-retired
+  approved-issue binding for synchronization proposals. It concerned managed PR
+  metadata, not an Argote resource or source mapping. [Workflow contract,
+  lines 45-52](../../workflows/pack-source-synchronization.md#L45-L52).
 
 These changes may have affected the timing and administrative surface of #508,
 but the repository evidence does not show an Argote content or binding change
