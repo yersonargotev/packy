@@ -171,5 +171,5 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HOMEBREW_CACHE"
-          brew install --formula bundle/release-metadata/packy.rb
+          brew install yersonargotev/tap/packy
           [[ "$(packy --version)" == "packy version $RELEASE_TAG" ]]

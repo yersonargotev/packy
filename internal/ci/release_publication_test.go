@@ -23,7 +23,7 @@ func TestReleaseWorkflowUsesConventionalImmutableTagPublication(t *testing.T) {
 		`[[ "$GITHUB_SHA" == "$(git rev-parse origin/main)" ]]`,
 		"show origin/main:Formula/packy.rb",
 		"SHA256SUMS",
-		"brew install --formula",
+		"brew install yersonargotev/tap/packy",
 		`"packy version $RELEASE_TAG"`,
 		"HOME: ${{ runner.temp }}/home",
 		"XDG_CONFIG_HOME: ${{ runner.temp }}/xdg",
@@ -41,6 +41,7 @@ func TestReleaseWorkflowUsesConventionalImmutableTagPublication(t *testing.T) {
 		"id-token: write",
 		"attestations: write",
 		"--clobber",
+		"brew install --formula bundle/release-metadata/packy.rb",
 	} {
 		if strings.Contains(strings.ToLower(workflow), strings.ToLower(retired)) {
 			t.Errorf("release workflow retains retired behavior %q", retired)
