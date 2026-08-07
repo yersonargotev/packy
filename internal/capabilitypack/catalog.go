@@ -284,6 +284,7 @@ type Pack struct {
 	ID              string
 	Version         string
 	Description     string
+	Selectable      bool
 	Surfaces        []Surface
 	Provides        []string
 	Requires        Requirements
@@ -291,6 +292,14 @@ type Pack struct {
 	Resources       []Resource
 	RootMigrations  []RootMigration
 	Contract        Contract
+	SourceReference *SourceReference
+}
+
+// SourceReference is optional informational metadata. Reviewed Pack content is
+// authoritative; this reference grants no synchronization or admission power.
+type SourceReference struct {
+	Repository string `json:"repository"`
+	Revision   string `json:"revision"`
 }
 
 // RootMigration declares one exact manifest-v4 update identity transition.
@@ -343,6 +352,7 @@ type Catalog struct {
 	deferSourceValidation bool
 	transactionHeld       bool
 	enforceUpdateRoutes   bool
+	currentManifests      bool
 }
 
 type catalogEntry struct {
@@ -372,23 +382,6 @@ type CatalogDetail struct {
 	UpdateRoutes       []UpdateRoute
 }
 
-var initialCatalog = []catalogEntry{
-	{
-		ID:                 "addy",
-		Description:        "Addy agent skills",
-		Surfaces:           []Surface{SurfaceCodex, SurfaceOpenCode},
-		HistoricalVersions: []string{"1.0.0", "1.1.0"},
-		UpdateRoutes: []UpdateRoute{{
-			FromVersion:      "1.0.0",
-			ToVersion:        "1.1.0",
-			ExistingSurfaces: []Surface{SurfaceCodex, SurfaceOpenCode},
-		}},
-	},
-	{ID: "argote", Description: "Yerson Argote's engineering and communication guidance", Surfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
-	{ID: "engram", Description: "Persistent memory for agent work", Surfaces: []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}},
-	{ID: "matty", Description: "Matty workflow", Surfaces: []Surface{SurfaceCodex, SurfaceOpenCode}},
-}
-
 // Discover loads the strict initial catalog from a Packy-owned bundle root.
 func Discover(bundleRoot string) (Catalog, error) {
 	return discoverProductionCatalog(bundleRoot, true)
@@ -402,9 +395,50 @@ func DiscoverForDurableIntents(bundleRoot string) (Catalog, error) {
 }
 
 func discoverProductionCatalog(bundleRoot string, validateSources bool) (Catalog, error) {
-	catalog, err := discoverCatalogWithSourceValidation(bundleRoot, initialCatalog, validateSources)
-	catalog.enforceUpdateRoutes = true
+	var catalog Catalog
+	err := bundletransaction.WithExclusive(context.Background(), filepath.Dir(filepath.Clean(bundleRoot)), func() error {
+		var err error
+		catalog, err = discoverCurrentCatalogUnlocked(bundleRoot, validateSources)
+		return err
+	})
 	return catalog, err
+}
+
+func discoverCurrentCatalogUnlocked(bundleRoot string, validateSources bool) (Catalog, error) {
+	entries, err := os.ReadDir(filepath.Join(bundleRoot, "packs"))
+	if err != nil {
+		return Catalog{}, fmt.Errorf("read Pack catalog: %w", err)
+	}
+	packs := make([]Pack, 0, len(entries))
+	metadata := make([]catalogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			return Catalog{}, fmt.Errorf("unexpected Pack catalog entry %q", entry.Name())
+		}
+		path := filepath.Join(bundleRoot, "packs", entry.Name(), "pack.json")
+		marker, err := readCurrentManifestMarker(path)
+		if err != nil {
+			return Catalog{}, err
+		}
+		if marker == nil && entry.Name() == "vercel" {
+			continue
+		}
+		pack, err := LoadCurrentManifest(path, bundleRoot, validateSources)
+		if err != nil {
+			return Catalog{}, err
+		}
+		if pack.ID != entry.Name() {
+			return Catalog{}, fmt.Errorf("Pack directory %q contains manifest id %q", entry.Name(), pack.ID)
+		}
+		if !pack.Selectable {
+			continue
+		}
+		packs = append(packs, pack)
+		metadata = append(metadata, catalogEntry{ID: pack.ID, Description: pack.Description, Surfaces: append([]Surface(nil), pack.Surfaces...)})
+	}
+	sort.Slice(packs, func(i, j int) bool { return packs[i].ID < packs[j].ID })
+	sort.Slice(metadata, func(i, j int) bool { return metadata[i].ID < metadata[j].ID })
+	return Catalog{packs: packs, bundleRoot: bundleRoot, entries: metadata, deferSourceValidation: !validateSources, currentManifests: true}, nil
 }
 
 func discoverCatalog(bundleRoot string, entries []catalogEntry) (Catalog, error) {
@@ -464,7 +498,11 @@ func (c Catalog) refreshed() (Catalog, error) {
 	var refreshed Catalog
 	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
 		var err error
-		refreshed, err = discoverCatalogUnlocked(c.bundleRoot, c.entries, !c.deferSourceValidation)
+		if c.currentManifests {
+			refreshed, err = discoverCurrentCatalogUnlocked(c.bundleRoot, !c.deferSourceValidation)
+		} else {
+			refreshed, err = discoverCatalogUnlocked(c.bundleRoot, c.entries, !c.deferSourceValidation)
+		}
 		refreshed.allowSyntheticHistory = c.allowSyntheticHistory
 		refreshed.enforceUpdateRoutes = c.enforceUpdateRoutes
 		refreshed.transactionHeld = locked.transactionHeld
@@ -602,6 +640,10 @@ func (c Catalog) withdrawn(id string) bool {
 }
 
 func clonePack(pack Pack) Pack {
+	if pack.SourceReference != nil {
+		copy := *pack.SourceReference
+		pack.SourceReference = &copy
+	}
 	pack.Surfaces = append([]Surface(nil), pack.Surfaces...)
 	pack.Provides = append([]string(nil), pack.Provides...)
 	pack.Requires.Capabilities = append([]string(nil), pack.Requires.Capabilities...)
@@ -2096,10 +2138,17 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 	if binding.Projection != want {
 		return fmt.Errorf("%s binding on claude must project as %s", kind, want)
 	}
-	if (binding.AgentAuthority != nil) != (kind == "agent") || (binding.Hook != nil) != (kind == "lifecycle") {
+	currentContract := optionalModes == nil
+	if !currentContract && ((binding.AgentAuthority != nil) != (kind == "agent") || (binding.Hook != nil) != (kind == "lifecycle")) {
 		return fmt.Errorf("typed Claude binding field does not match %s projection", kind)
 	}
 	if binding.AgentAuthority != nil {
+		if currentContract {
+			if binding.AgentAuthority.PermissionMode != "default" || binding.AgentAuthority.Authorities == nil {
+				return fmt.Errorf("agent_authority permission_mode and authorities are invalid")
+			}
+			return nil
+		}
 		return validateAgentAuthority(*binding.AgentAuthority, resource.Tools, resource.Permissions, optionalModes)
 	}
 	if binding.Hook != nil {

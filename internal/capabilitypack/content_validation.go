@@ -6,6 +6,23 @@ import (
 	"path/filepath"
 )
 
+// ValidatePackContent validates one named Pack or Pack directory through the
+// current authoring contract and verifies every referenced reviewed resource.
+func ValidatePackContent(bundleRoot, pack string) (Pack, error) {
+	manifestPath, packDir, err := currentManifestPath(bundleRoot, pack)
+	if err != nil {
+		return Pack{}, err
+	}
+	loaded, err := LoadCurrentManifest(manifestPath, bundleRoot, true)
+	if err != nil {
+		return Pack{}, err
+	}
+	if filepath.Clean(filepath.Dir(packDir)) == filepath.Clean(filepath.Join(bundleRoot, "packs")) && loaded.ID != filepath.Base(packDir) {
+		return Pack{}, fmt.Errorf("Pack directory %q contains manifest id %q", filepath.Base(packDir), loaded.ID)
+	}
+	return loaded, nil
+}
+
 // ValidatePortableContent validates every portable Pack manifest and each inert
 // bundle resource it references. It parses declarations only; it never invokes
 // a resource or an upstream tool.
@@ -15,21 +32,28 @@ func ValidatePortableContent(bundleRoot string) error {
 	if err != nil {
 		return fmt.Errorf("read portable Pack manifests: %w", err)
 	}
-	if len(entries) == 0 {
-		return fmt.Errorf("portable Pack manifest directory is empty")
-	}
+	validated := 0
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			return fmt.Errorf("unexpected portable Pack manifest entry %q", entry.Name())
 		}
 		manifestPath := filepath.Join(packsRoot, entry.Name(), "pack.json")
-		pack, err := decodeManifest(manifestPath, bundleRoot)
+		marker, err := readCurrentManifestMarker(manifestPath)
 		if err != nil {
 			return err
 		}
-		if pack.ID != entry.Name() {
-			return fmt.Errorf("portable Pack directory %q contains manifest id %q", entry.Name(), pack.ID)
+		// Directories from the retired bundle generation remain outside the
+		// current authoring set until their owning cleanup issue removes them.
+		if marker == nil && entry.Name() == "vercel" {
+			continue
 		}
+		if _, err := ValidatePackContent(bundleRoot, entry.Name()); err != nil {
+			return err
+		}
+		validated++
+	}
+	if validated == 0 {
+		return fmt.Errorf("current Pack manifest directory is empty")
 	}
 	return nil
 }

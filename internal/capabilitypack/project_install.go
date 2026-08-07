@@ -714,6 +714,10 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			}
 		}
 	}
+	graph = mergeProjectResourceGraphs(ResourceGraph{Resources: []ResourceClosureFact{}}, graph)
+	for i := range resolvedPacks {
+		resolvedPacks[i].ResourceGraph = mergeProjectResourceGraphs(ResourceGraph{Resources: []ResourceClosureFact{}}, resolvedPacks[i].ResourceGraph)
+	}
 	sort.Slice(resolvedPacks, func(i, j int) bool { return projectResolvedPackLess(resolvedPacks[i], resolvedPacks[j], pack.ID) })
 	sort.Slice(sources, func(i, j int) bool { return projectSourceLess(sources[i], sources[j], pack.ID) })
 	if len(resolvedPacks) > 0 && resolvedPacks[0].ID == pack.ID {
@@ -1021,6 +1025,9 @@ func (f Facade) resolveExactProjectUpdatePackUnlocked(id, version string) (Pack,
 }
 
 func (c Catalog) withExactHistoricalCurrentPacks() (Catalog, error) {
+	if c.currentManifests {
+		return c.refreshed()
+	}
 	exact := c
 	exact.packs = make([]Pack, 0, len(c.packs))
 	for _, metadata := range c.packs {

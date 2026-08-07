@@ -79,6 +79,24 @@ func TestLoadManifestsAcceptsCanonicalPortableManifestV4(t *testing.T) {
 	}
 }
 
+func TestLoadManifestsObservesCurrentCatalogIdentityWithoutLegacyValidation(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := runtimeManifestPath(t, root)
+	current := `{"id":"example","version":"1.0.0","description":"Example","selectable":true,"surfaces":["codex"],"external_requirements":[],"resources":[],"exclusions":[]}`
+	if err := os.WriteFile(manifestPath, []byte(current), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	manifests, _, err := loadManifests(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := manifests["example"]
+	if manifest.ID != "example" || manifest.Version != "1.0.0" || manifest.SchemaVersion != 4 {
+		t.Fatalf("legacy synchronization current identity = %#v", manifest)
+	}
+}
+
 func TestLoadManifestsRejectsUnsupportedPortableManifestVersion(t *testing.T) {
 	root := t.TempDir()
 	encoded := canonicalPortableManifestV4(t, root)

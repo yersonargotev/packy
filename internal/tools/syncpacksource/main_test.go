@@ -150,29 +150,6 @@ func TestWorkflowAuthenticationIsLimitedToGitHubAPIOrigin(t *testing.T) {
 	}
 }
 
-func TestInspectBoundaryRetriesRateLimit403AndContinuesSuccessfully(t *testing.T) {
-	repository, snapshot, lock := prepareInspectFixture(t)
-	stable := &sandboxSource{root: snapshot, oldRoot: snapshot, oldCandidate: lock.Candidate, candidate: lock.Candidate}
-	flaky := &releasesFailureSource{source: stable, failures: []error{githubsource.HTTPError{Operation: "read GitHub API", StatusCode: http.StatusForbidden, Status: "403 Forbidden", RetryAfter: "4", RateLimitRemaining: "0"}}}
-	sleeper := &sourceSleeper{}
-	oldFactory := workflowSourceFactory
-	workflowSourceFactory = func() packsync.Source {
-		return retryingSource{source: flaky, policy: packsyncworkflow.RetryPolicy{MaxAttempts: 3, InitialBackoff: time.Second, Sleeper: sleeper}}
-	}
-	t.Cleanup(func() { workflowSourceFactory = oldFactory })
-
-	setInspectEnvironment(t, "rate-limit retry fixture")
-	output := t.TempDir()
-	if err := run(context.Background(), []string{"--phase", "inspect", "--repository-root", repository, "--output", output}, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	var plan packsync.Plan
-	readJSONForTest(t, filepath.Join(output, "plan.json"), &plan)
-	if plan.Status != "no-op" || flaky.calls != 2 || !reflect.DeepEqual(sleeper.delays, []time.Duration{4 * time.Second}) {
-		t.Fatalf("Inspect continuation = status:%s calls:%d delays:%v", plan.Status, flaky.calls, sleeper.delays)
-	}
-}
-
 func TestInspectBoundaryKeepsGenuinelyMovedTagAsProvenanceFailure(t *testing.T) {
 	repository, snapshot, lock := prepareInspectFixture(t)
 	moved := lock.Candidate

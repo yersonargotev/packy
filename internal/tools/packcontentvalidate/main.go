@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yersonargotev/packy/internal/packsync"
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
 func main() {
@@ -21,7 +21,9 @@ func run(args []string) error {
 	flags := flag.NewFlagSet("packcontentvalidate", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	var repositoryRoot string
+	var pack string
 	flags.StringVar(&repositoryRoot, "repository-root", ".", "Packy repository root")
+	flags.StringVar(&pack, "pack", "", "Validate one named Pack or Pack directory")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -32,5 +34,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	return packsync.ValidateContent(filepath.Join(root, "bundle"))
+	if pack != "" {
+		_, err := capabilitypack.ValidatePackContent(filepath.Join(root, "bundle"), pack)
+		return err
+	}
+	return capabilitypack.ValidatePortableContent(filepath.Join(root, "bundle"))
 }

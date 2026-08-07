@@ -842,14 +842,26 @@ func loadManifests(root string) (map[string]packManifest, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
+		var currentMarker struct {
+			Selectable *bool `json:"selectable"`
+		}
+		if err := json.Unmarshal(data, &currentMarker); err != nil {
+			return nil, "", fmt.Errorf("decode runtime manifest %s: %w", name, err)
+		}
 		var manifest packManifest
 		if err := json.Unmarshal(data, &manifest); err != nil {
 			return nil, "", fmt.Errorf("decode runtime manifest %s: %w", name, err)
 		}
-		if (manifest.SchemaVersion < 1 || manifest.SchemaVersion > 4) || manifest.ID == "" || result[manifest.ID].ID != "" {
+		if currentMarker.Selectable != nil {
+			// The legacy synchronization workflow observes only current identity
+			// and resource paths until #517 removes it. It does not validate,
+			// classify, or author the current manifest contract.
+			manifest.SchemaVersion = 4
+		}
+		if (manifest.SchemaVersion < 1 || manifest.SchemaVersion > 4) || manifest.ID == "" || manifest.Version == "" || result[manifest.ID].ID != "" {
 			return nil, "", fmt.Errorf("invalid or duplicate runtime manifest %s", name)
 		}
-		if manifest.SchemaVersion >= 2 {
+		if currentMarker.Selectable == nil && manifest.SchemaVersion >= 2 {
 			portable, err := capabilitypack.LoadPortableManifest(name, filepath.Join(root, "bundle"))
 			if err != nil {
 				return nil, "", fmt.Errorf("runtime manifest %s disagrees with capability-pack contract: %w", name, err)

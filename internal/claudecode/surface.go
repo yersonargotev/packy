@@ -203,7 +203,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			if err != nil {
 				return result, err
 			}
-			if pack.ID == "addy" && pack.Version == "1.1.0" {
+			if pack.ID == "addy" {
 				content, err = renderAddyClaudeAgent(pack, r, b, content)
 				if err != nil {
 					return result, err
@@ -219,7 +219,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 			if err != nil {
 				return result, err
 			}
-			if pack.ID != "addy" || pack.Version != "1.1.0" {
+			if pack.ID != "addy" {
 				if b.AgentAuthority == nil && (len(r.Tools) > 0 || len(r.Permissions) > 0) {
 					return result, fmt.Errorf("Claude agent %s is missing explicit authority translations", r.ID)
 				}

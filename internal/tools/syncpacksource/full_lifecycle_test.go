@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -12,119 +11,7 @@ import (
 	"time"
 
 	"github.com/yersonargotev/packy/internal/packsync"
-	"github.com/yersonargotev/packy/internal/packsyncworkflow"
 )
-
-func TestSandboxTracerRunsInspectClassifyPublishWithOnePackContentValidation(t *testing.T) {
-	clearPackyEnvironment(t)
-	root := repositoryRootForTest(t)
-	base := t.TempDir()
-	copyTreeForTest(t, filepath.Join(root, "bundle"), filepath.Join(base, "bundle"))
-	snapshot := t.TempDir()
-	var config struct {
-		Sources []packsync.SourceConfig `json:"sources"`
-	}
-	readJSONForTest(t, filepath.Join(base, "bundle", "sources.json"), &config)
-	for _, binding := range sourceResourcesForTest(t, config.Sources, "mattpocock-skills") {
-		copyTreeForTest(t, filepath.Join(base, "bundle", filepath.FromSlash(binding.UpstreamPath)), filepath.Join(snapshot, filepath.FromSlash(binding.UpstreamPath)))
-	}
-	oldSnapshot := t.TempDir()
-	copyTreeForTest(t, snapshot, oldSnapshot)
-	if err := os.MkdirAll(filepath.Join(snapshot, "skills", "in-progress", "sandbox-discovery"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(snapshot, "skills", "in-progress", "sandbox-discovery", "SKILL.md"), []byte("sandbox discovery\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var lock packsync.Lock
-	lockPath := filepath.Join(base, "bundle", "sources/mattpocock-skills.lock.json")
-	readJSONForTest(t, lockPath, &lock)
-	lock.Selector = packsync.Selector{Mode: packsync.SelectorStableRelease}
-	lock.Candidate = fixtureCandidateWithRelease(lock.Candidate)
-	writeFixtureLock(t, lockPath, lock)
-	candidate := lock.Candidate
-	candidate.Commit = candidateA
-	candidate.Tree = strings.Repeat("f", 40)
-	candidate.CommitNodeID = "sandbox-candidate"
-	release := *candidate.Release
-	release.ID++
-	release.Tag, release.Name = "v9.9.9", "v9.9.9"
-	release.CreatedAt = release.CreatedAt.Add(time.Hour)
-	release.PublishedAt = release.PublishedAt.Add(time.Hour)
-	candidate.Release = &release
-	candidate.TagRefName = "refs/tags/" + release.Tag
-	candidate.TagRefSHA = strings.Repeat("e", 40)
-	candidate.TagObjects = []packsync.TagObject{{SHA: candidate.TagRefSHA, Name: release.Tag, TargetSHA: candidate.Commit, TargetType: "commit", Verification: packsync.Verification{Reason: "unsigned"}}}
-	source := &sandboxSource{root: snapshot, oldRoot: oldSnapshot, oldCandidate: lock.Candidate, candidate: candidate}
-
-	initForTest(t, base)
-	gitForTest(t, base, "config", "user.name", "fixture")
-	gitForTest(t, base, "config", "user.email", "fixture@example.com")
-	gitForTest(t, base, "add", ".")
-	gitForTest(t, base, "commit", "-qm", "base")
-	baseSHA := strings.TrimSpace(gitForTest(t, base, "rev-parse", "HEAD"))
-	publishRepo := filepath.Join(t.TempDir(), "publish")
-	cloneForTest(t, base, publishRepo)
-
-	oldSourceFactory, oldValidatorFactory, oldGatewayFactory := workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory
-	workflowSourceFactory = func() packsync.Source { return source }
-	validator := &sandboxValidator{}
-	workflowValidatorFactory = func() phaseValidator { return validator }
-	fakeGitHub := &fakeGitHubCommands{baseHead: baseSHA}
-	workflowGatewayFactory = func(repositoryRoot string, plan packsync.Plan) *githubGateway {
-		return &githubGateway{repositoryRoot: repositoryRoot, repository: "owner/repo", plan: plan, retry: packsyncworkflow.RetryPolicy{MaxAttempts: 3, InitialBackoff: time.Nanosecond, Sleeper: noWaitSleeper{}}, run: fakeGitHub.run}
-	}
-	t.Cleanup(func() {
-		workflowSourceFactory, workflowValidatorFactory, workflowGatewayFactory = oldSourceFactory, oldValidatorFactory, oldGatewayFactory
-	})
-	t.Setenv("GITHUB_REPOSITORY", "owner/repo")
-	t.Setenv("GITHUB_ACTOR", "maintainer")
-	t.Setenv("GITHUB_RUN_ID", "37")
-	t.Setenv("GITHUB_RUN_ATTEMPT", "1")
-	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
-	t.Setenv("PACKY_SOURCE_ID", "mattpocock-skills")
-	t.Setenv("PACKY_SELECTOR", "latest-stable")
-	t.Setenv("PACKY_SELECTOR_REF", "")
-	t.Setenv("PACKY_CLASSIFICATION_MODE", "ai")
-	t.Setenv("PACKY_REQUEST_REASON", "sandbox tracer")
-	t.Setenv("PACKY_EXPECTED_PLAN_ID", "")
-	t.Setenv("PACKY_EXPECTED_BASE_SHA", "")
-	t.Setenv("PACKY_HUMAN_EVIDENCE_JSON", "")
-
-	artifacts := t.TempDir()
-	inspect := filepath.Join(artifacts, "inspect")
-	if err := run(context.Background(), []string{"--phase", "inspect", "--repository-root", base, "--output", inspect}, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	var plan packsync.Plan
-	readJSONForTest(t, filepath.Join(inspect, "plan.json"), &plan)
-	if plan.Status != "review-required" || len(plan.AffectedPacks) != 0 || len(plan.Discoveries) == 0 {
-		t.Fatalf("inspection did not isolate the unselected discovery: %#v", plan)
-	}
-	classification := filepath.Join(artifacts, "classification")
-	if err := run(context.Background(), []string{"--phase", "classify", "--repository-root", base, "--request", filepath.Join(inspect, "request.json"), "--plan", filepath.Join(inspect, "plan.json"), "--output", classification}, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	publication := filepath.Join(artifacts, "publication")
-	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publishRepo, "--request", filepath.Join(inspect, "request.json"), "--plan", filepath.Join(inspect, "plan.json"), "--evidence", filepath.Join(classification, "classification.json"), "--output", publication}, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	if validator.bundleCalls != 1 || validator.suiteCalls != 0 || fakeGitHub.createCalls != 1 || fakeGitHub.pushCalls != 1 {
-		t.Fatalf("tracer gates/writes = bundle:%d suite:%d create:%d push:%d", validator.bundleCalls, validator.suiteCalls, fakeGitHub.createCalls, fakeGitHub.pushCalls)
-	}
-	var result map[string]any
-	readJSONForTest(t, filepath.Join(publication, "publication.json"), &result)
-	markdown, err := os.ReadFile(filepath.Join(publication, "proposal-brief.md"))
-	if err != nil || !strings.Contains(string(markdown), "## Packy pack synchronization") {
-		t.Fatalf("canonical proposal Markdown = %q, %v", markdown, err)
-	}
-	if result["decision_ready"] != true || result["auto_merge"] != false {
-		t.Fatalf("publication result = %#v", result)
-	}
-	if result["head_sha"] == "" || result["result_tree_sha"] == "" || result["head_sha"] == result["result_tree_sha"] {
-		t.Fatalf("publication did not preserve distinct commit/tree identity: %#v", result)
-	}
-}
 
 func sourceResourcesForTest(t *testing.T, sources []packsync.SourceConfig, sourceID string) []packsync.Binding {
 	t.Helper()

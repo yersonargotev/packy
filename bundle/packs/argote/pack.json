@@ -1,28 +1,20 @@
 {
-  "schema_version": 4,
   "id": "argote",
   "version": "1.0.0",
+  "description": "Yerson Argote's engineering and communication guidance",
+  "selectable": true,
   "surfaces": [
     "claude",
     "codex",
     "opencode"
   ],
-  "provides": [],
-  "requires": {
-    "capabilities": [],
-    "tools": []
-  },
-  "conflicts": [],
+  "external_requirements": [],
   "resources": [
     {
       "kind": "instruction",
       "id": "engineering-principles",
       "source": "instructions/argote-engineering-principles.md",
       "requires": [],
-      "provides_capabilities": [],
-      "requires_capabilities": [],
-      "requires_tools": [],
-      "capability_conflicts": [],
       "conflicts": [],
       "notices": [],
       "bindings": [
@@ -58,10 +50,6 @@
       "id": "neutral-spanish",
       "source": "instructions/argote-neutral-spanish.md",
       "requires": [],
-      "provides_capabilities": [],
-      "requires_capabilities": [],
-      "requires_tools": [],
-      "capability_conflicts": [],
       "conflicts": [],
       "notices": [],
       "bindings": [
@@ -97,10 +85,6 @@
       "id": "espera-que",
       "source": "skills/productivity/espera-que",
       "requires": [],
-      "provides_capabilities": [],
-      "requires_capabilities": [],
-      "requires_tools": [],
-      "capability_conflicts": [],
       "conflicts": [],
       "notices": [],
       "bindings": [
@@ -129,12 +113,8 @@
           "sharing": "exclusive"
         }
       ],
-      "surface_exclusions": [],
-      "runtime_modes": []
+      "surface_exclusions": []
     }
   ],
-  "root_migrations": [],
-  "contract": {
-    "exclusions": []
-  }
+  "exclusions": []
 }
