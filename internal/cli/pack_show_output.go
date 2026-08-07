@@ -25,12 +25,6 @@ type packShowSourceIdentityJSON struct {
 	Limitation    string `json:"limitation"`
 }
 
-type packShowRouteJSON struct {
-	FromVersion      string                   `json:"from_version"`
-	ToVersion        string                   `json:"to_version"`
-	ExistingSurfaces []capabilitypack.Surface `json:"existing_surfaces"`
-}
-
 type packShowIntentJSON struct {
 	State    string                        `json:"state"`
 	Active   *bool                         `json:"active"`
@@ -53,8 +47,7 @@ type packShowSurfaceJSON struct {
 }
 
 type packShowRequirementsJSON struct {
-	Capabilities []string `json:"capabilities"`
-	Tools        []string `json:"tools"`
+	Tools []string `json:"tools"`
 }
 
 type packShowJSON struct {
@@ -65,12 +58,8 @@ type packShowJSON struct {
 	Version               string                            `json:"version"`
 	Description           string                            `json:"description"`
 	SourceIdentity        packShowSourceIdentityJSON        `json:"source_identity"`
-	HistoricalVersions    []string                          `json:"historical_versions"`
-	UpdateRoutes          []packShowRouteJSON               `json:"update_routes"`
 	Surfaces              []capabilitypack.Surface          `json:"surfaces"`
-	Provides              []string                          `json:"provides"`
 	Requires              packShowRequirementsJSON          `json:"requires"`
-	Conflicts             []string                          `json:"conflicts"`
 	ResourceCounts        capabilitypack.ResourceCounts     `json:"resource_counts"`
 	LifecycleAvailability packShowLifecycleAvailabilityJSON `json:"lifecycle_availability"`
 	SurfaceContracts      []packShowSurfaceJSON             `json:"surface_contracts"`
@@ -79,17 +68,6 @@ type packShowJSON struct {
 
 func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 	pack := report.Detail.Pack
-	state := "current"
-	if report.Detail.Withdrawn {
-		state = "withdrawn"
-	}
-	routes := make([]packShowRouteJSON, 0, len(report.Detail.UpdateRoutes))
-	for _, route := range report.Detail.UpdateRoutes {
-		routes = append(routes, packShowRouteJSON{
-			FromVersion: route.FromVersion, ToVersion: route.ToVersion,
-			ExistingSurfaces: append([]capabilitypack.Surface{}, route.ExistingSurfaces...),
-		})
-	}
 	surfaces := make([]capabilitypack.Surface, 0, len(report.Surfaces))
 	contracts := make([]packShowSurfaceJSON, 0, len(report.Surfaces))
 	for _, surface := range report.Surfaces {
@@ -99,18 +77,17 @@ func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 		})
 	}
 	return packShowJSON{
-		SchemaVersion: packShowJSONSchemaVersion, Report: "pack-show", CatalogState: state,
+		SchemaVersion: packShowJSONSchemaVersion, Report: "pack-show", CatalogState: "current",
 		ID: pack.ID, Version: pack.Version, Description: pack.Description,
 		SourceIdentity: packShowSourceIdentityJSON{
 			PackID: report.SourceIdentity.PackID, Version: report.SourceIdentity.Version,
 			SchemaVersion: report.SourceIdentity.SchemaVersion, Limitation: report.SourceIdentity.Limitation,
 		},
-		HistoricalVersions: append([]string{}, report.Detail.HistoricalVersions...), UpdateRoutes: routes,
-		Surfaces: surfaces, Provides: sortedStrings(pack.Provides),
+		Surfaces: surfaces,
 		Requires: packShowRequirementsJSON{
-			Capabilities: sortedStrings(pack.Requires.Capabilities), Tools: sortedStrings(pack.Requires.Tools),
+			Tools: sortedStrings(pack.Requires.Tools),
 		},
-		Conflicts: sortedStrings(pack.Conflicts), ResourceCounts: report.ResourceCounts,
+		ResourceCounts: report.ResourceCounts,
 		LifecycleAvailability: packShowLifecycleAvailabilityJSON{
 			FreshActivationAvailable: report.LifecycleAvailability.FreshActivationAvailable,
 			CatalogUpdateAvailable:   report.LifecycleAvailability.CatalogUpdateAvailable,
@@ -145,29 +122,17 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		return err
 	}
 	if _, err := fmt.Fprintf(w,
-		"%s %s\nCatalog state: %s\nDescription: %s\nSource identity: pack=%s version=%s schema=%d\nSource limitation: %s\nHistorical versions: %s\nSupported CLI surfaces: %s\nProvides capabilities: %s\nRequires capabilities: %s\nRequires global tools: %s\nConflicts with capabilities: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
+		"%s %s\nCatalog state: %s\nDescription: %s\nSource identity: pack=%s version=%s schema=%d\nSource limitation: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
 		document.ID, document.Version, document.CatalogState, document.Description,
 		document.SourceIdentity.PackID, document.SourceIdentity.Version, document.SourceIdentity.SchemaVersion,
-		document.SourceIdentity.Limitation, joinOrNone(document.HistoricalVersions), joinSurfaces(document.Surfaces),
-		joinOrNone(document.Provides), joinOrNone(document.Requires.Capabilities), joinOrNone(document.Requires.Tools),
-		joinOrNone(document.Conflicts), document.ResourceCounts.Skills, document.ResourceCounts.Instructions,
+		document.SourceIdentity.Limitation, joinSurfaces(document.Surfaces), joinOrNone(document.Requires.Tools),
+		document.ResourceCounts.Skills, document.ResourceCounts.Instructions,
 		document.ResourceCounts.MCPServers, document.ResourceCounts.Lifecycles, document.ResourceCounts.Agents,
 		document.ResourceCounts.Commands, document.ResourceCounts.Assets, document.ResourceCounts.Notices,
 		yesNo(document.LifecycleAvailability.FreshActivationAvailable), yesNo(document.LifecycleAvailability.CatalogUpdateAvailable),
 		yesNo(document.LifecycleAvailability.LifecycleVerbsAvailable), yesNo(document.LifecycleAvailability.AutomaticDowngrade),
 	); err != nil {
 		return err
-	}
-	if len(document.UpdateRoutes) == 0 {
-		if _, err := fmt.Fprintln(w, "Update routes: none"); err != nil {
-			return err
-		}
-	} else {
-		for _, route := range document.UpdateRoutes {
-			if _, err := fmt.Fprintf(w, "Update route: %s -> %s on %s\n", route.FromVersion, route.ToVersion, joinSurfaces(route.ExistingSurfaces)); err != nil {
-				return err
-			}
-		}
 	}
 	for _, fact := range document.ResourceGraph.Resources {
 		if _, err := fmt.Fprintf(w, "Resource: %s role=%s requires=%s notices=%s\n",

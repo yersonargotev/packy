@@ -35,11 +35,11 @@ type ownershipStore struct {
 	state capabilitypack.ActivationState
 }
 
-func (s ownershipStore) Load(context.Context, capabilitypack.Surface) (capabilitypack.ActivationState, error) {
+func (s ownershipStore) LoadSnapshot(context.Context, capabilitypack.Surface) (capabilitypack.ActivationState, error) {
 	return s.state, nil
 }
-func (s ownershipStore) Save(context.Context, capabilitypack.Surface, int, capabilitypack.ActivationState) error {
-	return nil
+func (s ownershipStore) SaveSnapshot(context.Context, capabilitypack.Surface, int, capabilitypack.ActivationState) (int, error) {
+	return 1, nil
 }
 
 type staticRuntimeEvidence []RuntimeEvidence
@@ -113,7 +113,7 @@ func TestInspectionSealsExternalConsentAndExactCommandAssetCleanup(t *testing.T)
 	os.MkdirAll(filepath.Join(layout.SkillsDir, "run"), 0700)
 	os.WriteFile(filepath.Join(layout.SkillsDir, "run", "SKILL.md"), []byte(claudeCommandSkill(pack.Resources[0], "run", []byte("Run $ARGUMENTS"))), 0600)
 	os.WriteFile(filepath.Join(layout.SkillsDir, "run", "guide.txt"), []byte("guide"), 0600)
-	state := capabilitypack.ActivationState{Intent: capabilitypack.ActivationIntent{PackID: "p", Version: "1.0.0", Surface: capabilitypack.SurfaceClaude, Active: true}, Ownership: []capabilitypack.ProjectionOwnership{{ID: "command:run", Contributors: []string{"p"}}, {ID: "asset:command:run:guide", Contributors: []string{"p"}}}}
+	state := capabilitypack.ActivationState{Intent: capabilitypack.ActivationIntent{PackID: "p", Version: "1.0.0", Surface: capabilitypack.SurfaceClaude, Active: true}, Ownership: []capabilitypack.ProjectionOwnership{{ID: "command:run", PackID: "p", Surface: capabilitypack.SurfaceClaude}, {ID: "asset:command:run:guide", PackID: "p", Surface: capabilitypack.SurfaceClaude}}}
 	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"p": pack}, layout, bundle)
 	a := NewSurfaceAdapter(bundle, layout, filepath.Join(home, "state"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, provider)
 	inspection, err := a.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
@@ -179,7 +179,7 @@ func TestCapabilityPackOwnershipProviderReturnsHookAndMCPIdentity(t *testing.T) 
 	os.WriteFile(layout.SettingsFile, settings, 0600)
 	os.WriteFile(layout.UserMCPFile, []byte(`{"mcpServers":{"memory":{"command":"engram","args":["mcp"]}}}`), 0600)
 	pack := capabilitypack.Pack{ID: "p", Version: "1.0.0", Resources: []capabilitypack.Resource{{Kind: "lifecycle", ID: "start", Bindings: []capabilitypack.Binding{binding}}, {Kind: "mcp_server", ID: "memory", Command: "engram", Args: []string{"mcp"}, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "mcp_server", Name: "memory"}}}}}
-	state := capabilitypack.ActivationState{Intent: capabilitypack.ActivationIntent{PackID: "p", Version: "1.0.0", Surface: capabilitypack.SurfaceClaude, Active: true}, Ownership: []capabilitypack.ProjectionOwnership{{ID: "lifecycle:start", Fingerprint: entry.Fingerprint(), Contributors: []string{"p"}}, {ID: "mcp_server:memory", Contributors: []string{"p"}}}}
+	state := capabilitypack.ActivationState{Intent: capabilitypack.ActivationIntent{PackID: "p", Version: "1.0.0", Surface: capabilitypack.SurfaceClaude, Active: true}, Ownership: []capabilitypack.ProjectionOwnership{{ID: "lifecycle:start", Fingerprint: entry.Fingerprint(), PackID: "p", Surface: capabilitypack.SurfaceClaude}, {ID: "mcp_server:memory", PackID: "p", Surface: capabilitypack.SurfaceClaude}}}
 	snapshot, err := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"p": pack}, layout, t.TempDir()).ObserveOwnership(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -227,7 +227,7 @@ func TestCapabilityPackOwnershipProviderUsesAllActiveIntentsAndPersistedAliases(
 			{PackID: "one", Version: "1", Surface: capabilitypack.SurfaceClaude, Active: true, Aliases: []capabilitypack.SurfaceAlias{{Kind: "command", ID: "run", Name: "one-run"}}},
 			{PackID: "two", Version: "2", Surface: capabilitypack.SurfaceClaude, Active: true, Aliases: []capabilitypack.SurfaceAlias{{Kind: "command", ID: "check", Name: "two-check"}}},
 		},
-		Ownership: []capabilitypack.ProjectionOwnership{{ID: "command:one-run", Contributors: []string{"one"}}, {ID: "command:two-check", Contributors: []string{"two"}}},
+		Ownership: []capabilitypack.ProjectionOwnership{{ID: "command:one-run", PackID: "one", Surface: capabilitypack.SurfaceClaude}, {ID: "command:two-check", PackID: "two", Surface: capabilitypack.SurfaceClaude}},
 	}
 	snapshot, err := NewCapabilityPackOwnershipProvider(ownershipStore{state}, packs, layout, t.TempDir()).ObserveOwnership(context.Background())
 	if err != nil {
@@ -235,39 +235,6 @@ func TestCapabilityPackOwnershipProviderUsesAllActiveIntentsAndPersistedAliases(
 	}
 	if len(snapshot.Records) != 2 || snapshot.Records[0].ID != "command:one-run" || snapshot.Records[1].ID != "command:two-check" {
 		t.Fatalf("records=%+v", snapshot.Records)
-	}
-}
-
-func TestCapabilityPackRecoveryDoesNotClaimUnownedResourcesFromOtherIntents(t *testing.T) {
-	home := t.TempDir()
-	layout := NewCanonicalLayout(home)
-	command := func(id string) capabilitypack.Resource {
-		return capabilitypack.Resource{Kind: "command", ID: id, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: id}}}
-	}
-	for _, name := range []string{"recover", "foreign"} {
-		target := filepath.Join(layout.SkillsDir, name)
-		if err := os.MkdirAll(target, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte(name), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	packs := map[string]capabilitypack.Pack{
-		"recovering": {ID: "recovering", Version: "1", Resources: []capabilitypack.Resource{command("recover")}},
-		"other":      {ID: "other", Version: "1", Resources: []capabilitypack.Resource{command("foreign")}},
-	}
-	state := capabilitypack.ActivationState{
-		Intent:  capabilitypack.ActivationIntent{PackID: "recovering", Version: "1", Surface: capabilitypack.SurfaceClaude, Active: true},
-		Intents: []capabilitypack.ActivationIntent{{PackID: "recovering", Version: "1", Surface: capabilitypack.SurfaceClaude, Active: true}, {PackID: "other", Version: "1", Surface: capabilitypack.SurfaceClaude, Active: true}},
-		Journal: &capabilitypack.ApplyingJournal{PackID: "recovering", Actions: []string{"command:recover"}},
-	}
-	snapshot, err := NewCapabilityPackOwnershipProvider(ownershipStore{state}, packs, layout, t.TempDir()).ObserveOwnership(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(snapshot.Records) != 1 || snapshot.Records[0].ID != "command:recover" {
-		t.Fatalf("recovery ownership=%+v", snapshot.Records)
 	}
 }
 

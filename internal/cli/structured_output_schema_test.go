@@ -13,50 +13,15 @@ import (
 	"github.com/yersonargotev/packy/internal/setuphealth"
 )
 
-var structuredOutputFixtures = map[string]string{
-	"doctor.json":                 "doctor.schema.json",
-	"pack-show.json":              "pack-show.schema.json",
-	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
-	"pack-status.json":            "pack-status.schema.json",
-}
-
-var structuredOutputV3Fixtures = map[string]string{
-	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
-	"pack-status.json":            "pack-status.schema.json",
-}
-
-var structuredOutputV4Fixtures = map[string]string{
-	"pack-show.json":              "pack-show.schema.json",
-	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
-	"pack-status.json":            "pack-status.schema.json",
-}
-
-var structuredOutputV5Fixtures = map[string]string{
-	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
-	"pack-status.json":            "pack-status.schema.json",
-}
-
-var structuredOutputV6Fixtures = map[string]string{
-	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
-	"pack-status.json":            "pack-status.schema.json",
-}
-
-var structuredOutputV7Fixtures = map[string]string{
-	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
-	"pack-status.json":            "pack-status.schema.json",
-}
-
-var structuredOutputV8Fixtures = map[string]string{
-	"pack-lifecycle-apply.json":   "pack-lifecycle.schema.json",
-	"pack-lifecycle-failure.json": "pack-lifecycle.schema.json",
-	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
-	"pack-status.json":            "pack-status.schema.json",
-}
-
-var structuredOutputV9Fixtures = map[string]string{
-	"pack-lifecycle-apply.json":   "pack-lifecycle.schema.json",
-	"pack-lifecycle-failure.json": "pack-lifecycle.schema.json",
-	"pack-lifecycle-preview.json": "pack-lifecycle.schema.json",
+var structuredOutputFixtures = []struct {
+	version, fixture, schema string
+}{
+	{"v2", "doctor.json", "doctor.schema.json"},
+	{"v4", "pack-show.json", "pack-show.schema.json"},
+	{"v8", "pack-status.json", "pack-status.schema.json"},
+	{"v9", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
+	{"v9", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
+	{"v9", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
 }
 
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
@@ -64,106 +29,21 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixtureRoot := filepath.Join("testdata", "structured-output", "v2")
-	for fixtureName, schemaName := range structuredOutputFixtures {
-		fixture, err := os.ReadFile(filepath.Join(fixtureRoot, fixtureName))
+	for _, current := range structuredOutputFixtures {
+		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", current.version, current.fixture))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
-			t.Fatalf("fixture %s: %v", fixtureName, err)
+		if err := validateStructuredOutput(t, root, current.schema, fixture); err != nil {
+			t.Fatalf("fixture %s/%s: %v", current.version, current.fixture, err)
 		}
 		if err := validateCanonicalOperatorOrder(fixture); err != nil {
-			t.Fatalf("fixture %s canonical order: %v", fixtureName, err)
+			t.Fatalf("fixture %s/%s canonical order: %v", current.version, current.fixture, err)
 		}
 		for _, forbidden := range []string{"TOKEN=", "SECRET=", "/Users/", "foreign-document", "mixed-store"} {
 			if strings.Contains(string(fixture), forbidden) {
-				t.Fatalf("fixture %s leaks %q", fixtureName, forbidden)
+				t.Fatalf("fixture %s/%s leaks %q", current.version, current.fixture, forbidden)
 			}
-		}
-	}
-	for fixtureName, schemaName := range structuredOutputV3Fixtures {
-		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v3", fixtureName))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
-			t.Fatalf("v3 fixture %s: %v", fixtureName, err)
-		}
-		if err := validateCanonicalOperatorOrder(fixture); err != nil {
-			t.Fatalf("v3 fixture %s canonical order: %v", fixtureName, err)
-		}
-	}
-	for fixtureName, schemaName := range structuredOutputV4Fixtures {
-		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v4", fixtureName))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
-			t.Fatalf("v4 fixture %s: %v", fixtureName, err)
-		}
-		if err := validateCanonicalOperatorOrder(fixture); err != nil {
-			t.Fatalf("v4 fixture %s canonical order: %v", fixtureName, err)
-		}
-	}
-	for fixtureName, schemaName := range structuredOutputV5Fixtures {
-		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v5", fixtureName))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
-			t.Fatalf("v5 fixture %s: %v", fixtureName, err)
-		}
-		if err := validateCanonicalOperatorOrder(fixture); err != nil {
-			t.Fatalf("v5 fixture %s canonical order: %v", fixtureName, err)
-		}
-	}
-	for fixtureName, schemaName := range structuredOutputV6Fixtures {
-		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v6", fixtureName))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
-			t.Fatalf("v6 fixture %s: %v", fixtureName, err)
-		}
-		if err := validateCanonicalOperatorOrder(fixture); err != nil {
-			t.Fatalf("v6 fixture %s canonical order: %v", fixtureName, err)
-		}
-	}
-	for fixtureName, schemaName := range structuredOutputV7Fixtures {
-		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v7", fixtureName))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
-			t.Fatalf("v7 fixture %s: %v", fixtureName, err)
-		}
-		if err := validateCanonicalOperatorOrder(fixture); err != nil {
-			t.Fatalf("v7 fixture %s canonical order: %v", fixtureName, err)
-		}
-	}
-	for fixtureName, schemaName := range structuredOutputV8Fixtures {
-		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v8", fixtureName))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
-			t.Fatalf("v8 fixture %s: %v", fixtureName, err)
-		}
-		if err := validateCanonicalOperatorOrder(fixture); err != nil {
-			t.Fatalf("v8 fixture %s canonical order: %v", fixtureName, err)
-		}
-	}
-	for fixtureName, schemaName := range structuredOutputV9Fixtures {
-		fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v9", fixtureName))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := validateStructuredOutput(t, root, schemaName, fixture); err != nil {
-			t.Fatalf("v9 fixture %s: %v", fixtureName, err)
-		}
-		if err := validateCanonicalOperatorOrder(fixture); err != nil {
-			t.Fatalf("v9 fixture %s canonical order: %v", fixtureName, err)
 		}
 	}
 
@@ -210,37 +90,6 @@ func TestStructuredOutputV2SchemasRejectWrongVersionAndUnknownFields(t *testing.
 	}
 }
 
-func TestStructuredOutputV2SchemasRejectMismatchedReadinessState(t *testing.T) {
-	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v2", "pack-status.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var document map[string]any
-	if err := json.Unmarshal(fixture, &document); err != nil {
-		t.Fatal(err)
-	}
-	entry := document["entries"].([]any)[0].(map[string]any)
-	readiness := entry["readiness"].(map[string]any)
-	for name, invalid := range map[string]map[string]any{
-		"unknown boolean": {"state": "unknown", "value": true},
-		"known null":      {"state": "known", "value": nil},
-	} {
-		t.Run(name, func(t *testing.T) {
-			original := readiness["configured"]
-			readiness["configured"] = invalid
-			defer func() { readiness["configured"] = original }()
-			encoded, err := json.Marshal(document)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := validateStructuredOutput(t, root, "pack-status.schema.json", encoded); err == nil {
-				t.Fatalf("mismatched readiness passed: %s", encoded)
-			}
-		})
-	}
-}
-
 func TestRuntimeModeV2SchemaAcceptsSanitizedFactsAndRejectsUnknownProbeData(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
 	valid := []byte(`{
@@ -275,10 +124,10 @@ func TestRuntimeModeV2SchemaAcceptsSanitizedFactsAndRejectsUnknownProbeData(t *t
 
 func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixtureRoot := filepath.Join("testdata", "structured-output", "v2")
 	load := func(t *testing.T, name string) map[string]any {
 		t.Helper()
-		data, err := os.ReadFile(filepath.Join(fixtureRoot, name))
+		version := map[string]string{"pack-show.json": "v4", "pack-status.json": "v8"}[name]
+		data, err := os.ReadFile(filepath.Join("testdata", "structured-output", version, name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -315,12 +164,6 @@ func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 		delete(document, "source_identity")
 		reject(t, "pack-show.schema.json", document)
 	})
-	t.Run("contradictory fact", func(t *testing.T) {
-		document := load(t, "pack-show.json")
-		intent := document["surface_contracts"].([]any)[0].(map[string]any)["intent"].(map[string]any)
-		intent["state"] = "known"
-		reject(t, "pack-show.schema.json", document)
-	})
 	t.Run("unredacted ambient target", func(t *testing.T) {
 		document := load(t, "pack-status.json")
 		detail := document["entries"].([]any)[0].(map[string]any)["projection_details"].([]any)[0].(map[string]any)
@@ -334,11 +177,6 @@ func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 	}{
 		{"nondeterministic top-level order", "pack-show.json", func(document map[string]any) {
 			values := document["surfaces"].([]any)
-			values[0], values[1] = values[1], values[0]
-		}},
-		{"nondeterministic contract order", "pack-show.json", func(document map[string]any) {
-			contract := document["surface_contracts"].([]any)[0].(map[string]any)["contract"].(map[string]any)
-			values := contract["bindings"].([]any)
 			values[0], values[1] = values[1], values[0]
 		}},
 		{"nondeterministic status order", "pack-status.json", func(document map[string]any) {
@@ -463,26 +301,12 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 	}
 	switch document["report"] {
 	case "pack-show":
-		for _, field := range []string{"historical_versions", "surfaces", "provides", "conflicts"} {
-			if err := requireStrings(field, document[field].([]any)); err != nil {
-				return err
-			}
-		}
-		requires := document["requires"].(map[string]any)
-		for _, field := range []string{"capabilities", "tools"} {
-			if err := requireStrings("requires."+field, requires[field].([]any)); err != nil {
-				return err
-			}
-		}
-		routes := document["update_routes"].([]any)
-		if err := requireOrdered("update_routes", routes, objectKey("from_version", "to_version")); err != nil {
+		if err := requireStrings("surfaces", document["surfaces"].([]any)); err != nil {
 			return err
 		}
-		for _, value := range routes {
-			route := value.(map[string]any)
-			if err := requireStrings("update_routes.existing_surfaces", route["existing_surfaces"].([]any)); err != nil {
-				return err
-			}
+		requires := document["requires"].(map[string]any)
+		if err := requireStrings("requires.tools", requires["tools"].([]any)); err != nil {
+			return err
 		}
 		contracts := document["surface_contracts"].([]any)
 		if err := requireOrdered("surface_contracts", contracts, objectKey("surface")); err != nil {
@@ -516,12 +340,6 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 			projections := entry["projection_details"].([]any)
 			if err := requireOrdered("projection_details", projections, objectKey("id")); err != nil {
 				return err
-			}
-			for _, projectionValue := range projections {
-				projection := projectionValue.(map[string]any)
-				if err := requireStrings("projection_details.contributors", projection["contributors"].([]any)); err != nil {
-					return err
-				}
 			}
 			if err := requireOrdered("optional_authorities", entry["optional_authorities"].([]any), objectKey("mode_id", "authority")); err != nil {
 				return err

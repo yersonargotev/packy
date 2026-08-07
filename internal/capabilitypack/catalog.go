@@ -2,11 +2,8 @@
 package capabilitypack
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,33 +38,29 @@ const (
 )
 
 type Requirements struct {
-	Capabilities []string `json:"capabilities"`
-	Tools        []string `json:"tools"`
+	Tools []string `json:"tools"`
 }
 
 type Resource struct {
-	Kind                 string
-	ID                   string
-	Source               string
-	Command              string
-	Args                 []string
-	Description          string
-	Mode                 string
-	Tools                []string
-	Permissions          []string
-	Requires             []string
-	Conflicts            []string
-	ProvidesCapabilities []string
-	RequiresCapabilities []string
-	RequiresTools        []string
-	CapabilityConflicts  []string
-	Notices              []string
-	Bindings             []Binding
-	SurfaceExclusions    []SurfaceExclusion
-	Arguments            CommandArguments
-	License              string
-	Attribution          string
-	RuntimeModes         []RuntimeMode
+	Kind              string
+	ID                string
+	Source            string
+	Command           string
+	Args              []string
+	Description       string
+	Mode              string
+	Tools             []string
+	Permissions       []string
+	Requires          []string
+	Conflicts         []string
+	RequiresTools     []string
+	Notices           []string
+	Bindings          []Binding
+	SurfaceExclusions []SurfaceExclusion
+	Arguments         CommandArguments
+	License           string
+	Attribution       string
+	RuntimeModes      []RuntimeMode
 }
 
 type RuntimeModeRole string
@@ -286,11 +279,8 @@ type Pack struct {
 	Description     string
 	Selectable      bool
 	Surfaces        []Surface
-	Provides        []string
 	Requires        Requirements
-	Conflicts       []string
 	Resources       []Resource
-	RootMigrations  []RootMigration
 	Contract        Contract
 	SourceReference *SourceReference
 }
@@ -300,12 +290,6 @@ type Pack struct {
 type SourceReference struct {
 	Repository string `json:"repository"`
 	Revision   string `json:"revision"`
-}
-
-// RootMigration declares one exact manifest-v4 update identity transition.
-type RootMigration struct {
-	From ResourceIdentity `json:"from"`
-	To   ResourceIdentity `json:"to"`
 }
 
 type ResourceCounts struct {
@@ -348,38 +332,18 @@ type Catalog struct {
 	packs                 []Pack
 	bundleRoot            string
 	entries               []catalogEntry
-	allowSyntheticHistory bool
 	deferSourceValidation bool
 	transactionHeld       bool
-	enforceUpdateRoutes   bool
-	currentManifests      bool
 }
 
 type catalogEntry struct {
-	ID                 string
-	Description        string
-	Surfaces           []Surface
-	Withdrawn          bool
-	HistoricalVersions []string
-	UpdateRoutes       []UpdateRoute
+	ID          string
+	Description string
+	Surfaces    []Surface
 }
 
-// UpdateRoute identifies one exact, supported transition between catalog
-// versions.
-type UpdateRoute struct {
-	FromVersion      string
-	ToVersion        string
-	ExistingSurfaces []Surface
-}
-
-// CatalogDetail is a detached view of a known catalog entry. Current reports
-// whether the pack is selectable; withdrawn packs remain addressable by Show.
 type CatalogDetail struct {
-	Current            bool
-	Withdrawn          bool
-	Pack               Pack
-	HistoricalVersions []string
-	UpdateRoutes       []UpdateRoute
+	Pack Pack
 }
 
 // Discover loads the strict initial catalog from a Packy-owned bundle root.
@@ -387,9 +351,8 @@ func Discover(bundleRoot string) (Catalog, error) {
 	return discoverProductionCatalog(bundleRoot, true)
 }
 
-// DiscoverForDurableIntents loads catalog metadata while deferring current
-// source validation until a catalog-current pack is selected. This lets an
-// existing pinned intent be reproduced solely from its historical artifact.
+// DiscoverForDurableIntents retains the lifecycle-facing name while loading
+// only the current manifest generation.
 func DiscoverForDurableIntents(bundleRoot string) (Catalog, error) {
 	return discoverProductionCatalog(bundleRoot, false)
 }
@@ -431,57 +394,7 @@ func discoverCurrentCatalogUnlocked(bundleRoot string, validateSources bool) (Ca
 	}
 	sort.Slice(packs, func(i, j int) bool { return packs[i].ID < packs[j].ID })
 	sort.Slice(metadata, func(i, j int) bool { return metadata[i].ID < metadata[j].ID })
-	return Catalog{packs: packs, bundleRoot: bundleRoot, entries: metadata, deferSourceValidation: !validateSources, currentManifests: true}, nil
-}
-
-func discoverCatalog(bundleRoot string, entries []catalogEntry) (Catalog, error) {
-	return discoverCatalogWithSourceValidation(bundleRoot, entries, true)
-}
-
-func discoverCatalogWithSourceValidation(bundleRoot string, entries []catalogEntry, validateSources bool) (Catalog, error) {
-	var catalog Catalog
-	err := bundletransaction.WithExclusive(context.Background(), filepath.Dir(filepath.Clean(bundleRoot)), func() error {
-		var err error
-		catalog, err = discoverCatalogUnlocked(bundleRoot, entries, validateSources)
-		return err
-	})
-	return catalog, err
-}
-
-func discoverCatalogUnlocked(bundleRoot string, entries []catalogEntry, validateSources bool) (Catalog, error) {
-	packs := make([]Pack, 0, len(entries))
-	for _, entry := range entries {
-		if err := validateCatalogMetadata(entry); err != nil {
-			return Catalog{}, fmt.Errorf("catalog entry %q: %w", entry.ID, err)
-		}
-		manifestPath := filepath.Join(bundleRoot, "packs", entry.ID, "pack.json")
-		pack, err := decodeManifestWithSourceValidation(manifestPath, bundleRoot, validateSources)
-		if err != nil {
-			return Catalog{}, err
-		}
-		if pack.ID != entry.ID {
-			return Catalog{}, fmt.Errorf("catalog entry %q: manifest id is %q", entry.ID, pack.ID)
-		}
-		pack.Description = entry.Description
-		manifestOwnedSurfaces := len(pack.Surfaces) > 0
-		if !manifestOwnedSurfaces {
-			pack.Surfaces = append([]Surface(nil), entry.Surfaces...)
-		}
-		if err := validateSurfaces(pack.Surfaces); err != nil {
-			return Catalog{}, fmt.Errorf("pack %q: %w", pack.ID, err)
-		}
-		if len(entry.HistoricalVersions) > 0 && !containsString(entry.HistoricalVersions, pack.Version) {
-			return Catalog{}, fmt.Errorf("catalog entry %q: current version %q is absent from immutable history metadata", entry.ID, pack.Version)
-		}
-		if pack.Contract.Exclusions != nil && !manifestOwnedSurfaces {
-			if err := validateBindingsForSurfaces(pack); err != nil {
-				return Catalog{}, fmt.Errorf("pack %q: %w", pack.ID, err)
-			}
-		}
-		packs = append(packs, pack)
-	}
-	sort.Slice(packs, func(i, j int) bool { return packs[i].ID < packs[j].ID })
-	return Catalog{packs: packs, bundleRoot: bundleRoot, entries: cloneCatalogEntries(entries), deferSourceValidation: !validateSources}, nil
+	return Catalog{packs: packs, bundleRoot: bundleRoot, entries: metadata, deferSourceValidation: !validateSources}, nil
 }
 
 func (c Catalog) refreshed() (Catalog, error) {
@@ -491,13 +404,7 @@ func (c Catalog) refreshed() (Catalog, error) {
 	var refreshed Catalog
 	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
 		var err error
-		if c.currentManifests {
-			refreshed, err = discoverCurrentCatalogUnlocked(c.bundleRoot, !c.deferSourceValidation)
-		} else {
-			refreshed, err = discoverCatalogUnlocked(c.bundleRoot, c.entries, !c.deferSourceValidation)
-		}
-		refreshed.allowSyntheticHistory = c.allowSyntheticHistory
-		refreshed.enforceUpdateRoutes = c.enforceUpdateRoutes
+		refreshed, err = discoverCurrentCatalogUnlocked(c.bundleRoot, !c.deferSourceValidation)
 		refreshed.transactionHeld = locked.transactionHeld
 		return err
 	})
@@ -533,33 +440,23 @@ func (c Catalog) ListDetails() ([]CatalogDetail, error) {
 		}
 		details = make([]CatalogDetail, 0, len(fresh.packs))
 		for _, metadata := range fresh.packs {
-			entry, _ := fresh.catalogEntry(metadata.ID)
-			if entry.Withdrawn {
-				continue
-			}
 			pack, err := fresh.showUnlocked(metadata.ID)
 			if err != nil {
 				return err
 			}
-			details = append(details, catalogDetail(pack, entry))
+			details = append(details, catalogDetail(pack))
 		}
 		return nil
 	})
 	return details, err
 }
 
-// ShowDetail returns detached metadata for a known pack, including a withdrawn
-// pack that is intentionally absent from normal listing.
 func (c Catalog) ShowDetail(id string) (CatalogDetail, error) {
 	pack, err := c.Show(id)
 	if err != nil {
 		return CatalogDetail{}, err
 	}
-	entry, ok := c.catalogEntry(id)
-	if !ok {
-		return CatalogDetail{}, fmt.Errorf("unknown capability pack %q; run `packy pack list` to see available packs", id)
-	}
-	return catalogDetail(pack, entry), nil
+	return catalogDetail(pack), nil
 }
 
 // ListCurrent returns only after every advertised catalog-current pack has
@@ -573,10 +470,6 @@ func (c Catalog) ListCurrent() ([]Pack, error) {
 		}
 		packs = make([]Pack, 0, len(fresh.packs))
 		for _, metadata := range fresh.packs {
-			entry, _ := fresh.catalogEntry(metadata.ID)
-			if entry.Withdrawn {
-				continue
-			}
 			pack, err := fresh.showUnlocked(metadata.ID)
 			if err != nil {
 				return err
@@ -627,22 +520,13 @@ func (c Catalog) catalogMetadata(id string) (Pack, error) {
 	return Pack{}, fmt.Errorf("unknown capability pack %q; run `packy pack list` to see available packs", id)
 }
 
-func (c Catalog) withdrawn(id string) bool {
-	entry, ok := c.catalogEntry(id)
-	return ok && entry.Withdrawn
-}
-
 func clonePack(pack Pack) Pack {
 	if pack.SourceReference != nil {
 		copy := *pack.SourceReference
 		pack.SourceReference = &copy
 	}
 	pack.Surfaces = append([]Surface(nil), pack.Surfaces...)
-	pack.Provides = append([]string(nil), pack.Provides...)
-	pack.Requires.Capabilities = append([]string(nil), pack.Requires.Capabilities...)
 	pack.Requires.Tools = append([]string(nil), pack.Requires.Tools...)
-	pack.Conflicts = append([]string(nil), pack.Conflicts...)
-	pack.RootMigrations = append([]RootMigration(nil), pack.RootMigrations...)
 	pack.Resources = append([]Resource(nil), pack.Resources...)
 	for i := range pack.Resources {
 		pack.Resources[i].Args = append([]string(nil), pack.Resources[i].Args...)
@@ -650,10 +534,7 @@ func clonePack(pack Pack) Pack {
 		pack.Resources[i].Permissions = append([]string(nil), pack.Resources[i].Permissions...)
 		pack.Resources[i].Requires = append([]string(nil), pack.Resources[i].Requires...)
 		pack.Resources[i].Conflicts = append([]string(nil), pack.Resources[i].Conflicts...)
-		pack.Resources[i].ProvidesCapabilities = append([]string(nil), pack.Resources[i].ProvidesCapabilities...)
-		pack.Resources[i].RequiresCapabilities = append([]string(nil), pack.Resources[i].RequiresCapabilities...)
 		pack.Resources[i].RequiresTools = append([]string(nil), pack.Resources[i].RequiresTools...)
-		pack.Resources[i].CapabilityConflicts = append([]string(nil), pack.Resources[i].CapabilityConflicts...)
 		pack.Resources[i].Notices = append([]string(nil), pack.Resources[i].Notices...)
 		pack.Resources[i].Bindings = append([]Binding(nil), pack.Resources[i].Bindings...)
 		pack.Resources[i].SurfaceExclusions = append([]SurfaceExclusion(nil), pack.Resources[i].SurfaceExclusions...)
@@ -687,1104 +568,8 @@ func clonePack(pack Pack) Pack {
 	return pack
 }
 
-func catalogDetail(pack Pack, entry catalogEntry) CatalogDetail {
-	return CatalogDetail{
-		Current:            !entry.Withdrawn,
-		Withdrawn:          entry.Withdrawn,
-		Pack:               clonePack(pack),
-		HistoricalVersions: append([]string(nil), entry.HistoricalVersions...),
-		UpdateRoutes:       cloneUpdateRoutes(entry.UpdateRoutes),
-	}
-}
-
-func cloneCatalogEntries(entries []catalogEntry) []catalogEntry {
-	cloned := make([]catalogEntry, len(entries))
-	for i, entry := range entries {
-		cloned[i] = entry
-		cloned[i].Surfaces = append([]Surface(nil), entry.Surfaces...)
-		cloned[i].HistoricalVersions = append([]string(nil), entry.HistoricalVersions...)
-		cloned[i].UpdateRoutes = cloneUpdateRoutes(entry.UpdateRoutes)
-	}
-	return cloned
-}
-
-func cloneUpdateRoutes(routes []UpdateRoute) []UpdateRoute {
-	cloned := make([]UpdateRoute, len(routes))
-	for i, route := range routes {
-		cloned[i] = route
-		cloned[i].ExistingSurfaces = append([]Surface(nil), route.ExistingSurfaces...)
-	}
-	return cloned
-}
-
-func validateCatalogMetadata(entry catalogEntry) error {
-	versions := make(map[string]bool, len(entry.HistoricalVersions))
-	for i, version := range entry.HistoricalVersions {
-		if !validSemver(version) {
-			return fmt.Errorf("historical version %q is not valid SemVer", version)
-		}
-		if versions[version] {
-			return fmt.Errorf("historical version %q is duplicated", version)
-		}
-		if i > 0 && compareSemanticVersions(entry.HistoricalVersions[i-1], version) >= 0 {
-			return fmt.Errorf("historical versions must be in ascending canonical order")
-		}
-		versions[version] = true
-	}
-	routeKeys := make(map[string]bool, len(entry.UpdateRoutes))
-	for i, route := range entry.UpdateRoutes {
-		if !validSemver(route.FromVersion) || !validSemver(route.ToVersion) || route.FromVersion == route.ToVersion {
-			return fmt.Errorf("update route %q -> %q is malformed", route.FromVersion, route.ToVersion)
-		}
-		if err := validateSurfaces(route.ExistingSurfaces); err != nil {
-			return fmt.Errorf("update route %q -> %q: %w", route.FromVersion, route.ToVersion, err)
-		}
-		if !versions[route.FromVersion] || !versions[route.ToVersion] {
-			return fmt.Errorf("update route %q -> %q references an unknown historical version", route.FromVersion, route.ToVersion)
-		}
-		key := route.FromVersion + "\x00" + route.ToVersion
-		if routeKeys[key] {
-			return fmt.Errorf("update route %q -> %q is duplicated", route.FromVersion, route.ToVersion)
-		}
-		if i > 0 && compareUpdateRoutes(entry.UpdateRoutes[i-1], route) >= 0 {
-			return fmt.Errorf("update routes must be in ascending canonical order")
-		}
-		routeKeys[key] = true
-	}
-	return nil
-}
-
-func compareUpdateRoutes(left, right UpdateRoute) int {
-	if compared := compareSemanticVersions(left.FromVersion, right.FromVersion); compared != 0 {
-		return compared
-	}
-	return compareSemanticVersions(left.ToVersion, right.ToVersion)
-}
-
-func compareSemanticVersions(left, right string) int {
-	leftVersion := parseSemanticVersion(left)
-	rightVersion := parseSemanticVersion(right)
-	for i := range leftVersion.core {
-		if compared := compareSemanticVersionNumbers(leftVersion.core[i], rightVersion.core[i]); compared != 0 {
-			return compared
-		}
-	}
-	switch {
-	case len(leftVersion.prerelease) == 0 && len(rightVersion.prerelease) > 0:
-		return 1
-	case len(leftVersion.prerelease) > 0 && len(rightVersion.prerelease) == 0:
-		return -1
-	}
-	for i := 0; i < len(leftVersion.prerelease) && i < len(rightVersion.prerelease); i++ {
-		leftIdentifier := leftVersion.prerelease[i]
-		rightIdentifier := rightVersion.prerelease[i]
-		leftNumeric := isSemanticVersionNumber(leftIdentifier)
-		rightNumeric := isSemanticVersionNumber(rightIdentifier)
-		switch {
-		case leftNumeric && rightNumeric:
-			if compared := compareSemanticVersionNumbers(leftIdentifier, rightIdentifier); compared != 0 {
-				return compared
-			}
-		case leftNumeric && !rightNumeric:
-			return -1
-		case !leftNumeric && rightNumeric:
-			return 1
-		case !leftNumeric && !rightNumeric && leftIdentifier < rightIdentifier:
-			return -1
-		case !leftNumeric && !rightNumeric && leftIdentifier > rightIdentifier:
-			return 1
-		}
-	}
-	if len(leftVersion.prerelease) < len(rightVersion.prerelease) {
-		return -1
-	}
-	if len(leftVersion.prerelease) > len(rightVersion.prerelease) {
-		return 1
-	}
-	return strings.Compare(left, right)
-}
-
-type semanticVersion struct {
-	core       [3]string
-	prerelease []string
-}
-
-func parseSemanticVersion(value string) semanticVersion {
-	withoutBuild, _, _ := strings.Cut(value, "+")
-	core, prerelease, _ := strings.Cut(withoutBuild, "-")
-	parts := strings.Split(core, ".")
-	version := semanticVersion{}
-	for i := range version.core {
-		version.core[i] = parts[i]
-	}
-	if prerelease != "" {
-		version.prerelease = strings.Split(prerelease, ".")
-	}
-	return version
-}
-
-func isSemanticVersionNumber(value string) bool {
-	for _, character := range value {
-		if character < '0' || character > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func compareSemanticVersionNumbers(left, right string) int {
-	if len(left) < len(right) {
-		return -1
-	}
-	if len(left) > len(right) {
-		return 1
-	}
-	return strings.Compare(left, right)
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
-type manifest struct {
-	SchemaVersion  int               `json:"schema_version"`
-	ID             string            `json:"id"`
-	Version        string            `json:"version"`
-	Provides       []string          `json:"provides"`
-	Requires       Requirements      `json:"requires"`
-	Conflicts      []string          `json:"conflicts"`
-	Resources      []json.RawMessage `json:"resources"`
-	RootMigrations *[]struct {
-		From string `json:"from"`
-		To   string `json:"to"`
-	} `json:"root_migrations,omitempty"`
-	Contract *Contract  `json:"contract,omitempty"`
-	Surfaces *[]Surface `json:"surfaces,omitempty"`
-}
-
-func decodeManifest(path, bundleRoot string) (Pack, error) {
-	return decodeManifestWithSourceValidation(path, bundleRoot, true)
-}
-
-// LoadPortableManifest exposes capability-pack's strict runtime decoder to
-// Packy-owned producers and validators so they cannot accept a weaker wire
-// contract than catalog discovery.
-func LoadPortableManifest(path, bundleRoot string) (Pack, error) {
-	return decodeManifestWithSourceValidation(path, bundleRoot, false)
-}
-
-// EncodePortableManifestV4 is the canonical producer seam for Manifest v4.
-// Its output is accepted by LoadPortableManifest without a weaker producer-only
-// interpretation of the contract.
-func EncodePortableManifestV4(pack Pack) ([]byte, error) {
-	if pack.Contract.OptionalModes != nil {
-		return nil, fmt.Errorf("contract.optional_modes is forbidden for schema_version 4")
-	}
-	if err := validatePackMetadataWithContract(pack, manifestSchemaV4, true); err != nil {
-		return nil, fmt.Errorf("invalid pack manifest: %w", err)
-	}
-	resources := make([]map[string]any, 0, len(pack.Resources))
-	for _, resource := range pack.Resources {
-		wire := map[string]any{
-			"kind": resource.Kind, "id": resource.ID, "requires": resource.Requires,
-			"bindings": resource.Bindings, "surface_exclusions": resource.SurfaceExclusions,
-			"provides_capabilities": resource.ProvidesCapabilities,
-			"requires_capabilities": resource.RequiresCapabilities,
-			"requires_tools":        resource.RequiresTools,
-			"capability_conflicts":  resource.CapabilityConflicts,
-		}
-		if resource.Kind != "notice" {
-			wire["conflicts"] = resource.Conflicts
-			wire["notices"] = resource.Notices
-		}
-		switch resource.Kind {
-		case "skill", "instruction", "asset":
-			wire["source"] = resource.Source
-		case "mcp_server":
-			wire["command"], wire["args"] = resource.Command, resource.Args
-		case "lifecycle":
-		case "agent":
-			wire["source"], wire["description"], wire["mode"] = resource.Source, resource.Description, resource.Mode
-			wire["tools"], wire["permissions"] = resource.Tools, resource.Permissions
-		case "command":
-			wire["source"], wire["arguments"] = resource.Source, resource.Arguments
-		case "notice":
-			wire["source"], wire["license"], wire["attribution"] = resource.Source, resource.License, resource.Attribution
-		default:
-			return nil, fmt.Errorf("unsupported resource kind %q", resource.Kind)
-		}
-		if resource.Kind == "skill" || resource.Kind == "agent" || resource.Kind == "command" {
-			wire["runtime_modes"] = resource.RuntimeModes
-		}
-		resources = append(resources, wire)
-	}
-	wire := struct {
-		SchemaVersion  int              `json:"schema_version"`
-		ID             string           `json:"id"`
-		Version        string           `json:"version"`
-		Surfaces       []Surface        `json:"surfaces"`
-		Provides       []string         `json:"provides"`
-		Requires       Requirements     `json:"requires"`
-		Conflicts      []string         `json:"conflicts"`
-		Resources      []map[string]any `json:"resources"`
-		RootMigrations []struct {
-			From string `json:"from"`
-			To   string `json:"to"`
-		} `json:"root_migrations"`
-		Contract struct {
-			Exclusions []Exclusion `json:"exclusions"`
-		} `json:"contract"`
-	}{
-		SchemaVersion: manifestSchemaV4,
-		ID:            pack.ID,
-		Version:       pack.Version,
-		Surfaces:      pack.Surfaces,
-		Provides:      pack.Provides,
-		Requires:      pack.Requires,
-		Conflicts:     pack.Conflicts,
-		Resources:     resources,
-		RootMigrations: make([]struct {
-			From string `json:"from"`
-			To   string `json:"to"`
-		}, 0, len(pack.RootMigrations)),
-	}
-	for _, migration := range pack.RootMigrations {
-		wire.RootMigrations = append(wire.RootMigrations, struct {
-			From string `json:"from"`
-			To   string `json:"to"`
-		}{From: migration.From.String(), To: migration.To.String()})
-	}
-	wire.Contract.Exclusions = pack.Contract.Exclusions
-	encoded, err := json.MarshalIndent(wire, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return append(encoded, '\n'), nil
-}
-
-func decodeManifestWithSourceValidation(path, bundleRoot string, validateSources bool) (Pack, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Pack{}, fmt.Errorf("read pack manifest %s: %w", path, err)
-	}
-	var raw manifest
-	if err := strictDecode(data, &raw); err != nil {
-		return Pack{}, fmt.Errorf("decode pack manifest %s: %w", path, err)
-	}
-	if (raw.SchemaVersion == manifestSchemaV3 || raw.SchemaVersion == manifestSchemaV4) && raw.Surfaces == nil {
-		return Pack{}, fmt.Errorf("invalid pack manifest %s: surfaces is a required non-null array for schema_version %d", path, raw.SchemaVersion)
-	}
-	if raw.SchemaVersion != manifestSchemaV3 && raw.SchemaVersion != manifestSchemaV4 && raw.Surfaces != nil {
-		return Pack{}, fmt.Errorf("invalid pack manifest %s: surfaces is forbidden before schema_version 3", path)
-	}
-	if raw.SchemaVersion == manifestSchemaV4 && raw.RootMigrations == nil {
-		return Pack{}, fmt.Errorf("invalid pack manifest %s: root_migrations is a required non-null array for schema_version 4", path)
-	}
-	if raw.SchemaVersion != manifestSchemaV4 && raw.RootMigrations != nil {
-		return Pack{}, fmt.Errorf("invalid pack manifest %s: root_migrations is forbidden before schema_version 4", path)
-	}
-	if raw.SchemaVersion == manifestSchemaV4 && raw.Contract != nil {
-		var wire struct {
-			Contract map[string]json.RawMessage `json:"contract"`
-		}
-		if err := json.Unmarshal(data, &wire); err != nil {
-			return Pack{}, err
-		}
-		if _, present := wire.Contract["optional_modes"]; present {
-			return Pack{}, fmt.Errorf("invalid pack manifest %s: contract.optional_modes is forbidden for schema_version 4", path)
-		}
-	}
-	pack := Pack{manifestVersion: raw.SchemaVersion, ID: raw.ID, Version: raw.Version, Provides: raw.Provides, Requires: raw.Requires, Conflicts: raw.Conflicts}
-	if raw.Surfaces != nil {
-		pack.Surfaces = append([]Surface(nil), (*raw.Surfaces)...)
-	}
-	for i, encoded := range raw.Resources {
-		resource, err := decodeResource(encoded, raw.SchemaVersion)
-		if err != nil {
-			return Pack{}, fmt.Errorf("pack %q resource %d: %w", raw.ID, i, err)
-		}
-		pack.Resources = append(pack.Resources, resource)
-	}
-	if raw.RootMigrations != nil {
-		pack.RootMigrations = make([]RootMigration, 0, len(*raw.RootMigrations))
-		for i, encoded := range *raw.RootMigrations {
-			from, fromErr := ParseResourceIdentity(encoded.From)
-			if fromErr != nil {
-				return Pack{}, fmt.Errorf("pack %q root migration %d from: %w", raw.ID, i, fromErr)
-			}
-			to, toErr := ParseResourceIdentity(encoded.To)
-			if toErr != nil {
-				return Pack{}, fmt.Errorf("pack %q root migration %d to: %w", raw.ID, i, toErr)
-			}
-			pack.RootMigrations = append(pack.RootMigrations, RootMigration{From: from, To: to})
-		}
-	}
-	if raw.Contract != nil {
-		pack.Contract = *raw.Contract
-	}
-	if err := validatePackMetadataWithContract(pack, raw.SchemaVersion, raw.Contract != nil); err != nil {
-		return Pack{}, fmt.Errorf("invalid pack manifest %s: %w", path, err)
-	}
-	if validateSources {
-		if err := validatePackSources(pack, bundleRoot); err != nil {
-			return Pack{}, fmt.Errorf("invalid pack manifest %s: %w", path, err)
-		}
-	}
-	return pack, nil
-}
-
-func strictDecode(data []byte, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("multiple JSON values")
-		}
-		return err
-	}
-	return nil
-}
-
-func decodeResource(data []byte, version int) (Resource, error) {
-	var discriminator struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(data, &discriminator); err != nil {
-		return Resource{}, err
-	}
-	if version == manifestSchemaV2 {
-		return decodeResourceV2(data, discriminator.Kind)
-	}
-	if version == manifestSchemaV3 {
-		return decodeResourceV3(data, discriminator.Kind)
-	}
-	if version == manifestSchemaV4 {
-		return decodeResourceV4(data, discriminator.Kind)
-	}
-	if version != manifestSchemaV1 {
-		return Resource{}, fmt.Errorf("schema_version must be %d, %d, %d, or %d", manifestSchemaV1, manifestSchemaV2, manifestSchemaV3, manifestSchemaV4)
-	}
-	switch discriminator.Kind {
-	case "skill", "instruction":
-		var raw struct{ Kind, ID, Source string }
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		return Resource{Kind: raw.Kind, ID: raw.ID, Source: raw.Source}, nil
-	case "mcp_server":
-		var raw struct {
-			Kind, ID, Command string
-			Args              []string
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		return Resource{Kind: raw.Kind, ID: raw.ID, Command: raw.Command, Args: raw.Args}, nil
-	case "lifecycle":
-		var raw struct{ Kind, ID string }
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		return Resource{Kind: raw.Kind, ID: raw.ID}, nil
-	default:
-		return Resource{}, fmt.Errorf("unsupported resource kind %q", discriminator.Kind)
-	}
-}
-
-func decodeResourceV4(data []byte, kind string) (Resource, error) {
-	if err := validateRuntimeModeWirePresence(data, kind == "skill" || kind == "agent" || kind == "command"); err != nil {
-		return Resource{}, err
-	}
-	if err := validateNoticeWirePresence(data, kind == "notice"); err != nil {
-		return Resource{}, err
-	}
-	if err := validateResourceConflictWirePresence(data, kind == "notice"); err != nil {
-		return Resource{}, err
-	}
-	type resourceWireV4 struct {
-		Kind                 string             `json:"kind"`
-		ID                   string             `json:"id"`
-		Requires             []string           `json:"requires"`
-		Conflicts            []string           `json:"conflicts"`
-		Bindings             []Binding          `json:"bindings"`
-		SurfaceExclusions    []SurfaceExclusion `json:"surface_exclusions"`
-		RuntimeModes         []RuntimeMode      `json:"runtime_modes"`
-		Notices              []string           `json:"notices"`
-		ProvidesCapabilities []string           `json:"provides_capabilities"`
-		RequiresCapabilities []string           `json:"requires_capabilities"`
-		RequiresTools        []string           `json:"requires_tools"`
-		CapabilityConflicts  []string           `json:"capability_conflicts"`
-	}
-	type sourced struct {
-		resourceWireV4
-		Source string `json:"source"`
-	}
-	toResource := func(raw resourceWireV4) Resource {
-		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Conflicts: raw.Conflicts, Notices: raw.Notices, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions, RuntimeModes: raw.RuntimeModes,
-			ProvidesCapabilities: raw.ProvidesCapabilities, RequiresCapabilities: raw.RequiresCapabilities, RequiresTools: raw.RequiresTools, CapabilityConflicts: raw.CapabilityConflicts}
-	}
-	switch kind {
-	case "skill", "instruction", "asset":
-		var raw sourced
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.resourceWireV4)
-		resource.Source = raw.Source
-		return resource, nil
-	case "mcp_server":
-		var raw struct {
-			resourceWireV4
-			Command string   `json:"command"`
-			Args    []string `json:"args"`
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.resourceWireV4)
-		resource.Command, resource.Args = raw.Command, raw.Args
-		return resource, nil
-	case "lifecycle":
-		var raw resourceWireV4
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		if err := validateTypedBindingWirePresence(data); err != nil {
-			return Resource{}, err
-		}
-		return toResource(raw), nil
-	case "agent":
-		var raw struct {
-			sourced
-			Description string   `json:"description"`
-			Mode        string   `json:"mode"`
-			Tools       []string `json:"tools"`
-			Permissions []string `json:"permissions"`
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		if err := validateTypedBindingWirePresence(data); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.resourceWireV4)
-		resource.Source, resource.Description, resource.Mode = raw.Source, raw.Description, raw.Mode
-		resource.Tools, resource.Permissions = raw.Tools, raw.Permissions
-		return resource, nil
-	case "command":
-		var raw struct {
-			sourced
-			Arguments CommandArguments `json:"arguments"`
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.resourceWireV4)
-		resource.Source, resource.Arguments = raw.Source, raw.Arguments
-		return resource, nil
-	case "notice":
-		var raw struct {
-			sourced
-			License     string `json:"license"`
-			Attribution string `json:"attribution"`
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.resourceWireV4)
-		resource.Source, resource.License, resource.Attribution = raw.Source, raw.License, raw.Attribution
-		return resource, nil
-	default:
-		return Resource{}, fmt.Errorf("unsupported resource kind %q", kind)
-	}
-}
-
-func validateResourceConflictWirePresence(data []byte, notice bool) error {
-	var wire map[string]json.RawMessage
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	value, present := wire["conflicts"]
-	if notice {
-		if present {
-			return fmt.Errorf("conflicts is forbidden for notice resources")
-		}
-		return nil
-	}
-	if !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-		return fmt.Errorf("conflicts is a required non-null array")
-	}
-	return nil
-}
-
-func validateNoticeWirePresence(data []byte, notice bool) error {
-	var wire map[string]json.RawMessage
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	value, present := wire["notices"]
-	if notice {
-		if present {
-			return fmt.Errorf("notices is forbidden for notice resources")
-		}
-		return nil
-	}
-	if !present || bytes.Equal(value, []byte("null")) {
-		return fmt.Errorf("notices is a required non-null array")
-	}
-	return nil
-}
-
-func validateRuntimeModeWirePresence(data []byte, executable bool) error {
-	var resource map[string]json.RawMessage
-	if err := json.Unmarshal(data, &resource); err != nil {
-		return err
-	}
-	encoded, present := resource["runtime_modes"]
-	if executable && (!present || bytes.Equal(bytes.TrimSpace(encoded), []byte("null"))) {
-		return fmt.Errorf("runtime_modes is a required non-null array for executable resources")
-	}
-	if !executable && present {
-		return fmt.Errorf("runtime_modes is forbidden for non-executable resources")
-	}
-	if !present {
-		return nil
-	}
-	var modes []struct {
-		Requirements []map[string]json.RawMessage `json:"requirements"`
-		Fallback     map[string]json.RawMessage   `json:"fallback"`
-	}
-	if err := json.Unmarshal(encoded, &modes); err != nil {
-		return err
-	}
-	for _, mode := range modes {
-		var fallbackKind string
-		if err := json.Unmarshal(mode.Fallback["kind"], &fallbackKind); err != nil {
-			return err
-		}
-		_, hasMode := mode.Fallback["mode"]
-		if fallbackKind == "none" && hasMode {
-			return fmt.Errorf("fallback none forbids mode")
-		}
-		if fallbackKind == "mode" && !hasMode {
-			return fmt.Errorf("fallback mode requires mode")
-		}
-		for _, requirement := range mode.Requirements {
-			var kind string
-			if err := json.Unmarshal(requirement["kind"], &kind); err != nil {
-				return err
-			}
-			if encodedVersion, hasVersion := requirement["version"]; hasVersion {
-				if kind != "tool" {
-					return fmt.Errorf("requirement kind %q forbids version", kind)
-				}
-				var version string
-				if err := json.Unmarshal(encodedVersion, &version); err != nil || version == "" {
-					return fmt.Errorf("tool requirement version must be a non-null normalized SemVer predicate when present")
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func decodeResourceV3(data []byte, kind string) (Resource, error) {
-	type outcomes struct {
-		Kind              string             `json:"kind"`
-		ID                string             `json:"id"`
-		Requires          []string           `json:"requires"`
-		Bindings          []Binding          `json:"bindings"`
-		SurfaceExclusions []SurfaceExclusion `json:"surface_exclusions"`
-	}
-	type sourced struct {
-		outcomes
-		Source string `json:"source"`
-	}
-	toResource := func(raw outcomes) Resource {
-		return Resource{Kind: raw.Kind, ID: raw.ID, Requires: raw.Requires, Bindings: raw.Bindings, SurfaceExclusions: raw.SurfaceExclusions}
-	}
-	switch kind {
-	case "skill", "instruction", "asset":
-		var raw sourced
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.outcomes)
-		resource.Source = raw.Source
-		return resource, nil
-	case "mcp_server":
-		var raw struct {
-			outcomes
-			Command string   `json:"command"`
-			Args    []string `json:"args"`
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.outcomes)
-		resource.Command, resource.Args = raw.Command, raw.Args
-		return resource, nil
-	case "lifecycle":
-		var raw outcomes
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		if err := validateTypedBindingWirePresence(data); err != nil {
-			return Resource{}, err
-		}
-		return toResource(raw), nil
-	case "agent":
-		var raw struct {
-			sourced
-			Description string   `json:"description"`
-			Mode        string   `json:"mode"`
-			Tools       []string `json:"tools"`
-			Permissions []string `json:"permissions"`
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		if err := validateTypedBindingWirePresence(data); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.outcomes)
-		resource.Source, resource.Description, resource.Mode = raw.Source, raw.Description, raw.Mode
-		resource.Tools, resource.Permissions = raw.Tools, raw.Permissions
-		return resource, nil
-	case "command":
-		var raw struct {
-			sourced
-			Arguments CommandArguments `json:"arguments"`
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.outcomes)
-		resource.Source, resource.Arguments = raw.Source, raw.Arguments
-		return resource, nil
-	case "notice":
-		var raw struct {
-			sourced
-			License     string `json:"license"`
-			Attribution string `json:"attribution"`
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		resource := toResource(raw.outcomes)
-		resource.Source, resource.License, resource.Attribution = raw.Source, raw.License, raw.Attribution
-		return resource, nil
-	default:
-		return Resource{}, fmt.Errorf("unsupported resource kind %q", kind)
-	}
-}
-
-func validateTypedBindingWirePresence(data []byte) error {
-	var resource struct {
-		Bindings []map[string]json.RawMessage `json:"bindings"`
-	}
-	if err := json.Unmarshal(data, &resource); err != nil {
-		return err
-	}
-	for _, binding := range resource.Bindings {
-		hookData, ok := binding["hook"]
-		if !ok {
-			continue
-		}
-		var hook map[string]json.RawMessage
-		if err := json.Unmarshal(hookData, &hook); err != nil {
-			return err
-		}
-		for _, field := range []string{"matcher", "blocking"} {
-			if _, ok := hook[field]; !ok {
-				return fmt.Errorf("hook %s is required", field)
-			}
-		}
-	}
-	return nil
-}
-
-func decodeResourceV2(data []byte, kind string) (Resource, error) {
-	type sourceResource struct {
-		Kind     string    `json:"kind"`
-		ID       string    `json:"id"`
-		Source   string    `json:"source"`
-		Requires []string  `json:"requires"`
-		Bindings []Binding `json:"bindings"`
-	}
-	if kind == "skill" || kind == "agent" || kind == "command" {
-		if err := validateBindingWirePresence(data); err != nil {
-			return Resource{}, err
-		}
-	}
-	switch kind {
-	case "skill":
-		var raw sourceResource
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		return Resource{Kind: raw.Kind, ID: raw.ID, Source: raw.Source, Requires: raw.Requires, Bindings: raw.Bindings}, nil
-	case "agent":
-		var raw struct {
-			Kind, ID, Source, Description, Mode string
-			Tools, Permissions, Requires        []string
-			Bindings                            []Binding
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		return Resource{Kind: raw.Kind, ID: raw.ID, Source: raw.Source, Description: raw.Description, Mode: raw.Mode, Tools: raw.Tools, Permissions: raw.Permissions, Requires: raw.Requires, Bindings: raw.Bindings}, nil
-	case "command":
-		var raw struct {
-			Kind, ID, Source string
-			Arguments        CommandArguments
-			Requires         []string
-			Bindings         []Binding
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		var wire struct {
-			Arguments map[string]json.RawMessage `json:"arguments"`
-		}
-		if err := json.Unmarshal(data, &wire); err != nil {
-			return Resource{}, err
-		}
-		if raw.Arguments.Mode == "none" {
-			if _, present := wire.Arguments["placeholder"]; present {
-				return Resource{}, fmt.Errorf("none arguments forbid placeholder")
-			}
-		}
-		return Resource{Kind: raw.Kind, ID: raw.ID, Source: raw.Source, Arguments: raw.Arguments, Requires: raw.Requires, Bindings: raw.Bindings}, nil
-	case "asset":
-		var raw struct {
-			Kind, ID, Source string
-			Requires         []string
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		return Resource{Kind: raw.Kind, ID: raw.ID, Source: raw.Source, Requires: raw.Requires}, nil
-	case "notice":
-		var raw struct {
-			Kind, ID, Source, License, Attribution string
-			Requires                               []string
-		}
-		if err := strictDecode(data, &raw); err != nil {
-			return Resource{}, err
-		}
-		return Resource{Kind: raw.Kind, ID: raw.ID, Source: raw.Source, License: raw.License, Attribution: raw.Attribution, Requires: raw.Requires}, nil
-	default:
-		return Resource{}, fmt.Errorf("unsupported resource kind %q", kind)
-	}
-}
-
-func validateBindingWirePresence(data []byte) error {
-	var resource struct {
-		Bindings []json.RawMessage `json:"bindings"`
-	}
-	if err := json.Unmarshal(data, &resource); err != nil {
-		return err
-	}
-	for _, data := range resource.Bindings {
-		var binding map[string]json.RawMessage
-		if err := json.Unmarshal(data, &binding); err != nil {
-			return err
-		}
-		if _, present := binding["agent_authority"]; present {
-			return fmt.Errorf("agent_authority is forbidden before schema_version 3")
-		}
-		if _, present := binding["hook"]; present {
-			return fmt.Errorf("hook is forbidden before schema_version 3")
-		}
-		var mode string
-		if err := json.Unmarshal(binding["mode"], &mode); err != nil {
-			return err
-		}
-		if mode == "native" {
-			if _, present := binding["degradation"]; present {
-				return fmt.Errorf("degradation is forbidden when mode is native")
-			}
-		}
-	}
-	return nil
-}
-
-func validatePack(pack Pack, version int, bundleRoot string) error {
-	if err := validatePackMetadata(pack, version); err != nil {
-		return err
-	}
-	return validatePackSources(pack, bundleRoot)
-}
-
-func validatePackMetadata(pack Pack, version int) error {
-	return validatePackMetadataWithContract(pack, version, version == manifestSchemaV2)
-}
-
-func validatePackMetadataWithContract(pack Pack, version int, contractPresent bool) error {
-	if version != manifestSchemaV1 && version != manifestSchemaV2 && version != manifestSchemaV3 && version != manifestSchemaV4 {
-		return fmt.Errorf("schema_version must be %d, %d, %d, or %d", manifestSchemaV1, manifestSchemaV2, manifestSchemaV3, manifestSchemaV4)
-	}
-	if (version == manifestSchemaV2 || version == manifestSchemaV3 || version == manifestSchemaV4) && !contractPresent {
-		return fmt.Errorf("contract is required for schema_version %d", version)
-	}
-	if version == manifestSchemaV1 && contractPresent {
-		return fmt.Errorf("contract is forbidden for schema_version 1")
-	}
-	if version == manifestSchemaV3 || version == manifestSchemaV4 {
-		if err := validateV3Surfaces(pack.Surfaces); err != nil {
-			return err
-		}
-	}
-	if !idPattern.MatchString(pack.ID) {
-		return fmt.Errorf("id %q must be lowercase kebab-case", pack.ID)
-	}
-	if !validSemver(pack.Version) {
-		return fmt.Errorf("version %q must be SemVer", pack.Version)
-	}
-	if pack.Provides == nil || pack.Requires.Capabilities == nil || pack.Requires.Tools == nil || pack.Conflicts == nil || pack.Resources == nil {
-		return fmt.Errorf("provides, requires.capabilities, requires.tools, conflicts, and resources are required arrays")
-	}
-	seenCapabilities := map[string]string{}
-	for _, group := range []struct {
-		name   string
-		values []string
-	}{{"provides", pack.Provides}, {"requires.capabilities", pack.Requires.Capabilities}, {"conflicts", pack.Conflicts}} {
-		for _, capability := range group.values {
-			if err := validateCapability(capability); err != nil {
-				return fmt.Errorf("%s: %w", group.name, err)
-			}
-			if previous, ok := seenCapabilities[capability]; ok {
-				return fmt.Errorf("capability %q appears in both %s and %s", capability, previous, group.name)
-			}
-			seenCapabilities[capability] = group.name
-		}
-	}
-	seenTools := map[string]bool{}
-	for _, tool := range pack.Requires.Tools {
-		if !idPattern.MatchString(tool) {
-			return fmt.Errorf("required tool %q must be lowercase kebab-case", tool)
-		}
-		if seenTools[tool] {
-			return fmt.Errorf("duplicate required tool %q", tool)
-		}
-		seenTools[tool] = true
-	}
-	seenResources := map[string]bool{}
-	identities := make([]string, 0, len(pack.Resources))
-	if version == manifestSchemaV4 && (len(pack.Provides) != 0 || len(pack.Requires.Capabilities) != 0 || len(pack.Requires.Tools) != 0 || len(pack.Conflicts) != 0) {
-		return fmt.Errorf("schema_version 4 resource capability contracts cannot be combined with Pack-level provides, requires, or conflicts")
-	}
-	for _, resource := range pack.Resources {
-		if !idPattern.MatchString(resource.ID) {
-			return fmt.Errorf("resource id %q must be lowercase kebab-case", resource.ID)
-		}
-		identity := resource.Kind + ":" + resource.ID
-		if seenResources[identity] {
-			return fmt.Errorf("duplicate resource %q", identity)
-		}
-		seenResources[identity] = true
-		identities = append(identities, identity)
-		if _, duplicate := seenCapabilities[identity]; duplicate {
-			return fmt.Errorf("resource capability %q must not be declared at top level", identity)
-		}
-		if version == manifestSchemaV2 || version == manifestSchemaV3 || version == manifestSchemaV4 {
-			if version == manifestSchemaV3 || version == manifestSchemaV4 {
-				if err := validateResourceV3(resource, pack.Surfaces, pack.Contract.OptionalModes); err != nil {
-					return fmt.Errorf("resource %q: %w", identity, err)
-				}
-				if version == manifestSchemaV4 {
-					if resource.ProvidesCapabilities == nil || resource.RequiresCapabilities == nil || resource.RequiresTools == nil || resource.CapabilityConflicts == nil {
-						return fmt.Errorf("resource %q: provides_capabilities, requires_capabilities, requires_tools, and capability_conflicts are required non-null arrays", identity)
-					}
-					seenResourceCapabilities := map[string]string{}
-					for _, group := range []struct {
-						name   string
-						values []string
-					}{
-						{"provides_capabilities", resource.ProvidesCapabilities},
-						{"requires_capabilities", resource.RequiresCapabilities},
-						{"capability_conflicts", resource.CapabilityConflicts},
-					} {
-						if !sortedPortableSet(group.values, validCapabilityIdentity) {
-							return fmt.Errorf("resource %q: %s must be a sorted set of canonical capability identities", identity, group.name)
-						}
-						for _, capability := range group.values {
-							if previous, ok := seenResourceCapabilities[capability]; ok {
-								return fmt.Errorf("resource %q: capability %q appears in both %s and %s", identity, capability, previous, group.name)
-							}
-							seenResourceCapabilities[capability] = group.name
-						}
-					}
-					if !sortedPortableSet(resource.RequiresTools, idPattern.MatchString) {
-						return fmt.Errorf("resource %q: requires_tools must be a sorted set of lowercase kebab-case tool identities", identity)
-					}
-					if resource.Kind == "notice" && (len(resource.ProvidesCapabilities) != 0 || len(resource.RequiresCapabilities) != 0 || len(resource.RequiresTools) != 0 || len(resource.CapabilityConflicts) != 0) {
-						return fmt.Errorf("resource %q: notice capability and tool arrays must be empty", identity)
-					}
-					if resource.Kind == "asset" && len(resource.ProvidesCapabilities) != 0 {
-						return fmt.Errorf("resource %q: non-rootable asset cannot provide capabilities", identity)
-					}
-					if err := validateRuntimeModes(resource); err != nil {
-						return fmt.Errorf("resource %q: %w", identity, err)
-					}
-					if resource.Kind == "notice" {
-						if resource.Conflicts != nil {
-							return fmt.Errorf("resource %q: conflicts is forbidden for notice resources", identity)
-						}
-						if resource.Notices != nil {
-							return fmt.Errorf("resource %q: notices is forbidden for notice resources", identity)
-						}
-					} else {
-						if resource.Conflicts == nil {
-							return fmt.Errorf("resource %q: conflicts is a required non-null array", identity)
-						}
-						if !sort.StringsAreSorted(resource.Conflicts) || hasDuplicateStrings(resource.Conflicts) {
-							return fmt.Errorf("resource %q: conflicts must be a sorted set of canonical resource identities", identity)
-						}
-						for _, conflict := range resource.Conflicts {
-							if _, err := ParseResourceIdentity(conflict); err != nil {
-								return fmt.Errorf("resource %q: conflict identity %q must be canonical", identity, conflict)
-							}
-						}
-						if resource.Notices == nil {
-							return fmt.Errorf("resource %q: notices is a required non-null array", identity)
-						}
-						if !sort.StringsAreSorted(resource.Notices) || hasDuplicateStrings(resource.Notices) {
-							return fmt.Errorf("resource %q: notices must be a sorted set of canonical notice identities", identity)
-						}
-						for _, notice := range resource.Notices {
-							parsed, err := ParseResourceIdentity(notice)
-							if err != nil || parsed.Kind != "notice" {
-								return fmt.Errorf("resource %q: notices identity %q must be canonical notice:<id>", identity, notice)
-							}
-						}
-					}
-				}
-				continue
-			}
-			if err := validateResourceV2(resource); err != nil {
-				return fmt.Errorf("resource %q: %w", identity, err)
-			}
-			continue
-		}
-		switch resource.Kind {
-		case "skill", "instruction":
-			if err := validateSourcePath(resource.Source); err != nil {
-				return fmt.Errorf("resource %q source: %w", identity, err)
-			}
-		case "mcp_server":
-			if strings.TrimSpace(resource.Command) == "" {
-				return fmt.Errorf("resource %q command is required", identity)
-			}
-			if resource.Args == nil {
-				return fmt.Errorf("resource %q args is required", identity)
-			}
-		case "lifecycle":
-		default:
-			return fmt.Errorf("unsupported resource kind %q", resource.Kind)
-		}
-	}
-	if version == manifestSchemaV2 || version == manifestSchemaV3 || version == manifestSchemaV4 {
-		if !sortedPortableSet(pack.Provides, validCapabilityIdentity) || !sortedPortableSet(pack.Requires.Capabilities, validCapabilityIdentity) || !sortedPortableSet(pack.Requires.Tools, idPattern.MatchString) || !sortedPortableSet(pack.Conflicts, validCapabilityIdentity) {
-			return fmt.Errorf("provides, requires, and conflicts arrays must be sorted sets")
-		}
-		if !sort.StringsAreSorted(identities) {
-			return fmt.Errorf("resources must be sorted by kind and id")
-		}
-		if err := validateDependencies(pack.Resources, seenResources, version); err != nil {
-			return err
-		}
-		if version == manifestSchemaV4 {
-			if pack.RootMigrations == nil {
-				return fmt.Errorf("root_migrations is a required non-null array")
-			}
-			if err := validateRootMigrations(pack); err != nil {
-				return err
-			}
-			if err := validateResourceConflicts(pack.Resources, seenResources); err != nil {
-				return err
-			}
-			for _, resource := range pack.Resources {
-				identity := resource.Kind + ":" + resource.ID
-				for _, notice := range resource.Notices {
-					if !seenResources[notice] {
-						return fmt.Errorf("resource %q notice %q does not exist", identity, notice)
-					}
-				}
-			}
-		}
-		contract := pack.Contract
-		if version == manifestSchemaV4 {
-			if contract.Exclusions == nil {
-				return fmt.Errorf("contract exclusions is a required non-null array")
-			}
-			contract.OptionalModes = []OptionalMode{}
-		}
-		if err := validateContract(contract, pack.Resources); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateRootMigrations(pack Pack) error {
-	resources := make(map[string]Resource, len(pack.Resources))
-	for _, resource := range pack.Resources {
-		resources[(ResourceIdentity{Kind: resource.Kind, ID: resource.ID}).String()] = resource
-	}
-	sources, targets := map[string]bool{}, map[string]bool{}
-	previous := ""
-	for _, migration := range pack.RootMigrations {
-		from, to := migration.From.String(), migration.To.String()
-		if _, err := ParseResourceIdentity(from); err != nil {
-			return fmt.Errorf("root migration from %q is not canonical", from)
-		}
-		if _, err := ParseResourceIdentity(to); err != nil {
-			return fmt.Errorf("root migration to %q is not canonical", to)
-		}
-		if migration.From.Kind == "asset" || migration.From.Kind == "notice" ||
-			migration.To.Kind == "asset" || migration.To.Kind == "notice" {
-			return fmt.Errorf("root migration %q to %q must use operational root identities", from, to)
-		}
-		if from == to {
-			return fmt.Errorf("root migration %q must change identity", from)
-		}
-		if _, exists := resources[from]; exists {
-			return fmt.Errorf("root migration source %q must be absent from target resources", from)
-		}
-		target, exists := resources[to]
-		if !exists {
-			return fmt.Errorf("root migration target %q does not exist in target resources", to)
-		}
-		if target.Kind == "asset" || target.Kind == "notice" {
-			return fmt.Errorf("root migration target %q is not an operational root", to)
-		}
-		if sources[from] {
-			return fmt.Errorf("duplicate root migration source %q", from)
-		}
-		if targets[to] {
-			return fmt.Errorf("duplicate root migration target %q", to)
-		}
-		key := from + "\x00" + to
-		if previous != "" && previous >= key {
-			return fmt.Errorf("root_migrations must be sorted by from then to")
-		}
-		if targets[from] || sources[to] {
-			return fmt.Errorf("root migration chains and cycles are forbidden between %q and %q", from, to)
-		}
-		sources[from], targets[to], previous = true, true, key
-	}
-	return nil
+func catalogDetail(pack Pack) CatalogDetail {
+	return CatalogDetail{Pack: clonePack(pack)}
 }
 
 func validateV3Surfaces(surfaces []Surface) error {

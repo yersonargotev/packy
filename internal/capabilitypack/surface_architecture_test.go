@@ -60,7 +60,6 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 	inspectionImplementations := 0
 	applicationImplementations := 0
 	directInspections := 0
-	fingerprintRemovalSlots := 0
 	for _, source := range sources {
 		for _, forbidden := range obsolete {
 			if strings.Contains(source.text, forbidden) {
@@ -102,10 +101,9 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 		}
 		directInspections += count
 		removalSlots := strings.Count(source.text, "Removal"+"Candidates")
-		if removalSlots > 0 && source.path != "../capabilitypack/activation.go" {
+		if removalSlots > 0 {
 			t.Fatalf("%s reintroduced a removal-candidate side channel", source.path)
 		}
-		fingerprintRemovalSlots += removalSlots
 	}
 	if concreteAdapters != 3 {
 		t.Fatalf("found %d concrete production surface adapters, want Codex, OpenCode, and Claude Code only", concreteAdapters)
@@ -115,8 +113,5 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 	}
 	if directInspections != 1 {
 		t.Fatalf("found %d direct production InspectSurface calls, want the private gateway only", directInspections)
-	}
-	if fingerprintRemovalSlots != 1 {
-		t.Fatalf("found %d removal-candidate names, want only the fixed legacy fingerprint JSON key", fingerprintRemovalSlots)
 	}
 }

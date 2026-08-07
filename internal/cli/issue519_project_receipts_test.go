@@ -268,33 +268,6 @@ func TestIssue519DriftedNoticeBlocksReceiptRemoval(t *testing.T) {
 	}
 }
 
-func TestIssue519MultiSurfaceNoticeReceiptMatchesPublishedContribution(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, _, _ := packActivationOptions(t, terminal)
-	project := t.TempDir()
-	writeTestGitWorktree(t, project)
-	opts.Getwd = func() (string, error) { return project, nil }
-
-	commands := [][]string{
-		{"pack", "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"},
-		{"pack", "install", "addy", "--surface", "opencode"},
-	}
-	for _, args := range commands {
-		if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
-			t.Fatalf("%v: %v\n%s", args, err, out)
-		}
-	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "addy", "--surface", "codex", "--project", "--require", "installed"); err != nil {
-		t.Fatalf("multi-surface notice status: %v\n%s", err, out)
-	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "addy", "--surface", "codex"); err != nil {
-		t.Fatalf("remove first surface with shared notice: %v\n%s", err, out)
-	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "addy", "--surface", "opencode"); err != nil {
-		t.Fatalf("remove final surface with shared notice: %v\n%s", err, out)
-	}
-}
-
 func projectReceiptJSON(t *testing.T, data []byte, packID string) string {
 	t.Helper()
 	var document struct {

@@ -106,7 +106,7 @@ func TestCodexProjectInspectionBuildsComposableMCPDefinition(t *testing.T) {
 				{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "engram"}, Detail: "project-trust"},
 			},
 			Bindings:    []capabilitypack.LifecycleBinding{{Surface: capabilitypack.SurfaceCodex, Kind: "mcp_server", ID: "engram", Projection: "mcp_server", Name: "engram"}},
-			Projections: []capabilitypack.ProjectProjectionPlan{{Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "engram"}, Target: ".codex/config.toml", Mode: "merge_marked_file", DesiredFingerprint: projection.DesiredFingerprint, Contributor: "surface:codex:pack:engram", Command: executable}},
+			Projections: []capabilitypack.ProjectProjectionPlan{{Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "engram"}, Target: ".codex/config.toml", Mode: "merge_marked_file", DesiredFingerprint: projection.DesiredFingerprint, OwnerPack: "engram", Surface: capabilitypack.SurfaceCodex, Command: executable}},
 		},
 	}
 	locked, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionPresent})

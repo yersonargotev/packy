@@ -104,7 +104,6 @@
         "intent",
         "lifecycle_state",
         "activation_role",
-        "consumers",
         "update_available",
         "projection_summary",
         "projection_details",
@@ -137,8 +136,7 @@
             "state",
             "active",
             "revision",
-            "selection",
-            "provider_choices"
+            "selection"
           ],
           "properties": {
             "state": {
@@ -164,13 +162,6 @@
             },
             "selection": {
               "$ref": "#/$defs/selection"
-            },
-            "provider_choices": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/provider_choice"
-              },
-              "uniqueItems": true
             }
           },
           "additionalProperties": false
@@ -179,8 +170,7 @@
           "enum": [
             "active",
             "inactive-clean",
-            "inactive-with-residuals",
-            "recovery-required"
+            "inactive-with-residuals"
           ]
         },
         "update_available": {
@@ -224,10 +214,7 @@
               "owner",
               "health",
               "observed_fingerprint",
-              "desired_fingerprint",
-              "contributors",
-              "shared",
-              "discoverable_by"
+              "desired_fingerprint"
             ],
             "properties": {
               "id": {
@@ -255,27 +242,6 @@
                 "type": "string"
               },
               "desired_fingerprint": {
-                "type": "string"
-              },
-              "contributors": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^(?:surface:(?:codex|opencode|claude):)?pack:[a-z0-9][a-z0-9._-]*:[a-z_]+:[a-z0-9][a-z0-9._-]*$"
-                },
-                "uniqueItems": true
-              },
-              "shared": {
-                "type": "boolean"
-              },
-              "discoverable_by": {
-                "type": ["array", "null"],
-                "items": {
-                  "enum": ["codex", "opencode", "claude"]
-                },
-                "uniqueItems": true
-              },
-              "discovery_notice": {
                 "type": "string"
               }
             },
@@ -387,13 +353,6 @@
             "required",
             "explicit-required"
           ]
-        },
-        "consumers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/capability_consumer"
-          },
-          "uniqueItems": true
         }
       },
       "additionalProperties": false
@@ -535,56 +494,6 @@
           "items": {
             "type": "string"
           }
-        }
-      },
-      "additionalProperties": false
-    },
-    "provider_choice": {
-      "type": "object",
-      "required": [
-        "capability",
-        "provider_pack"
-      ],
-      "properties": {
-        "capability": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider_pack": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider_resource": {
-          "$ref": "#/$defs/resource_identity"
-        }
-      },
-      "additionalProperties": false
-    },
-    "capability_consumer": {
-      "type": "object",
-      "required": [
-        "consumer_pack",
-        "consumer_resource",
-        "capability"
-      ],
-      "properties": {
-        "consumer_pack": {
-          "type": "string",
-          "minLength": 1
-        },
-        "consumer_resource": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/resource_identity"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "capability": {
-          "type": "string",
-          "minLength": 1
         }
       },
       "additionalProperties": false

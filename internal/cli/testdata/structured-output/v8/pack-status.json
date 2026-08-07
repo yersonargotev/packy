@@ -19,8 +19,7 @@
               "id": "ask-matt"
             }
           ]
-        },
-        "provider_choices": []
+        }
       },
       "update_available": false,
       "projection_summary": {
@@ -37,12 +36,7 @@
           "owner": "example-pack",
           "health": "verified",
           "observed_fingerprint": "sha256:example",
-          "desired_fingerprint": "sha256:example",
-          "contributors": [
-            "pack:example-pack:skill:ask-matt"
-          ],
-          "shared": false,
-          "discoverable_by": null
+          "desired_fingerprint": "sha256:example"
         }
       ],
       "contract": {
@@ -174,7 +168,6 @@
         }
       ],
       "activation_role": "explicit",
-      "consumers": [],
       "lifecycle_state": "active"
     }
   ],

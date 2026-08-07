@@ -297,7 +297,7 @@ func TestPortableOpenCodeResourcesUseNativeBindingsAndConsumerAssets(t *testing.
 	}
 	owners := make([]capabilitypack.ProjectionOwnership, 0, len(inspection.Projections))
 	for _, projection := range inspection.Projections {
-		owners = append(owners, capabilitypack.ProjectionOwnership{ID: projection.ID, Fingerprint: projection.DesiredFingerprint, Contributors: []string{pack.ID}})
+		owners = append(owners, capabilitypack.ProjectionOwnership{ID: projection.ID, Fingerprint: projection.DesiredFingerprint, PackID: pack.ID, Surface: capabilitypack.SurfaceOpenCode})
 	}
 	verified, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, CurrentOwnership: owners})
 	if err != nil {
@@ -340,7 +340,7 @@ func TestPortableOpenCodeResidualRemovalPreservesDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := NewSurfaceAdapter(root, filepath.Join(root, "skills"), filepath.Join(root, "opencode", "opencode.json"), filepath.Join(root, "prompt.md"))
-	owner := capabilitypack.ProjectionOwnership{ID: "command:owned", Fingerprint: "recorded-before-drift", Contributors: []string{"portable"}}
+	owner := capabilitypack.ProjectionOwnership{ID: "command:owned", Fingerprint: "recorded-before-drift", PackID: "portable", Surface: capabilitypack.SurfaceOpenCode}
 	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "desired"}, ResidualOwnership: []capabilitypack.ProjectionOwnership{owner}})
 	if err != nil {
 		t.Fatal(err)
@@ -602,7 +602,7 @@ func TestOwnershipResidualInspectionDiscoversObsoleteOwnedOpenCodeProjectionsAnd
 	}
 	owners := make([]capabilitypack.ProjectionOwnership, 0, len(verified.Projections))
 	for _, projection := range verified.Projections {
-		owners = append(owners, capabilitypack.ProjectionOwnership{ID: projection.ID, Fingerprint: projection.ObservedFingerprint, Contributors: []string{"app"}})
+		owners = append(owners, capabilitypack.ProjectionOwnership{ID: projection.ID, Fingerprint: projection.ObservedFingerprint, PackID: "app", Surface: capabilitypack.SurfaceOpenCode})
 	}
 	reconcile, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "desired"}, ResidualOwnership: owners, ResolvedExecutables: nil})
 	if err != nil {

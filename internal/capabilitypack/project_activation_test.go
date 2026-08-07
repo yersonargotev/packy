@@ -77,8 +77,8 @@ func TestProjectActivationIdentityIsSurfaceScoped(t *testing.T) {
 			{Surface: SurfaceOpenCode, Kind: resource.Kind, ID: resource.ID, Projection: "mcp_server"},
 		},
 		Projections: []ProjectProjectionPlan{
-			{Resource: resource, Target: ".codex/config.toml", Contributor: "surface:codex:pack:pack", Command: "codex-command"},
-			{Resource: resource, Target: "opencode.json", Contributor: "surface:opencode:pack:pack", Command: "opencode-command"},
+			{Resource: resource, Target: ".codex/config.toml", OwnerPack: "pack", Surface: SurfaceCodex, Command: "codex-command"},
+			{Resource: resource, Target: "opencode.json", OwnerPack: "pack", Surface: SurfaceOpenCode, Command: "opencode-command"},
 		},
 	}
 	categories := projectActivationCategories(lock, SurfaceCodex)
@@ -107,7 +107,7 @@ func TestProjectActivationDocumentsAreSurfaceScoped(t *testing.T) {
 	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode, SurfaceClaude} {
 		receipt := []projectActivationReceipt{{Category: ProjectActivationMCP, Digest: "approved", Details: []ProjectSensitiveDisclosure{{Category: ProjectActivationMCP, Surface: surface, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "command:memory"}}}}
 		state := projectActivationState{SchemaVersion: projectActivationDocumentSchemaVersion, PackID: "pack", Version: "1.0.0", Surface: surface, ProjectRootDigest: rootDigest, SensitiveLockIdentity: "lock-" + string(surface)}
-		if err := saveProjectActivationRecords(home, root, state, approval, receipt, nil, "clean"); err != nil {
+		if err := saveProjectActivationRecords(home, root, state, approval, receipt, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

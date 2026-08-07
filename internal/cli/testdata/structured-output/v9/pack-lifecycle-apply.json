@@ -45,7 +45,6 @@
       }
     },
     "aliases": [],
-    "contributors": {},
     "blockers": [],
     "phases": [
       {
@@ -79,8 +78,6 @@
     "pending_evidence": [
       "supply explicit runtime loading evidence"
     ],
-    "capability_requirements": [],
-    "recovery": true,
     "mandatory_actions": [
       {
         "id": "skill:example",
@@ -97,10 +94,6 @@
       "removed": [],
       "retained": []
     },
-    "migrations": [],
-    "retained_projections": [],
-    "shared_projections": [],
-    "removed_contributors": {},
     "dry_run": true,
     "selection": {
       "mode": "custom",
@@ -114,39 +107,7 @@
     "resource_graph": {
       "resources": []
     },
-    "provider_choices": [],
-    "sensitive_effects": [],
-    "recovery_guidance": {
-      "originating_operation": "reconcile",
-      "affected_resources": [
-        {
-          "pack": "example-pack",
-          "resource": {
-            "kind": "skill",
-            "id": "example"
-          }
-        }
-      ],
-      "consumers": [
-        {
-          "pack": "consumer-pack",
-          "resource": {
-            "kind": "instruction",
-            "id": "root"
-          },
-          "capability": "cap:example"
-        }
-      ],
-      "completed": [
-        "skill:example"
-      ],
-      "failed_action": "instruction:example",
-      "failure_detail": "write failed",
-      "not_started": [
-        "verify-after-external"
-      ],
-      "next_command": "packy pack reconcile example-pack --surface codex"
-    }
+    "sensitive_effects": []
   },
   "verified": true,
   "projections": 1,

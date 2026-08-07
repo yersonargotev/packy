@@ -11,7 +11,23 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/codex"
 )
+
+func projectInstallFixture(t *testing.T) (capabilitypack.Facade, capabilitypack.SurfaceAdapter, string, string) {
+	t.Helper()
+	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := capabilitypack.DiscoverForDurableIntents(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	adapter := codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(t.TempDir(), "global-skills"), filepath.Join(t.TempDir(), "global-AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
+	return capabilitypack.NewFacade(catalog), adapter, project, filepath.Join(t.TempDir(), ".packy")
+}
 
 func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) {
 	facade, adapter, project, packyHome := projectInstallFixture(t)
@@ -113,29 +129,10 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err := os.WriteFile(statePath, state, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	declarativeLock := lock
-	for i := range declarativeLock.Receipts[0].Projections {
-		if declarativeLock.Receipts[0].Projections[i].ID != "skill:ask-matt" {
-			declarativeLock.Receipts[0].Projections[i].Command = "declarative-only-metadata-change"
-			break
-		}
+	if len(lock.Receipts[0].Sensitive) == 0 {
+		t.Fatal("installed receipt has no sensitive disclosure to change")
 	}
-	declarativeData, err := json.MarshalIndent(declarativeLock, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(lockPath, append(declarativeData, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	status, err = capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: packyHome, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}})
-	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeActive {
-		t.Fatalf("purely declarative lock change fabricated renewed consent: %+v, %v", status, err)
-	}
-	for i := range lock.Receipts[0].Projections {
-		if lock.Receipts[0].Projections[i].ID == "skill:ask-matt" {
-			lock.Receipts[0].Projections[i].Command = "changed-sensitive-command"
-		}
-	}
+	lock.Receipts[0].Sensitive[0].Detail += "-changed"
 	changedLock, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -155,10 +152,13 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{`"approvals"`, `"receipts"`, `"effects"`, `"sensitive_lock_identity"`, `"recovery"`} {
+	for _, field := range []string{`"approvals"`, `"receipts"`, `"effects"`, `"sensitive_lock_identity"`} {
 		if !strings.Contains(string(state), field) {
 			t.Fatalf("personal state omitted %s: %s", field, state)
 		}
+	}
+	if strings.Contains(string(state), `"recovery"`) {
+		t.Fatalf("personal state persisted retired recovery data: %s", state)
 	}
 	if strings.Contains(string(state), "TOKEN=") {
 		t.Fatalf("personal state must be secret-safe: %q", state)

@@ -89,7 +89,7 @@ func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) 
 		lock.Projections = append(lock.Projections, capabilitypack.ProjectProjectionPlan{
 			Resource: capabilitypack.ResourceIdentity{Kind: strings.SplitN(projection.ID, ":", 2)[0], ID: strings.SplitN(projection.ID, ":", 2)[1]},
 			Target:   filepath.ToSlash(relative), DesiredFingerprint: projection.DesiredFingerprint, Command: projection.Action.Command, Args: projection.Action.Args,
-			Contributors: []string{"surface:claude:pack:portable"},
+			OwnerPack: "portable", Surface: capabilitypack.SurfaceClaude,
 		})
 	}
 	installation := capabilitypack.ProjectInstallation{Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "portable", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceClaude}}}}, Lock: lock}
@@ -153,7 +153,7 @@ func TestLockedClaudeProjectInspectionRequiresNativeEvidenceForExactHookIdentity
 	}
 	lock := capabilitypack.ProjectLockProposal{
 		Bindings:    []capabilitypack.LifecycleBinding{{Surface: capabilitypack.SurfaceClaude, Kind: "lifecycle", ID: "session", Projection: "command_hook", Name: "session"}},
-		Projections: []capabilitypack.ProjectProjectionPlan{{Resource: capabilitypack.ResourceIdentity{Kind: "lifecycle", ID: "session"}, Target: ".claude/packy-hooks/session.json", DesiredFingerprint: Fingerprint(definition), Contributors: []string{"surface:claude:pack:portable"}}},
+		Projections: []capabilitypack.ProjectProjectionPlan{{Resource: capabilitypack.ResourceIdentity{Kind: "lifecycle", ID: "session"}, Target: ".claude/packy-hooks/session.json", DesiredFingerprint: Fingerprint(definition), OwnerPack: "portable", Surface: capabilitypack.SurfaceClaude}},
 	}
 	installation := capabilitypack.ProjectInstallation{Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "portable", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceClaude}}}}, Lock: lock}
 	a := NewSurfaceAdapterWithAuthorization("", layout, "", "", nil, nil, AuthorizationObserverFunc(func(context.Context) AuthorizationObservation {

@@ -27,14 +27,13 @@ const (
 type ProjectRuntimeState string
 
 const (
-	ProjectRuntimeNotRequired      ProjectRuntimeState = "not-required"
-	ProjectRuntimePending          ProjectRuntimeState = "pending"
-	ProjectRuntimeActive           ProjectRuntimeState = "active"
-	ProjectRuntimeInheritedGlobal  ProjectRuntimeState = "inherited-global"
-	ProjectRuntimeStale            ProjectRuntimeState = "stale"
-	ProjectRuntimeOrphaned         ProjectRuntimeState = "orphaned"
-	ProjectRuntimeRecoveryRequired ProjectRuntimeState = "recovery-required"
-	ProjectRuntimeBlocked          ProjectRuntimeState = "blocked"
+	ProjectRuntimeNotRequired     ProjectRuntimeState = "not-required"
+	ProjectRuntimePending         ProjectRuntimeState = "pending"
+	ProjectRuntimeActive          ProjectRuntimeState = "active"
+	ProjectRuntimeInheritedGlobal ProjectRuntimeState = "inherited-global"
+	ProjectRuntimeStale           ProjectRuntimeState = "stale"
+	ProjectRuntimeOrphaned        ProjectRuntimeState = "orphaned"
+	ProjectRuntimeBlocked         ProjectRuntimeState = "blocked"
 )
 
 type ProjectRuntimeCoverage string
@@ -63,7 +62,8 @@ type ProjectProjectionStatus struct {
 	Health              string           `json:"health"`
 	ObservedFingerprint string           `json:"observed_fingerprint"`
 	DesiredFingerprint  string           `json:"desired_fingerprint"`
-	Contributor         string           `json:"contributor"`
+	OwnerPack           string           `json:"owner_pack"`
+	Surface             Surface          `json:"surface"`
 }
 
 // ProjectReadinessStatus is intentionally project-report specific so its
@@ -91,12 +91,10 @@ type JSONProjectPackStatus struct {
 }
 
 type JSONProjectStatusReport struct {
-	SchemaVersion    int                     `json:"schema_version"`
-	Report           string                  `json:"report"`
-	ProjectRoot      string                  `json:"project_root"`
-	RecoveryRequired bool                    `json:"recovery_required"`
-	RecoveryCommand  string                  `json:"recovery_command,omitempty"`
-	Packs            []JSONProjectPackStatus `json:"packs"`
+	SchemaVersion int                     `json:"schema_version"`
+	Report        string                  `json:"report"`
+	ProjectRoot   string                  `json:"project_root"`
+	Packs         []JSONProjectPackStatus `json:"packs"`
 }
 
 type ProjectStatusRequest struct {
@@ -167,7 +165,7 @@ func projectLockForPack(lock ProjectLockProposal, packID string) ProjectLockProp
 	lock.Sensitive = sensitive
 	projections := make([]ProjectProjectionPlan, 0, len(lock.Projections))
 	for _, projection := range lock.Projections {
-		if projectProjectionHasPackContributor(projection, packID) {
+		if projectProjectionOwnedByPack(projection, packID) {
 			projections = append(projections, projection)
 		}
 	}
@@ -183,19 +181,8 @@ func projectResourceSet(facts []ResourceClosureFact) map[ResourceIdentity]bool {
 	return result
 }
 
-func projectProjectionHasPackContributor(projection ProjectProjectionPlan, packID string) bool {
-	match := func(value string) bool {
-		return strings.Contains(value, ":pack:"+packID) && (strings.HasSuffix(value, ":pack:"+packID) || strings.Contains(value, ":pack:"+packID+":"))
-	}
-	if match(projection.Contributor) {
-		return true
-	}
-	for _, contributor := range projection.Contributors {
-		if match(contributor) {
-			return true
-		}
-	}
-	return false
+func projectProjectionOwnedByPack(projection ProjectProjectionPlan, packID string) bool {
+	return projection.OwnerPack == packID
 }
 
 type projectManifestDocument struct {
@@ -227,12 +214,6 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 	if !supportedProjectContractVersion(document.SchemaVersion, "") {
 		return ProjectInstallation{}, errors.New("project manifest schema or minimum Packy capability is unsupported")
 	}
-	for i := range document.Packs {
-		document.Packs[i].ProviderChoices = []ProviderChoice{}
-		for j := range document.Packs[i].SurfaceIntents {
-			document.Packs[i].SurfaceIntents[j].ProviderChoices = []ProviderChoice{}
-		}
-	}
 	manifest := ProjectContractProposal{Path: "packy.json", SchemaVersion: document.SchemaVersion, Packs: document.Packs}
 	lock, exists, err := readExistingProjectLock(projectRoot)
 	if err != nil {
@@ -249,18 +230,6 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 
 func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JSONProjectStatusReport, error) {
 	report := JSONProjectStatusReport{SchemaVersion: ProjectStatusSchemaVersion, Report: "project-status", ProjectRoot: "<project-root>", Packs: []JSONProjectPackStatus{}}
-	recoveryPending := false
-	if request.PackyHome != "" {
-		var err error
-		recoveryPending, err = ProjectInstallRecoveryPending(request.PackyHome, request.ProjectRoot)
-		if err != nil {
-			return report, err
-		}
-		if recoveryPending {
-			report.RecoveryRequired = true
-			report.RecoveryCommand = "packy pack install <pack> --surface <surface>"
-		}
-	}
 	manifestMissing, err := projectPathMissing(filepath.Join(request.ProjectRoot, "packy.json"))
 	if err != nil {
 		return report, err
@@ -283,11 +252,6 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			pendingActions := []string{}
 			effects := []ProjectRuntimeEffectStatus{}
 			blockers := []ProjectInstallBlocker{}
-			if recoveryPending {
-				runtime = ProjectRuntimeRecoveryRequired
-				blockers = append(blockers, ProjectInstallBlocker{Code: "recovery_required", Detail: "an interrupted shared project mutation must be recovered before new intent", Remediation: "rerun the interrupted named `packy pack install <pack> --surface <surface>`"})
-				pendingActions = append(pendingActions, "packy pack install <pack> --surface <surface>")
-			}
 			if request.PackyHome != "" {
 				document, exists, loadErr := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.PackID, request.Surface)
 				if loadErr != nil {
@@ -299,9 +263,6 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 					}
 					version = document.State.Version
 					runtime = ProjectRuntimeOrphaned
-					if document.Recovery.Status != "clean" {
-						runtime = ProjectRuntimeRecoveryRequired
-					}
 					for _, receipt := range document.Receipts {
 						for _, detail := range receipt.Details {
 							effects = append(effects, ProjectRuntimeEffectStatus{Category: receipt.Category, Resource: detail.Resource, Detail: detail.Detail, Coverage: ProjectRuntimeCoverageProject})
@@ -324,12 +285,8 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 					pendingActions = append(pendingActions, fmt.Sprintf("packy pack deactivate %s --surface %s --project", request.PackID, request.Surface))
 				}
 			}
-			if recoveryPending {
-				runtime = ProjectRuntimeRecoveryRequired
-				pendingActions = []string{"packy pack install <pack> --surface <surface>"}
-			}
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
-				Pack:    ProjectManifestPack{ID: request.PackID, Version: version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}},
+				Pack:    ProjectManifestPack{ID: request.PackID, Version: version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}},
 				Surface: request.Surface, Installation: ProjectInstallationAbsent, Runtime: runtime, RuntimeRequired: len(effects) > 0,
 				RuntimeEffects: effects, Projections: []ProjectProjectionStatus{}, Blockers: blockers, PendingHumanActions: sortedUnique(pendingActions), Evidence: []string{}, Requirement: requirement, RequirementSatisfied: requirementSatisfied,
 			})
@@ -339,24 +296,6 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 				return report, orphanErr
 			}
 			report.Packs = append(report.Packs, orphaned...)
-		}
-		return report, nil
-	}
-	if recoveryPending {
-		if request.PackID != "" && request.Surface != "" {
-			requirement := ""
-			if request.RequireInstalled {
-				requirement = "installed"
-			}
-			if request.RequireUsable {
-				requirement = "usable"
-			}
-			report.Packs = append(report.Packs, JSONProjectPackStatus{
-				Pack: ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}, Surface: request.Surface,
-				Installation: ProjectInstallationBlocked, Runtime: ProjectRuntimeRecoveryRequired, RuntimeEffects: []ProjectRuntimeEffectStatus{}, Projections: []ProjectProjectionStatus{},
-				Blockers:            []ProjectInstallBlocker{{Code: "recovery_required", Detail: "an interrupted shared project mutation must be recovered before inspection or new intent", Remediation: "rerun the interrupted named `packy pack install <pack> --surface <surface>`"}},
-				PendingHumanActions: []string{"packy pack install <pack> --surface <surface>"}, Evidence: []string{}, Requirement: requirement, RequirementSatisfied: false,
-			})
 		}
 		return report, nil
 	}
@@ -405,7 +344,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			state := ProjectInstallationInstalled
 			if !manifestHealthy {
 				state = ProjectInstallationBlocked
-				blockers = append(blockers, ProjectInstallBlocker{Code: "manifest_lock_mismatch", Target: "packy.json", Detail: "the human manifest does not match the exact generated lock", Remediation: "run the named Pack install again to reconcile its receipt"})
+				blockers = append(blockers, ProjectInstallBlocker{Code: "manifest_lock_mismatch", Target: "packy.json", Detail: "the human manifest does not match the exact generated lock", Remediation: "run the named Pack install again to refresh its receipt"})
 			} else if !contractHealthy {
 				state = ProjectInstallationDrifted
 			}
@@ -445,7 +384,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 				if runtimeRequired {
 					status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack activate %s --surface %s --project", pack.ID, surface))
 				}
-			case ProjectRuntimeBlocked, ProjectRuntimeRecoveryRequired:
+			case ProjectRuntimeBlocked:
 				status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack deactivate %s --surface %s --project", pack.ID, surface))
 			}
 			if state != ProjectInstallationInstalled {
@@ -566,7 +505,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		if composition.conflict {
 			status.Runtime = ProjectRuntimeBlocked
 			status.Blockers = append(status.Blockers, ProjectInstallBlocker{Code: "activation_scope_conflict", Detail: composition.conflictDetail, Remediation: "deactivate the incompatible global contribution or align the global and project contracts"})
-		} else if personalRuntime != ProjectRuntimeBlocked && personalRuntime != ProjectRuntimeStale && personalRuntime != ProjectRuntimeRecoveryRequired {
+		} else if personalRuntime != ProjectRuntimeBlocked && personalRuntime != ProjectRuntimeStale {
 			status.Runtime = composedProjectRuntimeState(status.RuntimeEffects)
 		}
 		activateCommand := fmt.Sprintf("packy pack activate %s --surface %s --project", status.Pack.ID, status.Surface)
@@ -580,7 +519,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		switch {
 		case composition.conflict:
 			pendingActions = append(pendingActions, fmt.Sprintf("packy pack deactivate %s --surface %s", status.Pack.ID, status.Surface))
-		case personalRuntime == ProjectRuntimeBlocked || personalRuntime == ProjectRuntimeRecoveryRequired:
+		case personalRuntime == ProjectRuntimeBlocked:
 			pendingActions = append(pendingActions, deactivateCommand)
 		case status.Runtime == ProjectRuntimePending || status.Runtime == ProjectRuntimeStale:
 			pendingActions = append(pendingActions, activateCommand)
@@ -613,9 +552,8 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 		observed[resource] = projection
 	}
 	statuses := make([]ProjectProjectionStatus, 0, len(lock.Projections))
-	contributor := "surface:" + string(surface) + ":pack:" + packID
 	for _, locked := range lock.Projections {
-		if !ProjectProjectionHasContributor(locked, contributor) {
+		if locked.OwnerPack != packID || locked.Surface != surface {
 			continue
 		}
 		projection, ok := observed[locked.Resource]
@@ -638,7 +576,7 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 		}
 		statuses = append(statuses, ProjectProjectionStatus{
 			Resource: locked.Resource, Target: locked.Target, Mode: locked.Mode, Health: health,
-			ObservedFingerprint: projection.ObservedFingerprint, DesiredFingerprint: locked.DesiredFingerprint, Contributor: locked.Contributor,
+			ObservedFingerprint: projection.ObservedFingerprint, DesiredFingerprint: locked.DesiredFingerprint, OwnerPack: locked.OwnerPack, Surface: locked.Surface,
 		})
 	}
 	sort.Slice(statuses, func(i, j int) bool {
@@ -663,9 +601,6 @@ func projectPersonalRuntimeStatus(ctx context.Context, adapter SurfaceAdapter, p
 		return ProjectRuntimeBlocked, effects
 	}
 	state := document.State
-	if exists && document.Recovery.Status != "clean" {
-		return ProjectRuntimeRecoveryRequired, effects
-	}
 	if !exists || !state.Active {
 		return ProjectRuntimePending, effects
 	}
@@ -766,7 +701,7 @@ func validateProjectManifestPack(pack ProjectManifestPack) error {
 		}
 	}
 	selection, err := canonicalSelection(pack.Selection)
-	if err != nil || digestJSON(selection) != digestJSON(pack.Selection) || pack.Selection.Roots == nil || pack.Aliases == nil || len(pack.ProviderChoices) != 0 {
+	if err != nil || digestJSON(selection) != digestJSON(pack.Selection) || pack.Selection.Roots == nil || pack.Aliases == nil {
 		return errors.New("project manifest selection and aliases are incomplete or non-canonical")
 	}
 	aliases := cloneAliases(pack.Aliases)
@@ -783,7 +718,7 @@ func validateProjectManifestPack(pack ProjectManifestPack) error {
 		canonical, selectionErr := canonicalSelection(intent.Selection)
 		intentAliases := cloneAliases(intent.Aliases)
 		aliasErr := canonicalizeAliases(&intentAliases)
-		if intent.Surface != pack.Surfaces[i] || intent.Selection.Roots == nil || intent.Aliases == nil || len(intent.ProviderChoices) != 0 || selectionErr != nil || aliasErr != nil || digestJSON(canonical) != digestJSON(intent.Selection) || digestJSON(intentAliases) != digestJSON(intent.Aliases) {
+		if intent.Surface != pack.Surfaces[i] || intent.Selection.Roots == nil || intent.Aliases == nil || selectionErr != nil || aliasErr != nil || digestJSON(canonical) != digestJSON(intent.Selection) || digestJSON(intentAliases) != digestJSON(intent.Aliases) {
 			return errors.New("project manifest surface intents are incomplete or non-canonical")
 		}
 	}
@@ -866,17 +801,6 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 			validSurfaces[surface] = true
 		}
 	}
-	validContributor := func(value string) bool {
-		for surface := range validSurfaces {
-			for packID := range validPackIDs {
-				prefix := "surface:" + string(surface) + ":pack:" + packID
-				if value == prefix || strings.HasPrefix(value, prefix+":") {
-					return true
-				}
-			}
-		}
-		return false
-	}
 	for _, projection := range lock.Projections {
 		if projection.Mode != "copy_tree" && projection.Mode != "copy_file" && projection.Mode != "merge_marked_file" && projection.Mode != "merge_structured_file" {
 			return fmt.Errorf("project lock projection %s has unsupported mode %q", projection.Resource, projection.Mode)
@@ -885,14 +809,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		if projection.Mode == "merge_marked_file" || projection.Mode == "merge_structured_file" {
 			targetKey = projection.Resource.String() + "\x00" + projection.Target
 		}
-		validContributors := validContributor(projection.Contributor)
-		if projection.Contributors != nil {
-			validContributors = validContributors && len(projection.Contributors) > 0 && digestJSON(projection.Contributors) == digestJSON(sortedUnique(projection.Contributors))
-			for _, value := range projection.Contributors {
-				validContributors = validContributors && validContributor(value)
-			}
-		}
-		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[targetKey] || !validContributors || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
+		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[targetKey] || !validPackIDs[projection.OwnerPack] || !validSurfaces[projection.Surface] || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
 			return errors.New("project lock contains malformed, duplicate, or unauthorized projection evidence")
 		}
 		if (projection.Mode == "copy_tree" || projection.Mode == "copy_file" || projection.Mode == "merge_structured_file") && !resources[projection.Resource] {
@@ -904,20 +821,6 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		seenTargets[targetKey] = true
 	}
 	return nil
-}
-
-// ProjectProjectionHasContributor reports whether portable lock evidence names
-// the exact surface-and-pack contributor.
-func ProjectProjectionHasContributor(projection ProjectProjectionPlan, contributor string) bool {
-	if projection.Contributor == contributor {
-		return true
-	}
-	for _, value := range projection.Contributors {
-		if value == contributor {
-			return true
-		}
-	}
-	return false
 }
 
 func projectOperationalResource(kind string) bool {
@@ -993,7 +896,7 @@ func inspectOfflineProjectFiles(projectRoot string, installation ProjectInstalla
 			start, end := projectNoticeMarkers(pack.ID)
 			fragment, found := extractProjectContribution(string(noticesData), start, end)
 			locked, receiptFound := projectNoticeReceiptProjection(installation.Lock.Receipts, pack.ID)
-			if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest || uint32(noticesInfo.Mode().Perm()) != locked.FileMode {
+			if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest {
 				allContributionsPresent = false
 				break
 			}
@@ -1014,6 +917,6 @@ func (r JSONProjectStatusReport) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(report{
 		SchemaVersion: r.SchemaVersion, Report: r.Report, ProjectRoot: r.ProjectRoot,
-		RecoveryRequired: r.RecoveryRequired, RecoveryCommand: r.RecoveryCommand, Packs: packs,
+		Packs: packs,
 	})
 }

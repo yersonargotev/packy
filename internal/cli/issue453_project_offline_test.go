@@ -167,10 +167,6 @@ func TestIssue453InstalledEnforcementCoversThePortableContract(t *testing.T) {
 		{name: "manifest-to-lock identity", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Receipts[0].Pack.Version = "0.0.0" }},
 		{name: "closure", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Receipts[0].Resources = nil }},
 		{name: "target", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Receipts[0].Projections[0].Target = "../escape" }},
-		{name: "mode", mutate: func(lock *capabilitypack.ProjectLockProposal) { lock.Receipts[0].Projections[0].Mode = "invented" }},
-		{name: "contributor", mutate: func(lock *capabilitypack.ProjectLockProposal) {
-			lock.Receipts[0].Projections[0].Contributors = []string{"surface:codex:pack:other"}
-		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			opts, project := installIssue453Project(t)

@@ -15,11 +15,10 @@ type StatusRequest struct {
 }
 
 type IntentStatus struct {
-	Active          bool
-	Revision        int
-	Version         string
-	Selection       ResourceSelection
-	ProviderChoices []ProviderChoice
+	Active    bool
+	Revision  int
+	Version   string
+	Selection ResourceSelection
 }
 
 type PackLifecycleState string
@@ -28,14 +27,7 @@ const (
 	PackLifecycleActive                PackLifecycleState = "active"
 	PackLifecycleInactiveClean         PackLifecycleState = "inactive-clean"
 	PackLifecycleInactiveWithResiduals PackLifecycleState = "inactive-with-residuals"
-	PackLifecycleRecoveryRequired      PackLifecycleState = "recovery-required"
 )
-
-type CapabilityConsumerFact struct {
-	ConsumerPack     string
-	ConsumerResource *ResourceIdentity
-	Capability       string
-}
 
 type ReadinessStatus struct {
 	Configured bool
@@ -56,14 +48,8 @@ const (
 type ProjectionStatus struct {
 	ID, Target, ObservedFingerprint, DesiredFingerprint string
 	Health                                              ProjectionHealth
-	Contributors                                        []string
 	Owner                                               string
-	Shared                                              bool
-	DiscoverableBy                                      []Surface
-	DiscoveryNotice                                     string
 }
-
-const sharedProjectionDiscoveryNotice = "shared standard targets may be discovered by compatible surfaces; discovery does not create activation intent"
 
 type ProjectionSummary struct {
 	Verified, Missing, Drifted, Ambiguous, Unmanaged int
@@ -159,7 +145,6 @@ type StatusEntry struct {
 	Evidence            []string
 	Contract            LifecycleContract
 	ActivationRole      ActivationRole
-	Consumers           []CapabilityConsumerFact
 	LifecycleState      PackLifecycleState
 }
 
@@ -194,11 +179,6 @@ type Facade struct {
 }
 
 func NewFacade(catalog Catalog, options ...FacadeOption) Facade {
-	// Package tests use in-memory catalogs to isolate lifecycle policy from
-	// filesystem provenance. Discover always supplies a bundle root in runtime.
-	if catalog.bundleRoot == "" && len(catalog.packs) > 0 {
-		catalog.allowSyntheticHistory = true
-	}
 	facade := Facade{catalog: catalog}
 	for _, option := range options {
 		option(&facade)
@@ -227,7 +207,7 @@ func (f Facade) ActiveStatus(ctx context.Context) (StatusReport, error) {
 func ObserveActiveIntents(ctx context.Context, store ActivationStore) ActiveIntentObservation {
 	var observation ActiveIntentObservation
 	for _, surface := range statusSurfaces() {
-		state, err := store.Load(ctx, surface)
+		state, err := store.LoadSnapshot(ctx, surface)
 		if err != nil {
 			observation.FailedSurfaces = append(observation.FailedSurfaces, surface)
 			continue
@@ -263,7 +243,7 @@ func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {
 	var targets []target
 	var report StatusReport
 	for _, surface := range statusSurfaces() {
-		state, err := f.activation.store.Load(ctx, surface)
+		state, err := f.activation.store.LoadSnapshot(ctx, surface)
 		if err != nil {
 			report.ObservationFailures = append(report.ObservationFailures, surface)
 			continue
@@ -314,18 +294,8 @@ func activeOnlyStatusState(state ActivationState) ActivationState {
 	}
 	filtered.Ownership = filtered.Ownership[:0]
 	for _, owner := range state.Ownership {
-		copy := owner
-		copy.Contributors = make([]string, 0, len(owner.Contributors))
-		for _, contributor := range owner.Contributors {
-			for packID := range activePackIDs {
-				if contributor == packID || contributorBelongsToPack(contributor, packID) {
-					copy.Contributors = append(copy.Contributors, contributor)
-					break
-				}
-			}
-		}
-		if len(copy.Contributors) > 0 {
-			filtered.Ownership = append(filtered.Ownership, copy)
+		if activePackIDs[owner.PackID] {
+			filtered.Ownership = append(filtered.Ownership, owner)
 		}
 	}
 	return filtered
@@ -409,7 +379,7 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	if f.activation == nil || f.activation.store == nil {
 		return StatusEntry{}, fmt.Errorf("surface inspection is not configured")
 	}
-	state, err := f.activation.store.Load(ctx, surface)
+	state, err := f.activation.store.LoadSnapshot(ctx, surface)
 	if err != nil {
 		return StatusEntry{}, err
 	}
@@ -424,7 +394,7 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 	entry := StatusEntry{Pack: pack, Surface: surface}
 	var err error
 	evidencePack := pack
-	ownedResidual := hasContributor(state.Ownership, pack.ID)
+	ownedResidual := hasPackOwnership(state.Ownership, pack.ID)
 	selection := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
 	if intent, ok := intentForPack(state, pack.ID, surface); ok {
 		selection, err = canonicalSelection(intent.Selection)
@@ -432,61 +402,12 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 			return StatusEntry{}, err
 		}
 		entry.Contract = LifecycleContractFor(pack, surface, intent.Aliases)
-		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection, ProviderChoices: cloneProviderChoices(intent.ProviderChoices)}
-		explicit, required := intentIsExplicit(intent), false
-		for _, consumer := range activeIntents(state) {
-			if !consumer.Active {
-				continue
-			}
-			consumerPack, resolveErr := f.catalog.resolveIntentPack(consumer.PackID, consumer.Version)
-			if resolveErr != nil {
-				return StatusEntry{}, fmt.Errorf("resolve capability consumer %q: %w", consumer.PackID, resolveErr)
-			}
-			consumerPack, resolveErr = selectPackResources(consumerPack, consumer.Selection)
-			if resolveErr != nil {
-				return StatusEntry{}, fmt.Errorf("active consumer pack %q has invalid resource selection: %w", consumer.PackID, resolveErr)
-			}
-			if resolveErr = f.validatePersistedProviderChoices(consumerPack, consumer, state, surface); resolveErr != nil {
-				return StatusEntry{}, resolveErr
-			}
-			for _, choice := range consumer.ProviderChoices {
-				if choice.ProviderPack != pack.ID {
-					continue
-				}
-				required = true
-				for _, requirement := range capabilityRequirements(consumerPack) {
-					if requirement.capability == choice.Capability {
-						entry.Consumers = append(entry.Consumers, CapabilityConsumerFact{ConsumerPack: consumer.PackID, ConsumerResource: optionalResourceIdentity(requirement.resource), Capability: choice.Capability})
-					}
-				}
-			}
-		}
-		switch {
-		case !intent.Active:
-			entry.ActivationRole = ActivationInactive
-		case explicit && required:
-			entry.ActivationRole = ActivationExplicitRequired
-		case required:
-			entry.ActivationRole = ActivationRequired
-		default:
+		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection}
+		if intent.Active {
 			entry.ActivationRole = ActivationExplicit
+		} else {
+			entry.ActivationRole = ActivationInactive
 		}
-		sort.Slice(entry.Consumers, func(i, j int) bool {
-			if entry.Consumers[i].ConsumerPack != entry.Consumers[j].ConsumerPack {
-				return entry.Consumers[i].ConsumerPack < entry.Consumers[j].ConsumerPack
-			}
-			if entry.Consumers[i].Capability != entry.Consumers[j].Capability {
-				return entry.Consumers[i].Capability < entry.Consumers[j].Capability
-			}
-			left, right := "", ""
-			if entry.Consumers[i].ConsumerResource != nil {
-				left = entry.Consumers[i].ConsumerResource.String()
-			}
-			if entry.Consumers[j].ConsumerResource != nil {
-				right = entry.Consumers[j].ConsumerResource.String()
-			}
-			return left < right
-		})
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
 		if intent.Active || ownedResidual {
@@ -500,7 +421,7 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 	} else if evidencePack, err = f.catalog.Show(pack.ID); err != nil {
 		return StatusEntry{}, err
 	}
-	if entry.Contract.DependencyClosure == nil {
+	if entry.Contract.AuthorityDisclosure == "" {
 		entry.Contract = LifecycleContractFor(pack, surface, nil)
 	}
 	entry.ResourceSelections = resourceSelectionFacts(evidencePack, selection, entry.Intent.Active || ownedResidual)
@@ -600,79 +521,10 @@ func lifecycleStateForStatus(entry StatusEntry, state ActivationState, packID st
 	if entry.IntentPresent && entry.Intent.Active {
 		return PackLifecycleActive
 	}
-	if hasContributor(state.Ownership, packID) {
-		observed := make(map[string]string, len(projections))
-		for _, projection := range projections {
-			provenance := projection.AdapterProvenance
-			if provenance == "" {
-				provenance = projection.Action.AdapterProvenance
-			}
-			observed[projection.ID] = provenance
-		}
-		for _, owner := range state.Ownership {
-			relevant := false
-			for _, contributor := range owner.Contributors {
-				if contributorBelongsToPack(contributor, packID) {
-					relevant = true
-					break
-				}
-			}
-			fresh, inspectable := observed[owner.ID]
-			if relevant && (owner.AdapterProvenance == "" || !inspectable || fresh == "" || owner.AdapterProvenance != fresh) {
-				return PackLifecycleRecoveryRequired
-			}
-		}
+	if hasPackOwnership(state.Ownership, packID) {
 		return PackLifecycleInactiveWithResiduals
 	}
 	return PackLifecycleInactiveClean
-}
-
-func (f Facade) validatePersistedProviderChoices(consumerPack Pack, intent ActivationIntent, state ActivationState, surface Surface) error {
-	choices, err := canonicalProviderChoices(intent.ProviderChoices)
-	if err != nil {
-		return fmt.Errorf("active consumer pack %q has invalid provider choices: %w", intent.PackID, err)
-	}
-	required := map[string]bool{}
-	for _, requirement := range capabilityRequirements(consumerPack) {
-		required[requirement.capability] = true
-	}
-	for _, choice := range choices {
-		if !required[choice.Capability] {
-			return fmt.Errorf("active consumer pack %q has stale provider choice for unselected capability %q", intent.PackID, choice.Capability)
-		}
-		providerIntent, ok := intentForPack(state, choice.ProviderPack, surface)
-		if !ok || !providerIntent.Active {
-			return fmt.Errorf("active consumer pack %q has invalid persisted provider choice: provider pack %q is not active", intent.PackID, choice.ProviderPack)
-		}
-		providerPack, err := f.catalog.resolveIntentPack(providerIntent.PackID, providerIntent.Version)
-		if err == nil {
-			providerPack, err = selectPackResources(providerPack, providerIntent.Selection)
-		}
-		if err != nil {
-			return fmt.Errorf("active consumer pack %q has invalid persisted provider choice: provider pack %q selection is invalid: %w", intent.PackID, choice.ProviderPack, err)
-		}
-		eligible := providersInPack(providerPack, choice.Capability)
-		if _, err := selectChosenProvider(choice, eligible); err != nil {
-			return fmt.Errorf("active consumer pack %q has invalid persisted provider choice: %w", intent.PackID, err)
-		}
-	}
-	return nil
-}
-
-func providersInPack(pack Pack, capability string) []capabilityProvider {
-	if pack.manifestVersion != manifestSchemaV4 {
-		if containsString(pack.Provides, capability) {
-			return []capabilityProvider{{pack: pack}}
-		}
-		return nil
-	}
-	var result []capabilityProvider
-	for _, resource := range pack.Resources {
-		if resource.Kind != "notice" && containsString(resource.ProvidesCapabilities, capability) {
-			result = append(result, capabilityProvider{pack: pack, resource: ResourceIdentity{Kind: resource.Kind, ID: resource.ID}})
-		}
-	}
-	return result
 }
 
 func deriveResourceStatuses(packID string, graph ResourceGraph, projections []ProjectionStatus, fresh ReadinessObservation) []ResourceStatus {
@@ -685,10 +537,9 @@ func deriveResourceStatuses(packID string, graph ResourceGraph, projections []Pr
 		if fact.Role == ResourceRoleUnselected {
 			continue
 		}
-		contributor := resourceContributor(packID, fact.Resource)
 		status := ResourceStatus{Resource: fact.Resource, Role: fact.Role, DependencyChain: append([]ResourceIdentity{}, fact.DependencyChain...)}
 		for _, projection := range projections {
-			if containsString(projection.Contributors, contributor) {
+			if projection.ID == fact.Resource.String() {
 				addProjectionHealth(&status.Projections, projection.Health)
 				if projection.Health != ProjectionVerified {
 					status.Blockers = append(status.Blockers, fmt.Sprintf("%s is %s", projection.ID, projection.Health))
@@ -740,13 +591,7 @@ func deriveProjectionStatus(packID string, observed []ObservedProjection, owners
 	result := make([]ProjectionStatus, 0, len(observed))
 	var summary ProjectionSummary
 	for _, p := range observed {
-		status := ProjectionStatus{ID: p.ID, Target: portableProjectionTarget(p.Action.Target), ObservedFingerprint: p.ObservedFingerprint, DesiredFingerprint: p.DesiredFingerprint, Contributors: c.contributorSet(p.ID), Shared: p.Shared || p.Action.Shared, DiscoverableBy: append([]Surface(nil), p.DiscoverableBy...)}
-		if len(status.DiscoverableBy) == 0 {
-			status.DiscoverableBy = append([]Surface(nil), p.Action.DiscoverableBy...)
-		}
-		if status.Shared {
-			status.DiscoveryNotice = sharedProjectionDiscoveryNotice
-		}
+		status := ProjectionStatus{ID: p.ID, Target: portableProjectionTarget(p.Action.Target), ObservedFingerprint: p.ObservedFingerprint, DesiredFingerprint: p.DesiredFingerprint}
 		owner, owned := ownershipByID(ownership, physicalProjectionID(c.surface, p))
 		if !owned {
 			owner, owned = ownershipByID(ownership, projectionOwnershipID(p))
@@ -777,7 +622,7 @@ func deriveProjectionStatus(packID string, observed []ObservedProjection, owners
 		case !owned:
 			status.Health = ProjectionUnmanaged
 			summary.Unmanaged++
-		case owner.Fingerprint != p.DesiredFingerprint || !contributorsMatchForSurface(owner.Contributors, c.surface, status.Contributors):
+		case owner.Fingerprint != p.DesiredFingerprint || owner.PackID != packID || owner.Surface != c.surface:
 			status.Health = ProjectionAmbiguous
 			summary.Ambiguous++
 		default:

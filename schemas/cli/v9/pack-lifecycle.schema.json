@@ -124,7 +124,6 @@
         "selection",
         "contract",
         "aliases",
-        "contributors",
         "blockers",
         "phases",
         "pending_human_actions",
@@ -132,15 +131,8 @@
         "readiness_observed",
         "evidence",
         "pending_evidence",
-        "capability_requirements",
-        "provider_choices",
-        "recovery",
         "mandatory_actions",
         "contract_diff",
-        "migrations",
-        "retained_projections",
-        "shared_projections",
-        "removed_contributors",
         "dry_run",
         "resource_graph",
         "sensitive_effects"
@@ -159,8 +151,7 @@
           "enum": [
             "activate",
             "update",
-            "deactivate",
-            "reconcile"
+            "deactivate"
           ]
         },
         "disposition": {
@@ -207,15 +198,6 @@
         },
         "aliases": {
           "type": "array"
-        },
-        "contributors": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
         },
         "blockers": {
           "type": "array",
@@ -328,89 +310,6 @@
             "type": "string"
           }
         },
-        "capability_requirements": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "consumer_pack",
-              "consumer_resource",
-              "capability",
-              "provider_pack",
-              "provider_resource",
-              "required_tools",
-              "required_authority",
-              "resulting_readiness"
-            ],
-            "properties": {
-              "consumer_pack": {
-                "type": "string"
-              },
-              "consumer_resource": {
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/resource_identity"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "capability": {
-                "type": "string"
-              },
-              "provider_pack": {
-                "type": "string"
-              },
-              "provider_resource": {
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/resource_identity"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "required_tools": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "required_authority": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "resulting_readiness": {
-                "type": "object",
-                "required": [
-                  "Configured",
-                  "Authorized",
-                  "Usable"
-                ],
-                "properties": {
-                  "Configured": {
-                    "type": "boolean"
-                  },
-                  "Authorized": {
-                    "type": "boolean"
-                  },
-                  "Usable": {
-                    "type": "boolean"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "recovery": {
-          "type": "boolean"
-        },
         "mandatory_actions": {
           "type": "array",
           "items": {
@@ -440,71 +339,6 @@
             }
           },
           "additionalProperties": false
-        },
-        "migrations": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "retained_projections": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "ID",
-              "Contributors"
-            ],
-            "properties": {
-              "ID": {
-                "type": "string"
-              },
-              "Contributors": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "shared_projections": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "id",
-              "projection_key",
-              "discoverable_by",
-              "discovery_notice"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "projection_key": {
-                "type": "string"
-              },
-              "discoverable_by": {
-                "type": ["array", "null"],
-                "items": {
-                  "enum": ["codex", "opencode", "claude"]
-                },
-                "uniqueItems": true
-              },
-              "discovery_notice": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "removed_contributors": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
         },
         "dry_run": {
           "type": "boolean"
@@ -619,21 +453,11 @@
           },
           "additionalProperties": false
         },
-        "provider_choices": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/provider_choice"
-          },
-          "uniqueItems": true
-        },
         "sensitive_effects": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/sensitive_effect_origin"
           }
-        },
-        "recovery_guidance": {
-          "$ref": "#/$defs/recovery_guidance"
         }
       },
       "additionalProperties": false
@@ -709,27 +533,6 @@
           }
         }
       ],
-      "additionalProperties": false
-    },
-    "provider_choice": {
-      "type": "object",
-      "required": [
-        "capability",
-        "provider_pack"
-      ],
-      "properties": {
-        "capability": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider_pack": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider_resource": {
-          "$ref": "#/$defs/resource_identity"
-        }
-      },
       "additionalProperties": false
     },
     "sensitive_effect_origin": {
@@ -826,106 +629,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "recovery_affected_resource": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "pack",
-        "resource"
-      ],
-      "properties": {
-        "pack": {
-          "type": "string",
-          "minLength": 1
-        },
-        "resource": {
-          "$ref": "#/$defs/resource_identity"
-        }
-      }
-    },
-    "recovery_consumer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "pack",
-        "capability"
-      ],
-      "properties": {
-        "pack": {
-          "type": "string",
-          "minLength": 1
-        },
-        "resource": {
-          "$ref": "#/$defs/resource_identity"
-        },
-        "capability": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "recovery_guidance": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "originating_operation",
-        "affected_resources",
-        "consumers",
-        "completed",
-        "failed_action",
-        "failure_detail",
-        "not_started",
-        "next_command"
-      ],
-      "properties": {
-        "originating_operation": {
-          "enum": [
-            "activate",
-            "update",
-            "deactivate",
-            "reconcile"
-          ]
-        },
-        "affected_resources": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/recovery_affected_resource"
-          }
-        },
-        "consumers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/recovery_consumer"
-          }
-        },
-        "completed": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "failed_action": {
-          "type": "string",
-          "minLength": 1
-        },
-        "failure_detail": {
-          "type": "string",
-          "minLength": 1
-        },
-        "not_started": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "next_command": {
-          "type": "string",
-          "pattern": "^packy pack (activate|update|deactivate|reconcile)( [a-z0-9][a-z0-9._-]*)? --surface (codex|opencode|claude)$"
-        }
-      }
     }
   },
   "oneOf": [

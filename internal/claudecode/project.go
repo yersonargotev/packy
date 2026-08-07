@@ -187,7 +187,6 @@ func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot s
 		}
 		bindings[capabilitypack.ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] = binding
 	}
-	contributor := "surface:claude:pack:" + pack.ID
 	var projections []capabilitypack.ObservedProjection
 	var revision []string
 	instructionTarget := filepath.Join(projectRoot, "CLAUDE.md")
@@ -198,7 +197,7 @@ func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot s
 	instructionDocument := string(instructionOriginal)
 	instructionPrecondition := projectFileFingerprint(instructionTarget)
 	for _, locked := range lock.Projections {
-		if !capabilitypack.ProjectProjectionHasContributor(locked, contributor) {
+		if locked.OwnerPack != pack.ID || locked.Surface != capabilitypack.SurfaceClaude {
 			continue
 		}
 		binding := bindings[locked.Resource]
@@ -296,10 +295,9 @@ func (a *SurfaceAdapter) inspectLockedProjectRuntime(ctx context.Context, projec
 			break
 		}
 	}
-	contributor := "surface:claude:pack:" + pack.ID
 	var identities []string
 	for _, projection := range lock.Projections {
-		if !capabilitypack.ProjectProjectionHasContributor(projection, contributor) {
+		if projection.OwnerPack != pack.ID || projection.Surface != capabilitypack.SurfaceClaude {
 			continue
 		}
 		if projection.Resource.Kind == "mcp_server" || projection.Resource.Kind == "lifecycle" {

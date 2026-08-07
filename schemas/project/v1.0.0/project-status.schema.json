@@ -3,13 +3,11 @@
   "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-status.schema.json",
   "title": "Packy project status report v3",
   "type": "object",
-  "required": ["schema_version", "report", "project_root", "recovery_required", "packs"],
+  "required": ["schema_version", "report", "project_root", "packs"],
   "properties": {
     "schema_version": { "const": 3 },
     "report": { "const": "project-status" },
     "project_root": { "const": "<project-root>" },
-    "recovery_required": { "type": "boolean" },
-    "recovery_command": { "type": "string", "minLength": 1 },
     "packs": {
       "type": "array",
       "items": {
@@ -19,7 +17,7 @@
           "pack": { "$ref": "project-contract-defs.schema.json#/$defs/pack" },
           "surface": { "$ref": "project-contract-defs.schema.json#/$defs/surface" },
           "installation": { "enum": ["absent", "installed", "drifted", "blocked"] },
-          "runtime": { "enum": ["not-required", "pending", "active", "inherited-global", "stale", "orphaned", "recovery-required", "blocked"] },
+          "runtime": { "enum": ["not-required", "pending", "active", "inherited-global", "stale", "orphaned", "blocked"] },
           "runtime_required": { "type": "boolean" },
           "runtime_effects": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/runtime_effect" } },
           "readiness": { "$ref": "project-contract-defs.schema.json#/$defs/readiness" },

@@ -125,7 +125,7 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	actions := make([]ProjectionAction, 0, len(observation.Projections)+3)
 	remainingSurfaces := removeProjectSurface(pack.Surfaces, surface)
 	retainedLock := installation.Lock
-	retainedLock.Projections = subtractProjectContributor(retainedLock.Projections, surface)
+	retainedLock.Projections = withoutProjectSurface(retainedLock.Projections, surface)
 	retainedTargets := map[string]bool{}
 	for _, projection := range retainedLock.Projections {
 		retainedTargets[projection.Resource.String()+"\x00"+filepath.Clean(projection.Target)] = true
@@ -167,7 +167,7 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 		lockPath := filepath.Join(request.ProjectRoot, "packy.lock.json")
 		actions = append(actions,
 			ProjectionAction{ID: "project-contract:manifest", Kind: ActionProjectManifestFile, Target: manifestPath, Content: string(manifestData), FileMode: 0o644, Precondition: projectTargetFingerprint(manifestPath), Description: "remove the selected project surface intent"},
-			ProjectionAction{ID: "project-contract:lock", Kind: ActionProjectLockFile, Target: lockPath, Content: string(lockData), FileMode: 0o644, Precondition: projectTargetFingerprint(lockPath), Description: "publish the remaining project contributors"},
+			ProjectionAction{ID: "project-contract:lock", Kind: ActionProjectLockFile, Target: lockPath, Content: string(lockData), FileMode: 0o644, Precondition: projectTargetFingerprint(lockPath), Description: "publish the remaining project receipts"},
 		)
 		report.Contracts = []string{"packy.json", "packy.lock.json"}
 		for _, projection := range report.Projections {
@@ -392,22 +392,11 @@ func removeProjectSurface(surfaces []Surface, removed Surface) []Surface {
 	return sortedProjectSurfaces(result)
 }
 
-func subtractProjectContributor(projections []ProjectProjectionPlan, surface Surface) []ProjectProjectionPlan {
-	prefix := "surface:" + string(surface) + ":"
+func withoutProjectSurface(projections []ProjectProjectionPlan, surface Surface) []ProjectProjectionPlan {
 	result := make([]ProjectProjectionPlan, 0, len(projections))
 	for _, projection := range projections {
-		contributors := make([]string, 0, len(projection.Contributors))
-		for _, contributor := range projection.Contributors {
-			if !strings.HasPrefix(contributor, prefix) {
-				contributors = append(contributors, contributor)
-			}
-		}
-		if len(contributors) == 0 {
+		if projection.Surface == surface {
 			continue
-		}
-		projection.Contributors = sortedUnique(contributors)
-		if strings.HasPrefix(projection.Contributor, prefix) {
-			projection.Contributor = projection.Contributors[0]
 		}
 		result = append(result, projection)
 	}
@@ -427,10 +416,6 @@ func ApplyProjectUninstall(ctx context.Context, request ProjectUninstallApplyReq
 		return ProjectUninstallApplyResult{}, err
 	}
 	defer guard.Close()
-	journalPath := projectInstallJournalPath(request.PackyHome, preview.projectRoot)
-	if err := recoverProjectInstall(ctx, request.Adapter, journalPath, preview.projectRoot); err != nil {
-		return ProjectUninstallApplyResult{}, err
-	}
 	fresh, err := PreviewProjectUninstall(ctx, preview.request, request.Adapter)
 	if err != nil {
 		return ProjectUninstallApplyResult{}, err
@@ -454,19 +439,17 @@ func ApplyProjectUninstall(ctx context.Context, request ProjectUninstallApplyReq
 	nonLock := append([]ProjectionAction(nil), fresh.actions[:lockIndex]...)
 	lockAction := fresh.actions[lockIndex]
 	forward := append(append([]ProjectionAction(nil), nonLock...), lockAction)
-	backupRoot := projectInstallBackupRoot(journalPath)
+	backupRoot, err := os.MkdirTemp("", "packy-project-rollback-")
+	if err != nil {
+		return ProjectUninstallApplyResult{}, err
+	}
+	defer os.RemoveAll(backupRoot)
 	reverse, err := captureProjectReverseActions(forward, backupRoot)
 	if err != nil {
 		return ProjectUninstallApplyResult{}, err
 	}
-	journal := projectInstallJournal{SchemaVersion: projectInstallApplySchemaVersion, Observation: fresh.Observation, ProjectRoot: fresh.projectRoot, Reverse: reverse}
-	journal.Seal = sealProjectInstallJournal(journal)
-	if err := writeProjectInstallJournal(journalPath, journal); err != nil {
-		_ = os.RemoveAll(backupRoot)
-		return ProjectUninstallApplyResult{}, err
-	}
 	fail := func(cause error) (ProjectUninstallApplyResult, error) {
-		return ProjectUninstallApplyResult{}, rollbackProjectMutation(ctx, request.Adapter, reverse, journalPath, cause)
+		return ProjectUninstallApplyResult{}, rollbackProjectMutation(ctx, request.Adapter, reverse, cause)
 	}
 	if actionErr := request.Adapter.ApplyProjections(ctx, nonLock); actionErr != nil {
 		return fail(actionErr)
@@ -486,9 +469,6 @@ func ApplyProjectUninstall(ctx context.Context, request ProjectUninstallApplyReq
 		}
 	} else if err := verifyProjectRegularFile(lockAction.Target, []byte(lockAction.Content), fs.FileMode(lockAction.FileMode)); err != nil {
 		return fail(err)
-	}
-	if err := removeProjectInstallJournal(journalPath); err != nil {
-		return ProjectUninstallApplyResult{}, err
 	}
 	return ProjectUninstallApplyResult{SchemaVersion: 1, Report: "project-uninstall-apply", Status: "verified", Observation: fresh.Observation}, nil
 }
@@ -512,7 +492,7 @@ func planProjectNoticeRemoval(projectRoot string, pack ProjectManifestPack, lock
 	start, end := projectNoticeMarkers(pack.ID)
 	fragment, found := extractProjectContribution(string(data), start, end)
 	lockedNotice, receiptFound := projectNoticeReceiptProjection(lock.Receipts, pack.ID)
-	if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != lockedNotice.Digest || uint32(info.Mode().Perm()) != lockedNotice.FileMode || strings.Count(string(data), start) != 1 || strings.Count(string(data), end) != 1 {
+	if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != lockedNotice.Digest || strings.Count(string(data), start) != 1 || strings.Count(string(data), end) != 1 {
 		return ProjectionAction{}, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution differs from the lock", Remediation: "restore the exact locked notice contribution before uninstalling"}}, nil
 	}
 	remaining := strings.Replace(string(data), fragment, "", 1)

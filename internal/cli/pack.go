@@ -58,11 +58,9 @@ and receive a new Preview. Packy never retries it automatically.
   packy pack activate engram --surface claude --dry-run --json
   packy pack activate matty --surface codex
   packy pack update matty --surface codex
-  packy pack reconcile matty --surface codex
-  packy pack reconcile --surface codex
   packy pack deactivate matty --surface codex`,
 	}
-	cmd.AddCommand(newPackListCommand(opts, workstationResolver), newPackShowCommand(opts, workstationResolver), newPackStatusCommand(opts, workstationResolver), newPackInstallCommand(opts, workstationResolver), newPackUninstallCommand(opts, workstationResolver), newPackActivateCommand(opts, workstationResolver), newPackUpdateCommand(opts, workstationResolver), newPackDeactivateCommand(opts, workstationResolver), newPackReconcileCommand(opts, workstationResolver))
+	cmd.AddCommand(newPackListCommand(opts, workstationResolver), newPackShowCommand(opts, workstationResolver), newPackStatusCommand(opts, workstationResolver), newPackInstallCommand(opts, workstationResolver), newPackUninstallCommand(opts, workstationResolver), newPackActivateCommand(opts, workstationResolver), newPackUpdateCommand(opts, workstationResolver), newPackDeactivateCommand(opts, workstationResolver))
 	return cmd
 }
 
@@ -96,24 +94,6 @@ func newPackUninstallCommand(opts Options, workstationResolver *workstation.Reso
 				return err
 			}
 			adapter := projectOfflineAdapter(capabilitypack.Surface(surface))
-			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
-			if err != nil {
-				return err
-			}
-			if dryRun && pendingRecovery {
-				return errors.New("project installation is recovery-required; rerun `packy pack uninstall` without --dry-run before requesting another preview")
-			}
-			if !dryRun {
-				recovered, recoveryErr := capabilitypack.NewFacade(capabilitypack.Catalog{}).RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
-				if recoveryErr != nil {
-					return recoveryErr
-				}
-				if recovered {
-					if err := renderProjectRecovery(cmd, jsonOutput, "uninstall", "packy pack uninstall", "Recovered the prior project mutation before preview"); err != nil {
-						return err
-					}
-				}
-			}
 			if err := deactivateBeforeProjectUninstall(cmd, opts, snapshot, args[0], capabilitypack.Surface(surface), projectRoot, dryRun, jsonOutput); err != nil {
 				return err
 			}
@@ -312,26 +292,6 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if surface == "" {
 				return errors.New("--surface is required when installing a pack")
 			}
-			offlineAdapter := projectOfflineAdapter("")
-			pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
-			if err != nil {
-				return err
-			}
-			if dryRun && pendingRecovery {
-				return errors.New("project installation is recovery-required; rerun this named install without --dry-run before requesting another preview")
-			}
-			if !dryRun {
-				recoveryFacade := capabilitypack.NewFacade(capabilitypack.Catalog{})
-				recovered, recoveryErr := recoveryFacade.RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: offlineAdapter})
-				if recoveryErr != nil {
-					return recoveryErr
-				}
-				if recovered {
-					if err := renderProjectRecovery(cmd, jsonOutput, "install", "packy pack install <pack> --surface <surface>", "Recovered the prior project installation attempt before preview"); err != nil {
-						return err
-					}
-				}
-			}
 			composition, err := resolvePackComposition(opts, workstationResolver)
 			if err != nil {
 				return err
@@ -462,11 +422,6 @@ func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONP
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s -> %s mode=%s observed=%s\n", projection.Resource, projection.Target, projection.Mode, projection.ObservedState); err != nil {
 			return err
 		}
-		for _, discovered := range projection.DiscoverableBy {
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Incidentally discoverable by %s; no installation or activation intent recorded\n", discovered); err != nil {
-				return err
-			}
-		}
 	}
 	for _, projection := range report.Retirements {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Retirement: %s -> %s observed=%s\n", projection.Resource, projection.Target, projection.ObservedState); err != nil {
@@ -506,47 +461,6 @@ func renderProjectInstallPreview(cmd *cobra.Command, report capabilitypack.JSONP
 	}
 	_, err := fmt.Fprintf(cmd.OutOrStdout(), "Disposition: %s\n", report.Disposition)
 	return err
-}
-
-func newPackReconcileCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	var surface string
-	var dryRun bool
-	var aliasValues []string
-	var jsonOutput bool
-	cmd := &cobra.Command{
-		Use: "reconcile [pack]", Short: "Repair active capability packs on one CLI surface", Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(aliasValues) > 0 && len(args) == 0 {
-				return fmt.Errorf("--alias is valid only for targeted reconcile of one pack")
-			}
-			aliases, err := parseSurfaceAliases(aliasValues)
-			if err != nil {
-				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
-			}
-			facade, err := activationFacade(opts, workstationResolver)
-			if err != nil {
-				return err
-			}
-			packID := ""
-			if len(args) == 1 {
-				packID = args[0]
-			}
-			plan, err := facade.PreviewReconcile(cmd.Context(), capabilitypack.ReconcileRequest{PackID: packID, Surface: capabilitypack.Surface(surface), Aliases: aliases})
-			if err != nil {
-				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
-			}
-			if err := renderActivationPlanOutput(cmd, plan, dryRun, jsonOutput); err != nil {
-				return err
-			}
-			return applyPackPlan(cmd, opts, facade, plan, dryRun, jsonOutput)
-		},
-	}
-	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
-	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
-	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
-	_ = cmd.MarkFlagRequired("surface")
-	return cmd
 }
 
 func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
@@ -753,24 +667,6 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 		return err
 	}
 	adapter := projectOfflineAdapter("")
-	pendingRecovery, err := capabilitypack.ProjectInstallRecoveryPending(snapshot.PackyHome(), projectRoot)
-	if err != nil {
-		return err
-	}
-	if dryRun && pendingRecovery {
-		return errors.New("project installation is recovery-required; rerun the project update without --dry-run before requesting another preview")
-	}
-	if !dryRun {
-		recovered, recoveryErr := capabilitypack.NewFacade(capabilitypack.Catalog{}).RecoverProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRecoveryRequest{ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
-		if recoveryErr != nil {
-			return recoveryErr
-		}
-		if recovered {
-			if err := renderProjectRecovery(cmd, jsonOutput, "update", "packy pack update <pack> --project", "Recovered the prior project installation attempt before preview"); err != nil {
-				return err
-			}
-		}
-	}
 	composition, err := resolvePackComposition(opts, workstationResolver)
 	if err != nil {
 		return err
@@ -899,7 +795,6 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	var project bool
 	var aliasValues []string
 	var resourceValues []string
-	var providerValues []string
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Long: "Activate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
@@ -912,8 +807,8 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				}
 			}()
 			if project {
-				if len(aliasValues) > 0 || len(resourceValues) > 0 || len(providerValues) > 0 {
-					return errors.New("--alias, --resource, and --provider are not accepted with --project; project activation consumes the exact installed lock")
+				if len(aliasValues) > 0 || len(resourceValues) > 0 {
+					return errors.New("--alias and --resource are not accepted with --project; project activation consumes the exact installed lock")
 				}
 				snapshot, err := workstationResolver.Resolve(workstation.Options{})
 				if err != nil {
@@ -980,15 +875,11 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 					selection.Roots = append(selection.Roots, resource)
 				}
 			}
-			providerChoices, err := parseProviderChoices(providerValues)
-			if err != nil {
-				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
-			}
 			facade, err := activationFacade(opts, workstationResolver)
 			if err != nil {
 				return err
 			}
-			plan, err := facade.Preview(cmd.Context(), capabilitypack.ActivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Aliases: aliases, Selection: selection, ProviderChoices: providerChoices})
+			plan, err := facade.Preview(cmd.Context(), capabilitypack.ActivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), Aliases: aliases, Selection: selection})
 			if err != nil {
 				return lifecycleFailure(cmd, jsonOutput, "preview", err, nil)
 			}
@@ -1003,7 +894,6 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	cmd.Flags().BoolVar(&project, "project", false, "Activate personal runtime effects from the current project installation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one manifest-v4 operational resource (<kind>:<id>); repeatable")
-	cmd.Flags().StringArrayVar(&providerValues, "provider", nil, "Select a capability provider (<capability>=<pack>[/<kind>:<id>]); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd
@@ -1083,33 +973,6 @@ func renderProjectActivationPreview(cmd *cobra.Command, preview capabilitypack.J
 	return nil
 }
 
-func parseProviderChoices(values []string) ([]capabilitypack.ProviderChoice, error) {
-	if values == nil {
-		return nil, nil
-	}
-	result := make([]capabilitypack.ProviderChoice, 0, len(values))
-	for _, value := range values {
-		capability, provider, ok := strings.Cut(value, "=")
-		if !ok || capability == "" || provider == "" {
-			return nil, fmt.Errorf("provider choice %q must be <capability>=<pack>[/<kind>:<id>]", value)
-		}
-		packID, resourceValue, hasResource := strings.Cut(provider, "/")
-		if packID == "" {
-			return nil, fmt.Errorf("provider choice %q has an empty provider pack", value)
-		}
-		choice := capabilitypack.ProviderChoice{Capability: capability, ProviderPack: packID}
-		if hasResource {
-			resource, err := capabilitypack.ParseResourceIdentity(resourceValue)
-			if err != nil {
-				return nil, fmt.Errorf("provider choice %q: %w", value, err)
-			}
-			choice.ProviderResource = &resource
-		}
-		result = append(result, choice)
-	}
-	return result, nil
-}
-
 func lifecycleFailure(cmd *cobra.Command, jsonOutput bool, stage string, err error, plan *capabilitypack.ReconciliationPlan) error {
 	err = capabilitypack.ReportSafeError(err, plan)
 	if jsonOutput {
@@ -1151,7 +1014,7 @@ func projectLifecycleArgs(cmd *cobra.Command, args []string, validate cobra.Posi
 
 func projectLifecycleArgumentValues(cmd *cobra.Command) []string {
 	values := append([]string(nil), cmd.Flags().Args()...)
-	for _, name := range []string{"alias", "provider", "resource"} {
+	for _, name := range []string{"alias", "resource"} {
 		flag := cmd.Flags().Lookup(name)
 		if flag == nil || !flag.Changed {
 			continue
@@ -1172,20 +1035,6 @@ func projectLifecycleArgumentValues(cmd *cobra.Command) []string {
 		}
 	}
 	return values
-}
-
-func renderProjectRecovery(cmd *cobra.Command, jsonOutput bool, operation, nextCommand, human string) error {
-	if jsonOutput {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(capabilitypack.JSONProjectRecovery{
-			SchemaVersion: capabilitypack.ProjectLifecycleJSONSchemaVersion,
-			Report:        "project-recovery",
-			Operation:     operation,
-			Status:        "recovered",
-			NextCommand:   nextCommand,
-		})
-	}
-	_, err := fmt.Fprintln(cmd.OutOrStdout(), human)
-	return err
 }
 
 func surfaceName(surface capabilitypack.Surface) string {
@@ -1241,7 +1090,7 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 			claudePacks[pack.ID+"@"+pack.Version] = pack
 		}
 	}
-	claudeState, err := store.Load(context.Background(), capabilitypack.SurfaceClaude)
+	claudeState, err := store.LoadSnapshot(context.Background(), capabilitypack.SurfaceClaude)
 	if err != nil {
 		return capabilitypack.Facade{}, fmt.Errorf("load Claude activation contracts: %w", err)
 	}
@@ -1307,24 +1156,16 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		prefix = "Update plan"
 	} else if plan.Operation() == capabilitypack.OperationDeactivate {
 		prefix = "Deactivation plan"
-	} else if plan.Operation() == capabilitypack.OperationReconcile {
-		prefix = "Reconcile plan"
 	}
 	if dryRun {
 		prefix = strings.TrimSuffix(prefix, " plan") + " dry-run plan"
 	}
 	packLabel := plan.Pack().ID
-	if plan.Operation() != capabilitypack.OperationUpdate && plan.Operation() != capabilitypack.OperationDeactivate && plan.Operation() != capabilitypack.OperationReconcile {
+	if plan.Operation() != capabilitypack.OperationUpdate && plan.Operation() != capabilitypack.OperationDeactivate {
 		packLabel += " " + plan.Pack().Version
 	}
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s\nDigest: %s\nPack: %s\nSurface: %s\n", prefix, plan.ID(), plan.Digest(), packLabel, plan.Surface()); err != nil {
 		return err
-	}
-	if history := plan.HistoricalAttempt(); history != nil {
-		guidance := plan.RecoveryGuidance()
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Recovery: fresh %s Preview toward the already-approved intent; historical plan %s is not replayed.\nOriginating operation: %s\nHistorical outcome: %s\nHistorical digest: %s\nAffected resources: %s\nConsumers: %s\nCompleted: %s\nFailed: %s — %s\nNot started: %s\nNext explicit lifecycle command: `%s`\nTo recover, repeat `%s`; a new Preview and approvals are required.\n", plan.Operation(), history.PlanID, guidance.OriginatingOperation, history.Outcome, history.PlanDigest, renderRecoveryResources(guidance.AffectedResources), renderRecoveryConsumers(guidance.Consumers), joinFacts(guidance.Completed), guidance.FailedAction, guidance.FailureDetail, joinFacts(guidance.NotStarted), guidance.NextCommand, guidance.NextCommand); err != nil {
-			return err
-		}
 	}
 	if plan.Operation() == capabilitypack.OperationUpdate {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Version: %s -> %s (catalog-current)\nIntent revision: %d\n", plan.OldVersion(), plan.Pack().Version, plan.IntentRevision()); err != nil {
@@ -1332,10 +1173,6 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		}
 	} else if plan.Operation() == capabilitypack.OperationDeactivate {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Active version: %s\nIntent revision: %d\n", plan.OldVersion(), plan.IntentRevision()); err != nil {
-			return err
-		}
-	} else if plan.Operation() == capabilitypack.OperationReconcile {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Scope: %s\nIntent revision: %d (unchanged)\n", plan.ReconcileScope(), plan.IntentRevision()); err != nil {
 			return err
 		}
 	} else if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Version: %s\nIntent revision: %d\n", plan.Pack().Version, plan.IntentRevision()); err != nil {
@@ -1352,16 +1189,6 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 	}
 	for _, activation := range plan.Activations() {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Activation: %s %s %s\n", activation.Role, activation.Pack.ID, activation.Pack.Version); err != nil {
-			return err
-		}
-	}
-	for _, requirement := range plan.CapabilityRequirements() {
-		if err := renderCapabilityRequirement(cmd.OutOrStdout(), requirement); err != nil {
-			return err
-		}
-	}
-	for _, choice := range plan.ProviderChoices() {
-		if err := renderProviderChoice(cmd.OutOrStdout(), choice); err != nil {
 			return err
 		}
 	}
@@ -1411,11 +1238,6 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Contract diff: added=%s changed=%s removed=%s retained=%s\n", joinFacts(structured.ContractDiff.Added), joinFacts(structured.ContractDiff.Changed), joinFacts(structured.ContractDiff.Removed), joinFacts(structured.ContractDiff.Retained)); err != nil {
 		return err
 	}
-	for _, migration := range structured.Migrations {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Migration: %s\n", migration); err != nil {
-			return err
-		}
-	}
 	disposition := plan.Disposition()
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Plan disposition: %s\n", disposition); err != nil {
 		return err
@@ -1426,8 +1248,6 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 			operation = "update"
 		} else if plan.Operation() == capabilitypack.OperationDeactivate {
 			operation = "deactivation"
-		} else if plan.Operation() == capabilitypack.OperationReconcile {
-			operation = "reconcile"
 		}
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Cannot apply %s: %d blockers\nPreserved or blocked projections:\n", operation, len(plan.Blockers())); err != nil {
 			return err
@@ -1449,38 +1269,6 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 	if plan.NoOp() {
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), "Already converged: no approval or Apply required.")
 		return err
-	}
-	contributors := plan.Contributors()
-	removed := plan.RemovedContributors()
-	removedKeys := make([]string, 0, len(removed))
-	for id := range removed {
-		removedKeys = append(removedKeys, id)
-	}
-	sort.Strings(removedKeys)
-	for _, id := range removedKeys {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Contributor removed: %s <- %s\n", id, removed[id]); err != nil {
-			return err
-		}
-	}
-	keys := make([]string, 0, len(contributors))
-	for id := range contributors {
-		keys = append(keys, id)
-	}
-	sort.Strings(keys)
-	for _, id := range keys {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Contributors: %s <- %s\n", id, strings.Join(contributors[id], ", ")); err != nil {
-			return err
-		}
-	}
-	for _, retained := range plan.RetainedProjections() {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Retained shared projection: %s <- %s (no rewrite)\n", retained.ID, strings.Join(retained.Contributors, ", ")); err != nil {
-			return err
-		}
-	}
-	for _, shared := range structured.SharedProjections {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Shared projection: %s key=%s discoverable_by=%s — %s\n", shared.ID, shared.ProjectionKey, joinSurfaces(shared.DiscoverableBy), shared.DiscoveryNotice); err != nil {
-			return err
-		}
 	}
 	for _, resolution := range plan.Resolutions() {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Requirement: %s available=%s path=%s origin=%s acquisition_source=%s acquisition_version=%s\n",
@@ -1524,59 +1312,11 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 	return nil
 }
 
-func renderRecoveryResources(values []capabilitypack.RecoveryAffectedResource) string {
-	facts := make([]string, 0, len(values))
-	for _, value := range values {
-		facts = append(facts, value.Pack+"/"+value.Resource.String())
-	}
-	return joinFacts(facts)
-}
-
-func renderRecoveryConsumers(values []capabilitypack.RecoveryConsumer) string {
-	facts := make([]string, 0, len(values))
-	for _, value := range values {
-		fact := value.Pack
-		if value.Resource != nil {
-			fact += "/" + value.Resource.String()
-		}
-		if value.Capability != "" {
-			fact += " (" + value.Capability + ")"
-		}
-		facts = append(facts, fact)
-	}
-	return joinFacts(facts)
-}
-
 func renderActivationPlanOutput(cmd *cobra.Command, plan capabilitypack.ReconciliationPlan, dryRun, jsonOutput bool) error {
 	if jsonOutput {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(plan.JSONReport(dryRun))
 	}
 	return renderActivationPlan(cmd, plan, dryRun)
-}
-
-func renderCapabilityRequirement(out io.Writer, requirement capabilitypack.CapabilityRequirementFact) error {
-	consumer, provider := "all", "all"
-	if requirement.ConsumerResource != nil {
-		consumer = requirement.ConsumerResource.String()
-	}
-	if requirement.ProviderResource != nil {
-		provider = requirement.ProviderResource.String()
-	}
-	readiness := requirement.ResultingReadiness
-	_, err := fmt.Fprintf(out, "Capability requirement: consumer=%s/%s capability=%s provider=%s/%s tools=%s authority=%s readiness=configured:%t,authorized:%t,usable:%t\n",
-		requirement.ConsumerPack, consumer, requirement.Capability, requirement.ProviderPack, provider,
-		joinFacts(requirement.RequiredTools), joinFacts(requirement.RequiredAuthority),
-		readiness.Configured, readiness.Authorized, readiness.Usable)
-	return err
-}
-
-func renderProviderChoice(out io.Writer, choice capabilitypack.ProviderChoice) error {
-	provider := "all"
-	if choice.ProviderResource != nil {
-		provider = choice.ProviderResource.String()
-	}
-	_, err := fmt.Fprintf(out, "Provider choice: capability=%s provider=%s/%s\n", choice.Capability, choice.ProviderPack, provider)
-	return err
 }
 
 func renderPackContract(cmd *cobra.Command, contract capabilitypack.LifecycleContract) error {
@@ -1683,9 +1423,6 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				} else if err := renderProjectStatus(cmd, report); err != nil {
 					return err
 				}
-				if require != "" && report.RecoveryRequired {
-					return fmt.Errorf("project recovery is required; run `%s`", report.RecoveryCommand)
-				}
 				for _, status := range report.Packs {
 					if require == "installed" && !status.RequirementSatisfied {
 						return fmt.Errorf("pack %q on %s is not installed", status.Pack.ID, status.Surface)
@@ -1782,11 +1519,6 @@ func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
 }
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
-	if report.RecoveryRequired {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Project recovery: required\nRecovery command: %s\n", report.RecoveryCommand); err != nil {
-			return err
-		}
-	}
 	for _, status := range report.Packs {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, yesNo(status.Readiness.Configured), yesNo(status.Readiness.Authorized), yesNo(status.Readiness.Usable), len(status.Projections), renderProjectInstallBlockers(status.Blockers), renderPendingAction(status.PendingHumanActions), renderPendingAction(status.Evidence)); err != nil {
 			return err
@@ -1855,20 +1587,6 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Activation role: %s\n", entry.ActivationRole); err != nil {
 			return err
 		}
-		for _, choice := range entry.Intent.ProviderChoices {
-			if err := renderProviderChoice(cmd.OutOrStdout(), choice); err != nil {
-				return err
-			}
-		}
-		for _, consumer := range entry.Consumers {
-			resource := "all"
-			if consumer.ConsumerResource != nil {
-				resource = consumer.ConsumerResource.String()
-			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Capability consumer: consumer=%s/%s capability=%s\n", consumer.ConsumerPack, resource, consumer.Capability); err != nil {
-				return err
-			}
-		}
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Selection mode: %s\n", entry.Intent.Selection.Mode); err != nil {
 			return err
 		}
@@ -1911,7 +1629,7 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		}
 	}
 	for _, projection := range entry.ProjectionDetails {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s target=%s owner=%s health=%s observed=%s desired=%s contributors=%s shared=%s discoverable_by=%s discovery_notice=%s\n", projection.ID, projection.Target, projection.Owner, projection.Health, projection.ObservedFingerprint, projection.DesiredFingerprint, joinFacts(projection.Contributors), yesNo(projection.Shared), joinSurfaces(projection.DiscoverableBy), factOrNone(projection.DiscoveryNotice)); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s target=%s owner=%s health=%s observed=%s desired=%s\n", projection.ID, projection.Target, projection.Owner, projection.Health, projection.ObservedFingerprint, projection.DesiredFingerprint); err != nil {
 			return err
 		}
 	}

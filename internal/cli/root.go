@@ -251,7 +251,6 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 			ID:                  entry.Pack.ID,
 			Surface:             string(entry.Surface),
 			InspectionFailed:    entry.InspectionFailed,
-			RecoveryRequired:    entry.LifecycleState == capabilitypack.PackLifecycleRecoveryRequired,
 			UpdateAvailable:     entry.UpdateAvailable,
 			ProjectionProblems:  entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
 			MissingRequirements: len(entry.MissingRequirements),

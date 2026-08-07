@@ -292,7 +292,7 @@ func TestAddyCompositeSurfaceStagesReplacesPreservesAndRemovesExactOwnership(t *
 	}
 }
 
-func TestAddyCompositeOwnershipProviderReconstructsAliasAndRecovery(t *testing.T) {
+func TestAddyCompositeOwnershipProviderReconstructsAlias(t *testing.T) {
 	bundle, pack := addyCompositeFixture(t)
 	home := t.TempDir()
 	layout := NewCanonicalLayout(home)
@@ -302,14 +302,10 @@ func TestAddyCompositeOwnershipProviderReconstructsAliasAndRecovery(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	provenance, err := canonicalCompositeOwnership(composite.Ownership)
-	if err != nil {
-		t.Fatal(err)
-	}
 	state := capabilitypack.ActivationState{
 		Intent: capabilitypack.ActivationIntent{PackID: "addy", Version: "1.1.0", Surface: capabilitypack.SurfaceClaude, Active: true, Aliases: []capabilitypack.SurfaceAlias{alias}},
 		Ownership: []capabilitypack.ProjectionOwnership{{
-			ID: "skill:addy-example", Contributors: []string{"addy"}, Fingerprint: composite.TreeFingerprint, AdapterProvenance: provenance,
+			ID: "skill:addy-example", PackID: "addy", Surface: capabilitypack.SurfaceClaude, Fingerprint: composite.TreeFingerprint,
 		}},
 	}
 	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"addy": pack}, layout, bundle)
@@ -322,23 +318,6 @@ func TestAddyCompositeOwnershipProviderReconstructsAliasAndRecovery(t *testing.T
 		t.Fatalf("record=%+v", record)
 	}
 
-	recovery := state
-	recovery.Ownership = nil
-	recovery.Intent.Active = false
-	recovery.Journal = &capabilitypack.ApplyingJournal{PackID: "addy", Surface: capabilitypack.SurfaceClaude, Actions: []string{"skill:addy-example"}}
-	recoveryProvider := NewCapabilityPackOwnershipProvider(ownershipStore{recovery}, map[string]capabilitypack.Pack{"addy": pack}, layout, bundle)
-	recovered, err := recoveryProvider.ObserveOwnership(context.Background())
-	if err != nil || len(recovered.Records) != 1 || recovered.Records[0].Composite != composite.Ownership {
-		t.Fatalf("recovery snapshot=%+v err=%v", recovered, err)
-	}
-
-	stale := state
-	stale.Ownership = append([]capabilitypack.ProjectionOwnership(nil), state.Ownership...)
-	stale.Ownership[0].AdapterProvenance = "{}"
-	staleProvider := NewCapabilityPackOwnershipProvider(ownershipStore{stale}, map[string]capabilitypack.Pack{"addy": pack}, layout, bundle)
-	if _, err := staleProvider.ObserveOwnership(context.Background()); err == nil || !strings.Contains(err.Error(), "does not match") {
-		t.Fatalf("stale provenance was accepted: %v", err)
-	}
 }
 
 func compositeOwnershipRecord(t *testing.T, projection capabilitypack.ObservedProjection, contributor string) OwnershipRecord {

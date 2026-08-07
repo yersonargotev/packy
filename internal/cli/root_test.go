@@ -138,7 +138,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("doctor error=%v\n%s", err, out)
 		}
-		for _, want := range []string{"WARN pack-matty-codex", "projection findings", "packy pack reconcile matty --surface codex", "packy pack status matty --surface codex"} {
+		for _, want := range []string{"WARN pack-matty-codex", "projection findings", "packy pack activate matty --surface codex", "packy pack status matty --surface codex"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("drift doctor missing %q:\n%s", want, out)
 			}
