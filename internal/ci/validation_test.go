@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -44,7 +43,6 @@ var packyOwnedPackages = []string{
 	"./internal/packsync/githubsource",
 	"./internal/packsyncworkflow",
 	"./internal/prompt",
-	"./internal/release",
 	"./internal/setuphealth",
 	"./internal/skillbundle",
 	"./internal/tools/addypromotiongate",
@@ -219,91 +217,6 @@ func TestCIUsesOnlyTheValidationEntrypoint(t *testing.T) {
 		if strings.Contains(workflow, "run: "+unsafe) {
 			t.Fatalf("CI bypasses validation entrypoint with %q", unsafe)
 		}
-	}
-}
-
-func TestReleaseScenarioDeveloperEntrypointIsFocusedAndSandboxed(t *testing.T) {
-	for _, test := range []struct {
-		name       string
-		goExit     string
-		wantErr    bool
-		wantOutput string
-		wantDetail string
-	}{
-		{name: "success", wantOutput: "Release scenario cohort passed."},
-		{name: "failure", goExit: "7", wantErr: true, wantOutput: "Release scenario cohort failed; inspect the verbose test output above", wantDetail: "publication denied: expected=sealed-commit observed=moved-tag effects=none"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			bin := filepath.Join(root, "bin")
-			logPath := filepath.Join(root, "go.log")
-			writeExecutable(t, filepath.Join(root, "scripts", "test-release-scenarios.sh"), readFile(t, filepath.Join(repositoryRoot(t), "scripts", "test-release-scenarios.sh")))
-			writeExecutable(t, filepath.Join(bin, "go"), `#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$HOME" "$XDG_CONFIG_HOME" "$GOCACHE" "$GOMODCACHE" "$GOPATH" "$*" >>"$GO_LOG"
-[[ -z "${GO_DETAIL:-}" ]] || printf '%s\n' "$GO_DETAIL"
-exit "${GO_EXIT:-0}"
-`)
-
-			operatorHome := filepath.Join(root, "operator-home")
-			operatorXDG := filepath.Join(root, "operator-xdg")
-			goCache := filepath.Join(root, "go-cache")
-			goModCache := filepath.Join(root, "go-mod-cache")
-			goPath := filepath.Join(root, "go-path")
-			cmd := exec.Command("/bin/bash", filepath.Join(root, "scripts", "test-release-scenarios.sh"))
-			cmd.Dir = root
-			cmd.Env = append(os.Environ(),
-				"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-				"HOME="+operatorHome,
-				"XDG_CONFIG_HOME="+operatorXDG,
-				"GOCACHE="+goCache,
-				"GOMODCACHE="+goModCache,
-				"GOPATH="+goPath,
-				"GO_LOG="+logPath,
-				"GO_EXIT="+test.goExit,
-				"GO_DETAIL="+test.wantDetail,
-				"TMPDIR="+root,
-			)
-			output, err := cmd.CombinedOutput()
-			if (err != nil) != test.wantErr {
-				t.Fatalf("entrypoint error = %v, want error %t\n%s", err, test.wantErr, output)
-			}
-			if test.goExit != "" {
-				var exitErr *exec.ExitError
-				if !errors.As(err, &exitErr) || exitErr.ExitCode() != 7 {
-					t.Fatalf("entrypoint exit = %v, want propagated status 7", err)
-				}
-			}
-			if !strings.Contains(string(output), test.wantOutput) {
-				t.Fatalf("entrypoint output missing %q:\n%s", test.wantOutput, output)
-			}
-			if test.wantDetail != "" && !strings.Contains(string(output), test.wantDetail) {
-				t.Fatalf("entrypoint discarded scenario boundary/identity/effect diagnostic %q:\n%s", test.wantDetail, output)
-			}
-
-			fields := strings.Split(strings.TrimSpace(readFile(t, logPath)), "\t")
-			if len(fields) != 6 {
-				t.Fatalf("fake Go log fields = %#v, want six", fields)
-			}
-			if fields[2] != goCache || fields[3] != goModCache || fields[4] != goPath {
-				t.Fatalf("Go cache roots were not preserved: %#v", fields[2:5])
-			}
-			if fields[5] != "test ./internal/release -run ^TestReleaseScenario -count=1 -v" {
-				t.Fatalf("focused Go invocation = %q", fields[5])
-			}
-			sandbox := filepath.Dir(fields[0])
-			if filepath.Base(fields[0]) != "home" || fields[1] != filepath.Join(sandbox, "xdg") || filepath.Dir(sandbox) != root || !strings.HasPrefix(filepath.Base(sandbox), "packy-release-scenarios.") {
-				t.Fatalf("focused Go invocation escaped its disposable roots: HOME=%q XDG_CONFIG_HOME=%q", fields[0], fields[1])
-			}
-			if _, statErr := os.Stat(sandbox); !os.IsNotExist(statErr) {
-				t.Fatalf("disposable sandbox was not removed: %s", sandbox)
-			}
-			for _, path := range []string{operatorHome, operatorXDG} {
-				if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-					t.Fatalf("operator root touched: %s", path)
-				}
-			}
-		})
 	}
 }
 
@@ -739,7 +652,6 @@ func TestCodeownersMatchesAcceptedSensitivePathPolicy(t *testing.T) {
 		"/go.sum",
 		"/bundle/sources.json",
 		"/internal/ci/",
-		"/internal/release/",
 		"/internal/claudesmoke/",
 		"/internal/packsync/",
 		"/internal/packsyncworkflow/",

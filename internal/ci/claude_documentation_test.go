@@ -19,8 +19,8 @@ func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 		"docs/roadmap.md":            {"Claude Code", claudecode.MinimumSupportedVersion},
 		"docs/capability-packs.md":   {"manifest v3", "Claude Code", "matty 4.0.0", "Matty no longer contributes instructions", "engram 2.0.0"},
 		"docs/structured-output.md":  {"schema_version: 2", "packy-core"},
-		"docs/release.md":            {"./scripts/validate-packy.sh", "Fail-closed publication gate", claudecode.MinimumSupportedVersion},
-		"docs/release-notes/next.md": {"{{TAG}}", claudecode.MinimumSupportedVersion, "state schema v2", "matty 4.0.0", "no longer injects", "engram 2.0.0", "degraded"},
+		"docs/release.md":            {"./scripts/validate-packy.sh", "Publication boundaries"},
+		"docs/release-notes/next.md": {"{{TAG}}", claudecode.MinimumSupportedVersion, "Addy", "Argote", "Engram", "Matty", "SHA256SUMS"},
 	}
 
 	staleSupportClaim := regexp.MustCompile(`(?is)(?:supports? only.{0,80}(?:codex.{0,30}opencode|opencode.{0,30}codex)|both supported surfaces|two[- ]surface support|cli surfaces\s*\|\s*codex and opencode only|initial supported cli surfaces are codex and opencode|claude code,\s*antigravity,\s*and github copilot cli are future candidates)`)

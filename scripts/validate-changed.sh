@@ -27,7 +27,6 @@ readonly packages=(
   ./internal/packsync/githubsource
   ./internal/packsyncworkflow
   ./internal/prompt
-  ./internal/release
   ./internal/setuphealth
   ./internal/skillbundle
   ./internal/tools/addypromotiongate

@@ -9,7 +9,7 @@ Usage:
   scripts/generate-homebrew-formula.sh --version <v0.x.y> --checksums <SHA256SUMS> --out <Formula/packy.rb> [options]
 
 Options:
-  --version   Release tag used in artifact filenames, for example v0.1.0.
+  --version   Release tag used in artifact filenames, for example v0.2.0.
   --checksums Path to the complete release SHA256SUMS manifest.
   --out       Output formula path.
   --repo      GitHub repository in owner/name form. Defaults to yersonargotev/packy.
@@ -76,9 +76,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-release_version_regex='^v0\.[0-9]+\.[0-9]+$'
+release_version_regex='^v[0-9]+\.[0-9]+\.[0-9]+$'
 if [[ ! "$version" =~ $release_version_regex ]]; then
-  fail "release version must be a v0.x.y tag such as v0.1.0; got '${version:-<empty>}'"
+  fail "release version must be a tag such as v0.2.0; got '${version:-<empty>}'"
 fi
 if [[ -z "$checksums_path" ]]; then
   fail "--checksums is required"
@@ -161,18 +161,16 @@ validate_checksum_manifest() {
   done
 }
 
-darwin_amd64_artifact="packy_${version}_darwin_amd64"
-darwin_arm64_artifact="packy_${version}_darwin_arm64"
-linux_amd64_artifact="packy_${version}_linux_amd64"
-linux_arm64_artifact="packy_${version}_linux_arm64"
-sbom_artifact="sbom.spdx.json"
+darwin_amd64_artifact="packy_${version}_darwin_amd64.tar.gz"
+darwin_arm64_artifact="packy_${version}_darwin_arm64.tar.gz"
+linux_amd64_artifact="packy_${version}_linux_amd64.tar.gz"
+linux_arm64_artifact="packy_${version}_linux_arm64.tar.gz"
 
 expected_artifacts=(
   "$darwin_amd64_artifact"
   "$darwin_arm64_artifact"
   "$linux_amd64_artifact"
   "$linux_arm64_artifact"
-  "$sbom_artifact"
 )
 
 darwin_amd64_sha=""
@@ -190,28 +188,26 @@ class Packy < Formula
 
   on_macos do
     if Hardware::CPU.arm?
-      url "${asset_base}/${darwin_arm64_artifact}", using: :nounzip
+      url "${asset_base}/${darwin_arm64_artifact}"
       sha256 "$darwin_arm64_sha"
     else
-      url "${asset_base}/${darwin_amd64_artifact}", using: :nounzip
+      url "${asset_base}/${darwin_amd64_artifact}"
       sha256 "$darwin_amd64_sha"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "${asset_base}/${linux_arm64_artifact}", using: :nounzip
+      url "${asset_base}/${linux_arm64_artifact}"
       sha256 "$linux_arm64_sha"
     else
-      url "${asset_base}/${linux_amd64_artifact}", using: :nounzip
+      url "${asset_base}/${linux_amd64_artifact}"
       sha256 "$linux_amd64_sha"
     end
   end
 
   def install
-    downloaded_binary = Dir["packy_*"].first
-    odie "downloaded packy binary not found" if downloaded_binary.nil?
-    bin.install downloaded_binary => "packy"
+    bin.install "packy"
   end
 
   test do
