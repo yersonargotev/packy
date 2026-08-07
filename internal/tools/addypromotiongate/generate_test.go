@@ -9,7 +9,6 @@ import (
 
 	"github.com/yersonargotev/packy/internal/addyacceptance"
 	"github.com/yersonargotev/packy/internal/claudesmoke"
-	"github.com/yersonargotev/packy/internal/governancedrift"
 )
 
 func TestProjectProductionAtomicityMapsSmokeEvidenceExactly(t *testing.T) {
@@ -69,7 +68,7 @@ func TestReadCanonicalRegularRejectsMalformedNoncanonicalAndNonregularInputs(t *
 			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			var decision governancedrift.GateDecision
+			var decision map[string]any
 			if _, err := readCanonicalRegular(path, &decision); err == nil {
 				t.Fatal("untrusted input accepted")
 			}
@@ -79,7 +78,7 @@ func TestReadCanonicalRegularRejectsMalformedNoncanonicalAndNonregularInputs(t *
 	if err := os.Mkdir(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	var decision governancedrift.GateDecision
+	var decision map[string]any
 	if _, err := readCanonicalRegular(directory, &decision); err == nil {
 		t.Fatal("nonregular input accepted")
 	}

@@ -9,9 +9,9 @@ Supersedes ADR 0020 and ADR 0021.
 ## Context
 
 Packy's protected branch already provides the durable integration boundary for
-repository changes. Approved issues establish authority, pull requests expose
-the complete candidate, required CI checks correctness and policy, and review
-records Standards and Spec findings against the final candidate.
+repository changes. Issues describe the requested work, pull requests expose
+the complete candidate, required CI checks correctness, and review records
+Standards and Spec findings against the final candidate.
 
 Maintainers need one predictable path for ordinary, sensitive, and governance
 changes. A separate local orchestration lifecycle adds another state machine,
@@ -25,7 +25,7 @@ and package-manager state after repository integration.
 
 All Packy issue work uses the conventional protected pull-request workflow:
 
-1. an approved GitHub issue states the objective and acceptance criteria;
+1. a GitHub issue states the objective and acceptance criteria;
 2. a branch and pull request contain the candidate and close that issue;
 3. required CI passes for the final pull-request head;
 4. traceable Standards and Spec review covers that final candidate;
@@ -52,6 +52,6 @@ candidate has integrated.
 ## Enforcement
 
 Repository instructions and issue-tracker documentation describe only the
-protected pull-request path. Governance continues to require an approved
-closing issue and the required protected-main checks. Repository validation
-must remain green before a change is reported complete.
+protected pull-request path. Ordinary Packy CI, CodeQL, review, and human merge
+through branch protection govern integration; issues organize work but do not
+grant merge authority.

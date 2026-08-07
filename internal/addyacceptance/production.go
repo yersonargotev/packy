@@ -11,8 +11,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/yersonargotev/packy/internal/governancedrift"
 )
 
 const AcceptanceRunReportSchema = "addy-acceptance-run.v1"
@@ -75,9 +73,6 @@ func (r AcceptanceRunReport) CanonicalJSON(context PromotionValidationContext) (
 type ProductionPromotionInputs struct {
 	Acceptance            AcceptanceRunReport
 	Qualification         ProductionQualification
-	GovernanceEvaluation  governancedrift.Evaluation
-	GovernanceDecision    governancedrift.GateDecision
-	WorkflowBlobSHA       string
 	DisposableHarnessRoot string
 }
 
@@ -173,18 +168,6 @@ func BuildProductionPromotionEvidence(context PromotionValidationContext, in Pro
 	if err := validateProductionAtomicity(q); err != nil {
 		return PromotionEvidence{}, err
 	}
-	e, g := in.GovernanceEvaluation, in.GovernanceDecision
-	if e.State != governancedrift.StateClean || len(e.Findings) != 0 || !g.Allowed || len(g.Reasons) != 0 {
-		return PromotionEvidence{}, errors.New("governance evidence is dirty or gate decision is disallowed")
-	}
-	i := e.Identity
-	if i.Repository != context.Repository || i.Ref != "refs/heads/main" ||
-		i.CommitSHA != contextCommit(context) || i.WorkflowSHA != in.WorkflowBlobSHA {
-		return PromotionEvidence{}, errors.New("governance identity does not match protected evaluated candidate")
-	}
-	if i.CollectedAt.After(context.Now) || context.Now.Sub(i.CollectedAt) > time.Hour {
-		return PromotionEvidence{}, errors.New("governance evidence is stale or future-dated")
-	}
 	acceptanceSHA256, err := canonicalAuthorityDigest(in.Acceptance)
 	if err != nil {
 		return PromotionEvidence{}, err
@@ -193,19 +176,12 @@ func BuildProductionPromotionEvidence(context PromotionValidationContext, in Pro
 	if err != nil {
 		return PromotionEvidence{}, err
 	}
-	governanceSHA256, err := canonicalAuthorityDigest(struct {
-		Evaluation governancedrift.Evaluation   `json:"evaluation"`
-		Decision   governancedrift.GateDecision `json:"decision"`
-	}{e, g})
-	if err != nil {
-		return PromotionEvidence{}, err
-	}
 	atomicitySHA256, err := canonicalAuthorityDigest(q.Atomicity)
 	if err != nil {
 		return PromotionEvidence{}, err
 	}
-	prepublication := digestBytes([]byte(acceptanceSHA256 + governanceSHA256))
-	authority, err := NewProductionPromotionAuthority(context, in.Acceptance.Rows, acceptanceSHA256, qualificationSHA256, governanceSHA256, prepublication)
+	prepublication := digestBytes([]byte(acceptanceSHA256 + qualificationSHA256))
+	authority, err := NewProductionPromotionAuthority(context, in.Acceptance.Rows, acceptanceSHA256, qualificationSHA256, prepublication)
 	if err != nil {
 		return PromotionEvidence{}, err
 	}

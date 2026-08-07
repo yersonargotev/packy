@@ -2,7 +2,6 @@ package ci_test
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -18,7 +17,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/yersonargotev/packy/internal/packsync"
@@ -38,8 +36,6 @@ var packyOwnedPackages = []string{
 	"./internal/codex",
 	"./internal/codexsmoke",
 	"./internal/engrambin",
-	"./internal/governanceauth",
-	"./internal/governancedrift",
 	"./internal/localprojection",
 	"./internal/opencode",
 	"./internal/opencodesmoke",
@@ -57,8 +53,6 @@ var packyOwnedPackages = []string{
 	"./internal/tools/codexsmoke",
 	"./internal/tools/opencodesmoke",
 	"./internal/tools/packcontentvalidate",
-	"./internal/tools/governanceauth",
-	"./internal/tools/governancedrift",
 	"./internal/tools/syncpacksource",
 	"./internal/tools/vercelacceptance",
 	"./internal/vercelacceptance",
@@ -79,54 +73,6 @@ var packSourceSchemaNames = []string{
 	"pack-source-operational-artifact.schema.json",
 	"pack-source-publication.schema.json",
 	"pack-source-validation.schema.json",
-}
-
-func TestValidationEntrypointOwnsTheExactPackageAllowlist(t *testing.T) {
-	root := repositoryRoot(t)
-	script := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
-
-	packages := shellArray(t, script, "readonly packages=(")
-	if !reflect.DeepEqual(packages, packyOwnedPackages) {
-		t.Fatalf("validation package allowlist = %#v, want %#v", packages, packyOwnedPackages)
-	}
-	for _, forbidden := range []string{"./" + "...", "bundle/", ".scratch/"} {
-		if strings.Contains(script, forbidden) {
-			t.Fatalf("validation entrypoint contains non-allowlisted discovery path %q", forbidden)
-		}
-	}
-	for _, command := range []string{"gofmt -l", "go build", "go vet", "go test", "go test -race"} {
-		if !strings.Contains(script, command) {
-			t.Fatalf("validation entrypoint missing %q", command)
-		}
-	}
-	wantCommands := []string{
-		`go_cache="${GOCACHE:-$(go env GOCACHE)}"`,
-		`go_mod_cache="${GOMODCACHE:-$(go env GOMODCACHE)}"`,
-		`go_path="${GOPATH:-$(go env GOPATH)}"`,
-		`unformatted="$(gofmt -l "${go_files[@]}")"`,
-		`go build "${build_packages[@]}"`,
-		`go vet "${packages[@]}"`,
-		`go test "${packages[@]}"`,
-		`go test -race -timeout 10m "${race_packages[@]}"`,
-	}
-	if commands := validationCommands(script); !reflect.DeepEqual(commands, wantCommands) {
-		t.Fatalf("validation commands = %#v, want only %#v", commands, wantCommands)
-	}
-}
-
-func TestValidationRaceCoverageRejectsRequiredPackageOmission(t *testing.T) {
-	invocations := expectedValidationGoInvocations()
-	raceInvocation := invocations[len(invocations)-1]
-	withoutCapabilityPack := make([]string, 0, len(raceInvocation)-1)
-	for _, argument := range raceInvocation {
-		if argument != "./internal/capabilitypack" {
-			withoutCapabilityPack = append(withoutCapabilityPack, argument)
-		}
-	}
-	invocations[len(invocations)-1] = withoutCapabilityPack
-	if err := validateCanonicalGoInvocations(invocations); err == nil {
-		t.Fatal("canonical race contract accepted omission of concurrency coverage")
-	}
 }
 
 func TestOrdinaryOnlyCLITestsRemainConcurrencyFree(t *testing.T) {
@@ -189,7 +135,7 @@ func TestChangedValidationClassifiesTheCompleteWorkingTree(t *testing.T) {
 		{name: "empty delta", change: func(t *testing.T, root string) {}, want: []string{"mode=focused", "scope=empty", "changed paths=(none)"}},
 		{name: "changed owner includes test-import reverse dependent", change: func(t *testing.T, root string) {
 			writeFile(t, filepath.Join(root, "internal/prompt/new.go"), "package prompt\n")
-		}, want: []string{"mode=focused", "./internal/cli ./internal/prompt", "remains required before final delivery"}, wantTest: true, wantFormat: true},
+		}, want: []string{"mode=focused", "./internal/cli ./internal/prompt"}, wantTest: true, wantFormat: true},
 		{name: "Go and documentation remain focused", change: func(t *testing.T, root string) {
 			writeFile(t, filepath.Join(root, "internal/prompt/new.go"), "package prompt\n")
 			writeFile(t, filepath.Join(root, "docs/note.md"), "note\n")
@@ -198,25 +144,25 @@ func TestChangedValidationClassifiesTheCompleteWorkingTree(t *testing.T) {
 		{name: "cross cutting dominates mixed delta", change: func(t *testing.T, root string) {
 			writeFile(t, filepath.Join(root, "go.mod"), "module changed\n")
 			writeFile(t, filepath.Join(root, "docs/note.md"), "note\n")
-		}, want: []string{"mode=exhaustive", "cross-cutting or dependency path changed"}, wantFull: true},
+		}, want: []string{"mode=general", "cross-cutting or dependency path changed"}, wantFull: true},
 		{name: "validation infrastructure is cross cutting", change: func(t *testing.T, root string) {
 			writeFile(t, filepath.Join(root, "internal/ci/new.go"), "package ci\n")
-		}, want: []string{"mode=exhaustive", "cross-cutting or dependency path changed: internal/ci/new.go"}, wantFull: true},
+		}, want: []string{"mode=general", "cross-cutting or dependency path changed: internal/ci/new.go"}, wantFull: true},
 		{name: "unknown untracked path fails closed", change: func(t *testing.T, root string) {
 			writeFile(t, filepath.Join(root, "new-package/file.txt"), "unknown\n")
-		}, want: []string{"mode=exhaustive", "unknown path changed"}, wantFull: true},
+		}, want: []string{"mode=general", "unknown path changed"}, wantFull: true},
 		{name: "Go symlink fails closed before formatting", change: func(t *testing.T, root string) {
 			target := filepath.Join(filepath.Dir(root), "outside.go")
 			writeFile(t, target, "package outside\n")
 			if err := os.Symlink(target, filepath.Join(root, "internal/prompt/link.go")); err != nil {
 				t.Fatal(err)
 			}
-		}, want: []string{"mode=exhaustive", "changed Go path is not a regular repository file"}, wantFull: true},
+		}, want: []string{"mode=general", "changed Go path is not a regular repository file"}, wantFull: true},
 		{name: "dangling Go symlink fails closed", change: func(t *testing.T, root string) {
 			if err := os.Symlink(filepath.Join(filepath.Dir(root), "missing.go"), filepath.Join(root, "internal/prompt/link.go")); err != nil {
 				t.Fatal(err)
 			}
-		}, want: []string{"mode=exhaustive", "changed Go path is not a regular repository file"}, wantFull: true},
+		}, want: []string{"mode=general", "changed Go path is not a regular repository file"}, wantFull: true},
 		{name: "deleted Go file retains owner", change: func(t *testing.T, root string) {
 			if err := os.Remove(filepath.Join(root, "internal/prompt/existing.go")); err != nil {
 				t.Fatal(err)
@@ -252,8 +198,8 @@ func TestChangedValidationClassifiesTheCompleteWorkingTree(t *testing.T) {
 			if test.wantFormat && !strings.Contains(log, "\t-w ") {
 				t.Fatalf("changed Go files were not formatted in place:\n%s", log)
 			}
-			if strings.Contains(log, "exhaustive\t") != test.wantFull {
-				t.Fatalf("exhaustive invocation mismatch:\n%s", log)
+			if strings.Contains(log, "general\t") != test.wantFull {
+				t.Fatalf("general invocation mismatch:\n%s", log)
 			}
 			for _, path := range []string{operatorHome, operatorXDG} {
 				if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
@@ -267,58 +213,12 @@ func TestChangedValidationClassifiesTheCompleteWorkingTree(t *testing.T) {
 func TestCIUsesOnlyTheValidationEntrypoint(t *testing.T) {
 	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
 	if strings.Count(workflow, "./scripts/validate-packy.sh") != 1 {
-		t.Fatal("CI must invoke the repository validation authority exactly once")
+		t.Fatal("CI must invoke general validation exactly once")
 	}
 	for _, unsafe := range []string{"go test", "go vet", "go build", "gofmt"} {
 		if strings.Contains(workflow, "run: "+unsafe) {
 			t.Fatalf("CI bypasses validation entrypoint with %q", unsafe)
 		}
-	}
-}
-
-func TestReleaseScenariosHaveOneCanonicalOwnerAndOneFocusedDeveloperEntrypoint(t *testing.T) {
-	root := repositoryRoot(t)
-	authority := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
-	developerScript := readFile(t, filepath.Join(root, "scripts", "test-release-scenarios.sh"))
-	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
-
-	if err := validateReleaseScenarioOwnership(authority, developerScript, workflow); err != nil {
-		t.Fatal(err)
-	}
-	mutations := []struct {
-		name            string
-		authority       string
-		developerScript string
-		workflow        string
-	}{
-		{name: "missing release package", authority: strings.Replace(authority, "  ./internal/release\n", "", 1), developerScript: developerScript, workflow: workflow},
-		{name: "direct scenario duplicate", authority: authority + "\ngo test ./internal/release -run '^TestReleaseScenario' -count=1 -v\n", developerScript: developerScript, workflow: workflow},
-		{name: "bash direct scenario duplicate", authority: authority + "\nbash -c \"go test ./internal/release -run '^TestReleaseScenario'\"\n", developerScript: developerScript, workflow: workflow},
-		{name: "root-qualified direct scenario duplicate", authority: authority + "\ngo test \"$root/internal/release\" -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
-		{name: "multiline direct scenario duplicate", authority: authority + "\ngo test ./internal/release \\\n  -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
-		{name: "broad release package duplicate", authority: authority + "\ngo test ./internal/release\n", developerScript: developerScript, workflow: workflow},
-		{name: "repository wildcard duplicate", authority: authority + "\ngo test ./... -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
-		{name: "internal wildcard duplicate", authority: authority + "\ngo test ./internal/... -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
-		{name: "variable expanded release duplicate", authority: authority + "\nrelease_package=./internal/release\ngo test \"$release_package\" -run '^TestReleaseScenario'\n", developerScript: developerScript, workflow: workflow},
-		{name: "release directory duplicate", authority: authority + "\n(cd internal/release && go test . -run '^TestReleaseScenario')\n", developerScript: developerScript, workflow: workflow},
-		{name: "developer script duplicate", authority: authority + "\n./scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
-		{name: "bash developer script duplicate", authority: authority + "\nbash scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
-		{name: "root-qualified developer script duplicate", authority: authority + "\n$root/scripts/test-release-scenarios.sh\n", developerScript: developerScript, workflow: workflow},
-		{name: "duplicate focused command", authority: authority, developerScript: developerScript + "\ngo test ./internal/release -run '^TestReleaseScenario' -count=1 -v\n", workflow: workflow},
-		{name: "CI direct scenario bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: go test ./internal/release -run '^TestReleaseScenario'\n"},
-		{name: "CI multiline scenario bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: |\n          go test ./internal/release \\\n            -run '^TestReleaseScenario'\n"},
-		{name: "CI folded scenario bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: >-\n          go test\n          ./internal/release -run '^TestReleaseScenario'\n"},
-		{name: "CI folded wildcard bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: >-\n          go test\n          ./internal/... -run '^TestReleaseScenario'\n"},
-		{name: "CI broad release package bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: go test ./internal/release\n"},
-		{name: "CI developer script bypass", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: bash scripts/test-release-scenarios.sh\n"},
-		{name: "CI second validation entrypoint", authority: authority, developerScript: developerScript, workflow: workflow + "\n      - run: bash scripts/validate-packy.sh\n"},
-	}
-	for _, mutation := range mutations {
-		t.Run(mutation.name, func(t *testing.T) {
-			if err := validateReleaseScenarioOwnership(mutation.authority, mutation.developerScript, mutation.workflow); err == nil {
-				t.Fatal("mutated release scenario ownership was accepted")
-			}
-		})
 	}
 }
 
@@ -407,63 +307,9 @@ exit "${GO_EXIT:-0}"
 	}
 }
 
-func validateReleaseScenarioOwnership(authority, developerScript, workflow string) error {
-	packages := shellArrayValue(authority, "readonly packages=(")
-	if count := strings.Count(" "+strings.Join(packages, " ")+" ", " ./internal/release "); count != 1 {
-		return fmt.Errorf("canonical release package count = %d, want 1", count)
-	}
-	if strings.Count(authority, `go test "${packages[@]}"`) != 1 {
-		return fmt.Errorf("ordinary canonical test command must remain exactly once")
-	}
-	if strings.Count(authority, `go test -race -timeout 10m "${race_packages[@]}"`) != 1 || !strings.Contains(authority, "./internal/cli | ./internal/release) ;;\n    *) race_packages") {
-		return fmt.Errorf("CLI and release package ordinary/race contract changed")
-	}
-	authorityCommands := normalizedCommandText(authority)
-	if count := strings.Count(authorityCommands, "go test"); count != 2 {
-		return fmt.Errorf("canonical validation Go test command count = %d, want ordinary and race only", count)
-	}
-	if strings.Contains(authorityCommands, "TestReleaseScenario") {
-		return fmt.Errorf("canonical validation must own scenarios through the ordinary release package only")
-	}
-	if count := strings.Count(authority, "scripts/test-release-scenarios.sh"); count != 0 {
-		return fmt.Errorf("canonical validation invokes focused developer script %d times, want 0", count)
-	}
-	developerCommands := normalizedCommandText(developerScript)
-	if strings.Count(developerCommands, "go test") != 1 || strings.Count(developerCommands, `go test ./internal/release -run '^TestReleaseScenario' -count=1 -v`) != 1 {
-		return fmt.Errorf("focused developer scenario command count must equal 1")
-	}
-	if count := strings.Count(workflow, "scripts/validate-packy.sh"); count != 1 {
-		return fmt.Errorf("CI validation entrypoint count = %d, want 1", count)
-	}
-	workflowCommands := normalizedCommandText(workflow)
-	if strings.Contains(workflowCommands, "go test") || strings.Contains(workflowCommands, "internal/release") || strings.Contains(workflowCommands, "TestReleaseScenario") || strings.Contains(workflow, "scripts/test-release-scenarios.sh") {
-		return fmt.Errorf("CI bypasses the one validation entrypoint")
-	}
-	return nil
-}
-
-func shellArrayValue(script, opening string) []string {
-	start := strings.Index(script, opening)
-	if start < 0 {
-		return nil
-	}
-	body, _, found := strings.Cut(script[start+len(opening):], "\n)")
-	if !found {
-		return nil
-	}
-	return strings.Fields(body)
-}
-
-func normalizedCommandText(contents string) string {
-	contents = strings.ReplaceAll(contents, "\\\r\n", " ")
-	contents = strings.ReplaceAll(contents, "\\\n", " ")
-	return strings.Join(strings.Fields(contents), " ")
-}
-
-func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T) {
+func TestRequiredPullRequestWorkflowsUsePinnedActions(t *testing.T) {
 	root := repositoryRoot(t)
 	ci := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
-	governance := readFile(t, filepath.Join(root, ".github", "workflows", "governance.yml"))
 	security := readFile(t, filepath.Join(root, ".github", "workflows", "security-pr.yml"))
 
 	for _, expected := range []struct {
@@ -472,12 +318,8 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 		action   string
 		count    int
 	}{
-		{name: "CI checkout", workflow: ci, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 6},
-		{name: "CI setup-go cache", workflow: ci, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 6},
-		{name: "CI setup-node", workflow: ci, action: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0", count: 3},
-		{name: "CI upload-artifact", workflow: ci, action: "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1", count: 6},
-		{name: "Governance checkout", workflow: governance, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 1},
-		{name: "Governance setup-go cache", workflow: governance, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 1},
+		{name: "CI checkout", workflow: ci, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 1},
+		{name: "CI setup-go", workflow: ci, action: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0", count: 1},
 		{name: "Security checkout", workflow: security, action: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", count: 2},
 		{name: "Security CodeQL", workflow: security, action: "github/codeql-action/", count: 3},
 		{name: "Security CodeQL revision", workflow: security, action: "@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4", count: 3},
@@ -486,40 +328,13 @@ func TestRequiredPullRequestWorkflowsUseWarningCleanActionRuntimes(t *testing.T)
 			t.Errorf("%s occurrences = %d, want %d", expected.name, got, expected.count)
 		}
 	}
-	if strings.Contains(ci, "actions/download-artifact@") {
-		t.Fatal("required PR workflows must not use download-artifact while its Node 24 bundle emits DEP0005")
+	if strings.Count(ci, "cache: false") != 1 || strings.Count(ci, "uses: ./.github/actions/go-cache") != 1 {
+		t.Fatal("ordinary CI must use the verified cache adapter")
 	}
-	for _, command := range []string{
-		`gh run download "$GITHUB_RUN_ID" --name codex-floor-qualification --dir "$RUNNER_TEMP/codex-floor-evidence"`,
-		`gh run download "$GITHUB_RUN_ID" --name vercel-foundation-qualification --dir "$RUNNER_TEMP/vercel-foundation-evidence"`,
-		`gh run download "$GITHUB_RUN_ID" --name opencode-floor-qualification --dir "$RUNNER_TEMP/opencode-floor-evidence"`,
-		`gh run download "$GITHUB_RUN_ID" --name claude-vercel-floor-qualification --dir "$RUNNER_TEMP/claude-vercel-floor-evidence"`,
-	} {
-		if !strings.Contains(ci, command) {
-			t.Errorf("warning-clean exact-run artifact download missing %q", command)
-		}
-	}
-
-	if strings.Count(ci, "cache: false") != 7 ||
-		strings.Count(ci, "uses: ./.github/actions/go-cache") != 6 ||
-		strings.Count(governance, "cache: false") != 1 ||
-		strings.Count(governance, "uses: ./.github/actions/go-cache") != 1 {
-		t.Fatal("required setup-go jobs must use the verified cache adapter")
-	}
-	validate := workflowSection(t, ci, "  validate:", "  claude-floor-smoke:")
-	if strings.Contains(validate, "continue-on-error: true\n        run: ./scripts/validate-packy.sh") {
-		t.Fatal("repository validation failure must remain fail-closed")
-	}
-	if !strings.Contains(validate, "go-version-input: \"\"\n          check-latest: false\n          cache: false") {
-		t.Fatal("advisory govulncheck must reuse the configured Go toolchain without a second implicit cache restore")
-	}
-	for _, runner := range []string{"runs-on: ubuntu-latest", "runs-on: macos-15"} {
-		if !strings.Contains(ci, runner) {
-			t.Fatalf("supported required workflow runner missing %q", runner)
-		}
+	if strings.Contains(ci, "continue-on-error: true") {
+		t.Fatal("ordinary validation must remain fail-closed")
 	}
 }
-
 func TestVerifiedGoCacheDistinguishesMissesFromCorruptRestoration(t *testing.T) {
 	root := repositoryRoot(t)
 	prepareScript := filepath.Join(root, "scripts", "prepare-go-cache-restore.sh")
@@ -692,52 +507,6 @@ func TestCIKeepsCapabilityPromotionOutOfUniversalGates(t *testing.T) {
 	}
 }
 
-func TestVercelAcceptanceGateBindsIndependentHostEvidenceWithoutPublication(t *testing.T) {
-	root := repositoryRoot(t)
-	workflow := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
-	gate := workflowSection(t, workflow, "  vercel-acceptance-gate:", "")
-	for _, required := range []string{
-		"name: Vercel six-gate acceptance cohort",
-		"needs: [validate, codex-floor-smoke, opencode-floor-smoke, claude-vercel-floor-smoke]",
-		"if: always() && github.event_name == 'pull_request'",
-		"actions: read",
-		"contents: read",
-		"fetch-depth: 0",
-		"persist-credentials: false",
-		"--name codex-floor-qualification",
-		"--name opencode-floor-qualification",
-		"--name claude-vercel-floor-qualification",
-		"--name vercel-foundation-qualification",
-		"VALIDATE_RESULT: ${{ needs.validate.result }}",
-		"CODEX_RESULT: ${{ needs.codex-floor-smoke.result }}",
-		"OPENCODE_RESULT: ${{ needs.opencode-floor-smoke.result }}",
-		"CLAUDE_RESULT: ${{ needs.claude-vercel-floor-smoke.result }}",
-		"./scripts/gate-vercel-acceptance.sh",
-		"--candidate-sha \"$GITHUB_SHA\"",
-		"--foundation-evidence \"$RUNNER_TEMP/vercel-foundation-evidence\"",
-		"retention-days: 90",
-	} {
-		if !strings.Contains(gate, required) {
-			t.Fatalf("Vercel acceptance gate missing %q", required)
-		}
-	}
-	for _, forbidden := range []string{
-		"contents: write", "packages: write", "pull-requests: write", "id-token: write",
-		"VERCEL_TOKEN", "git push", "gh pr", "gh release", "npm publish", "deploy",
-	} {
-		if strings.Contains(gate, forbidden) {
-			t.Fatalf("Vercel acceptance gate contains forbidden authority or effect %q", forbidden)
-		}
-	}
-	script := filepath.Join(root, "scripts", "gate-vercel-acceptance.sh")
-	if !strings.Contains(readFile(t, script), "status --porcelain --untracked-files=normal") {
-		t.Fatal("Vercel gate must bind execution to a clean exact-candidate checkout")
-	}
-	if output, err := exec.Command("bash", "-n", script).CombinedOutput(); err != nil {
-		t.Fatalf("bash -n Vercel gate: %v\n%s", err, output)
-	}
-}
-
 func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testing.T) {
 	root := repositoryRoot(t)
 	scriptPath := filepath.Join(root, "scripts", "validate-vercel-acceptance.sh")
@@ -777,49 +546,6 @@ func TestVercelAcceptanceFoundationOwnsStableRowsAndDeterministicReruns(t *testi
 			t.Fatalf("foundation script duplicates domain identity %q", forbidden)
 		}
 	}
-	authority := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
-	validate := workflowSection(t, readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml")), "  validate:", "  claude-floor-smoke:")
-	if err := validateVercelFoundationOwnership(authority, validate); err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		"--vercel-foundation-evidence-dir \"$RUNNER_TEMP/vercel-foundation-evidence\"",
-		"--candidate-sha \"$GITHUB_SHA\"",
-		"--run-id \"${{ github.run_id }}\"",
-	} {
-		if !strings.Contains(validate, required) {
-			t.Fatalf("required validation job does not bind foundation evidence with %q", required)
-		}
-	}
-	mutations := []struct {
-		name      string
-		authority string
-		workflow  string
-	}{
-		{name: "direct authority duplicate", authority: authority + "\n./scripts/validate-vercel-acceptance.sh\n", workflow: validate},
-		{name: "bash authority duplicate", authority: authority + "\nbash scripts/validate-vercel-acceptance.sh\n", workflow: validate},
-		{name: "root-qualified authority duplicate", authority: authority + "\n$root/scripts/validate-vercel-acceptance.sh\n", workflow: validate},
-		{name: "bash workflow bypass", authority: authority, workflow: validate + "\nbash scripts/validate-vercel-acceptance.sh\n"},
-		{name: "root-qualified workflow bypass", authority: authority, workflow: validate + "\n$root/scripts/validate-vercel-acceptance.sh\n"},
-	}
-	for _, mutation := range mutations {
-		t.Run(mutation.name, func(t *testing.T) {
-			if err := validateVercelFoundationOwnership(mutation.authority, mutation.workflow); err == nil {
-				t.Fatal("mutated duplicate Vercel foundation invocation was accepted")
-			}
-		})
-	}
-}
-
-func validateVercelFoundationOwnership(authority, validateJob string) error {
-	const foundationScript = "scripts/validate-vercel-acceptance.sh"
-	if count := strings.Count(authority, foundationScript); count != 1 {
-		return fmt.Errorf("repository validation authority Vercel foundation invocation count = %d, want 1", count)
-	}
-	if strings.Contains(validateJob, foundationScript) {
-		return fmt.Errorf("required validation job must not run a second Vercel foundation pass")
-	}
-	return nil
 }
 
 func TestVercelAcceptanceFoundationNormalizationExcludesOnlyGoDownloadNoise(t *testing.T) {
@@ -1001,170 +727,6 @@ printf '=== RUN   %s\nproof detail\n--- PASS: %s (0.01s)\nPASS\nok  \t%s\t0.02s\
 	return vercelFoundationResult{output: string(output), log: string(log), evidence: evidence, err: err}
 }
 
-func TestGovernanceChecksKeepStableProtectedAdvisoryIdentities(t *testing.T) {
-	root := repositoryRoot(t)
-	governance := readFile(t, filepath.Join(root, ".github", "workflows", "governance.yml"))
-	for _, required := range []string{
-		"name: Governance",
-		"pull_request_target:",
-		"issues:",
-		"- edited",
-		"issue_comment:",
-		"workflow_run:",
-		"name: Validate authorization metadata",
-		"cancel-in-progress: true",
-		"statuses: write",
-		"ref: ${{ github.sha }}",
-		"persist-credentials: false",
-		"context='Governance / Validate authorization'",
-		"go run ./internal/tools/governanceauth",
-		"--authorization \"$directory/authorization.json\"",
-		"--declaration",
-		"packy-canonical-automation",
-	} {
-		if !strings.Contains(governance, required) {
-			t.Fatalf("governance workflow missing %q", required)
-		}
-	}
-	syncWorkflow := readFile(t, filepath.Join(root, ".github", "workflows", "sync-pack-source.yml"))
-	for _, required := range []string{"packy-canonical-automation", "gh pr comment", "--body-file"} {
-		if !strings.Contains(syncWorkflow, required) {
-			t.Fatalf("synchronization workflow missing canonical proposal binding %q", required)
-		}
-	}
-	for _, forbidden := range []string{
-		"pull_request:\n",
-		"contents: write",
-		"issues: write",
-		"pull-requests: write",
-		"security-events: read",
-		"/security-advisories/",
-	} {
-		if strings.Contains(governance, forbidden) {
-			t.Fatalf("governance workflow contains unsafe boundary %q", forbidden)
-		}
-	}
-
-	security := readFile(t, filepath.Join(root, ".github", "workflows", "security.yml"))
-	securityPR := readFile(t, filepath.Join(root, ".github", "workflows", "security-pr.yml"))
-	for _, required := range []string{
-		"name: Security",
-		"name: CodeQL",
-		"schedule:",
-		"security-events: write",
-	} {
-		if !strings.Contains(security, required) {
-			t.Fatalf("security workflow missing %q", required)
-		}
-	}
-	for _, required := range []string{"name: Security", "pull_request:", "name: CodeQL", "upload: false", "name: Dependency review", "warn-only: true"} {
-		if !strings.Contains(securityPR, required) {
-			t.Fatalf("pull-request security workflow missing %q", required)
-		}
-	}
-	if strings.Contains(security+securityPR, "contents: write") || strings.Contains(security+securityPR, "pull-requests: write") {
-		t.Fatal("advisory security workflow has repository write authority")
-	}
-
-	registry := readFile(t, filepath.Join(root, "docs", "governance", "advisory-checks.md"))
-	for _, identity := range []string{
-		"CI / Validate Packy-owned code",
-		"CI / Claude 2.1.203 package smoke",
-		"Governance / Validate authorization",
-		"Security / CodeQL",
-		"Security / Dependency review",
-	} {
-		if strings.Count(registry, "`"+identity+"`") != 1 {
-			t.Fatalf("check registry must contain stable identity %q exactly once", identity)
-		}
-	}
-	if strings.Count(registry, "App ID `15368`, slug `github-actions`") != 5 {
-		t.Fatal("each stable identity must record the expected GitHub Actions App source")
-	}
-}
-
-func TestGovernanceNormalizesExternalMetadataBeforeStrictValidation(t *testing.T) {
-	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
-	for _, projection := range []string{
-		"closingIssuesReferences: [$pr[0].closingIssuesReferences[] | {number, repository: {name: .repository.name, owner: {login: .repository.owner.login}}}]",
-		"issues: [$issues[0][] | {number, state, labels: [.labels[] | {name}]}]",
-	} {
-		if !strings.Contains(governance, projection) {
-			t.Fatalf("governance workflow does not normalize external metadata with %q", projection)
-		}
-	}
-	for _, raw := range []string{
-		"closingIssuesReferences: $pr[0].closingIssuesReferences",
-		"issues: $issues[0]",
-	} {
-		if strings.Contains(governance, raw) {
-			t.Fatalf("governance workflow passes raw external metadata with %q", raw)
-		}
-	}
-}
-
-func TestGovernanceDefersMixedAuthorizationPolicyToValidator(t *testing.T) {
-	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
-	const obsoleteGuard = "if ((${#issue_files[@]} != 0)); then\n              result=1"
-	if strings.Contains(governance, obsoleteGuard) {
-		t.Fatal("governance workflow rejects closing issues before strict domain validation")
-	}
-}
-
-func TestGovernanceCollectsCanonicalWorkflowIdentityForAutomationRuns(t *testing.T) {
-	root := repositoryRoot(t)
-	governance := readFile(t, filepath.Join(root, ".github", "workflows", "governance.yml"))
-	syncWorkflow := readFile(t, filepath.Join(root, ".github", "workflows", "sync-pack-source.yml"))
-	for _, required := range []string{
-		"workflow_id:.workflow_id",
-		"jq -er '.workflow_id | numbers | select(. > 0)'",
-		"actions/workflows/$workflow_id",
-		"--jq '{workflow:.name,path:.path}'",
-		"del(.workflow_id)",
-		`("<!-- packy-canonical-automation\nrun: " + $run_url + "\nhead: " + $head_sha + "\n-->\n")`,
-	} {
-		if !strings.Contains(governance, required) {
-			t.Fatalf("governance workflow does not collect canonical workflow identity with %q", required)
-		}
-	}
-	for _, forbidden := range []string{
-		"workflow:.name,path,event,head_branch",
-		"workflow_id:.workflow_id,path,event,head_branch",
-	} {
-		if strings.Contains(governance, forbidden) {
-			t.Fatalf("governance workflow trusts run-level workflow identity with %q", forbidden)
-		}
-	}
-	const publishedBinding = `printf '<!-- packy-canonical-automation\nrun: %s\nhead: %s\n-->\n'`
-	if !strings.Contains(syncWorkflow, publishedBinding) {
-		t.Fatal("synchronization workflow does not publish the byte-exact canonical binding")
-	}
-}
-
-func TestGovernanceTargetMatrixRejectsWhitespaceOnlyRecords(t *testing.T) {
-	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
-	const marker = "jq -Rsc '"
-	start := strings.Index(governance, marker)
-	if start == -1 {
-		t.Fatal("governance workflow target matrix jq filter is missing")
-	}
-	start += len(marker)
-	end := strings.Index(governance[start:], "'")
-	if end == -1 {
-		t.Fatal("governance workflow target matrix jq filter is unterminated")
-	}
-
-	cmd := exec.Command("jq", "-Rsc", governance[start:start+end])
-	cmd.Stdin = strings.NewReader("42\n    \n7\n42\n")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("normalize governance target matrix: %v\n%s", err, output)
-	}
-	if got := strings.TrimSpace(string(output)); got != "[7,42]" {
-		t.Fatalf("normalized governance target matrix = %s; want [7,42]", got)
-	}
-}
-
 func TestCodeownersMatchesAcceptedSensitivePathPolicy(t *testing.T) {
 	owners := readFile(t, filepath.Join(repositoryRoot(t), ".github", "CODEOWNERS"))
 	for _, path := range []string{
@@ -1176,11 +738,9 @@ func TestCodeownersMatchesAcceptedSensitivePathPolicy(t *testing.T) {
 		"/go.mod",
 		"/go.sum",
 		"/bundle/sources.json",
-		"/docs/governance/",
 		"/internal/ci/",
 		"/internal/release/",
 		"/internal/claudesmoke/",
-		"/internal/governancedrift/",
 		"/internal/packsync/",
 		"/internal/packsyncworkflow/",
 		"/internal/tools/",
@@ -1380,12 +940,12 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 			t.Fatalf("synchronization workflow is missing bounded runtime %q", timeout)
 		}
 	}
-	if strings.Count(workflow, "cache: true") != 5 {
-		t.Fatalf("synchronization workflow setup-go cache count = %d, want 5", strings.Count(workflow, "cache: true"))
+	if strings.Count(workflow, "cache: true") != 4 {
+		t.Fatalf("synchronization workflow setup-go cache count = %d, want 4", strings.Count(workflow, "cache: true"))
 	}
 	ciWorkflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
 	if strings.Count(ciWorkflow, "./scripts/validate-packy.sh") != 1 {
-		t.Fatal("ordinary pull-request CI must remain the single exhaustive validation authority")
+		t.Fatal("ordinary pull-request CI must invoke general validation once")
 	}
 	sourceInput := workflowSection(t, workflow, "      source_id:", "      pack_id:")
 	selectorInput := workflowSection(t, workflow, "      selector:", "      selector_ref:")
@@ -2605,217 +2165,6 @@ func workflowSection(t *testing.T, workflow, start, end string) string {
 	return workflow[startIndex:endIndex]
 }
 
-func TestValidationEntrypointIgnoresHostileUnownedGoContent(t *testing.T) {
-	sourceRoot := repositoryRoot(t)
-	tempRoot := filepath.Join(t.TempDir(), "repo")
-	copyRepository(t, sourceRoot, tempRoot)
-
-	writeFile(t, filepath.Join(tempRoot, "bundle", "hostile-load", "broken.go"), "package hostile\nfunc broken(\n")
-	sentinel := filepath.Join(tempRoot, "hostile-executed")
-	writeFile(t, filepath.Join(tempRoot, "bundle", "hostile-execute", "hostile_test.go"), `package hostile
-
-import (
-	"os"
-	"testing"
-)
-
-func TestHostile(t *testing.T) {
-	if err := os.WriteFile(os.Getenv("HOSTILE_SENTINEL"), []byte("executed"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Fatal("vendored upstream test was executed")
-}
-`)
-	writeFile(t, filepath.Join(tempRoot, ".scratch", "hostile", "broken.go"), "package hostile\nfunc broken(\n")
-
-	operatorHome := filepath.Join(tempRoot, "operator-home")
-	operatorXDG := filepath.Join(tempRoot, "operator-xdg")
-	validationTemp := filepath.Join(tempRoot, "validation-tmp")
-	if err := os.MkdirAll(validationTemp, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	commandLog := filepath.Join(tempRoot, "validation-commands.log")
-	shimRoot := filepath.Join(tempRoot, "validation-bin")
-	// Exercise the real entrypoint while recording, rather than executing, its
-	// expensive validation children. The bash shim makes recursion observable.
-	for _, command := range []string{"go", "gofmt", "bash"} {
-		contents := "#!/bin/sh\n" +
-			"printf '" + command + "\\t%s\\t%s' \"$HOME\" \"$XDG_CONFIG_HOME\" >> \"$PACKY_VALIDATION_COMMAND_LOG\"\n" +
-			"for arg in \"$@\"; do printf '\\t%s' \"$arg\" >> \"$PACKY_VALIDATION_COMMAND_LOG\"; done\n" +
-			"printf '\\n' >> \"$PACKY_VALIDATION_COMMAND_LOG\"\n"
-		if command == "bash" {
-			contents += "exec /bin/bash \"$@\"\n"
-		}
-		writeExecutable(t, filepath.Join(shimRoot, command), contents)
-	}
-	// Acceptance cohorts own their own execution contracts; this tracer is
-	// scoped to the repository entrypoint's package selection and validation classes.
-	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-addy-acceptance.sh"), "#!/bin/sh\nexit 0\n")
-	vercelInvocationLog := filepath.Join(tempRoot, "vercel-invocations.log")
-	writeExecutable(t, filepath.Join(tempRoot, "scripts", "validate-vercel-acceptance.sh"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$PACKY_VERCEL_INVOCATION_LOG\"\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"))
-	cmd.Dir = tempRoot
-	cmd.Env = append(os.Environ(),
-		"HOME="+operatorHome,
-		"XDG_CONFIG_HOME="+operatorXDG,
-		"GOCACHE="+filepath.Join(tempRoot, "go-cache"),
-		"GOMODCACHE="+filepath.Join(tempRoot, "go-mod-cache"),
-		"GOPATH="+filepath.Join(tempRoot, "go-path"),
-		"HOSTILE_SENTINEL="+sentinel,
-		"PACKY_VALIDATION_COMMAND_LOG="+commandLog,
-		"PACKY_VERCEL_INVOCATION_LOG="+vercelInvocationLog,
-		"PACKY_VALIDATION_HOME=",
-		"PACKY_VALIDATION_CONFIG_HOME=",
-		"PATH="+shimRoot+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"TMPDIR="+validationTemp,
-	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if ctx.Err() != nil {
-			t.Fatalf("validation entrypoint recursively invoked itself: %v\n%s", ctx.Err(), output)
-		}
-		t.Fatalf("validation entrypoint failed with hostile unowned content: %v\n%s", err, output)
-	}
-
-	invocations := validationInvocations(t, commandLog)
-	var goInvocations [][]string
-	formatInvocations := 0
-	for _, invocation := range invocations {
-		if !validationRootsAreSandboxed(validationTemp, invocation.home, invocation.xdg) {
-			t.Fatalf("validation child escaped the entrypoint sandbox: %#v", invocation)
-		}
-		switch invocation.command {
-		case "go":
-			goInvocations = append(goInvocations, invocation.args)
-		case "gofmt":
-			if len(invocation.args) < 2 || invocation.args[0] != "-l" {
-				t.Fatalf("format invocation = %#v, want gofmt -l with allowlisted files", invocation.args)
-			}
-			for _, path := range invocation.args[1:] {
-				if !validationPathIsOwned(tempRoot, path) {
-					t.Fatalf("format invocation loaded unowned path %q", path)
-				}
-			}
-			formatInvocations++
-		case "bash":
-			t.Fatalf("validation entrypoint recursively launched bash: %#v", invocation.args)
-		default:
-			t.Fatalf("unexpected validation command: %#v", invocation)
-		}
-	}
-	if err := validateCanonicalGoInvocations(goInvocations); err != nil {
-		t.Fatal(err)
-	}
-	if countPackageInvocation(goInvocations, "test", "./internal/release") != 1 {
-		t.Fatalf("release package must appear exactly once in ordinary exhaustive tests: %#v", goInvocations)
-	}
-	if countPackageInvocation(goInvocations, "test -race", "./internal/release") != 0 {
-		t.Fatalf("release package must be excluded from race tests: %#v", goInvocations)
-	}
-	if countPackageInvocation(goInvocations, "test", "./internal/cli") != 1 || countPackageInvocation(goInvocations, "test -race", "./internal/cli") != 0 {
-		t.Fatalf("CLI package must remain ordinary-only: %#v", goInvocations)
-	}
-	if formatInvocations != 1 {
-		t.Fatalf("format invocation count = %d, want 1", formatInvocations)
-	}
-	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
-		t.Fatalf("hostile vendored test executed: %v", err)
-	}
-	if got := strings.TrimSpace(readFile(t, vercelInvocationLog)); got != "" {
-		t.Fatalf("ordinary local validation requested durable Vercel evidence: %q", got)
-	}
-	for _, path := range []string{operatorHome, operatorXDG} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("validation wrote operator path %s: %v", path, err)
-		}
-	}
-
-	receiptHome := filepath.Join(filepath.Dir(tempRoot), "receipt-home")
-	receiptConfig := filepath.Join(filepath.Dir(tempRoot), "receipt-config")
-	if err := os.WriteFile(commandLog, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	explicit := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"))
-	explicit.Dir = tempRoot
-	explicit.Env = append(cmd.Env,
-		"PACKY_VALIDATION_HOME="+receiptHome,
-		"PACKY_VALIDATION_CONFIG_HOME="+receiptConfig,
-	)
-	if output, err := explicit.CombinedOutput(); err != nil {
-		t.Fatalf("validation entrypoint rejected explicit receipt sandbox roots: %v\n%s", err, output)
-	}
-	for _, invocation := range validationInvocations(t, commandLog) {
-		if invocation.home != receiptHome || invocation.xdg != receiptConfig {
-			t.Fatalf("validation child did not use the sealed sandbox roots: %#v", invocation)
-		}
-	}
-
-	evidenceDir := filepath.Join(filepath.Dir(tempRoot), "vercel-evidence")
-	candidateSHA := strings.Repeat("a", 40)
-	if err := os.WriteFile(vercelInvocationLog, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	withEvidence := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"),
-		"--vercel-foundation-evidence-dir", evidenceDir,
-		"--candidate-sha", candidateSHA,
-		"--run-id", "379",
-	)
-	withEvidence.Dir = tempRoot
-	withEvidence.Env = cmd.Env
-	if output, err := withEvidence.CombinedOutput(); err != nil {
-		t.Fatalf("validation entrypoint rejected complete Vercel evidence identity: %v\n%s", err, output)
-	}
-	wantVercelArgs := "--evidence-dir " + evidenceDir + " --candidate-sha " + candidateSHA + " --run-id 379"
-	if got := strings.TrimSpace(readFile(t, vercelInvocationLog)); got != wantVercelArgs {
-		t.Fatalf("Vercel foundation invocation = %q, want %q", got, wantVercelArgs)
-	}
-
-	partial := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"))
-	partial.Dir = tempRoot
-	partial.Env = append(cmd.Env, "PACKY_VALIDATION_HOME="+receiptHome)
-	if output, err := partial.CombinedOutput(); err == nil || !strings.Contains(string(output), "must both be absolute") {
-		t.Fatalf("partial receipt sandbox identity was accepted: %v\n%s", err, output)
-	}
-	partialEvidence := exec.CommandContext(ctx, "/bin/bash", filepath.Join(tempRoot, "scripts", "validate-packy.sh"),
-		"--candidate-sha", candidateSHA,
-	)
-	partialEvidence.Dir = tempRoot
-	partialEvidence.Env = cmd.Env
-	if output, err := partialEvidence.CombinedOutput(); err == nil || !strings.Contains(string(output), "requires --vercel-foundation-evidence-dir, --candidate-sha, and --run-id together") {
-		t.Fatalf("partial Vercel evidence identity was accepted: %v\n%s", err, output)
-	}
-}
-
-func validationRacePackages() []string {
-	packages := make([]string, 0, len(packyOwnedPackages)-2)
-	for _, packagePath := range packyOwnedPackages {
-		if packagePath != "./internal/cli" && packagePath != "./internal/release" {
-			packages = append(packages, packagePath)
-		}
-	}
-	return packages
-}
-
-func expectedValidationGoInvocations() [][]string {
-	return [][]string{
-		append([]string{"build"}, validationBuildPackages()...),
-		append([]string{"vet"}, packyOwnedPackages...),
-		append([]string{"test"}, packyOwnedPackages...),
-		append([]string{"test", "-race", "-timeout", "10m"}, validationRacePackages()...),
-	}
-}
-
-func validateCanonicalGoInvocations(invocations [][]string) error {
-	want := expectedValidationGoInvocations()
-	if !reflect.DeepEqual(invocations, want) {
-		return fmt.Errorf("validation Go invocations = %#v, want %#v", invocations, want)
-	}
-	return nil
-}
-
 func cliTestConcurrency(path string, source []byte) ([]string, error) {
 	files := token.NewFileSet()
 	file, err := parser.ParseFile(files, path, source, 0)
@@ -2846,32 +2195,6 @@ func cliTestConcurrency(path string, source []byte) ([]string, error) {
 		return true
 	})
 	return findings, nil
-}
-
-func countPackageInvocation(invocations [][]string, phase, packagePath string) int {
-	count := 0
-	for _, invocation := range invocations {
-		invocationPhase := invocation[0]
-		if len(invocation) > 1 && invocation[0] == "test" && invocation[1] == "-race" {
-			invocationPhase = "test -race"
-		}
-		if invocationPhase != phase {
-			continue
-		}
-		for _, arg := range invocation {
-			if arg == packagePath {
-				count++
-			}
-		}
-	}
-	return count
-}
-
-type validationInvocation struct {
-	command string
-	home    string
-	xdg     string
-	args    []string
 }
 
 type addyValidationResult struct {
@@ -2969,56 +2292,6 @@ echo "ok $package"
 	return addyValidationResult{output: string(output), log: string(log), err: err}
 }
 
-func validationInvocations(t *testing.T, path string) []validationInvocation {
-	t.Helper()
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var invocations []validationInvocation
-	for _, line := range strings.Split(strings.TrimSpace(string(contents)), "\n") {
-		fields := strings.Split(line, "\t")
-		if len(fields) < 3 {
-			t.Fatalf("malformed validation command log line %q", line)
-		}
-		invocations = append(invocations, validationInvocation{
-			command: fields[0],
-			home:    fields[1],
-			xdg:     fields[2],
-			args:    fields[3:],
-		})
-	}
-	return invocations
-}
-
-func validationBuildPackages() []string {
-	var packages []string
-	for _, packagePath := range packyOwnedPackages {
-		if packagePath != "./internal/ci" && packagePath != "./internal/release" {
-			packages = append(packages, packagePath)
-		}
-	}
-	return packages
-}
-
-func validationPathIsOwned(root, path string) bool {
-	for _, packagePath := range packyOwnedPackages {
-		packageRoot := filepath.Join(root, strings.TrimPrefix(packagePath, "./"))
-		if filepath.Dir(path) == packageRoot && filepath.Ext(path) == ".go" {
-			return true
-		}
-	}
-	return false
-}
-
-func validationRootsAreSandboxed(tempRoot, home, xdg string) bool {
-	sandbox := filepath.Dir(home)
-	return filepath.Base(home) == "home" &&
-		xdg == filepath.Join(sandbox, "xdg") &&
-		filepath.Dir(sandbox) == tempRoot &&
-		strings.HasPrefix(filepath.Base(sandbox), "packy-validation.")
-}
-
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -3052,17 +2325,6 @@ func shellArray(t *testing.T, script, opening string) []string {
 		t.Fatalf("validation entrypoint has unterminated %q", opening)
 	}
 	return strings.Fields(body)
-}
-
-func validationCommands(script string) []string {
-	var commands []string
-	for _, line := range strings.Split(script, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "go ") || strings.Contains(line, "$(go ") || strings.Contains(line, "gofmt ") {
-			commands = append(commands, line)
-		}
-	}
-	return commands
 }
 
 func copyRepository(t *testing.T, sourceRoot, destinationRoot string) {
@@ -3137,7 +2399,7 @@ func changedValidationFixture(t *testing.T) (string, string, string) {
 	t.Helper()
 	root := t.TempDir()
 	writeExecutable(t, filepath.Join(root, "scripts", "validate-changed.sh"), readFile(t, filepath.Join(repositoryRoot(t), "scripts", "validate-changed.sh")))
-	writeExecutable(t, filepath.Join(root, "scripts", "validate-packy.sh"), "#!/bin/sh\nprintf 'exhaustive\\t%s\\t%s\\n' \"$HOME\" \"$XDG_CONFIG_HOME\" >>\"$COMMAND_LOG\"\n")
+	writeExecutable(t, filepath.Join(root, "scripts", "validate-packy.sh"), "#!/bin/sh\nprintf 'general\\t%s\\t%s\\n' \"$HOME\" \"$XDG_CONFIG_HOME\" >>\"$COMMAND_LOG\"\n")
 	writeFile(t, filepath.Join(root, "internal", "prompt", "existing.go"), "package prompt\n")
 	writeFile(t, filepath.Join(root, "internal", "cli", "existing.go"), "package cli\n")
 	writeFile(t, filepath.Join(root, "README.md"), "fixture\n")

@@ -13,7 +13,7 @@ import (
 func main() {
 	var context addyacceptance.PromotionValidationContext
 	var evidencePath string
-	var qualificationPath, governanceEvaluationPath, governanceGatePath, acceptanceReportPath, outputPath string
+	var qualificationPath, acceptanceReportPath, outputPath string
 	var generate bool
 	var writeAcceptance bool
 	var acceptanceRows acceptanceRowsFlag
@@ -33,8 +33,6 @@ func main() {
 	flag.StringVar(&context.RunID, "run-id", "", "trusted workflow run ID")
 	flag.StringVar(&evidencePath, "evidence", "", "candidate promotion evidence JSON")
 	flag.StringVar(&qualificationPath, "qualification", "", "production Addy qualification JSON")
-	flag.StringVar(&governanceEvaluationPath, "governance-evaluation", "", "clean governance evaluation JSON")
-	flag.StringVar(&governanceGatePath, "governance-gate", "", "allowed governance gate decision JSON")
 	flag.StringVar(&acceptanceReportPath, "acceptance-report", "", "canonical same-run acceptance report")
 	flag.StringVar(&outputPath, "output", "", "generated promotion evidence path")
 	flag.StringVar(&acceptanceCommit, "acceptance-commit", "", "exact acceptance report commit")
@@ -56,7 +54,7 @@ func main() {
 	}
 	context.Inputs = inputs
 	if generate {
-		if err := generatePromotionEvidence(context, qualificationPath, governanceEvaluationPath, governanceGatePath, acceptanceReportPath, outputPath); err != nil {
+		if err := generatePromotionEvidence(context, qualificationPath, acceptanceReportPath, outputPath); err != nil {
 			fatalf("generate promotion evidence: %v", err)
 		}
 		return

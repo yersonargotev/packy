@@ -13,10 +13,9 @@ import (
 
 	"github.com/yersonargotev/packy/internal/addyacceptance"
 	"github.com/yersonargotev/packy/internal/claudesmoke"
-	"github.com/yersonargotev/packy/internal/governancedrift"
 )
 
-func generatePromotionEvidence(context addyacceptance.PromotionValidationContext, qualificationPath, evaluationPath, gatePath, acceptancePath, outputPath string) error {
+func generatePromotionEvidence(context addyacceptance.PromotionValidationContext, qualificationPath, acceptancePath, outputPath string) error {
 	if !context.PromotionChange || context.FoundationChange || outputPath == "" {
 		return errors.New("generation requires a promotion change and output path")
 	}
@@ -33,21 +32,6 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 	if err != nil {
 		return fmt.Errorf("read acceptance report: %w", err)
 	}
-	var evaluation governancedrift.Evaluation
-	_, err = readCanonicalRegular(evaluationPath, &evaluation)
-	if err != nil {
-		return fmt.Errorf("read governance evaluation: %w", err)
-	}
-	var gate governancedrift.GateDecision
-	_, err = readCanonicalRegular(gatePath, &gate)
-	if err != nil {
-		return fmt.Errorf("read governance gate: %w", err)
-	}
-	workflowSHABytes, err := gitOutputBytes("rev-parse", context.EvaluatedMergeSHA+":"+context.Workflow)
-	if err != nil {
-		return fmt.Errorf("resolve evaluated workflow blob: %w", err)
-	}
-	workflowSHA := string(bytes.TrimSpace(workflowSHABytes))
 	collectedAt, err := time.Parse(time.RFC3339Nano, qualification.CollectedAt)
 	if err != nil {
 		return fmt.Errorf("parse qualification collection time: %w", err)
@@ -70,8 +54,7 @@ func generatePromotionEvidence(context addyacceptance.PromotionValidationContext
 			ClaudeIntegrity:        qualification.Smoke.ClaudeIntegrity, ClaudeDigest: qualification.Smoke.ClaudeDigest,
 			Sandbox: qualification.Sandbox, Atomicity: projectProductionAtomicity(qualification),
 		},
-		GovernanceEvaluation: evaluation, GovernanceDecision: gate,
-		WorkflowBlobSHA: workflowSHA, DisposableHarnessRoot: root,
+		DisposableHarnessRoot: root,
 	})
 	if err != nil {
 		return err

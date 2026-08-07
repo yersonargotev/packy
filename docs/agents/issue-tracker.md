@@ -59,4 +59,7 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 7. Append the map's one-line context pointer only after the issue is closed and the asset is durable.
 8. Verify the merged commit, closed issue, map entry, deleted branch, and clean local and remote state.
 
-The accepted [issue and Wayfinder governance contract](https://github.com/yersonargotev/packy/issues/128) defines the authorization policy. Complete issue delivery uses a protected pull request, required CI, traceable Standards and Spec review, resolved conversations, and merge through branch protection. Release publication remains a separate workflow with its own authority.
+Issues organize work but do not grant merge authority. Complete issue delivery
+uses a protected pull request, ordinary Packy CI, CodeQL, traceable Standards
+and Spec review, resolved conversations, and human merge through branch
+protection. Release publication remains a separate workflow.

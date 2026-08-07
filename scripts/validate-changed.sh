@@ -5,7 +5,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-# This mirrors the exhaustive validator deliberately. A package is never
+# This explicit list keeps focused package selection deterministic. A package is never
 # inferred into the trusted set merely because a directory happens to exist.
 readonly packages=(
   ./cmd/packy
@@ -19,8 +19,6 @@ readonly packages=(
   ./internal/codex
   ./internal/codexsmoke
   ./internal/engrambin
-  ./internal/governanceauth
-  ./internal/governancedrift
   ./internal/localprojection
   ./internal/opencode
   ./internal/opencodesmoke
@@ -38,8 +36,6 @@ readonly packages=(
   ./internal/tools/codexsmoke
   ./internal/tools/opencodesmoke
   ./internal/tools/packcontentvalidate
-  ./internal/tools/governanceauth
-  ./internal/tools/governancedrift
   ./internal/tools/syncpacksource
   ./internal/tools/vercelacceptance
   ./internal/vercelacceptance
@@ -47,8 +43,8 @@ readonly packages=(
   ./internal/workstation
 )
 
-exhaustive() {
-  echo "mode=exhaustive"
+general() {
+  echo "mode=general"
   echo "reason=$1"
   echo "changed paths=${changed_paths[*]:-(unavailable)}"
   ./scripts/validate-packy.sh
@@ -58,10 +54,10 @@ exhaustive() {
 base="${1:-origin/main}"
 changed_paths=()
 if ! base_commit="$(git rev-parse --verify "${base}^{commit}" 2>/dev/null)"; then
-  exhaustive "base cannot be resolved: $base"
+  general "base cannot be resolved: $base"
 fi
 if ! git merge-base --is-ancestor "$base_commit" HEAD; then
-  exhaustive "base is not an ancestor of HEAD: $base"
+  general "base is not an ancestor of HEAD: $base"
 fi
 
 declare -a owners=() format_files=()
@@ -110,7 +106,7 @@ classify_path() {
 }
 
 if ! git diff --name-status -z --find-renames "$base_commit" -- >"$records"; then
-  exhaustive "Git could not enumerate the base-to-working-tree delta"
+  general "Git could not enumerate the base-to-working-tree delta"
 fi
 while IFS= read -r -d '' status; do
   [[ -n "$status" ]] || { unsafe_reason="malformed empty Git status"; break; }
@@ -127,11 +123,11 @@ while IFS= read -r -d '' status; do
 done <"$records"
 
 if ! git ls-files --others --exclude-standard -z >"$untracked"; then
-  exhaustive "Git could not enumerate untracked paths"
+  general "Git could not enumerate untracked paths"
 fi
 while IFS= read -r -d '' path; do classify_path "$path" true; done <"$untracked"
 
-if [[ -n "$unsafe_reason" ]]; then exhaustive "$unsafe_reason"; fi
+if [[ -n "$unsafe_reason" ]]; then general "$unsafe_reason"; fi
 
 if ((${#changed_paths[@]} == 0)); then
   echo "mode=focused"
@@ -139,7 +135,6 @@ if ((${#changed_paths[@]} == 0)); then
   echo "changed paths=(none)"
   echo "scope=empty"
   echo "package scope=(none)"
-  echo "WARNING: ./scripts/validate-packy.sh remains required before final delivery."
   exit 0
 fi
 
@@ -149,11 +144,10 @@ if [[ "$code" == false ]]; then
   printf 'changed paths=%s\n' "${changed_paths[*]}"
   echo "scope=documentation-only"
   echo "package scope=(none)"
-  echo "WARNING: ./scripts/validate-packy.sh remains required before final delivery."
   exit 0
 fi
 
-# Match the exhaustive validator's isolation while retaining the caller's Go caches.
+# Match general validation's isolation while retaining the caller's Go caches.
 go_cache="${GOCACHE:-$(go env GOCACHE)}"
 go_mod_cache="${GOMODCACHE:-$(go env GOMODCACHE)}"
 go_path="${GOPATH:-$(go env GOPATH)}"
@@ -163,13 +157,13 @@ export GOCACHE="$go_cache" GOMODCACHE="$go_mod_cache" GOPATH="$go_path"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 
 for owner in "${owners[@]}"; do
-  if ! go list "$owner" >/dev/null 2>&1; then exhaustive "changed package cannot be resolved: $owner"; fi
+  if ! go list "$owner" >/dev/null 2>&1; then general "changed package cannot be resolved: $owner"; fi
 done
 
 declare -a selected=()
 for candidate in "${packages[@]}"; do
   if ! dependencies="$(go list -deps -test -f '{{.ImportPath}}' "$candidate" 2>&1)"; then
-    exhaustive "dependency analysis failed for $candidate"
+    general "dependency analysis failed for $candidate"
   fi
   candidate_selected=false
   for owner in "${owners[@]}"; do
@@ -190,4 +184,3 @@ if ((${#format_files[@]})); then
   gofmt -w "${format_files[@]}"
 fi
 go test "${selected[@]}"
-echo "WARNING: ./scripts/validate-packy.sh remains required before final delivery."

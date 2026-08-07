@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/yersonargotev/packy/internal/governancedrift"
 )
 
 func TestAcceptanceRunReportRequiresExactRegisteredProductionRows(t *testing.T) {
@@ -55,7 +53,7 @@ func TestAcceptanceRunReportRequiresExactRegisteredProductionRows(t *testing.T) 
 	}
 }
 
-func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(t *testing.T) {
+func TestBuildProductionPromotionEvidenceRejectsQualificationTwins(t *testing.T) {
 	ctx := harnessContext()
 	ctx.PromotionChange = true
 	ctx.PullRequest = 7
@@ -66,7 +64,6 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 	}
 	input := ProductionPromotionInputs{
 		Acceptance:            NewAcceptanceRunReport(ctx.Repository, ctx.EvaluatedMergeSHA, ctx.WorkflowDigest, ctx.RunID, rows),
-		WorkflowBlobSHA:       strings.Repeat("4", 40),
 		DisposableHarnessRoot: t.TempDir(),
 		Qualification: ProductionQualification{
 			SchemaVersion: 3, Repository: ctx.Repository, Workflow: ctx.Workflow, WorkflowDigest: ctx.WorkflowDigest,
@@ -76,11 +73,6 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 			ClaudeIntegrity: "sha512-integrity", ClaudeDigest: strings.Repeat("6", 64),
 			Sandbox: "/sandbox",
 		},
-		GovernanceEvaluation: governancedrift.Evaluation{
-			Identity: governancedrift.EvidenceIdentity{Repository: ctx.Repository, Ref: "refs/heads/main", CommitSHA: ctx.EvaluatedMergeSHA, WorkflowSHA: strings.Repeat("4", 40), CollectedAt: ctx.Now.Add(-time.Minute)},
-			State:    governancedrift.StateClean, Findings: []governancedrift.Finding{},
-		},
-		GovernanceDecision: governancedrift.GateDecision{Allowed: true, Reasons: []string{}},
 	}
 	input.Qualification.Atomicity = validProductionAtomicity(ctx.EvaluatedMergeSHA, input.Qualification.CollectedAt)
 	baseline, err := BuildProductionPromotionEvidence(ctx, input)
@@ -101,13 +93,6 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 	qualificationEvidence, err := BuildProductionPromotionEvidence(ctx, changedQualification)
 	if err != nil || qualificationEvidence.Rows[10].EvidenceSHA256 == baseline.Rows[10].EvidenceSHA256 {
 		t.Fatal("changing admitted qualification did not change its derived authority")
-	}
-	changedGovernance := input
-	changedGovernance.DisposableHarnessRoot = t.TempDir()
-	changedGovernance.GovernanceEvaluation.Identity.CollectedAt = ctx.Now.Add(-2 * time.Minute)
-	governanceEvidence, err := BuildProductionPromotionEvidence(ctx, changedGovernance)
-	if err != nil || governanceEvidence.Rows[12].EvidenceSHA256 == baseline.Rows[12].EvidenceSHA256 {
-		t.Fatal("changing admitted governance evidence did not change its derived authority")
 	}
 	tests := []struct {
 		name   string
@@ -140,18 +125,6 @@ func TestBuildProductionPromotionEvidenceRejectsQualificationAndGovernanceTwins(
 		{"false-observed-safety", func(in *ProductionPromotionInputs) { in.Qualification.Atomicity.Observation.Safety.NoGoRun = false }},
 		{"malformed-process-digest", func(in *ProductionPromotionInputs) {
 			in.Qualification.Atomicity.Observation.ProcessLogDigest = strings.Repeat("0", 64)
-		}},
-		{"stale-governance", func(in *ProductionPromotionInputs) {
-			in.GovernanceEvaluation.Identity.CollectedAt = ctx.Now.Add(-2 * time.Hour)
-		}},
-		{"future-governance", func(in *ProductionPromotionInputs) {
-			in.GovernanceEvaluation.Identity.CollectedAt = ctx.Now.Add(time.Minute)
-		}},
-		{"dirty-governance", func(in *ProductionPromotionInputs) {
-			in.GovernanceEvaluation.State = governancedrift.StateConfirmedDrift
-		}},
-		{"disallowed-governance", func(in *ProductionPromotionInputs) {
-			in.GovernanceDecision = governancedrift.GateDecision{Allowed: false, Reasons: []string{"blocked"}}
 		}},
 	}
 	for _, test := range tests {

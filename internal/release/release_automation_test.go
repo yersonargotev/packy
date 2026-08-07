@@ -383,37 +383,6 @@ func TestReleaseWorkflowRecoveryUsesOnlyOriginalRetainedCandidate(t *testing.T) 
 	}
 }
 
-func TestReleaseWorkflowSeparatesCurrentMainGovernanceFromTagBuildIdentity(t *testing.T) {
-	text := readReleaseWorkflow(t, repoRoot(t))
-	normalize := releaseWorkflowJob(t, text, "normalize")
-	governance := releaseWorkflowJob(t, text, "governance-drift")
-	build := releaseWorkflowJob(t, text, "build")
-	for _, want := range []string{"main_commit:", "source_ref:", "release_state:"} {
-		if !strings.Contains(normalize, want) {
-			t.Fatalf("normalize must separately seal release and governance identity with %q", want)
-		}
-	}
-	for _, want := range []string{
-		`ref: ${{ needs.normalize.outputs.main_commit }}`,
-		`--commit "${{ needs.normalize.outputs.main_commit }}"`,
-	} {
-		if !strings.Contains(governance, want) {
-			t.Fatalf("governance must run against freshly observed current main with %q", want)
-		}
-	}
-	if !strings.Contains(build, `ref: ${{ needs.normalize.outputs.commit }}`) {
-		t.Fatal("release build must remain pinned to the sealed tag commit")
-	}
-	for _, want := range []string{
-		`--arg attestation_source_ref "${{ needs.normalize.outputs.source_ref }}"`,
-		`--source-ref "${{ needs.normalize.outputs.source_ref }}"`,
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("tag-triggered attestation identity must be sealed and verified with %q", want)
-		}
-	}
-}
-
 func TestReleaseWorkflowIssuesAndVerifiesSealedAttestationBundle(t *testing.T) {
 	text := readReleaseWorkflow(t, repoRoot(t))
 	workflow := parseReleaseWorkflow(t, text)

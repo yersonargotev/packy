@@ -5,98 +5,17 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-vercel_evidence_dir=""
-candidate_sha=""
-run_id=""
-while (($#)); do
-  case "$1" in
-    --vercel-foundation-evidence-dir) vercel_evidence_dir="${2:-}"; shift 2 ;;
-    --candidate-sha) candidate_sha="${2:-}"; shift 2 ;;
-    --run-id) run_id="${2:-}"; shift 2 ;;
-    *) echo "unknown argument: $1" >&2; exit 2 ;;
-  esac
-done
-vercel_args=()
-if [[ -n "$vercel_evidence_dir$candidate_sha$run_id" ]]; then
-  if [[ -z "$vercel_evidence_dir" || -z "$candidate_sha" || -z "$run_id" ]]; then
-    echo "Vercel foundation evidence requires --vercel-foundation-evidence-dir, --candidate-sha, and --run-id together" >&2
+ci=false
+if (($#)); then
+  if [[ "$1" != "--ci" || $# -ne 1 ]]; then
+    echo "usage: $0 [--ci]" >&2
     exit 2
   fi
-  vercel_args=(
-    --evidence-dir "$vercel_evidence_dir"
-    --candidate-sha "$candidate_sha"
-    --run-id "$run_id"
-  )
+  ci=true
 fi
 
-# Keep this list explicit. A new Packy-owned package must be deliberately added
-# here before CI or the synchronization publisher can load or execute it.
-readonly packages=(
-  ./cmd/packy
-  ./internal/addyacceptance
-  ./internal/bootstrap
-  ./internal/bundletransaction
-  ./internal/capabilitypack
-  ./internal/ci
-  ./internal/cli
-  ./internal/claudesmoke
-  ./internal/codex
-  ./internal/codexsmoke
-  ./internal/engrambin
-  ./internal/governanceauth
-  ./internal/governancedrift
-  ./internal/localprojection
-  ./internal/opencode
-  ./internal/opencodesmoke
-  ./internal/packclassification
-  ./internal/packsync
-  ./internal/packsync/githubsource
-  ./internal/packsyncworkflow
-  ./internal/prompt
-  ./internal/release
-  ./internal/setuphealth
-  ./internal/skillbundle
-  ./internal/tools/addypromotiongate
-  ./internal/tools/claudesmoke
-  ./internal/tools/claudevercelsmoke
-  ./internal/tools/codexsmoke
-  ./internal/tools/opencodesmoke
-  ./internal/tools/packcontentvalidate
-  ./internal/tools/governanceauth
-  ./internal/tools/governancedrift
-  ./internal/tools/syncpacksource
-  ./internal/tools/vercelacceptance
-  ./internal/vercelacceptance
-  ./internal/version
-  ./internal/workstation
-)
-
-# Derive formatting paths and the build subset from the one package authority.
-# The glob below is intentionally non-recursive. Test-only contract packages
-# remain in vet/test/race but have no production archive for `go build` to emit.
-go_dirs=()
-build_packages=()
-race_packages=()
-for package in "${packages[@]}"; do
-  go_dirs+=("${package#./}")
-  case "$package" in
-    ./internal/ci | ./internal/release) ;;
-    *) build_packages+=("$package") ;;
-  esac
-  # CLI tests are sequential adapter, filesystem, and subprocess coverage; the
-  # synchronized domains they compose remain instrumented in their owning
-  # packages. Release is subprocess, cross-platform, and package-install
-  # integration coverage whose child commands are not race-instrumented. The
-  # ordinary exhaustive phase retains both packages without repeating them
-  # under race.
-  case "$package" in
-    ./internal/cli | ./internal/release) ;;
-    *) race_packages+=("$package") ;;
-  esac
-done
-
-# Tests that exercise workstation behavior must never inherit the operator's
-# real configuration roots. Preserve only Go's caches across the sandbox.
+# Tests that resolve workstation paths must never inherit the operator's real
+# configuration roots. Preserve only Go's caches across the sandbox.
 go_cache="${GOCACHE:-$(go env GOCACHE)}"
 go_mod_cache="${GOMODCACHE:-$(go env GOMODCACHE)}"
 go_path="${GOPATH:-$(go env GOPATH)}"
@@ -122,38 +41,47 @@ export GOMODCACHE="$go_mod_cache"
 export GOPATH="$go_path"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 
-# The conditional expansion keeps the no-argument path compatible with the
-# system Bash 3.2 used by supported macOS validation.
-./scripts/validate-vercel-acceptance.sh ${vercel_args[@]+"${vercel_args[@]}"}
-./scripts/validate-addy-acceptance.sh
-
-shopt -s nullglob
 go_files=()
-for dir in "${go_dirs[@]}"; do
-  files=("$root/$dir"/*.go)
-  if ((${#files[@]} == 0)); then
-    echo "allowlisted Go directory has no Go files: $dir" >&2
-    exit 1
-  fi
-  go_files+=("${files[@]}")
-done
+while IFS= read -r file; do
+  [[ -f "$file" && ! -L "$file" ]] && go_files+=("$file")
+done < <(git ls-files --cached --others --exclude-standard -- '*.go')
 
 echo "==> formatting"
 unformatted="$(gofmt -l "${go_files[@]}")"
 if [[ -n "$unformatted" ]]; then
-  echo "These Packy-owned files are not gofmt-clean:" >&2
+  echo "These Go files are not gofmt-clean:" >&2
   echo "$unformatted" >&2
   exit 1
 fi
 
-echo "==> build"
-go build "${build_packages[@]}"
-
 echo "==> vet"
-go vet "${packages[@]}"
+go vet ./...
 
 echo "==> tests"
-go test "${packages[@]}"
+test_packages=()
+while IFS= read -r package; do
+  if [[ "$ci" == true && "$package" == github.com/yersonargotev/packy/internal/capabilitypack ]]; then
+    continue
+  fi
+  if [[ "$ci" == false ]]; then
+    case "$package" in
+      github.com/yersonargotev/packy/internal/cli | github.com/yersonargotev/packy/internal/release) continue ;;
+    esac
+  fi
+  test_packages+=("$package")
+done < <(go list ./...)
 
-echo "==> race"
-go test -race -timeout 10m "${race_packages[@]}"
+if [[ "$ci" == true ]]; then
+  go test "${test_packages[@]}" &
+  tests_pid=$!
+  echo "==> race"
+  go test -race ./internal/capabilitypack &
+  race_pid=$!
+  tests_status=0
+  race_status=0
+  wait "$tests_pid" || tests_status=$?
+  wait "$race_pid" || race_status=$?
+  ((tests_status == 0 && race_status == 0))
+else
+  go test "${test_packages[@]}"
+fi

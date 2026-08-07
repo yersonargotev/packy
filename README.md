@@ -162,16 +162,14 @@ If `XDG_CONFIG_HOME` is unset or relative, Packy uses `~/.config`.
 
 ## Verification
 
-The repository validation authority uses an explicit allowlist of Packy-owned
-Go packages and paths, so vendored or temporary upstream content is never
-discovered or executed:
+Use focused package tests while iterating. For a general local check, run the
+sandboxed formatting, vet, and Go test path used by ordinary CI:
 
 ```sh
 ./scripts/validate-packy.sh
 ```
 
-For a faster, non-authoritative local check, validate only the impact of the
-complete base-to-working-tree change set:
+To select the changed Go packages and their reverse dependents automatically:
 
 ```sh
 ./scripts/validate-changed.sh             # base defaults to origin/main
@@ -180,14 +178,11 @@ complete base-to-working-tree change set:
 
 The command reports `mode=focused` when it can safely format changed Packy Go
 files and test their owning packages and reverse dependents (or skip tests for
-documentation-only or empty changes). It reports `mode=exhaustive` and
-delegates to `./scripts/validate-packy.sh` whenever the base or impact cannot be
-established safely, or a cross-cutting/unknown path changed. The focused command
-is only a local feedback aid: `./scripts/validate-packy.sh` remains required
-before final delivery and is the command used by CI.
+documentation-only or empty changes). It reports `mode=general` and uses the
+general path when the base or impact cannot be established safely, or a
+cross-cutting or unknown path changed.
 
-The post-optimization CI timings and validation-phase counts are recorded in
-[the CI validation performance evidence](docs/research/ci-validation-performance-evidence.md).
-
-Until vendored upstream Go content exists, `go test ./...` also remains a
-supported compatibility check.
+Focused checks target under ten seconds, general local validation under thirty
+seconds, and required CI under three minutes. These are operational targets,
+not wall-clock test assertions. CI adds the slower CLI and release packages plus
+a race pass for the concurrent capability state store.

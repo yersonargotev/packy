@@ -38,7 +38,6 @@ type ProductionPromotionAuthority struct {
 	acceptanceSHA256     string
 	acceptanceRowSHA256  map[int]string
 	qualificationSHA256  string
-	governanceSHA256     string
 	prepublicationSHA256 string
 }
 
@@ -233,14 +232,14 @@ func (h PromotionHarness) runRow(row PromotionRow) PromotionHarnessRow {
 
 // NewProductionPromotionAuthority validates the independent evidence
 // authorities used by ProductionPromotionRowEvaluator.
-func NewProductionPromotionAuthority(context PromotionValidationContext, acceptanceRows []AcceptanceRunRow, acceptanceSHA256, qualificationSHA256, governanceSHA256, prepublicationSHA256 string) (ProductionPromotionAuthority, error) {
+func NewProductionPromotionAuthority(context PromotionValidationContext, acceptanceRows []AcceptanceRunRow, acceptanceSHA256, qualificationSHA256, prepublicationSHA256 string) (ProductionPromotionAuthority, error) {
 	a := ProductionPromotionAuthority{
 		repository: context.Repository, commitSHA: contextCommit(context),
 		workflowDigest: context.WorkflowDigest, runID: context.RunID,
 		contextSHA256:    promotionAuthorityContextDigest(context),
 		acceptanceSHA256: acceptanceSHA256, qualificationSHA256: qualificationSHA256,
-		governanceSHA256: governanceSHA256, prepublicationSHA256: prepublicationSHA256,
-		acceptanceRowSHA256: map[int]string{},
+		prepublicationSHA256: prepublicationSHA256,
+		acceptanceRowSHA256:  map[int]string{},
 	}
 	if err := validatePromotionContext(context); err != nil {
 		return ProductionPromotionAuthority{}, err
@@ -252,7 +251,7 @@ func NewProductionPromotionAuthority(context PromotionValidationContext, accepta
 	}
 	for name, value := range map[string]string{
 		"acceptance": a.acceptanceSHA256, "qualification": a.qualificationSHA256,
-		"governance": a.governanceSHA256, "prepublication": a.prepublicationSHA256,
+		"prepublication": a.prepublicationSHA256,
 	} {
 		if !validAuthorityDigest(value) {
 			return ProductionPromotionAuthority{}, fmt.Errorf("%s authority must be a lowercase SHA-256", name)
@@ -306,10 +305,8 @@ func productionAuthorityForRow(number int, authority ProductionPromotionAuthorit
 	switch number {
 	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10:
 		return "acceptance", authority.acceptanceRowSHA256[number]
-	case 11, 12:
+	case 11, 12, 13:
 		return "production-qualification", authority.qualificationSHA256
-	case 13:
-		return "governance", authority.governanceSHA256
 	case 14:
 		return "prepublication", authority.prepublicationSHA256
 	default:
