@@ -10,18 +10,11 @@ type JSONOptionalBool struct {
 }
 
 type JSONIntent struct {
-	State           string            `json:"state"`
-	Active          *bool             `json:"active"`
-	Revision        *int              `json:"revision"`
-	Version         string            `json:"version,omitempty"`
-	Selection       ResourceSelection `json:"selection"`
-	ProviderChoices []ProviderChoice  `json:"provider_choices"`
-}
-
-type JSONCapabilityConsumer struct {
-	ConsumerPack     string            `json:"consumer_pack"`
-	ConsumerResource *ResourceIdentity `json:"consumer_resource"`
-	Capability       string            `json:"capability"`
+	State     string            `json:"state"`
+	Active    *bool             `json:"active"`
+	Revision  *int              `json:"revision"`
+	Version   string            `json:"version,omitempty"`
+	Selection ResourceSelection `json:"selection"`
 }
 
 type JSONReadiness struct {
@@ -52,10 +45,6 @@ type JSONProjectionStatus struct {
 	Health              ProjectionHealth `json:"health"`
 	ObservedFingerprint string           `json:"observed_fingerprint"`
 	DesiredFingerprint  string           `json:"desired_fingerprint"`
-	Contributors        []string         `json:"contributors"`
-	Shared              bool             `json:"shared"`
-	DiscoverableBy      []Surface        `json:"discoverable_by"`
-	DiscoveryNotice     string           `json:"discovery_notice,omitempty"`
 }
 
 type JSONResourceSelectionStatus struct {
@@ -98,7 +87,6 @@ type JSONStatusEntry struct {
 	Evidence            []string                      `json:"evidence"`
 	PendingHumanActions []string                      `json:"pending_human_actions"`
 	ActivationRole      ActivationRole                `json:"activation_role"`
-	Consumers           []JSONCapabilityConsumer      `json:"consumers"`
 	LifecycleState      PackLifecycleState            `json:"lifecycle_state"`
 }
 
@@ -117,15 +105,11 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 	}
 	entries := make([]JSONStatusEntry, 0, len(report.Entries))
 	for _, entry := range report.Entries {
-		intent := JSONIntent{State: "absent", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, ProviderChoices: []ProviderChoice{}}
+		intent := JSONIntent{State: "absent", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}
 		if entry.IntentPresent {
 			active, revision := entry.Intent.Active, entry.Intent.Revision
 			selection, _ := canonicalSelection(entry.Intent.Selection)
-			choices, _ := canonicalProviderChoices(entry.Intent.ProviderChoices)
-			if choices == nil {
-				choices = []ProviderChoice{}
-			}
-			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version, Selection: selection, ProviderChoices: choices}
+			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version, Selection: selection}
 		}
 		entries = append(entries, JSONStatusEntry{
 			Pack: entry.Pack.ID, PackVersion: entry.Pack.Version, Surface: entry.Surface,
@@ -137,7 +121,7 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			ResourceSelections: jsonResourceSelectionDetails(entry.ResourceSelections),
 			Resources:          jsonResourceStatuses(entry.Resources),
 			Blockers:           sortedCopy(entry.Blockers), Evidence: sortedCopy(entry.Evidence), PendingHumanActions: sortedCopy(entry.PendingHumanActions),
-			ActivationRole: statusActivationRole(entry), Consumers: jsonCapabilityConsumers(entry.Consumers), LifecycleState: normalizedLifecycleState(entry),
+			ActivationRole: statusActivationRole(entry), LifecycleState: normalizedLifecycleState(entry),
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -177,16 +161,6 @@ func statusActivationRole(entry StatusEntry) ActivationRole {
 		return ActivationInactive
 	}
 	return entry.ActivationRole
-}
-
-func jsonCapabilityConsumers(values []CapabilityConsumerFact) []JSONCapabilityConsumer {
-	result := make([]JSONCapabilityConsumer, 0, len(values))
-	for _, value := range values {
-		result = append(result, JSONCapabilityConsumer{
-			ConsumerPack: value.ConsumerPack, ConsumerResource: value.ConsumerResource, Capability: value.Capability,
-		})
-	}
-	return result
 }
 
 func jsonResourceStatuses(values []ResourceStatus) []JSONResourceStatus {
@@ -243,8 +217,7 @@ func jsonProjectionDetails(values []ProjectionStatus) []JSONProjectionStatus {
 	result := make([]JSONProjectionStatus, 0, len(values))
 	for _, value := range values {
 		result = append(result, JSONProjectionStatus{ID: value.ID, Target: value.Target, Owner: value.Owner, Health: value.Health,
-			ObservedFingerprint: value.ObservedFingerprint, DesiredFingerprint: value.DesiredFingerprint, Contributors: sortedCopy(value.Contributors),
-			Shared: value.Shared, DiscoverableBy: append([]Surface(nil), value.DiscoverableBy...), DiscoveryNotice: value.DiscoveryNotice})
+			ObservedFingerprint: value.ObservedFingerprint, DesiredFingerprint: value.DesiredFingerprint})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result

@@ -15,16 +15,6 @@ type JSONProjectFailure struct {
 	ApprovalRequested *bool  `json:"approval_requested,omitempty"`
 }
 
-// JSONProjectRecovery records the explicit recovery phase that completes
-// before Packy previews new project intent.
-type JSONProjectRecovery struct {
-	SchemaVersion int    `json:"schema_version"`
-	Report        string `json:"report"`
-	Operation     string `json:"operation"`
-	Status        string `json:"status"`
-	NextCommand   string `json:"next_command"`
-}
-
 func JSONProjectFailureFor(operation, stage string, err error) JSONProjectFailure {
 	result := JSONProjectFailure{
 		SchemaVersion: ProjectLifecycleJSONSchemaVersion,

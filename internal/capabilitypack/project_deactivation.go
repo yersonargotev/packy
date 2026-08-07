@@ -70,19 +70,12 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 	if request.ProjectRoot == "" || request.PackyHome == "" || request.PackID == "" || request.Adapter == nil {
 		return report, errors.New("project deactivation preview requires the project root, Packy Home, pack, and surface adapter")
 	}
-	recoveryPending, err := ProjectInstallRecoveryPending(request.PackyHome, request.ProjectRoot)
-	if err != nil {
-		return report, err
-	}
-	if recoveryPending {
-		return report, errors.New("shared project recovery is required; rerun the interrupted named `packy pack install <pack> --surface <surface>` before previewing personal project deactivation")
-	}
 	document, exists, err := loadProjectActivationDocumentForSurface(request.PackyHome, request.ProjectRoot, request.PackID, request.Surface)
 	if err != nil {
 		return report, err
 	}
 	if !exists {
-		report.Pack = ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}
+		report.Pack = ProjectManifestPack{ID: request.PackID, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}}
 		report.Runtime, report.Disposition = ProjectRuntimePending, ProjectDeactivationConverged
 		report.Digest = sealProjectDeactivationPreview(report)
 		return report, nil
@@ -90,7 +83,7 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 	if document.State.PackID != request.PackID {
 		return report, fmt.Errorf("personal project activation belongs to capability pack %q, not %q", document.State.PackID, request.PackID)
 	}
-	report.Pack = ProjectManifestPack{ID: document.State.PackID, Version: document.State.Version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}, ProviderChoices: []ProviderChoice{}}
+	report.Pack = ProjectManifestPack{ID: document.State.PackID, Version: document.State.Version, Surfaces: []Surface{request.Surface}, Selection: ResourceSelection{Roots: []ResourceIdentity{}}, Aliases: []SurfaceAlias{}}
 	report.Runtime = ProjectRuntimeActive
 	manifestMissing, manifestErr := projectPathMissing(filepath.Join(request.ProjectRoot, "packy.json"))
 	lockMissing, lockErr := projectPathMissing(filepath.Join(request.ProjectRoot, "packy.lock.json"))
@@ -102,9 +95,6 @@ func PreviewProjectDeactivation(ctx context.Context, request ProjectDeactivation
 	} else if manifestMissing != lockMissing {
 		report.Runtime = ProjectRuntimeBlocked
 		report.Blockers = append(report.Blockers, ProjectInstallBlocker{Code: "project_contract_incomplete", Detail: "packy.json and packy.lock.json are not consistently present", Remediation: "restore or remove the shared project contract before retrying personal deactivation"})
-	}
-	if document.Recovery.Status != "clean" {
-		report.Runtime = ProjectRuntimeRecoveryRequired
 	}
 	observedEffects, err := inspectProjectEffectReceipts(ctx, request.Adapter, request.ProjectRoot, document.Effects)
 	if err != nil {
@@ -179,25 +169,19 @@ func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationAp
 	if err != nil {
 		return ProjectDeactivationApplyResult{}, err
 	}
-	if err := saveProjectActivationRecords(preview.packyHome, preview.projectRoot, document.State, document.Approvals, document.Receipts, document.Effects, "applying"); err != nil {
-		return ProjectDeactivationApplyResult{}, err
-	}
 	actions := append([]ProjectionAction(nil), fresh.actions...)
 	for i := range actions {
 		actions[i].PreviewOnly = false
 	}
 	if actionErr := request.Adapter.ApplyProjections(ctx, actions); actionErr != nil {
-		_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, document.State, document.Approvals, document.Receipts, document.Effects, "required")
 		return ProjectDeactivationApplyResult{}, actionErr
 	}
 	verified, inspectErr := inspectProjectEffectReceipts(ctx, request.Adapter, preview.projectRoot, document.Effects)
 	if inspectErr != nil {
-		_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, document.State, document.Approvals, document.Receipts, document.Effects, "required")
 		return ProjectDeactivationApplyResult{}, inspectErr
 	}
 	for _, effect := range verified {
 		if effect.State != ProjectEffectAbsent {
-			_ = saveProjectActivationRecords(preview.packyHome, preview.projectRoot, document.State, document.Approvals, document.Receipts, document.Effects, "required")
 			return ProjectDeactivationApplyResult{}, errors.New("personal project contribution was not verified absent after deactivation")
 		}
 	}

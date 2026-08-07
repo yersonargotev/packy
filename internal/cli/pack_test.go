@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -170,7 +169,6 @@ func TestPackHelpDocumentsSupportedRolloutCommands(t *testing.T) {
 		"packy pack list", "packy pack show matty", "packy pack status",
 		"status engram --surface codex --require usable",
 		"activate matty --surface codex --dry-run", "update matty --surface codex",
-		"reconcile matty --surface codex", "reconcile --surface codex",
 		"deactivate matty --surface codex", "Approvals", "repeat the original lifecycle",
 	} {
 		if !strings.Contains(out, want) {
@@ -620,7 +618,7 @@ func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 		t.Fatalf("skills-only Matty Pack projected instructions: %v", err)
 	}
 	state, err := os.ReadFile(filepath.Join(home, ".packy", "packs.json"))
-	if err != nil || !strings.Contains(string(state), `"contributors": [`) || strings.Contains(string(state), "applying_journal") {
+	if err != nil || !strings.Contains(string(state), `"receipts": [`) || strings.Contains(string(state), "contributors") || strings.Contains(string(state), "applying_journal") {
 		t.Fatalf("state = %s err=%v", state, err)
 	}
 
@@ -677,7 +675,7 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("show failed: %v\n%s", err, show)
 	}
-	for _, want := range []string{"Provides capabilities: none", "Requires global tools: engram", "Conflicts with capabilities: none", "0 skill, 1 instruction, 1 mcp_server, 1 lifecycle"} {
+	for _, want := range []string{"Requires global tools: engram", "0 skill, 1 instruction, 1 mcp_server, 1 lifecycle"} {
 		if !strings.Contains(show, want) {
 			t.Fatalf("show missing %q:\n%s", want, show)
 		}
@@ -1036,40 +1034,6 @@ func TestPackActivateOpenCodePreservesUnmanagedContentAndDoesNotMutateCodex(t *t
 	}
 }
 
-func TestPackActivationKeepsCodexAndOpenCodeIndependentAndConverged(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := currentPackActivationOptions(t, terminal)
-	for _, args := range [][]string{
-		{"pack", "activate", "matty", "--surface", "codex"},
-		{"pack", "activate", "matty", "--surface", "opencode"},
-	} {
-		if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
-			t.Fatalf("%v failed: %v\n%s", args, err, out)
-		}
-	}
-	if terminal.calls != 1 {
-		t.Fatalf("approvals = %d, want one shared projection approval", terminal.calls)
-	}
-	for _, path := range []string{filepath.Join(home, ".agents", "skills", "ask-matt")} {
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("missing host projection %s: %v", path, err)
-		}
-	}
-	for _, surface := range []string{"codex", "opencode"} {
-		out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface)
-		if err != nil || !strings.Contains(out, "Already converged") {
-			t.Fatalf("%s repeat failed/no-op missing: %v\n%s", surface, err, out)
-		}
-	}
-	if terminal.calls != 1 {
-		t.Fatalf("converged repeats requested approval: %d", terminal.calls)
-	}
-	state, err := os.ReadFile(filepath.Join(home, ".packy", "packs.json"))
-	if err != nil || !strings.Contains(string(state), `"surface": "codex"`) || !strings.Contains(string(state), `"surface": "opencode"`) {
-		t.Fatalf("state did not preserve both surfaces: %s err=%v", state, err)
-	}
-}
-
 func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, repoRoot, runner := engramActivationOptions(t, terminal)
@@ -1227,7 +1191,7 @@ func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
 			if err != nil {
 				t.Fatalf("dry-run: %v\n%s", err, out)
 			}
-			for _, want := range []string{"Deactivation dry-run plan plan-", "Active version: " + currentVersion, "Intent revision:", "Contributor removed:", "Phase: destructive-cleanup"} {
+			for _, want := range []string{"Deactivation dry-run plan plan-", "Active version: " + currentVersion, "Intent revision:", "Phase: destructive-cleanup"} {
 				if !strings.Contains(out, want) {
 					t.Fatalf("missing %q:\n%s", want, out)
 				}
@@ -1271,192 +1235,5 @@ func TestPackDeactivateCancellationAndNonTTYHaveZeroEffects(t *testing.T) {
 				t.Fatalf("prompts=%v", tc.terminal.prompts)
 			}
 		})
-	}
-}
-
-func TestPackDeactivateKeepsOtherSurfaceIntentOwnershipAndConfigIndependent(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := currentPackActivationOptions(t, terminal)
-	for _, surface := range []string{"codex", "opencode"} {
-		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface); err != nil {
-			t.Fatalf("seed %s: %v\n%s", surface, err, out)
-		}
-	}
-	statePath := filepath.Join(home, ".packy", "packs.json")
-	beforeOwnership := ownershipForSurface(t, statePath, "opencode")
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", "codex"); err != nil {
-		t.Fatalf("deactivate: %v\n%s", err, out)
-	}
-	if got := ownershipForSurface(t, statePath, "opencode"); got != beforeOwnership {
-		t.Fatal("Codex deactivation mutated OpenCode ownership")
-	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", "opencode", "--dry-run"); err != nil || strings.Contains(out, "Already converged") {
-		t.Fatalf("OpenCode intent changed: %v\n%s", err, out)
-	}
-}
-
-func TestPackReconcileBlockedTargetedAndSurfaceWideExitNonzeroWithoutEffects(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := currentPackActivationOptions(t, terminal)
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
-		t.Fatalf("seed: %v\n%s", err, out)
-	}
-	clearSurfaceOwnership(t, filepath.Join(home, ".packy", "packs.json"), capabilitypack.SurfaceCodex)
-	projection := filepath.Join(home, ".agents", "skills", "ask-matt")
-	if err := os.Remove(projection); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(projection, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(projection, "operator-owned"), []byte("concurrent content\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	before := snapshotTree(t, home)
-	prompts := terminal.calls
-	for _, tc := range []struct {
-		name string
-		args []string
-	}{
-		{"targeted", []string{"pack", "reconcile", "matty", "--surface", "codex", "--dry-run"}},
-		{"surface-wide", []string{"pack", "reconcile", "--surface", "codex", "--dry-run"}},
-		{"interactive-apply", []string{"pack", "reconcile", "matty", "--surface", "codex"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := executeCommand(t, NewRootCommand(opts), tc.args...)
-			if !errors.Is(err, capabilitypack.ErrPlanNotActionable) {
-				t.Fatalf("blocked reconcile error=%v\n%s", err, out)
-			}
-			for _, want := range []string{"Plan disposition: blocked", "Cannot apply reconcile", "Blocker: ownership"} {
-				if !strings.Contains(out, want) {
-					t.Fatalf("missing %q:\n%s", want, out)
-				}
-			}
-			if strings.Contains(out, "Verified plan") {
-				t.Fatalf("blocked interactive Apply overstated success:\n%s", out)
-			}
-		})
-	}
-	if snapshotTree(t, home) != before || terminal.calls != prompts {
-		t.Fatal("blocked reconcile previews mutated files, ownership, intent, journals, or configuration")
-	}
-}
-
-func clearSurfaceOwnership(t *testing.T, path string, surface capabilitypack.Surface) {
-	t.Helper()
-	var document map[string]any
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &document); err != nil {
-		t.Fatal(err)
-	}
-	for _, raw := range document["receipts"].([]any) {
-		receipt := raw.(map[string]any)
-		if receipt["surface"] == string(surface) {
-			receipt["projections"] = []any{}
-		}
-	}
-	data, err = json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestPackReconcileCancellationNonTTYAndStaleHaveZeroEffects(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		terminal *fakeTerminal
-		stale    bool
-	}{
-		{"cancel", &fakeTerminal{interactive: true, approve: false}, false},
-		{"non-tty", &fakeTerminal{interactive: false, approve: true}, false},
-		{"stale", &fakeTerminal{interactive: true, approve: true}, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			seed := &fakeTerminal{interactive: true, approve: true}
-			opts, home, _ := currentPackActivationOptions(t, seed)
-			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
-				t.Fatalf("seed: %v\n%s", err, out)
-			}
-			target := filepath.Join(home, ".agents", "skills", "ask-matt")
-			if err := os.Remove(target); err != nil {
-				t.Fatal(err)
-			}
-			opts.Terminal = tc.terminal
-			if tc.stale {
-				tc.terminal.onApprove = func() {
-					_ = os.MkdirAll(target, 0o700)
-					_ = os.WriteFile(filepath.Join(target, "operator-owned"), []byte("concurrent unmanaged edit\n"), 0o600)
-				}
-			}
-			beforeState := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
-			out, err := executeCommand(t, NewRootCommand(opts), "pack", "reconcile", "matty", "--surface", "codex")
-			if err == nil {
-				t.Fatalf("unsafe reconcile succeeded:\n%s", out)
-			}
-			if tc.stale {
-				message := strings.ToLower(err.Error())
-				if !strings.Contains(message, "stale") || !strings.Contains(message, "rerun") {
-					t.Fatalf("stale error must direct an explicit rerun: %v", err)
-				}
-				if strings.Contains(out, "replacement preview") {
-					t.Fatalf("stale reconcile silently previewed a replacement:\n%s", out)
-				}
-			}
-			if (!tc.stale && exists(target)) || (tc.stale && readFileString(t, filepath.Join(target, "operator-owned")) != "concurrent unmanaged edit\n") || readFileString(t, filepath.Join(home, ".packy", "packs.json")) != beforeState {
-				t.Fatal("cancel/non-TTY/stale reconcile repaired projection or changed intent state")
-			}
-		})
-	}
-}
-
-func TestPackReconcileDriftFreeIsApprovalFreeNoOp(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "opencode"); err != nil {
-		t.Fatalf("seed: %v\n%s", err, out)
-	}
-	before := snapshotTree(t, home)
-	prompts := terminal.calls
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "reconcile", "matty", "--surface", "opencode")
-	if err != nil || !strings.Contains(out, "Scope: targeted") || !strings.Contains(out, "Already converged") {
-		t.Fatalf("drift-free reconcile: %v\n%s", err, out)
-	}
-	if terminal.calls != prompts || snapshotTree(t, home) != before {
-		t.Fatal("drift-free reconcile prompted or mutated state")
-	}
-}
-
-func TestPackReconcileCannotAcquireMissingExecutable(t *testing.T) {
-	seed := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _, runner := engramActivationOptions(t, seed)
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex"); err != nil {
-		t.Fatalf("seed: %v\n%s", err, out)
-	}
-	if err := os.Remove(filepath.Join(home, ".codex", "config.toml")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(runner.path["engram"]); err != nil {
-		t.Fatal(err)
-	}
-	runner.path = map[string]string{}
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts.Terminal = terminal
-	beforeState := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
-	beforeCalls := len(runner.calls)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "reconcile", "engram", "--surface", "codex")
-	if err == nil {
-		t.Fatalf("blocked reconcile succeeded:\n%s", out)
-	}
-	if len(terminal.prompts) != 0 || !strings.Contains(out, "executable acquisition requires an explicit activation or update") {
-		t.Fatalf("reconcile acquisition authority = prompts:%v\n%s", terminal.prompts, out)
-	}
-	if exists(filepath.Join(home, ".codex", "config.toml")) || len(runner.calls) != beforeCalls || readFileString(t, filepath.Join(home, ".packy", "packs.json")) != beforeState {
-		t.Fatal("blocked reconcile caused local, external, or state effects")
 	}
 }

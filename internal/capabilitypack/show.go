@@ -59,23 +59,10 @@ type ShowDecisionSummary struct {
 func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 	pack := report.Detail.Pack
 	risks := make([]string, 0)
-	if report.Detail.Withdrawn {
-		risks = append(risks, "catalog entry is withdrawn; fresh activation is unavailable")
-	}
-	requiresCapabilities := append([]string(nil), pack.Requires.Capabilities...)
-	sort.Strings(requiresCapabilities)
-	if len(requiresCapabilities) > 0 {
-		risks = append(risks, "requires capabilities "+strings.Join(requiresCapabilities, ", "))
-	}
 	requiresTools := append([]string(nil), pack.Requires.Tools...)
 	sort.Strings(requiresTools)
 	if len(requiresTools) > 0 {
 		risks = append(risks, "requires global tools "+strings.Join(requiresTools, ", "))
-	}
-	conflicts := append([]string(nil), pack.Conflicts...)
-	sort.Strings(conflicts)
-	if len(conflicts) > 0 {
-		risks = append(risks, "conflicts with capabilities "+strings.Join(conflicts, ", "))
 	}
 	for _, surface := range report.Surfaces {
 		if surface.Contract.SelectionValidity.All.Available {
@@ -201,8 +188,8 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 		ResourceCounts: pack.ResourceCounts(),
 		ResourceGraph:  ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
 		LifecycleAvailability: ShowLifecycleAvailability{
-			FreshActivationAvailable: !detail.Withdrawn,
-			CatalogUpdateAvailable:   !detail.Withdrawn && len(detail.UpdateRoutes) > 0,
+			FreshActivationAvailable: true,
+			CatalogUpdateAvailable:   true,
 			LifecycleVerbsAvailable:  true,
 			AutomaticDowngrade:       false,
 		},
@@ -211,7 +198,7 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 	surfaces := append([]Surface(nil), pack.Surfaces...)
 	sort.Slice(surfaces, func(i, j int) bool { return surfaces[i] < surfaces[j] })
 	for _, surface := range surfaces {
-		state, err := f.activation.store.Load(ctx, surface)
+		state, err := f.activation.store.LoadSnapshot(ctx, surface)
 		if err != nil {
 			return ShowReport{}, fmt.Errorf("load %s surface intent: %w", surface, err)
 		}

@@ -2,50 +2,11 @@ package capabilitypack
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
-
-func TestIssue518VerifiedExternalEffectSurvivesLaterApplicationFailure(t *testing.T) {
-	ctx := context.Background()
-	store := NewFileActivationStore(filepath.Join(t.TempDir(), "packs.json"))
-	effect := ExternalEffect{ID: "external:engram:setup:codex", Fingerprint: "sealed"}
-	effect.Receipt = &ExternalEffectReceipt{
-		SchemaVersion: 1, EffectID: effect.ID, EffectFingerprint: effect.Fingerprint, Surface: SurfaceCodex,
-		Contributors:  []string{"surface:codex:pack:engram:external:engram"},
-		Contributions: []ExternalContribution{{ID: "external_setup:engram:codex:mcp", ObservedFingerprint: "exact", AdapterProvenance: "test-adapter/v1"}},
-		Reversal:      ExternalReversalContract{SchemaVersion: 1, Consent: ConsentDestructiveCleanup, AuthorityLimits: []string{"recorded configuration only"}},
-	}
-	failed := ActivationState{Journal: &ApplyingJournal{PlanID: "memory-only", Outcome: AttemptRecoveryRequired}, External: []ExternalEffect{effect}}
-	revision, err := store.SaveSnapshot(ctx, SurfaceCodex, 0, failed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if revision != 1 {
-		t.Fatalf("external receipt revision = %d, want 1", revision)
-	}
-	data, err := os.ReadFile(store.path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var durable installedReceiptDocument
-	if err := json.Unmarshal(data, &durable); err != nil {
-		t.Fatal(err)
-	}
-	if len(durable.Receipts) != 0 || len(durable.ExternalEffects) != 1 {
-		t.Fatalf("failed application durable state = %+v", durable)
-	}
-	loaded, err := store.LoadSnapshot(ctx, SurfaceCodex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Journal != nil || len(loaded.External) != 1 || loaded.External[0].Receipt == nil {
-		t.Fatalf("verified reversal authority was not retained without recovery state: %+v", loaded)
-	}
-}
 
 func TestIssue518FailedApplicationDoesNotReplaceInstalledReceipt(t *testing.T) {
 	ctx := context.Background()
@@ -60,8 +21,7 @@ func TestIssue518FailedApplicationDoesNotReplaceInstalledReceipt(t *testing.T) {
 		},
 		Ownership: []ProjectionOwnership{{
 			ID: "path:" + target, ProjectionID: "instruction:guide", Target: target, Fingerprint: "old",
-			Contributors: []string{"surface:codex:pack:app:instruction:guide"}, AdapterProvenance: "test-adapter/v1",
-			Authorities: []ProjectionAuthority{{Surface: SurfaceCodex, AdapterProvenance: "test-adapter/v1"}},
+			PackID: "app", Surface: SurfaceCodex,
 		}},
 	}
 	state.Intents = []ActivationIntent{state.Intent}
@@ -142,8 +102,7 @@ func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
 		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
 		Ownership: []ProjectionOwnership{{
 			ID: "path:" + target, ProjectionID: "skill:guide", Target: target, Fingerprint: "receipt-digest",
-			Contributors: []string{"surface:codex:pack:app:skill:guide"}, AdapterProvenance: "test-adapter/v1",
-			Authorities: []ProjectionAuthority{{Surface: SurfaceCodex, AdapterProvenance: "test-adapter/v1"}},
+			PackID: "app", Surface: SurfaceCodex,
 		}},
 		snapshotManaged: true,
 	}
@@ -191,8 +150,7 @@ func TestIssue518ForceDeactivationIsLimitedToReceiptOwnedTargets(t *testing.T) {
 		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
 		Ownership: []ProjectionOwnership{{
 			ID: "path:" + target, ProjectionID: "skill:guide", Target: target, Fingerprint: "receipt-digest",
-			Contributors: []string{"surface:codex:pack:app:skill:guide"}, AdapterProvenance: "test-adapter/v1",
-			Authorities: []ProjectionAuthority{{Surface: SurfaceCodex, AdapterProvenance: "test-adapter/v1"}},
+			PackID: "app", Surface: SurfaceCodex,
 		}},
 		snapshotManaged: true,
 	}

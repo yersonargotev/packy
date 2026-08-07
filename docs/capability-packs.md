@@ -150,53 +150,31 @@ terminal and plan-bound typed approval; there is no generic `--yes`.
 Preview reports compatibility before readiness, every binding/exclusion, exact
 projections, preservation, blockers, expected readiness, and pending evidence.
 It separates reversible local, executable/external, and destructive-cleanup
-phases. Claude typed hooks require executable/external consent. Removing a
-last-contributor hook or user MCP definition requires destructive-cleanup
+phases. Claude typed hooks require executable/external consent. Removing an
+owned hook or user MCP definition requires destructive-cleanup
 consent. MCP environment values are always redacted. Any preview blocker
 executes zero effects.
 
-## Shared discovery is not activation
-
-Some resources use targets shared by compatible agents: the standard global
-`~/.agents/skills` tree and resource-scoped marked instruction contributions in
-a project's `AGENTS.md`. Codex and OpenCode project activation compose identical
-instruction bytes in that file. An activation on one surface may therefore make
-the physical resource discoverable from another surface. That incidental
-visibility does not activate the pack on the other surface, does not authorize
-its surface-specific configuration, and does not create readiness there.
-
-Every activation that requires the shared resource is recorded as a contributor.
-Deactivation preserves the physical projection while any contributor remains
-and removes it only after the final contributor is gone and its ownership
-fingerprint still matches.
-
-## Update, reconcile, recovery, and deactivation
+## Update and deactivation
 
 ```sh
 packy pack update engram --surface claude --dry-run
 packy pack update engram --surface claude
-packy pack reconcile engram --surface claude --dry-run
 packy pack deactivate engram --surface claude --dry-run
 packy pack deactivate engram --surface claude
 ```
 
-Update preserves the active all/custom selection and provider choices. For a
-manifest-v4 custom selection, each old root must still exist in the target
-manifest or have one exact declared `root_migrations` entry. Packy migrates that
-recorded root identity during update; a missing, chained, cyclic, duplicate, or
-ambiguous migration blocks the update rather than guessing a replacement.
+Update preserves the active all/custom selection. If a selected resource is no
+longer present in the current Pack, the update is blocked rather than guessing
+a replacement.
 
 Approvals belong to one immutable plan. A stale plan executes no actions;
-repeat the originating verb for fresh inspection and consent. After a partial
-attempt marked `recovery-required`, also repeat the originating verb. Packy
-plans recovery from current evidence rather than replaying history. Recovery
-keeps the recorded selection, provider edges, aliases, version transition, and
-ownership evidence sealed to the fresh replacement plan.
+repeat the originating verb for fresh inspection and consent.
 
 Packy updates or removes only an exact unchanged recorded projection. It
 preserves unmanaged, ambiguous, drifted, foreign, and higher-precedence content.
-Shared resources remain while another contributor is active. Deactivation never
-deletes credentials, Engram memory, foreign configuration, or external data. If
+Deactivation never deletes credentials, Engram memory, foreign configuration,
+or external data. If
 Claude is unavailable, local cleanup may proceed while user MCP ownership is
 retained for later official removal.
 

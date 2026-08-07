@@ -62,10 +62,7 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 		Description:     raw.Description,
 		Selectable:      *raw.Selectable,
 		Surfaces:        raw.Surfaces,
-		Provides:        []string{},
-		Requires:        Requirements{Capabilities: []string{}, Tools: raw.ExternalRequirements},
-		Conflicts:       []string{},
-		RootMigrations:  []RootMigration{},
+		Requires:        Requirements{Tools: raw.ExternalRequirements},
 		Contract:        Contract{Exclusions: raw.Exclusions, OptionalModes: []OptionalMode{}},
 		SourceReference: raw.SourceReference,
 	}
@@ -81,8 +78,7 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 			License: wire.License, Attribution: wire.Attribution,
 			Requires: wire.Requires, Conflicts: wire.Conflicts, Notices: wire.Notices,
 			Bindings: wire.Bindings, SurfaceExclusions: wire.SurfaceExclusions,
-			ProvidesCapabilities: []string{}, RequiresCapabilities: []string{},
-			RequiresTools: []string{}, CapabilityConflicts: []string{},
+			RequiresTools: []string{},
 		})
 	}
 	if err := validateCurrentPack(pack); err != nil {

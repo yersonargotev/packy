@@ -53,7 +53,7 @@ func TestResourceGraphForAllTreatsEveryOperationalResourceAsSelectableRoot(t *te
 }
 
 func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
-	pack := Pack{ID: "addy", Version: "1.0.0", Requires: Requirements{Capabilities: []string{"z", "a", "a"}},
+	pack := Pack{ID: "addy", Version: "1.0.0",
 		Resources: []Resource{
 			{Kind: "agent", ID: "reviewer", Permissions: []string{"network", "filesystem", "network"}, Bindings: []Binding{
 				{Surface: SurfaceOpenCode, Projection: "agent", Name: "addy-reviewer", Invocation: "@addy-reviewer", Mode: "native", Sharing: "exclusive"},
@@ -69,7 +69,7 @@ func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
 	if got.Counts != (ResourceCounts{Agents: 1, Skills: 1}) {
 		t.Fatalf("counts = %#v", got.Counts)
 	}
-	if !reflect.DeepEqual(got.DependencyClosure, []string{"a", "z"}) {
+	if !reflect.DeepEqual(got.DependencyClosure, []string{}) {
 		t.Fatalf("closure = %#v", got.DependencyClosure)
 	}
 	if len(got.Bindings) != 2 || got.Bindings[0].ID != "reviewer" || got.Bindings[0].Degradation != "no nested delegation" {
@@ -156,9 +156,9 @@ func TestLifecycleCompatibilityBlocksExcludedDependencyAndRendersSurfaceExclusio
 
 func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "addy", Version: "1.0.0", manifestVersion: manifestSchemaV3}, operation: OperationActivate,
-		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}}, recovery: true,
+		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}},
 		readiness: ReadinessStatus{Configured: false}, readinessObserved: ReadinessObservationStatus{Configured: true}, pendingEvidence: []string{"z", "a"},
-		contributors: map[string][]string{"projection": {"z", "a"}}, blockers: []PlanBlocker{{Kind: BlockerAlias, Subject: "z", Detail: "collision"}},
+		blockers:            []PlanBlocker{{Kind: BlockerAlias, Subject: "z", Detail: "collision"}},
 		pendingHumanActions: []string{"z", "a"}, phases: []PlanPhase{{Kind: ConsentReversibleLocal, Digest: "phase", ApprovalRequired: true,
 			Actions: []ProjectionAction{{ID: "z"}, {ID: "a"}}}}}
 	first, err := json.Marshal(plan.JSONReport(true))
@@ -173,7 +173,7 @@ func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 		t.Fatalf("unstable JSON:\n%s\n%s", first, second)
 	}
 	got := plan.JSONReport(true)
-	if got.SchemaVersion != LifecycleJSONSchemaVersion || got.Disposition != PlanMixed || !got.Recovery || got.IntentRevision != 3 {
+	if got.SchemaVersion != LifecycleJSONSchemaVersion || got.Disposition != PlanMixed || got.IntentRevision != 3 {
 		t.Fatalf("facts = %#v", got)
 	}
 	if got.Contract.Compatibility != CompatibilityBlocked || got.ExpectedReadiness.Configured || !got.ReadinessObserved.Configured || !reflect.DeepEqual(got.PendingEvidence, []string{"a", "z"}) {
@@ -187,7 +187,7 @@ func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	if err != nil || !json.Valid(failureJSON) || !strings.Contains(string(failureJSON), `"compatibility":"blocked"`) {
 		t.Fatalf("stale failure wire contract = %s, err=%v", failureJSON, err)
 	}
-	if !reflect.DeepEqual(got.Contributors["projection"], []string{"a", "z"}) || !reflect.DeepEqual([]string{got.MandatoryActions[0].ID, got.MandatoryActions[1].ID}, []string{"z", "a"}) {
+	if !reflect.DeepEqual([]string{got.MandatoryActions[0].ID, got.MandatoryActions[1].ID}, []string{"z", "a"}) {
 		t.Fatalf("canonical facts = %#v", got)
 	}
 }

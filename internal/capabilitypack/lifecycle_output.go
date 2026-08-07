@@ -137,7 +137,6 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 	if !contract.CompatibilityObserved {
 		contract.Compatibility = ""
 	}
-	contract.DependencyClosure = sortedUnique(pack.Requires.Capabilities)
 	authorities := []string{}
 	for _, resource := range pack.Resources {
 		resolved := resourceWithSurfaceAlias(resource, aliases, surface)
@@ -576,97 +575,33 @@ type JSONLifecyclePhase struct {
 }
 
 type JSONLifecyclePlan struct {
-	SchemaVersion          int                          `json:"schema_version"`
-	Report                 string                       `json:"report"`
-	PlanID                 string                       `json:"plan_id"`
-	Operation              Operation                    `json:"operation"`
-	Disposition            PlanDisposition              `json:"disposition"`
-	Digest                 string                       `json:"digest"`
-	Pack                   string                       `json:"pack"`
-	PackVersion            string                       `json:"pack_version"`
-	Surface                Surface                      `json:"surface"`
-	IntentRevision         int                          `json:"intent_revision"`
-	DocumentRevision       int                          `json:"document_revision"`
-	Selection              ResourceSelection            `json:"selection"`
-	ResourceGraph          ResourceGraph                `json:"resource_graph"`
-	SensitiveEffects       []SensitiveEffectOrigin      `json:"sensitive_effects"`
-	Contract               LifecycleContract            `json:"contract"`
-	Aliases                []SurfaceAlias               `json:"aliases"`
-	Contributors           map[string][]string          `json:"contributors"`
-	Blockers               []PlanBlocker                `json:"blockers"`
-	Phases                 []JSONLifecyclePhase         `json:"phases"`
-	PendingHumanActions    []string                     `json:"pending_human_actions"`
-	ExpectedReadiness      ReadinessStatus              `json:"expected_readiness"`
-	ReadinessObserved      ReadinessObservationStatus   `json:"readiness_observed"`
-	Evidence               []string                     `json:"evidence"`
-	PendingEvidence        []string                     `json:"pending_evidence"`
-	RuntimeModes           []RuntimeModeResult          `json:"runtime_modes,omitempty"`
-	CapabilityRequirements []CapabilityRequirementFact  `json:"capability_requirements"`
-	ProviderChoices        []ProviderChoice             `json:"provider_choices"`
-	Recovery               bool                         `json:"recovery"`
-	RecoveryGuidance       *RecoveryGuidance            `json:"recovery_guidance,omitempty"`
-	MandatoryActions       []ProjectionAction           `json:"mandatory_actions"`
-	ContractDiff           JSONContractDiff             `json:"contract_diff"`
-	Migrations             []string                     `json:"migrations"`
-	RetainedProjections    []RetainedProjection         `json:"retained_projections"`
-	SharedProjections      []SharedProjectionVisibility `json:"shared_projections"`
-	RemovedContributors    map[string]string            `json:"removed_contributors"`
-	DryRun                 bool                         `json:"dry_run"`
-}
-
-type RecoveryGuidance struct {
-	OriginatingOperation Operation                  `json:"originating_operation"`
-	AffectedResources    []RecoveryAffectedResource `json:"affected_resources"`
-	Consumers            []RecoveryConsumer         `json:"consumers"`
-	Completed            []string                   `json:"completed"`
-	FailedAction         string                     `json:"failed_action"`
-	FailureDetail        string                     `json:"failure_detail"`
-	NotStarted           []string                   `json:"not_started"`
-	NextCommand          string                     `json:"next_command"`
-}
-
-func (p ReconciliationPlan) RecoveryGuidance() *RecoveryGuidance {
-	history := p.HistoricalAttempt()
-	if history == nil {
-		return nil
-	}
-	affected := append([]RecoveryAffectedResource(nil), history.AffectedResources...)
-	consumers := append([]RecoveryConsumer(nil), history.Consumers...)
-	derivedAffected, derivedConsumers := p.recoverySubjects()
-	if len(affected) == 0 {
-		affected = derivedAffected
-	}
-	if len(consumers) == 0 {
-		consumers = derivedConsumers
-	}
-	reconcileScope := history.ReconcileScope
-	if history.Operation == OperationReconcile && reconcileScope == "" {
-		reconcileScope = p.reconcileScope
-	}
-	return &RecoveryGuidance{
-		OriginatingOperation: history.Operation,
-		AffectedResources:    nonNilAffectedResources(affected),
-		Consumers:            nonNilRecoveryConsumers(consumers),
-		Completed:            nonNilStrings(history.Completed),
-		FailedAction:         history.FailedAction,
-		FailureDetail:        history.FailureDetail,
-		NotStarted:           nonNilStrings(history.NotStarted()),
-		NextCommand:          lifecycleCommand(history.Operation, history.PackID, history.Surface, reconcileScope),
-	}
-}
-
-func nonNilAffectedResources(values []RecoveryAffectedResource) []RecoveryAffectedResource {
-	if values == nil {
-		return []RecoveryAffectedResource{}
-	}
-	return values
-}
-
-func nonNilRecoveryConsumers(values []RecoveryConsumer) []RecoveryConsumer {
-	if values == nil {
-		return []RecoveryConsumer{}
-	}
-	return values
+	SchemaVersion       int                        `json:"schema_version"`
+	Report              string                     `json:"report"`
+	PlanID              string                     `json:"plan_id"`
+	Operation           Operation                  `json:"operation"`
+	Disposition         PlanDisposition            `json:"disposition"`
+	Digest              string                     `json:"digest"`
+	Pack                string                     `json:"pack"`
+	PackVersion         string                     `json:"pack_version"`
+	Surface             Surface                    `json:"surface"`
+	IntentRevision      int                        `json:"intent_revision"`
+	DocumentRevision    int                        `json:"document_revision"`
+	Selection           ResourceSelection          `json:"selection"`
+	ResourceGraph       ResourceGraph              `json:"resource_graph"`
+	SensitiveEffects    []SensitiveEffectOrigin    `json:"sensitive_effects"`
+	Contract            LifecycleContract          `json:"contract"`
+	Aliases             []SurfaceAlias             `json:"aliases"`
+	Blockers            []PlanBlocker              `json:"blockers"`
+	Phases              []JSONLifecyclePhase       `json:"phases"`
+	PendingHumanActions []string                   `json:"pending_human_actions"`
+	ExpectedReadiness   ReadinessStatus            `json:"expected_readiness"`
+	ReadinessObserved   ReadinessObservationStatus `json:"readiness_observed"`
+	Evidence            []string                   `json:"evidence"`
+	PendingEvidence     []string                   `json:"pending_evidence"`
+	RuntimeModes        []RuntimeModeResult        `json:"runtime_modes,omitempty"`
+	MandatoryActions    []ProjectionAction         `json:"mandatory_actions"`
+	ContractDiff        JSONContractDiff           `json:"contract_diff"`
+	DryRun              bool                       `json:"dry_run"`
 }
 
 func nonNilStrings(values []string) []string {
@@ -694,13 +629,6 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		phases = append(phases, JSONLifecyclePhase{Kind: phase.Kind, Digest: phase.Digest, ApprovalRequired: phase.ApprovalRequired, Actions: actions})
 		mandatory = append(mandatory, actions...)
 	}
-	contributors := p.Contributors()
-	if contributors == nil {
-		contributors = map[string][]string{}
-	}
-	for id := range contributors {
-		contributors[id] = sortedUnique(contributors[id])
-	}
 	blockers := append([]PlanBlocker{}, p.Blockers()...)
 	sort.Slice(blockers, func(i, j int) bool {
 		if blockers[i].Kind != blockers[j].Kind {
@@ -713,40 +641,15 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	})
 	contract := p.LifecycleContract()
 	diff := lifecycleContractDiff(p.beforeCompositionFacts, p.compositionFacts)
-	removed := p.RemovedContributors()
-	if removed == nil {
-		removed = map[string]string{}
-	}
-	retained := p.RetainedProjections()
-	if retained == nil {
-		retained = []RetainedProjection{}
-	}
-	shared := append([]SharedProjectionVisibility(nil), p.sharedProjections...)
-	if shared == nil {
-		shared = []SharedProjectionVisibility{}
-	}
-	for i := range shared {
-		const pathKeyPrefix = "path:"
-		if strings.HasPrefix(shared[i].ProjectionKey, pathKeyPrefix) {
-			shared[i].ProjectionKey = pathKeyPrefix + portableProjectionTarget(strings.TrimPrefix(shared[i].ProjectionKey, pathKeyPrefix))
-		}
-	}
 	selection, _ := canonicalSelection(p.selection)
-	providerChoices := p.ProviderChoices()
-	if providerChoices == nil {
-		providerChoices = []ProviderChoice{}
-	}
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
 		Surface: p.surface, IntentRevision: p.intentRevision, DocumentRevision: p.documentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false),
 		SensitiveEffects: p.SensitiveEffects(), Contract: contract, Aliases: contract.Aliases,
-		Contributors: contributors, Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
+		Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
-		RuntimeModes:           sortedRuntimeModeResults(p.runtimeModeResults),
-		CapabilityRequirements: p.CapabilityRequirements(),
-		ProviderChoices:        providerChoices,
-		Recovery:               p.recovery, RecoveryGuidance: p.RecoveryGuidance(), MandatoryActions: mandatory, ContractDiff: diff, Migrations: lifecycleMigrations(p),
-		RetainedProjections: retained, SharedProjections: shared, RemovedContributors: removed, DryRun: dryRun}
+		RuntimeModes:     sortedRuntimeModeResults(p.runtimeModeResults),
+		MandatoryActions: mandatory, ContractDiff: diff, DryRun: dryRun}
 }
 
 func actionForReport(action ProjectionAction) ProjectionAction {
@@ -809,25 +712,6 @@ func lifecycleContractDiff(before, after []Pack) JSONContractDiff {
 	sort.Strings(diff.Removed)
 	sort.Strings(diff.Retained)
 	return diff
-}
-
-func lifecycleMigrations(p ReconciliationPlan) []string {
-	result := append([]string{}, p.allModeContractChanges...)
-	for _, migration := range p.rootMigrations {
-		result = append(result, fmt.Sprintf("resource root migrates from %s to %s", migration.From.String(), migration.To.String()))
-	}
-	if digestJSON(p.previousAliases) != digestJSON(p.aliases) {
-		result = append(result, "surface-local aliases change")
-	}
-	if p.operation == OperationDeactivate && p.previousSelection.Mode == SelectionAll && p.selection.Mode == SelectionCustom {
-		result = append(result, "selection changes from all to custom; future resources are not selected automatically")
-	}
-	for _, blocker := range p.blockers {
-		if blocker.Kind == BlockerAlias {
-			result = append(result, blocker.Detail)
-		}
-	}
-	return sortedUnique(result)
 }
 
 type JSONLifecycleFailure struct {

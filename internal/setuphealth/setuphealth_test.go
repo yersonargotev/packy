@@ -50,7 +50,7 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex", ProjectionProblems: 2, ReadinessPending: true},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"2 projection findings", "packy pack reconcile ma" + "tty --surface codex", "packy pack status ma" + "tty --surface codex"},
+			want:     []string{"2 projection findings", "packy pack activate ma" + "tty --surface codex", "packy pack status ma" + "tty --surface codex"},
 		},
 		{
 			name:     "missing requirement",

@@ -46,7 +46,6 @@ type ActivePack struct {
 	ID                  string
 	Surface             string
 	InspectionFailed    bool
-	RecoveryRequired    bool
 	UpdateAvailable     bool
 	ProjectionProblems  int
 	MissingRequirements int
@@ -95,10 +94,6 @@ func diagnoseActivePack(pack ActivePack) Check {
 		severity = Fail
 		findings = append(findings, "inspection failed")
 	}
-	if pack.RecoveryRequired {
-		severity = Fail
-		findings = append(findings, "recovery is required")
-	}
 	if pack.ProjectionProblems > 0 {
 		if severity == Pass {
 			severity = Warn
@@ -135,7 +130,7 @@ func diagnoseActivePack(pack ActivePack) Check {
 
 	remediation := []string{statusCommand}
 	if pack.ProjectionProblems > 0 {
-		remediation = append([]string{fmt.Sprintf("packy pack reconcile %s --surface %s", pack.ID, pack.Surface)}, remediation...)
+		remediation = append([]string{fmt.Sprintf("packy pack activate %s --surface %s", pack.ID, pack.Surface)}, remediation...)
 	}
 	if pack.UpdateAvailable {
 		remediation = append([]string{fmt.Sprintf("packy pack update %s --surface %s", pack.ID, pack.Surface)}, remediation...)

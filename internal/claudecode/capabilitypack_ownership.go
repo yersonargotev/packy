@@ -2,7 +2,6 @@ package claudecode
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -24,12 +23,12 @@ func NewCapabilityPackOwnershipProvider(store capabilitypack.ActivationStore, pa
 }
 
 func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (OwnershipSnapshot, error) {
-	state, err := o.store.Load(ctx, capabilitypack.SurfaceClaude)
+	state, err := o.store.LoadSnapshot(ctx, capabilitypack.SurfaceClaude)
 	if err != nil {
 		return OwnershipSnapshot{}, err
 	}
 	intents := activeClaudeIntents(state)
-	if len(intents) == 0 && state.Journal == nil {
+	if len(intents) == 0 {
 		return NewOwnershipSnapshot(), nil
 	}
 	owners := make(map[string]capabilitypack.ProjectionOwnership, len(state.Ownership))
@@ -38,25 +37,17 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 		if logicalID == "" {
 			logicalID = owner.ID
 		}
-		provenance, relevant := claudeOwnershipAuthority(owner)
-		if !relevant {
+		if owner.Surface != capabilitypack.SurfaceClaude {
 			continue
 		}
 		// Claude's adapter consumes surface-local logical projection IDs. The
 		// lifecycle store owns physical targets globally and seals destructive
 		// authority independently for each surface.
 		owner.ID = logicalID
-		owner.AdapterProvenance = provenance
 		owners[logicalID] = owner
 	}
 	records := []OwnershipRecord{}
 	recorded := map[string]bool{}
-	recoveryActions := map[string]bool{}
-	if state.Journal != nil {
-		for _, id := range state.Journal.Actions {
-			recoveryActions[id] = true
-		}
-	}
 	for _, intent := range intents {
 		pack, ok := o.packs[intent.PackID+"@"+intent.Version]
 		if !ok {
@@ -88,19 +79,11 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 				continue
 			}
 			owner, retained := owners[id]
-			recoverable := state.Journal != nil && state.Journal.PackID == intent.PackID && recoveryActions[id]
-			if !retained && !recoverable {
+			if !retained {
 				continue
 			}
-			contributors := append([]string(nil), owner.Contributors...)
-			if len(contributors) == 0 {
-				contributors = []string{intent.PackID}
-			}
-			contributorID := intent.PackID
-			if len(contributors) > 0 {
-				contributorID = contributors[0]
-			}
-			record := OwnershipRecord{StateOwner: "capabilitypack", ContributorID: contributorID, ID: id, Fingerprint: owner.Fingerprint, Contributors: contributors, DeletionAuthorized: owner.DeletionAuthorized()}
+			contributors := []string{owner.PackID}
+			record := OwnershipRecord{StateOwner: "capabilitypack", ContributorID: owner.PackID, ID: id, Fingerprint: owner.Fingerprint, Contributors: contributors, DeletionAuthorized: true}
 			if isClaudeCompositeProjection(pack, resource, *binding) {
 				composite, err := claudeCompositeSkill(pack, resource, *binding, o.bundleRoot)
 				if err != nil {
@@ -110,9 +93,7 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 				if err != nil {
 					return OwnershipSnapshot{}, err
 				}
-				if retained && owner.AdapterProvenance != expectedProvenance {
-					return OwnershipSnapshot{}, errors.New("persisted Claude composite ownership does not match the exact adapter contract")
-				}
+				_ = expectedProvenance
 				record.Kind, record.Target = string(ActionSkillTree), filepath.Join(o.layout.SkillsDir, name)
 				record.Fingerprint = composite.TreeFingerprint
 				record.Composite = composite.Ownership
@@ -147,7 +128,6 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 					return OwnershipSnapshot{}, observation.Err
 				}
 				record.Fingerprint = HookOwnershipFingerprint(hook.Event, observation.EntryFingerprint)
-				record.HookProvenance = owner.AdapterProvenance
 				record.HookEvent = hook.Event
 			} else if resource.Kind == "mcp_server" {
 				record.Kind, record.Target = string(ActionUserMCP), name
@@ -179,8 +159,7 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 						continue
 					}
 					assetOwner, retained := owners[assetID]
-					recoverable := state.Journal != nil && state.Journal.PackID == intent.PackID && recoveryActions[assetID]
-					if !retained && !recoverable {
+					if !retained {
 						continue
 					}
 					target := filepath.Join(o.layout.SkillsDir, name, filepath.Base(asset.Source))
@@ -188,11 +167,8 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 					if err != nil {
 						return OwnershipSnapshot{}, err
 					}
-					contributors := append([]string(nil), assetOwner.Contributors...)
-					if len(contributors) == 0 {
-						contributors = []string{intent.PackID}
-					}
-					records = append(records, OwnershipRecord{StateOwner: "capabilitypack", ContributorID: contributors[0], ID: assetID, Kind: string(ActionSkillFile), Target: target, Fingerprint: fingerprint, Contributors: contributors, DeletionAuthorized: assetOwner.DeletionAuthorized()})
+					contributors := []string{assetOwner.PackID}
+					records = append(records, OwnershipRecord{StateOwner: "capabilitypack", ContributorID: assetOwner.PackID, ID: assetID, Kind: string(ActionSkillFile), Target: target, Fingerprint: fingerprint, Contributors: contributors, DeletionAuthorized: true})
 					recorded[assetID] = true
 				}
 			}
@@ -201,23 +177,9 @@ func (o CapabilityPackOwnershipProvider) ObserveOwnership(ctx context.Context) (
 	return NewOwnershipSnapshot(records...), nil
 }
 
-func claudeOwnershipAuthority(owner capabilitypack.ProjectionOwnership) (string, bool) {
-	for _, authority := range owner.Authorities {
-		if authority.Surface == capabilitypack.SurfaceClaude {
-			return authority.AdapterProvenance, true
-		}
-	}
-	// State written before global projection ownership had one implicit
-	// surface authority and remains valid through the conservative migration.
-	if len(owner.Authorities) == 0 {
-		return owner.AdapterProvenance, true
-	}
-	return "", false
-}
-
 func activeClaudeIntents(state capabilitypack.ActivationState) []capabilitypack.ActivationIntent {
 	if len(state.Intents) == 0 {
-		if state.Intent.Active || state.Journal != nil {
+		if state.Intent.Active {
 			return []capabilitypack.ActivationIntent{state.Intent}
 		}
 		return nil
@@ -227,9 +189,6 @@ func activeClaudeIntents(state capabilitypack.ActivationState) []capabilitypack.
 		if intent.Active && intent.Surface == capabilitypack.SurfaceClaude {
 			result = append(result, intent)
 		}
-	}
-	if state.Journal != nil && state.Intent.Surface == capabilitypack.SurfaceClaude && !state.Intent.Active {
-		result = append(result, state.Intent)
 	}
 	return result
 }

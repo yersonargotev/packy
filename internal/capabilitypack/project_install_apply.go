@@ -32,58 +32,6 @@ type ProjectInstallApplyResult struct {
 	Observation   string `json:"observation"`
 }
 
-type ProjectInstallRecoveryRequest struct {
-	ProjectRoot string
-	PackyHome   string
-	Adapter     SurfaceAdapter
-}
-
-// ProjectInstallRecoveryPending reports durable recovery state without
-// reading, applying, or deleting the journal.
-func ProjectInstallRecoveryPending(packyHome, projectRoot string) (bool, error) {
-	path := projectInstallJournalPath(packyHome, projectRoot)
-	info, err := os.Lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if !info.Mode().IsRegular() {
-		return false, errors.New("project installation recovery journal is not a regular file")
-	}
-	return true, nil
-}
-
-func (f Facade) RecoverProjectInstall(ctx context.Context, request ProjectInstallRecoveryRequest) (bool, error) {
-	if request.Adapter == nil || request.ProjectRoot == "" || request.PackyHome == "" {
-		return false, errors.New("project installation recovery requires the project root, adapter, and Packy Home")
-	}
-	journalPath := projectInstallJournalPath(request.PackyHome, request.ProjectRoot)
-	if _, err := os.Stat(journalPath); errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-	guard, err := acquireProjectInstallGuard(ctx, request.ProjectRoot)
-	if err != nil {
-		return false, err
-	}
-	defer guard.Close()
-	if err := recoverProjectInstall(ctx, request.Adapter, journalPath, request.ProjectRoot); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-type projectInstallJournal struct {
-	SchemaVersion int                `json:"schema_version"`
-	Observation   string             `json:"observation"`
-	ProjectRoot   string             `json:"project_root"`
-	Reverse       []ProjectionAction `json:"reverse"`
-	Seal          string             `json:"seal"`
-}
-
 func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallApplyRequest) (ProjectInstallApplyResult, error) {
 	preview := request.Preview
 	if request.Adapter == nil || preview.projectRoot == "" || request.PackyHome == "" {
@@ -101,10 +49,6 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	}
 	defer guard.Close()
 
-	journalPath := projectInstallJournalPath(request.PackyHome, preview.projectRoot)
-	if err := recoverProjectInstall(ctx, request.Adapter, journalPath, preview.projectRoot); err != nil {
-		return ProjectInstallApplyResult{}, err
-	}
 	freshRequest := preview.request
 	var fresh JSONProjectInstallPreview
 	if preview.updateRequest.PackID != "" {
@@ -169,17 +113,17 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 	if writeLock {
 		forward = append(forward, lockAction)
 	}
-	reverse, err := captureProjectReverseActions(forward, projectInstallBackupRoot(journalPath))
+	backupRoot, err := os.MkdirTemp("", "packy-project-rollback-")
 	if err != nil {
 		return ProjectInstallApplyResult{}, err
 	}
-	journal := projectInstallJournal{SchemaVersion: projectInstallApplySchemaVersion, Observation: fresh.Observation, ProjectRoot: fresh.projectRoot, Reverse: reverse}
-	journal.Seal = sealProjectInstallJournal(journal)
-	if err := writeProjectInstallJournal(journalPath, journal); err != nil {
+	defer os.RemoveAll(backupRoot)
+	reverse, err := captureProjectReverseActions(forward, backupRoot)
+	if err != nil {
 		return ProjectInstallApplyResult{}, err
 	}
 	fail := func(cause error) (ProjectInstallApplyResult, error) {
-		return ProjectInstallApplyResult{}, rollbackProjectMutation(ctx, request.Adapter, reverse, journalPath, cause)
+		return ProjectInstallApplyResult{}, rollbackProjectMutation(ctx, request.Adapter, reverse, cause)
 	}
 	if actionErr := request.Adapter.ApplyProjections(ctx, nonLock); actionErr != nil {
 		return fail(actionErr)
@@ -210,25 +154,19 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 		}
 		return fail(err)
 	}
-	if err := removeProjectInstallJournal(journalPath); err != nil {
-		return ProjectInstallApplyResult{}, err
-	}
 	return ProjectInstallApplyResult{SchemaVersion: projectInstallApplySchemaVersion, Report: "project-install-apply", Status: "verified", Observation: verified.Observation}, nil
 }
 
-func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, reverse []ProjectionAction, journalPath string, cause error) error {
+func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, reverse []ProjectionAction, cause error) error {
 	pending, err := pendingProjectReverse(reverse)
 	if err != nil {
-		return fmt.Errorf("project installation is recovery-required after %v: %w", cause, err)
+		return fmt.Errorf("project mutation failed (%v) and rollback could not be prepared: %w", cause, err)
 	}
 	if actionErr := adapter.ApplyProjections(ctx, pending); actionErr != nil {
-		return fmt.Errorf("project installation is recovery-required after %v: %w", cause, actionErr)
+		return fmt.Errorf("project mutation failed (%v) and rollback failed: %w", cause, actionErr)
 	}
 	if err := verifyProjectReverse(reverse); err != nil {
-		return fmt.Errorf("project installation is recovery-required after %v: %w", cause, err)
-	}
-	if err := removeProjectInstallJournal(journalPath); err != nil {
-		return fmt.Errorf("project installation restored prior state but journal cleanup failed: %w", err)
+		return fmt.Errorf("project mutation failed (%v) and rollback verification failed: %w", cause, err)
 	}
 	return cause
 }
@@ -314,9 +252,6 @@ func planProjectNotices(preview JSONProjectInstallPreview, lockExists, allowMiss
 		}
 		return content, mode, before, false, []ProjectInstallBlocker{{Code: code, Target: preview.Notices.Path, Detail: "the Packy notice contribution differs from the admitted content", Remediation: "restore the exact generated notice contribution before installation"}}, nil
 	}
-	if lockExists && mode != preview.Lock.NoticesFileMode {
-		return content, mode, before, false, []ProjectInstallBlocker{{Code: "owned_drift", Target: preview.Notices.Path, Detail: "the Packy notices file mode differs from the lock", Remediation: "restore the locked notices file mode before installation"}}, nil
-	}
 	return content, mode, before, true, nil, nil
 }
 
@@ -349,8 +284,8 @@ func verifyProjectNoticeContribution(preview JSONProjectInstallPreview) error {
 	if !found {
 		return fmt.Errorf("verify project notice contribution: %w", ErrVerificationFailed)
 	}
-	_, mode, _, intact, blockers, err := planProjectNotices(preview, true, false, lockedNotice.Digest)
-	if err != nil || !intact || len(blockers) > 0 || mode != preview.Lock.NoticesFileMode {
+	_, _, _, intact, blockers, err := planProjectNotices(preview, true, false, lockedNotice.Digest)
+	if err != nil || !intact || len(blockers) > 0 {
 		return fmt.Errorf("verify project notice contribution: %w", ErrVerificationFailed)
 	}
 	return nil
@@ -392,7 +327,7 @@ func supportedProjectContractVersion(schemaVersion int, minimumCapability string
 
 func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdentity, target, fingerprint string) bool {
 	for _, projection := range lock.Projections {
-		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && projection.DesiredFingerprint == fingerprint && (projection.Contributor != "" || len(projection.Contributors) > 0) {
+		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && projection.DesiredFingerprint == fingerprint && projection.OwnerPack != "" && projection.Surface != "" {
 			return true
 		}
 	}
@@ -401,7 +336,7 @@ func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdenti
 
 func findProjectLockProjection(lock ProjectLockProposal, resource ResourceIdentity, target string) (ProjectProjectionPlan, bool) {
 	for _, projection := range lock.Projections {
-		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && (projection.Contributor != "" || len(projection.Contributors) > 0) {
+		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && projection.OwnerPack != "" && projection.Surface != "" {
 			return projection, true
 		}
 	}
@@ -528,13 +463,13 @@ func verifyProjectInstallSurface(ctx context.Context, adapter SurfaceAdapter, pr
 	if preview.updateRequest.PackID != "" {
 		resolver, ok := adapter.(projectSurfaceAdapterResolver)
 		if !ok {
-			return errors.New("complete project reconcile verification requires the installed surface adapter set")
+			return errors.New("complete project update verification requires the installed surface adapter set")
 		}
 		surfaces := append([]Surface(nil), preview.Pack.Surfaces...)
 		for _, surface := range surfaces {
 			surfaceAdapter, found := resolver.projectSurfaceAdapter(surface)
 			if !found {
-				return fmt.Errorf("complete project reconcile verification is missing the %s adapter", surface)
+				return fmt.Errorf("complete project update verification is missing the %s adapter", surface)
 			}
 			observation, err := inspectSurface(ctx, surfaceAdapter, SurfaceTransition{Desired: preview.pack, ProjectRoot: preview.projectRoot})
 			if err != nil {
@@ -542,8 +477,8 @@ func verifyProjectInstallSurface(ctx context.Context, adapter SurfaceAdapter, pr
 			}
 			var expected []ProjectProjectionPlan
 			for _, projection := range preview.Projections {
-				for _, contributorSurface := range projectProjectionContributorSurfaces(projection) {
-					if contributorSurface == surface {
+				for _, projectionSurface := range projectProjectionSurfaces(projection) {
+					if projectionSurface == surface {
 						expected = append(expected, projection)
 						break
 					}
@@ -653,14 +588,14 @@ func pendingProjectReverse(reverse []ProjectionAction) ([]ProjectionAction, erro
 				return nil, err
 			}
 			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-				return nil, fmt.Errorf("project recovery target %s changed after mutation", action.Target)
+				return nil, fmt.Errorf("project rollback target %s changed after mutation", action.Target)
 			}
 			equal, err := projectTreesEqual(action.Source, action.Target)
 			if err != nil {
 				return nil, err
 			}
 			if !equal {
-				return nil, fmt.Errorf("project recovery target %s changed after mutation", action.Target)
+				return nil, fmt.Errorf("project rollback target %s changed after mutation", action.Target)
 			}
 			continue
 		}
@@ -716,15 +651,6 @@ func verifyProjectReverse(reverse []ProjectionAction) error {
 		}
 	}
 	return nil
-}
-
-func projectInstallJournalPath(packyHome, projectRoot string) string {
-	sum := sha256.Sum256([]byte(filepath.Clean(projectRoot)))
-	return filepath.Join(packyHome, "projects", hex.EncodeToString(sum[:]), "install-journal.json")
-}
-
-func projectInstallBackupRoot(journalPath string) string {
-	return journalPath + ".backups"
 }
 
 func copyProjectTreeBackup(source, target string) error {
@@ -839,117 +765,6 @@ func projectTreesEqual(left, right string) (bool, error) {
 		}
 	}
 	return true, nil
-}
-
-func sealProjectInstallJournal(journal projectInstallJournal) string {
-	journal.Seal = ""
-	data, _ := json.Marshal(journal)
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func writeProjectInstallJournal(path string, journal projectInstallJournal) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(journal, "", "  ")
-	if err != nil {
-		return err
-	}
-	temporary := path + ".tmp"
-	file, err := os.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	cleanup := true
-	defer func() {
-		_ = file.Close()
-		if cleanup {
-			_ = os.Remove(temporary)
-		}
-	}()
-	if _, err := file.Write(append(data, '\n')); err != nil {
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return syncProjectDirectory(filepath.Dir(path))
-}
-
-func recoverProjectInstall(ctx context.Context, adapter SurfaceAdapter, path, projectRoot string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var journal projectInstallJournal
-	if err := json.Unmarshal(data, &journal); err != nil || journal.SchemaVersion != projectInstallApplySchemaVersion || journal.Seal != sealProjectInstallJournal(journal) {
-		return errors.New("project installation recovery journal is invalid")
-	}
-	if filepath.Clean(journal.ProjectRoot) != filepath.Clean(projectRoot) {
-		return errors.New("project installation recovery journal belongs to a different project root")
-	}
-	allowedKinds := map[ProjectionActionKind]bool{
-		ActionCodexProjectSkillTree: true, ActionCodexMCPConfig: true, ActionClaudeProjectSkillTree: true, ActionInstructionFile: true,
-		ActionClaudeProjectFile: true, ActionClaudeProjectInstruction: true, ActionClaudeProjectMCP: true,
-		ActionOpenCodeInstructionFile: true, ActionOpenCodeMCPConfig: true, ActionOpenCodeAgentFile: true, ActionOpenCodeCommandFile: true, ActionOpenCodeAssetFile: true,
-		ActionProjectManifestFile: true, ActionProjectLockFile: true, ActionProjectNoticesFile: true,
-	}
-	for _, action := range journal.Reverse {
-		if !strings.HasPrefix(action.ID, "restore:") || !allowedKinds[action.Kind] {
-			return errors.New("project installation recovery journal contains an unsupported action")
-		}
-		if _, err := RelativeProjectTarget(projectRoot, action.Target); err != nil {
-			return fmt.Errorf("project installation recovery journal contains an unsafe target: %w", err)
-		}
-		if err := validateProjectTargetPath(projectRoot, action.Target); err != nil {
-			return fmt.Errorf("project installation recovery journal contains an unsafe target: %w", err)
-		}
-		if projectTreeAction(action.Kind) && action.Mode != ProjectionDeleteTarget {
-			backupRoot := projectInstallBackupRoot(path)
-			relative, err := filepath.Rel(backupRoot, action.Source)
-			if err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-				return errors.New("project installation recovery journal contains an unsafe tree backup")
-			}
-		}
-	}
-	pending, err := pendingProjectReverse(journal.Reverse)
-	if err != nil {
-		return fmt.Errorf("project installation recovery-required: %w", err)
-	}
-	if actionErr := adapter.ApplyProjections(ctx, pending); actionErr != nil {
-		return fmt.Errorf("project installation recovery-required: %w", actionErr)
-	}
-	if err := verifyProjectReverse(journal.Reverse); err != nil {
-		return fmt.Errorf("project installation recovery-required: %w", err)
-	}
-	return removeProjectInstallJournal(path)
-}
-
-func removeProjectInstallJournal(path string) error {
-	if err := os.RemoveAll(projectInstallBackupRoot(path)); err != nil {
-		return err
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	projectDir := filepath.Dir(path)
-	projectsDir := filepath.Dir(projectDir)
-	packyHome := filepath.Dir(projectsDir)
-	_ = os.Remove(projectDir)
-	_ = os.Remove(projectsDir)
-	_ = os.Remove(packyHome)
-	return nil
 }
 
 func syncProjectDirectory(path string) error {

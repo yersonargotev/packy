@@ -753,7 +753,7 @@ func applyRecordedOccupancyOwnership(observation *capabilitypack.SurfaceInspecti
 			}
 			owner, recorded := byID[projection.ID]
 			if recorded && owner.Fingerprint == occupied.Fingerprint {
-				occupied.OwnerType, occupied.OwnerID = "packy", strings.Join(owner.Contributors, ",")
+				occupied.OwnerType, occupied.OwnerID = "packy", owner.PackID
 			}
 		}
 	}

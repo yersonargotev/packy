@@ -99,7 +99,7 @@ func TestSurfaceGatewayRejectsMalformedProjectionContracts(t *testing.T) {
 func TestSurfaceGatewayClonesAndCanonicalizesTransitionAndInspection(t *testing.T) {
 	transition := SurfaceTransition{
 		Desired:             Pack{ID: "app", Resources: []Resource{{ID: "guide", Args: []string{"original"}}}},
-		ResidualOwnership:   []ProjectionOwnership{{ID: "instruction:guide", Contributors: []string{"app"}}},
+		ResidualOwnership:   []ProjectionOwnership{{ID: "instruction:guide", PackID: "app", Surface: SurfaceCodex}},
 		ResolvedExecutables: []ExecutableResolution{{Tool: "tool", AcquisitionArgs: []string{"install"}}},
 		ProjectInstallation: &ProjectInstallation{Manifest: ProjectContractProposal{Packs: []ProjectManifestPack{{ID: "project-app"}}}},
 	}
@@ -115,7 +115,7 @@ func TestSurfaceGatewayClonesAndCanonicalizesTransitionAndInspection(t *testing.
 		},
 		inspect: func(value SurfaceTransition) {
 			value.Desired.Resources[0].Args[0] = "mutated"
-			value.ResidualOwnership[0].Contributors[0] = "mutated"
+			value.ResidualOwnership[0].PackID = "mutated"
 			value.ResolvedExecutables[0].AcquisitionArgs[0] = "mutated"
 			value.ProjectInstallation.Manifest.Packs[0].ID = "mutated"
 		},
@@ -125,7 +125,7 @@ func TestSurfaceGatewayClonesAndCanonicalizesTransitionAndInspection(t *testing.
 		t.Fatal(err)
 	}
 	adapter.inspection.Projections[0].Action.Args[0] = "mutated"
-	if transition.Desired.Resources[0].Args[0] != "original" || transition.ResidualOwnership[0].Contributors[0] != "app" || transition.ResolvedExecutables[0].AcquisitionArgs[0] != "install" || transition.ProjectInstallation.Manifest.Packs[0].ID != "project-app" {
+	if transition.Desired.Resources[0].Args[0] != "original" || transition.ResidualOwnership[0].PackID != "app" || transition.ResolvedExecutables[0].AcquisitionArgs[0] != "install" || transition.ProjectInstallation.Manifest.Packs[0].ID != "project-app" {
 		t.Fatalf("adapter mutated gateway input: %+v", transition)
 	}
 	if got.Projections[0].ID != "a" || got.Projections[1].ID != "z" || got.Projections[1].Action.Args[0] != "z" || got.OccupiedNames[0].Namespace != "agent" || got.OccupiedNames[1].Name != "z" || got.PendingHumanActions[0] != "a" || got.Readiness.PendingHumanActions[0] != "a" || got.Readiness.Evidence[0] != "a" {
@@ -145,8 +145,8 @@ func TestSurfaceGatewayRejectsMalformedOccupiedNames(t *testing.T) {
 }
 
 func TestObservationDigestIgnoresNewGoalAndReadinessEvidence(t *testing.T) {
-	if got, want := observationDigest(SurfaceInspection{Revision: "host-empty"}), "37688b139518a7d08fb213bfe4a780042acbedc334af35bed7c98597d5586173"; got != want {
-		t.Fatalf("empty observation digest=%s want legacy %s", got, want)
+	if got, want := observationDigest(SurfaceInspection{Revision: "host-empty"}), "404d76e35b07f22959e16a698eb05838fa44e3edcab1ba471fc21e1f08ff73bc"; got != want {
+		t.Fatalf("empty observation digest=%s want %s", got, want)
 	}
 	projection := ObservedProjection{Goal: ProjectionPresent, ID: "instruction:guide", Exists: true, ObservedFingerprint: "catalog", DesiredFingerprint: "catalog", Action: ProjectionAction{ID: "instruction:guide"}}
 	withUnifiedFacts := SurfaceInspection{

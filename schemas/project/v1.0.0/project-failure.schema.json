@@ -8,7 +8,7 @@
     "schema_version": { "const": 1 },
     "report": { "const": "project-lifecycle-failure" },
     "operation": { "enum": ["install", "uninstall", "activate", "deactivate", "update", "status"] },
-    "stage": { "enum": ["command", "preview", "blocked", "approval", "apply", "recovery"] },
+    "stage": { "enum": ["command", "preview", "blocked", "approval", "apply"] },
     "error": { "type": "string", "minLength": 1 },
     "actions_executed": { "type": "integer", "minimum": 0 },
     "approval_requested": { "type": "boolean" }

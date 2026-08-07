@@ -42,8 +42,8 @@ func TestLockedProjectRuntimeKeepsOpenCodeConsentAndSecretsHostOwned(t *testing.
 				{Surface: capabilitypack.SurfaceOpenCode, Kind: "lifecycle", ID: "memory", Projection: "command_hook", Name: "memory"},
 			},
 			Projections: []capabilitypack.ProjectProjectionPlan{
-				{Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Target: "opencode.json", DesiredFingerprint: mcp.DesiredFingerprint, Contributor: "surface:opencode:pack:memory", Command: "engram", Args: []string{"mcp"}},
-				{Resource: capabilitypack.ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Target: ".opencode/packy-hooks/memory.json", DesiredFingerprint: hookDigest, Contributor: "surface:opencode:pack:memory"},
+				{Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Target: "opencode.json", DesiredFingerprint: mcp.DesiredFingerprint, OwnerPack: "memory", Surface: capabilitypack.SurfaceOpenCode, Command: "engram", Args: []string{"mcp"}},
+				{Resource: capabilitypack.ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Target: ".opencode/packy-hooks/memory.json", DesiredFingerprint: hookDigest, OwnerPack: "memory", Surface: capabilitypack.SurfaceOpenCode},
 			},
 		},
 	}

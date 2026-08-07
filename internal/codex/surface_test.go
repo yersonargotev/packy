@@ -335,7 +335,7 @@ func TestOwnershipResidualInspectionDiscoversObsoleteOwnedCodexProjectionAndPres
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner := capabilitypack.ProjectionOwnership{ID: verified.Projections[0].ID, Fingerprint: verified.Projections[0].ObservedFingerprint, Contributors: []string{"app"}}
+	owner := capabilitypack.ProjectionOwnership{ID: verified.Projections[0].ID, Fingerprint: verified.Projections[0].ObservedFingerprint, PackID: "app", Surface: capabilitypack.SurfaceCodex}
 	reconcile, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "desired"}, ResidualOwnership: []capabilitypack.ProjectionOwnership{owner}, ResolvedExecutables: nil})
 	if err != nil {
 		t.Fatal(err)
@@ -423,7 +423,7 @@ func TestPortableCodexWorkflowProjectsNativeBindingsAndRequiredDegradation(t *te
 	}
 	var recorded []capabilitypack.ProjectionOwnership
 	for _, projection := range first.Projections {
-		recorded = append(recorded, capabilitypack.ProjectionOwnership{ID: projection.ID, Contributors: []string{pack.ID}, Fingerprint: projection.DesiredFingerprint})
+		recorded = append(recorded, capabilitypack.ProjectionOwnership{ID: projection.ID, PackID: pack.ID, Surface: capabilitypack.SurfaceCodex, Fingerprint: projection.DesiredFingerprint})
 	}
 	verified, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, CurrentOwnership: recorded})
 	if err != nil {
@@ -539,7 +539,7 @@ func TestCodexResidualInspectionReportsDriftBeforeOwnedRemoval(t *testing.T) {
 	if err := os.WriteFile(target, []byte("drifted"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "empty"}, ResidualOwnership: []capabilitypack.ProjectionOwnership{{ID: "agent:coach", Fingerprint: initial, Contributors: []string{"pack"}}}})
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "empty"}, ResidualOwnership: []capabilitypack.ProjectionOwnership{{ID: "agent:coach", Fingerprint: initial, PackID: "pack", Surface: capabilitypack.SurfaceCodex}}})
 	if err != nil {
 		t.Fatal(err)
 	}

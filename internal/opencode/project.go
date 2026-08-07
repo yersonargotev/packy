@@ -246,7 +246,6 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		}
 		bindings[capabilitypack.ResourceIdentity{Kind: binding.Kind, ID: binding.ID}] = binding.Name
 	}
-	contributor := "surface:opencode:pack:" + pack.ID
 	var projections []capabilitypack.ObservedProjection
 	var revision []string
 	instructionTarget := filepath.Join(projectRoot, "AGENTS.md")
@@ -260,7 +259,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 		instructionPrecondition = localprojection.FingerprintBytes(instructionOriginal)
 	}
 	for _, projection := range lock.Projections {
-		if !capabilitypack.ProjectProjectionHasContributor(projection, contributor) {
+		if projection.OwnerPack != pack.ID || projection.Surface != capabilitypack.SurfaceOpenCode {
 			continue
 		}
 		name := bindings[projection.Resource]
