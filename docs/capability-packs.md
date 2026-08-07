@@ -10,7 +10,7 @@ The selectable pack catalog currently contains `addy`, `argote`, `engram`, and `
 | Pack | Version | Purpose |
 | --- | --- | --- |
 | `addy` | `1.0.0` | Addy agent skills. |
-| `argote` | `1.0.0` | Engineering and communication guidance. |
+| `argote` | `1.0.1` | Engineering and communication guidance. |
 | `engram` | `1.0.0` | Memory guidance and Engram integration. |
 | `matty` | `1.0.0` | Engineering workflow skills. |
 

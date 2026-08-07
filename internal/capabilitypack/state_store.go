@@ -349,7 +349,7 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 }
 
 func receiptProjectionOwnershipID(surface Surface, projection installedProjection) string {
-	if (surface == SurfaceCodex || surface == SurfaceOpenCode) && projection.Target != "" {
+	if (surface == SurfaceCodex || surface == SurfaceOpenCode) && strings.HasPrefix(projection.ID, "skill:") && projection.Target != "" {
 		return "path:" + filepath.Clean(projection.Target)
 	}
 	return "surface:" + string(surface) + ":" + projection.ID

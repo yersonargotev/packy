@@ -61,8 +61,8 @@ packy doctor
 packy pack list
 ```
 
-The catalog should list Addy, Argote, Engram, and Matty at Pack version
-`1.0.0`.
+The catalog should list Argote at Pack version `1.0.1` and Addy, Engram, and
+Matty at Pack version `1.0.0`.
 
 ## 5. Regenerate current projects
 

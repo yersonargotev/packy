@@ -7,7 +7,8 @@ Claude Code support requires stable version **2.1.203 or newer**.
 
 ## Current checkpoint
 
-- Addy, Argote, Engram, and Matty each use one manifest at Pack version `1.0.0`.
+- Argote uses one manifest at Pack version `1.0.1`; Addy, Engram, and Matty use
+  one manifest each at Pack version `1.0.0`.
 - Global and project lifecycles operate on independent installed Pack receipts.
 - Pack maintainers use the standard template and focused Pack validator.
 - General CI uses formatting, vet, Packy-owned tests, and focused race coverage.

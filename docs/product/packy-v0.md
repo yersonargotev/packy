@@ -8,7 +8,7 @@ orchestrator.
 
 | Area | Current scope |
 | --- | --- |
-| Packs | Addy, Argote, Engram, and Matty at Pack version `1.0.0`. |
+| Packs | Argote at Pack version `1.0.1`; Addy, Engram, and Matty at Pack version `1.0.0`. |
 | Authoring | One reviewed manifest and reviewed content per Pack. |
 | Surfaces | Codex, OpenCode, and user-global Claude Code. |
 | Global lifecycle | Inspect, activate, update, status, deactivate, and remove one Pack at a time. |
