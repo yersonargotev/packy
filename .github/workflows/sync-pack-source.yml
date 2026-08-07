@@ -144,6 +144,15 @@ jobs:
           (( $(input_bytes human_evidence_json) <= 16384 )) || { echo "human_evidence_json exceeds 16 KiB" >&2; exit 1; }
           (( $(input_bytes request_reason) <= 2048 )) || { echo "request_reason exceeds 2 KiB" >&2; exit 1; }
           (( $(input_bytes closing_issue) <= 256 )) || { echo "closing_issue exceeds 256 bytes" >&2; exit 1; }
+          closing_issue="$(jq -er '(.inputs.closing_issue // "") | if type == "string" then . else error("closing_issue must use string transport") end' "$GITHUB_EVENT_PATH")"
+          if [[ -n "$closing_issue" ]]; then
+            [[ "$closing_issue" =~ ^https://github\.com/[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9_.-]{1,100}/issues/[1-9][0-9]*$ ]] || { echo "closing_issue must be one canonical GitHub issue URL" >&2; exit 1; }
+            issue_path="${closing_issue#https://github.com/}"
+            issue_owner="${issue_path%%/*}"
+            issue_repository="${issue_path#*/}"
+            issue_repository="${issue_repository%%/*}"
+            [[ "$issue_owner" != *--* && "$issue_repository" != "." && "$issue_repository" != ".." ]] || { echo "closing_issue must be one canonical GitHub issue URL" >&2; exit 1; }
+          fi
           json_input_type() {
             jq -er --arg key "$1" '
               (.inputs[$key] // "") |

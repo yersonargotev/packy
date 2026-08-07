@@ -1350,7 +1350,7 @@ func TestSyncWorkflowIsManualPinnedLeastPrivilegeAndPhaseSeparated(t *testing.T)
 		"prepare_only:", "Admit protected publication or read-only preparation", "Enforce the ref, mode, and operation boundary",
 		"Enforce input and transport bounds before acquisition", "inputs_bytes <= 61440", "registration_json exceeds 16 KiB", "reconfiguration_json exceeds 16 KiB",
 		"registrations_json exceeds 16 KiB", "proposed_manifest_json exceeds 48 KiB", "human_evidence_json exceeds 16 KiB",
-		"request_reason exceeds 2 KiB", "closing_issue exceeds 256 bytes", "register_bundle requires 2..8 members",
+		"request_reason exceeds 2 KiB", "closing_issue exceeds 256 bytes", "closing_issue must use string transport", "closing_issue must be one canonical GitHub issue URL", "issue_owner", "issue_repository", "register_bundle requires 2..8 members",
 		"operation:", "reconfigure", "register_bundle", "pack_id:", "closing_issue:", "PACKY_CLOSING_ISSUE: ${{ inputs.closing_issue }}", "reconfiguration_json:", "reconfiguration_sha256:", "registrations_json:", "registration_bundle_sha256:", "proposed_version:", "proposed_manifest_json:", "proposed_manifest_sha256:",
 		"registration_json:", "registration_sha256:", "PACKY_OPERATION: ${{ inputs.operation }}", "PACKY_REGISTRATION_JSON: ${{ inputs.registration_json }}", "PACKY_REGISTRATION_SHA256: ${{ inputs.registration_sha256 }}", "PACKY_RECONFIGURATION_JSON: ${{ inputs.reconfiguration_json }}", "PACKY_RECONFIGURATION_SHA256: ${{ inputs.reconfiguration_sha256 }}",
 		"PACKY_PACK_ID: ${{ inputs.pack_id }}", "PACKY_REGISTRATIONS_JSON: ${{ inputs.registrations_json }}", "PACKY_REGISTRATION_BUNDLE_SHA256: ${{ inputs.registration_bundle_sha256 }}",
