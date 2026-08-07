@@ -12,7 +12,7 @@ import (
 	"github.com/yersonargotev/packy/internal/bundletransaction"
 )
 
-func TestCheckedInAddyPromotionPublishesExactHistoryAndUpdateRoute(t *testing.T) {
+func TestCheckedInCatalogDerivesCurrentAddyManifest(t *testing.T) {
 	bundleRoot := filepath.Join("..", "..", "bundle")
 	catalog, err := Discover(bundleRoot)
 	if err != nil {
@@ -22,25 +22,12 @@ func TestCheckedInAddyPromotionPublishesExactHistoryAndUpdateRoute(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.Pack.Version != "1.1.0" || detail.Pack.manifestVersion != manifestSchemaV3 ||
+	if detail.Pack.Version != "1.0.0" || detail.Pack.Description != "Addy agent skills" || !detail.Pack.Selectable ||
+		detail.Pack.manifestVersion != manifestSchemaV4 ||
 		len(detail.Pack.Surfaces) != 3 || detail.Pack.Surfaces[0] != SurfaceClaude ||
 		detail.Pack.Surfaces[1] != SurfaceCodex || detail.Pack.Surfaces[2] != SurfaceOpenCode ||
-		strings.Join(detail.HistoricalVersions, ",") != "1.0.0,1.1.0" ||
-		len(detail.UpdateRoutes) != 1 {
-		t.Fatalf("Addy promotion contract = %#v", detail)
-	}
-	for _, version := range detail.HistoricalVersions {
-		if _, err := catalog.resolveIntentPack("addy", version); err != nil {
-			t.Fatalf("resolve Addy %s: %v", version, err)
-		}
-	}
-	for _, surface := range []Surface{SurfaceCodex, SurfaceOpenCode} {
-		if err := catalog.validateUpdateRoute("addy", "1.0.0", "1.1.0", manifestSchemaV3, surface); err != nil {
-			t.Fatalf("Addy update route on %s: %v", surface, err)
-		}
-	}
-	if err := catalog.validateUpdateRoute("addy", "1.0.0", "1.1.0", manifestSchemaV3, SurfaceClaude); err == nil {
-		t.Fatal("Addy update route unexpectedly added a Claude intent")
+		len(detail.HistoricalVersions) != 0 || len(detail.UpdateRoutes) != 0 {
+		t.Fatalf("Addy current contract = %#v", detail)
 	}
 }
 
@@ -54,7 +41,7 @@ func TestCheckedInEngramTwoPublishesExactThreeSurfaceContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.Version != "2.0.0" || len(pack.Surfaces) != 3 || pack.Surfaces[0] != SurfaceClaude {
+	if pack.Version != "1.0.0" || len(pack.Surfaces) != 3 || pack.Surfaces[0] != SurfaceClaude {
 		t.Fatalf("Engram catalog contract = %#v", pack)
 	}
 	contract := LifecycleContractFor(pack, SurfaceClaude, nil)
@@ -285,11 +272,13 @@ func TestDiscoverRejectsInvalidManifests(t *testing.T) {
 		{"invalid id", func(m map[string]any) { m["id"] = "Engram" }, "lowercase kebab-case"},
 		{"invalid version", func(m map[string]any) { m["version"] = "1" }, "SemVer"},
 		{"invalid prerelease version", func(m map[string]any) { m["version"] = "1.0.0-01" }, "SemVer"},
-		{"invalid composition", func(m map[string]any) { m["conflicts"] = []any{"memory:persistent"} }, "appears in both"},
-		{"unknown resource", func(m map[string]any) { m["resources"] = []any{map[string]any{"kind": "config", "id": "bad"}} }, "unsupported resource kind"},
+		{"invalid external requirement", func(m map[string]any) { m["external_requirements"] = []any{"not a tool"} }, "external_requirements"},
+		{"unknown resource", func(m map[string]any) {
+			m["resources"] = []any{map[string]any{"kind": "config", "id": "bad", "requires": []any{}, "conflicts": []any{}, "bindings": []any{}, "surface_exclusions": []any{}}}
+		}, "unsupported resource kind"},
 		{"duplicate resource", func(m map[string]any) { r := m["resources"].([]any); m["resources"] = append(r, r[0]) }, "duplicate resource"},
 		{"traversing source", func(m map[string]any) {
-			m["resources"] = []any{map[string]any{"kind": "instruction", "id": "bad-source", "source": "../outside"}}
+			m["resources"] = []any{map[string]any{"kind": "instruction", "id": "bad-source", "source": "../outside", "requires": []any{}, "conflicts": []any{}, "bindings": []any{}, "surface_exclusions": []any{}}}
 		}, "escapes the bundle root"},
 	}
 	for _, tt := range tests {
@@ -316,9 +305,16 @@ func TestDiscoverRejectsInvalidManifests(t *testing.T) {
 
 func TestValidateSurfacesRejectsUnsupportedSurface(t *testing.T) {
 	root := writeCatalogFixture(t)
-	entries := append([]catalogEntry(nil), initialCatalog...)
-	entries[0].Surfaces = []Surface{"codex", "mobile"}
-	if _, err := discoverCatalog(root, entries); err == nil || !strings.Contains(err.Error(), "unsupported CLI surface") {
+	path := filepath.Join(root, "packs", "addy", "pack.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.Replace(string(data), `"surfaces":["claude","codex","opencode"]`, `"surfaces":["codex","mobile"]`, 1))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Discover(root); err == nil || !strings.Contains(err.Error(), "unsupported CLI surface") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -351,14 +347,19 @@ func writeCatalogFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(skillRoot, "espera-que", "SKILL.md"), []byte("---\nname: espera-que\n---\n\nRepitch.\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	addy := `{"schema_version":1,"id":"addy","version":"1.1.0","provides":["workflow:addy"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"addy-guidance","source":"instructions/addy.md"}]}`
-	argote := `{"schema_version":4,"id":"argote","version":"1.0.0","surfaces":["claude","codex","opencode"],"provides":[],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"engineering-principles","source":"instructions/argote-engineering.md","requires":[],"provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[],"conflicts":[],"notices":[],"bindings":[{"surface":"claude","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"},{"surface":"codex","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"},{"surface":"opencode","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"}],"surface_exclusions":[]},{"kind":"instruction","id":"neutral-spanish","source":"instructions/argote-spanish.md","requires":[],"provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[],"conflicts":[],"notices":[],"bindings":[{"surface":"claude","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"},{"surface":"codex","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"},{"surface":"opencode","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"}],"surface_exclusions":[]},{"kind":"skill","id":"espera-que","source":"skills/espera-que","requires":[],"provides_capabilities":[],"requires_capabilities":[],"requires_tools":[],"capability_conflicts":[],"conflicts":[],"notices":[],"bindings":[{"surface":"claude","projection":"skill","name":"espera-que","invocation":"/espera-que","mode":"native","sharing":"exclusive"},{"surface":"codex","projection":"skill","name":"espera-que","invocation":"$espera-que","mode":"native","sharing":"exclusive"},{"surface":"opencode","projection":"skill","name":"espera-que","invocation":"espera-que","mode":"native","sharing":"exclusive"}],"surface_exclusions":[],"runtime_modes":[]}],"root_migrations":[],"contract":{"exclusions":[]}}`
-	engram := `{"schema_version":1,"id":"engram","version":"1.0.0","provides":["memory:persistent"],"requires":{"capabilities":[],"tools":["engram"]},"conflicts":[],"resources":[{"kind":"instruction","id":"engram-memory","source":"instructions/engram.md"},{"kind":"mcp_server","id":"engram","command":"engram","args":["mcp"]},{"kind":"lifecycle","id":"engram-memory"}]}`
-	matty := `{"schema_version":1,"id":"matty","version":"1.0.0","provides":["workflow:matty"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"matty-guidance","source":"instructions/matty.md"}]}`
+	addy := currentCatalogFixtureManifest("addy", "Addy", "instructions/addy.md", []string{})
+	argote := `{"id":"argote","version":"1.0.0","description":"Argote","selectable":true,"surfaces":["claude","codex","opencode"],"external_requirements":[],"resources":[{"kind":"instruction","id":"engineering-principles","source":"instructions/argote-engineering.md","requires":[],"conflicts":[],"bindings":[{"surface":"claude","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"},{"surface":"codex","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"},{"surface":"opencode","projection":"instruction","name":"engineering-principles","invocation":"engineering-principles","mode":"native","sharing":"shared"}],"surface_exclusions":[]},{"kind":"instruction","id":"neutral-spanish","source":"instructions/argote-spanish.md","requires":[],"conflicts":[],"bindings":[{"surface":"claude","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"},{"surface":"codex","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"},{"surface":"opencode","projection":"instruction","name":"neutral-spanish","invocation":"neutral-spanish","mode":"native","sharing":"shared"}],"surface_exclusions":[]},{"kind":"skill","id":"espera-que","source":"skills/espera-que","requires":[],"conflicts":[],"bindings":[{"surface":"claude","projection":"skill","name":"espera-que","invocation":"/espera-que","mode":"native","sharing":"exclusive"},{"surface":"codex","projection":"skill","name":"espera-que","invocation":"$espera-que","mode":"native","sharing":"exclusive"},{"surface":"opencode","projection":"skill","name":"espera-que","invocation":"espera-que","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]}],"exclusions":[]}`
+	engram := `{"id":"engram","version":"1.0.0","description":"Engram","selectable":true,"surfaces":["claude","codex","opencode"],"external_requirements":["engram"],"resources":[{"kind":"instruction","id":"engram-memory","source":"instructions/engram.md","requires":[],"conflicts":[],"bindings":[{"surface":"claude","projection":"instruction","name":"engram-memory","invocation":"engram-memory","mode":"native","sharing":"shared"},{"surface":"codex","projection":"instruction","name":"engram-memory","invocation":"engram-memory","mode":"native","sharing":"shared"},{"surface":"opencode","projection":"instruction","name":"engram-memory","invocation":"engram-memory","mode":"native","sharing":"shared"}],"surface_exclusions":[]},{"kind":"lifecycle","id":"engram-memory","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"lifecycle","name":"engram-memory","invocation":"engram-memory","mode":"native","sharing":"exclusive"},{"surface":"opencode","projection":"lifecycle","name":"engram-memory","invocation":"engram-memory","mode":"native","sharing":"exclusive"}],"surface_exclusions":[{"surface":"claude","mode":"optional","code":"generic-lifecycle-unsupported","reason":"unsupported"}]},{"kind":"mcp_server","id":"engram","command":"engram","args":["mcp"],"requires":[],"conflicts":[],"bindings":[{"surface":"claude","projection":"mcp_server","name":"engram","invocation":"engram","mode":"native","sharing":"exclusive"},{"surface":"codex","projection":"mcp_server","name":"engram","invocation":"engram","mode":"native","sharing":"exclusive"},{"surface":"opencode","projection":"mcp_server","name":"engram","invocation":"engram","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]}],"exclusions":[]}`
+	matty := currentCatalogFixtureManifest("matty", "Matty", "instructions/matty.md", []string{})
 	for name, data := range map[string]string{"addy": addy, "argote": argote, "engram": engram, "matty": matty} {
 		if err := os.WriteFile(filepath.Join(bundle, "packs", name, "pack.json"), []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return bundle
+}
+
+func currentCatalogFixtureManifest(id, description, source string, requirements []string) string {
+	external, _ := json.Marshal(requirements)
+	return `{"id":"` + id + `","version":"1.0.0","description":"` + description + `","selectable":true,"surfaces":["claude","codex","opencode"],"external_requirements":` + string(external) + `,"resources":[{"kind":"instruction","id":"` + id + `-guidance","source":"` + source + `","requires":[],"conflicts":[],"bindings":[{"surface":"claude","projection":"instruction","name":"` + id + `-guidance","invocation":"` + id + `-guidance","mode":"native","sharing":"shared"},{"surface":"codex","projection":"instruction","name":"` + id + `-guidance","invocation":"` + id + `-guidance","mode":"native","sharing":"shared"},{"surface":"opencode","projection":"instruction","name":"` + id + `-guidance","invocation":"` + id + `-guidance","mode":"native","sharing":"shared"}],"surface_exclusions":[]}],"exclusions":[]}`
 }

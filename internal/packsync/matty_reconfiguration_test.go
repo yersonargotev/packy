@@ -1,9 +1,6 @@
 package packsync
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -52,37 +49,5 @@ func TestManifestReconfigurationFloorDistinguishesAdditionAndBreakingProjection(
 	floor, _, err = manifestReconfigurationFloor(before, projection)
 	if err != nil || floor != LevelMajor {
 		t.Fatalf("breaking projection floor=%s err=%v", floor, err)
-	}
-}
-
-func TestReconfigurationRequiresExactCurrentImmutableHistory(t *testing.T) {
-	source := repositoryRoot(t)
-	repository := t.TempDir()
-	copyTree(t, filepath.Join(source, "bundle"), filepath.Join(repository, "bundle"))
-	manifests, _, err := loadManifests(repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	current := manifests["matty"]
-	currentBytes, err := os.ReadFile(filepath.Join(repository, "bundle", "packs", "matty", "pack.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := validateCurrentHistoricalGeneration(repository, "matty", current.Version, current, currentBytes); err != nil {
-		t.Fatalf("valid current history rejected: %v", err)
-	}
-	artifact := filepath.Join(repository, "bundle", "history", "matty", current.Version, "artifact.json")
-	data, err := os.ReadFile(artifact)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var edited compositeHistoricalArtifact
-	if err := json.Unmarshal(data, &edited); err != nil {
-		t.Fatal(err)
-	}
-	edited.AggregateSHA256 = strings.Repeat("0", 64)
-	writeJSON(t, artifact, edited)
-	if err := validateCurrentHistoricalGeneration(repository, "matty", current.Version, current, currentBytes); err == nil {
-		t.Fatal("edited immutable history artifact was accepted")
 	}
 }

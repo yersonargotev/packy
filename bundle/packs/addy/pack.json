@@ -1,75 +1,14 @@
 {
-  "conflicts": [],
-  "contract": {
-    "exclusions": [
-      {
-        "id": "runtime-hooks",
-        "reason": "hooks are not Addy 1.0.0 runtime resources",
-        "source_paths": [
-          "hooks/sdd-cache-post.sh",
-          "hooks/sdd-cache-pre.sh",
-          "hooks/session-start.sh",
-          "hooks/simplify-ignore.sh"
-        ]
-      },
-      {
-        "id": "source-maintenance",
-        "reason": "source-only setup, manifests, symlinks, evaluators, validators, tests, and CI remain inert",
-        "source_paths": [
-          ".agents/**",
-          ".claude-plugin/**",
-          ".codex-plugin/**",
-          ".github/**",
-          ".opencode/skills",
-          "AGENTS.md",
-          "evals/**",
-          "scripts/**",
-          "tests/**"
-        ]
-      }
-    ],
-    "optional_modes": [
-      {
-        "authorities": [
-          "browser",
-          "network"
-        ],
-        "fallback": "static evidence-only analysis",
-        "id": "browser-network"
-      },
-      {
-        "authorities": [
-          "package-manager",
-          "process"
-        ],
-        "fallback": "report commands without running them",
-        "id": "package-tools"
-      },
-      {
-        "authorities": [
-          "commit",
-          "deploy"
-        ],
-        "fallback": "none",
-        "id": "privileged-shipping"
-      },
-      {
-        "authorities": [
-          "subagent"
-        ],
-        "fallback": "sequential single-agent analysis",
-        "id": "specialist-fanout"
-      }
-    ]
-  },
   "id": "addy",
-  "provides": [
-    "workflow:addy"
+  "version": "1.0.0",
+  "description": "Addy agent skills",
+  "selectable": true,
+  "surfaces": [
+    "claude",
+    "codex",
+    "opencode"
   ],
-  "requires": {
-    "capabilities": [],
-    "tools": []
-  },
+  "external_requirements": [],
   "resources": [
     {
       "bindings": [
@@ -79,7 +18,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:browser-network:browser",
+                  "permission:browser",
                   "tool:browser"
                 ],
                 "fallback": "static evidence-only analysis",
@@ -91,7 +30,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:privileged-shipping:commit"
+                  "permission:commit"
                 ],
                 "fallback": "none",
                 "outcome": "guarded",
@@ -102,7 +41,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:privileged-shipping:deploy"
+                  "permission:deploy"
                 ],
                 "fallback": "none",
                 "outcome": "guarded",
@@ -124,7 +63,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:browser-network:network"
+                  "permission:network"
                 ],
                 "fallback": "static evidence-only analysis",
                 "outcome": "fallback",
@@ -135,7 +74,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:package-tools:package-manager"
+                  "permission:package-manager"
                 ],
                 "fallback": "report commands without running them",
                 "outcome": "native",
@@ -146,7 +85,6 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:package-tools:process",
                   "permission:process"
                 ],
                 "fallback": "report commands without running them",
@@ -156,7 +94,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:specialist-fanout:subagent"
+                  "permission:subagent"
                 ],
                 "fallback": "sequential single-agent analysis",
                 "outcome": "fallback",
@@ -194,8 +132,14 @@
       "kind": "agent",
       "mode": "subagent",
       "permissions": [
+        "browser",
+        "commit",
+        "deploy",
         "filesystem",
-        "process"
+        "network",
+        "package-manager",
+        "process",
+        "subagent"
       ],
       "requires": [
         "skill:using-agent-skills"
@@ -204,7 +148,8 @@
       "surface_exclusions": [],
       "tools": [
         "browser"
-      ]
+      ],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -214,7 +159,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:browser-network:browser",
+                  "permission:browser",
                   "tool:browser"
                 ],
                 "fallback": "static evidence-only analysis",
@@ -226,7 +171,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:privileged-shipping:commit"
+                  "permission:commit"
                 ],
                 "fallback": "none",
                 "outcome": "guarded",
@@ -237,7 +182,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:privileged-shipping:deploy"
+                  "permission:deploy"
                 ],
                 "fallback": "none",
                 "outcome": "guarded",
@@ -262,7 +207,7 @@
                   "WebSearch"
                 ],
                 "declarations": [
-                  "optional-mode:browser-network:network"
+                  "permission:network"
                 ],
                 "fallback": "static evidence-only analysis",
                 "outcome": "native",
@@ -273,7 +218,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:package-tools:package-manager"
+                  "permission:package-manager"
                 ],
                 "fallback": "report commands without running them",
                 "outcome": "native",
@@ -284,7 +229,6 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:package-tools:process",
                   "permission:process"
                 ],
                 "fallback": "report commands without running them",
@@ -294,7 +238,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:specialist-fanout:subagent"
+                  "permission:subagent"
                 ],
                 "fallback": "sequential single-agent analysis",
                 "outcome": "fallback",
@@ -332,8 +276,14 @@
       "kind": "agent",
       "mode": "subagent",
       "permissions": [
+        "browser",
+        "commit",
+        "deploy",
         "filesystem",
-        "process"
+        "network",
+        "package-manager",
+        "process",
+        "subagent"
       ],
       "requires": [
         "skill:using-agent-skills"
@@ -342,7 +292,8 @@
       "surface_exclusions": [],
       "tools": [
         "browser"
-      ]
+      ],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -352,7 +303,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:browser-network:browser",
+                  "permission:browser",
                   "tool:browser"
                 ],
                 "fallback": "static evidence-only analysis",
@@ -364,7 +315,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:privileged-shipping:commit"
+                  "permission:commit"
                 ],
                 "fallback": "none",
                 "outcome": "guarded",
@@ -375,7 +326,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:privileged-shipping:deploy"
+                  "permission:deploy"
                 ],
                 "fallback": "none",
                 "outcome": "guarded",
@@ -399,7 +350,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:browser-network:network"
+                  "permission:network"
                 ],
                 "fallback": "static evidence-only analysis",
                 "outcome": "fallback",
@@ -410,7 +361,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:package-tools:package-manager"
+                  "permission:package-manager"
                 ],
                 "fallback": "report commands without running them",
                 "outcome": "native",
@@ -421,7 +372,6 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:package-tools:process",
                   "permission:process"
                 ],
                 "fallback": "report commands without running them",
@@ -431,7 +381,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:specialist-fanout:subagent"
+                  "permission:subagent"
                 ],
                 "fallback": "sequential single-agent analysis",
                 "outcome": "fallback",
@@ -469,8 +419,14 @@
       "kind": "agent",
       "mode": "subagent",
       "permissions": [
+        "browser",
+        "commit",
+        "deploy",
         "filesystem",
-        "process"
+        "network",
+        "package-manager",
+        "process",
+        "subagent"
       ],
       "requires": [
         "skill:using-agent-skills"
@@ -479,7 +435,8 @@
       "surface_exclusions": [],
       "tools": [
         "browser"
-      ]
+      ],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -489,7 +446,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:browser-network:browser",
+                  "permission:browser",
                   "tool:browser"
                 ],
                 "fallback": "static evidence-only analysis",
@@ -501,7 +458,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:privileged-shipping:commit"
+                  "permission:commit"
                 ],
                 "fallback": "none",
                 "outcome": "guarded",
@@ -512,7 +469,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:privileged-shipping:deploy"
+                  "permission:deploy"
                 ],
                 "fallback": "none",
                 "outcome": "guarded",
@@ -537,7 +494,7 @@
                   "WebSearch"
                 ],
                 "declarations": [
-                  "optional-mode:browser-network:network"
+                  "permission:network"
                 ],
                 "fallback": "static evidence-only analysis",
                 "outcome": "native",
@@ -548,7 +505,7 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:package-tools:package-manager"
+                  "permission:package-manager"
                 ],
                 "fallback": "report commands without running them",
                 "outcome": "native",
@@ -559,7 +516,6 @@
                   "Bash"
                 ],
                 "declarations": [
-                  "optional-mode:package-tools:process",
                   "permission:process"
                 ],
                 "fallback": "report commands without running them",
@@ -569,7 +525,7 @@
               {
                 "claude_tools": [],
                 "declarations": [
-                  "optional-mode:specialist-fanout:subagent"
+                  "permission:subagent"
                 ],
                 "fallback": "sequential single-agent analysis",
                 "outcome": "fallback",
@@ -607,8 +563,14 @@
       "kind": "agent",
       "mode": "subagent",
       "permissions": [
+        "browser",
+        "commit",
+        "deploy",
         "filesystem",
-        "process"
+        "network",
+        "package-manager",
+        "process",
+        "subagent"
       ],
       "requires": [
         "skill:using-agent-skills"
@@ -617,7 +579,8 @@
       "surface_exclusions": [],
       "tools": [
         "browser"
-      ]
+      ],
+      "conflicts": []
     },
     {
       "bindings": [],
@@ -625,7 +588,8 @@
       "kind": "asset",
       "requires": [],
       "source": "references/accessibility-checklist.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [],
@@ -633,7 +597,8 @@
       "kind": "asset",
       "requires": [],
       "source": "references/definition-of-done.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [],
@@ -641,7 +606,8 @@
       "kind": "asset",
       "requires": [],
       "source": "references/observability-checklist.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [],
@@ -649,7 +615,8 @@
       "kind": "asset",
       "requires": [],
       "source": "references/orchestration-patterns.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [],
@@ -657,7 +624,8 @@
       "kind": "asset",
       "requires": [],
       "source": "references/performance-checklist.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [],
@@ -665,7 +633,8 @@
       "kind": "asset",
       "requires": [],
       "source": "references/security-checklist.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [],
@@ -673,7 +642,8 @@
       "kind": "asset",
       "requires": [],
       "source": "references/testing-patterns.md",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "arguments": {
@@ -714,7 +684,8 @@
         "skill:using-agent-skills"
       ],
       "source": "commands/build.toml",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "arguments": {
@@ -755,7 +726,8 @@
         "skill:using-agent-skills"
       ],
       "source": "commands/code-simplify.toml",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "arguments": {
@@ -796,7 +768,8 @@
         "skill:using-agent-skills"
       ],
       "source": "commands/planning.toml",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "arguments": {
@@ -838,7 +811,8 @@
         "skill:using-agent-skills"
       ],
       "source": "commands/review.toml",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "arguments": {
@@ -882,7 +856,8 @@
         "skill:using-agent-skills"
       ],
       "source": "commands/ship.toml",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "arguments": {
@@ -923,7 +898,8 @@
         "skill:using-agent-skills"
       ],
       "source": "commands/spec.toml",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "arguments": {
@@ -965,7 +941,8 @@
         "skill:using-agent-skills"
       ],
       "source": "commands/test.toml",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "arguments": {
@@ -1007,7 +984,8 @@
         "skill:using-agent-skills"
       ],
       "source": "commands/webperf.toml",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "attribution": "Copyright 2025 Addy Osmani; synthetic Packy acceptance fixture derived from addyosmani/agent-skills",
@@ -1017,7 +995,8 @@
       "license": "MIT",
       "requires": [],
       "source": "LICENSE",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1050,7 +1029,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/api-and-interface-design",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1083,7 +1063,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/browser-testing-with-devtools",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1116,7 +1097,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/ci-cd-and-automation",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1149,7 +1131,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/code-review-and-quality",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1182,7 +1165,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/code-simplification",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1215,7 +1199,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/context-engineering",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1248,7 +1233,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/debugging-and-error-recovery",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1281,7 +1267,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/deprecation-and-migration",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1314,7 +1301,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/documentation-and-adrs",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1347,7 +1335,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/doubt-driven-development",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1380,7 +1369,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/frontend-ui-engineering",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1413,7 +1403,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/git-workflow-and-versioning",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1446,7 +1437,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/idea-refine",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1479,7 +1471,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/incremental-implementation",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1512,7 +1505,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/interview-me",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1545,7 +1539,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/observability-and-instrumentation",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1578,7 +1573,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/performance-optimization",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1611,7 +1607,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/planning-and-task-breakdown",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1644,7 +1641,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/security-and-hardening",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1677,7 +1675,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/shipping-and-launch",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1710,7 +1709,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/source-driven-development",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1743,7 +1743,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/spec-driven-development",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1776,7 +1777,8 @@
       "kind": "skill",
       "requires": [],
       "source": "skills/test-driven-development",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "bindings": [
@@ -1817,14 +1819,35 @@
         "asset:testing-patterns"
       ],
       "source": "skills/using-agent-skills",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     }
   ],
-  "schema_version": 3,
-  "surfaces": [
-    "claude",
-    "codex",
-    "opencode"
-  ],
-  "version": "1.1.0"
+  "exclusions": [
+    {
+      "id": "runtime-hooks",
+      "reason": "hooks are not Addy 1.0.0 runtime resources",
+      "source_paths": [
+        "hooks/sdd-cache-post.sh",
+        "hooks/sdd-cache-pre.sh",
+        "hooks/session-start.sh",
+        "hooks/simplify-ignore.sh"
+      ]
+    },
+    {
+      "id": "source-maintenance",
+      "reason": "source-only setup, manifests, symlinks, evaluators, validators, tests, and CI remain inert",
+      "source_paths": [
+        ".agents/**",
+        ".claude-plugin/**",
+        ".codex-plugin/**",
+        ".github/**",
+        ".opencode/skills",
+        "AGENTS.md",
+        "evals/**",
+        "scripts/**",
+        "tests/**"
+      ]
+    }
+  ]
 }

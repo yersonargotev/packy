@@ -128,7 +128,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
-		if err := os.Remove(filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
+		if err := os.Remove(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil {
 			t.Fatal(err)
 		}
 		before := snapshotTree(t, home)

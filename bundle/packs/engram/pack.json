@@ -1,22 +1,16 @@
 {
-  "schema_version": 3,
   "id": "engram",
-  "version": "2.0.0",
+  "version": "1.0.0",
+  "description": "Persistent memory for agent work",
+  "selectable": true,
   "surfaces": [
     "claude",
     "codex",
     "opencode"
   ],
-  "provides": [
-    "memory:persistent"
+  "external_requirements": [
+    "engram"
   ],
-  "requires": {
-    "capabilities": [],
-    "tools": [
-      "engram"
-    ]
-  },
-  "conflicts": [],
   "resources": [
     {
       "kind": "instruction",
@@ -49,7 +43,8 @@
           "sharing": "shared"
         }
       ],
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     },
     {
       "kind": "lifecycle",
@@ -80,7 +75,8 @@
           "code": "generic-lifecycle-unsupported",
           "reason": "Generic lifecycle translation is unsupported on Claude; Packy uses the native instruction and exact user MCP binding and does not execute `engram setup claude-code`."
         }
-      ]
+      ],
+      "conflicts": []
     },
     {
       "kind": "mcp_server",
@@ -117,11 +113,9 @@
           "sharing": "exclusive"
         }
       ],
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "conflicts": []
     }
   ],
-  "contract": {
-    "exclusions": [],
-    "optional_modes": []
-  }
+  "exclusions": []
 }

@@ -17,4 +17,12 @@ export GOPATH="$go_path"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 
 cd "$root"
-go run ./internal/tools/packcontentvalidate --repository-root "$root"
+args=(--repository-root "$root")
+if [[ $# -gt 1 ]]; then
+  echo "usage: ./scripts/validate-pack-content.sh [pack-name-or-directory]" >&2
+  exit 2
+fi
+if [[ $# -eq 1 ]]; then
+  args+=(--pack "$1")
+fi
+go run ./internal/tools/packcontentvalidate "${args[@]}"

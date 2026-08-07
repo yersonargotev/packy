@@ -53,7 +53,7 @@ func claudeCompositeSkillBuilder(pack capabilitypack.Pack, resource capabilitypa
 	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" {
 		return nil
 	}
-	if pack.ID == "addy" && pack.Version == "1.1.0" && (resource.Kind == "skill" || resource.Kind == "command") {
+	if pack.ID == "addy" && (resource.Kind == "skill" || resource.Kind == "command") {
 		return addyCompositeSkill
 	}
 	if pack.ID == "vercel" && pack.Version == "1.0.0" && resource.Kind == "skill" && len(dependencyAssets(pack, resource)) > 0 {
@@ -151,8 +151,8 @@ func vercelCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Reso
 // addyCompositeSkill is a pure translation: it reads selected bundle bytes but
 // never interprets or executes skill content.
 func addyCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
-	if pack.ID != "addy" || pack.Version != "1.1.0" {
-		return compositeSkill{}, fmt.Errorf("composite Claude skills require addy@1.1.0")
+	if pack.ID != "addy" {
+		return compositeSkill{}, fmt.Errorf("composite Claude skills require the Addy Pack")
 	}
 	if resource.Kind != "skill" && resource.Kind != "command" {
 		return compositeSkill{}, fmt.Errorf("unsupported Addy composite kind %q", resource.Kind)

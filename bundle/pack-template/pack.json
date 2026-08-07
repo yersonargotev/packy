@@ -1,0 +1,35 @@
+{
+  "id": "example-pack",
+  "version": "1.0.0",
+  "description": "Describe the reviewed Pack",
+  "selectable": false,
+  "surfaces": [
+    "codex"
+  ],
+  "external_requirements": [],
+  "resources": [
+    {
+      "kind": "instruction",
+      "id": "example-guidance",
+      "source": "pack-template/instructions/example-guidance.md",
+      "requires": [],
+      "conflicts": [],
+      "bindings": [
+        {
+          "surface": "codex",
+          "projection": "instruction",
+          "name": "example-guidance",
+          "invocation": "example-guidance",
+          "mode": "native",
+          "sharing": "shared"
+        }
+      ],
+      "surface_exclusions": []
+    }
+  ],
+  "exclusions": [],
+  "source_reference": {
+    "repository": "https://example.com/owner/example-pack.git",
+    "revision": "v1.0.0"
+  }
+}

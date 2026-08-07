@@ -506,7 +506,7 @@ func TestHistoryNeverFallsBackToCatalogCurrent(t *testing.T) {
 
 func TestHistoricalPreflightRejectsChangedCurrentPackInMixedComposition(t *testing.T) {
 	_, _, bundle := clonedHistoricalCatalog(t)
-	engramManifest := `{"schema_version":1,"id":"engram","version":"1.0.0","provides":["memory:persistent"],"requires":{"capabilities":[],"tools":[]},"conflicts":[],"resources":[{"kind":"instruction","id":"engram-memory","source":"instructions/engram-memory.md"}]}`
+	engramManifest := currentCatalogFixtureManifest("engram", "Engram", "instructions/engram-memory.md", []string{})
 	mustWrite(t, filepath.Join(bundle, "packs", "engram", "pack.json"), []byte(engramManifest), 0o644)
 	catalog, err := DiscoverForDurableIntents(bundle)
 	if err != nil {
