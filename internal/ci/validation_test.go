@@ -1103,6 +1103,14 @@ func TestGovernanceNormalizesExternalMetadataBeforeStrictValidation(t *testing.T
 	}
 }
 
+func TestGovernanceDefersMixedAuthorizationPolicyToValidator(t *testing.T) {
+	governance := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "governance.yml"))
+	const obsoleteGuard = "if ((${#issue_files[@]} != 0)); then\n              result=1"
+	if strings.Contains(governance, obsoleteGuard) {
+		t.Fatal("governance workflow rejects closing issues before strict domain validation")
+	}
+}
+
 func TestGovernanceCollectsCanonicalWorkflowIdentityForAutomationRuns(t *testing.T) {
 	root := repositoryRoot(t)
 	governance := readFile(t, filepath.Join(root, ".github", "workflows", "governance.yml"))
