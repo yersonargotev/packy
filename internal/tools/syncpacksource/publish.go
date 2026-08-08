@@ -46,6 +46,9 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	if err := dispatch.Validate(); err != nil {
 		return err
 	}
+	if dispatch.IsSingleSourceAdmission() {
+		return publishSingleSourceAdmission(ctx, option, output)
+	}
 	if err := readJSON(option.planPath, &plan); err != nil {
 		return err
 	}
@@ -124,13 +127,19 @@ func validateSandbox(ctx context.Context, option options, output io.Writer) erro
 	if err := readJSON(option.requestPath, &dispatch); err != nil {
 		return err
 	}
+	if err := dispatch.Validate(); err != nil {
+		return errors.New("validation inputs contradict the sealed dispatch")
+	}
+	if dispatch.IsSingleSourceAdmission() {
+		return validateSingleSourceAdmissionSandbox(ctx, option, output)
+	}
 	if err := readJSON(option.planPath, &plan); err != nil {
 		return err
 	}
 	if err := readJSON(option.evidencePath, &evidence); err != nil {
 		return err
 	}
-	if err := dispatch.Validate(); err != nil || validateDispatchPlanIdentity(dispatch, plan) != nil || plan.Preconditions.BaseCommit == "" || plan.Candidate.Commit == "" {
+	if validateDispatchPlanIdentity(dispatch, plan) != nil || plan.Preconditions.BaseCommit == "" || plan.Candidate.Commit == "" {
 		return errors.New("validation inputs contradict the sealed dispatch")
 	}
 	if err := validateWorkflowEvidence(plan, evidence); err != nil {

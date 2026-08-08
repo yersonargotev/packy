@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -48,6 +49,12 @@ type SingleSourceAdmissionPlan struct {
 	LockSetSHA256          string                  `json:"lock_set_sha256"`
 	ResultingConfigSHA256  string                  `json:"resulting_config_sha256"`
 	ResultBundleSHA256     string                  `json:"result_bundle_sha256"`
+}
+
+type SingleSourceAdmissionApplyRequest struct {
+	SingleSourceAdmissionCheckRequest
+	Plan                   SingleSourceAdmissionPlan
+	ClassificationEvidence CompositeClassificationEvidence
 }
 
 func (plan SingleSourceAdmissionPlan) VerifySeal() bool {
@@ -238,6 +245,239 @@ func (engine Engine) CheckSingleSourceAdmission(ctx context.Context, request Sin
 		return SingleSourceAdmissionPlan{}, fmt.Errorf("acquisition did not clean caller-supplied directory: %w", err)
 	}
 	return result, nil
+}
+
+// ApplySingleSourceAdmission publishes one complete initial Pack generation.
+// It never converges or mutates an individual admission component.
+func (engine Engine) ApplySingleSourceAdmission(ctx context.Context, request SingleSourceAdmissionApplyRequest) (ApplyResult, error) {
+	plan := request.Plan
+	if engine.Source == nil || engine.Validate == nil || !plan.VerifySeal() || plan.Status != "review-required" {
+		return ApplyResult{}, errors.New("single-source admission Apply requires acquisition, validation, and an applicable exact sealed plan")
+	}
+	registration, registrationDigest, err := canonicalRegistration(request.Registration)
+	if err != nil || registrationDigest != request.RegistrationSHA256 || registrationDigest != plan.RegistrationSHA256 || !reflect.DeepEqual(registration, plan.Registration) {
+		return ApplyResult{}, errors.New("single-source registration changed after Check")
+	}
+	manifest, manifestBytes, err := validateSingleSourceAdmissionManifest(request.RepositoryRoot, plan.PackID, request.ProposedVersion, request.ProposedManifest)
+	if err != nil {
+		return ApplyResult{}, fmt.Errorf("proposed Pack generation changed after Check: %w", err)
+	}
+	if request.ProposedVersion != plan.ProposedVersion {
+		return ApplyResult{}, errors.New("proposed Pack version changed after Check")
+	}
+	if request.ProposedManifestSHA256 != plan.ProposedManifestSHA256 || hashBytes(manifestBytes) != plan.ProposedManifestSHA256 {
+		return ApplyResult{}, errors.New("proposed Pack manifest digest changed after Check")
+	}
+	canonicalPlanManifest, err := canonicalJSON(plan.ProposedManifest)
+	if err != nil || !bytes.Equal(manifestBytes, canonicalPlanManifest) {
+		return ApplyResult{}, errors.New("proposed Pack manifest bytes changed after Check")
+	}
+	if !reflect.DeepEqual(request.LegalAdmission, plan.LegalAdmission) {
+		return ApplyResult{}, errors.New("legal admission request changed after Check")
+	}
+	if err := ValidateSingleSourceAdmissionClassificationEvidence(plan, request.ClassificationEvidence); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := requireEmptyDirectory(request.AcquisitionDir); err != nil {
+		return ApplyResult{}, fmt.Errorf("acquisition directory: %w", err)
+	}
+	releases, err := engine.Source.Releases(ctx, registration)
+	if err != nil {
+		return ApplyResult{}, fmt.Errorf("re-list stable releases: %w", err)
+	}
+	candidate, err := engine.resolveFromReleases(ctx, registration, registration.Selector, releases)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if !reflect.DeepEqual(candidate, plan.Candidate) {
+		return ApplyResult{}, errors.New("stable release candidate changed after Check")
+	}
+	var result ApplyResult
+	err = engine.Source.WithSnapshot(ctx, candidate, request.AcquisitionDir, func(snapshotRoot string) error {
+		if err := verifySnapshot(snapshotRoot, plan.ProposedLock); err != nil {
+			return fmt.Errorf("reacquired candidate does not match sealed plan: %w", err)
+		}
+		guard, err := bundletransaction.Acquire(ctx, request.RepositoryRoot)
+		if err != nil {
+			return err
+		}
+		defer guard.Release()
+		member := CompositeRegistrationMember{Registration: registration, LegalAdmission: request.LegalAdmission}
+		if err := validateCompositeLegalAdmission(request.RepositoryRoot, member, candidate); err != nil {
+			return fmt.Errorf("legal admission changed after Check: %w", err)
+		}
+		result, err = engine.applySingleSourceAdmissionLocked(ctx, request, manifest, snapshotRoot)
+		return err
+	})
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if err := requireEmptyDirectory(request.AcquisitionDir); err != nil {
+		return ApplyResult{}, fmt.Errorf("acquisition did not clean caller-supplied directory: %w", err)
+	}
+	return result, nil
+}
+
+func ValidateSingleSourceAdmissionClassificationEvidence(plan SingleSourceAdmissionPlan, set CompositeClassificationEvidence) error {
+	evidence := set.Evidence
+	if !plan.VerifySeal() || set.SchemaVersion != 1 || set.PlanID != plan.PlanID || set.PackID != plan.PackID ||
+		evidence.PackID != plan.PackID || evidence.CurrentVersion != plan.Classification.CurrentVersion ||
+		evidence.ProposedVersion != plan.ProposedVersion || evidence.MechanicalFloor != plan.Classification.MechanicalFloor {
+		return errors.New("single-source admission classification evidence is stale or does not cover the complete Pack plan")
+	}
+	if plan.Classification.PackID != plan.PackID || plan.Classification.CurrentVersion != "0.0.0" ||
+		plan.Classification.MechanicalFloor != LevelMajor || !plan.Classification.SemanticEvidenceRequired {
+		return errors.New("single-source admission plan has invalid classification identity")
+	}
+	if err := validatePackClassification(plan.Classification, evidence); err != nil {
+		return fmt.Errorf("single-source admission classification: %w", err)
+	}
+	return nil
+}
+
+// RevalidateSingleSourceAdmissionCandidate freshly resolves the stable release
+// sealed by one initial-admission plan without acquiring or materializing it.
+func (engine Engine) RevalidateSingleSourceAdmissionCandidate(ctx context.Context, plan SingleSourceAdmissionPlan) error {
+	if engine.Source == nil || !plan.VerifySeal() || plan.Registration.Selector.Mode != SelectorStableRelease {
+		return errors.New("fresh single-source admission provenance revalidation requires a source and exact sealed plan")
+	}
+	releases, err := engine.Source.Releases(ctx, plan.Registration)
+	if err != nil {
+		return fmt.Errorf("re-list stable releases: %w", err)
+	}
+	candidate, err := engine.resolveFromReleases(ctx, plan.Registration, plan.Registration.Selector, releases)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(candidate, plan.Candidate) {
+		return errors.New("stable release candidate provenance changed after validation")
+	}
+	return nil
+}
+
+func (engine Engine) applySingleSourceAdmissionLocked(ctx context.Context, request SingleSourceAdmissionApplyRequest, manifest packManifest, snapshotRoot string) (ApplyResult, error) {
+	plan := request.Plan
+	if !plan.VerifySeal() || !reflect.DeepEqual(plan.Registration, request.Registration) || !reflect.DeepEqual(plan.LegalAdmission, request.LegalAdmission) {
+		return ApplyResult{}, errors.New("single-source admission plan changed while acquiring transaction lock")
+	}
+	if err := ValidateSingleSourceAdmissionClassificationEvidence(plan, request.ClassificationEvidence); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := verifySnapshot(snapshotRoot, plan.ProposedLock); err != nil {
+		return ApplyResult{}, fmt.Errorf("exact candidate changed while acquiring the transaction lock: %w", err)
+	}
+	manifestNow, manifestBytes, err := validateSingleSourceAdmissionManifest(request.RepositoryRoot, plan.PackID, plan.ProposedVersion, request.ProposedManifest)
+	canonicalPlanManifest, canonicalErr := canonicalJSON(plan.ProposedManifest)
+	if err != nil || canonicalErr != nil || !reflect.DeepEqual(manifestNow, manifest) || !bytes.Equal(manifestBytes, canonicalPlanManifest) {
+		return ApplyResult{}, errors.New("proposed Pack generation changed while acquiring the transaction lock")
+	}
+	member := CompositeRegistrationMember{Registration: plan.Registration, LegalAdmission: plan.LegalAdmission}
+	current, err := readCompositeLocalUnlocked(request.RepositoryRoot, []CompositeRegistrationMember{member}, plan.PackID)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	base, err := repositoryBase(request.RepositoryRoot)
+	if err != nil || base != plan.Preconditions.BaseCommit || hashBytes(current.configBytes) != plan.Preconditions.ConfigSHA256 || current.lockSet.LockSetSHA256 != plan.Preconditions.LockSetSHA256 {
+		return ApplyResult{}, errors.New("stale single-source admission plan: local authority changed after Check")
+	}
+	_, manifestsHash, err := loadManifests(request.RepositoryRoot)
+	if err != nil || manifestsHash != plan.Preconditions.ManifestsSHA256 {
+		return ApplyResult{}, errors.New("stale single-source admission plan: manifests changed after Check")
+	}
+	bundle := filepath.Join(request.RepositoryRoot, "bundle")
+	if hash, err := treeHash(bundle); err != nil || hash != plan.Preconditions.BundleSHA256 {
+		return ApplyResult{}, errors.New("stale single-source admission plan: complete bundle changed after Check")
+	}
+	staged, backup := transactionPaths(request.RepositoryRoot, plan.PlanID)
+	markerPath := recoveryMarkerPath(request.RepositoryRoot)
+	for _, path := range []string{staged, backup, markerPath} {
+		if _, err := os.Lstat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
+			return ApplyResult{}, fmt.Errorf("%w: unexpected transaction path %s", ErrRecoveryEvidence, path)
+		}
+	}
+	if err := copyTreeExact(bundle, staged); err != nil {
+		return ApplyResult{}, fmt.Errorf("stage complete bundle: %w", err)
+	}
+	cleanupStaged := true
+	defer func() {
+		if cleanupStaged {
+			_ = os.RemoveAll(staged)
+		}
+	}()
+	generation := completeAdmissionGeneration{
+		PackID: plan.PackID, ProposedVersion: plan.ProposedVersion, ProposedManifest: manifestBytes,
+		ResultingConfigSHA256: plan.ResultingConfigSHA256, LockSetSHA256: plan.LockSetSHA256,
+		Sources: []completeAdmissionSource{{SourceID: plan.Registration.ID, Registration: plan.Registration, ProposedLock: plan.ProposedLock}},
+	}
+	if err := materializeCompleteAdmissionResult(staged, generation, []string{snapshotRoot}, current.config, manifest); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := engine.Validate.ValidateBundle(ctx, request.RepositoryRoot, staged); err != nil {
+		return ApplyResult{}, fmt.Errorf("validate complete staged single-source bundle: %w", err)
+	}
+	oldHash, err := treeHash(bundle)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	newHash, err := treeHash(staged)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if newHash != plan.ResultBundleSHA256 {
+		return ApplyResult{}, errors.New("complete staged result tree contradicts sealed Check result")
+	}
+	if err := engine.inject(FaultBeforeSwap); err != nil {
+		return ApplyResult{}, err
+	}
+	marker := recoveryMarker{SchemaVersion: recoveryMarkerSchema, PlanID: plan.PlanID, Phase: "prepared", Bundle: bundle, Backup: backup, Staged: staged, OldSHA256: oldHash, NewSHA256: newHash, SourceID: plan.Registration.ID, SourceLockSHA256: plan.SourceLockSHA256, LockSetSHA256: plan.LockSetSHA256}
+	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := os.Rename(bundle, backup); err != nil {
+		_ = os.Remove(markerPath)
+		return ApplyResult{}, fmt.Errorf("first bundle rename: %w", err)
+	}
+	if err := syncDirectory(request.RepositoryRoot); err != nil {
+		return ApplyResult{}, err
+	}
+	cleanupStaged = false
+	marker.Phase = "old-renamed"
+	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := engine.inject(FaultAfterFirstRename); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := os.Rename(staged, bundle); err != nil {
+		return ApplyResult{}, fmt.Errorf("second bundle rename: %w", err)
+	}
+	if err := syncDirectory(request.RepositoryRoot); err != nil {
+		return ApplyResult{}, err
+	}
+	marker.Phase = "new-installed"
+	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := engine.inject(FaultAfterSecondRename); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := verifyTreeHash(bundle, newHash); err != nil {
+		return ApplyResult{}, err
+	}
+	marker.Phase = "cleanup"
+	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := engine.inject(FaultDuringCleanup); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := cleanupCommitted(marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := os.Remove(markerPath); err != nil {
+		return ApplyResult{}, err
+	}
+	return ApplyResult{Status: "applied", PlanID: plan.PlanID, Changed: true}, nil
 }
 
 func singleSourceBindingsMatchManifest(bindings []Binding, resources []manifestResource) bool {

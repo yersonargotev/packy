@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/yersonargotev/packy/internal/packclassification"
 	"github.com/yersonargotev/packy/internal/packsync"
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
 )
@@ -59,6 +61,7 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 		ProposedVersion: "1.0.0", ProposedManifest: manifest, ProposedManifestSHA256: manifestDigest,
 		LegalAdmission: &packsync.CompositeLegalAdmission{EvidenceReference: evidenceReference, EvidenceSHA256: fmt.Sprintf("%x", sha256.Sum256(evidence)), Disposition: packsync.RedistributableDisposition},
 	}
+	initializeToolRepository(t, repository)
 	requestPath := filepath.Join(t.TempDir(), "request.json")
 	requestBytes, err := json.MarshalIndent(request, "", "  ")
 	if err != nil {
@@ -83,6 +86,43 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repository, "bundle", "packs", "new-pack")); !os.IsNotExist(err) {
 		t.Fatalf("inspect wrote proposed Pack: %v", err)
 	}
+	previousClassificationAttempt := bundleClassificationAttempt
+	bundleClassificationAttempt = func(_ context.Context, classificationRequest packclassification.Request) (packsync.ClassificationEvidence, error) {
+		return packsync.ClassificationEvidence{
+			PackID: classificationRequest.PackID, Classifier: packsync.ClassifierIdentity{Type: packsync.ClassifierAI, ID: "fixture"}, Rationale: "initial single-source Pack admission",
+			CurrentVersion: classificationRequest.CurrentVersion, ProposedVersion: plan.ProposedVersion, ChangedAspects: []string{"initial complete Pack generation"},
+			MechanicalFloor: classificationRequest.MechanicalFloor, FinalLevel: packsync.LevelMajor, Migration: "initial generation has no predecessor",
+			RequiredActions: []string{"review initial complete Pack contract"},
+		}, nil
+	}
+	t.Cleanup(func() { bundleClassificationAttempt = previousClassificationAttempt })
+	classificationDir := t.TempDir()
+	if err := run(context.Background(), []string{"--phase", "classify", "--repository-root", repository, "--request", requestPath, "--plan", filepath.Join(outputDir, "plan.json"), "--output", classificationDir}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	classificationPath := filepath.Join(classificationDir, "classification.json")
+	validationDir := t.TempDir()
+	if err := run(context.Background(), []string{"--phase", "validate", "--repository-root", repository, "--request", requestPath, "--plan", filepath.Join(outputDir, "plan.json"), "--evidence", classificationPath, "--output", validationDir}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var validation packsyncworkflow.ValidationArtifact
+	if err := readJSON(filepath.Join(validationDir, "validation.json"), &validation); err != nil || validation.Validate() != nil {
+		t.Fatalf("validation=%#v err=%v", validation, err)
+	}
+	if validation.PackID != plan.PackID || validation.ResultBundleSHA256 != plan.ResultBundleSHA256 || validation.ResultTreeSHA == "" {
+		t.Fatalf("validation lost complete admission identity: %#v", validation)
+	}
+	for _, path := range []string{
+		filepath.Join(repository, "bundle", "sources", "new-source.lock.json"),
+		filepath.Join(repository, "bundle", "skills", "coordinate", "SKILL.md"),
+		filepath.Join(repository, "bundle", "notices", "mit"),
+		filepath.Join(repository, "bundle", "packs", "new-pack", "pack.json"),
+		filepath.Join(repository, "bundle", "history", "new-pack", "1.0.0", "artifact.json"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("validated complete generation path %s: %v", path, err)
+		}
+	}
 	if err := writeFailureArtifact(options{repositoryRoot: repository, requestPath: requestPath, planPath: filepath.Join(outputDir, "plan.json"), outputDir: outputDir}, fmt.Errorf("later phase blocked")); err != nil {
 		t.Fatal(err)
 	}
@@ -94,6 +134,24 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 		artifact.ProposedManifestSHA256 != plan.ProposedManifestSHA256 || artifact.LegalEvidenceReference != plan.LegalAdmission.EvidenceReference ||
 		artifact.LegalEvidenceSHA256 != plan.LegalAdmission.EvidenceSHA256 || artifact.ResultBundleSHA256 != plan.ResultBundleSHA256 {
 		t.Fatalf("failure artifact lost initial-admission identity: %#v", artifact)
+	}
+}
+
+func initializeToolRepository(t *testing.T, repository string) {
+	t.Helper()
+	commands := [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.name", "Fixture"},
+		{"config", "user.email", "fixture@example.com"},
+		{"add", "."},
+		{"commit", "-m", "fixture"},
+	}
+	for _, arguments := range commands {
+		command := exec.Command("git", arguments...)
+		command.Dir = repository
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", arguments, err, output)
+		}
 	}
 }
 
