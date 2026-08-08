@@ -234,9 +234,10 @@ func (builder *singleSourceAdmissionProposalBuilder) Build(ctx context.Context, 
 	}
 	traces := []packsyncworkflow.ClassifierTrace{}
 	_ = readJSON(filepath.Join(filepath.Dir(builder.evidencePath), "classifier-trace.json"), &traces)
+	runID, runAttempt, runURL, repository := singleSourceAdmissionReviewIdentity(builder.request)
 	brief := &packsyncworkflow.ReviewBrief{
-		SchemaVersion: 1, Actor: os.Getenv("GITHUB_ACTOR"), RunID: os.Getenv("GITHUB_RUN_ID"),
-		RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"), RunURL: actionsRunURL(), Repository: os.Getenv("GITHUB_REPOSITORY"),
+		SchemaVersion: 1, Actor: os.Getenv("GITHUB_ACTOR"), RunID: runID,
+		RunAttempt: runAttempt, RunURL: runURL, Repository: repository,
 		Request: builder.request, Candidate: builder.plan.Candidate, PlanID: builder.plan.PlanID,
 		BaseSHA: builder.plan.Preconditions.BaseCommit, HeadSHA: head, Branch: "sync/" + builder.plan.Registration.ID,
 		SelectedResources: builder.plan.ProposedLock.Resources, ProposedSnapshotSHA256: builder.plan.ResultBundleSHA256,
@@ -254,6 +255,19 @@ func (builder *singleSourceAdmissionProposalBuilder) Build(ctx context.Context, 
 	}
 	builder.gateway.configureSingleSourceAdmission(title, brief)
 	return proposal, nil
+}
+
+func singleSourceAdmissionReviewIdentity(request packsyncworkflow.DispatchRequest) (string, string, string, string) {
+	runID := os.Getenv("GITHUB_RUN_ID")
+	runAttempt := os.Getenv("GITHUB_RUN_ATTEMPT")
+	repository := os.Getenv("GITHUB_REPOSITORY")
+	if runID != "" {
+		return runID, runAttempt, actionsRunURL(), repository
+	}
+	if issueRepository, _, ok := packsyncworkflow.ParseClosingIssue(request.ClosingIssue); ok && request.IsSingleSourceAdmission() {
+		return "", "", request.ClosingIssue, issueRepository
+	}
+	return runID, runAttempt, actionsRunURL(), repository
 }
 
 type singleSourceAdmissionPublicationRuntime struct {

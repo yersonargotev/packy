@@ -62,6 +62,14 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 		LegalAdmission: &packsync.CompositeLegalAdmission{EvidenceReference: evidenceReference, EvidenceSHA256: fmt.Sprintf("%x", sha256.Sum256(evidence)), Disposition: packsync.RedistributableDisposition},
 		ClosingIssue:   "https://github.com/example/packy/issues/544",
 	}
+	t.Setenv("GITHUB_SERVER_URL", "")
+	t.Setenv("GITHUB_REPOSITORY", "")
+	t.Setenv("GITHUB_RUN_ID", "")
+	t.Setenv("GITHUB_RUN_ATTEMPT", "")
+	runID, runAttempt, runURL, reviewRepository := singleSourceAdmissionReviewIdentity(request)
+	if runID != "" || runAttempt != "" || runURL != request.ClosingIssue || reviewRepository != "example/packy" {
+		t.Fatalf("local admission identity = %q %q %q %q", runID, runAttempt, runURL, reviewRepository)
+	}
 	initializeToolRepository(t, repository)
 	requestPath := filepath.Join(t.TempDir(), "request.json")
 	requestBytes, err := json.MarshalIndent(request, "", "  ")
@@ -201,7 +209,7 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	managed, err := brief.ManagedMarkdown()
-	if err != nil || brief.Request.ClosingIssue != request.ClosingIssue || !strings.Contains(managed, "Closes "+request.ClosingIssue) {
+	if err != nil || brief.Request.ClosingIssue != request.ClosingIssue || brief.RunID != "543" || brief.RunAttempt != "1" || brief.RunURL != "https://github.com/example/packy/actions/runs/543" || brief.Repository != "example/packy" || !strings.Contains(managed, "Closes "+request.ClosingIssue) || !strings.Contains(managed, "[workflow run]("+brief.RunURL+")") {
 		t.Fatalf("managed proposal lost closing issue: request=%q err=%v\n%s", brief.Request.ClosingIssue, err, managed)
 	}
 	for _, mode := range []string{"unapproved-issue", "stale-base", "foreign-owner"} {

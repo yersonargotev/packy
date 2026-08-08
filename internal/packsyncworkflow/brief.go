@@ -55,8 +55,7 @@ type ReviewBrief struct {
 
 func (brief ReviewBrief) CanonicalJSON() ([]byte, error) {
 	validPreviousSnapshot := len(brief.PreviousSnapshotSHA256) == 64 || (brief.Request.Operation == OperationRegister && brief.PreviousSnapshotSHA256 == "")
-	repository, runID, validRun := parseActionsRunURL(brief.RunURL)
-	if brief.SchemaVersion != 1 || brief.Request.Validate() != nil || !validRun || repository != brief.Repository || runID != brief.RunID || brief.PlanID == "" || brief.Branch != "sync/"+brief.Request.SourceID || requireFullSHA("base", brief.BaseSHA) != nil || requireFullSHA("head", brief.HeadSHA) != nil || requireFullSHA("result tree", brief.ResultTreeSHA) != nil || len(brief.SelectedResources) == 0 || !validPreviousSnapshot || len(brief.ProposedSnapshotSHA256) != 64 || !brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired {
+	if brief.SchemaVersion != 1 || brief.Request.Validate() != nil || !brief.validAuthorizationRecord() || brief.PlanID == "" || brief.Branch != "sync/"+brief.Request.SourceID || requireFullSHA("base", brief.BaseSHA) != nil || requireFullSHA("head", brief.HeadSHA) != nil || requireFullSHA("result tree", brief.ResultTreeSHA) != nil || len(brief.SelectedResources) == 0 || !validPreviousSnapshot || len(brief.ProposedSnapshotSHA256) != 64 || !brief.Validation.Complete() || brief.UpstreamContentExecuted || brief.AutoMerge || !brief.ManualMergeRequired {
 		return nil, fmt.Errorf("review brief is incomplete or contradicts synchronization policy")
 	}
 	data, err := json.Marshal(brief)
@@ -69,6 +68,17 @@ func (brief ReviewBrief) CanonicalJSON() ([]byte, error) {
 	}
 	output.WriteByte('\n')
 	return output.Bytes(), nil
+}
+
+func (brief ReviewBrief) validAuthorizationRecord() bool {
+	if repository, runID, validRun := parseActionsRunURL(brief.RunURL); validRun {
+		return repository == brief.Repository && runID == brief.RunID
+	}
+	if !brief.Request.IsSingleSourceAdmission() || brief.RunID != "" || brief.RunAttempt != "" || brief.RunURL != brief.Request.ClosingIssue {
+		return false
+	}
+	repository, _, validIssue := ParseClosingIssue(brief.RunURL)
+	return validIssue && repository == brief.Repository
 }
 
 var (
@@ -140,5 +150,9 @@ func (brief ReviewBrief) ManagedMarkdown() (string, error) {
 	if brief.Request.ClosingIssue != "" {
 		closing = "\nCloses " + brief.Request.ClosingIssue + "\n"
 	}
-	return fmt.Sprintf("## Packy pack synchronization\n\n- Source: `%s`\n- Candidate: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Complete canonical evidence: [workflow run](%s)\n- Auto-merge: disabled; manual merge required.\n%s\nAuthorization-Exception: automation\nAuthorization-Record: %s\n", brief.Request.SourceID, brief.Candidate.Commit, brief.PlanID, brief.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, brief.RunURL, closing, brief.RunURL), nil
+	recordLabel := "workflow run"
+	if brief.Request.IsSingleSourceAdmission() && brief.RunURL == brief.Request.ClosingIssue {
+		recordLabel = "authorization record"
+	}
+	return fmt.Sprintf("## Packy pack synchronization\n\n- Source: `%s`\n- Candidate: `%s`\n- Plan: `%s`\n- Base/head/tree: `%s` / `%s` / `%s`\n- State: **%s**\n- Complete canonical evidence: [%s](%s)\n- Auto-merge: disabled; manual merge required.\n%s\nAuthorization-Exception: automation\nAuthorization-Record: %s\n", brief.Request.SourceID, brief.Candidate.Commit, brief.PlanID, brief.BaseSHA, brief.HeadSHA, brief.ResultTreeSHA, status, recordLabel, brief.RunURL, closing, brief.RunURL), nil
 }
