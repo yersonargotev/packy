@@ -57,6 +57,9 @@ fi
 echo "==> vet"
 go vet ./...
 
+echo "==> static analysis"
+./scripts/validate-static-analysis.sh
+
 echo "==> tests"
 test_packages=()
 while IFS= read -r package; do
