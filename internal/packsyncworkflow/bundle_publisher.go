@@ -25,9 +25,9 @@ type BundlePublishRequest struct {
 	Apply          packsync.CompositeApplyRequest
 }
 
-// BundlePublisher applies the existing ADR 0009 publication policy to one
+// BundlePublisher applies the workflow's protected publication policy to one
 // Pack-scoped composite proposal. Proposal.SourceID is deliberately the PackID
-// so existing ownership evaluation uses sync/<pack-id>.
+// so ownership evaluation uses sync/<pack-id>.
 type BundlePublisher struct {
 	Applier    CompositeApplier
 	Builder    ProposalBuilder

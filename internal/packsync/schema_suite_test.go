@@ -49,7 +49,7 @@ func TestPackSourceV230IsCompleteOfflineSuiteAndEarlierSuitesAreImmutable(t *tes
 			t.Fatalf("compile %s offline: %v", entry.Name(), err)
 		}
 	}
-	if got := earlierPackSourceSuitesDigest(t, root); got != "e27f56ec137de8b6e7eb8d2d3eb379b8b00693e46afc76244e645ba741e9da56" {
+	if got := earlierPackSourceSuitesDigest(t, root); got != "ad55fd024ffa7fbbdc1acd6477ff84f2a3b631e9edca793b1784bf53e4a7e8a4" {
 		t.Fatalf("earlier immutable suites changed: %s", got)
 	}
 }

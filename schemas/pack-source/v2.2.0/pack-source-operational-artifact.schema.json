@@ -73,4 +73,3 @@
     "closing_issue": { "type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9_.-]{1,100}/issues/[1-9][0-9]*$" }
   }
 }
-

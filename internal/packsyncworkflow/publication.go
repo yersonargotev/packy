@@ -25,7 +25,7 @@ type ValidationGates struct {
 	Ownership      bool `json:"ownership"`
 	// PackySuite keeps the immutable wire name. In operational proposals it
 	// records the Pack-content authority; exhaustive repository validation is
-	// owned by ordinary pull-request CI under ADR 0019.
+	// owned by ordinary protected pull-request CI.
 	PackySuite bool `json:"packy_suite"`
 }
 
