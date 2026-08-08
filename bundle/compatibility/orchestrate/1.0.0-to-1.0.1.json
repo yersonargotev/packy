@@ -1,0 +1,25 @@
+{
+  "schema_version": 3,
+  "pack_id": "orchestrate",
+  "from_version": "1.0.0",
+  "to_version": "1.0.1",
+  "source_id": "orchestrate-source",
+  "before_bindings": [
+    "orchestrate/notice/mit",
+    "orchestrate/skill/orchestrate"
+  ],
+  "after_bindings": [
+    "orchestrate/notice/mit",
+    "orchestrate/skill/orchestrate"
+  ],
+  "added": null,
+  "removed": null,
+  "before_manifest_sha256": "6250a66c042c26868b616b7c11e75d99a372af24da3c34f37489da59c2d5751c",
+  "after_manifest_sha256": "01cfec33f015e8abb3f0a010a3901dd163539c5e2d9e0e2426f51be144e1bfef",
+  "plan_id": "pack-sync-1ae8609dd74eb5c0613b857abad81b7330d2718b34d3881f6d75d8199bf4e589",
+  "base_sha": "b5a1907e3ae33fe52a2120ec7e9a795e28657c48",
+  "candidate_sha": "bd9d77b3c43a2544cea68d08492cbf306752cd22",
+  "final_version": "1.0.1",
+  "claims_upstream_provenance": false,
+  "replaces_source_lock": false
+}
