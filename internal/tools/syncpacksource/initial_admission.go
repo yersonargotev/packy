@@ -284,15 +284,8 @@ func publishSingleSourceAdmission(ctx context.Context, option options, output io
 		return err
 	}
 	defer runtime.cleanup()
-	if err := os.MkdirAll(option.outputDir, 0o755); err != nil {
+	if err := preparePublicationSandbox(ctx, option); err != nil {
 		return err
-	}
-	if err := stageAll(ctx, option.repositoryRoot); err != nil {
-		return err
-	}
-	baseStatus, err := command(ctx, option.repositoryRoot, "git", "status", "--porcelain")
-	if err != nil || strings.TrimSpace(baseStatus) != "" {
-		return errors.New("publish sandbox must begin from the exact clean base")
 	}
 	result, err := runtime.publisher.Run(ctx, runtime.publish)
 	if err != nil {
@@ -302,43 +295,11 @@ func publishSingleSourceAdmission(ctx context.Context, option options, output io
 	if brief == nil {
 		return errors.New("single-source admission publication did not produce canonical review evidence")
 	}
-	brief.PullRequest = result.PullRequest.Number
-	brief.HeadSHA = result.PullRequest.HeadSHA
-	brief.ResultTreeSHA = result.Proposal.ResultTreeSHA
-	brief.Validation = result.Readiness.Gates
-	brief.DecisionReady = result.Readiness.DecisionReady
-	brief.Blockers = nil
-	brief.InvalidationConditions = result.Proposal.InvalidationConditions
-	if err := writeCanonical(filepath.Join(option.outputDir, "proposal-brief.json"), brief); err != nil {
-		return err
-	}
-	markdown, err := brief.Markdown()
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(option.outputDir, "proposal-brief.md"), []byte(markdown), 0o600); err != nil {
-		return err
-	}
-	artifact := packsyncworkflow.PublicationArtifact{
-		SchemaVersion: 2, SourceID: runtime.request.SourceID, PlanID: runtime.plan.PlanID,
+	return finalizeV2Publication(option.outputDir, output, result, brief, v2PublicationIdentity{
+		SourceID: runtime.request.SourceID, PlanID: runtime.plan.PlanID,
 		BaseSHA: runtime.plan.Preconditions.BaseCommit, CandidateSHA: runtime.plan.Candidate.Commit,
 		ArtifactProvenance:               singleSourceAdmissionProvenance(runtime.plan),
 		InitialAdmissionArtifactIdentity: singleSourceAdmissionIdentity(runtime.plan),
-		ResultTreeSHA:                    result.Proposal.ResultTreeSHA, HeadSHA: result.Proposal.HeadSHA,
-		ProvenanceSHA256: result.Proposal.ProvenanceSHA256, BranchName: result.Decision.Branch,
-		PRNumber: result.PullRequest.Number, PRStateSHA256: result.PullRequest.MetadataHash,
-		ManagedTitle: result.Proposal.ManagedTitle, ManagedMetadataHash: result.PullRequest.MetadataHash,
-		Validation: result.Readiness.Gates, DecisionReady: result.Readiness.DecisionReady,
-		AutoMerge: false, ManualMergeRequired: true, UpstreamContentExecuted: false,
-		InvalidationConditions: result.Proposal.InvalidationConditions, ClosingIssue: runtime.request.ClosingIssue,
-	}
-	if err := artifact.Validate(); err != nil {
-		return err
-	}
-	name := filepath.Join(option.outputDir, "publication.json")
-	if err := writeCanonical(name, artifact); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(output, name)
-	return err
+		ClosingIssue:                     runtime.request.ClosingIssue,
+	})
 }
