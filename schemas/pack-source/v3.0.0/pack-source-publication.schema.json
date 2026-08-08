@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/pack-source/v3.0.0/pack-source-publication.schema.json",
+  "title": "Validated composite pack source bundle publication proposal",
+  "$comment": "Packy runtime additionally requires source_ids and members to use the same canonical source_id order and all sealed identities to match across phases; Draft 2020-12 cannot express those cross-property and cross-document equalities.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pack_id",
+    "source_ids",
+    "registration_bundle_sha256",
+    "proposed_version",
+    "proposed_manifest_sha256",
+    "members",
+    "plan_id",
+    "base_sha",
+    "config_sha256",
+    "manifests_sha256",
+    "lock_set_sha256",
+    "result_bundle_sha256",
+    "contains_secrets",
+    "contains_upstream_bytes",
+    "head_sha",
+    "branch_name",
+    "pr_number",
+    "pr_state_sha256",
+    "result_tree_sha",
+    "provenance_sha256",
+    "managed_title",
+    "managed_metadata_hash",
+    "validation",
+    "decision_ready",
+    "auto_merge",
+    "manual_merge_required",
+    "upstream_content_executed",
+    "invalidation_conditions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "pack_id": {
+      "$ref": "#/$defs/source_id"
+    },
+    "source_ids": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/source_id"
+      }
+    },
+    "registration_bundle_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "members": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/member"
+      }
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_sha": {
+      "$ref": "#/$defs/full_sha"
+    },
+    "config_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "manifests_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "lock_set_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "contains_secrets": {
+      "const": false
+    },
+    "contains_upstream_bytes": {
+      "const": false
+    },
+    "head_sha": {
+      "$ref": "#/$defs/full_sha"
+    },
+    "branch_name": {
+      "type": "string",
+      "pattern": "^sync/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "pr_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "pr_state_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provenance",
+        "classification",
+        "reacquisition",
+        "apply",
+        "diff",
+        "ownership",
+        "packy_suite"
+      ],
+      "properties": {
+        "provenance": {
+          "const": true
+        },
+        "classification": {
+          "const": true
+        },
+        "reacquisition": {
+          "const": true
+        },
+        "apply": {
+          "const": true
+        },
+        "diff": {
+          "const": true
+        },
+        "ownership": {
+          "const": true
+        },
+        "packy_suite": {
+          "const": true
+        }
+      }
+    },
+    "decision_ready": {
+      "const": true
+    },
+    "auto_merge": {
+      "const": false
+    },
+    "manual_merge_required": {
+      "const": true
+    },
+    "proposed_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proposed_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "result_bundle_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "result_tree_sha": {
+      "$ref": "#/$defs/full_sha"
+    },
+    "provenance_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "managed_title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "managed_metadata_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "upstream_content_executed": {
+      "const": false
+    },
+    "invalidation_conditions": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "base_changed",
+          "candidate_changed",
+          "provenance_changed",
+          "head_changed",
+          "pr_state_changed"
+        ]
+      },
+      "allOf": [
+        {
+          "contains": {
+            "const": "base_changed"
+          }
+        },
+        {
+          "contains": {
+            "const": "candidate_changed"
+          }
+        },
+        {
+          "contains": {
+            "const": "provenance_changed"
+          }
+        },
+        {
+          "contains": {
+            "const": "head_changed"
+          }
+        },
+        {
+          "contains": {
+            "const": "pr_state_changed"
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "source_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "full_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "candidate_sha",
+        "source_lock_sha256",
+        "legal_evidence_ref",
+        "legal_evidence_sha256"
+      ],
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/source_id"
+        },
+        "candidate_sha": {
+          "$ref": "#/$defs/full_sha"
+        },
+        "source_lock_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "legal_evidence_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "legal_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}
+

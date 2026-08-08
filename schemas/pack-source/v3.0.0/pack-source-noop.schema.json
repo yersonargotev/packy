@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/pack-source/v3.0.0/pack-source-noop.schema.json",
+  "title": "Composite pack source bundle no-op (forbidden)",
+  "$comment": "register_bundle has no initial no-op or partial-convergence state; this member completes the immutable five-schema suite but accepts no instance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "state"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "state": {
+      "const": "no-op"
+    }
+  },
+  "not": {}
+}
+
