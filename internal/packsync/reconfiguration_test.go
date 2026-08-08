@@ -288,10 +288,10 @@ func TestCheckedInOrchestrateSupportsMetadataOnlyReconfiguration(t *testing.T) {
 		t.Fatalf("checked-in Orchestrate metadata inspection = %#v", plan)
 	}
 	check.AcquisitionDir = t.TempDir()
-	if _, err := engine.Apply(context.Background(), ApplyRequest{CheckRequest: check, Plan: plan, ClassificationEvidence: metadataOnlyClassification(plan, "1.0.1")}); err != nil {
+	if _, err := engine.Apply(context.Background(), ApplyRequest{CheckRequest: check, Plan: plan, ClassificationEvidence: metadataOnlyClassification(plan, "1.0.2")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(repository, "bundle", "history", "orchestrate", "1.0.1", "artifact.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(repository, "bundle", "history", "orchestrate", "1.0.2", "artifact.json")); err != nil {
 		t.Fatal(err)
 	}
 }
