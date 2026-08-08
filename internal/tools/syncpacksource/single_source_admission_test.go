@@ -250,6 +250,63 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	}
 }
 
+func TestIssueBoundLocalPublicationAuthenticatesManagedOperator(t *testing.T) {
+	issue := "https://github.com/example/packy/issues/545"
+	request := packsyncworkflow.DispatchRequest{
+		SchemaVersion: 2, Operation: packsyncworkflow.OperationRegister,
+		ProposedVersion: "1.0.0", ProposedManifest: json.RawMessage(`{"id":"orchestrate"}`), ProposedManifestSHA256: strings.Repeat("a", 64),
+		LegalAdmission: &packsync.CompositeLegalAdmission{}, ClosingIssue: issue,
+	}
+	t.Setenv("GITHUB_ACTOR", "forged-operator")
+	calls := 0
+	gateway := newGitHubGateway(t.TempDir(), packsync.Plan{})
+	gateway.run = func(_ context.Context, _ string, name string, arguments ...string) (string, error) {
+		calls++
+		if name != "gh" || strings.Join(arguments, " ") != "api user --jq .login" {
+			t.Fatalf("authentication command = %s %v", name, arguments)
+		}
+		return "trusted-operator\n", nil
+	}
+	gateway.configureSingleSourceAdmission("sync(orchestrate-source)", &packsyncworkflow.ReviewBrief{RunURL: issue, Request: request})
+	if err := gateway.resolveManagedOwner(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || gateway.normalizedManagedLogin("trusted-operator") != packsyncworkflow.AutomationOwner || gateway.normalizedManagedLogin("forged-operator") != "forged-operator" || gateway.normalizedManagedLogin("other") != "other" {
+		t.Fatalf("local owner resolution calls=%d owner=%q forged=%q foreign=%q", calls, gateway.normalizedManagedLogin("trusted-operator"), gateway.normalizedManagedLogin("forged-operator"), gateway.normalizedManagedLogin("other"))
+	}
+	proposal := packsyncworkflow.Proposal{SourceID: "orchestrate-source", PlanID: "plan", BaseSHA: strings.Repeat("b", 40), CandidateSHA: strings.Repeat("c", 40), HeadSHA: strings.Repeat("d", 40), ManagedTitle: "sync(orchestrate-source)"}
+	record := packsyncworkflow.NewPublicationRecord(proposal, proposal.HeadSHA, packsyncworkflow.ManagedMetadataHash(proposal.ManagedTitle, "managed brief"))
+	body, err := packsyncworkflow.ManagedBody("managed brief", record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := mutationObservation{
+		BaseSHA: proposal.BaseSHA, BranchHead: proposal.HeadSHA,
+		Commit: commitIdentity{Author: packsyncworkflow.AutomationOwner, Committer: packsyncworkflow.AutomationOwner, Message: "sync(orchestrate-source): " + proposal.CandidateSHA[:12] + " [plan]", Parents: []string{proposal.BaseSHA}},
+		PRs: []ghPR{{Number: 7, State: "OPEN", BaseRefName: "main", HeadRefName: "sync/orchestrate-source", HeadRefOID: proposal.HeadSHA, IsDraft: true, Title: proposal.ManagedTitle, Body: body, Author: struct {
+			Login string `json:"login"`
+		}{Login: "trusted-operator"}}},
+		LastEditor: packsyncworkflow.AutomationOwner,
+	}
+	if _, ok := state.matchesCreated(proposal, record, gateway.managedOwner); !ok {
+		t.Fatal("exact authenticated local operator was not recognized as managed ownership")
+	}
+	state.PRs[0].Author.Login = "other"
+	if _, ok := state.matchesCreated(proposal, record, gateway.managedOwner); ok {
+		t.Fatal("foreign pull-request author was accepted as managed ownership")
+	}
+
+	actions := newGitHubGateway(t.TempDir(), packsync.Plan{})
+	actions.run = func(context.Context, string, string, ...string) (string, error) {
+		t.Fatal("Actions ownership queried the local authenticated user")
+		return "", nil
+	}
+	actions.configureSingleSourceAdmission("sync(orchestrate-source)", &packsyncworkflow.ReviewBrief{RunID: "37", RunURL: "https://github.com/example/packy/actions/runs/37", Request: request})
+	if err := actions.resolveManagedOwner(context.Background()); err != nil || actions.normalizedManagedLogin("trusted-operator") != "trusted-operator" || actions.normalizedManagedLogin("github-actions") != packsyncworkflow.AutomationOwner {
+		t.Fatalf("Actions owner changed: owner=%q bot=%q err=%v", actions.normalizedManagedLogin("trusted-operator"), actions.normalizedManagedLogin("github-actions"), err)
+	}
+}
+
 type fakeSingleSourceAdmissionGateway struct {
 	proposal      packsyncworkflow.Proposal
 	brief         *packsyncworkflow.ReviewBrief
