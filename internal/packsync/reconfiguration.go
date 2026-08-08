@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 )
 
 func canonicalProposedManifest(repositoryRoot string, raw json.RawMessage, source SourceConfig, current map[string]packManifest) (packManifest, []byte, error) {
@@ -30,42 +29,51 @@ func canonicalProposedManifest(repositoryRoot string, raw json.RawMessage, sourc
 	if !ok {
 		return packManifest{}, nil, fmt.Errorf("reconfiguration references unknown runtime pack: %s", packID)
 	}
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&value); err != nil {
-		return packManifest{}, nil, fmt.Errorf("decode proposed manifest: %w", err)
-	}
-	if err := ensureEOF(decoder); err != nil {
-		return packManifest{}, nil, err
-	}
-	canonical, err := json.MarshalIndent(value, "", "  ")
+	manifest, canonical, err := validateSingleSourceAdmissionManifest(repositoryRoot, packID, before.Version, raw)
 	if err != nil {
 		return packManifest{}, nil, err
 	}
-	canonical = append(canonical, '\n')
-	var manifest packManifest
-	if err := json.Unmarshal(canonical, &manifest); err != nil || manifest.ID != packID || manifest.Version != before.Version || manifest.SchemaVersion < 2 || manifest.SchemaVersion > 4 {
-		return packManifest{}, nil, errors.New("proposed manifest must preserve the affected Pack identity and current version")
-	}
-	_ = repositoryRoot
-	want := make([]string, 0, len(source.Resources))
-	for _, binding := range source.Resources {
-		want = append(want, binding.Kind+"/"+binding.ResourceID)
-	}
-	got := make([]string, 0, len(manifest.Resources))
-	for _, resource := range manifest.Resources {
-		got = append(got, resource.Kind+"/"+resource.ID)
-	}
-	sort.Strings(want)
-	sort.Strings(got)
-	if !reflect.DeepEqual(want, got) {
+	if !singleSourceBindingsMatchManifest(source.Resources, manifest.Resources) {
 		return packManifest{}, nil, errors.New("proposed manifest resources must exactly match the complete proposed binding set")
 	}
-	if manifest.SchemaVersion == 4 {
-		manifest.canonicalV4 = append([]byte(nil), canonical...)
+	if err := validateProtectedManifestMetadata(repositoryRoot, packID, canonical); err != nil {
+		return packManifest{}, nil, err
 	}
 	return manifest, canonical, nil
+}
+
+func validateProtectedManifestMetadata(repositoryRoot, packID string, proposed []byte) error {
+	current, err := os.ReadFile(filepath.Join(repositoryRoot, "bundle", "packs", packID, "pack.json"))
+	if err != nil {
+		return err
+	}
+	var before, after map[string]any
+	if json.Unmarshal(current, &before) != nil || json.Unmarshal(proposed, &after) != nil {
+		return errors.New("compare current and proposed Pack provenance metadata")
+	}
+	if !reflect.DeepEqual(before["source_reference"], after["source_reference"]) {
+		return errors.New("proposed manifest must preserve source reference")
+	}
+	beforeResources, err := manifestResourceObjects(before)
+	if err != nil {
+		return err
+	}
+	afterResources, err := manifestResourceObjects(after)
+	if err != nil {
+		return err
+	}
+	for identity, currentResource := range beforeResources {
+		proposedResource, ok := afterResources[identity]
+		if !ok {
+			continue
+		}
+		for _, field := range []string{"source", "license", "attribution"} {
+			if !reflect.DeepEqual(currentResource[field], proposedResource[field]) {
+				return fmt.Errorf("proposed manifest must preserve resource %s field %s", identity, field)
+			}
+		}
+	}
+	return nil
 }
 
 func manifestReconfigurationFloor(before, after []byte) (ClassificationLevel, []string, error) {
@@ -76,8 +84,11 @@ func manifestReconfigurationFloor(before, after []byte) (ClassificationLevel, []
 	if err := json.Unmarshal(after, &newManifest); err != nil {
 		return LevelNone, nil, fmt.Errorf("decode proposed manifest transition: %w", err)
 	}
+	originalOld, originalNew := cloneManifestMap(oldManifest), cloneManifestMap(newManifest)
 	delete(oldManifest, "version")
 	delete(newManifest, "version")
+	delete(oldManifest, "description")
+	delete(newManifest, "description")
 	oldResources, err := manifestResourceObjects(oldManifest)
 	if err != nil {
 		return LevelNone, nil, err
@@ -88,6 +99,12 @@ func manifestReconfigurationFloor(before, after []byte) (ClassificationLevel, []
 	}
 	delete(oldManifest, "resources")
 	delete(newManifest, "resources")
+	for _, resource := range oldResources {
+		delete(resource, "description")
+	}
+	for _, resource := range newResources {
+		delete(resource, "description")
+	}
 	floor := LevelNone
 	var reasons []string
 	raise := func(level ClassificationLevel, reason string) {
@@ -119,10 +136,19 @@ func manifestReconfigurationFloor(before, after []byte) (ClassificationLevel, []
 			raise(LevelMinor, "isolated manifest resource added")
 		}
 	}
-	if floor == LevelNone && !reflect.DeepEqual(oldResources, newResources) {
-		reasons = append(reasons, "manifest observable contract changed")
+	delete(originalOld, "version")
+	delete(originalNew, "version")
+	if floor == LevelNone && !reflect.DeepEqual(originalOld, originalNew) {
+		reasons = append(reasons, "Pack-owned descriptive metadata changed")
 	}
 	return floor, unique(reasons), nil
+}
+
+func cloneManifestMap(value map[string]any) map[string]any {
+	encoded, _ := json.Marshal(value)
+	var clone map[string]any
+	_ = json.Unmarshal(encoded, &clone)
+	return clone
 }
 
 func manifestResourceObjects(manifest map[string]any) (map[string]map[string]any, error) {

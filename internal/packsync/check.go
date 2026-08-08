@@ -122,10 +122,10 @@ func (engine Engine) Check(ctx context.Context, request CheckRequest) (Plan, err
 		}
 		if fresh.reconfiguration != nil {
 			_, beforeDigest, _ := canonicalSourceConfig(fresh.originalSource, "source configuration")
-			plan.Changes = append(plan.Changes,
-				Change{Kind: "source-reconfigured", Path: "bundle/sources.json", Before: beforeDigest, After: fresh.reconfigurationSHA256},
-				Change{Kind: "manifest-reconfigured", PackID: fresh.proposedManifest.ID, Path: "bundle/packs/" + fresh.proposedManifest.ID + "/pack.json", Before: fresh.currentManifestSHA256, After: fresh.proposedManifestSHA256},
-			)
+			if beforeDigest != fresh.reconfigurationSHA256 {
+				plan.Changes = append(plan.Changes, Change{Kind: "source-reconfigured", Path: "bundle/sources.json", Before: beforeDigest, After: fresh.reconfigurationSHA256})
+			}
+			plan.Changes = append(plan.Changes, Change{Kind: "manifest-reconfigured", PackID: fresh.proposedManifest.ID, Path: "bundle/packs/" + fresh.proposedManifest.ID + "/pack.json", Before: fresh.currentManifestSHA256, After: fresh.proposedManifestSHA256})
 		}
 		_, proposedDigest, err := CanonicalSourceLock(plan.ProposedLock)
 		if err != nil {
@@ -341,7 +341,7 @@ func raisePackImpact(plan *Plan, packID, currentVersion string, floor Classifica
 			return
 		}
 	}
-	impact := PackImpact{PackID: packID, CurrentVersion: currentVersion}
+	impact := PackImpact{PackID: packID, CurrentVersion: currentVersion, MechanicalFloor: LevelNone}
 	raiseImpact(&impact, floor, reasons...)
 	sort.Strings(impact.Reasons)
 	impact.Reasons = unique(impact.Reasons)
@@ -533,7 +533,7 @@ func buildPlan(snapshotRoot, repositoryRoot string, source SourceConfig, binding
 	for _, binding := range bindings {
 		targetPacks[binding.PackID] = true
 	}
-	if mode == buildPlanCheck {
+	if mode == buildPlanCheck && plan.Reconfiguration == nil {
 		plan.AffectedPacks = applyManifestContracts(repositoryRoot, manifests, targetPacks, plan.AffectedPacks, existingPacks, plan.Registration != nil, &plan.Blockers)
 	}
 	if plan.Registration != nil {
