@@ -112,6 +112,9 @@ func TestMetadataOnlyReconfigurationRejectsProtectedProvenanceMetadata(t *testin
 		name   string
 		mutate func(map[string]any)
 	}{
+		{"source reference", func(manifest map[string]any) {
+			manifest["source_reference"].(map[string]any)["revision"] = "different"
+		}},
 		{"attribution", func(manifest map[string]any) {
 			manifestResources(manifest)[1]["attribution"] = "Copyright somebody else"
 		}},
@@ -122,6 +125,23 @@ func TestMetadataOnlyReconfigurationRejectsProtectedProvenanceMetadata(t *testin
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repository, _, admission, source := singleSourceAdmissionFixture(t)
+			var admitted map[string]any
+			if err := json.Unmarshal(admission.ProposedManifest, &admitted); err != nil {
+				t.Fatal(err)
+			}
+			admitted["source_reference"] = map[string]any{
+				"repository": "https://github.com/yersonargotev/orchestrate-skill.git",
+				"revision":   "1.0.0",
+			}
+			admission.ProposedManifest, err = json.Marshal(admitted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			canonical, err := canonicalJSON(admission.ProposedManifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			admission.ProposedManifestSHA256 = hashBytes(canonical)
 			engine := Engine{Source: source, Validate: acceptingBundleValidator()}
 			admissionPlan, err := engine.CheckSingleSourceAdmission(context.Background(), admission)
 			if err != nil {
