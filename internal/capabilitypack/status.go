@@ -393,7 +393,7 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 	}
 	entry := StatusEntry{Pack: pack, Surface: surface}
 	var err error
-	evidencePack := pack
+	var evidencePack Pack
 	ownedResidual := hasPackOwnership(state.Ownership, pack.ID)
 	selection := ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
 	if intent, ok := intentForPack(state, pack.ID, surface); ok {

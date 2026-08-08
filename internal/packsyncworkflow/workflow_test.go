@@ -761,28 +761,6 @@ func (fake fakeApplier) RecoverPending(context.Context, string) (packsync.ApplyR
 	return packsync.ApplyResult{}, false, nil
 }
 
-type fakeValidator struct {
-	events *[]string
-	err    error
-}
-
-type fakeAppliedValidator struct {
-	events        *[]string
-	appliedCalls  int
-	ordinaryCalls int
-}
-
-func (fake *fakeAppliedValidator) Validate(context.Context, string) error {
-	fake.ordinaryCalls++
-	return nil
-}
-
-func (fake *fakeAppliedValidator) ValidateApplied(context.Context, string) error {
-	fake.appliedCalls++
-	*fake.events = append(*fake.events, "validate-applied")
-	return nil
-}
-
 type fakeProposalBuilder struct{ events *[]string }
 
 func (fake fakeProposalBuilder) Build(context.Context, string, packsync.ApplyResult) (Proposal, error) {
@@ -837,11 +815,6 @@ func (fake *sequenceProvenance) RevalidateCandidate(context.Context, packsync.Pl
 
 func (fake fakeProvenance) RevalidateCandidate(context.Context, packsync.Plan) error {
 	*fake.events = append(*fake.events, "provenance")
-	return fake.err
-}
-
-func (fake fakeValidator) Validate(context.Context, string) error {
-	*fake.events = append(*fake.events, "validate")
 	return fake.err
 }
 

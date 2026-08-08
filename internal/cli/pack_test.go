@@ -236,11 +236,6 @@ func TestPackLifecycleRejectsInvalidBundleResourceBeforeMutation(t *testing.T) {
 	}
 }
 
-func pathInside(root, path string) bool {
-	rel, err := filepath.Rel(root, path)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
-}
-
 type fakeTerminal struct {
 	interactive bool
 	approve     bool
@@ -1241,26 +1236,6 @@ func TestPackActivateEngramSurfacesRemainIndependent(t *testing.T) {
 	if !strings.Contains(state, `"surface": "codex"`) || !strings.Contains(state, `"surface": "opencode"`) {
 		t.Fatalf("state did not preserve both surfaces:\n%s", state)
 	}
-}
-
-func ownershipForSurface(t *testing.T, statePath, surface string) string {
-	t.Helper()
-	var document map[string]any
-	if err := json.Unmarshal([]byte(readFileString(t, statePath)), &document); err != nil {
-		t.Fatal(err)
-	}
-	for _, raw := range document["receipts"].([]any) {
-		receipt := raw.(map[string]any)
-		if receipt["surface"] == surface {
-			encoded, err := json.Marshal(receipt["projections"])
-			if err != nil {
-				t.Fatal(err)
-			}
-			return string(encoded)
-		}
-	}
-	t.Fatalf("missing %s activation", surface)
-	return ""
 }
 
 func copyPackBundleForUpdate(t *testing.T, repoRoot string) string {

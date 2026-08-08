@@ -113,15 +113,6 @@ func resourceWithSurfaceAlias(resource Resource, aliases []SurfaceAlias, surface
 
 func intentIsExplicit(ActivationIntent) bool { return true }
 
-func intentByPackID(intents []ActivationIntent, packID string) ActivationIntent {
-	for _, intent := range intents {
-		if intent.PackID == packID {
-			return intent
-		}
-	}
-	return ActivationIntent{}
-}
-
 func packHasAliasTarget(pack Pack, alias SurfaceAlias, surface Surface) bool {
 	for _, resource := range pack.Resources {
 		if resource.Kind != alias.Kind || resource.ID != alias.ID {
@@ -131,15 +122,6 @@ func packHasAliasTarget(pack Pack, alias SurfaceAlias, surface Surface) bool {
 			if binding.Surface == surface {
 				return true
 			}
-		}
-	}
-	return false
-}
-
-func supportsSurface(pack Pack, surface Surface) bool {
-	for _, candidate := range pack.Surfaces {
-		if candidate == surface {
-			return true
 		}
 	}
 	return false

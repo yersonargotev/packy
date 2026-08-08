@@ -11,13 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/setuphealth"
-	"github.com/yersonargotev/packy/internal/skillbundle"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 )
 
@@ -304,27 +302,6 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 	}, runner, home
 }
 
-func expandHomebrewEngramCalls(t *testing.T, opts Options, calls []string) []string {
-	t.Helper()
-	engram := newCLITestFixture(t, opts).engram.ExpectedPath()
-	expanded := make([]string, 0, len(calls))
-	for _, call := range calls {
-		expanded = append(expanded, strings.ReplaceAll(call, "<homebrew-engram>", engram))
-	}
-	return expanded
-}
-
-func engramSetupCallStrings(t *testing.T, opts Options) []string {
-	t.Helper()
-	engram := newCLITestFixture(t, opts).engram.ExpectedPath()
-	return []string{engram + " setup codex", engram + " setup opencode"}
-}
-
-func engramUpdateCallStrings(t *testing.T, opts Options) []string {
-	t.Helper()
-	return append([]string{"brew update", "brew upgrade engram"}, engramSetupCallStrings(t, opts)...)
-}
-
 func createSkillSource(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -354,42 +331,6 @@ func testSkillSourceRels() []string {
 		"in-progress/loop-me",
 		"engineering/wayfinder",
 	}
-}
-
-func testSkillNames() []string {
-	names := make([]string, 0, len(testSkillSourceRels()))
-	for _, rel := range testSkillSourceRels() {
-		names = append(names, filepath.Base(rel))
-	}
-	return names
-}
-
-func createUnmanagedSkillSymlinks(t *testing.T, skills skillbundle.GlobalLayout, targetRoot string) {
-	t.Helper()
-	if err := os.MkdirAll(skills.Root(), 0o700); err != nil {
-		t.Fatalf("mkdir agent skills: %v", err)
-	}
-	if err := os.MkdirAll(targetRoot, 0o700); err != nil {
-		t.Fatalf("mkdir unmanaged target root: %v", err)
-	}
-	for _, name := range testSkillNames() {
-		target := filepath.Join(targetRoot, name)
-		if err := os.Symlink(target, skills.Skill(name)); err != nil {
-			t.Fatalf("write unmanaged symlink %s: %v", name, err)
-		}
-	}
-}
-
-func installedSkillSourceRoot(home string) string {
-	return skillbundle.SourceRoot(bootstrap.DefaultInstalledSourceRoot(home))
-}
-
-func createRepoCheckoutSkillSource(t *testing.T) (string, string) {
-	t.Helper()
-	repoRoot := t.TempDir()
-	skillSource := skillbundle.SourceRoot(repoRoot)
-	createSkillSourceAt(t, skillSource)
-	return repoRoot, skillSource
 }
 
 func withVersion(t *testing.T, value string) {
@@ -479,24 +420,6 @@ func TestHelpAndVersionDoNotResolveWorkstation(t *testing.T) {
 	}
 }
 
-func chdirTempOutsideRepo(t *testing.T) string {
-	t.Helper()
-	cwd := t.TempDir()
-	previous, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(cwd); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(previous); err != nil {
-			t.Fatalf("restore cwd: %v", err)
-		}
-	})
-	return cwd
-}
-
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -509,8 +432,6 @@ func callStrings(calls []fakeCall) []string {
 	}
 	return out
 }
-
-func fixedTestTime() time.Time { return time.Unix(0, 0).UTC() }
 
 func snapshotTree(t *testing.T, root string) string {
 	t.Helper()

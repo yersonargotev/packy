@@ -663,7 +663,6 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		aliases = []SurfaceAlias{}
 	}
 	manifestPack := ProjectManifestPack{ID: pack.ID, Version: pack.Version, Surfaces: []Surface{request.Surface}, Selection: selection, Aliases: aliases}
-	manifestPacks := []ProjectManifestPack{manifestPack}
 	var prior ProjectManifestPack
 	priorFound := false
 	if request.update {
@@ -680,6 +679,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 			}
 		}
 	}
+	var manifestPacks []ProjectManifestPack
 	if existingContract {
 		manifestPacks = replaceProjectManifestPack(existingInstallation.Manifest.Packs, manifestPack)
 	} else {

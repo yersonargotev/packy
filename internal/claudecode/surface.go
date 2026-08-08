@@ -223,10 +223,8 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 				if b.AgentAuthority == nil && (len(r.Tools) > 0 || len(r.Permissions) > 0) {
 					return result, fmt.Errorf("Claude agent %s is missing explicit authority translations", r.ID)
 				}
-				authority := capabilitypack.AgentAuthority{}
 				if b.AgentAuthority != nil {
-					authority = *b.AgentAuthority
-					content = []byte(claudeAgentDocument(r, b.Name, authority, content))
+					content = []byte(claudeAgentDocument(r, b.Name, *b.AgentAuthority, content))
 				}
 			}
 			desired := localprojection.FingerprintBytes(content)

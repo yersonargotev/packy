@@ -6,7 +6,6 @@ import (
 )
 
 type surfaceInspectionCall struct {
-	kind        string
 	prior       Pack
 	desired     Pack
 	ownership   []ProjectionOwnership
@@ -20,7 +19,6 @@ type fakeSurfaceAdapter struct {
 	applied      [][]ProjectionAction
 	inspectCalls int
 	actions      []ProjectionAction
-	events       *[]string
 	applyErr     error
 	inspect      func(SurfaceTransition) SurfaceInspection
 }
@@ -76,9 +74,8 @@ func (f *fakeSurfaceAdapter) ApplyProjections(_ context.Context, actions []Proje
 }
 
 type fakeActivationStore struct {
-	state  ActivationState
-	events *[]string
-	saves  []ActivationState
+	state ActivationState
+	saves []ActivationState
 }
 
 func (f *fakeActivationStore) LoadSnapshot(context.Context, Surface) (ActivationState, error) {

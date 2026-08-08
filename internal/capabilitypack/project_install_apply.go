@@ -325,15 +325,6 @@ func supportedProjectContractVersion(schemaVersion int, minimumCapability string
 	return schemaVersion == projectContractSchemaV1 && minimumCapability == ""
 }
 
-func projectLockOwnsProjection(lock ProjectLockProposal, resource ResourceIdentity, target, fingerprint string) bool {
-	for _, projection := range lock.Projections {
-		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && projection.DesiredFingerprint == fingerprint && projection.OwnerPack != "" && projection.Surface != "" {
-			return true
-		}
-	}
-	return false
-}
-
 func findProjectLockProjection(lock ProjectLockProposal, resource ResourceIdentity, target string) (ProjectProjectionPlan, bool) {
 	for _, projection := range lock.Projections {
 		if projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && projection.OwnerPack != "" && projection.Surface != "" {

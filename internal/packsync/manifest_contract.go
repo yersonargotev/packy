@@ -232,10 +232,6 @@ func canonicalItemsAdded(before, after []map[string]any) bool {
 	return false
 }
 
-func exclusionsAdded(before, after []map[string]any) bool {
-	return canonicalItemsAdded(before, after)
-}
-
 func addedStrings(before, after []string) bool {
 	set := make(map[string]bool, len(before))
 	for _, value := range before {

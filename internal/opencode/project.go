@@ -178,18 +178,6 @@ func projectRegularFileProjection(id string, kind capabilitypack.ProjectionActio
 	return capabilitypack.ObservedProjection{ID: id, Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v1/copied-file", Action: capabilitypack.ProjectionAction{ID: id, Surface: capabilitypack.SurfaceOpenCode, Kind: kind, Target: target, Content: content, FileMode: 0o644, Precondition: observed, Description: "write OpenCode project projection " + id, PreviewOnly: true}}, true, nil
 }
 
-func projectMarkedFileProjection(id string, kind capabilitypack.ProjectionActionKind, target, block, start, end string) (capabilitypack.ObservedProjection, bool, error) {
-	current, err := os.ReadFile(target)
-	if err != nil && !os.IsNotExist(err) {
-		return capabilitypack.ObservedProjection{}, false, err
-	}
-	projection, represented, err := projectMarkedFileProjectionFromContent(id, kind, target, block, start, end, string(current))
-	if err == nil && len(current) > 0 {
-		projection.Action.Precondition = localprojection.FingerprintBytes(current)
-	}
-	return projection, represented, err
-}
-
 func projectMarkedFileProjectionFromContent(id string, kind capabilitypack.ProjectionActionKind, target, block, start, end, text string) (capabilitypack.ObservedProjection, bool, error) {
 	fragment, found := projectExtractBlock(text, start, end)
 	observed := "missing"

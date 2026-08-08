@@ -604,13 +604,6 @@ type JSONLifecyclePlan struct {
 	DryRun              bool                       `json:"dry_run"`
 }
 
-func nonNilStrings(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
-}
-
 type JSONContractDiff struct {
 	Added    []string `json:"added"`
 	Changed  []string `json:"changed"`

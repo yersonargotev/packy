@@ -173,14 +173,6 @@ func projectLockForPack(lock ProjectLockProposal, packID string) ProjectLockProp
 	return lock
 }
 
-func projectResourceSet(facts []ResourceClosureFact) map[ResourceIdentity]bool {
-	result := make(map[ResourceIdentity]bool, len(facts))
-	for _, fact := range facts {
-		result[fact.Resource] = true
-	}
-	return result
-}
-
 func projectProjectionOwnedByPack(projection ProjectProjectionPlan, packID string) bool {
 	return projection.OwnerPack == packID
 }
@@ -821,24 +813,6 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		seenTargets[targetKey] = true
 	}
 	return nil
-}
-
-func projectOperationalResource(kind string) bool {
-	switch kind {
-	case "skill", "instruction", "mcp_server", "agent", "command", "lifecycle":
-		return true
-	default:
-		return false
-	}
-}
-
-func validProjectResourceRole(role ResourceRole) bool {
-	switch role {
-	case ResourceRoleRoot, ResourceRoleDependency, ResourceRoleAsset, ResourceRoleNotice:
-		return true
-	default:
-		return false
-	}
 }
 
 func validProjectActivationCategory(category ProjectActivationCategory) bool {
