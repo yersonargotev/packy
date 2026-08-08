@@ -163,11 +163,23 @@ func TestCheckedInPackTemplateUsesCurrentContract(t *testing.T) {
 }
 
 func TestCheckedInCurrentManifestsOmitRetiredContractTerms(t *testing.T) {
-	for _, id := range []string{"addy", "argote", "engram", "matty"} {
-		data := string(mustReadFile(t, filepath.Join("..", "..", "bundle", "packs", id, "pack.json")))
+	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Discover(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packs, err := catalog.ListCurrent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pack := range packs {
+		data := string(mustReadFile(t, filepath.Join(bundle, "packs", pack.ID, "pack.json")))
 		for _, retired := range []string{"schema_version", "runtime_modes", "root_migrations", "optional-mode:", "provides_capabilities", "requires_capabilities", "capability_conflicts"} {
 			if strings.Contains(data, retired) {
-				t.Fatalf("Pack %s current manifest contains retired contract term %q", id, retired)
+				t.Fatalf("Pack %s current manifest contains retired contract term %q", pack.ID, retired)
 			}
 		}
 	}
