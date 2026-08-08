@@ -55,6 +55,7 @@ func classifySingleSourceAdmission(ctx context.Context, option options, output i
 		return err
 	}
 	var set packsync.CompositeClassificationEvidence
+	var traces []packsyncworkflow.ClassifierTrace
 	switch request.ClassificationMode {
 	case packsyncworkflow.ClassificationAI:
 		classificationRequest := packclassification.Request{
@@ -64,10 +65,11 @@ func classifySingleSourceAdmission(ctx context.Context, option options, output i
 			SemanticEvidenceRequired: plan.Classification.SemanticEvidenceRequired,
 			MechanicalReasons:        []string{"initial complete single-source Pack generation"},
 		}
-		evidence, modelErr := bundleClassificationAttempt(ctx, classificationRequest)
+		evidence, modelTraces, modelErr := bundleClassificationAttempt(ctx, classificationRequest)
 		if modelErr != nil {
 			return classificationFailure(modelErr)
 		}
+		traces = modelTraces
 		set = packsync.CompositeClassificationEvidence{SchemaVersion: 1, PlanID: plan.PlanID, PackID: plan.PackID, Evidence: evidence}
 	case packsyncworkflow.ClassificationHuman:
 		if request.ExpectedPlanID != plan.PlanID || request.ExpectedBaseSHA != plan.Preconditions.BaseCommit {
@@ -82,6 +84,11 @@ func classifySingleSourceAdmission(ctx context.Context, option options, output i
 	}
 	if err := os.MkdirAll(option.outputDir, 0o755); err != nil {
 		return err
+	}
+	if len(traces) != 0 {
+		if err := writeCanonical(filepath.Join(option.outputDir, "classifier-trace.json"), traces); err != nil {
+			return err
+		}
 	}
 	name := filepath.Join(option.outputDir, "classification.json")
 	if err := writeCanonical(name, set); err != nil {

@@ -451,7 +451,7 @@ func classify(ctx context.Context, option options, output io.Writer) error {
 	}
 	switch request.ClassificationMode {
 	case packsyncworkflow.ClassificationAI:
-		model, modelErr := newGitHubModel()
+		model, modelErr := newCodexModel()
 		if modelErr != nil {
 			return modelErr
 		}

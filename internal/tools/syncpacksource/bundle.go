@@ -17,12 +17,13 @@ import (
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
 )
 
-var bundleClassificationAttempt = func(ctx context.Context, request packclassification.Request) (packsync.ClassificationEvidence, error) {
-	model, err := newGitHubModel()
+var bundleClassificationAttempt = func(ctx context.Context, request packclassification.Request) (packsync.ClassificationEvidence, []packsyncworkflow.ClassifierTrace, error) {
+	model, err := newCodexModel()
 	if err != nil {
-		return packsync.ClassificationEvidence{}, err
+		return packsync.ClassificationEvidence{}, nil, err
 	}
-	return model.Attempt(ctx, request)
+	evidence, err := model.Attempt(ctx, request)
+	return evidence, append([]packsyncworkflow.ClassifierTrace(nil), model.traces...), err
 }
 
 func isBundleDispatch(option options) (bool, error) {
@@ -178,6 +179,7 @@ func classifyBundle(ctx context.Context, option options, output io.Writer) error
 		return err
 	}
 	var set packsync.CompositeClassificationEvidence
+	var traces []packsyncworkflow.ClassifierTrace
 	switch request.ClassificationMode {
 	case packsyncworkflow.ClassificationAI:
 		classificationRequest := packclassification.Request{
@@ -186,10 +188,11 @@ func classifyBundle(ctx context.Context, option options, output io.Writer) error
 			CurrentVersion: "0.0.0", MechanicalFloor: packsync.LevelMajor, SemanticEvidenceRequired: true,
 			MechanicalReasons: []string{"initial complete composite Pack generation"},
 		}
-		evidence, modelErr := bundleClassificationAttempt(ctx, classificationRequest)
+		evidence, modelTraces, modelErr := bundleClassificationAttempt(ctx, classificationRequest)
 		if modelErr != nil {
 			return classificationFailure(modelErr)
 		}
+		traces = modelTraces
 		set = packsync.CompositeClassificationEvidence{SchemaVersion: 1, PlanID: plan.PlanID, PackID: plan.PackID, Evidence: evidence}
 	case packsyncworkflow.ClassificationHuman:
 		if request.ExpectedPlanID != plan.PlanID || request.ExpectedBaseSHA != plan.Preconditions.BaseCommit {
@@ -204,6 +207,11 @@ func classifyBundle(ctx context.Context, option options, output io.Writer) error
 	}
 	if err := os.MkdirAll(option.outputDir, 0o755); err != nil {
 		return err
+	}
+	if len(traces) != 0 {
+		if err := writeCanonical(filepath.Join(option.outputDir, "classifier-trace.json"), traces); err != nil {
+			return err
+		}
 	}
 	evidencePath := filepath.Join(option.outputDir, "classification-evidence.json")
 	if err := writeCanonical(evidencePath, set); err != nil {
