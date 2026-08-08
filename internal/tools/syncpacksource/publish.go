@@ -409,15 +409,7 @@ func (gateway *githubGateway) resolveManagedOwner(ctx context.Context) error {
 }
 
 func (gateway *githubGateway) normalizedManagedLogin(login string) string {
-	switch login {
-	case "app/github-actions", "github-actions", packsyncworkflow.AutomationOwner:
-		return packsyncworkflow.AutomationOwner
-	case gateway.managedOwner:
-		if gateway.localIssueOwner && gateway.managedOwner != "" {
-			return packsyncworkflow.AutomationOwner
-		}
-	}
-	return login
+	return normalizedPublicationLogin(login, gateway.managedOwner)
 }
 
 func (gateway *githubGateway) Prepare(proposal packsyncworkflow.Proposal) (packsyncworkflow.Proposal, error) {
