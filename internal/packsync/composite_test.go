@@ -103,6 +103,16 @@ func TestCompositeCheckApplyMaterializesCompleteCrossSourcePack(t *testing.T) {
 	}
 }
 
+func TestCompositeCheckDoesNotBootstrapMissingSourceConfiguration(t *testing.T) {
+	repository, provider, request := compositeFixture(t)
+	removeSourceProvenance(t, repository)
+
+	_, err := (Engine{Source: provider, Validate: acceptingBundleValidator()}).CheckComposite(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), filepath.Join("bundle", "sources.json")) {
+		t.Fatalf("missing composite source configuration error = %v", err)
+	}
+}
+
 func TestCompositeCheckPreservesAndSealsSchemaV4Manifest(t *testing.T) {
 	_, provider, request := compositeFixture(t)
 	request.ProposedManifest = json.RawMessage(`{

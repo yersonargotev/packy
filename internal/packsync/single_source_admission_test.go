@@ -1,6 +1,7 @@
 package packsync
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -65,6 +66,89 @@ func TestCheckSingleSourceAdmissionProducesDeterministicMutationFreePlan(t *test
 	}
 	if _, err := os.Stat(filepath.Join(snapshot, "orchestrate", "SKILL.md")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSingleSourceAdmissionBootstrapsFirstSourceFromReviewedBundle(t *testing.T) {
+	repository, _, request, source := singleSourceAdmissionFixture(t)
+	bundle := filepath.Join(repository, "bundle")
+	removeSourceProvenance(t, repository)
+
+	engine := Engine{Source: source, Validate: acceptingBundleValidator()}
+	plan, err := engine.CheckSingleSourceAdmission(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	if plan.Preconditions.ConfigSHA256 != emptySHA256 || plan.Preconditions.LockSetSHA256 != emptySHA256 {
+		t.Fatalf("source-less preconditions = %#v", plan.Preconditions)
+	}
+
+	request.AcquisitionDir = t.TempDir()
+	result, err := engine.ApplySingleSourceAdmission(context.Background(), SingleSourceAdmissionApplyRequest{
+		SingleSourceAdmissionCheckRequest: request,
+		Plan:                              plan,
+		ClassificationEvidence:            singleSourceAdmissionClassification(plan),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configBytes, err := os.ReadFile(filepath.Join(bundle, "sources.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadConfig(bytes.NewReader(configBytes))
+	if err != nil || result.Status != "applied" || !result.Changed || len(config.Sources) != 1 || config.Sources[0].ID != "orchestrate-source" {
+		t.Fatalf("first source generation: result=%#v config=%#v err=%v", result, config, err)
+	}
+	for _, path := range []string{
+		filepath.Join(bundle, "sources", "orchestrate-source.lock.json"),
+		filepath.Join(bundle, "skills", "orchestrate", "SKILL.md"),
+		filepath.Join(bundle, "notices", "mit"),
+		filepath.Join(bundle, "packs", "orchestrate", "pack.json"),
+		filepath.Join(bundle, "history", "orchestrate", "1.0.0", "artifact.json"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("complete first source generation path %s: %v", path, err)
+		}
+	}
+}
+
+func TestSingleSourceAdmissionApplyRejectsChangedSourceLessBase(t *testing.T) {
+	repository, _, request, source := singleSourceAdmissionFixture(t)
+	removeSourceProvenance(t, repository)
+	engine := Engine{Source: source, Validate: acceptingBundleValidator()}
+	plan, err := engine.CheckSingleSourceAdmission(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(repository, "bundle", "sources"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	request.AcquisitionDir = t.TempDir()
+	_, err = engine.ApplySingleSourceAdmission(context.Background(), SingleSourceAdmissionApplyRequest{
+		SingleSourceAdmissionCheckRequest: request,
+		Plan:                              plan,
+		ClassificationEvidence:            singleSourceAdmissionClassification(plan),
+	})
+	if err == nil || !strings.Contains(err.Error(), "source configuration is absent while source locks exist") {
+		t.Fatalf("changed source-less base error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repository, "bundle", "packs", "orchestrate")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale source-less Apply admitted Pack: %v", err)
+	}
+}
+
+func TestSingleSourceAdmissionRejectsSourceLocksWithoutConfiguration(t *testing.T) {
+	repository, _, request, source := singleSourceAdmissionFixture(t)
+	if err := os.Remove(filepath.Join(repository, "bundle", "sources.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (Engine{Source: source, Validate: acceptingBundleValidator()}).CheckSingleSourceAdmission(context.Background(), request)
+	if err == nil || !strings.Contains(err.Error(), "source configuration is absent while source locks exist") {
+		t.Fatalf("partial source topology error = %v", err)
 	}
 }
 
@@ -247,28 +331,39 @@ func TestSingleSourceAdmissionApplyRejectsFreshnessAndValidationFailuresWithoutA
 }
 
 func TestSingleSourceAdmissionReplacementFaultRecoversOnlyCompleteGenerations(t *testing.T) {
-	for _, point := range []FaultPoint{FaultBeforeSwap, FaultAfterFirstRename, FaultAfterSecondRename, FaultDuringCleanup} {
-		t.Run(string(point), func(t *testing.T) {
-			repository, _, request, source := singleSourceAdmissionFixture(t)
-			engine := Engine{Source: source, Validate: acceptingBundleValidator(), Fault: failOnce(point)}
-			plan, err := engine.CheckSingleSourceAdmission(context.Background(), request)
-			if err != nil {
-				t.Fatal(err)
+	for _, sourceLess := range []bool{false, true} {
+		name := "configured-source"
+		if sourceLess {
+			name = "source-less"
+		}
+		t.Run(name, func(t *testing.T) {
+			for _, point := range []FaultPoint{FaultBeforeSwap, FaultAfterFirstRename, FaultAfterSecondRename, FaultDuringCleanup} {
+				t.Run(string(point), func(t *testing.T) {
+					repository, _, request, source := singleSourceAdmissionFixture(t)
+					if sourceLess {
+						removeSourceProvenance(t, repository)
+					}
+					engine := Engine{Source: source, Validate: acceptingBundleValidator(), Fault: failOnce(point)}
+					plan, err := engine.CheckSingleSourceAdmission(context.Background(), request)
+					if err != nil {
+						t.Fatal(err)
+					}
+					request.AcquisitionDir = t.TempDir()
+					_, err = engine.ApplySingleSourceAdmission(context.Background(), SingleSourceAdmissionApplyRequest{
+						SingleSourceAdmissionCheckRequest: request, Plan: plan,
+						ClassificationEvidence: singleSourceAdmissionClassification(plan),
+					})
+					if err == nil {
+						t.Fatal("fault did not interrupt replacement")
+					}
+					if point != FaultBeforeSwap {
+						if _, err := engine.Recover(context.Background(), RecoverRequest{RepositoryRoot: repository}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					assertSingleSourceAdmissionGeneration(t, repository)
+				})
 			}
-			request.AcquisitionDir = t.TempDir()
-			_, err = engine.ApplySingleSourceAdmission(context.Background(), SingleSourceAdmissionApplyRequest{
-				SingleSourceAdmissionCheckRequest: request, Plan: plan,
-				ClassificationEvidence: singleSourceAdmissionClassification(plan),
-			})
-			if err == nil {
-				t.Fatal("fault did not interrupt replacement")
-			}
-			if point != FaultBeforeSwap {
-				if _, err := engine.Recover(context.Background(), RecoverRequest{RepositoryRoot: repository}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			assertSingleSourceAdmissionGeneration(t, repository)
 		})
 	}
 }
@@ -290,16 +385,17 @@ func assertSingleSourceAdmissionGeneration(t *testing.T, repository string) {
 		}
 	}
 	data, err := os.ReadFile(filepath.Join(repository, "bundle", "sources.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatal(err)
-	}
 	configured := false
-	for _, source := range config.Sources {
-		configured = configured || source.ID == "orchestrate-source"
+	if err == nil {
+		var config Config
+		if err := json.Unmarshal(data, &config); err != nil {
+			t.Fatal(err)
+		}
+		for _, source := range config.Sources {
+			configured = configured || source.ID == "orchestrate-source"
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
 	}
 	if configured {
 		present++
@@ -450,6 +546,17 @@ func (source *gatedSingleSource) WithSnapshot(ctx context.Context, candidate Can
 		return err
 	}
 	return cleanupErr
+}
+
+func removeSourceProvenance(t *testing.T, repository string) {
+	t.Helper()
+	bundle := filepath.Join(repository, "bundle")
+	if err := os.Remove(filepath.Join(bundle, "sources.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(bundle, "sources")); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func singleSourceAdmissionFixture(t *testing.T) (string, string, SingleSourceAdmissionCheckRequest, *fixtureSource) {
