@@ -50,24 +50,30 @@ const (
 )
 
 type DispatchRequest struct {
-	SchemaVersion          int                    `json:"schema_version"`
-	Operation              DispatchOperation      `json:"operation,omitempty"`
-	SourceID               string                 `json:"source_id"`
-	Selector               Selector               `json:"selector"`
-	SelectorRef            string                 `json:"selector_ref,omitempty"`
-	ClassificationMode     ClassificationMode     `json:"classification_mode"`
-	RequestReason          string                 `json:"request_reason"`
-	RetryOfRun             string                 `json:"retry_of_run,omitempty"`
-	ExpectedPlanID         string                 `json:"expected_plan_id,omitempty"`
-	ExpectedBaseSHA        string                 `json:"expected_base_sha,omitempty"`
-	HumanEvidence          json.RawMessage        `json:"human_evidence,omitempty"`
-	Registration           *packsync.SourceConfig `json:"registration,omitempty"`
-	RegistrationSHA256     string                 `json:"registration_sha256,omitempty"`
-	Reconfiguration        *packsync.SourceConfig `json:"reconfiguration,omitempty"`
-	ReconfigurationSHA256  string                 `json:"reconfiguration_sha256,omitempty"`
-	ProposedManifest       json.RawMessage        `json:"proposed_manifest,omitempty"`
-	ProposedManifestSHA256 string                 `json:"proposed_manifest_sha256,omitempty"`
-	ClosingIssue           string                 `json:"closing_issue,omitempty"`
+	SchemaVersion          int                               `json:"schema_version"`
+	Operation              DispatchOperation                 `json:"operation,omitempty"`
+	SourceID               string                            `json:"source_id"`
+	Selector               Selector                          `json:"selector"`
+	SelectorRef            string                            `json:"selector_ref,omitempty"`
+	ClassificationMode     ClassificationMode                `json:"classification_mode"`
+	RequestReason          string                            `json:"request_reason"`
+	RetryOfRun             string                            `json:"retry_of_run,omitempty"`
+	ExpectedPlanID         string                            `json:"expected_plan_id,omitempty"`
+	ExpectedBaseSHA        string                            `json:"expected_base_sha,omitempty"`
+	HumanEvidence          json.RawMessage                   `json:"human_evidence,omitempty"`
+	Registration           *packsync.SourceConfig            `json:"registration,omitempty"`
+	RegistrationSHA256     string                            `json:"registration_sha256,omitempty"`
+	Reconfiguration        *packsync.SourceConfig            `json:"reconfiguration,omitempty"`
+	ReconfigurationSHA256  string                            `json:"reconfiguration_sha256,omitempty"`
+	ProposedManifest       json.RawMessage                   `json:"proposed_manifest,omitempty"`
+	ProposedManifestSHA256 string                            `json:"proposed_manifest_sha256,omitempty"`
+	ProposedVersion        string                            `json:"proposed_version,omitempty"`
+	LegalAdmission         *packsync.CompositeLegalAdmission `json:"legal_admission,omitempty"`
+	ClosingIssue           string                            `json:"closing_issue,omitempty"`
+}
+
+func (request DispatchRequest) IsSingleSourceAdmission() bool {
+	return request.Operation == OperationRegister && request.ProposedVersion != "" && len(request.ProposedManifest) != 0 && request.ProposedManifestSHA256 != "" && request.LegalAdmission != nil
 }
 
 // Digest returns the stable request identity used only to attach maintainers to
@@ -114,6 +120,8 @@ func (request *DispatchRequest) UnmarshalJSON(data []byte) error {
 		allowed["reconfiguration_sha256"] = true
 		allowed["proposed_manifest"] = true
 		allowed["proposed_manifest_sha256"] = true
+		allowed["proposed_version"] = true
+		allowed["legal_admission"] = true
 		allowed["closing_issue"] = true
 	}
 	for name := range fields {
@@ -121,7 +129,7 @@ func (request *DispatchRequest) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("dispatch contains unknown field %q", name)
 		}
 	}
-	for _, name := range []string{"operation", "selector_ref", "retry_of_run", "expected_plan_id", "expected_base_sha", "registration_sha256", "reconfiguration_sha256", "proposed_manifest_sha256", "closing_issue"} {
+	for _, name := range []string{"operation", "selector_ref", "retry_of_run", "expected_plan_id", "expected_base_sha", "registration_sha256", "reconfiguration_sha256", "proposed_manifest_sha256", "proposed_version", "closing_issue"} {
 		value, present := fields[name]
 		if !present {
 			continue
@@ -148,6 +156,15 @@ func (request *DispatchRequest) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("decode reconfiguration: %w", err)
 		}
 		decoded.Reconfiguration = &reconfiguration
+	}
+	if raw, present := fields["legal_admission"]; present {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		var legal packsync.CompositeLegalAdmission
+		if err := decoder.Decode(&legal); err != nil {
+			return fmt.Errorf("decode legal admission: %w", err)
+		}
+		decoded.LegalAdmission = &legal
 	}
 	*request = DispatchRequest(decoded)
 	return nil
@@ -335,7 +352,7 @@ func (request DispatchRequest) Validate() error {
 		return errors.New("dispatch schema, source id, and request reason are required")
 	}
 	if request.SchemaVersion == 1 {
-		if request.Operation != "" || request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" || request.ClosingIssue != "" {
+		if request.Operation != "" || request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" || request.ProposedVersion != "" || request.LegalAdmission != nil || request.ClosingIssue != "" {
 			return errors.New("v1 dispatch forbids v2 operation fields")
 		}
 	} else {
@@ -346,11 +363,11 @@ func (request DispatchRequest) Validate() error {
 		}
 		switch request.Operation {
 		case OperationSynchronize:
-			if request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" {
+			if request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" || request.ProposedVersion != "" || request.LegalAdmission != nil {
 				return errors.New("synchronize dispatch forbids configuration proposals")
 			}
 		case OperationRegister:
-			if request.Registration == nil || request.RegistrationSHA256 == "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" || len(request.ProposedManifest) != 0 || request.ProposedManifestSHA256 != "" {
+			if request.Registration == nil || request.RegistrationSHA256 == "" || request.Reconfiguration != nil || request.ReconfigurationSHA256 != "" {
 				return errors.New("register dispatch requires registration and its SHA-256")
 			}
 			if request.Registration.ID != request.SourceID {
@@ -360,8 +377,26 @@ func (request DispatchRequest) Validate() error {
 			if err != nil || digest != request.RegistrationSHA256 {
 				return errors.New("registration SHA-256 does not match canonical registration")
 			}
+			initialFieldCount := 0
+			for _, present := range []bool{request.ProposedVersion != "", len(request.ProposedManifest) != 0, request.ProposedManifestSHA256 != "", request.LegalAdmission != nil} {
+				if present {
+					initialFieldCount++
+				}
+			}
+			if initialFieldCount != 0 && initialFieldCount != 4 {
+				return errors.New("initial register dispatch requires proposed version, manifest, manifest digest, and legal admission together")
+			}
+			if initialFieldCount == 4 {
+				_, manifestDigest, err := CanonicalProposedManifest(request.ProposedManifest)
+				if err != nil || manifestDigest != request.ProposedManifestSHA256 {
+					return errors.New("initial proposed manifest SHA-256 or canonical bytes do not match")
+				}
+				if request.Selector != SelectorLatestStable || request.Registration.Selector.Mode != packsync.SelectorStableRelease || request.LegalAdmission.Disposition != packsync.RedistributableDisposition || !sha256Pattern.MatchString(request.LegalAdmission.EvidenceSHA256) || request.LegalAdmission.EvidenceReference == "" {
+					return errors.New("initial register dispatch requires latest stable selection and complete redistributable legal admission")
+				}
+			}
 		case OperationReconfigure:
-			if request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration == nil || request.ReconfigurationSHA256 == "" || len(request.ProposedManifest) == 0 || request.ProposedManifestSHA256 == "" {
+			if request.Registration != nil || request.RegistrationSHA256 != "" || request.Reconfiguration == nil || request.ReconfigurationSHA256 == "" || len(request.ProposedManifest) == 0 || request.ProposedManifestSHA256 == "" || request.ProposedVersion != "" || request.LegalAdmission != nil {
 				return errors.New("reconfigure dispatch requires the complete reconfiguration and proposed manifest with their SHA-256 digests")
 			}
 			if request.Reconfiguration.ID != request.SourceID {
