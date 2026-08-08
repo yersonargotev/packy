@@ -119,6 +119,14 @@ Run the sandboxed general repository check with:
 ./scripts/validate-packy.sh
 ```
 
+Run the focused dead-code and ineffectual-assignment check directly with:
+
+```sh
+./scripts/validate-static-analysis.sh
+```
+
+The general repository check includes this focused static analysis.
+
 `./scripts/validate-changed.sh [base]` selects focused Go packages when safe
 and falls back to the general validation path for cross-cutting changes.
 

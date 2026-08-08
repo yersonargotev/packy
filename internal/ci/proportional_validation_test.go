@@ -22,6 +22,46 @@ func TestGeneralValidationIsSandboxedAndProportional(t *testing.T) {
 	}
 }
 
+func TestFocusedStaticAnalysisContract(t *testing.T) {
+	root := repositoryRoot(t)
+	scriptPath := filepath.Join(root, "scripts", "validate-static-analysis.sh")
+	script := readFile(t, scriptPath)
+
+	const invocation = "go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.3.1 run ./..."
+	if strings.Count(script, invocation) != 1 {
+		t.Fatalf("focused static analysis must invoke the pinned tool once over all packages: want %q", invocation)
+	}
+	if strings.Contains(script, "@latest") {
+		t.Fatal("focused static analysis must not resolve golangci-lint at latest")
+	}
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatal("focused static-analysis command must be executable")
+	}
+
+	const configuration = "version: \"2\"\n\nlinters:\n  default: none\n  enable:\n    - ineffassign\n    - unused\n"
+	if got := readFile(t, filepath.Join(root, ".golangci.yml")); got != configuration {
+		t.Fatalf("golangci-lint configuration must enable exactly the approved analyzers without exclusions:\n%s", got)
+	}
+
+	general := readFile(t, filepath.Join(root, "scripts", "validate-packy.sh"))
+	if strings.Count(general, "./scripts/validate-static-analysis.sh") != 1 {
+		t.Fatal("general validation must invoke focused static analysis exactly once")
+	}
+}
+
+func TestDeveloperDocumentationExplainsStaticAnalysis(t *testing.T) {
+	readme := readFile(t, filepath.Join(repositoryRoot(t), "README.md"))
+	for _, required := range []string{"./scripts/validate-static-analysis.sh", "The general repository check includes this focused static analysis."} {
+		if !strings.Contains(readme, required) {
+			t.Errorf("developer documentation is missing %q", required)
+		}
+	}
+}
+
 func TestOrdinaryPullRequestCIContainsOnlyGeneralValidation(t *testing.T) {
 	workflow := readFile(t, filepath.Join(repositoryRoot(t), ".github", "workflows", "ci.yml"))
 	if strings.Count(workflow, "\n  validate:") != 1 || strings.Count(workflow, "./scripts/validate-packy.sh --ci") != 1 {
