@@ -109,7 +109,7 @@ func (engine Engine) CheckSingleSourceAdmission(ctx context.Context, request Sin
 	if !fullDigest(member.LegalAdmission.EvidenceSHA256) || member.LegalAdmission.EvidenceReference == "" || member.LegalAdmission.Disposition != RedistributableDisposition {
 		return SingleSourceAdmissionPlan{}, errors.New("initial single-source admission requires complete redistributable legal evidence")
 	}
-	initial, err := readCompositeLocal(request.RepositoryRoot, []CompositeRegistrationMember{member}, packID)
+	initial, err := readCompositeLocal(request.RepositoryRoot, []CompositeRegistrationMember{member}, packID, true)
 	if err != nil {
 		return SingleSourceAdmissionPlan{}, err
 	}
@@ -147,7 +147,7 @@ func (engine Engine) CheckSingleSourceAdmission(ctx context.Context, request Sin
 			return err
 		}
 		defer guard.Release()
-		fresh, err := readCompositeLocalUnlocked(request.RepositoryRoot, []CompositeRegistrationMember{member}, packID)
+		fresh, err := readCompositeLocalUnlocked(request.RepositoryRoot, []CompositeRegistrationMember{member}, packID, true)
 		if err != nil {
 			return err
 		}
@@ -377,7 +377,7 @@ func (engine Engine) applySingleSourceAdmissionLocked(ctx context.Context, reque
 		return ApplyResult{}, errors.New("proposed Pack generation changed while acquiring the transaction lock")
 	}
 	member := CompositeRegistrationMember{Registration: plan.Registration, LegalAdmission: plan.LegalAdmission}
-	current, err := readCompositeLocalUnlocked(request.RepositoryRoot, []CompositeRegistrationMember{member}, plan.PackID)
+	current, err := readCompositeLocalUnlocked(request.RepositoryRoot, []CompositeRegistrationMember{member}, plan.PackID, true)
 	if err != nil {
 		return ApplyResult{}, err
 	}

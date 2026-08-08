@@ -156,7 +156,7 @@ func (engine Engine) CheckComposite(ctx context.Context, request CompositeCheckR
 		}
 	}
 
-	initial, err := readCompositeLocal(request.RepositoryRoot, members, request.PackID)
+	initial, err := readCompositeLocal(request.RepositoryRoot, members, request.PackID, false)
 	if err != nil {
 		return CompositePlan{}, err
 	}
@@ -174,7 +174,7 @@ func (engine Engine) CheckComposite(ctx context.Context, request CompositeCheckR
 			return err
 		}
 		defer guard.Release()
-		fresh, err := readCompositeLocalUnlocked(request.RepositoryRoot, members, request.PackID)
+		fresh, err := readCompositeLocalUnlocked(request.RepositoryRoot, members, request.PackID, false)
 		if err != nil {
 			return err
 		}
@@ -326,27 +326,42 @@ type compositeLocal struct {
 	plan          CompositePlan
 }
 
-func readCompositeLocal(root string, members []CompositeRegistrationMember, packID string) (compositeLocal, error) {
+func readCompositeLocal(root string, members []CompositeRegistrationMember, packID string, allowSourceLess bool) (compositeLocal, error) {
 	guard, err := bundletransaction.Acquire(context.Background(), root)
 	if err != nil {
 		return compositeLocal{}, err
 	}
 	defer guard.Release()
-	return readCompositeLocalUnlocked(root, members, packID)
+	return readCompositeLocalUnlocked(root, members, packID, allowSourceLess)
 }
 
-func readCompositeLocalUnlocked(root string, members []CompositeRegistrationMember, packID string) (compositeLocal, error) {
+func readCompositeLocalUnlocked(root string, members []CompositeRegistrationMember, packID string, allowSourceLess bool) (compositeLocal, error) {
 	packPath := filepath.Join(root, "bundle", "packs", packID)
 	if _, err := os.Lstat(packPath); err == nil {
 		return compositeLocal{}, fmt.Errorf("target Pack %q already exists", packID)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return compositeLocal{}, fmt.Errorf("inspect target Pack path: %w", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "bundle", "sources.json"))
-	if err != nil {
-		return compositeLocal{}, err
+	bundle := filepath.Join(root, "bundle")
+	data, err := os.ReadFile(filepath.Join(bundle, "sources.json"))
+	config := Config{}
+	lockSet := sourceLockSet{}
+	sourceLess := false
+	if errors.Is(err, fs.ErrNotExist) {
+		if !allowSourceLess {
+			return compositeLocal{}, err
+		}
+		if _, lockErr := os.Lstat(filepath.Join(bundle, "sources")); lockErr == nil {
+			return compositeLocal{}, errors.New("source configuration is absent while source locks exist")
+		} else if !errors.Is(lockErr, fs.ErrNotExist) {
+			return compositeLocal{}, lockErr
+		}
+		config = Config{SchemaVersion: 1, Sources: []SourceConfig{}}
+		sourceLess = true
+		lockSet, err = loadSourceLockSetForTarget(bundle, config, "", true)
+	} else if err == nil {
+		config, err = LoadConfig(bytes.NewReader(data))
 	}
-	config, err := LoadConfig(bytes.NewReader(data))
 	if err != nil {
 		return compositeLocal{}, err
 	}
@@ -366,9 +381,11 @@ func readCompositeLocalUnlocked(root string, members []CompositeRegistrationMemb
 			return compositeLocal{}, fmt.Errorf("member source %q is already configured", member.Registration.ID)
 		}
 	}
-	lockSet, err := loadSourceLockSet(filepath.Join(root, "bundle"), config)
-	if err != nil {
-		return compositeLocal{}, err
+	if !sourceLess {
+		lockSet, err = loadSourceLockSet(bundle, config)
+		if err != nil {
+			return compositeLocal{}, err
+		}
 	}
 	return compositeLocal{configBytes: data, config: config, lockSet: lockSet, existingPacks: existingPacks}, nil
 }
@@ -816,7 +833,7 @@ func (engine Engine) applyCompositeLocked(ctx context.Context, request Composite
 	if err := ValidateCompositeClassificationEvidence(plan, request.ClassificationEvidence); err != nil {
 		return ApplyResult{}, err
 	}
-	current, err := readCompositeLocalUnlocked(request.RepositoryRoot, members, plan.PackID)
+	current, err := readCompositeLocalUnlocked(request.RepositoryRoot, members, plan.PackID, false)
 	if err != nil {
 		return ApplyResult{}, err
 	}
