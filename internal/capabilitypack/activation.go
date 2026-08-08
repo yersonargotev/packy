@@ -1456,15 +1456,6 @@ func hasPhaseActionID(phases []PlanPhase, kind ConsentKind, id string) bool {
 	return false
 }
 
-func hasExpectation(values []projectionExpectation, id string) bool {
-	for _, value := range values {
-		if value.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
 type planPreflight struct {
 	pack        Pack
 	adapter     SurfaceAdapter
@@ -1618,19 +1609,6 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("%s projections changed after Preview; rerun %s to preview a fresh plan", plan.surface, plan.operation)}
 	}
 	return planPreflight{pack: pack, adapter: adapter, state: state, composition: current, combined: combined, resolutions: resolutions}, nil
-}
-
-func appendCompleted(completed []string, id string) []string {
-	for _, existing := range completed {
-		if existing == id {
-			return completed
-		}
-	}
-	return append(completed, id)
-}
-
-func (f Facade) activationInputs(ctx context.Context, request ActivationRequest) (Pack, SurfaceAdapter, ActivationState, error) {
-	return f.activationInputsForOperation(ctx, request, OperationActivate)
 }
 
 func (f Facade) activationInputsForOperation(ctx context.Context, request ActivationRequest, operation Operation) (Pack, SurfaceAdapter, ActivationState, error) {
@@ -1910,13 +1888,6 @@ func runtimeModeFingerprints(values []RuntimeModeResult) []runtimeModeFingerprin
 	}
 	return result
 }
-func flattenActions(phases []PlanPhase) []ProjectionAction {
-	var actions []ProjectionAction
-	for _, phase := range phases {
-		actions = append(actions, phase.Actions...)
-	}
-	return actions
-}
 func verificationMatches(expected []projectionExpectation, values []ObservedProjection) bool {
 	if len(values) != len(expected) || len(values) == 0 {
 		return false
@@ -1983,30 +1954,6 @@ func verificationMismatch(expected []projectionExpectation, values []ObservedPro
 	}
 	return fmt.Sprintf("expected %d projections, observed %d; %s", len(expected), len(values), strings.Join(details, "; "))
 }
-func ownershipMatches(owners []ProjectionOwnership, projections []ObservedProjection, packID string) bool {
-	if len(owners) != len(projections) {
-		return false
-	}
-	byID := map[string]ProjectionOwnership{}
-	for _, owner := range owners {
-		byID[owner.ID] = owner
-	}
-	for _, projection := range projections {
-		owner, ok := byID[projection.ID]
-		if !ok || owner.Fingerprint != projection.DesiredFingerprint || owner.PackID != packID {
-			return false
-		}
-	}
-	return true
-}
-func ownedAtFingerprint(owners []ProjectionOwnership, id, fingerprint, packID string) bool {
-	for _, owner := range owners {
-		if owner.ID == id && owner.Fingerprint == fingerprint && owner.PackID == packID {
-			return true
-		}
-	}
-	return false
-}
 func ownedAtComposition(owners []ProjectionOwnership, projection ObservedProjection, fingerprint string, c composition) bool {
 	for _, owner := range owners {
 		identityMatches := owner.ID == physicalProjectionID(c.surface, projection) || owner.ID == projectionOwnershipID(projection)
@@ -2015,23 +1962,6 @@ func ownedAtComposition(owners []ProjectionOwnership, projection ObservedProject
 		}
 	}
 	return false
-}
-
-func repairEligible(owners []ProjectionOwnership, projection ObservedProjection, c composition) bool {
-	if projection.Action.Mode == ProjectionDeleteTarget || projection.Action.Mode == ProjectionRemoveContent {
-		return false
-	}
-	var matched []ProjectionOwnership
-	for _, owner := range owners {
-		if owner.ID == physicalProjectionID(c.surface, projection) || owner.ID == projectionOwnershipID(projection) {
-			matched = append(matched, owner)
-		}
-	}
-	if len(matched) != 1 {
-		return false
-	}
-	owner := matched[0]
-	return owner.Fingerprint == projection.DesiredFingerprint && owner.PackID == c.requested.ID && owner.Surface == c.surface
 }
 
 func forceRepairEligible(owners []ProjectionOwnership, projection ObservedProjection, c composition) bool {
@@ -2857,8 +2787,4 @@ func phaseActions(phases []PlanPhase, kind ConsentKind) []ProjectionAction {
 		}
 	}
 	return actions
-}
-
-func hasPhaseActions(phases []PlanPhase, kind ConsentKind) bool {
-	return len(phaseActions(phases, kind)) > 0
 }

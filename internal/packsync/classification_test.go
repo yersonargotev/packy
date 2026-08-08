@@ -4,10 +4,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
-
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 func TestValidateClassificationEvidenceCoversEveryAffectedPackAndFailsClosed(t *testing.T) {
@@ -112,45 +108,4 @@ func cloneClassificationEvidenceSet(set ClassificationEvidenceSet) Classificatio
 		panic("classification evidence clone changed values")
 	}
 	return clone
-}
-
-func classificationEvidenceForPlan(t *testing.T, plan Plan, classifierType ClassifierType, classifierID string, level ClassificationLevel) ClassificationEvidenceSet {
-	t.Helper()
-	set := ClassificationEvidenceSet{SchemaVersion: 1, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, Candidate: plan.Candidate}
-	for _, impact := range plan.AffectedPacks {
-		final := level
-		if classificationRank(impact.MechanicalFloor) > classificationRank(final) {
-			final = impact.MechanicalFloor
-		}
-		version, err := nextVersion(impact.CurrentVersion, final)
-		if err != nil {
-			t.Fatal(err)
-		}
-		evidence := ClassificationEvidence{PackID: impact.PackID, Classifier: ClassifierIdentity{Type: classifierType, ID: classifierID}, Rationale: "Fixture classification rationale.", CurrentVersion: impact.CurrentVersion, ProposedVersion: version, ChangedAspects: []string{"observable fixture behavior"}, MechanicalFloor: impact.MechanicalFloor, FinalLevel: final}
-		if final == LevelMajor {
-			evidence.Migration = "Follow the fixture migration."
-			evidence.RequiredActions = []string{"Complete the fixture action."}
-		}
-		set.Evidence = append(set.Evidence, evidence)
-	}
-	return set
-}
-
-func initializeFixtureGit(t *testing.T, root string) {
-	t.Helper()
-	repository, err := git.PlainInit(root, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	worktree, err := repository.Worktree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := worktree.Add("."); err != nil {
-		t.Fatal(err)
-	}
-	_, err = worktree.Commit("fixture base", &git.CommitOptions{Author: &object.Signature{Name: "Packy test", Email: "test@packy.invalid", When: time.Unix(1, 0).UTC()}})
-	if err != nil {
-		t.Fatal(err)
-	}
 }

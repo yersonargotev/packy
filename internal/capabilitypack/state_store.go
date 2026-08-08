@@ -355,18 +355,6 @@ func receiptProjectionOwnershipID(surface Surface, projection installedProjectio
 	return "surface:" + string(surface) + ":" + projection.ID
 }
 
-func projectionIdentity(value string) ResourceIdentity {
-	identity, _ := ParseResourceIdentity(value)
-	return identity
-}
-
-func projectionOwnershipKey(projection installedProjection) string {
-	if projection.Target != "" {
-		return "path:" + filepath.Clean(projection.Target)
-	}
-	return projection.ID
-}
-
 func ownershipBelongsToReceipt(owner ProjectionOwnership, packID string, surface Surface) bool {
 	return owner.PackID == packID && owner.Surface == surface
 }

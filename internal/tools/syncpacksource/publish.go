@@ -1115,16 +1115,3 @@ func actionsRunURL() string {
 	}
 	return strings.TrimSuffix(server, "/") + "/" + repository + "/actions/runs/" + runID
 }
-
-func withoutCredentials(environment []string) []string {
-	filtered := make([]string, 0, len(environment))
-	for _, item := range environment {
-		name, _, _ := strings.Cut(item, "=")
-		switch name {
-		case "GH_TOKEN", "GITHUB_TOKEN", "HOMEBREW_TAP_TOKEN", "SSH_AUTH_SOCK":
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered
-}

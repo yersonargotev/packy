@@ -17,15 +17,6 @@ func (c Catalog) ResolveIntentPack(id, version string) (Pack, error) {
 	return c.resolveIntentPack(id, version)
 }
 
-func (c Catalog) catalogEntry(id string) (catalogEntry, bool) {
-	for _, entry := range c.entries {
-		if entry.ID == id {
-			return entry, true
-		}
-	}
-	return catalogEntry{}, false
-}
-
 func (c Catalog) validateUpdateRoute(id, _, toVersion string, _ int, _ Surface) error {
 	pack, err := c.catalogMetadata(id)
 	if err != nil {

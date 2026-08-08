@@ -59,28 +59,6 @@ type MCPObservation struct {
 	Err                   error
 }
 
-func observeOwnedHooks(settings SettingsObservation, fingerprints []string) HookObservation {
-	observation := hookObservation(settings)
-	if settings.Err != nil || len(fingerprints) == 0 {
-		return observation
-	}
-	wanted := make(map[string]bool, len(fingerprints))
-	for _, fingerprint := range fingerprints {
-		wanted[fingerprint] = true
-	}
-	for _, entry := range observedHookEntries(settings) {
-		fingerprint := HookOwnershipFingerprint(entry.event, entry.fingerprint)
-		if wanted[fingerprint] {
-			observation.MatchingEntries = append(observation.MatchingEntries, fingerprint)
-		}
-	}
-	sort.Strings(observation.MatchingEntries)
-	if len(observation.MatchingEntries) == 1 {
-		observation.EntryFingerprint = observation.MatchingEntries[0]
-	}
-	return observation
-}
-
 func hookObservation(settings SettingsObservation) HookObservation {
 	return HookObservation{
 		Path: settings.Path, Revision: settings.Revision, Parseable: settings.Parseable,

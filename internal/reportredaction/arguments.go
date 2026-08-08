@@ -67,7 +67,6 @@ func environmentArguments(args []string) []environmentArgument {
 		if args[i] == "--env" || args[i] == "-e" {
 			if i+1 < len(args) {
 				values = append(values, environmentArgument{index: i + 1, value: args[i+1]})
-				i++
 			}
 			continue
 		}

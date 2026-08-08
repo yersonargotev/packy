@@ -19,9 +19,6 @@ const (
 	manifestSchemaV2 = 2
 	manifestSchemaV3 = 3
 	manifestSchemaV4 = 4
-	// schemaVersion remains the current state/history manifest version used by
-	// the original capability-pack lifecycle documents.
-	schemaVersion = manifestSchemaV1
 )
 
 var (
@@ -615,120 +612,6 @@ var runtimeAuthorityScopes = map[RuntimeAuthorityKind]map[RuntimeScope]bool{
 	RuntimeAuthoritySubagentDelegate:        {RuntimeScopeConsumerProject: true},
 }
 
-var runtimeEffectScopes = map[RuntimeEffectKind]map[RuntimeScope]bool{
-	RuntimeEffectAuthenticationStateChange:       {RuntimeScopeVercelAccount: true},
-	RuntimeEffectConsumerProjectFileChange:       {RuntimeScopeConsumerProject: true},
-	RuntimeEffectConsumerProjectDependencyChange: {RuntimeScopeConsumerProject: true},
-	RuntimeEffectLocalGitChange:                  {RuntimeScopeLocalGit: true},
-	RuntimeEffectRemoteGitChange:                 {RuntimeScopeRemoteGit: true},
-	RuntimeEffectToolInstallation:                {RuntimeScopeWorkstation: true},
-	RuntimeEffectVercelProjectChange:             {RuntimeScopeVercelProject: true},
-	RuntimeEffectVercelEnvironmentChange:         {RuntimeScopeVercelProject: true},
-	RuntimeEffectVercelDomainChange:              {RuntimeScopeVercelProject: true},
-	RuntimeEffectUpload:                          {RuntimeScopeDeploymentPayload: true},
-	RuntimeEffectPreviewDeployment:               {RuntimeScopeVercelProject: true},
-	RuntimeEffectProductionDeployment:            {RuntimeScopeVercelProject: true},
-}
-
-var semverPredicatePattern = regexp.MustCompile(`^>=(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
-
-func validateRuntimeModes(resource Resource) error {
-	executable := resource.Kind == "skill" || resource.Kind == "agent" || resource.Kind == "command"
-	if executable && resource.RuntimeModes == nil {
-		return fmt.Errorf("runtime_modes is a required non-null array for executable resources")
-	}
-	if !executable && resource.RuntimeModes != nil {
-		return fmt.Errorf("runtime_modes is forbidden for non-executable resources")
-	}
-	modes := make(map[string]RuntimeMode, len(resource.RuntimeModes))
-	for i, mode := range resource.RuntimeModes {
-		if !idPattern.MatchString(mode.ID) {
-			return fmt.Errorf("runtime mode id %q must be lowercase kebab-case", mode.ID)
-		}
-		if i > 0 && resource.RuntimeModes[i-1].ID >= mode.ID {
-			return fmt.Errorf("runtime_modes must be sorted by id without duplicates")
-		}
-		if mode.Role != RuntimeModePrimary && mode.Role != RuntimeModeFallbackOnly {
-			return fmt.Errorf("runtime mode %q role must be primary or fallback_only", mode.ID)
-		}
-		if mode.Requirements == nil || mode.Authorities == nil || mode.Effects == nil {
-			return fmt.Errorf("runtime mode %q arrays are required and non-null", mode.ID)
-		}
-		for j, requirement := range mode.Requirements {
-			if !runtimeRequirementKinds[requirement.Kind] || !idPattern.MatchString(requirement.ID) {
-				return fmt.Errorf("runtime mode %q has invalid requirement %q:%q", mode.ID, requirement.Kind, requirement.ID)
-			}
-			if requirement.Kind == RuntimeRequirementTool {
-				if requirement.Version != "" && !semverPredicatePattern.MatchString(requirement.Version) {
-					return fmt.Errorf("runtime mode %q tool requirement version %q must be a normalized SemVer predicate", mode.ID, requirement.Version)
-				}
-			} else if requirement.Version != "" {
-				return fmt.Errorf("runtime mode %q requirement kind %q forbids version", mode.ID, requirement.Kind)
-			}
-			if j > 0 && runtimeRequirementKey(mode.Requirements[j-1]) >= runtimeRequirementKey(requirement) {
-				return fmt.Errorf("runtime mode %q requirements must be a sorted set", mode.ID)
-			}
-		}
-		for j, authority := range mode.Authorities {
-			if !runtimeAuthorityScopes[authority.Kind][authority.Scope] {
-				return fmt.Errorf("runtime mode %q has invalid authority kind or scope %q:%q", mode.ID, authority.Kind, authority.Scope)
-			}
-			if j > 0 && runtimeScopedKey(mode.Authorities[j-1].Kind, mode.Authorities[j-1].Scope) >= runtimeScopedKey(authority.Kind, authority.Scope) {
-				return fmt.Errorf("runtime mode %q authorities must be a sorted set", mode.ID)
-			}
-		}
-		for j, effect := range mode.Effects {
-			if !runtimeEffectScopes[effect.Kind][effect.Scope] {
-				return fmt.Errorf("runtime mode %q has invalid effect kind or scope %q:%q", mode.ID, effect.Kind, effect.Scope)
-			}
-			if j > 0 && runtimeScopedKey(mode.Effects[j-1].Kind, mode.Effects[j-1].Scope) >= runtimeScopedKey(effect.Kind, effect.Scope) {
-				return fmt.Errorf("runtime mode %q effects must be a sorted set", mode.ID)
-			}
-		}
-		if mode.OnUnavailable != RuntimeFailBeforeEffects {
-			return fmt.Errorf("runtime mode %q on_unavailable must be fail_before_effects", mode.ID)
-		}
-		if mode.Fallback.Kind == RuntimeFallbackNone {
-			if mode.Fallback.Mode != "" {
-				return fmt.Errorf("runtime mode %q fallback none forbids mode", mode.ID)
-			}
-		} else if mode.Fallback.Kind != RuntimeFallbackMode || !idPattern.MatchString(mode.Fallback.Mode) {
-			return fmt.Errorf("runtime mode %q fallback must be none or a valid mode reference", mode.ID)
-		}
-		modes[mode.ID] = mode
-	}
-	for _, mode := range resource.RuntimeModes {
-		if mode.Fallback.Kind != RuntimeFallbackMode {
-			continue
-		}
-		if _, exists := modes[mode.Fallback.Mode]; !exists {
-			return fmt.Errorf("runtime mode %q fallback must reference a mode in the same resource", mode.ID)
-		}
-		seen := map[string]bool{}
-		for current := mode; current.Fallback.Kind == RuntimeFallbackMode; {
-			if seen[current.ID] {
-				return fmt.Errorf("runtime mode fallback graph must be acyclic")
-			}
-			seen[current.ID] = true
-			current = modes[current.Fallback.Mode]
-		}
-	}
-	for _, mode := range resource.RuntimeModes {
-		if mode.Fallback.Kind != RuntimeFallbackMode {
-			continue
-		}
-		target := modes[mode.Fallback.Mode]
-		if mode.Role != RuntimeModePrimary || target.Role != RuntimeModeFallbackOnly {
-			return fmt.Errorf("runtime mode %q fallback must reference a fallback_only mode from a primary mode", mode.ID)
-		}
-	}
-	return nil
-}
-
-func runtimeRequirementKey(value RuntimeRequirement) string {
-	return string(value.Kind) + "\x00" + value.ID + "\x00" + value.Version
-}
-
 func runtimeScopedKey[K ~string, S ~string](kind K, scope S) string {
 	return string(kind) + "\x00" + string(scope)
 }
@@ -1099,74 +982,6 @@ var portableAuthorities = map[string]bool{
 	"subagent": true, "package-manager": true, "commit": true, "deploy": true,
 }
 
-func validateResourceV2(resource Resource) error {
-	if err := validateSourcePath(resource.Source); err != nil {
-		return fmt.Errorf("source: %w", err)
-	}
-	if resource.Requires == nil {
-		return fmt.Errorf("requires is a required array")
-	}
-	if !sort.StringsAreSorted(resource.Requires) || hasDuplicateStrings(resource.Requires) {
-		return fmt.Errorf("requires must be a sorted set of canonical identities")
-	}
-	for _, dependency := range resource.Requires {
-		if !validResourceIdentity(dependency) {
-			return fmt.Errorf("requires identity %q must be <kind>:<id>", dependency)
-		}
-	}
-	switch resource.Kind {
-	case "skill":
-		if resource.Bindings == nil {
-			return fmt.Errorf("bindings is a required array")
-		}
-	case "agent":
-		if strings.TrimSpace(resource.Description) == "" || (resource.Mode != "primary" && resource.Mode != "subagent") {
-			return fmt.Errorf("description and primary or subagent mode are required")
-		}
-		if resource.Tools == nil || resource.Permissions == nil || resource.Bindings == nil {
-			return fmt.Errorf("tools, permissions, and bindings are required arrays")
-		}
-		if !sortedPortableSet(resource.Tools, idPattern.MatchString) {
-			return fmt.Errorf("tools must be a sorted portable set")
-		}
-		if !sortedPortableSet(resource.Permissions, func(value string) bool { return portableAuthorities[value] }) {
-			return fmt.Errorf("permissions must be a sorted authority set")
-		}
-	case "command":
-		if resource.Bindings == nil {
-			return fmt.Errorf("bindings is a required array")
-		}
-		if resource.Arguments.Mode == "none" {
-			if resource.Arguments.Placeholder != "" {
-				return fmt.Errorf("none arguments forbid placeholder")
-			}
-		} else if resource.Arguments.Mode != "freeform" || resource.Arguments.Placeholder != "$ARGUMENTS" {
-			return fmt.Errorf("arguments must be none or freeform with $ARGUMENTS")
-		}
-	case "asset":
-		if resource.Bindings != nil {
-			return fmt.Errorf("bindings are forbidden")
-		}
-	case "notice":
-		if resource.License == "" || strings.TrimSpace(resource.Attribution) == "" || len(resource.Requires) != 0 || resource.Bindings != nil {
-			return fmt.Errorf("license and attribution are required; requires must be empty and bindings are forbidden")
-		}
-	default:
-		return fmt.Errorf("unsupported resource kind %q", resource.Kind)
-	}
-	for _, binding := range resource.Bindings {
-		if err := validateBinding(resource.Kind, binding); err != nil {
-			return err
-		}
-	}
-	for i := 1; i < len(resource.Bindings); i++ {
-		if resource.Bindings[i-1].Surface >= resource.Bindings[i].Surface {
-			return fmt.Errorf("bindings must be sorted by surface without duplicates")
-		}
-	}
-	return nil
-}
-
 func validateBinding(kind string, binding Binding) error {
 	if binding.Surface != SurfaceCodex && binding.Surface != SurfaceOpenCode {
 		return fmt.Errorf("binding surface %q is unsupported", binding.Surface)
@@ -1202,27 +1017,6 @@ func validateBinding(kind string, binding Binding) error {
 		}
 		if binding.Surface == SurfaceOpenCode && (binding.Invocation != "/"+binding.Name || binding.Mode != "native") {
 			return fmt.Errorf("OpenCode command binding must be a native slash command")
-		}
-	}
-	return nil
-}
-
-func validateBindingsForSurfaces(pack Pack) error {
-	declared := make(map[Surface]bool, len(pack.Surfaces))
-	for _, surface := range pack.Surfaces {
-		declared[surface] = true
-	}
-	for _, resource := range pack.Resources {
-		if resource.Kind != "skill" && resource.Kind != "agent" && resource.Kind != "command" {
-			continue
-		}
-		if len(resource.Bindings) != len(pack.Surfaces) {
-			return fmt.Errorf("resource %q must have exactly one binding for each declared surface", resource.Kind+":"+resource.ID)
-		}
-		for _, binding := range resource.Bindings {
-			if !declared[binding.Surface] {
-				return fmt.Errorf("resource %q must have exactly one binding for each declared surface", resource.Kind+":"+resource.ID)
-			}
 		}
 	}
 	return nil
@@ -1385,10 +1179,6 @@ func validResourceIdentity(value string) bool {
 	return len(parts) == 2 && idPattern.MatchString(parts[0]) && idPattern.MatchString(parts[1])
 }
 
-func validCapabilityIdentity(value string) bool {
-	return validateCapability(value) == nil
-}
-
 func sortedPortableSet(values []string, valid func(string) bool) bool {
 	if !sort.StringsAreSorted(values) || hasDuplicateStrings(values) {
 		return false
@@ -1438,14 +1228,6 @@ func validateSourcePath(source string) error {
 	clean := filepath.Clean(source)
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("%q escapes the bundle root", source)
-	}
-	return nil
-}
-
-func validateCapability(value string) error {
-	parts := strings.Split(value, ":")
-	if len(parts) != 2 || !idPattern.MatchString(parts[0]) || !idPattern.MatchString(parts[1]) {
-		return fmt.Errorf("capability %q must have two lowercase kebab-case segments", value)
 	}
 	return nil
 }
@@ -1507,23 +1289,6 @@ func validateSource(root string, resource Resource) error {
 		}
 	} else if !info.Mode().IsRegular() {
 		return fmt.Errorf("%q must be a regular source file", source)
-	}
-	return nil
-}
-
-func validateSurfaces(surfaces []Surface) error {
-	if len(surfaces) == 0 {
-		return fmt.Errorf("at least one supported CLI surface is required")
-	}
-	seen := map[Surface]bool{}
-	for _, surface := range surfaces {
-		if surface != SurfaceCodex && surface != SurfaceOpenCode && surface != SurfaceClaude {
-			return fmt.Errorf("unsupported CLI surface %q", surface)
-		}
-		if seen[surface] {
-			return fmt.Errorf("duplicate CLI surface %q", surface)
-		}
-		seen[surface] = true
 	}
 	return nil
 }
