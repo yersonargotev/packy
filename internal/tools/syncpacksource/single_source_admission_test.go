@@ -119,13 +119,14 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	}
 	writeToolFile(t, filepath.Join(outputDir, "request.json"), string(requestBytes)+"\n")
 	previousClassificationAttempt := bundleClassificationAttempt
-	bundleClassificationAttempt = func(_ context.Context, classificationRequest packclassification.Request) (packsync.ClassificationEvidence, error) {
-		return packsync.ClassificationEvidence{
+	bundleClassificationAttempt = func(_ context.Context, classificationRequest packclassification.Request) (packsync.ClassificationEvidence, []packsyncworkflow.ClassifierTrace, error) {
+		evidence := packsync.ClassificationEvidence{
 			PackID: classificationRequest.PackID, Classifier: packsync.ClassifierIdentity{Type: packsync.ClassifierAI, ID: "fixture"}, Rationale: "initial single-source Pack admission",
 			CurrentVersion: classificationRequest.CurrentVersion, ProposedVersion: plan.ProposedVersion, ChangedAspects: []string{"initial complete Pack generation"},
 			MechanicalFloor: classificationRequest.MechanicalFloor, FinalLevel: packsync.LevelMajor, Migration: "initial generation has no predecessor",
 			RequiredActions: []string{"review initial complete Pack contract"},
-		}, nil
+		}
+		return evidence, []packsyncworkflow.ClassifierTrace{{PackID: classificationRequest.PackID, Model: "fixture", PromptSHA256: strings.Repeat("a", 64), CanonicalInputSHA256: strings.Repeat("b", 64), StructuredOutputSHA256: strings.Repeat("c", 64)}}, nil
 	}
 	t.Cleanup(func() { bundleClassificationAttempt = previousClassificationAttempt })
 	classificationDir := t.TempDir()
@@ -133,6 +134,10 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	classificationPath := filepath.Join(classificationDir, "classification.json")
+	var traces []packsyncworkflow.ClassifierTrace
+	if err := readJSON(filepath.Join(classificationDir, "classifier-trace.json"), &traces); err != nil || len(traces) != 1 || traces[0].Model != "fixture" {
+		t.Fatalf("classifier traces=%#v err=%v", traces, err)
+	}
 	validationRepository := t.TempDir()
 	if err := copyToolTree(repository, validationRepository); err != nil {
 		t.Fatal(err)
@@ -305,6 +310,20 @@ func (fake *fakeSingleSourceAdmissionGateway) Finalize(context.Context, packsync
 
 func initializeToolRepository(t *testing.T, repository string) {
 	t.Helper()
+	userRoot := t.TempDir()
+	environment := make([]string, 0, len(os.Environ())+4)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "HOME=") || strings.HasPrefix(entry, "XDG_CONFIG_HOME=") || strings.HasPrefix(entry, "GIT_CONFIG_NOSYSTEM=") || strings.HasPrefix(entry, "GIT_CONFIG_GLOBAL=") {
+			continue
+		}
+		environment = append(environment, entry)
+	}
+	environment = append(environment,
+		"HOME="+userRoot,
+		"XDG_CONFIG_HOME="+filepath.Join(userRoot, "xdg"),
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+filepath.Join(userRoot, "gitconfig"),
+	)
 	commands := [][]string{
 		{"init", "-b", "main"},
 		{"config", "user.name", "Fixture"},
@@ -315,6 +334,7 @@ func initializeToolRepository(t *testing.T, repository string) {
 	for _, arguments := range commands {
 		command := exec.Command("git", arguments...)
 		command.Dir = repository
+		command.Env = environment
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", arguments, err, output)
 		}
