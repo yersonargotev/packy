@@ -46,6 +46,9 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	if err := dispatch.Validate(); err != nil {
 		return err
 	}
+	if dispatch.IsSingleSourceAdmission() {
+		return publishSingleSourceAdmission(ctx, option, output)
+	}
 	if err := readJSON(option.planPath, &plan); err != nil {
 		return err
 	}
@@ -69,6 +72,33 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	if plan.Status == "no-op" {
 		return writeNoopArtifact(option.outputDir, dispatch.SourceID, dispatch.ClosingIssue, plan)
 	}
+	if err := preparePublicationSandbox(ctx, option); err != nil {
+		return err
+	}
+	github := workflowGatewayFactory(option.repositoryRoot, plan)
+	builder := &publicationBuilder{dispatch: dispatch, plan: plan, evidence: evidence, evidencePath: option.evidencePath, github: github}
+	publisher := packsyncworkflow.Publisher{Applier: engine, Builder: builder, Diff: gitDiffVerifier{}, Provenance: engine, GitHub: github}
+	result, err := publisher.Run(ctx, packsyncworkflow.PublishRequest{RepositoryRoot: option.repositoryRoot, Apply: apply})
+	if err != nil {
+		return err
+	}
+	return finalizeV2Publication(option.outputDir, output, result, &builder.brief, v2PublicationIdentity{
+		SourceID: dispatch.SourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit,
+		CandidateSHA: plan.Candidate.Commit, ArtifactProvenance: artifactProvenance(plan), ClosingIssue: dispatch.ClosingIssue,
+	})
+}
+
+type v2PublicationIdentity struct {
+	SourceID     string
+	PlanID       string
+	BaseSHA      string
+	CandidateSHA string
+	packsyncworkflow.ArtifactProvenance
+	packsyncworkflow.InitialAdmissionArtifactIdentity
+	ClosingIssue string
+}
+
+func preparePublicationSandbox(ctx context.Context, option options) error {
 	if err := os.MkdirAll(option.outputDir, 0o755); err != nil {
 		return err
 	}
@@ -79,38 +109,47 @@ func publish(ctx context.Context, option options, output io.Writer) error {
 	if err != nil || strings.TrimSpace(baseStatus) != "" {
 		return errors.New("publish sandbox must begin from the exact clean base")
 	}
-	github := workflowGatewayFactory(option.repositoryRoot, plan)
-	builder := &publicationBuilder{dispatch: dispatch, plan: plan, evidence: evidence, evidencePath: option.evidencePath, github: github}
-	publisher := packsyncworkflow.Publisher{Applier: engine, Builder: builder, Diff: gitDiffVerifier{}, Provenance: engine, GitHub: github}
-	result, err := publisher.Run(ctx, packsyncworkflow.PublishRequest{RepositoryRoot: option.repositoryRoot, Apply: apply})
+	return nil
+}
+
+func finalizeV2Publication(outputDir string, output io.Writer, result packsyncworkflow.PublishResult, brief *packsyncworkflow.ReviewBrief, identity v2PublicationIdentity) error {
+	brief.PullRequest = result.PullRequest.Number
+	brief.HeadSHA = result.PullRequest.HeadSHA
+	brief.ResultTreeSHA = result.Proposal.ResultTreeSHA
+	brief.Validation = result.Readiness.Gates
+	brief.DecisionReady = result.Readiness.DecisionReady
+	brief.Blockers = nil
+	brief.InvalidationConditions = result.Proposal.InvalidationConditions
+	if err := writeCanonical(filepath.Join(outputDir, "proposal-brief.json"), brief); err != nil {
+		return err
+	}
+	markdown, err := brief.Markdown()
 	if err != nil {
 		return err
 	}
-	builder.brief.PullRequest = result.PullRequest.Number
-	builder.brief.HeadSHA = result.PullRequest.HeadSHA
-	builder.brief.ResultTreeSHA = result.Proposal.ResultTreeSHA
-	builder.brief.Validation = result.Readiness.Gates
-	builder.brief.DecisionReady = result.Readiness.DecisionReady
-	builder.brief.Blockers = nil
-	builder.brief.InvalidationConditions = result.Proposal.InvalidationConditions
-	if err := writeCanonical(filepath.Join(option.outputDir, "proposal-brief.json"), builder.brief); err != nil {
+	if err := os.WriteFile(filepath.Join(outputDir, "proposal-brief.md"), []byte(markdown), 0o600); err != nil {
 		return err
 	}
-	markdown, err := builder.brief.Markdown()
-	if err != nil {
-		return err
+	artifact := packsyncworkflow.PublicationArtifact{
+		SchemaVersion: 2, SourceID: identity.SourceID, PlanID: identity.PlanID,
+		BaseSHA: identity.BaseSHA, CandidateSHA: identity.CandidateSHA,
+		ArtifactProvenance: identity.ArtifactProvenance, InitialAdmissionArtifactIdentity: identity.InitialAdmissionArtifactIdentity,
+		ResultTreeSHA: result.Proposal.ResultTreeSHA, HeadSHA: result.Proposal.HeadSHA,
+		ProvenanceSHA256: result.Proposal.ProvenanceSHA256, BranchName: result.Decision.Branch,
+		PRNumber: result.PullRequest.Number, PRStateSHA256: result.PullRequest.MetadataHash,
+		ManagedTitle: result.Proposal.ManagedTitle, ManagedMetadataHash: result.PullRequest.MetadataHash,
+		Validation: result.Readiness.Gates, DecisionReady: result.Readiness.DecisionReady,
+		AutoMerge: false, ManualMergeRequired: true, UpstreamContentExecuted: false,
+		InvalidationConditions: result.Proposal.InvalidationConditions, ClosingIssue: identity.ClosingIssue,
 	}
-	if err := os.WriteFile(filepath.Join(option.outputDir, "proposal-brief.md"), []byte(markdown), 0o600); err != nil {
-		return err
-	}
-	artifact := packsyncworkflow.PublicationArtifact{SchemaVersion: 2, SourceID: dispatch.SourceID, PlanID: plan.PlanID, BaseSHA: plan.Preconditions.BaseCommit, CandidateSHA: plan.Candidate.Commit, ArtifactProvenance: artifactProvenance(plan), ResultTreeSHA: result.Proposal.ResultTreeSHA, HeadSHA: result.Proposal.HeadSHA, ProvenanceSHA256: builder.provenance, BranchName: result.Decision.Branch, PRNumber: result.PullRequest.Number, PRStateSHA256: result.PullRequest.MetadataHash, ManagedTitle: result.Proposal.ManagedTitle, ManagedMetadataHash: result.PullRequest.MetadataHash, Validation: result.Readiness.Gates, DecisionReady: result.Readiness.DecisionReady, AutoMerge: false, ManualMergeRequired: true, UpstreamContentExecuted: false, InvalidationConditions: result.Proposal.InvalidationConditions, ClosingIssue: dispatch.ClosingIssue}
 	if err := artifact.Validate(); err != nil {
 		return err
 	}
-	if err := writeCanonical(filepath.Join(option.outputDir, "publication.json"), artifact); err != nil {
+	name := filepath.Join(outputDir, "publication.json")
+	if err := writeCanonical(name, artifact); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(output, filepath.Join(option.outputDir, "publication.json"))
+	_, err = fmt.Fprintln(output, name)
 	return err
 }
 
@@ -124,13 +163,19 @@ func validateSandbox(ctx context.Context, option options, output io.Writer) erro
 	if err := readJSON(option.requestPath, &dispatch); err != nil {
 		return err
 	}
+	if err := dispatch.Validate(); err != nil {
+		return errors.New("validation inputs contradict the sealed dispatch")
+	}
+	if dispatch.IsSingleSourceAdmission() {
+		return validateSingleSourceAdmissionSandbox(ctx, option, output)
+	}
 	if err := readJSON(option.planPath, &plan); err != nil {
 		return err
 	}
 	if err := readJSON(option.evidencePath, &evidence); err != nil {
 		return err
 	}
-	if err := dispatch.Validate(); err != nil || validateDispatchPlanIdentity(dispatch, plan) != nil || plan.Preconditions.BaseCommit == "" || plan.Candidate.Commit == "" {
+	if validateDispatchPlanIdentity(dispatch, plan) != nil || plan.Preconditions.BaseCommit == "" || plan.Candidate.Commit == "" {
 		return errors.New("validation inputs contradict the sealed dispatch")
 	}
 	if err := validateWorkflowEvidence(plan, evidence); err != nil {
@@ -293,6 +338,19 @@ type publicationBrief interface {
 
 type singleSourcePublicationBrief struct {
 	brief *packsyncworkflow.ReviewBrief
+}
+
+func (gateway *githubGateway) configureSingleSourceAdmission(title string, brief *packsyncworkflow.ReviewBrief) {
+	gateway.title = title
+	gateway.brief = singleSourcePublicationBrief{brief: brief}
+}
+
+func (gateway *githubGateway) singleSourceAdmissionReviewBrief() *packsyncworkflow.ReviewBrief {
+	single, ok := gateway.brief.(singleSourcePublicationBrief)
+	if !ok {
+		return nil
+	}
+	return single.brief
 }
 
 func (single singleSourcePublicationBrief) PreparePublication(proposal packsyncworkflow.Proposal) {

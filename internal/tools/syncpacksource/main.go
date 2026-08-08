@@ -415,6 +415,9 @@ func classify(ctx context.Context, option options, output io.Writer) error {
 	if err := request.Validate(); err != nil {
 		return err
 	}
+	if request.IsSingleSourceAdmission() {
+		return classifySingleSourceAdmission(ctx, option, output)
+	}
 	if err := readJSON(option.planPath, &plan); err != nil {
 		return err
 	}

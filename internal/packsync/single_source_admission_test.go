@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
 func TestCheckSingleSourceAdmissionProducesDeterministicMutationFreePlan(t *testing.T) {
@@ -59,6 +62,225 @@ func TestCheckSingleSourceAdmissionProducesDeterministicMutationFreePlan(t *test
 	}
 	if _, err := os.Stat(filepath.Join(snapshot, "orchestrate", "SKILL.md")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSingleSourceAdmissionApplyMaterializesCompleteGeneration(t *testing.T) {
+	repository, _, request, source := singleSourceAdmissionFixture(t)
+	engine := Engine{Source: source, Validate: acceptingBundleValidator()}
+	plan, err := engine.CheckSingleSourceAdmission(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.AcquisitionDir = t.TempDir()
+	result, err := engine.ApplySingleSourceAdmission(context.Background(), SingleSourceAdmissionApplyRequest{
+		SingleSourceAdmissionCheckRequest: request,
+		Plan:                              plan,
+		ClassificationEvidence:            singleSourceAdmissionClassification(plan),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "applied" || !result.Changed || result.PlanID != plan.PlanID {
+		t.Fatalf("result = %#v", result)
+	}
+
+	configBytes, err := os.ReadFile(filepath.Join(repository, "bundle", "sources.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadConfig(strings.NewReader(string(configBytes)))
+	if err != nil || len(config.Sources) != 2 || config.Sources[1].ID != plan.Registration.ID {
+		t.Fatalf("complete source configuration = %#v, %v", config.Sources, err)
+	}
+	for _, path := range []string{
+		sourceLockPath(repository, plan.Registration.ID),
+		filepath.Join(repository, "bundle", "skills", "orchestrate", "SKILL.md"),
+		filepath.Join(repository, "bundle", "notices", "mit"),
+		filepath.Join(repository, "bundle", "packs", "orchestrate", "pack.json"),
+		filepath.Join(repository, "bundle", "history", "orchestrate", "1.0.0", "pack.json"),
+		filepath.Join(repository, "bundle", "history", "orchestrate", "1.0.0", "artifact.json"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("complete generation path %s: %v", path, err)
+		}
+	}
+	manifestBytes, err := os.ReadFile(filepath.Join(repository, "bundle", "packs", "orchestrate", "pack.json"))
+	if err != nil || !strings.Contains(string(manifestBytes), `"selectable": true`) {
+		t.Fatalf("selectable manifest = %s, %v", manifestBytes, err)
+	}
+	if hash, err := treeHash(filepath.Join(repository, "bundle")); err != nil || hash != plan.ResultBundleSHA256 {
+		t.Fatalf("result bundle hash = %s, %v; want %s", hash, err, plan.ResultBundleSHA256)
+	}
+	admitted, err := capabilitypack.LoadCurrentManifest(filepath.Join(repository, "bundle", "packs", "orchestrate", "pack.json"), filepath.Join(repository, "bundle"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admitted.ID != "orchestrate" || admitted.Version != "1.0.0" || !admitted.Selectable {
+		t.Fatalf("admitted Pack is not a selectable catalog entry: %#v", admitted)
+	}
+}
+
+func singleSourceAdmissionClassification(plan SingleSourceAdmissionPlan) CompositeClassificationEvidence {
+	return CompositeClassificationEvidence{SchemaVersion: 1, PlanID: plan.PlanID, PackID: plan.PackID, Evidence: ClassificationEvidence{
+		PackID: plan.PackID, Classifier: ClassifierIdentity{Type: ClassifierAI, ID: "synthetic"}, Rationale: "initial single-source Pack admission",
+		CurrentVersion: "0.0.0", ProposedVersion: plan.ProposedVersion, ChangedAspects: []string{"initial complete Pack generation"},
+		MechanicalFloor: LevelMajor, FinalLevel: LevelMajor,
+		Migration: "initial generation has no predecessor", RequiredActions: []string{"review initial complete Pack contract"},
+	}}
+}
+
+func TestSingleSourceAdmissionApplyRejectsFreshnessAndValidationFailuresWithoutAdmission(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, string, *SingleSourceAdmissionApplyRequest, **fixtureSource, *Engine)
+		want   string
+	}{
+		{"changed request", func(_ *testing.T, _ string, apply *SingleSourceAdmissionApplyRequest, _ **fixtureSource, _ *Engine) {
+			apply.ProposedVersion = "1.0.1"
+		}, "generation changed"},
+		{"changed candidate", func(_ *testing.T, _ string, _ *SingleSourceAdmissionApplyRequest, source **fixtureSource, _ *Engine) {
+			(*source).candidate.Commit = strings.Repeat("9", 40)
+		}, "candidate changed"},
+		{"changed legal evidence", func(t *testing.T, repository string, apply *SingleSourceAdmissionApplyRequest, _ **fixtureSource, _ *Engine) {
+			writeFile(t, filepath.Join(repository, filepath.FromSlash(apply.LegalAdmission.EvidenceReference)), "changed\n")
+		}, "legal admission changed"},
+		{"invalid classification", func(_ *testing.T, _ string, apply *SingleSourceAdmissionApplyRequest, _ **fixtureSource, _ *Engine) {
+			apply.ClassificationEvidence.Evidence.ProposedVersion = "2.0.0"
+		}, "classification evidence"},
+		{"changed base generation", func(t *testing.T, repository string, _ *SingleSourceAdmissionApplyRequest, _ **fixtureSource, _ *Engine) {
+			writeFile(t, filepath.Join(repository, "bundle", "changed-after-check"), "stale\n")
+		}, "complete bundle changed"},
+		{"source ownership conflict", func(t *testing.T, repository string, apply *SingleSourceAdmissionApplyRequest, _ **fixtureSource, _ *Engine) {
+			data, err := os.ReadFile(filepath.Join(repository, "bundle", "sources.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config Config
+			if err := json.Unmarshal(data, &config); err != nil {
+				t.Fatal(err)
+			}
+			config.Sources = append(config.Sources, apply.Registration)
+			encoded, err := canonicalConfigAfterValidation(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(repository, "bundle", "sources.json"), string(encoded))
+		}, "already exists"},
+		{"failed staged validation", func(_ *testing.T, _ string, _ *SingleSourceAdmissionApplyRequest, _ **fixtureSource, engine *Engine) {
+			engine.Validate = BundleValidatorFunc(func(_ context.Context, _, bundle string) error {
+				if _, err := os.Stat(filepath.Join(bundle, "packs", "orchestrate", "pack.json")); err == nil {
+					return errors.New("synthetic complete Pack validation failure")
+				}
+				return nil
+			})
+		}, "validation failure"},
+		{"changed result tree", func(t *testing.T, _ string, apply *SingleSourceAdmissionApplyRequest, _ **fixtureSource, _ *Engine) {
+			apply.Plan.ResultBundleSHA256 = strings.Repeat("f", 64)
+			planID, err := sealSingleSourceAdmissionPlan(apply.Plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			apply.Plan.PlanID = planID
+			apply.ClassificationEvidence = singleSourceAdmissionClassification(apply.Plan)
+		}, "result tree contradicts"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository, _, request, source := singleSourceAdmissionFixture(t)
+			plan, err := (Engine{Source: source, Validate: acceptingBundleValidator()}).CheckSingleSourceAdmission(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := treeHash(filepath.Join(repository, "bundle"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.AcquisitionDir = t.TempDir()
+			apply := SingleSourceAdmissionApplyRequest{SingleSourceAdmissionCheckRequest: request, Plan: plan, ClassificationEvidence: singleSourceAdmissionClassification(plan)}
+			engine := Engine{Source: source, Validate: acceptingBundleValidator()}
+			test.mutate(t, repository, &apply, &source, &engine)
+			engine.Source = source
+			_, err = engine.ApplySingleSourceAdmission(context.Background(), apply)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+			if _, err := os.Stat(filepath.Join(repository, "bundle", "packs", "orchestrate")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("rejected Apply admitted Pack: %v", err)
+			}
+			if test.name != "changed base generation" && test.name != "source ownership conflict" {
+				after, hashErr := treeHash(filepath.Join(repository, "bundle"))
+				if hashErr != nil || after != before {
+					t.Fatalf("rejected Apply changed bundle: before=%s after=%s err=%v", before, after, hashErr)
+				}
+			}
+		})
+	}
+}
+
+func TestSingleSourceAdmissionReplacementFaultRecoversOnlyCompleteGenerations(t *testing.T) {
+	for _, point := range []FaultPoint{FaultBeforeSwap, FaultAfterFirstRename, FaultAfterSecondRename, FaultDuringCleanup} {
+		t.Run(string(point), func(t *testing.T) {
+			repository, _, request, source := singleSourceAdmissionFixture(t)
+			engine := Engine{Source: source, Validate: acceptingBundleValidator(), Fault: failOnce(point)}
+			plan, err := engine.CheckSingleSourceAdmission(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.AcquisitionDir = t.TempDir()
+			_, err = engine.ApplySingleSourceAdmission(context.Background(), SingleSourceAdmissionApplyRequest{
+				SingleSourceAdmissionCheckRequest: request, Plan: plan,
+				ClassificationEvidence: singleSourceAdmissionClassification(plan),
+			})
+			if err == nil {
+				t.Fatal("fault did not interrupt replacement")
+			}
+			if point != FaultBeforeSwap {
+				if _, err := engine.Recover(context.Background(), RecoverRequest{RepositoryRoot: repository}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertSingleSourceAdmissionGeneration(t, repository)
+		})
+	}
+}
+
+func assertSingleSourceAdmissionGeneration(t *testing.T, repository string) {
+	t.Helper()
+	present := 0
+	for _, path := range []string{
+		sourceLockPath(repository, "orchestrate-source"),
+		filepath.Join(repository, "bundle", "skills", "orchestrate", "SKILL.md"),
+		filepath.Join(repository, "bundle", "notices", "mit"),
+		filepath.Join(repository, "bundle", "packs", "orchestrate", "pack.json"),
+		filepath.Join(repository, "bundle", "history", "orchestrate", "1.0.0", "artifact.json"),
+	} {
+		if _, err := os.Stat(path); err == nil {
+			present++
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(repository, "bundle", "sources.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	configured := false
+	for _, source := range config.Sources {
+		configured = configured || source.ID == "orchestrate-source"
+	}
+	if configured {
+		present++
+	}
+	if present != 0 && present != 6 {
+		t.Fatalf("recovery exposed partial single-source generation: %d/6 components", present)
+	}
+	if _, err := os.Stat(recoveryMarkerPath(repository)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("recovery marker remains: %v", err)
 	}
 }
 
