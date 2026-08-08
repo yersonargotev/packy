@@ -28,6 +28,7 @@ func TestDispatchV23RequiresCompleteSingleSourceAdmissionIntent(t *testing.T) {
 		Registration: &registration, RegistrationSHA256: registrationDigest,
 		ProposedVersion: "1.0.0", ProposedManifest: manifest, ProposedManifestSHA256: manifestDigest,
 		LegalAdmission: &packsync.CompositeLegalAdmission{EvidenceReference: "docs/evidence.json", EvidenceSHA256: strings.Repeat("a", 64), Disposition: packsync.RedistributableDisposition},
+		ClosingIssue:   "https://github.com/example/packy/issues/544",
 	}
 	if err := request.Validate(); err != nil || !request.IsSingleSourceAdmission() {
 		t.Fatalf("complete v2.3 dispatch rejected: initial=%v err=%v", request.IsSingleSourceAdmission(), err)

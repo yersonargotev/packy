@@ -130,6 +130,31 @@ func singleSourceAdmissionClassification(plan SingleSourceAdmissionPlan) Composi
 	}}
 }
 
+func TestSingleSourceAdmissionClassificationIsPlanBoundAndProposalOnly(t *testing.T) {
+	_, _, request, source := singleSourceAdmissionFixture(t)
+	plan, err := (Engine{Source: source, Validate: acceptingBundleValidator()}).CheckSingleSourceAdmission(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, classifierType := range []ClassifierType{ClassifierAI, ClassifierHuman} {
+		t.Run(string(classifierType), func(t *testing.T) {
+			evidence := singleSourceAdmissionClassification(plan)
+			evidence.Evidence.Classifier = ClassifierIdentity{Type: classifierType, ID: "fixture"}
+			if err := ValidateSingleSourceAdmissionClassificationEvidence(plan, evidence); err != nil {
+				t.Fatalf("plan-bound classification rejected: %v", err)
+			}
+			encoded, err := json.Marshal(evidence)
+			if err != nil || strings.Contains(string(encoded), "decision_ready") || strings.Contains(string(encoded), "auto_merge") {
+				t.Fatalf("classification gained publication authority: err=%v %s", err, encoded)
+			}
+			evidence.PlanID = "different-plan"
+			if err := ValidateSingleSourceAdmissionClassificationEvidence(plan, evidence); err == nil {
+				t.Fatal("classification from a different plan was accepted")
+			}
+		})
+	}
+}
+
 func TestSingleSourceAdmissionApplyRejectsFreshnessAndValidationFailuresWithoutAdmission(t *testing.T) {
 	tests := []struct {
 		name   string

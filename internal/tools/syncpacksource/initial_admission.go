@@ -24,6 +24,9 @@ func readSingleSourceAdmissionInputs(option options) (packsyncworkflow.DispatchR
 	if err := request.Validate(); err != nil || !request.IsSingleSourceAdmission() {
 		return request, plan, errors.New("single-source admission requires one complete valid v2.3 register dispatch")
 	}
+	if request.ClosingIssue == "" {
+		return request, plan, errors.New("single-source admission requires one exact closing issue")
+	}
 	if err := readJSON(option.planPath, &plan); err != nil {
 		return request, plan, err
 	}
