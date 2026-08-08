@@ -247,11 +247,16 @@ func inspect(ctx context.Context, option options, output io.Writer) error {
 }
 
 func inspectSingleSourceAdmission(ctx context.Context, option options, output io.Writer, request packsyncworkflow.DispatchRequest, acquisition string) error {
+	authoritySHA256, err := packsyncworkflow.SingleSourceAdmissionAuthoritySHA256(request)
+	if err != nil {
+		return err
+	}
 	plan, err := (packsync.Engine{Source: workflowSourceFactory(), Validate: workflowValidatorFactory()}).CheckSingleSourceAdmission(ctx, packsync.SingleSourceAdmissionCheckRequest{
 		RepositoryRoot: option.repositoryRoot, AcquisitionDir: acquisition,
 		Registration: *request.Registration, RegistrationSHA256: request.RegistrationSHA256,
 		ProposedVersion: request.ProposedVersion, ProposedManifest: request.ProposedManifest,
 		ProposedManifestSHA256: request.ProposedManifestSHA256, LegalAdmission: *request.LegalAdmission,
+		PublicationAuthoritySHA256: authoritySHA256,
 	})
 	if err != nil {
 		return err

@@ -57,6 +57,9 @@ func TestCheckSingleSourceAdmissionProducesDeterministicMutationFreePlan(t *test
 	if first.ProposedLock.SourceID != "orchestrate-source" || first.SourceLockSHA256 == "" || first.LockSetSHA256 == "" || first.ResultBundleSHA256 == "" {
 		t.Fatalf("resulting provenance missing: %#v", first)
 	}
+	if first.PublicationAuthoritySHA256 != request.PublicationAuthoritySHA256 {
+		t.Fatalf("publication authority is not sealed into the plan: %#v", first)
+	}
 	if first.Classification.PackID != "orchestrate" || first.Classification.CurrentVersion != "0.0.0" || first.Classification.MechanicalFloor != LevelMajor || !first.Classification.SemanticEvidenceRequired {
 		t.Fatalf("initial classification missing: %#v", first.Classification)
 	}
@@ -128,6 +131,31 @@ func singleSourceAdmissionClassification(plan SingleSourceAdmissionPlan) Composi
 		MechanicalFloor: LevelMajor, FinalLevel: LevelMajor,
 		Migration: "initial generation has no predecessor", RequiredActions: []string{"review initial complete Pack contract"},
 	}}
+}
+
+func TestSingleSourceAdmissionClassificationIsPlanBoundAndProposalOnly(t *testing.T) {
+	_, _, request, source := singleSourceAdmissionFixture(t)
+	plan, err := (Engine{Source: source, Validate: acceptingBundleValidator()}).CheckSingleSourceAdmission(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, classifierType := range []ClassifierType{ClassifierAI, ClassifierHuman} {
+		t.Run(string(classifierType), func(t *testing.T) {
+			evidence := singleSourceAdmissionClassification(plan)
+			evidence.Evidence.Classifier = ClassifierIdentity{Type: classifierType, ID: "fixture"}
+			if err := ValidateSingleSourceAdmissionClassificationEvidence(plan, evidence); err != nil {
+				t.Fatalf("plan-bound classification rejected: %v", err)
+			}
+			encoded, err := json.Marshal(evidence)
+			if err != nil || strings.Contains(string(encoded), "decision_ready") || strings.Contains(string(encoded), "auto_merge") {
+				t.Fatalf("classification gained publication authority: err=%v %s", err, encoded)
+			}
+			evidence.PlanID = "different-plan"
+			if err := ValidateSingleSourceAdmissionClassificationEvidence(plan, evidence); err == nil {
+				t.Fatal("classification from a different plan was accepted")
+			}
+		})
+	}
 }
 
 func TestSingleSourceAdmissionApplyRejectsFreshnessAndValidationFailuresWithoutAdmission(t *testing.T) {
@@ -484,6 +512,7 @@ func singleSourceAdmissionFixture(t *testing.T) (string, string, SingleSourceAdm
 			EvidenceSHA256:    hashBytes(evidence),
 			Disposition:       RedistributableDisposition,
 		},
+		PublicationAuthoritySHA256: hashBytes([]byte("issue-bound publication authority")),
 	}, source
 }
 

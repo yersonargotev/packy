@@ -60,6 +60,7 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 		Registration: &registration, RegistrationSHA256: registrationDigest,
 		ProposedVersion: "1.0.0", ProposedManifest: manifest, ProposedManifestSHA256: manifestDigest,
 		LegalAdmission: &packsync.CompositeLegalAdmission{EvidenceReference: evidenceReference, EvidenceSHA256: fmt.Sprintf("%x", sha256.Sum256(evidence)), Disposition: packsync.RedistributableDisposition},
+		ClosingIssue:   "https://github.com/example/packy/issues/544",
 	}
 	initializeToolRepository(t, repository)
 	requestPath := filepath.Join(t.TempDir(), "request.json")
@@ -76,6 +77,21 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	t.Cleanup(func() {
 		workflowSourceFactory, workflowValidatorFactory = previousSource, previousValidator
 	})
+	missingIssueRequest := request
+	missingIssueRequest.ClosingIssue = ""
+	missingIssuePath := filepath.Join(t.TempDir(), "missing-issue-request.json")
+	missingIssueBytes, err := json.MarshalIndent(missingIssueRequest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeToolFile(t, missingIssuePath, string(missingIssueBytes)+"\n")
+	missingIssueOutput := t.TempDir()
+	if err := run(context.Background(), []string{"--phase", "inspect", "--repository-root", repository, "--request", missingIssuePath, "--output", missingIssueOutput}, io.Discard); err == nil {
+		t.Fatal("single-source admission without a closing issue reached inspection")
+	}
+	if _, err := os.Stat(filepath.Join(missingIssueOutput, "plan.json")); !os.IsNotExist(err) {
+		t.Fatalf("issue-less admission wrote a plan: %v", err)
+	}
 	if err := run(context.Background(), []string{"--phase", "inspect", "--repository-root", repository, "--request", requestPath, "--output", outputDir}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +102,22 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repository, "bundle", "packs", "new-pack")); !os.IsNotExist(err) {
 		t.Fatalf("inspect wrote proposed Pack: %v", err)
 	}
+	changedIssueRequest := request
+	changedIssueRequest.ClosingIssue = "https://github.com/example/packy/issues/545"
+	changedIssuePath := filepath.Join(t.TempDir(), "changed-issue-request.json")
+	changedIssueBytes, err := json.MarshalIndent(changedIssueRequest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeToolFile(t, changedIssuePath, string(changedIssueBytes)+"\n")
+	if _, _, err := readSingleSourceAdmissionInputs(options{requestPath: changedIssuePath, planPath: filepath.Join(outputDir, "plan.json")}); err == nil {
+		t.Fatal("later phase replaced the closing issue preserved by Inspect")
+	}
+	writeToolFile(t, filepath.Join(outputDir, "request.json"), string(changedIssueBytes)+"\n")
+	if _, _, err := readSingleSourceAdmissionInputs(options{requestPath: changedIssuePath, planPath: filepath.Join(outputDir, "plan.json")}); err == nil {
+		t.Fatal("later phase replaced both the supplied and preserved closing issue")
+	}
+	writeToolFile(t, filepath.Join(outputDir, "request.json"), string(requestBytes)+"\n")
 	previousClassificationAttempt := bundleClassificationAttempt
 	bundleClassificationAttempt = func(_ context.Context, classificationRequest packclassification.Request) (packsync.ClassificationEvidence, error) {
 		return packsync.ClassificationEvidence{
@@ -116,6 +148,9 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	if validation.PackID != plan.PackID || validation.ResultBundleSHA256 != plan.ResultBundleSHA256 || validation.ResultTreeSHA == "" {
 		t.Fatalf("validation lost complete admission identity: %#v", validation)
 	}
+	if validation.ClosingIssue != request.ClosingIssue {
+		t.Fatalf("validation closing issue = %q, want %q", validation.ClosingIssue, request.ClosingIssue)
+	}
 	for _, path := range []string{
 		filepath.Join(validationRepository, "bundle", "sources", "new-source.lock.json"),
 		filepath.Join(validationRepository, "bundle", "skills", "coordinate", "SKILL.md"),
@@ -132,21 +167,61 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	t.Setenv("GITHUB_RUN_ID", "543")
 	t.Setenv("GITHUB_RUN_ATTEMPT", "1")
 	t.Setenv("GITHUB_ACTOR", "github-actions[bot]")
+	publicationBase := t.TempDir()
+	if err := copyToolTree(repository, publicationBase); err != nil {
+		t.Fatal(err)
+	}
 	previousAdmissionGateway := singleSourceAdmissionGatewayFactory
 	fakeGateway := &fakeSingleSourceAdmissionGateway{}
 	singleSourceAdmissionGatewayFactory = func(string, packsync.Plan) singleSourceAdmissionGateway { return fakeGateway }
 	t.Cleanup(func() { singleSourceAdmissionGatewayFactory = previousAdmissionGateway })
+	publicationRepository := t.TempDir()
+	if err := copyToolTree(publicationBase, publicationRepository); err != nil {
+		t.Fatal(err)
+	}
 	publicationDir := t.TempDir()
-	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", repository, "--request", requestPath, "--plan", filepath.Join(outputDir, "plan.json"), "--evidence", classificationPath, "--output", publicationDir}, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"--phase", "publish", "--repository-root", publicationRepository, "--request", requestPath, "--plan", filepath.Join(outputDir, "plan.json"), "--evidence", classificationPath, "--output", publicationDir}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	var publication packsyncworkflow.PublicationArtifact
 	if err := readJSON(filepath.Join(publicationDir, "publication.json"), &publication); err != nil || publication.Validate() != nil {
 		t.Fatalf("publication=%#v err=%v", publication, err)
 	}
-	if !publication.DecisionReady || publication.PackID != plan.PackID || publication.ResultBundleSHA256 != plan.ResultBundleSHA256 || fakeGateway.publishCalls != 0 {
-		t.Fatalf("publication lost complete decision-ready admission identity: %#v writes=%d", publication, fakeGateway.publishCalls)
+	if !publication.DecisionReady || publication.PackID != plan.PackID || publication.ResultBundleSHA256 != plan.ResultBundleSHA256 ||
+		publication.ClosingIssue != request.ClosingIssue || fakeGateway.publishCalls != 1 || fakeGateway.finalizeCalls != 1 {
+		t.Fatalf("publication lost complete decision-ready admission identity: %#v publish=%d finalize=%d", publication, fakeGateway.publishCalls, fakeGateway.finalizeCalls)
 	}
+	var brief packsyncworkflow.ReviewBrief
+	if err := readJSON(filepath.Join(publicationDir, "proposal-brief.json"), &brief); err != nil {
+		t.Fatal(err)
+	}
+	managed, err := brief.ManagedMarkdown()
+	if err != nil || brief.Request.ClosingIssue != request.ClosingIssue || !strings.Contains(managed, "Closes "+request.ClosingIssue) {
+		t.Fatalf("managed proposal lost closing issue: request=%q err=%v\n%s", brief.Request.ClosingIssue, err, managed)
+	}
+	for _, mode := range []string{"unapproved-issue", "stale-base", "foreign-owner"} {
+		t.Run(mode, func(t *testing.T) {
+			rejectedRepository := t.TempDir()
+			if err := copyToolTree(publicationBase, rejectedRepository); err != nil {
+				t.Fatal(err)
+			}
+			rejectedGateway := &fakeSingleSourceAdmissionGateway{rejection: mode}
+			singleSourceAdmissionGatewayFactory = func(string, packsync.Plan) singleSourceAdmissionGateway { return rejectedGateway }
+			rejectedOutput := t.TempDir()
+			err := run(context.Background(), []string{"--phase", "publish", "--repository-root", rejectedRepository, "--request", requestPath, "--plan", filepath.Join(outputDir, "plan.json"), "--evidence", classificationPath, "--output", rejectedOutput}, io.Discard)
+			if err == nil || rejectedGateway.publishCalls != 0 || rejectedGateway.finalizeCalls != 0 {
+				t.Fatalf("%s publication was not rejected before GitHub writes: publish=%d finalize=%d err=%v", mode, rejectedGateway.publishCalls, rejectedGateway.finalizeCalls, err)
+			}
+			var failure packsyncworkflow.FailureArtifact
+			if err := readJSON(filepath.Join(rejectedOutput, "operational-artifact.json"), &failure); err != nil {
+				t.Fatal(err)
+			}
+			if failure.ClosingIssue != request.ClosingIssue || failure.ContainsSecrets || failure.ContainsUpstreamBytes || len(failure.Blockers) == 0 || len(failure.Recovery) == 0 {
+				t.Fatalf("%s failure artifact is not safe and retryable: %#v", mode, failure)
+			}
+		})
+	}
+	singleSourceAdmissionGatewayFactory = func(string, packsync.Plan) singleSourceAdmissionGateway { return fakeGateway }
 	if err := writeFailureArtifact(options{repositoryRoot: repository, requestPath: requestPath, planPath: filepath.Join(outputDir, "plan.json"), outputDir: outputDir}, fmt.Errorf("later phase blocked")); err != nil {
 		t.Fatal(err)
 	}
@@ -156,15 +231,20 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	}
 	if artifact.PlanID != plan.PlanID || artifact.PackID != plan.PackID || artifact.ProposedVersion != plan.ProposedVersion ||
 		artifact.ProposedManifestSHA256 != plan.ProposedManifestSHA256 || artifact.LegalEvidenceReference != plan.LegalAdmission.EvidenceReference ||
-		artifact.LegalEvidenceSHA256 != plan.LegalAdmission.EvidenceSHA256 || artifact.ResultBundleSHA256 != plan.ResultBundleSHA256 {
+		artifact.LegalEvidenceSHA256 != plan.LegalAdmission.EvidenceSHA256 || artifact.ResultBundleSHA256 != plan.ResultBundleSHA256 ||
+		artifact.ClosingIssue != request.ClosingIssue || artifact.ContainsSecrets || artifact.ContainsUpstreamBytes || len(artifact.Recovery) == 0 {
 		t.Fatalf("failure artifact lost initial-admission identity: %#v", artifact)
 	}
 }
 
 type fakeSingleSourceAdmissionGateway struct {
-	proposal     packsyncworkflow.Proposal
-	brief        *packsyncworkflow.ReviewBrief
-	publishCalls int
+	proposal      packsyncworkflow.Proposal
+	brief         *packsyncworkflow.ReviewBrief
+	publishCalls  int
+	finalizeCalls int
+	published     bool
+	finalized     bool
+	rejection     string
 }
 
 func (fake *fakeSingleSourceAdmissionGateway) configureSingleSourceAdmission(_ string, brief *packsyncworkflow.ReviewBrief) {
@@ -183,22 +263,44 @@ func (fake *fakeSingleSourceAdmissionGateway) Prepare(proposal packsyncworkflow.
 
 func (fake *fakeSingleSourceAdmissionGateway) Observe(context.Context, string) (packsyncworkflow.PublicationState, error) {
 	proposal := fake.proposal
-	return packsyncworkflow.PublicationState{
+	state := packsyncworkflow.PublicationState{
 		BaseSHA: proposal.BaseSHA, ProvenanceCurrent: true, CandidateRelation: packsyncworkflow.CandidateSame,
-		Branch:       packsyncworkflow.BranchState{Exists: true, Name: "sync/" + proposal.SourceID, HeadSHA: proposal.HeadSHA, Owner: packsyncworkflow.AutomationOwner, ManagedMetadataHash: proposal.ManagedMetadataHash},
-		PR:           packsyncworkflow.PRState{Exists: true, Number: 7, Open: true, BaseBranch: "main", HeadBranch: "sync/" + proposal.SourceID, HeadSHA: proposal.HeadSHA, MetadataHash: proposal.ManagedMetadataHash, Owner: packsyncworkflow.AutomationOwner},
-		Record:       packsyncworkflow.PublicationRecord{PlanID: proposal.PlanID, BaseSHA: proposal.BaseSHA, CandidateSHA: proposal.CandidateSHA, HeadSHA: proposal.HeadSHA, ResultTreeSHA: proposal.ResultTreeSHA, ProvenanceSHA256: proposal.ProvenanceSHA256, MetadataHash: proposal.ManagedMetadataHash, ClosingIssue: proposal.ClosingIssue},
 		ClosingIssue: proposal.ClosingIssue, IssueApproved: proposal.ClosingIssue != "",
-	}, nil
+	}
+	if !fake.published {
+		switch fake.rejection {
+		case "unapproved-issue":
+			state.IssueApproved = false
+		case "stale-base":
+			state.BaseSHA = strings.Repeat("8", 40)
+		case "foreign-owner":
+			state.Branch = packsyncworkflow.BranchState{Exists: true, Name: "sync/" + proposal.SourceID, HeadSHA: proposal.HeadSHA, Owner: "reviewer"}
+			state.PR = packsyncworkflow.PRState{Exists: true, Number: 7, Open: true, BaseBranch: "main", HeadBranch: "sync/" + proposal.SourceID, HeadSHA: proposal.HeadSHA, Owner: "reviewer"}
+		}
+		return state, nil
+	}
+	metadataHash := strings.Repeat("6", 64)
+	draft := true
+	if fake.finalized {
+		metadataHash = strings.Repeat("7", 64)
+		draft = false
+	}
+	state.Branch = packsyncworkflow.BranchState{Exists: true, Name: "sync/" + proposal.SourceID, HeadSHA: proposal.HeadSHA, Owner: packsyncworkflow.AutomationOwner, ManagedMetadataHash: metadataHash}
+	state.PR = packsyncworkflow.PRState{Exists: true, Number: 7, Open: true, BaseBranch: "main", HeadBranch: "sync/" + proposal.SourceID, HeadSHA: proposal.HeadSHA, MetadataHash: metadataHash, Owner: packsyncworkflow.AutomationOwner, Draft: draft}
+	state.Record = packsyncworkflow.PublicationRecord{PlanID: proposal.PlanID, BaseSHA: proposal.BaseSHA, CandidateSHA: proposal.CandidateSHA, HeadSHA: proposal.HeadSHA, ResultTreeSHA: proposal.ResultTreeSHA, ProvenanceSHA256: proposal.ProvenanceSHA256, MetadataHash: metadataHash, ClosingIssue: proposal.ClosingIssue}
+	return state, nil
 }
 
 func (fake *fakeSingleSourceAdmissionGateway) Publish(context.Context, packsyncworkflow.Proposal, packsyncworkflow.PublicationDecision) (packsyncworkflow.PRState, error) {
 	fake.publishCalls++
-	return packsyncworkflow.PRState{}, fmt.Errorf("unexpected publication write")
+	fake.published = true
+	return packsyncworkflow.PRState{Number: 7}, nil
 }
 
 func (fake *fakeSingleSourceAdmissionGateway) Finalize(context.Context, packsyncworkflow.Proposal, packsyncworkflow.PublicationDecision, packsyncworkflow.PRState) (string, error) {
-	return "", fmt.Errorf("unexpected publication finalization")
+	fake.finalizeCalls++
+	fake.finalized = true
+	return strings.Repeat("7", 64), nil
 }
 
 func initializeToolRepository(t *testing.T, repository string) {
