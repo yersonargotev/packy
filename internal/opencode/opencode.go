@@ -1,93 +1,15 @@
 package opencode
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/yersonargotev/packy/internal/prompt"
 )
 
 type Inspection struct {
-	ConfigExists             bool
-	PromptExists             bool
-	HasPackyInstruction      bool
-	RulesExternallySatisfied bool
-	RulesPackyProjected      bool
-	Warnings                 []string
-	Conflicts                []string
-}
-
-type externalRulesObservation struct {
-	exactPaths     []string
-	driftPaths     []string
-	malformedPaths []string
-}
-
-func (observation externalRulesObservation) exact() bool {
-	return len(observation.exactPaths) > 0
-}
-
-type instructionRuleSnapshot struct {
-	Reference   string `json:"reference"`
-	Path        string `json:"path,omitempty"`
-	State       string `json:"state"`
-	Fingerprint string `json:"fingerprint,omitempty"`
-}
-
-func observeInstructionRules(instructions []string, configPath, promptPath string) (externalRulesObservation, string, error) {
-	var observation externalRulesObservation
-	var snapshots []instructionRuleSnapshot
-	for _, instruction := range instructions {
-		referencesPrompt := instructionReferencesPath(configPath, instruction, promptPath)
-		if referencesPrompt {
-			snapshots = append(snapshots, instructionRuleSnapshot{Reference: instruction, Path: promptPath, State: "packy-owned"})
-		}
-		paths := instructionPaths(configPath, instruction)
-		if len(paths) == 0 {
-			snapshots = append(snapshots, instructionRuleSnapshot{Reference: instruction, State: "opaque"})
-			continue
-		}
-		for _, path := range paths {
-			snapshot := instructionRuleSnapshot{Reference: instruction, Path: path}
-			if filepath.Clean(path) == filepath.Clean(promptPath) {
-				if !referencesPrompt {
-					snapshot.State = "packy-owned"
-					snapshots = append(snapshots, snapshot)
-				}
-				continue
-			}
-			content, err := os.ReadFile(path)
-			if os.IsNotExist(err) {
-				snapshot.State = "missing"
-				snapshots = append(snapshots, snapshot)
-				continue
-			}
-			if err != nil {
-				return externalRulesObservation{}, "", fmt.Errorf("read OpenCode instruction %s: %w", path, err)
-			}
-			sum := sha256.Sum256(content)
-			snapshot.State = "read"
-			snapshot.Fingerprint = fmt.Sprintf("%x", sum)
-			snapshots = append(snapshots, snapshot)
-			rules := prompt.InspectRulesContract(string(content))
-			if rules.Exact {
-				observation.exactPaths = appendUniqueString(observation.exactPaths, path)
-			}
-			if rules.Drift {
-				observation.driftPaths = appendUniqueString(observation.driftPaths, path)
-			}
-			if rules.Malformed {
-				observation.malformedPaths = appendUniqueString(observation.malformedPaths, path)
-			}
-		}
-	}
-	data, _ := json.Marshal(snapshots)
-	sum := sha256.Sum256(data)
-	return observation, fmt.Sprintf("%x", sum), nil
+	HasPackyInstruction bool
 }
 
 func configuredInstructions(content, configPath string) ([]string, error) {
@@ -103,25 +25,6 @@ func configuredInstructions(content, configPath string) ([]string, error) {
 		return nil, fmt.Errorf("read OpenCode config %s: invalid JSONC: %w", configPath, err)
 	}
 	return instructionStrings(config["instructions"])
-}
-
-func instructionPaths(configPath, instruction string) []string {
-	if strings.Contains(instruction, "://") {
-		return nil
-	}
-	path := instruction
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(filepath.Dir(configPath), path)
-	}
-	path = filepath.Clean(path)
-	if !strings.ContainsAny(path, "*?[") {
-		return []string{path}
-	}
-	matches, err := filepath.Glob(path)
-	if err != nil || len(matches) == 0 {
-		return []string{path}
-	}
-	return matches
 }
 
 func instructionReferencesPath(configPath, instruction, target string) bool {
@@ -150,99 +53,6 @@ func instructionsReferencePath(configPath string, instructions []string, target 
 	return false
 }
 
-func appendUniqueString(values []string, value string) []string {
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
-	}
-	return append(values, value)
-}
-
-func rulesWarnings(rules externalRulesObservation) []string {
-	var warnings []string
-	if rules.exact() {
-		warnings = append(warnings, "OpenCode baseline rules are externally satisfied by exact dots:rules in "+strings.Join(rules.exactPaths, ", ")+"; Packy preserved the external instruction and omitted its own rules contribution")
-	}
-	return append(warnings, rulesConflictWarnings(rules)...)
-}
-
-func rulesConflictWarnings(rules externalRulesObservation) []string {
-	var warnings []string
-	if len(rules.driftPaths) > 0 {
-		action := "Packy projected its baseline and preserved the external instruction"
-		if rules.exact() {
-			action = "an exact dots:rules instruction still satisfies the baseline; Packy preserved the external instruction"
-		}
-		warnings = append(warnings, "OpenCode dots:rules in "+strings.Join(rules.driftPaths, ", ")+" differs from the Packy baseline; "+action+"; align the external provider contract before retrying")
-	}
-	if len(rules.malformedPaths) > 0 {
-		action := "Packy projected its baseline and preserved the external instruction"
-		if rules.exact() {
-			action = "an exact dots:rules instruction still satisfies the baseline; Packy preserved the external instruction"
-		}
-		warnings = append(warnings, "OpenCode dots:rules markers in "+strings.Join(rules.malformedPaths, ", ")+" are malformed; "+action+"; repair the external provider markers before retrying")
-	}
-	return warnings
-}
-
-func detectExternalManagedConfig(content string) []string {
-	if !hasKnownGentleAIOverlay(content) {
-		return nil
-	}
-	return []string{"OpenCode config contains gentle-ai references; Packy preserved them and only updated Packy instruction entries"}
-}
-
-func hasKnownGentleAIOverlay(content string) bool {
-	if strings.TrimSpace(content) == "" {
-		return false
-	}
-	config := map[string]any{}
-	jsonData, err := jsoncToJSON(content)
-	if err != nil {
-		return false
-	}
-	if err := json.Unmarshal(jsonData, &config); err != nil {
-		return false
-	}
-	return stringArrayContains(config["plugin"], "gentle-ai") ||
-		objectHasKey(config["agent"], "gentle-ai") ||
-		objectHasKey(config["profile"], "gentle-ai")
-}
-
-func stringArrayContains(value any, needle string) bool {
-	items, ok := value.([]any)
-	if !ok {
-		return false
-	}
-	for _, item := range items {
-		text, ok := item.(string)
-		if ok && text == needle {
-			return true
-		}
-	}
-	return false
-}
-
-func objectHasKey(value any, key string) bool {
-	items, ok := value.(map[string]any)
-	if !ok {
-		return false
-	}
-	if _, ok := items[key]; ok {
-		return true
-	}
-	for _, item := range items {
-		nested, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if _, ok := nested[key]; ok {
-			return true
-		}
-	}
-	return false
-}
 func Inspect(configPath, promptPath string) (Inspection, error) {
 	existing, err := readOptionalFile(configPath)
 	if err != nil {
@@ -252,27 +62,7 @@ func Inspect(configPath, promptPath string) (Inspection, error) {
 	if err != nil {
 		return Inspection{}, err
 	}
-	rules, _, err := observeInstructionRules(instructions, configPath, promptPath)
-	if err != nil {
-		return Inspection{}, err
-	}
-	inspection := Inspection{
-		ConfigExists:             strings.TrimSpace(existing) != "",
-		RulesExternallySatisfied: rules.exact(),
-		Warnings:                 append(rulesWarnings(rules), detectExternalManagedConfig(existing)...),
-		Conflicts:                append(rulesConflictWarnings(rules), detectExternalManagedConfig(existing)...),
-	}
-	if promptContent, err := os.ReadFile(promptPath); err == nil {
-		inspection.PromptExists = true
-		inspection.RulesPackyProjected = prompt.HasExactPackyRules(string(promptContent))
-	} else if err != nil && !os.IsNotExist(err) {
-		return Inspection{}, fmt.Errorf("inspect OpenCode Packy prompt %s: %w", promptPath, err)
-	}
-	if strings.TrimSpace(existing) == "" {
-		return inspection, nil
-	}
-	inspection.HasPackyInstruction = instructionsReferencePath(configPath, instructions, promptPath)
-	return inspection, nil
+	return Inspection{HasPackyInstruction: instructionsReferencePath(configPath, instructions, promptPath)}, nil
 }
 func mergeInstruction(existing, configPath, promptPath string) (string, error) {
 	return updateInstructions(existing, configPath, promptPath, instructionMerge)

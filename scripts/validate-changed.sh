@@ -19,7 +19,6 @@ readonly packages=(
   ./internal/engrambin
   ./internal/localprojection
   ./internal/opencode
-  ./internal/prompt
   ./internal/setuphealth
   ./internal/skillbundle
   ./internal/tools/claudesmoke
