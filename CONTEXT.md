@@ -17,8 +17,8 @@ declared supported surfaces, and a maintainer-selected SemVer.
 
 ### Reviewed Pack catalog
 
-The four Packs bundled with this generation: Addy, Argote, Engram, and Matty.
-Each begins at Pack version `1.0.0` and is independently selectable.
+The current set of selectable bundled Pack manifests. Each manifest owns its
+Pack version and supported surfaces, and each Pack is independently selectable.
 
 ### Orchestrate Pack
 
