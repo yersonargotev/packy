@@ -133,10 +133,11 @@ func TestMetadataOnlyReconfigurationRejectsProtectedProvenanceMetadata(t *testin
 				"repository": "https://github.com/yersonargotev/orchestrate-skill.git",
 				"revision":   "1.0.0",
 			}
-			admission.ProposedManifest, err = json.Marshal(admitted)
+			proposedManifest, err := json.Marshal(admitted)
 			if err != nil {
 				t.Fatal(err)
 			}
+			admission.ProposedManifest = proposedManifest
 			canonical, err := canonicalJSON(admission.ProposedManifest)
 			if err != nil {
 				t.Fatal(err)
@@ -161,7 +162,7 @@ func TestMetadataOnlyReconfigurationRejectsProtectedProvenanceMetadata(t *testin
 				t.Fatal(err)
 			}
 			test.mutate(proposed)
-			proposedManifest, err := json.Marshal(proposed)
+			proposedManifest, err = json.Marshal(proposed)
 			if err != nil {
 				t.Fatal(err)
 			}
