@@ -4,9 +4,9 @@ Packy is a lightweight installer and configurator for reviewed capability
 Packs. It installs selected Pack resources for Codex, OpenCode, and Claude Code
 without becoming an agent runtime.
 
-The selectable pack catalog currently contains `addy`, `argote`, `engram`, and `matty`.
-Each Pack uses one current manifest and begins this generation at Pack version
-`1.0.0`.
+The bundled Pack manifests are the canonical selectable catalog. Run
+`packy pack list` to inspect the Pack IDs and versions available in the current
+binary; each Pack uses one current manifest.
 
 ## Quickstart
 

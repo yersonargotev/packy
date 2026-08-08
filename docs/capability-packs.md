@@ -5,16 +5,11 @@ inspection and `--dry-run` are read-only. Mutation requires an explicit Pack,
 CLI surface, and operation. Supported surfaces are Codex, OpenCode, and Claude
 Code.
 
-The selectable pack catalog currently contains `addy`, `argote`, `engram`, and `matty`.
-
-| Pack | Version | Purpose |
-| --- | --- | --- |
-| `addy` | `1.0.0` | Addy agent skills. |
-| `argote` | `1.0.1` | Engineering and communication guidance. |
-| `engram` | `1.0.0` | Memory guidance and Engram integration. |
-| `matty` | `1.0.0` | Engineering workflow skills. |
-
-Pack versions are independent of the Packy binary version.
+The bundled Pack manifests are the canonical selectable catalog. Use
+`packy pack list` for the Pack IDs and versions available in the current
+binary, and `packy pack show <pack>` for one Pack's purpose, supported surfaces,
+resources, and external requirements. Pack versions are independent of the
+Packy binary version.
 
 ## Inspect and activate
 
