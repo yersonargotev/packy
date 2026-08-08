@@ -17,37 +17,39 @@ import (
 // SingleSourceAdmissionCheckRequest is the complete v2.3 registration intent
 // for one absent Pack and one absent Pack Source.
 type SingleSourceAdmissionCheckRequest struct {
-	RepositoryRoot         string
-	AcquisitionDir         string
-	Registration           SourceConfig
-	RegistrationSHA256     string
-	ProposedVersion        string
-	ProposedManifest       json.RawMessage
-	ProposedManifestSHA256 string
-	LegalAdmission         CompositeLegalAdmission
+	RepositoryRoot             string
+	AcquisitionDir             string
+	Registration               SourceConfig
+	RegistrationSHA256         string
+	ProposedVersion            string
+	ProposedManifest           json.RawMessage
+	ProposedManifestSHA256     string
+	LegalAdmission             CompositeLegalAdmission
+	PublicationAuthoritySHA256 string
 }
 
 // SingleSourceAdmissionPlan seals the complete observable initial generation.
 // It is proposal evidence only and grants no publication authority.
 type SingleSourceAdmissionPlan struct {
-	SchemaVersion          int                     `json:"schema_version"`
-	PlanID                 string                  `json:"plan_id"`
-	Status                 string                  `json:"status"`
-	PackID                 string                  `json:"pack_id"`
-	ProposedVersion        string                  `json:"proposed_version"`
-	ProposedManifest       json.RawMessage         `json:"proposed_manifest"`
-	ProposedManifestSHA256 string                  `json:"proposed_manifest_sha256"`
-	Registration           SourceConfig            `json:"registration"`
-	RegistrationSHA256     string                  `json:"registration_sha256"`
-	Candidate              Candidate               `json:"candidate"`
-	LegalAdmission         CompositeLegalAdmission `json:"legal_admission"`
-	Classification         PackImpact              `json:"classification"`
-	Preconditions          Preconditions           `json:"preconditions"`
-	ProposedLock           Lock                    `json:"proposed_lock"`
-	SourceLockSHA256       string                  `json:"source_lock_sha256"`
-	LockSetSHA256          string                  `json:"lock_set_sha256"`
-	ResultingConfigSHA256  string                  `json:"resulting_config_sha256"`
-	ResultBundleSHA256     string                  `json:"result_bundle_sha256"`
+	SchemaVersion              int                     `json:"schema_version"`
+	PlanID                     string                  `json:"plan_id"`
+	Status                     string                  `json:"status"`
+	PackID                     string                  `json:"pack_id"`
+	ProposedVersion            string                  `json:"proposed_version"`
+	ProposedManifest           json.RawMessage         `json:"proposed_manifest"`
+	ProposedManifestSHA256     string                  `json:"proposed_manifest_sha256"`
+	Registration               SourceConfig            `json:"registration"`
+	RegistrationSHA256         string                  `json:"registration_sha256"`
+	Candidate                  Candidate               `json:"candidate"`
+	LegalAdmission             CompositeLegalAdmission `json:"legal_admission"`
+	Classification             PackImpact              `json:"classification"`
+	Preconditions              Preconditions           `json:"preconditions"`
+	ProposedLock               Lock                    `json:"proposed_lock"`
+	SourceLockSHA256           string                  `json:"source_lock_sha256"`
+	LockSetSHA256              string                  `json:"lock_set_sha256"`
+	ResultingConfigSHA256      string                  `json:"resulting_config_sha256"`
+	ResultBundleSHA256         string                  `json:"result_bundle_sha256"`
+	PublicationAuthoritySHA256 string                  `json:"publication_authority_sha256"`
 }
 
 type SingleSourceAdmissionApplyRequest struct {
@@ -75,7 +77,7 @@ func (plan SingleSourceAdmissionPlan) CanonicalJSON() ([]byte, error) {
 // CheckSingleSourceAdmission inspects and validates a complete initial Pack
 // generation in disposable state. It never writes repository bundle state.
 func (engine Engine) CheckSingleSourceAdmission(ctx context.Context, request SingleSourceAdmissionCheckRequest) (SingleSourceAdmissionPlan, error) {
-	if engine.Source == nil || engine.Validate == nil || request.RepositoryRoot == "" || request.AcquisitionDir == "" || request.ProposedVersion == "" {
+	if engine.Source == nil || engine.Validate == nil || request.RepositoryRoot == "" || request.AcquisitionDir == "" || request.ProposedVersion == "" || !fullDigest(request.PublicationAuthoritySHA256) {
 		return SingleSourceAdmissionPlan{}, errors.New("single-source admission Check requires acquisition, validation, repository root, acquisition directory, and proposed version")
 	}
 	if err := requireEmptyDirectory(request.AcquisitionDir); err != nil {
@@ -206,6 +208,7 @@ func (engine Engine) CheckSingleSourceAdmission(ctx context.Context, request Sin
 			Preconditions: Preconditions{BaseCommit: baseCommit, ConfigSHA256: hashBytes(initial.configBytes), ManifestsSHA256: manifestsHash, BundleSHA256: bundleDigest, LockSetSHA256: initial.lockSet.LockSetSHA256},
 			ProposedLock:  basePlan.ProposedLock, SourceLockSHA256: lockDigest,
 			LockSetSHA256: lockSetDigest, ResultingConfigSHA256: hashBytes(configBytes),
+			PublicationAuthoritySHA256: request.PublicationAuthoritySHA256,
 		}
 		disposable := filepath.Join(request.AcquisitionDir, "complete-result")
 		if err := copyTreeExact(filepath.Join(request.RepositoryRoot, "bundle"), disposable); err != nil {
@@ -273,6 +276,9 @@ func (engine Engine) ApplySingleSourceAdmission(ctx context.Context, request Sin
 	}
 	if !reflect.DeepEqual(request.LegalAdmission, plan.LegalAdmission) {
 		return ApplyResult{}, errors.New("legal admission request changed after Check")
+	}
+	if request.PublicationAuthoritySHA256 != plan.PublicationAuthoritySHA256 {
+		return ApplyResult{}, errors.New("publication authority changed after Check")
 	}
 	if err := ValidateSingleSourceAdmissionClassificationEvidence(plan, request.ClassificationEvidence); err != nil {
 		return ApplyResult{}, err
@@ -356,7 +362,7 @@ func (engine Engine) RevalidateSingleSourceAdmissionCandidate(ctx context.Contex
 
 func (engine Engine) applySingleSourceAdmissionLocked(ctx context.Context, request SingleSourceAdmissionApplyRequest, manifest packManifest, snapshotRoot string) (ApplyResult, error) {
 	plan := request.Plan
-	if !plan.VerifySeal() || !reflect.DeepEqual(plan.Registration, request.Registration) || !reflect.DeepEqual(plan.LegalAdmission, request.LegalAdmission) {
+	if !plan.VerifySeal() || !reflect.DeepEqual(plan.Registration, request.Registration) || !reflect.DeepEqual(plan.LegalAdmission, request.LegalAdmission) || plan.PublicationAuthoritySHA256 != request.PublicationAuthoritySHA256 {
 		return ApplyResult{}, errors.New("single-source admission plan changed while acquiring transaction lock")
 	}
 	if err := ValidateSingleSourceAdmissionClassificationEvidence(plan, request.ClassificationEvidence); err != nil {

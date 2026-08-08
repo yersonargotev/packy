@@ -113,6 +113,11 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	if _, _, err := readSingleSourceAdmissionInputs(options{requestPath: changedIssuePath, planPath: filepath.Join(outputDir, "plan.json")}); err == nil {
 		t.Fatal("later phase replaced the closing issue preserved by Inspect")
 	}
+	writeToolFile(t, filepath.Join(outputDir, "request.json"), string(changedIssueBytes)+"\n")
+	if _, _, err := readSingleSourceAdmissionInputs(options{requestPath: changedIssuePath, planPath: filepath.Join(outputDir, "plan.json")}); err == nil {
+		t.Fatal("later phase replaced both the supplied and preserved closing issue")
+	}
+	writeToolFile(t, filepath.Join(outputDir, "request.json"), string(requestBytes)+"\n")
 	previousClassificationAttempt := bundleClassificationAttempt
 	bundleClassificationAttempt = func(_ context.Context, classificationRequest packclassification.Request) (packsync.ClassificationEvidence, error) {
 		return packsync.ClassificationEvidence{

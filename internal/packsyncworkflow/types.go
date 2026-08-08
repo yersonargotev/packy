@@ -88,6 +88,15 @@ func ValidateIssueBoundSingleSourceAdmission(request DispatchRequest) error {
 	return nil
 }
 
+// SingleSourceAdmissionAuthoritySHA256 binds the exact issue authority to the
+// sealed admission plan without exposing issue-tracker semantics to packsync.
+func SingleSourceAdmissionAuthoritySHA256(request DispatchRequest) (string, error) {
+	if err := ValidateIssueBoundSingleSourceAdmission(request); err != nil {
+		return "", err
+	}
+	return HashText("closing_issue=" + request.ClosingIssue + "\n"), nil
+}
+
 // Digest returns the stable request identity used only to attach maintainers to
 // an existing workflow run. It does not add authority or become a dispatch
 // field; the canonical request remains the source of truth.

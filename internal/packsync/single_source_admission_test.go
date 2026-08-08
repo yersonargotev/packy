@@ -57,6 +57,9 @@ func TestCheckSingleSourceAdmissionProducesDeterministicMutationFreePlan(t *test
 	if first.ProposedLock.SourceID != "orchestrate-source" || first.SourceLockSHA256 == "" || first.LockSetSHA256 == "" || first.ResultBundleSHA256 == "" {
 		t.Fatalf("resulting provenance missing: %#v", first)
 	}
+	if first.PublicationAuthoritySHA256 != request.PublicationAuthoritySHA256 {
+		t.Fatalf("publication authority is not sealed into the plan: %#v", first)
+	}
 	if first.Classification.PackID != "orchestrate" || first.Classification.CurrentVersion != "0.0.0" || first.Classification.MechanicalFloor != LevelMajor || !first.Classification.SemanticEvidenceRequired {
 		t.Fatalf("initial classification missing: %#v", first.Classification)
 	}
@@ -509,6 +512,7 @@ func singleSourceAdmissionFixture(t *testing.T) (string, string, SingleSourceAdm
 			EvidenceSHA256:    hashBytes(evidence),
 			Disposition:       RedistributableDisposition,
 		},
+		PublicationAuthoritySHA256: hashBytes([]byte("issue-bound publication authority")),
 	}, source
 }
 

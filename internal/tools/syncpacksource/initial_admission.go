@@ -30,12 +30,8 @@ func readSingleSourceAdmissionInputs(option options) (packsyncworkflow.DispatchR
 	if !singleSourceAdmissionRequestMatchesPlan(request, plan) {
 		return request, plan, errors.New("v2.3 dispatch and sealed single-source admission plan identity contradict")
 	}
-	var inspected packsyncworkflow.DispatchRequest
-	if err := readJSON(filepath.Join(filepath.Dir(option.planPath), "request.json"), &inspected); err != nil {
-		return request, plan, errors.New("single-source admission requires the canonical request preserved by Inspect")
-	}
-	if err := packsyncworkflow.ValidateIssueBoundSingleSourceAdmission(inspected); err != nil ||
-		!singleSourceAdmissionRequestMatchesPlan(inspected, plan) || inspected.ClosingIssue != request.ClosingIssue {
+	authoritySHA256, err := packsyncworkflow.SingleSourceAdmissionAuthoritySHA256(request)
+	if err != nil || authoritySHA256 != plan.PublicationAuthoritySHA256 {
 		return request, plan, errors.New("single-source admission closing issue changed after Inspect")
 	}
 	return request, plan, nil
@@ -113,6 +109,7 @@ func singleSourceAdmissionApplyRequest(repositoryRoot, acquisition string, reque
 			Registration: *request.Registration, RegistrationSHA256: request.RegistrationSHA256,
 			ProposedVersion: request.ProposedVersion, ProposedManifest: request.ProposedManifest,
 			ProposedManifestSHA256: request.ProposedManifestSHA256, LegalAdmission: *request.LegalAdmission,
+			PublicationAuthoritySHA256: plan.PublicationAuthoritySHA256,
 		},
 		Plan: plan, ClassificationEvidence: evidence,
 	}
