@@ -304,6 +304,19 @@ type singleSourcePublicationBrief struct {
 	brief *packsyncworkflow.ReviewBrief
 }
 
+func (gateway *githubGateway) configureSingleSourceAdmission(title string, brief *packsyncworkflow.ReviewBrief) {
+	gateway.title = title
+	gateway.brief = singleSourcePublicationBrief{brief: brief}
+}
+
+func (gateway *githubGateway) singleSourceAdmissionReviewBrief() *packsyncworkflow.ReviewBrief {
+	single, ok := gateway.brief.(singleSourcePublicationBrief)
+	if !ok {
+		return nil
+	}
+	return single.brief
+}
+
 func (single singleSourcePublicationBrief) PreparePublication(proposal packsyncworkflow.Proposal) {
 	single.brief.ResultTreeSHA = proposal.ResultTreeSHA
 	single.brief.Validation = proposal.Validation

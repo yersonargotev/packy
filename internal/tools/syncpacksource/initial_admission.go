@@ -191,7 +191,17 @@ type singleSourceAdmissionProposalBuilder struct {
 	plan         packsync.SingleSourceAdmissionPlan
 	evidence     packsync.CompositeClassificationEvidence
 	evidencePath string
-	gateway      *githubGateway
+	gateway      singleSourceAdmissionGateway
+}
+
+type singleSourceAdmissionGateway interface {
+	packsyncworkflow.PublicationGateway
+	configureSingleSourceAdmission(string, *packsyncworkflow.ReviewBrief)
+	singleSourceAdmissionReviewBrief() *packsyncworkflow.ReviewBrief
+}
+
+var singleSourceAdmissionGatewayFactory = func(repositoryRoot string, plan packsync.Plan) singleSourceAdmissionGateway {
+	return workflowGatewayFactory(repositoryRoot, plan)
 }
 
 func (builder *singleSourceAdmissionProposalBuilder) Build(ctx context.Context, root string, result packsync.ApplyResult) (packsyncworkflow.Proposal, error) {
@@ -226,8 +236,7 @@ func (builder *singleSourceAdmissionProposalBuilder) Build(ctx context.Context, 
 		BaseSHA: builder.plan.Preconditions.BaseCommit, CandidateSHA: builder.plan.Candidate.Commit,
 		HeadSHA: head, ProvenanceSHA256: provenance, ManagedTitle: title, ClosingIssue: builder.request.ClosingIssue,
 	}
-	builder.gateway.title = title
-	builder.gateway.brief = singleSourcePublicationBrief{brief: brief}
+	builder.gateway.configureSingleSourceAdmission(title, brief)
 	return proposal, nil
 }
 
@@ -235,7 +244,7 @@ type singleSourceAdmissionPublicationRuntime struct {
 	request   packsyncworkflow.DispatchRequest
 	plan      packsync.SingleSourceAdmissionPlan
 	publisher packsyncworkflow.SingleSourceAdmissionPublisher
-	gateway   *githubGateway
+	gateway   singleSourceAdmissionGateway
 	publish   packsyncworkflow.SingleSourceAdmissionPublishRequest
 	cleanup   func()
 }
@@ -259,7 +268,7 @@ func newSingleSourceAdmissionPublicationRuntime(option options) (singleSourceAdm
 	validator := workflowValidatorFactory()
 	engine := packsync.Engine{Source: workflowSourceFactory(), Validate: validator}
 	apply := singleSourceAdmissionApplyRequest(option.repositoryRoot, acquisition, request, plan, evidence)
-	gateway := workflowGatewayFactory(option.repositoryRoot, packsync.Plan{SourceID: plan.Registration.ID, Candidate: plan.Candidate, Preconditions: plan.Preconditions})
+	gateway := singleSourceAdmissionGatewayFactory(option.repositoryRoot, packsync.Plan{SourceID: plan.Registration.ID, Candidate: plan.Candidate, Preconditions: plan.Preconditions})
 	builder := &singleSourceAdmissionProposalBuilder{request: request, plan: plan, evidence: evidence, evidencePath: option.evidencePath, gateway: gateway}
 	publisher := packsyncworkflow.SingleSourceAdmissionPublisher{Applier: engine, Builder: builder, Diff: gitDiffVerifier{}, Provenance: engine, GitHub: gateway}
 	return singleSourceAdmissionPublicationRuntime{
@@ -289,21 +298,21 @@ func publishSingleSourceAdmission(ctx context.Context, option options, output io
 	if err != nil {
 		return err
 	}
-	brief, ok := runtime.gateway.brief.(singleSourcePublicationBrief)
-	if !ok {
+	brief := runtime.gateway.singleSourceAdmissionReviewBrief()
+	if brief == nil {
 		return errors.New("single-source admission publication did not produce canonical review evidence")
 	}
-	brief.brief.PullRequest = result.PullRequest.Number
-	brief.brief.HeadSHA = result.PullRequest.HeadSHA
-	brief.brief.ResultTreeSHA = result.Proposal.ResultTreeSHA
-	brief.brief.Validation = result.Readiness.Gates
-	brief.brief.DecisionReady = result.Readiness.DecisionReady
-	brief.brief.Blockers = nil
-	brief.brief.InvalidationConditions = result.Proposal.InvalidationConditions
-	if err := writeCanonical(filepath.Join(option.outputDir, "proposal-brief.json"), brief.brief); err != nil {
+	brief.PullRequest = result.PullRequest.Number
+	brief.HeadSHA = result.PullRequest.HeadSHA
+	brief.ResultTreeSHA = result.Proposal.ResultTreeSHA
+	brief.Validation = result.Readiness.Gates
+	brief.DecisionReady = result.Readiness.DecisionReady
+	brief.Blockers = nil
+	brief.InvalidationConditions = result.Proposal.InvalidationConditions
+	if err := writeCanonical(filepath.Join(option.outputDir, "proposal-brief.json"), brief); err != nil {
 		return err
 	}
-	markdown, err := brief.brief.Markdown()
+	markdown, err := brief.Markdown()
 	if err != nil {
 		return err
 	}

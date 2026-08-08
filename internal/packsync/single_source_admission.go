@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -388,96 +387,15 @@ func (engine Engine) applySingleSourceAdmissionLocked(ctx context.Context, reque
 	if hash, err := treeHash(bundle); err != nil || hash != plan.Preconditions.BundleSHA256 {
 		return ApplyResult{}, errors.New("stale single-source admission plan: complete bundle changed after Check")
 	}
-	staged, backup := transactionPaths(request.RepositoryRoot, plan.PlanID)
-	markerPath := recoveryMarkerPath(request.RepositoryRoot)
-	for _, path := range []string{staged, backup, markerPath} {
-		if _, err := os.Lstat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
-			return ApplyResult{}, fmt.Errorf("%w: unexpected transaction path %s", ErrRecoveryEvidence, path)
-		}
-	}
-	if err := copyTreeExact(bundle, staged); err != nil {
-		return ApplyResult{}, fmt.Errorf("stage complete bundle: %w", err)
-	}
-	cleanupStaged := true
-	defer func() {
-		if cleanupStaged {
-			_ = os.RemoveAll(staged)
-		}
-	}()
 	generation := completeAdmissionGeneration{
 		PackID: plan.PackID, ProposedVersion: plan.ProposedVersion, ProposedManifest: manifestBytes,
 		ResultingConfigSHA256: plan.ResultingConfigSHA256, LockSetSHA256: plan.LockSetSHA256,
 		Sources: []completeAdmissionSource{{SourceID: plan.Registration.ID, Registration: plan.Registration, ProposedLock: plan.ProposedLock}},
 	}
-	if err := materializeCompleteAdmissionResult(staged, generation, []string{snapshotRoot}, current.config, manifest); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := engine.Validate.ValidateBundle(ctx, request.RepositoryRoot, staged); err != nil {
-		return ApplyResult{}, fmt.Errorf("validate complete staged single-source bundle: %w", err)
-	}
-	oldHash, err := treeHash(bundle)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	newHash, err := treeHash(staged)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	if newHash != plan.ResultBundleSHA256 {
-		return ApplyResult{}, errors.New("complete staged result tree contradicts sealed Check result")
-	}
-	if err := engine.inject(FaultBeforeSwap); err != nil {
-		return ApplyResult{}, err
-	}
-	marker := recoveryMarker{SchemaVersion: recoveryMarkerSchema, PlanID: plan.PlanID, Phase: "prepared", Bundle: bundle, Backup: backup, Staged: staged, OldSHA256: oldHash, NewSHA256: newHash, SourceID: plan.Registration.ID, SourceLockSHA256: plan.SourceLockSHA256, LockSetSHA256: plan.LockSetSHA256}
-	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := os.Rename(bundle, backup); err != nil {
-		_ = os.Remove(markerPath)
-		return ApplyResult{}, fmt.Errorf("first bundle rename: %w", err)
-	}
-	if err := syncDirectory(request.RepositoryRoot); err != nil {
-		return ApplyResult{}, err
-	}
-	cleanupStaged = false
-	marker.Phase = "old-renamed"
-	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := engine.inject(FaultAfterFirstRename); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := os.Rename(staged, bundle); err != nil {
-		return ApplyResult{}, fmt.Errorf("second bundle rename: %w", err)
-	}
-	if err := syncDirectory(request.RepositoryRoot); err != nil {
-		return ApplyResult{}, err
-	}
-	marker.Phase = "new-installed"
-	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := engine.inject(FaultAfterSecondRename); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := verifyTreeHash(bundle, newHash); err != nil {
-		return ApplyResult{}, err
-	}
-	marker.Phase = "cleanup"
-	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := engine.inject(FaultDuringCleanup); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := cleanupCommitted(marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := os.Remove(markerPath); err != nil {
-		return ApplyResult{}, err
-	}
-	return ApplyResult{Status: "applied", PlanID: plan.PlanID, Changed: true}, nil
+	return engine.applyCompleteAdmissionTransaction(ctx, request.RepositoryRoot, generation, []string{snapshotRoot}, current.config, manifest, completeAdmissionTransaction{
+		PlanID: plan.PlanID, ResultBundleSHA256: plan.ResultBundleSHA256,
+		Marker: recoveryMarker{SourceID: plan.Registration.ID, SourceLockSHA256: plan.SourceLockSHA256, LockSetSHA256: plan.LockSetSHA256},
+	})
 }
 
 func singleSourceBindingsMatchManifest(bindings []Binding, resources []manifestResource) bool {

@@ -481,14 +481,18 @@ type completeAdmissionGeneration struct {
 }
 
 func materializeCompositeResult(staged string, plan CompositePlan, roots []string, base Config, manifest packManifest) error {
+	return materializeCompleteAdmissionResult(staged, completeAdmissionGenerationFromComposite(plan), roots, base, manifest)
+}
+
+func completeAdmissionGenerationFromComposite(plan CompositePlan) completeAdmissionGeneration {
 	sources := make([]completeAdmissionSource, len(plan.Members))
 	for i, member := range plan.Members {
 		sources[i] = completeAdmissionSource{SourceID: member.SourceID, Registration: member.Registration, ProposedLock: member.ProposedLock}
 	}
-	return materializeCompleteAdmissionResult(staged, completeAdmissionGeneration{
+	return completeAdmissionGeneration{
 		PackID: plan.PackID, ProposedVersion: plan.ProposedVersion, ProposedManifest: plan.ProposedManifest,
 		ResultingConfigSHA256: plan.ResultingConfigSHA256, LockSetSHA256: plan.LockSetSHA256, Sources: sources,
-	}, roots, base, manifest)
+	}
 }
 
 func materializeCompleteAdmissionResult(staged string, generation completeAdmissionGeneration, roots []string, base Config, manifest packManifest) error {
@@ -528,6 +532,104 @@ func materializeCompleteAdmissionResult(staged string, generation completeAdmiss
 		return errors.New("complete staged lock set contradicts sealed plan")
 	}
 	return materializePackHistory(staged, generation.PackID, generation.ProposedVersion, generation.ProposedManifest, manifest)
+}
+
+type completeAdmissionTransaction struct {
+	PlanID             string
+	ResultBundleSHA256 string
+	Marker             recoveryMarker
+}
+
+func (engine Engine) applyCompleteAdmissionTransaction(ctx context.Context, repositoryRoot string, generation completeAdmissionGeneration, roots []string, base Config, manifest packManifest, transaction completeAdmissionTransaction) (ApplyResult, error) {
+	bundle := filepath.Join(repositoryRoot, "bundle")
+	staged, backup := transactionPaths(repositoryRoot, transaction.PlanID)
+	markerPath := recoveryMarkerPath(repositoryRoot)
+	for _, path := range []string{staged, backup, markerPath} {
+		if _, err := os.Lstat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
+			return ApplyResult{}, fmt.Errorf("%w: unexpected transaction path %s", ErrRecoveryEvidence, path)
+		}
+	}
+	if err := copyTreeExact(bundle, staged); err != nil {
+		return ApplyResult{}, fmt.Errorf("stage complete bundle: %w", err)
+	}
+	cleanupStaged := true
+	defer func() {
+		if cleanupStaged {
+			_ = os.RemoveAll(staged)
+		}
+	}()
+	if err := materializeCompleteAdmissionResult(staged, generation, roots, base, manifest); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := engine.Validate.ValidateBundle(ctx, repositoryRoot, staged); err != nil {
+		return ApplyResult{}, fmt.Errorf("validate complete staged admission bundle: %w", err)
+	}
+	oldHash, err := treeHash(bundle)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	newHash, err := treeHash(staged)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if newHash != transaction.ResultBundleSHA256 {
+		return ApplyResult{}, errors.New("complete staged result tree contradicts sealed Check result")
+	}
+	if err := engine.inject(FaultBeforeSwap); err != nil {
+		return ApplyResult{}, err
+	}
+	marker := transaction.Marker
+	marker.SchemaVersion, marker.PlanID, marker.Phase = recoveryMarkerSchema, transaction.PlanID, "prepared"
+	marker.Bundle, marker.Backup, marker.Staged = bundle, backup, staged
+	marker.OldSHA256, marker.NewSHA256 = oldHash, newHash
+	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := os.Rename(bundle, backup); err != nil {
+		_ = os.Remove(markerPath)
+		return ApplyResult{}, fmt.Errorf("first bundle rename: %w", err)
+	}
+	if err := syncDirectory(repositoryRoot); err != nil {
+		return ApplyResult{}, err
+	}
+	cleanupStaged = false
+	marker.Phase = "old-renamed"
+	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := engine.inject(FaultAfterFirstRename); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := os.Rename(staged, bundle); err != nil {
+		return ApplyResult{}, fmt.Errorf("second bundle rename: %w", err)
+	}
+	if err := syncDirectory(repositoryRoot); err != nil {
+		return ApplyResult{}, err
+	}
+	marker.Phase = "new-installed"
+	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := engine.inject(FaultAfterSecondRename); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := verifyTreeHash(bundle, newHash); err != nil {
+		return ApplyResult{}, err
+	}
+	marker.Phase = "cleanup"
+	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := engine.inject(FaultDuringCleanup); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := cleanupCommitted(marker); err != nil {
+		return ApplyResult{}, err
+	}
+	if err := os.Remove(markerPath); err != nil {
+		return ApplyResult{}, err
+	}
+	return ApplyResult{Status: "applied", PlanID: transaction.PlanID, Changed: true}, nil
 }
 
 func materializePackHistory(staged, packID, version string, manifestBytes []byte, manifest packManifest) error {
@@ -730,93 +832,16 @@ func (engine Engine) applyCompositeLocked(ctx context.Context, request Composite
 	if hash, err := treeHash(bundle); err != nil || hash != plan.Preconditions.BundleSHA256 {
 		return ApplyResult{}, errors.New("stale composite plan: complete bundle changed after Check")
 	}
-	staged, backup := transactionPaths(request.RepositoryRoot, plan.PlanID)
-	markerPath := recoveryMarkerPath(request.RepositoryRoot)
-	for _, path := range []string{staged, backup, markerPath} {
-		if _, err := os.Lstat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
-			return ApplyResult{}, fmt.Errorf("%w: unexpected transaction path %s", ErrRecoveryEvidence, path)
-		}
-	}
-	if err := copyTreeExact(bundle, staged); err != nil {
-		return ApplyResult{}, err
-	}
-	cleanupStaged := true
-	defer func() {
-		if cleanupStaged {
-			_ = os.RemoveAll(staged)
-		}
-	}()
 	manifest, _, err := validateCompositeManifest(plan.PackID, plan.ProposedVersion, plan.ProposedManifest)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	if err := materializeCompositeResult(staged, plan, roots, current.config, manifest); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := engine.Validate.ValidateBundle(ctx, request.RepositoryRoot, staged); err != nil {
-		return ApplyResult{}, fmt.Errorf("validate complete staged composite bundle: %w", err)
-	}
-	oldHash, err := treeHash(bundle)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	newHash, err := treeHash(staged)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	if newHash != plan.ResultBundleSHA256 {
-		return ApplyResult{}, errors.New("complete staged result tree contradicts sealed Check result")
-	}
-	if err := engine.inject(FaultBeforeSwap); err != nil {
-		return ApplyResult{}, err
-	}
-	marker := recoveryMarker{SchemaVersion: recoveryMarkerSchema, PlanID: plan.PlanID, Phase: "prepared", Bundle: bundle, Backup: backup, Staged: staged, OldSHA256: oldHash, NewSHA256: newHash, SourceID: plan.SourceIDs[0], SourceLockSHA256: plan.Members[0].SourceLockSHA256, LockSetSHA256: plan.LockSetSHA256, Operation: "register_bundle", SourceIDs: append([]string(nil), plan.SourceIDs...), RegistrationBundleSHA256: plan.RegistrationBundleSHA256}
-	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := os.Rename(bundle, backup); err != nil {
-		_ = os.Remove(markerPath)
-		return ApplyResult{}, err
-	}
-	if err := syncDirectory(request.RepositoryRoot); err != nil {
-		return ApplyResult{}, err
-	}
-	cleanupStaged = false
-	marker.Phase = "old-renamed"
-	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := engine.inject(FaultAfterFirstRename); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := os.Rename(staged, bundle); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := syncDirectory(request.RepositoryRoot); err != nil {
-		return ApplyResult{}, err
-	}
-	marker.Phase = "new-installed"
-	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := engine.inject(FaultAfterSecondRename); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := verifyTreeHash(bundle, newHash); err != nil {
-		return ApplyResult{}, err
-	}
-	marker.Phase = "cleanup"
-	if err := writeRecoveryMarker(markerPath, &marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := engine.inject(FaultDuringCleanup); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := cleanupCommitted(marker); err != nil {
-		return ApplyResult{}, err
-	}
-	if err := os.Remove(markerPath); err != nil {
-		return ApplyResult{}, err
-	}
-	return ApplyResult{Status: "applied", PlanID: plan.PlanID, Changed: true}, nil
+	return engine.applyCompleteAdmissionTransaction(ctx, request.RepositoryRoot, completeAdmissionGenerationFromComposite(plan), roots, current.config, manifest, completeAdmissionTransaction{
+		PlanID: plan.PlanID, ResultBundleSHA256: plan.ResultBundleSHA256,
+		Marker: recoveryMarker{
+			SourceID: plan.SourceIDs[0], SourceLockSHA256: plan.Members[0].SourceLockSHA256,
+			LockSetSHA256: plan.LockSetSHA256, Operation: "register_bundle",
+			SourceIDs: append([]string(nil), plan.SourceIDs...), RegistrationBundleSHA256: plan.RegistrationBundleSHA256,
+		},
+	})
 }
