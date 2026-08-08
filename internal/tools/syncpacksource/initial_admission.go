@@ -21,24 +21,33 @@ func readSingleSourceAdmissionInputs(option options) (packsyncworkflow.DispatchR
 	if err := readJSON(option.requestPath, &request); err != nil {
 		return request, plan, err
 	}
-	if err := request.Validate(); err != nil || !request.IsSingleSourceAdmission() {
-		return request, plan, errors.New("single-source admission requires one complete valid v2.3 register dispatch")
-	}
-	if request.ClosingIssue == "" {
-		return request, plan, errors.New("single-source admission requires one exact closing issue")
+	if err := packsyncworkflow.ValidateIssueBoundSingleSourceAdmission(request); err != nil {
+		return request, plan, err
 	}
 	if err := readJSON(option.planPath, &plan); err != nil {
 		return request, plan, err
 	}
-	if !plan.VerifySeal() || request.Registration == nil || request.LegalAdmission == nil ||
-		request.SourceID != plan.Registration.ID || request.RegistrationSHA256 != plan.RegistrationSHA256 ||
-		request.ProposedVersion != plan.ProposedVersion || request.ProposedManifestSHA256 != plan.ProposedManifestSHA256 ||
-		request.LegalAdmission.EvidenceReference != plan.LegalAdmission.EvidenceReference ||
-		request.LegalAdmission.EvidenceSHA256 != plan.LegalAdmission.EvidenceSHA256 ||
-		request.LegalAdmission.Disposition != plan.LegalAdmission.Disposition {
+	if !singleSourceAdmissionRequestMatchesPlan(request, plan) {
 		return request, plan, errors.New("v2.3 dispatch and sealed single-source admission plan identity contradict")
 	}
+	var inspected packsyncworkflow.DispatchRequest
+	if err := readJSON(filepath.Join(filepath.Dir(option.planPath), "request.json"), &inspected); err != nil {
+		return request, plan, errors.New("single-source admission requires the canonical request preserved by Inspect")
+	}
+	if err := packsyncworkflow.ValidateIssueBoundSingleSourceAdmission(inspected); err != nil ||
+		!singleSourceAdmissionRequestMatchesPlan(inspected, plan) || inspected.ClosingIssue != request.ClosingIssue {
+		return request, plan, errors.New("single-source admission closing issue changed after Inspect")
+	}
 	return request, plan, nil
+}
+
+func singleSourceAdmissionRequestMatchesPlan(request packsyncworkflow.DispatchRequest, plan packsync.SingleSourceAdmissionPlan) bool {
+	return plan.VerifySeal() && request.Registration != nil && request.LegalAdmission != nil &&
+		request.SourceID == plan.Registration.ID && request.RegistrationSHA256 == plan.RegistrationSHA256 &&
+		request.ProposedVersion == plan.ProposedVersion && request.ProposedManifestSHA256 == plan.ProposedManifestSHA256 &&
+		request.LegalAdmission.EvidenceReference == plan.LegalAdmission.EvidenceReference &&
+		request.LegalAdmission.EvidenceSHA256 == plan.LegalAdmission.EvidenceSHA256 &&
+		request.LegalAdmission.Disposition == plan.LegalAdmission.Disposition
 }
 
 func classifySingleSourceAdmission(ctx context.Context, option options, output io.Writer) error {

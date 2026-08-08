@@ -76,6 +76,18 @@ func (request DispatchRequest) IsSingleSourceAdmission() bool {
 	return request.Operation == OperationRegister && request.ProposedVersion != "" && len(request.ProposedManifest) != 0 && request.ProposedManifestSHA256 != "" && request.LegalAdmission != nil
 }
 
+// ValidateIssueBoundSingleSourceAdmission applies the private publication
+// policy on top of the immutable v2.3 dispatch contract.
+func ValidateIssueBoundSingleSourceAdmission(request DispatchRequest) error {
+	if err := request.Validate(); err != nil || !request.IsSingleSourceAdmission() {
+		return errors.New("single-source admission requires one complete valid v2.3 register dispatch")
+	}
+	if request.ClosingIssue == "" {
+		return errors.New("single-source admission requires one exact closing issue")
+	}
+	return nil
+}
+
 // Digest returns the stable request identity used only to attach maintainers to
 // an existing workflow run. It does not add authority or become a dispatch
 // field; the canonical request remains the source of truth.

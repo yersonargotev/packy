@@ -247,8 +247,8 @@ func inspect(ctx context.Context, option options, output io.Writer) error {
 }
 
 func inspectSingleSourceAdmission(ctx context.Context, option options, output io.Writer, request packsyncworkflow.DispatchRequest, acquisition string) error {
-	if request.ClosingIssue == "" {
-		return errors.New("single-source admission requires one exact closing issue")
+	if err := packsyncworkflow.ValidateIssueBoundSingleSourceAdmission(request); err != nil {
+		return err
 	}
 	plan, err := (packsync.Engine{Source: workflowSourceFactory(), Validate: workflowValidatorFactory()}).CheckSingleSourceAdmission(ctx, packsync.SingleSourceAdmissionCheckRequest{
 		RepositoryRoot: option.repositoryRoot, AcquisitionDir: acquisition,

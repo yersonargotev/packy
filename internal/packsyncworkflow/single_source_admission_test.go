@@ -33,6 +33,17 @@ func TestDispatchV23RequiresCompleteSingleSourceAdmissionIntent(t *testing.T) {
 	if err := request.Validate(); err != nil || !request.IsSingleSourceAdmission() {
 		t.Fatalf("complete v2.3 dispatch rejected: initial=%v err=%v", request.IsSingleSourceAdmission(), err)
 	}
+	if err := ValidateIssueBoundSingleSourceAdmission(request); err != nil {
+		t.Fatalf("issue-bound admission rejected: %v", err)
+	}
+	issueLess := request
+	issueLess.ClosingIssue = ""
+	if err := issueLess.Validate(); err != nil {
+		t.Fatalf("immutable v2.3 dispatch contract changed: %v", err)
+	}
+	if err := ValidateIssueBoundSingleSourceAdmission(issueLess); err == nil {
+		t.Fatal("private admission policy accepted a request without a closing issue")
+	}
 	partial := request
 	partial.ProposedVersion = ""
 	if err := partial.Validate(); err == nil {

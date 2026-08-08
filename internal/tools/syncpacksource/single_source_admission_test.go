@@ -102,6 +102,17 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repository, "bundle", "packs", "new-pack")); !os.IsNotExist(err) {
 		t.Fatalf("inspect wrote proposed Pack: %v", err)
 	}
+	changedIssueRequest := request
+	changedIssueRequest.ClosingIssue = "https://github.com/example/packy/issues/545"
+	changedIssuePath := filepath.Join(t.TempDir(), "changed-issue-request.json")
+	changedIssueBytes, err := json.MarshalIndent(changedIssueRequest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeToolFile(t, changedIssuePath, string(changedIssueBytes)+"\n")
+	if _, _, err := readSingleSourceAdmissionInputs(options{requestPath: changedIssuePath, planPath: filepath.Join(outputDir, "plan.json")}); err == nil {
+		t.Fatal("later phase replaced the closing issue preserved by Inspect")
+	}
 	previousClassificationAttempt := bundleClassificationAttempt
 	bundleClassificationAttempt = func(_ context.Context, classificationRequest packclassification.Request) (packsync.ClassificationEvidence, error) {
 		return packsync.ClassificationEvidence{
