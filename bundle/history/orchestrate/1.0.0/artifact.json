@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "pack_id": "orchestrate",
+  "pack_version": "1.0.0",
+  "manifest": {
+    "path": "pack.json",
+    "size": 1512,
+    "mode": 420,
+    "sha256": "6250a66c042c26868b616b7c11e75d99a372af24da3c34f37489da59c2d5751c"
+  },
+  "resources": [
+    {
+      "kind": "lifecycle",
+      "id": "coordinate-session",
+      "source": "",
+      "files": [],
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "kind": "notice",
+      "id": "mit",
+      "source": "notices/mit",
+      "files": [
+        {
+          "path": "notices/mit",
+          "size": 1072,
+          "mode": 420,
+          "sha256": "c46a5f93c655d8a890391242058d050cbc6ff575d751f27477f22d1f8d53fba4"
+        }
+      ],
+      "sha256": "6b4433f129aef942b56d760d41f309bd288a46f6ceac48735260c190c88f1398"
+    },
+    {
+      "kind": "skill",
+      "id": "orchestrate",
+      "source": "skills/orchestrate",
+      "files": [
+        {
+          "path": "skills/orchestrate/SKILL.md",
+          "size": 606,
+          "mode": 420,
+          "sha256": "1eaa114f4271a76ab67429d43a7cc05462994e3c61685a5c40cf19ca041cbe71"
+        },
+        {
+          "path": "skills/orchestrate/agents/openai.yaml",
+          "size": 194,
+          "mode": 420,
+          "sha256": "769869faa8f5c919b77bbdf8686c46e08774d796af7a6aabdf9717d57bba72a8"
+        }
+      ],
+      "sha256": "9f182f748db7a295e97e600271b05b77babb4dde28e6a0e669132b97c9fc756d"
+    }
+  ],
+  "aggregate_sha256": "ccfc7a2c9ca4472147d48a8868df62b16ea3cd911a6b6899d7e26cc0f353f0c3"
+}
