@@ -17,7 +17,7 @@ func TestClaudeDocumentationContractStaysCurrent(t *testing.T) {
 		"docs/claude-code.md":        {"Prerequisite", "Global projections", "Explicit activation", "Preservation and cleanup", "Readiness", "No authentication or model calls", claudecode.MinimumSupportedVersion},
 		"docs/product/packy-v0.md":   {"Claude Code", claudecode.MinimumSupportedVersion},
 		"docs/roadmap.md":            {"Claude Code", claudecode.MinimumSupportedVersion},
-		"docs/capability-packs.md":   {"one `pack.json` manifest", "Claude", "`matty`", "`1.0.0`", "`engram`"},
+		"docs/capability-packs.md":   {"one `pack.json` manifest", "Claude", "packy pack list", "packy pack show <pack>"},
 		"docs/structured-output.md":  {"`schema_version`", "Current-state contract"},
 		"docs/release.md":            {"./scripts/validate-packy.sh", "Publication boundaries", "newer version"},
 		"docs/release-notes/next.md": {"{{TAG}}", claudecode.MinimumSupportedVersion, "Addy", "Argote", "Engram", "Matty", "SHA256SUMS"},

@@ -797,13 +797,31 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status failed: %v\n%s", err, overview)
 	}
-	for _, want := range []string{
-		"PACK", "SURFACE", "INTENT", "CONFIGURED", "AUTHORIZED", "USABLE", "ACTION",
-		"argote  claude", "argote  codex", "argote  opencode", "engram  claude", "engram  codex", "engram  opencode", "matty   claude", "matty   codex", "matty   opencode", "inactive",
-	} {
-		if !strings.Contains(overview, want) {
-			t.Fatalf("overview missing %q:\n%s", want, overview)
+	lines := strings.Split(strings.TrimSpace(overview), "\n")
+	if len(lines) == 0 || !reflect.DeepEqual(strings.Fields(lines[0]), []string{"PACK", "SURFACE", "INTENT", "CONFIGURED", "AUTHORIZED", "USABLE", "ACTION"}) {
+		t.Fatalf("status header is not semantic:\n%s", overview)
+	}
+	wantRows := expectedPackSurfaceRows(t, repoRoot)
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) != 7 {
+			t.Fatalf("malformed status row %q", line)
 		}
+		key := fields[0] + "/" + fields[1]
+		if !wantRows[key] {
+			t.Fatalf("unexpected or duplicate status row %q", line)
+		}
+		delete(wantRows, key)
+		wantAuthorized := "no"
+		if fields[1] == "claude" {
+			wantAuthorized = "unknown"
+		}
+		if !reflect.DeepEqual(fields[2:], []string{"inactive", "no", wantAuthorized, "unknown", "none"}) {
+			t.Fatalf("status row changed semantics: %q", line)
+		}
+	}
+	if len(wantRows) != 0 {
+		t.Fatalf("status omitted Pack/surface rows: %#v\n%s", wantRows, overview)
 	}
 
 	detail, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "engram", "--surface", "codex")
@@ -845,13 +863,22 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	if err := json.Unmarshal([]byte(overview), &report); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, overview)
 	}
-	if report.SchemaVersion != capabilitypack.StatusSchemaVersion || report.Report != "pack-status-overview" || len(report.Entries) != 12 {
+	wantRows := expectedPackSurfaceRows(t, repoRoot)
+	if report.SchemaVersion != capabilitypack.StatusSchemaVersion || report.Report != "pack-status-overview" || len(report.Entries) != len(wantRows) {
 		t.Fatalf("report=%#v", report)
 	}
 	for i, entry := range report.Entries {
 		if i > 0 && (report.Entries[i-1].Pack > entry.Pack || report.Entries[i-1].Pack == entry.Pack && report.Entries[i-1].Surface > entry.Surface) {
 			t.Fatalf("entries not sorted: %#v", report.Entries)
 		}
+		key := entry.Pack + "/" + string(entry.Surface)
+		if !wantRows[key] {
+			t.Fatalf("unexpected or duplicate JSON status entry: %#v", entry)
+		}
+		delete(wantRows, key)
+	}
+	if len(wantRows) != 0 {
+		t.Fatalf("JSON status omitted Pack/surface entries: %#v", wantRows)
 	}
 	detail, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "engram", "--surface", "codex", "--json")
 	if err != nil {
@@ -867,6 +894,25 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	if strings.Contains(detail, "Intent:") {
 		t.Fatalf("human output mixed into JSON: %s", detail)
 	}
+}
+
+func expectedPackSurfaceRows(t *testing.T, repoRoot string) map[string]bool {
+	t.Helper()
+	catalog, err := capabilitypack.Discover(filepath.Join(repoRoot, "bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	packs, err := catalog.ListCurrent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make(map[string]bool)
+	for _, pack := range packs {
+		for _, surface := range pack.Surfaces {
+			rows[pack.ID+"/"+string(surface)] = true
+		}
+	}
+	return rows
 }
 
 func TestPackStatusJSONRequireEmitsDocumentBeforeGateError(t *testing.T) {
