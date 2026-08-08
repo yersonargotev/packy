@@ -543,7 +543,7 @@ func addyProjectionMatchesInstalledSource(sandbox string) bool {
 	if err != nil {
 		return false
 	}
-	source, err := os.ReadFile(filepath.Join(sandbox, "installed-source", "bundle", "history", "addy", "1.1.0", "skills", "api-and-interface-design", "SKILL.md"))
+	source, err := os.ReadFile(filepath.Join(sandbox, "installed-source", "bundle", "skills", "api-and-interface-design", "SKILL.md"))
 	return err == nil && bytes.Equal(projection, source)
 }
 
