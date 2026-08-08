@@ -175,7 +175,7 @@ func (publisher Publisher) prepare(ctx context.Context, request PublishRequest) 
 	// These gates are derived here from the completed owner-controlled sequence,
 	// never asserted by the workflow adapter. Ownership is admitted only if the
 	// fail-closed state evaluation below succeeds.
-	proposal.Validation = ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}
+	proposal.Validation = CompletedValidationGates()
 	proposal.InvalidationConditions = DecisionReadyInvalidationConditions()
 	if proposal.ClosingIssue != "" {
 		proposal.InvalidationConditions = ClosingIssueInvalidationConditions()
@@ -212,6 +212,13 @@ func (publisher Publisher) prepare(ctx context.Context, request PublishRequest) 
 		return PublicationPreparation{Apply: result, Proposal: proposal, ObservedState: second}, blocked, Failure{Kind: FailureDivergence, Err: errors.New("publication state changed during final revalidation")}
 	}
 	return PublicationPreparation{Apply: result, Proposal: proposal, ObservedState: second}, decision, nil
+}
+
+// CompletedValidationGates is the workflow-owned result of the complete
+// validation sequence. Adapters may carry this result but must not assert the
+// individual policy gates themselves.
+func CompletedValidationGates() ValidationGates {
+	return ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}
 }
 
 func validatePublishedState(proposal Proposal, decision PublicationDecision, returned PRState, state PublicationState) error {

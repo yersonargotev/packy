@@ -15,6 +15,7 @@ type FailureArtifactContext struct {
 	BaseSHA      string
 	CandidateSHA string
 	ArtifactProvenance
+	InitialAdmissionArtifactIdentity
 	RunURL       string
 	Blockers     []string
 	ClosingIssue string
@@ -36,6 +37,9 @@ func NewFailureArtifact(context FailureArtifactContext, err error) FailureArtifa
 	if _, _, ok := ParseClosingIssue(context.ClosingIssue); context.ClosingIssue != "" && !ok {
 		context.ClosingIssue = ""
 	}
+	if !context.InitialAdmissionArtifactIdentity.empty() && !context.InitialAdmissionArtifactIdentity.valid(false) {
+		context.InitialAdmissionArtifactIdentity = InitialAdmissionArtifactIdentity{}
+	}
 	kind := FailureIntegrity
 	var failure Failure
 	if errors.As(err, &failure) {
@@ -55,10 +59,10 @@ func NewFailureArtifact(context FailureArtifactContext, err error) FailureArtifa
 	}
 	schemaVersion := 1
 	provenance := ArtifactProvenance{}
-	if context.PlanID != "" || context.ClosingIssue != "" {
+	if context.PlanID != "" || context.ClosingIssue != "" || !context.InitialAdmissionArtifactIdentity.empty() {
 		schemaVersion, provenance = 2, context.ArtifactProvenance
 	}
-	return FailureArtifact{SchemaVersion: schemaVersion, State: "blocked", SourceID: context.SourceID, PlanID: context.PlanID, BaseSHA: context.BaseSHA, CandidateSHA: context.CandidateSHA, ArtifactProvenance: provenance, Blockers: blockers, Recovery: []string{recovery}, RunURL: context.RunURL, ContainsSecrets: false, ContainsUpstreamBytes: false, ClosingIssue: context.ClosingIssue}
+	return FailureArtifact{SchemaVersion: schemaVersion, State: "blocked", SourceID: context.SourceID, PlanID: context.PlanID, BaseSHA: context.BaseSHA, CandidateSHA: context.CandidateSHA, ArtifactProvenance: provenance, InitialAdmissionArtifactIdentity: context.InitialAdmissionArtifactIdentity, Blockers: blockers, Recovery: []string{recovery}, RunURL: context.RunURL, ContainsSecrets: false, ContainsUpstreamBytes: false, ClosingIssue: context.ClosingIssue}
 }
 
 func uniqueNonEmptyStrings(values []string) []string {

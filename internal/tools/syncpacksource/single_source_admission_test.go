@@ -83,6 +83,18 @@ func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repository, "bundle", "packs", "new-pack")); !os.IsNotExist(err) {
 		t.Fatalf("inspect wrote proposed Pack: %v", err)
 	}
+	if err := writeFailureArtifact(options{repositoryRoot: repository, requestPath: requestPath, planPath: filepath.Join(outputDir, "plan.json"), outputDir: outputDir}, fmt.Errorf("later phase blocked")); err != nil {
+		t.Fatal(err)
+	}
+	var artifact packsyncworkflow.FailureArtifact
+	if err := readJSON(filepath.Join(outputDir, "operational-artifact.json"), &artifact); err != nil {
+		t.Fatal(err)
+	}
+	if artifact.PlanID != plan.PlanID || artifact.PackID != plan.PackID || artifact.ProposedVersion != plan.ProposedVersion ||
+		artifact.ProposedManifestSHA256 != plan.ProposedManifestSHA256 || artifact.LegalEvidenceReference != plan.LegalAdmission.EvidenceReference ||
+		artifact.LegalEvidenceSHA256 != plan.LegalAdmission.EvidenceSHA256 || artifact.ResultBundleSHA256 != plan.ResultBundleSHA256 {
+		t.Fatalf("failure artifact lost initial-admission identity: %#v", artifact)
+	}
 }
 
 type toolValidator struct{}

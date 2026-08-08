@@ -305,7 +305,7 @@ func validateBundle(ctx context.Context, option options, output io.Writer) error
 	if err != nil {
 		return err
 	}
-	gates := completeBundleGates()
+	gates := packsyncworkflow.CompletedValidationGates()
 	artifact := packsyncworkflow.BundleValidationArtifact{SchemaVersion: 3, BundleArtifactIdentity: identity, ResultTreeSHA: tree, Validation: gates}
 	if err := artifact.Validate(); err != nil {
 		return err
@@ -327,10 +327,6 @@ func gitResultTree(ctx context.Context, repository string) (string, error) {
 	}
 	tree, err := command(ctx, repository, "git", "write-tree")
 	return strings.TrimSpace(tree), err
-}
-
-func completeBundleGates() packsyncworkflow.ValidationGates {
-	return packsyncworkflow.ValidationGates{Provenance: true, Classification: true, Reacquisition: true, Apply: true, Diff: true, Ownership: true, PackySuite: true}
 }
 
 func writeBundleFailureArtifact(option options, failure error) error {
@@ -433,7 +429,7 @@ func (b *bundleProposalBuilder) Build(ctx context.Context, root string, result p
 		Request: b.request, Identity: bundleIdentity(b.plan), ClassificationSHA256: b.classificationSHA256,
 		HeadSHA: strings.TrimSpace(head), ResultTreeSHA: strings.TrimSpace(tree), Branch: "sync/" + b.plan.PackID,
 		SelectedResources: selected, PreviousSnapshotSHA256: b.plan.Preconditions.BundleSHA256,
-		ProposedSnapshotSHA256: b.plan.ResultBundleSHA256, ApplyStatus: result.Status, Validation: completeBundleGates(),
+		ProposedSnapshotSHA256: b.plan.ResultBundleSHA256, ApplyStatus: result.Status,
 		UpstreamContentExecuted: false, Blockers: []string{"Publication remains blocked until exact reobservation."},
 		AutoMerge: false, ManualMergeRequired: true, Recovery: []string{"Repeat Inspect when any sealed bundle fact changes."},
 	}

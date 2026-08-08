@@ -260,6 +260,7 @@ type ValidationArtifact struct {
 	BaseSHA       string `json:"base_sha"`
 	CandidateSHA  string `json:"candidate_sha"`
 	ArtifactProvenance
+	InitialAdmissionArtifactIdentity
 	ResultTreeSHA string `json:"result_tree_sha,omitempty"`
 	PackySuite    bool   `json:"packy_suite"`
 	Apply         bool   `json:"apply"`
@@ -275,13 +276,16 @@ func (artifact ValidationArtifact) Validate() error {
 		return errors.New("sandbox validation proof is incomplete or contradictory")
 	}
 	if artifact.SchemaVersion == 1 {
-		if !artifact.ArtifactProvenance.empty() || artifact.ResultTreeSHA != "" || artifact.ClosingIssue != "" {
+		if !artifact.ArtifactProvenance.empty() || !artifact.InitialAdmissionArtifactIdentity.empty() || artifact.ResultTreeSHA != "" || artifact.ClosingIssue != "" {
 			return errors.New("v1 sandbox validation proof forbids v2 provenance")
 		}
 		return nil
 	}
 	if !artifact.ArtifactProvenance.valid() || requireFullSHA("result tree", artifact.ResultTreeSHA) != nil {
 		return errors.New("v2 sandbox validation proof lacks complete provenance")
+	}
+	if !artifact.InitialAdmissionArtifactIdentity.empty() && !artifact.InitialAdmissionArtifactIdentity.valid(true) {
+		return errors.New("v2 sandbox validation proof has incomplete initial-admission identity")
 	}
 	if artifact.ClosingIssue != "" {
 		if _, _, ok := ParseClosingIssue(artifact.ClosingIssue); !ok {
@@ -298,6 +302,33 @@ type ArtifactProvenance struct {
 	LockSetSHA256    string `json:"lock_set_sha256,omitempty"`
 	ConfigSHA256     string `json:"config_sha256,omitempty"`
 	ManifestsSHA256  string `json:"manifests_sha256,omitempty"`
+}
+
+// InitialAdmissionArtifactIdentity carries the complete one-source initial
+// generation identity through v2.3 workflow artifacts.
+type InitialAdmissionArtifactIdentity struct {
+	PackID                 string `json:"pack_id,omitempty"`
+	ProposedVersion        string `json:"proposed_version,omitempty"`
+	ProposedManifestSHA256 string `json:"proposed_manifest_sha256,omitempty"`
+	LegalEvidenceReference string `json:"legal_evidence_reference,omitempty"`
+	LegalEvidenceSHA256    string `json:"legal_evidence_sha256,omitempty"`
+	ResultBundleSHA256     string `json:"result_bundle_sha256,omitempty"`
+}
+
+func (identity InitialAdmissionArtifactIdentity) empty() bool {
+	return identity == (InitialAdmissionArtifactIdentity{})
+}
+
+func (identity InitialAdmissionArtifactIdentity) valid(requireResult bool) bool {
+	if !ValidSourceID(identity.PackID) || identity.ProposedVersion == "" ||
+		requireSHA256("proposed manifest", identity.ProposedManifestSHA256) != nil ||
+		identity.LegalEvidenceReference == "" || requireSHA256("legal evidence", identity.LegalEvidenceSHA256) != nil {
+		return false
+	}
+	if requireResult {
+		return requireSHA256("result bundle", identity.ResultBundleSHA256) == nil
+	}
+	return identity.ResultBundleSHA256 == "" || requireSHA256("result bundle", identity.ResultBundleSHA256) == nil
 }
 
 func (provenance ArtifactProvenance) valid() bool {
@@ -469,6 +500,7 @@ type FailureArtifact struct {
 	BaseSHA       string `json:"base_sha,omitempty"`
 	CandidateSHA  string `json:"candidate_sha,omitempty"`
 	ArtifactProvenance
+	InitialAdmissionArtifactIdentity
 	Blockers              []string `json:"blockers"`
 	Recovery              []string `json:"recovery"`
 	RunURL                string   `json:"run_url,omitempty"`
@@ -484,7 +516,7 @@ func (artifact FailureArtifact) CanonicalJSON() ([]byte, error) {
 	if artifact.State != "blocked" || !ValidSourceID(artifact.SourceID) || !validOptionalSHA(artifact.BaseSHA) || !validOptionalSHA(artifact.CandidateSHA) || !validUniqueStrings(artifact.Blockers) || !validUniqueStrings(artifact.Recovery) || !validOptionalURI(artifact.RunURL) {
 		return nil, errors.New("operational artifact is incomplete")
 	}
-	if artifact.SchemaVersion == 1 && !artifact.ArtifactProvenance.empty() {
+	if artifact.SchemaVersion == 1 && (!artifact.ArtifactProvenance.empty() || !artifact.InitialAdmissionArtifactIdentity.empty()) {
 		return nil, errors.New("v1 operational artifact forbids v2 provenance")
 	}
 	if artifact.ClosingIssue != "" {
@@ -497,6 +529,9 @@ func (artifact FailureArtifact) CanonicalJSON() ([]byte, error) {
 	}
 	if artifact.SchemaVersion == 2 && ((artifact.PlanID != "" && !artifact.ArtifactProvenance.valid()) || (artifact.PlanID == "" && !artifact.ArtifactProvenance.empty())) {
 		return nil, errors.New("v2 operational artifact provenance contradicts plan state")
+	}
+	if !artifact.InitialAdmissionArtifactIdentity.empty() && !artifact.InitialAdmissionArtifactIdentity.valid(false) {
+		return nil, errors.New("v2 operational artifact has incomplete initial-admission identity")
 	}
 	if artifact.ContainsSecrets || artifact.ContainsUpstreamBytes {
 		return nil, errors.New("operational artifacts must not contain secrets or upstream bytes")
@@ -520,6 +555,7 @@ type PublicationArtifact struct {
 	BaseSHA       string `json:"base_sha"`
 	CandidateSHA  string `json:"candidate_sha"`
 	ArtifactProvenance
+	InitialAdmissionArtifactIdentity
 	ResultTreeSHA           string          `json:"result_tree_sha"`
 	HeadSHA                 string          `json:"head_sha"`
 	ProvenanceSHA256        string          `json:"provenance_sha256"`
@@ -543,6 +579,9 @@ func (artifact PublicationArtifact) Validate() error {
 	}
 	if !artifact.Validation.Complete() || !artifact.DecisionReady || artifact.AutoMerge || !artifact.ManualMergeRequired || artifact.UpstreamContentExecuted || !validInvalidationConditions(artifact.InvalidationConditions, artifact.ClosingIssue != "") {
 		return errors.New("v2 publication is not decision ready")
+	}
+	if !artifact.InitialAdmissionArtifactIdentity.empty() && !artifact.InitialAdmissionArtifactIdentity.valid(true) {
+		return errors.New("v2 publication has incomplete initial-admission identity")
 	}
 	if artifact.ClosingIssue != "" {
 		if _, _, ok := ParseClosingIssue(artifact.ClosingIssue); !ok {

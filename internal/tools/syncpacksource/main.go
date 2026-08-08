@@ -134,18 +134,37 @@ func writeFailureArtifact(option options, failure error) error {
 		sourceID = "unknown"
 	}
 	context := packsyncworkflow.FailureArtifactContext{SourceID: sourceID, RunURL: actionsRunURL(), ClosingIssue: request.ClosingIssue}
+	if request.IsSingleSourceAdmission() {
+		context.InitialAdmissionArtifactIdentity = initialAdmissionRequestIdentity(request)
+	}
 	planPath := option.planPath
 	if planPath == "" {
 		planPath = filepath.Join(option.outputDir, "plan.json")
 	}
-	var plan packsync.Plan
-	if readJSON(planPath, &plan) == nil {
-		context.PlanID = plan.PlanID
-		context.BaseSHA = plan.Preconditions.BaseCommit
-		context.CandidateSHA = plan.Candidate.Commit
-		context.ArtifactProvenance = artifactProvenance(plan)
-		if plan.Status == "blocked" {
-			context.Blockers = append([]string(nil), plan.Blockers...)
+	var admission packsync.SingleSourceAdmissionPlan
+	if readJSON(planPath, &admission) == nil && admission.VerifySeal() {
+		context.PlanID = admission.PlanID
+		context.BaseSHA = admission.Preconditions.BaseCommit
+		context.CandidateSHA = admission.Candidate.Commit
+		context.ArtifactProvenance = packsyncworkflow.ArtifactProvenance{SourceLockSHA256: admission.SourceLockSHA256, LockSetSHA256: admission.LockSetSHA256, ConfigSHA256: admission.Preconditions.ConfigSHA256, ManifestsSHA256: admission.Preconditions.ManifestsSHA256}
+		context.InitialAdmissionArtifactIdentity = packsyncworkflow.InitialAdmissionArtifactIdentity{
+			PackID: admission.PackID, ProposedVersion: admission.ProposedVersion, ProposedManifestSHA256: admission.ProposedManifestSHA256,
+			LegalEvidenceReference: admission.LegalAdmission.EvidenceReference, LegalEvidenceSHA256: admission.LegalAdmission.EvidenceSHA256,
+			ResultBundleSHA256: admission.ResultBundleSHA256,
+		}
+	} else {
+		var plan packsync.Plan
+		if readJSON(planPath, &plan) != nil {
+			plan = packsync.Plan{}
+		}
+		if plan.PlanID != "" {
+			context.PlanID = plan.PlanID
+			context.BaseSHA = plan.Preconditions.BaseCommit
+			context.CandidateSHA = plan.Candidate.Commit
+			context.ArtifactProvenance = artifactProvenance(plan)
+			if plan.Status == "blocked" {
+				context.Blockers = append([]string(nil), plan.Blockers...)
+			}
 		}
 	}
 	artifact := packsyncworkflow.NewFailureArtifact(context, failure)
@@ -154,6 +173,22 @@ func writeFailureArtifact(option options, failure error) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(option.outputDir, "operational-artifact.json"), data, 0o600)
+}
+
+func initialAdmissionRequestIdentity(request packsyncworkflow.DispatchRequest) packsyncworkflow.InitialAdmissionArtifactIdentity {
+	if request.Registration == nil || request.LegalAdmission == nil || len(request.Registration.Resources) == 0 {
+		return packsyncworkflow.InitialAdmissionArtifactIdentity{}
+	}
+	packID := request.Registration.Resources[0].PackID
+	for _, binding := range request.Registration.Resources[1:] {
+		if binding.PackID != packID {
+			return packsyncworkflow.InitialAdmissionArtifactIdentity{}
+		}
+	}
+	return packsyncworkflow.InitialAdmissionArtifactIdentity{
+		PackID: packID, ProposedVersion: request.ProposedVersion, ProposedManifestSHA256: request.ProposedManifestSHA256,
+		LegalEvidenceReference: request.LegalAdmission.EvidenceReference, LegalEvidenceSHA256: request.LegalAdmission.EvidenceSHA256,
+	}
 }
 
 func inspect(ctx context.Context, option options, output io.Writer) error {

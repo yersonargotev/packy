@@ -206,8 +206,12 @@ func (engine Engine) CheckSingleSourceAdmission(ctx context.Context, request Sin
 			return err
 		}
 		defer os.RemoveAll(disposable)
-		composite := result.asCompositePlan()
-		if err := materializeCompositeResult(disposable, composite, []string{snapshotRoot}, initial.config, manifest); err != nil {
+		generation := completeAdmissionGeneration{
+			PackID: result.PackID, ProposedVersion: result.ProposedVersion, ProposedManifest: result.ProposedManifest,
+			ResultingConfigSHA256: result.ResultingConfigSHA256, LockSetSHA256: result.LockSetSHA256,
+			Sources: []completeAdmissionSource{{SourceID: registration.ID, Registration: registration, ProposedLock: result.ProposedLock}},
+		}
+		if err := materializeCompleteAdmissionResult(disposable, generation, []string{snapshotRoot}, initial.config, manifest); err != nil {
 			return err
 		}
 		if err := engine.Validate.ValidateBundle(ctx, request.RepositoryRoot, disposable); err != nil {
@@ -216,6 +220,13 @@ func (engine Engine) CheckSingleSourceAdmission(ctx context.Context, request Sin
 		result.ResultBundleSHA256, err = treeHash(disposable)
 		if err != nil {
 			return err
+		}
+		freshCandidate, err := engine.resolve(ctx, registration, registration.Selector)
+		if err != nil {
+			return fmt.Errorf("re-resolve stable release candidate: %w", err)
+		}
+		if !reflect.DeepEqual(candidate, freshCandidate) {
+			return errors.New("stable release candidate changed during single-source admission Check; retry")
 		}
 		result.PlanID, err = sealSingleSourceAdmissionPlan(result)
 		return err
@@ -236,6 +247,9 @@ func singleSourceBindingsMatchManifest(bindings []Binding, resources []manifestR
 	}
 	got := make(map[string]bool, len(resources))
 	for _, resource := range resources {
+		if resource.Source == "" {
+			continue
+		}
 		got[resource.Kind+"\x00"+resource.ID] = true
 	}
 	return reflect.DeepEqual(want, got)
@@ -298,16 +312,4 @@ func sealSingleSourceAdmissionPlan(plan SingleSourceAdmissionPlan) (string, erro
 		return "", err
 	}
 	return "pack-sync-" + hashBytes(encoded), nil
-}
-
-func (plan SingleSourceAdmissionPlan) asCompositePlan() CompositePlan {
-	return CompositePlan{
-		SchemaVersion: 1, Status: plan.Status, PackID: plan.PackID,
-		ProposedVersion: plan.ProposedVersion, ProposedManifest: plan.ProposedManifest,
-		ProposedManifestSHA256: plan.ProposedManifestSHA256,
-		SourceIDs:              []string{plan.Registration.ID},
-		Members:                []CompositeMemberPlan{{SourceID: plan.Registration.ID, Registration: plan.Registration, Candidate: plan.Candidate, LegalAdmission: plan.LegalAdmission, SourceLockSHA256: plan.SourceLockSHA256, ProposedLock: plan.ProposedLock}},
-		Preconditions:          plan.Preconditions, ResultingConfigSHA256: plan.ResultingConfigSHA256,
-		LockSetSHA256: plan.LockSetSHA256, ResultBundleSHA256: plan.ResultBundleSHA256,
-	}
 }

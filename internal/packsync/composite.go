@@ -465,27 +465,57 @@ type compositeHistoricalArtifact struct {
 	AggregateSHA256 string                        `json:"aggregate_sha256"`
 }
 
+type completeAdmissionSource struct {
+	SourceID     string
+	Registration SourceConfig
+	ProposedLock Lock
+}
+
+type completeAdmissionGeneration struct {
+	PackID                string
+	ProposedVersion       string
+	ProposedManifest      json.RawMessage
+	ResultingConfigSHA256 string
+	LockSetSHA256         string
+	Sources               []completeAdmissionSource
+}
+
 func materializeCompositeResult(staged string, plan CompositePlan, roots []string, base Config, manifest packManifest) error {
-	config := Config{SchemaVersion: base.SchemaVersion, Sources: append(append([]SourceConfig(nil), base.Sources...), compositePlanRegistrations(plan)...)}
+	sources := make([]completeAdmissionSource, len(plan.Members))
+	for i, member := range plan.Members {
+		sources[i] = completeAdmissionSource{SourceID: member.SourceID, Registration: member.Registration, ProposedLock: member.ProposedLock}
+	}
+	return materializeCompleteAdmissionResult(staged, completeAdmissionGeneration{
+		PackID: plan.PackID, ProposedVersion: plan.ProposedVersion, ProposedManifest: plan.ProposedManifest,
+		ResultingConfigSHA256: plan.ResultingConfigSHA256, LockSetSHA256: plan.LockSetSHA256, Sources: sources,
+	}, roots, base, manifest)
+}
+
+func materializeCompleteAdmissionResult(staged string, generation completeAdmissionGeneration, roots []string, base Config, manifest packManifest) error {
+	registrations := make([]SourceConfig, len(generation.Sources))
+	for i, source := range generation.Sources {
+		registrations[i] = source.Registration
+	}
+	config := Config{SchemaVersion: base.SchemaVersion, Sources: append(append([]SourceConfig(nil), base.Sources...), registrations...)}
 	encoded, err := canonicalConfigAfterValidation(config)
-	if err != nil || hashBytes(encoded) != plan.ResultingConfigSHA256 {
+	if err != nil || hashBytes(encoded) != generation.ResultingConfigSHA256 {
 		return errors.New("complete resulting configuration contradicts sealed plan")
 	}
 	if err := os.WriteFile(filepath.Join(staged, "sources.json"), encoded, 0o644); err != nil {
 		return err
 	}
-	manifestPath := filepath.Join(staged, "packs", plan.PackID, "pack.json")
+	manifestPath := filepath.Join(staged, "packs", generation.PackID, "pack.json")
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(manifestPath, plan.ProposedManifest, 0o644); err != nil {
+	if err := os.WriteFile(manifestPath, generation.ProposedManifest, 0o644); err != nil {
 		return err
 	}
-	for i, member := range plan.Members {
-		if err := materializeSelectedResources(staged, roots[i], Lock{}, false, member.ProposedLock); err != nil {
+	for i, source := range generation.Sources {
+		if err := materializeSelectedResources(staged, roots[i], Lock{}, false, source.ProposedLock); err != nil {
 			return err
 		}
-		if err := writeCanonicalLock(filepath.Join(staged, "sources", member.SourceID+".lock.json"), member.ProposedLock); err != nil {
+		if err := writeCanonicalLock(filepath.Join(staged, "sources", source.SourceID+".lock.json"), source.ProposedLock); err != nil {
 			return err
 		}
 	}
@@ -494,22 +524,10 @@ func materializeCompositeResult(staged string, plan CompositePlan, roots []strin
 		return err
 	}
 	stagedLocks, err := loadSourceLockSet(staged, stagedConfig)
-	if err != nil || stagedLocks.LockSetSHA256 != plan.LockSetSHA256 {
+	if err != nil || stagedLocks.LockSetSHA256 != generation.LockSetSHA256 {
 		return errors.New("complete staged lock set contradicts sealed plan")
 	}
-	return materializeCompositeHistory(staged, plan, manifest)
-}
-
-func compositePlanRegistrations(plan CompositePlan) []SourceConfig {
-	result := make([]SourceConfig, len(plan.Members))
-	for i := range plan.Members {
-		result[i] = plan.Members[i].Registration
-	}
-	return result
-}
-
-func materializeCompositeHistory(staged string, plan CompositePlan, manifest packManifest) error {
-	return materializePackHistory(staged, plan.PackID, plan.ProposedVersion, plan.ProposedManifest, manifest)
+	return materializePackHistory(staged, generation.PackID, generation.ProposedVersion, generation.ProposedManifest, manifest)
 }
 
 func materializePackHistory(staged, packID, version string, manifestBytes []byte, manifest packManifest) error {

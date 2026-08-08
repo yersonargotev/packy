@@ -165,6 +165,22 @@ func TestCheckSingleSourceAdmissionRejectsChangedBaseFacts(t *testing.T) {
 	}
 }
 
+func TestCheckSingleSourceAdmissionRejectsChangedCandidate(t *testing.T) {
+	_, _, request, source := singleSourceAdmissionFixture(t)
+	gated := &gatedSingleSource{fixtureSource: *source, acquired: make(chan struct{}), proceed: make(chan struct{})}
+	result := make(chan error, 1)
+	go func() {
+		_, err := (Engine{Source: gated, Validate: acceptingBundleValidator()}).CheckSingleSourceAdmission(context.Background(), request)
+		result <- err
+	}()
+	<-gated.acquired
+	gated.candidate.Commit = strings.Repeat("9", 40)
+	close(gated.proceed)
+	if err := <-result; err == nil || !strings.Contains(err.Error(), "candidate changed") {
+		t.Fatalf("changed candidate error = %v", err)
+	}
+}
+
 type gatedSingleSource struct {
 	fixtureSource
 	acquired chan struct{}
@@ -216,8 +232,9 @@ func singleSourceAdmissionFixture(t *testing.T) (string, string, SingleSourceAdm
   "surfaces": ["codex"],
   "external_requirements": [],
   "resources": [
+	{"kind":"lifecycle","id":"coordinate-session","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"lifecycle","name":"coordinate-session","invocation":"coordinate-session","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]},
     {"kind":"notice","id":"mit","source":"notices/mit","license":"MIT","attribution":"Copyright Eric Provencher","requires":[],"conflicts":[],"bindings":[],"surface_exclusions":[]},
-    {"kind":"skill","id":"orchestrate","source":"skills/orchestrate","requires":[],"conflicts":[],"notices":["notice:mit"],"bindings":[{"surface":"codex","projection":"skill","name":"orchestrate","invocation":"$orchestrate","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]}
+	{"kind":"skill","id":"orchestrate","source":"skills/orchestrate","requires":[],"conflicts":[],"notices":["notice:mit"],"bindings":[{"surface":"codex","projection":"skill","name":"orchestrate","invocation":"$orchestrate","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]}
   ],
   "exclusions": []
 }`)
