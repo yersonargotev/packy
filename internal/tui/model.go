@@ -218,7 +218,7 @@ type Model struct {
 	applyEvents            chan tea.Msg
 	applySpinner           spinner.Model
 	deferredQuit           bool
-	applyResult            bool
+	showingApplyResult     bool
 	applyOutcome           ApplyResult
 	applyErr               error
 	applyReloaded          bool
@@ -263,9 +263,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = message.err
 		m.globalRow = boundedRow(m.globalRow, len(m.dashboard.Global.Packs))
 		m.projectRow = boundedRow(m.projectRow, len(m.dashboard.Project.Packs))
-		if m.applyResult {
+		if m.showingApplyResult {
 			m.applyReloaded = message.err == nil
 			m.applyReloadErr = message.err
+			if m.deferredQuit {
+				return m, tea.Quit
+			}
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = message.Width, message.Height
@@ -291,7 +294,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForApply(m.applyEvents)
 	case applyFinished:
 		m.applying = false
-		m.applyResult = true
+		m.showingApplyResult = true
 		m.applyOutcome = message.result
 		m.applyErr = message.err
 		m.applyEvents = nil
@@ -309,7 +312,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.applyResult {
+		if m.showingApplyResult {
 			switch {
 			case key.Matches(message, dashboardKeys.Help):
 				m.resultDetailsExpanded = !m.resultDetailsExpanded
@@ -353,6 +356,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.preview != nil || m.previewErr != nil {
 			if m.consenting {
+				if key.Matches(message, dashboardKeys.Quit) {
+					return m, tea.Quit
+				}
 				if key.Matches(message, dashboardKeys.Back) {
 					m.cancelConsent()
 					return m, nil
@@ -713,7 +719,7 @@ func (m Model) render() string {
 	if m.applying {
 		return m.renderBody(m.renderApplyProgress())
 	}
-	if m.applyResult {
+	if m.showingApplyResult {
 		return m.renderBody(m.renderApplyResult())
 	}
 	if m.err != nil {
@@ -1167,7 +1173,7 @@ func waitForApply(events <-chan tea.Msg) tea.Cmd {
 }
 
 func (m *Model) leaveApplyResult() {
-	m.applyResult, m.applyErr, m.applyReloaded, m.deferredQuit = false, nil, false, false
+	m.showingApplyResult, m.applyErr, m.applyReloaded, m.deferredQuit = false, nil, false, false
 	m.applyReloadErr = nil
 	m.applyOutcome = ApplyResult{}
 	m.resultDetailsExpanded = false
@@ -1176,10 +1182,21 @@ func (m *Model) leaveApplyResult() {
 func (m Model) renderConsent() string {
 	phases := requiredConsentPhases(*m.preview)
 	phase := phases[m.consentIndex]
-	lines := []string{
-		titleStyle.Render(fmt.Sprintf("Consent %d of %d", m.consentIndex+1, len(phases))),
-		"", phase.Kind, "Exact plan: " + m.preview.ID + " · " + m.preview.Digest, "", "Effects",
+	title := fmt.Sprintf("Consent %d of %d", m.consentIndex+1, len(phases))
+	effectsTitle := "Effects"
+	warning := ""
+	if phase.Kind == "destructive-cleanup" {
+		title = "Destructive cleanup confirmation · " + title
+		effectsTitle = "Exact paths and effects"
+		warning = "Removal cannot be interrupted after Apply starts."
 	}
+	lines := []string{
+		titleStyle.Render(title), "", phase.Kind, "Exact plan: " + m.preview.ID + " · " + m.preview.Digest,
+	}
+	if warning != "" {
+		lines = append(lines, "", warning)
+	}
+	lines = append(lines, "", effectsTitle)
 	for _, action := range phase.Actions {
 		lines = append(lines, "  "+action)
 	}

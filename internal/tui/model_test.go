@@ -88,6 +88,11 @@ func TestApplicableActivationRequestsOnlyItsRequiredConsentClassesAndCanCancel(t
 	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Immutable lifecycle preview") || !strings.Contains(view, "plan-1") {
 		t.Fatalf("cancel did not return to the exact preview:\n%s", view)
 	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
+	if quit == nil || len(backend.applyRequests) != 0 {
+		t.Fatalf("quit during consent was ignored or applied effects: quit=%v applies=%d", quit != nil, len(backend.applyRequests))
+	}
 }
 
 func TestDestructiveConsentDefaultsToCancelAndApprovesTheExactRequiredCombination(t *testing.T) {
@@ -108,7 +113,7 @@ func TestDestructiveConsentDefaultsToCancelAndApprovesTheExactRequiredCombinatio
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Consent 2 of 2", "destructive-cleanup", "remove $HOME/.codex/skills/retired", "Cancel", "selected"} {
+	for _, want := range []string{"Destructive cleanup confirmation", "Consent 2 of 2", "destructive-cleanup", "Exact paths and effects", "Removal cannot be interrupted after Apply starts", "remove $HOME/.codex/skills/retired", "Cancel", "selected"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("destructive consent missing %q:\n%s", want, view)
 		}
@@ -131,7 +136,7 @@ func TestDestructiveConsentDefaultsToCancelAndApprovesTheExactRequiredCombinatio
 	}
 }
 
-func TestApplyDefersExitShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *testing.T) {
+func TestApplyShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
@@ -158,14 +163,9 @@ func TestApplyDefersExitShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *
 			t.Fatalf("active Apply missing %q:\n%s", want, view)
 		}
 	}
-	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
-	if quit != nil || !strings.Contains(ansi.Strip(model.View().Content), "Exit deferred until Apply returns") {
-		t.Fatalf("ordinary quit was not visibly deferred: command=%v\n%s", quit != nil, ansi.Strip(model.View().Content))
-	}
-
 	model = runModelCommand(t, model, applyCommand)
 	view = ansi.Strip(model.View().Content)
-	for _, want := range []string{"Activation succeeded", "Stage: verification", "Verification: verified", "Activated argote on Codex", "Details collapsed · ? expand", "Fresh Pack status reloaded", "Exit request was deferred during Apply"} {
+	for _, want := range []string{"Activation succeeded", "Stage: verification", "Verification: verified", "Activated argote on Codex", "Details collapsed · ? expand", "Fresh Pack status reloaded"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("activation result missing %q:\n%s", want, view)
 		}
@@ -179,6 +179,30 @@ func TestApplyDefersExitShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *
 	}
 	if backend.loads != 2 {
 		t.Fatalf("loads = %d, want initial load plus post-result reload", backend.loads)
+	}
+}
+
+func TestQuitDuringApplyIsVisibleThenCompletesAfterApplyAndFreshStatusReload(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview:     tui.Preview{ID: "plan-exit", Digest: "digest-exit", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		applyResult: tui.ApplyResult{Stage: "verification", Verified: true},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, applyCommand := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
+	if quit != nil || !strings.Contains(ansi.Strip(model.View().Content), "Exit deferred until Apply returns") {
+		t.Fatalf("ordinary quit was not visibly deferred: command=%v\n%s", quit != nil, ansi.Strip(model.View().Content))
+	}
+	_, exited := runModelCommandTrackingQuit(t, model, applyCommand)
+	if !exited || backend.loads != 2 {
+		t.Fatalf("deferred quit completed=%v after %d loads; want exit after fresh reload", exited, backend.loads)
 	}
 }
 
@@ -917,4 +941,35 @@ func runModelCommand(t *testing.T, model tea.Model, command tea.Cmd) tea.Model {
 		}
 	}
 	return current
+}
+
+func runModelCommandTrackingQuit(t *testing.T, model tea.Model, command tea.Cmd) (tea.Model, bool) {
+	t.Helper()
+	if command == nil {
+		t.Fatal("expected command")
+	}
+	queue := []tea.Cmd{command}
+	current := model
+	exited := false
+	for len(queue) > 0 {
+		command, queue = queue[0], queue[1:]
+		message := command()
+		if batch, ok := message.(tea.BatchMsg); ok {
+			queue = append(queue, []tea.Cmd(batch)...)
+			continue
+		}
+		if _, ok := message.(tea.QuitMsg); ok {
+			exited = true
+			continue
+		}
+		if message == nil {
+			continue
+		}
+		var next tea.Cmd
+		current, next = current.Update(message)
+		if next != nil {
+			queue = append(queue, next)
+		}
+	}
+	return current, exited
 }
