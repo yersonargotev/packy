@@ -17,7 +17,7 @@ var structuredOutputFixtures = []struct {
 	version, fixture, schema string
 }{
 	{"v2", "doctor.json", "doctor.schema.json"},
-	{"v4", "pack-show.json", "pack-show.schema.json"},
+	{"v5", "pack-show.json", "pack-show.schema.json"},
 	{"v8", "pack-status.json", "pack-status.schema.json"},
 	{"v9", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
 	{"v9", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
@@ -63,6 +63,9 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertStructuredOutput(t, root, "pack-show.schema.json", show)
+	if err := validateCanonicalOperatorOrder([]byte(show)); err != nil {
+		t.Fatalf("pack-show producer canonical order: %v", err)
+	}
 
 	status, err := executeCommand(t, NewRootCommand(packReadOpts), "pack", "status", "ma"+"tty", "--surface", "claude", "--json")
 	if err != nil {
@@ -126,7 +129,7 @@ func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
 	load := func(t *testing.T, name string) map[string]any {
 		t.Helper()
-		version := map[string]string{"pack-show.json": "v4", "pack-status.json": "v8"}[name]
+		version := map[string]string{"pack-show.json": "v5", "pack-status.json": "v8"}[name]
 		data, err := os.ReadFile(filepath.Join("testdata", "structured-output", version, name))
 		if err != nil {
 			t.Fatal(err)
@@ -162,6 +165,12 @@ func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 	t.Run("missing fact", func(t *testing.T) {
 		document := load(t, "pack-show.json")
 		delete(document, "source_identity")
+		reject(t, "pack-show.schema.json", document)
+	})
+	t.Run("incomplete descriptive resource", func(t *testing.T) {
+		document := load(t, "pack-show.json")
+		resource := document["resource_inventory"].([]any)[0].(map[string]any)
+		delete(resource, "description")
 		reject(t, "pack-show.schema.json", document)
 	})
 	t.Run("unredacted ambient target", func(t *testing.T) {
@@ -307,6 +316,18 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 		requires := document["requires"].(map[string]any)
 		if err := requireStrings("requires.tools", requires["tools"].([]any)); err != nil {
 			return err
+		}
+		inventory := document["resource_inventory"].([]any)
+		if err := requireOrdered("resource_inventory", inventory, nestedObjectKey("resource", "kind", "id")); err != nil {
+			return err
+		}
+		for _, value := range inventory {
+			resource := value.(map[string]any)
+			for _, field := range []string{"dependencies", "notices"} {
+				if err := requireOrdered("resource_inventory."+field, resource[field].([]any), objectKey("kind", "id")); err != nil {
+					return err
+				}
+			}
 		}
 		contracts := document["surface_contracts"].([]any)
 		if err := requireOrdered("surface_contracts", contracts, objectKey("surface")); err != nil {

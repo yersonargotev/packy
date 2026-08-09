@@ -36,11 +36,32 @@ type ShowSurfaceReport struct {
 	Intent   ShowIntent
 }
 
+// ResourceInventoryRole describes how a resource contributes to a Pack,
+// independently of any lifecycle selection or host projection.
+type ResourceInventoryRole string
+
+const (
+	ResourceInventoryRoleOperational ResourceInventoryRole = "operational"
+	ResourceInventoryRoleSupporting  ResourceInventoryRole = "supporting"
+	ResourceInventoryRoleNotice      ResourceInventoryRole = "notice"
+)
+
+// DescriptiveResource is the domain-owned discovery contract for one Pack
+// resource. Dependencies and notices contain direct manifest relationships.
+type DescriptiveResource struct {
+	Resource     ResourceIdentity      `json:"resource"`
+	Description  string                `json:"description"`
+	Role         ResourceInventoryRole `json:"role"`
+	Dependencies []ResourceIdentity    `json:"dependencies"`
+	Notices      []ResourceIdentity    `json:"notices"`
+}
+
 // ShowReport is the detached domain result used by pack show renderers.
 type ShowReport struct {
 	Detail                CatalogDetail
 	SourceIdentity        PackSourceIdentity
 	ResourceCounts        ResourceCounts
+	ResourceInventory     []DescriptiveResource
 	ResourceGraph         ResourceGraph
 	LifecycleAvailability ShowLifecycleAvailability
 	Surfaces              []ShowSurfaceReport
@@ -185,8 +206,9 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 			SchemaVersion: pack.manifestVersion,
 			Limitation:    packSourceIdentityLimitation,
 		},
-		ResourceCounts: pack.ResourceCounts(),
-		ResourceGraph:  ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
+		ResourceCounts:    pack.ResourceCounts(),
+		ResourceInventory: descriptiveResourceInventory(pack),
+		ResourceGraph:     ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
 		LifecycleAvailability: ShowLifecycleAvailability{
 			FreshActivationAvailable: true,
 			CatalogUpdateAvailable:   true,
@@ -220,6 +242,32 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 		})
 	}
 	return report, nil
+}
+
+func descriptiveResourceInventory(pack Pack) []DescriptiveResource {
+	resources := make([]DescriptiveResource, 0, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		role := ResourceInventoryRoleOperational
+		switch resource.Kind {
+		case "asset":
+			role = ResourceInventoryRoleSupporting
+		case "notice":
+			role = ResourceInventoryRoleNotice
+		}
+		dependencies := resourceIdentities(resource.Requires)
+		notices := resourceIdentities(resource.Notices)
+		sort.Slice(dependencies, func(i, j int) bool { return dependencies[i].String() < dependencies[j].String() })
+		sort.Slice(notices, func(i, j int) bool { return notices[i].String() < notices[j].String() })
+		resources = append(resources, DescriptiveResource{
+			Resource:     ResourceIdentity{Kind: resource.Kind, ID: resource.ID},
+			Description:  resource.Description,
+			Role:         role,
+			Dependencies: dependencies,
+			Notices:      notices,
+		})
+	}
+	sort.Slice(resources, func(i, j int) bool { return resources[i].Resource.String() < resources[j].Resource.String() })
+	return resources
 }
 
 func canonicalShowAliases(aliases []SurfaceAlias) []SurfaceAlias {
