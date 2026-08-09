@@ -2,6 +2,7 @@ package capabilitypack
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -29,6 +30,39 @@ type recordingAcquirer struct{ calls int }
 func (a *recordingAcquirer) ResolveAcquisition(context.Context) (ExecutableAcquisition, error) {
 	a.calls++
 	return ExecutableAcquisition{Path: "/opt/homebrew/bin/engram", Command: "brew", Args: []string{"install", "reviewed/engram"}, Source: "reviewed/engram", Version: "1.0.0"}, nil
+}
+
+type syntheticRequirementAdapter struct {
+	applied      bool
+	inspectCalls int
+	applyCalls   int
+	target       string
+}
+
+func (a *syntheticRequirementAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
+	a.inspectCalls++
+	fingerprint := strings.Repeat("a", 64)
+	observed := ""
+	if a.applied {
+		observed = fingerprint
+	}
+	target := a.target
+	if target == "" {
+		target = "/tmp/synthetic-guide"
+	}
+	return SurfaceInspection{
+		Revision: "synthetic-adapter-v1",
+		Projections: []ObservedProjection{{
+			ID: "skill:guide", Goal: ProjectionPresent, Exists: a.applied, ObservedFingerprint: observed, DesiredFingerprint: fingerprint, AdapterProvenance: "synthetic-adapter/v1",
+			Action: ProjectionAction{ID: "skill:guide", Kind: ActionSkillLink, Target: target, Description: "project synthetic guide", AdapterProvenance: "synthetic-adapter/v1", PreviewOnly: transition.ProjectRoot != ""},
+		}},
+	}, nil
+}
+
+func (a *syntheticRequirementAdapter) ApplyProjections(_ context.Context, _ []ProjectionAction) *ProjectionActionError {
+	a.applyCalls++
+	a.applied = true
+	return nil
 }
 
 func TestFacadeStatusPreservesConditionTruthAndAggregatesDimensions(t *testing.T) {
@@ -343,5 +377,113 @@ func TestExternalPlanDoesNotInventSetupForOrdinaryToolRequirement(t *testing.T) 
 	actions, blockers = (Facade{}).externalPlan(OperationActivate, Pack{}, SurfaceCodex, ActivationState{}, []ExecutableResolution{resolution})
 	if len(actions) != 0 || len(blockers) != 1 || !strings.Contains(blockers[0].Detail, "missing from PATH") || !strings.Contains(blockers[0].Detail, "install it and retry") {
 		t.Fatalf("missing ordinary requirement = actions=%#v blockers=%#v", actions, blockers)
+	}
+}
+
+func TestSyntheticExternalRequirementsDrivePreviewApplyStatusAndMissingGate(t *testing.T) {
+	packFor := func(id, tool string) Pack {
+		return Pack{
+			manifestVersion: manifestSchemaV4, ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+			Requires:  Requirements{Tools: []string{tool}},
+			Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Synthetic guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
+			Contract:  Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+		}
+	}
+
+	present := packFor("synthetic-present", "present-helper")
+	presentAdapter := &syntheticRequirementAdapter{}
+	presentStore := &fakeActivationStore{}
+	presentResolver := &recordingReadinessResolver{paths: map[string]string{"present-helper": "/tmp/present-helper"}}
+	presentFacade := NewFacade(Catalog{packs: []Pack{present}}, WithActivation(presentStore, map[Surface]SurfaceAdapter{SurfaceCodex: presentAdapter}), WithExternalEffects(presentResolver, nil, nil))
+	preview, err := presentFacade.Preview(context.Background(), ActivationRequest{PackID: present.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Disposition() != PlanApplicable || preview.Readiness().Usable != ReadinessTrue || presentAdapter.applyCalls != 0 || len(presentStore.saves) != 0 {
+		t.Fatalf("present preview = disposition=%s readiness=%#v apply_calls=%d saves=%d", preview.Disposition(), preview.Readiness(), presentAdapter.applyCalls, len(presentStore.saves))
+	}
+	approvals := make([]ApprovalReceipt, 0, len(preview.Phases()))
+	for _, phase := range preview.Phases() {
+		if phase.ApprovalRequired {
+			approvals = append(approvals, presentFacade.Approve(preview, phase.Kind))
+		}
+	}
+	result, err := presentFacade.Apply(context.Background(), ApplyRequest{Plan: preview, Approvals: approvals, Interactive: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Verified || result.Readiness.Usable != ReadinessTrue || presentAdapter.applyCalls != 1 || len(presentStore.saves) == 0 {
+		t.Fatalf("present apply = result=%#v apply_calls=%d saves=%d", result, presentAdapter.applyCalls, len(presentStore.saves))
+	}
+	status, err := presentFacade.Status(context.Background(), StatusRequest{PackID: present.ID, Surface: SurfaceCodex, RequireUsable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Requirement == nil || !status.Requirement.Satisfied || status.Entries[0].Readiness.Usable != ReadinessTrue {
+		t.Fatalf("present strict status = %#v", status)
+	}
+
+	missing := packFor("synthetic-missing", "missing-helper")
+	missingAdapter := &syntheticRequirementAdapter{}
+	missingStore := &fakeActivationStore{}
+	missingFacade := NewFacade(Catalog{packs: []Pack{missing}}, WithActivation(missingStore, map[Surface]SurfaceAdapter{SurfaceCodex: missingAdapter}), WithExternalEffects(&recordingReadinessResolver{paths: map[string]string{}}, nil, nil))
+	blocked, err := missingFacade.Preview(context.Background(), ActivationRequest{PackID: missing.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Disposition() != PlanMixed || blocked.Readiness().Usable != ReadinessFalse || missingAdapter.applyCalls != 0 || len(missingStore.saves) != 0 {
+		t.Fatalf("missing preview = disposition=%s readiness=%#v apply_calls=%d saves=%d", blocked.Disposition(), blocked.Readiness(), missingAdapter.applyCalls, len(missingStore.saves))
+	}
+}
+
+func TestProjectActivationPreviewUsesGenericRequirementResolver(t *testing.T) {
+	project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
+	pack := Pack{
+		manifestVersion: manifestSchemaV4, ID: "synthetic-project", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
+		Requires:             Requirements{Tools: []string{"project-helper"}},
+		Resources:            []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Synthetic guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
+		Contract:             Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+	}
+	adapter := &syntheticRequirementAdapter{target: filepath.Join(project, ".agents", "skills", "guide")}
+	resolver := &recordingReadinessResolver{paths: map[string]string{"project-helper": "/tmp/project-helper"}}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithExternalEffects(resolver, nil, nil))
+	install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if install.Disposition != ProjectInstallPreviewable {
+		t.Fatalf("install disposition = %s blockers=%#v", install.Disposition, install.Blockers)
+	}
+	manifest, err := marshalProjectManifest(install.Manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := marshalProjectLock(install.Lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "packy.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "packy.lock.json"), lock, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "PACKY-NOTICES.md"), []byte(install.noticeContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapter.applied = true
+	preview, err := facade.PreviewProjectActivation(context.Background(), ProjectActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requirement ReadinessCondition
+	for _, condition := range preview.Conditions {
+		if condition.Type == ConditionExternalRequirement {
+			requirement = condition
+		}
+	}
+	if requirement.Value != ReadinessTrue || requirement.Reason != ReasonRequirementAvailable {
+		t.Fatalf("project activation requirement = %#v", requirement)
 	}
 }
