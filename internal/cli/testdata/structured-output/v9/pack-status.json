@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "report": "pack-status",
   "entries": [
     {
@@ -71,18 +71,9 @@
         }
       },
       "readiness": {
-        "configured": {
-          "state": "known",
-          "value": true
-        },
-        "authorized": {
-          "state": "unknown",
-          "value": null
-        },
-        "usable": {
-          "state": "unknown",
-          "value": null
-        }
+        "configured": "true",
+        "authorized": "unknown",
+        "usable": "unknown"
       },
       "blockers": [],
       "evidence": [
@@ -144,18 +135,9 @@
             }
           ],
           "readiness": {
-            "configured": {
-              "state": "known",
-              "value": true
-            },
-            "authorized": {
-              "state": "unknown",
-              "value": null
-            },
-            "usable": {
-              "state": "unknown",
-              "value": null
-            }
+            "configured": "true",
+            "authorized": "unknown",
+            "usable": "unknown"
           },
           "projection_summary": {
             "verified": 1,
@@ -164,11 +146,13 @@
             "ambiguous": 0,
             "unmanaged": 0
           },
-          "blockers": []
+          "blockers": [],
+          "conditions": []
         }
       ],
       "activation_role": "explicit",
-      "lifecycle_state": "active"
+      "lifecycle_state": "active",
+      "conditions": []
     }
   ],
   "focused_resource": {
@@ -184,18 +168,9 @@
       }
     ],
     "readiness": {
-      "configured": {
-        "state": "known",
-        "value": true
-      },
-      "authorized": {
-        "state": "unknown",
-        "value": null
-      },
-      "usable": {
-        "state": "unknown",
-        "value": null
-      }
+      "configured": "true",
+      "authorized": "unknown",
+      "usable": "unknown"
     },
     "projection_summary": {
       "verified": 1,
@@ -204,7 +179,8 @@
       "ambiguous": 0,
       "unmanaged": 0
     },
-    "blockers": []
+    "blockers": [],
+    "conditions": []
   },
   "requirement": {
     "resource": {

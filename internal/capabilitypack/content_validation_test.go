@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,9 @@ func TestValidatePackContentAcceptsCurrentManifest(t *testing.T) {
 	if len(pack.Requires.Tools) != 1 || pack.Requires.Tools[0] != "example-tool" {
 		t.Fatalf("external requirements = %#v", pack.Requires.Tools)
 	}
+	if got, want := pack.ReadinessObligations, []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("readiness obligations = %#v, want %#v", got, want)
+	}
 }
 
 func TestValidatePackContentRequiresExplicitSelectability(t *testing.T) {
@@ -73,6 +77,29 @@ func TestValidatePackContentRequiresExplicitSelectability(t *testing.T) {
 	_, err = ValidatePackContent(bundle, packDir)
 	if err == nil || !strings.Contains(err.Error(), "field selectable is required") {
 		t.Fatalf("selectability error = %v", err)
+	}
+}
+
+func TestLoadCurrentManifestRequiresReadinessObligations(t *testing.T) {
+	bundle := t.TempDir()
+	packDir := writeCurrentPackFixture(t, bundle, "example-pack")
+	path := filepath.Join(packDir, "pack.json")
+	var manifest map[string]any
+	if err := json.Unmarshal(mustReadFile(t, path), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	delete(manifest, "readiness_obligations")
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LoadCurrentManifest(path, bundle, false)
+	if err == nil || !strings.Contains(err.Error(), "field readiness_obligations") {
+		t.Fatalf("readiness obligations error = %v", err)
 	}
 }
 
@@ -156,6 +183,14 @@ func TestValidatePackContentReportsCurrentContractErrors(t *testing.T) {
 		{"root migrations", func(m map[string]any) { m["root_migrations"] = []any{} }, "unknown field"},
 		{"cross-Pack capabilities", func(m map[string]any) { m["provides"] = []any{"cap:example"} }, "unknown field"},
 		{"missing resources array", func(m map[string]any) { m["resources"] = nil }, "field resources"},
+		{"missing readiness obligations", func(m map[string]any) { delete(m, "readiness_obligations") }, "field readiness_obligations"},
+		{"null readiness obligations", func(m map[string]any) { m["readiness_obligations"] = nil }, "field readiness_obligations"},
+		{"unsorted readiness obligations", func(m map[string]any) {
+			m["readiness_obligations"] = []any{"surface-authorization", "runtime-usability"}
+		}, "readiness_obligations"},
+		{"unknown readiness obligation", func(m map[string]any) { m["readiness_obligations"] = []any{"readiness-probe", "runtime-usability"} }, "readiness_obligations"},
+		{"readiness probe", func(m map[string]any) { m["readiness_probe"] = map[string]any{} }, "unknown field"},
+		{"readiness extensions", func(m map[string]any) { m["readiness_extensions"] = []any{} }, "unknown field"},
 		{"unknown dependency", func(m map[string]any) { currentFixtureResource(m)["requires"] = []any{"skill:missing"} }, `dependency "skill:missing" does not exist`},
 		{"unsupported surface", func(m map[string]any) { m["surfaces"] = []any{"mobile"} }, "unsupported CLI surface"},
 		{"invalid external requirement", func(m map[string]any) { m["external_requirements"] = []any{"Example Tool"} }, "external_requirements"},
@@ -217,6 +252,9 @@ func TestCheckedInPackTemplateUsesCurrentContract(t *testing.T) {
 	if len(pack.Resources) != 1 || strings.TrimSpace(pack.Resources[0].Description) == "" {
 		t.Fatalf("template resources = %#v", pack.Resources)
 	}
+	if got, want := pack.ReadinessObligations, []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("template readiness obligations = %#v, want %#v", got, want)
+	}
 }
 
 func TestCheckedInCurrentManifestsOmitRetiredContractTerms(t *testing.T) {
@@ -233,6 +271,9 @@ func TestCheckedInCurrentManifestsOmitRetiredContractTerms(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, pack := range packs {
+		if got, want := pack.ReadinessObligations, []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("Pack %s readiness obligations = %#v, want %#v", pack.ID, got, want)
+		}
 		data := string(mustReadFile(t, filepath.Join(bundle, "packs", pack.ID, "pack.json")))
 		for _, retired := range []string{"schema_version", "runtime_modes", "root_migrations", "optional-mode:", "provides_capabilities", "requires_capabilities", "capability_conflicts"} {
 			if strings.Contains(data, retired) {
@@ -260,6 +301,7 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
   "description": "Example Pack",
   "selectable": true,
   "surfaces": ["codex"],
+  "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": ["example-tool"],
   "resources": [
     {
@@ -321,7 +363,7 @@ func writePortableFixture(t *testing.T, bundle, id, source string) {
 	if err := os.WriteFile(filepath.Join(bundle, source), []byte("inert\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"external_requirements":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared"}],"surface_exclusions":[]}],"exclusions":[]}`
+	manifest := `{"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared"}],"surface_exclusions":[]}],"exclusions":[]}`
 	if err := os.WriteFile(filepath.Join(bundle, "packs", id, "pack.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}

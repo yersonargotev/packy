@@ -145,7 +145,7 @@ func TestSurfaceGatewayRejectsMalformedOccupiedNames(t *testing.T) {
 }
 
 func TestObservationDigestIgnoresNewGoalAndReadinessEvidence(t *testing.T) {
-	if got, want := observationDigest(SurfaceInspection{Revision: "host-empty"}), "404d76e35b07f22959e16a698eb05838fa44e3edcab1ba471fc21e1f08ff73bc"; got != want {
+	if got, want := observationDigest(SurfaceInspection{Revision: "host-empty"}), "c3d8ea426d68b183735baf9f6f8e1d387deebc5f095c84b8c52ce4ec448aa80a"; got != want {
 		t.Fatalf("empty observation digest=%s want %s", got, want)
 	}
 	projection := ObservedProjection{Goal: ProjectionPresent, ID: "instruction:guide", Exists: true, ObservedFingerprint: "catalog", DesiredFingerprint: "catalog", Action: ProjectionAction{ID: "instruction:guide"}}

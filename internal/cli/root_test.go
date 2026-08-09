@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/bootstrap"
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	packyversion "github.com/yersonargotev/packy/internal/version"
@@ -164,7 +165,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("doctor: %v\n%s", err, human)
 		}
-		for _, want := range []string{"PASS packy-core", "PASS pack-matty-codex", "converged and ready", "SUMMARY status=healthy passes=2"} {
+		for _, want := range []string{"PASS packy-core", "PASS pack-matty-codex", "no confirmed health problems", "SUMMARY status=healthy passes=2"} {
 			if !strings.Contains(human, want) {
 				t.Fatalf("human doctor missing %q:\n%s", want, human)
 			}
@@ -212,7 +213,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		}
 	})
 
-	t.Run("pending human action warns", func(t *testing.T) {
+	t.Run("unobservable runtime is informational", func(t *testing.T) {
 		terminal := &fakeTerminal{interactive: true, approve: true}
 		opts, home, _ := packActivationOptions(t, terminal)
 		if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
@@ -220,13 +221,35 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		}
 		before := snapshotTree(t, home)
 		out, err := executeCommand(t, NewRootCommand(opts), "doctor")
-		if err != nil || !strings.Contains(out, "WARN pack-matty-codex") || !strings.Contains(out, "readiness is pending") {
-			t.Fatalf("pending doctor: %v\n%s", err, out)
+		if err != nil || !strings.Contains(out, "INFO pack-matty-codex-usable-runtime-usability-runtime-unobservable") || !strings.Contains(out, "SUMMARY status=healthy") || !strings.Contains(out, "infos=1") || strings.Contains(out, "WARN pack-matty-codex") {
+			t.Fatalf("informational doctor: %v\n%s", err, out)
 		}
 		if snapshotTree(t, home) != before {
 			t.Fatal("pending diagnosis mutated sandbox state")
 		}
 	})
+}
+
+func TestDoctorPreservesUnknownConditionsForBundledPackHealth(t *testing.T) {
+	unknownConditions := []capabilitypack.ReadinessCondition{
+		{Type: capabilitypack.ConditionRuntimeUsability, Dimension: capabilitypack.ReadinessUsable, Value: capabilitypack.ReadinessUnknown, Reason: capabilitypack.ReasonRuntimeUnobservable, Message: "runtime usability cannot be observed"},
+		{Type: capabilitypack.ConditionSurfaceAuthorization, Dimension: capabilitypack.ReadinessAuthorized, Value: capabilitypack.ReadinessUnknown, Reason: capabilitypack.ReasonAuthorizationUnknown, Message: "surface authorization cannot be observed"},
+	}
+	report := setuphealth.Diagnose("/sandbox/home", "/sandbox/xdg", setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{
+		{ID: "matty", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
+		{ID: "argote", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
+		{ID: "orchestrate", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
+	}})
+	if report.Summary.Status != "healthy" || report.Summary.Warnings != 0 || report.Summary.Failures != 0 || report.Summary.Infos != 6 {
+		t.Fatalf("report summary = %+v", report.Summary)
+	}
+
+	opts, _, _ := sandboxOptions(t)
+	opts.SetupHealthDiagnose = func() (setuphealth.Report, error) { return report, nil }
+	output, err := executeCommand(t, NewRootCommand(opts), "doctor", "--json")
+	if err != nil || !strings.Contains(output, `"status":"healthy"`) || !strings.Contains(output, `"infos":6`) || strings.Contains(output, `"warnings":1`) {
+		t.Fatalf("doctor JSON: %v\n%s", err, output)
+	}
 }
 
 func TestDoctorHumanAndJSONScenarioContracts(t *testing.T) {
@@ -242,7 +265,7 @@ func TestDoctorHumanAndJSONScenarioContracts(t *testing.T) {
 		{name: "converged", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex"}}}, checkName: "pack-matty-codex", severity: setuphealth.Pass, status: "healthy"},
 		{name: "drifted", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex", ProjectionProblems: 1}}}, checkName: "pack-matty-codex", severity: setuphealth.Warn, status: "warnings"},
 		{name: "missing requirement", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex", MissingRequirements: 1}}}, checkName: "pack-matty-codex", severity: setuphealth.Warn, status: "warnings"},
-		{name: "pending human action", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex", ReadinessPending: true, PendingHumanActions: 1}}}, checkName: "pack-matty-codex", severity: setuphealth.Warn, status: "warnings"},
+		{name: "pending human action", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex", PendingHumanActions: 1}}}, checkName: "pack-matty-codex", severity: setuphealth.Warn, status: "warnings"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

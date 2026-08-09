@@ -10,6 +10,7 @@ type Severity string
 
 const (
 	Pass Severity = "PASS"
+	Info Severity = "INFO"
 	Warn Severity = "WARN"
 	Fail Severity = "FAIL"
 )
@@ -23,6 +24,7 @@ type Check struct {
 type Summary struct {
 	Status   string
 	Passes   int
+	Infos    int
 	Warnings int
 	Failures int
 }
@@ -49,8 +51,18 @@ type ActivePack struct {
 	UpdateAvailable     bool
 	ProjectionProblems  int
 	MissingRequirements int
-	ReadinessPending    bool
 	PendingHumanActions int
+	Conditions          []ReadinessCondition
+}
+
+// ReadinessCondition is the detached condition fact Doctor needs from a Pack
+// status. Capability-pack remains the owner of its complete domain condition.
+type ReadinessCondition struct {
+	Type      string
+	Dimension string
+	Value     string
+	Reason    string
+	Message   string
 }
 
 type Observation struct {
@@ -62,7 +74,7 @@ type Observation struct {
 // Inactive pack projections are intentionally absent.
 func Diagnose(homeDir, configHome string, observation Observation) Report {
 	report := Report{
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		Kind:          "doctor",
 		Context:       Context{HomeDir: homeDir, ConfigHome: configHome},
 		Checks: []Check{{
@@ -79,13 +91,13 @@ func Diagnose(homeDir, configHome string, observation Observation) Report {
 		})
 	}
 	for _, pack := range observation.ActivePacks {
-		report.Checks = append(report.Checks, diagnoseActivePack(pack))
+		report.Checks = append(report.Checks, diagnoseActivePack(pack)...)
 	}
 	report.Summary = summarize(report.Checks)
 	return report
 }
 
-func diagnoseActivePack(pack ActivePack) Check {
+func diagnoseActivePack(pack ActivePack) []Check {
 	name := fmt.Sprintf("pack-%s-%s", pack.ID, pack.Surface)
 	statusCommand := fmt.Sprintf("packy status %s --surface %s", pack.ID, pack.Surface)
 	var findings []string
@@ -112,11 +124,14 @@ func diagnoseActivePack(pack ActivePack) Check {
 		}
 		findings = append(findings, "an update is available")
 	}
-	if pack.ReadinessPending {
+	for _, condition := range pack.Conditions {
+		if condition.Value != "false" {
+			continue
+		}
 		if severity == Pass {
 			severity = Warn
 		}
-		findings = append(findings, "readiness is pending")
+		findings = append(findings, condition.Message)
 	}
 	if pack.PendingHumanActions > 0 {
 		if severity == Pass {
@@ -125,7 +140,7 @@ func diagnoseActivePack(pack ActivePack) Check {
 		findings = append(findings, fmt.Sprintf("%d pending human actions", pack.PendingHumanActions))
 	}
 	if len(findings) == 0 {
-		return Check{Name: name, Severity: Pass, Detail: fmt.Sprintf("active pack %s on %s is converged and ready", pack.ID, pack.Surface)}
+		return append([]Check{{Name: name, Severity: Pass, Detail: fmt.Sprintf("active pack %s on %s has no confirmed health problems", pack.ID, pack.Surface)}}, informationalConditions(name, pack.Conditions)...)
 	}
 
 	remediation := []string{statusCommand}
@@ -135,11 +150,26 @@ func diagnoseActivePack(pack ActivePack) Check {
 	if pack.UpdateAvailable {
 		remediation = append([]string{fmt.Sprintf("packy update %s --surface %s", pack.ID, pack.Surface)}, remediation...)
 	}
-	return Check{
+	return append([]Check{{
 		Name:     name,
 		Severity: severity,
 		Detail:   fmt.Sprintf("active pack %s on %s has %s; run %s", pack.ID, pack.Surface, strings.Join(findings, ", "), strings.Join(remediation, "; then run ")),
+	}}, informationalConditions(name, pack.Conditions)...)
+}
+
+func informationalConditions(packName string, conditions []ReadinessCondition) []Check {
+	checks := make([]Check, 0, len(conditions))
+	for _, condition := range conditions {
+		if condition.Value != "unknown" {
+			continue
+		}
+		checks = append(checks, Check{
+			Name:     fmt.Sprintf("%s-%s-%s-%s", packName, condition.Dimension, condition.Type, condition.Reason),
+			Severity: Info,
+			Detail:   condition.Message,
+		})
 	}
+	return checks
 }
 
 func summarize(checks []Check) Summary {
@@ -148,6 +178,8 @@ func summarize(checks []Check) Summary {
 		switch check.Severity {
 		case Pass:
 			summary.Passes++
+		case Info:
+			summary.Infos++
 		case Warn:
 			summary.Warnings++
 		case Fail:

@@ -29,12 +29,6 @@ const (
 	PackLifecycleInactiveWithResiduals PackLifecycleState = "inactive-with-residuals"
 )
 
-type ReadinessStatus struct {
-	Configured bool
-	Authorized bool
-	Usable     bool
-}
-
 type ProjectionHealth string
 
 const (
@@ -67,13 +61,13 @@ type ResourceSelectionStatus struct {
 }
 
 type ResourceStatus struct {
-	Resource          ResourceIdentity
-	Role              ResourceRole
-	DependencyChain   []ResourceIdentity
-	Readiness         ReadinessStatus
-	ReadinessObserved ReadinessObservationStatus
-	Projections       ProjectionSummary
-	Blockers          []string
+	Resource        ResourceIdentity
+	Role            ResourceRole
+	DependencyChain []ResourceIdentity
+	Readiness       ReadinessStatus
+	Conditions      []ReadinessCondition
+	Projections     ProjectionSummary
+	Blockers        []string
 }
 
 // ReadinessObservation is fresh host-owned evidence. Observed distinguishes a
@@ -136,7 +130,7 @@ type StatusEntry struct {
 	UpdateAvailable       bool
 	UpdateActionAvailable bool
 	Readiness             ReadinessStatus
-	ReadinessObserved     ReadinessObservationStatus
+	Conditions            []ReadinessCondition
 	OptionalAuthorities   []OptionalAuthorityObservation
 	RuntimeModes          []RuntimeModeResult
 	Projections           ProjectionSummary
@@ -151,12 +145,6 @@ type StatusEntry struct {
 	Contract              LifecycleContract
 	ActivationRole        ActivationRole
 	LifecycleState        PackLifecycleState
-}
-
-type ReadinessObservationStatus struct {
-	Configured    bool
-	Authorization bool
-	Usability     bool
 }
 
 type StatusRequirement struct {
@@ -367,7 +355,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 			if resource.Resource == focused {
 				report.Focused = resource
 				if request.RequireUsable {
-					report.Requirement = &StatusRequirement{Resource: focused, Readiness: "usable", Satisfied: resource.Readiness.Usable}
+					report.Requirement = &StatusRequirement{Resource: focused, Readiness: "usable", Satisfied: resource.Readiness.SatisfiesUsable()}
 				}
 				return report, nil
 			}
@@ -375,7 +363,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 		return StatusReport{}, fmt.Errorf("resource %q is unknown or unselected for capability pack %q on %s", focused.String(), request.PackID, request.Surface)
 	}
 	if request.RequireUsable {
-		report.Requirement = &StatusRequirement{Readiness: "usable", Satisfied: report.Entries[0].Readiness.Usable}
+		report.Requirement = &StatusRequirement{Readiness: "usable", Satisfied: report.Entries[0].Readiness.SatisfiesUsable()}
 	}
 	return report, nil
 }
@@ -457,8 +445,10 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 		return StatusEntry{}, err
 	}
 	resolutions, err := f.resolveExecutables(ctx, relevantPack)
+	unobservedRequirements := []string{}
 	if err != nil {
 		entry.Blockers = append(entry.Blockers, err.Error())
+		unobservedRequirements = append(unobservedRequirements, relevantPack.Requires.Tools...)
 		resolutions = nil
 	}
 	for _, resolution := range resolutions {
@@ -478,8 +468,6 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)
 	entry.UpdateActionAvailable = entry.UpdateAvailable || entry.Intent.Active && entry.Projections.requiresReconciliation()
 	entry.RuntimeModes = cloneRuntimeModeResults(observation.RuntimeModeResults)
-	entry.Readiness.Configured = entry.Projections.Verified == len(observation.Projections) && len(observation.Projections) > 0
-	entry.ReadinessObserved.Configured = true
 	for _, detail := range entry.ProjectionDetails {
 		entry.Evidence = append(entry.Evidence, fmt.Sprintf("%s: %s observed=%s desired=%s target=%s", detail.ID, detail.Health, detail.ObservedFingerprint, detail.DesiredFingerprint, detail.Target))
 		if detail.Health != ProjectionVerified {
@@ -487,33 +475,25 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 		}
 	}
 	fresh := observation.Readiness
-	if entry.Readiness.Configured {
+	if entry.Projections.Verified == len(observation.Projections) && len(observation.Projections) > 0 {
 		entry.PendingHumanActions = append(entry.PendingHumanActions, fresh.PendingHumanActions...)
 	}
 	entry.Evidence = append(entry.Evidence, fresh.Evidence...)
-	entry.ReadinessObserved.Authorization = fresh.AuthorizationObserved
-	entry.ReadinessObserved.Usability = fresh.UsabilityObserved
 	entry.OptionalAuthorities = cloneOptionalAuthorities(fresh.OptionalAuthorities)
-	entry.Readiness.Authorized = entry.Readiness.Configured && fresh.AuthorizationObserved && fresh.Authorized
-	entry.Readiness.Usable = entry.Readiness.Authorized && fresh.UsabilityObserved && fresh.Usable
+	entry.Readiness, entry.Conditions = evaluateReadiness(readinessEvaluation{
+		Pack: relevantPack, Surface: surface, Scope: ReadinessScopeGlobal,
+		Projections: entry.ProjectionDetails, Resolutions: resolutions, UnobservedRequirements: unobservedRequirements, Observation: fresh, Revision: observation.Revision,
+	})
 	if entry.Intent.Active {
 		entry.Resources = deriveResourceStatuses(pack.ID, graph, entry.ProjectionDetails, fresh)
 	}
-	if len(entry.Resources) > 0 {
-		entry.Readiness = entry.Resources[0].Readiness
-		for _, resource := range entry.Resources[1:] {
-			entry.Readiness.Configured = entry.Readiness.Configured && resource.Readiness.Configured
-			entry.Readiness.Authorized = entry.Readiness.Authorized && resource.Readiness.Authorized
-			entry.Readiness.Usable = entry.Readiness.Usable && resource.Readiness.Usable
-		}
-	}
-	if entry.Readiness.Configured && len(fresh.PendingHumanActions) == 0 {
+	if entry.Readiness.Configured == ReadinessTrue && len(fresh.PendingHumanActions) == 0 {
 		entry.PendingHumanActions = append(entry.PendingHumanActions, observation.PendingHumanActions...)
 	}
-	if entry.Readiness.Configured && !entry.Readiness.Authorized {
+	if entry.Readiness.Authorized == ReadinessFalse {
 		entry.Blockers = append(entry.Blockers, "authorization/trust is not freshly demonstrated")
 	}
-	if entry.Readiness.Authorized && !entry.Readiness.Usable {
+	if entry.Readiness.Usable == ReadinessFalse {
 		entry.Blockers = append(entry.Blockers, "runtime usability is not freshly demonstrated")
 	}
 	sort.Strings(entry.Blockers)
@@ -553,14 +533,13 @@ func deriveResourceStatuses(packID string, graph ResourceGraph, projections []Pr
 			}
 		}
 		covered := status.Projections.Verified+status.Projections.Missing+status.Projections.Drifted+status.Projections.Ambiguous+status.Projections.Unmanaged > 0
-		status.Readiness.Configured = allConfigured
+		status.Readiness.Configured = configuredReadiness(allConfigured)
 		if covered {
-			status.Readiness.Configured = status.Projections.Verified > 0 &&
-				status.Projections.Verified == status.Projections.Verified+status.Projections.Missing+status.Projections.Drifted+status.Projections.Ambiguous+status.Projections.Unmanaged
+			status.Readiness.Configured = configuredReadiness(status.Projections.Verified > 0 &&
+				status.Projections.Verified == status.Projections.Verified+status.Projections.Missing+status.Projections.Drifted+status.Projections.Ambiguous+status.Projections.Unmanaged)
 		}
-		status.ReadinessObserved = ReadinessObservationStatus{Configured: true, Authorization: fresh.AuthorizationObserved, Usability: fresh.UsabilityObserved}
-		status.Readiness.Authorized = status.Readiness.Configured && fresh.AuthorizationObserved && fresh.Authorized
-		status.Readiness.Usable = status.Readiness.Authorized && fresh.UsabilityObserved && fresh.Usable
+		status.Readiness.Authorized = readinessValue(fresh.AuthorizationObserved, fresh.Authorized)
+		status.Readiness.Usable = readinessValue(fresh.UsabilityObserved, fresh.Usable)
 		sort.Strings(status.Blockers)
 		result = append(result, status)
 	}

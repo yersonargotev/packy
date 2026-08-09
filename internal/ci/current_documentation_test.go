@@ -22,17 +22,27 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0032-admit-single-source-packs-atomically.md"),
 		filepath.Join(root, "docs", "adr", "0033-make-the-tui-the-primary-interactive-interface.md"),
 		filepath.Join(root, "docs", "adr", "0034-make-packy-root-namespace-pack-oriented.md"),
+		filepath.Join(root, "docs", "adr", "0035-make-pack-readiness-capability-driven.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
 	}
 
-	research, err := filepath.Glob(filepath.Join(root, "docs", "research", "*.md"))
-	if err != nil {
+	wantResearch := filepath.Join(root, "docs", "research", "evidence", "pack-readiness-architecture.md")
+	var research []string
+	if err := filepath.WalkDir(filepath.Join(root, "docs", "research"), func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
+			research = append(research, path)
+		}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if len(research) != 0 {
-		t.Fatalf("retired current-tree research remains: %v", research)
+	if strings.Join(research, "\n") != wantResearch {
+		t.Fatalf("current research = %v, want [%s]", research, wantResearch)
 	}
 	if err := filepath.WalkDir(filepath.Join(root, ".scratch"), func(path string, entry os.DirEntry, err error) error {
 		if os.IsNotExist(err) {
@@ -69,6 +79,20 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Pack lifecycle behavior remains in `internal/capabilitypack`", "structured-output report identifiers",
 		"Cobra's ordinary unknown command behavior", "issue 589",
 	})
+	requireDocumentationText(t, root, "docs/adr/0035-make-pack-readiness-capability-driven.md", []string{
+		"capability-pack domain owns readiness policy", "three-valued result", "false` dominates",
+		"global and project Pack lifecycle", "strict usability gate requires fresh true usability",
+		"controlled runtime check", "only in Packy Home", "informational conditions",
+		"closed, reviewed surface-capability vocabulary", "issues 619 through 625",
+	})
+	requireDocumentationText(t, root, "CONTEXT.md", []string{
+		"Readiness obligation", "Readiness condition", "Readiness dimensions", "Controlled runtime check",
+		"configured, authorized, or usable", "true, false, or unknown",
+	})
+	requireDocumentationText(t, root, "docs/research/evidence/pack-readiness-architecture.md", []string{
+		"primary-source evidence", "Cockburn's original ports-and-adapters", "`True`,",
+		"GitHub App manifest", "does not define additional Pack behavior or contracts",
+	})
 	requireDocumentationText(t, root, "bundle/pack-template/README.md", []string{
 		"Copy this directory", "one `pack.json`", "maintainer-selected SemVer", "reviewed content",
 		"./scripts/validate-pack-content.sh <pack-id>",
@@ -81,6 +105,26 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"packy.json", "packy.lock.json", "PACKY-NOTICES.md", "brew install yersonargotev/tap/packy",
 		"packy init", "packy install", "no automatic", "migration command",
 	})
+}
+
+func TestReadinessAdaptersDoNotDispatchOnPackOrResourceIdentity(t *testing.T) {
+	root := repositoryRoot(t)
+	identityDispatch := regexp.MustCompile(`\b(?:pack|resource)\.ID\s*(?:==|!=)`)
+	for _, relative := range []string{"internal/codex/surface.go", "internal/opencode/surface.go"} {
+		text := readFile(t, filepath.Join(root, filepath.FromSlash(relative)))
+		start := strings.Index(text, "func (a *SurfaceAdapter) inspectReadiness")
+		if start < 0 {
+			t.Fatalf("%s readiness observation boundary is missing", relative)
+		}
+		end := strings.Index(text[start:], "func (a *SurfaceAdapter) inspectDesired")
+		if end < 0 {
+			t.Fatalf("%s readiness observation boundary is missing", relative)
+		}
+		readiness := text[start : start+end]
+		if identityDispatch.MatchString(readiness) {
+			t.Errorf("%s dispatches readiness observation by Pack or resource identity", relative)
+		}
+	}
 }
 
 func TestCurrentDocumentationLocalLinksResolve(t *testing.T) {

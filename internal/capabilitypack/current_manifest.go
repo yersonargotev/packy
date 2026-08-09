@@ -10,15 +10,16 @@ import (
 )
 
 type currentManifest struct {
-	ID                   string            `json:"id"`
-	Version              string            `json:"version"`
-	Description          string            `json:"description"`
-	Selectable           *bool             `json:"selectable"`
-	Surfaces             []Surface         `json:"surfaces"`
-	ExternalRequirements []string          `json:"external_requirements"`
-	Resources            []json.RawMessage `json:"resources"`
-	Exclusions           []Exclusion       `json:"exclusions"`
-	SourceReference      *SourceReference  `json:"source_reference,omitempty"`
+	ID                   string                `json:"id"`
+	Version              string                `json:"version"`
+	Description          string                `json:"description"`
+	Selectable           *bool                 `json:"selectable"`
+	Surfaces             []Surface             `json:"surfaces"`
+	ReadinessObligations []ReadinessObligation `json:"readiness_obligations"`
+	ExternalRequirements []string              `json:"external_requirements"`
+	Resources            []json.RawMessage     `json:"resources"`
+	Exclusions           []Exclusion           `json:"exclusions"`
+	SourceReference      *SourceReference      `json:"source_reference,omitempty"`
 }
 
 type currentResourceWire struct {
@@ -56,15 +57,16 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field selectable is required", path)
 	}
 	pack := Pack{
-		manifestVersion: manifestSchemaV4,
-		ID:              raw.ID,
-		Version:         raw.Version,
-		Description:     raw.Description,
-		Selectable:      *raw.Selectable,
-		Surfaces:        raw.Surfaces,
-		Requires:        Requirements{Tools: raw.ExternalRequirements},
-		Contract:        Contract{Exclusions: raw.Exclusions, OptionalModes: []OptionalMode{}},
-		SourceReference: raw.SourceReference,
+		manifestVersion:      manifestSchemaV4,
+		ID:                   raw.ID,
+		Version:              raw.Version,
+		Description:          raw.Description,
+		Selectable:           *raw.Selectable,
+		Surfaces:             raw.Surfaces,
+		ReadinessObligations: raw.ReadinessObligations,
+		Requires:             Requirements{Tools: raw.ExternalRequirements},
+		Contract:             Contract{Exclusions: raw.Exclusions, OptionalModes: []OptionalMode{}},
+		SourceReference:      raw.SourceReference,
 	}
 	for i, encoded := range raw.Resources {
 		var wire currentResourceWire
@@ -104,6 +106,9 @@ func validateCurrentPack(pack Pack) error {
 	}
 	if err := validateV3Surfaces(pack.Surfaces); err != nil {
 		return fmt.Errorf("Pack %q field surfaces: %w", pack.ID, err)
+	}
+	if !validReadinessObligations(pack.ReadinessObligations) {
+		return fmt.Errorf("Pack %q field readiness_obligations must be a sorted set of supported readiness obligations", pack.ID)
 	}
 	if pack.Requires.Tools == nil || !sortedPortableSet(pack.Requires.Tools, idPattern.MatchString) {
 		return fmt.Errorf("Pack %q field external_requirements must be a sorted set of lowercase kebab-case tool identities", pack.ID)
@@ -159,6 +164,31 @@ func validateCurrentPack(pack Pack) error {
 		return fmt.Errorf("Pack %q field exclusions: %w", pack.ID, err)
 	}
 	return nil
+}
+
+func validReadinessObligations(obligations []ReadinessObligation) bool {
+	if obligations == nil {
+		return false
+	}
+	values := make([]string, len(obligations))
+	for i, obligation := range obligations {
+		switch obligation {
+		case ReadinessRuntimeUsability, ReadinessSurfaceAuthorization:
+			values[i] = string(obligation)
+		default:
+			return false
+		}
+	}
+	return sort.StringsAreSorted(values) && !hasDuplicateReadinessObligations(values)
+}
+
+func hasDuplicateReadinessObligations(values []string) bool {
+	for i := 1; i < len(values); i++ {
+		if values[i] == values[i-1] {
+			return true
+		}
+	}
+	return false
 }
 
 func currentManifestPath(bundleRoot, pack string) (string, string, error) {

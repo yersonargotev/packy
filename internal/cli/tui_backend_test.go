@@ -337,7 +337,7 @@ func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivati
 		t.Fatal("fresh status omitted argote")
 	}
 	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
-	if index < 0 || pack.SurfaceStatuses[index].Configured != "yes" {
+	if index < 0 || pack.SurfaceStatuses[index].Configured != "true" {
 		t.Fatalf("fresh status did not observe activation: %#v", pack)
 	}
 }

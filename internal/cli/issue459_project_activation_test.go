@@ -97,7 +97,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 		RequireUsable: true,
 		Adapters:      map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter},
 	})
-	if err != nil || len(status.Packs) != 1 || !status.Packs[0].RequirementSatisfied || !status.Packs[0].Readiness.Authorized || !status.Packs[0].Readiness.Usable {
+	if err != nil || len(status.Packs) != 1 || !status.Packs[0].RequirementSatisfied || status.Packs[0].Readiness.Authorized != capabilitypack.ReadinessTrue || status.Packs[0].Readiness.Usable != capabilitypack.ReadinessTrue {
 		t.Fatalf("personally trusted Codex project is not usable: %+v, %v", status, err)
 	}
 	if err := os.WriteFile(filepath.Join(home, ".codex", "config.toml"), nil, 0o600); err != nil {
@@ -151,7 +151,7 @@ func TestIssue459ProjectUsableEnforcementRequiresPersonalActivation(t *testing.T
 	}
 
 	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project", "--require", "usable")
-	if err != nil {
-		t.Fatalf("declarative project should be usable from installation alone: %v\n%s", err, out)
+	if err == nil || !strings.Contains(out, "configured=true, authorized=unknown, usable=unknown") {
+		t.Fatalf("declarative project usability must fail closed without runtime evidence: %v\n%s", err, out)
 	}
 }

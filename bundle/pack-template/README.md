@@ -3,8 +3,10 @@
 Copy this directory to `bundle/packs/<pack-id>`. A Pack has reviewed content and
 one `pack.json` manifest.
 
-1. Set the Pack identity, description, selectability, supported surfaces, and
-   maintainer-selected SemVer in `pack.json`.
+1. Set the Pack identity, description, selectability, supported surfaces,
+   readiness obligations, and maintainer-selected SemVer in `pack.json`. Keep
+   the required obligations as the sorted set `runtime-usability` and
+   `surface-authorization`.
 2. Replace the example with the Pack's reviewed content beneath its Pack
    directory.
 3. Give every resource a concise `description` of its purpose within the Pack.

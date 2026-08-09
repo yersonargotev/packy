@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 )
 
-const ProjectDeactivationPreviewSchemaVersion = 1
+const ProjectDeactivationPreviewSchemaVersion = 3
 
 type ProjectDeactivationDisposition string
 
@@ -156,7 +156,7 @@ func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationAp
 		return ProjectDeactivationApplyResult{}, errors.New("project deactivation preview is blocked")
 	}
 	if preview.Disposition == ProjectDeactivationConverged {
-		return ProjectDeactivationApplyResult{SchemaVersion: 1, Report: "project-deactivation-apply", Status: "inactive", Digest: preview.Digest}, nil
+		return ProjectDeactivationApplyResult{SchemaVersion: 2, Report: "project-deactivation-apply", Status: "inactive", Digest: preview.Digest}, nil
 	}
 	fresh, err := PreviewProjectDeactivation(ctx, preview.request)
 	if err != nil {
@@ -188,7 +188,7 @@ func ApplyProjectDeactivation(ctx context.Context, request ProjectDeactivationAp
 	if err := removeProjectActivationRecord(preview.packyHome, preview.projectRoot, preview.Pack.ID, preview.Surface); err != nil {
 		return ProjectDeactivationApplyResult{}, err
 	}
-	return ProjectDeactivationApplyResult{SchemaVersion: 1, Report: "project-deactivation-apply", Status: "inactive", Digest: preview.Digest}, nil
+	return ProjectDeactivationApplyResult{SchemaVersion: 2, Report: "project-deactivation-apply", Status: "inactive", Digest: preview.Digest}, nil
 }
 
 func removeProjectActivationRecord(packyHome, projectRoot, packID string, surface Surface) error {

@@ -8,6 +8,10 @@
     "codex",
     "opencode"
   ],
+  "readiness_obligations": [
+    "runtime-usability",
+    "surface-authorization"
+  ],
   "external_requirements": [
     "engram"
   ],

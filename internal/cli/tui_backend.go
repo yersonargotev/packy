@@ -119,8 +119,9 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		ProjectRoot: projectRoot,
 		PackyHome:   snapshot.PackyHome(),
 		Adapters:    projectStatusAdapters(b.opts, snapshot),
+		Resolver:    projectExecutableResolver(b.opts, snapshot),
 	}
-	status, err := capabilitypack.InspectProjectStatus(ctx, request)
+	status, err := projectStatusFacade(b.opts, snapshot).InspectProjectStatus(ctx, request)
 	if err != nil {
 		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 			Cause:           fmt.Sprintf("inspect current project: %v", err),
@@ -837,10 +838,11 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
 			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateActionAvailable,
-			Configured: readinessForTUI(entry.ReadinessObserved.Configured, entry.Readiness.Configured),
-			Authorized: readinessForTUI(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized),
-			Usable:     readinessForTUI(entry.ReadinessObserved.Usability, entry.Readiness.Usable),
+			Configured: readinessForTUI(entry.Readiness.Configured),
+			Authorized: readinessForTUI(entry.Readiness.Authorized),
+			Usable:     readinessForTUI(entry.Readiness.Usable),
 			Blockers:   append([]string(nil), entry.Blockers...), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
+			Conditions: readinessConditionsForTUI(entry.Conditions),
 		}
 		for _, projection := range entry.ProjectionDetails {
 			if projection.Owner == "packy" {
@@ -865,8 +867,9 @@ func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[st
 			Name: string(entry.Surface), Supported: true,
 			Installation: string(entry.Installation), Runtime: string(entry.Runtime), Active: entry.Runtime == capabilitypack.ProjectRuntimeActive || entry.Runtime == capabilitypack.ProjectRuntimeInheritedGlobal,
 			InstalledVersion: entry.Pack.Version,
-			Configured:       yesNo(entry.Readiness.Configured), Authorized: yesNo(entry.Readiness.Authorized), Usable: yesNo(entry.Readiness.Usable),
+			Configured:       string(entry.Readiness.Configured), Authorized: string(entry.Readiness.Authorized), Usable: string(entry.Readiness.Usable),
 			Ownership: len(entry.Projections), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
+			Conditions: readinessConditionsForTUI(entry.Conditions),
 		}
 		for _, blocker := range entry.Blockers {
 			status.Blockers = append(status.Blockers, blocker.Code+": "+blocker.Detail)
@@ -884,9 +887,22 @@ func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[st
 	return result
 }
 
-func readinessForTUI(observed, value bool) string {
-	if !observed {
-		return "unknown"
+func readinessForTUI(value capabilitypack.ReadinessValue) string {
+	return string(value)
+}
+
+func readinessConditionsForTUI(values []capabilitypack.ReadinessCondition) []tui.ReadinessCondition {
+	result := make([]tui.ReadinessCondition, 0, len(values))
+	for _, value := range values {
+		resource := ""
+		if value.Scope.Resource != nil {
+			resource = value.Scope.Resource.String()
+		}
+		result = append(result, tui.ReadinessCondition{
+			Type: string(value.Type), Scope: string(value.Scope.Kind), Pack: value.Scope.Pack, Surface: string(value.Scope.Surface), Resource: resource,
+			Dimension: string(value.Dimension), Value: string(value.Value), Reason: string(value.Reason), Message: value.Message,
+			Evidence: append([]string(nil), value.Evidence...), ObservedAt: value.Freshness.ObservedAt, ValidityIdentity: value.Freshness.ValidityIdentity,
+		})
 	}
-	return yesNo(value)
+	return result
 }

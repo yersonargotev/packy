@@ -9,10 +9,10 @@ persists the resulting installed Pack receipt, not the preview.
 
 | Command family | Schema |
 | --- | --- |
-| `packy doctor --json` | `schemas/cli/v2/doctor.schema.json` |
+| `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
 | `packy show PACK --json` | `schemas/cli/v5/pack-show.schema.json` |
-| global Pack status | `schemas/cli/v8/pack-status.schema.json` |
-| global Pack lifecycle | `schemas/cli/v9/pack-lifecycle.schema.json` |
+| global Pack status | `schemas/cli/v9/pack-status.schema.json` |
+| global Pack lifecycle | `schemas/cli/v10/pack-lifecycle.schema.json` |
 | project Pack lifecycle | `schemas/project/v1.0.0/` |
 
 Canonical fixtures live under `internal/cli/testdata/`. Repository tests compile

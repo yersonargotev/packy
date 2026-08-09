@@ -2,12 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 8
-
-type JSONOptionalBool struct {
-	State string `json:"state"`
-	Value *bool  `json:"value"`
-}
+const StatusSchemaVersion = 9
 
 type JSONIntent struct {
 	State     string            `json:"state"`
@@ -17,11 +12,7 @@ type JSONIntent struct {
 	Selection ResourceSelection `json:"selection"`
 }
 
-type JSONReadiness struct {
-	Configured JSONOptionalBool `json:"configured"`
-	Authorized JSONOptionalBool `json:"authorized"`
-	Usable     JSONOptionalBool `json:"usable"`
-}
+type JSONReadiness = ReadinessStatus
 
 type JSONOptionalAuthority struct {
 	ModeID    string                 `json:"mode_id"`
@@ -59,6 +50,7 @@ type JSONResourceStatus struct {
 	Role            ResourceRole          `json:"role"`
 	DependencyChain []ResourceIdentity    `json:"dependency_chain"`
 	Readiness       JSONReadiness         `json:"readiness"`
+	Conditions      []ReadinessCondition  `json:"conditions"`
 	Projections     JSONProjectionSummary `json:"projection_summary"`
 	Blockers        []string              `json:"blockers"`
 }
@@ -81,6 +73,7 @@ type JSONStatusEntry struct {
 	Resources           []JSONResourceStatus          `json:"resources"`
 	Contract            LifecycleContract             `json:"contract"`
 	Readiness           JSONReadiness                 `json:"readiness"`
+	Conditions          []ReadinessCondition          `json:"conditions"`
 	OptionalAuthorities []JSONOptionalAuthority       `json:"optional_authorities"`
 	RuntimeModes        []RuntimeModeResult           `json:"runtime_modes,omitempty"`
 	Blockers            []string                      `json:"blockers"`
@@ -114,7 +107,8 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 		entries = append(entries, JSONStatusEntry{
 			Pack: entry.Pack.ID, PackVersion: entry.Pack.Version, Surface: entry.Surface,
 			Intent: intent, UpdateAvailable: entry.UpdateAvailable, Projections: JSONProjectionSummary{Verified: entry.Projections.Verified, Missing: entry.Projections.Missing, Drifted: entry.Projections.Drifted, Ambiguous: entry.Projections.Ambiguous, Unmanaged: entry.Projections.Unmanaged},
-			Readiness:           JSONReadiness{optionalBool(entry.ReadinessObserved.Configured, entry.Readiness.Configured), optionalBool(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized), optionalBool(entry.ReadinessObserved.Usability, entry.Readiness.Usable)},
+			Readiness:           entry.Readiness,
+			Conditions:          append([]ReadinessCondition{}, entry.Conditions...),
 			OptionalAuthorities: jsonOptionalAuthorities(entry.OptionalAuthorities),
 			RuntimeModes:        sortedRuntimeModeResults(entry.RuntimeModes),
 			ProjectionDetails:   jsonProjectionDetails(entry.ProjectionDetails), Contract: entry.Contract,
@@ -175,11 +169,7 @@ func jsonResourceStatuses(values []ResourceStatus) []JSONResourceStatus {
 func jsonResourceStatus(value ResourceStatus) JSONResourceStatus {
 	return JSONResourceStatus{
 		Resource: value.Resource, Role: value.Role, DependencyChain: append([]ResourceIdentity{}, value.DependencyChain...),
-		Readiness: JSONReadiness{
-			optionalBool(value.ReadinessObserved.Configured, value.Readiness.Configured),
-			optionalBool(value.ReadinessObserved.Authorization, value.Readiness.Authorized),
-			optionalBool(value.ReadinessObserved.Usability, value.Readiness.Usable),
-		},
+		Readiness: value.Readiness, Conditions: append([]ReadinessCondition{}, value.Conditions...),
 		Projections: JSONProjectionSummary{Verified: value.Projections.Verified, Missing: value.Projections.Missing, Drifted: value.Projections.Drifted, Ambiguous: value.Projections.Ambiguous, Unmanaged: value.Projections.Unmanaged},
 		Blockers:    sortedCopy(value.Blockers),
 	}
@@ -221,14 +211,6 @@ func jsonProjectionDetails(values []ProjectionStatus) []JSONProjectionStatus {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
-}
-
-func optionalBool(observed, value bool) JSONOptionalBool {
-	if !observed {
-		return JSONOptionalBool{State: "unknown", Value: nil}
-	}
-	v := value
-	return JSONOptionalBool{State: "known", Value: &v}
 }
 
 func sortedCopy(values []string) []string {

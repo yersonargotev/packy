@@ -8,7 +8,7 @@ import (
 
 func TestDiagnoseWithNoActivePacksIsHealthy(t *testing.T) {
 	want := Report{
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		Kind:          "doctor",
 		Context:       Context{HomeDir: "/sandbox/home", ConfigHome: "/sandbox/xdg"},
 		Checks: []Check{{
@@ -20,6 +20,35 @@ func TestDiagnoseWithNoActivePacksIsHealthy(t *testing.T) {
 	}
 	if got := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Diagnose() = %#v, want %#v", got, want)
+	}
+}
+
+func TestDiagnoseReportsUnknownConditionsAsInformational(t *testing.T) {
+	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{ActivePacks: []ActivePack{{
+		ID: "matty", Surface: "codex",
+		Conditions: []ReadinessCondition{{
+			Type: "runtime-usability", Dimension: "usable", Value: "unknown", Reason: "runtime-unobservable",
+			Message: "runtime usability cannot be observed",
+		}},
+	}}})
+	if report.Summary != (Summary{Status: "healthy", Passes: 2, Infos: 1}) {
+		t.Fatalf("summary = %+v", report.Summary)
+	}
+	if got := report.Checks[2]; got.Severity != Info || !strings.Contains(got.Name, "runtime-unobservable") || got.Detail != "runtime usability cannot be observed" {
+		t.Fatalf("informational condition = %+v", got)
+	}
+}
+
+func TestDiagnoseReportsFalseConditionsAsWarnings(t *testing.T) {
+	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{ActivePacks: []ActivePack{{
+		ID: "matty", Surface: "codex",
+		Conditions: []ReadinessCondition{{
+			Type: "surface-authorization", Dimension: "authorized", Value: "false", Reason: "authorization-denied",
+			Message: "surface authorization was denied",
+		}},
+	}}})
+	if report.Summary.Status != "warnings" || report.Summary.Warnings != 1 || report.Checks[1].Severity != Warn || !strings.Contains(report.Checks[1].Detail, "surface authorization was denied") {
+		t.Fatalf("report = %+v", report)
 	}
 }
 
@@ -43,28 +72,28 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex"},
 			severity: Pass,
 			status:   "healthy",
-			want:     []string{"converged and ready"},
+			want:     []string{"no confirmed health problems"},
 		},
 		{
 			name:     "drifted",
-			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex", ProjectionProblems: 2, ReadinessPending: true},
+			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex", ProjectionProblems: 2},
 			severity: Warn,
 			status:   "warnings",
 			want:     []string{"2 projection findings", "packy activate ma" + "tty --surface codex", "packy status ma" + "tty --surface codex"},
 		},
 		{
 			name:     "missing requirement",
-			pack:     ActivePack{ID: "engram", Surface: "opencode", MissingRequirements: 1, ReadinessPending: true},
+			pack:     ActivePack{ID: "engram", Surface: "opencode", MissingRequirements: 1},
 			severity: Warn,
 			status:   "warnings",
 			want:     []string{"1 missing requirements", "packy status engram --surface opencode"},
 		},
 		{
 			name:     "pending human action",
-			pack:     ActivePack{ID: "ma" + "tty", Surface: "claude", ReadinessPending: true, PendingHumanActions: 1},
+			pack:     ActivePack{ID: "ma" + "tty", Surface: "claude", PendingHumanActions: 1},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"readiness is pending", "1 pending human actions", "packy status ma" + "tty --surface claude"},
+			want:     []string{"1 pending human actions", "packy status ma" + "tty --surface claude"},
 		},
 		{
 			name:     "update available",

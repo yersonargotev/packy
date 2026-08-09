@@ -268,15 +268,17 @@ type SurfaceAdapter interface {
 }
 
 type ActivationIntent struct {
-	PackID    string             `json:"pack_id"`
-	Surface   Surface            `json:"surface"`
-	Version   string             `json:"version"`
-	Active    bool               `json:"active"`
-	Revision  int                `json:"revision"`
-	Aliases   []SurfaceAlias     `json:"aliases"`
-	Selection ResourceSelection  `json:"selection"`
-	Resources []ResourceIdentity `json:"resources,omitempty"`
-	Explicit  *bool              `json:"explicit,omitempty"`
+	PackID               string                `json:"pack_id"`
+	Surface              Surface               `json:"surface"`
+	Version              string                `json:"version"`
+	Active               bool                  `json:"active"`
+	Revision             int                   `json:"revision"`
+	ReadinessObligations []ReadinessObligation `json:"readiness_obligations"`
+	ExternalRequirements []string              `json:"external_requirements"`
+	Aliases              []SurfaceAlias        `json:"aliases"`
+	Selection            ResourceSelection     `json:"selection"`
+	Resources            []ResourceIdentity    `json:"resources,omitempty"`
+	Explicit             *bool                 `json:"explicit,omitempty"`
 }
 
 type SurfaceAlias struct {
@@ -423,7 +425,7 @@ type ReconciliationPlan struct {
 	runtimeModeResults     []RuntimeModeResult
 	sensitiveEffects       []SensitiveEffectOrigin
 	readiness              ReadinessStatus
-	readinessObserved      ReadinessObservationStatus
+	conditions             []ReadinessCondition
 	observedEvidence       []string
 	pendingEvidence        []string
 	pendingHumanActions    []string
@@ -529,8 +531,8 @@ func (p ReconciliationPlan) PendingHumanActions() []string {
 }
 
 func (p ReconciliationPlan) Readiness() ReadinessStatus { return p.readiness }
-func (p ReconciliationPlan) ReadinessObserved() ReadinessObservationStatus {
-	return p.readinessObserved
+func (p ReconciliationPlan) Conditions() []ReadinessCondition {
+	return cloneReadinessConditions(p.conditions)
 }
 func (p ReconciliationPlan) Evidence() []string { return append([]string(nil), p.observedEvidence...) }
 func (p ReconciliationPlan) PendingEvidence() []string {
@@ -553,7 +555,7 @@ type ApplyResult struct {
 	PlanID              string
 	Projections         int
 	Readiness           ReadinessStatus
-	ReadinessObserved   ReadinessObservationStatus
+	Conditions          []ReadinessCondition
 	PendingHumanActions []string
 }
 
@@ -829,11 +831,11 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 			plan.blockers = append(plan.blockers, PlanBlocker{Kind: BlockerOwnership, Subject: projection.ID, Detail: detail})
 		}
 	}
-	readiness := ReadinessStatus{Configured: len(plan.blockers) == 0}
-	readiness.Authorized = readiness.Configured && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
-	readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
-	plan.readiness = readiness
-	plan.readinessObserved = ReadinessObservationStatus{Configured: true, Authorization: observation.Readiness.AuthorizationObserved, Usability: observation.Readiness.UsabilityObserved}
+	plan.readiness, plan.conditions = evaluateReadiness(readinessEvaluation{
+		Pack: targetPack, Surface: request.Surface, Scope: ReadinessScopeGlobal,
+		Projections: expectedReadinessProjections(observation.Projections, plan.blockers), Resolutions: resolutions,
+		Observation: observation.Readiness, Revision: observation.Revision,
+	})
 	for _, evidence := range observation.Readiness.Evidence {
 		plan.observedEvidence = append(plan.observedEvidence, reportSafeObservationText(evidence, observation.Projections))
 	}
@@ -988,10 +990,11 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 			noOp = false
 		}
 	}
-	readiness := ReadinessStatus{Configured: operation != OperationDeactivate && len(composition.blockers) == 0}
-	readiness.Authorized = readiness.Configured && observation.Readiness.AuthorizationObserved && observation.Readiness.Authorized
-	readiness.Usable = readiness.Authorized && observation.Readiness.UsabilityObserved && observation.Readiness.Usable
-	readinessObserved := ReadinessObservationStatus{Configured: true, Authorization: observation.Readiness.AuthorizationObserved, Usability: observation.Readiness.UsabilityObserved}
+	readiness, conditions := evaluateReadiness(readinessEvaluation{
+		Pack: requested, Surface: request.Surface, Scope: ReadinessScopeGlobal,
+		Projections: expectedReadinessProjections(observation.Projections, composition.blockers), Resolutions: resolutions,
+		Observation: observation.Readiness, Revision: observation.Revision,
+	})
 	observedEvidence := make([]string, 0, len(observation.Readiness.Evidence))
 	for _, evidence := range observation.Readiness.Evidence {
 		observedEvidence = append(observedEvidence, reportSafeObservationText(evidence, observation.Projections))
@@ -1015,7 +1018,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		pendingHumanActions = append(pendingHumanActions, reportSafeObservationText(action, observation.Projections))
 	}
 	sort.Strings(pendingHumanActions)
-	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, documentRevision: state.documentRevision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, readinessObserved: readinessObserved, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, beforeIntentFacts: beforeIntentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts, force: force}
+	plan := ReconciliationPlan{pack: requested, operation: operation, surface: request.Surface, intentRevision: state.Intent.Revision, documentRevision: state.documentRevision, oldVersion: oldVersion, aliases: cloneAliases(aliases), previousAliases: previousAliases, selection: selection, previousSelection: previousSelection, selectionValidity: selectionValidity, observationFingerprint: observationDigest(observation), resolutions: resolutions, runtimeModeResults: cloneRuntimeModeResults(observation.RuntimeModeResults), readiness: readiness, conditions: conditions, observedEvidence: observedEvidence, pendingEvidence: pendingEvidence, pendingHumanActions: pendingHumanActions, noOp: noOp, activations: composition.activations, blockers: composition.blockers, compositionFacts: composition.packs, intentFacts: composition.intentFacts, beforeIntentFacts: beforeIntentFacts, ownershipFacts: cloneOwnership(state.Ownership), beforeCompositionFacts: beforeCompositionFacts, force: force}
 	for _, resource := range pack.Resources {
 		plan.portable = append(plan.portable, PortableOutcome{Kind: resource.Kind, ID: resource.ID})
 	}
@@ -1180,7 +1183,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			targetVersion = request.Plan.oldVersion
 		}
 		explicit := true
-		state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: targetVersion, Active: activeTarget, Revision: state.Intent.Revision + 1, Aliases: cloneAliases(request.Plan.aliases), Selection: request.Plan.selection, Resources: packResourceIdentities(pack), Explicit: &explicit}
+		state.Intent = ActivationIntent{PackID: pack.ID, Surface: request.Plan.surface, Version: targetVersion, Active: activeTarget, Revision: state.Intent.Revision + 1, ReadinessObligations: append([]ReadinessObligation(nil), pack.ReadinessObligations...), ExternalRequirements: append([]string{}, pack.Requires.Tools...), Aliases: cloneAliases(request.Plan.aliases), Selection: request.Plan.selection, Resources: packResourceIdentities(pack), Explicit: &explicit}
 		byID := map[string]ActivationIntent{}
 		for _, intent := range previousIntents {
 			byID[intent.PackID] = intent
@@ -1197,7 +1200,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			if previouslyActive {
 				explicitFact = previous.Explicit
 			}
-			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision, Aliases: cloneAliases(aliases), Selection: activationSelection, Resources: packResourceIdentities(activation.Pack), Explicit: explicitFact}
+			byID[activation.Pack.ID] = ActivationIntent{PackID: activation.Pack.ID, Surface: request.Plan.surface, Version: activation.Pack.Version, Active: true, Revision: state.Intent.Revision, ReadinessObligations: append([]ReadinessObligation(nil), activation.Pack.ReadinessObligations...), ExternalRequirements: append([]string{}, activation.Pack.Requires.Tools...), Aliases: cloneAliases(aliases), Selection: activationSelection, Resources: packResourceIdentities(activation.Pack), Explicit: explicitFact}
 			if activation.Pack.ID == pack.ID {
 				byID[activation.Pack.ID] = state.Intent
 			}
@@ -1393,13 +1396,53 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		return ApplyResult{}, err
 	}
 	fresh := verified.Readiness
-	readiness := ReadinessStatus{Configured: true, Authorized: fresh.AuthorizationObserved && fresh.Authorized}
-	readiness.Usable = readiness.Authorized && fresh.UsabilityObserved && fresh.Usable
+	readiness, conditions := evaluateReadiness(readinessEvaluation{
+		Pack: request.Plan.pack, Surface: request.Plan.surface, Scope: ReadinessScopeGlobal,
+		Projections: observedReadinessProjections(verified.Projections), Resolutions: request.Plan.resolutions,
+		Observation: fresh, Revision: verified.Revision,
+	})
 	pendingHumanActions := append([]string(nil), fresh.PendingHumanActions...)
 	if len(pendingHumanActions) == 0 {
 		pendingHumanActions = append(pendingHumanActions, verified.PendingHumanActions...)
 	}
-	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: len(state.Ownership), Readiness: readiness, ReadinessObserved: ReadinessObservationStatus{Configured: true, Authorization: fresh.AuthorizationObserved, Usability: fresh.UsabilityObserved}, PendingHumanActions: pendingHumanActions}, nil
+	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: len(state.Ownership), Readiness: readiness, Conditions: conditions, PendingHumanActions: pendingHumanActions}, nil
+}
+
+func expectedReadinessProjections(values []ObservedProjection, blockers []PlanBlocker) []ProjectionStatus {
+	blocked := make(map[string]bool, len(blockers))
+	for _, blocker := range blockers {
+		blocked[blocker.Subject] = true
+	}
+	result := make([]ProjectionStatus, 0, len(values))
+	for _, value := range values {
+		if value.DesiredFingerprint == "" {
+			continue
+		}
+		health := ProjectionVerified
+		if blocked[value.ID] {
+			health = ProjectionAmbiguous
+		}
+		result = append(result, ProjectionStatus{ID: value.ID, Target: value.Action.Target, Health: health, ObservedFingerprint: value.ObservedFingerprint, DesiredFingerprint: value.DesiredFingerprint})
+	}
+	return result
+}
+
+func observedReadinessProjections(values []ObservedProjection) []ProjectionStatus {
+	result := make([]ProjectionStatus, 0, len(values))
+	for _, value := range values {
+		if value.DesiredFingerprint == "" {
+			continue
+		}
+		health := ProjectionMissing
+		if value.Exists {
+			health = ProjectionDrifted
+			if value.ObservedFingerprint == value.DesiredFingerprint {
+				health = ProjectionVerified
+			}
+		}
+		result = append(result, ProjectionStatus{ID: value.ID, Target: value.Action.Target, Health: health, ObservedFingerprint: value.ObservedFingerprint, DesiredFingerprint: value.DesiredFingerprint})
+	}
+	return result
 }
 
 func verificationMatchesSubset(desired []projectionExpectation, observed []ObservedProjection) bool {
@@ -2018,12 +2061,16 @@ func cloneActivationState(state ActivationState) ActivationState {
 	state.Intent.Aliases = cloneAliases(state.Intent.Aliases)
 	state.Intent.Selection = cloneSelection(state.Intent.Selection)
 	state.Intent.Resources = append([]ResourceIdentity(nil), state.Intent.Resources...)
+	state.Intent.ReadinessObligations = append([]ReadinessObligation(nil), state.Intent.ReadinessObligations...)
+	state.Intent.ExternalRequirements = append([]string{}, state.Intent.ExternalRequirements...)
 	state.Ownership = append([]ProjectionOwnership(nil), state.Ownership...)
 	state.Intents = append([]ActivationIntent(nil), state.Intents...)
 	for i := range state.Intents {
 		state.Intents[i].Aliases = cloneAliases(state.Intents[i].Aliases)
 		state.Intents[i].Selection = cloneSelection(state.Intents[i].Selection)
 		state.Intents[i].Resources = append([]ResourceIdentity(nil), state.Intents[i].Resources...)
+		state.Intents[i].ReadinessObligations = append([]ReadinessObligation(nil), state.Intents[i].ReadinessObligations...)
+		state.Intents[i].ExternalRequirements = append([]string{}, state.Intents[i].ExternalRequirements...)
 	}
 	state.External = cloneExternalEffects(state.External)
 	return state

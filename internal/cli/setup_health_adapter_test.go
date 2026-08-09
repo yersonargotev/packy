@@ -16,22 +16,22 @@ func TestRenderSetupHealthHuman(t *testing.T) {
 			ConfigHome: "/home/test/config",
 		},
 		Checks:  []setuphealth.Check{{Name: "fixture", Severity: setuphealth.Warn, Detail: "inspect fixture"}},
-		Summary: setuphealth.Summary{Status: "warnings", Warnings: 1},
+		Summary: setuphealth.Summary{Status: "warnings", Warnings: 1, Infos: 2},
 	}
 	var output bytes.Buffer
 
 	if err := renderSetupHealthHuman(&output, report); err != nil {
 		t.Fatal(err)
 	}
-	want := "HOME=/home/test\nCONFIG_HOME=/home/test/config\nWARN fixture: inspect fixture\nSUMMARY status=warnings passes=0 warnings=1 failures=0\n"
+	want := "HOME=/home/test\nCONFIG_HOME=/home/test/config\nWARN fixture: inspect fixture\nSUMMARY status=warnings passes=0 infos=2 warnings=1 failures=0\n"
 	if output.String() != want {
 		t.Fatalf("human output = %q, want %q", output.String(), want)
 	}
 }
 
-func TestRenderSetupHealthJSONV2OmitsContext(t *testing.T) {
+func TestRenderSetupHealthJSONV3OmitsContext(t *testing.T) {
 	report := setuphealth.Report{
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		Kind:          "doctor",
 		Context:       setuphealth.Context{HomeDir: "/must-not-appear"},
 		Checks:        []setuphealth.Check{{Name: "fixture", Severity: setuphealth.Pass, Detail: "healthy"}},
@@ -42,12 +42,12 @@ func TestRenderSetupHealthJSONV2OmitsContext(t *testing.T) {
 	if err := renderSetupHealthJSON(&output, report); err != nil {
 		t.Fatal(err)
 	}
-	want := "{\"schema_version\":2,\"report\":\"doctor\",\"checks\":[{\"name\":\"fixture\",\"severity\":\"PASS\",\"detail\":\"healthy\"}],\"summary\":{\"status\":\"healthy\",\"passes\":1,\"warnings\":0,\"failures\":0}}\n"
+	want := "{\"schema_version\":3,\"report\":\"doctor\",\"checks\":[{\"name\":\"fixture\",\"severity\":\"PASS\",\"detail\":\"healthy\"}],\"summary\":{\"status\":\"healthy\",\"passes\":1,\"infos\":0,\"warnings\":0,\"failures\":0}}\n"
 	if output.String() != want {
 		t.Fatalf("JSON output = %q, want %q", output.String(), want)
 	}
 	if strings.Contains(output.String(), "must-not-appear") {
-		t.Fatalf("JSON v2 included report context: %s", output.String())
+		t.Fatalf("JSON v3 included report context: %s", output.String())
 	}
 }
 

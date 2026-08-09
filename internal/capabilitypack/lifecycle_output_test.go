@@ -157,7 +157,7 @@ func TestLifecycleCompatibilityBlocksExcludedDependencyAndRendersSurfaceExclusio
 func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "addy", Version: "1.0.0", manifestVersion: manifestSchemaV3}, operation: OperationActivate,
 		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}},
-		readiness: ReadinessStatus{Configured: false}, readinessObserved: ReadinessObservationStatus{Configured: true}, pendingEvidence: []string{"z", "a"},
+		readiness: ReadinessStatus{Configured: ReadinessFalse, Authorized: ReadinessUnknown, Usable: ReadinessUnknown}, conditions: []ReadinessCondition{{Type: ConditionRuntimeUsability, Dimension: ReadinessUsable, Value: ReadinessUnknown, Reason: ReasonRuntimeUnobservable, Message: "runtime usability cannot be observed", Evidence: []string{}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "addy/usable"}}}, pendingEvidence: []string{"z", "a"},
 		blockers:            []PlanBlocker{{Kind: BlockerAlias, Subject: "z", Detail: "collision"}},
 		pendingHumanActions: []string{"z", "a"}, phases: []PlanPhase{{Kind: ConsentReversibleLocal, Digest: "phase", ApprovalRequired: true,
 			Actions: []ProjectionAction{{ID: "z"}, {ID: "a"}}}}}
@@ -176,8 +176,11 @@ func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	if got.SchemaVersion != LifecycleJSONSchemaVersion || got.Disposition != PlanMixed || got.IntentRevision != 3 {
 		t.Fatalf("facts = %#v", got)
 	}
-	if got.Contract.Compatibility != CompatibilityBlocked || got.ExpectedReadiness.Configured || !got.ReadinessObserved.Configured || !reflect.DeepEqual(got.PendingEvidence, []string{"a", "z"}) {
+	if got.Contract.Compatibility != CompatibilityBlocked || got.ExpectedReadiness.Configured != ReadinessFalse || !reflect.DeepEqual(got.PendingEvidence, []string{"a", "z"}) {
 		t.Fatalf("planned lifecycle facts = %#v", got)
+	}
+	if len(got.Conditions) != 1 || got.Conditions[0].Value != ReadinessUnknown || got.Conditions[0].Freshness.ValidityIdentity != "addy/usable" {
+		t.Fatalf("conditions lost from lifecycle plan: %#v", got.Conditions)
 	}
 	failure := JSONFailureFor("apply", ErrStalePlan, &plan, nil, nil)
 	if failure.SchemaVersion != LifecycleJSONSchemaVersion || failure.Plan.Contract.Compatibility != CompatibilityBlocked {

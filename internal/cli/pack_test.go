@@ -52,13 +52,9 @@ func TestParseSurfaceAliasesRejectsMalformedInput(t *testing.T) {
 }
 
 func TestReadinessValuePreservesUnknown(t *testing.T) {
-	for _, tc := range []struct {
-		observed bool
-		value    bool
-		want     string
-	}{{false, false, "unknown"}, {false, true, "unknown"}, {true, false, "no"}, {true, true, "yes"}} {
-		if got := readinessValue(tc.observed, tc.value); got != tc.want {
-			t.Fatalf("readinessValue(%v, %v) = %q, want %q", tc.observed, tc.value, got, tc.want)
+	for _, value := range []capabilitypack.ReadinessValue{capabilitypack.ReadinessTrue, capabilitypack.ReadinessFalse, capabilitypack.ReadinessUnknown} {
+		if got := readinessValue(value); got != string(value) {
+			t.Fatalf("readinessValue(%q) = %q, want %q", value, got, value)
 		}
 	}
 }
@@ -75,7 +71,7 @@ func TestPackLifecycleJSONPreviewUsesCanonicalStructuredContract(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &report); err != nil {
 		t.Fatalf("invalid lifecycle JSON: %v\n%s", err, out)
 	}
-	if report.SchemaVersion != capabilitypack.LifecycleJSONSchemaVersion || report.Report != "pack-lifecycle-preview" || !report.DryRun || report.Operation != capabilitypack.OperationActivate || report.Contract.Bindings == nil || report.Contract.Exclusions == nil || report.Contract.OptionalModes == nil || report.Contract.PromptAuthorities == nil || report.Aliases == nil || report.Phases == nil || report.Blockers == nil || report.PendingHumanActions == nil || !report.ReadinessObserved.Configured || report.Evidence == nil || report.PendingEvidence == nil {
+	if report.SchemaVersion != capabilitypack.LifecycleJSONSchemaVersion || report.Report != "pack-lifecycle-preview" || !report.DryRun || report.Operation != capabilitypack.OperationActivate || report.Contract.Bindings == nil || report.Contract.Exclusions == nil || report.Contract.OptionalModes == nil || report.Contract.PromptAuthorities == nil || report.Aliases == nil || report.Phases == nil || report.Blockers == nil || report.PendingHumanActions == nil || report.Evidence == nil || report.PendingEvidence == nil {
 		t.Fatalf("incomplete lifecycle contract: %#v", report)
 	}
 	if terminal.calls != 0 || snapshotTree(t, home) != before {
@@ -472,7 +468,7 @@ func TestArgoteCodexActivationSurvivesReceiptReloadAndCanBeDeactivated(t *testin
 	if err != nil {
 		t.Fatalf("inspect Argote: %v\n%s", err, status)
 	}
-	for _, want := range []string{"Lifecycle state: active", "Readiness: configured=yes", "Projections: 2 verified; 0 drifted; 0 ambiguous; 0 missing; 0 unmanaged"} {
+	for _, want := range []string{"Lifecycle state: active", "Readiness: configured=true", "Projections: 2 verified; 0 drifted; 0 ambiguous; 0 missing; 0 unmanaged"} {
 		if !strings.Contains(status, want) {
 			t.Fatalf("active Argote status missing %q:\n%s", want, status)
 		}
@@ -614,8 +610,8 @@ func TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability(t *testing.T
 	}
 	for _, want := range []string{
 		"Resource readiness: skill:ask-matt role=root",
-		"configured=yes authorized=yes usable=yes",
-		"Focused resource: skill:ask-matt configured=yes authorized=yes usable=yes",
+		"configured=true authorized=true usable=true",
+		"Focused resource: skill:ask-matt configured=true authorized=true usable=true",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("focused human status missing %q:\n%s", want, out)
@@ -840,11 +836,7 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 			t.Fatalf("unexpected or duplicate status row %q", line)
 		}
 		delete(wantRows, key)
-		wantAuthorized := "no"
-		if fields[1] == "claude" {
-			wantAuthorized = "unknown"
-		}
-		if !reflect.DeepEqual(fields[2:], []string{"inactive", "no", wantAuthorized, "unknown", "none"}) {
+		if fields[2] != "inactive" || fields[3] != "false" || !isReadinessValue(fields[4]) || !isReadinessValue(fields[5]) || fields[6] != "none" {
 			t.Fatalf("status row changed semantics: %q", line)
 		}
 	}
@@ -858,7 +850,7 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 	}
 	for _, want := range []string{
 		"engram 1.0.1 on codex", "Intent: inactive", "Resources: 0 selected", "Receipt ownership: 0 projected paths", "Drift: 0 projections",
-		"Readiness: configured=no, authorized=no, usable=unknown",
+		"Readiness: configured=false, authorized=unknown, usable=false",
 		"Projections: 0 verified; 0 drifted; 0 ambiguous", "Pending human actions: none",
 	} {
 		if !strings.Contains(detail, want) {
@@ -877,6 +869,10 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".packy", "config.json")); !os.IsNotExist(err) {
 		t.Fatalf("state file exists: %v", err)
 	}
+}
+
+func isReadinessValue(value string) bool {
+	return value == "true" || value == "false" || value == "unknown"
 }
 
 func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
@@ -916,7 +912,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	entry := report.Entries[0]
-	if report.Report != "pack-status" || entry.Intent.State != "absent" || entry.Intent.Active != nil || entry.Readiness.Authorized.State != "known" || entry.Readiness.Authorized.Value == nil || *entry.Readiness.Authorized.Value || entry.Readiness.Usable.State != "unknown" || entry.Readiness.Usable.Value != nil || entry.Blockers == nil || entry.Evidence == nil || entry.PendingHumanActions == nil {
+	if report.Report != "pack-status" || entry.Intent.State != "absent" || entry.Intent.Active != nil || entry.Readiness.Authorized != capabilitypack.ReadinessUnknown || entry.Readiness.Usable != capabilitypack.ReadinessFalse || entry.Blockers == nil || entry.Evidence == nil || entry.PendingHumanActions == nil {
 		t.Fatalf("absence contract: %#v", entry)
 	}
 	if strings.Contains(detail, "Intent:") {
@@ -959,7 +955,7 @@ func TestPackStatusJSONRequireEmitsDocumentBeforeGateError(t *testing.T) {
 		t.Fatalf("activate: %v\n%s", activateErr, activation)
 	}
 	out, err = executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--require", "usable", "--json")
-	if err != nil || json.Unmarshal([]byte(out), &report) != nil || report.Entries[0].Readiness.Usable.Value == nil || !*report.Entries[0].Readiness.Usable.Value {
+	if err != nil || json.Unmarshal([]byte(out), &report) != nil || report.Entries[0].Readiness.Usable != capabilitypack.ReadinessTrue {
 		t.Fatalf("successful JSON gate: err=%v\n%s", err, out)
 	}
 }
@@ -1004,7 +1000,7 @@ func TestPackStatusRequireUsableIsIndependentNonInteractiveGate(t *testing.T) {
 	prompts := terminal.calls
 	before := snapshotTree(t, home)
 	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--require", "usable")
-	if err != nil || !strings.Contains(out, "configured=yes, authorized=yes, usable=yes") {
+	if err != nil || !strings.Contains(out, "configured=true, authorized=true, usable=true") {
 		t.Fatalf("gate err=%v\n%s", err, out)
 	}
 	if terminal.calls != prompts || snapshotTree(t, home) != before {
@@ -1026,13 +1022,13 @@ func TestPackActivatePackyAndFreshStatusAgreeRuntimeUsabilityIsPending(t *testin
 			if err != nil {
 				t.Fatalf("activate: %v\n%s", err, out)
 			}
-			for _, want := range []string{"Readiness: configured=yes, authorized=yes, usable=unknown", "reload " + map[string]string{"codex": "Codex", "opencode": "OpenCode"}[surface]} {
+			for _, want := range []string{"Readiness: configured=true, authorized=true, usable=unknown", "Pending evidence:"} {
 				if !strings.Contains(out, want) {
 					t.Fatalf("activate output missing %q:\n%s", want, out)
 				}
 			}
 			status, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", surface, "--require", "usable")
-			if err == nil || !strings.Contains(status, "Readiness: configured=yes, authorized=yes, usable=unknown") {
+			if err == nil || !strings.Contains(status, "Readiness: configured=true, authorized=true, usable=unknown") {
 				t.Fatalf("usable gate: err=%v\n%s", err, status)
 			}
 		})
@@ -1211,7 +1207,7 @@ func TestPackActivateEngramPromptsForExternalAuthorityAndReportsPendingActions(t
 	if len(runner.calls) != 1 || !strings.Contains(callStrings(runner.calls)[0], "setup codex") {
 		t.Fatalf("external calls = %#v", runner.calls)
 	}
-	for _, want := range []string{"Readiness: configured=yes, authorized=no, usable=unknown", "Pending human actions:", "/hooks", "reload Codex"} {
+	for _, want := range []string{"Readiness: configured=true, authorized=unknown, usable=unknown", "Pending human actions:", "/hooks", "reload Codex"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}

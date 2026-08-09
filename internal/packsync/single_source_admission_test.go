@@ -587,6 +587,7 @@ func singleSourceAdmissionFixture(t *testing.T) (string, string, SingleSourceAdm
   "description": "Coordinate focused Codex subagents",
   "selectable": true,
   "surfaces": ["codex"],
+  "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
   "resources": [
 	{"kind":"lifecycle","id":"coordinate-session","description":"Tracks the coordination session lifecycle","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"lifecycle","name":"coordinate-session","invocation":"coordinate-session","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]},

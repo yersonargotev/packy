@@ -32,7 +32,7 @@ func renderSetupHealthHuman(w io.Writer, report setuphealth.Report) error {
 		}
 	}
 	summary := report.Summary
-	_, err := fmt.Fprintf(w, "SUMMARY status=%s passes=%d warnings=%d failures=%d\n", summary.Status, summary.Passes, summary.Warnings, summary.Failures)
+	_, err := fmt.Fprintf(w, "SUMMARY status=%s passes=%d infos=%d warnings=%d failures=%d\n", summary.Status, summary.Passes, summary.Infos, summary.Warnings, summary.Failures)
 	return err
 }
 
@@ -52,6 +52,7 @@ type setupHealthJSONReport struct {
 type setupHealthJSONSummary struct {
 	Status   string `json:"status"`
 	Passes   int    `json:"passes"`
+	Infos    int    `json:"infos"`
 	Warnings int    `json:"warnings"`
 	Failures int    `json:"failures"`
 }
@@ -67,7 +68,7 @@ func renderSetupHealthJSON(w io.Writer, report setuphealth.Report) error {
 		Report:        report.Kind,
 		Checks:        checks,
 		Summary: setupHealthJSONSummary{
-			Status: summary.Status, Passes: summary.Passes, Warnings: summary.Warnings, Failures: summary.Failures,
+			Status: summary.Status, Passes: summary.Passes, Infos: summary.Infos, Warnings: summary.Warnings, Failures: summary.Failures,
 		},
 	})
 }

@@ -3,6 +3,7 @@
 This glossary is the current domain language for Packy `v0.2.0`. The accepted
 architecture is recorded in [ADR 0031](docs/adr/0031-simplify-packy-around-reviewed-packs.md)
 and [ADR 0033](docs/adr/0033-make-the-tui-the-primary-interactive-interface.md).
+Readiness architecture is recorded in [ADR 0035](docs/adr/0035-make-pack-readiness-capability-driven.md).
 
 ## Glossary
 
@@ -34,7 +35,8 @@ runtime usability.
 
 The single `pack.json` contract for a Pack. It declares identity, version,
 description, selectability, supported surfaces, resources, bindings,
-intra-Pack dependencies, external requirements, conflicts, and exclusions.
+intra-Pack dependencies, external requirements, readiness obligations,
+conflicts, and exclusions.
 
 ### Pack Source
 
@@ -76,8 +78,10 @@ surface, and resource intent.
 ### Installed Pack receipt
 
 The minimal current-state record for one Pack and surface: Pack identity and
-version, selected resource closure, projected paths, and content digests. It is
-the authority for safe update or removal of unchanged Pack-owned content.
+version, reviewed readiness obligations and external-requirement names,
+selected resource closure, projected paths, and content digests. It is the
+authority for safe update or removal of unchanged Pack-owned content and for
+offline readiness evaluation. It never contains runtime evidence.
 
 ### Project Pack lock
 
@@ -123,6 +127,37 @@ single-source Pack admission.
 
 A host tool a Pack needs, such as Engram. Packy reports readiness without
 turning external tools into Pack relationships.
+
+### Readiness obligation
+
+A reviewed, typed requirement evaluated by the capability-pack domain from
+surface observations or an approved controlled runtime check. Existing external
+requirements and receipt-backed projection integrity can produce obligations
+without duplicating declarations in a Pack manifest.
+
+### Readiness condition
+
+The domain-owned result of one readiness obligation: its stable type,
+configured, authorized, or usable dimension; true, false, or unknown value;
+stable reason; user-facing message; scoped evidence references; observation
+time; and validity identity.
+
+### Readiness dimensions
+
+The three independent readiness meanings. **Configured** means Packy's
+reviewed projection is in the required state; **authorized** means the required
+host authorization is established; **usable** means the required runtime
+behavior is observed. A false condition dominates a dimension, otherwise an
+unknown condition keeps it unknown, and a dimension is true only when all of
+its conditions are true.
+
+### Controlled runtime check
+
+An explicit, approved operation separate from activation that records positive
+or negative personal workstation evidence for host behavior Packy cannot
+otherwise observe. Its evidence is stored only in Packy Home and is stale when
+its Pack, surface, selected resources, projection, adapter, or observable host
+identity changes.
 
 ### Issue delivery
 

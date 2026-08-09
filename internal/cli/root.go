@@ -319,11 +319,25 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 			UpdateAvailable:     entry.UpdateAvailable,
 			ProjectionProblems:  entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
 			MissingRequirements: len(entry.MissingRequirements),
-			ReadinessPending:    !entry.Readiness.Configured || !entry.Readiness.Authorized || !entry.Readiness.Usable,
 			PendingHumanActions: len(entry.PendingHumanActions),
+			Conditions:          setupHealthConditions(entry.Conditions),
 		})
 	}
 	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
+}
+
+func setupHealthConditions(conditions []capabilitypack.ReadinessCondition) []setuphealth.ReadinessCondition {
+	result := make([]setuphealth.ReadinessCondition, 0, len(conditions))
+	for _, condition := range conditions {
+		result = append(result, setuphealth.ReadinessCondition{
+			Type:      string(condition.Type),
+			Dimension: string(condition.Dimension),
+			Value:     string(condition.Value),
+			Reason:    string(condition.Reason),
+			Message:   condition.Message,
+		})
+	}
+	return result
 }
 
 func failedActivePackObservations(intents []capabilitypack.ActivationIntent) []setuphealth.ActivePack {

@@ -16,12 +16,12 @@ import (
 var structuredOutputFixtures = []struct {
 	version, fixture, schema string
 }{
-	{"v2", "doctor.json", "doctor.schema.json"},
+	{"v3", "doctor.json", "doctor.schema.json"},
 	{"v5", "pack-show.json", "pack-show.schema.json"},
-	{"v8", "pack-status.json", "pack-status.schema.json"},
-	{"v9", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
-	{"v9", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
-	{"v9", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
+	{"v9", "pack-status.json", "pack-status.schema.json"},
+	{"v10", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
+	{"v10", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
+	{"v10", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
 }
 
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
@@ -49,7 +49,7 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 
 	opts, _, _ := sandboxOptions(t)
 	opts.SetupHealthDiagnose = func() (setuphealth.Report, error) {
-		return setuphealth.Report{SchemaVersion: 2, Kind: "doctor", Checks: []setuphealth.Check{{Name: "claude-readiness", Severity: setuphealth.Warn, Detail: "runtime usability is unknown; start Claude Code explicitly"}}, Summary: setuphealth.Summary{Status: "warnings", Warnings: 1}}, nil
+		return setuphealth.Report{SchemaVersion: 3, Kind: "doctor", Checks: []setuphealth.Check{{Name: "claude-readiness", Severity: setuphealth.Info, Detail: "runtime usability cannot be observed"}}, Summary: setuphealth.Summary{Status: "healthy", Infos: 1}}, nil
 	}
 	doctor, err := executeCommand(t, NewRootCommand(opts), "doctor", "--json")
 	if err != nil {
@@ -89,9 +89,16 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		t.Fatalf("project preview: %v\n%s", err, projectPreview)
 	}
 	assertProjectStructuredOutput(t, root, "project-preview.schema.json", projectPreview)
-	if applied, err := executeCommand(t, NewRootCommand(projectOpts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
+	applied, err := executeCommand(t, NewRootCommand(projectOpts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--json")
+	if err != nil {
 		t.Fatalf("project install: %v\n%s", err, applied)
 	}
+	projectDocuments := strings.Split(strings.TrimSpace(applied), "\n")
+	if len(projectDocuments) != 2 {
+		t.Fatalf("project install JSON documents = %d\n%s", len(projectDocuments), applied)
+	}
+	assertProjectStructuredOutput(t, root, "project-preview.schema.json", projectDocuments[0])
+	assertProjectStructuredOutput(t, root, "project-apply.schema.json", projectDocuments[1])
 	projectStatus, err := executeCommand(t, NewRootCommand(projectOpts), "status", "matty", "--surface", "codex", "--project", "--json")
 	if err != nil {
 		t.Fatalf("project status: %v\n%s", err, projectStatus)
@@ -99,15 +106,62 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	assertProjectStructuredOutput(t, root, "project-status.schema.json", projectStatus)
 }
 
-func TestStructuredOutputV2SchemasRejectWrongVersionAndUnknownFields(t *testing.T) {
+func TestStructuredOutputV3DoctorSchemaRejectsWrongVersionAndUnknownFields(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
 	for _, document := range []string{
-		`{"schema_version":1,"report":"doctor","checks":[],"summary":{"status":"healthy","passes":0,"warnings":0,"failures":0}}`,
-		`{"schema_version":2,"report":"doctor","checks":[],"summary":{"status":"healthy","passes":0,"warnings":0,"failures":0},"unknown":true}`,
+		`{"schema_version":2,"report":"doctor","checks":[],"summary":{"status":"healthy","passes":0,"infos":0,"warnings":0,"failures":0}}`,
+		`{"schema_version":3,"report":"doctor","checks":[],"summary":{"status":"healthy","passes":0,"infos":0,"warnings":0,"failures":0},"unknown":true}`,
 	} {
 		if err := validateStructuredOutput(t, root, "doctor.schema.json", []byte(document)); err == nil {
 			t.Fatalf("invalid document passed: %s", document)
 		}
+	}
+}
+
+func TestPackStatusSchemaAcceptsUnobservableExternalRequirementReason(t *testing.T) {
+	root, _ := filepath.Abs(filepath.Join("..", ".."))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v9", "pack-status.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(fixture, &document); err != nil {
+		t.Fatal(err)
+	}
+	entries := document["entries"].([]any)
+	entry := entries[0].(map[string]any)
+	entry["conditions"] = append(entry["conditions"].([]any), map[string]any{
+		"type": "external-requirement", "scope": map[string]any{"kind": "global", "pack": entry["pack"], "surface": entry["surface"]},
+		"dimension": "usable", "value": "unknown", "reason": "requirement-unobservable",
+		"message": "external requirement cannot be observed", "evidence": []any{"executable:engram"},
+		"freshness": map[string]any{"observed_at": "2026-08-09T00:00:00Z", "validity_identity": "engram/requirement"},
+	})
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateStructuredOutput(t, root, "pack-status.schema.json", encoded); err != nil {
+		t.Fatalf("unobservable external requirement condition: %v", err)
+	}
+}
+
+func TestPackLifecycleSchemaRejectsIncompleteReadinessCondition(t *testing.T) {
+	root, _ := filepath.Abs(filepath.Join("..", ".."))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v10", "pack-lifecycle-preview.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(fixture, &document); err != nil {
+		t.Fatal(err)
+	}
+	document["conditions"] = []any{map[string]any{}}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateStructuredOutput(t, root, "pack-lifecycle.schema.json", encoded); err == nil {
+		t.Fatal("lifecycle schema accepted an incomplete readiness condition")
 	}
 }
 
@@ -147,7 +201,7 @@ func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
 	load := func(t *testing.T, name string) map[string]any {
 		t.Helper()
-		version := map[string]string{"pack-show.json": "v5", "pack-status.json": "v8"}[name]
+		version := map[string]string{"pack-show.json": "v5", "pack-status.json": "v9"}[name]
 		data, err := os.ReadFile(filepath.Join("testdata", "structured-output", version, name))
 		if err != nil {
 			t.Fatal(err)
@@ -523,7 +577,7 @@ func validateStructuredOutput(t *testing.T, root, schemaName string, instance []
 	}
 	schema, err := compiler.Compile("https://yersonargotev.github.io/packy/schemas/cli/" + schemaVersion + "/" + schemaName)
 	if err != nil {
-		t.Fatalf("compile schema %s: %v", schemaName, err)
+		return fmt.Errorf("compile schema %s: %w", schemaName, err)
 	}
 	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(instance))
 	if err != nil {

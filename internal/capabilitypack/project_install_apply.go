@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const projectInstallApplySchemaVersion = 1
+const projectInstallApplySchemaVersion = 2
 
 type ProjectInstallApplyRequest struct {
 	Preview                    JSONProjectInstallPreview
@@ -26,10 +26,12 @@ type ProjectInstallApplyRequest struct {
 }
 
 type ProjectInstallApplyResult struct {
-	SchemaVersion int    `json:"schema_version"`
-	Report        string `json:"report"`
-	Status        string `json:"status"`
-	Observation   string `json:"observation"`
+	SchemaVersion int                  `json:"schema_version"`
+	Report        string               `json:"report"`
+	Status        string               `json:"status"`
+	Observation   string               `json:"observation"`
+	Readiness     ReadinessStatus      `json:"readiness"`
+	Conditions    []ReadinessCondition `json:"conditions"`
 }
 
 func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallApplyRequest) (ProjectInstallApplyResult, error) {
@@ -69,7 +71,7 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 		return ProjectInstallApplyResult{}, errors.New("project update retirement requires approval of the exact destructive-cleanup phase")
 	}
 	if fresh.Disposition == ProjectInstallConverged {
-		return ProjectInstallApplyResult{SchemaVersion: projectInstallApplySchemaVersion, Report: "project-install-apply", Status: "no-op", Observation: fresh.Observation}, nil
+		return ProjectInstallApplyResult{SchemaVersion: projectInstallApplySchemaVersion, Report: "project-install-apply", Status: "no-op", Observation: fresh.Observation, Readiness: fresh.ExpectedReadiness, Conditions: cloneReadinessConditions(fresh.Conditions)}, nil
 	}
 	if fresh.Disposition != ProjectInstallPreviewable {
 		return ProjectInstallApplyResult{}, ProjectInstallNotActionableError{Disposition: fresh.Disposition}
@@ -154,7 +156,7 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 		}
 		return fail(err)
 	}
-	return ProjectInstallApplyResult{SchemaVersion: projectInstallApplySchemaVersion, Report: "project-install-apply", Status: "verified", Observation: verified.Observation}, nil
+	return ProjectInstallApplyResult{SchemaVersion: projectInstallApplySchemaVersion, Report: "project-install-apply", Status: "verified", Observation: verified.Observation, Readiness: verified.ExpectedReadiness, Conditions: cloneReadinessConditions(verified.Conditions)}, nil
 }
 
 func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, reverse []ProjectionAction, cause error) error {

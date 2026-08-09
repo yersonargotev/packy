@@ -107,10 +107,16 @@
     },
     "installed_receipt": {
       "type": "object",
-      "required": ["pack", "surface", "selection", "resources", "projections"],
+      "required": ["pack", "surface", "readiness_obligations", "external_requirements", "selection", "resources", "projections"],
       "properties": {
         "pack": { "$ref": "#/$defs/installed_pack" },
         "surface": { "$ref": "#/$defs/surface" },
+        "readiness_obligations": {
+          "type": "array",
+          "items": { "enum": ["runtime-usability", "surface-authorization"] },
+          "uniqueItems": true
+        },
+        "external_requirements": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }, "uniqueItems": true },
         "selection": { "$ref": "#/$defs/selection" },
         "aliases": { "type": "array", "items": { "$ref": "#/$defs/alias" } },
         "resources": { "type": "array", "items": { "$ref": "#/$defs/resource" } },
@@ -179,11 +185,23 @@
       "type": "object",
       "required": ["configured", "authorized", "usable"],
       "properties": {
-        "configured": { "type": "boolean" },
-        "authorized": { "type": "boolean" },
-        "usable": { "type": "boolean" }
+        "configured": { "enum": ["true", "false", "unknown"] },
+        "authorized": { "enum": ["true", "false", "unknown"] },
+        "usable": { "enum": ["true", "false", "unknown"] }
       },
       "additionalProperties": false
+    },
+    "readiness_condition": {
+      "type": "object",
+      "required": ["type", "scope", "dimension", "value", "reason", "message", "evidence", "freshness"],
+      "properties": {
+        "type": { "enum": ["projection-integrity", "external-requirement", "surface-authorization", "runtime-usability"] },
+        "scope": { "type": "object", "required": ["kind", "pack", "surface"], "properties": { "kind": { "enum": ["global", "project"] }, "pack": { "type": "string" }, "surface": { "$ref": "#/$defs/surface" }, "resource": { "$ref": "#/$defs/resource" } }, "additionalProperties": false },
+        "dimension": { "enum": ["configured", "authorized", "usable"] },
+        "value": { "enum": ["true", "false", "unknown"] },
+        "reason": { "type": "string" }, "message": { "type": "string" }, "evidence": { "type": "array", "items": { "type": "string" } },
+        "freshness": { "type": "object", "required": ["observed_at", "validity_identity"], "properties": { "observed_at": { "type": "string", "format": "date-time" }, "validity_identity": { "type": "string" } }, "additionalProperties": false }
+      }, "additionalProperties": false
     }
   }
 }
