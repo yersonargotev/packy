@@ -331,7 +331,7 @@ func TestUninitializedDashboardRequiresExplicitFocusedInitialization(t *testing.
 func TestSetupBlockersDisableOnlyAffectedActions(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health: tui.Health{Status: "warnings", Warnings: 1},
-		Setup: tui.Setup{Initialized: true, Blockers: []tui.SetupBlocker{{
+		Setup: tui.Setup{Blockers: []tui.SetupBlocker{{
 			Cause:           "project status is unavailable",
 			AffectedActions: []string{"Current-project status", "Project Pack lifecycle actions"},
 		}}},
@@ -362,7 +362,7 @@ func TestInitializationProgressResultReloadAndRetryAreRecoverable(t *testing.T) 
 		if attempt == 1 {
 			return errors.New("network unavailable")
 		}
-		backend.dashboard.Setup = tui.Setup{Initialized: true}
+		backend.dashboard.Setup = tui.Setup{}
 		backend.dashboard.Global = tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0"}}}
 		return nil
 	}

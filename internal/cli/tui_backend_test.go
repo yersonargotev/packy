@@ -134,7 +134,7 @@ func TestTUIProductionBackendGuidesAndInitializesMissingInstalledSource(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !dashboard.Setup.Initialized || dashboard.Setup.InitializationAvailable || len(dashboard.Global.Packs) == 0 {
+	if dashboard.Setup.InitializationAvailable || len(dashboard.Setup.Blockers) != 0 || len(dashboard.Global.Packs) == 0 {
 		t.Fatalf("reloaded dashboard did not reflect initialized state: %#v", dashboard)
 	}
 
@@ -144,6 +144,43 @@ func TestTUIProductionBackendGuidesAndInitializesMissingInstalledSource(t *testi
 	}
 	if !strings.Contains(strings.Join(progress, "\n"), "already initialized") {
 		t.Fatalf("already-initialized result missing from progress: %v", progress)
+	}
+}
+
+func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	stateFile := filepath.Join(home, ".packy", "packs.json")
+	if err := os.MkdirAll(filepath.Dir(stateFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stateFile, []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PATH":                "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd:  func() (string, error) { return repositoryRoot, nil },
+		Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+
+	dashboard, err := newTUIBackend(opts, newWorkstationResolver(opts)).Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dashboard.Setup.Blockers) != 1 || !strings.Contains(dashboard.Setup.Blockers[0].Cause, "global Pack status") {
+		t.Fatalf("global status blocker missing or unclear: %#v", dashboard.Setup.Blockers)
+	}
+	if !dashboard.Project.Available || dashboard.Project.Root != repositoryRoot || len(dashboard.Project.Packs) == 0 {
+		t.Fatalf("global status blocker hid unaffected project inspection: %#v", dashboard.Project)
 	}
 }
 

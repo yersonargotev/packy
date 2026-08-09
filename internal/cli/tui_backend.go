@@ -72,7 +72,6 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		}
 		return dashboard, nil
 	}
-	dashboard.Setup.Initialized = true
 	dashboard.Global.Packs = catalogPacksForTUI(details, nil)
 	facade, err := activationFacade(b.opts, b.resolver)
 	if err != nil {
@@ -80,17 +79,17 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 			Cause:           fmt.Sprintf("compose global Pack status: %v", err),
 			AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
 		})
-		return dashboard, nil
+	} else {
+		globalStatus, statusErr := facade.Status(ctx, capabilitypack.StatusRequest{})
+		if statusErr != nil {
+			dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+				Cause:           fmt.Sprintf("inspect global Pack status: %v", statusErr),
+				AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
+			})
+		} else {
+			dashboard.Global.Packs = catalogPacksForTUI(details, globalStatusesForTUI(globalStatus))
+		}
 	}
-	globalStatus, err := facade.Status(ctx, capabilitypack.StatusRequest{})
-	if err != nil {
-		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
-			Cause:           fmt.Sprintf("inspect global Pack status: %v", err),
-			AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
-		})
-		return dashboard, nil
-	}
-	dashboard.Global.Packs = catalogPacksForTUI(details, globalStatusesForTUI(globalStatus))
 	snapshot, err := b.resolver.Resolve(workstation.Options{})
 	if err != nil {
 		return tui.Dashboard{}, fmt.Errorf("resolve workstation context: %w", err)

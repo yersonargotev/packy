@@ -87,7 +87,6 @@ type Dashboard struct {
 }
 
 type Setup struct {
-	Initialized             bool
 	InitializationAvailable bool
 	Blockers                []SetupBlocker
 }
