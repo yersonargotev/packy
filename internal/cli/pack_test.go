@@ -1279,7 +1279,7 @@ func copyPackBundleForUpdate(t *testing.T, repoRoot string) string {
 
 func copyProductionCatalogBundle(t *testing.T, target, repoRoot string) {
 	t.Helper()
-	for _, dir := range []string{"skills", "instructions", "agents", "commands", "references", "packs"} {
+	for _, dir := range []string{"skills", "instructions", "agents", "commands", "references", "notices", "packs"} {
 		if err := os.CopyFS(filepath.Join(target, dir), os.DirFS(filepath.Join(repoRoot, "bundle", dir))); err != nil {
 			t.Fatal(err)
 		}

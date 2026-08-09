@@ -148,6 +148,80 @@ func TestExistingProjectInstallationOffersFreshPersonalActivationWithoutReinstal
 	}
 }
 
+func TestProjectStatusOffersOnlyApplicableUpdateAndPersonalDeactivation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{
+				Name: "codex", Supported: true, Installation: "installed", Runtime: "active", UpdateAvailable: true,
+			}},
+		}}}},
+		preview: tui.Preview{ID: "project-update", Digest: "project-update", Operation: "update", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "project-update", ApprovalRequired: true}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Choose project lifecycle action", "Update · selected", "Deactivate"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("project action menu missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Activate") || strings.Contains(view, "Install") {
+		t.Fatalf("installed active project Pack offered an inapplicable action:\n%s", view)
+	}
+
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 {
+		t.Fatalf("project update preview requests = %d, want 1", len(backend.previewRequests))
+	}
+	request := backend.previewRequests[0]
+	if request.Operation != "update" || request.Scope != "project" || request.ProjectRoot != "/workspace/project" || request.Selection.Mode != "" {
+		t.Fatalf("project update preview request = %#v", request)
+	}
+}
+
+func TestProjectStatusOmitsNoOpUpdateAndRequiresDestructiveConsentForPersonalDeactivation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "engram", Version: "1.0.1", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "active"}},
+		}}}},
+		preview: tui.Preview{
+			ID: "personal-deactivation", Digest: "personal-deactivation", Operation: "deactivate", Disposition: "previewable", PackID: "engram", PackVersion: "1.0.1", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project",
+			Effects: []tui.PreviewEffect{{Kind: "personal-runtime", Target: "<codex-home>/config.toml", Description: "remove project trust"}}, Diff: tui.PreviewDiff{Removed: []string{"<codex-home>/config.toml"}},
+			Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove exact personal project trust contribution"}}},
+		},
+		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Personally deactivated engram for the current project"},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if strings.Contains(view, "preview project update") || !strings.Contains(view, "Enter preview personal project deactivation") {
+		t.Fatalf("catalog-current active project status exposed the wrong action:\n%s", view)
+	}
+
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Selection.Mode != "" {
+		t.Fatalf("personal project deactivation preview request = %#v", backend.previewRequests)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(model.View().Content)
+	for _, want := range []string{"Destructive cleanup confirmation", "remove exact personal project trust contribution", "Cancel ] · selected"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("personal project deactivation consent missing %q:\n%s", want, view)
+		}
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	view = ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "Personal project deactivation succeeded") || len(backend.applyRequests) != 1 || !slices.Equal(backend.applyRequests[0].ApprovedPhases, []string{"destructive-cleanup"}) {
+		t.Fatalf("personal project deactivation did not use exact destructive consent:\n%s\nrequests=%#v", view, backend.applyRequests)
+	}
+}
+
 func TestCancellingProjectConsentReloadsStatusWithoutInferringRollback(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
@@ -195,6 +269,39 @@ func TestFailedProjectApplyReloadsStatusWithoutClaimingRollback(t *testing.T) {
 	}
 	if backend.loads != 2 || strings.Contains(view, "rollback") || strings.Contains(view, "rolled back") {
 		t.Fatalf("failed project Apply did not rely on fresh status: loads=%d\n%s", backend.loads, view)
+	}
+}
+
+func TestFailedProjectUpdateReloadsStatusAndRequiresANewPreview(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "active", UpdateAvailable: true}},
+		}}}},
+		preview:     tui.Preview{ID: "project-update-fail", Digest: "project-update-fail", Operation: "update", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "project-update", ApprovalRequired: true}}},
+		applyResult: tui.ApplyResult{Stage: "apply", Verified: false, Summary: "Project update stopped before verification"},
+		applyErr:    errors.New("second projection write failed after the first effect"),
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+
+	view := strings.ToLower(ansi.Strip(model.View().Content))
+	for _, want := range []string{"project update failed", "second projection write failed after the first effect", "fresh pack status reloaded", "enter create fresh preview"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("failed project update missing %q:\n%s", want, view)
+		}
+	}
+	if backend.loads != 2 || len(backend.applyRequests) != 1 {
+		t.Fatalf("failed project update did not reload exactly once: loads=%d applies=%#v", backend.loads, backend.applyRequests)
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 2 || backend.previewRequests[1].Operation != "update" {
+		t.Fatalf("failed project update reused its old preview: %#v", backend.previewRequests)
 	}
 }
 
