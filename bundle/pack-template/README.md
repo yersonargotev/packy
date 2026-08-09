@@ -7,10 +7,12 @@ one `pack.json` manifest.
    maintainer-selected SemVer in `pack.json`.
 2. Replace the example with the Pack's reviewed content beneath its Pack
    directory.
-3. Point each resource `source` at that reviewed content.
-4. Declare only intra-Pack dependencies, external requirements, concrete
+3. Give every resource a concise `description` of its purpose within the Pack.
+   Do not merely repeat source paths or projection mechanics.
+4. Point each resource `source` at that reviewed content.
+5. Declare only intra-Pack dependencies, external requirements, concrete
    conflicts, bindings, and intentional exclusions.
-5. Run the focused validator:
+6. Run the focused validator:
 
    ```sh
    ./scripts/validate-pack-content.sh <pack-id>
