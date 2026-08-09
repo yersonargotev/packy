@@ -12,8 +12,8 @@ func TestIssue422OperatorPathsTeachInitializationThenExplicitActivation(t *testi
 	contracts := map[string][]string{
 		"README.md": {
 			"packy init",
-			"packy pack activate engram --surface codex --dry-run",
-			"packy pack activate engram --surface codex",
+			"packy activate engram --surface codex --dry-run",
+			"packy activate engram --surface codex",
 			"Repeat `--resource` to select specific resource roots",
 			"--resource <kind>:<id>",
 			"Inspection and `--dry-run` do not mutate Pack state or CLI surfaces",
@@ -24,7 +24,7 @@ func TestIssue422OperatorPathsTeachInitializationThenExplicitActivation(t *testi
 		},
 		"docs/release-notes/next.md": {
 			"packy init",
-			"packy pack activate engram --surface codex",
+			"packy activate engram --surface codex",
 		},
 	}
 	for path, wants := range contracts {

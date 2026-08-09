@@ -17,7 +17,7 @@ func installIssue453Project(t *testing.T) (Options, string) {
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("seed project install: %v\n%s", err, out)
 	}
 	return opts, project
@@ -31,7 +31,7 @@ func TestIssue453ProjectStatusReportsIndependentAxesOffline(t *testing.T) {
 		"PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(t.TempDir(), "missing-catalog"),
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project", "--require", "installed", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project", "--require", "installed", "--json")
 	if err != nil {
 		t.Fatalf("offline project status: %v\n%s", err, out)
 	}
@@ -60,7 +60,7 @@ func TestIssue453ProjectStatusReportsAbsentInstallationSeparately(t *testing.T) 
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project", "--json")
 	if err != nil {
 		t.Fatalf("absent project status: %v\n%s", err, out)
 	}
@@ -68,11 +68,11 @@ func TestIssue453ProjectStatusReportsAbsentInstallationSeparately(t *testing.T) 
 	if json.Unmarshal([]byte(out), &report) != nil || len(report.Packs) != 1 || report.Packs[0].Installation != capabilitypack.ProjectInstallationAbsent || report.Packs[0].Runtime != capabilitypack.ProjectRuntimePending {
 		t.Fatalf("absent project axes = %#v\n%s", report, out)
 	}
-	_, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project", "--require", "installed")
+	_, err = executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project", "--require", "installed")
 	if err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("absent installed gate = %v", err)
 	}
-	_, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "--project", "--require", "installed")
+	_, err = executeCommand(t, NewRootCommand(opts), "status", "--project", "--require", "installed")
 	if err == nil || !strings.Contains(err.Error(), "no installed capability packs") {
 		t.Fatalf("absent whole-project installed gate = %v", err)
 	}
@@ -85,7 +85,7 @@ func TestIssue453InstalledEnforcementDetectsDriftWithoutMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project", "--require", "installed", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project", "--require", "installed", "--json")
 	if err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("installed enforcement error = %v\n%s", err, out)
 	}
@@ -106,7 +106,7 @@ func TestIssue453NamedInstallRestoresAuthorizedMissingBytes(t *testing.T) {
 	}
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("reconcile project: %v\n%s", err, out)
 	}
@@ -129,7 +129,7 @@ func TestIssue453NamedInstallNeverInventsMissingBytesFromDigest(t *testing.T) {
 		"PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(t.TempDir(), "missing-catalog"),
 	}
 	before := snapshotTree(t, project)
-	_, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
+	_, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
 	if err == nil {
 		t.Fatal("reconcile invented missing bytes without an exact local source")
 	}
@@ -150,7 +150,7 @@ func TestIssue453StatusFailsClosedOnUnsupportedContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
-	_, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project")
+	_, err = executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project")
 	if err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("unsupported project status error = %v", err)
 	}
@@ -188,7 +188,7 @@ func TestIssue453InstalledEnforcementCoversThePortableContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := snapshotTree(t, project)
-			_, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project", "--require", "installed", "--json")
+			_, err = executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project", "--require", "installed", "--json")
 			if err == nil {
 				t.Fatalf("invalid %s evidence passed installed enforcement", test.name)
 			}

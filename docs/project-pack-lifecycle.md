@@ -10,8 +10,8 @@ authenticates an account, runs a hook, or mutates personal configuration.
 From a Git worktree, preview and install one Pack for one surface:
 
 ```sh
-packy pack install matty --surface codex --dry-run
-packy pack install matty --surface codex
+packy install matty --surface codex --dry-run
+packy install matty --surface codex
 ```
 
 The project root receives:
@@ -34,8 +34,8 @@ When an installed Pack has personal runtime effects, preview and activate them
 separately:
 
 ```sh
-packy pack activate matty --surface codex --project --dry-run
-packy pack activate matty --surface codex --project
+packy activate matty --surface codex --project --dry-run
+packy activate matty --surface codex --project
 ```
 
 Non-interactive installation does not activate personal effects. Global and
@@ -46,15 +46,15 @@ project activations remain explicit and independently inspectable.
 Update one project Pack to the version in the running Packy's bundled catalog:
 
 ```sh
-packy pack update matty --project --dry-run
-packy pack update matty --project
+packy update matty --project --dry-run
+packy update matty --project
 ```
 
 Inspect shared installation and personal activation independently:
 
 ```sh
-packy pack status --project
-packy pack status matty --surface codex --project --json
+packy status --project
+packy status matty --surface codex --project --json
 ```
 
 Every update preflights all receipt-owned projections. Drift or a target
@@ -67,15 +67,15 @@ Personal deactivation removes only unchanged runtime projections in the
 selected personal receipt:
 
 ```sh
-packy pack deactivate matty --surface codex --project --dry-run
-packy pack deactivate matty --surface codex --project
+packy deactivate matty --surface codex --project --dry-run
+packy deactivate matty --surface codex --project
 ```
 
 Uninstall changes shared project intent:
 
 ```sh
-packy pack uninstall matty --surface codex --dry-run
-packy pack uninstall matty --surface codex
+packy uninstall matty --surface codex --dry-run
+packy uninstall matty --surface codex
 ```
 
 Omitting `--surface` removes the complete Pack declaration. Removing one Pack
@@ -88,7 +88,7 @@ Project JSON reports use the checked-in `schemas/project/v1.0.0/` suite. CI can
 inspect the committed contract without using personal state:
 
 ```sh
-packy pack status --project --require installed --json
+packy status --project --require installed --json
 ```
 
 Tests and manual checks that resolve project or workstation paths must sandbox

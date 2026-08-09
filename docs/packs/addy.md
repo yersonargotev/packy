@@ -219,6 +219,6 @@ Addy agent skills
 ## Inspect and preview
 
 ```sh
-packy pack show addy
-packy pack activate addy --surface claude --dry-run
+packy show addy
+packy activate addy --surface claude --dry-run
 ```

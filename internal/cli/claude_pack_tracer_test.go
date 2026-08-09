@@ -17,13 +17,13 @@ func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T)
 	if err := os.WriteFile(filepath.Join(home, ".claude", "CLAUDE.md"), []byte("operator-owned guidance\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	shown, err := executeCommand(t, NewRootCommand(opts), "pack", "show", "matty")
+	shown, err := executeCommand(t, NewRootCommand(opts), "show", "matty")
 	if err != nil || !strings.Contains(shown, "Surface contract: claude") || !strings.Contains(shown, "Compatibility: complete") || !strings.Contains(shown, "Binding: skill:ask-matt") {
 		t.Fatalf("Claude tracer show: err=%v\n%s", err, shown)
 	}
 	beforePreview := snapshotTree(t, home)
 
-	preview, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "claude", "--dry-run")
+	preview, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "claude", "--dry-run")
 	_, resources := checkedInMattyFacts(t)
 	if err != nil || !strings.Contains(preview, "skill:ask-matt") || !strings.Contains(preview, fmt.Sprintf("Logical resources: %d skill, 0 instruction", resources)) || !strings.Contains(preview, "Expected readiness: configured=yes, authorized=unknown, usable=unknown") || !strings.Contains(preview, "Pending evidence:") {
 		t.Fatalf("Claude tracer preview: err=%v\n%s", err, preview)
@@ -36,7 +36,7 @@ func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T)
 	if snapshotTree(t, home) != beforePreview {
 		t.Fatal("Claude dry-run mutated the sandbox")
 	}
-	activated, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "claude")
+	activated, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "claude")
 	if err != nil {
 		t.Fatalf("Claude tracer activate: %v\n%s", err, activated)
 	}
@@ -47,18 +47,18 @@ func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T)
 	if err != nil || string(instructions) != "operator-owned guidance\n" {
 		t.Fatalf("Claude activation changed foreign instructions: %v\n%s", err, instructions)
 	}
-	status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "claude")
+	status, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "claude")
 	if err != nil || !strings.Contains(status, "configured=yes") || !strings.Contains(status, "authorized=unknown") {
 		t.Fatalf("Claude tracer status: err=%v\n%s", err, status)
 	}
 	if !strings.Contains(status, "Compatibility: complete") {
 		t.Fatalf("Claude tracer compatibility missing from status:\n%s", status)
 	}
-	updated, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--surface", "claude")
+	updated, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "claude")
 	if err != nil || !strings.Contains(updated, "Already converged") {
 		t.Fatalf("Claude tracer update: err=%v\n%s", err, updated)
 	}
-	deactivated, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", "claude")
+	deactivated, err := executeCommand(t, NewRootCommand(opts), "deactivate", "matty", "--surface", "claude")
 	if err != nil {
 		t.Fatalf("Claude tracer deactivate: %v\n%s", err, deactivated)
 	}
@@ -82,7 +82,7 @@ func TestClaudeBlockedActivationExecutesZeroEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, home)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "claude")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "claude")
 	if err == nil || !strings.Contains(out, "Compatibility: blocked") || !strings.Contains(out, "Expected readiness: configured=no") || !strings.Contains(out, "Cannot apply activation: 1 blockers") {
 		t.Fatalf("blocked Claude activation: err=%v\n%s", err, out)
 	}

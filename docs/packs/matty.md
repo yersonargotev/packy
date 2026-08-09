@@ -146,6 +146,6 @@ None.
 ## Inspect and preview
 
 ```sh
-packy pack show matty
-packy pack activate matty --surface claude --dry-run
+packy show matty
+packy activate matty --surface claude --dry-run
 ```

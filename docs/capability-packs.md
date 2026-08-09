@@ -6,8 +6,8 @@ CLI surface, and operation. Supported surfaces are Codex, OpenCode, and Claude
 Code.
 
 The bundled Pack manifests are the canonical selectable catalog. Use
-`packy pack list` for the Pack IDs and versions available in the current
-binary, and `packy pack show <pack>` for one Pack's purpose, supported surfaces,
+`packy list` for the Pack IDs and versions available in the current
+binary, and `packy show <pack>` for one Pack's purpose, supported surfaces,
 resources, and external requirements. The generated [Pack catalog](packs/index.md)
 provides the same manifest-backed inventory for browsing on GitHub. Pack
 versions are independent of the Packy binary version.
@@ -15,11 +15,11 @@ versions are independent of the Packy binary version.
 ## Inspect and activate
 
 ```sh
-packy pack list
-packy pack show matty
-packy pack activate matty --surface codex --dry-run
-packy pack activate matty --surface codex
-packy pack status matty --surface codex
+packy list
+packy show matty
+packy activate matty --surface codex --dry-run
+packy activate matty --surface codex
+packy status matty --surface codex
 ```
 
 Activation without `--resource` selects the complete Pack. Repeat `--resource`
@@ -27,7 +27,7 @@ to select explicit roots; the manifest supplies their intra-Pack dependency
 closure:
 
 ```sh
-packy pack activate matty --surface codex \
+packy activate matty --surface codex \
   --resource skill:code-review \
   --dry-run
 ```

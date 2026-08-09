@@ -33,6 +33,6 @@ None.
 ## Inspect and preview
 
 ```sh
-packy pack show argote
-packy pack activate argote --surface claude --dry-run
+packy show argote
+packy activate argote --surface claude --dry-run
 ```

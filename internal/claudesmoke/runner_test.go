@@ -39,17 +39,17 @@ func TestAllowedCommandRejectsInteractiveClaudeAndUnknownPacky(t *testing.T) {
 		t.Fatal("version rejected")
 	}
 	for _, argv := range [][]string{
-		{p, "pack", "list"},
-		{p, "pack", "show", "addy"},
-		{p, "pack", "activate", "addy", "--surface", "claude", "--dry-run"},
-		{p, "pack", "activate", "addy", "--surface", "claude"},
-		{p, "pack", "status", "addy", "--surface", "claude"},
+		{p, "list"},
+		{p, "show", "addy"},
+		{p, "activate", "addy", "--surface", "claude", "--dry-run"},
+		{p, "activate", "addy", "--surface", "claude"},
+		{p, "status", "addy", "--surface", "claude"},
 	} {
 		if !AllowedCommand(p, c, argv) {
 			t.Fatalf("release activation command rejected: %#v", argv)
 		}
 	}
-	for _, argv := range [][]string{{c}, {c, "--print", "hello"}, {c, "mcp", "list"}, {p, "pack", "show", "engram"}, {p, "doctor", "--json"}, {p, "version", "extra"}, {"sh", "-c", "true"}} {
+	for _, argv := range [][]string{{c}, {c, "--print", "hello"}, {c, "mcp", "list"}, {p, "show", "engram"}, {p, "doctor", "--json"}, {p, "version", "extra"}, {"sh", "-c", "true"}} {
 		if AllowedCommand(p, c, argv) {
 			t.Fatalf("allowed %#v", argv)
 		}
@@ -95,7 +95,7 @@ func TestRunInteractiveRestrictedProvidesTTYForExplicitActivation(t *testing.T) 
 		t.Fatal(err)
 	}
 	claude := filepath.Join(root, "claude")
-	argv := []string{packy, "pack", "activate", "addy", "--surface", "claude"}
+	argv := []string{packy, "activate", "addy", "--surface", "claude"}
 	evidence := runInteractiveRestricted(context.Background(), root, root, "", RestrictedEnv(root, root), packy, claude, "y\n", argv)
 	if evidence.ExitCode != 0 || !strings.Contains(evidence.Stdout, "Verified plan") {
 		t.Fatalf("interactive activation evidence = %#v", evidence)
@@ -411,10 +411,10 @@ func validEvidence() Evidence {
 	args := [][]string{
 		{"--version"}, {"version"},
 		{"init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", filepath.Join(sandbox, "source-repository"), "--repository-ref", syntheticSourceRef},
-		{"doctor"}, {"pack", "list"}, {"pack", "show", "addy"},
-		{"pack", "activate", "addy", "--surface", "claude", "--dry-run"},
-		{"pack", "activate", "addy", "--surface", "claude"},
-		{"pack", "status", "addy", "--surface", "claude"},
+		{"doctor"}, {"list"}, {"show", "addy"},
+		{"activate", "addy", "--surface", "claude", "--dry-run"},
+		{"activate", "addy", "--surface", "claude"},
+		{"status", "addy", "--surface", "claude"},
 	}
 	commands := make([]CommandEvidence, len(args))
 	for i := range args {
@@ -510,7 +510,7 @@ func TestValidateEvidenceRejectsTampering(t *testing.T) {
 		t.Fatal("accepted credential marker")
 	}
 	e = validEvidence()
-	e.Commands[6].Args = []string{"pack", "activate", "addy", "--surface", "claude"}
+	e.Commands[6].Args = []string{"activate", "addy", "--surface", "claude"}
 	if err := ValidateEvidence(e); err == nil {
 		t.Fatal("accepted tampered lifecycle sequence")
 	}

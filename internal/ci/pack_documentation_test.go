@@ -83,7 +83,7 @@ func TestGeneratedPackPagesExposeDecisionUsefulInventory(t *testing.T) {
 		for _, required := range []string{
 			"## Purpose", "- Version:", "- Supported surfaces:", "- External requirements:",
 			"## Resources", "  - Role:", "  - Dependencies:", "  - Notices:",
-			"## Pack exclusions", "## Inspect and preview", "packy pack show", "--dry-run",
+			"## Pack exclusions", "## Inspect and preview", "packy show", "--dry-run",
 		} {
 			if !strings.Contains(text, required) {
 				t.Errorf("docs/packs/%s is missing %q", entry.Name(), required)

@@ -5,7 +5,7 @@ Packs. It installs selected Pack resources for Codex, OpenCode, and Claude Code
 without becoming an agent runtime.
 
 The bundled Pack manifests are the canonical selectable catalog. Run
-`packy pack list` to inspect the Pack IDs and versions available in the current
+`packy list` to inspect the Pack IDs and versions available in the current
 binary; each Pack uses one current manifest. Browse the generated
 [Pack catalog](docs/packs/index.md) for purpose and resource details.
 
@@ -20,11 +20,11 @@ and activate one Pack:
 ```sh
 brew install yersonargotev/tap/packy
 packy init
-packy pack list
-packy pack show engram
-packy pack activate engram --surface codex --dry-run
-packy pack activate engram --surface codex
-packy pack status engram --surface codex
+packy list
+packy show engram
+packy activate engram --surface codex --dry-run
+packy activate engram --surface codex
+packy status engram --surface codex
 ```
 
 Before replacing a `v0.1.x` installation, follow the warning-first
@@ -36,16 +36,16 @@ automatic migration or cleanup command.
 From a Git worktree, preview and install a Pack into the project:
 
 ```sh
-packy pack install <pack> --surface <surface> --dry-run
-packy pack install <pack> --surface <surface>
+packy install <pack> --surface <surface> --dry-run
+packy install <pack> --surface <surface>
 ```
 
 Project installation writes reviewed project intent and one receipt per Pack
 and surface. Personal runtime effects remain a separate activation:
 
 ```sh
-packy pack activate <pack> --surface <surface> --project --dry-run
-packy pack activate <pack> --surface <surface> --project
+packy activate <pack> --surface <surface> --project --dry-run
+packy activate <pack> --surface <surface> --project
 ```
 
 See the [project Pack lifecycle](docs/project-pack-lifecycle.md) for update,
@@ -57,9 +57,9 @@ Omitting `--resource` selects the complete Pack. Repeat `--resource` to select
 specific resource roots plus their intra-Pack dependencies:
 
 ```sh
-packy pack activate <pack> --surface codex \
+packy activate <pack> --surface codex \
   --resource <kind>:<id> --dry-run
-packy pack activate <pack> --surface codex \
+packy activate <pack> --surface codex \
   --resource <kind>:<id>
 ```
 
@@ -68,14 +68,14 @@ packy pack activate <pack> --surface codex \
 ```text
 packy init
 packy doctor
-packy pack list
-packy pack show <pack>
-packy pack activate <pack> --surface <surface>
-packy pack install <pack> --surface <surface>
-packy pack update <pack> --surface <surface>
-packy pack status [<pack>] [--surface <surface>]
-packy pack deactivate <pack> --surface <surface>
-packy pack uninstall <pack> [--surface <surface>]
+packy list
+packy show <pack>
+packy activate <pack> --surface <surface>
+packy install <pack> --surface <surface>
+packy update <pack> --surface <surface>
+packy status [<pack>] [--surface <surface>]
+packy deactivate <pack> --surface <surface>
+packy uninstall <pack> [--surface <surface>]
 ```
 
 Inspection and `--dry-run` do not mutate Pack state or CLI surfaces. Lifecycle

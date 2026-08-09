@@ -274,7 +274,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 							blockers = append(blockers, ProjectInstallBlocker{Code: "personal_effect_drift", Target: "<personal-host-path>", Detail: "the receipted personal contribution differs from exact adapter evidence", Remediation: "restore the exact receipted contribution before retrying project deactivation"})
 						}
 					}
-					pendingActions = append(pendingActions, fmt.Sprintf("packy pack deactivate %s --surface %s --project", request.PackID, request.Surface))
+					pendingActions = append(pendingActions, fmt.Sprintf("packy deactivate %s --surface %s --project", request.PackID, request.Surface))
 				}
 			}
 			report.Packs = append(report.Packs, JSONProjectPackStatus{
@@ -374,13 +374,13 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			switch runtime {
 			case ProjectRuntimePending, ProjectRuntimeStale:
 				if runtimeRequired {
-					status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack activate %s --surface %s --project", pack.ID, surface))
+					status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy activate %s --surface %s --project", pack.ID, surface))
 				}
 			case ProjectRuntimeBlocked:
-				status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy pack deactivate %s --surface %s --project", pack.ID, surface))
+				status.PendingHumanActions = append(status.PendingHumanActions, fmt.Sprintf("packy deactivate %s --surface %s --project", pack.ID, surface))
 			}
 			if state != ProjectInstallationInstalled {
-				status.PendingHumanActions = append(status.PendingHumanActions, "packy pack install "+pack.ID+" --surface "+string(surface))
+				status.PendingHumanActions = append(status.PendingHumanActions, "packy install "+pack.ID+" --surface "+string(surface))
 			}
 			status.PendingHumanActions = sortedUnique(status.PendingHumanActions)
 			if request.RequireInstalled {
@@ -500,8 +500,8 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		} else if personalRuntime != ProjectRuntimeBlocked && personalRuntime != ProjectRuntimeStale {
 			status.Runtime = composedProjectRuntimeState(status.RuntimeEffects)
 		}
-		activateCommand := fmt.Sprintf("packy pack activate %s --surface %s --project", status.Pack.ID, status.Surface)
-		deactivateCommand := fmt.Sprintf("packy pack deactivate %s --surface %s --project", status.Pack.ID, status.Surface)
+		activateCommand := fmt.Sprintf("packy activate %s --surface %s --project", status.Pack.ID, status.Surface)
+		deactivateCommand := fmt.Sprintf("packy deactivate %s --surface %s --project", status.Pack.ID, status.Surface)
 		pendingActions := make([]string, 0, len(status.PendingHumanActions)+1)
 		for _, action := range status.PendingHumanActions {
 			if action != activateCommand && action != deactivateCommand {
@@ -510,7 +510,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		}
 		switch {
 		case composition.conflict:
-			pendingActions = append(pendingActions, fmt.Sprintf("packy pack deactivate %s --surface %s", status.Pack.ID, status.Surface))
+			pendingActions = append(pendingActions, fmt.Sprintf("packy deactivate %s --surface %s", status.Pack.ID, status.Surface))
 		case personalRuntime == ProjectRuntimeBlocked:
 			pendingActions = append(pendingActions, deactivateCommand)
 		case status.Runtime == ProjectRuntimePending || status.Runtime == ProjectRuntimeStale:

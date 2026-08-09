@@ -135,23 +135,23 @@ func (report ShowReport) DecisionSummary() ShowDecisionSummary {
 		}
 	}
 
-	nextCommand := "packy pack list"
+	nextCommand := "packy list"
 	for _, surface := range report.Surfaces {
 		if surface.Intent.Present && surface.Intent.Active &&
 			surface.Intent.Version != pack.Version && report.LifecycleAvailability.CatalogUpdateAvailable {
-			nextCommand = fmt.Sprintf("packy pack update %s --surface %s --dry-run", pack.ID, surface.Surface)
+			nextCommand = fmt.Sprintf("packy update %s --surface %s --dry-run", pack.ID, surface.Surface)
 			return ShowDecisionSummary{WhatWillChange: strings.Join(changes, "; "), Risks: risks, NextCommand: nextCommand}
 		}
 	}
 	for _, surface := range report.Surfaces {
 		if surface.Intent.Present && surface.Intent.Active {
-			nextCommand = fmt.Sprintf("packy pack status %s --surface %s", pack.ID, surface.Surface)
+			nextCommand = fmt.Sprintf("packy status %s --surface %s", pack.ID, surface.Surface)
 			return ShowDecisionSummary{WhatWillChange: strings.Join(changes, "; "), Risks: risks, NextCommand: nextCommand}
 		}
 	}
 	for _, surface := range report.Surfaces {
 		if report.LifecycleAvailability.FreshActivationAvailable && surface.Contract.SelectionValidity.All.Available {
-			nextCommand = fmt.Sprintf("packy pack activate %s --surface %s --dry-run", pack.ID, surface.Surface)
+			nextCommand = fmt.Sprintf("packy activate %s --surface %s --dry-run", pack.ID, surface.Surface)
 			break
 		}
 	}

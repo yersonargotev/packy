@@ -24,7 +24,7 @@ func TestIssue457ClaudeProjectInstallUsesNativeDeclarativeSurfaces(t *testing.T)
 		t.Fatal(err)
 	}
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "claude"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "claude"); err != nil {
 		t.Fatalf("install Addy for Claude: %v\n%s", err, out)
 	}
 	for _, relative := range []string{
@@ -38,11 +38,11 @@ func TestIssue457ClaudeProjectInstallUsesNativeDeclarativeSurfaces(t *testing.T)
 		}
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "addy", "--surface", "claude", "--project", "--require", "installed")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", "addy", "--surface", "claude", "--project", "--require", "installed")
 	if err != nil {
 		t.Fatalf("Claude project status for Addy: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "opencode"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "opencode"); err != nil {
 		t.Fatalf("add OpenCode project surface: %v\n%s", err, out)
 	}
 	missingSkill := filepath.Join(project, ".claude", "skills", "using-agent-skills")
@@ -53,10 +53,10 @@ func TestIssue457ClaudeProjectInstallUsesNativeDeclarativeSurfaces(t *testing.T)
 	if err := os.Remove(missingOpenCodeAgent); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "claude"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "claude"); err != nil {
 		t.Fatalf("reconcile Claude receipt: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "opencode"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "opencode"); err != nil {
 		t.Fatalf("reconcile OpenCode receipt: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(filepath.Join(missingSkill, "SKILL.md")); err != nil {
@@ -65,7 +65,7 @@ func TestIssue457ClaudeProjectInstallUsesNativeDeclarativeSurfaces(t *testing.T)
 	if _, err := os.Stat(missingOpenCodeAgent); err != nil {
 		t.Fatalf("OpenCode receipt reconcile did not restore its projection: %v", err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "addy", "--surface", "claude"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "addy", "--surface", "claude"); err != nil {
 		t.Fatalf("uninstall Addy for Claude: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(filepath.Join(project, "CLAUDE.md")); err != nil {
@@ -84,7 +84,7 @@ func TestIssue457ClaudeProjectDryRunDoesNotChangeGlobalActivation(t *testing.T) 
 	opts.Getwd = func() (string, error) { return project, nil }
 	before := snapshotTree(t, home)
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "claude", "--dry-run", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "claude", "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("preview Claude project install: %v\n%s", err, out)
 	}
@@ -95,7 +95,7 @@ func TestIssue457ClaudeProjectDryRunDoesNotChangeGlobalActivation(t *testing.T) 
 	if snapshotTree(t, home) != before || exists(filepath.Join(home, ".claude", "skills", "ask-matt")) {
 		t.Fatal("Claude project dry-run changed global Claude activation state")
 	}
-	globalOut, globalErr := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "claude", "--dry-run")
+	globalOut, globalErr := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "claude", "--dry-run")
 	if globalErr != nil || !strings.Contains(globalOut, "kind=claude-skill-link") || strings.Contains(globalOut, "claude-project") {
 		t.Fatalf("global Claude activation behavior changed: %v\n%s", globalErr, globalOut)
 	}

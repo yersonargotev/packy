@@ -12,8 +12,8 @@ func TestResourceParseFailuresUseJSONLifecycleFailure(t *testing.T) {
 	opts, _, _ := packActivationOptions(t, terminal)
 	packID := "mat" + "ty"
 	for _, args := range [][]string{
-		{"pack", "activate", packID, "--surface", "codex", "--resource", "malformed", "--json"},
-		{"pack", "deactivate", packID, "--surface", "codex", "--resource", "malformed", "--json"},
+		{"activate", packID, "--surface", "codex", "--resource", "malformed", "--json"},
+		{"deactivate", packID, "--surface", "codex", "--resource", "malformed", "--json"},
 	} {
 		out, err := executeCommand(t, NewRootCommand(opts), args...)
 		if err == nil {

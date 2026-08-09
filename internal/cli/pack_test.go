@@ -67,7 +67,7 @@ func TestPackLifecycleJSONPreviewUsesCanonicalStructuredContract(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
 	before := snapshotTree(t, home)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "ma"+"tty", "--surface", "codex", "--dry-run", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "ma"+"tty", "--surface", "codex", "--dry-run", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestPackLifecycleJSONFailureIsStructuredAndEffectFree(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
 	before := snapshotTree(t, home)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "ma"+"tty", "--surface", "codex", "--alias", "command:missing=alias", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "ma"+"tty", "--surface", "codex", "--alias", "command:missing=alias", "--json")
 	if err == nil {
 		t.Fatal("invalid alias unexpectedly succeeded")
 	}
@@ -104,7 +104,7 @@ func TestPackLifecycleJSONCancellationReportsRequestedApprovalAndZeroEffects(t *
 	terminal := &fakeTerminal{interactive: true, approve: false}
 	opts, home, _ := packActivationOptions(t, terminal)
 	before := snapshotTree(t, home)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "ma"+"tty", "--surface", "codex", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "ma"+"tty", "--surface", "codex", "--json")
 	if err == nil {
 		t.Fatal("cancelled activation unexpectedly succeeded")
 	}
@@ -159,21 +159,52 @@ func resolvePackTestLayout(t *testing.T, env Env) packTestLayout {
 	}
 }
 
-func TestPackHelpDocumentsSupportedRolloutCommands(t *testing.T) {
+func TestPackVerbHelpUsesFlatCommandPaths(t *testing.T) {
 	opts, _, _ := packActivationOptions(t, &fakeTerminal{})
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "--help")
+	for _, verb := range []string{"list", "show", "activate", "install", "update", "status", "deactivate", "uninstall"} {
+		t.Run(verb, func(t *testing.T) {
+			out, err := executeCommand(t, NewRootCommand(opts), verb, "--help")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "packy "+verb) || strings.Contains(out, "packy pack") {
+				t.Fatalf("%s help does not use the flat path:\n%s", verb, out)
+			}
+			if strings.Contains(out, "Project installation writes the shared") {
+				t.Fatalf("%s help duplicates shared root lifecycle guidance:\n%s", verb, out)
+			}
+		})
+	}
+}
+
+func TestObsoletePackRouteIsRejected(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	out, err := executeCommand(t, NewRootCommand(opts), "pack", "list")
+	if err == nil || !strings.Contains(err.Error(), `unknown command "pack"`) {
+		t.Fatalf("obsolete route error = %v, output:\n%s", err, out)
+	}
+}
+
+func TestRootCompletionOffersFlatPackVerbsWithoutPackGroup(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	out, err := executeCommand(t, NewRootCommand(opts), "__complete", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{
-		"packy pack list", "packy pack show matty", "packy pack status",
-		"status engram --surface codex --require usable",
-		"activate matty --surface codex --dry-run", "update matty --surface codex",
-		"deactivate matty --surface codex", "Approvals", "repeat the original lifecycle",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("pack help missing %q:\n%s", want, out)
+	var commands []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.HasPrefix(line, ":") || strings.HasPrefix(line, "Completion ended with directive:") {
+			continue
 		}
+		command, _, ok := strings.Cut(line, "\t")
+		if !ok {
+			t.Fatalf("malformed completion line %q", line)
+		}
+		commands = append(commands, command)
+	}
+	want := []string{"activate", "completion", "deactivate", "doctor", "help", "init", "install", "list", "show", "status", "uninstall", "update", "version"}
+	if !reflect.DeepEqual(commands, want) {
+		t.Fatalf("root completion commands = %q, want %q\n%s", commands, want, out)
 	}
 }
 
@@ -195,7 +226,7 @@ func TestPackListUsesOneCapturedWorkstationForSkillSource(t *testing.T) {
 		},
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "list")
+	out, err := executeCommand(t, NewRootCommand(opts), "list")
 	if err != nil {
 		t.Fatalf("pack list: %v\n%s", err, out)
 	}
@@ -219,7 +250,7 @@ func TestPackLifecycleRejectsInvalidBundleResourceBeforeMutation(t *testing.T) {
 	runner := opts.Runner.(*fakeRunner)
 	before := snapshotTree(t, home)
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex")
 	if err == nil {
 		t.Fatalf("expected invalid bundle resource error, got output:\n%s", out)
 	}
@@ -377,7 +408,7 @@ func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
 	beforeHome := snapshotTree(t, home)
 	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--dry-run")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--dry-run")
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
@@ -410,7 +441,7 @@ func TestArgoteActivationPreviewIsApplicableOnEverySurface(t *testing.T) {
 			opts, home, _ := packActivationOptions(t, terminal)
 			beforeHome := snapshotTree(t, home)
 
-			out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "argote", "--surface", surface, "--dry-run")
+			out, err := executeCommand(t, NewRootCommand(opts), "activate", "argote", "--surface", surface, "--dry-run")
 			if err != nil {
 				t.Fatalf("Argote %s dry-run failed: %v\n%s", surface, err, out)
 			}
@@ -433,10 +464,10 @@ func TestArgoteCodexActivationSurvivesReceiptReloadAndCanBeDeactivated(t *testin
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "argote", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "argote", "--surface", "codex"); err != nil {
 		t.Fatalf("activate Argote: %v\n%s", err, out)
 	}
-	status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "argote", "--surface", "codex")
+	status, err := executeCommand(t, NewRootCommand(opts), "status", "argote", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("inspect Argote: %v\n%s", err, status)
 	}
@@ -446,7 +477,7 @@ func TestArgoteCodexActivationSurvivesReceiptReloadAndCanBeDeactivated(t *testin
 		}
 	}
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "argote", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "deactivate", "argote", "--surface", "codex"); err != nil {
 		t.Fatalf("deactivate Argote: %v\n%s", err, out)
 	}
 	if prompt, err := os.ReadFile(filepath.Join(home, ".codex", "AGENTS.md")); err != nil && !os.IsNotExist(err) {
@@ -458,10 +489,10 @@ func TestArgoteCodexActivationSurvivesReceiptReloadAndCanBeDeactivated(t *testin
 		t.Fatalf("deactivation retained Argote skill: %v", err)
 	}
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "argote", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "argote", "--surface", "codex"); err != nil {
 		t.Fatalf("reactivate Argote: %v\n%s", err, out)
 	}
-	status, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "argote", "--surface", "codex")
+	status, err = executeCommand(t, NewRootCommand(opts), "status", "argote", "--surface", "codex")
 	if err != nil || !strings.Contains(status, "Projections: 2 verified; 0 drifted; 0 ambiguous; 0 missing; 0 unmanaged") {
 		t.Fatalf("reactivated Argote is not verified: %v\n%s", err, status)
 	}
@@ -474,7 +505,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
 
 	before := snapshotTree(t, home)
-	dryRun, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--resource", "skill:ask-matt", "--dry-run")
+	dryRun, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--resource", "skill:ask-matt", "--dry-run")
 	if err != nil {
 		t.Fatalf("selected dry-run failed: %v\n%s", err, dryRun)
 	}
@@ -490,7 +521,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		t.Fatalf("selected dry-run mutated sandbox HOME:\n%s", got)
 	}
 
-	applied, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
+	applied, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
 	if err != nil {
 		t.Fatalf("selected activation failed: %v\n%s", err, applied)
 	}
@@ -507,7 +538,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		}
 	}
 
-	status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex")
+	status, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("selected status failed: %v\n%s", err, status)
 	}
@@ -517,7 +548,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		}
 	}
 
-	jsonStatus, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--json")
+	jsonStatus, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--json")
 	if err != nil {
 		t.Fatalf("selected JSON status failed: %v\n%s", err, jsonStatus)
 	}
@@ -539,7 +570,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		t.Fatalf("selected JSON resources = %#v", report.Entries[0].ResourceSelections)
 	}
 
-	additive, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:code-review")
+	additive, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--resource", "skill:code-review")
 	if err != nil {
 		t.Fatalf("additive selection failed: %v\n%s", err, additive)
 	}
@@ -553,7 +584,7 @@ func TestPackActivateCodexSelectsOneV4ResourceThroughLifecycle(t *testing.T) {
 		}
 	}
 
-	deactivated, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
+	deactivated, err := executeCommand(t, NewRootCommand(opts), "deactivate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
 	if err != nil {
 		t.Fatalf("resource-scoped deactivation failed: %v\n%s", err, deactivated)
 	}
@@ -572,11 +603,11 @@ func TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability(t *testing.T
 	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
 	opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
 		t.Fatalf("activate selected resource: %v\n%s", err, out)
 	}
 	before := snapshotTree(t, home)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--require", "usable")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--require", "usable")
 	if err != nil {
 		t.Fatalf("focused usable status: %v\n%s", err, out)
 	}
@@ -593,7 +624,7 @@ func TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability(t *testing.T
 		t.Fatalf("focused status mutated sandbox HOME:\nbefore:\n%s\nafter:\n%s", before, got)
 	}
 
-	out, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--require", "usable", "--json")
+	out, err = executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--require", "usable", "--json")
 	if err != nil {
 		t.Fatalf("focused JSON status: %v\n%s", err, out)
 	}
@@ -608,7 +639,7 @@ func TestPackStatusFocusesSelectedResourceAndRequiresFreshUsability(t *testing.T
 	}
 
 	for _, resource := range []string{"malformed", "instruction:matty-guidance"} {
-		if _, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--resource", resource); err == nil {
+		if _, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--resource", resource); err == nil {
 			t.Fatalf("focused status unexpectedly accepted %q", resource)
 		}
 	}
@@ -629,7 +660,7 @@ func TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects(t *te
 		}
 	}
 
-	_, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--resource", "skill:ask-matt")
 	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "stale") {
 		t.Fatalf("selected stale error = %v", err)
 	}
@@ -644,7 +675,7 @@ func TestPackActivateCodexSelectedV4ResourceRejectsStalePlanWithoutEffects(t *te
 func TestPackActivateCodexRejectsNonTTYBeforeEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: false, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex")
 	if err == nil || !strings.Contains(err.Error(), "interactive terminal") {
 		t.Fatalf("error = %v\n%s", err, out)
 	}
@@ -663,7 +694,7 @@ func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _ := currentPackActivationOptions(t, terminal)
 	_, resourceCount := checkedInMattyFacts(t)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("activate failed: %v\n%s", err, out)
 	}
@@ -681,7 +712,7 @@ func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 		t.Fatalf("state = %s err=%v", state, err)
 	}
 
-	out, err = executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	out, err = executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("repeat failed: %v\n%s", err, out)
 	}
@@ -699,7 +730,7 @@ func TestPackActivateCodexStalePlanExecutesNoActions(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(target, "operator-owned"), []byte("concurrent change\n"), 0o600)
 	}
 
-	_, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex")
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("error = %v", err)
 	}
@@ -721,7 +752,7 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}, Runner: runner}
 	beforeHome := snapshotTree(t, home)
 	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "list")
+	out, err := executeCommand(t, NewRootCommand(opts), "list")
 	if err != nil {
 		t.Fatalf("list failed: %v\n%s", err, out)
 	}
@@ -730,7 +761,7 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 			t.Fatalf("list missing %q:\n%s", want, out)
 		}
 	}
-	show, err := executeCommand(t, NewRootCommand(opts), "pack", "show", "engram")
+	show, err := executeCommand(t, NewRootCommand(opts), "show", "engram")
 	if err != nil {
 		t.Fatalf("show failed: %v\n%s", err, show)
 	}
@@ -739,7 +770,7 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 			t.Fatalf("show missing %q:\n%s", want, show)
 		}
 	}
-	argoteShow, err := executeCommand(t, NewRootCommand(opts), "pack", "show", "argote")
+	argoteShow, err := executeCommand(t, NewRootCommand(opts), "show", "argote")
 	if err != nil {
 		t.Fatalf("show Argote failed: %v\n%s", err, argoteShow)
 	}
@@ -771,7 +802,7 @@ func TestPackShowRejectsUnknownPack(t *testing.T) {
 	home := t.TempDir()
 	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}}
 	opts.Env.(MapEnv)["PATH"] = ""
-	_, err := executeCommand(t, NewRootCommand(opts), "pack", "show", "mobile")
+	_, err := executeCommand(t, NewRootCommand(opts), "show", "mobile")
 	if err == nil || !strings.Contains(err.Error(), "unknown capability pack") {
 		t.Fatalf("error = %v", err)
 	}
@@ -789,7 +820,7 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 	beforeHome := snapshotTree(t, home)
 	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
 
-	overview, err := executeCommand(t, NewRootCommand(opts), "pack", "status")
+	overview, err := executeCommand(t, NewRootCommand(opts), "status")
 	if err != nil {
 		t.Fatalf("status failed: %v\n%s", err, overview)
 	}
@@ -820,7 +851,7 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 		t.Fatalf("status omitted Pack/surface rows: %#v\n%s", wantRows, overview)
 	}
 
-	detail, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "engram", "--surface", "codex")
+	detail, err := executeCommand(t, NewRootCommand(opts), "status", "engram", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("targeted status failed: %v\n%s", err, detail)
 	}
@@ -851,7 +882,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	repoRoot, _ := filepath.Abs(filepath.Join("..", ".."))
 	home := t.TempDir()
 	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}}
-	overview, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "--json")
+	overview, err := executeCommand(t, NewRootCommand(opts), "status", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -876,7 +907,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	if len(wantRows) != 0 {
 		t.Fatalf("JSON status omitted Pack/surface entries: %#v", wantRows)
 	}
-	detail, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "engram", "--surface", "codex", "--json")
+	detail, err := executeCommand(t, NewRootCommand(opts), "status", "engram", "--surface", "codex", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -914,7 +945,7 @@ func expectedPackSurfaceRows(t *testing.T, repoRoot string) map[string]bool {
 func TestPackStatusJSONRequireEmitsDocumentBeforeGateError(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--require", "usable", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--require", "usable", "--json")
 	if err == nil || !strings.Contains(err.Error(), "not freshly observed usable") {
 		t.Fatalf("gate error=%v", err)
 	}
@@ -923,10 +954,10 @@ func TestPackStatusJSONRequireEmitsDocumentBeforeGateError(t *testing.T) {
 		t.Fatalf("missing JSON before gate: %s", out)
 	}
 	opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
-	if activation, activateErr := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); activateErr != nil {
+	if activation, activateErr := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); activateErr != nil {
 		t.Fatalf("activate: %v\n%s", activateErr, activation)
 	}
-	out, err = executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--require", "usable", "--json")
+	out, err = executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--require", "usable", "--json")
 	if err != nil || json.Unmarshal([]byte(out), &report) != nil || report.Entries[0].Readiness.Usable.Value == nil || !*report.Entries[0].Readiness.Usable.Value {
 		t.Fatalf("successful JSON gate: err=%v\n%s", err, out)
 	}
@@ -944,10 +975,10 @@ func TestPackStatusRequiresCompleteTarget(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"pack", "status", "engram"}, "--surface is required"},
-		{[]string{"pack", "status", "--surface", "codex"}, "a pack is required"},
-		{[]string{"pack", "status", "engram", "--surface", "vscode"}, "does not support CLI surface"},
-		{[]string{"pack", "status", "missing", "--surface", "codex"}, "unknown capability pack"},
+		{[]string{"status", "engram"}, "--surface is required"},
+		{[]string{"status", "--surface", "codex"}, "a pack is required"},
+		{[]string{"status", "engram", "--surface", "vscode"}, "does not support CLI surface"},
+		{[]string{"status", "missing", "--surface", "codex"}, "unknown capability pack"},
 	} {
 		_, err := executeCommand(t, NewRootCommand(opts), tc.args...)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -960,25 +991,25 @@ func TestPackStatusRequireUsableIsIndependentNonInteractiveGate(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
 	opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--require", "usable"); err == nil || !strings.Contains(err.Error(), "not freshly observed usable") {
+	if _, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--require", "usable"); err == nil || !strings.Contains(err.Error(), "not freshly observed usable") {
 		t.Fatalf("inactive gate error=%v", err)
 	}
 	if terminal.calls != 0 || exists(filepath.Join(home, ".packy", "packs.json")) {
 		t.Fatal("failed status gate prompted or persisted")
 	}
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+	if _, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
 		t.Fatal(err)
 	}
 	prompts := terminal.calls
 	before := snapshotTree(t, home)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--require", "usable")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--require", "usable")
 	if err != nil || !strings.Contains(out, "configured=yes, authorized=yes, usable=yes") {
 		t.Fatalf("gate err=%v\n%s", err, out)
 	}
 	if terminal.calls != prompts || snapshotTree(t, home) != before {
 		t.Fatal("successful status gate prompted or mutated files")
 	}
-	for _, args := range [][]string{{"pack", "status", "--require", "usable"}, {"pack", "status", "matty", "--surface", "codex", "--require", "authorized"}} {
+	for _, args := range [][]string{{"status", "--require", "usable"}, {"status", "matty", "--surface", "codex", "--require", "authorized"}} {
 		if _, err := executeCommand(t, NewRootCommand(opts), args...); err == nil || !strings.Contains(err.Error(), "valid only") {
 			t.Fatalf("%v error=%v", args, err)
 		}
@@ -990,7 +1021,7 @@ func TestPackActivatePackyAndFreshStatusAgreeRuntimeUsabilityIsPending(t *testin
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
 			opts, _, _ := packActivationOptions(t, terminal)
-			out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface)
+			out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", surface)
 			if err != nil {
 				t.Fatalf("activate: %v\n%s", err, out)
 			}
@@ -999,7 +1030,7 @@ func TestPackActivatePackyAndFreshStatusAgreeRuntimeUsabilityIsPending(t *testin
 					t.Fatalf("activate output missing %q:\n%s", want, out)
 				}
 			}
-			status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", surface, "--require", "usable")
+			status, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", surface, "--require", "usable")
 			if err == nil || !strings.Contains(status, "Readiness: configured=yes, authorized=yes, usable=unknown") {
 				t.Fatalf("usable gate: err=%v\n%s", err, status)
 			}
@@ -1016,7 +1047,7 @@ func TestPackActivateOpenCodeDryRunIsCompletelySideEffectFree(t *testing.T) {
 	beforeHome := snapshotTree(t, home)
 	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "opencode", "--dry-run")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "opencode", "--dry-run")
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
@@ -1047,7 +1078,7 @@ func TestCurrentMattyActivationProjectsSkillsWithoutInstructions(t *testing.T) {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
 			opts, home, _ := packActivationOptions(t, terminal)
-			out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface)
+			out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", surface)
 			if err != nil {
 				t.Fatalf("activate current Matty: %v\n%s", err, out)
 			}
@@ -1076,7 +1107,7 @@ func TestCurrentMattyActivationProjectsSkillsWithoutInstructions(t *testing.T) {
 func TestPackActivateOpenCodeRejectsNonTTYBeforeEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: false, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
-	_, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "opencode")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "opencode")
 	if err == nil || !strings.Contains(err.Error(), "interactive terminal") {
 		t.Fatalf("error = %v", err)
 	}
@@ -1110,7 +1141,7 @@ func TestPackActivateOpenCodePreservesUnmanagedContentAndDoesNotMutateCodex(t *t
 		t.Fatal(err)
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "opencode")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "opencode")
 	if err != nil {
 		t.Fatalf("activate failed: %v\n%s", err, out)
 	}
@@ -1131,7 +1162,7 @@ func TestPackActivateOpenCodePreservesUnmanagedContentAndDoesNotMutateCodex(t *t
 		t.Fatalf("Codex mutated: %q err=%v", codex, err)
 	}
 
-	out, err = executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "opencode")
+	out, err = executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "opencode")
 	if err != nil {
 		t.Fatalf("repeat failed: %v\n%s", err, out)
 	}
@@ -1146,7 +1177,7 @@ func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T)
 	beforeHome := snapshotTree(t, home)
 	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex", "--dry-run")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex", "--dry-run")
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
@@ -1169,7 +1200,7 @@ func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T)
 func TestPackActivateEngramPromptsForExternalAuthorityAndReportsPendingActions(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _, runner := engramActivationOptions(t, terminal)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("activate failed: %v\n%s", err, out)
 	}
@@ -1192,7 +1223,7 @@ func TestPackActivateEngramPromptsForExternalAuthorityAndReportsPendingActions(t
 func TestPackActivateEngramNonTTYAndExternalCancellationAreSideEffectFree(t *testing.T) {
 	nonTTY := &fakeTerminal{interactive: false, approve: true}
 	opts, home, _, runner := engramActivationOptions(t, nonTTY)
-	_, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex")
 	if err == nil || !strings.Contains(err.Error(), "interactive terminal") {
 		t.Fatalf("non-TTY error = %v", err)
 	}
@@ -1202,7 +1233,7 @@ func TestPackActivateEngramNonTTYAndExternalCancellationAreSideEffectFree(t *tes
 
 	cancel := &fakeTerminal{interactive: true, approve: true, answers: []bool{false}}
 	opts, home, _, runner = engramActivationOptions(t, cancel)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex")
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("cancellation error = %v\n%s", err, out)
 	}
@@ -1214,11 +1245,11 @@ func TestPackActivateEngramNonTTYAndExternalCancellationAreSideEffectFree(t *tes
 func TestPackActivateEngramSurfacesRemainIndependent(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _, runner := engramActivationOptions(t, terminal)
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex"); err != nil {
 		t.Fatalf("Codex activation failed: %v\n%s", err, out)
 	}
 	codexConfig := readFileString(t, filepath.Join(home, ".codex", "config.toml"))
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "opencode"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "opencode"); err != nil {
 		t.Fatalf("OpenCode activation failed: %v\n%s", err, out)
 	}
 	if strings.Contains(readFileString(t, filepath.Join(home, ".codex", "config.toml")), "opencode") || readFileString(t, filepath.Join(home, ".codex", "config.toml")) != codexConfig {
@@ -1268,12 +1299,12 @@ func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
 			opts, home, _ := packActivationOptions(t, terminal)
-			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", surface); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", surface); err != nil {
 				t.Fatalf("seed: %v\n%s", err, out)
 			}
 			before := snapshotTree(t, home)
 			prompts := terminal.calls
-			out, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", surface, "--dry-run")
+			out, err := executeCommand(t, NewRootCommand(opts), "deactivate", "matty", "--surface", surface, "--dry-run")
 			if err != nil {
 				t.Fatalf("dry-run: %v\n%s", err, out)
 			}
@@ -1285,11 +1316,11 @@ func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
 			if terminal.calls != prompts || snapshotTree(t, home) != before {
 				t.Fatal("deactivation dry-run prompted or mutated HOME")
 			}
-			out, err = executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", surface)
+			out, err = executeCommand(t, NewRootCommand(opts), "deactivate", "matty", "--surface", surface)
 			if err != nil || !strings.Contains(out, "Verified plan") {
 				t.Fatalf("apply: %v\n%s", err, out)
 			}
-			out, err = executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", surface)
+			out, err = executeCommand(t, NewRootCommand(opts), "deactivate", "matty", "--surface", surface)
 			if err != nil || !strings.Contains(out, "Already converged") {
 				t.Fatalf("no-op: %v\n%s", err, out)
 			}
@@ -1305,12 +1336,12 @@ func TestPackDeactivateCancellationAndNonTTYHaveZeroEffects(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			seed := &fakeTerminal{interactive: true, approve: true}
 			opts, home, _ := packActivationOptions(t, seed)
-			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
 				t.Fatalf("seed: %v\n%s", err, out)
 			}
 			opts.Terminal = tc.terminal
 			before := snapshotTree(t, home)
-			_, err := executeCommand(t, NewRootCommand(opts), "pack", "deactivate", "matty", "--surface", "codex")
+			_, err := executeCommand(t, NewRootCommand(opts), "deactivate", "matty", "--surface", "codex")
 			if err == nil {
 				t.Fatal("unsafe deactivation succeeded")
 			}

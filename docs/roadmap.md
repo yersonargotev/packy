@@ -3,7 +3,7 @@
 Packy `v0.2.0` establishes the current product: reviewed Packs, installed Pack
 receipts, Codex/OpenCode/Claude Code support, proportional validation, native
 GitHub integration controls, and an immutable binary release. Use the
-manifest-backed Pack catalog through `packy pack list` or the generated
+manifest-backed Pack catalog through `packy list` or the generated
 [Pack catalog](packs/index.md) for current membership and versions. Claude Code
 support requires stable version **2.1.203 or newer**.
 

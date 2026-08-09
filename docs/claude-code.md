@@ -31,10 +31,10 @@ Initialization and catalog inspection do not activate Claude resources:
 
 ```sh
 packy init
-packy pack show engram
-packy pack activate engram --surface claude --dry-run
-packy pack activate engram --surface claude
-packy pack status engram --surface claude
+packy show engram
+packy activate engram --surface claude --dry-run
+packy activate engram --surface claude
+packy status engram --surface claude
 ```
 
 Application writes an installed Pack receipt before reporting success. Later
@@ -47,7 +47,7 @@ hooks, and MCP definitions. Ordinary update or deactivation stops before
 changing a drifted receipt-owned path. An explicit force option remains limited
 to the targeted receipt.
 
-`packy pack deactivate <pack> --surface claude` removes only unchanged
+`packy deactivate <pack> --surface claude` removes only unchanged
 receipt-owned projections. It never deletes credentials, Engram memory,
 unrelated host configuration, or external data.
 
@@ -57,8 +57,8 @@ Configured projections do not prove that Claude has loaded or authorized them.
 Inspect current status explicitly:
 
 ```sh
-packy pack status matty --surface claude
-packy pack status matty --surface claude --require usable
+packy status matty --surface claude
+packy status matty --surface claude --require usable
 ```
 
 `--require usable` exits nonzero until required host observations are ready.

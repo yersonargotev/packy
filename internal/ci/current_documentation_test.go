@@ -66,7 +66,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	requireDocumentationText(t, root, "docs/reset-v0.2.md", []string{
 		"Warning", "brew uninstall packy", "Back up", "~/.packy", "~/.local/share/packy",
 		"packy.json", "packy.lock.json", "PACKY-NOTICES.md", "brew install yersonargotev/tap/packy",
-		"packy init", "packy pack install", "no automatic", "migration command",
+		"packy init", "packy install", "no automatic", "migration command",
 	})
 }
 

@@ -75,7 +75,7 @@ func Diagnose(homeDir, configHome string, observation Observation) Report {
 		report.Checks = append(report.Checks, Check{
 			Name:     fmt.Sprintf("pack-state-%s", surface),
 			Severity: Fail,
-			Detail:   fmt.Sprintf("capability-pack activation state for %s could not be observed; run packy pack status", surface),
+			Detail:   fmt.Sprintf("capability-pack activation state for %s could not be observed; run packy status", surface),
 		})
 	}
 	for _, pack := range observation.ActivePacks {
@@ -87,7 +87,7 @@ func Diagnose(homeDir, configHome string, observation Observation) Report {
 
 func diagnoseActivePack(pack ActivePack) Check {
 	name := fmt.Sprintf("pack-%s-%s", pack.ID, pack.Surface)
-	statusCommand := fmt.Sprintf("packy pack status %s --surface %s", pack.ID, pack.Surface)
+	statusCommand := fmt.Sprintf("packy status %s --surface %s", pack.ID, pack.Surface)
 	var findings []string
 	severity := Pass
 	if pack.InspectionFailed {
@@ -130,10 +130,10 @@ func diagnoseActivePack(pack ActivePack) Check {
 
 	remediation := []string{statusCommand}
 	if pack.ProjectionProblems > 0 {
-		remediation = append([]string{fmt.Sprintf("packy pack activate %s --surface %s", pack.ID, pack.Surface)}, remediation...)
+		remediation = append([]string{fmt.Sprintf("packy activate %s --surface %s", pack.ID, pack.Surface)}, remediation...)
 	}
 	if pack.UpdateAvailable {
-		remediation = append([]string{fmt.Sprintf("packy pack update %s --surface %s", pack.ID, pack.Surface)}, remediation...)
+		remediation = append([]string{fmt.Sprintf("packy update %s --surface %s", pack.ID, pack.Surface)}, remediation...)
 	}
 	return Check{
 		Name:     name,
