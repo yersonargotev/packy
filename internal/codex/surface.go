@@ -120,23 +120,23 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 	var revisionParts []string
 	var desiredPrompt string
 	promptLoaded := false
-	engramOwned := hasEngramCodexSetupResources(pack)
-	if engramOwned {
+	externalSetup, hasExternalSetup := pack.ExternalHostSetup(capabilitypack.SurfaceCodex)
+	if hasExternalSetup {
 		config, err := readOptionalFile(a.configFile)
 		if err != nil {
 			return capabilitypack.SurfaceInspection{}, err
 		}
-		engramProjections, err := a.inspectEngramContract(config, resolutions)
+		externalProjections, err := a.inspectExternalHostSetupContract(config, externalSetup, resolutions)
 		if err != nil {
 			return capabilitypack.SurfaceInspection{}, err
 		}
-		projections = append(projections, engramProjections...)
-		for _, projection := range engramProjections {
+		projections = append(projections, externalProjections...)
+		for _, projection := range externalProjections {
 			revisionParts = append(revisionParts, projection.ID+"="+projection.ObservedFingerprint)
 		}
 	}
 	for _, resource := range pack.Resources {
-		if engramOwned && isEngramOwnedResource(resource) {
+		if hasExternalSetup && externalSetup.Manages(resource) {
 			continue
 		}
 		switch resource.Kind {
@@ -336,6 +336,7 @@ func applyRecordedOccupancyOwnership(observation *capabilitypack.SurfaceInspecti
 }
 
 func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, desired capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
+	activeSetup, hasActiveSetup := active.ExternalHostSetup(capabilitypack.SurfaceCodex)
 	current, err := a.inspectDesired(ctx, active, resolutions)
 	if err != nil {
 		return capabilitypack.SurfaceInspection{}, err
@@ -364,24 +365,27 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 		mode := capabilitypack.ProjectionRemoveContent
 		content := ""
 		if projection.ExternallyManaged {
-			switch strings.TrimPrefix(projection.ID, "external_setup:engram:codex:") {
+			if !hasActiveSetup {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("external Codex projection %s has no declaring host setup capability", projection.ID)
+			}
+			switch strings.TrimPrefix(projection.ID, "external_setup:"+activeSetup.Tool+":codex:") {
 			case "mcp":
-				configContent = removeTOMLSection(configContent, "mcp_servers.engram")
+				configContent = removeTOMLSection(configContent, "mcp_servers."+activeSetup.Tool)
 			case "instructions-config":
 				configContent = removeTOMLTopLevelKey(configContent, "model_instructions_file")
 			case "compact-config":
 				configContent = removeTOMLTopLevelKey(configContent, "experimental_compact_prompt_file")
 			case "marketplace":
-				configContent = removeTOMLSection(configContent, "marketplaces.engram")
+				configContent = removeTOMLSection(configContent, "marketplaces."+activeSetup.Tool)
 			case "plugin":
-				configContent = removeTOMLSection(configContent, `plugins."engram@engram"`)
+				configContent = removeTOMLSection(configContent, `plugins."`+activeSetup.Codex.Plugin+`"`)
 			case "instructions-file", "compact-file":
 				mode = capabilitypack.ProjectionDeleteTarget
 			}
 			if projection.Action.Target == a.configFile {
 				content = configContent
 			}
-			projection = capabilitypack.RemovalCandidate(projection, mode, content, fmt.Sprintf("remove exact receipt-backed Codex Engram setup contribution %s", projection.ID))
+			projection = capabilitypack.RemovalCandidate(projection, mode, content, fmt.Sprintf("remove exact receipt-backed Codex %s setup contribution %s", activeSetup.Tool, projection.ID))
 			result.Projections = append(result.Projections, projection)
 			continue
 		}
@@ -747,11 +751,13 @@ func readOptionalFile(path string) (string, error) {
 }
 
 func pendingActions(pack capabilitypack.Pack) []string {
-	if pack.ID != "engram" {
+	setup, ok := pack.ExternalHostSetup(capabilitypack.SurfaceCodex)
+	if !ok {
 		return nil
 	}
+	tool := strings.ToUpper(setup.Tool[:1]) + setup.Tool[1:]
 	return []string{
-		"review and trust the Engram integration in Codex through /hooks; Packy will not bypass hook trust",
-		"reload Codex so the configured Engram MCP server becomes available at runtime",
+		"review and trust the " + tool + " integration in Codex through /hooks; Packy will not bypass hook trust",
+		"reload Codex so the configured " + tool + " MCP server becomes available at runtime",
 	}
 }

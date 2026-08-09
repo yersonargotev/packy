@@ -337,7 +337,7 @@ func TestFacadeStatusObservesDifferentlyNamedExternalRequirementsWithoutToolDisp
 func TestExecutableAcquisitionRequiresExplicitReviewedCapability(t *testing.T) {
 	resolver := &recordingReadinessResolver{paths: map[string]string{}}
 	acquirer := &recordingAcquirer{}
-	facade := NewFacade(Catalog{}, WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityEngramIntegration: acquirer}, nil))
+	facade := NewFacade(Catalog{}, WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityExternalHostSetup: acquirer}, nil))
 	plain := Pack{Requires: Requirements{Tools: []string{"engram"}}}
 
 	plainResolutions, err := facade.resolveExecutables(context.Background(), plain, SurfaceCodex, true)
@@ -349,12 +349,12 @@ func TestExecutableAcquisitionRequiresExplicitReviewedCapability(t *testing.T) {
 	}
 
 	explicit := plain
-	explicit.Resources = []Resource{{Bindings: []Binding{{Surface: SurfaceCodex, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityEngramIntegration}}}}}}
+	explicit.Resources = []Resource{{Bindings: []Binding{{Surface: SurfaceCodex, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalHostSetup, ExternalHostSetup: &ExternalHostSetupCapability{Tool: "engram", SetupArgs: []string{"setup", "codex"}}}}}}}}
 	explicitResolutions, err := facade.resolveExecutables(context.Background(), explicit, SurfaceCodex, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if acquirer.calls != 1 || len(explicitResolutions) != 1 || !explicitResolutions[0].AcquisitionSupported || explicitResolutions[0].Capability != SurfaceCapabilityEngramIntegration || explicitResolutions[0].AcquisitionCommand != "brew" {
+	if acquirer.calls != 1 || len(explicitResolutions) != 1 || !explicitResolutions[0].AcquisitionSupported || explicitResolutions[0].Capability != SurfaceCapabilityExternalHostSetup || explicitResolutions[0].AcquisitionCommand != "brew" {
 		t.Fatalf("explicit acquisition = calls=%d resolutions=%#v", acquirer.calls, explicitResolutions)
 	}
 	if _, err := facade.resolveExecutables(context.Background(), explicit, SurfaceCodex, false); err != nil {

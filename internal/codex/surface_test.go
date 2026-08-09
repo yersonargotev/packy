@@ -12,6 +12,40 @@ import (
 	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
+const (
+	engramInstructionsFingerprint = "74176fb0847b06fb725ae8992c9a5fa12022ff347ca3ee2ef3e77c6d318d5fb3"
+	engramCompactFingerprint      = "c779d9584c8ca16331ebb31a753f7fbb5bcb8193b229572a54da189ffaa97fd1"
+)
+
+func codexExternalHostSetupPack(packID, instructionID, mcpID string) capabilitypack.Pack {
+	return capabilitypack.Pack{ID: packID, Version: "1.0.0", Resources: []capabilitypack.Resource{
+		{Kind: "instruction", ID: instructionID},
+		{
+			Kind: "lifecycle", ID: "host-memory",
+			Bindings: []capabilitypack.Binding{
+				{
+					Surface: capabilitypack.SurfaceCodex,
+					Capabilities: []capabilitypack.SurfaceCapability{
+						{
+							Type: capabilitypack.SurfaceCapabilityExternalHostSetup,
+							ExternalHostSetup: &capabilitypack.ExternalHostSetupCapability{
+								Tool: "engram", SetupArgs: []string{"setup", "codex"},
+								ManagedResources: []capabilitypack.ResourceIdentity{{Kind: "instruction", ID: instructionID}, {Kind: "mcp_server", ID: mcpID}},
+								Codex: &capabilitypack.CodexHostSetup{
+									MCPArgs: []string{"mcp", "--tools=agent"}, InstructionsFile: "engram-instructions.md", InstructionsFingerprint: engramInstructionsFingerprint,
+									CompactPromptFile: "engram-compact-prompt.md", CompactPromptFingerprint: engramCompactFingerprint,
+									MarketplaceRepository: "https://github.com/Gentleman-Programming/engram.git", MarketplaceRevision: "main", Plugin: "engram@engram",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{Kind: "mcp_server", ID: mcpID, Command: "engram", Args: []string{"mcp", "--tools=agent"}},
+	}}
+}
+
 func TestBindAdapterProvenancePublishesCanonicalObservationWithoutChangingAction(t *testing.T) {
 	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Kind: capabilitypack.ActionCodexAgentFile}}}}
 	bindAdapterProvenance(&inspection)
@@ -106,10 +140,7 @@ enabled = true
 	if err := os.WriteFile(compactFile, compactGolden, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	pack := capabilitypack.Pack{ID: "engram", Version: "1.0.0", Resources: []capabilitypack.Resource{
-		{Kind: "instruction", ID: "engram-memory", Source: "instructions/engram-memory.md"},
-		{Kind: "mcp_server", ID: "engram", Command: "engram", Args: []string{"mcp", "--tools=agent"}},
-	}}
+	pack := codexExternalHostSetupPack("portable-memory", "portable-notes", "portable-memory")
 	adapter := NewSurfaceAdapterWithConfig(root, filepath.Join(root, ".agents", "skills"), prompt, config)
 	observed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ResolvedExecutables: []capabilitypack.ExecutableResolution{{Tool: "engram", Available: true, Path: engramPath}}})
 	if err != nil {
@@ -198,7 +229,7 @@ EOF
 		t.Fatalf("fixture Engram setup: %v: %s", err, output)
 	}
 	adapter := NewSurfaceAdapterWithConfig(root, filepath.Join(root, "skills"), filepath.Join(codexDir, "AGENTS.md"), filepath.Join(codexDir, "config.toml"))
-	pack := capabilitypack.Pack{ID: "engram", Resources: []capabilitypack.Resource{{Kind: "instruction", ID: "engram-memory"}, {Kind: "mcp_server", ID: "engram", Command: "engram", Args: []string{"mcp", "--tools=agent"}}}}
+	pack := codexExternalHostSetupPack("engram", "engram-memory", "engram")
 	observed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ResolvedExecutables: []capabilitypack.ExecutableResolution{{Tool: "engram", Available: true, Path: engram}}})
 	if err != nil {
 		t.Fatal(err)

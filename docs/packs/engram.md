@@ -6,7 +6,7 @@
 
 Persistent memory for agent work
 
-- Version: `1.0.1`
+- Version: `1.0.2`
 - Supported surfaces: `claude`, `codex`, `opencode`
 - External requirements: `engram`
 
@@ -31,7 +31,7 @@ Persistent memory for agent work
 
 - `engram` — Makes Engram memory tools available to agents through MCP
   - Role: `operational`
-  - Dependencies: None.
+  - Dependencies: `instruction:engram-memory`
   - Notices: None.
 
 ## Pack exclusions

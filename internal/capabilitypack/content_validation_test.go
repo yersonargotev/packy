@@ -283,30 +283,100 @@ func TestValidatePackContentReportsCurrentContractErrors(t *testing.T) {
 	}
 }
 
-func TestValidatePackContentAcceptsExplicitEngramIntegrationCapability(t *testing.T) {
-	bundle := t.TempDir()
-	packDir := writeCurrentPackFixture(t, bundle, "example-pack")
-	path := filepath.Join(packDir, "pack.json")
-	var manifest map[string]any
-	if err := json.Unmarshal(mustReadFile(t, path), &manifest); err != nil {
-		t.Fatal(err)
-	}
-	manifest["external_requirements"] = []any{"engram"}
-	binding := currentFixtureResource(manifest)["bindings"].([]any)[0].(map[string]any)
-	binding["capabilities"] = []any{map[string]any{"type": "engram-integration"}}
-	encoded, err := json.Marshal(manifest)
+func TestValidatePackContentAcceptsExplicitExternalHostSetupCapability(t *testing.T) {
+	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, encoded, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ValidatePackContent(bundle, packDir); err != nil {
-		t.Fatalf("explicit Engram integration capability: %v", err)
+	if _, err := ValidatePackContent(bundle, filepath.Join(bundle, "packs", "engram")); err != nil {
+		t.Fatalf("explicit external host setup capability: %v", err)
 	}
 }
 
-func TestValidatePackContentRejectsEngramIntegrationWithoutRequirement(t *testing.T) {
+func TestValidatePackContentRejectsInvalidExternalHostSetupDeclarations(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(map[string]any)
+		want   string
+	}{
+		{
+			name: "missing managed resources",
+			mutate: func(setup map[string]any) {
+				delete(setup, "managed_resources")
+			},
+			want: "managed_resources must be a non-empty sorted set",
+		},
+		{
+			name: "unsupported tool",
+			mutate: func(setup map[string]any) {
+				setup["tool"] = "unknown-tool"
+			},
+			want: `tool "unknown-tool" is unsupported`,
+		},
+		{
+			name: "surface-mismatched setup arguments",
+			mutate: func(setup map[string]any) {
+				setup["setup_args"] = []any{"setup", "opencode"}
+			},
+			want: `setup_args must be ["setup", "codex"]`,
+		},
+		{
+			name: "incomplete Codex contract",
+			mutate: func(setup map[string]any) {
+				delete(setup, "codex")
+			},
+			want: "on codex requires only codex data",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bundle := copyCheckedInBundle(t)
+			path := filepath.Join(bundle, "packs", "engram", "pack.json")
+			manifest := decodeManifestMap(t, path)
+			test.mutate(externalHostSetupMap(t, manifest, "mcp_server", "engram", "codex"))
+			writeManifestMap(t, path, manifest)
+			_, err := ValidatePackContent(bundle, filepath.Dir(path))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("external host setup error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestValidatePackContentRejectsConflictingExternalHostSetupDeclarations(t *testing.T) {
+	bundle := copyCheckedInBundle(t)
+	path := filepath.Join(bundle, "packs", "engram", "pack.json")
+	manifest := decodeManifestMap(t, path)
+	resources := manifest["resources"].([]any)
+	original := resources[len(resources)-1].(map[string]any)
+	encoded, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var duplicate map[string]any
+	if err := json.Unmarshal(encoded, &duplicate); err != nil {
+		t.Fatal(err)
+	}
+	duplicate["id"] = "engram-copy"
+	for _, value := range duplicate["bindings"].([]any) {
+		binding := value.(map[string]any)
+		binding["name"] = "engram-copy"
+		binding["invocation"] = "engram-copy"
+		capabilities := binding["capabilities"].([]any)
+		if len(capabilities) == 0 {
+			continue
+		}
+		managed := capabilities[0].(map[string]any)["external_host_setup"].(map[string]any)["managed_resources"].([]any)
+		managed[1].(map[string]any)["id"] = "engram-copy"
+	}
+	manifest["resources"] = append(resources, duplicate)
+	writeManifestMap(t, path, manifest)
+	_, err = ValidatePackContent(bundle, filepath.Dir(path))
+	if err == nil || !strings.Contains(err.Error(), "declare conflicting external host setup") {
+		t.Fatalf("conflicting external host setup error = %v", err)
+	}
+}
+
+func TestValidatePackContentRejectsExternalHostSetupWithoutRequirement(t *testing.T) {
 	bundle := t.TempDir()
 	packDir := writeCurrentPackFixture(t, bundle, "example-pack")
 	path := filepath.Join(packDir, "pack.json")
@@ -315,7 +385,24 @@ func TestValidatePackContentRejectsEngramIntegrationWithoutRequirement(t *testin
 		t.Fatal(err)
 	}
 	binding := currentFixtureResource(manifest)["bindings"].([]any)[0].(map[string]any)
-	binding["capabilities"] = []any{map[string]any{"type": "engram-integration"}}
+	binding["capabilities"] = []any{map[string]any{
+		"type": "external-host-setup",
+		"external_host_setup": map[string]any{
+			"tool":              "engram",
+			"setup_args":        []any{"setup", "codex"},
+			"managed_resources": []any{map[string]any{"kind": "skill", "id": "guide"}},
+			"codex": map[string]any{
+				"mcp_args":                   []any{"mcp", "--tools=agent"},
+				"instructions_file":          "engram-instructions.md",
+				"instructions_fingerprint":   "74176fb0847b06fb725ae8992c9a5fa12022ff347ca3ee2ef3e77c6d318d5fb3",
+				"compact_prompt_file":        "engram-compact-prompt.md",
+				"compact_prompt_fingerprint": "c779d9584c8ca16331ebb31a753f7fbb5bcb8193b229572a54da189ffaa97fd1",
+				"marketplace_repository":     "https://github.com/Gentleman-Programming/engram.git",
+				"marketplace_revision":       "main",
+				"plugin":                     "engram@engram",
+			},
+		},
+	}}
 	encoded, err := json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -331,6 +418,58 @@ func TestValidatePackContentRejectsEngramIntegrationWithoutRequirement(t *testin
 
 func currentFixtureResource(manifest map[string]any) map[string]any {
 	return manifest["resources"].([]any)[0].(map[string]any)
+}
+
+func copyCheckedInBundle(t *testing.T) string {
+	t.Helper()
+	source, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "bundle")
+	if err := os.CopyFS(destination, os.DirFS(source)); err != nil {
+		t.Fatal(err)
+	}
+	return destination
+}
+
+func decodeManifestMap(t *testing.T, path string) map[string]any {
+	t.Helper()
+	var manifest map[string]any
+	if err := json.Unmarshal(mustReadFile(t, path), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	return manifest
+}
+
+func writeManifestMap(t *testing.T, path string, manifest map[string]any) {
+	t.Helper()
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func externalHostSetupMap(t *testing.T, manifest map[string]any, kind, id, surface string) map[string]any {
+	t.Helper()
+	for _, value := range manifest["resources"].([]any) {
+		resource := value.(map[string]any)
+		if resource["kind"] != kind || resource["id"] != id {
+			continue
+		}
+		for _, bindingValue := range resource["bindings"].([]any) {
+			binding := bindingValue.(map[string]any)
+			if binding["surface"] != surface {
+				continue
+			}
+			return binding["capabilities"].([]any)[0].(map[string]any)["external_host_setup"].(map[string]any)
+		}
+	}
+	t.Fatalf("missing external host setup for %s:%s on %s", kind, id, surface)
+	return nil
 }
 
 func mustReadFile(t *testing.T, path string) []byte {

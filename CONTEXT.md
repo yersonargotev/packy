@@ -64,10 +64,11 @@ contribution in a project's native instruction document.
 `opencode-primary-prompt` projects reviewed source as OpenCode's global primary
 instruction document and registers that document in workstation OpenCode
 configuration; project-native guidance remains owned by `project-instruction`.
-`engram-integration`
-explicitly enables Packy's reviewed Engram acquisition and host setup behavior;
-an `engram` external requirement without that capability is observed through
-PATH like any other tool and receives no implicit setup behavior.
+`external-host-setup` explicitly selects one supported tool-owned setup through
+reviewed tool, setup-argument, managed-resource, and host-contract data. Engram
+uses it for Codex and OpenCode; an `engram` external requirement without that
+capability is observed through PATH like any other tool and receives no
+implicit setup behavior.
 
 ### Pack activation
 

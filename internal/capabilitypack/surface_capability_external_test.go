@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -12,6 +13,69 @@ import (
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/opencode"
 )
+
+func TestExternalHostSetupCapabilityIsPackAndResourceIdentityIndependent(t *testing.T) {
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceOpenCode} {
+		t.Run(string(surface), func(t *testing.T) {
+			bundle := t.TempDir()
+			instructions := filepath.Join(bundle, "instructions")
+			if err := os.MkdirAll(instructions, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range []string{"alpha-notes", "beta-notes"} {
+				if err := os.WriteFile(filepath.Join(instructions, id+".md"), []byte("portable memory\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			root := t.TempDir()
+			var adapter capabilitypack.SurfaceAdapter
+			switch surface {
+			case capabilitypack.SurfaceCodex:
+				adapter = codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(root, "skills"), filepath.Join(root, "AGENTS.md"), filepath.Join(root, "config.toml"))
+			case capabilitypack.SurfaceOpenCode:
+				adapter = opencode.NewSurfaceAdapter(bundle, filepath.Join(root, "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "primary.md"))
+			}
+			var translated [][]capabilitypack.ObservedProjection
+			for _, named := range []struct{ pack, instruction, mcp string }{{"synthetic-alpha", "alpha-notes", "alpha-memory"}, {"synthetic-beta", "beta-notes", "beta-memory"}} {
+				pack := syntheticExternalHostSetupPack(named.pack, named.instruction, named.mcp, surface)
+				observation, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ResolvedExecutables: []capabilitypack.ExecutableResolution{{Tool: "engram", Available: true, Path: "/opt/reviewed/engram"}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var external []capabilitypack.ObservedProjection
+				for _, projection := range observation.Projections {
+					if projection.ExternallyManaged {
+						external = append(external, projection)
+					}
+				}
+				translated = append(translated, external)
+			}
+			if len(translated[0]) == 0 || !reflect.DeepEqual(translated[0], translated[1]) {
+				t.Fatalf("%s host translation depends on Pack or resource identity:\nalpha=%#v\nbeta=%#v", surface, translated[0], translated[1])
+			}
+		})
+	}
+}
+
+func syntheticExternalHostSetupPack(packID, instructionID, mcpID string, surface capabilitypack.Surface) capabilitypack.Pack {
+	setup := &capabilitypack.ExternalHostSetupCapability{
+		Tool: "engram", SetupArgs: []string{"setup", string(surface)},
+		ManagedResources: []capabilitypack.ResourceIdentity{{Kind: "instruction", ID: instructionID}, {Kind: "mcp_server", ID: mcpID}},
+	}
+	if surface == capabilitypack.SurfaceCodex {
+		setup.Codex = &capabilitypack.CodexHostSetup{
+			MCPArgs: []string{"mcp", "--tools=agent"}, InstructionsFile: "engram-instructions.md", InstructionsFingerprint: "74176fb0847b06fb725ae8992c9a5fa12022ff347ca3ee2ef3e77c6d318d5fb3",
+			CompactPromptFile: "engram-compact-prompt.md", CompactPromptFingerprint: "c779d9584c8ca16331ebb31a753f7fbb5bcb8193b229572a54da189ffaa97fd1",
+			MarketplaceRepository: "https://github.com/Gentleman-Programming/engram.git", MarketplaceRevision: "main", Plugin: "engram@engram",
+		}
+	} else {
+		setup.OpenCode = &capabilitypack.OpenCodeHostSetup{PluginFile: "plugins/engram.ts", TUIFile: "tui.json", TUIPlugin: "opencode-subagent-statusline"}
+	}
+	return capabilitypack.Pack{ID: packID, Version: "1.0.0", Resources: []capabilitypack.Resource{
+		{Kind: "instruction", ID: instructionID, Source: "instructions/" + instructionID + ".md"},
+		{Kind: "mcp_server", ID: mcpID, Command: "engram", Args: []string{"mcp", "--tools=agent"}, Bindings: []capabilitypack.Binding{{Surface: surface, Capabilities: []capabilitypack.SurfaceCapability{{Type: capabilitypack.SurfaceCapabilityExternalHostSetup, ExternalHostSetup: setup}}}}},
+	}}
+}
 
 func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceCodex, capabilitypack.SurfaceOpenCode} {
