@@ -1,6 +1,6 @@
 {
   "id": "argote",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Yerson Argote's engineering and communication guidance",
   "selectable": true,
   "surfaces": [
@@ -11,6 +11,7 @@
   "external_requirements": [],
   "resources": [
     {
+      "description": "Defines default engineering principles and neutral-Spanish communication guidance",
       "kind": "instruction",
       "id": "guidance",
       "source": "instructions/argote-guidance.md",
@@ -46,6 +47,7 @@
       "surface_exclusions": []
     },
     {
+      "description": "Re-explains the last point in neutral Spanish when it did not land",
       "kind": "skill",
       "id": "espera-que",
       "source": "skills/productivity/espera-que",

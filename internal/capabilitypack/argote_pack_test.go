@@ -17,7 +17,7 @@ func TestCheckedInArgotePackHasCollisionFreeNativeRoots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.Version != "1.0.1" || pack.manifestVersion != manifestSchemaV4 {
+	if pack.Version != "1.0.2" || pack.manifestVersion != manifestSchemaV4 {
 		t.Fatalf("argote identity = version %q schema %d", pack.Version, pack.manifestVersion)
 	}
 	if got, want := pack.Surfaces, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}; !reflect.DeepEqual(got, want) {
