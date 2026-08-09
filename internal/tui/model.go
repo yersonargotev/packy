@@ -401,8 +401,18 @@ func (m Model) renderDetail() string {
 	}
 	for _, exclusion := range pack.Exclusions {
 		identity := exclusion.ID
+		qualifiers := make([]string, 0, 3)
 		if exclusion.Surface != "" {
-			identity = exclusion.Surface + "/" + exclusion.Code
+			qualifiers = append(qualifiers, "surface="+exclusion.Surface)
+		}
+		if exclusion.Mode != "" {
+			qualifiers = append(qualifiers, "mode="+exclusion.Mode)
+		}
+		if exclusion.Code != "" {
+			qualifiers = append(qualifiers, "code="+exclusion.Code)
+		}
+		if len(qualifiers) > 0 {
+			identity += " (" + strings.Join(qualifiers, ", ") + ")"
 		}
 		lines = append(lines, "  "+identity+" — "+exclusion.Reason)
 	}

@@ -109,7 +109,7 @@ func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[str
 			Resources:    resourcesForTUI(detail),
 			Exclusions:   exclusionsForTUI(pack),
 		}
-		for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceClaude, capabilitypack.SurfaceCodex, capabilitypack.SurfaceOpenCode} {
+		for _, surface := range capabilitypack.SupportedSurfaces() {
 			supported := slices.Contains(pack.Surfaces, surface)
 			status := tui.SurfaceStatus{Name: string(surface), Supported: supported}
 			if supported {

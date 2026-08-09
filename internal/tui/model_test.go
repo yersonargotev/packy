@@ -94,7 +94,10 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 				ID: "orchestrate", Version: "1.0.0", Description: "Coordination workflow",
 				Requirements: []string{"git"},
 				Resources:    []tui.Resource{{Identity: "skill:orchestrate", Description: "Coordinate agents", Role: "operational", Requirements: []string{"notice:mit"}, Conflicts: []string{"skill:legacy"}}},
-				Exclusions:   []tui.Exclusion{{ID: "windows", Reason: "POSIX shell required"}},
+				Exclusions: []tui.Exclusion{
+					{ID: "windows", Reason: "POSIX shell required"},
+					{ID: "skill:orchestrate", Surface: "claude", Mode: "unsupported", Code: "surface-unsupported", Reason: "Codex only"},
+				},
 				SurfaceStatuses: []tui.SurfaceStatus{
 					{Name: "claude", Supported: false},
 					{Name: "codex", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
@@ -123,6 +126,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		"Pack details · Workstation · global", "orchestrate 1.0.0", "Coordination workflow",
 		"skill:orchestrate", "Coordinate agents", "requires notice:mit", "conflicts skill:legacy",
 		"Requirements: git", "windows — POSIX shell required",
+		"skill:orchestrate (surface=claude, mode=unsupported", "code=surface-unsupported) — Codex only",
 		"claude: unsupported", "codex: supported", "configured=yes authorized=yes usable=no",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
 		"install helper", "projection verified", "opencode: unsupported",
