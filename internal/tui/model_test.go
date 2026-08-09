@@ -1138,12 +1138,12 @@ func TestPreviewWrapsSafetyEvidenceInNarrowTerminalWithoutTruncation(t *testing.
 		}
 	}
 
-	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 14})
 	seen := ""
 	for range 80 {
 		view := ansi.Strip(model.View().Content)
-		if lines := strings.Count(view, "\n") + 1; lines > 12 {
-			t.Fatalf("preview height = %d lines, want <= 12:\n%s", lines, view)
+		if lines := strings.Count(view, "\n") + 1; lines > 14 {
+			t.Fatalf("preview height = %d lines, want <= 14:\n%s", lines, view)
 		}
 		seen += "\n" + view
 		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
@@ -1399,6 +1399,46 @@ func TestSetupBlockersDisableOnlyAffectedActions(t *testing.T) {
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	if view := ansi.Strip(current.View().Content); !strings.Contains(view, "Pack details") || !strings.Contains(view, "Agent guidance") {
 		t.Fatalf("setup blocker disabled unaffected global inspection:\n%s", view)
+	}
+}
+
+func TestDashboardShowsMinimumSizeStateAndRecoversIntoOneColumn(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health:  tui.Health{Status: "healthy", Passes: 1},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0"}}},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "matty", Version: "1.0.0"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 39, Height: 10})
+	view := ansi.Strip(current.View().Content)
+	for _, want := range []string{"Terminal too small", "48 columns", "rows to show safety-critical details", "q quit"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("minimum-size state missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "argote") || strings.Contains(view, "matty") {
+		t.Fatalf("undersized terminal rendered safety-critical dashboard content:\n%s", view)
+	}
+
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+	view = ansi.Strip(current.View().Content)
+	lines := strings.Split(view, "\n")
+	globalLine, projectLine := -1, -1
+	for index, line := range lines {
+		if strings.Contains(line, "Workstation · global") {
+			globalLine = index
+		}
+		if strings.Contains(line, "Current project") {
+			projectLine = index
+		}
+	}
+	if globalLine < 0 || projectLine-globalLine < 2 {
+		t.Fatalf("narrow dashboard did not recover into one column:\n%s", view)
+	}
+	for _, line := range strings.Split(current.View().Content, "\n") {
+		if width := ansi.StringWidth(line); width > 60 {
+			t.Fatalf("narrow dashboard line width = %d, want <= 60: %q", width, ansi.Strip(line))
+		}
 	}
 }
 

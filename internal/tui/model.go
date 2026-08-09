@@ -897,6 +897,16 @@ var (
 )
 
 func (m Model) render() string {
+	if m.terminalUndersized() {
+		return m.renderBody(strings.Join([]string{
+			titleStyle.Render("Terminal too small"),
+			"",
+			"Packy needs at least 48 columns and 14 rows to show safety-critical details.",
+			"Resize the terminal to continue.",
+			"",
+			"q quit",
+		}, "\n"))
+	}
 	if !m.loaded {
 		return m.renderBody(titleStyle.Render("Packy health") + "\n\nLoading Packy health…")
 	}
@@ -984,6 +994,10 @@ func (m Model) render() string {
 		"",
 		help,
 	}, "\n"))
+}
+
+func (m Model) terminalUndersized() bool {
+	return (m.width > 0 && m.width < 48) || (m.height > 0 && m.height < 14)
 }
 
 func (m Model) renderSetup() string {

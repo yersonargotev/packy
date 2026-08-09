@@ -276,7 +276,8 @@ type fakeTerminal struct {
 	prompts     []string
 }
 
-func (f *fakeTerminal) Interactive(io.Reader) bool { return f.interactive }
+func (f *fakeTerminal) Interactive(io.Reader) bool                   { return f.interactive }
+func (f *fakeTerminal) InteractiveSession(io.Reader, io.Writer) bool { return f.interactive }
 func (f *fakeTerminal) Approve(_ io.Reader, _ io.Writer, prompt string) (bool, error) {
 	f.calls++
 	f.prompts = append(f.prompts, prompt)

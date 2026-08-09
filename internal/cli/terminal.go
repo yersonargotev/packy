@@ -6,22 +6,33 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/charmbracelet/x/term"
 )
 
 type Terminal interface {
 	Interactive(io.Reader) bool
+	InteractiveSession(io.Reader, io.Writer) bool
 	Approve(io.Reader, io.Writer, string) (bool, error)
 }
 
 type processTerminal struct{}
 
 func (processTerminal) Interactive(in io.Reader) bool {
-	file, ok := in.(*os.File)
+	input, ok := in.(*os.File)
 	if !ok {
 		return false
 	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(input.Fd())
+}
+
+func (processTerminal) InteractiveSession(in io.Reader, out io.Writer) bool {
+	input, inputOK := in.(*os.File)
+	output, outputOK := out.(*os.File)
+	if !inputOK || !outputOK {
+		return false
+	}
+	return term.IsTerminal(input.Fd()) && term.IsTerminal(output.Fd())
 }
 
 func (processTerminal) Approve(in io.Reader, out io.Writer, prompt string) (bool, error) {
