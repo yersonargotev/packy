@@ -804,7 +804,7 @@ func controlledCheckPreviewForTUI(preview capabilitypack.ControlledCheckPreview,
 		ID: preview.ValidityIdentity, Digest: preview.ValidityIdentity, Operation: "check", Disposition: disposition,
 		PackID: preview.Pack, PackVersion: preview.PackVersion, Surface: string(preview.Surface), Scope: scope,
 		ProjectRoot: projectRoot, Selection: tui.Selection{Mode: "custom"},
-		Instructions: append([]string(nil), preview.Instructions...), ValidityIdentity: preview.ValidityIdentity,
+		Instructions: append([]string(nil), preview.Instructions...), ValidityIdentity: preview.ValidityIdentity, ProjectionRevision: preview.ProjectionRevision,
 		Phases: []tui.PreviewPhase{{Kind: "controlled-check", ApprovalRequired: true, Actions: []string{"record an explicit positive or negative personal result"}}},
 	}
 	for _, resource := range preview.Resources {

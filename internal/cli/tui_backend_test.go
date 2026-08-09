@@ -97,7 +97,7 @@ func TestTUIBackendPreviewsAndRecordsControlledRuntimeCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Operation != "check" || preview.ValidityIdentity == "" || len(preview.Instructions) == 0 || len(preview.Resources) == 0 {
+	if preview.Operation != "check" || preview.ValidityIdentity == "" || preview.ProjectionRevision == "" || len(preview.Instructions) == 0 || len(preview.Resources) == 0 {
 		t.Fatalf("controlled check preview = %#v", preview)
 	}
 	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: []string{"controlled-check"}, ControlledCheckResult: "positive"}, func(tui.ApplyProgress) {})

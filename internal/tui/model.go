@@ -85,6 +85,7 @@ type Preview struct {
 	PendingActions                      []string
 	Instructions                        []string
 	ValidityIdentity                    string
+	ProjectionRevision                  string
 	Stale                               bool
 	StaleReason                         string
 }
@@ -1456,6 +1457,9 @@ func (m Model) renderPreview(preview Preview) string {
 	}
 	if preview.ValidityIdentity != "" {
 		lines = append(lines, "Validity identity: "+preview.ValidityIdentity)
+	}
+	if preview.ProjectionRevision != "" {
+		lines = append(lines, "Projection revision: "+preview.ProjectionRevision)
 	}
 	if len(preview.Instructions) > 0 {
 		lines = append(lines, "", "Check instructions")

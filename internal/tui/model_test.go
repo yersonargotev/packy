@@ -837,7 +837,7 @@ func TestGlobalControlledRuntimeCheckRecordsPositiveResultAfterItsOwnPreview(t *
 		return tui.Preview{
 			ID: "runtime-check-global", Digest: "runtime-check-global", Operation: "check", Disposition: "applicable",
 			PackID: "orchestrate", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: request.Selection,
-			ValidityIdentity: "projection-revision=7; adapter=codex-1; host=codex-2", Instructions: []string{"Run the reviewed delegation workflow in Codex."},
+			ValidityIdentity: "projection-revision=7; adapter=codex-1; host=codex-2", ProjectionRevision: "revision-7", Instructions: []string{"Run the reviewed delegation workflow in Codex."},
 			Phases: []tui.PreviewPhase{{Kind: "record-runtime-evidence", ApprovalRequired: true}},
 		}, nil
 	}
@@ -850,7 +850,7 @@ func TestGlobalControlledRuntimeCheckRecordsPositiveResultAfterItsOwnPreview(t *
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Immutable controlled runtime check", "Check instructions", "projection-revision=7", "Enter continue to consent"} {
+	for _, want := range []string{"Immutable controlled runtime check", "Check instructions", "Projection revision: revision-7", "projection-revision=7", "Enter continue to consent"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("controlled-check preview missing %q:\n%s", want, view)
 		}
