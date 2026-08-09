@@ -13,15 +13,6 @@ type projectSurfaceAdapterSet struct {
 	contractWriter Surface
 }
 
-type projectSurfaceAdapterResolver interface {
-	projectSurfaceAdapter(Surface) (SurfaceAdapter, bool)
-}
-
-func (a projectSurfaceAdapterSet) projectSurfaceAdapter(surface Surface) (SurfaceAdapter, bool) {
-	adapter, ok := a.adapters[surface]
-	return adapter, ok
-}
-
 // NewProjectSurfaceAdapterSet composes installed project hosts while keeping
 // each projection action owned by the adapter that produced it.
 func NewProjectSurfaceAdapterSet(adapters map[Surface]SurfaceAdapter, contractWriter Surface) SurfaceAdapter {

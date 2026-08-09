@@ -185,8 +185,13 @@ func projectProjectionOwnedByPack(projection ProjectProjectionPlan, packID strin
 }
 
 type projectManifestDocument struct {
-	SchemaVersion int                   `json:"schema_version"`
-	Packs         []ProjectManifestPack `json:"packs"`
+	SchemaVersion int                           `json:"schema_version"`
+	Packs         []projectManifestPackDocument `json:"packs"`
+}
+
+type projectManifestPackDocument struct {
+	ID             string                 `json:"id"`
+	SurfaceIntents []ProjectSurfaceIntent `json:"surface_intents"`
 }
 
 var projectDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -213,7 +218,11 @@ func LoadProjectInstallation(projectRoot string) (ProjectInstallation, error) {
 	if !supportedProjectContractVersion(document.SchemaVersion, "") {
 		return ProjectInstallation{}, errors.New("project manifest schema or minimum Packy capability is unsupported")
 	}
-	manifest := ProjectContractProposal{Path: "packy.json", SchemaVersion: document.SchemaVersion, Packs: document.Packs}
+	packs := make([]ProjectManifestPack, 0, len(document.Packs))
+	for _, persisted := range document.Packs {
+		packs = append(packs, deriveProjectManifestPack(ProjectManifestPack{ID: persisted.ID, SurfaceIntents: persisted.SurfaceIntents}))
+	}
+	manifest := ProjectContractProposal{Path: "packy.json", SchemaVersion: document.SchemaVersion, Packs: packs}
 	lock, exists, err := readExistingProjectLock(projectRoot)
 	if err != nil {
 		return ProjectInstallation{}, err
@@ -311,13 +320,20 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 	}
 	actualManifest, readErr := os.ReadFile(filepath.Join(request.ProjectRoot, "packy.json"))
 	manifestHealthy := readErr == nil && string(actualManifest) == string(manifestBytes)
-	contractHealthy, contractBlockers, err := inspectOfflineProjectFiles(request.ProjectRoot, installation, manifestBytes)
+	contractHealthy, contractBlockers, err := inspectOfflineProjectFiles(request.ProjectRoot, installation)
 	if err != nil {
 		return report, err
 	}
 	for _, pack := range installation.Manifest.Packs {
 		packLock := projectLockForPack(installation.Lock, pack.ID)
 		for _, surface := range pack.Surfaces {
+			surfacePack := pack
+			for _, intent := range projectSurfaceIntents(pack) {
+				if intent.Surface == surface {
+					surfacePack.Version = intent.Version
+					break
+				}
+			}
 			if request.PackID != "" && request.PackID != pack.ID {
 				continue
 			}
@@ -340,11 +356,16 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 				return report, inspectErr
 			}
 			blockers := append([]ProjectInstallBlocker{}, contractBlockers...)
+			noticeHealthy, noticeBlockers, inspectErr := inspectProjectNoticeFile(request.ProjectRoot, installation, pack.ID, surface)
+			if inspectErr != nil {
+				return report, inspectErr
+			}
+			blockers = append(blockers, noticeBlockers...)
 			state := ProjectInstallationInstalled
 			if !manifestHealthy {
 				state = ProjectInstallationBlocked
 				blockers = append(blockers, ProjectInstallBlocker{Code: "manifest_lock_mismatch", Target: "packy.json", Detail: "the human manifest does not match the exact generated lock", Remediation: "run the named Pack install again to refresh its receipt"})
-			} else if !contractHealthy {
+			} else if !contractHealthy || !noticeHealthy {
 				state = ProjectInstallationDrifted
 			}
 			for _, projection := range projections {
@@ -375,9 +396,9 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			runtime := ProjectRuntimeNotRequired
 			effects := pendingProjectRuntimeEffects(categories)
 			if runtimeRequired {
-				runtime, effects = projectPersonalRuntimeStatus(ctx, adapter, request.PackyHome, request.ProjectRoot, pack, surface, state, packLock, categories)
+				runtime, effects = projectPersonalRuntimeStatus(ctx, adapter, request.PackyHome, request.ProjectRoot, surfacePack, surface, state, packLock, categories)
 			}
-			status := JSONProjectPackStatus{Pack: pack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
+			status := JSONProjectPackStatus{Pack: surfacePack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true}
 			switch runtime {
 			case ProjectRuntimePending, ProjectRuntimeStale:
 				if runtimeRequired {
@@ -688,8 +709,8 @@ func projectPathMissing(path string) (bool, error) {
 }
 
 func validateProjectManifestPack(pack ProjectManifestPack) error {
-	if !idPattern.MatchString(pack.ID) || !semverPattern.MatchString(pack.Version) {
-		return errors.New("project manifest Pack identity must use a valid ID and exact semantic version")
+	if !idPattern.MatchString(pack.ID) || len(pack.SurfaceIntents) == 0 {
+		return errors.New("project manifest Pack must use a valid ID and surface intents")
 	}
 	if len(pack.Surfaces) == 0 || digestJSON(pack.Surfaces) != digestJSON(sortedProjectSurfaces(pack.Surfaces)) {
 		return errors.New("project manifest surfaces are empty, duplicated, or unsorted")
@@ -707,9 +728,6 @@ func validateProjectManifestPack(pack ProjectManifestPack) error {
 	if err := canonicalizeAliases(&aliases); err != nil || digestJSON(aliases) != digestJSON(pack.Aliases) {
 		return errors.New("project manifest aliases are invalid or non-canonical")
 	}
-	if len(pack.SurfaceIntents) == 0 {
-		return nil
-	}
 	if len(pack.SurfaceIntents) != len(pack.Surfaces) {
 		return errors.New("project manifest surface intents do not exactly cover installed surfaces")
 	}
@@ -717,9 +735,13 @@ func validateProjectManifestPack(pack ProjectManifestPack) error {
 		canonical, selectionErr := canonicalSelection(intent.Selection)
 		intentAliases := cloneAliases(intent.Aliases)
 		aliasErr := canonicalizeAliases(&intentAliases)
-		if intent.Surface != pack.Surfaces[i] || intent.Selection.Roots == nil || intent.Aliases == nil || selectionErr != nil || aliasErr != nil || digestJSON(canonical) != digestJSON(intent.Selection) || digestJSON(intentAliases) != digestJSON(intent.Aliases) {
+		if intent.Surface != pack.Surfaces[i] || !semverPattern.MatchString(intent.Version) || intent.Selection.Roots == nil || intent.Aliases == nil || selectionErr != nil || aliasErr != nil || digestJSON(canonical) != digestJSON(intent.Selection) || digestJSON(intentAliases) != digestJSON(intent.Aliases) {
 			return errors.New("project manifest surface intents are incomplete or non-canonical")
 		}
+	}
+	derived := deriveProjectManifestPack(ProjectManifestPack{ID: pack.ID, SurfaceIntents: pack.SurfaceIntents})
+	if derived.Version != pack.Version || digestJSON(derived.Surfaces) != digestJSON(pack.Surfaces) || digestJSON(derived.Selection) != digestJSON(pack.Selection) || digestJSON(derived.Aliases) != digestJSON(pack.Aliases) {
+		return errors.New("project manifest aggregate view does not match surface intents")
 	}
 	return nil
 }
@@ -748,7 +770,7 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 	receiptSurfaces := map[string]map[Surface]bool{}
 	for _, receipt := range lock.Receipts {
 		direct, found := manifestPacks[receipt.Pack.ID]
-		if !found || receipt.Pack.Version != direct.Version || !projectSupportsSurface(direct.Surfaces, receipt.Surface) {
+		if !found || !projectSupportsSurface(direct.Surfaces, receipt.Surface) {
 			return errors.New("project receipt identity does not match direct manifest intent")
 		}
 		intents := projectSurfaceIntents(direct)
@@ -756,6 +778,9 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		for _, intent := range intents {
 			if intent.Surface != receipt.Surface {
 				continue
+			}
+			if intent.Version != receipt.Pack.Version {
+				return errors.New("project receipt version does not match manifest surface intent")
 			}
 			receiptAliases := cloneAliases(receipt.Aliases)
 			_ = canonicalizeAliases(&receiptAliases)
@@ -792,24 +817,34 @@ func validateProjectInstallation(manifest ProjectContractProposal, lock ProjectL
 		resources[fact.Resource] = true
 	}
 	seenTargets := make(map[string]bool, len(lock.Projections))
+	sharedTargets := make(map[string]ProjectProjectionPlan, len(lock.Projections))
 	validPackIDs := map[string]bool{}
-	validSurfaces := map[Surface]bool{}
+	validPackSurfaces := map[string]map[Surface]bool{}
 	for _, direct := range manifest.Packs {
 		validPackIDs[direct.ID] = true
+		validPackSurfaces[direct.ID] = map[Surface]bool{}
 		for _, surface := range direct.Surfaces {
-			validSurfaces[surface] = true
+			validPackSurfaces[direct.ID][surface] = true
 		}
 	}
 	for _, projection := range lock.Projections {
 		if projection.Mode != "copy_tree" && projection.Mode != "copy_file" && projection.Mode != "merge_marked_file" && projection.Mode != "merge_structured_file" {
 			return fmt.Errorf("project lock projection %s has unsupported mode %q", projection.Resource, projection.Mode)
 		}
-		targetKey := projection.Target
+		physicalTargetKey := projection.Target
+		targetKey := string(projection.Surface) + "\x00" + projection.Target
 		if projection.Mode == "merge_marked_file" || projection.Mode == "merge_structured_file" {
-			targetKey = projection.Resource.String() + "\x00" + projection.Target
+			physicalTargetKey = projection.Resource.String() + "\x00" + projection.Target
+			targetKey = string(projection.Surface) + "\x00" + physicalTargetKey
 		}
-		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[targetKey] || !validPackIDs[projection.OwnerPack] || !validSurfaces[projection.Surface] || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
+		if projection.Resource.Kind == "" || projection.Resource.ID == "" || !safeProjectContractTarget(projection.Target) || seenTargets[targetKey] || !validPackIDs[projection.OwnerPack] || !validPackSurfaces[projection.OwnerPack][projection.Surface] || projection.ObservedState != "installed" || !projectDigestPattern.MatchString(projection.DesiredFingerprint) {
 			return errors.New("project lock contains malformed, duplicate, or unauthorized projection evidence")
+		}
+		if projection.Mode == "copy_tree" || projection.Mode == "copy_file" {
+			if shared, found := sharedTargets[physicalTargetKey]; found && (shared.OwnerPack != projection.OwnerPack || shared.Resource != projection.Resource || shared.DesiredFingerprint != projection.DesiredFingerprint) {
+				return errors.New("project lock contains incompatible shared projection evidence")
+			}
+			sharedTargets[physicalTargetKey] = projection
 		}
 		if (projection.Mode == "copy_tree" || projection.Mode == "copy_file" || projection.Mode == "merge_structured_file") && !resources[projection.Resource] {
 			return fmt.Errorf("project lock projection %s is outside the receipt resource closure", projection.Resource)
@@ -835,7 +870,7 @@ func safeProjectContractTarget(target string) bool {
 	return target != "" && target != "." && !filepath.IsAbs(target) && !strings.Contains(target, "\\") && target != ".." && !strings.HasPrefix(target, "../") && filepath.ToSlash(filepath.Clean(filepath.FromSlash(target))) == target
 }
 
-func inspectOfflineProjectFiles(projectRoot string, installation ProjectInstallation, manifestBytes []byte) (bool, []ProjectInstallBlocker, error) {
+func inspectOfflineProjectFiles(projectRoot string, installation ProjectInstallation) (bool, []ProjectInstallBlocker, error) {
 	healthy := true
 	var blockers []ProjectInstallBlocker
 	manifestPath := filepath.Join(projectRoot, "packy.json")
@@ -856,38 +891,30 @@ func inspectOfflineProjectFiles(projectRoot string, installation ProjectInstalla
 		healthy = false
 		blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "packy.lock.json", Detail: "the generated project lock bytes or mode have changed", Remediation: "rerun the named Pack install to regenerate its exact receipt"})
 	}
-	_ = manifestBytes
+	return healthy, blockers, nil
+}
+
+func inspectProjectNoticeFile(projectRoot string, installation ProjectInstallation, packID string, surface Surface) (bool, []ProjectInstallBlocker, error) {
 	noticesPath := filepath.Join(projectRoot, "PACKY-NOTICES.md")
 	noticesInfo, statErr := os.Lstat(noticesPath)
 	if errors.Is(statErr, fs.ErrNotExist) {
-		healthy = false
-		blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notices are missing", Remediation: "restore the exact locked notice contribution"})
+		return false, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notices are missing", Remediation: "restore the exact locked notice contribution"}}, nil
 	} else if statErr != nil {
 		return false, nil, statErr
 	} else if !noticesInfo.Mode().IsRegular() {
-		healthy = false
-		blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notices target is unsafe", Remediation: "restore the exact locked notice contribution"})
-	} else {
-		noticesData, readErr := os.ReadFile(noticesPath)
-		if readErr != nil {
-			return false, nil, readErr
-		}
-		allContributionsPresent := true
-		for _, pack := range installation.Manifest.Packs {
-			start, end := projectNoticeMarkers(pack.ID)
-			fragment, found := extractProjectContribution(string(noticesData), start, end)
-			locked, receiptFound := projectNoticeReceiptProjection(installation.Lock.Receipts, pack.ID)
-			if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest {
-				allContributionsPresent = false
-				break
-			}
-		}
-		if !allContributionsPresent {
-			healthy = false
-			blockers = append(blockers, ProjectInstallBlocker{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution or mode differs from the lock", Remediation: "restore the exact locked notice contribution"})
-		}
+		return false, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notices target is unsafe", Remediation: "restore the exact locked notice contribution"}}, nil
 	}
-	return healthy, blockers, nil
+	noticesData, readErr := os.ReadFile(noticesPath)
+	if readErr != nil {
+		return false, nil, readErr
+	}
+	start, end := projectNoticeMarkers(packID, surface)
+	fragment, found := extractProjectContribution(string(noticesData), start, end)
+	locked, receiptFound := projectNoticeReceiptProjection(installation.Lock.Receipts, packID, surface)
+	if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest {
+		return false, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution or mode differs from the lock", Remediation: "restore the exact locked notice contribution"}}, nil
+	}
+	return true, nil, nil
 }
 
 func (r JSONProjectStatusReport) MarshalJSON() ([]byte, error) {

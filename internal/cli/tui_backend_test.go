@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -498,7 +499,6 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activation, ApprovedPhases: requiredTUIPhases(activation)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
-
 	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
@@ -691,6 +691,15 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
+	opencodeInstall, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "install", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "custom", Roots: []string{"mcp_server:engram"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: opencodeInstall, ApprovedPhases: requiredTUIPhases(opencodeInstall)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
 	activation, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
@@ -698,12 +707,72 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activation, ApprovedPhases: requiredTUIPhases(activation)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
-	noOp, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Scope: "project", ProjectRoot: project})
+	opencodeActivation, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: opencodeActivation, ApprovedPhases: requiredTUIPhases(opencodeActivation)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	beforeUpdateDashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeUpdatePack := findTUIPack(beforeUpdateDashboard.Project.Packs, "engram")
+	beforeUpdateOpenCode := slices.IndexFunc(beforeUpdatePack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
+	if beforeUpdateOpenCode < 0 {
+		t.Fatalf("activated project status omitted OpenCode: %#v", beforeUpdatePack)
+	}
+	retainedOpenCodeRuntimeBefore := beforeUpdatePack.SurfaceStatuses[beforeUpdateOpenCode].Runtime
+	noOp, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if noOp.Operation != "update" || noOp.Disposition != "converged" || len(requiredTUIPhases(noOp)) != 0 {
-		t.Fatalf("catalog-current project update was not an explicit no-op: %#v", noOp)
+		t.Fatalf("catalog-current project update was not an explicit no-op: %#v\n%s", noOp, snapshotTree(t, project))
+	}
+	installationBeforeUpdate, err := capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retainedOpenCodeReceiptBefore []byte
+	for _, receipt := range installationBeforeUpdate.Lock.Receipts {
+		if receipt.Pack.ID == "engram" && receipt.Surface == capabilitypack.SurfaceOpenCode {
+			retainedOpenCodeReceiptBefore, err = json.Marshal(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(retainedOpenCodeReceiptBefore) == 0 {
+		t.Fatal("initial project installation omitted the OpenCode receipt")
+	}
+	retainedOpenCodeMetadataBefore := projectSurfaceLockMetadataJSON(t, installationBeforeUpdate.Lock, capabilitypack.SurfaceOpenCode)
+	noticesPath := filepath.Join(project, "PACKY-NOTICES.md")
+	notices, err := os.ReadFile(noticesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opencodeNoticeEnd := "<!-- packy:project:engram:opencode:notices:end -->"
+	driftedNotices := strings.Replace(string(notices), opencodeNoticeEnd, "operator edit\n"+opencodeNoticeEnd, 1)
+	if driftedNotices == string(notices) {
+		t.Fatalf("project notices omitted the OpenCode contribution marker:\n%s", notices)
+	}
+	if err := os.WriteFile(noticesPath, []byte(driftedNotices), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	noticeDashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	noticePack := findTUIPack(noticeDashboard.Project.Packs, "engram")
+	noticeCodex := slices.IndexFunc(noticePack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	noticeOpenCode := slices.IndexFunc(noticePack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
+	if noticeCodex < 0 || noticeOpenCode < 0 || noticePack.SurfaceStatuses[noticeCodex].Installation != "installed" || noticePack.SurfaceStatuses[noticeOpenCode].Installation != "drifted" {
+		t.Fatalf("notice drift leaked across project surfaces: %#v", noticePack.SurfaceStatuses)
+	}
+	if err := os.WriteFile(noticesPath, notices, 0o644); err != nil {
+		t.Fatal(err)
 	}
 
 	manifestPath := filepath.Join(bundle, "packs", "engram", "pack.json")
@@ -753,7 +822,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if driftedIndex < 0 || driftedPack.SurfaceStatuses[driftedIndex].Installation != "drifted" || driftedPack.SurfaceStatuses[driftedIndex].UpdateAvailable {
 		t.Fatalf("drifted project status advertised an inapplicable update: %#v", driftedPack)
 	}
-	blocked, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Scope: "project", ProjectRoot: project})
+	blocked, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -763,12 +832,24 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if err := os.WriteFile(configPath, config, 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Scope: "project", ProjectRoot: project})
+	opencodePath := filepath.Join(project, "opencode.json")
+	opencodeConfig, err := os.ReadFile(opencodePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if update.Operation != "update" || update.Disposition != "previewable" || update.PackVersion != "1.0.2" || update.Surface != "all installed surfaces" || !slices.Contains(update.Diff.Changed, "packy.json") || !slices.Contains(update.Diff.Changed, "packy.lock.json") || !slices.Contains(update.Diff.Retained, ".codex/config.toml") {
+	driftedOpenCode := strings.Replace(string(opencodeConfig), `"command":["engram"`, `"command":["operator-edit"`, 1)
+	if driftedOpenCode == string(opencodeConfig) {
+		t.Fatalf("installed OpenCode config omitted the expected Engram command:\n%s", opencodeConfig)
+	}
+	if err := os.WriteFile(opencodePath, []byte(driftedOpenCode), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if update.Operation != "update" || update.Disposition != "previewable" || update.PackVersion != "1.0.2" || update.Surface != "codex" || !slices.Contains(update.Diff.Changed, "packy.json") || !slices.Contains(update.Diff.Changed, "packy.lock.json") || !slices.Contains(update.Diff.Retained, ".codex/config.toml") {
 		t.Fatalf("project update preview = %#v", update)
 	}
 	beforeUpdate := snapshotTree(t, project)
@@ -783,12 +864,89 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: update, ApprovedPhases: requiredTUIPhases(update)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
+	if after, err := os.ReadFile(opencodePath); err != nil || string(after) != driftedOpenCode {
+		t.Fatalf("Codex update changed unrelated OpenCode drift: %v\n%s", err, after)
+	}
+	if err := os.WriteFile(opencodePath, opencodeConfig, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	installation, err := capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(installation.Manifest.Packs) != 1 || installation.Manifest.Packs[0].Version != "1.0.2" || installation.Manifest.Packs[0].Selection.Mode != capabilitypack.SelectionCustom || !slices.Equal(installation.Manifest.Packs[0].Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "mcp_server", ID: "engram"}}) {
 		t.Fatalf("project update did not preserve reviewed project intent: %#v", installation.Manifest.Packs)
+	}
+	versions := map[capabilitypack.Surface]string{}
+	var retainedOpenCodeReceiptAfter []byte
+	for _, receipt := range installation.Lock.Receipts {
+		if receipt.Pack.ID == "engram" {
+			versions[receipt.Surface] = receipt.Pack.Version
+		}
+		if receipt.Pack.ID == "engram" && receipt.Surface == capabilitypack.SurfaceOpenCode {
+			retainedOpenCodeReceiptAfter, err = json.Marshal(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if versions[capabilitypack.SurfaceCodex] != "1.0.2" || versions[capabilitypack.SurfaceOpenCode] != "1.0.1" {
+		t.Fatalf("selected-surface update changed another surface: %#v", versions)
+	}
+	if string(retainedOpenCodeReceiptAfter) != string(retainedOpenCodeReceiptBefore) {
+		t.Fatalf("selected-surface update rewrote the retained OpenCode receipt\nbefore: %s\nafter:  %s", retainedOpenCodeReceiptBefore, retainedOpenCodeReceiptAfter)
+	}
+	if got := projectSurfaceLockMetadataJSON(t, installation.Lock, capabilitypack.SurfaceOpenCode); got != retainedOpenCodeMetadataBefore {
+		t.Fatalf("selected-surface update rewrote retained OpenCode lock metadata\nbefore: %s\nafter:  %s", retainedOpenCodeMetadataBefore, got)
+	}
+	dashboard, err = backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack = findTUIPack(dashboard.Project.Packs, "engram")
+	codexIndex := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	opencodeIndex := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
+	if codexIndex < 0 || opencodeIndex < 0 || pack.SurfaceStatuses[codexIndex].InstalledVersion != "1.0.2" || pack.SurfaceStatuses[codexIndex].UpdateAvailable || pack.SurfaceStatuses[opencodeIndex].InstalledVersion != "1.0.1" || !pack.SurfaceStatuses[opencodeIndex].UpdateAvailable || pack.SurfaceStatuses[opencodeIndex].Runtime != retainedOpenCodeRuntimeBefore {
+		t.Fatalf("surface-scoped status did not preserve the sequential update frontier: %#v", pack.SurfaceStatuses)
+	}
+	var retainedCodexReceiptBefore []byte
+	for _, receipt := range installation.Lock.Receipts {
+		if receipt.Pack.ID == "engram" && receipt.Surface == capabilitypack.SurfaceCodex {
+			retainedCodexReceiptBefore, err = json.Marshal(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	opencodeUpdate, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opencodeUpdate.Surface != "opencode" || opencodeUpdate.Disposition != "previewable" {
+		t.Fatalf("second surface update preview = %#v", opencodeUpdate)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: opencodeUpdate, ApprovedPhases: requiredTUIPhases(opencodeUpdate)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	installation, err = capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions = map[capabilitypack.Surface]string{}
+	var retainedCodexReceiptAfter []byte
+	for _, receipt := range installation.Lock.Receipts {
+		if receipt.Pack.ID == "engram" {
+			versions[receipt.Surface] = receipt.Pack.Version
+		}
+		if receipt.Pack.ID == "engram" && receipt.Surface == capabilitypack.SurfaceCodex {
+			retainedCodexReceiptAfter, err = json.Marshal(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if versions[capabilitypack.SurfaceCodex] != "1.0.2" || versions[capabilitypack.SurfaceOpenCode] != "1.0.2" || string(retainedCodexReceiptAfter) != string(retainedCodexReceiptBefore) {
+		t.Fatalf("sequential project updates did not converge independently: versions=%#v\ncodex before: %s\ncodex after:  %s", versions, retainedCodexReceiptBefore, retainedCodexReceiptAfter)
 	}
 	projectContract := snapshotTree(t, project)
 
@@ -975,4 +1133,42 @@ func findTUIPack(packs []tui.Pack, id string) *tui.Pack {
 		}
 	}
 	return nil
+}
+
+func projectSurfaceLockMetadataJSON(t *testing.T, lock capabilitypack.ProjectLockProposal, surface capabilitypack.Surface) string {
+	t.Helper()
+	var projections []capabilitypack.ProjectProjectionPlan
+	for _, projection := range lock.Projections {
+		if projection.Surface == surface {
+			projections = append(projections, projection)
+		}
+	}
+	var bindings []capabilitypack.LifecycleBinding
+	for _, binding := range lock.Bindings {
+		if binding.Surface == surface {
+			bindings = append(bindings, binding)
+		}
+	}
+	var sensitive []capabilitypack.ProjectSensitiveDisclosure
+	for _, disclosure := range lock.Sensitive {
+		if disclosure.Surface == surface {
+			sensitive = append(sensitive, disclosure)
+		}
+	}
+	var degradations []capabilitypack.LifecycleExclusion
+	for _, degradation := range lock.Degradations {
+		if degradation.Surface == surface {
+			degradations = append(degradations, degradation)
+		}
+	}
+	data, err := json.Marshal(struct {
+		Projections  []capabilitypack.ProjectProjectionPlan
+		Bindings     []capabilitypack.LifecycleBinding
+		Sensitive    []capabilitypack.ProjectSensitiveDisclosure
+		Degradations []capabilitypack.LifecycleExclusion
+	}{projections, bindings, sensitive, degradations})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

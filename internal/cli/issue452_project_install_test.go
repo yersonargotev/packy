@@ -54,14 +54,17 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 		t.Fatal(err)
 	}
 	var manifest struct {
-		SchemaVersion          int                                  `json:"schema_version"`
-		MinimumPackyCapability string                               `json:"minimum_packy_capability"`
-		Packs                  []capabilitypack.ProjectManifestPack `json:"packs"`
+		SchemaVersion          int    `json:"schema_version"`
+		MinimumPackyCapability string `json:"minimum_packy_capability"`
+		Packs                  []struct {
+			ID             string                                `json:"id"`
+			SurfaceIntents []capabilitypack.ProjectSurfaceIntent `json:"surface_intents"`
+		} `json:"packs"`
 	}
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatalf("decode manifest: %v\n%s", err, manifestData)
 	}
-	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || manifest.Packs[0].Version != version || len(manifest.Packs[0].Surfaces) != 1 || manifest.Packs[0].Surfaces[0] != capabilitypack.SurfaceCodex {
+	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Version != version || manifest.Packs[0].SurfaceIntents[0].Surface != capabilitypack.SurfaceCodex {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 

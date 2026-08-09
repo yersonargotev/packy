@@ -79,6 +79,24 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		t.Fatalf("pack preview: %v\n%s", err, preview)
 	}
 	assertStructuredOutput(t, root, "pack-lifecycle.schema.json", preview)
+
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	projectOpts, _, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
+	projectOpts.Getwd = func() (string, error) { return project, nil }
+	projectPreview, err := executeCommand(t, NewRootCommand(projectOpts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("project preview: %v\n%s", err, projectPreview)
+	}
+	assertProjectStructuredOutput(t, root, "project-preview.schema.json", projectPreview)
+	if applied, err := executeCommand(t, NewRootCommand(projectOpts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
+		t.Fatalf("project install: %v\n%s", err, applied)
+	}
+	projectStatus, err := executeCommand(t, NewRootCommand(projectOpts), "status", "matty", "--surface", "codex", "--project", "--json")
+	if err != nil {
+		t.Fatalf("project status: %v\n%s", err, projectStatus)
+	}
+	assertProjectStructuredOutput(t, root, "project-status.schema.json", projectStatus)
 }
 
 func TestStructuredOutputV2SchemasRejectWrongVersionAndUnknownFields(t *testing.T) {
@@ -425,6 +443,43 @@ func assertStructuredOutput(t *testing.T, root, schemaName, document string) {
 	t.Helper()
 	if err := validateStructuredOutput(t, root, schemaName, []byte(document)); err != nil {
 		t.Fatalf("%s producer: %v\n%s", schemaName, err, document)
+	}
+}
+
+func assertProjectStructuredOutput(t *testing.T, root, schemaName, instance string) {
+	t.Helper()
+	compiler := jsonschema.NewCompiler()
+	schemaRoot := filepath.Join(root, "schemas", "project", "v1.0.0")
+	entries, err := os.ReadDir(schemaRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		schemaBytes, err := os.ReadFile(filepath.Join(schemaRoot, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
+		if err != nil {
+			t.Fatalf("parse project schema %s: %v", entry.Name(), err)
+		}
+		if err := compiler.AddResource("https://yersonargotev.github.io/packy/schemas/project/v1.0.0/"+entry.Name(), document); err != nil {
+			t.Fatal(err)
+		}
+	}
+	schema, err := compiler.Compile("https://yersonargotev.github.io/packy/schemas/project/v1.0.0/" + schemaName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := jsonschema.UnmarshalJSON(strings.NewReader(instance))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(value); err != nil {
+		t.Fatalf("%s producer: %v\n%s", schemaName, err, instance)
 	}
 }
 

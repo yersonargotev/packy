@@ -94,7 +94,10 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 
 	beforeAddy := projectReceiptJSON(t, lockData, "addy")
 	beforeArgote := projectReceiptJSON(t, lockData, "argote")
-	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--project"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--project"); err == nil || !strings.Contains(err.Error(), "--surface is required for project update") {
+		t.Fatalf("project update without a surface was not rejected: %v\n%s", err, out)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--surface", "codex", "--project"); err != nil {
 		t.Fatalf("update Addy to the current bundled version: %v\n%s", err, out)
 	}
 	updatedData, err := os.ReadFile(filepath.Join(project, "packy.lock.json"))
@@ -112,13 +115,13 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	if err := os.WriteFile(addySkill, []byte("user drift\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--project"); err == nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--surface", "codex", "--project"); err == nil {
 		t.Fatalf("ordinary project update overwrote receipt drift:\n%s", out)
 	}
 	if drifted, _ := os.ReadFile(addySkill); string(drifted) != "user drift\n" {
 		t.Fatalf("blocked update changed drifted receipt target: %q", drifted)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--project", "--force"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--surface", "codex", "--project", "--force"); err != nil {
 		t.Fatalf("force receipt-owned Addy update: %v\n%s", err, out)
 	}
 	if restored, _ := os.ReadFile(addySkill); string(restored) != string(originalSkill) {
@@ -222,15 +225,30 @@ func TestIssue519MultiSurfaceUpdatePreservesEveryOtherPackReceipt(t *testing.T) 
 		t.Fatal(err)
 	}
 	addyReceipt := projectReceiptJSON(t, before, "addy")
-	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--project"); err != nil {
-		t.Fatalf("multi-surface Matty update: %v\n%s", err, out)
+	mattyOpenCodeReceipt := projectSurfaceReceiptJSON(t, before, "matty", "opencode")
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "codex", "--project"); err != nil {
+		t.Fatalf("Codex Matty update: %v\n%s", err, out)
 	}
 	after, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := projectReceiptJSON(t, after, "addy"); got != addyReceipt {
-		t.Fatalf("multi-surface update changed Addy receipt\nbefore: %s\nafter:  %s", addyReceipt, got)
+		t.Fatalf("surface update changed Addy receipt\nbefore: %s\nafter:  %s", addyReceipt, got)
+	}
+	if got := projectSurfaceReceiptJSON(t, after, "matty", "opencode"); got != mattyOpenCodeReceipt {
+		t.Fatalf("Codex update changed the retained OpenCode receipt\nbefore: %s\nafter:  %s", mattyOpenCodeReceipt, got)
+	}
+	mattyCodexReceipt := projectSurfaceReceiptJSON(t, after, "matty", "codex")
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "opencode", "--project"); err != nil {
+		t.Fatalf("OpenCode Matty update: %v\n%s", err, out)
+	}
+	after, err = os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := projectSurfaceReceiptJSON(t, after, "matty", "codex"); got != mattyCodexReceipt {
+		t.Fatalf("OpenCode update changed the retained Codex receipt\nbefore: %s\nafter:  %s", mattyCodexReceipt, got)
 	}
 	installation, err := capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
@@ -238,6 +256,186 @@ func TestIssue519MultiSurfaceUpdatePreservesEveryOtherPackReceipt(t *testing.T) 
 	}
 	if len(installation.Manifest.Packs) != 2 {
 		t.Fatalf("multi-surface update retained manifest Packs = %#v", installation.Manifest.Packs)
+	}
+}
+
+func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncompatibleContent(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, _, repoRoot := packActivationOptions(t, terminal)
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	opts.Getwd = func() (string, error) { return project, nil }
+	for _, surface := range []string{"codex", "opencode"} {
+		if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", surface, "--resource", "skill:ask-matt"); err != nil {
+			t.Fatalf("install Matty on %s: %v\n%s", surface, err, out)
+		}
+	}
+	manifestPath := filepath.Join(bundle, "packs", "matty", "pack.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.1"`, `"version": "1.0.2"`, 1)
+	if updatedManifest == string(manifest) {
+		t.Fatal("Matty fixture version did not match the expected current version")
+	}
+	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "codex", "--project"); err != nil {
+		t.Fatalf("compatible Codex shared update: %v\n%s", err, out)
+	}
+	installation, err := capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions := map[capabilitypack.Surface]string{}
+	for _, receipt := range installation.Lock.Receipts {
+		if receipt.Pack.ID == "matty" {
+			versions[receipt.Surface] = receipt.Pack.Version
+		}
+	}
+	if versions[capabilitypack.SurfaceCodex] != "1.0.2" || versions[capabilitypack.SurfaceOpenCode] != "1.0.1" {
+		t.Fatalf("compatible shared update did not retain per-surface versions: %#v", versions)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "opencode", "--project"); err != nil {
+		t.Fatalf("compatible OpenCode shared update: %v\n%s", err, out)
+	}
+	updatedAgain := strings.Replace(updatedManifest, `"version": "1.0.2"`, `"version": "1.0.3"`, 1)
+	if updatedAgain == updatedManifest {
+		t.Fatal("updated Matty fixture version did not match")
+	}
+	if err := os.WriteFile(manifestPath, []byte(updatedAgain), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	skillPath := filepath.Join(bundle, "skills", "engineering", "ask-matt", "SKILL.md")
+	skill, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, append(skill, []byte("\nIncompatible shared update.\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, project)
+	out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "codex", "--project")
+	if err == nil || !strings.Contains(out, "shared_projection_version_conflict") {
+		t.Fatalf("incompatible shared update was not blocked: %v\n%s", err, out)
+	}
+	if after := snapshotTree(t, project); after != before {
+		t.Fatalf("blocked shared update mutated the project\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, _, repoRoot := packActivationOptions(t, terminal)
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	opts.Getwd = func() (string, error) { return project, nil }
+	manifestPath := filepath.Join(bundle, "packs", "matty", "pack.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withDependency := strings.Replace(string(manifest), `"requires": [],`, `"requires": ["skill:code-review"],`, 1)
+	if withDependency == string(manifest) {
+		t.Fatal("Matty fixture omitted the expected empty ask-matt dependency list")
+	}
+	if err := os.WriteFile(manifestPath, []byte(withDependency), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, surface := range []string{"codex", "opencode"} {
+		if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", surface, "--resource", "skill:ask-matt"); err != nil {
+			t.Fatalf("install Matty on %s: %v\n%s", surface, err, out)
+		}
+	}
+	retiredPath := filepath.Join(project, ".agents", "skills", "code-review", "SKILL.md")
+	if _, err := os.Stat(retiredPath); err != nil {
+		t.Fatalf("shared dependency was not installed: %v", err)
+	}
+	withoutDependency := strings.Replace(withDependency, `"requires": ["skill:code-review"],`, `"requires": [],`, 1)
+	withoutDependency = strings.Replace(withoutDependency, `"version": "1.0.1"`, `"version": "1.0.2"`, 1)
+	if err := os.WriteFile(manifestPath, []byte(withoutDependency), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(project, "packy.lock.json")
+	before, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retainedOpenCode := projectSurfaceReceiptJSON(t, before, "matty", "opencode")
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "codex", "--project"); err != nil {
+		t.Fatalf("Codex dependency retirement: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(retiredPath); err != nil {
+		t.Fatalf("Codex update removed a projection retained by OpenCode: %v", err)
+	}
+	afterCodex, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := projectSurfaceReceiptJSON(t, afterCodex, "matty", "opencode"); got != retainedOpenCode {
+		t.Fatalf("Codex retirement changed the OpenCode receipt\nbefore: %s\nafter:  %s", retainedOpenCode, got)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "opencode", "--project"); err != nil {
+		t.Fatalf("OpenCode dependency retirement: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(retiredPath); !os.IsNotExist(err) {
+		t.Fatalf("last surface update retained the retired projection: %v", err)
+	}
+}
+
+func TestIssue626ProjectNoticesUseOnlyTheSelectedSurfaceIntent(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, _, repoRoot := packActivationOptions(t, terminal)
+	bundle := copyPackBundleForUpdate(t, repoRoot)
+	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	opts.Getwd = func() (string, error) { return project, nil }
+	manifestPath := filepath.Join(bundle, "packs", "addy", "pack.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := `"id": "api-and-interface-design",
+      "kind": "skill",`
+	withNotice := strings.Replace(string(manifest), resource, resource+"\n      \"notices\": [\"notice:mit\"],", 1)
+	if withNotice == string(manifest) {
+		t.Fatal("Addy fixture omitted api-and-interface-design")
+	}
+	if err := os.WriteFile(manifestPath, []byte(withNotice), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"); err != nil {
+		t.Fatalf("install Codex notice selection: %v\n%s", err, out)
+	}
+	previewJSON, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "opencode", "--resource", "skill:browser-testing-with-devtools", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("preview OpenCode no-notice selection: %v\n%s", err, previewJSON)
+	}
+	var preview capabilitypack.JSONProjectInstallPreview
+	if err := json.Unmarshal([]byte(previewJSON), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Notices.Contributions) != 0 {
+		t.Fatalf("OpenCode preview inherited Codex notices: %#v", preview.Notices.Contributions)
+	}
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "opencode", "--resource", "skill:browser-testing-with-devtools"); err != nil {
+		t.Fatalf("install OpenCode no-notice selection: %v\n%s", err, out)
+	}
+	notices, err := os.ReadFile(filepath.Join(project, "PACKY-NOTICES.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(notices), "<!-- packy:project:addy:opencode:notices:start -->")
+	end := strings.Index(string(notices), "<!-- packy:project:addy:opencode:notices:end -->")
+	if start < 0 || end <= start || strings.Contains(string(notices)[start:end], "Copyright 2025 Addy Osmani") {
+		t.Fatalf("OpenCode notice block inherited the Codex attribution:\n%s", notices)
 	}
 }
 
@@ -294,5 +492,31 @@ func projectReceiptJSON(t *testing.T, data []byte, packID string) string {
 		}
 	}
 	t.Fatalf("receipt for %s not found in %s", packID, data)
+	return ""
+}
+
+func projectSurfaceReceiptJSON(t *testing.T, data []byte, packID, surface string) string {
+	t.Helper()
+	var document struct {
+		Receipts []json.RawMessage `json:"receipts"`
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	for _, receipt := range document.Receipts {
+		var identity struct {
+			Pack struct {
+				ID string `json:"id"`
+			} `json:"pack"`
+			Surface string `json:"surface"`
+		}
+		if err := json.Unmarshal(receipt, &identity); err != nil {
+			t.Fatal(err)
+		}
+		if identity.Pack.ID == packID && identity.Surface == surface {
+			return string(receipt)
+		}
+	}
+	t.Fatalf("receipt for %s on %s not found in %s", packID, surface, data)
 	return ""
 }

@@ -6,7 +6,7 @@
   "required": ["schema_version", "packs"],
   "properties": {
     "schema_version": { "const": 1 },
-    "packs": { "type": "array", "minItems": 1, "items": { "$ref": "project-contract-defs.schema.json#/$defs/pack" } }
+    "packs": { "type": "array", "minItems": 1, "items": { "$ref": "project-contract-defs.schema.json#/$defs/manifest_pack" } }
   },
   "additionalProperties": false
 }

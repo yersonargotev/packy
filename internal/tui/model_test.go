@@ -181,7 +181,7 @@ func TestProjectStatusOffersOnlyApplicableUpdatePersonalDeactivationAndUninstall
 		t.Fatalf("project update preview requests = %d, want 1", len(backend.previewRequests))
 	}
 	request := backend.previewRequests[0]
-	if request.Operation != "update" || request.Scope != "project" || request.ProjectRoot != "/workspace/project" || request.Selection.Mode != "" {
+	if request.Operation != "update" || request.Surface != "codex" || request.Scope != "project" || request.ProjectRoot != "/workspace/project" || request.Selection.Mode != "" {
 		t.Fatalf("project update preview request = %#v", request)
 	}
 }

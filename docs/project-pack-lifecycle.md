@@ -46,9 +46,13 @@ project activations remain explicit and independently inspectable.
 Update one project Pack to the version in the running Packy's bundled catalog:
 
 ```sh
-packy update matty --project --dry-run
-packy update matty --project
+packy update matty --surface codex --project --dry-run
+packy update matty --surface codex --project
 ```
+
+Each installed surface keeps its own exact Pack version. Updating one surface
+leaves every other surface unchanged and still eligible for its own previewed
+update.
 
 Inspect shared installation and personal activation independently:
 
