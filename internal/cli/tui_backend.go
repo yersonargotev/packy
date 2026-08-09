@@ -17,8 +17,7 @@ import (
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
-// RunTUI composes the read-only terminal application from Packy's production
-// owners. Root-command activation is deliberately owned by a later increment.
+// RunTUI composes the terminal application from Packy's production owners.
 func RunTUI(ctx context.Context, opts Options, input io.Reader, output io.Writer) error {
 	opts = opts.withDefaults()
 	resolver := newWorkstationResolver(opts)
@@ -184,6 +183,54 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 		return tui.Preview{}, err
 	}
 	return globalPreviewForTUI(plan.JSONReport(true)), nil
+}
+
+func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
+	if request.Preview.Scope != "global" || request.Preview.Operation != string(capabilitypack.OperationActivate) {
+		return tui.ApplyResult{Stage: "revalidation"}, errors.New("TUI Apply supports only global Pack activation")
+	}
+	selection, err := selectionForTUI(request.Preview.Selection)
+	if err != nil {
+		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	progress(tui.ApplyProgress{Phase: "revalidation"})
+	facade, err := activationFacade(b.opts, b.resolver)
+	if err != nil {
+		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	plan, err := facade.Preview(ctx, capabilitypack.ActivationRequest{
+		PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), Selection: selection,
+	})
+	if err != nil {
+		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	if plan.ID() != request.Preview.ID || plan.Digest() != request.Preview.Digest {
+		return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved preview is stale; create a fresh preview before Apply")
+	}
+	required := make([]string, 0)
+	receipts := make([]capabilitypack.ApprovalReceipt, 0)
+	for _, phase := range plan.Phases() {
+		if !phase.ApprovalRequired {
+			continue
+		}
+		required = append(required, string(phase.Kind))
+		receipts = append(receipts, facade.Approve(plan, phase.Kind))
+	}
+	if !slices.Equal(request.ApprovedPhases, required) {
+		return tui.ApplyResult{Stage: "approval"}, fmt.Errorf("approved effect classes %v do not match required classes %v", request.ApprovedPhases, required)
+	}
+	progress(tui.ApplyProgress{Phase: "apply"})
+	applied, err := facade.Apply(ctx, capabilitypack.ApplyRequest{Plan: plan, Approvals: receipts, Interactive: true})
+	if err != nil {
+		return tui.ApplyResult{Stage: "apply", Summary: "Activation stopped before verification"}, err
+	}
+	progress(tui.ApplyProgress{Phase: "verification"})
+	return tui.ApplyResult{
+		Stage: "verification", Verified: applied.Verified,
+		Summary:        fmt.Sprintf("Activated %s on %s", request.Preview.PackID, request.Preview.Surface),
+		Details:        []string{fmt.Sprintf("%d projections owned", applied.Projections)},
+		PendingActions: append([]string(nil), applied.PendingHumanActions...),
+	}, nil
 }
 
 func selectionForTUI(selection tui.Selection) (capabilitypack.ResourceSelection, error) {

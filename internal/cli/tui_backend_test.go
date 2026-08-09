@@ -272,6 +272,71 @@ func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState
 	}
 }
 
+func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivation(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PATH":                "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd:  func() (string, error) { return repositoryRoot, nil },
+		Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved := make([]string, 0)
+	for _, phase := range preview.Phases {
+		if phase.ApprovalRequired {
+			approved = append(approved, phase.Kind)
+		}
+	}
+	before := snapshotTree(t, home)
+	stale := preview
+	stale.Digest = "superseded-digest"
+	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: stale, ApprovedPhases: approved}, func(tui.ApplyProgress) {})
+	if err == nil || result.Stage != "revalidation" || !strings.Contains(err.Error(), "fresh preview") {
+		t.Fatalf("stale Apply = result %#v, err %v; want revalidation failure", result, err)
+	}
+	if after := snapshotTree(t, home); after != before {
+		t.Fatalf("stale Apply mutated HOME\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+
+	var progress []string
+	result, err = backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: approved}, func(update tui.ApplyProgress) {
+		progress = append(progress, update.Phase)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Verified || result.Stage != "verification" || !strings.Contains(result.Summary, "argote") || !slices.Equal(progress, []string{"revalidation", "apply", "verification"}) {
+		t.Fatalf("activation result/progress = %#v / %v", result, progress)
+	}
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := findTUIPack(dashboard.Global.Packs, "argote")
+	if pack == nil {
+		t.Fatal("fresh status omitted argote")
+	}
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || pack.SurfaceStatuses[index].Configured != "yes" {
+		t.Fatalf("fresh status did not observe activation: %#v", pack)
+	}
+}
+
 func findTUIPack(packs []tui.Pack, id string) *tui.Pack {
 	for _, pack := range packs {
 		if pack.ID == id {

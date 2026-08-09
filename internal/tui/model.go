@@ -1,4 +1,4 @@
-// Package tui presents Packy's read-only application state in a terminal UI.
+// Package tui presents Packy's interactive application state in a terminal UI.
 package tui
 
 import (
@@ -6,18 +6,35 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
 // Backend is the presentation-neutral seam through which the TUI loads Packy
-// state and explicitly initializes Packy's Installed Source.
+// state, initializes Packy's Installed Source, and applies consented previews.
 type Backend interface {
 	Load(context.Context) (Dashboard, error)
 	Initialize(context.Context, func(string)) error
 	Preview(context.Context, PreviewRequest) (Preview, error)
+	Apply(context.Context, ApplyRequest, func(ApplyProgress)) (ApplyResult, error)
+}
+
+type ApplyRequest struct {
+	Preview        Preview
+	ApprovedPhases []string
+}
+
+type ApplyProgress struct{ Phase string }
+
+type ApplyResult struct {
+	Stage, Summary string
+	Verified       bool
+	Details        []string
+	PendingActions []string
 }
 
 type Selection struct {
@@ -159,6 +176,13 @@ type previewResult struct {
 	err     error
 }
 
+type applyFinished struct {
+	result ApplyResult
+	err    error
+}
+
+type applyProgressMessage struct{ phase string }
+
 type Model struct {
 	backend                Backend
 	ctx                    context.Context
@@ -184,6 +208,22 @@ type Model struct {
 	preview                *Preview
 	previewErr             error
 	previewScroll          int
+	consenting             bool
+	consentIndex           int
+	consentApprove         bool
+	approvedPhases         []string
+	applying               bool
+	applyPhase             string
+	applyStartedAt         time.Time
+	applyEvents            chan tea.Msg
+	applySpinner           spinner.Model
+	deferredQuit           bool
+	applyResult            bool
+	applyOutcome           ApplyResult
+	applyErr               error
+	applyReloaded          bool
+	applyReloadErr         error
+	resultDetailsExpanded  bool
 	filtering              bool
 	filter                 string
 	initializing           bool
@@ -198,7 +238,7 @@ func NewModel(backend Backend) Model {
 }
 
 func newModel(ctx context.Context, backend Backend) Model {
-	return Model{backend: backend, ctx: ctx}
+	return Model{backend: backend, ctx: ctx, applySpinner: spinner.New()}
 }
 
 // Run executes the full-screen dashboard with caller-owned process I/O.
@@ -223,6 +263,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = message.err
 		m.globalRow = boundedRow(m.globalRow, len(m.dashboard.Global.Packs))
 		m.projectRow = boundedRow(m.projectRow, len(m.dashboard.Project.Packs))
+		if m.applyResult {
+			m.applyReloaded = message.err == nil
+			m.applyReloadErr = message.err
+		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = message.Width, message.Height
 	case initializationProgress:
@@ -242,7 +286,52 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.preview = &preview
 			m.previewScroll = 0
 		}
+	case applyProgressMessage:
+		m.applyPhase = message.phase
+		return m, waitForApply(m.applyEvents)
+	case applyFinished:
+		m.applying = false
+		m.applyResult = true
+		m.applyOutcome = message.result
+		m.applyErr = message.err
+		m.applyEvents = nil
+		return m, m.Init()
+	case spinner.TickMsg:
+		if m.applying {
+			var command tea.Cmd
+			m.applySpinner, command = m.applySpinner.Update(message)
+			return m, command
+		}
 	case tea.KeyPressMsg:
+		if m.applying {
+			if key.Matches(message, dashboardKeys.Quit) || key.Matches(message, dashboardKeys.Back) {
+				m.deferredQuit = true
+			}
+			return m, nil
+		}
+		if m.applyResult {
+			switch {
+			case key.Matches(message, dashboardKeys.Help):
+				m.resultDetailsExpanded = !m.resultDetailsExpanded
+				return m, nil
+			case key.Matches(message, dashboardKeys.Quit):
+				return m, tea.Quit
+			case key.Matches(message, dashboardKeys.Back):
+				m.leaveApplyResult()
+				m.preview, m.previewErr, m.selecting, m.inspecting = nil, nil, false, false
+				return m, nil
+			case key.Matches(message, dashboardKeys.Inspect):
+				failed := m.applyErr != nil || !m.applyOutcome.Verified
+				m.leaveApplyResult()
+				if failed {
+					m.preview, m.previewErr = nil, nil
+					return m.startPreview()
+				}
+				m.preview, m.previewErr, m.selecting, m.inspecting = nil, nil, false, false
+				return m, nil
+			}
+			return m, nil
+		}
 		if m.initializing {
 			return m, nil
 		}
@@ -263,11 +352,45 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.preview != nil || m.previewErr != nil {
+			if m.consenting {
+				if key.Matches(message, dashboardKeys.Back) {
+					m.cancelConsent()
+					return m, nil
+				}
+				if message.Code == tea.KeyTab || key.Matches(message, dashboardKeys.Up) || key.Matches(message, dashboardKeys.Down) {
+					m.consentApprove = !m.consentApprove
+					return m, nil
+				}
+				if key.Matches(message, dashboardKeys.Inspect) {
+					if !m.consentApprove {
+						m.cancelConsent()
+						return m, nil
+					}
+					phases := requiredConsentPhases(*m.preview)
+					m.approvedPhases = append(m.approvedPhases, phases[m.consentIndex].Kind)
+					m.consentIndex++
+					if m.consentIndex < len(phases) {
+						m.consentApprove = phases[m.consentIndex].Kind != "destructive-cleanup"
+						return m, nil
+					}
+					m.consenting = false
+					request := ApplyRequest{Preview: *m.preview, ApprovedPhases: append([]string(nil), m.approvedPhases...)}
+					return m.startApply(request)
+				}
+				return m, nil
+			}
 			switch {
 			case key.Matches(message, dashboardKeys.Quit):
 				return m, tea.Quit
 			case key.Matches(message, dashboardKeys.Back):
 				m.preview, m.previewErr = nil, nil
+				return m, nil
+			case key.Matches(message, dashboardKeys.Inspect):
+				if m.preview != nil && previewCanApply(*m.preview) {
+					phases := requiredConsentPhases(*m.preview)
+					m.consenting, m.consentIndex, m.approvedPhases = true, 0, nil
+					m.consentApprove = phases[0].Kind != "destructive-cleanup"
+				}
 				return m, nil
 			case key.Matches(message, dashboardKeys.Reload):
 				m.preview, m.previewErr = nil, nil
@@ -587,6 +710,12 @@ func (m Model) render() string {
 	if !m.loaded {
 		return m.renderBody(titleStyle.Render("Packy health") + "\n\nLoading Packy health…")
 	}
+	if m.applying {
+		return m.renderBody(m.renderApplyProgress())
+	}
+	if m.applyResult {
+		return m.renderBody(m.renderApplyResult())
+	}
 	if m.err != nil {
 		return m.renderBody(titleStyle.Render("Packy health") + "\n\nUnable to load dashboard\n" + m.err.Error() + "\n\nr reload · q quit")
 	}
@@ -603,6 +732,9 @@ func (m Model) render() string {
 		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nUnable to create preview\n" + m.previewErr.Error() + "\n\nEsc back · q quit")
 	}
 	if m.preview != nil {
+		if m.consenting {
+			return m.renderBody(m.renderConsent())
+		}
 		return m.renderPreviewViewport(m.renderPreview(*m.preview))
 	}
 	if m.selecting {
@@ -986,7 +1118,139 @@ func (m Model) renderPreview(preview Preview) string {
 	if preview.Stale {
 		lines = append(lines, "", "Stale preview — "+preview.StaleReason, "Create a fresh preview before continuing")
 	}
-	lines = append(lines, "", "Continue unavailable in this delivery · Esc back · q quit")
+	if previewCanApply(preview) {
+		lines = append(lines, "", "Enter continue to consent · Esc back · q quit")
+	} else {
+		lines = append(lines, "", "Continue unavailable · Esc back · q quit")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func previewCanApply(preview Preview) bool {
+	return preview.Scope == "global" && preview.Operation == "activate" && preview.Disposition == "applicable" && !preview.Stale && len(requiredConsentPhases(preview)) > 0
+}
+
+func requiredConsentPhases(preview Preview) []PreviewPhase {
+	phases := make([]PreviewPhase, 0, len(preview.Phases))
+	for _, phase := range preview.Phases {
+		if phase.ApprovalRequired {
+			phases = append(phases, phase)
+		}
+	}
+	return phases
+}
+
+func (m *Model) cancelConsent() {
+	m.consenting, m.consentIndex, m.consentApprove, m.approvedPhases = false, 0, false, nil
+}
+
+func (m Model) startApply(request ApplyRequest) (tea.Model, tea.Cmd) {
+	m.applying = true
+	m.applyPhase = "revalidation"
+	m.applyStartedAt = time.Now()
+	m.applyEvents = make(chan tea.Msg, 64)
+	m.deferredQuit = false
+	events := m.applyEvents
+	apply := func() tea.Msg {
+		result, err := m.backend.Apply(m.ctx, request, func(progress ApplyProgress) {
+			events <- applyProgressMessage{phase: progress.Phase}
+		})
+		events <- applyFinished{result: result, err: err}
+		close(events)
+		return nil
+	}
+	return m, tea.Batch(apply, waitForApply(events), m.applySpinner.Tick)
+}
+
+func waitForApply(events <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg { return <-events }
+}
+
+func (m *Model) leaveApplyResult() {
+	m.applyResult, m.applyErr, m.applyReloaded, m.deferredQuit = false, nil, false, false
+	m.applyReloadErr = nil
+	m.applyOutcome = ApplyResult{}
+	m.resultDetailsExpanded = false
+}
+
+func (m Model) renderConsent() string {
+	phases := requiredConsentPhases(*m.preview)
+	phase := phases[m.consentIndex]
+	lines := []string{
+		titleStyle.Render(fmt.Sprintf("Consent %d of %d", m.consentIndex+1, len(phases))),
+		"", phase.Kind, "Exact plan: " + m.preview.ID + " · " + m.preview.Digest, "", "Effects",
+	}
+	for _, action := range phase.Actions {
+		lines = append(lines, "  "+action)
+	}
+	approve, cancel := "  [ Approve ]", "  [ Cancel ]"
+	if m.consentApprove {
+		approve = "› [ Approve ] · selected"
+	} else {
+		cancel = "› [ Cancel ] · selected"
+	}
+	lines = append(lines, "", approve, cancel, "", "↑/↓ or Tab choose · Enter confirm · Esc preview")
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderApplyProgress() string {
+	lines := []string{
+		titleStyle.Render("Apply in progress"), "",
+		fmt.Sprintf("%s %s · elapsed %s", m.applySpinner.View(), m.applyPhase, time.Since(m.applyStartedAt).Truncate(time.Second)),
+		"", "Apply is non-interruptible; ordinary exit waits for the operation to return.",
+	}
+	if m.deferredQuit {
+		lines = append(lines, "Exit deferred until Apply returns.")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderApplyResult() string {
+	succeeded := m.applyErr == nil && m.applyOutcome.Verified
+	title := "Activation failed"
+	verification := "not verified"
+	if succeeded {
+		title, verification = "Activation succeeded", "verified"
+	}
+	stage := m.applyOutcome.Stage
+	if stage == "" {
+		stage = "apply"
+	}
+	lines := []string{titleStyle.Render(title), "", "Stage: " + stage, "Verification: " + verification}
+	if m.applyOutcome.Summary != "" {
+		lines = append(lines, "Summary: "+m.applyOutcome.Summary)
+	}
+	if m.applyErr != nil {
+		lines = append(lines, "Error: "+m.applyErr.Error())
+	}
+	if len(m.applyOutcome.Details) > 0 {
+		detailState := "Details collapsed · ? expand"
+		if m.resultDetailsExpanded {
+			detailState = "Details expanded · ? collapse"
+		}
+		lines = append(lines, "", detailState)
+		if m.resultDetailsExpanded {
+			for _, detail := range m.applyOutcome.Details {
+				lines = append(lines, "  "+detail)
+			}
+		}
+	}
+	if len(m.applyOutcome.PendingActions) > 0 {
+		lines = append(lines, "", "Pending actions: "+strings.Join(m.applyOutcome.PendingActions, ", "))
+	}
+	if m.applyReloaded {
+		lines = append(lines, "", "Fresh Pack status reloaded")
+	} else if m.applyReloadErr != nil {
+		lines = append(lines, "", "Fresh Pack status reload failed: "+m.applyReloadErr.Error())
+	}
+	if m.deferredQuit {
+		lines = append(lines, "Exit request was deferred during Apply")
+	}
+	action := "Enter dashboard"
+	if !succeeded {
+		action = "Enter create fresh preview"
+	}
+	lines = append(lines, "", action+" · Esc dashboard · q quit")
 	return strings.Join(lines, "\n")
 }
 
