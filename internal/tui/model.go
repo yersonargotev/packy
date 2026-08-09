@@ -131,22 +131,26 @@ type Exclusion struct {
 }
 
 type SurfaceStatus struct {
-	Name             string
-	Supported        bool
-	Active           bool
-	UpdateAvailable  bool
-	InstalledVersion string
-	Installation     string
-	Runtime          string
-	Configured       string
-	Authorized       string
-	Usable           string
-	Ownership        int
-	Drift            int
-	Blockers         []string
-	PendingActions   []string
-	Evidence         []string
-	Conditions       []ReadinessCondition
+	Name                    string
+	Supported               bool
+	Active                  bool
+	UpdateAvailable         bool
+	InstalledVersion        string
+	Installation            string
+	Runtime                 string
+	Configured              string
+	Authorized              string
+	Usable                  string
+	ControlledCheckState    string
+	ControlledCheckResult   string
+	ControlledCheckObserved string
+	ControlledCheckIdentity string
+	Ownership               int
+	Drift                   int
+	Blockers                []string
+	PendingActions          []string
+	Evidence                []string
+	Conditions              []ReadinessCondition
 }
 
 // ReadinessCondition is the presentation DTO for a domain readiness fact.
@@ -1234,6 +1238,7 @@ func (m Model) renderDetail() string {
 		}
 		lines = append(lines,
 			fmt.Sprintf("    configured=%s authorized=%s usable=%s", status.Configured, status.Authorized, status.Usable),
+			fmt.Sprintf("    Controlled runtime check: state=%s result=%s observed_at=%s identity=%s", status.ControlledCheckState, status.ControlledCheckResult, status.ControlledCheckObserved, status.ControlledCheckIdentity),
 			fmt.Sprintf("    Ownership: %d projected paths", status.Ownership),
 			fmt.Sprintf("    Drift: %d projections", status.Drift),
 			"    Blockers: "+joinOrNone(status.Blockers),

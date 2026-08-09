@@ -110,7 +110,7 @@ func TestTUIBackendPreviewsAndRecordsControlledRuntimeCheck(t *testing.T) {
 	}
 	orchestrate := findTUIPack(dashboard.Global.Packs, "orchestrate")
 	index := slices.IndexFunc(orchestrate.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
-	if index < 0 || orchestrate.SurfaceStatuses[index].Usable != "true" {
+	if index < 0 || orchestrate.SurfaceStatuses[index].Usable != "true" || orchestrate.SurfaceStatuses[index].ControlledCheckState != "current" || orchestrate.SurfaceStatuses[index].ControlledCheckResult != "true" || orchestrate.SurfaceStatuses[index].ControlledCheckIdentity == "" {
 		t.Fatalf("controlled check did not flow to TUI status: %#v", orchestrate)
 	}
 }

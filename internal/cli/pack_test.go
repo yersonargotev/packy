@@ -344,6 +344,26 @@ type fakeTerminal struct {
 	prompts     []string
 }
 
+type versionOutputRunner struct{ output string }
+
+func (r versionOutputRunner) LookPath(name string) (string, error)         { return "/bin/" + name, nil }
+func (r versionOutputRunner) Run(context.Context, string, ...string) error { return nil }
+func (r versionOutputRunner) RunOutput(context.Context, string, ...string) (string, string, int, error) {
+	return r.output, "", 0, nil
+}
+
+func TestObservableSurfaceVersionUsesSanitizedHostVersion(t *testing.T) {
+	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "codex-cli 2.4.1\n"}, "codex"); got != "codex/2.4.1" {
+		t.Fatalf("host version = %q", got)
+	}
+	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "TOKEN=secret"}, "codex"); got != "unobservable" {
+		t.Fatalf("secret-shaped host output = %q", got)
+	}
+	if got := observableSurfaceVersion(context.Background(), versionOutputRunner{output: "/Users/alice/codex build"}, "codex"); got != "unobservable" {
+		t.Fatalf("path-shaped host output = %q", got)
+	}
+}
+
 func (f *fakeTerminal) Interactive(io.Reader) bool                   { return f.interactive }
 func (f *fakeTerminal) InteractiveSession(io.Reader, io.Writer) bool { return f.interactive }
 func (f *fakeTerminal) Approve(_ io.Reader, _ io.Writer, prompt string) (bool, error) {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/reportredaction"
 	"github.com/yersonargotev/packy/internal/skillbundle"
+	packyversion "github.com/yersonargotev/packy/internal/version"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
@@ -883,7 +885,7 @@ func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, snapsho
 	home := snapshot.Home()
 	if surface == capabilitypack.SurfaceCodex && home != "" {
 		layout := codex.NewCanonicalLayout(home)
-		return codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile())
+		return withControlledCheckFacts(opts, surface, codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile()))
 	}
 	if surface == capabilitypack.SurfaceClaude && home != "" {
 		executable, _ := opts.ClaudeLookPath("claude")
@@ -897,9 +899,9 @@ func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, snapsho
 		if opts.ClaudeRuntimeEvidence != nil {
 			adapter = adapter.WithRuntimeEvidence(opts.ClaudeRuntimeEvidence)
 		}
-		return adapter
+		return withControlledCheckFacts(opts, surface, adapter)
 	}
-	return projectOfflineAdapter(surface)
+	return withControlledCheckFacts(opts, surface, projectOfflineAdapter(surface))
 }
 
 func projectStatusAdapters(opts Options, snapshot workstation.Snapshot) map[capabilitypack.Surface]capabilitypack.SurfaceAdapter {
@@ -1124,9 +1126,9 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 	adapters := opts.SurfaceAdapters
 	if adapters == nil {
 		adapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceCodex:    codexAdapter,
-			capabilitypack.SurfaceOpenCode: openCodeAdapter,
-			capabilitypack.SurfaceClaude:   claudeAdapter,
+			capabilitypack.SurfaceCodex:    withControlledCheckFacts(opts, capabilitypack.SurfaceCodex, codexAdapter),
+			capabilitypack.SurfaceOpenCode: withControlledCheckFacts(opts, capabilitypack.SurfaceOpenCode, openCodeAdapter),
+			capabilitypack.SurfaceClaude:   withControlledCheckFacts(opts, capabilitypack.SurfaceClaude, claudeAdapter),
 		}
 	}
 	return capabilitypack.NewFacade(composition.catalog,
@@ -1138,6 +1140,43 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 		),
 	), nil
 }
+
+func withControlledCheckFacts(opts Options, surface capabilitypack.Surface, adapter capabilitypack.SurfaceAdapter) capabilitypack.SurfaceAdapter {
+	return capabilitypack.WithControlledCheckDescriptor(adapter, capabilitypack.ControlledCheckDescriptor{
+		AdapterVersion: "packy/" + packyversion.Value + "/" + string(surface) + "-surface/v1",
+		HostVersion:    observableSurfaceVersion(context.Background(), opts.Runner, string(surface)),
+		Instructions:   []string{fmt.Sprintf("In a fresh %s session, exercise the selected Pack behavior and record whether it succeeds.", surface)},
+	})
+}
+
+func observableSurfaceVersion(ctx context.Context, runner Runner, command string) string {
+	path, err := runner.LookPath(command)
+	if err != nil {
+		return "unobservable"
+	}
+	output, ok := runner.(outputRunner)
+	if !ok {
+		return "unobservable"
+	}
+	stdout, stderr, exitCode, err := output.RunOutput(ctx, path, "--version")
+	if err != nil || exitCode != 0 {
+		return "unobservable"
+	}
+	outputText := strings.TrimSpace(stdout)
+	if outputText == "" {
+		outputText = strings.TrimSpace(stderr)
+	}
+	if index := strings.IndexByte(outputText, '\n'); index >= 0 {
+		outputText = outputText[:index]
+	}
+	version := observableVersionPattern.FindString(outputText)
+	if version == "" {
+		return "unobservable"
+	}
+	return command + "/" + version
+}
+
+var observableVersionPattern = regexp.MustCompile(`\bv?[0-9]+(?:\.[0-9]+)+(?:[-+][0-9A-Za-z.-]+)?\b`)
 
 type outputRunner interface {
 	RunOutput(context.Context, string, ...string) (string, string, int, error)
@@ -1350,18 +1389,9 @@ func (e runnerExternalExecutor) Execute(ctx context.Context, action capabilitypa
 	return e.runner.Run(ctx, action.Command, action.Args...)
 }
 
-type controlledCheckRecordReport struct {
-	SchemaVersion int                                  `json:"schema_version"`
-	Report        string                               `json:"report"`
-	Pack          string                               `json:"pack"`
-	Surface       capabilitypack.Surface               `json:"surface"`
-	Scope         capabilitypack.ControlledCheckScope  `json:"scope"`
-	Evidence      capabilitypack.ControlledCheckStatus `json:"evidence"`
-}
-
 func newControlledCheckCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var surface, result string
-	var project, dryRun, jsonOutput bool
+	var project, dryRun bool
 	var resourceValues []string
 	cmd := &cobra.Command{
 		Use:   "check <pack>",
@@ -1413,11 +1443,7 @@ func newControlledCheckCommand(opts Options, workstationResolver *workstation.Re
 			if err != nil {
 				return err
 			}
-			if jsonOutput {
-				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(preview); err != nil {
-					return err
-				}
-			} else if err := renderControlledCheckPreview(cmd.OutOrStdout(), preview, dryRun); err != nil {
+			if err := renderControlledCheckPreview(cmd.OutOrStdout(), preview, dryRun); err != nil {
 				return err
 			}
 			if dryRun {
@@ -1442,9 +1468,6 @@ func newControlledCheckCommand(opts Options, workstationResolver *workstation.Re
 			if err != nil {
 				return err
 			}
-			if jsonOutput {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(controlledCheckRecordReport{SchemaVersion: 1, Report: "controlled-check-record", Pack: preview.Pack, Surface: preview.Surface, Scope: preview.Scope, Evidence: evidence})
-			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Recorded %s controlled runtime evidence at %s\n", result, evidence.ObservedAt)
 			return err
 		},
@@ -1453,7 +1476,6 @@ func newControlledCheckCommand(opts Options, workstationResolver *workstation.Re
 	cmd.Flags().StringVar(&result, "result", "", "Observed result to record (positive or negative)")
 	cmd.Flags().BoolVar(&project, "project", false, "Check the current project's installed Pack closure")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the exact controlled check without recording evidence")
-	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one Pack resource root (<kind>:<id>); repeatable")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd

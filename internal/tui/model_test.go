@@ -969,7 +969,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 				},
 				SurfaceStatuses: []tui.SurfaceStatus{
 					{Name: "claude", Supported: false},
-					{Name: "codex", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
+					{Name: "codex", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", ControlledCheckState: "stale", ControlledCheckResult: "true", ControlledCheckObserved: "2026-08-09T00:00:00Z", ControlledCheckIdentity: "check-identity", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
 					{Name: "opencode", Supported: false},
 				},
 			},
@@ -997,6 +997,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		"Requirements: git", "windows — POSIX shell required",
 		"skill:orchestrate (surface=claude, mode=unsupported", "code=surface-unsupported) — Codex only",
 		"claude: unsupported", "codex: supported", "configured=yes authorized=yes usable=no",
+		"Controlled runtime check: state=stale result=true", "identity=check-identity",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
 		"install helper", "projection verified", "opencode: unsupported",
 	} {

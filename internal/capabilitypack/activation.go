@@ -272,6 +272,21 @@ type SurfaceAdapter interface {
 	ApplyProjections(context.Context, []ProjectionAction) *ProjectionActionError
 }
 
+type controlledCheckSurfaceAdapter struct {
+	SurfaceAdapter
+	descriptor ControlledCheckDescriptor
+}
+
+// WithControlledCheckDescriptor binds observable adapter and host facts to all
+// inspection paths without moving readiness policy into a driving adapter.
+func WithControlledCheckDescriptor(adapter SurfaceAdapter, descriptor ControlledCheckDescriptor) SurfaceAdapter {
+	return controlledCheckSurfaceAdapter{SurfaceAdapter: adapter, descriptor: descriptor}
+}
+
+func (a controlledCheckSurfaceAdapter) controlledCheckDescriptor() ControlledCheckDescriptor {
+	return a.descriptor
+}
+
 type ActivationIntent struct {
 	PackID               string                `json:"pack_id"`
 	Surface              Surface               `json:"surface"`
@@ -2279,6 +2294,20 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		return SurfaceInspection{}, err
 	}
 	observation = cloneSurfaceInspection(observation)
+	if provider, ok := adapter.(interface {
+		controlledCheckDescriptor() ControlledCheckDescriptor
+	}); ok {
+		descriptor := provider.controlledCheckDescriptor()
+		if observation.ControlledCheck.AdapterVersion == "" {
+			observation.ControlledCheck.AdapterVersion = descriptor.AdapterVersion
+		}
+		if observation.ControlledCheck.HostVersion == "" {
+			observation.ControlledCheck.HostVersion = descriptor.HostVersion
+		}
+		if len(observation.ControlledCheck.Instructions) == 0 {
+			observation.ControlledCheck.Instructions = append([]string(nil), descriptor.Instructions...)
+		}
+	}
 	seen := make(map[string]struct{}, len(observation.Projections))
 	for i := range observation.Projections {
 		projection := &observation.Projections[i]
