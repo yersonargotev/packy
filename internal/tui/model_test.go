@@ -17,12 +17,17 @@ import (
 type fakeBackend struct {
 	dashboard       tui.Dashboard
 	err             error
+	load            func() (tui.Dashboard, error)
 	loads           int
 	initializations int
 	initialize      func(func(string)) error
 	preview         tui.Preview
 	previewErr      error
 	previewRequests []tui.PreviewRequest
+	applyRequests   []tui.ApplyRequest
+	applyResult     tui.ApplyResult
+	applyErr        error
+	apply           func(func(tui.ApplyProgress)) (tui.ApplyResult, error)
 }
 
 func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error {
@@ -36,6 +41,226 @@ func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error
 func (b *fakeBackend) Preview(_ context.Context, request tui.PreviewRequest) (tui.Preview, error) {
 	b.previewRequests = append(b.previewRequests, request)
 	return b.preview, b.previewErr
+}
+
+func (b *fakeBackend) Apply(_ context.Context, request tui.ApplyRequest, progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
+	b.applyRequests = append(b.applyRequests, request)
+	if b.apply != nil {
+		return b.apply(progress)
+	}
+	return b.applyResult, b.applyErr
+}
+
+func TestApplicableActivationRequestsOnlyItsRequiredConsentClassesAndCanCancel(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview: tui.Preview{ID: "plan-1", Digest: "digest-1", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{
+			{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"write AGENTS.md"}},
+			{Kind: "host-follow-up", ApprovalRequired: false, Actions: []string{"restart Codex"}},
+			{Kind: "executable-external", ApprovalRequired: true, Actions: []string{"install Engram"}},
+		}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if command != nil {
+		t.Fatal("opening consent unexpectedly scheduled Apply")
+	}
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Consent 1 of 2", "reversible-local", "write AGENTS.md", "Approve", "Cancel"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("consent screen missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "host-follow-up") || len(backend.applyRequests) != 0 {
+		t.Fatalf("consent included a non-required class or applied early:\n%s", view)
+	}
+
+	model, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if command != nil || len(backend.applyRequests) != 0 {
+		t.Fatalf("canceling consent produced an effect: command=%v applies=%d", command != nil, len(backend.applyRequests))
+	}
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Immutable lifecycle preview") || !strings.Contains(view, "plan-1") {
+		t.Fatalf("cancel did not return to the exact preview:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
+	if quit == nil || len(backend.applyRequests) != 0 {
+		t.Fatalf("quit during consent was ignored or applied effects: quit=%v applies=%d", quit != nil, len(backend.applyRequests))
+	}
+}
+
+func TestDestructiveConsentDefaultsToCancelAndApprovesTheExactRequiredCombination(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview: tui.Preview{ID: "plan-2", Digest: "digest-2", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{
+			{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"write $HOME/.codex/AGENTS.md"}},
+			{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove $HOME/.codex/skills/retired"}},
+		}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Destructive cleanup confirmation", "Consent 2 of 2", "destructive-cleanup", "Exact paths and effects", "Removal cannot be interrupted after Apply starts", "remove $HOME/.codex/skills/retired", "Cancel", "selected"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("destructive consent missing %q:\n%s", want, view)
+		}
+	}
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if command != nil || len(backend.applyRequests) != 0 || !strings.Contains(ansi.Strip(model.View().Content), "Immutable lifecycle preview") {
+		t.Fatalf("default destructive choice did not cancel safely: command=%v applies=%d", command != nil, len(backend.applyRequests))
+	}
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if command == nil {
+		t.Fatal("approving every required class did not schedule Apply")
+	}
+	model = runModelCommand(t, model, command)
+	if len(backend.applyRequests) != 1 || !slices.Equal(backend.applyRequests[0].ApprovedPhases, []string{"reversible-local", "destructive-cleanup"}) {
+		t.Fatalf("Apply approvals = %#v, want exact required combination", backend.applyRequests)
+	}
+}
+
+func TestApplyShowsKnownProgressAndReloadsFreshStatusIntoItsResult(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview: tui.Preview{ID: "plan-3", Digest: "digest-3", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+	}
+	backend.apply = func(progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
+		progress(tui.ApplyProgress{Phase: "reversible-local"})
+		backend.dashboard.Global.Packs[0].SurfaceStatuses[0].Configured = "yes"
+		return tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Activated argote on Codex", Details: []string{"3 projections owned"}}, nil
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, applyCommand := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if applyCommand == nil {
+		t.Fatal("approved activation did not schedule Apply")
+	}
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Apply in progress", "revalidation", "elapsed 0s"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("active Apply missing %q:\n%s", want, view)
+		}
+	}
+	model = runModelCommand(t, model, applyCommand)
+	view = ansi.Strip(model.View().Content)
+	for _, want := range []string{"Activation succeeded", "Stage: verification", "Verification: verified", "Activated argote on Codex", "Details collapsed · ? expand", "Fresh Pack status reloaded"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("activation result missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "3 projections owned") {
+		t.Fatalf("result details were not initially collapsed:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "?", Code: '?'}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Details expanded · ? collapse") || !strings.Contains(view, "3 projections owned") {
+		t.Fatalf("result details did not expand:\n%s", view)
+	}
+	if backend.loads != 2 {
+		t.Fatalf("loads = %d, want initial load plus post-result reload", backend.loads)
+	}
+}
+
+func TestQuitDuringApplyIsVisibleThenCompletesAfterApplyAndFreshStatusReload(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview:     tui.Preview{ID: "plan-exit", Digest: "digest-exit", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		applyResult: tui.ApplyResult{Stage: "verification", Verified: true},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, applyCommand := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
+	if quit != nil || !strings.Contains(ansi.Strip(model.View().Content), "Exit deferred until Apply returns") {
+		t.Fatalf("ordinary quit was not visibly deferred: command=%v\n%s", quit != nil, ansi.Strip(model.View().Content))
+	}
+	_, exited := runModelCommandTrackingQuit(t, model, applyCommand)
+	if !exited || backend.loads != 2 {
+		t.Fatalf("deferred quit completed=%v after %d loads; want exit after fresh reload", exited, backend.loads)
+	}
+}
+
+func TestApplyFailureReloadsStatusAndRetryCreatesANewPreview(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview:     tui.Preview{ID: "plan-failed", Digest: "digest-failed", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		applyResult: tui.ApplyResult{Stage: "apply", Verified: false, Summary: "Activation stopped before verification", Details: []string{"projection write rejected"}},
+		applyErr:    errors.New("permission denied"),
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Activation failed", "Stage: apply", "Verification: not verified", "permission denied", "Details collapsed · ? expand", "Fresh Pack status reloaded", "Enter create fresh preview"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("failed activation result missing %q:\n%s", want, view)
+		}
+	}
+
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 2 || len(backend.applyRequests) != 1 {
+		t.Fatalf("retry reused Apply instead of creating a fresh preview: previews=%d applies=%d", len(backend.previewRequests), len(backend.applyRequests))
+	}
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Immutable lifecycle preview") || !strings.Contains(view, "plan-failed") {
+		t.Fatalf("fresh retry did not return to preview review:\n%s", view)
+	}
+}
+
+func TestActivationResultRemainsVisibleWhenFreshStatusReloadFails(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview:     tui.Preview{ID: "plan-4", Digest: "digest-4", Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Activated argote on Codex"},
+	}
+	backend.apply = func(func(tui.ApplyProgress)) (tui.ApplyResult, error) {
+		backend.err = errors.New("status unavailable")
+		return backend.applyResult, nil
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Activation succeeded", "Activated argote on Codex", "Fresh Pack status reload failed: status unavailable"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("result with reload failure missing %q:\n%s", want, view)
+		}
+	}
 }
 
 func TestRunEntersAndRestoresAlternateScreen(t *testing.T) {
@@ -236,7 +461,7 @@ func TestFullPackSelectionCreatesAndRendersCompleteImmutablePreview(t *testing.T
 		"Selection: Full Pack", "skill:review [root]", "skill:review → instruction:guidance",
 		"Authorities", "skill:review — read project files", "Effects", "skill-link — $HOME/.codex/skills/review",
 		"Diff", "Added: skill:review", "Retained: instruction:guidance", "Blockers: none",
-		"Phases", "reversible-local · approval required", "Pending actions: restart Codex", "Continue unavailable in this delivery",
+		"Phases", "reversible-local · approval required", "Pending actions: restart Codex", "Enter continue to consent",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("preview screen missing %q:\n%s", want, view)
@@ -304,19 +529,19 @@ func TestBlockedNoOpAndStalePreviewsNeverOfferConsent(t *testing.T) {
 			name: "blocked",
 			preview: tui.Preview{Operation: "activate", Disposition: "blocked", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
 				Selection: tui.Selection{Mode: "all"}, Blockers: []tui.PreviewBlocker{{Kind: "ownership", Subject: "AGENTS.md", Detail: "owned by another Pack"}}},
-			wants: []string{"Disposition: blocked", "Blockers: ownership AGENTS.md — owned by another Pack", "Continue unavailable in this delivery"},
+			wants: []string{"Disposition: blocked", "Blockers: ownership AGENTS.md — owned by another Pack", "Continue unavailable"},
 		},
 		{
 			name: "no-op",
 			preview: tui.Preview{Operation: "activate", Disposition: "converged", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
 				Selection: tui.Selection{Mode: "all"}},
-			wants: []string{"Disposition: converged", "Blockers: none", "Continue unavailable in this delivery"},
+			wants: []string{"Disposition: converged", "Blockers: none", "Continue unavailable"},
 		},
 		{
 			name: "stale",
 			preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
 				Selection: tui.Selection{Mode: "all"}, Stale: true, StaleReason: "catalog changed after preview"},
-			wants: []string{"Stale preview — catalog changed after preview", "Create a fresh preview before continuing", "Continue unavailable in this delivery"},
+			wants: []string{"Stale preview — catalog changed after preview", "Create a fresh preview before continuing", "Continue unavailable"},
 		},
 	}
 	for _, test := range tests {
@@ -531,6 +756,9 @@ func TestReloadReflectsDynamicCatalogChanges(t *testing.T) {
 
 func (b *fakeBackend) Load(context.Context) (tui.Dashboard, error) {
 	b.loads++
+	if b.load != nil {
+		return b.load()
+	}
 	return b.dashboard, b.err
 }
 
@@ -691,16 +919,27 @@ func runModelMessage(t *testing.T, model tea.Model, message tea.Msg) tea.Model {
 
 func runModelCommand(t *testing.T, model tea.Model, command tea.Cmd) tea.Model {
 	t.Helper()
+	current, _ := runModelCommandTrackingQuit(t, model, command)
+	return current
+}
+
+func runModelCommandTrackingQuit(t *testing.T, model tea.Model, command tea.Cmd) (tea.Model, bool) {
+	t.Helper()
 	if command == nil {
 		t.Fatal("expected command")
 	}
 	queue := []tea.Cmd{command}
 	current := model
+	exited := false
 	for len(queue) > 0 {
 		command, queue = queue[0], queue[1:]
 		message := command()
 		if batch, ok := message.(tea.BatchMsg); ok {
 			queue = append(queue, []tea.Cmd(batch)...)
+			continue
+		}
+		if _, ok := message.(tea.QuitMsg); ok {
+			exited = true
 			continue
 		}
 		if message == nil {
@@ -712,5 +951,5 @@ func runModelCommand(t *testing.T, model tea.Model, command tea.Cmd) tea.Model {
 			queue = append(queue, next)
 		}
 	}
-	return current
+	return current, exited
 }
