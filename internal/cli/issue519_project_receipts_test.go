@@ -74,6 +74,9 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	}
 	for _, receipt := range lock.Receipts {
 		wantVersion := "1.0.1"
+		if receipt.Pack.ID == "argote" {
+			wantVersion = "1.0.2"
+		}
 		if receipt.Pack.ID == "" || receipt.Pack.Version != wantVersion || receipt.Surface != "codex" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
 			t.Fatalf("incomplete project Pack receipt = %#v\n%s", receipt, lockData)
 		}
