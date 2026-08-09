@@ -907,7 +907,7 @@ func supportedSurfaces(pack Pack) []string {
 			result = append(result, status.Name)
 		}
 	}
-	if len(result) == 0 {
+	if len(pack.SurfaceStatuses) == 0 {
 		result = append(result, pack.Surfaces...)
 	}
 	return result

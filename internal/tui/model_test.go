@@ -412,6 +412,25 @@ func TestSelectionMakesTheSingleCLISurfaceVisibleAndChangeable(t *testing.T) {
 	}
 }
 
+func TestSelectionCannotPreviewAnExplicitlyUnsupportedCLISurface(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+		ID: "orchestrate", Version: "1.0.0", Surfaces: []string{"claude"}, Resources: []tui.Resource{{Identity: "skill:orchestrate", Role: "root"}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "claude", Supported: false}},
+	}}}}}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "CLI surface: unavailable") {
+		t.Fatalf("incompatible Pack did not expose unavailable surface:\n%s", view)
+	}
+	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(updated.View().Content)
+	if command != nil || len(backend.previewRequests) != 0 || !strings.Contains(view, "No supported CLI surface is available") {
+		t.Fatalf("unsupported surface reached preview: command=%v requests=%#v\n%s", command != nil, backend.previewRequests, view)
+	}
+}
+
 func TestScopeStatusCannotBeMistakenInPackDetail(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health:  tui.Health{Status: "healthy"},
