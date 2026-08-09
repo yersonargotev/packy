@@ -13,9 +13,10 @@ import (
 )
 
 // Backend is the presentation-neutral seam through which the TUI loads Packy
-// state. Implementations must not mutate Pack state.
+// state and explicitly initializes Packy's Installed Source.
 type Backend interface {
 	Load(context.Context) (Dashboard, error)
+	Initialize(context.Context, func(string)) error
 }
 
 type Health struct {
@@ -80,8 +81,20 @@ type Scope struct {
 
 type Dashboard struct {
 	Health  Health
+	Setup   Setup
 	Global  Scope
 	Project Scope
+}
+
+type Setup struct {
+	Initialized             bool
+	InitializationAvailable bool
+	Blockers                []SetupBlocker
+}
+
+type SetupBlocker struct {
+	Cause           string
+	AffectedActions []string
 }
 
 type loadResult struct {
@@ -89,20 +102,33 @@ type loadResult struct {
 	err       error
 }
 
+type initializationProgress struct {
+	detail string
+}
+
+type initializationFinished struct {
+	err error
+}
+
 type Model struct {
-	backend    Backend
-	ctx        context.Context
-	dashboard  Dashboard
-	err        error
-	loaded     bool
-	project    bool
-	globalRow  int
-	projectRow int
-	width      int
-	showHelp   bool
-	inspecting bool
-	filtering  bool
-	filter     string
+	backend                Backend
+	ctx                    context.Context
+	dashboard              Dashboard
+	err                    error
+	loaded                 bool
+	project                bool
+	globalRow              int
+	projectRow             int
+	width                  int
+	showHelp               bool
+	inspecting             bool
+	filtering              bool
+	filter                 string
+	initializing           bool
+	initializationResult   bool
+	initializationErr      error
+	initializationProgress []string
+	initializationEvents   chan tea.Msg
 }
 
 func NewModel(backend Backend) Model {
@@ -137,7 +163,35 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectRow = boundedRow(m.projectRow, len(m.dashboard.Project.Packs))
 	case tea.WindowSizeMsg:
 		m.width = message.Width
+	case initializationProgress:
+		m.initializationProgress = append(m.initializationProgress, message.detail)
+		return m, waitForInitialization(m.initializationEvents)
+	case initializationFinished:
+		m.initializing = false
+		m.initializationResult = true
+		m.initializationErr = message.err
+		m.initializationEvents = nil
+		return m, m.Init()
 	case tea.KeyPressMsg:
+		if m.initializing {
+			return m, nil
+		}
+		if m.initializationResult {
+			switch {
+			case key.Matches(message, dashboardKeys.Quit):
+				return m, tea.Quit
+			case key.Matches(message, dashboardKeys.Back):
+				m.initializationResult = false
+				return m, nil
+			case key.Matches(message, dashboardKeys.Inspect):
+				if m.initializationErr != nil && m.dashboard.Setup.InitializationAvailable {
+					return m.startInitialization()
+				}
+				m.initializationResult = false
+				return m, nil
+			}
+			return m, nil
+		}
 		if m.filtering {
 			switch message.Code {
 			case tea.KeyEnter:
@@ -183,6 +237,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.project = false
 			}
 		case key.Matches(message, dashboardKeys.Inspect):
+			if m.dashboard.Setup.InitializationAvailable {
+				return m.startInitialization()
+			}
 			m.inspecting = m.selectedPack() != nil
 		case key.Matches(message, dashboardKeys.Down):
 			m.inspecting = false
@@ -201,6 +258,30 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) startInitialization() (tea.Model, tea.Cmd) {
+	m.initializing = true
+	m.initializationResult = false
+	m.initializationErr = nil
+	m.initializationProgress = nil
+	m.initializationEvents = make(chan tea.Msg, 64)
+	events := m.initializationEvents
+	initialize := func() tea.Msg {
+		err := m.backend.Initialize(m.ctx, func(detail string) {
+			events <- initializationProgress{detail: detail}
+		})
+		events <- initializationFinished{err: err}
+		close(events)
+		return nil
+	}
+	return m, tea.Batch(initialize, waitForInitialization(events))
+}
+
+func waitForInitialization(events <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		return <-events
+	}
 }
 
 func (m Model) selectedPack() *Pack {
@@ -286,6 +367,12 @@ func (m Model) render() string {
 	if m.err != nil {
 		return m.renderBody(titleStyle.Render("Packy health") + "\n\nUnable to load dashboard\n" + m.err.Error() + "\n\nr reload · q quit")
 	}
+	if m.initializing {
+		return m.renderBody(m.renderInitializationProgress())
+	}
+	if m.initializationResult {
+		return m.renderBody(m.renderInitializationResult())
+	}
 	if m.inspecting {
 		return m.renderBody(m.renderDetail())
 	}
@@ -320,18 +407,71 @@ func (m Model) render() string {
 		}
 	}
 	help := "↑/k ↓/j navigate · tab switch scope · / filter · enter inspect · ? help · r reload · q quit"
+	setup := m.renderSetup()
+	if setup != "" {
+		help = "Enter initialize · ? help · r reload · q quit"
+	}
 	if m.showHelp {
 		help = "arrows/j/k navigate · Tab/Shift+Tab switch scope · Enter inspect · Esc back · ? hide help · r reload · q quit · Ctrl+C quit"
 	}
 	return m.renderBody(strings.Join([]string{
 		titleStyle.Render("Packy health"),
 		strings.Join(healthLines, "\n"),
+		setup,
 		"",
 		scopes,
 		filter,
 		"",
 		help,
 	}, "\n"))
+}
+
+func (m Model) renderSetup() string {
+	if !m.dashboard.Setup.InitializationAvailable && len(m.dashboard.Setup.Blockers) == 0 {
+		return ""
+	}
+	lines := []string{"", "Setup"}
+	for _, blocker := range m.dashboard.Setup.Blockers {
+		lines = append(lines, "  Blocked: "+blocker.Cause)
+		if len(blocker.AffectedActions) > 0 {
+			lines = append(lines, "  Affected actions: "+strings.Join(blocker.AffectedActions, ", "))
+		}
+	}
+	if m.dashboard.Setup.InitializationAvailable {
+		lines = append(lines, "", "› [ Initialize Packy ] · selected")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderInitializationProgress() string {
+	lines := []string{titleStyle.Render("Packy initialization"), "", "Initialization in progress"}
+	if len(m.initializationProgress) == 0 {
+		lines = append(lines, "Preparing Installed Source…")
+	} else {
+		for _, detail := range m.initializationProgress {
+			lines = append(lines, "  "+detail)
+		}
+	}
+	lines = append(lines, "", "Packy will return when initialization finishes")
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderInitializationResult() string {
+	status := "Initialization succeeded"
+	action := "Enter dashboard"
+	if m.initializationErr != nil {
+		status = "Initialization failed"
+		action = "Enter retry"
+	}
+	lines := []string{titleStyle.Render("Packy initialization"), "", status}
+	for _, detail := range m.initializationProgress {
+		lines = append(lines, "  "+detail)
+	}
+	if m.initializationErr != nil {
+		lines = append(lines, "", m.initializationErr.Error())
+	}
+	lines = append(lines, "", action+" · Esc dashboard · q quit")
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderBody(content string) string {

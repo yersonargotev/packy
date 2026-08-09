@@ -151,38 +151,16 @@ func newInitCommand(opts Options, workstationResolver *workstation.Resolver) *co
 		Short: "Initialize Packy's package-installed source checkout",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			snapshot, err := workstationResolver.Resolve(workstation.Options{Home: strings.TrimSpace(homeFlag)})
-			if err != nil {
-				return err
-			}
-			installedSource, err := bootstrap.ResolveInstalledSource(snapshot, sourceRoot)
-			if err != nil {
-				return err
-			}
-
-			result, err := bootstrap.EnsureInstalledSource(bootstrap.BootstrapOptions{
-				InstalledSource: installedSource,
-				RepositoryURL:   repositoryURL,
-				RepositoryRef:   defaultInitRepositoryRef(repositoryRef, packyversion.Value),
-				HomeDir:         snapshot.Home(),
-				ConfigHome:      snapshot.ConfigurationHome(),
+			return initializeInstalledSource(workstationResolver, initializationRequest{
+				Home:          strings.TrimSpace(homeFlag),
+				SourceRoot:    sourceRoot,
+				RepositoryURL: repositoryURL,
+				RepositoryRef: defaultInitRepositoryRef(repositoryRef, packyversion.Value),
 				ReportProgress: func(message string) error {
 					_, err := fmt.Fprintf(cmd.OutOrStdout(), "packy init: %s\n", message)
 					return err
 				},
 			})
-			if err != nil {
-				return err
-			}
-			switch {
-			case result.Cloned:
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy init: initialized Installed Source at %s\n", installedSource.Root())
-			case result.Updated:
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy init: updated Installed Source at %s\n", installedSource.Root())
-			default:
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "packy init: Installed Source already initialized at %s\n", installedSource.Root())
-			}
-			return err
 		},
 	}
 
@@ -191,6 +169,46 @@ func newInitCommand(opts Options, workstationResolver *workstation.Resolver) *co
 	cmd.Flags().StringVar(&repositoryURL, "repository-url", bootstrap.DefaultRepositoryURL, "Packy Source of Truth Git URL")
 	cmd.Flags().StringVar(&repositoryRef, "repository-ref", "", "optional Packy Source of Truth Git ref to clone or check out")
 	return cmd
+}
+
+type initializationRequest struct {
+	Home           string
+	SourceRoot     string
+	RepositoryURL  string
+	RepositoryRef  string
+	ReportProgress func(string) error
+}
+
+func initializeInstalledSource(resolver *workstation.Resolver, request initializationRequest) error {
+	snapshot, err := resolver.Resolve(workstation.Options{Home: request.Home})
+	if err != nil {
+		return err
+	}
+	installedSource, err := bootstrap.ResolveInstalledSource(snapshot, request.SourceRoot)
+	if err != nil {
+		return err
+	}
+	result, err := bootstrap.EnsureInstalledSource(bootstrap.BootstrapOptions{
+		InstalledSource: installedSource,
+		RepositoryURL:   request.RepositoryURL,
+		RepositoryRef:   request.RepositoryRef,
+		HomeDir:         snapshot.Home(),
+		ConfigHome:      snapshot.ConfigurationHome(),
+		ReportProgress:  request.ReportProgress,
+	})
+	if err != nil {
+		return err
+	}
+	message := "Installed Source already initialized at " + installedSource.Root()
+	if result.Cloned {
+		message = "initialized Installed Source at " + installedSource.Root()
+	} else if result.Updated {
+		message = "updated Installed Source at " + installedSource.Root()
+	}
+	if request.ReportProgress != nil {
+		return request.ReportProgress(message)
+	}
+	return nil
 }
 
 func newWorkstationResolver(opts Options) *workstation.Resolver {
