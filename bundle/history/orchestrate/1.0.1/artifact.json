@@ -4,9 +4,9 @@
   "pack_version": "1.0.1",
   "manifest": {
     "path": "pack.json",
-    "size": 1843,
+    "size": 1903,
     "mode": 420,
-    "sha256": "4ca201b688599fc65a5d75b53d5ed4c822151eeeafa8934f472187c28e26c07d"
+    "sha256": "b206f6c3251c3161ae6c16940bdf9d5f3973f3d3f9ce4894430bdd81ae9620eb"
   },
   "resources": [
     {
@@ -51,5 +51,5 @@
       "sha256": "9f182f748db7a295e97e600271b05b77babb4dde28e6a0e669132b97c9fc756d"
     }
   ],
-  "aggregate_sha256": "e846b845deedfc335b65f903f294b424cb621faca9e2435db447b9cd6753d5cd"
+  "aggregate_sha256": "bac158db3287d46bb0d079d7f1043a31db7c70af24b36fce9b694e12e0c3192f"
 }
