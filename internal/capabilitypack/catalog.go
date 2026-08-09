@@ -283,12 +283,8 @@ func (p Pack) RequestsSurfaceCapability(surface Surface, capability SurfaceCapab
 }
 
 func (p Pack) externalToolCapability(surface Surface, tool string) (SurfaceCapabilityType, bool) {
-	for capability, capabilityTool := range map[SurfaceCapabilityType]string{
-		SurfaceCapabilityEngramIntegration: "engram",
-	} {
-		if tool == capabilityTool && p.RequestsSurfaceCapability(surface, capability) {
-			return capability, true
-		}
+	if tool == "engram" && p.RequestsSurfaceCapability(surface, SurfaceCapabilityEngramIntegration) {
+		return SurfaceCapabilityEngramIntegration, true
 	}
 	return "", false
 }
