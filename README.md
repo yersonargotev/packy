@@ -27,6 +27,28 @@ packy activate engram --surface codex
 packy status engram --surface codex
 ```
 
+Running `packy` without arguments opens the full-screen interactive interface
+when both standard input and standard output are terminals. Redirected,
+pipelined, and other non-interactive no-argument runs print ordinary textual
+help without terminal control sequences. Explicit commands such as `packy
+list`, `packy version`, and every `--help` or `--json` invocation always retain
+their command behavior.
+
+The interactive interface starts with workstation health and keeps global and
+current-project Pack state visibly separate. Use the arrow keys or optional
+`j`/`k` aliases to navigate, `Tab` and `Shift+Tab` to move between areas,
+`Enter` to activate the focused control, `Esc` to go back, `?` for contextual
+help, `r` to reload observed state, and `q` or `Ctrl+C` to quit. Mutations are
+available only through focused controls and immutable previews; no global
+single-key shortcut applies a change. During Apply, ordinary exit is deferred
+until Packy finishes and reloads observed state.
+
+The interface uses a one-column layout on narrow terminals and shows a minimum
+size message when it cannot safely display review details. Text and structure
+carry the meaning of every status and control, so color, icons, animation, and
+mouse input are never required. The explicit command interface remains the
+accessible alternative in terminals that cannot run the full-screen view.
+
 Before replacing a `v0.1.x` installation, follow the warning-first
 [one-time v0.2 reset](docs/reset-v0.2.md). Packy intentionally provides no
 automatic migration or cleanup command.

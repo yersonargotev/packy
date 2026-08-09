@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +38,50 @@ func TestRootHelpExposesPackLifecycleCommandsWithoutPackGroup(t *testing.T) {
 	}
 	if strings.Contains(out, "pack      ") {
 		t.Fatalf("root help still exposes pack group:\n%s", out)
+	}
+}
+
+func TestNoArgumentExecutionStartsTUIOnlyWithInteractiveInputAndOutput(t *testing.T) {
+	tests := []struct {
+		name        string
+		interactive bool
+		wantTUI     bool
+	}{
+		{name: "interactive terminal", interactive: true, wantTUI: true},
+		{name: "non-interactive stream", interactive: false, wantTUI: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, _, _ := sandboxOptions(t)
+			terminal := &fakeTerminal{interactive: tt.interactive}
+			opts.Terminal = terminal
+			runs := 0
+			opts.TUIRunner = func(_ context.Context, _ Options, input io.Reader, output io.Writer) error {
+				runs++
+				if input == nil || output == nil {
+					t.Fatal("TUI did not receive command input and output")
+				}
+				return nil
+			}
+
+			out, err := executeCommand(t, NewRootCommand(opts))
+			if err != nil {
+				t.Fatalf("no-argument command failed: %v\n%s", err, out)
+			}
+			if (runs == 1) != tt.wantTUI {
+				t.Fatalf("TUI runs = %d, wantTUI=%t", runs, tt.wantTUI)
+			}
+			if tt.wantTUI {
+				if out != "" {
+					t.Fatalf("interactive startup emitted textual output: %q", out)
+				}
+				return
+			}
+			if !strings.Contains(out, "Usage:") || strings.Contains(out, "\x1b[") {
+				t.Fatalf("non-interactive startup did not emit clean textual help:\n%q", out)
+			}
+		})
 	}
 }
 

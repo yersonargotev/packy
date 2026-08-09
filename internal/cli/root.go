@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -35,6 +36,7 @@ type Options struct {
 	ClaudeLookPath         claudecode.LookPath
 	ClaudeAuthorization    claudecode.AuthorizationObserver
 	ClaudeRuntimeEvidence  claudecode.RuntimeEvidenceObserver
+	TUIRunner              func(context.Context, Options, io.Reader, io.Writer) error
 }
 
 func (o Options) withDefaults() Options {
@@ -64,6 +66,9 @@ func (o Options) withDefaults() Options {
 	o.EngramFacts = o.EngramFacts.WithDefaults()
 	if o.Terminal == nil {
 		o.Terminal = processTerminal{}
+	}
+	if o.TUIRunner == nil {
+		o.TUIRunner = RunTUI
 	}
 	return o
 }
@@ -107,6 +112,13 @@ and receive a new Preview. Packy never retries it automatically.
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       packyversion.Value,
+		Args:          cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !opts.Terminal.InteractiveSession(cmd.InOrStdin(), cmd.OutOrStdout()) {
+				return cmd.Help()
+			}
+			return opts.TUIRunner(cmd.Context(), opts, cmd.InOrStdin(), cmd.OutOrStdout())
+		},
 	}
 
 	root.AddCommand(
