@@ -551,6 +551,15 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if err := os.WriteFile(configPath, []byte(driftedConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	driftedDashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	driftedPack := findTUIPack(driftedDashboard.Project.Packs, "engram")
+	driftedIndex := slices.IndexFunc(driftedPack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if driftedIndex < 0 || driftedPack.SurfaceStatuses[driftedIndex].Installation != "drifted" || driftedPack.SurfaceStatuses[driftedIndex].UpdateAvailable {
+		t.Fatalf("drifted project status advertised an inapplicable update: %#v", driftedPack)
+	}
 	blocked, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
