@@ -503,7 +503,7 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Operation != "uninstall" || preview.Disposition != "previewable" || preview.Surface != "all installed surfaces" || !slices.Equal(requiredTUIPhases(preview), []string{"destructive-cleanup"}) {
+	if preview.Operation != "uninstall" || preview.Disposition != "previewable" || preview.Surface != "opencode" || !slices.Equal(requiredTUIPhases(preview), []string{"destructive-cleanup"}) {
 		t.Fatalf("project uninstall preview = %#v", preview)
 	}
 	for _, target := range []string{"packy.json", "packy.lock.json", "PACKY-NOTICES.md"} {
@@ -603,6 +603,57 @@ func TestTUIProductionBackendShowsProjectUninstallDriftAndRefusesApply(t *testin
 	}
 	if after := snapshotTree(t, project); after != before {
 		t.Fatalf("blocked project uninstall mutated the project\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestTUIProductionBackendUninstallsOnlyTheSelectedProjectSurface(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	project := filepath.Join(t.TempDir(), "project")
+	writeTestGitWorktree(t, project)
+	opts := Options{
+		Env: MapEnv{
+			"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	for _, surface := range []string{"codex", "opencode"} {
+		install, previewErr := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: "matty", Surface: surface, Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
+		if previewErr != nil {
+			t.Fatal(previewErr)
+		}
+		if _, applyErr := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); applyErr != nil {
+			t.Fatal(applyErr)
+		}
+	}
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: "matty", Surface: "codex", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Surface != "codex" || !slices.Contains(preview.Diff.Changed, "packy.json") || !slices.Contains(preview.Diff.Changed, "packy.lock.json") || !slices.Contains(preview.Diff.Removed, "AGENTS.md") {
+		t.Fatalf("selected-surface uninstall preview = %#v", preview)
+	}
+	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(tui.ApplyProgress) {})
+	if err != nil || !result.Verified || !strings.Contains(result.Summary, "from codex") || !slices.Contains(result.Details, "Other installed surfaces remain independently installed") {
+		t.Fatalf("selected-surface uninstall result = %#v, %v", result, err)
+	}
+	installation, err := capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}) {
+		t.Fatalf("selected-surface uninstall changed retained intent: %#v", installation.Manifest.Packs)
+	}
+	for _, retained := range []string{"packy.json", "packy.lock.json", filepath.Join(".agents", "skills", "ask-matt", "SKILL.md")} {
+		if _, err := os.Stat(filepath.Join(project, retained)); err != nil {
+			t.Fatalf("selected-surface uninstall removed retained %s: %v", retained, err)
+		}
 	}
 }
 

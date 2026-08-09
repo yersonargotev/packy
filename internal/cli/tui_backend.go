@@ -202,7 +202,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 			}
 			return projectDeactivationPreviewForTUI(preview, projectRoot), nil
 		case "uninstall":
-			preview, _, previewErr := b.previewProjectUninstall(ctx, snapshot, request.PackID, projectRoot)
+			preview, _, previewErr := b.previewProjectUninstall(ctx, snapshot, request.PackID, surface, projectRoot)
 			return preview, previewErr
 		default:
 			return tui.Preview{}, fmt.Errorf("project preview operation %q is unsupported", operation)
@@ -399,7 +399,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		progress(tui.ApplyProgress{Phase: "verification"})
 		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "inactive", Summary: fmt.Sprintf("Personally deactivated %s for the current project", request.Preview.PackID), Details: []string{"Project installation remains independently installed"}}, nil
 	case "uninstall":
-		freshView, fresh, previewErr := b.previewProjectUninstall(ctx, snapshot, request.Preview.PackID, projectRoot)
+		freshView, fresh, previewErr := b.previewProjectUninstall(ctx, snapshot, request.Preview.PackID, surface, projectRoot)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
 		}
@@ -423,20 +423,22 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 			return result, applyErr
 		}
 		progress(tui.ApplyProgress{Phase: "verification"})
-		return tui.ApplyResult{Stage: applied.Stage, Verified: applied.Status == "verified", Summary: fmt.Sprintf("Uninstalled %s from the current project", request.Preview.PackID), Details: []string{"Personal runtime deactivation and project-owned removal verified"}}, nil
+		summary := fmt.Sprintf("Uninstalled %s from %s in the current project", request.Preview.PackID, request.Preview.Surface)
+		details := []string{"Personal runtime deactivation and selected-surface project removal verified", "Other installed surfaces remain independently installed"}
+		if fresh.Uninstall.Scope == capabilitypack.ProjectUninstallPack {
+			summary = fmt.Sprintf("Uninstalled %s from the current project", request.Preview.PackID)
+			details = []string{"Personal runtime deactivation and complete project-owned removal verified"}
+		}
+		return tui.ApplyResult{Stage: applied.Stage, Verified: applied.Status == "verified", Summary: summary, Details: details}, nil
 	default:
 		return tui.ApplyResult{Stage: "revalidation"}, fmt.Errorf("project Apply operation %q is unsupported", request.Preview.Operation)
 	}
 }
 
-func (b *tuiBackend) previewProjectUninstall(ctx context.Context, snapshot workstation.Snapshot, packID, projectRoot string) (tui.Preview, capabilitypack.ProjectPackUninstallPreview, error) {
+func (b *tuiBackend) previewProjectUninstall(ctx context.Context, snapshot workstation.Snapshot, packID string, surface capabilitypack.Surface, projectRoot string) (tui.Preview, capabilitypack.ProjectPackUninstallPreview, error) {
 	preview, err := capabilitypack.PreviewProjectPackUninstall(ctx, capabilitypack.ProjectPackUninstallRequest{
-		PackID: packID, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), UninstallAdapter: projectOfflineAdapter(""),
-		RuntimeAdapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceClaude:   projectRuntimeAdapter(b.opts, capabilitypack.SurfaceClaude, snapshot),
-			capabilitypack.SurfaceCodex:    projectRuntimeAdapter(b.opts, capabilitypack.SurfaceCodex, snapshot),
-			capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(b.opts, capabilitypack.SurfaceOpenCode, snapshot),
-		},
+		PackID: packID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(),
+		UninstallAdapter: projectOfflineAdapter(surface), RuntimeAdapter: projectRuntimeAdapter(b.opts, surface, snapshot),
 	})
 	if err != nil {
 		return tui.Preview{}, capabilitypack.ProjectPackUninstallPreview{}, err
@@ -663,10 +665,13 @@ func projectUninstallPreviewForTUI(plan capabilitypack.ProjectPackUninstallPrevi
 	report := plan.Uninstall
 	preview := tui.Preview{
 		ID: plan.Observation, Digest: plan.Observation, Operation: "uninstall", Disposition: string(plan.Disposition), PackID: plan.Pack.ID, PackVersion: plan.Pack.Version,
-		Surface: "all installed surfaces", Scope: "project", ProjectRoot: projectRoot,
+		Surface: string(plan.Uninstall.Surface), Scope: "project", ProjectRoot: projectRoot,
 	}
-	actions := make([]string, 0, len(report.Projections)+len(report.Contracts))
-	for _, deactivation := range plan.Deactivations {
+	if preview.Surface == "" && len(plan.Pack.Surfaces) == 1 {
+		preview.Surface = string(plan.Pack.Surfaces[0])
+	}
+	actions := make([]string, 0, len(plan.ProjectEffects)+len(plan.Deactivation.Effects))
+	for _, deactivation := range []capabilitypack.JSONProjectDeactivationPreview{plan.Deactivation} {
 		if deactivation.Disposition != capabilitypack.ProjectDeactivationConverged {
 			preview.PendingActions = append(preview.PendingActions, fmt.Sprintf("Personal runtime on %s must be deactivated as part of this uninstall", deactivation.Surface))
 		}
@@ -680,18 +685,16 @@ func projectUninstallPreviewForTUI(plan capabilitypack.ProjectPackUninstallPrevi
 			preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})
 		}
 	}
-	for _, projection := range report.Projections {
-		description := "remove owned project projection for " + projection.Resource.String() + " (health=" + projection.Health + ")"
-		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: projection.Mode, Target: projection.Target, Description: description})
-		preview.Diff.Removed = append(preview.Diff.Removed, projection.Target)
-		actions = append(actions, strings.TrimSpace(projection.Mode+" "+projection.Target+" "+description))
+	for _, effect := range plan.ProjectEffects {
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: effect.Kind, Target: effect.Target, Description: effect.Description})
+		if effect.Change == "removed" {
+			preview.Diff.Removed = append(preview.Diff.Removed, effect.Target)
+		} else {
+			preview.Diff.Changed = append(preview.Diff.Changed, effect.Target)
+		}
+		actions = append(actions, strings.TrimSpace(effect.Kind+" "+effect.Target+" "+effect.Description))
 	}
-	for _, contract := range report.Contracts {
-		description := "remove this Pack's manifest, lock, or notice contribution"
-		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: "project-contract", Target: contract, Description: description})
-		preview.Diff.Removed = append(preview.Diff.Removed, contract)
-		actions = append(actions, "project-contract "+contract+" "+description)
-	}
+	preview.Diff.Retained = append(preview.Diff.Retained, plan.Retained...)
 	for _, blocker := range report.Blockers {
 		preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})
 	}

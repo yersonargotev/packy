@@ -13,20 +13,27 @@ import (
 // required personal runtime deactivation for one installed Pack.
 type ProjectPackUninstallRequest struct {
 	PackID           string
+	Surface          Surface
 	ProjectRoot      string
 	PackyHome        string
 	UninstallAdapter SurfaceAdapter
-	RuntimeAdapters  map[Surface]SurfaceAdapter
+	RuntimeAdapter   SurfaceAdapter
 }
 
 type ProjectPackUninstallPreview struct {
-	ProjectRoot   string                           `json:"project_root"`
-	Pack          ProjectManifestPack              `json:"pack"`
-	Disposition   ProjectInstallDisposition        `json:"disposition"`
-	Uninstall     JSONProjectUninstallPreview      `json:"uninstall"`
-	Deactivations []JSONProjectDeactivationPreview `json:"deactivations"`
-	Observation   string                           `json:"observation"`
-	request       ProjectPackUninstallRequest
+	ProjectRoot    string                         `json:"project_root"`
+	Pack           ProjectManifestPack            `json:"pack"`
+	Disposition    ProjectInstallDisposition      `json:"disposition"`
+	Uninstall      JSONProjectUninstallPreview    `json:"uninstall"`
+	Deactivation   JSONProjectDeactivationPreview `json:"deactivation"`
+	ProjectEffects []ProjectPackUninstallEffect   `json:"project_effects"`
+	Retained       []string                       `json:"retained"`
+	Observation    string                         `json:"observation"`
+	request        ProjectPackUninstallRequest
+}
+
+type ProjectPackUninstallEffect struct {
+	Kind, Target, Description, Change string
 }
 
 type ProjectPackUninstallApplyRequest struct {
@@ -43,8 +50,8 @@ type ProjectPackUninstallApplyResult struct {
 
 func PreviewProjectPackUninstall(ctx context.Context, request ProjectPackUninstallRequest) (ProjectPackUninstallPreview, error) {
 	preview := ProjectPackUninstallPreview{ProjectRoot: "<project-root>", request: request}
-	if request.PackID == "" || request.ProjectRoot == "" || request.PackyHome == "" || request.UninstallAdapter == nil {
-		return preview, errors.New("project Pack uninstall preview requires the Pack, project root, Packy Home, and uninstall adapter")
+	if request.PackID == "" || request.Surface == "" || request.ProjectRoot == "" || request.PackyHome == "" || request.UninstallAdapter == nil || request.RuntimeAdapter == nil {
+		return preview, errors.New("project Pack uninstall preview requires the Pack, surface, project root, Packy Home, and lifecycle adapters")
 	}
 	installation, err := LoadProjectInstallation(request.ProjectRoot)
 	if err != nil {
@@ -61,28 +68,37 @@ func PreviewProjectPackUninstall(ctx context.Context, request ProjectPackUninsta
 	if !installed {
 		return preview, fmt.Errorf("capability pack %q is not declared by this project installation", request.PackID)
 	}
-	for _, surface := range preview.Pack.Surfaces {
-		adapter := request.RuntimeAdapters[surface]
-		if adapter == nil {
-			return preview, fmt.Errorf("project Pack uninstall is missing the %s personal runtime adapter", surface)
-		}
-		deactivation, previewErr := PreviewProjectDeactivation(ctx, ProjectDeactivationRequest{
-			PackID: request.PackID, Surface: surface, ProjectRoot: request.ProjectRoot, PackyHome: request.PackyHome, Adapter: adapter,
-		})
-		if previewErr != nil {
-			return preview, previewErr
-		}
-		preview.Deactivations = append(preview.Deactivations, deactivation)
-	}
-	preview.Uninstall, err = PreviewProjectUninstall(ctx, ProjectUninstallRequest{PackID: request.PackID, ProjectRoot: request.ProjectRoot}, request.UninstallAdapter)
+	preview.Deactivation, err = PreviewProjectDeactivation(ctx, ProjectDeactivationRequest{
+		PackID: request.PackID, Surface: request.Surface, ProjectRoot: request.ProjectRoot, PackyHome: request.PackyHome, Adapter: request.RuntimeAdapter,
+	})
 	if err != nil {
 		return preview, err
 	}
-	preview.Disposition = preview.Uninstall.Disposition
-	for _, deactivation := range preview.Deactivations {
-		if deactivation.Disposition == ProjectDeactivationBlocked {
-			preview.Disposition = ProjectInstallBlocked
+	preview.Uninstall, err = PreviewProjectUninstall(ctx, ProjectUninstallRequest{PackID: request.PackID, Surface: request.Surface, ProjectRoot: request.ProjectRoot}, request.UninstallAdapter)
+	if err != nil {
+		return preview, err
+	}
+	plannedTargets := make(map[string]bool, len(preview.Uninstall.actions))
+	for _, action := range preview.Uninstall.actions {
+		target, targetErr := RelativeProjectTarget(request.ProjectRoot, action.Target)
+		if targetErr != nil {
+			return preview, targetErr
 		}
+		change := "changed"
+		if action.Mode == ProjectionDeleteTarget {
+			change = "removed"
+		}
+		preview.ProjectEffects = append(preview.ProjectEffects, ProjectPackUninstallEffect{Kind: string(action.Kind), Target: target, Description: action.Description, Change: change})
+		plannedTargets[target] = true
+	}
+	for _, projection := range preview.Uninstall.Projections {
+		if !plannedTargets[projection.Target] {
+			preview.Retained = append(preview.Retained, projection.Target)
+		}
+	}
+	preview.Disposition = preview.Uninstall.Disposition
+	if preview.Deactivation.Disposition == ProjectDeactivationBlocked {
+		preview.Disposition = ProjectInstallBlocked
 	}
 	preview.Observation = sealProjectPackUninstallPreview(preview)
 	return preview, nil
@@ -118,27 +134,25 @@ func ApplyProjectPackUninstall(ctx context.Context, request ProjectPackUninstall
 	if applied.Status != "verified" {
 		return ProjectPackUninstallApplyResult{Stage: "verification"}, errors.New("project uninstall was not verified")
 	}
-	for _, approved := range fresh.Deactivations {
-		if approved.Disposition == ProjectDeactivationConverged {
-			continue
+	approved := fresh.Deactivation
+	if approved.Disposition == ProjectDeactivationConverged {
+		return ProjectPackUninstallApplyResult{Status: "verified", Stage: "verification"}, nil
+	}
+	current, previewErr := PreviewProjectDeactivation(ctx, ProjectDeactivationRequest{
+		PackID: fresh.Pack.ID, Surface: approved.Surface, ProjectRoot: fresh.request.ProjectRoot, PackyHome: fresh.request.PackyHome, Adapter: fresh.request.RuntimeAdapter,
+	})
+	if previewErr != nil || projectDeactivationEffectsDigest(current) != projectDeactivationEffectsDigest(approved) {
+		if previewErr == nil {
+			previewErr = errors.New("personal deactivation effects changed after project-owned removal")
 		}
-		adapter := fresh.request.RuntimeAdapters[approved.Surface]
-		current, previewErr := PreviewProjectDeactivation(ctx, ProjectDeactivationRequest{
-			PackID: fresh.Pack.ID, Surface: approved.Surface, ProjectRoot: fresh.request.ProjectRoot, PackyHome: fresh.request.PackyHome, Adapter: adapter,
-		})
-		if previewErr != nil || projectDeactivationEffectsDigest(current) != projectDeactivationEffectsDigest(approved) {
-			if previewErr == nil {
-				previewErr = errors.New("personal deactivation effects changed after project-owned removal")
-			}
-			return ProjectPackUninstallApplyResult{Status: "partial", Stage: "verification", PendingSurfaces: []Surface{approved.Surface}}, previewErr
+		return ProjectPackUninstallApplyResult{Status: "partial", Stage: "verification", PendingSurfaces: []Surface{approved.Surface}}, previewErr
+	}
+	deactivated, deactivationErr := ApplyProjectDeactivation(ctx, ProjectDeactivationApplyRequest{Preview: current, Adapter: fresh.request.RuntimeAdapter, DestructiveCleanupApproved: true})
+	if deactivationErr != nil || deactivated.Status != "inactive" {
+		if deactivationErr == nil {
+			deactivationErr = errors.New("personal project deactivation was not verified")
 		}
-		deactivated, deactivationErr := ApplyProjectDeactivation(ctx, ProjectDeactivationApplyRequest{Preview: current, Adapter: adapter, DestructiveCleanupApproved: true})
-		if deactivationErr != nil || deactivated.Status != "inactive" {
-			if deactivationErr == nil {
-				deactivationErr = errors.New("personal project deactivation was not verified")
-			}
-			return ProjectPackUninstallApplyResult{Status: "partial", Stage: "verification", PendingSurfaces: []Surface{approved.Surface}}, deactivationErr
-		}
+		return ProjectPackUninstallApplyResult{Status: "partial", Stage: "verification", PendingSurfaces: []Surface{approved.Surface}}, deactivationErr
 	}
 	return ProjectPackUninstallApplyResult{Status: "verified", Stage: "verification"}, nil
 }

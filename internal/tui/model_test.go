@@ -207,7 +207,7 @@ func TestProjectUninstallRequiresFocusedDestructiveApprovalAndCancellationIsSafe
 			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "pending"}},
 		}}}},
 		preview: tui.Preview{
-			ID: "uninstall-exact", Digest: "uninstall-exact", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "all installed surfaces", Scope: "project", ProjectRoot: "/workspace/project",
+			ID: "uninstall-exact", Digest: "uninstall-exact", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project",
 			Effects: []tui.PreviewEffect{{Kind: "owned-projection", Target: ".agents/skills/review/SKILL.md", Description: "remove exact owned projection"}, {Kind: "project-manifest", Target: "packy.json", Description: "remove Pack intent"}, {Kind: "project-lock", Target: "packy.lock.json", Description: "remove installed receipt"}},
 			Diff:    tui.PreviewDiff{Removed: []string{".agents/skills/review/SKILL.md", "packy.json", "packy.lock.json"}},
 			Phases:  []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove .agents/skills/review/SKILL.md", "remove packy.json", "remove packy.lock.json"}}},
@@ -266,7 +266,7 @@ func TestProjectUninstallPartialFailureReportsDriftPendingEffectsAndOnlyVerified
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "pending", Drift: 1}},
 		}}}},
-		preview:     tui.Preview{ID: "uninstall-partial", Digest: "uninstall-partial", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "all installed surfaces", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove packy.lock.json"}}}},
+		preview:     tui.Preview{ID: "uninstall-partial", Digest: "uninstall-partial", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove packy.lock.json"}}}},
 		applyResult: tui.ApplyResult{Stage: "verification", Summary: "Project Pack uninstalled with pending personal effects", PendingActions: []string{"Personal runtime still requires deactivation"}, RollbackVerified: true},
 		applyErr:    errors.New("remaining owned projection drift requires recovery"),
 	}
