@@ -228,7 +228,7 @@ func ObserveActiveIntents(ctx context.Context, store ActivationStore) ActiveInte
 }
 
 func statusSurfaces() []Surface {
-	return []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}
+	return SupportedSurfaces()
 }
 
 func (f Facade) activeStatus(ctx context.Context) (StatusReport, error) {

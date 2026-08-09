@@ -21,6 +21,12 @@ const (
 	manifestSchemaV4 = 4
 )
 
+// SupportedSurfaces returns Packy's complete product-owned CLI surface set in
+// stable display order. Pack manifests decide which members each Pack supports.
+func SupportedSurfaces() []Surface {
+	return []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}
+}
+
 var (
 	idPattern     = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 	semverPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)

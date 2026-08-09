@@ -33,10 +33,43 @@ type HealthCheck struct {
 }
 
 type Pack struct {
-	ID          string
-	Version     string
-	Description string
-	Surfaces    []string
+	ID              string
+	Version         string
+	Description     string
+	Surfaces        []string
+	Requirements    []string
+	Resources       []Resource
+	Exclusions      []Exclusion
+	SurfaceStatuses []SurfaceStatus
+}
+
+type Resource struct {
+	Identity     string
+	Description  string
+	Role         string
+	Requirements []string
+	Conflicts    []string
+}
+
+type Exclusion struct {
+	ID      string
+	Surface string
+	Mode    string
+	Code    string
+	Reason  string
+}
+
+type SurfaceStatus struct {
+	Name           string
+	Supported      bool
+	Configured     string
+	Authorized     string
+	Usable         string
+	Ownership      int
+	Drift          int
+	Blockers       []string
+	PendingActions []string
+	Evidence       []string
 }
 
 type Scope struct {
@@ -68,6 +101,8 @@ type Model struct {
 	width      int
 	showHelp   bool
 	inspecting bool
+	filtering  bool
+	filter     string
 }
 
 func NewModel(backend Backend) Model {
@@ -103,14 +138,36 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = message.Width
 	case tea.KeyPressMsg:
+		if m.filtering {
+			switch message.Code {
+			case tea.KeyEnter:
+				m.filtering = false
+			case tea.KeyEscape:
+				m.filtering, m.filter = false, ""
+			case tea.KeyBackspace:
+				characters := []rune(m.filter)
+				if len(characters) > 0 {
+					m.filter = string(characters[:len(characters)-1])
+				}
+			default:
+				if message.Text != "" {
+					m.filter += message.Text
+				}
+			}
+			m.globalRow = boundedRow(m.globalRow, len(filteredPacks(m.dashboard.Global.Packs, m.filter)))
+			m.projectRow = boundedRow(m.projectRow, len(filteredPacks(m.dashboard.Project.Packs, m.filter)))
+			return m, nil
+		}
 		switch {
 		case key.Matches(message, dashboardKeys.Quit):
 			return m, tea.Quit
 		case key.Matches(message, dashboardKeys.Reload):
-			m.loaded, m.err = false, nil
+			m.loaded, m.err, m.inspecting = false, nil, false
 			return m, m.Init()
 		case key.Matches(message, dashboardKeys.Help):
 			m.showHelp = !m.showHelp
+		case key.Matches(message, dashboardKeys.Filter):
+			m.filtering, m.inspecting = true, false
 		case key.Matches(message, dashboardKeys.NextScope):
 			if m.dashboard.Project.Available {
 				m.project = true
@@ -130,16 +187,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(message, dashboardKeys.Down):
 			m.inspecting = false
 			if m.project {
-				m.projectRow = nextRow(m.projectRow, len(m.dashboard.Project.Packs), 1)
+				m.projectRow = nextRow(m.projectRow, len(filteredPacks(m.dashboard.Project.Packs, m.filter)), 1)
 			} else {
-				m.globalRow = nextRow(m.globalRow, len(m.dashboard.Global.Packs), 1)
+				m.globalRow = nextRow(m.globalRow, len(filteredPacks(m.dashboard.Global.Packs, m.filter)), 1)
 			}
 		case key.Matches(message, dashboardKeys.Up):
 			m.inspecting = false
 			if m.project {
-				m.projectRow = nextRow(m.projectRow, len(m.dashboard.Project.Packs), -1)
+				m.projectRow = nextRow(m.projectRow, len(filteredPacks(m.dashboard.Project.Packs, m.filter)), -1)
 			} else {
-				m.globalRow = nextRow(m.globalRow, len(m.dashboard.Global.Packs), -1)
+				m.globalRow = nextRow(m.globalRow, len(filteredPacks(m.dashboard.Global.Packs, m.filter)), -1)
 			}
 		}
 	}
@@ -151,11 +208,26 @@ func (m Model) selectedPack() *Pack {
 	if m.project {
 		packs, row = m.dashboard.Project.Packs, m.projectRow
 	}
+	packs = filteredPacks(packs, m.filter)
 	if row < 0 || row >= len(packs) {
 		return nil
 	}
 	pack := packs[row]
 	return &pack
+}
+
+func filteredPacks(packs []Pack, filter string) []Pack {
+	filter = strings.ToLower(strings.TrimSpace(filter))
+	if filter == "" {
+		return packs
+	}
+	result := make([]Pack, 0, len(packs))
+	for _, pack := range packs {
+		if strings.Contains(strings.ToLower(pack.ID+" "+pack.Description), filter) {
+			result = append(result, pack)
+		}
+	}
+	return result
 }
 
 func boundedRow(row, length int) int {
@@ -173,7 +245,7 @@ func nextRow(row, length, direction int) int {
 }
 
 type keyMap struct {
-	Up, Down, NextScope, PreviousScope, Inspect, Back, Help, Reload, Quit key.Binding
+	Up, Down, NextScope, PreviousScope, Inspect, Back, Filter, Help, Reload, Quit key.Binding
 }
 
 var dashboardKeys = keyMap{
@@ -183,6 +255,7 @@ var dashboardKeys = keyMap{
 	PreviousScope: key.NewBinding(key.WithKeys("shift+tab", "left"), key.WithHelp("shift+tab/←", "previous scope")),
 	Inspect:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "inspect")),
 	Back:          key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+	Filter:        key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 	Help:          key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Reload:        key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
 	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -213,6 +286,9 @@ func (m Model) render() string {
 	if m.err != nil {
 		return m.renderBody(titleStyle.Render("Packy health") + "\n\nUnable to load dashboard\n" + m.err.Error() + "\n\nr reload · q quit")
 	}
+	if m.inspecting {
+		return m.renderBody(m.renderDetail())
+	}
 
 	health := fmt.Sprintf("%s · %d pass · %d warnings · %d failures", m.dashboard.Health.Status, m.dashboard.Health.Passes, m.dashboard.Health.Warnings, m.dashboard.Health.Failures)
 	if m.dashboard.Health.Status == "healthy" {
@@ -222,16 +298,28 @@ func (m Model) render() string {
 	for _, check := range m.dashboard.Health.Checks {
 		healthLines = append(healthLines, fmt.Sprintf("  %s  %s — %s", check.Severity, check.Name, check.Detail))
 	}
-	global := m.renderScope("Workstation · global", m.dashboard.Global.Packs, m.globalRow, !m.project, !m.project && m.inspecting, "No reviewed Packs are available")
+	globalEmpty := "No reviewed Packs are available"
+	projectEmpty := "No reviewed Packs are available in this project scope"
+	if strings.TrimSpace(m.filter) != "" {
+		globalEmpty, projectEmpty = "No reviewed Packs match the filter", "No reviewed Packs match the filter"
+	}
+	global := m.renderScope("Workstation · global", filteredPacks(m.dashboard.Global.Packs, m.filter), m.globalRow, !m.project, globalEmpty)
 	project := "Current project\nNo Git project\nGlobal inspection remains available"
 	if m.dashboard.Project.Available {
-		project = m.renderScope("Current project", m.dashboard.Project.Packs, m.projectRow, m.project, m.project && m.inspecting, "No Packs are installed in this project") + "\n" + m.dashboard.Project.Root
+		project = m.renderScope("Current project", filteredPacks(m.dashboard.Project.Packs, m.filter), m.projectRow, m.project, projectEmpty) + "\n" + m.dashboard.Project.Root
 	}
 	scopes := global + "\n\n" + project
 	if m.width >= 96 {
 		scopes = lipgloss.JoinHorizontal(lipgloss.Top, global, "    ", project)
 	}
-	help := "↑/k ↓/j navigate · tab switch scope · enter inspect · ? help · r reload · q quit"
+	filter := ""
+	if m.filtering || m.filter != "" {
+		filter = "Filter: " + m.filter
+		if m.filtering {
+			filter += "_"
+		}
+	}
+	help := "↑/k ↓/j navigate · tab switch scope · / filter · enter inspect · ? help · r reload · q quit"
 	if m.showHelp {
 		help = "arrows/j/k navigate · Tab/Shift+Tab switch scope · Enter inspect · Esc back · ? hide help · r reload · q quit · Ctrl+C quit"
 	}
@@ -240,6 +328,7 @@ func (m Model) render() string {
 		strings.Join(healthLines, "\n"),
 		"",
 		scopes,
+		filter,
 		"",
 		help,
 	}, "\n"))
@@ -253,7 +342,7 @@ func (m Model) renderBody(content string) string {
 	return style.Render(content)
 }
 
-func (m Model) renderScope(title string, packs []Pack, row int, selected, inspecting bool, empty string) string {
+func (m Model) renderScope(title string, packs []Pack, row int, selected bool, empty string) string {
 	if selected {
 		title += " · selected"
 	}
@@ -268,14 +357,91 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected, inspec
 		}
 		lines = append(lines, fmt.Sprintf("%s%s  %s", marker, pack.ID, pack.Version))
 	}
-	if selected && inspecting && row < len(packs) {
-		lines = append(lines, "", "Pack details")
-		if packs[row].Description != "" {
-			lines = append(lines, "  "+packs[row].Description)
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderDetail() string {
+	pack := m.selectedPack()
+	if pack == nil {
+		return titleStyle.Render("Pack details") + "\n\nNo Pack selected\n\nEsc back"
+	}
+	scope := "Workstation · global"
+	root := ""
+	if m.project {
+		scope = "Current project"
+		root = "\nProject root: " + m.dashboard.Project.Root
+	}
+	lines := []string{
+		titleStyle.Render("Pack details · " + scope),
+		pack.ID + " " + pack.Version,
+		pack.Description + root,
+		"Requirements: " + joinOrNone(pack.Requirements),
+		"",
+		"Resources",
+	}
+	if len(pack.Resources) == 0 {
+		lines = append(lines, "  none")
+	}
+	for _, resource := range pack.Resources {
+		line := "  " + resource.Identity + " [" + resource.Role + "]"
+		if resource.Description != "" {
+			line += " — " + resource.Description
 		}
-		if len(packs[row].Surfaces) != 0 {
-			lines = append(lines, "  Available on: "+strings.Join(packs[row].Surfaces, ", "))
+		lines = append(lines, line)
+		if len(resource.Requirements) > 0 {
+			lines = append(lines, "    requires "+strings.Join(resource.Requirements, ", "))
+		}
+		if len(resource.Conflicts) > 0 {
+			lines = append(lines, "    conflicts "+strings.Join(resource.Conflicts, ", "))
 		}
 	}
+	lines = append(lines, "", "Conflicts and exclusions")
+	if len(pack.Exclusions) == 0 {
+		lines = append(lines, "  none")
+	}
+	for _, exclusion := range pack.Exclusions {
+		identity := exclusion.ID
+		qualifiers := make([]string, 0, 3)
+		if exclusion.Surface != "" {
+			qualifiers = append(qualifiers, "surface="+exclusion.Surface)
+		}
+		if exclusion.Mode != "" {
+			qualifiers = append(qualifiers, "mode="+exclusion.Mode)
+		}
+		if exclusion.Code != "" {
+			qualifiers = append(qualifiers, "code="+exclusion.Code)
+		}
+		if len(qualifiers) > 0 {
+			identity += " (" + strings.Join(qualifiers, ", ") + ")"
+		}
+		lines = append(lines, "  "+identity+" — "+exclusion.Reason)
+	}
+	lines = append(lines, "", "CLI surfaces and status")
+	if len(pack.SurfaceStatuses) == 0 && len(pack.Surfaces) > 0 {
+		lines = append(lines, "  Available on: "+strings.Join(pack.Surfaces, ", "))
+	}
+	for _, status := range pack.SurfaceStatuses {
+		if !status.Supported {
+			lines = append(lines, "  "+status.Name+": unsupported")
+			continue
+		}
+		lines = append(lines,
+			"  "+status.Name+": supported",
+			fmt.Sprintf("    configured=%s authorized=%s usable=%s", status.Configured, status.Authorized, status.Usable),
+			fmt.Sprintf("    Ownership: %d projected paths", status.Ownership),
+			fmt.Sprintf("    Drift: %d projections", status.Drift),
+			"    Blockers: "+joinOrNone(status.Blockers),
+			"    Pending actions: "+joinOrNone(status.PendingActions),
+			"    Evidence: "+joinOrNone(status.Evidence),
+		)
+	}
+	lines = append(lines, "", "Esc back · / filter · r reload · q quit")
 	return strings.Join(lines, "\n")
+}
+
+func joinOrNone(values []string) string {
+	if len(values) == 0 {
+		return "none"
+	}
+	return strings.Join(values, ", ")
 }
