@@ -21,6 +21,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0031-simplify-packy-around-reviewed-packs.md"),
 		filepath.Join(root, "docs", "adr", "0032-admit-single-source-packs-atomically.md"),
 		filepath.Join(root, "docs", "adr", "0033-make-the-tui-the-primary-interactive-interface.md"),
+		filepath.Join(root, "docs", "adr", "0034-make-packy-root-namespace-pack-oriented.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
@@ -61,6 +62,12 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Bubble Tea v2 TUI", "minimum Go version to 1.25", "same `internal/capabilitypack` behavior",
 		"one Pack, surface", "global or project", "preview, phase consent", "verification boundary",
 		"defers exit until the operation returns", "fresh inspection",
+	})
+	requireDocumentationText(t, root, "docs/adr/0034-make-packy-root-namespace-pack-oriented.md", []string{
+		"root namespace is Pack-oriented", "direct root commands", "obsolete `pack` grouping command is absent",
+		"alias, forwarding command, fallback, or deprecation path", "`internal/cli` adapter boundary",
+		"Pack lifecycle behavior remains in `internal/capabilitypack`", "structured-output report identifiers",
+		"Cobra's ordinary unknown command behavior", "issue 589",
 	})
 	requireDocumentationText(t, root, "bundle/pack-template/README.md", []string{
 		"Copy this directory", "one `pack.json`", "maintainer-selected SemVer", "reviewed content",
