@@ -312,6 +312,12 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 				inspected, inspectErr := InspectMCPContent(content, target, projection.Resource.ID, projection.Command, projection.Args)
 				err = inspectErr
 				exists, observed = inspected.Exists, inspected.ObservedFingerprint
+				if inspectErr == nil && goal == capabilitypack.ProjectionAbsent && inspected.Exists {
+					action.Content, err = RemoveMCPProjection(content, target, projection.Resource.ID)
+					action.FileMode = 0o644
+					action.Precondition = localprojection.FingerprintBytes([]byte(content))
+					action.Mode = capabilitypack.ProjectionRemoveContent
+				}
 			}
 		case "agent":
 			action.Kind = capabilitypack.ActionOpenCodeAgentFile

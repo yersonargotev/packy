@@ -134,10 +134,14 @@ func TestExistingProjectInstallationOffersFreshPersonalActivationWithoutReinstal
 	model := loadModel(t, backend)
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	for _, want := range []string{"Project installation: installed", "Personal runtime activation: pending", "Enter preview personal project activation"} {
+	for _, want := range []string{"Project installation: installed", "Personal runtime activation: pending", "Enter choose project lifecycle action"} {
 		if view := ansi.Strip(model.View().Content); !strings.Contains(view, want) {
 			t.Fatalf("existing installation detail missing %q:\n%s", want, view)
 		}
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Activate · selected") || !strings.Contains(view, "Uninstall") {
+		t.Fatalf("installed pending project actions are incomplete:\n%s", view)
 	}
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "activate" || backend.previewRequests[0].Surface != "opencode" || backend.previewRequests[0].Selection.Mode != "" {
@@ -148,7 +152,7 @@ func TestExistingProjectInstallationOffersFreshPersonalActivationWithoutReinstal
 	}
 }
 
-func TestProjectStatusOffersOnlyApplicableUpdateAndPersonalDeactivation(t *testing.T) {
+func TestProjectStatusOffersOnlyApplicableUpdatePersonalDeactivationAndUninstall(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{
@@ -163,7 +167,7 @@ func TestProjectStatusOffersOnlyApplicableUpdateAndPersonalDeactivation(t *testi
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Choose project lifecycle action", "Update · selected", "Deactivate"} {
+	for _, want := range []string{"Choose project lifecycle action", "Update · selected", "Deactivate", "Uninstall"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("project action menu missing %q:\n%s", want, view)
 		}
@@ -179,6 +183,118 @@ func TestProjectStatusOffersOnlyApplicableUpdateAndPersonalDeactivation(t *testi
 	request := backend.previewRequests[0]
 	if request.Operation != "update" || request.Scope != "project" || request.ProjectRoot != "/workspace/project" || request.Selection.Mode != "" {
 		t.Fatalf("project update preview request = %#v", request)
+	}
+}
+
+func TestProjectStatusNeverOffersUninstallForAnAbsentPack(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "argote", Version: "2.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "absent"}},
+		}}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if strings.Contains(view, "uninstall") || !strings.Contains(view, "Enter select resources for project installation") {
+		t.Fatalf("absent project Pack exposed uninstall:\n%s", view)
+	}
+}
+
+func TestProjectUninstallRequiresFocusedDestructiveApprovalAndCancellationIsSafe(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "pending"}},
+		}}}},
+		preview: tui.Preview{
+			ID: "uninstall-exact", Digest: "uninstall-exact", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "all installed surfaces", Scope: "project", ProjectRoot: "/workspace/project",
+			Effects: []tui.PreviewEffect{{Kind: "owned-projection", Target: ".agents/skills/review/SKILL.md", Description: "remove exact owned projection"}, {Kind: "project-manifest", Target: "packy.json", Description: "remove Pack intent"}, {Kind: "project-lock", Target: "packy.lock.json", Description: "remove installed receipt"}},
+			Diff:    tui.PreviewDiff{Removed: []string{".agents/skills/review/SKILL.md", "packy.json", "packy.lock.json"}},
+			Phases:  []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove .agents/skills/review/SKILL.md", "remove packy.json", "remove packy.lock.json"}}},
+		},
+		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Uninstalled argote from the current project"},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "uninstall" || backend.previewRequests[0].Selection.Mode != "" {
+		t.Fatalf("project uninstall preview request = %#v", backend.previewRequests)
+	}
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"uninstall argote", ".agents/skills/review/SKILL.md", "packy.json", "packy.lock.json"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("project uninstall preview missing %q:\n%s", want, view)
+		}
+	}
+
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'u', Text: "u"}))
+	if command != nil || len(backend.applyRequests) != 0 {
+		t.Fatalf("global one-key shortcut applied uninstall: command=%v applies=%#v", command != nil, backend.applyRequests)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(model.View().Content)
+	for _, want := range []string{"Destructive cleanup confirmation", "Exact paths and effects", "Cancel ] · selected"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("project uninstall consent missing %q:\n%s", want, view)
+		}
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.applyRequests) != 0 || backend.loads != 2 {
+		t.Fatalf("cancelled uninstall produced effects or skipped reload: applies=%#v loads=%d", backend.applyRequests, backend.loads)
+	}
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	view = ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "Project uninstall succeeded") || !strings.Contains(view, "Fresh Pack status reloaded") || len(backend.applyRequests) != 1 {
+		t.Fatalf("approved project uninstall did not report verified completion:\n%s\nrequests=%#v", view, backend.applyRequests)
+	}
+}
+
+func TestProjectUninstallPartialFailureReportsDriftPendingEffectsAndOnlyVerifiedRollback(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Runtime: "pending", Drift: 1}},
+		}}}},
+		preview:     tui.Preview{ID: "uninstall-partial", Digest: "uninstall-partial", Operation: "uninstall", Disposition: "previewable", PackID: "argote", PackVersion: "2.0.0", Surface: "all installed surfaces", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove packy.lock.json"}}}},
+		applyResult: tui.ApplyResult{Stage: "verification", Summary: "Project Pack uninstalled with pending personal effects", PendingActions: []string{"Personal runtime still requires deactivation"}, RollbackVerified: true},
+		applyErr:    errors.New("remaining owned projection drift requires recovery"),
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Project uninstall failed", "remaining owned projection drift", "Personal runtime still requires deactivation", "Rollback: verified by the domain owner", "Enter create fresh preview"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("partial uninstall result missing %q:\n%s", want, view)
+		}
+	}
+
+	backend.applyResult.RollbackVerified = false
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	if view := strings.ToLower(ansi.Strip(model.View().Content)); strings.Contains(view, "rollback") {
+		t.Fatalf("unverified rollback was reported:\n%s", view)
 	}
 }
 
@@ -198,10 +314,14 @@ func TestProjectStatusOmitsNoOpUpdateAndRequiresDestructiveConsentForPersonalDea
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
-	if strings.Contains(view, "preview project update") || !strings.Contains(view, "Enter preview personal project deactivation") {
+	if strings.Contains(view, "preview project update") || !strings.Contains(view, "Enter choose project lifecycle action") {
 		t.Fatalf("catalog-current active project status exposed the wrong action:\n%s", view)
 	}
 
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Deactivate · selected") || !strings.Contains(view, "Uninstall") {
+		t.Fatalf("installed active project actions are incomplete:\n%s", view)
+	}
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Selection.Mode != "" {
 		t.Fatalf("personal project deactivation preview request = %#v", backend.previewRequests)

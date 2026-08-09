@@ -37,6 +37,7 @@ type ApplyResult struct {
 	PendingActions    []string
 	FollowUpOperation string
 	RuntimeActivation string
+	RollbackVerified  bool
 }
 
 type Selection struct {
@@ -580,7 +581,7 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 		scope, projectRoot = "project", m.dashboard.Project.Root
 	}
 	selection := Selection{}
-	if m.operation != "update" && !(m.project && (m.operation == "activate" || m.operation == "deactivate")) {
+	if m.operation != "update" && !(m.project && (m.operation == "activate" || m.operation == "deactivate" || m.operation == "uninstall")) {
 		selection = Selection{Mode: "all", Roots: []string{}}
 	}
 	if m.advancedSelection {
@@ -722,7 +723,7 @@ func projectLifecycleActionsForStatus(status *SurfaceStatus) []string {
 	case "stale":
 		actions = append(actions, "activate", "deactivate")
 	}
-	return actions
+	return append(actions, "uninstall")
 }
 
 func (m Model) selectedSurfaceStatus() *SurfaceStatus {
@@ -1160,6 +1161,8 @@ func (m Model) renderDetail() string {
 			action = "Enter preview project update"
 		case actions[0] == "deactivate":
 			action = "Enter preview personal project deactivation"
+		case actions[0] == "uninstall":
+			action = "Enter preview project Pack uninstall"
 		}
 	}
 	lines = append(lines, "", action+" · Esc back · / filter · r reload · q quit")
@@ -1390,7 +1393,7 @@ func previewCanApply(preview Preview) bool {
 	operationSupported := preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate"
 	disposition := preview.Disposition == "applicable"
 	if preview.Scope == "project" {
-		operationSupported = preview.Operation == "install" || preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate"
+		operationSupported = preview.Operation == "install" || preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate" || preview.Operation == "uninstall"
 		disposition = preview.Disposition == "previewable"
 	}
 	return operationSupported && disposition && !preview.Stale && len(requiredConsentPhases(preview)) > 0
@@ -1508,6 +1511,8 @@ func (m Model) renderApplyResult() string {
 			if m.preview.Scope == "project" {
 				operation = "Personal project deactivation"
 			}
+		case "uninstall":
+			operation = "Project uninstall"
 		}
 	}
 	title := operation + " failed"
@@ -1540,6 +1545,9 @@ func (m Model) renderApplyResult() string {
 	}
 	if len(m.applyOutcome.PendingActions) > 0 {
 		lines = append(lines, "", "Pending actions: "+strings.Join(m.applyOutcome.PendingActions, ", "))
+	}
+	if m.applyOutcome.RollbackVerified {
+		lines = append(lines, "Rollback: verified by the domain owner")
 	}
 	if m.applyOutcome.RuntimeActivation != "" {
 		lines = append(lines, "Personal runtime activation: "+m.applyOutcome.RuntimeActivation)
