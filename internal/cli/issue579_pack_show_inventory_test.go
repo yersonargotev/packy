@@ -21,11 +21,11 @@ func TestPackShowHumanRendersDeterministicDescriptiveInventory(t *testing.T) {
 		"PACKY_SKILLS_SOURCE": filepath.Join(root, "bundle", "skills"),
 	}}
 
-	first, err := executeCommand(t, NewRootCommand(opts), "pack", "show", "engram")
+	first, err := executeCommand(t, NewRootCommand(opts), "show", "engram")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := executeCommand(t, NewRootCommand(opts), "pack", "show", "engram")
+	second, err := executeCommand(t, NewRootCommand(opts), "show", "engram")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestPackShowJSONV5IncludesDescriptiveInventory(t *testing.T) {
 		"PACKY_SKILLS_SOURCE": filepath.Join(root, "bundle", "skills"),
 	}}
 
-	output, err := executeCommand(t, NewRootCommand(opts), "pack", "show", "engram", "--json")
+	output, err := executeCommand(t, NewRootCommand(opts), "show", "engram", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}

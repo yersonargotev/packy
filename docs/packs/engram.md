@@ -41,6 +41,6 @@ None.
 ## Inspect and preview
 
 ```sh
-packy pack show engram
-packy pack activate engram --surface claude --dry-run
+packy show engram
+packy activate engram --surface claude --dry-run
 ```

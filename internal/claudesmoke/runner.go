@@ -415,11 +415,11 @@ func executeSmoke(ctx context.Context, e Evidence, lc smokeContext) (Evidence, e
 		{Kind: phasePackyVersion, Argv: []string{packy, "version"}},
 		{Kind: phaseInit, Argv: []string{packy, "init", "--home", filepath.Join(sandbox, "home"), "--source-root", filepath.Join(sandbox, "installed-source"), "--repository-url", installRepo, "--repository-ref", installRef}},
 		{Kind: phaseDoctor, Argv: []string{packy, "doctor"}},
-		{Kind: phasePackList, Argv: []string{packy, "pack", "list"}},
-		{Kind: phasePackShow, Argv: []string{packy, "pack", "show", "addy"}},
-		{Kind: phaseActivationPreview, Argv: []string{packy, "pack", "activate", "addy", "--surface", "claude", "--dry-run"}},
-		{Kind: phaseActivationApply, Argv: []string{packy, "pack", "activate", "addy", "--surface", "claude"}, InteractiveInput: "y\n"},
-		{Kind: phasePackStatus, Argv: []string{packy, "pack", "status", "addy", "--surface", "claude"}},
+		{Kind: phasePackList, Argv: []string{packy, "list"}},
+		{Kind: phasePackShow, Argv: []string{packy, "show", "addy"}},
+		{Kind: phaseActivationPreview, Argv: []string{packy, "activate", "addy", "--surface", "claude", "--dry-run"}},
+		{Kind: phaseActivationApply, Argv: []string{packy, "activate", "addy", "--surface", "claude"}, InteractiveInput: "y\n"},
+		{Kind: phasePackStatus, Argv: []string{packy, "status", "addy", "--surface", "claude"}},
 	}
 	for _, phase := range phases {
 		var ce CommandEvidence
@@ -677,12 +677,15 @@ func AllowedCommand(packy, claude string, argv []string) bool {
 		return len(argv) == 2
 	case "init":
 		return len(argv) == 10
-	case "pack":
-		return reflect.DeepEqual(argv[2:], []string{"list"}) ||
-			reflect.DeepEqual(argv[2:], []string{"show", "addy"}) ||
-			reflect.DeepEqual(argv[2:], []string{"activate", "addy", "--surface", "claude", "--dry-run"}) ||
-			reflect.DeepEqual(argv[2:], []string{"activate", "addy", "--surface", "claude"}) ||
-			reflect.DeepEqual(argv[2:], []string{"status", "addy", "--surface", "claude"})
+	case "list":
+		return len(argv) == 2
+	case "show":
+		return reflect.DeepEqual(argv[1:], []string{"show", "addy"})
+	case "activate":
+		return reflect.DeepEqual(argv[1:], []string{"activate", "addy", "--surface", "claude", "--dry-run"}) ||
+			reflect.DeepEqual(argv[1:], []string{"activate", "addy", "--surface", "claude"})
+	case "status":
+		return reflect.DeepEqual(argv[1:], []string{"status", "addy", "--surface", "claude"})
 	}
 	return false
 }
@@ -778,11 +781,11 @@ func ValidateEvidence(e Evidence) error {
 		{Name: "packy", Args: []string{"version"}},
 		{Name: "packy", Args: []string{"init"}},
 		{Name: "packy", Args: []string{"doctor"}},
-		{Name: "packy", Args: []string{"pack", "list"}},
-		{Name: "packy", Args: []string{"pack", "show", "addy"}},
-		{Name: "packy", Args: []string{"pack", "activate", "addy", "--surface", "claude", "--dry-run"}},
-		{Name: "packy", Args: []string{"pack", "activate", "addy", "--surface", "claude"}},
-		{Name: "packy", Args: []string{"pack", "status", "addy", "--surface", "claude"}},
+		{Name: "packy", Args: []string{"list"}},
+		{Name: "packy", Args: []string{"show", "addy"}},
+		{Name: "packy", Args: []string{"activate", "addy", "--surface", "claude", "--dry-run"}},
+		{Name: "packy", Args: []string{"activate", "addy", "--surface", "claude"}},
+		{Name: "packy", Args: []string{"status", "addy", "--surface", "claude"}},
 	}
 	if len(e.Commands) <= len(want) {
 		return errors.New("evidence command sequence is incomplete")

@@ -25,7 +25,7 @@ func TestPublicDocumentationUsesCanonicalPackDiscovery(t *testing.T) {
 		if !strings.Contains(text, canonicalCatalogAuthority) {
 			t.Errorf("%s does not identify bundled Pack manifests as canonical catalog authority", path)
 		}
-		if !strings.Contains(text, "packy pack list") {
+		if !strings.Contains(text, "packy list") {
 			t.Errorf("%s does not expose canonical runtime Pack discovery", path)
 		}
 		if catalogSnapshot.MatchString(text) {

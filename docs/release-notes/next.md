@@ -5,6 +5,9 @@ Git-reviewed capability Packs on Codex, OpenCode, and Claude Code.
 
 ## Highlights
 
+- Pack discovery and lifecycle commands now run directly at the root, such as
+  `packy list` and `packy activate`; the former intermediate grouping command
+  has been removed without an alias or deprecation path.
 - Argote `1.0.1` projects its engineering and communication guidance as one
   cohesive instruction, so complete activation is collision-free on every
   supported surface. Addy, Engram, and Matty remain at Pack version `1.0.0`.
@@ -24,9 +27,9 @@ catalog:
 ```sh
 brew install yersonargotev/tap/packy
 packy init
-packy pack list
-packy pack activate engram --surface codex --dry-run
-packy pack activate engram --surface codex
+packy list
+packy activate engram --surface codex --dry-run
+packy activate engram --surface codex
 ```
 
 Claude Code **2.1.203 or newer** remains the supported floor.

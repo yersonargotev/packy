@@ -74,8 +74,36 @@ func NewRootCommand(opts Options) *cobra.Command {
 	workstationResolver := newWorkstationResolver(opts)
 
 	root := &cobra.Command{
-		Use:           "packy",
-		Short:         "Manage Packy capability packs and sources",
+		Use:   "packy",
+		Short: "Packy is an installer and configurator for reviewed capability Packs",
+		Long: `Packy is an installer and configurator for reviewed capability Packs on Claude Code, Codex, and OpenCode.
+
+Lifecycle commands preview an immutable plan before interactive Apply. Approvals
+are requested separately for each consent kind. A verified Apply can succeed while
+login, trust, permissions, reload, or runtime loading remain pending; use targeted
+status with --require usable as the separate automation gate.
+
+After a stale plan, repeat the original lifecycle verb to inspect fresh state
+and receive a new Preview. Packy never retries it automatically.
+
+` + projectLifecycleHelp,
+		Example: `  packy list
+  packy show matty
+  packy show engram --json
+  packy status
+  packy status engram --surface claude
+  packy status engram --surface claude --require usable --json
+  packy status engram --surface codex
+  packy status engram --surface codex --require usable
+  packy install matty --surface codex --dry-run
+  packy uninstall matty --dry-run
+  packy activate matty --surface codex --dry-run
+  packy activate example-pack --surface codex --resource skill:ask-matt --dry-run
+  packy deactivate example-pack --surface codex --resource skill:ask-matt --dry-run
+  packy activate engram --surface claude --dry-run --json
+  packy activate matty --surface codex
+  packy update matty --surface codex
+  packy deactivate matty --surface codex`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       packyversion.Value,
@@ -83,9 +111,16 @@ func NewRootCommand(opts Options) *cobra.Command {
 
 	root.AddCommand(
 		newVersionCommand(),
-		newPackCommand(opts, workstationResolver),
 		newInitCommand(opts, workstationResolver),
 		newDoctorCommand(opts, workstationResolver),
+		newPackListCommand(opts, workstationResolver),
+		newPackShowCommand(opts, workstationResolver),
+		newPackStatusCommand(opts, workstationResolver),
+		newPackInstallCommand(opts, workstationResolver),
+		newPackUninstallCommand(opts, workstationResolver),
+		newPackActivateCommand(opts, workstationResolver),
+		newPackUpdateCommand(opts, workstationResolver),
+		newPackDeactivateCommand(opts, workstationResolver),
 	)
 
 	return root

@@ -54,7 +54,7 @@ func renderIndex(details []capabilitypack.CatalogDetail) []byte {
 	var out bytes.Buffer
 	out.WriteString(generatedNotice)
 	out.WriteString("\n# Pack catalog\n\n")
-	out.WriteString("This index is generated from the bundled selectable Pack manifests. Use `packy pack show <pack>` to inspect the same descriptive inventory in the CLI.\n\n")
+	out.WriteString("This index is generated from the bundled selectable Pack manifests. Use `packy show <pack>` to inspect the same descriptive inventory in the CLI.\n\n")
 	for _, detail := range details {
 		pack := detail.Pack
 		fmt.Fprintf(&out, "- [%s](%s.md) — %s (version `%s`)\n", pack.ID, pack.ID, pack.Description, pack.Version)
@@ -106,8 +106,8 @@ func renderPack(detail capabilitypack.CatalogDetail) []byte {
 	}
 
 	out.WriteString("\n## Inspect and preview\n\n```sh\n")
-	fmt.Fprintf(&out, "packy pack show %s\n", pack.ID)
-	fmt.Fprintf(&out, "packy pack activate %s --surface %s --dry-run\n", pack.ID, pack.Surfaces[0])
+	fmt.Fprintf(&out, "packy show %s\n", pack.ID)
+	fmt.Fprintf(&out, "packy activate %s --surface %s --dry-run\n", pack.ID, pack.Surfaces[0])
 	out.WriteString("```\n")
 	return out.Bytes()
 }

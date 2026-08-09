@@ -36,7 +36,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	}
 	gitBefore := snapshotTree(t, filepath.Join(project, ".git"))
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -132,7 +132,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	}
 	beforeRepeat := snapshotTree(t, project)
 	terminal.calls = 0
-	repeated, repeatErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
+	repeated, repeatErr := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
 	if repeatErr != nil {
 		t.Fatalf("repeat install: %v\n%s", repeatErr, repeated)
 	}
@@ -190,7 +190,7 @@ func TestIssue452ProjectInstallBlocksForeignTargetsAndAmbiguousMarkersBeforeMuta
 			test.setup(t, project)
 			opts.Getwd = func() (string, error) { return project, nil }
 			before := snapshotTree(t, project)
-			out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
+			out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
 			if err == nil || !strings.Contains(out, test.want) || terminal.calls != 0 {
 				t.Fatalf("blocked install = err:%v approvals:%d\n%s", err, terminal.calls, out)
 			}
@@ -216,7 +216,7 @@ func TestIssue452ProjectInstallRejectsConcurrentTargetChangeAfterApproval(t *tes
 			t.Fatal(err)
 		}
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("stale install = %v\n%s", err, out)
 	}
@@ -236,7 +236,7 @@ func TestIssue452ProjectInstallPreservesOwnedDriftAndRefusesRepeat(t *testing.T)
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("seed install: %v\n%s", err, out)
 	}
 	drift := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
@@ -244,7 +244,7 @@ func TestIssue452ProjectInstallPreservesOwnedDriftAndRefusesRepeat(t *testing.T)
 		t.Fatal(err)
 	}
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
 	if err == nil || !strings.Contains(out, "owned_drift") || terminal.calls != 0 {
 		t.Fatalf("drifted repeat = err:%v approvals:%d\n%s", err, terminal.calls, out)
 	}

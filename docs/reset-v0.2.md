@@ -58,7 +58,7 @@ normal review flow.
 brew install yersonargotev/tap/packy
 packy init
 packy doctor
-packy pack list
+packy list
 ```
 
 The catalog should list Argote at Pack version `1.0.1` and Addy, Engram, and
@@ -70,8 +70,8 @@ For each project and each intended Pack/surface pair, preview and install the
 current declaration:
 
 ```sh
-packy pack install <pack> --surface <surface> --dry-run
-packy pack install <pack> --surface <surface>
+packy install <pack> --surface <surface> --dry-run
+packy install <pack> --surface <surface>
 ```
 
 Review the regenerated `packy.json`, `packy.lock.json`, `PACKY-NOTICES.md`, and
@@ -79,8 +79,8 @@ Pack projections before committing them. If the Pack has personal runtime
 effects, activate those separately:
 
 ```sh
-packy pack activate <pack> --surface <surface> --project --dry-run
-packy pack activate <pack> --surface <surface> --project
+packy activate <pack> --surface <surface> --project --dry-run
+packy activate <pack> --surface <surface> --project
 ```
 
 Repeat the same preview-first process for desired global activations. Do not

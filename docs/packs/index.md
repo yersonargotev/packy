@@ -2,7 +2,7 @@
 
 # Pack catalog
 
-This index is generated from the bundled selectable Pack manifests. Use `packy pack show <pack>` to inspect the same descriptive inventory in the CLI.
+This index is generated from the bundled selectable Pack manifests. Use `packy show <pack>` to inspect the same descriptive inventory in the CLI.
 
 - [addy](addy.md) — Addy agent skills (version `1.0.1`)
 - [argote](argote.md) — Yerson Argote's engineering and communication guidance (version `1.0.2`)

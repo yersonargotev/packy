@@ -19,7 +19,7 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyAcrossOpenCodeAndClaude(t *testi
 			writeTestGitWorktree(t, project)
 			opts.Getwd = func() (string, error) { return project, nil }
 
-			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", string(surface)); err != nil {
+			if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", string(surface)); err != nil {
 				t.Fatalf("install: %v\n%s", err, out)
 			}
 			installation, err := capabilitypack.LoadProjectInstallation(project)
@@ -41,11 +41,11 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyAcrossOpenCodeAndClaude(t *testi
 				t.Fatal(err)
 			}
 
-			human, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", string(surface), "--project", "--dry-run")
+			human, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", string(surface), "--project", "--dry-run")
 			if err != nil || !strings.Contains(human, "Runtime activation: previewable") || !strings.Contains(human, "Approval category: mcp") {
 				t.Fatalf("human activation preview: %v\n%s", err, human)
 			}
-			structured, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", string(surface), "--project", "--dry-run", "--json")
+			structured, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", string(surface), "--project", "--dry-run", "--json")
 			if err != nil {
 				t.Fatalf("structured activation preview: %v\n%s", err, structured)
 			}
@@ -54,7 +54,7 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyAcrossOpenCodeAndClaude(t *testi
 				t.Fatalf("structured preview = %+v, %v", preview, err)
 			}
 
-			if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", string(surface), "--project"); err != nil || !strings.Contains(out, "Verified personal project activation") {
+			if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", string(surface), "--project"); err != nil || !strings.Contains(out, "Verified personal project activation") {
 				t.Fatalf("activate: %v\n%s", err, out)
 			}
 			state := "state-matty-" + string(surface) + ".json"
@@ -62,11 +62,11 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyAcrossOpenCodeAndClaude(t *testi
 			if err != nil || len(matches) != 1 {
 				t.Fatalf("surface-scoped personal state %s = %v, %v", state, matches, err)
 			}
-			status, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", string(surface), "--project")
+			status, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", string(surface), "--project")
 			if err != nil || !strings.Contains(status, "Installation: installed") || !strings.Contains(status, "Runtime activation: active") || !strings.Contains(status, "Pending human actions:") || !strings.Contains(status, "Evidence:") {
 				t.Fatalf("project status: %v\n%s", err, status)
 			}
-			statusJSON, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", string(surface), "--project", "--json")
+			statusJSON, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", string(surface), "--project", "--json")
 			var report capabilitypack.JSONProjectStatusReport
 			if err != nil || json.Unmarshal([]byte(statusJSON), &report) != nil || len(report.Packs) != 1 || len(report.Packs[0].PendingHumanActions) == 0 || len(report.Packs[0].Evidence) == 0 {
 				t.Fatalf("structured project status = %+v, err=%v, output=%s", report, err, statusJSON)

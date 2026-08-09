@@ -20,7 +20,7 @@ func TestIssue459ProjectActivationRequiresAnInstalledPack(t *testing.T) {
 	opts.Getwd = func() (string, error) { return project, nil }
 
 	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
-	_, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--project")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--project")
 	if err == nil || !strings.Contains(err.Error(), "project installation") {
 		t.Fatalf("activation without installation error = %v", err)
 	}
@@ -35,7 +35,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
@@ -104,11 +104,11 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	terminal.calls = 0
-	driftPreview, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--project", "--dry-run")
+	driftPreview, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--project", "--dry-run")
 	if err != nil || !strings.Contains(driftPreview, "Runtime activation: previewable") || !strings.Contains(driftPreview, "Personal effect: codex-project-trust") || terminal.calls != 0 {
 		t.Fatalf("drifted trust preview prompts=%d: %v\n%s", terminal.calls, err, driftPreview)
 	}
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--project"); err != nil {
+	if _, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--project"); err != nil {
 		t.Fatalf("repair drifted trust: %v", err)
 	}
 	trust, err = os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
@@ -124,11 +124,11 @@ func TestIssue459DeclarativeProjectActivationIsNotRequired(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex", "--project")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--project")
 	if err != nil || !strings.Contains(out, "Runtime activation: not-required") {
 		t.Fatalf("declarative activation: %v\n%s", err, out)
 	}
@@ -146,11 +146,11 @@ func TestIssue459ProjectUsableEnforcementRequiresPersonalActivation(t *testing.T
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--project", "--require", "usable")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project", "--require", "usable")
 	if err != nil {
 		t.Fatalf("declarative project should be usable from installation alone: %v\n%s", err, out)
 	}

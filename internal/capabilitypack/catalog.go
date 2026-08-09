@@ -506,7 +506,7 @@ func (c Catalog) showUnlocked(id string) (Pack, error) {
 			return clonePack(pack), nil
 		}
 	}
-	return Pack{}, fmt.Errorf("unknown capability pack %q; run `packy pack list` to see available packs", id)
+	return Pack{}, fmt.Errorf("unknown capability pack %q; run `packy list` to see available packs", id)
 }
 
 func (c Catalog) catalogMetadata(id string) (Pack, error) {
@@ -515,7 +515,7 @@ func (c Catalog) catalogMetadata(id string) (Pack, error) {
 			return clonePack(pack), nil
 		}
 	}
-	return Pack{}, fmt.Errorf("unknown capability pack %q; run `packy pack list` to see available packs", id)
+	return Pack{}, fmt.Errorf("unknown capability pack %q; run `packy list` to see available packs", id)
 }
 
 func clonePack(pack Pack) Pack {

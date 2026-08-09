@@ -14,7 +14,7 @@ func TestIssue518ActivationPublishesMinimalInstalledPackReceipt(t *testing.T) {
 	opts, _, _ := packActivationOptions(t, terminal)
 	fixture := newCLITestFixture(t, opts)
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("activate Matty: %v\n%s", err, out)
 	}
 
@@ -62,11 +62,11 @@ func TestIssue518ActivationPublishesMinimalInstalledPackReceipt(t *testing.T) {
 func TestIssue518StatusReportsCurrentReceiptWithoutHistoricalAttempts(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("activate Matty: %v\n%s", err, out)
 	}
 
-	human, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex")
+	human, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("status Matty: %v\n%s", err, human)
 	}
@@ -79,7 +79,7 @@ func TestIssue518StatusReportsCurrentReceiptWithoutHistoricalAttempts(t *testing
 		t.Fatalf("status exposed retired attempt history:\n%s", human)
 	}
 
-	encoded, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "matty", "--surface", "codex", "--json")
+	encoded, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--json")
 	if err != nil {
 		t.Fatalf("JSON status Matty: %v\n%s", err, encoded)
 	}

@@ -40,6 +40,6 @@ None.
 ## Inspect and preview
 
 ```sh
-packy pack show orchestrate
-packy pack activate orchestrate --surface codex --dry-run
+packy show orchestrate
+packy activate orchestrate --surface codex --dry-run
 ```

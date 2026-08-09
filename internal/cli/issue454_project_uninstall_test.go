@@ -14,7 +14,7 @@ func TestIssue454PackWideUninstallPreviewsEveryRemovalWithoutMutation(t *testing
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "matty", "--dry-run")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty", "--dry-run")
 	if err != nil {
 		t.Fatalf("pack-wide uninstall dry-run: %v\n%s", err, out)
 	}
@@ -59,12 +59,12 @@ func TestIssue454PackWideUninstallRemovesOnlyExactOwnedContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitBefore := snapshotTree(t, filepath.Join(project, ".git"))
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
 		t.Fatalf("seed install: %v\n%s", err, out)
 	}
 	terminal.calls = 0
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "matty")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty")
 	if err != nil {
 		t.Fatalf("pack-wide uninstall: %v\n%s", err, out)
 	}
@@ -106,7 +106,7 @@ func TestIssue454SurfaceUninstallRemovesOnlyTheSelectedContributor(t *testing.T)
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("surface uninstall: %v\n%s", err, out)
 	}
@@ -132,7 +132,7 @@ func TestIssue454UninstallPreservesDriftAndForeignMatchingContent(t *testing.T) 
 	before := snapshotTree(t, project)
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "matty")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty")
 	if err == nil || !strings.Contains(out, "project_drift") {
 		t.Fatalf("drifted uninstall = err:%v\n%s", err, out)
 	}
@@ -144,7 +144,7 @@ func TestIssue454UninstallPreservesDriftAndForeignMatchingContent(t *testing.T) 
 		t.Fatal(err)
 	}
 	before = snapshotTree(t, project)
-	_, err = executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "matty")
+	_, err = executeCommand(t, NewRootCommand(opts), "uninstall", "matty")
 	if err == nil || snapshotTree(t, project) != before {
 		t.Fatalf("matching bytes without lock were adopted or removed: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestIssue454UninstallRejectsConcurrentChangeAfterApproval(t *testing.T) {
 		}
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "matty")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty")
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("concurrent uninstall = err:%v\n%s", err, out)
 	}

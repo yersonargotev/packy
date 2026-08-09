@@ -58,7 +58,7 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	assertStructuredOutput(t, root, "doctor.schema.json", doctor)
 
 	packReadOpts := Options{Env: MapEnv{"HOME": t.TempDir(), "XDG_CONFIG_HOME": filepath.Join(t.TempDir(), "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(root, "bundle", "skills")}}
-	show, err := executeCommand(t, NewRootCommand(packReadOpts), "pack", "show", "engram", "--json")
+	show, err := executeCommand(t, NewRootCommand(packReadOpts), "show", "engram", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,14 +67,14 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		t.Fatalf("pack-show producer canonical order: %v", err)
 	}
 
-	status, err := executeCommand(t, NewRootCommand(packReadOpts), "pack", "status", "ma"+"tty", "--surface", "claude", "--json")
+	status, err := executeCommand(t, NewRootCommand(packReadOpts), "status", "ma"+"tty", "--surface", "claude", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertStructuredOutput(t, root, "pack-status.schema.json", status)
 
 	packOpts, _, _ := packActivationOptions(t, &fakeTerminal{})
-	preview, err := executeCommand(t, NewRootCommand(packOpts), "pack", "activate", "ma"+"tty", "--surface", "claude", "--dry-run", "--json")
+	preview, err := executeCommand(t, NewRootCommand(packOpts), "activate", "ma"+"tty", "--surface", "claude", "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("pack preview: %v\n%s", err, preview)
 	}

@@ -18,8 +18,8 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	opts.Getwd = func() (string, error) { return project, nil }
 
 	installs := [][]string{
-		{"pack", "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"},
-		{"pack", "install", "argote", "--surface", "codex", "--resource", "instruction:guidance"},
+		{"install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"},
+		{"install", "argote", "--surface", "codex", "--resource", "instruction:guidance"},
 	}
 	for _, args := range installs {
 		if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
@@ -34,7 +34,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	if len(installation.Manifest.Packs) != 2 {
 		t.Fatalf("manifest packs = %#v, want two independent direct Packs", installation.Manifest.Packs)
 	}
-	statusOutput, err := executeCommand(t, NewRootCommand(opts), "pack", "status", "--project", "--json")
+	statusOutput, err := executeCommand(t, NewRootCommand(opts), "status", "--project", "--json")
 	if err != nil {
 		t.Fatalf("project status: %v\n%s", err, statusOutput)
 	}
@@ -94,7 +94,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 
 	beforeAddy := projectReceiptJSON(t, lockData, "addy")
 	beforeArgote := projectReceiptJSON(t, lockData, "argote")
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "addy", "--project"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--project"); err != nil {
 		t.Fatalf("update Addy to the current bundled version: %v\n%s", err, out)
 	}
 	updatedData, err := os.ReadFile(filepath.Join(project, "packy.lock.json"))
@@ -112,19 +112,19 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	if err := os.WriteFile(addySkill, []byte("user drift\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "addy", "--project"); err == nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--project"); err == nil {
 		t.Fatalf("ordinary project update overwrote receipt drift:\n%s", out)
 	}
 	if drifted, _ := os.ReadFile(addySkill); string(drifted) != "user drift\n" {
 		t.Fatalf("blocked update changed drifted receipt target: %q", drifted)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "addy", "--project", "--force"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "addy", "--project", "--force"); err != nil {
 		t.Fatalf("force receipt-owned Addy update: %v\n%s", err, out)
 	}
 	if restored, _ := os.ReadFile(addySkill); string(restored) != string(originalSkill) {
 		t.Fatal("forced update did not restore the exact receipt-owned Addy projection")
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "argote"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "argote"); err != nil {
 		t.Fatalf("uninstall argote: %v\n%s", err, out)
 	}
 	afterData, err := os.ReadFile(filepath.Join(project, "packy.lock.json"))
@@ -143,10 +143,10 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"); err != nil {
 		t.Fatalf("install Addy: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "engram", "--surface", "codex", "--resource", "instruction:engram-memory"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "engram", "--surface", "codex", "--resource", "instruction:engram-memory"); err != nil {
 		t.Fatalf("install Engram while declining activation: %v\n%s", err, out)
 	}
 	lockPath := filepath.Join(project, "packy.lock.json")
@@ -163,7 +163,7 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	terminal.answers = nil
 	terminal.calls = 0
 	terminal.approve = true
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "engram", "--surface", "codex", "--project"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex", "--project"); err != nil {
 		t.Fatalf("activate only Engram personally: %v\n%s", err, out)
 	}
 	after, err := os.ReadFile(lockPath)
@@ -186,11 +186,11 @@ func TestIssue519CrossPackProjectionCollisionBlocksWithoutMutation(t *testing.T)
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
 		t.Fatalf("install Matty: %v\n%s", err, out)
 	}
 	before := snapshotTree(t, project)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "argote", "--surface", "codex", "--resource", "instruction:guidance")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "argote", "--surface", "codex", "--resource", "instruction:guidance")
 	if err == nil || !strings.Contains(out, "projection_collision") {
 		t.Fatalf("cross-Pack collision was not blocked: %v\n%s", err, out)
 	}
@@ -207,9 +207,9 @@ func TestIssue519MultiSurfaceUpdatePreservesEveryOtherPackReceipt(t *testing.T) 
 	opts.Getwd = func() (string, error) { return project, nil }
 
 	commands := [][]string{
-		{"pack", "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"},
-		{"pack", "install", "matty", "--surface", "opencode", "--resource", "skill:ask-matt"},
-		{"pack", "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"},
+		{"install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"},
+		{"install", "matty", "--surface", "opencode", "--resource", "skill:ask-matt"},
+		{"install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"},
 	}
 	for _, args := range commands {
 		if out, err := executeCommand(t, NewRootCommand(opts), args...); err != nil {
@@ -222,7 +222,7 @@ func TestIssue519MultiSurfaceUpdatePreservesEveryOtherPackReceipt(t *testing.T) 
 		t.Fatal(err)
 	}
 	addyReceipt := projectReceiptJSON(t, before, "addy")
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "update", "matty", "--project"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--project"); err != nil {
 		t.Fatalf("multi-surface Matty update: %v\n%s", err, out)
 	}
 	after, err := os.ReadFile(lockPath)
@@ -247,7 +247,7 @@ func TestIssue519DriftedNoticeBlocksReceiptRemoval(t *testing.T) {
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "opencode"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "opencode"); err != nil {
 		t.Fatalf("install Addy notices: %v\n%s", err, out)
 	}
 	noticesPath := filepath.Join(project, "PACKY-NOTICES.md")
@@ -263,7 +263,7 @@ func TestIssue519DriftedNoticeBlocksReceiptRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "uninstall", "addy")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "addy")
 	if err == nil || !strings.Contains(out, "project_drift") {
 		t.Fatalf("drifted notice uninstall was not blocked: %v\n%s", err, out)
 	}

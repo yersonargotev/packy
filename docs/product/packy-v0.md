@@ -2,7 +2,7 @@
 
 Packy is an installer/configurator for the reviewed Packs in its
 manifest-backed Pack catalog on Codex, OpenCode, and Claude Code **2.1.203 or
-newer**. It is not an always-on runtime orchestrator. Use `packy pack list` or
+newer**. It is not an always-on runtime orchestrator. Use `packy list` or
 the generated [Pack catalog](../packs/index.md) for current discovery.
 
 ## Product boundary

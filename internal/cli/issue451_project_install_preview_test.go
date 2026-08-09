@@ -26,7 +26,7 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 	beforeHome := snapshotTree(t, home)
 	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
 
-	human, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--dry-run")
+	human, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--dry-run")
 	if err != nil {
 		t.Fatalf("human preview: %v\n%s", err, human)
 	}
@@ -42,7 +42,7 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 		}
 	}
 
-	structured, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--dry-run", "--json")
+	structured, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("JSON preview: %v\n%s", err, structured)
 	}
@@ -53,7 +53,7 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != "matty" || report.Pack.Version != version || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != resources || len(report.Projections) != resources+1 || report.Manifest.Path != "packy.json" || report.Lock.SchemaVersion != 1 || len(report.Lock.Receipts) != 1 || report.Notices.Path != "PACKY-NOTICES.md" || report.Notices.Contributions == nil || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable {
 		t.Fatalf("incomplete JSON preview: %#v", report)
 	}
-	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--dry-run", "--json"); repeatErr != nil || again != structured {
+	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--dry-run", "--json"); repeatErr != nil || again != structured {
 		t.Fatalf("preview is not deterministic: err=%v\nfirst=%s\nsecond=%s", repeatErr, structured, again)
 	}
 	if strings.Contains(human, project) || strings.Contains(structured, project) || strings.Contains(structured, home) || strings.Contains(structured, repoRoot) {
@@ -68,11 +68,11 @@ func TestIssue451ProjectInstallRequiresGitWorktreeAndDryRun(t *testing.T) {
 	opts, _, _ := packActivationOptions(t, &fakeTerminal{})
 	outside := t.TempDir()
 	opts.Getwd = func() (string, error) { return outside, nil }
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex", "--dry-run"); err == nil || !strings.Contains(err.Error(), "Git worktree") {
+	if _, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--dry-run"); err == nil || !strings.Contains(err.Error(), "Git worktree") {
 		t.Fatalf("outside-worktree error = %v", err)
 	}
 	writeTestGitWorktree(t, outside)
-	if _, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "matty", "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
+	if _, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err == nil || !strings.Contains(err.Error(), "interactive terminal") {
 		t.Fatalf("non-interactive mutation error = %v", err)
 	}
 }
@@ -83,11 +83,11 @@ func TestIssue451UnrepresentableProjectResourceIsNonActionable(t *testing.T) {
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
-	human, humanErr := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "codex", "--dry-run")
+	human, humanErr := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "codex", "--dry-run")
 	if humanErr == nil || !strings.Contains(human, "Legal contribution: notice:mit") || !strings.Contains(human, "license=MIT") || !strings.Contains(human, "attribution=") {
 		t.Fatalf("human legal disclosure: err=%v\n%s", humanErr, human)
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "pack", "install", "addy", "--surface", "codex", "--dry-run", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "codex", "--dry-run", "--json")
 	if err == nil || !strings.Contains(err.Error(), "not actionable") {
 		t.Fatalf("unrepresentable preview error = %v\n%s", err, out)
 	}

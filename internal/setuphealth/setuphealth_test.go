@@ -36,7 +36,7 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 			pack:     ActivePack{ID: "missing", Surface: "codex", InspectionFailed: true},
 			severity: Fail,
 			status:   "failures",
-			want:     []string{"inspection failed", "packy pack status missing --surface codex"},
+			want:     []string{"inspection failed", "packy status missing --surface codex"},
 		},
 		{
 			name:     "converged",
@@ -50,28 +50,28 @@ func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex", ProjectionProblems: 2, ReadinessPending: true},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"2 projection findings", "packy pack activate ma" + "tty --surface codex", "packy pack status ma" + "tty --surface codex"},
+			want:     []string{"2 projection findings", "packy activate ma" + "tty --surface codex", "packy status ma" + "tty --surface codex"},
 		},
 		{
 			name:     "missing requirement",
 			pack:     ActivePack{ID: "engram", Surface: "opencode", MissingRequirements: 1, ReadinessPending: true},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"1 missing requirements", "packy pack status engram --surface opencode"},
+			want:     []string{"1 missing requirements", "packy status engram --surface opencode"},
 		},
 		{
 			name:     "pending human action",
 			pack:     ActivePack{ID: "ma" + "tty", Surface: "claude", ReadinessPending: true, PendingHumanActions: 1},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"readiness is pending", "1 pending human actions", "packy pack status ma" + "tty --surface claude"},
+			want:     []string{"readiness is pending", "1 pending human actions", "packy status ma" + "tty --surface claude"},
 		},
 		{
 			name:     "update available",
 			pack:     ActivePack{ID: "ma" + "tty", Surface: "codex", UpdateAvailable: true},
 			severity: Warn,
 			status:   "warnings",
-			want:     []string{"an update is available", "packy pack update ma" + "tty --surface codex"},
+			want:     []string{"an update is available", "packy update ma" + "tty --surface codex"},
 		},
 	}
 	for _, tc := range tests {

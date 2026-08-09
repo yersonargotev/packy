@@ -19,6 +19,27 @@ import (
 	packyversion "github.com/yersonargotev/packy/internal/version"
 )
 
+func TestRootHelpExposesPackLifecycleCommandsWithoutPackGroup(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	out, err := executeCommand(t, NewRootCommand(opts), "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"installer and configurator for reviewed capability Packs",
+		"list", "show", "activate", "install", "update", "status", "deactivate", "uninstall",
+		"Preview", "Apply", "consent", "stale plan", "Project installation",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("root help missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "pack      ") {
+		t.Fatalf("root help still exposes pack group:\n%s", out)
+	}
+}
+
 func TestDoctorJSONHealthyWarningsAndFailures(t *testing.T) {
 	t.Run("healthy", func(t *testing.T) {
 		opts, _, _ := sandboxOptions(t)
@@ -88,7 +109,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		terminal := &fakeTerminal{interactive: true, approve: true}
 		opts, home, _ := packActivationOptions(t, terminal)
 		opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
-		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
 		before := snapshotTree(t, home)
@@ -123,7 +144,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 	t.Run("active drift warns with current remediation", func(t *testing.T) {
 		terminal := &fakeTerminal{interactive: true, approve: true}
 		opts, home, _ := currentPackActivationOptions(t, terminal)
-		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
 		if err := os.Remove(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil {
@@ -136,7 +157,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("doctor error=%v\n%s", err, out)
 		}
-		for _, want := range []string{"WARN pack-matty-codex", "projection findings", "packy pack activate matty --surface codex", "packy pack status matty --surface codex"} {
+		for _, want := range []string{"WARN pack-matty-codex", "projection findings", "packy activate matty --surface codex", "packy status matty --surface codex"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("drift doctor missing %q:\n%s", want, out)
 			}
@@ -149,7 +170,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 	t.Run("pending human action warns", func(t *testing.T) {
 		terminal := &fakeTerminal{interactive: true, approve: true}
 		opts, home, _ := packActivationOptions(t, terminal)
-		if out, err := executeCommand(t, NewRootCommand(opts), "pack", "activate", "matty", "--surface", "codex"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
 		before := snapshotTree(t, home)
@@ -348,10 +369,9 @@ func TestHelpRendersForRootAndV0Subcommands(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{name: "root", args: []string{"--help"}, want: []string{"Manage Packy capability packs and sources", "version", "init", "doctor", "pack"}},
+		{name: "root", args: []string{"--help"}, want: []string{"installer and configurator for reviewed capability Packs", "version", "init", "doctor", "list", "show", "activate", "install", "update", "status", "deactivate", "uninstall"}},
 		{name: "version", args: []string{"version", "--help"}, want: []string{"Print the Packy version"}},
 		{name: "doctor", args: []string{"doctor", "--help"}, want: []string{"Check Packy setup"}},
-		{name: "pack", args: []string{"pack", "--help"}, want: []string{"Discover and manage opt-in capability packs"}},
 	}
 
 	for _, tt := range tests {

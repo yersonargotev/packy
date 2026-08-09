@@ -10,7 +10,7 @@ persists the resulting installed Pack receipt, not the preview.
 | Command family | Schema |
 | --- | --- |
 | `packy doctor --json` | `schemas/cli/v2/doctor.schema.json` |
-| `packy pack show PACK --json` | `schemas/cli/v5/pack-show.schema.json` |
+| `packy show PACK --json` | `schemas/cli/v5/pack-show.schema.json` |
 | global Pack status | `schemas/cli/v8/pack-status.schema.json` |
 | global Pack lifecycle | `schemas/cli/v9/pack-lifecycle.schema.json` |
 | project Pack lifecycle | `schemas/project/v1.0.0/` |
@@ -24,11 +24,11 @@ live producer examples, and reject the checked-in negative project fixtures.
 | Command | `report` |
 | --- | --- |
 | `packy doctor --json` | `doctor` |
-| `packy pack show PACK --json` | `pack-show` |
+| `packy show PACK --json` | `pack-show` |
 | global Pack preview | `pack-lifecycle-preview` |
 | successful global Pack apply | `pack-lifecycle-apply` |
 | global Pack failure | `pack-lifecycle-failure` |
-| `packy pack status --json` | `pack-status-overview` |
+| `packy status --json` | `pack-status-overview` |
 | targeted global status | `pack-status` |
 
 Project lifecycle output is a newline-delimited stream because one command can
