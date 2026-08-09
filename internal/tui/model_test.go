@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,9 @@ type fakeBackend struct {
 	loads           int
 	initializations int
 	initialize      func(func(string)) error
+	preview         tui.Preview
+	previewErr      error
+	previewRequests []tui.PreviewRequest
 }
 
 func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error {
@@ -27,6 +31,11 @@ func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error
 		return b.initialize(progress)
 	}
 	return nil
+}
+
+func (b *fakeBackend) Preview(_ context.Context, request tui.PreviewRequest) (tui.Preview, error) {
+	b.previewRequests = append(b.previewRequests, request)
+	return b.preview, b.previewErr
 }
 
 func TestRunEntersAndRestoresAlternateScreen(t *testing.T) {
@@ -148,6 +157,214 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 	for _, line := range strings.Split(current.View().Content, "\n") {
 		if width := ansi.StringWidth(line); width > 64 {
 			t.Fatalf("detail line width = %d, want <= 64: %q", width, ansi.Strip(line))
+		}
+	}
+}
+
+func TestPackLifecycleSelectionDefaultsToFullPackAndExplainsResourceRoles(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy"},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Description: "Agent guidance",
+			Resources: []tui.Resource{
+				{Identity: "skill:review", Role: "root", Description: "Review changes"},
+				{Identity: "instruction:guidance", Role: "dependency", Description: "Shared guidance"},
+				{Identity: "asset:template", Role: "asset", Description: "Report template"},
+				{Identity: "notice:mit", Role: "notice", Description: "MIT notice"},
+			},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}},
+	}}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{
+		"Select Pack resources", "argote · codex · Workstation · global",
+		"Full Pack · selected", "Advanced operational roots",
+		"skill:review [operational root]", "instruction:guidance [derived dependency · read-only]",
+		"asset:template [asset · included by domain role]", "notice:mit [legal notice · included by domain role]",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("selection screen missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestFullPackSelectionCreatesAndRendersCompleteImmutablePreview(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{
+			Health: tui.Health{Status: "healthy"},
+			Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+				ID: "argote", Version: "1.2.0",
+				Resources:       []tui.Resource{{Identity: "skill:review", Role: "root"}},
+				SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			}}},
+		},
+		preview: tui.Preview{
+			ID: "plan-42", Digest: "sha256:exact", Operation: "activate", Disposition: "applicable",
+			PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
+			Selection: tui.Selection{Mode: "all"},
+			Resources: []tui.PreviewResource{
+				{Identity: "skill:review", Role: "root", DependencyChain: []string{"skill:review"}},
+				{Identity: "instruction:guidance", Role: "dependency", DependencyChain: []string{"skill:review", "instruction:guidance"}},
+			},
+			Authorities:    []tui.PreviewAuthority{{Resource: "skill:review", Detail: "read project files"}},
+			Effects:        []tui.PreviewEffect{{Kind: "skill-link", Target: "$HOME/.codex/skills/review", Description: "create reviewed skill link"}},
+			Diff:           tui.PreviewDiff{Added: []string{"skill:review"}, Retained: []string{"instruction:guidance"}},
+			Blockers:       []tui.PreviewBlocker{},
+			Phases:         []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"skill-link $HOME/.codex/skills/review"}}},
+			PendingActions: []string{"restart Codex"},
+		},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+
+	if len(backend.previewRequests) != 1 {
+		t.Fatalf("preview requests = %d, want 1", len(backend.previewRequests))
+	}
+	request := backend.previewRequests[0]
+	if request.PackID != "argote" || request.Surface != "codex" || request.Scope != "global" || request.Selection.Mode != "all" || len(request.Selection.Roots) != 0 {
+		t.Fatalf("preview target or default selection is not exact: %#v", request)
+	}
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{
+		"Immutable lifecycle preview", "activate argote 1.2.0 · codex · global", "plan-42 · sha256:exact",
+		"Selection: Full Pack", "skill:review [root]", "skill:review → instruction:guidance",
+		"Authorities", "skill:review — read project files", "Effects", "skill-link — $HOME/.codex/skills/review",
+		"Diff", "Added: skill:review", "Retained: instruction:guidance", "Blockers: none",
+		"Phases", "reversible-local · approval required", "Pending actions: restart Codex", "Continue unavailable in this delivery",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("preview screen missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestAdvancedSelectionExposesOnlyOperationalRootsAndSendsExactCustomSelection(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{
+			Health: tui.Health{Status: "healthy"},
+			Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+				ID: "argote", Version: "1.2.0",
+				Resources: []tui.Resource{
+					{Identity: "skill:review", Role: "root"},
+					{Identity: "agent:critic", Role: "root"},
+					{Identity: "instruction:guidance", Role: "dependency"},
+					{Identity: "asset:template", Role: "asset"},
+					{Identity: "notice:mit", Role: "notice"},
+				},
+				SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			}}},
+		},
+		preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"agent:critic"}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{
+		"Advanced operational roots · selected", "[x] skill:review", "[x] agent:critic",
+		"instruction:guidance [derived dependency · read-only]",
+		"asset:template [asset · included by domain role]", "notice:mit [legal notice · included by domain role]",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("advanced selection missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "[x] asset:template") || strings.Contains(view, "[x] notice:mit") || strings.Contains(view, "[x] instruction:guidance") {
+		t.Fatalf("non-root resource was independently selectable:\n%s", view)
+	}
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: " ", Code: ' '}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 {
+		t.Fatalf("preview requests = %d, want 1", len(backend.previewRequests))
+	}
+	selection := backend.previewRequests[0].Selection
+	if selection.Mode != "custom" || !slices.Equal(selection.Roots, []string{"agent:critic"}) {
+		t.Fatalf("advanced selection = %#v, want only retained operational root", selection)
+	}
+}
+
+func TestBlockedNoOpAndStalePreviewsNeverOfferConsent(t *testing.T) {
+	tests := []struct {
+		name    string
+		preview tui.Preview
+		wants   []string
+	}{
+		{
+			name: "blocked",
+			preview: tui.Preview{Operation: "activate", Disposition: "blocked", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
+				Selection: tui.Selection{Mode: "all"}, Blockers: []tui.PreviewBlocker{{Kind: "ownership", Subject: "AGENTS.md", Detail: "owned by another Pack"}}},
+			wants: []string{"Disposition: blocked", "Blockers: ownership AGENTS.md — owned by another Pack", "Continue unavailable in this delivery"},
+		},
+		{
+			name: "no-op",
+			preview: tui.Preview{Operation: "activate", Disposition: "converged", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
+				Selection: tui.Selection{Mode: "all"}},
+			wants: []string{"Disposition: converged", "Blockers: none", "Continue unavailable in this delivery"},
+		},
+		{
+			name: "stale",
+			preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global",
+				Selection: tui.Selection{Mode: "all"}, Stale: true, StaleReason: "catalog changed after preview"},
+			wants: []string{"Stale preview — catalog changed after preview", "Create a fresh preview before continuing", "Continue unavailable in this delivery"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+				ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+			}}}}, preview: test.preview}
+			model := loadModel(t, backend)
+			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			view := ansi.Strip(model.View().Content)
+			for _, want := range test.wants {
+				if !strings.Contains(view, want) {
+					t.Fatalf("preview missing %q:\n%s", want, view)
+				}
+			}
+			updated, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			if command != nil || len(backend.previewRequests) != 1 || ansi.Strip(updated.View().Content) != view {
+				t.Fatalf("preview advanced despite being review-only: command=%v requests=%d", command != nil, len(backend.previewRequests))
+			}
+		})
+	}
+}
+
+func TestPreviewWrapsSafetyEvidenceInNarrowTerminalWithoutTruncation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview: tui.Preview{Operation: "activate", Disposition: "blocked", PackID: "argote", PackVersion: "1.2.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+			Blockers:       []tui.PreviewBlocker{{Kind: "ownership", Subject: "a-very-long-projection-target", Detail: "the complete blocker detail remains visible instead of being shortened"}},
+			PendingActions: []string{"a long pending action whose complete meaning must remain visible"}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 24})
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"the complete blocker detail remains visible", "a long pending action whose complete meaning must remain visible"} {
+		if !strings.Contains(strings.Join(strings.Fields(view), " "), want) {
+			t.Fatalf("narrow preview truncated %q:\n%s", want, view)
+		}
+	}
+	for _, line := range strings.Split(model.View().Content, "\n") {
+		if width := ansi.StringWidth(line); width > 48 {
+			t.Fatalf("narrow preview line width = %d, want <= 48: %q", width, ansi.Strip(line))
 		}
 	}
 }

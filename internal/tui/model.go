@@ -17,6 +17,51 @@ import (
 type Backend interface {
 	Load(context.Context) (Dashboard, error)
 	Initialize(context.Context, func(string)) error
+	Preview(context.Context, PreviewRequest) (Preview, error)
+}
+
+type Selection struct {
+	Mode  string
+	Roots []string
+}
+
+type PreviewRequest struct {
+	PackID      string
+	Surface     string
+	Scope       string
+	ProjectRoot string
+	Selection   Selection
+}
+
+type PreviewResource struct {
+	Identity        string
+	Role            string
+	DependencyChain []string
+}
+
+type PreviewAuthority struct{ Resource, Detail string }
+type PreviewEffect struct{ Kind, Target, Description string }
+type PreviewDiff struct{ Added, Changed, Removed, Retained []string }
+type PreviewBlocker struct{ Kind, Subject, Detail string }
+type PreviewPhase struct {
+	Kind             string
+	ApprovalRequired bool
+	Actions          []string
+}
+
+type Preview struct {
+	ID, Digest, Operation, Disposition  string
+	PackID, PackVersion, Surface, Scope string
+	Selection                           Selection
+	Resources                           []PreviewResource
+	Authorities                         []PreviewAuthority
+	Effects                             []PreviewEffect
+	Diff                                PreviewDiff
+	Blockers                            []PreviewBlocker
+	Phases                              []PreviewPhase
+	PendingActions                      []string
+	Stale                               bool
+	StaleReason                         string
 }
 
 type Health struct {
@@ -109,6 +154,11 @@ type initializationFinished struct {
 	err error
 }
 
+type previewResult struct {
+	preview Preview
+	err     error
+}
+
 type Model struct {
 	backend                Backend
 	ctx                    context.Context
@@ -121,6 +171,16 @@ type Model struct {
 	width                  int
 	showHelp               bool
 	inspecting             bool
+	selecting              bool
+	advancedSelection      bool
+	selectionChoice        int
+	selectionRoot          int
+	selectionPreviewFocus  bool
+	selectedRoots          map[string]bool
+	selectionNotice        string
+	previewing             bool
+	preview                *Preview
+	previewErr             error
 	filtering              bool
 	filter                 string
 	initializing           bool
@@ -171,6 +231,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.initializationErr = message.err
 		m.initializationEvents = nil
 		return m, m.Init()
+	case previewResult:
+		m.previewing = false
+		m.previewErr = message.err
+		if message.err == nil {
+			preview := message.preview
+			m.preview = &preview
+		}
 	case tea.KeyPressMsg:
 		if m.initializing {
 			return m, nil
@@ -190,6 +257,20 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		}
+		if m.preview != nil || m.previewErr != nil {
+			switch {
+			case key.Matches(message, dashboardKeys.Quit):
+				return m, tea.Quit
+			case key.Matches(message, dashboardKeys.Back):
+				m.preview, m.previewErr = nil, nil
+				return m, nil
+			case key.Matches(message, dashboardKeys.Reload):
+				m.preview, m.previewErr = nil, nil
+				return m.startPreview()
+			default:
+				return m, nil
+			}
 		}
 		if m.filtering {
 			switch message.Code {
@@ -211,11 +292,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.projectRow = boundedRow(m.projectRow, len(filteredPacks(m.dashboard.Project.Packs, m.filter)))
 			return m, nil
 		}
+		if m.selecting && m.preview == nil && m.previewErr == nil {
+			return m.updateSelection(message)
+		}
 		switch {
 		case key.Matches(message, dashboardKeys.Quit):
 			return m, tea.Quit
 		case key.Matches(message, dashboardKeys.Reload):
-			m.loaded, m.err, m.inspecting = false, nil, false
+			m.loaded, m.err, m.inspecting, m.selecting, m.preview = false, nil, false, false, nil
 			return m, m.Init()
 		case key.Matches(message, dashboardKeys.Help):
 			m.showHelp = !m.showHelp
@@ -230,7 +314,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.project = false
 			m.inspecting = false
 		case key.Matches(message, dashboardKeys.Back):
-			if m.inspecting {
+			if m.preview != nil || m.previewErr != nil {
+				m.preview, m.previewErr = nil, nil
+			} else if m.selecting {
+				m.selecting = false
+			} else if m.inspecting {
 				m.inspecting = false
 			} else {
 				m.project = false
@@ -239,7 +327,22 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.dashboard.Setup.InitializationAvailable {
 				return m.startInitialization()
 			}
-			m.inspecting = m.selectedPack() != nil
+			if m.selecting && m.selectedPack() != nil {
+				return m.startPreview()
+			} else if m.inspecting && m.selectedPack() != nil {
+				m.selecting = true
+				m.advancedSelection = false
+				m.selectionChoice = 0
+				m.selectionRoot = 0
+				m.selectionPreviewFocus = false
+				m.selectionNotice = ""
+				m.selectedRoots = make(map[string]bool)
+				for _, resource := range operationalRoots(*m.selectedPack()) {
+					m.selectedRoots[resource.Identity] = true
+				}
+			} else {
+				m.inspecting = m.selectedPack() != nil
+			}
 		case key.Matches(message, dashboardKeys.Down):
 			m.inspecting = false
 			if m.project {
@@ -281,6 +384,100 @@ func waitForInitialization(events <-chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		return <-events
 	}
+}
+
+func (m Model) startPreview() (tea.Model, tea.Cmd) {
+	pack := m.selectedPack()
+	if pack == nil {
+		return m, nil
+	}
+	scope := "global"
+	projectRoot := ""
+	if m.project {
+		scope, projectRoot = "project", m.dashboard.Project.Root
+	}
+	selection := Selection{Mode: "all", Roots: []string{}}
+	if m.advancedSelection {
+		selection.Mode = "custom"
+		for _, resource := range operationalRoots(*pack) {
+			if m.selectedRoots[resource.Identity] {
+				selection.Roots = append(selection.Roots, resource.Identity)
+			}
+		}
+		if len(selection.Roots) == 0 {
+			m.selectionNotice = "Select at least one operational root"
+			return m, nil
+		}
+	}
+	request := PreviewRequest{
+		PackID: pack.ID, Surface: selectedSurface(*pack), Scope: scope, ProjectRoot: projectRoot,
+		Selection: selection,
+	}
+	m.previewing, m.previewErr = true, nil
+	return m, func() tea.Msg {
+		preview, err := m.backend.Preview(m.ctx, request)
+		return previewResult{preview: preview, err: err}
+	}
+}
+
+func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	pack := m.selectedPack()
+	if pack == nil {
+		return m, nil
+	}
+	if key.Matches(message, dashboardKeys.Quit) {
+		return m, tea.Quit
+	}
+	if key.Matches(message, dashboardKeys.Back) {
+		if m.advancedSelection {
+			m.advancedSelection, m.selectionPreviewFocus, m.selectionNotice = false, false, ""
+			return m, nil
+		}
+		m.selecting = false
+		return m, nil
+	}
+	if !m.advancedSelection {
+		switch {
+		case key.Matches(message, dashboardKeys.Down), key.Matches(message, dashboardKeys.Up):
+			m.selectionChoice = 1 - m.selectionChoice
+		case key.Matches(message, dashboardKeys.Inspect):
+			if m.selectionChoice == 0 {
+				return m.startPreview()
+			}
+			m.advancedSelection = true
+		}
+		return m, nil
+	}
+	roots := operationalRoots(*pack)
+	if message.Code == tea.KeyTab {
+		m.selectionPreviewFocus = !m.selectionPreviewFocus
+		return m, nil
+	}
+	if key.Matches(message, dashboardKeys.Down) && !m.selectionPreviewFocus {
+		m.selectionRoot = nextRow(m.selectionRoot, len(roots), 1)
+		return m, nil
+	}
+	if key.Matches(message, dashboardKeys.Up) && !m.selectionPreviewFocus {
+		m.selectionRoot = nextRow(m.selectionRoot, len(roots), -1)
+		return m, nil
+	}
+	if message.Text == " " && !m.selectionPreviewFocus && len(roots) > 0 {
+		identity := roots[m.selectionRoot].Identity
+		m.selectedRoots[identity] = !m.selectedRoots[identity]
+		m.selectionNotice = ""
+		return m, nil
+	}
+	if key.Matches(message, dashboardKeys.Inspect) {
+		if m.selectionPreviewFocus {
+			return m.startPreview()
+		}
+		if len(roots) > 0 {
+			identity := roots[m.selectionRoot].Identity
+			m.selectedRoots[identity] = !m.selectedRoots[identity]
+			m.selectionNotice = ""
+		}
+	}
+	return m, nil
 }
 
 func (m Model) selectedPack() *Pack {
@@ -371,6 +568,18 @@ func (m Model) render() string {
 	}
 	if m.initializationResult {
 		return m.renderBody(m.renderInitializationResult())
+	}
+	if m.previewing {
+		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nCreating immutable preview…")
+	}
+	if m.previewErr != nil {
+		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nUnable to create preview\n" + m.previewErr.Error() + "\n\nEsc back · q quit")
+	}
+	if m.preview != nil {
+		return m.renderBody(m.renderPreview(*m.preview))
+	}
+	if m.selecting {
+		return m.renderBody(m.renderSelection())
 	}
 	if m.inspecting {
 		return m.renderBody(m.renderDetail())
@@ -574,8 +783,189 @@ func (m Model) renderDetail() string {
 			"    Evidence: "+joinOrNone(status.Evidence),
 		)
 	}
-	lines = append(lines, "", "Esc back · / filter · r reload · q quit")
+	lines = append(lines, "", "Enter select resources · Esc back · / filter · r reload · q quit")
 	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderSelection() string {
+	pack := m.selectedPack()
+	if pack == nil {
+		return titleStyle.Render("Select Pack resources") + "\n\nNo Pack selected\n\nEsc back"
+	}
+	scope := "Workstation · global"
+	if m.project {
+		scope = "Current project"
+	}
+	surface := selectedSurface(*pack)
+	fullMarker, advancedMarker := "› ", "  "
+	if m.selectionChoice == 1 || m.advancedSelection {
+		fullMarker, advancedMarker = "  ", "› "
+	}
+	advancedLabel := "Advanced operational roots"
+	if m.advancedSelection {
+		advancedLabel += " · selected"
+	}
+	lines := []string{
+		titleStyle.Render("Select Pack resources"),
+		pack.ID + " · " + surface + " · " + scope,
+		"",
+		fullMarker + "Full Pack" + map[bool]string{true: " · selected"}[!m.advancedSelection && m.selectionChoice == 0],
+		advancedMarker + advancedLabel,
+		"",
+		"Resource roles",
+	}
+	if m.advancedSelection {
+		lines = append(lines, "  Operational roots")
+		for index, resource := range operationalRoots(*pack) {
+			focus := "  "
+			if !m.selectionPreviewFocus && index == m.selectionRoot {
+				focus = "› "
+			}
+			checked := "[ ]"
+			if m.selectedRoots[resource.Identity] {
+				checked = "[x]"
+			}
+			lines = append(lines, "  "+focus+checked+" "+resource.Identity)
+		}
+	}
+	for _, resource := range pack.Resources {
+		role := resource.Role
+		switch role {
+		case "root", "operational":
+			role = "operational root"
+		case "dependency":
+			role = "derived dependency · read-only"
+		case "asset":
+			role = "asset · included by domain role"
+		case "notice":
+			role = "legal notice · included by domain role"
+		}
+		if !m.advancedSelection || (resource.Role != "root" && resource.Role != "operational") {
+			lines = append(lines, "  "+resource.Identity+" ["+role+"]")
+		}
+	}
+	if m.selectionNotice != "" {
+		lines = append(lines, "", m.selectionNotice)
+	}
+	if m.advancedSelection {
+		marker := "  "
+		if m.selectionPreviewFocus {
+			marker = "› "
+		}
+		lines = append(lines, "", marker+"[ Preview selected roots ]", "Space/Enter toggle · Tab preview · Esc Full Pack · q quit")
+	} else {
+		lines = append(lines, "", "Enter choose · Esc back · q quit")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func operationalRoots(pack Pack) []Resource {
+	result := []Resource{}
+	for _, resource := range pack.Resources {
+		if resource.Role == "root" || resource.Role == "operational" {
+			result = append(result, resource)
+		}
+	}
+	return result
+}
+
+func selectedSurface(pack Pack) string {
+	for _, status := range pack.SurfaceStatuses {
+		if status.Supported {
+			return status.Name
+		}
+	}
+	if len(pack.Surfaces) > 0 {
+		return pack.Surfaces[0]
+	}
+	return "no supported surface"
+}
+
+func (m Model) renderPreview(preview Preview) string {
+	selection := "Full Pack"
+	if preview.Selection.Mode == "custom" {
+		selection = "Advanced · " + joinOrNone(preview.Selection.Roots)
+	}
+	lines := []string{
+		titleStyle.Render("Immutable lifecycle preview"),
+		preview.Operation + " " + preview.PackID + " " + preview.PackVersion + " · " + preview.Surface + " · " + preview.Scope,
+		preview.ID + " · " + preview.Digest,
+		"Disposition: " + preview.Disposition,
+		"Selection: " + selection,
+		"",
+		"Dependency closure",
+	}
+	if len(preview.Resources) == 0 {
+		lines = append(lines, "  none")
+	}
+	for _, resource := range preview.Resources {
+		line := "  " + resource.Identity + " [" + resource.Role + "]"
+		if len(resource.DependencyChain) > 1 {
+			line += " · " + strings.Join(resource.DependencyChain, " → ")
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "", "Authorities")
+	if len(preview.Authorities) == 0 {
+		lines = append(lines, "  none")
+	}
+	for _, authority := range preview.Authorities {
+		lines = append(lines, "  "+authority.Resource+" — "+authority.Detail)
+	}
+	lines = append(lines, "", "Effects")
+	if len(preview.Effects) == 0 {
+		lines = append(lines, "  none")
+	}
+	for _, effect := range preview.Effects {
+		line := "  " + effect.Kind + " — " + effect.Target
+		if effect.Description != "" {
+			line += " — " + effect.Description
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "", "Diff",
+		"  Added: "+joinOrNone(preview.Diff.Added),
+		"  Changed: "+joinOrNone(preview.Diff.Changed),
+		"  Removed: "+joinOrNone(preview.Diff.Removed),
+		"  Retained: "+joinOrNone(preview.Diff.Retained),
+		"", "Blockers: "+renderPreviewBlockers(preview.Blockers), "", "Phases")
+	if len(preview.Phases) == 0 {
+		lines = append(lines, "  none")
+	}
+	for _, phase := range preview.Phases {
+		approval := "no approval"
+		if phase.ApprovalRequired {
+			approval = "approval required"
+		}
+		lines = append(lines, "  "+phase.Kind+" · "+approval)
+		for _, action := range phase.Actions {
+			lines = append(lines, "    "+action)
+		}
+	}
+	lines = append(lines, "", "Pending actions: "+joinOrNone(preview.PendingActions))
+	if preview.Stale {
+		lines = append(lines, "", "Stale preview — "+preview.StaleReason, "Create a fresh preview before continuing")
+	}
+	lines = append(lines, "", "Continue unavailable in this delivery · Esc back · q quit")
+	return strings.Join(lines, "\n")
+}
+
+func renderPreviewBlockers(blockers []PreviewBlocker) string {
+	if len(blockers) == 0 {
+		return "none"
+	}
+	values := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		value := blocker.Kind
+		if blocker.Subject != "" {
+			value += " " + blocker.Subject
+		}
+		if blocker.Detail != "" {
+			value += " — " + blocker.Detail
+		}
+		values = append(values, value)
+	}
+	return strings.Join(values, "; ")
 }
 
 func joinOrNone(values []string) string {

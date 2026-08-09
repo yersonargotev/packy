@@ -148,6 +148,138 @@ func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) erro
 	})
 }
 
+func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (tui.Preview, error) {
+	selection, err := selectionForTUI(request.Selection)
+	if err != nil {
+		return tui.Preview{}, err
+	}
+	surface := capabilitypack.Surface(request.Surface)
+	if request.Scope == "project" {
+		if request.ProjectRoot == "" {
+			return tui.Preview{}, errors.New("project preview requires the current project root")
+		}
+		composition, err := resolvePackComposition(b.opts, b.resolver)
+		if err != nil {
+			return tui.Preview{}, err
+		}
+		facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil))
+		adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+		preview, err := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{
+			PackID: request.PackID, Surface: surface, ProjectRoot: request.ProjectRoot, Selection: selection,
+		}, adapter)
+		if err != nil {
+			return tui.Preview{}, err
+		}
+		return projectPreviewForTUI(preview), nil
+	}
+	if request.Scope != "global" {
+		return tui.Preview{}, fmt.Errorf("preview scope %q is unsupported", request.Scope)
+	}
+	facade, err := activationFacade(b.opts, b.resolver)
+	if err != nil {
+		return tui.Preview{}, err
+	}
+	plan, err := facade.Preview(ctx, capabilitypack.ActivationRequest{PackID: request.PackID, Surface: surface, Selection: selection})
+	if err != nil {
+		return tui.Preview{}, err
+	}
+	return globalPreviewForTUI(plan.JSONReport(true)), nil
+}
+
+func selectionForTUI(selection tui.Selection) (capabilitypack.ResourceSelection, error) {
+	result := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionMode(selection.Mode), Roots: []capabilitypack.ResourceIdentity{}}
+	for _, value := range selection.Roots {
+		identity, err := capabilitypack.ParseResourceIdentity(value)
+		if err != nil {
+			return capabilitypack.ResourceSelection{}, err
+		}
+		result.Roots = append(result.Roots, identity)
+	}
+	return result, nil
+}
+
+func globalPreviewForTUI(report capabilitypack.JSONLifecyclePlan) tui.Preview {
+	preview := tui.Preview{
+		ID: report.PlanID, Digest: report.Digest, Operation: string(report.Operation), Disposition: string(report.Disposition),
+		PackID: report.Pack, PackVersion: report.PackVersion, Surface: string(report.Surface), Scope: "global",
+		Selection:      tui.Selection{Mode: string(report.Selection.Mode), Roots: resourceIdentitiesForTUI(report.Selection.Roots)},
+		Diff:           tui.PreviewDiff{Added: report.ContractDiff.Added, Changed: report.ContractDiff.Changed, Removed: report.ContractDiff.Removed, Retained: report.ContractDiff.Retained},
+		PendingActions: append([]string(nil), report.PendingHumanActions...),
+	}
+	for _, resource := range report.ResourceGraph.Resources {
+		preview.Resources = append(preview.Resources, tui.PreviewResource{
+			Identity: resource.Resource.String(), Role: string(resource.Role), DependencyChain: resourceIdentitiesForTUI(resource.DependencyChain),
+		})
+	}
+	for _, origin := range report.SensitiveEffects {
+		for _, authority := range origin.PromptAuthorities {
+			preview.Authorities = append(preview.Authorities, tui.PreviewAuthority{Resource: origin.Resource.String(), Detail: "prompt authority " + authority})
+		}
+		for _, authority := range origin.RuntimeAuthorities {
+			preview.Authorities = append(preview.Authorities, tui.PreviewAuthority{Resource: origin.Resource.String(), Detail: fmt.Sprintf("runtime authority %s (%s)", authority.Kind, authority.Scope)})
+		}
+		for _, effect := range origin.RuntimeEffects {
+			preview.Authorities = append(preview.Authorities, tui.PreviewAuthority{Resource: origin.Resource.String(), Detail: fmt.Sprintf("runtime effect %s (%s)", effect.Kind, effect.Scope)})
+		}
+	}
+	for _, action := range report.MandatoryActions {
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: string(action.Kind), Target: action.Target, Description: action.Description})
+	}
+	for _, blocker := range report.Blockers {
+		preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: string(blocker.Kind), Subject: blocker.Subject, Detail: blocker.Detail})
+	}
+	for _, phase := range report.Phases {
+		view := tui.PreviewPhase{Kind: string(phase.Kind), ApprovalRequired: phase.ApprovalRequired}
+		for _, action := range phase.Actions {
+			view.Actions = append(view.Actions, strings.TrimSpace(string(action.Kind)+" "+action.Target+" "+action.Description))
+		}
+		preview.Phases = append(preview.Phases, view)
+	}
+	return preview
+}
+
+func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview) tui.Preview {
+	preview := tui.Preview{
+		ID: report.Observation, Digest: report.Observation, Operation: "install", Disposition: string(report.Disposition),
+		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: string(report.Surface), Scope: "project",
+		Selection:      tui.Selection{Mode: string(report.Selection.Mode)},
+		PendingActions: append([]string(nil), report.Requirements...),
+	}
+	for _, resource := range report.Selection.Resources {
+		preview.Resources = append(preview.Resources, tui.PreviewResource{
+			Identity: resource.Resource.String(), Role: string(resource.Role), DependencyChain: resourceIdentitiesForTUI(resource.DependencyChain),
+		})
+		if resource.Role == capabilitypack.ResourceRoleRoot {
+			preview.Selection.Roots = append(preview.Selection.Roots, resource.Resource.String())
+		}
+	}
+	for _, change := range report.SensitiveChanges {
+		preview.Authorities = append(preview.Authorities, tui.PreviewAuthority{Resource: change.Resource.String(), Detail: string(change.Category) + " — " + change.Detail})
+	}
+	for _, projection := range report.Projections {
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: projection.Mode, Target: projection.Target, Description: "project projection for " + projection.Resource.String()})
+		preview.Diff.Added = append(preview.Diff.Added, projection.Resource.String())
+	}
+	for _, retirement := range report.Retirements {
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: retirement.Mode, Target: retirement.Target, Description: "retire project projection for " + retirement.Resource.String()})
+		preview.Diff.Removed = append(preview.Diff.Removed, retirement.Resource.String())
+	}
+	for _, blocker := range report.Blockers {
+		preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})
+	}
+	actions := []string{"project manifest " + report.Manifest.Path, "project lock " + report.Lock.Path, "project notices " + report.Notices.Path}
+	preview.Phases = []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: report.Disposition == capabilitypack.ProjectInstallPreviewable, Actions: actions}}
+	return preview
+}
+
+func resourceIdentitiesForTUI(resources []capabilitypack.ResourceIdentity) []string {
+	result := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		result = append(result, resource.String())
+	}
+	return result
+}
+
 func healthForTUI(report setuphealth.Report) tui.Health {
 	health := tui.Health{
 		Status: report.Summary.Status, Passes: report.Summary.Passes,

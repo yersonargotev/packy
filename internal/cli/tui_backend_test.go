@@ -184,6 +184,79 @@ func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *
 	}
 }
 
+func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PATH":                "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd:  func() (string, error) { return repositoryRoot, nil },
+		Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := findTUIPack(dashboard.Global.Packs, "argote")
+	if pack == nil {
+		t.Fatal("argote Pack missing from reviewed catalog")
+	}
+	var root string
+	for _, resource := range pack.Resources {
+		if resource.Role == "root" || resource.Role == "operational" {
+			root = resource.Identity
+			break
+		}
+	}
+	if root == "" {
+		t.Fatalf("argote Pack exposes no operational root: %#v", pack.Resources)
+	}
+	before := snapshotTree(t, home)
+
+	full, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		PackID: "argote", Surface: "codex", Scope: "project", ProjectRoot: repositoryRoot, Selection: tui.Selection{Mode: "all"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.ID == "" || full.Digest == "" || full.PackID != "argote" || full.Surface != "codex" || full.Scope != "global" || full.Selection.Mode != "all" {
+		t.Fatalf("full-Pack preview omitted its immutable exact target: %#v", full)
+	}
+	if partial.ID == "" || partial.Digest == "" || partial.Selection.Mode != "custom" || !slices.Equal(partial.Selection.Roots, []string{root}) {
+		t.Fatalf("partial preview omitted its exact selected root: %#v", partial)
+	}
+	if len(full.Resources) == 0 || len(partial.Resources) == 0 {
+		t.Fatalf("preview omitted resource closure: full=%#v partial=%#v", full.Resources, partial.Resources)
+	}
+	if project.ID == "" || project.PackID != "argote" || project.Surface != "codex" || project.Scope != "project" || project.Operation != "install" {
+		t.Fatalf("project preview omitted its immutable exact target: %#v", project)
+	}
+	if after := snapshotTree(t, home); after != before {
+		t.Fatalf("immutable previews mutated HOME\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
 func findTUIPack(packs []tui.Pack, id string) *tui.Pack {
 	for _, pack := range packs {
 		if pack.ID == id {
