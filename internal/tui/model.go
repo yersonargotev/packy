@@ -31,10 +31,12 @@ type ApplyRequest struct {
 type ApplyProgress struct{ Phase string }
 
 type ApplyResult struct {
-	Stage, Summary string
-	Verified       bool
-	Details        []string
-	PendingActions []string
+	Stage, Summary    string
+	Verified          bool
+	Details           []string
+	PendingActions    []string
+	FollowUpOperation string
+	RuntimeActivation string
 }
 
 type Selection struct {
@@ -70,6 +72,7 @@ type PreviewPhase struct {
 type Preview struct {
 	ID, Digest, Operation, Disposition  string
 	PackID, PackVersion, Surface, Scope string
+	ProjectRoot                         string
 	Selection                           Selection
 	Resources                           []PreviewResource
 	Authorities                         []PreviewAuthority
@@ -128,6 +131,8 @@ type SurfaceStatus struct {
 	Supported       bool
 	Active          bool
 	UpdateAvailable bool
+	Installation    string
+	Runtime         string
 	Configured      string
 	Authorized      string
 	Usable          string
@@ -331,9 +336,15 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case key.Matches(message, dashboardKeys.Inspect):
 				failed := m.applyErr != nil || !m.applyOutcome.Verified
+				followUp := m.applyOutcome.FollowUpOperation
 				m.leaveApplyResult()
 				if failed {
 					m.preview, m.previewErr = nil, nil
+					return m.startPreview()
+				}
+				if followUp != "" {
+					m.operation = followUp
+					m.preview, m.previewErr, m.selecting, m.inspecting = nil, nil, false, false
 					return m.startPreview()
 				}
 				m.preview, m.previewErr, m.selecting, m.inspecting = nil, nil, false, false
@@ -367,6 +378,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if key.Matches(message, dashboardKeys.Back) {
 					m.cancelConsent()
+					if m.preview.Scope == "project" {
+						return m.reloadAfterProjectCancellation()
+					}
 					return m, nil
 				}
 				if message.Code == tea.KeyTab || key.Matches(message, dashboardKeys.Up) || key.Matches(message, dashboardKeys.Down) {
@@ -376,6 +390,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				if key.Matches(message, dashboardKeys.Inspect) {
 					if !m.consentApprove {
 						m.cancelConsent()
+						if m.preview.Scope == "project" {
+							return m.reloadAfterProjectCancellation()
+						}
 						return m, nil
 					}
 					phases := requiredConsentPhases(*m.preview)
@@ -480,8 +497,15 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selecting && m.selectedPack() != nil {
 				return m.startPreview()
 			} else if m.inspecting && m.selectedPack() != nil {
-				m.surfaceIndex = 0
-				if status := m.selectedSurfaceStatus(); !m.project && status != nil && status.Active {
+				m.surfaceIndex = preferredSurfaceIndex(*m.selectedPack(), m.project)
+				if m.project {
+					m.operation = projectLifecycleOperation(m.selectedSurfaceStatus())
+					if m.operation == "install" {
+						m.beginSelection()
+					} else if m.operation != "" {
+						return m.startPreview()
+					}
+				} else if status := m.selectedSurfaceStatus(); status != nil && status.Active {
 					m.choosingAction = true
 					m.actionChoice = 0
 					m.operation = firstLifecycleAction(*status)
@@ -491,6 +515,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				m.inspecting = m.selectedPack() != nil
+				if m.inspecting {
+					m.surfaceIndex = preferredSurfaceIndex(*m.selectedPack(), m.project)
+				}
 			}
 		case key.Matches(message, dashboardKeys.Down):
 			m.inspecting = false
@@ -546,7 +573,7 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 		scope, projectRoot = "project", m.dashboard.Project.Root
 	}
 	selection := Selection{}
-	if m.operation != "update" {
+	if m.operation != "update" && !(m.project && m.operation == "activate") {
 		selection = Selection{Mode: "all", Roots: []string{}}
 	}
 	if m.advancedSelection {
@@ -656,6 +683,18 @@ func lifecycleActionsForStatus(status SurfaceStatus) []string {
 		actions = append(actions, "update")
 	}
 	return append(actions, "deactivate")
+}
+
+func projectLifecycleOperation(status *SurfaceStatus) string {
+	if status == nil || status.Installation == "" || status.Installation == "absent" || status.Installation == "drifted" || status.Installation == "blocked" {
+		return "install"
+	}
+	switch status.Runtime {
+	case "pending", "stale", "blocked", "orphaned":
+		return "activate"
+	default:
+		return ""
+	}
 }
 
 func (m Model) selectedSurfaceStatus() *SurfaceStatus {
@@ -1057,8 +1096,18 @@ func (m Model) renderDetail() string {
 			lines = append(lines, "  "+status.Name+": unsupported")
 			continue
 		}
+		lines = append(lines, "  "+status.Name+": supported")
+		if m.project {
+			installation, runtime := status.Installation, status.Runtime
+			if installation == "" {
+				installation = "absent"
+			}
+			if runtime == "" {
+				runtime = "pending"
+			}
+			lines = append(lines, "    Project installation: "+installation, "    Personal runtime activation: "+runtime)
+		}
 		lines = append(lines,
-			"  "+status.Name+": supported",
 			fmt.Sprintf("    configured=%s authorized=%s usable=%s", status.Configured, status.Authorized, status.Usable),
 			fmt.Sprintf("    Ownership: %d projected paths", status.Ownership),
 			fmt.Sprintf("    Drift: %d projections", status.Drift),
@@ -1067,7 +1116,18 @@ func (m Model) renderDetail() string {
 			"    Evidence: "+joinOrNone(status.Evidence),
 		)
 	}
-	lines = append(lines, "", "Enter select resources · Esc back · / filter · r reload · q quit")
+	action := "Enter select resources"
+	if m.project {
+		switch projectLifecycleOperation(m.selectedSurfaceStatus()) {
+		case "install":
+			action = "Enter select resources for project installation"
+		case "activate":
+			action = "Enter preview personal project activation"
+		default:
+			action = "No applicable project action"
+		}
+	}
+	lines = append(lines, "", action+" · Esc back · / filter · r reload · q quit")
 	return strings.Join(lines, "\n")
 }
 
@@ -1201,6 +1261,20 @@ func selectedSurface(pack Pack, index int) string {
 	return surfaces[boundedRow(index, len(surfaces))]
 }
 
+func preferredSurfaceIndex(pack Pack, project bool) int {
+	if !project {
+		return 0
+	}
+	for index, surface := range supportedSurfaces(pack) {
+		for _, status := range pack.SurfaceStatuses {
+			if status.Name == surface && status.Installation != "" && status.Installation != "absent" {
+				return index
+			}
+		}
+	}
+	return 0
+}
+
 func (m Model) renderPreview(preview Preview) string {
 	selection := "Full Pack"
 	if preview.Selection.Mode == "custom" {
@@ -1209,12 +1283,11 @@ func (m Model) renderPreview(preview Preview) string {
 	lines := []string{
 		titleStyle.Render("Immutable lifecycle preview"),
 		preview.Operation + " " + preview.PackID + " " + preview.PackVersion + " · " + preview.Surface + " · " + preview.Scope,
-		preview.ID + " · " + preview.Digest,
-		"Disposition: " + preview.Disposition,
-		"Selection: " + selection,
-		"",
-		"Dependency closure",
 	}
+	if preview.ProjectRoot != "" {
+		lines = append(lines, "Project root: "+preview.ProjectRoot)
+	}
+	lines = append(lines, preview.ID+" · "+preview.Digest, "Disposition: "+preview.Disposition, "Selection: "+selection, "", "Dependency closure")
 	if len(preview.Resources) == 0 {
 		lines = append(lines, "  none")
 	}
@@ -1276,7 +1349,12 @@ func (m Model) renderPreview(preview Preview) string {
 
 func previewCanApply(preview Preview) bool {
 	operationSupported := preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate"
-	return preview.Scope == "global" && operationSupported && preview.Disposition == "applicable" && !preview.Stale && len(requiredConsentPhases(preview)) > 0
+	disposition := preview.Disposition == "applicable"
+	if preview.Scope == "project" {
+		operationSupported = preview.Operation == "install" || preview.Operation == "activate"
+		disposition = preview.Disposition == "previewable"
+	}
+	return operationSupported && disposition && !preview.Stale && len(requiredConsentPhases(preview)) > 0
 }
 
 func requiredConsentPhases(preview Preview) []PreviewPhase {
@@ -1291,6 +1369,11 @@ func requiredConsentPhases(preview Preview) []PreviewPhase {
 
 func (m *Model) cancelConsent() {
 	m.consenting, m.consentIndex, m.consentApprove, m.approvedPhases = false, 0, false, nil
+}
+
+func (m Model) reloadAfterProjectCancellation() (tea.Model, tea.Cmd) {
+	m.loaded, m.preview, m.previewErr, m.selecting, m.inspecting = false, nil, nil, false, false
+	return m, m.Init()
 }
 
 func (m Model) startApply(request ApplyRequest) (tea.Model, tea.Cmd) {
@@ -1370,6 +1453,12 @@ func (m Model) renderApplyResult() string {
 	operation := "Activation"
 	if m.preview != nil {
 		switch m.preview.Operation {
+		case "install":
+			operation = "Project installation"
+		case "activate":
+			if m.preview.Scope == "project" {
+				operation = "Personal project activation"
+			}
 		case "update":
 			operation = "Update"
 		case "deactivate":
@@ -1407,6 +1496,9 @@ func (m Model) renderApplyResult() string {
 	if len(m.applyOutcome.PendingActions) > 0 {
 		lines = append(lines, "", "Pending actions: "+strings.Join(m.applyOutcome.PendingActions, ", "))
 	}
+	if m.applyOutcome.RuntimeActivation != "" {
+		lines = append(lines, "Personal runtime activation: "+m.applyOutcome.RuntimeActivation)
+	}
 	if m.applyReloaded {
 		lines = append(lines, "", "Fresh Pack status reloaded")
 	} else if m.applyReloadErr != nil {
@@ -1418,6 +1510,11 @@ func (m Model) renderApplyResult() string {
 	action := "Enter dashboard"
 	if !succeeded {
 		action = "Enter create fresh preview"
+	} else if m.applyOutcome.FollowUpOperation == "activate" {
+		if m.applyOutcome.RuntimeActivation == "" {
+			lines = append(lines, "Personal runtime activation: not yet activated")
+		}
+		action = "Enter preview personal project activation"
 	}
 	lines = append(lines, "", action+" · Esc dashboard · q quit")
 	return strings.Join(lines, "\n")

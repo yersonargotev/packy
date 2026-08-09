@@ -23,11 +23,13 @@ type fakeBackend struct {
 	initialize      func(func(string)) error
 	preview         tui.Preview
 	previewErr      error
+	previewFor      func(tui.PreviewRequest) (tui.Preview, error)
 	previewRequests []tui.PreviewRequest
 	applyRequests   []tui.ApplyRequest
 	applyResult     tui.ApplyResult
 	applyErr        error
 	apply           func(func(tui.ApplyProgress)) (tui.ApplyResult, error)
+	applyFor        func(tui.ApplyRequest, func(tui.ApplyProgress)) (tui.ApplyResult, error)
 }
 
 func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error {
@@ -40,15 +42,160 @@ func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error
 
 func (b *fakeBackend) Preview(_ context.Context, request tui.PreviewRequest) (tui.Preview, error) {
 	b.previewRequests = append(b.previewRequests, request)
+	if b.previewFor != nil {
+		return b.previewFor(request)
+	}
 	return b.preview, b.previewErr
 }
 
 func (b *fakeBackend) Apply(_ context.Context, request tui.ApplyRequest, progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
 	b.applyRequests = append(b.applyRequests, request)
+	if b.applyFor != nil {
+		return b.applyFor(request, progress)
+	}
 	if b.apply != nil {
 		return b.apply(progress)
 	}
 	return b.applyResult, b.applyErr
+}
+
+func TestProjectInstallResultSeparatesAndOffersPersonalActivation(t *testing.T) {
+	project := tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+		ID: "argote", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+	}}}
+	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: project}}
+	backend.previewFor = func(request tui.PreviewRequest) (tui.Preview, error) {
+		switch request.Operation {
+		case "install":
+			return tui.Preview{ID: "install-1", Digest: "install-1", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}}, nil
+		case "activate":
+			return tui.Preview{ID: "activation-1", Digest: "activation-1", Operation: "activate", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "trust", ApprovalRequired: true}}}, nil
+		default:
+			return tui.Preview{}, errors.New("unexpected operation")
+		}
+	}
+	backend.applyFor = func(request tui.ApplyRequest, _ func(tui.ApplyProgress)) (tui.ApplyResult, error) {
+		if request.Preview.Operation == "install" {
+			return tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Installed argote in the current project", FollowUpOperation: "activate"}, nil
+		}
+		return tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Personally activated argote for the current project"}, nil
+	}
+
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Project installation succeeded", "Installed argote in the current project", "Personal runtime activation: not yet activated", "Enter preview personal project activation"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("project installation result missing %q:\n%s", want, view)
+		}
+	}
+
+	installOnly, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if command != nil || len(backend.previewRequests) != 1 || len(backend.applyRequests) != 1 {
+		t.Fatalf("leaving the Pack installed produced another operation: previews=%#v applies=%#v", backend.previewRequests, backend.applyRequests)
+	}
+	if view := ansi.Strip(installOnly.(tui.Model).View().Content); !strings.Contains(view, "Current project") {
+		t.Fatalf("install-only path did not return to fresh project status:\n%s", view)
+	}
+
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 2 || backend.previewRequests[1].Operation != "activate" || backend.previewRequests[1].Scope != "project" {
+		t.Fatalf("personal activation did not create its own preview: %#v", backend.previewRequests)
+	}
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "activate argote") || !strings.Contains(view, "activation-1") {
+		t.Fatalf("personal activation preview is not distinct:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	view = ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "Personal project activation succeeded") || len(backend.applyRequests) != 2 || backend.applyRequests[1].Preview.ID != "activation-1" {
+		t.Fatalf("personal activation did not use its own consent and Apply:\n%s\nrequests=%#v", view, backend.applyRequests)
+	}
+}
+
+func TestExistingProjectInstallationOffersFreshPersonalActivationWithoutReinstalling(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "engram", Version: "1.0.1", SurfaceStatuses: []tui.SurfaceStatus{
+				{Name: "codex", Supported: true},
+				{Name: "opencode", Supported: true, Installation: "installed", Runtime: "pending"},
+			},
+		}}}},
+		preview: tui.Preview{ID: "activation-fresh", Digest: "activation-fresh", Operation: "activate", Disposition: "previewable", PackID: "engram", PackVersion: "1.0.1", Surface: "opencode", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "mcp", ApprovalRequired: true}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	for _, want := range []string{"Project installation: installed", "Personal runtime activation: pending", "Enter preview personal project activation"} {
+		if view := ansi.Strip(model.View().Content); !strings.Contains(view, want) {
+			t.Fatalf("existing installation detail missing %q:\n%s", want, view)
+		}
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "activate" || backend.previewRequests[0].Surface != "opencode" || backend.previewRequests[0].Selection.Mode != "" {
+		t.Fatalf("existing installation did not request fresh personal activation: %#v", backend.previewRequests)
+	}
+	if view := ansi.Strip(model.View().Content); strings.Contains(view, "install engram") || !strings.Contains(view, "activate engram") {
+		t.Fatalf("existing installation was routed through the wrong lifecycle:\n%s", view)
+	}
+}
+
+func TestCancellingProjectConsentReloadsStatusWithoutInferringRollback(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "argote", Version: "1.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview: tui.Preview{ID: "install-cancel", Digest: "install-cancel", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	view := strings.ToLower(ansi.Strip(model.View().Content))
+	if backend.loads != 2 || len(backend.applyRequests) != 0 || !strings.Contains(view, "current project") {
+		t.Fatalf("project cancellation did not reload fresh status: loads=%d applies=%#v\n%s", backend.loads, backend.applyRequests, view)
+	}
+	if strings.Contains(view, "rollback") || strings.Contains(view, "rolled back") {
+		t.Fatalf("project cancellation inferred unverified rollback:\n%s", view)
+	}
+}
+
+func TestFailedProjectApplyReloadsStatusWithoutClaimingRollback(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+			ID: "argote", Version: "1.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}},
+		}}}},
+		preview:     tui.Preview{ID: "install-fail", Digest: "install-fail", Operation: "install", Disposition: "previewable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project", Phases: []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: true}}},
+		applyResult: tui.ApplyResult{Stage: "apply", Verified: false, Summary: "Project installation stopped before verification"},
+		applyErr:    errors.New("projection write failed"),
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := strings.ToLower(ansi.Strip(model.View().Content))
+	for _, want := range []string{"project installation failed", "projection write failed", "fresh pack status reloaded", "enter create fresh preview"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("failed project result missing %q:\n%s", want, view)
+		}
+	}
+	if backend.loads != 2 || strings.Contains(view, "rollback") || strings.Contains(view, "rolled back") {
+		t.Fatalf("failed project Apply did not rely on fresh status: loads=%d\n%s", backend.loads, view)
+	}
 }
 
 func TestGlobalLifecycleOffersOnlyApplicableActionsAndRequestsTheChosenOperation(t *testing.T) {

@@ -340,6 +340,107 @@ func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivati
 	}
 }
 
+func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	project := filepath.Join(t.TempDir(), "project")
+	writeTestGitWorktree(t, project)
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PATH":                "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	blocked, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "install", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Disposition != "blocked" || len(blocked.Blockers) == 0 || len(requiredTUIPhases(blocked)) != 0 {
+		t.Fatalf("unrepresentable project installation did not fail closed: %#v", blocked)
+	}
+
+	install, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "install", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if install.Operation != "install" || install.Disposition != "previewable" || len(install.Resources) == 0 || len(install.Effects) == 0 || len(install.Phases) != 1 {
+		t.Fatalf("project install preview = %#v", install)
+	}
+	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
+	stale := install
+	stale.Digest = "stale-install"
+	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: stale, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {})
+	if err == nil || result.Stage != "revalidation" || !strings.Contains(err.Error(), "fresh preview") {
+		t.Fatalf("stale project install = %#v, %v", result, err)
+	}
+	if snapshotTree(t, project) != beforeProject || snapshotTree(t, home) != beforeHome {
+		t.Fatal("stale project install mutated project or personal state")
+	}
+
+	var progress []string
+	result, err = backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(update tui.ApplyProgress) {
+		progress = append(progress, update.Phase)
+	})
+	if err != nil || !result.Verified || result.FollowUpOperation != "activate" || !slices.Equal(progress, []string{"revalidation", "apply", "verification"}) {
+		t.Fatalf("project install result/progress = %#v / %v / %v", result, progress, err)
+	}
+	for _, path := range []string{"packy.json", "packy.lock.json", "PACKY-NOTICES.md"} {
+		if _, err := os.Stat(filepath.Join(project, path)); err != nil {
+			t.Fatalf("project installation omitted %s: %v", path, err)
+		}
+	}
+
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := findTUIPack(dashboard.Project.Packs, "engram")
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
+	if index < 0 || pack.SurfaceStatuses[index].Installation != "installed" || pack.SurfaceStatuses[index].Runtime != "pending" {
+		t.Fatalf("fresh project status did not separate installation/runtime: %#v", pack)
+	}
+
+	activation, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "activate", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activation.Operation != "activate" || activation.Disposition != "previewable" || activation.ID == install.ID || len(activation.Phases) == 0 {
+		t.Fatalf("personal activation preview is not distinct: %#v", activation)
+	}
+	staleActivation := activation
+	staleActivation.Digest = "stale-activation"
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: staleActivation, ApprovedPhases: requiredTUIPhases(activation)}, func(tui.ApplyProgress) {}); err == nil || !strings.Contains(err.Error(), "fresh preview") {
+		t.Fatalf("stale personal activation error = %v", err)
+	}
+	result, err = backend.Apply(context.Background(), tui.ApplyRequest{Preview: activation, ApprovedPhases: requiredTUIPhases(activation)}, func(tui.ApplyProgress) {})
+	if err != nil || !result.Verified || !strings.Contains(result.Summary, "Personally activated") {
+		t.Fatalf("personal activation result = %#v, %v", result, err)
+	}
+	dashboard, err = backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack = findTUIPack(dashboard.Project.Packs, "engram")
+	index = slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
+	if index < 0 || pack.SurfaceStatuses[index].Installation != "installed" || pack.SurfaceStatuses[index].Runtime != "active" {
+		t.Fatalf("fresh status did not verify personal activation: %#v", pack)
+	}
+}
+
 func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeactivation(t *testing.T) {
 	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
