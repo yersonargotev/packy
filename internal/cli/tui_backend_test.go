@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/bootstrap"
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/tui"
 )
 
@@ -184,6 +185,31 @@ func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *
 	}
 }
 
+func TestTUIStatusOffersUpdateOnlyForActiveCatalogOrSelectionReconciliation(t *testing.T) {
+	active := capabilitypack.IntentStatus{Active: true}
+	tests := []struct {
+		name  string
+		entry capabilitypack.StatusEntry
+		want  bool
+	}{
+		{name: "inactive drift", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, Projections: capabilitypack.ProjectionSummary{Drifted: 1}}},
+		{name: "active converged", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Verified: 2}}},
+		{name: "catalog version", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, UpdateAvailable: true, Projections: capabilitypack.ProjectionSummary{Verified: 2}}, want: true},
+		{name: "missing selected projection", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Verified: 1, Missing: 1}}, want: true},
+		{name: "drifted selected projection", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Drifted: 1}}, want: true},
+		{name: "ambiguous selected projection", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Ambiguous: 1}}, want: true},
+		{name: "unmanaged selected projection", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Unmanaged: 1}}, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			statuses := globalStatusesForTUI(capabilitypack.StatusReport{Entries: []capabilitypack.StatusEntry{test.entry}})
+			if got := statuses["argote"]["codex"].UpdateAvailable; got != test.want {
+				t.Fatalf("UpdateAvailable = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState(t *testing.T) {
 	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -221,21 +247,24 @@ func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState
 		t.Fatalf("argote Pack exposes no operational root: %#v", pack.Resources)
 	}
 	before := snapshotTree(t, home)
+	if _, err := backend.Preview(context.Background(), tui.PreviewRequest{PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}}); err == nil || !strings.Contains(err.Error(), "operation") {
+		t.Fatalf("missing lifecycle operation was accepted: %v", err)
+	}
 
 	full, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	partial, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
+		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	project, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		PackID: "argote", Surface: "codex", Scope: "project", ProjectRoot: repositoryRoot, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: "argote", Surface: "codex", Scope: "project", ProjectRoot: repositoryRoot, Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +320,7 @@ func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivati
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
