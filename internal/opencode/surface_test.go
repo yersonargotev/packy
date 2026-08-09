@@ -611,6 +611,56 @@ func TestReceiptCandidateRemovesOnlyExactOpenCodeSetupContributions(t *testing.T
 	}
 }
 
+func TestReceiptCandidatePreservesInlineOpenCodeTUIArray(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "instruction.md"), []byte("Engram instructions\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plugin := filepath.Join(root, "plugins", "engram.ts")
+	if err := os.MkdirAll(filepath.Dir(plugin), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plugin, []byte("// exact Engram plugin\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tui := filepath.Join(root, "tui.json")
+	tuiContent := "{\n  \"model\": \"keep/model\",\n  \"plugin\": [\"keep-plugin\", \"opencode-subagent-statusline\"]\n}\n"
+	if err := os.WriteFile(tui, []byte(tuiContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack := openCodeExternalHostSetupPack("engram", "engram-memory", "engram", "instruction.md")
+	adapter := NewSurfaceAdapter(root, filepath.Join(root, ".agents", "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "engram-memory.md"))
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack, Desired: capabilitypack.Pack{ID: "remaining"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range inspection.Projections {
+		if projection.ID != "external_setup:engram:opencode:tui-plugin" {
+			continue
+		}
+		if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{projection.Action}); err != nil {
+			t.Fatal(err)
+		}
+		updated, readErr := os.ReadFile(tui)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if _, err := decodeConfig(string(updated), tui); err != nil {
+			t.Fatalf("TUI config became invalid: %v\n%s", err, updated)
+		}
+		for _, want := range []string{"keep/model", "keep-plugin"} {
+			if !strings.Contains(string(updated), want) {
+				t.Fatalf("OpenCode TUI config lost %q:\n%s", want, updated)
+			}
+		}
+		if strings.Contains(string(updated), openCodeSubagentStatuslinePlugin) {
+			t.Fatalf("receipt-backed TUI contribution remains:\n%s", updated)
+		}
+		return
+	}
+	t.Fatal("TUI setup projection was not observed")
+}
+
 func TestDuplicateOpenCodeSetupContributionIsAmbiguousAndPreserved(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "instruction.md"), []byte("Engram instructions\n"), 0o600); err != nil {
