@@ -169,6 +169,7 @@ type Model struct {
 	globalRow              int
 	projectRow             int
 	width                  int
+	height                 int
 	showHelp               bool
 	inspecting             bool
 	selecting              bool
@@ -178,9 +179,11 @@ type Model struct {
 	selectionPreviewFocus  bool
 	selectedRoots          map[string]bool
 	selectionNotice        string
+	surfaceIndex           int
 	previewing             bool
 	preview                *Preview
 	previewErr             error
+	previewScroll          int
 	filtering              bool
 	filter                 string
 	initializing           bool
@@ -221,7 +224,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.globalRow = boundedRow(m.globalRow, len(m.dashboard.Global.Packs))
 		m.projectRow = boundedRow(m.projectRow, len(m.dashboard.Project.Packs))
 	case tea.WindowSizeMsg:
-		m.width = message.Width
+		m.width, m.height = message.Width, message.Height
 	case initializationProgress:
 		m.initializationProgress = append(m.initializationProgress, message.detail)
 		return m, waitForInitialization(m.initializationEvents)
@@ -237,6 +240,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.err == nil {
 			preview := message.preview
 			m.preview = &preview
+			m.previewScroll = 0
 		}
 	case tea.KeyPressMsg:
 		if m.initializing {
@@ -268,6 +272,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(message, dashboardKeys.Reload):
 				m.preview, m.previewErr = nil, nil
 				return m.startPreview()
+			case key.Matches(message, dashboardKeys.Down):
+				m.previewScroll = min(m.previewScroll+1, m.previewViewportMaxOffset())
+				return m, nil
+			case key.Matches(message, dashboardKeys.Up):
+				m.previewScroll = max(m.previewScroll-1, 0)
+				return m, nil
 			default:
 				return m, nil
 			}
@@ -336,6 +346,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectionRoot = 0
 				m.selectionPreviewFocus = false
 				m.selectionNotice = ""
+				m.surfaceIndex = 0
 				m.selectedRoots = make(map[string]bool)
 				for _, resource := range operationalRoots(*m.selectedPack()) {
 					m.selectedRoots[resource.Identity] = true
@@ -409,8 +420,13 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	surface := selectedSurface(*pack, m.surfaceIndex)
+	if surface == "" {
+		m.selectionNotice = "No supported CLI surface is available"
+		return m, nil
+	}
 	request := PreviewRequest{
-		PackID: pack.ID, Surface: selectedSurface(*pack), Scope: scope, ProjectRoot: projectRoot,
+		PackID: pack.ID, Surface: surface, Scope: scope, ProjectRoot: projectRoot,
 		Selection: selection,
 	}
 	m.previewing, m.previewErr = true, nil
@@ -434,6 +450,17 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.selecting = false
+		return m, nil
+	}
+	surfaces := supportedSurfaces(*pack)
+	if message.Code == tea.KeyRight && len(surfaces) > 0 {
+		m.surfaceIndex = nextRow(m.surfaceIndex, len(surfaces), 1)
+		m.selectionNotice = ""
+		return m, nil
+	}
+	if message.Code == tea.KeyLeft && len(surfaces) > 0 {
+		m.surfaceIndex = nextRow(m.surfaceIndex, len(surfaces), -1)
+		m.selectionNotice = ""
 		return m, nil
 	}
 	if !m.advancedSelection {
@@ -576,7 +603,7 @@ func (m Model) render() string {
 		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nUnable to create preview\n" + m.previewErr.Error() + "\n\nEsc back · q quit")
 	}
 	if m.preview != nil {
-		return m.renderBody(m.renderPreview(*m.preview))
+		return m.renderPreviewViewport(m.renderPreview(*m.preview))
 	}
 	if m.selecting {
 		return m.renderBody(m.renderSelection())
@@ -796,7 +823,10 @@ func (m Model) renderSelection() string {
 	if m.project {
 		scope = "Current project"
 	}
-	surface := selectedSurface(*pack)
+	surface := selectedSurface(*pack, m.surfaceIndex)
+	if surface == "" {
+		surface = "unavailable"
+	}
 	fullMarker, advancedMarker := "› ", "  "
 	if m.selectionChoice == 1 || m.advancedSelection {
 		fullMarker, advancedMarker = "  ", "› "
@@ -808,6 +838,7 @@ func (m Model) renderSelection() string {
 	lines := []string{
 		titleStyle.Render("Select Pack resources"),
 		pack.ID + " · " + surface + " · " + scope,
+		"CLI surface: " + surface + " · selected (←/→ change surface)",
 		"",
 		fullMarker + "Full Pack" + map[bool]string{true: " · selected"}[!m.advancedSelection && m.selectionChoice == 0],
 		advancedMarker + advancedLabel,
@@ -869,16 +900,25 @@ func operationalRoots(pack Pack) []Resource {
 	return result
 }
 
-func selectedSurface(pack Pack) string {
+func supportedSurfaces(pack Pack) []string {
+	result := []string{}
 	for _, status := range pack.SurfaceStatuses {
 		if status.Supported {
-			return status.Name
+			result = append(result, status.Name)
 		}
 	}
-	if len(pack.Surfaces) > 0 {
-		return pack.Surfaces[0]
+	if len(result) == 0 {
+		result = append(result, pack.Surfaces...)
 	}
-	return "no supported surface"
+	return result
+}
+
+func selectedSurface(pack Pack, index int) string {
+	surfaces := supportedSurfaces(pack)
+	if len(surfaces) == 0 {
+		return ""
+	}
+	return surfaces[boundedRow(index, len(surfaces))]
 }
 
 func (m Model) renderPreview(preview Preview) string {
@@ -948,6 +988,31 @@ func (m Model) renderPreview(preview Preview) string {
 	}
 	lines = append(lines, "", "Continue unavailable in this delivery · Esc back · q quit")
 	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderPreviewViewport(content string) string {
+	styled := m.renderBody(content)
+	if m.height <= 0 {
+		return styled
+	}
+	lines := strings.Split(styled, "\n")
+	if len(lines) <= m.height {
+		return styled
+	}
+	visible := max(m.height-1, 1)
+	maxOffset := max(len(lines)-visible, 0)
+	offset := min(m.previewScroll, maxOffset)
+	end := min(offset+visible, len(lines))
+	footer := fmt.Sprintf("↑/↓ scroll · lines %d–%d of %d", offset+1, end, len(lines))
+	return strings.Join(append(lines[offset:end], m.renderBody(footer)), "\n")
+}
+
+func (m Model) previewViewportMaxOffset() int {
+	if m.preview == nil || m.height <= 1 {
+		return 0
+	}
+	lines := strings.Split(m.renderBody(m.renderPreview(*m.preview)), "\n")
+	return max(len(lines)-(m.height-1), 0)
 }
 
 func renderPreviewBlockers(blockers []PreviewBlocker) string {

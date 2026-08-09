@@ -352,7 +352,7 @@ func TestPreviewWrapsSafetyEvidenceInNarrowTerminalWithoutTruncation(t *testing.
 			PendingActions: []string{"a long pending action whose complete meaning must remain visible"}},
 	}
 	model := loadModel(t, backend)
-	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 24})
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 80})
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -366,6 +366,49 @@ func TestPreviewWrapsSafetyEvidenceInNarrowTerminalWithoutTruncation(t *testing.
 		if width := ansi.StringWidth(line); width > 48 {
 			t.Fatalf("narrow preview line width = %d, want <= 48: %q", width, ansi.Strip(line))
 		}
+	}
+
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
+	seen := ""
+	for range 80 {
+		view := ansi.Strip(model.View().Content)
+		if lines := strings.Count(view, "\n") + 1; lines > 12 {
+			t.Fatalf("preview height = %d lines, want <= 12:\n%s", lines, view)
+		}
+		seen += "\n" + view
+		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
+	}
+	normalized := strings.Join(strings.Fields(seen), " ")
+	for _, want := range []string{"Immutable lifecycle preview", "Dependency closure", "Authorities", "Effects", "Diff", "Blockers", "Phases", "Pending actions", "complete meaning must remain visible"} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("scrollable preview never exposed %q:\n%s", want, seen)
+		}
+	}
+}
+
+func TestSelectionMakesTheSingleCLISurfaceVisibleAndChangeable(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.2.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}},
+			SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true}, {Name: "opencode", Supported: true}, {Name: "claude", Supported: false}},
+		}}}},
+		preview: tui.Preview{Operation: "activate", Disposition: "applicable", PackID: "argote", PackVersion: "1.2.0", Surface: "opencode", Scope: "global", Selection: tui.Selection{Mode: "all"}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "CLI surface: codex · selected") || !strings.Contains(view, "←/→ change surface") {
+		t.Fatalf("default exact surface is not reviewable:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
+	view = ansi.Strip(model.View().Content)
+	if !strings.Contains(view, "CLI surface: opencode · selected") || strings.Contains(view, "CLI surface: claude · selected") {
+		t.Fatalf("surface navigation did not choose the next supported surface:\n%s", view)
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Surface != "opencode" {
+		t.Fatalf("preview did not target the reviewed surface: %#v", backend.previewRequests)
 	}
 }
 

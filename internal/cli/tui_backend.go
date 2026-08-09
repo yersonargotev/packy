@@ -245,11 +245,27 @@ func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview) tui.P
 		Selection:      tui.Selection{Mode: string(report.Selection.Mode)},
 		PendingActions: append([]string(nil), report.Requirements...),
 	}
+	coreEffects := []tui.PreviewEffect{
+		{Kind: "project-manifest", Target: report.Manifest.Path, Description: fmt.Sprintf("write project Pack intent schema %d", report.Manifest.SchemaVersion)},
+		{Kind: "project-lock", Target: report.Lock.Path, Description: fmt.Sprintf("write installed Pack receipts schema %d", report.Lock.SchemaVersion)},
+		{Kind: "project-notices", Target: report.Notices.Path, Description: fmt.Sprintf("write %d legal notice contributions", len(report.Notices.Contributions))},
+	}
+	for _, effect := range coreEffects {
+		if effect.Target == "" {
+			continue
+		}
+		preview.Effects = append(preview.Effects, effect)
+		if report.Disposition == capabilitypack.ProjectInstallConverged {
+			preview.Diff.Retained = append(preview.Diff.Retained, effect.Target)
+		} else {
+			preview.Diff.Changed = append(preview.Diff.Changed, effect.Target)
+		}
+	}
 	for _, resource := range report.Selection.Resources {
 		preview.Resources = append(preview.Resources, tui.PreviewResource{
 			Identity: resource.Resource.String(), Role: string(resource.Role), DependencyChain: resourceIdentitiesForTUI(resource.DependencyChain),
 		})
-		if resource.Role == capabilitypack.ResourceRoleRoot {
+		if report.Selection.Mode == capabilitypack.SelectionCustom && resource.Role == capabilitypack.ResourceRoleRoot {
 			preview.Selection.Roots = append(preview.Selection.Roots, resource.Resource.String())
 		}
 	}
@@ -257,12 +273,23 @@ func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview) tui.P
 		preview.Authorities = append(preview.Authorities, tui.PreviewAuthority{Resource: change.Resource.String(), Detail: string(change.Category) + " — " + change.Detail})
 	}
 	for _, projection := range report.Projections {
-		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: projection.Mode, Target: projection.Target, Description: "project projection for " + projection.Resource.String()})
-		preview.Diff.Added = append(preview.Diff.Added, projection.Resource.String())
+		kind := projection.Mode
+		if kind == "" {
+			kind = "project-projection"
+		}
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: kind, Target: projection.Target, Description: "project projection for " + projection.Resource.String()})
+		switch projection.ObservedState {
+		case "missing":
+			preview.Diff.Added = append(preview.Diff.Added, projection.Target)
+		case "owned", "installed":
+			preview.Diff.Retained = append(preview.Diff.Retained, projection.Target)
+		default:
+			preview.Diff.Changed = append(preview.Diff.Changed, projection.Target)
+		}
 	}
 	for _, retirement := range report.Retirements {
 		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: retirement.Mode, Target: retirement.Target, Description: "retire project projection for " + retirement.Resource.String()})
-		preview.Diff.Removed = append(preview.Diff.Removed, retirement.Resource.String())
+		preview.Diff.Removed = append(preview.Diff.Removed, retirement.Target)
 	}
 	for _, blocker := range report.Blockers {
 		preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})

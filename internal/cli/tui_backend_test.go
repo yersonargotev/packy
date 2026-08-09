@@ -252,6 +252,21 @@ func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState
 	if project.ID == "" || project.PackID != "argote" || project.Surface != "codex" || project.Scope != "project" || project.Operation != "install" {
 		t.Fatalf("project preview omitted its immutable exact target: %#v", project)
 	}
+	effectKinds := make(map[string]bool)
+	for _, effect := range project.Effects {
+		effectKinds[effect.Kind] = true
+	}
+	for _, kind := range []string{"project-manifest", "project-lock", "project-notices"} {
+		if !effectKinds[kind] {
+			t.Fatalf("project preview omitted %s effect: %#v", kind, project.Effects)
+		}
+	}
+	diffFacts := append(append(append(append([]string{}, project.Diff.Added...), project.Diff.Changed...), project.Diff.Removed...), project.Diff.Retained...)
+	for _, target := range []string{project.Effects[0].Target, project.Effects[1].Target, project.Effects[2].Target} {
+		if target == "" || !slices.Contains(diffFacts, target) {
+			t.Fatalf("project preview omitted exact effect target %q from diff: %#v", target, project.Diff)
+		}
+	}
 	if after := snapshotTree(t, home); after != before {
 		t.Fatalf("immutable previews mutated HOME\nbefore:\n%s\nafter:\n%s", before, after)
 	}
