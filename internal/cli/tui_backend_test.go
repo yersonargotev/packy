@@ -348,6 +348,9 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 	home := t.TempDir()
 	project := filepath.Join(t.TempDir(), "project")
 	writeTestGitWorktree(t, project)
+	otherProject := filepath.Join(t.TempDir(), "other-project")
+	writeTestGitWorktree(t, otherProject)
+	currentDirectory := project
 	opts := Options{
 		Env: MapEnv{
 			"HOME":                home,
@@ -355,10 +358,15 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 			"PATH":                "",
 			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
 		},
-		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
+		Getwd: func() (string, error) { return currentDirectory, nil }, Runner: &fakeRunner{},
 	}
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	if _, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "install", PackID: "argote", Surface: "codex", Scope: "project", ProjectRoot: otherProject, Selection: tui.Selection{Mode: "all"},
+	}); err == nil || !strings.Contains(err.Error(), "current Git project") {
+		t.Fatalf("project preview accepted a different Git repository: %v", err)
+	}
 	blocked, err := backend.Preview(context.Background(), tui.PreviewRequest{
 		Operation: "install", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
 	})
@@ -378,10 +386,24 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 	if install.Operation != "install" || install.Disposition != "previewable" || len(install.Resources) == 0 || len(install.Effects) == 0 || len(install.Phases) != 1 {
 		t.Fatalf("project install preview = %#v", install)
 	}
+	for _, effect := range install.Effects {
+		if !slices.ContainsFunc(install.Phases[0].Actions, func(action string) bool { return strings.Contains(action, effect.Target) }) {
+			t.Fatalf("project consent omitted exact effect target %q: %#v", effect.Target, install.Phases[0])
+		}
+	}
 	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
+	wrongTarget := install
+	wrongTarget.ProjectRoot = otherProject
+	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: wrongTarget, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {})
+	if err == nil || result.Stage != "revalidation" || !strings.Contains(err.Error(), "current Git project") {
+		t.Fatalf("project Apply accepted a different current repository: %#v, %v", result, err)
+	}
+	if snapshotTree(t, project) != beforeProject || snapshotTree(t, home) != beforeHome {
+		t.Fatal("wrong-current-project Apply mutated project or personal state")
+	}
 	stale := install
 	stale.Digest = "stale-install"
-	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: stale, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {})
+	result, err = backend.Apply(context.Background(), tui.ApplyRequest{Preview: stale, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {})
 	if err == nil || result.Stage != "revalidation" || !strings.Contains(err.Error(), "fresh preview") {
 		t.Fatalf("stale project install = %#v, %v", result, err)
 	}
