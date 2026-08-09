@@ -34,6 +34,21 @@ read-only investigation, focused implementation slices, and independent review
 axes when repository delegation policy permits, but it never delegates final
 authority or external-state ownership.
 
+### Entry wayfinding
+
+The workflow remains at repository-root `workflows/issue-delivery.md` as the
+single authoritative orchestration contract. The thin skill gate bootstraps the
+run by naming this file, repository-root `AGENTS.md`, and
+`docs/agents/issue-tracker.md` as literal repository-root paths. Its first
+filesystem read reads all three complete files in one operation. The skill
+contains only this bootstrap and the phase gates; workflow behavior stays here.
+
+Wayfinding regression proof uses three independent fresh `deliver-issue`
+invocations. Every invocation must read the three named files in its first
+filesystem operation, with `workflows/issue-delivery.md` resolved exactly as
+written and no failed probe of a guessed path. A path-resolution command alone
+does not exercise this agent-document boundary and is not regression proof.
+
 ## Trigger
 
 The user explicitly requests delivery of one numbered GitHub issue. The issue
