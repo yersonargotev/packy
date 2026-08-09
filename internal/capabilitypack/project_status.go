@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-const ProjectStatusSchemaVersion = 4
+const ProjectStatusSchemaVersion = 5
 
 type ProjectInstallationState string
 
@@ -86,10 +86,12 @@ type JSONProjectPackStatus struct {
 	Blockers             []ProjectInstallBlocker      `json:"blockers"`
 	PendingHumanActions  []string                     `json:"pending_human_actions"`
 	Evidence             []string                     `json:"evidence"`
+	ControlledCheck      ControlledCheckStatus        `json:"controlled_check"`
 	Requirement          string                       `json:"requirement,omitempty"`
 	RequirementSatisfied bool                         `json:"requirement_satisfied"`
 	readinessObservation ReadinessObservation
 	readinessRevision    string
+	controlledCheck      ControlledCheckDescriptor
 }
 
 type JSONProjectStatusReport struct {
@@ -392,16 +394,29 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			})
 			categories := projectActivationCategories(packLock, surface)
 			runtimeRequired := len(categories) != 0
+			controlledCheck := ControlledCheckStatus{State: ControlledCheckUnknown}
+			if request.PackyHome != "" && state == ProjectInstallationInstalled {
+				projectDigest, digestErr := projectActivationRootDigest(request.ProjectRoot)
+				if digestErr != nil {
+					return report, digestErr
+				}
+				identity := controlledCheckIdentityFor(readinessPack, surface, ControlledCheckProject, projectDigest, controlledCheckResources(projectLockForPack(installation.Lock, pack.ID).ResourceGraph), observation)
+				controlledCheck, inspectErr = NewFileControlledCheckStore(request.PackyHome).Status(ctx, identity)
+				if inspectErr != nil {
+					return report, inspectErr
+				}
+			}
 			readiness, conditions := evaluateReadiness(readinessEvaluation{
 				Pack: readinessPack, Surface: surface, Scope: ReadinessScopeProject,
 				Projections: projectReadinessProjections(projections, state), Resolutions: resolutions, UnobservedRequirements: unobservedRequirements, Observation: observation.Readiness, Revision: observation.Revision,
+				ControlledCheck: &controlledCheck,
 			})
 			runtime := ProjectRuntimeNotRequired
 			effects := pendingProjectRuntimeEffects(categories)
 			if runtimeRequired {
 				runtime, effects = projectPersonalRuntimeStatus(ctx, adapter, request.PackyHome, request.ProjectRoot, surfacePack, surface, state, packLock, categories)
 			}
-			status := JSONProjectPackStatus{Pack: surfacePack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Conditions: conditions, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), RequirementSatisfied: true, readinessObservation: observation.Readiness, readinessRevision: observation.Revision}
+			status := JSONProjectPackStatus{Pack: surfacePack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Conditions: conditions, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), ControlledCheck: controlledCheck, RequirementSatisfied: true, readinessObservation: observation.Readiness, readinessRevision: observation.Revision, controlledCheck: observation.ControlledCheck}
 			switch runtime {
 			case ProjectRuntimePending, ProjectRuntimeStale:
 				if runtimeRequired {
@@ -520,6 +535,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 	if err != nil {
 		return report, err
 	}
+	installation, installationErr := LoadProjectInstallation(request.ProjectRoot)
 	catalogAvailable := make(map[string]bool, len(report.Packs))
 	for i := range report.Packs {
 		status := &report.Packs[i]
@@ -536,6 +552,19 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 			continue
 		}
 		catalogAvailable[status.Pack.ID+"\x00"+string(status.Surface)] = true
+		if store := f.controlledCheckStore(request.PackyHome); store != nil && installationErr == nil && status.Installation == ProjectInstallationInstalled {
+			digest, digestErr := projectActivationRootDigest(request.ProjectRoot)
+			if digestErr != nil {
+				return report, digestErr
+			}
+			identity := controlledCheckIdentityFor(pack, status.Surface, ControlledCheckProject, digest, controlledCheckResources(projectLockForPack(installation.Lock, status.Pack.ID).ResourceGraph), SurfaceInspection{Revision: status.readinessRevision, ControlledCheck: status.controlledCheck})
+			status.ControlledCheck, err = store.Status(ctx, identity)
+			if err != nil {
+				return report, err
+			}
+		} else {
+			status.ControlledCheck = ControlledCheckStatus{State: ControlledCheckUnknown}
+		}
 		resolutions, resolveErr := f.resolveExecutables(ctx, pack)
 		unobservedRequirements := []string{}
 		if resolveErr != nil {
@@ -549,7 +578,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		status.Readiness, status.Conditions = evaluateReadiness(readinessEvaluation{
 			Pack: pack, Surface: status.Surface, Scope: ReadinessScopeProject,
 			Projections: projectReadinessProjections(status.Projections, status.Installation), Resolutions: resolutions, UnobservedRequirements: unobservedRequirements,
-			Observation: status.readinessObservation, Revision: status.readinessRevision,
+			Observation: status.readinessObservation, Revision: status.readinessRevision, ControlledCheck: &status.ControlledCheck,
 		})
 		if request.RequireUsable {
 			status.RequirementSatisfied = status.Installation == ProjectInstallationInstalled && status.Readiness.SatisfiesUsable() && (!status.RuntimeRequired || status.Runtime == ProjectRuntimeActive || status.Runtime == ProjectRuntimeInheritedGlobal)
@@ -565,7 +594,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 	if !hasInstalledRuntime {
 		return report, nil
 	}
-	installation, err := LoadProjectInstallation(request.ProjectRoot)
+	installation, err = LoadProjectInstallation(request.ProjectRoot)
 	if err != nil {
 		return report, err
 	}

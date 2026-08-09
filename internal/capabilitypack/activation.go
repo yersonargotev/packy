@@ -235,7 +235,12 @@ type ObservedProjectEffect struct {
 }
 
 type SurfaceInspection struct {
-	Revision                   string
+	Revision string
+	// ControlledCheck describes the host facts used to bind an explicit runtime
+	// check. Empty fields are normalized by the capability-pack domain so older
+	// adapters remain safe: they can never accidentally share evidence across a
+	// later adapter or observable host identity.
+	ControlledCheck            ControlledCheckDescriptor
 	Projections                []ObservedProjection
 	OccupiedNames              []OccupiedName
 	RuntimeModeEvidence        []RuntimeModeEvidence
@@ -399,6 +404,13 @@ func WithExternalEffects(resolver ExecutableResolver, executor ExternalExecutor)
 		f.activation.resolver = resolver
 		f.activation.executor = executor
 	}
+}
+
+// WithControlledCheckEvidence injects workstation-local controlled runtime
+// evidence. It lets all facade reads, including Doctor's ActiveStatus, use
+// the same personal store without coupling them to a CLI path convention.
+func WithControlledCheckEvidence(store ControlledCheckEvidenceStore) FacadeOption {
+	return func(f *Facade) { f.controlledChecks = store }
 }
 
 type PlanPhase struct {
@@ -2518,6 +2530,7 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 }
 
 func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
+	value.ControlledCheck.Instructions = append([]string(nil), value.ControlledCheck.Instructions...)
 	value.Projections = append([]ObservedProjection(nil), value.Projections...)
 	value.OccupiedNames = append([]OccupiedName(nil), value.OccupiedNames...)
 	value.RuntimeModeEvidence = cloneRuntimeModeEvidence(value.RuntimeModeEvidence)

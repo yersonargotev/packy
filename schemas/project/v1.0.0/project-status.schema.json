@@ -1,18 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-status.schema.json",
-  "title": "Packy project status report v4",
+  "title": "Packy project status report v5",
   "type": "object",
   "required": ["schema_version", "report", "project_root", "packs"],
   "properties": {
-    "schema_version": { "const": 4 },
+    "schema_version": { "const": 5 },
     "report": { "const": "project-status" },
     "project_root": { "const": "<project-root>" },
     "packs": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["pack", "surface", "installation", "runtime", "runtime_required", "runtime_effects", "readiness", "conditions", "projections", "blockers", "pending_human_actions", "evidence", "requirement_satisfied"],
+        "required": ["pack", "surface", "installation", "runtime", "runtime_required", "runtime_effects", "readiness", "conditions", "controlled_check", "projections", "blockers", "pending_human_actions", "evidence", "requirement_satisfied"],
         "properties": {
           "pack": { "$ref": "project-contract-defs.schema.json#/$defs/pack" },
           "surface": { "$ref": "project-contract-defs.schema.json#/$defs/surface" },
@@ -22,6 +22,17 @@
           "runtime_effects": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/runtime_effect" } },
           "readiness": { "$ref": "project-contract-defs.schema.json#/$defs/readiness" },
           "conditions": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/readiness_condition" } },
+          "controlled_check": {
+            "type": "object",
+            "required": ["state", "validity_identity"],
+            "properties": {
+              "state": { "enum": ["unknown", "current", "stale"] },
+              "result": { "enum": ["true", "false"] },
+              "observed_at": { "type": "string", "format": "date-time" },
+              "validity_identity": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
           "projections": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/projection_status" } },
           "blockers": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/blocker" } },
           "pending_human_actions": { "type": "array", "items": { "type": "string" } },

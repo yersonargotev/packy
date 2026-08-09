@@ -18,7 +18,7 @@ var structuredOutputFixtures = []struct {
 }{
 	{"v3", "doctor.json", "doctor.schema.json"},
 	{"v5", "pack-show.json", "pack-show.schema.json"},
-	{"v9", "pack-status.json", "pack-status.schema.json"},
+	{"v10", "pack-status.json", "pack-status.schema.json"},
 	{"v10", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
 	{"v10", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
 	{"v10", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
@@ -120,7 +120,7 @@ func TestStructuredOutputV3DoctorSchemaRejectsWrongVersionAndUnknownFields(t *te
 
 func TestPackStatusSchemaAcceptsUnobservableExternalRequirementReason(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v9", "pack-status.json"))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v10", "pack-status.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

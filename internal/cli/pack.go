@@ -919,6 +919,7 @@ func projectStatusFacade(opts Options, snapshot workstation.Snapshot) capability
 	return capabilitypack.NewFacade(capabilitypack.Catalog{},
 		capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File()), adapters),
 		capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil),
+		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
 	)
 }
 
@@ -1130,6 +1131,7 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 	}
 	return capabilitypack.NewFacade(composition.catalog,
 		capabilitypack.WithActivation(store, adapters),
+		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(filepath.Dir(composition.state.File()))),
 		capabilitypack.WithExternalEffects(
 			composition.engram,
 			runnerExternalExecutor{runner: opts.Runner},
@@ -1348,6 +1350,134 @@ func (e runnerExternalExecutor) Execute(ctx context.Context, action capabilitypa
 	return e.runner.Run(ctx, action.Command, action.Args...)
 }
 
+type controlledCheckRecordReport struct {
+	SchemaVersion int                                  `json:"schema_version"`
+	Report        string                               `json:"report"`
+	Pack          string                               `json:"pack"`
+	Surface       capabilitypack.Surface               `json:"surface"`
+	Scope         capabilitypack.ControlledCheckScope  `json:"scope"`
+	Evidence      capabilitypack.ControlledCheckStatus `json:"evidence"`
+}
+
+func newControlledCheckCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
+	var surface, result string
+	var project, dryRun, jsonOutput bool
+	var resourceValues []string
+	cmd := &cobra.Command{
+		Use:   "check <pack>",
+		Short: "Record a controlled runtime check separately from Pack activation",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			selection := capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}
+			if len(resourceValues) > 0 {
+				if project {
+					return errors.New("--resource is not supported with --project; the installed project closure is checked exactly")
+				}
+				selection.Mode = capabilitypack.SelectionCustom
+				for _, value := range resourceValues {
+					resource, err := capabilitypack.ParseResourceIdentity(value)
+					if err != nil {
+						return err
+					}
+					selection.Roots = append(selection.Roots, resource)
+				}
+			}
+			if !dryRun && result != "positive" && result != "negative" {
+				return errors.New("--result must be positive or negative when recording a controlled runtime check")
+			}
+			snapshot, err := workstationResolver.Resolve(workstation.Options{})
+			if err != nil {
+				return err
+			}
+			projectRoot := ""
+			adapter := capabilitypack.SurfaceAdapter(nil)
+			if project {
+				cwd, cwdErr := snapshot.CurrentDirectory()
+				if cwdErr != nil {
+					return fmt.Errorf("resolve current directory: %w", cwdErr)
+				}
+				projectRoot, err = capabilitypack.DiscoverProjectRoot(cwd)
+				if err != nil {
+					return err
+				}
+				adapter = projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot)
+			}
+			facade, err := activationFacade(opts, workstationResolver)
+			if err != nil {
+				return err
+			}
+			preview, err := facade.PreviewControlledCheck(cmd.Context(), capabilitypack.ControlledCheckRequest{
+				PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot,
+				PackyHome: snapshot.PackyHome(), Selection: selection, Adapter: adapter,
+			})
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(preview); err != nil {
+					return err
+				}
+			} else if err := renderControlledCheckPreview(cmd.OutOrStdout(), preview, dryRun); err != nil {
+				return err
+			}
+			if dryRun {
+				return nil
+			}
+			if !opts.Terminal.Interactive(cmd.InOrStdin()) {
+				return capabilitypack.ErrInteractiveRequired
+			}
+			prompt := fmt.Sprintf("Record a %s controlled runtime result for exact identity %s?", result, preview.ValidityIdentity)
+			approved, err := opts.Terminal.Approve(cmd.InOrStdin(), cmd.OutOrStdout(), prompt)
+			if err != nil {
+				return err
+			}
+			if !approved {
+				return errors.New("controlled runtime check result was not approved")
+			}
+			value := capabilitypack.ReadinessTrue
+			if result == "negative" {
+				value = capabilitypack.ReadinessFalse
+			}
+			evidence, err := facade.RecordControlledCheck(cmd.Context(), preview, value)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(controlledCheckRecordReport{SchemaVersion: 1, Report: "controlled-check-record", Pack: preview.Pack, Surface: preview.Surface, Scope: preview.Scope, Evidence: evidence})
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Recorded %s controlled runtime evidence at %s\n", result, evidence.ObservedAt)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
+	cmd.Flags().StringVar(&result, "result", "", "Observed result to record (positive or negative)")
+	cmd.Flags().BoolVar(&project, "project", false, "Check the current project's installed Pack closure")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the exact controlled check without recording evidence")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
+	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one Pack resource root (<kind>:<id>); repeatable")
+	_ = cmd.MarkFlagRequired("surface")
+	return cmd
+}
+
+func renderControlledCheckPreview(w io.Writer, preview capabilitypack.ControlledCheckPreview, dryRun bool) error {
+	header := "CONTROLLED RUNTIME CHECK PREVIEW"
+	if dryRun {
+		header = "CONTROLLED RUNTIME CHECK DRY-RUN"
+	}
+	if _, err := fmt.Fprintf(w, "%s\nPack: %s %s\nSurface: %s\nScope: %s\nSelected resource closure: %s\nProjection revision: %s\nAdapter version: %s\nObservable host version: %s\nValidity identity: %s\nExisting evidence: %s\n", header, preview.Pack, preview.PackVersion, preview.Surface, preview.Scope, renderIdentityChain(preview.Resources), preview.ProjectionRevision, preview.AdapterVersion, preview.HostVersion, preview.ValidityIdentity, preview.CurrentEvidence.State); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "Check instructions:"); err != nil {
+		return err
+	}
+	for _, instruction := range preview.Instructions {
+		if _, err := fmt.Fprintf(w, "  - %s\n", instruction); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
 	var surface string
 	var resource string
@@ -1519,7 +1649,7 @@ func claudeProjectAdapter(bundleRoot string) capabilitypack.SurfaceAdapter {
 
 func renderProjectStatus(cmd *cobra.Command, report capabilitypack.JSONProjectStatusReport) error {
 	for _, status := range report.Packs {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nProjections: %d\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, status.Readiness.Configured, status.Readiness.Authorized, status.Readiness.Usable, len(status.Projections), renderProjectInstallBlockers(status.Blockers), renderPendingAction(status.PendingHumanActions), renderPendingAction(status.Evidence)); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s (project)\nInstallation: %s\nRuntime activation: %s\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nProjections: %d\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", status.Pack.ID, status.Pack.Version, status.Surface, status.Installation, status.Runtime, status.Readiness.Configured, status.Readiness.Authorized, status.Readiness.Usable, status.ControlledCheck.State, status.ControlledCheck.Result, status.ControlledCheck.ObservedAt, len(status.Projections), renderProjectInstallBlockers(status.Blockers), renderPendingAction(status.PendingHumanActions), renderPendingAction(status.Evidence)); err != nil {
 			return err
 		}
 		if err := renderProjectRuntimeEffects(cmd.OutOrStdout(), status.RuntimeEffects); err != nil {
@@ -1582,7 +1712,7 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 }
 
 func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry, focused *capabilitypack.ResourceStatus) error {
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), len(entry.Resources), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), len(entry.Resources), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
 	}
 	if entry.Intent.Active {

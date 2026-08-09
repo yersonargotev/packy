@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -157,7 +158,7 @@ func resolvePackTestLayout(t *testing.T, env Env) packTestLayout {
 
 func TestPackVerbHelpUsesFlatCommandPaths(t *testing.T) {
 	opts, _, _ := packActivationOptions(t, &fakeTerminal{})
-	for _, verb := range []string{"list", "show", "activate", "install", "update", "status", "deactivate", "uninstall"} {
+	for _, verb := range []string{"list", "show", "check", "activate", "install", "update", "status", "deactivate", "uninstall"} {
 		t.Run(verb, func(t *testing.T) {
 			out, err := executeCommand(t, NewRootCommand(opts), verb, "--help")
 			if err != nil {
@@ -170,6 +171,77 @@ func TestPackVerbHelpUsesFlatCommandPaths(t *testing.T) {
 				t.Fatalf("%s help duplicates shared root lifecycle guidance:\n%s", verb, out)
 			}
 		})
+	}
+}
+
+func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatus(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, _ := packActivationOptions(t, terminal)
+	if _, err := executeCommand(t, NewRootCommand(opts), "activate", "orchestrate", "--surface", "codex"); err != nil {
+		t.Fatalf("activate orchestrate: %v", err)
+	}
+	before, err := os.ReadFile(filepath.Join(home, ".packy", "packs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex")
+	if err != nil || !strings.Contains(unknown, "usable=unknown") || !strings.Contains(unknown, "Controlled runtime check: unknown") {
+		t.Fatalf("unknown status: err=%v\n%s", err, unknown)
+	}
+	preview, err := executeCommand(t, NewRootCommand(opts), "check", "orchestrate", "--surface", "codex", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"CONTROLLED RUNTIME CHECK DRY-RUN", "Selected resource closure:", "Projection revision:", "Adapter version:", "Observable host version:", "Check instructions:"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("controlled check preview omitted %q:\n%s", want, preview)
+		}
+	}
+	if _, err := executeCommand(t, NewRootCommand(opts), "check", "orchestrate", "--surface", "codex", "--result", "positive"); err != nil {
+		t.Fatalf("record positive controlled check: %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(home, ".packy", "packs.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("controlled check changed installed receipts: err=%v", err)
+	}
+	if info, err := os.Stat(filepath.Join(home, ".packy", "controlled-checks.json")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("personal evidence file: info=%v err=%v", info, err)
+	}
+	current, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--require", "usable")
+	if err != nil || !strings.Contains(current, "usable=true") || !strings.Contains(current, "Controlled runtime check: current result=true") {
+		t.Fatalf("current positive strict status: err=%v\n%s", err, current)
+	}
+}
+
+func TestProjectControlledRuntimeCheckDoesNotEnterProjectArtifacts(t *testing.T) {
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, _, _ := packActivationOptions(t, terminal)
+	opts.Getwd = func() (string, error) { return project, nil }
+	if _, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
+		t.Fatalf("install project matty: %v", err)
+	}
+	manifestBefore, err := os.ReadFile(filepath.Join(project, "packy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockBefore, err := os.ReadFile(filepath.Join(project, "packy.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkOutput, err := executeCommand(t, NewRootCommand(opts), "check", "matty", "--surface", "codex", "--project", "--result", "negative")
+	if err != nil {
+		t.Fatalf("record project controlled check: %v", err)
+	}
+	manifestAfter, _ := os.ReadFile(filepath.Join(project, "packy.json"))
+	lockAfter, _ := os.ReadFile(filepath.Join(project, "packy.lock.json"))
+	if !bytes.Equal(manifestBefore, manifestAfter) || !bytes.Equal(lockBefore, lockAfter) {
+		t.Fatal("controlled check entered project manifest or lock")
+	}
+	status, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project")
+	if err != nil || !strings.Contains(status, "Controlled runtime check: current result=false") || !strings.Contains(status, "usable=false") {
+		t.Fatalf("project negative status: err=%v\ncheck:\n%s\nstatus:\n%s", err, checkOutput, status)
 	}
 }
 
@@ -198,7 +270,7 @@ func TestRootCompletionOffersFlatPackVerbsWithoutPackGroup(t *testing.T) {
 		}
 		commands = append(commands, command)
 	}
-	want := []string{"activate", "completion", "deactivate", "doctor", "help", "init", "install", "list", "show", "status", "uninstall", "update", "version"}
+	want := []string{"activate", "check", "completion", "deactivate", "doctor", "help", "init", "install", "list", "show", "status", "uninstall", "update", "version"}
 	if !reflect.DeepEqual(commands, want) {
 		t.Fatalf("root completion commands = %q, want %q\n%s", commands, want, out)
 	}

@@ -100,6 +100,8 @@ and receive a new Preview. Packy never retries it automatically.
   packy status engram --surface claude --require usable --json
   packy status engram --surface codex
   packy status engram --surface codex --require usable
+  packy check orchestrate --surface codex --dry-run
+  packy check orchestrate --surface codex --result positive
   packy install matty --surface codex --dry-run
   packy uninstall matty --dry-run
   packy activate matty --surface codex --dry-run
@@ -128,6 +130,7 @@ and receive a new Preview. Packy never retries it automatically.
 		newPackListCommand(opts, workstationResolver),
 		newPackShowCommand(opts, workstationResolver),
 		newPackStatusCommand(opts, workstationResolver),
+		newControlledCheckCommand(opts, workstationResolver),
 		newPackInstallCommand(opts, workstationResolver),
 		newPackUninstallCommand(opts, workstationResolver),
 		newPackActivateCommand(opts, workstationResolver),

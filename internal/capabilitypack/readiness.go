@@ -48,6 +48,7 @@ const (
 	ReasonRuntimeConfirmed        ReadinessReason = "runtime-confirmed"
 	ReasonRuntimeRejected         ReadinessReason = "runtime-rejected"
 	ReasonRuntimeUnobservable     ReadinessReason = "runtime-unobservable"
+	ReasonRuntimeCheckStale       ReadinessReason = "runtime-check-stale"
 )
 
 type ReadinessScopeKind string
@@ -118,6 +119,7 @@ type readinessEvaluation struct {
 	Observation            ReadinessObservation
 	Revision               string
 	ObservedAt             time.Time
+	ControlledCheck        *ControlledCheckStatus
 }
 
 func evaluateReadiness(input readinessEvaluation) (ReadinessStatus, []ReadinessCondition) {
@@ -170,8 +172,15 @@ func evaluateReadiness(input readinessEvaluation) (ReadinessStatus, []ReadinessC
 			value, reason, message := observedReadiness(input.Observation.AuthorizationObserved, input.Observation.Authorized, ReasonAuthorizationConfirmed, ReasonAuthorizationDenied, ReasonAuthorizationUnknown, "surface authorization is confirmed", "surface authorization was denied", "surface authorization cannot be observed")
 			conditions = append(conditions, ReadinessCondition{Type: ConditionSurfaceAuthorization, Scope: baseScope, Dimension: ReadinessAuthorized, Value: value, Reason: reason, Message: message, Evidence: readinessEvidence(input.Observation.Evidence, input.Revision), Freshness: freshness(string(obligation))})
 		case ReadinessRuntimeUsability:
-			value, reason, message := observedReadiness(input.Observation.UsabilityObserved, input.Observation.Usable, ReasonRuntimeConfirmed, ReasonRuntimeRejected, ReasonRuntimeUnobservable, "runtime usability is confirmed", "runtime usability was rejected", "runtime usability cannot be observed")
-			conditions = append(conditions, ReadinessCondition{Type: ConditionRuntimeUsability, Scope: baseScope, Dimension: ReadinessUsable, Value: value, Reason: reason, Message: message, Evidence: readinessEvidence(input.Observation.Evidence, input.Revision), Freshness: freshness(string(obligation))})
+			value, reason, message, evidence, checkFreshness := controlledCheckReadiness(input.ControlledCheck)
+			if input.ControlledCheck != nil && input.ControlledCheck.State == ControlledCheckStale {
+				// A stale human result is deliberately not mixed with a fresh
+				// adapter fact. It remains visible as actionable unknown evidence.
+			} else if input.ControlledCheck == nil || input.ControlledCheck.State != ControlledCheckCurrent {
+				value, reason, message = observedReadiness(input.Observation.UsabilityObserved, input.Observation.Usable, ReasonRuntimeConfirmed, ReasonRuntimeRejected, ReasonRuntimeUnobservable, "runtime usability is confirmed", "runtime usability was rejected", "runtime usability cannot be observed")
+				evidence, checkFreshness = readinessEvidence(input.Observation.Evidence, input.Revision), freshness(string(obligation))
+			}
+			conditions = append(conditions, ReadinessCondition{Type: ConditionRuntimeUsability, Scope: baseScope, Dimension: ReadinessUsable, Value: value, Reason: reason, Message: message, Evidence: evidence, Freshness: checkFreshness})
 		}
 	}
 	sort.SliceStable(conditions, func(i, j int) bool {
@@ -188,6 +197,20 @@ func evaluateReadiness(input readinessEvaluation) (ReadinessStatus, []ReadinessC
 		Authorized: aggregateReadinessDimension(conditions, ReadinessAuthorized),
 		Usable:     aggregateReadinessDimension(conditions, ReadinessUsable),
 	}, conditions
+}
+
+func controlledCheckReadiness(check *ControlledCheckStatus) (ReadinessValue, ReadinessReason, string, []string, ReadinessFreshness) {
+	if check == nil || check.State == ControlledCheckUnknown {
+		return ReadinessUnknown, ReasonRuntimeUnobservable, "runtime usability cannot be observed", nil, ReadinessFreshness{}
+	}
+	freshness := ReadinessFreshness{ObservedAt: check.ObservedAt, ValidityIdentity: check.ValidityIdentity}
+	if check.State == ControlledCheckStale {
+		return ReadinessUnknown, ReasonRuntimeCheckStale, "controlled runtime check evidence is stale; rerun the controlled check", []string{"controlled-check:" + check.ValidityIdentity}, freshness
+	}
+	if check.Result == ReadinessTrue {
+		return ReadinessTrue, ReasonRuntimeConfirmed, "controlled runtime check succeeded", []string{"controlled-check:" + check.ValidityIdentity}, freshness
+	}
+	return ReadinessFalse, ReasonRuntimeRejected, "controlled runtime check failed; rerun the check after fixing the host behavior", []string{"controlled-check:" + check.ValidityIdentity}, freshness
 }
 
 func aggregateReadinessDimension(conditions []ReadinessCondition, dimension ReadinessDimension) ReadinessValue {

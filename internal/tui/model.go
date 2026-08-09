@@ -24,8 +24,9 @@ type Backend interface {
 }
 
 type ApplyRequest struct {
-	Preview        Preview
-	ApprovedPhases []string
+	Preview               Preview
+	ApprovedPhases        []string
+	ControlledCheckResult string
 }
 
 type ApplyProgress struct{ Phase string }
@@ -82,6 +83,8 @@ type Preview struct {
 	Blockers                            []PreviewBlocker
 	Phases                              []PreviewPhase
 	PendingActions                      []string
+	Instructions                        []string
+	ValidityIdentity                    string
 	Stale                               bool
 	StaleReason                         string
 }
@@ -240,6 +243,8 @@ type Model struct {
 	previewErr             error
 	previewScroll          int
 	consenting             bool
+	choosingCheckResult    bool
+	controlledCheckResult  string
 	consentIndex           int
 	consentApprove         bool
 	approvedPhases         []string
@@ -398,6 +403,33 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.preview != nil || m.previewErr != nil {
+			if m.choosingCheckResult {
+				if key.Matches(message, dashboardKeys.Quit) {
+					return m, tea.Quit
+				}
+				if key.Matches(message, dashboardKeys.Back) {
+					m.choosingCheckResult, m.controlledCheckResult = false, ""
+					return m, nil
+				}
+				if key.Matches(message, dashboardKeys.Up) || key.Matches(message, dashboardKeys.Down) || message.Code == tea.KeyTab {
+					if m.controlledCheckResult == "positive" {
+						m.controlledCheckResult = "negative"
+					} else {
+						m.controlledCheckResult = "positive"
+					}
+					return m, nil
+				}
+				if key.Matches(message, dashboardKeys.Inspect) && m.controlledCheckResult != "" {
+					m.choosingCheckResult = false
+					phases := requiredConsentPhases(*m.preview)
+					if len(phases) == 0 {
+						return m.startApply(ApplyRequest{Preview: *m.preview, ControlledCheckResult: m.controlledCheckResult})
+					}
+					m.consenting, m.consentIndex, m.approvedPhases = true, 0, nil
+					m.consentApprove = phases[0].Kind != "destructive-cleanup"
+				}
+				return m, nil
+			}
 			if m.consenting {
 				if key.Matches(message, dashboardKeys.Quit) {
 					return m, tea.Quit
@@ -429,7 +461,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 					m.consenting = false
-					request := ApplyRequest{Preview: *m.preview, ApprovedPhases: append([]string(nil), m.approvedPhases...)}
+					request := ApplyRequest{Preview: *m.preview, ApprovedPhases: append([]string(nil), m.approvedPhases...), ControlledCheckResult: m.controlledCheckResult}
 					return m.startApply(request)
 				}
 				return m, nil
@@ -438,17 +470,21 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(message, dashboardKeys.Quit):
 				return m, tea.Quit
 			case key.Matches(message, dashboardKeys.Back):
-				m.preview, m.previewErr = nil, nil
+				m.preview, m.previewErr, m.controlledCheckResult = nil, nil, ""
 				return m, nil
 			case key.Matches(message, dashboardKeys.Inspect):
 				if m.preview != nil && previewCanApply(*m.preview) {
+					if m.preview.Operation == "check" {
+						m.choosingCheckResult, m.controlledCheckResult = true, ""
+						return m, nil
+					}
 					phases := requiredConsentPhases(*m.preview)
 					m.consenting, m.consentIndex, m.approvedPhases = true, 0, nil
 					m.consentApprove = phases[0].Kind != "destructive-cleanup"
 				}
 				return m, nil
 			case key.Matches(message, dashboardKeys.Reload):
-				m.preview, m.previewErr = nil, nil
+				m.preview, m.previewErr, m.controlledCheckResult = nil, nil, ""
 				return m.startPreview()
 			case key.Matches(message, dashboardKeys.Down):
 				m.previewScroll = min(m.previewScroll+1, m.previewViewportMaxOffset())
@@ -537,7 +573,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 					} else if m.operation != "" {
 						return m.startPreview()
 					}
-				} else if status := m.selectedSurfaceStatus(); status != nil && status.Active {
+				} else if status := m.selectedSurfaceStatus(); status != nil && (status.Active || controlledCheckAvailable(*status)) {
 					m.choosingAction = true
 					m.actionChoice = 0
 					m.operation = firstLifecycleAction(*status)
@@ -630,7 +666,7 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 		PackID:    pack.ID, Surface: surface, Scope: scope, ProjectRoot: projectRoot,
 		Selection: selection,
 	}
-	m.previewing, m.previewErr = true, nil
+	m.previewing, m.previewErr, m.controlledCheckResult = true, nil, ""
 	return m, func() tea.Msg {
 		preview, err := m.backend.Preview(m.ctx, request)
 		return previewResult{preview: preview, err: err}
@@ -710,14 +746,19 @@ func (m Model) lifecycleActions() []string {
 }
 
 func lifecycleActionsForStatus(status SurfaceStatus) []string {
-	if !status.Active {
-		return []string{"activate"}
-	}
 	actions := []string{}
-	if status.UpdateAvailable {
-		actions = append(actions, "update")
+	if !status.Active {
+		actions = append(actions, "activate")
+	} else {
+		if status.UpdateAvailable {
+			actions = append(actions, "update")
+		}
+		actions = append(actions, "deactivate")
 	}
-	return append(actions, "deactivate")
+	if controlledCheckAvailable(status) {
+		actions = append(actions, "check")
+	}
+	return actions
 }
 
 func projectLifecycleOperation(status *SurfaceStatus) string {
@@ -747,7 +788,17 @@ func projectLifecycleActionsForStatus(status *SurfaceStatus) []string {
 	case "stale":
 		actions = append(actions, "activate", "deactivate")
 	}
+	if controlledCheckAvailable(*status) {
+		actions = append(actions, "check")
+	}
 	return append(actions, "uninstall")
+}
+
+func controlledCheckAvailable(status SurfaceStatus) bool {
+	if !status.Supported || status.Configured != "true" {
+		return false
+	}
+	return status.Usable == "unknown" || status.Usable == "false" || status.Usable == "stale"
 }
 
 func (m Model) selectedSurfaceStatus() *SurfaceStatus {
@@ -963,6 +1014,9 @@ func (m Model) render() string {
 		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nUnable to create preview\n" + m.previewErr.Error() + "\n\nEsc back · q quit")
 	}
 	if m.preview != nil {
+		if m.choosingCheckResult {
+			return m.renderBody(m.renderControlledCheckResult())
+		}
 		if m.consenting {
 			return m.renderBody(m.renderConsent())
 		}
@@ -1191,6 +1245,14 @@ func (m Model) renderDetail() string {
 		}
 	}
 	action := "Enter select resources"
+	if !m.project {
+		actions := m.lifecycleActions()
+		if len(actions) > 1 {
+			action = "Enter choose lifecycle action"
+		} else if len(actions) == 1 && actions[0] == "check" {
+			action = "Enter select resources for controlled runtime check"
+		}
+	}
 	if m.project {
 		actions := projectLifecycleActionsForStatus(m.selectedSurfaceStatus())
 		switch {
@@ -1206,6 +1268,8 @@ func (m Model) renderDetail() string {
 			action = "Enter preview project update"
 		case actions[0] == "deactivate":
 			action = "Enter preview personal project deactivation"
+		case actions[0] == "check":
+			action = "Enter preview controlled runtime check"
 		case actions[0] == "uninstall":
 			action = "Enter preview project Pack uninstall"
 		}
@@ -1230,10 +1294,17 @@ func (m Model) renderActionChoice() string {
 		if index == m.actionChoice {
 			marker = "› "
 		}
-		lines = append(lines, marker+strings.ToUpper(action[:1])+action[1:]+map[bool]string{true: " · selected"}[index == m.actionChoice])
+		lines = append(lines, marker+lifecycleActionLabel(action)+map[bool]string{true: " · selected"}[index == m.actionChoice])
 	}
 	lines = append(lines, "", "↑/↓ choose · Enter continue · Esc back · q quit")
 	return strings.Join(lines, "\n")
+}
+
+func lifecycleActionLabel(action string) string {
+	if action == "check" {
+		return "Controlled runtime check"
+	}
+	return strings.ToUpper(action[:1]) + action[1:]
 }
 
 func (m Model) renderSelection() string {
@@ -1367,12 +1438,25 @@ func (m Model) renderPreview(preview Preview) string {
 	if preview.Selection.Mode == "custom" {
 		selection = "Advanced · " + joinOrNone(preview.Selection.Roots)
 	}
+	title := "Immutable lifecycle preview"
+	if preview.Operation == "check" {
+		title = "Immutable controlled runtime check"
+	}
 	lines := []string{
-		titleStyle.Render("Immutable lifecycle preview"),
+		titleStyle.Render(title),
 		preview.Operation + " " + preview.PackID + " " + preview.PackVersion + " · " + preview.Surface + " · " + preview.Scope,
 	}
 	if preview.ProjectRoot != "" {
 		lines = append(lines, "Project root: "+preview.ProjectRoot)
+	}
+	if preview.ValidityIdentity != "" {
+		lines = append(lines, "Validity identity: "+preview.ValidityIdentity)
+	}
+	if len(preview.Instructions) > 0 {
+		lines = append(lines, "", "Check instructions")
+		for _, instruction := range preview.Instructions {
+			lines = append(lines, "  "+instruction)
+		}
 	}
 	lines = append(lines, preview.ID+" · "+preview.Digest, "Disposition: "+preview.Disposition, "Selection: "+selection, "", "Dependency closure")
 	if len(preview.Resources) == 0 {
@@ -1435,10 +1519,10 @@ func (m Model) renderPreview(preview Preview) string {
 }
 
 func previewCanApply(preview Preview) bool {
-	operationSupported := preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate"
+	operationSupported := preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate" || preview.Operation == "check"
 	disposition := preview.Disposition == "applicable"
 	if preview.Scope == "project" {
-		operationSupported = preview.Operation == "install" || preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate" || preview.Operation == "uninstall"
+		operationSupported = preview.Operation == "install" || preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate" || preview.Operation == "uninstall" || preview.Operation == "check"
 		disposition = preview.Disposition == "previewable"
 	}
 	return operationSupported && disposition && !preview.Stale && len(requiredConsentPhases(preview)) > 0
@@ -1455,7 +1539,7 @@ func requiredConsentPhases(preview Preview) []PreviewPhase {
 }
 
 func (m *Model) cancelConsent() {
-	m.consenting, m.consentIndex, m.consentApprove, m.approvedPhases = false, 0, false, nil
+	m.consenting, m.consentIndex, m.consentApprove, m.approvedPhases, m.controlledCheckResult = false, 0, false, nil, ""
 }
 
 func (m Model) reloadAfterProjectCancellation() (tea.Model, tea.Cmd) {
@@ -1523,6 +1607,42 @@ func (m Model) renderConsent() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m Model) renderControlledCheckResult() string {
+	preview := *m.preview
+	positive, negative := "  [ Positive ]", "  [ Negative ]"
+	if m.controlledCheckResult == "positive" {
+		positive = "› [ Positive ] · selected"
+	} else if m.controlledCheckResult == "negative" {
+		negative = "› [ Negative ] · selected"
+	}
+	lines := []string{
+		titleStyle.Render("Record controlled runtime check result"), "",
+		preview.PackID + " " + preview.PackVersion + " · " + preview.Surface + " · " + preview.Scope,
+		"Exact plan: " + preview.ID + " · " + preview.Digest,
+		"Selection: " + checkSelection(preview.Selection),
+	}
+	if preview.ValidityIdentity != "" {
+		lines = append(lines, "Validity identity: "+preview.ValidityIdentity)
+	}
+	lines = append(lines, "", "Instructions")
+	if len(preview.Instructions) == 0 {
+		lines = append(lines, "  No instructions supplied")
+	} else {
+		for _, instruction := range preview.Instructions {
+			lines = append(lines, "  "+instruction)
+		}
+	}
+	lines = append(lines, "", positive, negative, "", "↑/↓ or Tab choose · Enter record result · Esc preview")
+	return strings.Join(lines, "\n")
+}
+
+func checkSelection(selection Selection) string {
+	if selection.Mode == "custom" {
+		return "Advanced · " + joinOrNone(selection.Roots)
+	}
+	return "Full Pack"
+}
+
 func (m Model) renderApplyProgress() string {
 	lines := []string{
 		titleStyle.Render("Apply in progress"), "",
@@ -1558,6 +1678,8 @@ func (m Model) renderApplyResult() string {
 			}
 		case "uninstall":
 			operation = "Project uninstall"
+		case "check":
+			operation = "Controlled runtime check"
 		}
 	}
 	title := operation + " failed"

@@ -36,6 +36,28 @@ External requirements such as Engram are host prerequisites, not relationships
 between Packs. Multiple Packs can coexist, but each lifecycle command acts on
 one Pack and installed Pack receipt.
 
+## Controlled runtime checks
+
+When Packy cannot observe host runtime behavior, preview and perform the
+reviewed instructions separately from activation, then explicitly record the
+observed result:
+
+```sh
+packy check orchestrate --surface codex --dry-run
+packy check orchestrate --surface codex --result positive
+packy status orchestrate --surface codex --require usable
+```
+
+The preview identifies the exact Pack version, CLI surface, selected resource
+closure, projection revision, adapter version, observable host version, and
+instructions. A positive current result can satisfy strict usability; a
+negative result fails it, and an identity change makes the prior result stale.
+Evidence has no time-to-live while its identity is unchanged.
+
+Controlled-check evidence lives only in `~/.packy/controlled-checks.json`. It
+is personal workstation state and never enters a Pack manifest, project
+manifest, project lock, or Git-managed artifact.
+
 ## Installed Pack receipts
 
 A successful activation records the current Pack version, surface, selected

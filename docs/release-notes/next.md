@@ -5,6 +5,8 @@ Git-reviewed capability Packs on Codex, OpenCode, and Claude Code.
 
 ## Highlights
 
+- Controlled runtime checks now record scoped positive or negative personal
+  evidence for host behavior Packy cannot observe, separately from activation.
 - Pack discovery and lifecycle commands now run directly at the root, such as
   `packy list` and `packy activate`; the former intermediate grouping command
   has been removed without an alias or deprecation path.
