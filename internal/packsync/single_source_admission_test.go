@@ -416,7 +416,7 @@ func TestCheckSingleSourceAdmissionRequiresBidirectionalBindingEquality(t *testi
 	}
 	resources := manifest["resources"].([]any)
 	manifest["resources"] = append(resources, map[string]any{
-		"kind": "skill", "id": "unexpected", "source": "skills/unexpected",
+		"kind": "skill", "id": "unexpected", "source": "skills/unexpected", "description": "Coordinates unexpected work",
 		"requires": []any{}, "conflicts": []any{}, "notices": []any{},
 		"bindings":           []any{map[string]any{"surface": "codex", "projection": "skill", "name": "unexpected", "invocation": "$unexpected", "mode": "native", "sharing": "exclusive"}},
 		"surface_exclusions": []any{},
@@ -589,9 +589,9 @@ func singleSourceAdmissionFixture(t *testing.T) (string, string, SingleSourceAdm
   "surfaces": ["codex"],
   "external_requirements": [],
   "resources": [
-	{"kind":"lifecycle","id":"coordinate-session","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"lifecycle","name":"coordinate-session","invocation":"coordinate-session","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]},
-    {"kind":"notice","id":"mit","source":"notices/mit","license":"MIT","attribution":"Copyright Eric Provencher","requires":[],"conflicts":[],"bindings":[],"surface_exclusions":[]},
-	{"kind":"skill","id":"orchestrate","source":"skills/orchestrate","requires":[],"conflicts":[],"notices":["notice:mit"],"bindings":[{"surface":"codex","projection":"skill","name":"orchestrate","invocation":"$orchestrate","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]}
+	{"kind":"lifecycle","id":"coordinate-session","description":"Tracks the coordination session lifecycle","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"lifecycle","name":"coordinate-session","invocation":"coordinate-session","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]},
+    {"kind":"notice","id":"mit","source":"notices/mit","description":"Preserves the upstream MIT license and attribution","license":"MIT","attribution":"Copyright Eric Provencher","requires":[],"conflicts":[],"bindings":[],"surface_exclusions":[]},
+	{"kind":"skill","id":"orchestrate","source":"skills/orchestrate","description":"Coordinates focused subagents","requires":[],"conflicts":[],"notices":["notice:mit"],"bindings":[{"surface":"codex","projection":"skill","name":"orchestrate","invocation":"$orchestrate","mode":"native","sharing":"exclusive"}],"surface_exclusions":[]}
   ],
   "exclusions": []
 }`)
