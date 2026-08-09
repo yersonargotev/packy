@@ -4,34 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
-const (
-	engramInstructionsFingerprint = "74176fb0847b06fb725ae8992c9a5fa12022ff347ca3ee2ef3e77c6d318d5fb3"
-	engramCompactFingerprint      = "c779d9584c8ca16331ebb31a753f7fbb5bcb8193b229572a54da189ffaa97fd1"
-)
-
-func hasEngramCodexSetupResources(pack capabilitypack.Pack) bool {
-	hasInstruction, hasMCP := false, false
-	for _, resource := range pack.Resources {
-		hasInstruction = hasInstruction || resource.Kind == "instruction" && resource.ID == "engram-memory"
-		hasMCP = hasMCP || resource.Kind == "mcp_server" && resource.ID == "engram"
-	}
-	return hasInstruction && hasMCP
-}
-
-func isEngramOwnedResource(resource capabilitypack.Resource) bool {
-	return resource.Kind == "instruction" && resource.ID == "engram-memory" || resource.Kind == "mcp_server" && resource.ID == "engram"
-}
-
-func (a *SurfaceAdapter) inspectEngramContract(config string, resolutions []capabilitypack.ExecutableResolution) ([]capabilitypack.ObservedProjection, error) {
+func (a *SurfaceAdapter) inspectExternalHostSetupContract(config string, setup capabilitypack.ExternalHostSetupCapability, resolutions []capabilitypack.ExecutableResolution) ([]capabilitypack.ObservedProjection, error) {
+	contract := setup.Codex
 	dir := filepath.Dir(a.configFile)
-	instructionsPath := filepath.Join(dir, "engram-instructions.md")
-	compactPath := filepath.Join(dir, "engram-compact-prompt.md")
+	instructionsPath := filepath.Join(dir, filepath.Clean(contract.InstructionsFile))
+	compactPath := filepath.Join(dir, filepath.Clean(contract.CompactPromptFile))
 	instructions, instructionsExist, err := readOptionalFileWithExistence(instructionsPath)
 	if err != nil {
 		return nil, err
@@ -40,7 +24,10 @@ func (a *SurfaceAdapter) inspectEngramContract(config string, resolutions []capa
 	if err != nil {
 		return nil, err
 	}
-	command := capabilitypack.ResolvedExecutablePath("engram", resolutions)
+	command := capabilitypack.ResolvedExecutablePath(setup.Tool, resolutions)
+	mcpSection := "mcp_servers." + setup.Tool
+	marketplaceSection := "marketplaces." + setup.Tool
+	pluginSection := `plugins."` + contract.Plugin + `"`
 	checks := []struct {
 		id, target string
 		kind       capabilitypack.ProjectionActionKind
@@ -48,18 +35,18 @@ func (a *SurfaceAdapter) inspectEngramContract(config string, resolutions []capa
 		present    bool
 		exact      string
 	}{
-		{id: "mcp", target: a.configFile, kind: capabilitypack.ActionCodexMCPConfig, valid: tomlSectionHas(config, "mcp_servers.engram", map[string]string{"command": command, "args": `["mcp", "--tools=agent"]`}), present: tomlSectionExists(config, "mcp_servers.engram"), exact: tomlSectionContent(config, "mcp_servers.engram")},
+		{id: "mcp", target: a.configFile, kind: capabilitypack.ActionCodexMCPConfig, valid: tomlSectionHas(config, mcpSection, map[string]string{"command": command, "args": tomlStringArray(contract.MCPArgs)}), present: tomlSectionExists(config, mcpSection), exact: tomlSectionContent(config, mcpSection)},
 		{id: "instructions-config", target: a.configFile, kind: capabilitypack.ActionCodexMCPConfig, valid: tomlSectionHas(config, "", map[string]string{"model_instructions_file": instructionsPath}), present: tomlTopLevelKeyExists(config, "model_instructions_file"), exact: tomlTopLevelValue(config, "model_instructions_file")},
-		{id: "instructions-file", target: instructionsPath, kind: capabilitypack.ActionCodexAssetFile, valid: instructionsExist && localprojection.FingerprintBytes([]byte(instructions)) == engramInstructionsFingerprint, present: instructionsExist, exact: instructions},
+		{id: "instructions-file", target: instructionsPath, kind: capabilitypack.ActionCodexAssetFile, valid: instructionsExist && localprojection.FingerprintBytes([]byte(instructions)) == contract.InstructionsFingerprint, present: instructionsExist, exact: instructions},
 		{id: "compact-config", target: a.configFile, kind: capabilitypack.ActionCodexMCPConfig, valid: tomlSectionHas(config, "", map[string]string{"experimental_compact_prompt_file": compactPath}), present: tomlTopLevelKeyExists(config, "experimental_compact_prompt_file"), exact: tomlTopLevelValue(config, "experimental_compact_prompt_file")},
-		{id: "compact-file", target: compactPath, kind: capabilitypack.ActionCodexAssetFile, valid: compactExists && localprojection.FingerprintBytes([]byte(compact)) == engramCompactFingerprint, present: compactExists, exact: compact},
-		{id: "marketplace", target: a.configFile, kind: capabilitypack.ActionCodexMCPConfig, valid: tomlSectionHas(config, "marketplaces.engram", map[string]string{"source_type": "git", "source": "https://github.com/Gentleman-Programming/engram.git", "ref": "main"}), present: tomlSectionExists(config, "marketplaces.engram"), exact: tomlSectionContent(config, "marketplaces.engram")},
-		{id: "plugin", target: a.configFile, kind: capabilitypack.ActionCodexMCPConfig, valid: tomlSectionHas(config, `plugins."engram@engram"`, map[string]string{"enabled": "true"}), present: tomlSectionExists(config, `plugins."engram@engram"`), exact: tomlSectionContent(config, `plugins."engram@engram"`)},
+		{id: "compact-file", target: compactPath, kind: capabilitypack.ActionCodexAssetFile, valid: compactExists && localprojection.FingerprintBytes([]byte(compact)) == contract.CompactPromptFingerprint, present: compactExists, exact: compact},
+		{id: "marketplace", target: a.configFile, kind: capabilitypack.ActionCodexMCPConfig, valid: tomlSectionHas(config, marketplaceSection, map[string]string{"source_type": "git", "source": contract.MarketplaceRepository, "ref": contract.MarketplaceRevision}), present: tomlSectionExists(config, marketplaceSection), exact: tomlSectionContent(config, marketplaceSection)},
+		{id: "plugin", target: a.configFile, kind: capabilitypack.ActionCodexMCPConfig, valid: tomlSectionHas(config, pluginSection, map[string]string{"enabled": "true"}), present: tomlSectionExists(config, pluginSection), exact: tomlSectionContent(config, pluginSection)},
 	}
 	result := make([]capabilitypack.ObservedProjection, 0, len(checks))
 	for _, check := range checks {
-		id := "external_setup:engram:codex:" + check.id
-		desired := localprojection.FingerprintBytes([]byte("engram-codex-contract-v1:" + check.id))
+		id := "external_setup:" + setup.Tool + ":codex:" + check.id
+		desired := localprojection.FingerprintBytes([]byte("external-host-setup:codex:" + setup.Tool + ":" + check.id))
 		exact := "missing"
 		if check.present {
 			exact = localprojection.FingerprintBytes([]byte(check.exact))
@@ -70,10 +57,18 @@ func (a *SurfaceAdapter) inspectEngramContract(config string, resolutions []capa
 		}
 		result = append(result, capabilitypack.ObservedProjection{
 			ID: id, Exists: check.present, ObservedFingerprint: observed, ExactFingerprint: exact, DesiredFingerprint: desired, ExternallyManaged: true,
-			Action: capabilitypack.ProjectionAction{ID: id, Kind: check.kind, Target: check.target, Description: fmt.Sprintf("observe Engram-owned Codex %s configuration", check.id)},
+			Action: capabilitypack.ProjectionAction{ID: id, Kind: check.kind, Target: check.target, Description: fmt.Sprintf("observe %s-owned Codex %s configuration", setup.Tool, check.id)},
 		})
 	}
 	return result, nil
+}
+
+func tomlStringArray(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = strconv.Quote(value)
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
 func readOptionalFileWithExistence(path string) (string, bool, error) {

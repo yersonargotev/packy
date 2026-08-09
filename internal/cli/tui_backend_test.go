@@ -809,7 +809,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if err != nil {
 		t.Fatal(err)
 	}
-	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.1"`, `"version": "1.0.2"`, 1)
+	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.2"`, `"version": "1.0.3"`, 1)
 	if updatedManifest == string(manifest) {
 		t.Fatal("Engram fixture version did not match the expected current version")
 	}
@@ -878,7 +878,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if err != nil {
 		t.Fatal(err)
 	}
-	if update.Operation != "update" || update.Disposition != "previewable" || update.PackVersion != "1.0.2" || update.Surface != "codex" || !slices.Contains(update.Diff.Changed, "packy.json") || !slices.Contains(update.Diff.Changed, "packy.lock.json") || !slices.Contains(update.Diff.Retained, ".codex/config.toml") {
+	if update.Operation != "update" || update.Disposition != "previewable" || update.PackVersion != "1.0.3" || update.Surface != "codex" || !slices.Contains(update.Diff.Changed, "packy.json") || !slices.Contains(update.Diff.Changed, "packy.lock.json") || !slices.Contains(update.Diff.Retained, ".codex/config.toml") {
 		t.Fatalf("project update preview = %#v", update)
 	}
 	beforeUpdate := snapshotTree(t, project)
@@ -903,7 +903,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(installation.Manifest.Packs) != 1 || installation.Manifest.Packs[0].Version != "1.0.2" || installation.Manifest.Packs[0].Selection.Mode != capabilitypack.SelectionCustom || !slices.Equal(installation.Manifest.Packs[0].Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "mcp_server", ID: "engram"}}) {
+	if len(installation.Manifest.Packs) != 1 || installation.Manifest.Packs[0].Version != "1.0.3" || installation.Manifest.Packs[0].Selection.Mode != capabilitypack.SelectionCustom || !slices.Equal(installation.Manifest.Packs[0].Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "mcp_server", ID: "engram"}}) {
 		t.Fatalf("project update did not preserve reviewed project intent: %#v", installation.Manifest.Packs)
 	}
 	versions := map[capabilitypack.Surface]string{}
@@ -919,7 +919,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 			}
 		}
 	}
-	if versions[capabilitypack.SurfaceCodex] != "1.0.2" || versions[capabilitypack.SurfaceOpenCode] != "1.0.1" {
+	if versions[capabilitypack.SurfaceCodex] != "1.0.3" || versions[capabilitypack.SurfaceOpenCode] != "1.0.2" {
 		t.Fatalf("selected-surface update changed another surface: %#v", versions)
 	}
 	if string(retainedOpenCodeReceiptAfter) != string(retainedOpenCodeReceiptBefore) {
@@ -935,7 +935,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 	pack = findTUIPack(dashboard.Project.Packs, "engram")
 	codexIndex := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
 	opencodeIndex := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
-	if codexIndex < 0 || opencodeIndex < 0 || pack.SurfaceStatuses[codexIndex].InstalledVersion != "1.0.2" || pack.SurfaceStatuses[codexIndex].UpdateAvailable || pack.SurfaceStatuses[opencodeIndex].InstalledVersion != "1.0.1" || !pack.SurfaceStatuses[opencodeIndex].UpdateAvailable || pack.SurfaceStatuses[opencodeIndex].Runtime != retainedOpenCodeRuntimeBefore {
+	if codexIndex < 0 || opencodeIndex < 0 || pack.SurfaceStatuses[codexIndex].InstalledVersion != "1.0.3" || pack.SurfaceStatuses[codexIndex].UpdateAvailable || pack.SurfaceStatuses[opencodeIndex].InstalledVersion != "1.0.2" || !pack.SurfaceStatuses[opencodeIndex].UpdateAvailable || pack.SurfaceStatuses[opencodeIndex].Runtime != retainedOpenCodeRuntimeBefore {
 		t.Fatalf("surface-scoped status did not preserve the sequential update frontier: %#v", pack.SurfaceStatuses)
 	}
 	var retainedCodexReceiptBefore []byte
@@ -974,7 +974,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPer
 			}
 		}
 	}
-	if versions[capabilitypack.SurfaceCodex] != "1.0.2" || versions[capabilitypack.SurfaceOpenCode] != "1.0.2" || string(retainedCodexReceiptAfter) != string(retainedCodexReceiptBefore) {
+	if versions[capabilitypack.SurfaceCodex] != "1.0.3" || versions[capabilitypack.SurfaceOpenCode] != "1.0.3" || string(retainedCodexReceiptAfter) != string(retainedCodexReceiptBefore) {
 		t.Fatalf("sequential project updates did not converge independently: versions=%#v\ncodex before: %s\ncodex after:  %s", versions, retainedCodexReceiptBefore, retainedCodexReceiptAfter)
 	}
 	projectContract := snapshotTree(t, project)

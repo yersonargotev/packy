@@ -350,14 +350,19 @@ func insertInstructionArrayEntry(existing string, close int, propertyIndent stri
 	return prefix + "\n" + entryIndent + string(encoded) + updated[adjustedClose:]
 }
 func removeArrayElement(existing string, element arrayStringElement) string {
-	start := propertyLineStart(existing, element.start)
+	lineStart := propertyLineStart(existing, element.start)
+	wholeLine := strings.TrimSpace(existing[lineStart:element.start]) == ""
+	start := element.start
+	if wholeLine {
+		start = lineStart
+	}
 	end := element.end
 	if comma := skipWhitespaceAndComments(existing, element.end); comma < len(existing) && existing[comma] == ',' {
 		end = comma + 1
 		for end < len(existing) && (existing[end] == ' ' || existing[end] == '\t') {
 			end++
 		}
-		if end < len(existing) && (existing[end] == '\n' || existing[end] == '\r') {
+		if wholeLine && end < len(existing) && (existing[end] == '\n' || existing[end] == '\r') {
 			if existing[end] == '\r' && end+1 < len(existing) && existing[end+1] == '\n' {
 				end++
 			}

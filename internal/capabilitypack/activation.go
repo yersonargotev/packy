@@ -2253,7 +2253,11 @@ func (f Facade) externalPlan(operation Operation, pack Pack, surface Surface, st
 				actions = append(actions, acquisition)
 			}
 		}
-		if resolution.Capability != SurfaceCapabilityEngramIntegration {
+		if resolution.Capability != SurfaceCapabilityExternalHostSetup {
+			continue
+		}
+		setupCapability, ok := pack.externalHostSetup(surface, resolution.Tool)
+		if !ok {
 			continue
 		}
 		if strings.TrimSpace(resolution.Path) == "" {
@@ -2267,7 +2271,7 @@ func (f Facade) externalPlan(operation Operation, pack Pack, surface Surface, st
 		}
 		setup := ProjectionAction{
 			ID: "external:" + resolution.Tool + ":setup:" + string(surface), Kind: ActionExternalCommand, Consent: ConsentToolHostSetup,
-			Source: resolution.Path, Version: resolution.AcquisitionVersion, Command: resolution.Path, Args: []string{"setup", string(surface)},
+			Source: resolution.Path, Version: resolution.AcquisitionVersion, Command: resolution.Path, Args: append([]string(nil), setupCapability.SetupArgs...),
 			Description:    fmt.Sprintf("run %s setup %s", resolution.Path, surface),
 			Consequences:   fmt.Sprintf("allows %s to mutate the %s host configuration for its tool-owned setup", resolution.Tool, surfaceDisplayName(surface)),
 			RollbackLimits: "pack deactivation removes Packy-owned projections but does not delete tool-owned configuration, data, or credentials",
@@ -2771,7 +2775,7 @@ func recordExternalReceipts(effects []ExternalEffect, actions []ProjectionAction
 		tool := externalSetupTool(action.ID)
 		receipt := &ExternalEffectReceipt{
 			SchemaVersion: 1, EffectID: action.ID, EffectFingerprint: externalEffectFingerprint(action), Surface: surface,
-			PackID: externalReceiptPackID(packs, tool), Contributions: contributions,
+			PackID: externalReceiptPackID(packs, surface, tool), Contributions: contributions,
 			Reversal: ExternalReversalContract{
 				SchemaVersion: 1, Consent: ConsentDestructiveCleanup,
 				AuthorityLimits: []string{"configuration contributions recorded by this receipt only", "external executable, service, memory, data, sessions, credentials, and unrelated configuration are preserved"},
@@ -2802,9 +2806,9 @@ func externalSetupTool(effectID string) string {
 	return tool
 }
 
-func externalReceiptPackID(packs []Pack, tool string) string {
+func externalReceiptPackID(packs []Pack, surface Surface, tool string) string {
 	for _, pack := range packs {
-		if slices.Contains(pack.Requires.Tools, tool) {
+		if _, ok := pack.externalHostSetup(surface, tool); ok {
 			return pack.ID
 		}
 	}
@@ -2865,7 +2869,7 @@ func externalReceiptOwnerRemains(receipt *ExternalEffectReceipt, packs []Pack) b
 	if receipt == nil {
 		return false
 	}
-	return externalReceiptPackID(packs, externalSetupTool(receipt.EffectID)) == receipt.PackID
+	return externalReceiptPackID(packs, receipt.Surface, externalSetupTool(receipt.EffectID)) == receipt.PackID
 }
 
 func externalReceiptReversalAction(action ProjectionAction, receipt *ExternalEffectReceipt) ProjectionAction {
@@ -2881,7 +2885,7 @@ func refreshExternalReceiptOwner(effects []ExternalEffect, packs []Pack, surface
 		if result[i].Receipt == nil || result[i].Receipt.Surface != surface {
 			continue
 		}
-		packID := externalReceiptPackID(packs, externalSetupTool(result[i].Receipt.EffectID))
+		packID := externalReceiptPackID(packs, surface, externalSetupTool(result[i].Receipt.EffectID))
 		if packID != "" {
 			result[i].Receipt.PackID = packID
 		}

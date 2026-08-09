@@ -10,6 +10,30 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
+func openCodeExternalHostSetupPack(packID, instructionID, mcpID, instructionSource string) capabilitypack.Pack {
+	return capabilitypack.Pack{ID: packID, Version: "1.0.0", Resources: []capabilitypack.Resource{
+		{Kind: "instruction", ID: instructionID, Source: instructionSource},
+		{
+			Kind: "mcp_server", ID: mcpID, Command: "engram", Args: []string{"mcp", "--tools=agent"},
+			Bindings: []capabilitypack.Binding{
+				{
+					Surface: capabilitypack.SurfaceOpenCode,
+					Capabilities: []capabilitypack.SurfaceCapability{
+						{
+							Type: capabilitypack.SurfaceCapabilityExternalHostSetup,
+							ExternalHostSetup: &capabilitypack.ExternalHostSetupCapability{
+								Tool: "engram", SetupArgs: []string{"setup", "opencode"},
+								ManagedResources: []capabilitypack.ResourceIdentity{{Kind: "instruction", ID: instructionID}, {Kind: "mcp_server", ID: mcpID}},
+								OpenCode:         &capabilitypack.OpenCodeHostSetup{PluginFile: "plugins/engram.ts", TUIFile: "tui.json", TUIPlugin: openCodeSubagentStatuslinePlugin},
+							},
+						},
+					},
+				},
+			},
+		},
+	}}
+}
+
 func TestBindAdapterProvenancePublishesCanonicalObservationWithoutChangingAction(t *testing.T) {
 	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{Goal: capabilitypack.ProjectionPresent, Action: capabilitypack.ProjectionAction{Kind: capabilitypack.ActionOpenCodeCommandFile}}}}
 	bindAdapterProvenance(&inspection)
@@ -473,7 +497,7 @@ func TestEngramProjectionIsOpenCodeSpecificAndPreservesJSONC(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := filepath.Join(root, "opencode.json")
-	prompt := filepath.Join(root, "engram-memory.md")
+	prompt := filepath.Join(root, "portable-notes.md")
 	existing := `// keep OpenCode syntax
 {
   "model": "anthropic/test",
@@ -484,10 +508,7 @@ func TestEngramProjectionIsOpenCodeSpecificAndPreservesJSONC(t *testing.T) {
 	if err := os.WriteFile(config, []byte(existing), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	pack := capabilitypack.Pack{ID: "engram", Version: "1.0.0", Resources: []capabilitypack.Resource{
-		{Kind: "instruction", ID: "engram-memory", Source: "instructions/engram-memory.md"},
-		{Kind: "mcp_server", ID: "engram", Command: "engram", Args: []string{"mcp", "--tools=agent"}},
-	}}
+	pack := openCodeExternalHostSetupPack("portable-memory", "portable-notes", "portable-memory", "instructions/engram-memory.md")
 	adapter := NewSurfaceAdapter(root, filepath.Join(root, ".agents", "skills"), config, prompt)
 	observed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
 	if err != nil {
@@ -554,7 +575,7 @@ func TestReceiptCandidateRemovesOnlyExactOpenCodeSetupContributions(t *testing.T
 	if err := os.WriteFile(tui, []byte(tuiContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	pack := capabilitypack.Pack{ID: "engram", Resources: []capabilitypack.Resource{{Kind: "instruction", ID: "engram-memory", Source: "instruction.md"}, {Kind: "mcp_server", ID: "engram", Command: "engram"}}}
+	pack := openCodeExternalHostSetupPack("engram", "engram-memory", "engram", "instruction.md")
 	adapter := NewSurfaceAdapter(root, filepath.Join(root, ".agents", "skills"), config, prompt)
 	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack, Desired: capabilitypack.Pack{ID: "remaining"}})
 	if err != nil {
@@ -590,6 +611,56 @@ func TestReceiptCandidateRemovesOnlyExactOpenCodeSetupContributions(t *testing.T
 	}
 }
 
+func TestReceiptCandidatePreservesInlineOpenCodeTUIArray(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "instruction.md"), []byte("Engram instructions\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plugin := filepath.Join(root, "plugins", "engram.ts")
+	if err := os.MkdirAll(filepath.Dir(plugin), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plugin, []byte("// exact Engram plugin\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tui := filepath.Join(root, "tui.json")
+	tuiContent := "{\n  \"model\": \"keep/model\",\n  \"plugin\": [\"keep-plugin\", \"opencode-subagent-statusline\"]\n}\n"
+	if err := os.WriteFile(tui, []byte(tuiContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack := openCodeExternalHostSetupPack("engram", "engram-memory", "engram", "instruction.md")
+	adapter := NewSurfaceAdapter(root, filepath.Join(root, ".agents", "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "engram-memory.md"))
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Prior: pack, Desired: capabilitypack.Pack{ID: "remaining"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range inspection.Projections {
+		if projection.ID != "external_setup:engram:opencode:tui-plugin" {
+			continue
+		}
+		if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{projection.Action}); err != nil {
+			t.Fatal(err)
+		}
+		updated, readErr := os.ReadFile(tui)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if _, err := decodeConfig(string(updated), tui); err != nil {
+			t.Fatalf("TUI config became invalid: %v\n%s", err, updated)
+		}
+		for _, want := range []string{"keep/model", "keep-plugin"} {
+			if !strings.Contains(string(updated), want) {
+				t.Fatalf("OpenCode TUI config lost %q:\n%s", want, updated)
+			}
+		}
+		if strings.Contains(string(updated), openCodeSubagentStatuslinePlugin) {
+			t.Fatalf("receipt-backed TUI contribution remains:\n%s", updated)
+		}
+		return
+	}
+	t.Fatal("TUI setup projection was not observed")
+}
+
 func TestDuplicateOpenCodeSetupContributionIsAmbiguousAndPreserved(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "instruction.md"), []byte("Engram instructions\n"), 0o600); err != nil {
@@ -607,7 +678,7 @@ func TestDuplicateOpenCodeSetupContributionIsAmbiguousAndPreserved(t *testing.T)
 	if err := os.WriteFile(tui, []byte(duplicate), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	pack := capabilitypack.Pack{ID: "engram", Resources: []capabilitypack.Resource{{Kind: "instruction", ID: "engram-memory", Source: "instruction.md"}, {Kind: "mcp_server", ID: "engram", Command: "engram"}}}
+	pack := openCodeExternalHostSetupPack("engram", "engram-memory", "engram", "instruction.md")
 	adapter := NewSurfaceAdapter(root, filepath.Join(root, ".agents", "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "engram-memory.md"))
 	observed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
 	if err != nil {

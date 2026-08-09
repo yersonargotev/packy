@@ -108,11 +108,15 @@ global primary instruction document and its workstation configuration reference.
 Project guidance remains a separate `project-instruction` contribution. Unknown capability
 types, missing typed data, and extension fields are rejected during admission.
 
-The payload-free `engram-integration` capability explicitly enables Packy's
-reviewed Engram acquisition and host setup behavior on that surface. External
-requirements remain the single source of tool readiness: every declared name
-is observed generically through PATH, and no tool receives acquisition or a
-`setup` command merely because of its name.
+The typed `external-host-setup` capability explicitly enables one supported
+tool-owned setup on that surface. Its reviewed data names the external tool,
+exact setup arguments, resources governed by that setup, and the closed Codex
+or OpenCode verification contract. Engram declares this capability on its MCP
+resource; selecting another resource does not inherit setup behavior unless
+dependency closure selects that declaration. External requirements remain the
+single source of tool readiness: every declared name is observed generically
+through PATH, and no tool receives acquisition or a `setup` command merely
+because of its name.
 
 The generated Pack catalog is derived from the manifests; it is not a second
 authoring source or manually maintained snapshot. Review and merge the manifest

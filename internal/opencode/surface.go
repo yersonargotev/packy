@@ -111,8 +111,8 @@ func skillOnlyReadiness(pack capabilitypack.Pack) bool {
 func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
 	var projections []capabilitypack.ObservedProjection
 	var revisionParts []string
-	if hasEngramOpenCodeSetupResources(pack) {
-		external, err := a.inspectEngramSetupContract()
+	if setup, ok := pack.ExternalHostSetup(capabilitypack.SurfaceOpenCode); ok {
+		external, err := a.inspectExternalHostSetupContract(setup)
 		if err != nil {
 			return capabilitypack.SurfaceInspection{}, err
 		}
@@ -356,6 +356,7 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 }
 
 func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, desired capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
+	activeSetup, hasActiveSetup := active.ExternalHostSetup(capabilitypack.SurfaceOpenCode)
 	current, err := a.inspectDesired(ctx, active, resolutions)
 	if err != nil {
 		return capabilitypack.SurfaceInspection{}, err
@@ -380,7 +381,10 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 		mode := capabilitypack.ProjectionRemoveContent
 		projection.Action.Content = ""
 		if projection.ExternallyManaged {
-			switch strings.TrimPrefix(projection.ID, "external_setup:engram:opencode:") {
+			if !hasActiveSetup {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("external OpenCode projection %s has no declaring host setup capability", projection.ID)
+			}
+			switch strings.TrimPrefix(projection.ID, "external_setup:"+activeSetup.Tool+":opencode:") {
 			case "plugin":
 				mode = capabilitypack.ProjectionDeleteTarget
 			case "tui-plugin":
@@ -388,13 +392,13 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 				if readErr != nil {
 					return capabilitypack.SurfaceInspection{}, readErr
 				}
-				content, err = removeTopLevelStringArrayEntry(content, "plugin", openCodeSubagentStatuslinePlugin)
+				content, err = removeTopLevelStringArrayEntry(content, "plugin", activeSetup.OpenCode.TUIPlugin)
 				if err != nil {
 					return capabilitypack.SurfaceInspection{}, err
 				}
 				projection.Action.Content = content
 			}
-			projection = capabilitypack.RemovalCandidate(projection, mode, projection.Action.Content, fmt.Sprintf("remove exact receipt-backed OpenCode Engram setup contribution %s", projection.ID))
+			projection = capabilitypack.RemovalCandidate(projection, mode, projection.Action.Content, fmt.Sprintf("remove exact receipt-backed OpenCode %s setup contribution %s", activeSetup.Tool, projection.ID))
 			result.Projections = append(result.Projections, projection)
 			continue
 		}
@@ -847,12 +851,14 @@ func (a *SurfaceAdapter) configReferenceTarget(id string) string {
 }
 
 func pendingActions(pack capabilitypack.Pack) []string {
-	if pack.ID != "engram" {
+	setup, ok := pack.ExternalHostSetup(capabilitypack.SurfaceOpenCode)
+	if !ok {
 		return nil
 	}
+	tool := strings.ToUpper(setup.Tool[:1]) + setup.Tool[1:]
 	return []string{
-		"review OpenCode permissions for Engram if the host asks for tool access",
-		"reload OpenCode so the configured Engram MCP server becomes available at runtime",
+		"review OpenCode permissions for " + tool + " if the host asks for tool access",
+		"reload OpenCode so the configured " + tool + " MCP server becomes available at runtime",
 	}
 }
 

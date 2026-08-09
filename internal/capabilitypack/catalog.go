@@ -30,6 +30,7 @@ func SupportedSurfaces() []Surface {
 var (
 	idPattern     = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 	semverPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
+	digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
 type Surface string
@@ -42,6 +43,42 @@ const (
 
 type Requirements struct {
 	Tools []string `json:"tools"`
+}
+
+func validateCodexHostSetup(setup CodexHostSetup) error {
+	if setup.MCPArgs == nil || len(setup.MCPArgs) == 0 || hasBlankString(setup.MCPArgs) {
+		return fmt.Errorf("mcp_args must be a non-empty array without blank values")
+	}
+	if !validHostSetupPath(setup.InstructionsFile) || !validHostSetupPath(setup.CompactPromptFile) || setup.InstructionsFile == setup.CompactPromptFile {
+		return fmt.Errorf("instruction and compact-prompt files must be distinct safe relative paths")
+	}
+	if !digestPattern.MatchString(setup.InstructionsFingerprint) || !digestPattern.MatchString(setup.CompactPromptFingerprint) {
+		return fmt.Errorf("instruction and compact-prompt fingerprints must be lowercase SHA-256 digests")
+	}
+	if !strings.HasPrefix(setup.MarketplaceRepository, "https://") || strings.ContainsAny(setup.MarketplaceRepository, "@?#") || strings.TrimSpace(setup.MarketplaceRevision) == "" || strings.TrimSpace(setup.Plugin) == "" {
+		return fmt.Errorf("marketplace repository, revision, and plugin are invalid")
+	}
+	return nil
+}
+
+func validateOpenCodeHostSetup(setup OpenCodeHostSetup) error {
+	if !validHostSetupPath(setup.PluginFile) || !validHostSetupPath(setup.TUIFile) || setup.PluginFile == setup.TUIFile || !idPattern.MatchString(setup.TUIPlugin) {
+		return fmt.Errorf("plugin_file, tui_file, and tui_plugin are invalid")
+	}
+	return nil
+}
+
+func validHostSetupPath(value string) bool {
+	return value != "" && !filepath.IsAbs(value) && filepath.Clean(value) == value && value != "." && value != ".." && !strings.HasPrefix(value, ".."+string(filepath.Separator))
+}
+
+func hasBlankString(values []string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ReadinessObligation identifies a Pack-level condition whose satisfaction is
@@ -234,7 +271,7 @@ type Binding struct {
 type SurfaceCapabilityType string
 
 const (
-	SurfaceCapabilityEngramIntegration     SurfaceCapabilityType = "engram-integration"
+	SurfaceCapabilityExternalHostSetup     SurfaceCapabilityType = "external-host-setup"
 	SurfaceCapabilityOpenCodePrimaryPrompt SurfaceCapabilityType = "opencode-primary-prompt"
 	SurfaceCapabilityProjectInstruction    SurfaceCapabilityType = "project-instruction"
 )
@@ -243,8 +280,34 @@ const (
 // binding. Its closed wire shape deliberately cannot carry extension data.
 type SurfaceCapability struct {
 	Type               SurfaceCapabilityType         `json:"type"`
+	ExternalHostSetup  *ExternalHostSetupCapability  `json:"external_host_setup,omitempty"`
 	PrimaryPrompt      *PrimaryPromptCapability      `json:"primary_prompt,omitempty"`
 	ProjectInstruction *ProjectInstructionCapability `json:"project_instruction,omitempty"`
+}
+
+type ExternalHostSetupCapability struct {
+	Tool             string             `json:"tool"`
+	SetupArgs        []string           `json:"setup_args"`
+	ManagedResources []ResourceIdentity `json:"managed_resources"`
+	Codex            *CodexHostSetup    `json:"codex,omitempty"`
+	OpenCode         *OpenCodeHostSetup `json:"opencode,omitempty"`
+}
+
+type CodexHostSetup struct {
+	MCPArgs                  []string `json:"mcp_args"`
+	InstructionsFile         string   `json:"instructions_file"`
+	InstructionsFingerprint  string   `json:"instructions_fingerprint"`
+	CompactPromptFile        string   `json:"compact_prompt_file"`
+	CompactPromptFingerprint string   `json:"compact_prompt_fingerprint"`
+	MarketplaceRepository    string   `json:"marketplace_repository"`
+	MarketplaceRevision      string   `json:"marketplace_revision"`
+	Plugin                   string   `json:"plugin"`
+}
+
+type OpenCodeHostSetup struct {
+	PluginFile string `json:"plugin_file"`
+	TUIFile    string `json:"tui_file"`
+	TUIPlugin  string `json:"tui_plugin"`
 }
 
 type PrimaryPromptCapability struct {
@@ -290,10 +353,42 @@ func (p Pack) RequestsSurfaceCapability(surface Surface, capability SurfaceCapab
 }
 
 func (p Pack) externalToolCapability(surface Surface, tool string) (SurfaceCapabilityType, bool) {
-	if tool == "engram" && p.RequestsSurfaceCapability(surface, SurfaceCapabilityEngramIntegration) {
-		return SurfaceCapabilityEngramIntegration, true
+	if _, ok := p.externalHostSetup(surface, tool); ok {
+		return SurfaceCapabilityExternalHostSetup, true
 	}
 	return "", false
+}
+
+func (p Pack) externalHostSetup(surface Surface, tool string) (ExternalHostSetupCapability, bool) {
+	for _, resource := range p.Resources {
+		capability, ok := resource.SurfaceCapability(surface, SurfaceCapabilityExternalHostSetup)
+		if ok && capability.ExternalHostSetup.Tool == tool {
+			return *capability.ExternalHostSetup, true
+		}
+	}
+	return ExternalHostSetupCapability{}, false
+}
+
+// ExternalHostSetup returns the selected reviewed host-setup declaration for
+// one surface. Admission rejects conflicting declarations, so callers never
+// need to choose between resources or infer behavior from their identities.
+func (p Pack) ExternalHostSetup(surface Surface) (ExternalHostSetupCapability, bool) {
+	for _, resource := range p.Resources {
+		capability, ok := resource.SurfaceCapability(surface, SurfaceCapabilityExternalHostSetup)
+		if ok {
+			return *capability.ExternalHostSetup, true
+		}
+	}
+	return ExternalHostSetupCapability{}, false
+}
+
+func (c ExternalHostSetupCapability) Manages(resource Resource) bool {
+	for _, managed := range c.ManagedResources {
+		if managed.Kind == resource.Kind && managed.ID == resource.ID {
+			return true
+		}
+	}
+	return false
 }
 
 type AgentAuthority struct {
@@ -623,6 +718,21 @@ func clonePack(pack Pack) Pack {
 			binding := &pack.Resources[i].Bindings[j]
 			binding.Capabilities = append([]SurfaceCapability(nil), binding.Capabilities...)
 			for k := range binding.Capabilities {
+				if binding.Capabilities[k].ExternalHostSetup != nil {
+					copy := *binding.Capabilities[k].ExternalHostSetup
+					copy.SetupArgs = append([]string(nil), copy.SetupArgs...)
+					copy.ManagedResources = append([]ResourceIdentity(nil), copy.ManagedResources...)
+					if copy.Codex != nil {
+						codex := *copy.Codex
+						codex.MCPArgs = append([]string(nil), codex.MCPArgs...)
+						copy.Codex = &codex
+					}
+					if copy.OpenCode != nil {
+						opencode := *copy.OpenCode
+						copy.OpenCode = &opencode
+					}
+					binding.Capabilities[k].ExternalHostSetup = &copy
+				}
 				if binding.Capabilities[k].PrimaryPrompt != nil {
 					copy := *binding.Capabilities[k].PrimaryPrompt
 					binding.Capabilities[k].PrimaryPrompt = &copy
@@ -895,6 +1005,52 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			return fmt.Errorf("capabilities must be sorted by type without duplicates")
 		}
 		switch capability.Type {
+		case SurfaceCapabilityExternalHostSetup:
+			if capability.ExternalHostSetup == nil {
+				return fmt.Errorf("surface capability %q requires external_host_setup data", capability.Type)
+			}
+			if capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
+				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
+			}
+			setup := capability.ExternalHostSetup
+			if setup.Tool != "engram" {
+				return fmt.Errorf("surface capability %q external_host_setup tool %q is unsupported", capability.Type, setup.Tool)
+			}
+			if binding.Surface != SurfaceCodex && binding.Surface != SurfaceOpenCode {
+				return fmt.Errorf("surface capability %q requires a codex or opencode binding", capability.Type)
+			}
+			if len(setup.SetupArgs) != 2 || setup.SetupArgs[0] != "setup" || setup.SetupArgs[1] != string(binding.Surface) {
+				return fmt.Errorf("surface capability %q external_host_setup setup_args must be [\"setup\", %q]", capability.Type, binding.Surface)
+			}
+			if binding.Surface == SurfaceCodex {
+				if setup.Codex == nil || setup.OpenCode != nil {
+					return fmt.Errorf("surface capability %q on codex requires only codex data", capability.Type)
+				}
+				if err := validateCodexHostSetup(*setup.Codex); err != nil {
+					return fmt.Errorf("surface capability %q codex: %w", capability.Type, err)
+				}
+			} else {
+				if setup.OpenCode == nil || setup.Codex != nil {
+					return fmt.Errorf("surface capability %q on opencode requires only opencode data", capability.Type)
+				}
+				if err := validateOpenCodeHostSetup(*setup.OpenCode); err != nil {
+					return fmt.Errorf("surface capability %q opencode: %w", capability.Type, err)
+				}
+			}
+			if setup.ManagedResources == nil || len(setup.ManagedResources) == 0 {
+				return fmt.Errorf("surface capability %q external_host_setup managed_resources must be a non-empty sorted set", capability.Type)
+			}
+			for i, managed := range setup.ManagedResources {
+				if strings.TrimSpace(managed.Kind) == "" || !idPattern.MatchString(managed.ID) {
+					return fmt.Errorf("surface capability %q external_host_setup managed resource identities are invalid", capability.Type)
+				}
+				if i > 0 {
+					prior := setup.ManagedResources[i-1]
+					if prior.Kind > managed.Kind || prior.Kind == managed.Kind && prior.ID >= managed.ID {
+						return fmt.Errorf("surface capability %q external_host_setup managed_resources must be sorted without duplicates", capability.Type)
+					}
+				}
+			}
 		case SurfaceCapabilityOpenCodePrimaryPrompt:
 			if binding.Surface != SurfaceOpenCode {
 				return fmt.Errorf("surface capability %q requires an opencode binding", capability.Type)
@@ -904,6 +1060,9 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			}
 			if capability.ProjectInstruction != nil {
 				return fmt.Errorf("surface capability %q does not accept project_instruction data", capability.Type)
+			}
+			if capability.ExternalHostSetup != nil {
+				return fmt.Errorf("surface capability %q does not accept external_host_setup data", capability.Type)
 			}
 			if !idPattern.MatchString(capability.PrimaryPrompt.ID) {
 				return fmt.Errorf("surface capability %q primary_prompt id must be lowercase kebab-case", capability.Type)
@@ -921,18 +1080,14 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.PrimaryPrompt != nil {
 				return fmt.Errorf("surface capability %q does not accept primary_prompt data", capability.Type)
 			}
+			if capability.ExternalHostSetup != nil {
+				return fmt.Errorf("surface capability %q does not accept external_host_setup data", capability.Type)
+			}
 			if !idPattern.MatchString(capability.ProjectInstruction.ID) {
 				return fmt.Errorf("surface capability %q project_instruction id must be lowercase kebab-case", capability.Type)
 			}
 			if err := validateSourcePath(capability.ProjectInstruction.Source); err != nil {
 				return fmt.Errorf("surface capability %q project_instruction source: %w", capability.Type, err)
-			}
-		case SurfaceCapabilityEngramIntegration:
-			if capability.PrimaryPrompt != nil {
-				return fmt.Errorf("surface capability %q does not accept primary_prompt data", capability.Type)
-			}
-			if capability.ProjectInstruction != nil {
-				return fmt.Errorf("surface capability %q does not accept project_instruction data", capability.Type)
 			}
 		default:
 			return fmt.Errorf("surface capability %q is unsupported", capability.Type)

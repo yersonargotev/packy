@@ -11,57 +11,49 @@ import (
 
 const openCodeSubagentStatuslinePlugin = "opencode-subagent-statusline"
 
-func hasEngramOpenCodeSetupResources(pack capabilitypack.Pack) bool {
-	hasInstruction, hasMCP := false, false
-	for _, resource := range pack.Resources {
-		hasInstruction = hasInstruction || resource.Kind == "instruction" && resource.ID == "engram-memory"
-		hasMCP = hasMCP || resource.Kind == "mcp_server" && resource.ID == "engram"
-	}
-	return hasInstruction && hasMCP
-}
-
-func (a *SurfaceAdapter) inspectEngramSetupContract() ([]capabilitypack.ObservedProjection, error) {
-	pluginPath := filepath.Join(filepath.Dir(a.configFile), "plugins", "engram.ts")
+func (a *SurfaceAdapter) inspectExternalHostSetupContract(setup capabilitypack.ExternalHostSetupCapability) ([]capabilitypack.ObservedProjection, error) {
+	contract := setup.OpenCode
+	pluginPath := filepath.Join(filepath.Dir(a.configFile), filepath.Clean(contract.PluginFile))
 	pluginFingerprint, pluginExists, err := localprojection.FingerprintPath(pluginPath)
 	if err != nil {
 		return nil, err
 	}
-	pluginDesired := localprojection.FingerprintBytes([]byte("engram-opencode-contract-v1:plugin"))
+	pluginDesired := localprojection.FingerprintBytes([]byte("external-host-setup:opencode:" + setup.Tool + ":plugin"))
 	pluginObserved := pluginFingerprint
 	if pluginExists {
 		pluginObserved = pluginDesired
 	}
 
-	tuiPath := filepath.Join(filepath.Dir(a.configFile), "tui.json")
+	tuiPath := filepath.Join(filepath.Dir(a.configFile), filepath.Clean(contract.TUIFile))
 	tuiContent, err := readOptionalSurfaceFile(tuiPath)
 	if err != nil {
 		return nil, err
 	}
-	tuiMatches, err := topLevelStringArrayCount(tuiContent, tuiPath, "plugin", openCodeSubagentStatuslinePlugin)
+	tuiMatches, err := topLevelStringArrayCount(tuiContent, tuiPath, "plugin", contract.TUIPlugin)
 	if err != nil {
 		return nil, err
 	}
 	tuiExists := tuiMatches > 0
 	tuiConfigured := tuiMatches == 1
-	tuiDesired := localprojection.FingerprintBytes([]byte("engram-opencode-contract-v1:tui-plugin"))
+	tuiDesired := localprojection.FingerprintBytes([]byte("external-host-setup:opencode:" + setup.Tool + ":tui-plugin"))
 	tuiExact := "missing"
 	tuiObserved := "missing"
 	if tuiExists {
-		tuiExact = localprojection.FingerprintBytes([]byte(fmt.Sprintf("%s\ncount=%d", openCodeSubagentStatuslinePlugin, tuiMatches)))
+		tuiExact = localprojection.FingerprintBytes([]byte(fmt.Sprintf("%s\ncount=%d", contract.TUIPlugin, tuiMatches)))
 	}
 	if tuiConfigured {
 		tuiObserved = tuiDesired
 	}
 	return []capabilitypack.ObservedProjection{
 		{
-			ID: "external_setup:engram:opencode:plugin", Exists: pluginExists, ObservedFingerprint: pluginObserved, ExactFingerprint: pluginFingerprint,
+			ID: "external_setup:" + setup.Tool + ":opencode:plugin", Exists: pluginExists, ObservedFingerprint: pluginObserved, ExactFingerprint: pluginFingerprint,
 			DesiredFingerprint: pluginDesired, ExternallyManaged: true,
-			Action: capabilitypack.ProjectionAction{ID: "external_setup:engram:opencode:plugin", Kind: capabilitypack.ActionOpenCodeAssetFile, Target: pluginPath, Description: "observe Engram-owned OpenCode plugin configuration"},
+			Action: capabilitypack.ProjectionAction{ID: "external_setup:" + setup.Tool + ":opencode:plugin", Kind: capabilitypack.ActionOpenCodeAssetFile, Target: pluginPath, Description: fmt.Sprintf("observe %s-owned OpenCode plugin configuration", setup.Tool)},
 		},
 		{
-			ID: "external_setup:engram:opencode:tui-plugin", Exists: tuiExists, ObservedFingerprint: tuiObserved, ExactFingerprint: tuiExact,
+			ID: "external_setup:" + setup.Tool + ":opencode:tui-plugin", Exists: tuiExists, ObservedFingerprint: tuiObserved, ExactFingerprint: tuiExact,
 			DesiredFingerprint: tuiDesired, ExternallyManaged: true,
-			Action: capabilitypack.ProjectionAction{ID: "external_setup:engram:opencode:tui-plugin", Kind: capabilitypack.ActionOpenCodeAssetFile, Target: tuiPath, Description: "observe Engram-owned OpenCode TUI plugin configuration"},
+			Action: capabilitypack.ProjectionAction{ID: "external_setup:" + setup.Tool + ":opencode:tui-plugin", Kind: capabilitypack.ActionOpenCodeAssetFile, Target: tuiPath, Description: fmt.Sprintf("observe %s-owned OpenCode TUI plugin configuration", setup.Tool)},
 		},
 	}, nil
 }

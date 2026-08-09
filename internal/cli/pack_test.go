@@ -941,7 +941,7 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 		t.Fatalf("targeted status failed: %v\n%s", err, detail)
 	}
 	for _, want := range []string{
-		"engram 1.0.1 on codex", "Intent: inactive", "Resources: 0 selected", "Receipt ownership: 0 projected paths", "Drift: 0 projections",
+		"engram 1.0.2 on codex", "Intent: inactive", "Resources: 0 selected", "Receipt ownership: 0 projected paths", "Drift: 0 projections",
 		"Readiness: configured=false, authorized=unknown, usable=false",
 		"Projections: 0 verified; 0 drifted; 0 ambiguous", "Pending human actions: none",
 	} {
@@ -1278,7 +1278,7 @@ func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T)
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Pack: engram 1.0.1", "Phase: tool-host-setup", "engram setup codex", "Phase: host-follow-up", "/hooks"} {
+	for _, want := range []string{"Pack: engram 1.0.2", "Phase: tool-host-setup", "engram setup codex", "Phase: host-follow-up", "/hooks"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}

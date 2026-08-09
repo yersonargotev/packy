@@ -1,6 +1,6 @@
 {
   "id": "engram",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Persistent memory for agent work",
   "selectable": true,
   "surfaces": [
@@ -114,7 +114,9 @@
         "mcp",
         "--tools=agent"
       ],
-      "requires": [],
+      "requires": [
+        "instruction:engram-memory"
+      ],
       "bindings": [
         {
           "surface": "claude",
@@ -123,11 +125,7 @@
           "invocation": "engram",
           "mode": "native",
           "sharing": "exclusive",
-          "capabilities": [
-            {
-              "type": "engram-integration"
-            }
-          ]
+          "capabilities": []
         },
         {
           "surface": "codex",
@@ -138,7 +136,25 @@
           "sharing": "exclusive",
           "capabilities": [
             {
-              "type": "engram-integration"
+              "type": "external-host-setup",
+              "external_host_setup": {
+                "tool": "engram",
+                "setup_args": ["setup", "codex"],
+                "managed_resources": [
+                  {"kind": "instruction", "id": "engram-memory"},
+                  {"kind": "mcp_server", "id": "engram"}
+                ],
+                "codex": {
+                  "mcp_args": ["mcp", "--tools=agent"],
+                  "instructions_file": "engram-instructions.md",
+                  "instructions_fingerprint": "74176fb0847b06fb725ae8992c9a5fa12022ff347ca3ee2ef3e77c6d318d5fb3",
+                  "compact_prompt_file": "engram-compact-prompt.md",
+                  "compact_prompt_fingerprint": "c779d9584c8ca16331ebb31a753f7fbb5bcb8193b229572a54da189ffaa97fd1",
+                  "marketplace_repository": "https://github.com/Gentleman-Programming/engram.git",
+                  "marketplace_revision": "main",
+                  "plugin": "engram@engram"
+                }
+              }
             }
           ]
         },
@@ -151,7 +167,20 @@
           "sharing": "exclusive",
           "capabilities": [
             {
-              "type": "engram-integration"
+              "type": "external-host-setup",
+              "external_host_setup": {
+                "tool": "engram",
+                "setup_args": ["setup", "opencode"],
+                "managed_resources": [
+                  {"kind": "instruction", "id": "engram-memory"},
+                  {"kind": "mcp_server", "id": "engram"}
+                ],
+                "opencode": {
+                  "plugin_file": "plugins/engram.ts",
+                  "tui_file": "tui.json",
+                  "tui_plugin": "opencode-subagent-statusline"
+                }
+              }
             }
           ]
         }

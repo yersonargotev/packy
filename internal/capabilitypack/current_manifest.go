@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 )
@@ -164,9 +163,41 @@ func validateCurrentPack(pack Pack) error {
 	if err := validateContract(pack.Contract, pack.Resources); err != nil {
 		return fmt.Errorf("Pack %q field exclusions: %w", pack.ID, err)
 	}
-	for _, surface := range pack.Surfaces {
-		if pack.RequestsSurfaceCapability(surface, SurfaceCapabilityEngramIntegration) && !slices.Contains(pack.Requires.Tools, "engram") {
-			return fmt.Errorf("Pack %q surface capability %q requires external requirement %q", pack.ID, SurfaceCapabilityEngramIntegration, "engram")
+	setups := map[string]string{}
+	for _, resource := range pack.Resources {
+		for _, binding := range resource.Bindings {
+			capability, ok := resource.SurfaceCapability(binding.Surface, SurfaceCapabilityExternalHostSetup)
+			if !ok {
+				continue
+			}
+			setup := capability.ExternalHostSetup
+			if !containsString(pack.Requires.Tools, setup.Tool) {
+				return fmt.Errorf("Pack %q surface capability %q requires external requirement %q", pack.ID, capability.Type, setup.Tool)
+			}
+			key := string(binding.Surface) + ":" + setup.Tool
+			identity := resource.Kind + ":" + resource.ID
+			if prior, exists := setups[key]; exists {
+				return fmt.Errorf("Pack %q resources %q and %q declare conflicting external host setup for %s", pack.ID, prior, identity, key)
+			}
+			setups[key] = identity
+			managedTool := false
+			for _, managed := range setup.ManagedResources {
+				managedIdentity := managed.Kind + ":" + managed.ID
+				if !identities[managedIdentity] {
+					return fmt.Errorf("Pack %q resource %q external host setup manages unknown resource %q", pack.ID, identity, managedIdentity)
+				}
+				if managedIdentity != identity && !containsString(resource.Requires, managedIdentity) {
+					return fmt.Errorf("Pack %q resource %q external host setup must require managed resource %q", pack.ID, identity, managedIdentity)
+				}
+				for _, candidate := range pack.Resources {
+					if candidate.Kind == managed.Kind && candidate.ID == managed.ID && candidate.Kind == "mcp_server" && candidate.Command == setup.Tool {
+						managedTool = true
+					}
+				}
+			}
+			if !managedTool {
+				return fmt.Errorf("Pack %q resource %q external host setup must manage an MCP server for tool %q", pack.ID, identity, setup.Tool)
+			}
 		}
 	}
 	return nil

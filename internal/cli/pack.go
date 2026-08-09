@@ -2030,7 +2030,7 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 
 func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.SurfaceCapabilityType]capabilitypack.ExecutableAcquirer {
 	return map[capabilitypack.SurfaceCapabilityType]capabilitypack.ExecutableAcquirer{
-		capabilitypack.SurfaceCapabilityEngramIntegration: engram,
+		capabilitypack.SurfaceCapabilityExternalHostSetup: engram,
 	}
 }
 
