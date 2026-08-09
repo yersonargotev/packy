@@ -127,20 +127,21 @@ type Exclusion struct {
 }
 
 type SurfaceStatus struct {
-	Name            string
-	Supported       bool
-	Active          bool
-	UpdateAvailable bool
-	Installation    string
-	Runtime         string
-	Configured      string
-	Authorized      string
-	Usable          string
-	Ownership       int
-	Drift           int
-	Blockers        []string
-	PendingActions  []string
-	Evidence        []string
+	Name             string
+	Supported        bool
+	Active           bool
+	UpdateAvailable  bool
+	InstalledVersion string
+	Installation     string
+	Runtime          string
+	Configured       string
+	Authorized       string
+	Usable           string
+	Ownership        int
+	Drift            int
+	Blockers         []string
+	PendingActions   []string
+	Evidence         []string
 }
 
 type Scope struct {
@@ -499,7 +500,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.inspecting && m.selectedPack() != nil {
 				m.surfaceIndex = preferredSurfaceIndex(*m.selectedPack(), m.project)
 				if m.project {
+					actions := m.lifecycleActions()
 					m.operation = projectLifecycleOperation(m.selectedSurfaceStatus())
+					if len(actions) > 1 {
+						m.choosingAction = true
+						m.actionChoice = 0
+						break
+					}
 					if m.operation == "install" {
 						m.beginSelection()
 					} else if m.operation != "" {
@@ -573,7 +580,7 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 		scope, projectRoot = "project", m.dashboard.Project.Root
 	}
 	selection := Selection{}
-	if m.operation != "update" && !(m.project && m.operation == "activate") {
+	if m.operation != "update" && !(m.project && (m.operation == "activate" || m.operation == "deactivate")) {
 		selection = Selection{Mode: "all", Roots: []string{}}
 	}
 	if m.advancedSelection {
@@ -651,7 +658,7 @@ func (m Model) updateActionChoice(message tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 	} else if key.Matches(message, dashboardKeys.Inspect) && len(actions) > 0 {
 		m.operation = actions[m.actionChoice]
 		m.choosingAction = false
-		if m.operation == "update" {
+		if m.operation == "update" || (m.project && m.operation != "install") {
 			return m.startPreview()
 		}
 		m.beginSelection()
@@ -668,6 +675,9 @@ func firstLifecycleAction(status SurfaceStatus) string {
 
 func (m Model) lifecycleActions() []string {
 	status := m.selectedSurfaceStatus()
+	if m.project {
+		return projectLifecycleActionsForStatus(status)
+	}
 	if status == nil {
 		return []string{"activate"}
 	}
@@ -686,15 +696,33 @@ func lifecycleActionsForStatus(status SurfaceStatus) []string {
 }
 
 func projectLifecycleOperation(status *SurfaceStatus) string {
-	if status == nil || status.Installation == "" || status.Installation == "absent" || status.Installation == "drifted" || status.Installation == "blocked" {
-		return "install"
-	}
-	switch status.Runtime {
-	case "pending", "stale", "blocked", "orphaned":
-		return "activate"
-	default:
+	actions := projectLifecycleActionsForStatus(status)
+	if len(actions) == 0 {
 		return ""
 	}
+	return actions[0]
+}
+
+func projectLifecycleActionsForStatus(status *SurfaceStatus) []string {
+	if status == nil || status.Installation == "" || status.Installation == "absent" {
+		return []string{"install"}
+	}
+	actions := []string{}
+	if status.UpdateAvailable {
+		actions = append(actions, "update")
+	}
+	if status.Installation != "installed" {
+		return actions
+	}
+	switch status.Runtime {
+	case "pending", "blocked", "orphaned":
+		actions = append(actions, "activate")
+	case "active":
+		actions = append(actions, "deactivate")
+	case "stale":
+		actions = append(actions, "activate", "deactivate")
+	}
+	return actions
 }
 
 func (m Model) selectedSurfaceStatus() *SurfaceStatus {
@@ -1118,13 +1146,20 @@ func (m Model) renderDetail() string {
 	}
 	action := "Enter select resources"
 	if m.project {
-		switch projectLifecycleOperation(m.selectedSurfaceStatus()) {
-		case "install":
-			action = "Enter select resources for project installation"
-		case "activate":
-			action = "Enter preview personal project activation"
-		default:
+		actions := projectLifecycleActionsForStatus(m.selectedSurfaceStatus())
+		switch {
+		case len(actions) > 1:
+			action = "Enter choose project lifecycle action"
+		case len(actions) == 0:
 			action = "No applicable project action"
+		case actions[0] == "install":
+			action = "Enter select resources for project installation"
+		case actions[0] == "activate":
+			action = "Enter preview personal project activation"
+		case actions[0] == "update":
+			action = "Enter preview project update"
+		case actions[0] == "deactivate":
+			action = "Enter preview personal project deactivation"
 		}
 	}
 	lines = append(lines, "", action+" · Esc back · / filter · r reload · q quit")
@@ -1137,7 +1172,11 @@ func (m Model) renderActionChoice() string {
 		return titleStyle.Render("Choose lifecycle action") + "\n\nNo Pack selected\n\nEsc back"
 	}
 	surface := selectedSurface(*pack, m.surfaceIndex)
-	lines := []string{titleStyle.Render("Choose lifecycle action"), pack.ID + " · " + surface + " · Workstation · global", "CLI surface: " + surface + " · selected (←/→ change surface)", ""}
+	title, scope := "Choose lifecycle action", "Workstation · global"
+	if m.project {
+		title, scope = "Choose project lifecycle action", "Current project"
+	}
+	lines := []string{titleStyle.Render(title), pack.ID + " · " + surface + " · " + scope, "CLI surface: " + surface + " · selected (←/→ change surface)", ""}
 	for index, action := range m.lifecycleActions() {
 		marker := "  "
 		if index == m.actionChoice {
@@ -1351,7 +1390,7 @@ func previewCanApply(preview Preview) bool {
 	operationSupported := preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate"
 	disposition := preview.Disposition == "applicable"
 	if preview.Scope == "project" {
-		operationSupported = preview.Operation == "install" || preview.Operation == "activate"
+		operationSupported = preview.Operation == "install" || preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate"
 		disposition = preview.Disposition == "previewable"
 	}
 	return operationSupported && disposition && !preview.Stale && len(requiredConsentPhases(preview)) > 0
@@ -1461,8 +1500,14 @@ func (m Model) renderApplyResult() string {
 			}
 		case "update":
 			operation = "Update"
+			if m.preview.Scope == "project" {
+				operation = "Project update"
+			}
 		case "deactivate":
 			operation = "Deactivation"
+			if m.preview.Scope == "project" {
+				operation = "Personal project deactivation"
+			}
 		}
 	}
 	title := operation + " failed"

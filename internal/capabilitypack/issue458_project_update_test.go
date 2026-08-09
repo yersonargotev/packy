@@ -6,6 +6,29 @@ import (
 	"testing"
 )
 
+func TestProjectUpdateAvailabilityRequiresAnIntactOlderInstallation(t *testing.T) {
+	tests := []struct {
+		name         string
+		installation ProjectInstallationState
+		installed    string
+		catalog      string
+		want         bool
+	}{
+		{name: "older installed Pack", installation: ProjectInstallationInstalled, installed: "1.0.0", catalog: "1.0.1", want: true},
+		{name: "catalog current", installation: ProjectInstallationInstalled, installed: "1.0.1", catalog: "1.0.1"},
+		{name: "drifted", installation: ProjectInstallationDrifted, installed: "1.0.0", catalog: "1.0.1"},
+		{name: "blocked", installation: ProjectInstallationBlocked, installed: "1.0.0", catalog: "1.0.1"},
+		{name: "absent installed version", installation: ProjectInstallationInstalled, catalog: "1.0.1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ProjectUpdateAvailable(test.installation, test.installed, test.catalog); got != test.want {
+				t.Fatalf("ProjectUpdateAvailable(%q, %q, %q) = %v, want %v", test.installation, test.installed, test.catalog, got, test.want)
+			}
+		})
+	}
+}
+
 func TestIssue458ClassifiesSensitiveVersionChangesForFreshPersonalActivation(t *testing.T) {
 	oldHook := ProjectSensitiveDisclosure{Category: ProjectActivationHooks, Surface: SurfaceCodex, Resource: ResourceIdentity{Kind: "lifecycle", ID: "memory"}, Detail: "hook:memory"}
 	newMCP := ProjectSensitiveDisclosure{Category: ProjectActivationMCP, Surface: SurfaceOpenCode, Resource: ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Detail: "mcp:memory"}

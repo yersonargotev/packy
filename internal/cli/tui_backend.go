@@ -177,7 +177,14 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
 			}
-			return projectPreviewForTUI(preview, projectRoot), nil
+			return projectPreviewForTUI(preview, projectRoot, "install"), nil
+		case "update":
+			adapter := projectInstallAdapter("", composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, ProjectRoot: projectRoot}, adapter)
+			if previewErr != nil {
+				return tui.Preview{}, previewErr
+			}
+			return projectPreviewForTUI(preview, projectRoot, "update"), nil
 		case "activate":
 			preview, previewErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{
 				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
@@ -186,6 +193,14 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 				return tui.Preview{}, previewErr
 			}
 			return projectActivationPreviewForTUI(preview, projectRoot), nil
+		case "deactivate":
+			preview, previewErr := capabilitypack.PreviewProjectDeactivation(ctx, capabilitypack.ProjectDeactivationRequest{
+				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+			})
+			if previewErr != nil {
+				return tui.Preview{}, previewErr
+			}
+			return projectDeactivationPreviewForTUI(preview, projectRoot), nil
 		default:
 			return tui.Preview{}, fmt.Errorf("project preview operation %q is unsupported", operation)
 		}
@@ -277,7 +292,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
 		}
-		freshView := projectPreviewForTUI(fresh, projectRoot)
+		freshView := projectPreviewForTUI(fresh, projectRoot, "install")
 		if freshView.ID != request.Preview.ID || freshView.Digest != request.Preview.Digest {
 			return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved preview is stale; create a fresh preview before Apply")
 		}
@@ -309,6 +324,29 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 			}
 		}
 		return result, nil
+	case "update":
+		adapter := projectInstallAdapter("", composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, ProjectRoot: projectRoot}, adapter)
+		if previewErr != nil {
+			return tui.ApplyResult{Stage: "revalidation"}, previewErr
+		}
+		freshView := projectPreviewForTUI(fresh, projectRoot, "update")
+		if freshView.ID != request.Preview.ID || freshView.Digest != request.Preview.Digest {
+			return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved preview is stale; create a fresh preview before Apply")
+		}
+		if err := validateTUIApprovals(request.ApprovedPhases, freshView); err != nil {
+			return tui.ApplyResult{Stage: "approval"}, err
+		}
+		progress(tui.ApplyProgress{Phase: "apply"})
+		applied, applyErr := facade.ApplyProjectInstall(ctx, capabilitypack.ProjectInstallApplyRequest{
+			Preview: fresh, PackyHome: snapshot.PackyHome(), Adapter: adapter,
+			DestructiveCleanupApproved: slices.Contains(request.ApprovedPhases, "destructive-cleanup"),
+		})
+		if applyErr != nil {
+			return tui.ApplyResult{Stage: "apply", Summary: "Project update stopped before verification"}, applyErr
+		}
+		progress(tui.ApplyProgress{Phase: "verification"})
+		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "verified" || applied.Status == "no-op", Summary: fmt.Sprintf("Updated %s in the current project", request.Preview.PackID), Details: []string{"Reviewed project intent and personal runtime activation remain separate"}}, nil
 	case "activate":
 		adapter := projectRuntimeAdapter(b.opts, surface, snapshot)
 		fresh, previewErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
@@ -335,6 +373,28 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		}
 		progress(tui.ApplyProgress{Phase: "verification"})
 		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "active", Summary: fmt.Sprintf("Personally activated %s for the current project", request.Preview.PackID), Details: []string{"Project installation remains independently installed"}}, nil
+	case "deactivate":
+		adapter := projectRuntimeAdapter(b.opts, surface, snapshot)
+		fresh, previewErr := capabilitypack.PreviewProjectDeactivation(ctx, capabilitypack.ProjectDeactivationRequest{
+			PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter,
+		})
+		if previewErr != nil {
+			return tui.ApplyResult{Stage: "revalidation"}, previewErr
+		}
+		freshView := projectDeactivationPreviewForTUI(fresh, projectRoot)
+		if freshView.ID != request.Preview.ID || freshView.Digest != request.Preview.Digest {
+			return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved preview is stale; create a fresh preview before Apply")
+		}
+		if err := validateTUIApprovals(request.ApprovedPhases, freshView); err != nil {
+			return tui.ApplyResult{Stage: "approval"}, err
+		}
+		progress(tui.ApplyProgress{Phase: "apply"})
+		applied, applyErr := capabilitypack.ApplyProjectDeactivation(ctx, capabilitypack.ProjectDeactivationApplyRequest{Preview: fresh, Adapter: adapter, DestructiveCleanupApproved: true})
+		if applyErr != nil {
+			return tui.ApplyResult{Stage: "apply", Summary: "Personal project deactivation stopped before verification"}, applyErr
+		}
+		progress(tui.ApplyProgress{Phase: "verification"})
+		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "inactive", Summary: fmt.Sprintf("Personally deactivated %s for the current project", request.Preview.PackID), Details: []string{"Project installation remains independently installed"}}, nil
 	default:
 		return tui.ApplyResult{Stage: "revalidation"}, fmt.Errorf("project Apply operation %q is unsupported", request.Preview.Operation)
 	}
@@ -457,10 +517,14 @@ func globalPreviewForTUI(report capabilitypack.JSONLifecyclePlan) tui.Preview {
 	return preview
 }
 
-func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, projectRoot string) tui.Preview {
+func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, projectRoot, operation string) tui.Preview {
+	surface := string(report.Surface)
+	if operation == "update" {
+		surface = "all installed surfaces"
+	}
 	preview := tui.Preview{
-		ID: report.Observation, Digest: report.Observation, Operation: "install", Disposition: string(report.Disposition),
-		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: string(report.Surface), Scope: "project",
+		ID: report.Observation, Digest: report.Observation, Operation: operation, Disposition: string(report.Disposition),
+		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: surface, Scope: "project",
 		ProjectRoot:    projectRoot,
 		Selection:      tui.Selection{Mode: string(report.Selection.Mode)},
 		PendingActions: append([]string(nil), report.Requirements...),
@@ -515,10 +579,39 @@ func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, proje
 		preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})
 	}
 	actions := make([]string, 0, len(preview.Effects))
+	destructiveActions := make([]string, 0, len(report.Retirements))
 	for _, effect := range preview.Effects {
-		actions = append(actions, strings.TrimSpace(effect.Kind+" "+effect.Target+" "+effect.Description))
+		action := strings.TrimSpace(effect.Kind + " " + effect.Target + " " + effect.Description)
+		if strings.HasPrefix(effect.Description, "retire project projection") {
+			destructiveActions = append(destructiveActions, action)
+		} else {
+			actions = append(actions, action)
+		}
 	}
-	preview.Phases = []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: report.Disposition == capabilitypack.ProjectInstallPreviewable, Actions: actions}}
+	preview.Phases = []tui.PreviewPhase{{Kind: "project-" + operation, ApprovalRequired: report.Disposition == capabilitypack.ProjectInstallPreviewable, Actions: actions}}
+	if len(destructiveActions) > 0 {
+		preview.Phases = append(preview.Phases, tui.PreviewPhase{Kind: "destructive-cleanup", ApprovalRequired: report.Disposition == capabilitypack.ProjectInstallPreviewable, Actions: destructiveActions})
+	}
+	return preview
+}
+
+func projectDeactivationPreviewForTUI(report capabilitypack.JSONProjectDeactivationPreview, projectRoot string) tui.Preview {
+	preview := tui.Preview{
+		ID: report.Digest, Digest: report.Digest, Operation: "deactivate", Disposition: string(report.Disposition),
+		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: string(report.Surface), Scope: "project", ProjectRoot: projectRoot,
+		Selection: tui.Selection{Mode: "all"},
+	}
+	actions := make([]string, 0, len(report.Effects))
+	for _, effect := range report.Effects {
+		description := string(effect.Action) + " " + effect.Identity
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: "personal-runtime", Target: effect.Target, Description: description})
+		preview.Diff.Removed = append(preview.Diff.Removed, effect.Target)
+		actions = append(actions, strings.TrimSpace("personal-runtime "+effect.Target+" "+description))
+	}
+	for _, blocker := range report.Blockers {
+		preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})
+	}
+	preview.Phases = []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: report.Disposition == capabilitypack.ProjectDeactivationPreviewable, Actions: actions}}
 	return preview
 }
 
@@ -599,6 +692,9 @@ func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[str
 				if observed, ok := statuses[pack.ID][string(surface)]; ok {
 					status = observed
 					status.Supported = true
+					if status.InstalledVersion != "" {
+						status.UpdateAvailable = capabilitypack.ProjectUpdateAvailable(capabilitypack.ProjectInstallationState(status.Installation), status.InstalledVersion, pack.Version)
+					}
 				}
 				view.Surfaces = append(view.Surfaces, string(surface))
 			}
@@ -684,7 +780,8 @@ func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[st
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
 			Installation: string(entry.Installation), Runtime: string(entry.Runtime), Active: entry.Runtime == capabilitypack.ProjectRuntimeActive || entry.Runtime == capabilitypack.ProjectRuntimeInheritedGlobal,
-			Configured: yesNo(entry.Readiness.Configured), Authorized: yesNo(entry.Readiness.Authorized), Usable: yesNo(entry.Readiness.Usable),
+			InstalledVersion: entry.Pack.Version,
+			Configured:       yesNo(entry.Readiness.Configured), Authorized: yesNo(entry.Readiness.Authorized), Usable: yesNo(entry.Readiness.Usable),
 			Ownership: len(entry.Projections), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
 		}
 		for _, blocker := range entry.Blockers {

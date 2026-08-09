@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/bootstrap"
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/tui"
 )
 
@@ -460,6 +461,175 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 	index = slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
 	if index < 0 || pack.SurfaceStatuses[index].Installation != "installed" || pack.SurfaceStatuses[index].Runtime != "active" {
 		t.Fatalf("fresh status did not verify personal activation: %#v", pack)
+	}
+}
+
+func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPersonalRuntime(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	project := filepath.Join(t.TempDir(), "project")
+	writeTestGitWorktree(t, project)
+	bundle := copyPackBundleForUpdate(t, repositoryRoot)
+	opts := Options{
+		Env: MapEnv{
+			"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(bundle, "skills"),
+		},
+		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	if err := os.MkdirAll(filepath.Join(project, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".codex", "config.toml"), []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	install, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "install", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "custom", Roots: []string{"mcp_server:engram"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	activation, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activation, ApprovedPhases: requiredTUIPhases(activation)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	noOp, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if noOp.Operation != "update" || noOp.Disposition != "converged" || len(requiredTUIPhases(noOp)) != 0 {
+		t.Fatalf("catalog-current project update was not an explicit no-op: %#v", noOp)
+	}
+
+	manifestPath := filepath.Join(bundle, "packs", "engram", "pack.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.1"`, `"version": "1.0.2"`, 1)
+	if updatedManifest == string(manifest) {
+		t.Fatal("Engram fixture version did not match the expected current version")
+	}
+	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := findTUIPack(dashboard.Project.Packs, "engram")
+	if pack == nil {
+		t.Fatalf("updated catalog omitted Engram: dashboard=%#v", dashboard)
+	}
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || !pack.SurfaceStatuses[index].UpdateAvailable || pack.SurfaceStatuses[index].Runtime != "active" {
+		t.Fatalf("fresh project status did not offer update and personal deactivation: %#v", pack)
+	}
+
+	configPath := filepath.Join(project, ".codex", "config.toml")
+	config, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	driftedConfig := strings.Replace(string(config), `command = "engram"`, `command = "operator-edit"`, 1)
+	if driftedConfig == string(config) {
+		t.Fatalf("installed Codex config omitted the expected Engram command:\n%s", config)
+	}
+	if err := os.WriteFile(configPath, []byte(driftedConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	driftedDashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	driftedPack := findTUIPack(driftedDashboard.Project.Packs, "engram")
+	driftedIndex := slices.IndexFunc(driftedPack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if driftedIndex < 0 || driftedPack.SurfaceStatuses[driftedIndex].Installation != "drifted" || driftedPack.SurfaceStatuses[driftedIndex].UpdateAvailable {
+		t.Fatalf("drifted project status advertised an inapplicable update: %#v", driftedPack)
+	}
+	blocked, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Disposition != "blocked" || len(blocked.Blockers) == 0 || len(requiredTUIPhases(blocked)) != 0 {
+		t.Fatalf("drifted project update did not fail closed: %#v", blocked)
+	}
+	if err := os.WriteFile(configPath, config, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "engram", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if update.Operation != "update" || update.Disposition != "previewable" || update.PackVersion != "1.0.2" || update.Surface != "all installed surfaces" || !slices.Contains(update.Diff.Changed, "packy.json") || !slices.Contains(update.Diff.Changed, "packy.lock.json") || !slices.Contains(update.Diff.Retained, ".codex/config.toml") {
+		t.Fatalf("project update preview = %#v", update)
+	}
+	beforeUpdate := snapshotTree(t, project)
+	staleUpdate := update
+	staleUpdate.Digest = "stale-project-update"
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: staleUpdate, ApprovedPhases: requiredTUIPhases(update)}, func(tui.ApplyProgress) {}); err == nil || !strings.Contains(err.Error(), "fresh preview") {
+		t.Fatalf("stale project update error = %v", err)
+	}
+	if after := snapshotTree(t, project); after != beforeUpdate {
+		t.Fatalf("stale project update mutated the project\nbefore:\n%s\nafter:\n%s", beforeUpdate, after)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: update, ApprovedPhases: requiredTUIPhases(update)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	installation, err := capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installation.Manifest.Packs) != 1 || installation.Manifest.Packs[0].Version != "1.0.2" || installation.Manifest.Packs[0].Selection.Mode != capabilitypack.SelectionCustom || !slices.Equal(installation.Manifest.Packs[0].Selection.Roots, []capabilitypack.ResourceIdentity{{Kind: "mcp_server", ID: "engram"}}) {
+		t.Fatalf("project update did not preserve reviewed project intent: %#v", installation.Manifest.Packs)
+	}
+	projectContract := snapshotTree(t, project)
+
+	deactivate, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: "engram", Surface: "codex", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deactivate.Operation != "deactivate" || deactivate.Disposition != "previewable" || len(deactivate.Effects) == 0 || !slices.Equal(requiredTUIPhases(deactivate), []string{"destructive-cleanup"}) {
+		t.Fatalf("personal project deactivation preview = %#v", deactivate)
+	}
+	beforeDeactivation := snapshotTree(t, home)
+	staleDeactivation := deactivate
+	staleDeactivation.Digest = "stale-personal-deactivation"
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: staleDeactivation, ApprovedPhases: requiredTUIPhases(deactivate)}, func(tui.ApplyProgress) {}); err == nil || !strings.Contains(err.Error(), "fresh preview") {
+		t.Fatalf("stale personal deactivation error = %v", err)
+	}
+	if after := snapshotTree(t, home); after != beforeDeactivation {
+		t.Fatalf("stale personal deactivation mutated HOME\nbefore:\n%s\nafter:\n%s", beforeDeactivation, after)
+	}
+	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: deactivate, ApprovedPhases: requiredTUIPhases(deactivate)}, func(tui.ApplyProgress) {})
+	if err != nil || !result.Verified || !strings.Contains(result.Summary, "Personally deactivated") {
+		t.Fatalf("personal project deactivation = %#v, %v", result, err)
+	}
+	if after := snapshotTree(t, project); after != projectContract {
+		t.Fatalf("personal deactivation changed the project installation\nbefore:\n%s\nafter:\n%s", projectContract, after)
+	}
+	dashboard, err = backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack = findTUIPack(dashboard.Project.Packs, "engram")
+	index = slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || pack.SurfaceStatuses[index].Installation != "installed" || pack.SurfaceStatuses[index].Runtime != "pending" || pack.SurfaceStatuses[index].UpdateAvailable {
+		t.Fatalf("reloaded status conflated personal deactivation with project uninstall: %#v", pack)
 	}
 }
 
