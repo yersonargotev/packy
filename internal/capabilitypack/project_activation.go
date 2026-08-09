@@ -180,7 +180,11 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	if !installed || !projectSupportsSurface(pack.Surfaces, request.Surface) {
 		return report, fmt.Errorf("capability pack %q is not installed for CLI surface %q", request.PackID, request.Surface)
 	}
-	status, err := f.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: request.ProjectRoot, PackID: request.PackID, Surface: request.Surface, PackyHome: request.PackyHome, RequireInstalled: true, Adapters: map[Surface]SurfaceAdapter{request.Surface: request.Adapter}})
+	var resolver ExecutableResolver
+	if f.activation != nil {
+		resolver = f.activation.resolver
+	}
+	status, err := f.InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: request.ProjectRoot, PackID: request.PackID, Surface: request.Surface, PackyHome: request.PackyHome, RequireInstalled: true, Adapters: map[Surface]SurfaceAdapter{request.Surface: request.Adapter}, Resolver: resolver})
 	if err != nil {
 		return report, err
 	}

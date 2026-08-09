@@ -690,7 +690,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		lockSensitive = mergeProjectSensitiveDisclosures(existingLock.Sensitive, lockSensitive)
 		lockProjections, projections = mergeProjectProjections(existingLock.Projections, lockProjections, projections)
 	}
-	resolutions, resolutionErr := f.resolveExecutables(ctx, selectedPack)
+	resolutions, resolutionErr := f.resolveExecutables(ctx, selectedPack, request.Surface, false)
 	unobservedRequirements := []string{}
 	if resolutionErr != nil {
 		unobservedRequirements = append(unobservedRequirements, selectedPack.Requires.Tools...)

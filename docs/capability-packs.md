@@ -98,11 +98,17 @@ invalid field or resource directly.
 
 Every binding declares a non-null `capabilities` array. Most bindings use an
 empty array. A binding that needs reusable host-native behavior selects only a
-reviewed typed capability. The current `project-instruction` capability carries
+reviewed typed capability. The `project-instruction` capability carries
 typed `project_instruction` data with a stable lowercase kebab-case `id` and a
 reviewed relative `source`; Codex and OpenCode translate it into an independently
 owned marked contribution in the project's `AGENTS.md`. Unknown capability
 types, missing typed data, and extension fields are rejected during admission.
+
+The payload-free `engram-integration` capability explicitly enables Packy's
+reviewed Engram acquisition and host setup behavior on that surface. External
+requirements remain the single source of tool readiness: every declared name
+is observed generically through PATH, and no tool receives acquisition or a
+`setup` command merely because of its name.
 
 The generated Pack catalog is derived from the manifests; it is not a second
 authoring source or manually maintained snapshot. Review and merge the manifest

@@ -151,35 +151,13 @@ func writeVersionExecutableAt(t *testing.T, path, body string) string {
 	return path
 }
 
-func TestResolverUsesHomebrewIdentityWithoutExecutingEngram(t *testing.T) {
-	prefix := t.TempDir()
-	path := filepath.Join(prefix, "bin", "engram")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("not executed"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	resolver := NewResolver(prefix, func(string) (string, error) {
-		return path, nil
-	})
-	resolution, err := resolver.Resolve(context.Background(), "engram")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !resolution.Available || resolution.Path != path || resolution.Origin != "homebrew" || resolution.Precondition == "" {
-		t.Fatalf("resolution = %+v", resolution)
-	}
-}
-
-func TestResolverReportsSupportedHomebrewAcquisitionWhenMissing(t *testing.T) {
+func TestAcquirerReportsSupportedHomebrewAcquisition(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "homebrew")
-	resolver := NewResolver(prefix, func(string) (string, error) { return "", os.ErrNotExist })
-	resolution, err := resolver.Resolve(context.Background(), "engram")
+	resolution, err := NewAcquirer(prefix).ResolveAcquisition(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolution.Available || !resolution.AcquisitionSupported || resolution.AcquisitionCommand != "brew" || !strings.Contains(strings.Join(resolution.AcquisitionArgs, " "), Formula) {
+	if resolution.Command != "brew" || !strings.Contains(strings.Join(resolution.Args, " "), Formula) {
 		t.Fatalf("missing resolution = %+v", resolution)
 	}
 	if resolution.Path != filepath.Join(prefix, "bin", "engram") {
@@ -187,10 +165,10 @@ func TestResolverReportsSupportedHomebrewAcquisitionWhenMissing(t *testing.T) {
 	}
 }
 
-func TestResolverSealsReadOnlyFormulaSourceAndVersionForAcquisition(t *testing.T) {
+func TestAcquirerSealsReadOnlyFormulaSourceAndVersion(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "homebrew")
 	calls := 0
-	resolver := NewResolver(prefix, func(string) (string, error) { return "", os.ErrNotExist }).WithFormulaInspector(
+	acquirer := NewAcquirer(prefix).WithFormulaInspector(
 		func(_ context.Context, formula string) (FormulaMetadata, error) {
 			calls++
 			if formula != Formula {
@@ -199,11 +177,11 @@ func TestResolverSealsReadOnlyFormulaSourceAndVersionForAcquisition(t *testing.T
 			return FormulaMetadata{Source: Formula, Version: "0.4.2"}, nil
 		},
 	)
-	resolution, err := resolver.Resolve(context.Background(), "engram")
+	resolution, err := acquirer.ResolveAcquisition(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 || resolution.AcquisitionSource != Formula || resolution.AcquisitionVersion != "0.4.2" {
+	if calls != 1 || resolution.Source != Formula || resolution.Version != "0.4.2" {
 		t.Fatalf("sealed acquisition resolution = %+v calls=%d", resolution, calls)
 	}
 }
@@ -276,18 +254,6 @@ func TestParseServeProcessesIgnoresNonServeEngramCommands(t *testing.T) {
 	processes := ParseServeProcessesWithResolver("42 /tmp/engram setup serve codex\n43 /tmp/engram serve\n", func(int) string { return "" })
 	if len(processes) != 1 || processes[0].PID != 43 {
 		t.Fatalf("ParseServeProcessesWithResolver() = %#v, want only direct serve command", processes)
-	}
-}
-
-func TestResolverDoesNotTreatNonHomebrewPathAsOwned(t *testing.T) {
-	prefix := filepath.Join(t.TempDir(), "homebrew")
-	other := writeVersionExecutable(t, "printf 'engram version 1.19.0\\n'")
-	resolution, err := NewResolver(prefix, func(string) (string, error) { return other, nil }).Resolve(context.Background(), "engram")
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if resolution.Available || resolution.Origin != "homebrew" || resolution.Path != filepath.Join(prefix, "bin", "engram") {
-		t.Fatalf("non-Homebrew resolution = %+v", resolution)
 	}
 }
 

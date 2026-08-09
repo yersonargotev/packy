@@ -451,7 +451,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	if err != nil {
 		return StatusEntry{}, err
 	}
-	resolutions, err := f.resolveExecutables(ctx, relevantPack)
+	resolutions, err := f.resolveExecutables(ctx, relevantPack, surface, false)
 	unobservedRequirements := []string{}
 	if err != nil {
 		entry.Blockers = append(entry.Blockers, err.Error())

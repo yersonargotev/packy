@@ -167,6 +167,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 		facade := capabilitypack.NewFacade(composition.catalog,
 			capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil),
 			capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
+			capabilitypack.WithExternalEffects(projectExecutableResolver(b.opts, snapshot), nil, nil),
 		)
 		switch operation {
 		case "install":
@@ -318,6 +319,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 	facade := capabilitypack.NewFacade(composition.catalog,
 		capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil),
 		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
+		capabilitypack.WithExternalEffects(projectExecutableResolver(b.opts, snapshot), nil, nil),
 	)
 	surface := capabilitypack.Surface(request.Preview.Surface)
 	switch request.Preview.Operation {
