@@ -485,7 +485,7 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 	for _, entry := range report.Entries {
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
-			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateAvailable,
+			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateActionAvailable,
 			Configured: readinessForTUI(entry.ReadinessObserved.Configured, entry.Readiness.Configured),
 			Authorized: readinessForTUI(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized),
 			Usable:     readinessForTUI(entry.ReadinessObserved.Usability, entry.Readiness.Usable),
