@@ -122,11 +122,46 @@ func TestOpenCodePrimaryPromptCapabilityIsPackIdentityIndependent(t *testing.T) 
 			if err != nil || !result.Verified {
 				t.Fatalf("activate primary prompt: %#v, %v", result, err)
 			}
+
+			updatedBundle := t.TempDir()
+			if err := os.CopyFS(updatedBundle, os.DirFS(bundle)); err != nil {
+				t.Fatal(err)
+			}
+			manifestPath := filepath.Join(updatedBundle, "packs", packID, "pack.json")
+			manifest, err := os.ReadFile(manifestPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			updatedManifest := strings.Replace(string(manifest), `"version": "1.0.0"`, `"version": "1.0.1"`, 1)
+			if updatedManifest == string(manifest) {
+				t.Fatal("synthetic primary prompt version did not advance")
+			}
+			if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			updatedGuidance := "Updated primary guidance from " + packID + ".\n"
+			if err := os.WriteFile(filepath.Join(updatedBundle, "instructions", packID+".md"), []byte(updatedGuidance), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(updatedBundle)
+			if err != nil {
+				t.Fatal(err)
+			}
+			adapter = opencode.NewSurfaceAdapter(updatedBundle, filepath.Join(root, "skills"), config, prompt)
+			facade = capabilitypack.NewFacade(updatedCatalog, capabilitypack.WithActivation(store, map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceOpenCode: adapter}))
+			update, err := facade.PreviewUpdate(context.Background(), capabilitypack.UpdateRequest{PackID: packID, Surface: capabilitypack.SurfaceOpenCode})
+			if err != nil {
+				t.Fatal(err)
+			}
+			updated, err := facade.Apply(context.Background(), capabilitypack.ApplyRequest{Plan: update, Approvals: approvalsFor(t, facade, update), Interactive: true})
+			if err != nil || !updated.Verified {
+				t.Fatalf("update primary prompt: %#v, %v", updated, err)
+			}
 			status, err := facade.Status(context.Background(), capabilitypack.StatusRequest{PackID: packID, Surface: capabilitypack.SurfaceOpenCode})
 			if err != nil || len(status.Entries) != 1 || status.Entries[0].Projections.Verified != 4 {
 				t.Fatalf("primary prompt status = %#v, %v", status, err)
 			}
-			if data, err := os.ReadFile(prompt); err != nil || string(data) != "Primary guidance from "+packID+".\n" {
+			if data, err := os.ReadFile(prompt); err != nil || string(data) != updatedGuidance {
 				t.Fatalf("primary prompt = %q, %v", data, err)
 			}
 			if err := os.WriteFile(prompt, []byte("operator drift\n"), 0o640); err != nil {
@@ -136,7 +171,7 @@ func TestOpenCodePrimaryPromptCapabilityIsPackIdentityIndependent(t *testing.T) 
 			if err != nil || drifted.Entries[0].Projections.Drifted != 1 {
 				t.Fatalf("primary prompt drift status = %#v, %v", drifted, err)
 			}
-			if err := os.WriteFile(prompt, []byte("Primary guidance from "+packID+".\n"), 0o640); err != nil {
+			if err := os.WriteFile(prompt, []byte(updatedGuidance), 0o640); err != nil {
 				t.Fatal(err)
 			}
 			removal, err := facade.PreviewDeactivate(context.Background(), capabilitypack.DeactivationRequest{PackID: packID, Surface: capabilitypack.SurfaceOpenCode})

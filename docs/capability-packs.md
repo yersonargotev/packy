@@ -104,7 +104,8 @@ reviewed relative `source`; Codex and OpenCode translate it into an independentl
 owned marked contribution in the project's `AGENTS.md`. The
 `opencode-primary-prompt` capability carries typed `primary_prompt` data with
 the same identity and source constraints; OpenCode translates it into the
-primary instruction document and its configuration reference. Unknown capability
+global primary instruction document and its workstation configuration reference.
+Project guidance remains a separate `project-instruction` contribution. Unknown capability
 types, missing typed data, and extension fields are rejected during admission.
 
 The payload-free `engram-integration` capability explicitly enables Packy's

@@ -61,8 +61,9 @@ A closed, reviewed, typed Pack-binding request for reusable host-native
 behavior that is not implied by Pack, version, or resource identity.
 `project-instruction` projects reviewed source as an independently owned marked
 contribution in a project's native instruction document.
-`opencode-primary-prompt` projects reviewed source as OpenCode's primary
-instruction document and registers that document in OpenCode configuration.
+`opencode-primary-prompt` projects reviewed source as OpenCode's global primary
+instruction document and registers that document in workstation OpenCode
+configuration; project-native guidance remains owned by `project-instruction`.
 `engram-integration`
 explicitly enables Packy's reviewed Engram acquisition and host setup behavior;
 an `engram` external requirement without that capability is observed through
