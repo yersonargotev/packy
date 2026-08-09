@@ -221,21 +221,24 @@ func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState
 		t.Fatalf("argote Pack exposes no operational root: %#v", pack.Resources)
 	}
 	before := snapshotTree(t, home)
+	if _, err := backend.Preview(context.Background(), tui.PreviewRequest{PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}}); err == nil || !strings.Contains(err.Error(), "operation") {
+		t.Fatalf("missing lifecycle operation was accepted: %v", err)
+	}
 
 	full, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	partial, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
+		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	project, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		PackID: "argote", Surface: "codex", Scope: "project", ProjectRoot: repositoryRoot, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: "argote", Surface: "codex", Scope: "project", ProjectRoot: repositoryRoot, Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +294,7 @@ func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivati
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -335,6 +338,148 @@ func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivati
 	if index < 0 || pack.SurfaceStatuses[index].Configured != "yes" {
 		t.Fatalf("fresh status did not observe activation: %#v", pack)
 	}
+}
+
+func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeactivation(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PATH":                "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd:  func() (string, error) { return repositoryRoot, nil },
+		Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+
+	activate, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activate, ApprovedPhases: requiredTUIPhases(activate)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+
+	update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "argote", Surface: "codex", Scope: "global"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if update.Operation != "update" || update.Disposition != "converged" {
+		t.Fatalf("catalog-current update = %#v; want explicit no-op", update)
+	}
+
+	partial, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "deactivate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:espera-que"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partial.Operation != "deactivate" || partial.Disposition != "applicable" || !slices.Equal(partial.Selection.Roots, []string{"skill:espera-que"}) || len(partial.Diff.Removed) == 0 || len(partial.Diff.Retained) == 0 {
+		t.Fatalf("partial deactivation preview = %#v", partial)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: partial, ApprovedPhases: requiredTUIPhases(partial)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+
+	complete, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "deactivate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := complete
+	stale.Digest = "stale"
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: stale, ApprovedPhases: requiredTUIPhases(complete)}, func(tui.ApplyProgress) {}); err == nil || !strings.Contains(err.Error(), "fresh preview") {
+		t.Fatalf("stale deactivation err = %v", err)
+	}
+	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: complete, ApprovedPhases: requiredTUIPhases(complete)}, func(tui.ApplyProgress) {})
+	if err != nil || !result.Verified || !strings.Contains(result.Summary, "Deactivated") {
+		t.Fatalf("complete deactivation = %#v, %v", result, err)
+	}
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := findTUIPack(dashboard.Global.Packs, "argote")
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || pack.SurfaceStatuses[index].Active || pack.SurfaceStatuses[index].Ownership != 0 {
+		t.Fatalf("fresh status retained deactivated Pack: %#v", pack)
+	}
+}
+
+func TestTUIProductionBackendShowsDriftAndFailsDeactivationClosed(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PATH":                "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd: func() (string, error) { return repositoryRoot, nil }, Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	activate, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activate, ApprovedPhases: requiredTUIPhases(activate)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(home, ".agents", "skills", "espera-que")
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("operator edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, home)
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := findTUIPack(dashboard.Global.Packs, "argote")
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || !pack.SurfaceStatuses[index].UpdateAvailable {
+		t.Fatalf("drifted active selection did not offer Update: %#v", pack)
+	}
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Disposition == "applicable" || len(preview.Blockers) == 0 {
+		t.Fatalf("drifted deactivation did not fail closed: %#v", preview)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(tui.ApplyProgress) {}); err == nil {
+		t.Fatal("drifted mixed deactivation unexpectedly applied")
+	}
+	if after := snapshotTree(t, home); after != before {
+		t.Fatalf("drift preview mutated HOME\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func requiredTUIPhases(preview tui.Preview) []string {
+	result := []string{}
+	for _, phase := range preview.Phases {
+		if phase.ApprovalRequired {
+			result = append(result, phase.Kind)
+		}
+	}
+	return result
 }
 
 func findTUIPack(packs []tui.Pack, id string) *tui.Pack {

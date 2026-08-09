@@ -55,6 +55,10 @@ type ProjectionSummary struct {
 	Verified, Missing, Drifted, Ambiguous, Unmanaged int
 }
 
+func (s ProjectionSummary) requiresReconciliation() bool {
+	return s.Missing > 0 || s.Drifted > 0 || s.Ambiguous > 0 || s.Unmanaged > 0
+}
+
 type ResourceSelectionStatus struct {
 	Resource        ResourceIdentity
 	Selected        bool
@@ -125,27 +129,28 @@ func UnknownOptionalAuthorities(pack Pack) []OptionalAuthorityObservation {
 }
 
 type StatusEntry struct {
-	Pack                Pack
-	Surface             Surface
-	Intent              IntentStatus
-	IntentPresent       bool
-	UpdateAvailable     bool
-	Readiness           ReadinessStatus
-	ReadinessObserved   ReadinessObservationStatus
-	OptionalAuthorities []OptionalAuthorityObservation
-	RuntimeModes        []RuntimeModeResult
-	Projections         ProjectionSummary
-	ProjectionDetails   []ProjectionStatus
-	ResourceSelections  []ResourceSelectionStatus
-	Resources           []ResourceStatus
-	Blockers            []string
-	MissingRequirements []string
-	InspectionFailed    bool
-	PendingHumanActions []string
-	Evidence            []string
-	Contract            LifecycleContract
-	ActivationRole      ActivationRole
-	LifecycleState      PackLifecycleState
+	Pack                  Pack
+	Surface               Surface
+	Intent                IntentStatus
+	IntentPresent         bool
+	UpdateAvailable       bool
+	UpdateActionAvailable bool
+	Readiness             ReadinessStatus
+	ReadinessObserved     ReadinessObservationStatus
+	OptionalAuthorities   []OptionalAuthorityObservation
+	RuntimeModes          []RuntimeModeResult
+	Projections           ProjectionSummary
+	ProjectionDetails     []ProjectionStatus
+	ResourceSelections    []ResourceSelectionStatus
+	Resources             []ResourceStatus
+	Blockers              []string
+	MissingRequirements   []string
+	InspectionFailed      bool
+	PendingHumanActions   []string
+	Evidence              []string
+	Contract              LifecycleContract
+	ActivationRole        ActivationRole
+	LifecycleState        PackLifecycleState
 }
 
 type ReadinessObservationStatus struct {
@@ -471,6 +476,7 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 	}
 	entry.LifecycleState = lifecycleStateForStatus(entry, state, pack.ID, observation.Projections)
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)
+	entry.UpdateActionAvailable = entry.UpdateAvailable || entry.Intent.Active && entry.Projections.requiresReconciliation()
 	entry.RuntimeModes = cloneRuntimeModeResults(observation.RuntimeModeResults)
 	entry.Readiness.Configured = entry.Projections.Verified == len(observation.Projections) && len(observation.Projections) > 0
 	entry.ReadinessObserved.Configured = true
