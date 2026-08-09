@@ -919,27 +919,7 @@ func runModelMessage(t *testing.T, model tea.Model, message tea.Msg) tea.Model {
 
 func runModelCommand(t *testing.T, model tea.Model, command tea.Cmd) tea.Model {
 	t.Helper()
-	if command == nil {
-		t.Fatal("expected command")
-	}
-	queue := []tea.Cmd{command}
-	current := model
-	for len(queue) > 0 {
-		command, queue = queue[0], queue[1:]
-		message := command()
-		if batch, ok := message.(tea.BatchMsg); ok {
-			queue = append(queue, []tea.Cmd(batch)...)
-			continue
-		}
-		if message == nil {
-			continue
-		}
-		var next tea.Cmd
-		current, next = current.Update(message)
-		if next != nil {
-			queue = append(queue, next)
-		}
-	}
+	current, _ := runModelCommandTrackingQuit(t, model, command)
 	return current
 }
 
