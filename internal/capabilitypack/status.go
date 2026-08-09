@@ -55,6 +55,10 @@ type ProjectionSummary struct {
 	Verified, Missing, Drifted, Ambiguous, Unmanaged int
 }
 
+func (s ProjectionSummary) RequiresReconciliation() bool {
+	return s.Missing > 0 || s.Drifted > 0 || s.Ambiguous > 0 || s.Unmanaged > 0
+}
+
 type ResourceSelectionStatus struct {
 	Resource        ResourceIdentity
 	Selected        bool
@@ -471,6 +475,7 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 	}
 	entry.LifecycleState = lifecycleStateForStatus(entry, state, pack.ID, observation.Projections)
 	entry.ProjectionDetails, entry.Projections = deriveProjectionStatus(pack.ID, observation.Projections, state.Ownership, surfaceComposition)
+	entry.UpdateAvailable = entry.UpdateAvailable || entry.Intent.Active && entry.Projections.RequiresReconciliation()
 	entry.RuntimeModes = cloneRuntimeModeResults(observation.RuntimeModeResults)
 	entry.Readiness.Configured = entry.Projections.Verified == len(observation.Projections) && len(observation.Projections) > 0
 	entry.ReadinessObserved.Configured = true

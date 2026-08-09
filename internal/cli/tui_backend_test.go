@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/bootstrap"
-	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/tui"
 )
 
@@ -182,31 +181,6 @@ func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *
 	}
 	if !dashboard.Project.Available || dashboard.Project.Root != repositoryRoot || len(dashboard.Project.Packs) == 0 {
 		t.Fatalf("global status blocker hid unaffected project inspection: %#v", dashboard.Project)
-	}
-}
-
-func TestTUIStatusOffersUpdateOnlyForActiveCatalogOrSelectionReconciliation(t *testing.T) {
-	active := capabilitypack.IntentStatus{Active: true}
-	tests := []struct {
-		name  string
-		entry capabilitypack.StatusEntry
-		want  bool
-	}{
-		{name: "inactive drift", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, Projections: capabilitypack.ProjectionSummary{Drifted: 1}}},
-		{name: "active converged", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Verified: 2}}},
-		{name: "catalog version", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, UpdateAvailable: true, Projections: capabilitypack.ProjectionSummary{Verified: 2}}, want: true},
-		{name: "missing selected projection", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Verified: 1, Missing: 1}}, want: true},
-		{name: "drifted selected projection", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Drifted: 1}}, want: true},
-		{name: "ambiguous selected projection", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Ambiguous: 1}}, want: true},
-		{name: "unmanaged selected projection", entry: capabilitypack.StatusEntry{Pack: capabilitypack.Pack{ID: "argote"}, Surface: capabilitypack.SurfaceCodex, IntentPresent: true, Intent: active, Projections: capabilitypack.ProjectionSummary{Unmanaged: 1}}, want: true},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			statuses := globalStatusesForTUI(capabilitypack.StatusReport{Entries: []capabilitypack.StatusEntry{test.entry}})
-			if got := statuses["argote"]["codex"].UpdateAvailable; got != test.want {
-				t.Fatalf("UpdateAvailable = %v, want %v", got, test.want)
-			}
-		})
 	}
 }
 
@@ -474,6 +448,15 @@ func TestTUIProductionBackendShowsDriftAndFailsDeactivationClosed(t *testing.T) 
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, home)
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := findTUIPack(dashboard.Global.Packs, "argote")
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || !pack.SurfaceStatuses[index].UpdateAvailable {
+		t.Fatalf("drifted active selection did not offer Update: %#v", pack)
+	}
 	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
 	if err != nil {
 		t.Fatal(err)

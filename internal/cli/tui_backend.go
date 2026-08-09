@@ -485,7 +485,7 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 	for _, entry := range report.Entries {
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
-			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: updateAvailableForTUI(entry),
+			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateAvailable,
 			Configured: readinessForTUI(entry.ReadinessObserved.Configured, entry.Readiness.Configured),
 			Authorized: readinessForTUI(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized),
 			Usable:     readinessForTUI(entry.ReadinessObserved.Usability, entry.Readiness.Usable),
@@ -505,13 +505,6 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 		result[entry.Pack.ID][string(entry.Surface)] = status
 	}
 	return result
-}
-
-func updateAvailableForTUI(entry capabilitypack.StatusEntry) bool {
-	if !entry.IntentPresent || !entry.Intent.Active {
-		return false
-	}
-	return entry.UpdateAvailable || entry.Projections.Missing > 0 || entry.Projections.Drifted > 0 || entry.Projections.Ambiguous > 0 || entry.Projections.Unmanaged > 0
 }
 
 func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[string]map[string]tui.SurfaceStatus {
