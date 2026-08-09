@@ -24,14 +24,13 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			facade := capabilitypack.NewFacade(catalog)
-			project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
-			if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("# Foreign guidance\n"), 0o640); err != nil {
-				t.Fatal(err)
-			}
-			adapter := projectInstructionAdapter(t, bundle, surface)
-
 			for _, packID := range []string{"synthetic-alpha", "synthetic-beta"} {
+				facade := capabilitypack.NewFacade(catalog)
+				project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
+				if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("# Foreign guidance\n"), 0o640); err != nil {
+					t.Fatal(err)
+				}
+				adapter := projectInstructionAdapter(t, bundle, surface)
 				preview, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: packID, Surface: surface, ProjectRoot: project}, adapter)
 				if err != nil {
 					t.Fatal(err)
@@ -54,32 +53,30 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 						t.Fatalf("%s projection status = %#v", packID, projection)
 					}
 				}
-			}
 
-			assertProjectInstructionContributions(t, project, true, true)
-			agentsPath := filepath.Join(project, "AGENTS.md")
-			installedDocument, err := os.ReadFile(agentsPath)
-			if err != nil {
-				t.Fatal(err)
+				assertProjectInstructionContribution(t, project, packID, true)
+				agentsPath := filepath.Join(project, "AGENTS.md")
+				installedDocument, err := os.ReadFile(agentsPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				drifted := strings.Replace(string(installedDocument), "Shared project guidance from "+packID+".", "Locally changed guidance.", 1)
+				if err := os.WriteFile(agentsPath, []byte(drifted), 0o640); err != nil {
+					t.Fatal(err)
+				}
+				blocked, err := capabilitypack.PreviewProjectUninstall(context.Background(), capabilitypack.ProjectUninstallRequest{PackID: packID, Surface: surface, ProjectRoot: project}, adapter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if blocked.Disposition != capabilitypack.ProjectInstallBlocked || len(blocked.Blockers) == 0 {
+					t.Fatalf("drifted removal = %#v", blocked)
+				}
+				if err := os.WriteFile(agentsPath, installedDocument, 0o640); err != nil {
+					t.Fatal(err)
+				}
+				uninstallProjectInstructionPack(t, project, packyHome, packID, surface, adapter)
+				assertProjectInstructionContribution(t, project, packID, false)
 			}
-			drifted := strings.Replace(string(installedDocument), "Shared project guidance from synthetic-alpha.", "Locally changed alpha guidance.", 1)
-			if err := os.WriteFile(agentsPath, []byte(drifted), 0o640); err != nil {
-				t.Fatal(err)
-			}
-			blocked, err := capabilitypack.PreviewProjectUninstall(context.Background(), capabilitypack.ProjectUninstallRequest{PackID: "synthetic-alpha", Surface: surface, ProjectRoot: project}, adapter)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if blocked.Disposition != capabilitypack.ProjectInstallBlocked || len(blocked.Blockers) == 0 {
-				t.Fatalf("drifted removal = %#v", blocked)
-			}
-			if err := os.WriteFile(agentsPath, installedDocument, 0o640); err != nil {
-				t.Fatal(err)
-			}
-			uninstallProjectInstructionPack(t, project, packyHome, "synthetic-alpha", surface, adapter)
-			assertProjectInstructionContributions(t, project, false, true)
-			uninstallProjectInstructionPack(t, project, packyHome, "synthetic-beta", surface, adapter)
-			assertProjectInstructionContributions(t, project, false, false)
 		})
 	}
 }
@@ -168,7 +165,7 @@ func uninstallProjectInstructionPack(t *testing.T, project, packyHome, packID st
 	}
 }
 
-func assertProjectInstructionContributions(t *testing.T, project string, alpha, beta bool) {
+func assertProjectInstructionContribution(t *testing.T, project, packID string, want bool) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(project, "AGENTS.md"))
 	if err != nil {
@@ -178,10 +175,9 @@ func assertProjectInstructionContributions(t *testing.T, project string, alpha, 
 	if !strings.Contains(content, "# Foreign guidance") {
 		t.Fatalf("foreign guidance was removed: %q", content)
 	}
-	for id, want := range map[string]bool{"synthetic-alpha-guidance": alpha, "synthetic-beta-guidance": beta} {
-		marker := "<!-- packy:project:instruction:" + id + ":start -->"
-		if strings.Contains(content, marker) != want {
-			t.Fatalf("marker %s presence = %t, want %t: %q", id, strings.Contains(content, marker), want, content)
-		}
+	id := packID + "-guidance"
+	marker := "<!-- packy:project:instruction:" + id + ":start -->"
+	if strings.Contains(content, marker) != want {
+		t.Fatalf("marker %s presence = %t, want %t: %q", id, strings.Contains(content, marker), want, content)
 	}
 }

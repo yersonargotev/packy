@@ -125,7 +125,6 @@ type ProjectProjectionPlan struct {
 	ObservedState      string           `json:"observed_state"`
 	OwnerPack          string           `json:"owner_pack"`
 	Surface            Surface          `json:"surface"`
-	Sharing            string           `json:"sharing"`
 	Command            string           `json:"command,omitempty"`
 	Args               []string         `json:"args,omitempty"`
 }
@@ -576,7 +575,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		}
 		targetKey := filepath.Clean(target)
 		for _, locked := range existingLock.Projections {
-			if filepath.Clean(locked.Target) == targetKey && (locked.Resource != resource || !projectProjectionOwnedByPack(locked, pack.ID)) && !sharedMarkedProjectContribution(projection, locked) {
+			if filepath.Clean(locked.Target) == targetKey && (locked.Resource != resource || !projectProjectionOwnedByPack(locked, pack.ID)) {
 				blockers = append(blockers, ProjectInstallBlocker{Code: "projection_collision", Resource: resource, Target: target, Detail: "another installed Pack receipt owns the same project path", Remediation: "select a non-colliding resource root or assign an explicit alias"})
 				break
 			}
@@ -617,11 +616,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		} else if projection.Action.Kind == ActionOpenCodeMCPConfig || projection.Action.Kind == ActionClaudeProjectMCP {
 			mode, fileMode = "merge_structured_file", projection.Action.FileMode
 		}
-		sharing := "exclusive"
-		if projection.Shared {
-			sharing = "shared"
-		}
-		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, OwnerPack: pack.ID, Surface: request.Surface, Sharing: sharing, Command: projection.Action.Command, Args: append([]string(nil), projection.Action.Args...)})
+		projections = append(projections, ProjectProjectionPlan{Resource: resource, Target: target, Mode: mode, FileMode: fileMode, DesiredFingerprint: projection.DesiredFingerprint, ObservedState: state, OwnerPack: pack.ID, Surface: request.Surface, Command: projection.Action.Command, Args: append([]string(nil), projection.Action.Args...)})
 		if state != "owned" && state != "drifted" {
 			action := projection.Action
 			action.PreviewOnly = false
@@ -770,18 +765,6 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	return report, nil
 }
 
-func sharedMarkedProjectContribution(observed ObservedProjection, locked ProjectProjectionPlan) bool {
-	if !observed.Shared || observed.Action.ProjectionKey == "" || locked.Mode != "merge_marked_file" || locked.Sharing != "shared" {
-		return false
-	}
-	switch observed.Action.Kind {
-	case ActionInstructionFile, ActionOpenCodeInstructionFile, ActionClaudeProjectInstruction:
-		return true
-	default:
-		return false
-	}
-}
-
 func expectedProjectReadinessProjections(plans []ProjectProjectionPlan) []ProjectionStatus {
 	result := make([]ProjectionStatus, 0, len(plans))
 	for _, plan := range plans {
@@ -897,7 +880,7 @@ func projectReceipt(pack Pack, surface Surface, selection ResourceSelection, ali
 			selected[projection.Resource] = true
 		}
 		receipt.Projections = append(receipt.Projections, installedProjection{
-			ID: projection.Resource.String(), Target: projection.Target, Digest: projection.DesiredFingerprint, Sharing: projection.Sharing,
+			ID: projection.Resource.String(), Target: projection.Target, Digest: projection.DesiredFingerprint,
 		})
 	}
 	sort.Slice(receipt.Resources, func(i, j int) bool { return receipt.Resources[i].String() < receipt.Resources[j].String() })
@@ -926,7 +909,7 @@ func replaceProjectNoticeReceiptProjection(receipts []installedPackReceipt, pack
 			}
 		}
 		projections = append(projections, installedProjection{
-			ID: projectNoticeProjectionID(packID, surface), Target: "PACKY-NOTICES.md", Digest: fingerprintProjectBytes([]byte(block)), Sharing: "exclusive",
+			ID: projectNoticeProjectionID(packID, surface), Target: "PACKY-NOTICES.md", Digest: fingerprintProjectBytes([]byte(block)),
 		})
 		sort.Slice(projections, func(left, right int) bool {
 			leftKey := filepath.Clean(projections[left].Target) + "\x00" + projections[left].ID
@@ -1026,7 +1009,7 @@ func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
 			mode, fileMode := projectReceiptProjectionMode(receipt.Surface, resource)
 			lock.Projections = append(lock.Projections, ProjectProjectionPlan{
 				Resource: resource, Target: projection.Target, Mode: mode, FileMode: fileMode,
-				DesiredFingerprint: projection.Digest, ObservedState: "installed", OwnerPack: receipt.Pack.ID, Surface: receipt.Surface, Sharing: projection.Sharing,
+				DesiredFingerprint: projection.Digest, ObservedState: "installed", OwnerPack: receipt.Pack.ID, Surface: receipt.Surface,
 			})
 			name := resource.ID
 			for _, alias := range receipt.Aliases {
@@ -1057,7 +1040,6 @@ func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
 func validateProjectReceipts(receipts []installedPackReceipt) error {
 	seen := map[string]bool{}
 	targetOwners := map[string]string{}
-	targetSharing := map[string]string{}
 	for i, receipt := range receipts {
 		key := receipt.Pack.ID + "\x00" + string(receipt.Surface)
 		if !idPattern.MatchString(receipt.Pack.ID) || !semverPattern.MatchString(receipt.Pack.Version) || receipt.Surface != SurfaceCodex && receipt.Surface != SurfaceOpenCode && receipt.Surface != SurfaceClaude || seen[key] {
@@ -1111,7 +1093,7 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 			projectionKey := filepath.Clean(projection.Target) + "\x00" + projection.ID
 			identity, identityErr := ParseResourceIdentity(projection.ID)
 			noticeProjection := projection.ID == projectNoticeProjectionID(receipt.Pack.ID, receipt.Surface) && projection.Target == "PACKY-NOTICES.md"
-			if identityErr != nil || !noticeProjection && !resourceSeen[identity] || !safeProjectContractTarget(projection.Target) || !projectDigestPattern.MatchString(projection.Digest) || projection.Sharing != "exclusive" && projection.Sharing != "shared" || projectionSeen[projectionKey] {
+			if identityErr != nil || !noticeProjection && !resourceSeen[identity] || !safeProjectContractTarget(projection.Target) || !projectDigestPattern.MatchString(projection.Digest) || projectionSeen[projectionKey] {
 				return fmt.Errorf("project receipt for %s on %s has invalid projection evidence", receipt.Pack.ID, receipt.Surface)
 			}
 			if j > 0 {
@@ -1121,13 +1103,10 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 				}
 			}
 			cleanTarget := filepath.Clean(projection.Target)
-			if owner, occupied := targetOwners[cleanTarget]; occupied && owner != receipt.Pack.ID && !noticeProjection && (projection.Sharing != "shared" || targetSharing[cleanTarget] != "shared") {
+			if owner, occupied := targetOwners[cleanTarget]; occupied && owner != receipt.Pack.ID && !noticeProjection {
 				return fmt.Errorf("project receipts for Packs %s and %s collide at %s", owner, receipt.Pack.ID, projection.Target)
 			}
-			if !noticeProjection {
-				targetOwners[cleanTarget] = receipt.Pack.ID
-				targetSharing[cleanTarget] = projection.Sharing
-			}
+			targetOwners[cleanTarget] = receipt.Pack.ID
 			projectionSeen[projectionKey] = true
 		}
 	}

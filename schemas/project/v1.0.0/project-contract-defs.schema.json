@@ -97,12 +97,11 @@
     },
     "installed_projection": {
       "type": "object",
-      "required": ["id", "target", "digest", "sharing"],
+      "required": ["id", "target", "digest"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "target": { "type": "string", "minLength": 1 },
-        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "sharing": { "enum": ["exclusive", "shared"] }
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       },
       "additionalProperties": false
     },
@@ -128,7 +127,7 @@
     },
     "projection_plan": {
       "type": "object",
-      "required": ["resource", "target", "mode", "file_mode", "observed_state", "owner_pack", "surface", "sharing"],
+      "required": ["resource", "target", "mode", "file_mode", "observed_state", "owner_pack", "surface"],
       "properties": {
         "resource": { "$ref": "#/$defs/resource" },
         "target": { "type": "string" },
@@ -138,7 +137,6 @@
         "observed_state": { "type": "string", "minLength": 1 },
         "owner_pack": { "type": "string", "minLength": 1 },
         "surface": { "$ref": "#/$defs/surface" },
-        "sharing": { "enum": ["exclusive", "shared"] },
         "command": { "type": "string" },
         "args": { "type": "array", "items": { "type": "string" } }
       },

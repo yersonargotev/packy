@@ -202,7 +202,7 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	}
 }
 
-func TestIssue620CrossPackMarkedInstructionsComposeWithoutCollision(t *testing.T) {
+func TestIssue620CrossPackProjectionCollisionRemainsBlocked(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)
 	project := t.TempDir()
@@ -212,13 +212,14 @@ func TestIssue620CrossPackMarkedInstructionsComposeWithoutCollision(t *testing.T
 	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
 		t.Fatalf("install Matty: %v\n%s", err, out)
 	}
+	before := snapshotTree(t, project)
 	out, err := executeCommand(t, NewRootCommand(opts), "install", "argote", "--surface", "codex", "--resource", "instruction:guidance")
-	if err != nil {
-		t.Fatalf("install shared Argote instruction: %v\n%s", err, out)
+	if err == nil || !strings.Contains(out, "projection_collision") {
+		t.Fatalf("install colliding Argote instruction = %v\n%s", err, out)
 	}
-	data, readErr := os.ReadFile(filepath.Join(project, "AGENTS.md"))
-	if readErr != nil || !strings.Contains(string(data), "packy:project:instruction:matty-codex-project:start") || !strings.Contains(string(data), "packy:project:instruction:guidance:start") {
-		t.Fatalf("shared marked contributions = %q, %v", data, readErr)
+	after := snapshotTree(t, project)
+	if after != before {
+		t.Fatalf("colliding install mutated the project\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
