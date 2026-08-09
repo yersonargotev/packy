@@ -21,6 +21,7 @@ import (
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/reportredaction"
 	"github.com/yersonargotev/packy/internal/skillbundle"
+	"github.com/yersonargotev/packy/internal/toolbin"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -259,7 +260,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if err != nil {
 				return err
 			}
-			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil), capabilitypack.WithExternalEffects(composition.engram, nil))
+			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil), capabilitypack.WithExternalEffects(composition.tools, nil, nil))
 			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, Selection: selection, Aliases: aliases}, adapter)
 			if err != nil {
@@ -801,7 +802,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 				if err != nil {
 					return err
 				}
-				facade := capabilitypack.NewFacade(capabilitypack.Catalog{})
+				facade := capabilitypack.NewFacade(capabilitypack.Catalog{}, capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil))
 				store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
 				global := capabilitypack.ObserveActiveIntents(cmd.Context(), store)
 				globalRelevant := slices.Contains(global.FailedSurfaces, capabilitypack.Surface(surface))
@@ -913,14 +914,14 @@ func projectStatusAdapters(opts Options, snapshot workstation.Snapshot) map[capa
 }
 
 func projectExecutableResolver(opts Options, snapshot workstation.Snapshot) capabilitypack.ExecutableResolver {
-	return engrambin.NewResolver(snapshot.HomebrewPrefix(), opts.Runner.LookPath)
+	return toolbin.NewPATHResolver(opts.Runner.LookPath)
 }
 
 func projectStatusFacade(opts Options, snapshot workstation.Snapshot) capabilitypack.Facade {
 	adapters := projectStatusAdapters(opts, snapshot)
 	return capabilitypack.NewFacade(capabilitypack.Catalog{},
 		capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File()), adapters),
-		capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil),
+		capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil),
 		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
 	)
 }
@@ -1135,7 +1136,8 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 		capabilitypack.WithActivation(store, adapters),
 		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(filepath.Dir(composition.state.File()))),
 		capabilitypack.WithExternalEffects(
-			composition.engram,
+			composition.tools,
+			externalToolAcquirers(composition.engram),
 			runnerExternalExecutor{runner: opts.Runner},
 		),
 	), nil
@@ -1988,7 +1990,8 @@ type packComposition struct {
 	codex      codex.CanonicalLayout
 	openCode   opencode.CanonicalLayout
 	claude     claudecode.CanonicalLayout
-	engram     engrambin.Resolver
+	tools      toolbin.PATHResolver
+	engram     engrambin.Acquirer
 }
 
 func resolvePackComposition(opts Options, workstationResolver *workstation.Resolver) (packComposition, error) {
@@ -2008,9 +2011,9 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 	if err != nil {
 		return packComposition{}, err
 	}
-	engramResolver := engrambin.NewResolver(snapshot.HomebrewPrefix(), opts.Runner.LookPath)
+	engramAcquirer := engrambin.NewAcquirer(snapshot.HomebrewPrefix())
 	if opts.EngramFormulaInspector != nil {
-		engramResolver = engramResolver.WithFormulaInspector(opts.EngramFormulaInspector)
+		engramAcquirer = engramAcquirer.WithFormulaInspector(opts.EngramFormulaInspector)
 	}
 	return packComposition{
 		catalog:    catalog,
@@ -2020,8 +2023,15 @@ func resolvePackComposition(opts Options, workstationResolver *workstation.Resol
 		codex:      codex.NewCanonicalLayout(snapshot.Home()),
 		openCode:   opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
 		claude:     claudecode.NewCanonicalLayout(snapshot.Home()),
-		engram:     engramResolver,
+		tools:      toolbin.NewPATHResolver(opts.Runner.LookPath),
+		engram:     engramAcquirer,
 	}, nil
+}
+
+func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.SurfaceCapabilityType]capabilitypack.ExecutableAcquirer {
+	return map[capabilitypack.SurfaceCapabilityType]capabilitypack.ExecutableAcquirer{
+		capabilitypack.SurfaceCapabilityEngramIntegration: engram,
+	}
 }
 
 func discoverPackCatalog(opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Catalog, error) {

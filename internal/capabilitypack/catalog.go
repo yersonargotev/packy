@@ -233,7 +233,10 @@ type Binding struct {
 
 type SurfaceCapabilityType string
 
-const SurfaceCapabilityProjectInstruction SurfaceCapabilityType = "project-instruction"
+const (
+	SurfaceCapabilityEngramIntegration  SurfaceCapabilityType = "engram-integration"
+	SurfaceCapabilityProjectInstruction SurfaceCapabilityType = "project-instruction"
+)
 
 // SurfaceCapability is one reviewed host-native behavior requested by a
 // binding. Its closed wire shape deliberately cannot carry extension data.
@@ -268,6 +271,26 @@ func (r Resource) SurfaceCapability(surface Surface, capability SurfaceCapabilit
 		}
 	}
 	return SurfaceCapability{}, false
+}
+
+func (p Pack) RequestsSurfaceCapability(surface Surface, capability SurfaceCapabilityType) bool {
+	for _, resource := range p.Resources {
+		if resource.RequestsSurfaceCapability(surface, capability) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p Pack) externalToolCapability(surface Surface, tool string) (SurfaceCapabilityType, bool) {
+	for capability, capabilityTool := range map[SurfaceCapabilityType]string{
+		SurfaceCapabilityEngramIntegration: "engram",
+	} {
+		if tool == capabilityTool && p.RequestsSurfaceCapability(surface, capability) {
+			return capability, true
+		}
+	}
+	return "", false
 }
 
 type AgentAuthority struct {
@@ -877,6 +900,10 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			}
 			if err := validateSourcePath(capability.ProjectInstruction.Source); err != nil {
 				return fmt.Errorf("surface capability %q project_instruction source: %w", capability.Type, err)
+			}
+		case SurfaceCapabilityEngramIntegration:
+			if capability.ProjectInstruction != nil {
+				return fmt.Errorf("surface capability %q does not accept project_instruction data", capability.Type)
 			}
 		default:
 			return fmt.Errorf("surface capability %q is unsupported", capability.Type)

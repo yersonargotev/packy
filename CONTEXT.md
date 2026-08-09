@@ -58,9 +58,12 @@ the current product.
 ### Surface capability
 
 A closed, reviewed, typed Pack-binding request for reusable host-native
-behavior that is not implied by Pack, version, or resource identity. The first
-capability, `project-instruction`, projects reviewed source as an independently
-owned marked contribution in a project's native instruction document.
+behavior that is not implied by Pack, version, or resource identity.
+`project-instruction` projects reviewed source as an independently owned marked
+contribution in a project's native instruction document. `engram-integration`
+explicitly enables Packy's reviewed Engram acquisition and host setup behavior;
+an `engram` external requirement without that capability is observed through
+PATH like any other tool and receives no implicit setup behavior.
 
 ### Pack activation
 

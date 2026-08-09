@@ -269,6 +269,52 @@ func TestValidatePackContentReportsCurrentContractErrors(t *testing.T) {
 	}
 }
 
+func TestValidatePackContentAcceptsExplicitEngramIntegrationCapability(t *testing.T) {
+	bundle := t.TempDir()
+	packDir := writeCurrentPackFixture(t, bundle, "example-pack")
+	path := filepath.Join(packDir, "pack.json")
+	var manifest map[string]any
+	if err := json.Unmarshal(mustReadFile(t, path), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["external_requirements"] = []any{"engram"}
+	binding := currentFixtureResource(manifest)["bindings"].([]any)[0].(map[string]any)
+	binding["capabilities"] = []any{map[string]any{"type": "engram-integration"}}
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidatePackContent(bundle, packDir); err != nil {
+		t.Fatalf("explicit Engram integration capability: %v", err)
+	}
+}
+
+func TestValidatePackContentRejectsEngramIntegrationWithoutRequirement(t *testing.T) {
+	bundle := t.TempDir()
+	packDir := writeCurrentPackFixture(t, bundle, "example-pack")
+	path := filepath.Join(packDir, "pack.json")
+	var manifest map[string]any
+	if err := json.Unmarshal(mustReadFile(t, path), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	binding := currentFixtureResource(manifest)["bindings"].([]any)[0].(map[string]any)
+	binding["capabilities"] = []any{map[string]any{"type": "engram-integration"}}
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = ValidatePackContent(bundle, packDir)
+	if err == nil || !strings.Contains(err.Error(), "requires external requirement \"engram\"") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func currentFixtureResource(manifest map[string]any) map[string]any {
 	return manifest["resources"].([]any)[0].(map[string]any)
 }

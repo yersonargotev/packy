@@ -61,6 +61,9 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 	applicationImplementations := 0
 	directInspections := 0
 	for _, source := range sources {
+		if source.path == "../engrambin/engrambin.go" && strings.Contains(source.text, "unsupported executable requirement") {
+			t.Fatalf("%s reintroduced fixed-name external requirement rejection", source.path)
+		}
 		for _, forbidden := range obsolete {
 			if strings.Contains(source.text, forbidden) {
 				t.Fatalf("%s reintroduced obsolete surface structure %q", source.path, forbidden)

@@ -13,6 +13,24 @@ func (r readinessResolver) Resolve(_ context.Context, tool string) (ExecutableRe
 	return ExecutableResolution{Tool: tool, Available: r.available}, nil
 }
 
+type recordingReadinessResolver struct {
+	paths map[string]string
+	calls []string
+}
+
+func (r *recordingReadinessResolver) Resolve(_ context.Context, tool string) (ExecutableResolution, error) {
+	r.calls = append(r.calls, tool)
+	path := r.paths[tool]
+	return ExecutableResolution{Tool: tool, Available: path != "", Path: path, ResolvedPath: path, Origin: "path"}, nil
+}
+
+type recordingAcquirer struct{ calls int }
+
+func (a *recordingAcquirer) ResolveAcquisition(context.Context) (ExecutableAcquisition, error) {
+	a.calls++
+	return ExecutableAcquisition{Path: "/opt/homebrew/bin/engram", Command: "brew", Args: []string{"install", "reviewed/engram"}, Source: "reviewed/engram", Version: "1.0.0"}, nil
+}
+
 func TestFacadeStatusPreservesConditionTruthAndAggregatesDimensions(t *testing.T) {
 	pack := Pack{
 		manifestVersion:      manifestSchemaV4,
@@ -204,7 +222,7 @@ func TestFacadeStatusDerivesExternalRequirementConditionFromExistingRequirement(
 	}}}
 	facade := NewFacade(Catalog{packs: []Pack{pack}},
 		WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}),
-		WithExternalEffects(readinessResolver{}, nil),
+		WithExternalEffects(readinessResolver{}, nil, nil),
 	)
 
 	report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex})
@@ -226,5 +244,104 @@ func TestFacadeStatusDerivesExternalRequirementConditionFromExistingRequirement(
 	}
 	if count != 1 {
 		t.Fatalf("external requirement conditions = %d, want one", count)
+	}
+}
+
+func TestFacadeStatusObservesDifferentlyNamedExternalRequirementsWithoutToolDispatch(t *testing.T) {
+	for _, scenario := range []struct {
+		tool       string
+		path       string
+		wantValue  ReadinessValue
+		wantReason ReadinessReason
+		wantUsable bool
+	}{
+		{tool: "synthetic-present", path: "/tmp/synthetic-present", wantValue: ReadinessTrue, wantReason: ReasonRequirementAvailable, wantUsable: true},
+		{tool: "synthetic-missing", wantValue: ReadinessFalse, wantReason: ReasonRequirementMissing, wantUsable: false},
+	} {
+		t.Run(scenario.tool, func(t *testing.T) {
+			pack := Pack{
+				manifestVersion: manifestSchemaV4, ID: "synthetic-pack", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+				Requires:  Requirements{Tools: []string{scenario.tool}},
+				Resources: []Resource{{Kind: "skill", ID: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
+				Contract:  Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+			}
+			state := ActivationState{
+				Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
+				Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}},
+			}
+			adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{Revision: "codex-v1", Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide"}}}}}}
+			resolver := &recordingReadinessResolver{paths: map[string]string{scenario.tool: scenario.path}}
+			store := &fakeActivationStore{state: state}
+			facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}), WithExternalEffects(resolver, nil, nil))
+
+			report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, RequireUsable: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(resolver.calls) != 1 || resolver.calls[0] != scenario.tool {
+				t.Fatalf("resolver calls = %#v", resolver.calls)
+			}
+			var requirement ReadinessCondition
+			for _, condition := range report.Entries[0].Conditions {
+				if condition.Type == ConditionExternalRequirement {
+					requirement = condition
+				}
+			}
+			if requirement.Value != scenario.wantValue || requirement.Reason != scenario.wantReason || !strings.Contains(requirement.Message, scenario.tool) {
+				t.Fatalf("requirement condition = %#v", requirement)
+			}
+			if report.Requirement == nil || report.Requirement.Satisfied != scenario.wantUsable {
+				t.Fatalf("strict usable gate = %#v, want %t", report.Requirement, scenario.wantUsable)
+			}
+			if len(store.saves) != 0 || len(adapter.applied) != 0 {
+				t.Fatalf("status observation caused side effects: saves=%d applied=%d", len(store.saves), len(adapter.applied))
+			}
+		})
+	}
+}
+
+func TestExecutableAcquisitionRequiresExplicitReviewedCapability(t *testing.T) {
+	resolver := &recordingReadinessResolver{paths: map[string]string{}}
+	acquirer := &recordingAcquirer{}
+	facade := NewFacade(Catalog{}, WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityEngramIntegration: acquirer}, nil))
+	plain := Pack{Requires: Requirements{Tools: []string{"engram"}}}
+
+	plainResolutions, err := facade.resolveExecutables(context.Background(), plain, SurfaceCodex, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acquirer.calls != 0 || len(plainResolutions) != 1 || plainResolutions[0].AcquisitionSupported || plainResolutions[0].Capability != "" {
+		t.Fatalf("plain requirement gained acquisition: calls=%d resolutions=%#v", acquirer.calls, plainResolutions)
+	}
+
+	explicit := plain
+	explicit.Resources = []Resource{{Bindings: []Binding{{Surface: SurfaceCodex, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityEngramIntegration}}}}}}
+	explicitResolutions, err := facade.resolveExecutables(context.Background(), explicit, SurfaceCodex, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acquirer.calls != 1 || len(explicitResolutions) != 1 || !explicitResolutions[0].AcquisitionSupported || explicitResolutions[0].Capability != SurfaceCapabilityEngramIntegration || explicitResolutions[0].AcquisitionCommand != "brew" {
+		t.Fatalf("explicit acquisition = calls=%d resolutions=%#v", acquirer.calls, explicitResolutions)
+	}
+	if _, err := facade.resolveExecutables(context.Background(), explicit, SurfaceCodex, false); err != nil {
+		t.Fatal(err)
+	}
+	if acquirer.calls != 1 {
+		t.Fatalf("observation invoked acquisition capability: calls=%d", acquirer.calls)
+	}
+}
+
+func TestExternalPlanDoesNotInventSetupForOrdinaryToolRequirement(t *testing.T) {
+	resolution := ExecutableResolution{Tool: "synthetic-helper", Available: true, Path: "/tmp/synthetic-helper", Origin: "path"}
+	actions, blockers := (Facade{}).externalPlan(OperationActivate, Pack{}, SurfaceCodex, ActivationState{}, []ExecutableResolution{resolution})
+	if len(actions) != 0 || len(blockers) != 0 {
+		t.Fatalf("ordinary PATH requirement produced setup policy: actions=%#v blockers=%#v", actions, blockers)
+	}
+
+	resolution.Available = false
+	resolution.Path = ""
+	actions, blockers = (Facade{}).externalPlan(OperationActivate, Pack{}, SurfaceCodex, ActivationState{}, []ExecutableResolution{resolution})
+	if len(actions) != 0 || len(blockers) != 1 || !strings.Contains(blockers[0].Detail, "missing from PATH") || !strings.Contains(blockers[0].Detail, "install it and retry") {
+		t.Fatalf("missing ordinary requirement = actions=%#v blockers=%#v", actions, blockers)
 	}
 }

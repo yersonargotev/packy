@@ -110,24 +110,40 @@ type DeactivationRequest struct {
 // ExecutableResolution is the immutable fact set used to choose an external
 // command. It intentionally contains no credentials or tool-owned data.
 type ExecutableResolution struct {
-	Tool                 string   `json:"tool"`
-	Available            bool     `json:"available"`
-	Path                 string   `json:"path"`
-	ResolvedPath         string   `json:"resolved_path"`
-	Origin               string   `json:"origin"`
-	Version              string   `json:"version,omitempty"`
-	AcquisitionSupported bool     `json:"acquisition_supported"`
-	AcquisitionCommand   string   `json:"acquisition_command,omitempty"`
-	AcquisitionArgs      []string `json:"acquisition_args,omitempty"`
-	AcquisitionSource    string   `json:"acquisition_source,omitempty"`
-	AcquisitionVersion   string   `json:"acquisition_version,omitempty"`
-	Precondition         string   `json:"precondition"`
+	Tool                 string                `json:"tool"`
+	Available            bool                  `json:"available"`
+	Path                 string                `json:"path"`
+	ResolvedPath         string                `json:"resolved_path"`
+	Origin               string                `json:"origin"`
+	Version              string                `json:"version,omitempty"`
+	AcquisitionSupported bool                  `json:"acquisition_supported"`
+	AcquisitionCommand   string                `json:"acquisition_command,omitempty"`
+	AcquisitionArgs      []string              `json:"acquisition_args,omitempty"`
+	AcquisitionSource    string                `json:"acquisition_source,omitempty"`
+	AcquisitionVersion   string                `json:"acquisition_version,omitempty"`
+	Precondition         string                `json:"precondition"`
+	Capability           SurfaceCapabilityType `json:"-"`
 }
 
-// ExecutableResolver is owned by capabilitypack; the concrete Engram
-// resolver is composed by the CLI at the edge of the application.
+type ExecutableAcquisition struct {
+	Path    string
+	Command string
+	Args    []string
+	Source  string
+	Version string
+}
+
+// ExecutableResolver is owned by capabilitypack; the generic PATH observer is
+// composed by the CLI at the edge of the application.
 type ExecutableResolver interface {
 	Resolve(context.Context, string) (ExecutableResolution, error)
+}
+
+// ExecutableAcquirer resolves one explicitly reviewed tool capability. It is
+// separate from PATH observation so ordinary requirements never inherit a
+// tool-specific installation or setup convention.
+type ExecutableAcquirer interface {
+	ResolveAcquisition(context.Context) (ExecutableAcquisition, error)
 }
 
 // ExternalExecutor is the only side-effect seam for executable/external
@@ -391,10 +407,11 @@ func checkpointExternalEffects(ctx context.Context, store ActivationStore, surfa
 }
 
 type activationDependencies struct {
-	store    ActivationStore
-	adapters map[Surface]SurfaceAdapter
-	resolver ExecutableResolver
-	executor ExternalExecutor
+	store     ActivationStore
+	adapters  map[Surface]SurfaceAdapter
+	resolver  ExecutableResolver
+	acquirers map[SurfaceCapabilityType]ExecutableAcquirer
+	executor  ExternalExecutor
 }
 
 type FacadeOption func(*Facade)
@@ -402,21 +419,24 @@ type FacadeOption func(*Facade)
 func WithActivation(store ActivationStore, adapters map[Surface]SurfaceAdapter) FacadeOption {
 	return func(f *Facade) {
 		var resolver ExecutableResolver
+		var acquirers map[SurfaceCapabilityType]ExecutableAcquirer
 		var executor ExternalExecutor
 		if f.activation != nil {
 			resolver = f.activation.resolver
+			acquirers = f.activation.acquirers
 			executor = f.activation.executor
 		}
-		f.activation = &activationDependencies{store: store, adapters: adapters, resolver: resolver, executor: executor}
+		f.activation = &activationDependencies{store: store, adapters: adapters, resolver: resolver, acquirers: acquirers, executor: executor}
 	}
 }
 
-func WithExternalEffects(resolver ExecutableResolver, executor ExternalExecutor) FacadeOption {
+func WithExternalEffects(resolver ExecutableResolver, acquirers map[SurfaceCapabilityType]ExecutableAcquirer, executor ExternalExecutor) FacadeOption {
 	return func(f *Facade) {
 		if f.activation == nil {
 			f.activation = &activationDependencies{}
 		}
 		f.activation.resolver = resolver
+		f.activation.acquirers = acquirers
 		f.activation.executor = executor
 	}
 }
@@ -691,7 +711,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	}
 	target := f.composeWithout(requested, state, request.Surface)
 	combined := target.combinedPack()
-	resolutions, err := f.resolveExecutables(ctx, before.combinedPack())
+	resolutions, err := f.resolveExecutables(ctx, before.combinedPack(), request.Surface, false)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -797,7 +817,7 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 		return ReconciliationPlan{}, err
 	}
 	combinedBefore, combined := before.combinedPack(), target.combinedPack()
-	resolutions, err := f.resolveExecutables(ctx, combinedBefore)
+	resolutions, err := f.resolveExecutables(ctx, combinedBefore, request.Surface, false)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -949,7 +969,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 	var previousPack Pack
 	var ownedBeforeUpdate func(ObservedProjection, string) bool
 	pack := composition.combinedPack()
-	resolutions, err := f.resolveExecutables(ctx, pack)
+	resolutions, err := f.resolveExecutables(ctx, pack, request.Surface, operation == OperationActivate || operation == OperationUpdate)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -1660,7 +1680,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	if plan.operation == OperationDeactivate {
 		resolutionPack = priorCombinedPack(plan, pack)
 	}
-	resolutions, err := f.resolveExecutables(ctx, resolutionPack)
+	resolutions, err := f.resolveExecutables(ctx, resolutionPack, plan.surface, plan.operation == OperationActivate || plan.operation == OperationUpdate)
 	if err != nil {
 		return planPreflight{}, err
 	}
@@ -2204,6 +2224,10 @@ func (f Facade) externalPlan(operation Operation, pack Pack, surface Surface, st
 	var blockers []PlanBlocker
 	for _, resolution := range resolutions {
 		if !resolution.Available {
+			if resolution.Capability == "" {
+				blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, fmt.Sprintf("required executable %s is missing from PATH; install it and retry", resolution.Tool)})
+				continue
+			}
 			if operation != OperationActivate && operation != OperationUpdate {
 				blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "executable acquisition requires an explicit activation or update; preview one of those operations before retrying"})
 				continue
@@ -2227,6 +2251,9 @@ func (f Facade) externalPlan(operation Operation, pack Pack, surface Surface, st
 			if !externalEffectCompleted(state.External, acquisition) {
 				actions = append(actions, acquisition)
 			}
+		}
+		if resolution.Capability != SurfaceCapabilityEngramIntegration {
+			continue
 		}
 		if strings.TrimSpace(resolution.Path) == "" {
 			blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "resolved tool has no executable path"})
@@ -2595,7 +2622,7 @@ func cloneResolutions(values []ExecutableResolution) []ExecutableResolution {
 	return result
 }
 
-func (f Facade) resolveExecutables(ctx context.Context, pack Pack) ([]ExecutableResolution, error) {
+func (f Facade) resolveExecutables(ctx context.Context, pack Pack, surface Surface, includeAcquisition bool) ([]ExecutableResolution, error) {
 	if len(pack.Requires.Tools) == 0 {
 		return nil, nil
 	}
@@ -2609,6 +2636,23 @@ func (f Facade) resolveExecutables(ctx context.Context, pack Pack) ([]Executable
 			return nil, fmt.Errorf("resolve required executable %q: %w", tool, err)
 		}
 		resolution.Tool = tool
+		if capability, ok := pack.externalToolCapability(surface, tool); ok {
+			resolution.Capability = capability
+			if includeAcquisition && !resolution.Available && f.activation.acquirers != nil {
+				if acquirer := f.activation.acquirers[capability]; acquirer != nil {
+					acquisition, acquisitionErr := acquirer.ResolveAcquisition(ctx)
+					if acquisitionErr != nil {
+						return nil, fmt.Errorf("resolve acquisition for required executable %q: %w", tool, acquisitionErr)
+					}
+					resolution.Path = acquisition.Path
+					resolution.AcquisitionSupported = acquisition.Command != ""
+					resolution.AcquisitionCommand = acquisition.Command
+					resolution.AcquisitionArgs = append([]string(nil), acquisition.Args...)
+					resolution.AcquisitionSource = acquisition.Source
+					resolution.AcquisitionVersion = acquisition.Version
+				}
+			}
+		}
 		resolution.AcquisitionArgs = append([]string(nil), resolution.AcquisitionArgs...)
 		if resolution.Precondition == "" {
 			resolution.Precondition = resolutionFingerprint(resolution)
@@ -2633,7 +2677,8 @@ func resolutionFingerprint(resolution ExecutableResolution) string {
 		Available, AcquisitionSupported                         bool
 		AcquisitionCommand                                      string
 		AcquisitionArgs                                         []string
-	}{resolution.Tool, resolution.Path, resolution.ResolvedPath, resolution.Origin, resolution.Version, "", resolution.Available, resolution.AcquisitionSupported, resolution.AcquisitionCommand, resolution.AcquisitionArgs})
+		Capability                                              SurfaceCapabilityType
+	}{resolution.Tool, resolution.Path, resolution.ResolvedPath, resolution.Origin, resolution.Version, "", resolution.Available, resolution.AcquisitionSupported, resolution.AcquisitionCommand, resolution.AcquisitionArgs, resolution.Capability})
 }
 
 func sameResolutions(want, got []ExecutableResolution) bool {

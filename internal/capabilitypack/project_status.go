@@ -565,7 +565,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		} else {
 			status.ControlledCheck = ControlledCheckStatus{State: ControlledCheckUnknown}
 		}
-		resolutions, resolveErr := f.resolveExecutables(ctx, pack)
+		resolutions, resolveErr := f.resolveExecutables(ctx, pack, status.Surface, false)
 		unobservedRequirements := []string{}
 		if resolveErr != nil {
 			status.Blockers = append(status.Blockers, ProjectInstallBlocker{

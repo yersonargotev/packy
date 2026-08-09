@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -162,6 +163,11 @@ func validateCurrentPack(pack Pack) error {
 	}
 	if err := validateContract(pack.Contract, pack.Resources); err != nil {
 		return fmt.Errorf("Pack %q field exclusions: %w", pack.ID, err)
+	}
+	for _, surface := range pack.Surfaces {
+		if pack.RequestsSurfaceCapability(surface, SurfaceCapabilityEngramIntegration) && !slices.Contains(pack.Requires.Tools, "engram") {
+			return fmt.Errorf("Pack %q surface capability %q requires external requirement %q", pack.ID, SurfaceCapabilityEngramIntegration, "engram")
+		}
 	}
 	return nil
 }
