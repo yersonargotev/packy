@@ -24,6 +24,13 @@ const (
 	ProjectInstallationBlocked   ProjectInstallationState = "blocked"
 )
 
+// ProjectUpdateAvailable reports whether an intact installed project Pack is
+// older than the reviewed catalog Pack. Blocked or drifted installations must
+// be repaired before update can be offered as an applicable action.
+func ProjectUpdateAvailable(installation ProjectInstallationState, installedVersion, catalogVersion string) bool {
+	return installation == ProjectInstallationInstalled && installedVersion != "" && installedVersion != catalogVersion
+}
+
 type ProjectRuntimeState string
 
 const (

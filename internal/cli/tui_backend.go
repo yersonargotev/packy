@@ -693,7 +693,7 @@ func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[str
 					status = observed
 					status.Supported = true
 					if status.InstalledVersion != "" {
-						status.UpdateAvailable = status.Installation == string(capabilitypack.ProjectInstallationInstalled) && status.InstalledVersion != pack.Version
+						status.UpdateAvailable = capabilitypack.ProjectUpdateAvailable(capabilitypack.ProjectInstallationState(status.Installation), status.InstalledVersion, pack.Version)
 					}
 				}
 				view.Surfaces = append(view.Surfaces, string(surface))
