@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -39,14 +40,22 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	if err != nil {
 		return tui.Dashboard{}, fmt.Errorf("discover reviewed Pack catalog: %w", err)
 	}
-	packs, err := catalog.ListCurrent()
+	details, err := catalog.ListDetails()
 	if err != nil {
 		return tui.Dashboard{}, fmt.Errorf("load reviewed Pack catalog: %w", err)
+	}
+	facade, err := activationFacade(b.opts, b.resolver)
+	if err != nil {
+		return tui.Dashboard{}, fmt.Errorf("compose global Pack status: %w", err)
+	}
+	globalStatus, err := facade.Status(ctx, capabilitypack.StatusRequest{})
+	if err != nil {
+		return tui.Dashboard{}, fmt.Errorf("inspect global Pack status: %w", err)
 	}
 
 	dashboard := tui.Dashboard{
 		Health: healthForTUI(health),
-		Global: tui.Scope{Available: true, Packs: packsForTUI(packs)},
+		Global: tui.Scope{Available: true, Packs: catalogPacksForTUI(details, globalStatusesForTUI(globalStatus))},
 	}
 	snapshot, err := b.resolver.Resolve(workstation.Options{})
 	if err != nil {
@@ -74,7 +83,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	if err != nil {
 		return tui.Dashboard{}, fmt.Errorf("inspect current project: %w", err)
 	}
-	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: projectPacksForTUI(status)}
+	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: catalogPacksForTUI(details, projectStatusesForTUI(status))}
 	return dashboard, nil
 }
 
@@ -90,31 +99,129 @@ func healthForTUI(report setuphealth.Report) tui.Health {
 	return health
 }
 
-func packsForTUI(packs []capabilitypack.Pack) []tui.Pack {
-	result := make([]tui.Pack, 0, len(packs))
-	for _, pack := range packs {
-		surfaces := make([]string, len(pack.Surfaces))
-		for index, surface := range pack.Surfaces {
-			surfaces[index] = string(surface)
+func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[string]map[string]tui.SurfaceStatus) []tui.Pack {
+	result := make([]tui.Pack, 0, len(details))
+	for _, detail := range details {
+		pack := detail.Pack
+		view := tui.Pack{
+			ID: pack.ID, Version: pack.Version, Description: pack.Description,
+			Requirements: append([]string(nil), pack.Requires.Tools...),
+			Resources:    resourcesForTUI(detail),
+			Exclusions:   exclusionsForTUI(pack),
 		}
-		result = append(result, tui.Pack{ID: pack.ID, Version: pack.Version, Description: pack.Description, Surfaces: surfaces})
+		for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceClaude, capabilitypack.SurfaceCodex, capabilitypack.SurfaceOpenCode} {
+			supported := slices.Contains(pack.Surfaces, surface)
+			status := tui.SurfaceStatus{Name: string(surface), Supported: supported}
+			if supported {
+				status.Configured, status.Authorized, status.Usable = "no", "no", "no"
+				if observed, ok := statuses[pack.ID][string(surface)]; ok {
+					status = observed
+					status.Supported = true
+				}
+				view.Surfaces = append(view.Surfaces, string(surface))
+			}
+			view.SurfaceStatuses = append(view.SurfaceStatuses, status)
+		}
+		result = append(result, view)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func resourcesForTUI(detail capabilitypack.CatalogDetail) []tui.Resource {
+	raw := make(map[string]capabilitypack.Resource, len(detail.Pack.Resources))
+	for _, resource := range detail.Pack.Resources {
+		raw[resource.Kind+":"+resource.ID] = resource
+	}
+	result := make([]tui.Resource, 0, len(detail.ResourceInventory))
+	for _, resource := range detail.ResourceInventory {
+		identity := resource.Resource.String()
+		requirements := make([]string, 0, len(resource.Dependencies)+len(resource.Notices))
+		for _, dependency := range resource.Dependencies {
+			requirements = append(requirements, dependency.String())
+		}
+		for _, notice := range resource.Notices {
+			requirements = append(requirements, notice.String())
+		}
+		manifestResource := raw[identity]
+		requirements = append(requirements, manifestResource.RequiresTools...)
+		result = append(result, tui.Resource{
+			Identity: identity, Description: resource.Description, Role: string(resource.Role),
+			Requirements: requirements, Conflicts: append([]string(nil), manifestResource.Conflicts...),
+		})
 	}
 	return result
 }
 
-func projectPacksForTUI(report capabilitypack.JSONProjectStatusReport) []tui.Pack {
-	byID := make(map[string]tui.Pack)
-	for _, status := range report.Packs {
-		pack := byID[status.Pack.ID]
-		pack.ID, pack.Version = status.Pack.ID, status.Pack.Version
-		pack.Surfaces = append(pack.Surfaces, string(status.Surface))
-		byID[pack.ID] = pack
+func exclusionsForTUI(pack capabilitypack.Pack) []tui.Exclusion {
+	result := make([]tui.Exclusion, 0, len(pack.Contract.Exclusions))
+	for _, exclusion := range pack.Contract.Exclusions {
+		result = append(result, tui.Exclusion{ID: exclusion.ID, Reason: exclusion.Reason})
 	}
-	result := make([]tui.Pack, 0, len(byID))
-	for _, pack := range byID {
-		sort.Strings(pack.Surfaces)
-		result = append(result, pack)
+	for _, resource := range pack.Resources {
+		for _, exclusion := range resource.SurfaceExclusions {
+			result = append(result, tui.Exclusion{
+				ID: resource.Kind + ":" + resource.ID, Surface: string(exclusion.Surface),
+				Mode: exclusion.Mode, Code: exclusion.Code, Reason: exclusion.Reason,
+			})
+		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[string]tui.SurfaceStatus {
+	result := make(map[string]map[string]tui.SurfaceStatus)
+	for _, entry := range report.Entries {
+		status := tui.SurfaceStatus{
+			Name: string(entry.Surface), Supported: true,
+			Configured: readinessForTUI(entry.ReadinessObserved.Configured, entry.Readiness.Configured),
+			Authorized: readinessForTUI(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized),
+			Usable:     readinessForTUI(entry.ReadinessObserved.Usability, entry.Readiness.Usable),
+			Blockers:   append([]string(nil), entry.Blockers...), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
+		}
+		for _, projection := range entry.ProjectionDetails {
+			if projection.Owner == "packy" {
+				status.Ownership++
+				if projection.Health != capabilitypack.ProjectionVerified {
+					status.Drift++
+				}
+			}
+		}
+		if result[entry.Pack.ID] == nil {
+			result[entry.Pack.ID] = make(map[string]tui.SurfaceStatus)
+		}
+		result[entry.Pack.ID][string(entry.Surface)] = status
+	}
+	return result
+}
+
+func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[string]map[string]tui.SurfaceStatus {
+	result := make(map[string]map[string]tui.SurfaceStatus)
+	for _, entry := range report.Packs {
+		status := tui.SurfaceStatus{
+			Name: string(entry.Surface), Supported: true,
+			Configured: yesNo(entry.Readiness.Configured), Authorized: yesNo(entry.Readiness.Authorized), Usable: yesNo(entry.Readiness.Usable),
+			Ownership: len(entry.Projections), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
+		}
+		for _, blocker := range entry.Blockers {
+			status.Blockers = append(status.Blockers, blocker.Code+": "+blocker.Detail)
+		}
+		for _, projection := range entry.Projections {
+			if projection.Health != "verified" {
+				status.Drift++
+			}
+		}
+		if result[entry.Pack.ID] == nil {
+			result[entry.Pack.ID] = make(map[string]tui.SurfaceStatus)
+		}
+		result[entry.Pack.ID][string(entry.Surface)] = status
+	}
+	return result
+}
+
+func readinessForTUI(observed, value bool) string {
+	if !observed {
+		return "unknown"
+	}
+	return yesNo(value)
 }

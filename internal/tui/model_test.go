@@ -85,6 +85,80 @@ func TestDashboardNavigationKeyMapAndNarrowLayout(t *testing.T) {
 	}
 }
 
+func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy"},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{
+			{ID: "argote", Version: "1.2.0", Description: "Agent guidance"},
+			{
+				ID: "orchestrate", Version: "1.0.0", Description: "Coordination workflow",
+				Requirements: []string{"git"},
+				Resources:    []tui.Resource{{Identity: "skill:orchestrate", Description: "Coordinate agents", Role: "operational", Requirements: []string{"notice:mit"}, Conflicts: []string{"skill:legacy"}}},
+				Exclusions:   []tui.Exclusion{{ID: "windows", Reason: "POSIX shell required"}},
+				SurfaceStatuses: []tui.SurfaceStatus{
+					{Name: "claude", Supported: false},
+					{Name: "codex", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
+					{Name: "opencode", Supported: false},
+				},
+			},
+		}},
+	}}
+	model := tui.NewModel(backend)
+	current, _ := model.Update(model.Init()())
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 64, Height: 30})
+
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "/", Code: '/'}))
+	for _, char := range "orch" {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: string(char), Code: char}))
+	}
+	view := ansi.Strip(current.View().Content)
+	if strings.Contains(view, "argote") || !strings.Contains(view, "orchestrate") || !strings.Contains(view, "Filter: orch") {
+		t.Fatalf("catalog filter did not narrow the visible list:\n%s", view)
+	}
+
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(current.View().Content)
+	for _, want := range []string{
+		"Pack details · Workstation · global", "orchestrate 1.0.0", "Coordination workflow",
+		"skill:orchestrate", "Coordinate agents", "requires notice:mit", "conflicts skill:legacy",
+		"Requirements: git", "windows — POSIX shell required",
+		"claude: unsupported", "codex: supported", "configured=yes authorized=yes usable=no",
+		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
+		"install helper", "projection verified", "opencode: unsupported",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Pack detail missing %q:\n%s", want, view)
+		}
+	}
+	for _, line := range strings.Split(current.View().Content, "\n") {
+		if width := ansi.StringWidth(line); width > 64 {
+			t.Fatalf("detail line width = %d, want <= 64: %q", width, ansi.Strip(line))
+		}
+	}
+}
+
+func TestScopeStatusCannotBeMistakenInPackDetail(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health:  tui.Health{Status: "healthy"},
+		Global:  tui.Scope{Available: true, Packs: []tui.Pack{{ID: "matty", Version: "1.0.0"}}},
+		Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{ID: "matty", Version: "1.0.0"}}},
+	}}
+	model := tui.NewModel(backend)
+	current, _ := model.Update(model.Init()())
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(current.View().Content)
+	for _, want := range []string{"Pack details · Current project", "/workspace/project"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("project detail missing scope marker %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Pack details · Workstation · global") {
+		t.Fatalf("project detail was mislabeled as global:\n%s", view)
+	}
+}
+
 func lineContaining(value, target string) string {
 	for _, line := range strings.Split(value, "\n") {
 		if strings.Contains(line, target) {
@@ -142,6 +216,23 @@ func TestDashboardReloadsAfterFailureAndAlwaysRequestsAlternateScreen(t *testing
 	current, _ = current.Update(reload())
 	if backend.loads != 2 || !strings.Contains(current.View().Content, "argote") {
 		t.Fatalf("reload did not replace the failure state: loads=%d\n%s", backend.loads, current.View().Content)
+	}
+}
+
+func TestReloadReflectsDynamicCatalogChanges(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy"},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "first", Version: "1.0.0"}}},
+	}}
+	model := tui.NewModel(backend)
+	current, _ := model.Update(model.Init()())
+
+	backend.dashboard.Global.Packs = []tui.Pack{{ID: "newly-reviewed", Version: "2.0.0"}}
+	current, reload := current.Update(tea.KeyPressMsg(tea.Key{Text: "r", Code: 'r'}))
+	current, _ = current.Update(reload())
+	view := ansi.Strip(current.View().Content)
+	if strings.Contains(view, "first") || !strings.Contains(view, "newly-reviewed") {
+		t.Fatalf("reload retained a hard-coded catalog instead of backend data:\n%s", view)
 	}
 }
 
