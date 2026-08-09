@@ -1419,6 +1419,12 @@ func TestDashboardShowsMinimumSizeStateAndRecoversIntoOneColumn(t *testing.T) {
 	if strings.Contains(view, "argote") || strings.Contains(view, "matty") {
 		t.Fatalf("undersized terminal rendered safety-critical dashboard content:\n%s", view)
 	}
+	for range 4 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	}
+	if len(backend.previewRequests) != 0 || !strings.Contains(ansi.Strip(current.View().Content), "Terminal too small") {
+		t.Fatalf("undersized terminal accepted hidden navigation or preview: requests=%#v\n%s", backend.previewRequests, ansi.Strip(current.View().Content))
+	}
 
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
 	view = ansi.Strip(current.View().Content)

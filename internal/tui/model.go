@@ -325,6 +325,15 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.initializing {
+			return m, nil
+		}
+		if m.terminalUndersized() {
+			if key.Matches(message, dashboardKeys.Quit) {
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.showingApplyResult {
 			switch {
 			case key.Matches(message, dashboardKeys.Help):
@@ -352,9 +361,6 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.preview, m.previewErr, m.selecting, m.inspecting = nil, nil, false, false
 				return m, nil
 			}
-			return m, nil
-		}
-		if m.initializing {
 			return m, nil
 		}
 		if m.initializationResult {
@@ -898,13 +904,17 @@ var (
 
 func (m Model) render() string {
 	if m.terminalUndersized() {
+		action := "q quit"
+		if m.applying || m.initializing {
+			action = "Active operation must finish before exit"
+		}
 		return m.renderBody(strings.Join([]string{
 			titleStyle.Render("Terminal too small"),
 			"",
 			"Packy needs at least 48 columns and 14 rows to show safety-critical details.",
 			"Resize the terminal to continue.",
 			"",
-			"q quit",
+			action,
 		}, "\n"))
 	}
 	if !m.loaded {
