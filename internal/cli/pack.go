@@ -34,7 +34,6 @@ func newPackUninstallCommand(opts Options, workstationResolver *workstation.Reso
 	cmd := &cobra.Command{
 		Use:   "uninstall <pack>",
 		Short: "Uninstall exact owned projections from the current Git project",
-		Long:  "Uninstall exact owned projections from the current Git project.\n\n" + projectLifecycleHelp,
 		Args: func(cmd *cobra.Command, args []string) error {
 			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, true, "uninstall")
 		},
@@ -215,7 +214,6 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 	cmd := &cobra.Command{
 		Use:   "install <pack>",
 		Short: "Install a capability pack in the current Git project",
-		Long:  "Install a capability pack in the current Git project.\n\n" + projectLifecycleHelp,
 		Args: func(cmd *cobra.Command, args []string) error {
 			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, true, "install")
 		},
@@ -433,7 +431,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	var jsonOutput bool
 	var project bool
 	var force bool
-	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Long: "Deactivate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "deactivate <pack>", Short: "Deactivate a capability pack on one CLI surface", Args: func(cmd *cobra.Command, args []string) error {
 		return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, project, "deactivate")
 	}, RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 		defer func() {
@@ -568,7 +566,7 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	var project bool
 	var force bool
 	cmd := &cobra.Command{
-		Use: "update <pack>", Short: "Update an active capability pack to the catalog-current version", Long: "Update an active capability pack to the catalog-current version.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
+		Use: "update <pack>", Short: "Update an active capability pack to the catalog-current version", Args: func(cmd *cobra.Command, args []string) error {
 			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, project, "update")
 		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
@@ -760,7 +758,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	var resourceValues []string
 	var jsonOutput bool
 	cmd := &cobra.Command{
-		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Long: "Activate a capability pack on one CLI surface.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
+		Use: "activate <pack>", Short: "Activate a capability pack on one CLI surface", Args: func(cmd *cobra.Command, args []string) error {
 			return projectLifecycleArgs(cmd, args, cobra.ExactArgs(1), jsonOutput, project, "activate")
 		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
@@ -1313,7 +1311,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 	var jsonOutput bool
 	var project bool
 	cmd := &cobra.Command{
-		Use: "status [pack]", Short: "Inspect capability pack status", Long: "Inspect capability pack status.\n\n" + projectLifecycleHelp, Args: func(cmd *cobra.Command, args []string) error {
+		Use: "status [pack]", Short: "Inspect capability pack status", Args: func(cmd *cobra.Command, args []string) error {
 			return projectLifecycleArgs(cmd, args, cobra.MaximumNArgs(1), jsonOutput, project, "status")
 		},
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {

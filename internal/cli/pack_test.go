@@ -170,6 +170,9 @@ func TestPackVerbHelpUsesFlatCommandPaths(t *testing.T) {
 			if !strings.Contains(out, "packy "+verb) || strings.Contains(out, "packy pack") {
 				t.Fatalf("%s help does not use the flat path:\n%s", verb, out)
 			}
+			if strings.Contains(out, "Project installation writes the shared") {
+				t.Fatalf("%s help duplicates shared root lifecycle guidance:\n%s", verb, out)
+			}
 		})
 	}
 }
