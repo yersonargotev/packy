@@ -59,6 +59,51 @@ func TestValidatePackContentAcceptsCurrentManifest(t *testing.T) {
 	if got, want := pack.ReadinessObligations, []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("readiness obligations = %#v, want %#v", got, want)
 	}
+	if got, want := pack.Resources[0].Bindings[0].Capabilities, []SurfaceCapability{{Type: SurfaceCapabilityProjectInstruction, ProjectInstruction: &ProjectInstructionCapability{ID: "guide", Source: "packs/example-pack/instructions/guide.md"}}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("surface capabilities = %#v, want %#v", got, want)
+	}
+}
+
+func TestLoadCurrentManifestRejectsInvalidSurfaceCapabilities(t *testing.T) {
+	for _, test := range []struct {
+		name, replace, want string
+	}{
+		{
+			name:    "null capabilities",
+			replace: `          "capabilities": null`,
+			want:    "capabilities is a required non-null array",
+		},
+		{
+			name:    "unknown capability",
+			replace: `          "capabilities": [{"type": "custom-extension", "project_instruction": {"id": "guide", "source": "packs/example-pack/instructions/guide.md"}}]`,
+			want:    `surface capability "custom-extension" is unsupported`,
+		},
+		{
+			name:    "missing typed data",
+			replace: `          "capabilities": [{"type": "project-instruction"}]`,
+			want:    `surface capability "project-instruction" requires project_instruction data`,
+		},
+		{
+			name:    "generic extension data",
+			replace: `          "capabilities": [{"type": "project-instruction", "project_instruction": {"id": "guide", "source": "packs/example-pack/instructions/guide.md"}, "data": {"custom": true}}]`,
+			want:    `unknown field "data"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bundle := t.TempDir()
+			packDir := writeCurrentPackFixture(t, bundle, "example-pack")
+			path := filepath.Join(packDir, "pack.json")
+			data := string(mustReadFile(t, path))
+			data = strings.Replace(data, `          "capabilities": [{"type": "project-instruction", "project_instruction": {"id": "guide", "source": "packs/example-pack/instructions/guide.md"}}]`, test.replace, 1)
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadCurrentManifest(path, bundle, false)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("surface capability error = %v, want %q", err, test.want)
+			}
+		})
+	}
 }
 
 func TestValidatePackContentRequiresExplicitSelectability(t *testing.T) {
@@ -318,7 +363,8 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
           "name": "guide",
           "invocation": "guide",
           "mode": "native",
-          "sharing": "shared"
+          "sharing": "shared",
+          "capabilities": [{"type": "project-instruction", "project_instruction": {"id": "guide", "source": "packs/` + id + `/instructions/guide.md"}}]
         }
       ],
       "surface_exclusions": []
@@ -363,7 +409,7 @@ func writePortableFixture(t *testing.T, bundle, id, source string) {
 	if err := os.WriteFile(filepath.Join(bundle, source), []byte("inert\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared"}],"surface_exclusions":[]}],"exclusions":[]}`
+	manifest := `{"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared","capabilities":[{"type":"project-instruction","project_instruction":{"id":"guidance","source":"` + source + `"}}]}],"surface_exclusions":[]}],"exclusions":[]}`
 	if err := os.WriteFile(filepath.Join(bundle, "packs", id, "pack.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}

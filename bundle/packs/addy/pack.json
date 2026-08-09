@@ -112,7 +112,8 @@
           "name": "code-reviewer",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$code-reviewer",
@@ -120,7 +121,8 @@
           "name": "code-reviewer",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "code-reviewer",
@@ -128,7 +130,8 @@
           "name": "code-reviewer",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Reviews code for correctness, readability, architecture, security, and performance",
@@ -256,7 +259,8 @@
           "name": "security-auditor",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$security-auditor",
@@ -264,7 +268,8 @@
           "name": "security-auditor",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "security-auditor",
@@ -272,7 +277,8 @@
           "name": "security-auditor",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Audits code for vulnerabilities, threat exposure, and secure coding practices",
@@ -399,7 +405,8 @@
           "name": "test-engineer",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$test-engineer",
@@ -407,7 +414,8 @@
           "name": "test-engineer",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "test-engineer",
@@ -415,7 +423,8 @@
           "name": "test-engineer",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Designs test strategies, writes tests, and evaluates coverage and test quality",
@@ -543,7 +552,8 @@
           "name": "web-performance-auditor",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$web-performance-auditor",
@@ -551,7 +561,8 @@
           "name": "web-performance-auditor",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "web-performance-auditor",
@@ -559,7 +570,8 @@
           "name": "web-performance-auditor",
           "projection": "agent",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Audits web performance, Core Web Vitals, loading, rendering, and network behavior",
@@ -668,7 +680,8 @@
           "name": "build",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -677,7 +690,8 @@
           "name": "build",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "/build",
@@ -685,7 +699,8 @@
           "name": "build",
           "projection": "command",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Implements planned tasks incrementally with testing, verification, and commits",
@@ -711,7 +726,8 @@
           "name": "code-simplify",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -720,7 +736,8 @@
           "name": "code-simplify",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "/code-simplify",
@@ -728,7 +745,8 @@
           "name": "code-simplify",
           "projection": "command",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Simplifies code for clarity and maintainability without changing behavior",
@@ -754,7 +772,8 @@
           "name": "plan",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -763,7 +782,8 @@
           "name": "plan",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "/plan",
@@ -771,7 +791,8 @@
           "name": "plan",
           "projection": "command",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Breaks work into small, verifiable tasks with acceptance criteria and dependency ordering",
@@ -797,7 +818,8 @@
           "name": "review",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -806,7 +828,8 @@
           "name": "review",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "/review",
@@ -814,7 +837,8 @@
           "name": "review",
           "projection": "command",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Reviews code for correctness, readability, architecture, security, and performance",
@@ -841,7 +865,8 @@
           "name": "ship",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -850,7 +875,8 @@
           "name": "ship",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "/ship",
@@ -858,7 +884,8 @@
           "name": "ship",
           "projection": "command",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Runs specialist pre-launch checks and synthesizes a go or no-go decision",
@@ -887,7 +914,8 @@
           "name": "spec",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -896,7 +924,8 @@
           "name": "spec",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "/spec",
@@ -904,7 +933,8 @@
           "name": "spec",
           "projection": "command",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Creates a structured specification before implementation begins",
@@ -930,7 +960,8 @@
           "name": "test",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -939,7 +970,8 @@
           "name": "test",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "/test",
@@ -947,7 +979,8 @@
           "name": "test",
           "projection": "command",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Runs a test-driven workflow from failing tests through implementation and verification",
@@ -974,7 +1007,8 @@
           "name": "webperf",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -983,7 +1017,8 @@
           "name": "webperf",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "/webperf",
@@ -991,7 +1026,8 @@
           "name": "webperf",
           "projection": "command",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Runs a web performance audit through the web-performance-auditor persona",
@@ -1026,7 +1062,8 @@
           "name": "api-and-interface-design",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$api-and-interface-design",
@@ -1034,7 +1071,8 @@
           "name": "api-and-interface-design",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "api-and-interface-design",
@@ -1042,7 +1080,8 @@
           "name": "api-and-interface-design",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Guides stable API, module boundary, and public interface design",
@@ -1061,7 +1100,8 @@
           "name": "browser-testing-with-devtools",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$browser-testing-with-devtools",
@@ -1069,7 +1109,8 @@
           "name": "browser-testing-with-devtools",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "browser-testing-with-devtools",
@@ -1077,7 +1118,8 @@
           "name": "browser-testing-with-devtools",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Tests and diagnoses browser behavior through Chrome DevTools MCP",
@@ -1096,7 +1138,8 @@
           "name": "ci-cd-and-automation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$ci-cd-and-automation",
@@ -1104,7 +1147,8 @@
           "name": "ci-cd-and-automation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "ci-cd-and-automation",
@@ -1112,7 +1156,8 @@
           "name": "ci-cd-and-automation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Automates CI/CD pipelines, quality gates, test runners, and deployment strategies",
@@ -1131,7 +1176,8 @@
           "name": "code-review-and-quality",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$code-review-and-quality",
@@ -1139,7 +1185,8 @@
           "name": "code-review-and-quality",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "code-review-and-quality",
@@ -1147,7 +1194,8 @@
           "name": "code-review-and-quality",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Guides multi-axis code review across correctness, readability, architecture, security, and performance",
@@ -1166,7 +1214,8 @@
           "name": "code-simplification",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$code-simplification",
@@ -1174,7 +1223,8 @@
           "name": "code-simplification",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "code-simplification",
@@ -1182,7 +1232,8 @@
           "name": "code-simplification",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Simplifies code for clarity and maintainability while preserving behavior",
@@ -1201,7 +1252,8 @@
           "name": "context-engineering",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$context-engineering",
@@ -1209,7 +1261,8 @@
           "name": "context-engineering",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "context-engineering",
@@ -1217,7 +1270,8 @@
           "name": "context-engineering",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Optimizes agent context, rules, and task-relevant information",
@@ -1236,7 +1290,8 @@
           "name": "debugging-and-error-recovery",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$debugging-and-error-recovery",
@@ -1244,7 +1299,8 @@
           "name": "debugging-and-error-recovery",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "debugging-and-error-recovery",
@@ -1252,7 +1308,8 @@
           "name": "debugging-and-error-recovery",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Guides systematic root-cause debugging and recovery from failures",
@@ -1271,7 +1328,8 @@
           "name": "deprecation-and-migration",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$deprecation-and-migration",
@@ -1279,7 +1337,8 @@
           "name": "deprecation-and-migration",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "deprecation-and-migration",
@@ -1287,7 +1346,8 @@
           "name": "deprecation-and-migration",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Guides safe deprecation, system replacement, and user migration",
@@ -1306,7 +1366,8 @@
           "name": "documentation-and-adrs",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$documentation-and-adrs",
@@ -1314,7 +1375,8 @@
           "name": "documentation-and-adrs",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "documentation-and-adrs",
@@ -1322,7 +1384,8 @@
           "name": "documentation-and-adrs",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Records architectural decisions and durable engineering context",
@@ -1341,7 +1404,8 @@
           "name": "doubt-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$doubt-driven-development",
@@ -1349,7 +1413,8 @@
           "name": "doubt-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "doubt-driven-development",
@@ -1357,7 +1422,8 @@
           "name": "doubt-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Subjects non-trivial decisions to fresh-context adversarial review",
@@ -1376,7 +1442,8 @@
           "name": "frontend-ui-engineering",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$frontend-ui-engineering",
@@ -1384,7 +1451,8 @@
           "name": "frontend-ui-engineering",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "frontend-ui-engineering",
@@ -1392,7 +1460,8 @@
           "name": "frontend-ui-engineering",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Builds accessible, responsive, production-quality user interfaces",
@@ -1411,7 +1480,8 @@
           "name": "git-workflow-and-versioning",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$git-workflow-and-versioning",
@@ -1419,7 +1489,8 @@
           "name": "git-workflow-and-versioning",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "git-workflow-and-versioning",
@@ -1427,7 +1498,8 @@
           "name": "git-workflow-and-versioning",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Guides Git workflows, commits, branches, releases, and semantic versioning",
@@ -1446,7 +1518,8 @@
           "name": "idea-refine",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$idea-refine",
@@ -1454,7 +1527,8 @@
           "name": "idea-refine",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "idea-refine",
@@ -1462,7 +1536,8 @@
           "name": "idea-refine",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Refines raw ideas into actionable concepts through divergent and convergent thinking",
@@ -1481,7 +1556,8 @@
           "name": "incremental-implementation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$incremental-implementation",
@@ -1489,7 +1565,8 @@
           "name": "incremental-implementation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "incremental-implementation",
@@ -1497,7 +1574,8 @@
           "name": "incremental-implementation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Delivers changes as small, working, independently verifiable increments",
@@ -1516,7 +1594,8 @@
           "name": "interview-me",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$interview-me",
@@ -1524,7 +1603,8 @@
           "name": "interview-me",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "interview-me",
@@ -1532,7 +1612,8 @@
           "name": "interview-me",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Clarifies underlying user intent through a focused one-question-at-a-time interview",
@@ -1551,7 +1632,8 @@
           "name": "observability-and-instrumentation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$observability-and-instrumentation",
@@ -1559,7 +1641,8 @@
           "name": "observability-and-instrumentation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "observability-and-instrumentation",
@@ -1567,7 +1650,8 @@
           "name": "observability-and-instrumentation",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Instruments production code with logging, metrics, tracing, and alerting",
@@ -1586,7 +1670,8 @@
           "name": "performance-optimization",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$performance-optimization",
@@ -1594,7 +1679,8 @@
           "name": "performance-optimization",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "performance-optimization",
@@ -1602,7 +1688,8 @@
           "name": "performance-optimization",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Optimizes frontend, backend, query, and database performance",
@@ -1621,7 +1708,8 @@
           "name": "planning-and-task-breakdown",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$planning-and-task-breakdown",
@@ -1629,7 +1717,8 @@
           "name": "planning-and-task-breakdown",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "planning-and-task-breakdown",
@@ -1637,7 +1726,8 @@
           "name": "planning-and-task-breakdown",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Breaks requirements into ordered, implementable, and verifiable tasks",
@@ -1656,7 +1746,8 @@
           "name": "security-and-hardening",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$security-and-hardening",
@@ -1664,7 +1755,8 @@
           "name": "security-and-hardening",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "security-and-hardening",
@@ -1672,7 +1764,8 @@
           "name": "security-and-hardening",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Hardens code against vulnerabilities in input, identity, storage, and integrations",
@@ -1691,7 +1784,8 @@
           "name": "shipping-and-launch",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$shipping-and-launch",
@@ -1699,7 +1793,8 @@
           "name": "shipping-and-launch",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "shipping-and-launch",
@@ -1707,7 +1802,8 @@
           "name": "shipping-and-launch",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Prepares production launches with readiness, rollout, monitoring, and rollback checks",
@@ -1726,7 +1822,8 @@
           "name": "source-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$source-driven-development",
@@ -1734,7 +1831,8 @@
           "name": "source-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "source-driven-development",
@@ -1742,7 +1840,8 @@
           "name": "source-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Grounds implementation decisions in authoritative documentation",
@@ -1761,7 +1860,8 @@
           "name": "spec-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$spec-driven-development",
@@ -1769,7 +1869,8 @@
           "name": "spec-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "spec-driven-development",
@@ -1777,7 +1878,8 @@
           "name": "spec-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Creates structured specifications before significant implementation work",
@@ -1796,7 +1898,8 @@
           "name": "test-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$test-driven-development",
@@ -1804,7 +1907,8 @@
           "name": "test-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "test-driven-development",
@@ -1812,7 +1916,8 @@
           "name": "test-driven-development",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Guides implementation through failing tests, minimal code, and verification",
@@ -1831,7 +1936,8 @@
           "name": "using-agent-skills",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "claude"
+          "surface": "claude",
+          "capabilities": []
         },
         {
           "invocation": "$using-agent-skills",
@@ -1839,7 +1945,8 @@
           "name": "using-agent-skills",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         },
         {
           "invocation": "using-agent-skills",
@@ -1847,7 +1954,8 @@
           "name": "using-agent-skills",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "opencode"
+          "surface": "opencode",
+          "capabilities": []
         }
       ],
       "description": "Discovers and invokes the agent skill appropriate to a task",

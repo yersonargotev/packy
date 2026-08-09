@@ -60,7 +60,7 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.1"`, `"version": "1.0.2"`, 1)
+	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.2"`, `"version": "1.0.3"`, 1)
 	if updatedManifest == string(manifest) {
 		t.Fatal("Matty fixture version did not match")
 	}

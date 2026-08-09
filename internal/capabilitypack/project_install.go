@@ -465,7 +465,7 @@ func coalesceProjectComposableActions(actions []ProjectionAction) []ProjectionAc
 	result := make([]ProjectionAction, 0, len(actions))
 	indices := map[string]int{}
 	for _, action := range actions {
-		composable := action.Kind == ActionOpenCodeInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
+		composable := action.Kind == ActionInstructionFile || action.Kind == ActionOpenCodeInstructionFile || action.Kind == ActionClaudeProjectInstruction || action.Kind == ActionClaudeProjectMCP
 		if !composable {
 			result = append(result, action)
 			continue
@@ -1102,10 +1102,11 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 					return fmt.Errorf("project receipt for %s on %s has unsorted projections", receipt.Pack.ID, receipt.Surface)
 				}
 			}
-			if owner, occupied := targetOwners[filepath.Clean(projection.Target)]; occupied && owner != receipt.Pack.ID && !noticeProjection {
+			cleanTarget := filepath.Clean(projection.Target)
+			if owner, occupied := targetOwners[cleanTarget]; occupied && owner != receipt.Pack.ID && !noticeProjection {
 				return fmt.Errorf("project receipts for Packs %s and %s collide at %s", owner, receipt.Pack.ID, projection.Target)
 			}
-			targetOwners[filepath.Clean(projection.Target)] = receipt.Pack.ID
+			targetOwners[cleanTarget] = receipt.Pack.ID
 			projectionSeen[projectionKey] = true
 		}
 	}

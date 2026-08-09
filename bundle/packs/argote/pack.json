@@ -29,7 +29,8 @@
           "name": "guidance",
           "invocation": "guidance",
           "mode": "native",
-          "sharing": "shared"
+          "sharing": "shared",
+          "capabilities": []
         },
         {
           "surface": "codex",
@@ -37,7 +38,16 @@
           "name": "guidance",
           "invocation": "guidance",
           "mode": "native",
-          "sharing": "shared"
+          "sharing": "shared",
+          "capabilities": [
+            {
+              "type": "project-instruction",
+              "project_instruction": {
+                "id": "guidance",
+                "source": "instructions/argote-guidance.md"
+              }
+            }
+          ]
         },
         {
           "surface": "opencode",
@@ -45,7 +55,16 @@
           "name": "guidance",
           "invocation": "guidance",
           "mode": "native",
-          "sharing": "shared"
+          "sharing": "shared",
+          "capabilities": [
+            {
+              "type": "project-instruction",
+              "project_instruction": {
+                "id": "guidance",
+                "source": "instructions/argote-guidance.md"
+              }
+            }
+          ]
         }
       ],
       "surface_exclusions": []
@@ -65,7 +84,8 @@
           "name": "espera-que",
           "invocation": "/espera-que",
           "mode": "native",
-          "sharing": "exclusive"
+          "sharing": "exclusive",
+          "capabilities": []
         },
         {
           "surface": "codex",
@@ -73,7 +93,8 @@
           "name": "espera-que",
           "invocation": "$espera-que",
           "mode": "native",
-          "sharing": "exclusive"
+          "sharing": "exclusive",
+          "capabilities": []
         },
         {
           "surface": "opencode",
@@ -81,7 +102,8 @@
           "name": "espera-que",
           "invocation": "espera-que",
           "mode": "native",
-          "sharing": "exclusive"
+          "sharing": "exclusive",
+          "capabilities": []
         }
       ],
       "surface_exclusions": []

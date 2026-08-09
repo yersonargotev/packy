@@ -11,7 +11,7 @@ import (
 	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
-func TestMattyProjectInspectionBuildsCopiedTreeAndComposableInstructions(t *testing.T) {
+func TestProjectInstructionCapabilityBuildsCopiedTreeAndComposableInstructions(t *testing.T) {
 	root := t.TempDir()
 	bundle := filepath.Join(root, "bundle")
 	source := filepath.Join(bundle, "skills", "ask-matt")
@@ -21,6 +21,13 @@ func TestMattyProjectInspectionBuildsCopiedTreeAndComposableInstructions(t *test
 	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("# Ask Matt\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	instructionSource := filepath.Join(bundle, "instructions", "project.md")
+	if err := os.MkdirAll(filepath.Dir(instructionSource), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(instructionSource, []byte("Packy manages the selected Codex skill trees in .agents/skills.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	project := filepath.Join(root, "project")
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)
@@ -28,9 +35,9 @@ func TestMattyProjectInspectionBuildsCopiedTreeAndComposableInstructions(t *test
 	if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("# Team guidance\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pack := capabilitypack.Pack{ID: "matty", Resources: []capabilitypack.Resource{{
+	pack := capabilitypack.Pack{ID: "synthetic-one", Resources: []capabilitypack.Resource{{
 		Kind: "skill", ID: "ask-matt", Source: "skills/ask-matt",
-		Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Name: "ask-matt"}},
+		Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Name: "ask-matt", Capabilities: []capabilitypack.SurfaceCapability{{Type: capabilitypack.SurfaceCapabilityProjectInstruction, ProjectInstruction: &capabilitypack.ProjectInstructionCapability{ID: "project-guidance", Source: "instructions/project.md"}}}}},
 	}}}
 	adapter := NewSurfaceAdapter(bundle, "", "")
 	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ProjectRoot: project})
@@ -44,8 +51,8 @@ func TestMattyProjectInspectionBuildsCopiedTreeAndComposableInstructions(t *test
 	if skill.ID != "skill:ask-matt" || skill.Action.Kind != capabilitypack.ActionCodexProjectSkillTree || skill.Action.Source != source || skill.Action.Version != skill.DesiredFingerprint || skill.Action.Target != filepath.Join(project, ".agents", "skills", "ask-matt") {
 		t.Fatalf("copied skill projection = %#v", skill)
 	}
-	instruction := findProjectProjection(t, inspection.Projections, projectMattyInstructionID)
-	if instruction.ID != projectMattyInstructionID || instruction.Exists || instruction.AdapterProvenance != "codex-project/v1/composable-instruction/missing" || !strings.Contains(instruction.Action.Content, "# Team guidance") || !strings.Contains(instruction.Action.Content, projectMattyInstructionStart) {
+	instruction := findProjectProjection(t, inspection.Projections, "instruction:project-guidance")
+	if instruction.ID != "instruction:project-guidance" || instruction.Exists || instruction.AdapterProvenance != "codex-project/v1/shared-composable-instruction/missing" || !strings.Contains(instruction.Action.Content, "# Team guidance") || !strings.Contains(instruction.Action.Content, "<!-- packy:project:instruction:project-guidance:start -->") {
 		t.Fatalf("composable instruction projection = %#v", instruction)
 	}
 	if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{skill.Action, instruction.Action}); err != nil {
@@ -155,9 +162,10 @@ func findProjectProjection(t *testing.T, projections []capabilitypack.ObservedPr
 	return capabilitypack.ObservedProjection{}
 }
 
-func TestMattyProjectInstructionInspectionPreservesOnlyIntactContribution(t *testing.T) {
+func TestProjectInstructionCapabilityPreservesOnlyIntactContribution(t *testing.T) {
 	project := t.TempDir()
-	desired := projectMattyInstructionStart + "\nPacky manages the Matty Codex skill trees in .agents/skills.\n" + projectMattyInstructionEnd
+	start, end := projectInstructionMarkers("project-guidance")
+	desired := start + "\nPacky manages the selected Codex skill trees in .agents/skills.\n" + end
 	for _, test := range []struct {
 		name, content, provenance string
 		exists                    bool
@@ -166,18 +174,19 @@ func TestMattyProjectInstructionInspectionPreservesOnlyIntactContribution(t *tes
 		{name: "missing preserves foreign content", content: "# Team guidance\n", provenance: "missing", writable: true},
 		{name: "intact preserves surrounding content", content: "# Before\n" + desired + "\n# After\n", provenance: "intact", exists: true, writable: true},
 		{name: "changed marker contribution blocks", content: strings.Replace(desired, "skill trees", "different trees", 1), provenance: "changed", exists: true},
-		{name: "orphaned marker blocks", content: projectMattyInstructionStart + "\n# incomplete\n", provenance: "malformed", exists: true},
+		{name: "orphaned marker blocks", content: start + "\n# incomplete\n", provenance: "malformed", exists: true},
 		{name: "duplicate markers block", content: desired + "\n" + desired, provenance: "ambiguous", exists: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte(test.content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			projection, err := projectMattyInstruction(project)
+			current, err := os.ReadFile(filepath.Join(project, "AGENTS.md"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if projection.Exists != test.exists || projection.AdapterProvenance != "codex-project/v1/composable-instruction/"+test.provenance {
+			projection := codexProjectInstructionProjection(capabilitypack.ResourceIdentity{Kind: "instruction", ID: "project-guidance"}, filepath.Join(project, "AGENTS.md"), "Packy manages the selected Codex skill trees in .agents/skills.", string(current), localprojection.FingerprintBytes(current))
+			if projection.Exists != test.exists || projection.AdapterProvenance != "codex-project/v1/shared-composable-instruction/"+test.provenance {
 				t.Fatalf("projection = %#v", projection)
 			}
 			if test.writable {
@@ -217,32 +226,31 @@ func TestCodexProjectInspectionBuildsSharedComposableInstructions(t *testing.T) 
 		t.Fatal(err)
 	}
 	pack := capabilitypack.Pack{ID: "guide", Resources: []capabilitypack.Resource{
-		{Kind: "instruction", ID: "one", Source: "instructions/one.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "instruction", Name: "one"}}},
-		{Kind: "instruction", ID: "two", Source: "instructions/two.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "instruction", Name: "two"}}},
+		{Kind: "instruction", ID: "one", Source: "instructions/one.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "instruction", Name: "one", Capabilities: []capabilitypack.SurfaceCapability{{Type: capabilitypack.SurfaceCapabilityProjectInstruction, ProjectInstruction: &capabilitypack.ProjectInstructionCapability{ID: "one", Source: "instructions/one.md"}}}}}},
+		{Kind: "instruction", ID: "two", Source: "instructions/two.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "instruction", Name: "two", Capabilities: []capabilitypack.SurfaceCapability{}}}},
 	}}
 	adapter := NewSurfaceAdapter(bundle, "", "")
 	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inspection.Unrepresentable) != 0 || len(inspection.Projections) != 2 {
+	if len(inspection.Unrepresentable) != 1 || inspection.Unrepresentable[0].Resource.String() != "instruction:two" || len(inspection.Projections) != 1 {
 		t.Fatalf("instruction inspection = %#v", inspection)
 	}
 	one := findProjectProjection(t, inspection.Projections, "instruction:one")
-	two := findProjectProjection(t, inspection.Projections, "instruction:two")
-	for _, projection := range []capabilitypack.ObservedProjection{one, two} {
+	for _, projection := range []capabilitypack.ObservedProjection{one} {
 		if projection.Action.Target != target || projection.Action.Kind != capabilitypack.ActionInstructionFile || !projection.Shared || len(projection.DiscoverableBy) != 1 || projection.DiscoverableBy[0] != capabilitypack.SurfaceOpenCode {
 			t.Fatalf("shared instruction projection = %#v", projection)
 		}
 	}
-	if !strings.Contains(two.Action.Content, "# Team guidance") || !strings.Contains(two.Action.Content, "First guidance") || !strings.Contains(two.Action.Content, "Second guidance") {
-		t.Fatalf("composed AGENTS.md = %q", two.Action.Content)
+	if !strings.Contains(one.Action.Content, "# Team guidance") || !strings.Contains(one.Action.Content, "First guidance") || strings.Contains(one.Action.Content, "Second guidance") {
+		t.Fatalf("composed AGENTS.md = %q", one.Action.Content)
 	}
-	if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{two.Action}); err != nil {
+	if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{one.Action}); err != nil {
 		t.Fatal(err)
 	}
 	content, err := os.ReadFile(target)
-	if err != nil || string(content) != two.Action.Content {
-		t.Fatalf("project instructions = %q, want %q: %v", content, two.Action.Content, err)
+	if err != nil || string(content) != one.Action.Content {
+		t.Fatalf("project instructions = %q, want %q: %v", content, one.Action.Content, err)
 	}
 }

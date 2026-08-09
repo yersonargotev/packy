@@ -33,6 +33,27 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		if resource.Kind == "notice" {
 			continue
 		}
+		projectInstruction, hasProjectInstruction := resource.SurfaceCapability(capabilitypack.SurfaceOpenCode, capabilitypack.SurfaceCapabilityProjectInstruction)
+		if hasProjectInstruction {
+			data := projectInstruction.ProjectInstruction
+			content, err := os.ReadFile(filepath.Join(a.bundleRoot, data.Source))
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read project instruction capability %q source: %w", data.ID, err)
+			}
+			instructionIdentity := capabilitypack.ResourceIdentity{Kind: "instruction", ID: data.ID}
+			projection, _, err := openCodeProjectInstructionProjection(instructionIdentity, projectRoot, string(content), instructionDocument, instructionPrecondition)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			projections = append(projections, projection)
+			instructionDocument = projection.Action.Content
+		}
+		if resource.Kind == "instruction" {
+			if !hasProjectInstruction {
+				unrepresentable = append(unrepresentable, capabilitypack.UnrepresentableResource{Resource: identity, Reason: fmt.Sprintf("%s has no OpenCode project-native representation in this installation preview", identity)})
+			}
+			continue
+		}
 		projection, represented, err := a.openCodeProjectProjection(pack, resource, projectRoot, instructionDocument, instructionPrecondition)
 		if err != nil {
 			return capabilitypack.SurfaceInspection{}, err
@@ -42,9 +63,6 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			continue
 		}
 		projections = append(projections, projection)
-		if resource.Kind == "instruction" {
-			instructionDocument = projection.Action.Content
-		}
 	}
 	sort.Slice(projections, func(i, j int) bool { return projections[i].ID < projections[j].ID })
 	evidence, err := capabilitypack.UnverifiedRuntimeModeEvidence(pack, time.Unix(0, 0).UTC(), "project-install-preview")
@@ -76,24 +94,6 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 			return capabilitypack.ObservedProjection{}, false, fmt.Errorf("inspect %s target: %w", identity, err)
 		}
 		return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: desired, AdapterProvenance: "opencode-project/v1/shared-copied-skill-tree", ProjectionKey: "path:" + filepath.Clean(target), Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceCodex}, Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceOpenCode, Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the shared project skill tree", identity), PreviewOnly: true}}, true, nil
-	case "instruction":
-		if !bound || resource.Source == "" {
-			return capabilitypack.ObservedProjection{}, false, nil
-		}
-		content, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
-		if err != nil {
-			return capabilitypack.ObservedProjection{}, false, err
-		}
-		target := filepath.Join(projectRoot, "AGENTS.md")
-		start, end := projectInstructionMarkers(resource.ID)
-		block := start + "\n" + strings.TrimSpace(string(content)) + "\n" + end
-		projection, represented, err := projectMarkedFileProjectionFromContent(identity.String(), capabilitypack.ActionOpenCodeInstructionFile, target, block, start, end, instructionDocument)
-		projection.Action.Precondition = instructionPrecondition
-		key := "path:" + filepath.Clean(target) + "#packy-project-instruction:" + resource.ID
-		projection.AdapterProvenance = "opencode-project/v1/shared-composable-instruction"
-		projection.ProjectionKey, projection.Shared, projection.DiscoverableBy = key, true, []capabilitypack.Surface{capabilitypack.SurfaceCodex}
-		projection.Action.ProjectionKey, projection.Action.Shared, projection.Action.DiscoverableBy = key, true, []capabilitypack.Surface{capabilitypack.SurfaceCodex}
-		return projection, represented, err
 	case "agent":
 		if !bound || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
@@ -158,6 +158,19 @@ func (a *SurfaceAdapter) openCodeProjectProjection(pack capabilitypack.Pack, res
 	default:
 		return capabilitypack.ObservedProjection{}, false, nil
 	}
+}
+
+func openCodeProjectInstructionProjection(identity capabilitypack.ResourceIdentity, projectRoot, content, instructionDocument, instructionPrecondition string) (capabilitypack.ObservedProjection, bool, error) {
+	target := filepath.Join(projectRoot, "AGENTS.md")
+	start, end := projectInstructionMarkers(identity.ID)
+	block := start + "\n" + strings.TrimSpace(content) + "\n" + end
+	projection, represented, err := projectMarkedFileProjectionFromContent(identity.String(), capabilitypack.ActionOpenCodeInstructionFile, target, block, start, end, instructionDocument)
+	projection.Action.Precondition = instructionPrecondition
+	key := "path:" + filepath.Clean(target) + "#packy-project-instruction:" + identity.ID
+	projection.AdapterProvenance = "opencode-project/v1/shared-composable-instruction"
+	projection.ProjectionKey, projection.Shared, projection.DiscoverableBy = key, true, []capabilitypack.Surface{capabilitypack.SurfaceCodex}
+	projection.Action.ProjectionKey, projection.Action.Shared, projection.Action.DiscoverableBy = key, true, []capabilitypack.Surface{capabilitypack.SurfaceCodex}
+	return projection, represented, err
 }
 
 func projectOpenCodeBinding(resource capabilitypack.Resource) capabilitypack.Binding {
