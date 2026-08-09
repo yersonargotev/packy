@@ -58,12 +58,14 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 		t.Fatal(err)
 	}
 	var manifest struct {
-		Packs []capabilitypack.ProjectManifestPack `json:"packs"`
+		Packs []struct {
+			SurfaceIntents []capabilitypack.ProjectSurfaceIntent `json:"surface_intents"`
+		} `json:"packs"`
 	}
 	if err := json.Unmarshal(manifestBytes, &manifest); err != nil || len(manifest.Packs) != 1 {
 		t.Fatalf("manifest: %v %#v", err, manifest)
 	}
-	if manifest.Packs[0].Selection.Mode != capabilitypack.SelectionCustom || len(manifest.Packs[0].Aliases) != 1 {
+	if len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Selection.Mode != capabilitypack.SelectionCustom || len(manifest.Packs[0].SurfaceIntents[0].Aliases) != 1 {
 		t.Fatalf("persisted project intent = %#v", manifest.Packs[0])
 	}
 	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "project-matt", "SKILL.md")); err != nil {

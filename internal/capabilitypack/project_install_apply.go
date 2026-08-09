@@ -182,10 +182,11 @@ func (e ProjectMutationError) Error() string { return e.Cause.Error() }
 func (e ProjectMutationError) Unwrap() error { return e.Cause }
 
 func marshalProjectManifest(proposal ProjectContractProposal) ([]byte, error) {
-	value := struct {
-		SchemaVersion int                   `json:"schema_version"`
-		Packs         []ProjectManifestPack `json:"packs"`
-	}{SchemaVersion: proposal.SchemaVersion, Packs: proposal.Packs}
+	packs := make([]projectManifestPackDocument, 0, len(proposal.Packs))
+	for _, pack := range proposal.Packs {
+		packs = append(packs, projectManifestPackDocument{ID: pack.ID, SurfaceIntents: append([]ProjectSurfaceIntent(nil), pack.SurfaceIntents...)})
+	}
+	value := projectManifestDocument{SchemaVersion: proposal.SchemaVersion, Packs: packs}
 	data, err := json.MarshalIndent(value, "", "  ")
 	return append(data, '\n'), err
 }
@@ -202,21 +203,23 @@ func marshalProjectLock(proposal ProjectLockProposal) ([]byte, error) {
 
 func renderProjectNoticeBlock(preview JSONProjectInstallPreview) string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "<!-- packy:project:%s:notices:start -->\n", preview.Pack.ID)
+	start, end := projectNoticeMarkers(preview.Pack.ID, preview.Surface)
+	fmt.Fprintf(&out, "%s\n", start)
 	out.WriteString("## Packy project notices\n\n")
-	fmt.Fprintf(&out, "Pack: %s %s\n\nReviewed Pack content is authoritative.\n\n", preview.Pack.ID, preview.Pack.Version)
+	fmt.Fprintf(&out, "Pack: %s %s\n\nSurface: %s\n\nReviewed Pack content is authoritative.\n\n", preview.Pack.ID, preview.Pack.Version, preview.Surface)
 	if len(preview.Notices.Contributions) == 0 {
 		out.WriteString("No additional downstream notice text is required by the reviewed Pack contract.\n")
 	}
 	for _, notice := range preview.Notices.Contributions {
 		fmt.Fprintf(&out, "## %s\n\nLicense: %s\n\n%s\n\n", notice.Resource, notice.License, notice.Attribution)
 	}
-	fmt.Fprintf(&out, "<!-- packy:project:%s:notices:end -->", preview.Pack.ID)
+	out.WriteString(end)
 	return out.String()
 }
 
-func projectNoticeMarkers(packID string) (string, string) {
-	return "<!-- packy:project:" + packID + ":notices:start -->", "<!-- packy:project:" + packID + ":notices:end -->"
+func projectNoticeMarkers(packID string, surface Surface) (string, string) {
+	prefix := "<!-- packy:project:" + packID + ":" + string(surface) + ":notices:"
+	return prefix + "start -->", prefix + "end -->"
 }
 
 func planProjectNotices(preview JSONProjectInstallPreview, lockExists, allowMissingRestore bool, priorNoticeSHA256 string) (string, uint32, string, bool, []ProjectInstallBlocker, error) {
@@ -236,7 +239,7 @@ func planProjectNotices(preview JSONProjectInstallPreview, lockExists, allowMiss
 		return "", 0, "", false, nil, err
 	}
 	content := string(current)
-	start, end := projectNoticeMarkers(preview.Pack.ID)
+	start, end := projectNoticeMarkers(preview.Pack.ID, preview.Surface)
 	starts, ends := strings.Count(content, start), strings.Count(content, end)
 	block := renderProjectNoticeBlock(preview)
 	if starts == 0 && ends == 0 {
@@ -290,7 +293,7 @@ func extractProjectContribution(content, start, end string) (string, bool) {
 }
 
 func verifyProjectNoticeContribution(preview JSONProjectInstallPreview) error {
-	lockedNotice, found := projectNoticeReceiptProjection(preview.Lock.Receipts, preview.Pack.ID)
+	lockedNotice, found := projectNoticeReceiptProjection(preview.Lock.Receipts, preview.Pack.ID, preview.Surface)
 	if !found {
 		return fmt.Errorf("verify project notice contribution: %w", ErrVerificationFailed)
 	}
@@ -333,6 +336,15 @@ func readExistingProjectLock(projectRoot string) (ProjectLockProposal, bool, err
 
 func supportedProjectContractVersion(schemaVersion int, minimumCapability string) bool {
 	return schemaVersion == projectContractSchemaV1 && minimumCapability == ""
+}
+
+func findProjectSurfaceLockProjection(lock ProjectLockProposal, surface Surface, resource ResourceIdentity, target string) (ProjectProjectionPlan, bool) {
+	for _, projection := range lock.Projections {
+		if projection.Surface == surface && projection.Resource == resource && filepath.Clean(projection.Target) == filepath.Clean(target) && projection.OwnerPack != "" {
+			return projection, true
+		}
+	}
+	return ProjectProjectionPlan{}, false
 }
 
 func findProjectLockProjection(lock ProjectLockProposal, resource ResourceIdentity, target string) (ProjectProjectionPlan, bool) {
@@ -462,34 +474,11 @@ func projectLocksEqual(left, right ProjectLockProposal) bool {
 
 func verifyProjectInstallSurface(ctx context.Context, adapter SurfaceAdapter, preview JSONProjectInstallPreview) error {
 	if preview.updateRequest.PackID != "" {
-		resolver, ok := adapter.(projectSurfaceAdapterResolver)
-		if !ok {
-			return errors.New("complete project update verification requires the installed surface adapter set")
+		observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: preview.pack, ProjectRoot: preview.projectRoot})
+		if err != nil {
+			return err
 		}
-		surfaces := append([]Surface(nil), preview.Pack.Surfaces...)
-		for _, surface := range surfaces {
-			surfaceAdapter, found := resolver.projectSurfaceAdapter(surface)
-			if !found {
-				return fmt.Errorf("complete project update verification is missing the %s adapter", surface)
-			}
-			observation, err := inspectSurface(ctx, surfaceAdapter, SurfaceTransition{Desired: preview.pack, ProjectRoot: preview.projectRoot})
-			if err != nil {
-				return err
-			}
-			var expected []ProjectProjectionPlan
-			for _, projection := range preview.Projections {
-				for _, projectionSurface := range projectProjectionSurfaces(projection) {
-					if projectionSurface == surface {
-						expected = append(expected, projection)
-						break
-					}
-				}
-			}
-			if err := verifyProjectProjectionObservation(preview.projectRoot, expected, observation); err != nil {
-				return err
-			}
-		}
-		return nil
+		return verifyProjectProjectionObservation(preview.projectRoot, preview.Projections, observation)
 	}
 	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: preview.pack, ProjectRoot: preview.projectRoot})
 	if err != nil {

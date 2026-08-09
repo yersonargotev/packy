@@ -29,6 +29,63 @@ func projectInstallFixture(t *testing.T) (capabilitypack.Facade, capabilitypack.
 	return capabilitypack.NewFacade(catalog), adapter, project, filepath.Join(t.TempDir(), ".packy")
 }
 
+func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
+	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := capabilitypack.DiscoverForDurableIntents(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	adapter := codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(t.TempDir(), "global-skills"), filepath.Join(t.TempDir(), "global-AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
+	facade := capabilitypack.NewFacade(catalog)
+	install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
+		PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project,
+		Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "ask-matt"}}},
+	}, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: filepath.Join(t.TempDir(), ".packy"), Adapter: adapter}); err != nil {
+		t.Fatal(err)
+	}
+	updatedBundle := t.TempDir()
+	if err := os.CopyFS(updatedBundle, os.DirFS(bundle)); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(updatedBundle, "packs", "matty", "pack.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.1"`, `"version": "1.0.2"`, 1)
+	if updatedManifest == string(manifest) {
+		t.Fatal("Matty fixture version did not match")
+	}
+	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(updatedBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedAdapter := codex.NewSurfaceAdapterWithConfig(updatedBundle, filepath.Join(t.TempDir(), "global-skills"), filepath.Join(t.TempDir(), "global-AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
+	updatedFacade := capabilitypack.NewFacade(updatedCatalog)
+	preview, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project}, updatedAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshness, err := updatedFacade.CheckProjectInstallFreshness(context.Background(), preview, updatedAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if freshness.Disposition != capabilitypack.ProjectInstallPreviewable || len(freshness.Blockers) != 0 {
+		t.Fatalf("unchanged surface update freshness = %#v", freshness)
+	}
+}
+
 func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) {
 	facade, adapter, project, packyHome := projectInstallFixture(t)
 	install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{

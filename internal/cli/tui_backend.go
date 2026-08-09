@@ -179,8 +179,8 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 			}
 			return projectPreviewForTUI(preview, projectRoot, "install"), nil
 		case "update":
-			adapter := projectInstallAdapter("", composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, ProjectRoot: projectRoot}, adapter)
+			adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+			preview, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot}, adapter)
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
 			}
@@ -328,8 +328,8 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		}
 		return result, nil
 	case "update":
-		adapter := projectInstallAdapter("", composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, ProjectRoot: projectRoot}, adapter)
+		adapter := projectInstallAdapter(capabilitypack.Surface(request.Preview.Surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+		fresh, previewErr := facade.PreviewProjectUpdate(ctx, capabilitypack.ProjectUpdateRequest{PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), ProjectRoot: projectRoot}, adapter)
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
 		}
@@ -565,9 +565,6 @@ func globalPreviewForTUI(report capabilitypack.JSONLifecyclePlan) tui.Preview {
 
 func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, projectRoot, operation string) tui.Preview {
 	surface := string(report.Surface)
-	if operation == "update" {
-		surface = "all installed surfaces"
-	}
 	preview := tui.Preview{
 		ID: report.Observation, Digest: report.Observation, Operation: operation, Disposition: string(report.Disposition),
 		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: surface, Scope: "project",

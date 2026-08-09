@@ -576,13 +576,13 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 				}
 			}()
 			if project {
-				if surface != "" {
-					return errors.New("--surface is not accepted for project update")
+				if surface == "" {
+					return errors.New("--surface is required for project update")
 				}
 				if len(aliasValues) > 0 {
 					return errors.New("--alias is not accepted for project update")
 				}
-				return runProjectPackUpdate(cmd, opts, workstationResolver, args[0], force, dryRun, jsonOutput)
+				return runProjectPackUpdate(cmd, opts, workstationResolver, args[0], capabilitypack.Surface(surface), force, dryRun, jsonOutput)
 			}
 			if surface == "" {
 				return errors.New("--surface is required for global update")
@@ -609,12 +609,12 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
-	cmd.Flags().BoolVar(&project, "project", false, "Update the shared project installation across every installed surface")
+	cmd.Flags().BoolVar(&project, "project", false, "Update the shared project installation for one CLI surface")
 	cmd.Flags().BoolVar(&force, "force", false, "Replace drifted paths proven to belong to this installed Pack receipt")
 	return cmd
 }
 
-func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver *workstation.Resolver, packID string, force, dryRun, jsonOutput bool) error {
+func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver *workstation.Resolver, packID string, surface capabilitypack.Surface, force, dryRun, jsonOutput bool) error {
 	snapshot, err := workstationResolver.Resolve(workstation.Options{})
 	if err != nil {
 		return err
@@ -627,14 +627,13 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 	if err != nil {
 		return err
 	}
-	adapter := projectOfflineAdapter("")
 	composition, err := resolvePackComposition(opts, workstationResolver)
 	if err != nil {
 		return err
 	}
 	facade := capabilitypack.NewFacade(composition.catalog)
-	adapter = projectInstallAdapter("", composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, ProjectRoot: projectRoot, Force: force}, adapter)
+	adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: projectRoot, Force: force}, adapter)
 	if err != nil {
 		return err
 	}

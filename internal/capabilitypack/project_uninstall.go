@@ -145,6 +145,14 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	}
 	if report.Scope == ProjectUninstallSurface && len(remainingSurfaces) > 0 {
 		pack = withoutProjectSurfaceIntent(pack, surface)
+		noticeAction, noticeBlockers, noticeErr := planProjectNoticeRemoval(request.ProjectRoot, pack, request.Surface, installation.Lock)
+		if noticeErr != nil {
+			return report, noticeErr
+		}
+		report.Blockers = append(report.Blockers, noticeBlockers...)
+		if len(noticeBlockers) == 0 {
+			actions = append(actions, noticeAction)
+		}
 		retainedLock.Receipts = removeProjectReceipt(retainedLock.Receipts, pack.ID, surface)
 		retainedLock, err = hydrateProjectLock(retainedLock)
 		if err != nil {
@@ -169,7 +177,7 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 			ProjectionAction{ID: "project-contract:manifest", Kind: ActionProjectManifestFile, Target: manifestPath, Content: string(manifestData), FileMode: 0o644, Precondition: projectTargetFingerprint(manifestPath), Description: "remove the selected project surface intent"},
 			ProjectionAction{ID: "project-contract:lock", Kind: ActionProjectLockFile, Target: lockPath, Content: string(lockData), FileMode: 0o644, Precondition: projectTargetFingerprint(lockPath), Description: "publish the remaining project receipts"},
 		)
-		report.Contracts = []string{"packy.json", "packy.lock.json"}
+		report.Contracts = []string{"PACKY-NOTICES.md", "packy.json", "packy.lock.json"}
 		for _, projection := range report.Projections {
 			if projection.Health != "verified" {
 				report.Blockers = append(report.Blockers, ProjectInstallBlocker{Code: "project_drift", Resource: projection.Resource, Target: projection.Target, Detail: "the installed project projection is " + projection.Health, Remediation: "restore the exact locked projection before uninstalling"})
@@ -184,7 +192,7 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 		report.Observation = sealProjectUninstallPreview(report)
 		return report, nil
 	}
-	noticeAction, noticeBlockers, err := planProjectNoticeRemoval(request.ProjectRoot, pack, installation.Lock)
+	noticeAction, noticeBlockers, err := planProjectNoticeRemoval(request.ProjectRoot, pack, request.Surface, installation.Lock)
 	if err != nil {
 		return report, err
 	}
@@ -473,7 +481,7 @@ func ApplyProjectUninstall(ctx context.Context, request ProjectUninstallApplyReq
 	return ProjectUninstallApplyResult{SchemaVersion: 1, Report: "project-uninstall-apply", Status: "verified", Observation: fresh.Observation}, nil
 }
 
-func planProjectNoticeRemoval(projectRoot string, pack ProjectManifestPack, lock ProjectLockProposal) (ProjectionAction, []ProjectInstallBlocker, error) {
+func planProjectNoticeRemoval(projectRoot string, pack ProjectManifestPack, surface Surface, lock ProjectLockProposal) (ProjectionAction, []ProjectInstallBlocker, error) {
 	path := filepath.Join(projectRoot, "PACKY-NOTICES.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -489,13 +497,20 @@ func planProjectNoticeRemoval(projectRoot string, pack ProjectManifestPack, lock
 	if !info.Mode().IsRegular() {
 		return ProjectionAction{}, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the project notices target or mode differs from the lock", Remediation: "restore the exact locked notice contribution before uninstalling"}}, nil
 	}
-	start, end := projectNoticeMarkers(pack.ID)
-	fragment, found := extractProjectContribution(string(data), start, end)
-	lockedNotice, receiptFound := projectNoticeReceiptProjection(lock.Receipts, pack.ID)
-	if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != lockedNotice.Digest || strings.Count(string(data), start) != 1 || strings.Count(string(data), end) != 1 {
-		return ProjectionAction{}, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution differs from the lock", Remediation: "restore the exact locked notice contribution before uninstalling"}}, nil
+	surfaces := []Surface{surface}
+	if surface == "" {
+		surfaces = append([]Surface(nil), pack.Surfaces...)
 	}
-	remaining := strings.Replace(string(data), fragment, "", 1)
+	remaining := string(data)
+	for _, target := range surfaces {
+		start, end := projectNoticeMarkers(pack.ID, target)
+		fragment, found := extractProjectContribution(remaining, start, end)
+		lockedNotice, receiptFound := projectNoticeReceiptProjection(lock.Receipts, pack.ID, target)
+		if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != lockedNotice.Digest || strings.Count(remaining, start) != 1 || strings.Count(remaining, end) != 1 {
+			return ProjectionAction{}, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution differs from the lock", Remediation: "restore the exact locked notice contribution before uninstalling"}}, nil
+		}
+		remaining = strings.Replace(remaining, fragment, "", 1)
+	}
 	action := ProjectionAction{ID: "project-contract:notices", Kind: ActionProjectNoticesFile, Target: path, Content: remaining, FileMode: uint32(info.Mode().Perm()), Precondition: fingerprintProjectBytes(data), Description: "remove the exact project Packy notice contribution"}
 	if strings.TrimSpace(remaining) == "" {
 		action.Content, action.Mode = "", ProjectionDeleteTarget
