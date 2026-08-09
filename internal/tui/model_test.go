@@ -51,8 +51,20 @@ func TestDashboardNavigationKeyMapAndNarrowLayout(t *testing.T) {
 
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
 	view := ansi.Strip(current.View().Content)
-	if !strings.Contains(view, "› matty") || !strings.Contains(view, "Product review") {
+	if !strings.Contains(view, "› matty") || strings.Contains(view, "Product review") {
 		t.Fatalf("down navigation did not select the next Pack:\n%s", view)
+	}
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(current.View().Content)
+	for _, want := range []string{"Pack details", "Product review"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Enter did not inspect the selected Pack; missing %q:\n%s", want, view)
+		}
+	}
+	for _, line := range strings.Split(current.View().Content, "\n") {
+		if width := ansi.StringWidth(line); width > 64 {
+			t.Fatalf("narrow line width = %d, want <= 64: %q", width, ansi.Strip(line))
+		}
 	}
 
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))

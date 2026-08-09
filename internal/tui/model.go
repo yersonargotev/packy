@@ -66,8 +66,8 @@ type Model struct {
 	globalRow  int
 	projectRow int
 	width      int
-	height     int
 	showHelp   bool
+	inspecting bool
 }
 
 func NewModel(backend Backend) Model {
@@ -101,7 +101,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.globalRow = boundedRow(m.globalRow, len(m.dashboard.Global.Packs))
 		m.projectRow = boundedRow(m.projectRow, len(m.dashboard.Project.Packs))
 	case tea.WindowSizeMsg:
-		m.width, m.height = message.Width, message.Height
+		m.width = message.Width
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(message, dashboardKeys.Quit):
@@ -114,16 +114,28 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(message, dashboardKeys.NextScope):
 			if m.dashboard.Project.Available {
 				m.project = true
+				m.inspecting = false
 			}
-		case key.Matches(message, dashboardKeys.PreviousScope), key.Matches(message, dashboardKeys.Back):
+		case key.Matches(message, dashboardKeys.PreviousScope):
 			m.project = false
+			m.inspecting = false
+		case key.Matches(message, dashboardKeys.Back):
+			if m.inspecting {
+				m.inspecting = false
+			} else {
+				m.project = false
+			}
+		case key.Matches(message, dashboardKeys.Inspect):
+			m.inspecting = m.selectedPack() != nil
 		case key.Matches(message, dashboardKeys.Down):
+			m.inspecting = false
 			if m.project {
 				m.projectRow = nextRow(m.projectRow, len(m.dashboard.Project.Packs), 1)
 			} else {
 				m.globalRow = nextRow(m.globalRow, len(m.dashboard.Global.Packs), 1)
 			}
 		case key.Matches(message, dashboardKeys.Up):
+			m.inspecting = false
 			if m.project {
 				m.projectRow = nextRow(m.projectRow, len(m.dashboard.Project.Packs), -1)
 			} else {
@@ -132,6 +144,18 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) selectedPack() *Pack {
+	packs, row := m.dashboard.Global.Packs, m.globalRow
+	if m.project {
+		packs, row = m.dashboard.Project.Packs, m.projectRow
+	}
+	if row < 0 || row >= len(packs) {
+		return nil
+	}
+	pack := packs[row]
+	return &pack
 }
 
 func boundedRow(row, length int) int {
@@ -184,10 +208,10 @@ var (
 
 func (m Model) render() string {
 	if !m.loaded {
-		return bodyStyle.Render(titleStyle.Render("Packy health") + "\n\nLoading Packy health…")
+		return m.renderBody(titleStyle.Render("Packy health") + "\n\nLoading Packy health…")
 	}
 	if m.err != nil {
-		return bodyStyle.Render(titleStyle.Render("Packy health") + "\n\nUnable to load dashboard\n" + m.err.Error() + "\n\nr reload · q quit")
+		return m.renderBody(titleStyle.Render("Packy health") + "\n\nUnable to load dashboard\n" + m.err.Error() + "\n\nr reload · q quit")
 	}
 
 	health := fmt.Sprintf("%s · %d pass · %d warnings · %d failures", m.dashboard.Health.Status, m.dashboard.Health.Passes, m.dashboard.Health.Warnings, m.dashboard.Health.Failures)
@@ -198,10 +222,10 @@ func (m Model) render() string {
 	for _, check := range m.dashboard.Health.Checks {
 		healthLines = append(healthLines, fmt.Sprintf("  %s  %s — %s", check.Severity, check.Name, check.Detail))
 	}
-	global := m.renderScope("Workstation · global", m.dashboard.Global.Packs, m.globalRow, !m.project, "No reviewed Packs are available")
+	global := m.renderScope("Workstation · global", m.dashboard.Global.Packs, m.globalRow, !m.project, !m.project && m.inspecting, "No reviewed Packs are available")
 	project := "Current project\nNo Git project\nGlobal inspection remains available"
 	if m.dashboard.Project.Available {
-		project = m.renderScope("Current project", m.dashboard.Project.Packs, m.projectRow, m.project, "No Packs are installed in this project") + "\n" + m.dashboard.Project.Root
+		project = m.renderScope("Current project", m.dashboard.Project.Packs, m.projectRow, m.project, m.project && m.inspecting, "No Packs are installed in this project") + "\n" + m.dashboard.Project.Root
 	}
 	scopes := global + "\n\n" + project
 	if m.width >= 96 {
@@ -211,7 +235,7 @@ func (m Model) render() string {
 	if m.showHelp {
 		help = "arrows/j/k navigate · Tab/Shift+Tab switch scope · Enter inspect · Esc back · ? hide help · r reload · q quit · Ctrl+C quit"
 	}
-	return bodyStyle.Render(strings.Join([]string{
+	return m.renderBody(strings.Join([]string{
 		titleStyle.Render("Packy health"),
 		strings.Join(healthLines, "\n"),
 		"",
@@ -221,7 +245,15 @@ func (m Model) render() string {
 	}, "\n"))
 }
 
-func (m Model) renderScope(title string, packs []Pack, row int, selected bool, empty string) string {
+func (m Model) renderBody(content string) string {
+	style := bodyStyle
+	if m.width > 0 {
+		style = style.Width(m.width)
+	}
+	return style.Render(content)
+}
+
+func (m Model) renderScope(title string, packs []Pack, row int, selected, inspecting bool, empty string) string {
 	if selected {
 		title += " · selected"
 	}
@@ -236,8 +268,14 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 		}
 		lines = append(lines, fmt.Sprintf("%s%s  %s", marker, pack.ID, pack.Version))
 	}
-	if selected && row < len(packs) && packs[row].Description != "" {
-		lines = append(lines, "  "+packs[row].Description)
+	if selected && inspecting && row < len(packs) {
+		lines = append(lines, "", "Pack details")
+		if packs[row].Description != "" {
+			lines = append(lines, "  "+packs[row].Description)
+		}
+		if len(packs[row].Surfaces) != 0 {
+			lines = append(lines, "  Available on: "+strings.Join(packs[row].Surfaces, ", "))
+		}
 	}
 	return strings.Join(lines, "\n")
 }

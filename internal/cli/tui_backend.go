@@ -68,11 +68,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	request := capabilitypack.ProjectStatusRequest{
 		ProjectRoot: projectRoot,
 		PackyHome:   snapshot.PackyHome(),
-		Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceClaude:   projectRuntimeAdapter(b.opts, capabilitypack.SurfaceClaude, snapshot),
-			capabilitypack.SurfaceCodex:    projectRuntimeAdapter(b.opts, capabilitypack.SurfaceCodex, snapshot),
-			capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(b.opts, capabilitypack.SurfaceOpenCode, snapshot),
-		},
+		Adapters:    projectStatusAdapters(b.opts, snapshot),
 	}
 	status, err := capabilitypack.InspectProjectStatus(ctx, request)
 	if err != nil {
