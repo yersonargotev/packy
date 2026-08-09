@@ -10,7 +10,7 @@ persists the resulting installed Pack receipt, not the preview.
 | Command family | Schema |
 | --- | --- |
 | `packy doctor --json` | `schemas/cli/v2/doctor.schema.json` |
-| `packy pack show PACK --json` | `schemas/cli/v4/pack-show.schema.json` |
+| `packy pack show PACK --json` | `schemas/cli/v5/pack-show.schema.json` |
 | global Pack status | `schemas/cli/v8/pack-status.schema.json` |
 | global Pack lifecycle | `schemas/cli/v9/pack-lifecycle.schema.json` |
 | project Pack lifecycle | `schemas/project/v1.0.0/` |
@@ -44,6 +44,12 @@ from generated receipts.
 
 Arrays representing sets use their schema-defined deterministic order. Arrays
 representing work preserve execution order.
+
+Pack show v5 adds `resource_inventory`, the domain-owned descriptive list of
+every Pack resource. Each entry includes its identity, purpose, role, direct
+dependencies, and relevant notices; entries and relationships use canonical
+resource-identity order. Lifecycle and status resource graphs retain their
+existing schemas and operational selection semantics.
 
 ## Redaction
 

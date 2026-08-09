@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-const packShowJSONSchemaVersion = 4
+const packShowJSONSchemaVersion = 5
 
 func sortedStrings(values []string) []string {
 	result := append([]string{}, values...)
@@ -51,19 +51,20 @@ type packShowRequirementsJSON struct {
 }
 
 type packShowJSON struct {
-	SchemaVersion         int                               `json:"schema_version"`
-	Report                string                            `json:"report"`
-	CatalogState          string                            `json:"catalog_state"`
-	ID                    string                            `json:"id"`
-	Version               string                            `json:"version"`
-	Description           string                            `json:"description"`
-	SourceIdentity        packShowSourceIdentityJSON        `json:"source_identity"`
-	Surfaces              []capabilitypack.Surface          `json:"surfaces"`
-	Requires              packShowRequirementsJSON          `json:"requires"`
-	ResourceCounts        capabilitypack.ResourceCounts     `json:"resource_counts"`
-	LifecycleAvailability packShowLifecycleAvailabilityJSON `json:"lifecycle_availability"`
-	SurfaceContracts      []packShowSurfaceJSON             `json:"surface_contracts"`
-	ResourceGraph         capabilitypack.ResourceGraph      `json:"resource_graph"`
+	SchemaVersion         int                                  `json:"schema_version"`
+	Report                string                               `json:"report"`
+	CatalogState          string                               `json:"catalog_state"`
+	ID                    string                               `json:"id"`
+	Version               string                               `json:"version"`
+	Description           string                               `json:"description"`
+	SourceIdentity        packShowSourceIdentityJSON           `json:"source_identity"`
+	Surfaces              []capabilitypack.Surface             `json:"surfaces"`
+	Requires              packShowRequirementsJSON             `json:"requires"`
+	ResourceCounts        capabilitypack.ResourceCounts        `json:"resource_counts"`
+	ResourceInventory     []capabilitypack.DescriptiveResource `json:"resource_inventory"`
+	LifecycleAvailability packShowLifecycleAvailabilityJSON    `json:"lifecycle_availability"`
+	SurfaceContracts      []packShowSurfaceJSON                `json:"surface_contracts"`
+	ResourceGraph         capabilitypack.ResourceGraph         `json:"resource_graph"`
 }
 
 func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
@@ -87,7 +88,8 @@ func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 		Requires: packShowRequirementsJSON{
 			Tools: sortedStrings(pack.Requires.Tools),
 		},
-		ResourceCounts: report.ResourceCounts,
+		ResourceCounts:    report.ResourceCounts,
+		ResourceInventory: report.ResourceInventory,
 		LifecycleAvailability: packShowLifecycleAvailabilityJSON{
 			FreshActivationAvailable: report.LifecycleAvailability.FreshActivationAvailable,
 			CatalogUpdateAvailable:   report.LifecycleAvailability.CatalogUpdateAvailable,
@@ -134,9 +136,10 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 	); err != nil {
 		return err
 	}
-	for _, fact := range document.ResourceGraph.Resources {
-		if _, err := fmt.Fprintf(w, "Resource: %s role=%s requires=%s notices=%s\n",
-			fact.Resource, fact.Role, renderIdentityChain(fact.Requires), renderIdentityChain(fact.Notices)); err != nil {
+	for _, resource := range report.ResourceInventory {
+		if _, err := fmt.Fprintf(w, "Resource: %s — %s; role=%s dependencies=%s notices=%s\n",
+			resource.Resource, resource.Description, resource.Role,
+			renderIdentityChain(resource.Dependencies), renderIdentityChain(resource.Notices)); err != nil {
 			return err
 		}
 	}
