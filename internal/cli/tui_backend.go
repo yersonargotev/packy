@@ -148,12 +148,16 @@ func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) erro
 }
 
 func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (tui.Preview, error) {
-	selection, err := selectionForTUI(request.Selection)
-	if err != nil {
-		return tui.Preview{}, err
+	operation := request.Operation
+	if operation == "" {
+		operation = string(capabilitypack.OperationActivate)
 	}
 	surface := capabilitypack.Surface(request.Surface)
 	if request.Scope == "project" {
+		selection, err := selectionForTUI(request.Selection)
+		if err != nil {
+			return tui.Preview{}, err
+		}
 		if request.ProjectRoot == "" {
 			return tui.Preview{}, errors.New("project preview requires the current project root")
 		}
@@ -178,29 +182,64 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 	if err != nil {
 		return tui.Preview{}, err
 	}
-	plan, err := facade.Preview(ctx, capabilitypack.ActivationRequest{PackID: request.PackID, Surface: surface, Selection: selection})
+	var plan capabilitypack.ReconciliationPlan
+	switch operation {
+	case string(capabilitypack.OperationActivate):
+		selection, selectionErr := selectionForTUI(request.Selection)
+		if selectionErr != nil {
+			return tui.Preview{}, selectionErr
+		}
+		plan, err = facade.Preview(ctx, capabilitypack.ActivationRequest{PackID: request.PackID, Surface: surface, Selection: selection})
+	case string(capabilitypack.OperationUpdate):
+		plan, err = facade.PreviewUpdate(ctx, capabilitypack.UpdateRequest{PackID: request.PackID, Surface: surface})
+	case string(capabilitypack.OperationDeactivate):
+		resources, resourcesErr := resourceIdentitiesFromTUI(request.Selection.Roots)
+		if resourcesErr != nil {
+			return tui.Preview{}, resourcesErr
+		}
+		plan, err = facade.PreviewDeactivate(ctx, capabilitypack.DeactivationRequest{PackID: request.PackID, Surface: surface, Resources: resources})
+	default:
+		return tui.Preview{}, fmt.Errorf("preview operation %q is unsupported", operation)
+	}
 	if err != nil {
 		return tui.Preview{}, err
 	}
-	return globalPreviewForTUI(plan.JSONReport(true)), nil
+	preview := globalPreviewForTUI(plan.JSONReport(true))
+	if operation == string(capabilitypack.OperationDeactivate) {
+		preview.Selection = request.Selection
+	}
+	return preview, nil
 }
 
 func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
-	if request.Preview.Scope != "global" || request.Preview.Operation != string(capabilitypack.OperationActivate) {
-		return tui.ApplyResult{Stage: "revalidation"}, errors.New("TUI Apply supports only global Pack activation")
-	}
-	selection, err := selectionForTUI(request.Preview.Selection)
-	if err != nil {
-		return tui.ApplyResult{Stage: "revalidation"}, err
+	if request.Preview.Scope != "global" {
+		return tui.ApplyResult{Stage: "revalidation"}, errors.New("TUI Apply supports only global Pack lifecycle operations")
 	}
 	progress(tui.ApplyProgress{Phase: "revalidation"})
 	facade, err := activationFacade(b.opts, b.resolver)
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
 	}
-	plan, err := facade.Preview(ctx, capabilitypack.ActivationRequest{
-		PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface), Selection: selection,
-	})
+	var plan capabilitypack.ReconciliationPlan
+	surface := capabilitypack.Surface(request.Preview.Surface)
+	switch request.Preview.Operation {
+	case string(capabilitypack.OperationActivate):
+		selection, selectionErr := selectionForTUI(request.Preview.Selection)
+		if selectionErr != nil {
+			return tui.ApplyResult{Stage: "revalidation"}, selectionErr
+		}
+		plan, err = facade.Preview(ctx, capabilitypack.ActivationRequest{PackID: request.Preview.PackID, Surface: surface, Selection: selection})
+	case string(capabilitypack.OperationUpdate):
+		plan, err = facade.PreviewUpdate(ctx, capabilitypack.UpdateRequest{PackID: request.Preview.PackID, Surface: surface})
+	case string(capabilitypack.OperationDeactivate):
+		resources, resourcesErr := resourceIdentitiesFromTUI(request.Preview.Selection.Roots)
+		if resourcesErr != nil {
+			return tui.ApplyResult{Stage: "revalidation"}, resourcesErr
+		}
+		plan, err = facade.PreviewDeactivate(ctx, capabilitypack.DeactivationRequest{PackID: request.Preview.PackID, Surface: surface, Resources: resources})
+	default:
+		return tui.ApplyResult{Stage: "revalidation"}, fmt.Errorf("TUI Apply operation %q is unsupported", request.Preview.Operation)
+	}
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
 	}
@@ -222,15 +261,26 @@ func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progre
 	progress(tui.ApplyProgress{Phase: "apply"})
 	applied, err := facade.Apply(ctx, capabilitypack.ApplyRequest{Plan: plan, Approvals: receipts, Interactive: true})
 	if err != nil {
-		return tui.ApplyResult{Stage: "apply", Summary: "Activation stopped before verification"}, err
+		return tui.ApplyResult{Stage: "apply", Summary: lifecyclePastTense(request.Preview.Operation) + " stopped before verification"}, err
 	}
 	progress(tui.ApplyProgress{Phase: "verification"})
 	return tui.ApplyResult{
 		Stage: "verification", Verified: applied.Verified,
-		Summary:        fmt.Sprintf("Activated %s on %s", request.Preview.PackID, request.Preview.Surface),
+		Summary:        fmt.Sprintf("%s %s on %s", lifecyclePastTense(request.Preview.Operation), request.Preview.PackID, request.Preview.Surface),
 		Details:        []string{fmt.Sprintf("%d projections owned", applied.Projections)},
 		PendingActions: append([]string(nil), applied.PendingHumanActions...),
 	}, nil
+}
+
+func lifecyclePastTense(operation string) string {
+	switch operation {
+	case string(capabilitypack.OperationUpdate):
+		return "Updated"
+	case string(capabilitypack.OperationDeactivate):
+		return "Deactivated"
+	default:
+		return "Activated"
+	}
 }
 
 func selectionForTUI(selection tui.Selection) (capabilitypack.ResourceSelection, error) {
@@ -241,6 +291,18 @@ func selectionForTUI(selection tui.Selection) (capabilitypack.ResourceSelection,
 			return capabilitypack.ResourceSelection{}, err
 		}
 		result.Roots = append(result.Roots, identity)
+	}
+	return result, nil
+}
+
+func resourceIdentitiesFromTUI(values []string) ([]capabilitypack.ResourceIdentity, error) {
+	result := make([]capabilitypack.ResourceIdentity, 0, len(values))
+	for _, value := range values {
+		identity, err := capabilitypack.ParseResourceIdentity(value)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, identity)
 	}
 	return result, nil
 }
@@ -441,6 +503,7 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 	for _, entry := range report.Entries {
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
+			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateAvailable,
 			Configured: readinessForTUI(entry.ReadinessObserved.Configured, entry.Readiness.Configured),
 			Authorized: readinessForTUI(entry.ReadinessObserved.Authorization, entry.Readiness.Authorized),
 			Usable:     readinessForTUI(entry.ReadinessObserved.Usability, entry.Readiness.Usable),

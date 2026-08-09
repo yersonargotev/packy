@@ -43,6 +43,7 @@ type Selection struct {
 }
 
 type PreviewRequest struct {
+	Operation   string
 	PackID      string
 	Surface     string
 	Scope       string
@@ -123,16 +124,18 @@ type Exclusion struct {
 }
 
 type SurfaceStatus struct {
-	Name           string
-	Supported      bool
-	Configured     string
-	Authorized     string
-	Usable         string
-	Ownership      int
-	Drift          int
-	Blockers       []string
-	PendingActions []string
-	Evidence       []string
+	Name            string
+	Supported       bool
+	Active          bool
+	UpdateAvailable bool
+	Configured      string
+	Authorized      string
+	Usable          string
+	Ownership       int
+	Drift           int
+	Blockers        []string
+	PendingActions  []string
+	Evidence        []string
 }
 
 type Scope struct {
@@ -196,6 +199,9 @@ type Model struct {
 	height                 int
 	showHelp               bool
 	inspecting             bool
+	choosingAction         bool
+	operation              string
+	actionChoice           int
 	selecting              bool
 	advancedSelection      bool
 	selectionChoice        int
@@ -434,6 +440,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selecting && m.preview == nil && m.previewErr == nil {
 			return m.updateSelection(message)
 		}
+		if m.choosingAction {
+			return m.updateActionChoice(message)
+		}
 		switch {
 		case key.Matches(message, dashboardKeys.Quit):
 			return m, tea.Quit
@@ -455,6 +464,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(message, dashboardKeys.Back):
 			if m.preview != nil || m.previewErr != nil {
 				m.preview, m.previewErr = nil, nil
+			} else if m.choosingAction {
+				m.choosingAction = false
 			} else if m.selecting {
 				m.selecting = false
 			} else if m.inspecting {
@@ -469,16 +480,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selecting && m.selectedPack() != nil {
 				return m.startPreview()
 			} else if m.inspecting && m.selectedPack() != nil {
-				m.selecting = true
-				m.advancedSelection = false
-				m.selectionChoice = 0
-				m.selectionRoot = 0
-				m.selectionPreviewFocus = false
-				m.selectionNotice = ""
 				m.surfaceIndex = 0
-				m.selectedRoots = make(map[string]bool)
-				for _, resource := range operationalRoots(*m.selectedPack()) {
-					m.selectedRoots[resource.Identity] = true
+				if status := m.selectedSurfaceStatus(); !m.project && status != nil && status.Active {
+					m.choosingAction = true
+					m.actionChoice = 0
+					m.operation = firstLifecycleAction(*status)
+				} else {
+					m.operation = "activate"
+					m.beginSelection()
 				}
 			} else {
 				m.inspecting = m.selectedPack() != nil
@@ -536,7 +545,10 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 	if m.project {
 		scope, projectRoot = "project", m.dashboard.Project.Root
 	}
-	selection := Selection{Mode: "all", Roots: []string{}}
+	selection := Selection{}
+	if m.operation != "update" {
+		selection = Selection{Mode: "all", Roots: []string{}}
+	}
 	if m.advancedSelection {
 		selection.Mode = "custom"
 		for _, resource := range operationalRoots(*pack) {
@@ -555,7 +567,8 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	request := PreviewRequest{
-		PackID: pack.ID, Surface: surface, Scope: scope, ProjectRoot: projectRoot,
+		Operation: m.operation,
+		PackID:    pack.ID, Surface: surface, Scope: scope, ProjectRoot: projectRoot,
 		Selection: selection,
 	}
 	m.previewing, m.previewErr = true, nil
@@ -563,6 +576,100 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 		preview, err := m.backend.Preview(m.ctx, request)
 		return previewResult{preview: preview, err: err}
 	}
+}
+
+func (m *Model) beginSelection() {
+	m.selecting = true
+	m.advancedSelection = false
+	m.selectionChoice = 0
+	m.selectionRoot = 0
+	m.selectionPreviewFocus = false
+	m.selectionNotice = ""
+	m.selectedRoots = make(map[string]bool)
+	for _, resource := range operationalRoots(*m.selectedPack()) {
+		m.selectedRoots[resource.Identity] = true
+	}
+}
+
+func (m Model) updateActionChoice(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	pack := m.selectedPack()
+	if pack == nil {
+		return m, nil
+	}
+	if key.Matches(message, dashboardKeys.Quit) {
+		return m, tea.Quit
+	}
+	if key.Matches(message, dashboardKeys.Back) {
+		m.choosingAction = false
+		return m, nil
+	}
+	surfaces := supportedSurfaces(*pack)
+	if (message.Code == tea.KeyRight || message.Code == tea.KeyLeft) && len(surfaces) > 0 {
+		direction := 1
+		if message.Code == tea.KeyLeft {
+			direction = -1
+		}
+		m.surfaceIndex = nextRow(m.surfaceIndex, len(surfaces), direction)
+		m.actionChoice = 0
+		if status := m.selectedSurfaceStatus(); status != nil {
+			m.operation = firstLifecycleAction(*status)
+		}
+		return m, nil
+	}
+	actions := m.lifecycleActions()
+	if key.Matches(message, dashboardKeys.Down) {
+		m.actionChoice = nextRow(m.actionChoice, len(actions), 1)
+	} else if key.Matches(message, dashboardKeys.Up) {
+		m.actionChoice = nextRow(m.actionChoice, len(actions), -1)
+	} else if key.Matches(message, dashboardKeys.Inspect) && len(actions) > 0 {
+		m.operation = actions[m.actionChoice]
+		m.choosingAction = false
+		if m.operation == "update" {
+			return m.startPreview()
+		}
+		m.beginSelection()
+	}
+	if len(actions) > 0 {
+		m.operation = actions[m.actionChoice]
+	}
+	return m, nil
+}
+
+func firstLifecycleAction(status SurfaceStatus) string {
+	if !status.Active {
+		return "activate"
+	}
+	if status.UpdateAvailable {
+		return "update"
+	}
+	return "deactivate"
+}
+
+func (m Model) lifecycleActions() []string {
+	status := m.selectedSurfaceStatus()
+	if status == nil || !status.Active {
+		return []string{"activate"}
+	}
+	actions := []string{}
+	if status.UpdateAvailable {
+		actions = append(actions, "update")
+	}
+	return append(actions, "deactivate")
+}
+
+func (m Model) selectedSurfaceStatus() *SurfaceStatus {
+	pack := m.selectedPack()
+	if pack == nil {
+		return nil
+	}
+	surface := selectedSurface(*pack, m.surfaceIndex)
+	for _, status := range pack.SurfaceStatuses {
+		if status.Name == surface {
+			copy := status
+			return &copy
+		}
+	}
+	return nil
 }
 
 func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -733,6 +840,9 @@ func (m Model) render() string {
 	}
 	if m.previewing {
 		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nCreating immutable preview…")
+	}
+	if m.choosingAction {
+		return m.renderBody(m.renderActionChoice())
 	}
 	if m.previewErr != nil {
 		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nUnable to create preview\n" + m.previewErr.Error() + "\n\nEsc back · q quit")
@@ -952,6 +1062,24 @@ func (m Model) renderDetail() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m Model) renderActionChoice() string {
+	pack := m.selectedPack()
+	if pack == nil {
+		return titleStyle.Render("Choose lifecycle action") + "\n\nNo Pack selected\n\nEsc back"
+	}
+	surface := selectedSurface(*pack, m.surfaceIndex)
+	lines := []string{titleStyle.Render("Choose lifecycle action"), pack.ID + " · " + surface + " · Workstation · global", "CLI surface: " + surface + " · selected (←/→ change surface)", ""}
+	for index, action := range m.lifecycleActions() {
+		marker := "  "
+		if index == m.actionChoice {
+			marker = "› "
+		}
+		lines = append(lines, marker+strings.ToUpper(action[:1])+action[1:]+map[bool]string{true: " · selected"}[index == m.actionChoice])
+	}
+	lines = append(lines, "", "↑/↓ choose · Enter continue · Esc back · q quit")
+	return strings.Join(lines, "\n")
+}
+
 func (m Model) renderSelection() string {
 	pack := m.selectedPack()
 	if pack == nil {
@@ -969,16 +1097,21 @@ func (m Model) renderSelection() string {
 	if m.selectionChoice == 1 || m.advancedSelection {
 		fullMarker, advancedMarker = "  ", "› "
 	}
-	advancedLabel := "Advanced operational roots"
+	title := "Select Pack resources"
+	fullLabel, advancedLabel := "Full Pack", "Advanced operational roots"
+	if m.operation == "deactivate" {
+		title = "Deactivate Pack resources"
+		fullLabel, advancedLabel = "Complete deactivation", "Selected operational roots"
+	}
 	if m.advancedSelection {
 		advancedLabel += " · selected"
 	}
 	lines := []string{
-		titleStyle.Render("Select Pack resources"),
+		titleStyle.Render(title),
 		pack.ID + " · " + surface + " · " + scope,
 		"CLI surface: " + surface + " · selected (←/→ change surface)",
 		"",
-		fullMarker + "Full Pack" + map[bool]string{true: " · selected"}[!m.advancedSelection && m.selectionChoice == 0],
+		fullMarker + fullLabel + map[bool]string{true: " · selected"}[!m.advancedSelection && m.selectionChoice == 0],
 		advancedMarker + advancedLabel,
 		"",
 		"Resource roles",
@@ -1133,7 +1266,8 @@ func (m Model) renderPreview(preview Preview) string {
 }
 
 func previewCanApply(preview Preview) bool {
-	return preview.Scope == "global" && preview.Operation == "activate" && preview.Disposition == "applicable" && !preview.Stale && len(requiredConsentPhases(preview)) > 0
+	operationSupported := preview.Operation == "activate" || preview.Operation == "update" || preview.Operation == "deactivate"
+	return preview.Scope == "global" && operationSupported && preview.Disposition == "applicable" && !preview.Stale && len(requiredConsentPhases(preview)) > 0
 }
 
 func requiredConsentPhases(preview Preview) []PreviewPhase {
@@ -1224,10 +1358,19 @@ func (m Model) renderApplyProgress() string {
 
 func (m Model) renderApplyResult() string {
 	succeeded := m.applyErr == nil && m.applyOutcome.Verified
-	title := "Activation failed"
+	operation := "Activation"
+	if m.preview != nil {
+		switch m.preview.Operation {
+		case "update":
+			operation = "Update"
+		case "deactivate":
+			operation = "Deactivation"
+		}
+	}
+	title := operation + " failed"
 	verification := "not verified"
 	if succeeded {
-		title, verification = "Activation succeeded", "verified"
+		title, verification = operation+" succeeded", "verified"
 	}
 	stage := m.applyOutcome.Stage
 	if stage == "" {

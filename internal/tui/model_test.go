@@ -51,6 +51,114 @@ func (b *fakeBackend) Apply(_ context.Context, request tui.ApplyRequest, progres
 	return b.applyResult, b.applyErr
 }
 
+func TestGlobalLifecycleOffersOnlyApplicableActionsAndRequestsTheChosenOperation(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "2.0.0", Resources: []tui.Resource{
+				{Identity: "skill:review", Role: "root"},
+				{Identity: "skill:tdd", Role: "root"},
+			}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true}},
+		}}}},
+		preview: tui.Preview{ID: "update-1", Digest: "digest-1", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Choose lifecycle action", "Update · selected", "Deactivate"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("active status action menu missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "Activate") {
+		t.Fatalf("active Pack offered activation:\n%s", view)
+	}
+
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "update" || backend.previewRequests[0].Selection.Mode != "" {
+		t.Fatalf("update preview request = %#v", backend.previewRequests)
+	}
+
+	backend.previewRequests = nil
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(model.View().Content)
+	for _, want := range []string{"Deactivate Pack resources", "Complete deactivation · selected", "Selected operational roots"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("deactivation selection missing %q:\n%s", want, view)
+		}
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "deactivate" || backend.previewRequests[0].Selection.Mode != "all" {
+		t.Fatalf("complete deactivation request = %#v", backend.previewRequests)
+	}
+}
+
+func TestGlobalStatusOmitsNoOpUpdateAndPartialDeactivationRequestsSelectedRoots(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.0.0", Resources: []tui.Resource{
+				{Identity: "skill:review", Role: "root"},
+				{Identity: "skill:tdd", Role: "root"},
+			}, SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true}},
+		}}}},
+		preview: tui.Preview{ID: "deactivate-1", Digest: "digest-1", Operation: "deactivate", Disposition: "applicable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:review"}}, Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true}}},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	if strings.Contains(view, "Update") || !strings.Contains(view, "Deactivate · selected") {
+		t.Fatalf("no-op status exposed the wrong actions:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: " ", Code: ' '}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	request := backend.previewRequests[0]
+	if request.Operation != "deactivate" || request.Selection.Mode != "custom" || !slices.Equal(request.Selection.Roots, []string{"skill:tdd"}) {
+		t.Fatalf("partial deactivation request = %#v", request)
+	}
+}
+
+func TestUpdateUsesSharedConsentApplyResultAndFreshReloadFlow(t *testing.T) {
+	backend := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true}},
+		}}}},
+		preview:     tui.Preview{ID: "update-2", Digest: "digest-2", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "global", Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true, Actions: []string{"replace owned projection"}}}, Diff: tui.PreviewDiff{Changed: []string{"$HOME/.codex/AGENTS.md"}}},
+		applyResult: tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Updated argote on codex"},
+	}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Changed: $HOME/.codex/AGENTS.md") || !strings.Contains(view, "Enter continue to consent") {
+		t.Fatalf("update preview did not expose changed projections or continuation:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if command == nil {
+		t.Fatal("approved update did not enter Apply")
+	}
+	model = runModelCommand(t, model, command)
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Update succeeded", "Verification: verified", "Updated argote on codex", "Fresh Pack status reloaded"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("shared update result missing %q:\n%s", want, view)
+		}
+	}
+	if len(backend.applyRequests) != 1 || backend.applyRequests[0].Preview.Operation != "update" {
+		t.Fatalf("update Apply request = %#v", backend.applyRequests)
+	}
+}
+
 func TestApplicableActivationRequestsOnlyItsRequiredConsentClassesAndCanCancel(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
