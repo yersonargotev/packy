@@ -1,14 +1,16 @@
 # Context
 
 This glossary is the current domain language for Packy `v0.2.0`. The accepted
-architecture is [ADR 0031](docs/adr/0031-simplify-packy-around-reviewed-packs.md).
+architecture is recorded in [ADR 0031](docs/adr/0031-simplify-packy-around-reviewed-packs.md)
+and [ADR 0033](docs/adr/0033-make-the-tui-the-primary-interactive-interface.md).
 
 ## Glossary
 
 ### Packy
 
-A command-line installer and configurator for reviewed capability Packs on
-Codex, OpenCode, and Claude Code.
+A terminal installer and configurator for reviewed capability Packs on Codex,
+OpenCode, and Claude Code. Its interactive and command-line interfaces expose
+the same Pack lifecycle.
 
 ### Pack
 
@@ -55,6 +57,11 @@ the current product.
 
 The user's explicit consent to a previewed global Pack operation on one CLI
 surface. Project installation and personal project activation are separate.
+
+### Pack lifecycle
+
+The previewed state transitions for one Pack, CLI surface, and global or
+project scope. It includes inspection, consent, application, and verification.
 
 ### Project installation
 
