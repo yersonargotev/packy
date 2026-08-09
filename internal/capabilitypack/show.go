@@ -207,7 +207,7 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 			Limitation:    packSourceIdentityLimitation,
 		},
 		ResourceCounts:    pack.ResourceCounts(),
-		ResourceInventory: descriptiveResourceInventory(pack),
+		ResourceInventory: detail.ResourceInventory,
 		ResourceGraph:     ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
 		LifecycleAvailability: ShowLifecycleAvailability{
 			FreshActivationAvailable: true,

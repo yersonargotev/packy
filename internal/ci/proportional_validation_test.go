@@ -10,7 +10,7 @@ import (
 func TestGeneralValidationIsSandboxedAndProportional(t *testing.T) {
 	script := readFile(t, filepath.Join(repositoryRoot(t), "scripts", "validate-packy.sh"))
 
-	for _, required := range []string{"export HOME=", "export XDG_CONFIG_HOME=", "gofmt -l", "go vet ./...", `go test "${test_packages[@]}"`} {
+	for _, required := range []string{"export HOME=", "export XDG_CONFIG_HOME=", "gofmt -l", "go vet ./...", "go run ./internal/tools/packdocs --check", `go test "${test_packages[@]}"`} {
 		if !strings.Contains(script, required) {
 			t.Errorf("general validation is missing %q", required)
 		}

@@ -1,14 +1,15 @@
 # Packy v0.2 product scope
 
-Packy is an installer/configurator for four reviewed Packs on Codex, OpenCode,
-and Claude Code **2.1.203 or newer**. It is not an always-on runtime
-orchestrator.
+Packy is an installer/configurator for the reviewed Packs in its
+manifest-backed Pack catalog on Codex, OpenCode, and Claude Code **2.1.203 or
+newer**. It is not an always-on runtime orchestrator. Use `packy pack list` or
+the generated [Pack catalog](../packs/index.md) for current discovery.
 
 ## Product boundary
 
 | Area | Current scope |
 | --- | --- |
-| Packs | Argote at Pack version `1.0.1`; Addy, Engram, and Matty at Pack version `1.0.0`. |
+| Packs | Independently selectable Packs discovered from the bundled manifests. |
 | Authoring | One reviewed manifest and reviewed content per Pack. |
 | Surfaces | Codex, OpenCode, and user-global Claude Code. |
 | Global lifecycle | Inspect, activate, update, status, deactivate, and remove one Pack at a time. |

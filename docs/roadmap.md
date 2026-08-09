@@ -1,14 +1,16 @@
 # Packy roadmap
 
-Packy `v0.2.0` establishes the current product: four reviewed Packs, installed
-Pack receipts, Codex/OpenCode/Claude Code support, proportional validation,
-native GitHub integration controls, and an immutable binary release.
-Claude Code support requires stable version **2.1.203 or newer**.
+Packy `v0.2.0` establishes the current product: reviewed Packs, installed Pack
+receipts, Codex/OpenCode/Claude Code support, proportional validation, native
+GitHub integration controls, and an immutable binary release. Use the
+manifest-backed Pack catalog through `packy pack list` or the generated
+[Pack catalog](packs/index.md) for current membership and versions. Claude Code
+support requires stable version **2.1.203 or newer**.
 
 ## Current checkpoint
 
-- Argote uses one manifest at Pack version `1.0.1`; Addy, Engram, and Matty use
-  one manifest each at Pack version `1.0.0`.
+- Selectable Packs and their independent versions come from the bundled current
+  manifests.
 - Global and project lifecycles operate on independent installed Pack receipts.
 - Pack maintainers use the standard template and focused Pack validator.
 - General CI uses formatting, vet, Packy-owned tests, and focused race coverage.
@@ -23,7 +25,7 @@ The following are outside the current product until a separate decision is
 accepted:
 
 - another CLI surface beyond Codex, OpenCode, and Claude Code;
-- another reviewed Pack beyond the current four;
+- another reviewed Pack beyond the current manifest-backed catalog;
 - a different binary distribution channel; or
 - broader platform support beyond the published Darwin and Linux artifacts.
 

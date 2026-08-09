@@ -16,8 +16,11 @@ const canonicalCatalogAuthority = "The bundled Pack manifests are the canonical 
 
 func TestPublicDocumentationUsesCanonicalPackDiscovery(t *testing.T) {
 	root := repositoryRoot(t)
-	documents := []string{"README.md", "docs/capability-packs.md"}
-	for _, path := range documents {
+	documents := map[string]string{
+		"README.md":                "(docs/packs/index.md)",
+		"docs/capability-packs.md": "(packs/index.md)",
+	}
+	for path, catalogLink := range documents {
 		text := readFile(t, filepath.Join(root, filepath.FromSlash(path)))
 		if !strings.Contains(text, canonicalCatalogAuthority) {
 			t.Errorf("%s does not identify bundled Pack manifests as canonical catalog authority", path)
@@ -30,6 +33,22 @@ func TestPublicDocumentationUsesCanonicalPackDiscovery(t *testing.T) {
 		}
 		if staleCatalogClaim.MatchString(text) {
 			t.Errorf("%s retains stale only-Matty-and-Engram catalog claim", path)
+		}
+		if strings.Count(text, catalogLink) != 1 {
+			t.Errorf("%s must contain one generated Pack catalog link %q", path, catalogLink)
+		}
+	}
+}
+
+func TestCurrentProductGuidanceUsesManifestBackedPackDiscovery(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, path := range []string{"docs/product/packy-v0.md", "docs/roadmap.md"} {
+		text := readFile(t, filepath.Join(root, filepath.FromSlash(path)))
+		if !strings.Contains(text, "manifest-backed Pack catalog") {
+			t.Errorf("%s does not direct readers to manifest-backed Pack discovery", path)
+		}
+		if strings.Contains(text, "four reviewed Packs") || strings.Contains(text, "current four") {
+			t.Errorf("%s retains a brittle current catalog count", path)
 		}
 	}
 }

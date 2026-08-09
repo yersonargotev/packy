@@ -60,6 +60,9 @@ go vet ./...
 echo "==> static analysis"
 ./scripts/validate-static-analysis.sh
 
+echo "==> generated Pack documentation"
+go run ./internal/tools/packdocs --check
+
 echo "==> tests"
 test_packages=()
 while IFS= read -r package; do
