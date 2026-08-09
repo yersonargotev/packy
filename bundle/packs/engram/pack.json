@@ -1,6 +1,6 @@
 {
   "id": "engram",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Persistent memory for agent work",
   "selectable": true,
   "surfaces": [
@@ -13,6 +13,7 @@
   ],
   "resources": [
     {
+      "description": "Guides agents to recall prior project work and preserve durable decisions and discoveries",
       "kind": "instruction",
       "id": "engram-memory",
       "source": "instructions/engram-memory.md",
@@ -47,6 +48,7 @@
       "conflicts": []
     },
     {
+      "description": "Runs Engram's host setup so Codex and OpenCode receive their native memory integration",
       "kind": "lifecycle",
       "id": "engram-memory",
       "requires": [],
@@ -79,6 +81,7 @@
       "conflicts": []
     },
     {
+      "description": "Makes Engram memory tools available to agents through MCP",
       "kind": "mcp_server",
       "id": "engram",
       "command": "engram",
