@@ -12,7 +12,8 @@
           "name": "coordinate-session",
           "projection": "lifecycle",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         }
       ],
       "conflicts": [],
@@ -40,7 +41,8 @@
           "name": "orchestrate",
           "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "surface": "codex",
+          "capabilities": []
         }
       ],
       "conflicts": [],

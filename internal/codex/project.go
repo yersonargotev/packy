@@ -89,6 +89,20 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 		if resource.Kind == "notice" {
 			continue
 		}
+		projectInstruction, hasProjectInstruction := resource.SurfaceCapability(capabilitypack.SurfaceCodex, capabilitypack.SurfaceCapabilityProjectInstruction)
+		if hasProjectInstruction {
+			data := projectInstruction.ProjectInstruction
+			content, err := os.ReadFile(filepath.Join(a.bundleRoot, data.Source))
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read project instruction capability %q source: %w", data.ID, err)
+			}
+			instructionIdentity := capabilitypack.ResourceIdentity{Kind: "instruction", ID: data.ID}
+			projection := codexProjectInstructionProjection(instructionIdentity, instructionTarget, string(content), instructionDocument, instructionPrecondition)
+			projections = append(projections, projection)
+			if projection.Action.Content != "" {
+				instructionDocument = projection.Action.Content
+			}
+		}
 		if resource.Kind == "mcp_server" {
 			bindingName, bound := codexBindingName(resource, "mcp_server")
 			if !bound || resource.Command == "" {
@@ -121,18 +135,8 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			continue
 		}
 		if resource.Kind == "instruction" {
-			if _, bound := codexProjectBinding(resource); !bound || resource.Source == "" {
+			if !hasProjectInstruction {
 				unrepresentable = append(unrepresentable, capabilitypack.UnrepresentableResource{Resource: identity, Reason: fmt.Sprintf("%s has no Codex project-native representation in this installation preview", identity)})
-				continue
-			}
-			content, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
-			if err != nil {
-				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read %s source: %w", identity, err)
-			}
-			projection := codexProjectInstructionProjection(identity, instructionTarget, string(content), instructionDocument, instructionPrecondition)
-			projections = append(projections, projection)
-			if projection.Action.Content != "" {
-				instructionDocument = projection.Action.Content
 			}
 			continue
 		}
@@ -158,13 +162,6 @@ func (a *SurfaceAdapter) inspectProject(_ context.Context, pack capabilitypack.P
 			Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionCodexProjectSkillTree, Source: source, Target: target, Version: desired, Precondition: observed, Description: fmt.Sprintf("copy %s to the Codex project skill tree", identity), PreviewOnly: true},
 		})
 	}
-	if pack.ID == "matty" {
-		instruction, err := projectMattyInstruction(projectRoot)
-		if err != nil {
-			return capabilitypack.SurfaceInspection{}, err
-		}
-		projections = append(projections, instruction)
-	}
 	sort.Slice(projections, func(i, j int) bool { return projections[i].ID < projections[j].ID })
 	evidence, err := capabilitypack.UnverifiedRuntimeModeEvidence(pack, time.Unix(0, 0).UTC(), "project-install-preview")
 	if err != nil {
@@ -180,6 +177,7 @@ func codexProjectInstructionProjection(identity capabilitypack.ResourceIdentity,
 	start, end := projectInstructionMarkers(identity.ID)
 	block := start + "\n" + strings.TrimSpace(source) + "\n" + end
 	state, fragment := projectInstructionMarkerState(document, start, end)
+	desired := localprojection.FingerprintBytes([]byte(block))
 	observed := "missing"
 	exists := state != "missing"
 	if fragment != "" {
@@ -187,18 +185,25 @@ func codexProjectInstructionProjection(identity capabilitypack.ResourceIdentity,
 	} else if exists {
 		observed = state + ":" + localprojection.FingerprintBytes([]byte(document))
 	}
+	if state == "intact" && observed != desired {
+		state = "changed"
+	}
 	content := ""
 	if state == "missing" {
 		content = mergeBlock(document, block, start, end)
 	} else if state == "intact" {
 		content = strings.Replace(document, fragment, block, 1)
 	}
+	fileMode := uint32(0o644)
+	if info, err := os.Lstat(target); err == nil && info.Mode().IsRegular() {
+		fileMode = uint32(info.Mode().Perm())
+	}
 	key := "path:" + filepath.Clean(target) + "#packy-project-instruction:" + identity.ID
 	return capabilitypack.ObservedProjection{
 		ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed,
-		DesiredFingerprint: localprojection.FingerprintBytes([]byte(block)), AdapterProvenance: "codex-project/v1/shared-composable-instruction/" + state,
+		DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/shared-composable-instruction/" + state,
 		ProjectionKey: key, Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
-		Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionInstructionFile, Target: target, Content: content, FileMode: 0o644, Precondition: precondition, ProjectionKey: key, Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}, Description: fmt.Sprintf("merge %s into the shared project AGENTS.md", identity), PreviewOnly: true},
+		Action: capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionInstructionFile, Target: target, Content: content, FileMode: fileMode, Precondition: precondition, ProjectionKey: key, Shared: true, DiscoverableBy: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}, Description: fmt.Sprintf("merge %s into the shared project AGENTS.md", identity), PreviewOnly: true},
 	}
 }
 
@@ -294,9 +299,6 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 			}
 		} else {
 			start, end := projectInstructionMarkers(projection.Resource.ID)
-			if pack.ID == "matty" && projection.Resource.String() == projectMattyInstructionID {
-				start, end = projectMattyInstructionStart, projectMattyInstructionEnd
-			}
 			current, readErr := os.ReadFile(target)
 			if readErr != nil && !os.IsNotExist(readErr) {
 				return capabilitypack.SurfaceInspection{}, readErr
@@ -480,59 +482,6 @@ func projectTreeFingerprint(target string) (string, bool, error) {
 	}
 	fingerprint, err := localprojection.FingerprintExactTree(target)
 	return fingerprint, true, err
-}
-
-const (
-	projectMattyInstructionID    = "instruction:matty-codex-project"
-	projectMattyInstructionStart = "<!-- packy:project:matty:codex:start -->"
-	projectMattyInstructionEnd   = "<!-- packy:project:matty:codex:end -->"
-)
-
-func projectMattyInstruction(projectRoot string) (capabilitypack.ObservedProjection, error) {
-	target := filepath.Join(projectRoot, "AGENTS.md")
-	current, err := os.ReadFile(target)
-	if err != nil && !os.IsNotExist(err) {
-		return capabilitypack.ObservedProjection{}, fmt.Errorf("read Codex project instructions: %w", err)
-	}
-	desiredBlock := projectMattyInstructionStart + "\n" +
-		"Packy manages the Matty Codex skill trees in .agents/skills.\n" +
-		projectMattyInstructionEnd
-	desired := localprojection.FingerprintBytes([]byte(desiredBlock))
-	content := string(current)
-	state, fragment := projectInstructionMarkerState(content, projectMattyInstructionStart, projectMattyInstructionEnd)
-	projection := capabilitypack.ObservedProjection{
-		ID: projectMattyInstructionID, Goal: capabilitypack.ProjectionPresent,
-		DesiredFingerprint: desired, AdapterProvenance: "codex-project/v1/composable-instruction/" + state,
-		Action: capabilitypack.ProjectionAction{ID: projectMattyInstructionID, Surface: capabilitypack.SurfaceCodex, Kind: capabilitypack.ActionInstructionFile, Target: target, FileMode: 0o644, Description: "merge Packy Matty Codex instructions into the project AGENTS.md", PreviewOnly: true},
-	}
-	projection.Action.Precondition = "missing"
-	if err == nil {
-		projection.Action.Precondition = localprojection.FingerprintBytes(current)
-	}
-	if info, statErr := os.Lstat(target); statErr == nil && info.Mode().IsRegular() {
-		projection.Action.FileMode = uint32(info.Mode().Perm())
-	}
-	switch state {
-	case "missing":
-		projection.ObservedFingerprint = "missing"
-		projection.Action.Content = mergeBlock(content, desiredBlock, projectMattyInstructionStart, projectMattyInstructionEnd)
-	case "intact", "changed":
-		projection.Exists = true
-		projection.ObservedFingerprint = localprojection.FingerprintBytes([]byte(fragment))
-		if state == "intact" {
-			projection.Action.Content = mergeBlock(content, desiredBlock, projectMattyInstructionStart, projectMattyInstructionEnd)
-		}
-	case "malformed", "ambiguous":
-		projection.Exists = true
-		projection.ObservedFingerprint = state + ":" + localprojection.FingerprintBytes([]byte(content))
-	default:
-		return capabilitypack.ObservedProjection{}, fmt.Errorf("unknown Codex project instruction marker state %q", state)
-	}
-	if state == "intact" && projection.ObservedFingerprint != desired {
-		projection.AdapterProvenance = "codex-project/v1/composable-instruction/changed"
-		projection.Action.Content = ""
-	}
-	return projection, nil
 }
 
 func projectInstructionMarkerState(content, start, end string) (string, string) {

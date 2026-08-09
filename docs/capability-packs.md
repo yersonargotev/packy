@@ -96,6 +96,14 @@ surfaces, resources, bindings, intra-Pack dependencies, external requirements,
 concrete conflicts, and exclusions. The focused validator reports the Pack and
 invalid field or resource directly.
 
+Every binding declares a non-null `capabilities` array. Most bindings use an
+empty array. A binding that needs reusable host-native behavior selects only a
+reviewed typed capability. The current `project-instruction` capability carries
+typed `project_instruction` data with a stable lowercase kebab-case `id` and a
+reviewed relative `source`; Codex and OpenCode translate it into an independently
+owned marked contribution in the project's `AGENTS.md`. Unknown capability
+types, missing typed data, and extension fields are rejected during admission.
+
 The generated Pack catalog is derived from the manifests; it is not a second
 authoring source or manually maintained snapshot. Review and merge the manifest
 and content together through the normal GitHub pull-request flow.

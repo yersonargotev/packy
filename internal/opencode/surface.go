@@ -772,9 +772,6 @@ func applyRecordedOccupancyOwnership(observation *capabilitypack.SurfaceInspecti
 }
 
 func (a *SurfaceAdapter) instructionPath(id string) string {
-	if id == "matty-guidance" {
-		return a.promptFile
-	}
 	return filepath.Join(filepath.Dir(a.promptFile), id+".md")
 }
 

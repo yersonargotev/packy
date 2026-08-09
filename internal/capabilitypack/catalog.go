@@ -219,15 +219,55 @@ type RuntimeEvidence struct {
 }
 
 type Binding struct {
-	Surface        Surface         `json:"surface"`
-	Projection     string          `json:"projection"`
-	Name           string          `json:"name"`
-	Invocation     string          `json:"invocation"`
-	Mode           string          `json:"mode"`
-	Degradation    string          `json:"degradation,omitempty"`
-	Sharing        string          `json:"sharing"`
-	AgentAuthority *AgentAuthority `json:"agent_authority,omitempty"`
-	Hook           *CommandHook    `json:"hook,omitempty"`
+	Surface        Surface             `json:"surface"`
+	Projection     string              `json:"projection"`
+	Name           string              `json:"name"`
+	Invocation     string              `json:"invocation"`
+	Mode           string              `json:"mode"`
+	Degradation    string              `json:"degradation,omitempty"`
+	Sharing        string              `json:"sharing"`
+	Capabilities   []SurfaceCapability `json:"capabilities"`
+	AgentAuthority *AgentAuthority     `json:"agent_authority,omitempty"`
+	Hook           *CommandHook        `json:"hook,omitempty"`
+}
+
+type SurfaceCapabilityType string
+
+const SurfaceCapabilityProjectInstruction SurfaceCapabilityType = "project-instruction"
+
+// SurfaceCapability is one reviewed host-native behavior requested by a
+// binding. Its closed wire shape deliberately cannot carry extension data.
+type SurfaceCapability struct {
+	Type               SurfaceCapabilityType         `json:"type"`
+	ProjectInstruction *ProjectInstructionCapability `json:"project_instruction,omitempty"`
+}
+
+type ProjectInstructionCapability struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
+}
+
+// RequestsSurfaceCapability reports whether the resource's binding for one
+// surface requests a reviewed host-native behavior.
+func (r Resource) RequestsSurfaceCapability(surface Surface, capability SurfaceCapabilityType) bool {
+	_, ok := r.SurfaceCapability(surface, capability)
+	return ok
+}
+
+// SurfaceCapability returns the reviewed capability data requested by the
+// resource's binding for one surface.
+func (r Resource) SurfaceCapability(surface Surface, capability SurfaceCapabilityType) (SurfaceCapability, bool) {
+	for _, binding := range r.Bindings {
+		if binding.Surface != surface {
+			continue
+		}
+		for _, requested := range binding.Capabilities {
+			if requested.Type == capability {
+				return requested, true
+			}
+		}
+	}
+	return SurfaceCapability{}, false
 }
 
 type AgentAuthority struct {
@@ -555,6 +595,13 @@ func clonePack(pack Pack) Pack {
 		pack.Resources[i].SurfaceExclusions = append([]SurfaceExclusion(nil), pack.Resources[i].SurfaceExclusions...)
 		for j := range pack.Resources[i].Bindings {
 			binding := &pack.Resources[i].Bindings[j]
+			binding.Capabilities = append([]SurfaceCapability(nil), binding.Capabilities...)
+			for k := range binding.Capabilities {
+				if binding.Capabilities[k].ProjectInstruction != nil {
+					copy := *binding.Capabilities[k].ProjectInstruction
+					binding.Capabilities[k].ProjectInstruction = &copy
+				}
+			}
 			if binding.AgentAuthority != nil {
 				copy := *binding.AgentAuthority
 				copy.Authorities = append([]AuthorityRecord(nil), copy.Authorities...)
@@ -809,6 +856,31 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 	}
 	if binding.Mode == "native" && binding.Degradation != "" {
 		return fmt.Errorf("degradation is forbidden when mode is native")
+	}
+	if binding.Capabilities == nil {
+		return fmt.Errorf("capabilities is a required non-null array")
+	}
+	for i, capability := range binding.Capabilities {
+		if i > 0 && binding.Capabilities[i-1].Type >= capability.Type {
+			return fmt.Errorf("capabilities must be sorted by type without duplicates")
+		}
+		switch capability.Type {
+		case SurfaceCapabilityProjectInstruction:
+			if binding.Surface != SurfaceCodex && binding.Surface != SurfaceOpenCode {
+				return fmt.Errorf("surface capability %q requires a codex or opencode binding", capability.Type)
+			}
+			if capability.ProjectInstruction == nil {
+				return fmt.Errorf("surface capability %q requires project_instruction data", capability.Type)
+			}
+			if !idPattern.MatchString(capability.ProjectInstruction.ID) {
+				return fmt.Errorf("surface capability %q project_instruction id must be lowercase kebab-case", capability.Type)
+			}
+			if err := validateSourcePath(capability.ProjectInstruction.Source); err != nil {
+				return fmt.Errorf("surface capability %q project_instruction source: %w", capability.Type, err)
+			}
+		default:
+			return fmt.Errorf("surface capability %q is unsupported", capability.Type)
+		}
 	}
 	if binding.Surface != SurfaceClaude {
 		if binding.AgentAuthority != nil || binding.Hook != nil {
@@ -1232,11 +1304,20 @@ func sortedByID[T any](values []T, id func(T) string) bool {
 
 func validatePackSources(pack Pack, bundleRoot string) error {
 	for _, resource := range pack.Resources {
-		if resource.Kind != "skill" && resource.Kind != "instruction" && resource.Kind != "agent" && resource.Kind != "command" && resource.Kind != "asset" && resource.Kind != "notice" {
-			continue
+		if resource.Kind == "skill" || resource.Kind == "instruction" || resource.Kind == "agent" || resource.Kind == "command" || resource.Kind == "asset" || resource.Kind == "notice" {
+			if err := validateSource(bundleRoot, resource); err != nil {
+				return fmt.Errorf("resource %q source: %w", resource.Kind+":"+resource.ID, err)
+			}
 		}
-		if err := validateSource(bundleRoot, resource); err != nil {
-			return fmt.Errorf("resource %q source: %w", resource.Kind+":"+resource.ID, err)
+		for _, binding := range resource.Bindings {
+			for _, capability := range binding.Capabilities {
+				if capability.Type != SurfaceCapabilityProjectInstruction || capability.ProjectInstruction == nil {
+					continue
+				}
+				if err := validateSource(bundleRoot, Resource{Kind: "instruction", Source: capability.ProjectInstruction.Source}); err != nil {
+					return fmt.Errorf("resource %q surface capability %q source: %w", resource.Kind+":"+resource.ID, capability.Type, err)
+				}
+			}
 		}
 	}
 	return nil

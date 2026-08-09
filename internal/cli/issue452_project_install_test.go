@@ -94,7 +94,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"foreign preamble", "<!-- packy:project:matty:codex:start -->", ".agents/skills", "<!-- packy:project:matty:codex:end -->", "foreign epilogue"} {
+	for _, want := range []string{"foreign preamble", "<!-- packy:project:instruction:matty-codex-project:start -->", ".agents/skills", "<!-- packy:project:instruction:matty-codex-project:end -->", "foreign epilogue"} {
 		if !strings.Contains(string(agents), want) {
 			t.Fatalf("AGENTS.md missing %q:\n%s", want, agents)
 		}
@@ -163,7 +163,7 @@ func TestIssue452ProjectInstallBlocksForeignTargetsAndAmbiguousMarkersBeforeMuta
 		}, want: "foreign_target"},
 		{name: "ambiguous Packy markers", setup: func(t *testing.T, project string) {
 			t.Helper()
-			block := "<!-- packy:project:matty:codex:start -->\nchanged\n<!-- packy:project:matty:codex:end -->\n"
+			block := "<!-- packy:project:instruction:matty-codex-project:start -->\nchanged\n<!-- packy:project:instruction:matty-codex-project:end -->\n"
 			if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte(block+block), 0o600); err != nil {
 				t.Fatal(err)
 			}

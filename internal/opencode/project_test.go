@@ -149,9 +149,11 @@ func TestProjectInspectionRepresentsEverySupportedOpenCodeResourceKind(t *testin
 	binding := func(projection, name string) []capabilitypack.Binding {
 		return []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: projection, Name: name, Mode: "native", Sharing: "exclusive"}}
 	}
+	instructionBinding := binding("instruction", "one")
+	instructionBinding[0].Capabilities = []capabilitypack.SurfaceCapability{{Type: capabilitypack.SurfaceCapabilityProjectInstruction, ProjectInstruction: &capabilitypack.ProjectInstructionCapability{ID: "one", Source: "instructions/one.md"}}}
 	pack := capabilitypack.Pack{ID: "complete", Version: "1.0.0", Resources: []capabilitypack.Resource{
 		{Kind: "skill", ID: "one", Source: "skills/one", Bindings: binding("skill", "one")},
-		{Kind: "instruction", ID: "one", Source: "instructions/one.md", Bindings: binding("instruction", "one")},
+		{Kind: "instruction", ID: "one", Source: "instructions/one.md", Bindings: instructionBinding},
 		{Kind: "agent", ID: "one", Source: "agents/one.md", Bindings: binding("agent", "one")},
 		{Kind: "command", ID: "one", Source: "commands/one.md", Bindings: binding("command", "one")},
 		{Kind: "mcp_server", ID: "one", Command: "server", Args: []string{"--stdio"}, Bindings: binding("mcp_server", "one")},
@@ -193,12 +195,15 @@ func TestOpenCodeProjectInstructionUsesSharedSurfaceNeutralContribution(t *testi
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	pack := capabilitypack.Pack{ID: "guide", Resources: []capabilitypack.Resource{{Kind: "instruction", ID: "guide", Source: "instructions/guide.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: "instruction", Name: "guide"}}}}}
+	pack := capabilitypack.Pack{ID: "guide", Resources: []capabilitypack.Resource{
+		{Kind: "instruction", ID: "guide", Source: "instructions/guide.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: "instruction", Name: "guide", Capabilities: []capabilitypack.SurfaceCapability{{Type: capabilitypack.SurfaceCapabilityProjectInstruction, ProjectInstruction: &capabilitypack.ProjectInstructionCapability{ID: "guide", Source: "instructions/guide.md"}}}}}},
+		{Kind: "instruction", ID: "plain", Source: "instructions/guide.md", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: "instruction", Name: "plain", Capabilities: []capabilitypack.SurfaceCapability{}}}},
+	}}
 	inspection, err := NewSurfaceAdapter(bundle, "", "", "").InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inspection.Projections) != 1 {
+	if len(inspection.Projections) != 1 || len(inspection.Unrepresentable) != 1 || inspection.Unrepresentable[0].Resource.String() != "instruction:plain" {
 		t.Fatalf("instruction projections = %#v", inspection.Projections)
 	}
 	projection := inspection.Projections[0]

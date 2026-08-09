@@ -55,6 +55,13 @@ A supported host Packy can configure. The supported surfaces are Codex,
 OpenCode, and Claude Code. Antigravity and GitHub Copilot CLI remain outside
 the current product.
 
+### Surface capability
+
+A closed, reviewed, typed Pack-binding request for reusable host-native
+behavior that is not implied by Pack, version, or resource identity. The first
+capability, `project-instruction`, projects reviewed source as an independently
+owned marked contribution in a project's native instruction document.
+
 ### Pack activation
 
 The user's explicit consent to a previewed global Pack operation on one CLI

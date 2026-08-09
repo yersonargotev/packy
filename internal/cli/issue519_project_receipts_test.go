@@ -202,7 +202,7 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	}
 }
 
-func TestIssue519CrossPackProjectionCollisionBlocksWithoutMutation(t *testing.T) {
+func TestIssue620CrossPackMarkedInstructionsComposeWithoutCollision(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)
 	project := t.TempDir()
@@ -212,13 +212,13 @@ func TestIssue519CrossPackProjectionCollisionBlocksWithoutMutation(t *testing.T)
 	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
 		t.Fatalf("install Matty: %v\n%s", err, out)
 	}
-	before := snapshotTree(t, project)
 	out, err := executeCommand(t, NewRootCommand(opts), "install", "argote", "--surface", "codex", "--resource", "instruction:guidance")
-	if err == nil || !strings.Contains(out, "projection_collision") {
-		t.Fatalf("cross-Pack collision was not blocked: %v\n%s", err, out)
+	if err != nil {
+		t.Fatalf("install shared Argote instruction: %v\n%s", err, out)
 	}
-	if after := snapshotTree(t, project); after != before {
-		t.Fatal("blocked cross-Pack collision mutated the project")
+	data, readErr := os.ReadFile(filepath.Join(project, "AGENTS.md"))
+	if readErr != nil || !strings.Contains(string(data), "packy:project:instruction:matty-codex-project:start") || !strings.Contains(string(data), "packy:project:instruction:guidance:start") {
+		t.Fatalf("shared marked contributions = %q, %v", data, readErr)
 	}
 }
 
@@ -297,7 +297,7 @@ func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncomp
 	if err != nil {
 		t.Fatal(err)
 	}
-	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.1"`, `"version": "1.0.2"`, 1)
+	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.2"`, `"version": "1.0.3"`, 1)
 	if updatedManifest == string(manifest) {
 		t.Fatal("Matty fixture version did not match the expected current version")
 	}
@@ -317,13 +317,13 @@ func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncomp
 			versions[receipt.Surface] = receipt.Pack.Version
 		}
 	}
-	if versions[capabilitypack.SurfaceCodex] != "1.0.2" || versions[capabilitypack.SurfaceOpenCode] != "1.0.1" {
+	if versions[capabilitypack.SurfaceCodex] != "1.0.3" || versions[capabilitypack.SurfaceOpenCode] != "1.0.2" {
 		t.Fatalf("compatible shared update did not retain per-surface versions: %#v", versions)
 	}
 	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "opencode", "--project"); err != nil {
 		t.Fatalf("compatible OpenCode shared update: %v\n%s", err, out)
 	}
-	updatedAgain := strings.Replace(updatedManifest, `"version": "1.0.2"`, `"version": "1.0.3"`, 1)
+	updatedAgain := strings.Replace(updatedManifest, `"version": "1.0.3"`, `"version": "1.0.4"`, 1)
 	if updatedAgain == updatedManifest {
 		t.Fatal("updated Matty fixture version did not match")
 	}
@@ -378,7 +378,7 @@ func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t
 		t.Fatalf("shared dependency was not installed: %v", err)
 	}
 	withoutDependency := strings.Replace(withDependency, `"requires": ["skill:code-review"],`, `"requires": [],`, 1)
-	withoutDependency = strings.Replace(withoutDependency, `"version": "1.0.1"`, `"version": "1.0.2"`, 1)
+	withoutDependency = strings.Replace(withoutDependency, `"version": "1.0.2"`, `"version": "1.0.3"`, 1)
 	if err := os.WriteFile(manifestPath, []byte(withoutDependency), 0o600); err != nil {
 		t.Fatal(err)
 	}

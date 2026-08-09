@@ -31,9 +31,10 @@ type installedPackIdentity struct {
 }
 
 type installedProjection struct {
-	ID     string `json:"id"`
-	Target string `json:"target"`
-	Digest string `json:"digest"`
+	ID      string `json:"id"`
+	Target  string `json:"target"`
+	Digest  string `json:"digest"`
+	Sharing string `json:"sharing"`
 }
 
 type installedPackReceipt struct {
@@ -272,7 +273,7 @@ func receiptDocumentFromActivation(document activationDocument) installedReceipt
 					continue
 				}
 				receipt.Projections = append(receipt.Projections, installedProjection{
-					ID: owner.ProjectionID, Target: owner.Target, Digest: owner.Fingerprint,
+					ID: owner.ProjectionID, Target: owner.Target, Digest: owner.Fingerprint, Sharing: "exclusive",
 				})
 			}
 			for _, effect := range document.External {

@@ -71,6 +71,7 @@ func TestSurfaceAdapterAppliesHostSpecificProjectionsAndPreservesJSONC(t *testin
 	}
 	config := filepath.Join(root, "xdg", "opencode", "opencode.json")
 	prompt := filepath.Join(root, "xdg", "opencode", "packy.md")
+	instructionTarget := filepath.Join(root, "xdg", "opencode", "matty-guidance.md")
 	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -117,12 +118,12 @@ func TestSurfaceAdapterAppliesHostSpecificProjectionsAndPreservesJSONC(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"// keep OpenCode syntax", `"model": "anthropic/test"`, `"CONTRIBUTING.md"`, prompt} {
+	for _, want := range []string{"// keep OpenCode syntax", `"model": "anthropic/test"`, `"CONTRIBUTING.md"`, instructionTarget} {
 		if !strings.Contains(string(updated), want) {
 			t.Fatalf("config lost %q:\n%s", want, updated)
 		}
 	}
-	promptData, err := os.ReadFile(prompt)
+	promptData, err := os.ReadFile(instructionTarget)
 	if err != nil || string(promptData) != "OpenCode Packy guidance\n" {
 		t.Fatalf("prompt=%q err=%v", promptData, err)
 	}
