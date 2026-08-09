@@ -1,6 +1,6 @@
 {
   "id": "addy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Addy agent skills",
   "selectable": true,
   "surfaces": [
@@ -127,7 +127,7 @@
           "surface": "opencode"
         }
       ],
-      "description": "Synthetic Addy code-reviewer persona",
+      "description": "Reviews code for correctness, readability, architecture, security, and performance",
       "id": "code-reviewer",
       "kind": "agent",
       "mode": "subagent",
@@ -271,7 +271,7 @@
           "surface": "opencode"
         }
       ],
-      "description": "Synthetic Addy security-auditor persona",
+      "description": "Audits code for vulnerabilities, threat exposure, and secure coding practices",
       "id": "security-auditor",
       "kind": "agent",
       "mode": "subagent",
@@ -414,7 +414,7 @@
           "surface": "opencode"
         }
       ],
-      "description": "Synthetic Addy test-engineer persona",
+      "description": "Designs test strategies, writes tests, and evaluates coverage and test quality",
       "id": "test-engineer",
       "kind": "agent",
       "mode": "subagent",
@@ -558,7 +558,7 @@
           "surface": "opencode"
         }
       ],
-      "description": "Synthetic Addy web-performance-auditor persona",
+      "description": "Audits web performance, Core Web Vitals, loading, rendering, and network behavior",
       "id": "web-performance-auditor",
       "kind": "agent",
       "mode": "subagent",
@@ -584,6 +584,7 @@
     },
     {
       "bindings": [],
+      "description": "Provides a quick-reference checklist for WCAG 2.1 AA accessibility compliance",
       "id": "accessibility-checklist",
       "kind": "asset",
       "requires": [],
@@ -593,6 +594,7 @@
     },
     {
       "bindings": [],
+      "description": "Defines the project-wide quality bar that every completed change must satisfy",
       "id": "definition-of-done",
       "kind": "asset",
       "requires": [],
@@ -602,6 +604,7 @@
     },
     {
       "bindings": [],
+      "description": "Provides a quick-reference checklist for instrumenting observable production systems",
       "id": "observability-checklist",
       "kind": "asset",
       "requires": [],
@@ -611,6 +614,7 @@
     },
     {
       "bindings": [],
+      "description": "Catalogs endorsed agent orchestration patterns and anti-patterns",
       "id": "orchestration-patterns",
       "kind": "asset",
       "requires": [],
@@ -620,6 +624,7 @@
     },
     {
       "bindings": [],
+      "description": "Provides a quick-reference checklist for web application performance",
       "id": "performance-checklist",
       "kind": "asset",
       "requires": [],
@@ -629,6 +634,7 @@
     },
     {
       "bindings": [],
+      "description": "Provides a quick-reference checklist for web application security",
       "id": "security-checklist",
       "kind": "asset",
       "requires": [],
@@ -638,6 +644,7 @@
     },
     {
       "bindings": [],
+      "description": "Provides common testing patterns for unit, integration, component, API, and end-to-end tests",
       "id": "testing-patterns",
       "kind": "asset",
       "requires": [],
@@ -677,6 +684,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Implements planned tasks incrementally with testing, verification, and commits",
       "id": "build",
       "kind": "command",
       "requires": [
@@ -719,6 +727,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Simplifies code for clarity and maintainability without changing behavior",
       "id": "code-simplify",
       "kind": "command",
       "requires": [
@@ -761,6 +770,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Breaks work into small, verifiable tasks with acceptance criteria and dependency ordering",
       "id": "plan",
       "kind": "command",
       "requires": [
@@ -803,6 +813,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Reviews code for correctness, readability, architecture, security, and performance",
       "id": "review",
       "kind": "command",
       "requires": [
@@ -846,6 +857,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Runs specialist pre-launch checks and synthesizes a go or no-go decision",
       "id": "ship",
       "kind": "command",
       "requires": [
@@ -891,6 +903,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Creates a structured specification before implementation begins",
       "id": "spec",
       "kind": "command",
       "requires": [
@@ -933,6 +946,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Runs a test-driven workflow from failing tests through implementation and verification",
       "id": "test",
       "kind": "command",
       "requires": [
@@ -976,6 +990,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Runs a web performance audit through the web-performance-auditor persona",
       "id": "webperf",
       "kind": "command",
       "requires": [
@@ -990,6 +1005,7 @@
     {
       "attribution": "Copyright 2025 Addy Osmani; synthetic Packy acceptance fixture derived from addyosmani/agent-skills",
       "bindings": [],
+      "description": "Preserves Addy Osmani's MIT license and attribution for the reviewed resources",
       "id": "mit",
       "kind": "notice",
       "license": "MIT",
@@ -1025,6 +1041,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides stable API, module boundary, and public interface design",
       "id": "api-and-interface-design",
       "kind": "skill",
       "requires": [],
@@ -1059,6 +1076,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Tests and diagnoses browser behavior through Chrome DevTools MCP",
       "id": "browser-testing-with-devtools",
       "kind": "skill",
       "requires": [],
@@ -1093,6 +1111,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Automates CI/CD pipelines, quality gates, test runners, and deployment strategies",
       "id": "ci-cd-and-automation",
       "kind": "skill",
       "requires": [],
@@ -1127,6 +1146,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides multi-axis code review across correctness, readability, architecture, security, and performance",
       "id": "code-review-and-quality",
       "kind": "skill",
       "requires": [],
@@ -1161,6 +1181,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Simplifies code for clarity and maintainability while preserving behavior",
       "id": "code-simplification",
       "kind": "skill",
       "requires": [],
@@ -1195,6 +1216,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Optimizes agent context, rules, and task-relevant information",
       "id": "context-engineering",
       "kind": "skill",
       "requires": [],
@@ -1229,6 +1251,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides systematic root-cause debugging and recovery from failures",
       "id": "debugging-and-error-recovery",
       "kind": "skill",
       "requires": [],
@@ -1263,6 +1286,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides safe deprecation, system replacement, and user migration",
       "id": "deprecation-and-migration",
       "kind": "skill",
       "requires": [],
@@ -1297,6 +1321,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Records architectural decisions and durable engineering context",
       "id": "documentation-and-adrs",
       "kind": "skill",
       "requires": [],
@@ -1331,6 +1356,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Subjects non-trivial decisions to fresh-context adversarial review",
       "id": "doubt-driven-development",
       "kind": "skill",
       "requires": [],
@@ -1365,6 +1391,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Builds accessible, responsive, production-quality user interfaces",
       "id": "frontend-ui-engineering",
       "kind": "skill",
       "requires": [],
@@ -1399,6 +1426,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides Git workflows, commits, branches, releases, and semantic versioning",
       "id": "git-workflow-and-versioning",
       "kind": "skill",
       "requires": [],
@@ -1433,6 +1461,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Refines raw ideas into actionable concepts through divergent and convergent thinking",
       "id": "idea-refine",
       "kind": "skill",
       "requires": [],
@@ -1467,6 +1496,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Delivers changes as small, working, independently verifiable increments",
       "id": "incremental-implementation",
       "kind": "skill",
       "requires": [],
@@ -1501,6 +1531,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Clarifies underlying user intent through a focused one-question-at-a-time interview",
       "id": "interview-me",
       "kind": "skill",
       "requires": [],
@@ -1535,6 +1566,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Instruments production code with logging, metrics, tracing, and alerting",
       "id": "observability-and-instrumentation",
       "kind": "skill",
       "requires": [],
@@ -1569,6 +1601,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Optimizes frontend, backend, query, and database performance",
       "id": "performance-optimization",
       "kind": "skill",
       "requires": [],
@@ -1603,6 +1636,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Breaks requirements into ordered, implementable, and verifiable tasks",
       "id": "planning-and-task-breakdown",
       "kind": "skill",
       "requires": [],
@@ -1637,6 +1671,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Hardens code against vulnerabilities in input, identity, storage, and integrations",
       "id": "security-and-hardening",
       "kind": "skill",
       "requires": [],
@@ -1671,6 +1706,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Prepares production launches with readiness, rollout, monitoring, and rollback checks",
       "id": "shipping-and-launch",
       "kind": "skill",
       "requires": [],
@@ -1705,6 +1741,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Grounds implementation decisions in authoritative documentation",
       "id": "source-driven-development",
       "kind": "skill",
       "requires": [],
@@ -1739,6 +1776,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Creates structured specifications before significant implementation work",
       "id": "spec-driven-development",
       "kind": "skill",
       "requires": [],
@@ -1773,6 +1811,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides implementation through failing tests, minimal code, and verification",
       "id": "test-driven-development",
       "kind": "skill",
       "requires": [],
@@ -1807,6 +1846,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Discovers and invokes the agent skill appropriate to a task",
       "id": "using-agent-skills",
       "kind": "skill",
       "requires": [
