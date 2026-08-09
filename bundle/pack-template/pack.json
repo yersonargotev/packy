@@ -6,6 +6,10 @@
   "surfaces": [
     "codex"
   ],
+  "readiness_obligations": [
+    "runtime-usability",
+    "surface-authorization"
+  ],
   "external_requirements": [],
   "resources": [
     {

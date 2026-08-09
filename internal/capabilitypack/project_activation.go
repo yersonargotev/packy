@@ -13,7 +13,7 @@ import (
 	"sort"
 )
 
-const ProjectActivationPreviewSchemaVersion = 2
+const ProjectActivationPreviewSchemaVersion = 3
 
 // ProjectActivationCategory separates consent for each class of sensitive
 // project runtime behavior. Its values are portable lock identities.
@@ -86,6 +86,8 @@ type JSONProjectActivationPreview struct {
 	SensitiveLockIdentity string                             `json:"sensitive_lock_identity"`
 	RuntimeEffects        []ProjectRuntimeEffectStatus       `json:"runtime_effects"`
 	Digest                string                             `json:"digest"`
+	ExpectedReadiness     ReadinessStatus                    `json:"expected_readiness"`
+	Conditions            []ReadinessCondition               `json:"conditions"`
 	projectRoot           string
 	packyHome             string
 	request               ProjectActivationRequest
@@ -105,10 +107,12 @@ type ProjectActivationApplyRequest struct {
 }
 
 type ProjectActivationApplyResult struct {
-	SchemaVersion int    `json:"schema_version"`
-	Report        string `json:"report"`
-	Status        string `json:"status"`
-	Digest        string `json:"digest"`
+	SchemaVersion int                  `json:"schema_version"`
+	Report        string               `json:"report"`
+	Status        string               `json:"status"`
+	Digest        string               `json:"digest"`
+	Readiness     ReadinessStatus      `json:"readiness"`
+	Conditions    []ReadinessCondition `json:"conditions"`
 }
 
 const projectActivationDocumentSchemaVersion = 1
@@ -200,6 +204,7 @@ func (f Facade) PreviewProjectActivation(ctx context.Context, request ProjectAct
 	}
 	categories := projectActivationCategories(scopedInstallation.Lock, request.Surface)
 	report.Pack, report.Surface, report.RuntimeEffects = pack, request.Surface, status.Packs[0].RuntimeEffects
+	report.ExpectedReadiness, report.Conditions = status.Packs[0].Readiness, cloneReadinessConditions(status.Packs[0].Conditions)
 	if status.Packs[0].Runtime == ProjectRuntimeBlocked {
 		report.Categories, report.RuntimeRequired, report.Disposition = categories, len(categories) != 0, ProjectActivationBlocked
 		report.SensitiveLockIdentity = projectSensitiveLockIdentity(scopedInstallation.Lock, categories)
@@ -326,7 +331,18 @@ func (f Facade) ApplyProjectActivation(ctx context.Context, request ProjectActiv
 	if err := saveProjectActivationRecords(preview.packyHome, preview.projectRoot, state, request.Approvals, receipts, effectReceipts); err != nil {
 		return ProjectActivationApplyResult{}, err
 	}
-	return ProjectActivationApplyResult{SchemaVersion: 1, Report: "project-activation-apply", Status: "active", Digest: preview.Digest}, nil
+	readinessPack := projectReadinessPack(scopedInstallation.Lock, preview.Surface, preview.Pack)
+	var resolver ExecutableResolver
+	if f.activation != nil {
+		resolver = f.activation.resolver
+	}
+	resolutions, unobservedRequirements := observeProjectRequirements(ctx, readinessPack.Requires.Tools, resolver)
+	readiness, conditions := evaluateReadiness(readinessEvaluation{
+		Pack: readinessPack, Surface: preview.Surface, Scope: ReadinessScopeProject,
+		Projections: expectedProjectReadinessProjections(scopedInstallation.Lock.Projections), Resolutions: resolutions, UnobservedRequirements: unobservedRequirements,
+		Observation: verified.Readiness, Revision: verified.Revision,
+	})
+	return ProjectActivationApplyResult{SchemaVersion: 2, Report: "project-activation-apply", Status: "active", Digest: preview.Digest, Readiness: readiness, Conditions: conditions}, nil
 }
 
 func projectActivationCategories(lock ProjectLockProposal, surface Surface) []ProjectActivationCategoryPreview {
@@ -501,6 +517,7 @@ func projectProjectionOwnedBySurface(projection ProjectProjectionPlan, surface S
 
 func sealProjectActivationPreview(preview JSONProjectActivationPreview) string {
 	preview.ProjectRoot, preview.Digest, preview.projectRoot, preview.packyHome, preview.request, preview.actions = "", "", "", "", ProjectActivationRequest{}, nil
+	preview.ExpectedReadiness, preview.Conditions = ReadinessStatus{}, nil
 	data, _ := json.Marshal(preview)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

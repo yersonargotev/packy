@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v8/pack-status.schema.json",
-  "title": "Packy capability-pack status reports v8",
+  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v9/pack-status.schema.json",
+  "title": "Packy capability-pack status reports v9",
   "$defs": {
     "optional_bool": {
       "type": "object",
@@ -55,15 +55,24 @@
         "usable"
       ],
       "properties": {
-        "configured": {
-          "$ref": "#/$defs/optional_bool"
-        },
-        "authorized": {
-          "$ref": "#/$defs/optional_bool"
-        },
-        "usable": {
-          "$ref": "#/$defs/optional_bool"
-        }
+        "configured": { "enum": ["true", "false", "unknown"] },
+        "authorized": { "enum": ["true", "false", "unknown"] },
+        "usable": { "enum": ["true", "false", "unknown"] }
+      },
+      "additionalProperties": false
+    },
+    "readiness_condition": {
+      "type": "object",
+      "required": ["type", "scope", "dimension", "value", "reason", "message", "evidence", "freshness"],
+      "properties": {
+        "type": { "enum": ["projection-integrity", "external-requirement", "surface-authorization", "runtime-usability"] },
+        "scope": { "type": "object", "required": ["kind", "pack", "surface"], "properties": { "kind": { "enum": ["global", "project"] }, "pack": { "type": "string" }, "surface": { "enum": ["claude", "codex", "opencode"] }, "resource": { "$ref": "#/$defs/resource_identity" } }, "additionalProperties": false },
+        "dimension": { "enum": ["configured", "authorized", "usable"] },
+        "value": { "enum": ["true", "false", "unknown"] },
+        "reason": { "enum": ["projection-verified", "projection-missing", "projection-drifted", "projection-ambiguous", "projection-unmanaged", "requirement-available", "requirement-missing", "requirement-unobservable", "authorization-confirmed", "authorization-denied", "authorization-unobservable", "runtime-confirmed", "runtime-rejected", "runtime-unobservable"] },
+        "message": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "freshness": { "type": "object", "required": ["observed_at", "validity_identity"], "properties": { "observed_at": { "type": "string", "format": "date-time" }, "validity_identity": { "type": "string" } }, "additionalProperties": false }
       },
       "additionalProperties": false
     },
@@ -110,6 +119,7 @@
         "resource_selections",
         "contract",
         "readiness",
+        "conditions",
         "optional_authorities",
         "blockers",
         "evidence",
@@ -262,6 +272,7 @@
         "readiness": {
           "$ref": "#/$defs/readiness"
         },
+        "conditions": { "type": "array", "items": { "$ref": "#/$defs/readiness_condition" } },
         "optional_authorities": {
           "type": "array",
           "items": {
@@ -437,6 +448,7 @@
         "role",
         "dependency_chain",
         "readiness",
+        "conditions",
         "projection_summary",
         "blockers"
       ],
@@ -461,6 +473,7 @@
         "readiness": {
           "$ref": "#/$defs/readiness"
         },
+        "conditions": { "type": "array", "items": { "$ref": "#/$defs/readiness_condition" } },
         "projection_summary": {
           "type": "object",
           "required": [
@@ -507,7 +520,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 8
+      "const": 9
     },
     "report": {
       "enum": [

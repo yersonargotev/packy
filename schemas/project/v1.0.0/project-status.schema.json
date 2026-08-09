@@ -1,18 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-status.schema.json",
-  "title": "Packy project status report v3",
+  "title": "Packy project status report v4",
   "type": "object",
   "required": ["schema_version", "report", "project_root", "packs"],
   "properties": {
-    "schema_version": { "const": 3 },
+    "schema_version": { "const": 4 },
     "report": { "const": "project-status" },
     "project_root": { "const": "<project-root>" },
     "packs": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["pack", "surface", "installation", "runtime", "runtime_required", "runtime_effects", "readiness", "projections", "blockers", "pending_human_actions", "evidence", "requirement_satisfied"],
+        "required": ["pack", "surface", "installation", "runtime", "runtime_required", "runtime_effects", "readiness", "conditions", "projections", "blockers", "pending_human_actions", "evidence", "requirement_satisfied"],
         "properties": {
           "pack": { "$ref": "project-contract-defs.schema.json#/$defs/pack" },
           "surface": { "$ref": "project-contract-defs.schema.json#/$defs/surface" },
@@ -21,6 +21,7 @@
           "runtime_required": { "type": "boolean" },
           "runtime_effects": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/runtime_effect" } },
           "readiness": { "$ref": "project-contract-defs.schema.json#/$defs/readiness" },
+          "conditions": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/readiness_condition" } },
           "projections": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/projection_status" } },
           "blockers": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/blocker" } },
           "pending_human_actions": { "type": "array", "items": { "type": "string" } },

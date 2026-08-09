@@ -44,6 +44,15 @@ type Requirements struct {
 	Tools []string `json:"tools"`
 }
 
+// ReadinessObligation identifies a Pack-level condition whose satisfaction is
+// required for the Pack to be ready on a selected surface.
+type ReadinessObligation string
+
+const (
+	ReadinessRuntimeUsability     ReadinessObligation = "runtime-usability"
+	ReadinessSurfaceAuthorization ReadinessObligation = "surface-authorization"
+)
+
 type Resource struct {
 	Kind              string
 	ID                string
@@ -276,16 +285,17 @@ type OptionalMode struct {
 }
 
 type Pack struct {
-	manifestVersion int
-	ID              string
-	Version         string
-	Description     string
-	Selectable      bool
-	Surfaces        []Surface
-	Requires        Requirements
-	Resources       []Resource
-	Contract        Contract
-	SourceReference *SourceReference
+	manifestVersion      int
+	ID                   string
+	Version              string
+	Description          string
+	Selectable           bool
+	Surfaces             []Surface
+	ReadinessObligations []ReadinessObligation
+	Requires             Requirements
+	Resources            []Resource
+	Contract             Contract
+	SourceReference      *SourceReference
 }
 
 // SourceReference is optional informational metadata. Reviewed Pack content is
@@ -530,6 +540,7 @@ func clonePack(pack Pack) Pack {
 		pack.SourceReference = &copy
 	}
 	pack.Surfaces = append([]Surface(nil), pack.Surfaces...)
+	pack.ReadinessObligations = append([]ReadinessObligation(nil), pack.ReadinessObligations...)
 	pack.Requires.Tools = append([]string(nil), pack.Requires.Tools...)
 	pack.Resources = append([]Resource(nil), pack.Resources...)
 	for i := range pack.Resources {

@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 9
+const LifecycleJSONSchemaVersion = 10
 
 type ResourceRole string
 
@@ -575,33 +575,33 @@ type JSONLifecyclePhase struct {
 }
 
 type JSONLifecyclePlan struct {
-	SchemaVersion       int                        `json:"schema_version"`
-	Report              string                     `json:"report"`
-	PlanID              string                     `json:"plan_id"`
-	Operation           Operation                  `json:"operation"`
-	Disposition         PlanDisposition            `json:"disposition"`
-	Digest              string                     `json:"digest"`
-	Pack                string                     `json:"pack"`
-	PackVersion         string                     `json:"pack_version"`
-	Surface             Surface                    `json:"surface"`
-	IntentRevision      int                        `json:"intent_revision"`
-	DocumentRevision    int                        `json:"document_revision"`
-	Selection           ResourceSelection          `json:"selection"`
-	ResourceGraph       ResourceGraph              `json:"resource_graph"`
-	SensitiveEffects    []SensitiveEffectOrigin    `json:"sensitive_effects"`
-	Contract            LifecycleContract          `json:"contract"`
-	Aliases             []SurfaceAlias             `json:"aliases"`
-	Blockers            []PlanBlocker              `json:"blockers"`
-	Phases              []JSONLifecyclePhase       `json:"phases"`
-	PendingHumanActions []string                   `json:"pending_human_actions"`
-	ExpectedReadiness   ReadinessStatus            `json:"expected_readiness"`
-	ReadinessObserved   ReadinessObservationStatus `json:"readiness_observed"`
-	Evidence            []string                   `json:"evidence"`
-	PendingEvidence     []string                   `json:"pending_evidence"`
-	RuntimeModes        []RuntimeModeResult        `json:"runtime_modes,omitempty"`
-	MandatoryActions    []ProjectionAction         `json:"mandatory_actions"`
-	ContractDiff        JSONContractDiff           `json:"contract_diff"`
-	DryRun              bool                       `json:"dry_run"`
+	SchemaVersion       int                     `json:"schema_version"`
+	Report              string                  `json:"report"`
+	PlanID              string                  `json:"plan_id"`
+	Operation           Operation               `json:"operation"`
+	Disposition         PlanDisposition         `json:"disposition"`
+	Digest              string                  `json:"digest"`
+	Pack                string                  `json:"pack"`
+	PackVersion         string                  `json:"pack_version"`
+	Surface             Surface                 `json:"surface"`
+	IntentRevision      int                     `json:"intent_revision"`
+	DocumentRevision    int                     `json:"document_revision"`
+	Selection           ResourceSelection       `json:"selection"`
+	ResourceGraph       ResourceGraph           `json:"resource_graph"`
+	SensitiveEffects    []SensitiveEffectOrigin `json:"sensitive_effects"`
+	Contract            LifecycleContract       `json:"contract"`
+	Aliases             []SurfaceAlias          `json:"aliases"`
+	Blockers            []PlanBlocker           `json:"blockers"`
+	Phases              []JSONLifecyclePhase    `json:"phases"`
+	PendingHumanActions []string                `json:"pending_human_actions"`
+	ExpectedReadiness   ReadinessStatus         `json:"expected_readiness"`
+	Conditions          []ReadinessCondition    `json:"conditions"`
+	Evidence            []string                `json:"evidence"`
+	PendingEvidence     []string                `json:"pending_evidence"`
+	RuntimeModes        []RuntimeModeResult     `json:"runtime_modes,omitempty"`
+	MandatoryActions    []ProjectionAction      `json:"mandatory_actions"`
+	ContractDiff        JSONContractDiff        `json:"contract_diff"`
+	DryRun              bool                    `json:"dry_run"`
 }
 
 type JSONContractDiff struct {
@@ -640,7 +640,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		Surface: p.surface, IntentRevision: p.intentRevision, DocumentRevision: p.documentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false),
 		SensitiveEffects: p.SensitiveEffects(), Contract: contract, Aliases: contract.Aliases,
 		Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
-		ExpectedReadiness: p.readiness, ReadinessObserved: p.readinessObserved, Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
+		ExpectedReadiness: p.readiness, Conditions: append([]ReadinessCondition{}, p.Conditions()...), Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
 		RuntimeModes:     sortedRuntimeModeResults(p.runtimeModeResults),
 		MandatoryActions: mandatory, ContractDiff: diff, DryRun: dryRun}
 }
@@ -759,21 +759,18 @@ func reportSafeObservationText(value string, projections []ObservedProjection) s
 }
 
 type JSONApplyResult struct {
-	SchemaVersion       int               `json:"schema_version"`
-	Report              string            `json:"report"`
-	Plan                JSONLifecyclePlan `json:"plan"`
-	Verified            bool              `json:"verified"`
-	Projections         int               `json:"projections"`
-	Readiness           JSONReadiness     `json:"readiness"`
-	PendingHumanActions []string          `json:"pending_human_actions"`
+	SchemaVersion       int                  `json:"schema_version"`
+	Report              string               `json:"report"`
+	Plan                JSONLifecyclePlan    `json:"plan"`
+	Verified            bool                 `json:"verified"`
+	Projections         int                  `json:"projections"`
+	Readiness           JSONReadiness        `json:"readiness"`
+	Conditions          []ReadinessCondition `json:"conditions"`
+	PendingHumanActions []string             `json:"pending_human_actions"`
 }
 
 func JSONApplyResultFor(plan ReconciliationPlan, applied ApplyResult) JSONApplyResult {
 	return JSONApplyResult{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-apply", Plan: plan.JSONReport(false),
 		Verified: applied.Verified, Projections: applied.Projections,
-		Readiness: JSONReadiness{
-			Configured: optionalBool(applied.ReadinessObserved.Configured, applied.Readiness.Configured),
-			Authorized: optionalBool(applied.ReadinessObserved.Authorization, applied.Readiness.Authorized),
-			Usable:     optionalBool(applied.ReadinessObserved.Usability, applied.Readiness.Usable),
-		}, PendingHumanActions: sortedCopy(applied.PendingHumanActions)}
+		Readiness: applied.Readiness, Conditions: append([]ReadinessCondition{}, applied.Conditions...), PendingHumanActions: sortedCopy(applied.PendingHumanActions)}
 }

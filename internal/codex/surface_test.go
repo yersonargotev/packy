@@ -21,6 +21,24 @@ func TestBindAdapterProvenancePublishesCanonicalObservationWithoutChangingAction
 	}
 }
 
+func TestUnobservablePackReadinessIsUnknownRatherThanDenied(t *testing.T) {
+	adapter := &SurfaceAdapter{}
+	observed, err := adapter.inspectReadiness(context.Background(), capabilitypack.Pack{ID: "argote"}, capabilitypack.SurfaceInspection{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.AuthorizationObserved || observed.Authorized || observed.UsabilityObserved || observed.Usable {
+		t.Fatalf("unobservable readiness = %#v", observed)
+	}
+	matty, err := adapter.inspectReadiness(context.Background(), capabilitypack.Pack{ID: "synthetic", Resources: []capabilitypack.Resource{{Kind: "skill", ID: "guide"}}}, capabilitypack.SurfaceInspection{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matty.AuthorizationObserved || !matty.Authorized || matty.UsabilityObserved || matty.Usable || len(matty.PendingHumanActions) != 0 {
+		t.Fatalf("Matty runtime-unobservable readiness = %#v", matty)
+	}
+}
+
 func TestBindAdapterProvenancePublishesSharedSkillTopologyWithoutCreatingOpenCodeIntent(t *testing.T) {
 	target := filepath.Join(t.TempDir(), ".agents", "skills", "ask-matt")
 	inspection := capabilitypack.SurfaceInspection{Projections: []capabilitypack.ObservedProjection{{

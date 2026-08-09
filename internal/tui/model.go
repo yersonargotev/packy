@@ -143,6 +143,24 @@ type SurfaceStatus struct {
 	Blockers         []string
 	PendingActions   []string
 	Evidence         []string
+	Conditions       []ReadinessCondition
+}
+
+// ReadinessCondition is the presentation DTO for a domain readiness fact.
+// The CLI adapter copies each field without assigning policy to the TUI.
+type ReadinessCondition struct {
+	Type             string
+	Scope            string
+	Pack             string
+	Surface          string
+	Resource         string
+	Dimension        string
+	Value            string
+	Reason           string
+	Message          string
+	Evidence         []string
+	ObservedAt       string
+	ValidityIdentity string
 }
 
 type Scope struct {
@@ -1168,6 +1186,9 @@ func (m Model) renderDetail() string {
 			"    Pending actions: "+joinOrNone(status.PendingActions),
 			"    Evidence: "+joinOrNone(status.Evidence),
 		)
+		for _, condition := range status.Conditions {
+			lines = append(lines, fmt.Sprintf("    Readiness condition: dimension=%s value=%s reason=%s message=%s", condition.Dimension, condition.Value, condition.Reason, condition.Message))
+		}
 	}
 	action := "Enter select resources"
 	if m.project {

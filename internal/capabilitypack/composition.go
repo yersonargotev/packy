@@ -46,7 +46,7 @@ type composition struct {
 
 func (c composition) combinedPack() Pack {
 	if len(c.packs) == 0 {
-		return Pack{ID: c.requested.ID, Version: c.requested.Version, Surfaces: []Surface{c.surface}, Resources: []Resource{}, Requires: Requirements{Tools: []string{}}}
+		return Pack{ID: c.requested.ID, Version: c.requested.Version, Surfaces: []Surface{c.surface}, ReadinessObligations: append([]ReadinessObligation(nil), c.requested.ReadinessObligations...), Resources: []Resource{}, Requires: Requirements{Tools: []string{}}}
 	}
 	return clonePack(c.packs[0])
 }

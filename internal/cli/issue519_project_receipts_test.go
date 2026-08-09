@@ -162,6 +162,26 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	if states, _ := filepath.Glob(statePattern); len(states) != 0 {
 		t.Fatalf("project installation persisted personal activation: %v", states)
 	}
+	statusJSON, err := executeCommand(t, NewRootCommand(opts), "status", "engram", "--surface", "codex", "--project", "--json")
+	if err != nil {
+		t.Fatalf("inspect installed Engram requirements: %v\n%s", err, statusJSON)
+	}
+	var status capabilitypack.JSONProjectStatusReport
+	if err := json.Unmarshal([]byte(statusJSON), &status); err != nil || len(status.Packs) != 1 || status.Packs[0].Readiness.Usable != capabilitypack.ReadinessFalse {
+		t.Fatalf("project external requirement readiness = %#v, %v", status, err)
+	}
+	externalConditions := 0
+	for _, condition := range status.Packs[0].Conditions {
+		if condition.Type == capabilitypack.ConditionExternalRequirement {
+			externalConditions++
+			if condition.Value != capabilitypack.ReadinessFalse || condition.Reason != capabilitypack.ReasonRequirementMissing {
+				t.Fatalf("project external requirement condition = %#v", condition)
+			}
+		}
+	}
+	if externalConditions != 1 {
+		t.Fatalf("project external requirement conditions = %d", externalConditions)
+	}
 
 	terminal.answers = nil
 	terminal.calls = 0

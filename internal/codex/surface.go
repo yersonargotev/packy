@@ -94,14 +94,25 @@ func bindAdapterProvenance(observation *capabilitypack.SurfaceInspection) {
 	}
 }
 
-// InspectReadiness is filesystem-only and side-effect-free. The initial matty
-// pack has no authentication boundary and its file-discovered resources are
-// usable as soon as every required projection is loadable at its host path.
+// InspectReadiness is filesystem-only and side-effect-free. A Pack made only
+// of filesystem-discovered skills has no separate Codex authorization boundary.
 func (a *SurfaceAdapter) inspectReadiness(_ context.Context, pack capabilitypack.Pack, observation capabilitypack.SurfaceInspection, _ []capabilitypack.ExecutableResolution) (capabilitypack.ReadinessObservation, error) {
-	if pack.ID != "matty" {
-		return capabilitypack.ReadinessObservation{AuthorizationObserved: true, OptionalAuthorities: capabilitypack.UnknownOptionalAuthorities(pack), PendingHumanActions: observation.PendingHumanActions, Evidence: []string{"Codex trust and runtime loading are not yet observed"}}, nil
+	if !skillOnlyReadiness(pack) {
+		return capabilitypack.ReadinessObservation{OptionalAuthorities: capabilitypack.UnknownOptionalAuthorities(pack), PendingHumanActions: observation.PendingHumanActions, Evidence: []string{"Codex trust and runtime loading are not yet observed"}}, nil
 	}
-	return capabilitypack.ReadinessObservation{AuthorizationObserved: true, Authorized: true, OptionalAuthorities: capabilitypack.UnknownOptionalAuthorities(pack), PendingHumanActions: []string{"reload Codex and verify the capability in a new runtime session"}, Evidence: []string{"Codex filesystem discovery paths inspected; runtime loading is not observable without a host signal"}}, nil
+	return capabilitypack.ReadinessObservation{AuthorizationObserved: true, Authorized: true, OptionalAuthorities: capabilitypack.UnknownOptionalAuthorities(pack), Evidence: []string{"Codex filesystem discovery paths inspected; runtime loading is not observable without a host signal"}}, nil
+}
+
+func skillOnlyReadiness(pack capabilitypack.Pack) bool {
+	if len(pack.Resources) == 0 {
+		return false
+	}
+	for _, resource := range pack.Resources {
+		if resource.Kind != "skill" {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {

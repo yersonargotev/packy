@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const ProjectUninstallPreviewSchemaVersion = 1
+const ProjectUninstallPreviewSchemaVersion = 3
 
 type ProjectUninstallRequest struct {
 	PackID      string
@@ -478,7 +478,7 @@ func ApplyProjectUninstall(ctx context.Context, request ProjectUninstallApplyReq
 	} else if err := verifyProjectRegularFile(lockAction.Target, []byte(lockAction.Content), fs.FileMode(lockAction.FileMode)); err != nil {
 		return fail(err)
 	}
-	return ProjectUninstallApplyResult{SchemaVersion: 1, Report: "project-uninstall-apply", Status: "verified", Observation: fresh.Observation}, nil
+	return ProjectUninstallApplyResult{SchemaVersion: 2, Report: "project-uninstall-apply", Status: "verified", Observation: fresh.Observation}, nil
 }
 
 func planProjectNoticeRemoval(projectRoot string, pack ProjectManifestPack, surface Surface, lock ProjectLockProposal) (ProjectionAction, []ProjectInstallBlocker, error) {

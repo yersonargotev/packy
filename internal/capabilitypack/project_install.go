@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	ProjectInstallPreviewSchemaVersion = 1
+	ProjectInstallPreviewSchemaVersion = 3
 	projectContractSchemaV1            = 1
 )
 
@@ -130,32 +130,34 @@ type ProjectProjectionPlan struct {
 }
 
 type JSONProjectInstallPreview struct {
-	SchemaVersion    int                       `json:"schema_version"`
-	Report           string                    `json:"report"`
-	DryRun           bool                      `json:"dry_run"`
-	ProjectRoot      string                    `json:"project_root"`
-	Pack             ProjectManifestPack       `json:"pack"`
-	Surface          Surface                   `json:"surface"`
-	Selection        ProjectSelectionPreview   `json:"selection"`
-	Manifest         ProjectContractProposal   `json:"manifest"`
-	Lock             ProjectLockProposal       `json:"lock"`
-	Notices          ProjectNoticesProposal    `json:"notices"`
-	Projections      []ProjectProjectionPlan   `json:"projections"`
-	Retirements      []ProjectProjectionPlan   `json:"retirements,omitempty"`
-	SensitiveChanges []ProjectSensitiveChange  `json:"sensitive_changes,omitempty"`
-	Requirements     []string                  `json:"requirements"`
-	Blockers         []ProjectInstallBlocker   `json:"blockers"`
-	Disposition      ProjectInstallDisposition `json:"disposition"`
-	Observation      string                    `json:"observation"`
-	projectRoot      string
-	pack             Pack
-	actions          []ProjectionAction
-	noticeContent    string
-	noticeMode       uint32
-	noticeBefore     string
-	noticeIntact     bool
-	request          ProjectInstallRequest
-	updateRequest    ProjectUpdateRequest
+	SchemaVersion     int                       `json:"schema_version"`
+	Report            string                    `json:"report"`
+	DryRun            bool                      `json:"dry_run"`
+	ProjectRoot       string                    `json:"project_root"`
+	Pack              ProjectManifestPack       `json:"pack"`
+	Surface           Surface                   `json:"surface"`
+	Selection         ProjectSelectionPreview   `json:"selection"`
+	Manifest          ProjectContractProposal   `json:"manifest"`
+	Lock              ProjectLockProposal       `json:"lock"`
+	Notices           ProjectNoticesProposal    `json:"notices"`
+	Projections       []ProjectProjectionPlan   `json:"projections"`
+	Retirements       []ProjectProjectionPlan   `json:"retirements,omitempty"`
+	SensitiveChanges  []ProjectSensitiveChange  `json:"sensitive_changes,omitempty"`
+	Requirements      []string                  `json:"requirements"`
+	Blockers          []ProjectInstallBlocker   `json:"blockers"`
+	Disposition       ProjectInstallDisposition `json:"disposition"`
+	Observation       string                    `json:"observation"`
+	ExpectedReadiness ReadinessStatus           `json:"expected_readiness"`
+	Conditions        []ReadinessCondition      `json:"conditions"`
+	projectRoot       string
+	pack              Pack
+	actions           []ProjectionAction
+	noticeContent     string
+	noticeMode        uint32
+	noticeBefore      string
+	noticeIntact      bool
+	request           ProjectInstallRequest
+	updateRequest     ProjectUpdateRequest
 }
 
 type ProjectInstallNotActionableError struct{ Disposition ProjectInstallDisposition }
@@ -688,6 +690,17 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		lockSensitive = mergeProjectSensitiveDisclosures(existingLock.Sensitive, lockSensitive)
 		lockProjections, projections = mergeProjectProjections(existingLock.Projections, lockProjections, projections)
 	}
+	resolutions, resolutionErr := f.resolveExecutables(ctx, selectedPack)
+	unobservedRequirements := []string{}
+	if resolutionErr != nil {
+		unobservedRequirements = append(unobservedRequirements, selectedPack.Requires.Tools...)
+		resolutions = nil
+	}
+	expectedReadiness, readinessConditions := evaluateReadiness(readinessEvaluation{
+		Pack: selectedPack, Surface: request.Surface, Scope: ReadinessScopeProject,
+		Projections: expectedProjectReadinessProjections(projections), Resolutions: resolutions, UnobservedRequirements: unobservedRequirements,
+		Observation: observation.Readiness, Revision: observation.Revision,
+	})
 	report := JSONProjectInstallPreview{
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
 		ProjectRoot: "<project-root>", Pack: manifestPack, Surface: request.Surface, projectRoot: request.ProjectRoot, pack: selectedPack, actions: actions, request: request,
@@ -696,6 +709,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		Lock:        ProjectLockProposal{Path: "packy.lock.json", SchemaVersion: projectContractSchemaV1, ResourceGraph: graph, Bindings: lockBindings, Degradations: lockDegradations, Modes: lockModes, Sensitive: lockSensitive, Projections: lockProjections},
 		Notices:     ProjectNoticesProposal{Path: "PACKY-NOTICES.md", Contributions: notices},
 		Projections: projections, Requirements: append([]string{}, requirements...), Blockers: append([]ProjectInstallBlocker{}, blockers...), Disposition: disposition,
+		ExpectedReadiness: expectedReadiness, Conditions: readinessConditions,
 	}
 	report.Lock.Receipts = replaceProjectReceipt(existingLock.Receipts, projectReceipt(selectedPack, request.Surface, selection, aliases, ResourceGraphFor(pack, selection, false), projections))
 	manifestBytes, err := marshalProjectManifest(report.Manifest)
@@ -749,6 +763,14 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	})
 	report.Observation = sealProjectInstallPreview(report, observationDigest(observation)+"\nnotices="+noticeBefore)
 	return report, nil
+}
+
+func expectedProjectReadinessProjections(plans []ProjectProjectionPlan) []ProjectionStatus {
+	result := make([]ProjectionStatus, 0, len(plans))
+	for _, plan := range plans {
+		result = append(result, ProjectionStatus{ID: plan.Resource.String(), Health: ProjectionVerified})
+	}
+	return result
 }
 
 func normalizeProjectProjectionFingerprint(value string) string {
@@ -838,7 +860,9 @@ func projectSurfaceIntents(pack ProjectManifestPack) []ProjectSurfaceIntent {
 func projectReceipt(pack Pack, surface Surface, selection ResourceSelection, aliases []SurfaceAlias, graph ResourceGraph, projections []ProjectProjectionPlan) installedPackReceipt {
 	receipt := installedPackReceipt{
 		Pack: installedPackIdentity{ID: pack.ID, Version: pack.Version}, Surface: surface,
-		Selection: cloneSelection(selection), Aliases: cloneAliases(aliases), Resources: []ResourceIdentity{}, Projections: []installedProjection{},
+		ReadinessObligations: append([]ReadinessObligation(nil), pack.ReadinessObligations...),
+		ExternalRequirements: append([]string{}, pack.Requires.Tools...),
+		Selection:            cloneSelection(selection), Aliases: cloneAliases(aliases), Resources: []ResourceIdentity{}, Projections: []installedProjection{},
 	}
 	for _, fact := range graph.Resources {
 		receipt.Resources = append(receipt.Resources, fact.Resource)
@@ -1030,6 +1054,17 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 		seen[key] = true
 		if len(receipt.ExternalEffects) != 0 {
 			return fmt.Errorf("project receipt for %s on %s contains personal external effects", receipt.Pack.ID, receipt.Surface)
+		}
+		if !validReadinessObligations(receipt.ReadinessObligations) {
+			return fmt.Errorf("project receipt for %s on %s has invalid readiness obligations", receipt.Pack.ID, receipt.Surface)
+		}
+		if receipt.ExternalRequirements == nil || !sort.StringsAreSorted(receipt.ExternalRequirements) || hasDuplicateStrings(receipt.ExternalRequirements) {
+			return fmt.Errorf("project receipt for %s on %s has invalid external requirements", receipt.Pack.ID, receipt.Surface)
+		}
+		for _, requirement := range receipt.ExternalRequirements {
+			if !idPattern.MatchString(requirement) {
+				return fmt.Errorf("project receipt for %s on %s has invalid external requirements", receipt.Pack.ID, receipt.Surface)
+			}
 		}
 		selection, err := canonicalSelection(receipt.Selection)
 		aliases := cloneAliases(receipt.Aliases)
@@ -1304,6 +1339,7 @@ func mergeProjectProjections(existing, added, preview []ProjectProjectionPlan) (
 
 func sealProjectInstallPreview(report JSONProjectInstallPreview, surfaceObservation string) string {
 	report.Observation = ""
+	report.ExpectedReadiness, report.Conditions = ReadinessStatus{}, nil
 	data, _ := json.Marshal(struct {
 		Report             JSONProjectInstallPreview
 		SurfaceObservation string

@@ -1,10 +1,10 @@
 {
-  "schema_version": 9,
+  "schema_version": 10,
   "report": "pack-lifecycle-failure",
   "stage": "apply",
   "error": "projection write failed",
   "plan": {
-    "schema_version": 9,
+    "schema_version": 10,
     "report": "pack-lifecycle-preview",
     "plan_id": "plan-example",
     "operation": "activate",
@@ -65,14 +65,9 @@
     ],
     "pending_human_actions": [],
     "expected_readiness": {
-      "Configured": true,
-      "Authorized": false,
-      "Usable": false
-    },
-    "readiness_observed": {
-      "Configured": true,
-      "Authorization": false,
-      "Usability": false
+      "configured": "true",
+      "authorized": "false",
+      "usable": "false"
     },
     "evidence": [
       "static projection inspected"
@@ -109,7 +104,8 @@
     "resource_graph": {
       "resources": []
     },
-    "sensitive_effects": []
+    "sensitive_effects": [],
+    "conditions": []
   },
   "actions_executed": 1,
   "approval_requested": true

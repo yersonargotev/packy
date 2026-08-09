@@ -50,7 +50,7 @@ func TestIssue460ProjectRuntimeUsesOneVocabularyAcrossOpenCodeAndClaude(t *testi
 				t.Fatalf("structured activation preview: %v\n%s", err, structured)
 			}
 			var preview capabilitypack.JSONProjectActivationPreview
-			if err := json.Unmarshal([]byte(structured), &preview); err != nil || preview.Surface != surface || preview.Disposition != capabilitypack.ProjectActivationPreviewable || len(preview.Categories) != 1 || preview.Categories[0].Kind != capabilitypack.ProjectActivationMCP {
+			if err := json.Unmarshal([]byte(structured), &preview); err != nil || preview.Surface != surface || preview.Disposition != capabilitypack.ProjectActivationPreviewable || len(preview.Categories) != 1 || preview.Categories[0].Kind != capabilitypack.ProjectActivationMCP || preview.ExpectedReadiness.Configured != capabilitypack.ReadinessTrue || len(preview.Conditions) == 0 {
 				t.Fatalf("structured preview = %+v, %v", preview, err)
 			}
 

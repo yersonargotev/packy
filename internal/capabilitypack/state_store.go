@@ -37,14 +37,16 @@ type installedProjection struct {
 }
 
 type installedPackReceipt struct {
-	Pack            installedPackIdentity        `json:"pack"`
-	Surface         Surface                      `json:"surface"`
-	Selection       ResourceSelection            `json:"selection"`
-	Aliases         []SurfaceAlias               `json:"aliases,omitempty"`
-	Resources       []ResourceIdentity           `json:"resources"`
-	Projections     []installedProjection        `json:"projections"`
-	Sensitive       []ProjectSensitiveDisclosure `json:"sensitive,omitempty"`
-	ExternalEffects []ExternalEffect             `json:"external_effects,omitempty"`
+	Pack                 installedPackIdentity        `json:"pack"`
+	Surface              Surface                      `json:"surface"`
+	ReadinessObligations []ReadinessObligation        `json:"readiness_obligations"`
+	ExternalRequirements []string                     `json:"external_requirements"`
+	Selection            ResourceSelection            `json:"selection"`
+	Aliases              []SurfaceAlias               `json:"aliases,omitempty"`
+	Resources            []ResourceIdentity           `json:"resources"`
+	Projections          []installedProjection        `json:"projections"`
+	Sensitive            []ProjectSensitiveDisclosure `json:"sensitive,omitempty"`
+	ExternalEffects      []ExternalEffect             `json:"external_effects,omitempty"`
 }
 
 type installedReceiptDocument struct {
@@ -260,7 +262,9 @@ func receiptDocumentFromActivation(document activationDocument) installedReceipt
 			}
 			receipt := installedPackReceipt{
 				Pack: installedPackIdentity{ID: intent.PackID, Version: intent.Version}, Surface: intent.Surface,
-				Selection: cloneSelection(intent.Selection), Aliases: cloneAliases(intent.Aliases),
+				ReadinessObligations: append([]ReadinessObligation(nil), intent.ReadinessObligations...),
+				ExternalRequirements: append([]string{}, intent.ExternalRequirements...),
+				Selection:            cloneSelection(intent.Selection), Aliases: cloneAliases(intent.Aliases),
 				Resources: append([]ResourceIdentity(nil), intent.Resources...),
 			}
 			for _, owner := range document.Ownership {
@@ -312,7 +316,7 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 			bySurface[receipt.Surface] = state
 		}
 		explicit := true
-		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
+		intent := ActivationIntent{PackID: receipt.Pack.ID, Version: receipt.Pack.Version, Surface: receipt.Surface, Active: true, Revision: receipts.Revision, ReadinessObligations: append([]ReadinessObligation(nil), receipt.ReadinessObligations...), ExternalRequirements: append([]string{}, receipt.ExternalRequirements...), Aliases: cloneAliases(receipt.Aliases), Selection: cloneSelection(receipt.Selection), Resources: append([]ResourceIdentity(nil), receipt.Resources...), Explicit: &explicit}
 		state.Intents = append(state.Intents, intent)
 		state.Intent = intent
 		for _, projection := range receipt.Projections {
