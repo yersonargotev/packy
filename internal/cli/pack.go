@@ -886,6 +886,14 @@ func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, snapsho
 	return projectOfflineAdapter(surface)
 }
 
+func projectStatusAdapters(opts Options, snapshot workstation.Snapshot) map[capabilitypack.Surface]capabilitypack.SurfaceAdapter {
+	return map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+		capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot),
+		capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot),
+		capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot),
+	}
+}
+
 func approveAndApplyProjectActivation(cmd *cobra.Command, opts Options, facade capabilitypack.Facade, preview capabilitypack.JSONProjectActivationPreview, adapter capabilitypack.SurfaceAdapter, jsonOutput bool, cancellation string) error {
 	approvals := make([]capabilitypack.ProjectActivationApproval, 0, len(preview.Categories))
 	for _, category := range preview.Categories {
@@ -1348,11 +1356,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				}
 				statusRequest := capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
-					Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-						capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot),
-						capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot),
-						capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot),
-					},
+					Adapters: projectStatusAdapters(opts, snapshot),
 				}
 				report, err := capabilitypack.InspectProjectStatus(cmd.Context(), statusRequest)
 				if err != nil {

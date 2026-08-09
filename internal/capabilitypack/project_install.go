@@ -1377,7 +1377,18 @@ func DiscoverProjectRoot(currentDirectory string) (string, error) {
 			break
 		}
 	}
-	return "", fmt.Errorf("current directory %q is outside a Git worktree", currentDirectory)
+	return "", ProjectNotFoundError{CurrentDirectory: currentDirectory}
+}
+
+// ProjectNotFoundError means the current directory has no enclosing Git
+// worktree. Callers may treat this expected context absence differently from
+// an unreadable or malformed worktree.
+type ProjectNotFoundError struct {
+	CurrentDirectory string
+}
+
+func (e ProjectNotFoundError) Error() string {
+	return fmt.Sprintf("current directory %q is outside a Git worktree", e.CurrentDirectory)
 }
 
 func validGitWorktreeMarker(root, marker string, info os.FileInfo) (bool, error) {

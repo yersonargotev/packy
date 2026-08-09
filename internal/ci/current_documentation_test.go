@@ -20,6 +20,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	wantADR := []string{
 		filepath.Join(root, "docs", "adr", "0031-simplify-packy-around-reviewed-packs.md"),
 		filepath.Join(root, "docs", "adr", "0032-admit-single-source-packs-atomically.md"),
+		filepath.Join(root, "docs", "adr", "0033-make-the-tui-the-primary-interactive-interface.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
@@ -55,6 +56,11 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"immutable Pack Source v2.3.0", "single-source Pack admission", "immutable initial history",
 		"fail closed", "previous bundle", "two or more sources", "`yersonargotev/orchestrate-skill`",
 		"canonical exact-content source", "Eric Provencher",
+	})
+	requireDocumentationText(t, root, "docs/adr/0033-make-the-tui-the-primary-interactive-interface.md", []string{
+		"Bubble Tea v2 TUI", "minimum Go version to 1.25", "same `internal/capabilitypack` behavior",
+		"one Pack, surface", "global or project", "preview, phase consent", "verification boundary",
+		"defers exit until the operation returns", "fresh inspection",
 	})
 	requireDocumentationText(t, root, "bundle/pack-template/README.md", []string{
 		"Copy this directory", "one `pack.json`", "maintainer-selected SemVer", "reviewed content",
