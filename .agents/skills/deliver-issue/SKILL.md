@@ -5,11 +5,15 @@ description: Deliver one approved Packy GitHub issue through implementation, loc
 
 # Deliver Issue
 
-Read the complete [issue-delivery workflow](../../../workflows/issue-delivery.md),
-[repository instructions](../../../AGENTS.md), and [issue-tracker
-contract](../../../docs/agents/issue-tracker.md) before changing local or
-external state. The workflow owns orchestration; keep this skill as its thin
-project-local gate.
+From the repository root, make the first filesystem read one operation that
+reads these complete files:
+
+- `workflows/issue-delivery.md`
+- `AGENTS.md`
+- `docs/agents/issue-tracker.md`
+
+Resolve the paths from the repository root exactly as written. The workflow
+owns orchestration; keep this skill as its thin project-local gate.
 
 Require exactly one issue number. Applying `status:approved` without an explicit
 delivery request does not trigger this skill. Reconstruct any prior progress
