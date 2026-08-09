@@ -78,6 +78,47 @@ func TestLockedProjectRuntimeKeepsOpenCodeConsentAndSecretsHostOwned(t *testing.
 	}
 }
 
+func TestLockedProjectRemovalDeletesOnlyTheOwnedOpenCodeMCPContribution(t *testing.T) {
+	project := t.TempDir()
+	config := filepath.Join(project, "opencode.json")
+	content := "{\n  \"mcp\": {\n    \"memory\": {\"type\": \"local\", \"command\": [\"engram\", \"mcp\"], \"enabled\": true},\n    \"foreign\": {\"type\": \"remote\", \"url\": \"https://example.test/mcp\"}\n  }\n}\n"
+	if err := os.WriteFile(config, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mcp, err := InspectMCPProjection(config, "memory", "engram", []string{"mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := capabilitypack.ProjectInstallation{
+		Manifest: capabilitypack.ProjectContractProposal{Packs: []capabilitypack.ProjectManifestPack{{ID: "memory", Version: "1.0.0", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}}}},
+		Lock: capabilitypack.ProjectLockProposal{
+			Bindings: []capabilitypack.LifecycleBinding{{Surface: capabilitypack.SurfaceOpenCode, Kind: "mcp_server", ID: "memory", Projection: "mcp_server", Name: "memory"}},
+			Projections: []capabilitypack.ProjectProjectionPlan{{
+				Resource: capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: "memory"}, Target: "opencode.json", DesiredFingerprint: mcp.DesiredFingerprint, OwnerPack: "memory", Surface: capabilitypack.SurfaceOpenCode, Command: "engram", Args: []string{"mcp"},
+			}},
+		},
+	}
+	adapter := NewSurfaceAdapter("", "", "", "")
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionAbsent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inspection.Projections) != 1 {
+		t.Fatalf("OpenCode MCP removal inspection = %#v", inspection.Projections)
+	}
+	action := inspection.Projections[0].Action
+	if action.Mode != capabilitypack.ProjectionRemoveContent || strings.Contains(action.Content, "memory") || !strings.Contains(action.Content, "foreign") {
+		t.Fatalf("OpenCode MCP removal action = %#v", action)
+	}
+	if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(config)
+	if err != nil || strings.Contains(string(data), "memory") || !strings.Contains(string(data), "foreign") {
+		t.Fatalf("OpenCode MCP removal did not preserve the foreign contribution: %q, %v", data, err)
+	}
+}
+
 func containsOpenCodeDetail(values []string, want string) bool {
 	for _, value := range values {
 		if strings.Contains(value, want) {

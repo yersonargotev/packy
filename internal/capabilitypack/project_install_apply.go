@@ -168,8 +168,18 @@ func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, revers
 	if err := verifyProjectReverse(reverse); err != nil {
 		return fmt.Errorf("project mutation failed (%v) and rollback verification failed: %w", cause, err)
 	}
-	return cause
+	return ProjectMutationError{Cause: cause, RollbackVerified: true}
 }
+
+// ProjectMutationError reports a failed project mutation whose rollback was
+// independently verified by the project lifecycle owner.
+type ProjectMutationError struct {
+	Cause            error
+	RollbackVerified bool
+}
+
+func (e ProjectMutationError) Error() string { return e.Cause.Error() }
+func (e ProjectMutationError) Unwrap() error { return e.Cause }
 
 func marshalProjectManifest(proposal ProjectContractProposal) ([]byte, error) {
 	value := struct {

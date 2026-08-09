@@ -464,6 +464,199 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 	}
 }
 
+func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInstalledProjectPack(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	project := filepath.Join(t.TempDir(), "project")
+	writeTestGitWorktree(t, project)
+	opts := Options{
+		Env: MapEnv{
+			"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+
+	install, err := backend.Preview(context.Background(), tui.PreviewRequest{
+		Operation: "install", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	activation, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activation, ApprovedPhases: requiredTUIPhases(activation)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Operation != "uninstall" || preview.Disposition != "previewable" || preview.Surface != "opencode" || !slices.Equal(requiredTUIPhases(preview), []string{"destructive-cleanup"}) {
+		t.Fatalf("project uninstall preview = %#v", preview)
+	}
+	for _, target := range []string{"packy.json", "packy.lock.json", "PACKY-NOTICES.md"} {
+		if !slices.Contains(preview.Diff.Removed, target) {
+			t.Fatalf("project uninstall preview omitted contract %q: %#v", target, preview)
+		}
+	}
+	if !slices.ContainsFunc(preview.PendingActions, func(action string) bool {
+		return strings.Contains(strings.ToLower(action), "personal") && strings.Contains(action, "opencode")
+	}) {
+		t.Fatalf("project uninstall preview omitted personal deactivation prerequisite: %#v", preview.PendingActions)
+	}
+	for _, effect := range preview.Effects {
+		if effect.Target != "" && !slices.ContainsFunc(preview.Phases[0].Actions, func(action string) bool { return strings.Contains(action, effect.Target) }) {
+			t.Fatalf("destructive consent omitted exact effect target %q: %#v", effect.Target, preview.Phases[0])
+		}
+	}
+
+	before := snapshotTree(t, project)
+	stale := preview
+	stale.Digest = "stale-project-uninstall"
+	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: stale, ApprovedPhases: requiredTUIPhases(preview)}, func(tui.ApplyProgress) {})
+	if err == nil || result.Stage != "revalidation" || !strings.Contains(err.Error(), "fresh preview") {
+		t.Fatalf("stale project uninstall = %#v, %v", result, err)
+	}
+	if after := snapshotTree(t, project); after != before {
+		t.Fatalf("stale project uninstall mutated project\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+
+	var progress []string
+	result, err = backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(update tui.ApplyProgress) { progress = append(progress, update.Phase) })
+	if err != nil || !result.Verified || !strings.Contains(result.Summary, "Uninstalled engram") || !slices.Equal(progress, []string{"revalidation", "apply", "verification"}) {
+		t.Fatalf("project uninstall result = %#v / %v / %v", result, progress, err)
+	}
+	for _, target := range []string{"packy.json", "packy.lock.json"} {
+		if _, err := os.Stat(filepath.Join(project, target)); !os.IsNotExist(err) {
+			t.Fatalf("verified uninstall retained %s: %v", target, err)
+		}
+	}
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := findTUIPack(dashboard.Project.Packs, "engram")
+	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
+	if index < 0 || (pack.SurfaceStatuses[index].Installation != "" && pack.SurfaceStatuses[index].Installation != "absent") || pack.SurfaceStatuses[index].Runtime == "active" {
+		t.Fatalf("fresh status did not verify complete uninstall: %#v", pack)
+	}
+}
+
+func TestTUIProductionBackendShowsProjectUninstallDriftAndRefusesApply(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	project := filepath.Join(t.TempDir(), "project")
+	writeTestGitWorktree(t, project)
+	opts := Options{
+		Env: MapEnv{
+			"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	install, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(project, "opencode.json")
+	config, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drifted := strings.Replace(string(config), `"engram"`, `"operator-edit"`, 1)
+	if drifted == string(config) {
+		t.Fatalf("installed OpenCode config omitted Engram:\n%s", config)
+	}
+	if err := os.WriteFile(configPath, []byte(drifted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, project)
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: "engram", Surface: "opencode", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Disposition != "blocked" || len(preview.Blockers) == 0 || len(requiredTUIPhases(preview)) != 0 || !slices.ContainsFunc(preview.Blockers, func(blocker tui.PreviewBlocker) bool { return blocker.Kind == "project_drift" }) {
+		t.Fatalf("drifted project uninstall did not fail closed: %#v", preview)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview}, func(tui.ApplyProgress) {}); err == nil {
+		t.Fatal("blocked project uninstall Apply succeeded")
+	}
+	if after := snapshotTree(t, project); after != before {
+		t.Fatalf("blocked project uninstall mutated the project\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestTUIProductionBackendUninstallsOnlyTheSelectedProjectSurface(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	project := filepath.Join(t.TempDir(), "project")
+	writeTestGitWorktree(t, project)
+	opts := Options{
+		Env: MapEnv{
+			"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	for _, surface := range []string{"codex", "opencode"} {
+		install, previewErr := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: "matty", Surface: surface, Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
+		if previewErr != nil {
+			t.Fatal(previewErr)
+		}
+		if _, applyErr := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); applyErr != nil {
+			t.Fatal(applyErr)
+		}
+	}
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: "matty", Surface: "codex", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Surface != "codex" || !slices.Contains(preview.Diff.Changed, "packy.json") || !slices.Contains(preview.Diff.Changed, "packy.lock.json") || !slices.Contains(preview.Diff.Removed, "AGENTS.md") {
+		t.Fatalf("selected-surface uninstall preview = %#v", preview)
+	}
+	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(tui.ApplyProgress) {})
+	if err != nil || !result.Verified || !strings.Contains(result.Summary, "from codex") || !slices.Contains(result.Details, "Other installed surfaces remain independently installed") {
+		t.Fatalf("selected-surface uninstall result = %#v, %v", result, err)
+	}
+	installation, err := capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}) {
+		t.Fatalf("selected-surface uninstall changed retained intent: %#v", installation.Manifest.Packs)
+	}
+	for _, retained := range []string{"packy.json", "packy.lock.json", filepath.Join(".agents", "skills", "ask-matt", "SKILL.md")} {
+		if _, err := os.Stat(filepath.Join(project, retained)); err != nil {
+			t.Fatalf("selected-surface uninstall removed retained %s: %v", retained, err)
+		}
+	}
+}
+
 func TestTUIProductionBackendUpdatesAnInstalledProjectPackThenDeactivatesOnlyPersonalRuntime(t *testing.T) {
 	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
