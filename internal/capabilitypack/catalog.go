@@ -340,7 +340,8 @@ type catalogEntry struct {
 }
 
 type CatalogDetail struct {
-	Pack Pack
+	Pack              Pack
+	ResourceInventory []DescriptiveResource
 }
 
 // Discover loads the strict initial catalog from a Packy-owned bundle root.
@@ -566,7 +567,10 @@ func clonePack(pack Pack) Pack {
 }
 
 func catalogDetail(pack Pack) CatalogDetail {
-	return CatalogDetail{Pack: clonePack(pack)}
+	return CatalogDetail{
+		Pack:              clonePack(pack),
+		ResourceInventory: descriptiveResourceInventory(pack),
+	}
 }
 
 func validateV3Surfaces(surfaces []Surface) error {

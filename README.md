@@ -6,7 +6,8 @@ without becoming an agent runtime.
 
 The bundled Pack manifests are the canonical selectable catalog. Run
 `packy pack list` to inspect the Pack IDs and versions available in the current
-binary; each Pack uses one current manifest.
+binary; each Pack uses one current manifest. Browse the generated
+[Pack catalog](docs/packs/index.md) for purpose and resource details.
 
 ## Quickstart
 

@@ -8,8 +8,9 @@ Code.
 The bundled Pack manifests are the canonical selectable catalog. Use
 `packy pack list` for the Pack IDs and versions available in the current
 binary, and `packy pack show <pack>` for one Pack's purpose, supported surfaces,
-resources, and external requirements. Pack versions are independent of the
-Packy binary version.
+resources, and external requirements. The generated [Pack catalog](packs/index.md)
+provides the same manifest-backed inventory for browsing on GitHub. Pack
+versions are independent of the Packy binary version.
 
 ## Inspect and activate
 
@@ -62,15 +63,20 @@ Start from [the standard template](../bundle/pack-template/README.md):
    ```sh
    ./scripts/validate-pack-content.sh <pack-id>
    ```
+6. Regenerate the committed Pack catalog:
+
+   ```sh
+   go run ./internal/tools/packdocs
+   ```
 
 The manifest declares Pack identity, version, description, selectability,
 surfaces, resources, bindings, intra-Pack dependencies, external requirements,
 concrete conflicts, and exclusions. The focused validator reports the Pack and
 invalid field or resource directly.
 
-No other generated catalog or version record is part of authoring. Review and
-merge the manifest and content together through the normal GitHub pull-request
-flow.
+The generated Pack catalog is derived from the manifests; it is not a second
+authoring source or manually maintained snapshot. Review and merge the manifest
+and content together through the normal GitHub pull-request flow.
 
 ## Project use
 
