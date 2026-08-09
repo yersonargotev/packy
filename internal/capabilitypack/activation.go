@@ -57,6 +57,7 @@ const (
 	ActionInstructionFile          ProjectionActionKind = "instruction-file"
 	ActionOpenCodeSkillLink        ProjectionActionKind = "opencode-skill-link"
 	ActionOpenCodeInstructionFile  ProjectionActionKind = "opencode-instruction-file"
+	ActionOpenCodePrimaryPrompt    ProjectionActionKind = "opencode-primary-prompt"
 	ActionOpenCodeConfigReference  ProjectionActionKind = "opencode-config-reference"
 	ActionCodexMCPConfig           ProjectionActionKind = "codex-mcp-config"
 	ActionCodexProjectTrust        ProjectionActionKind = "codex-project-trust"

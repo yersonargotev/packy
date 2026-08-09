@@ -7,5 +7,5 @@ This index is generated from the bundled selectable Pack manifests. Use `packy s
 - [addy](addy.md) — Addy agent skills (version `1.0.1`)
 - [argote](argote.md) — Yerson Argote's engineering and communication guidance (version `1.0.2`)
 - [engram](engram.md) — Persistent memory for agent work (version `1.0.1`)
-- [matty](matty.md) — Matty workflow (version `1.0.2`)
+- [matty](matty.md) — Matty workflow (version `1.0.3`)
 - [orchestrate](orchestrate.md) — Coordinate focused Codex subagents (version `1.0.1`)

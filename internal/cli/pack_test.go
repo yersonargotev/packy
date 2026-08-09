@@ -1162,7 +1162,7 @@ func TestPackActivateOpenCodeDryRunIsCompletelySideEffectFree(t *testing.T) {
 	}
 }
 
-func TestCurrentMattyActivationProjectsSkillsWithoutInstructions(t *testing.T) {
+func TestCurrentMattyActivationProjectsSurfaceCapabilities(t *testing.T) {
 	for _, surface := range []string{"codex", "opencode"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
@@ -1179,12 +1179,20 @@ func TestCurrentMattyActivationProjectsSkillsWithoutInstructions(t *testing.T) {
 					t.Fatalf("retired instruction %q entered activation output:\n%s", retired, out)
 				}
 			}
-			for _, path := range []string{
-				filepath.Join(home, ".codex", "AGENTS.md"),
-				filepath.Join(home, "xdg", "opencode", "packy.md"),
-				filepath.Join(home, "xdg", "opencode", "opencode.json"),
-				filepath.Join(home, "xdg", "opencode", "matty-workflow-conventions.md"),
-			} {
+			retiredPaths := []string{filepath.Join(home, "xdg", "opencode", "matty-workflow-conventions.md")}
+			if surface == "codex" {
+				retiredPaths = append(retiredPaths, filepath.Join(home, ".codex", "AGENTS.md"))
+			} else {
+				prompt := filepath.Join(home, "xdg", "opencode", "packy.md")
+				if data, err := os.ReadFile(prompt); err != nil || !strings.Contains(string(data), "Matty OpenCode skill trees") {
+					t.Fatalf("OpenCode primary prompt = %q, %v", data, err)
+				}
+				config := readFileString(t, filepath.Join(home, "xdg", "opencode", "opencode.json"))
+				if !strings.Contains(config, prompt) {
+					t.Fatalf("OpenCode config omitted primary prompt %s:\n%s", prompt, config)
+				}
+			}
+			for _, path := range retiredPaths {
 				if _, err := os.Stat(path); !os.IsNotExist(err) {
 					t.Fatalf("current Matty wrote retired instruction target %s: %v", path, err)
 				}

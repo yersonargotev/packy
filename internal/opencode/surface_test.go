@@ -129,6 +129,75 @@ func TestSurfaceAdapterAppliesHostSpecificProjectionsAndPreservesJSONC(t *testin
 	}
 }
 
+func TestPrimaryPromptCapabilityProjectsTheOpenCodePrimaryDocument(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "bundle")
+	skill := filepath.Join(bundle, "skills", "guide")
+	instruction := filepath.Join(bundle, "instructions", "primary.md")
+	if err := os.MkdirAll(skill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(instruction), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("# Guide\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(instruction, []byte("Primary guidance\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "xdg", "opencode", "opencode.json")
+	prompt := filepath.Join(root, "xdg", "opencode", "packy.md")
+	pack := capabilitypack.Pack{ID: "renamed-pack", Resources: []capabilitypack.Resource{{
+		Kind: "skill", ID: "renamed-resource", Source: "skills/guide",
+		Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: "skill", Name: "renamed-skill", Capabilities: []capabilitypack.SurfaceCapability{{
+			Type:          capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt,
+			PrimaryPrompt: &capabilitypack.PrimaryPromptCapability{ID: "reviewed-primary", Source: "instructions/primary.md"},
+		}}}},
+	}}}
+	adapter := NewSurfaceAdapter(bundle, filepath.Join(root, "skills"), config, prompt)
+	observed, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observed.Projections) != 3 {
+		t.Fatalf("primary prompt projections = %#v", observed.Projections)
+	}
+	if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{observed.Projections[0].Action, observed.Projections[1].Action, observed.Projections[2].Action}); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(prompt); err != nil || string(data) != "Primary guidance\n" {
+		t.Fatalf("primary prompt = %q, %v", data, err)
+	}
+	if inspection, err := Inspect(config, prompt); err != nil || !inspection.HasPackyInstruction {
+		t.Fatalf("primary prompt reference = %#v, %v", inspection, err)
+	}
+}
+
+func TestConflictingPrimaryPromptCapabilitiesFailBeforeMutation(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "primary.md")
+	if err := os.WriteFile(source, []byte("Primary guidance\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	capability := func(id string) capabilitypack.Resource {
+		return capabilitypack.Resource{Kind: "skill", ID: id, Source: ".", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceOpenCode, Projection: "skill", Name: id, Capabilities: []capabilitypack.SurfaceCapability{{
+			Type: capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt, PrimaryPrompt: &capabilitypack.PrimaryPromptCapability{ID: id, Source: "primary.md"},
+		}}}}}
+	}
+	config, prompt := filepath.Join(root, "opencode.json"), filepath.Join(root, "packy.md")
+	adapter := NewSurfaceAdapter(root, filepath.Join(root, "skills"), config, prompt)
+	_, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: capabilitypack.Pack{ID: "conflicting", Resources: []capabilitypack.Resource{capability("first"), capability("second")}}})
+	if err == nil || !strings.Contains(err.Error(), "overlapping targets") {
+		t.Fatalf("conflicting primary prompts error = %v", err)
+	}
+	for _, path := range []string{config, prompt} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("conflicting primary prompts mutated %s: %v", path, err)
+		}
+	}
+}
+
 func TestSurfaceAdapterComposesMultipleInstructionReferences(t *testing.T) {
 	root := t.TempDir()
 	bundle := filepath.Join(root, "bundle")
