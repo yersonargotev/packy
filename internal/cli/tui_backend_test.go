@@ -2,10 +2,13 @@ package cli
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/tui"
 )
 
@@ -78,6 +81,106 @@ func TestTUIProductionBackendUsesPackyOwnersWithoutMutatingState(t *testing.T) {
 				t.Fatalf("read-only backend mutated HOME\nbefore:\n%s\nafter:\n%s", before, after)
 			}
 		})
+	}
+}
+
+func TestTUIProductionBackendGuidesAndInitializesMissingInstalledSource(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	opts := Options{
+		Env: MapEnv{
+			"HOME":            home,
+			"XDG_CONFIG_HOME": filepath.Join(home, "xdg"),
+			"PATH":            os.Getenv("PATH"),
+		},
+		Getwd: func() (string, error) { return t.TempDir(), nil },
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	backend.repositoryURL = repositoryRoot
+	before := snapshotTree(t, home)
+
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard.Health.Status != "healthy" || !dashboard.Setup.InitializationAvailable || len(dashboard.Setup.Blockers) != 1 {
+		t.Fatalf("missing setup did not retain diagnosis and an initialization route: %#v", dashboard)
+	}
+	blocker := dashboard.Setup.Blockers[0]
+	if !strings.Contains(blocker.Cause, "initialize") || !slices.Equal(blocker.AffectedActions, []string{"Pack catalog inspection", "Pack lifecycle actions"}) {
+		t.Fatalf("setup blocker is not decision-ready: %#v", blocker)
+	}
+	if after := snapshotTree(t, home); after != before {
+		t.Fatalf("loading an uninitialized dashboard mutated HOME\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+
+	var progress []string
+	if err := backend.Initialize(context.Background(), func(detail string) { progress = append(progress, detail) }); err != nil {
+		t.Fatal(err)
+	}
+	installedRoot := bootstrap.DefaultInstalledSourceRoot(home)
+	if !exists(filepath.Join(installedRoot, "bundle", "packs")) {
+		t.Fatalf("TUI initialization did not install the reviewed catalog at %s", installedRoot)
+	}
+	if !strings.Contains(strings.Join(progress, "\n"), "cloning Installed Source") || !strings.Contains(strings.Join(progress, "\n"), "initialized Installed Source") {
+		t.Fatalf("initialization progress was not genuine and complete: %v", progress)
+	}
+
+	dashboard, err = backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard.Setup.InitializationAvailable || len(dashboard.Setup.Blockers) != 0 || len(dashboard.Global.Packs) == 0 {
+		t.Fatalf("reloaded dashboard did not reflect initialized state: %#v", dashboard)
+	}
+
+	progress = nil
+	if err := backend.Initialize(context.Background(), func(detail string) { progress = append(progress, detail) }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(progress, "\n"), "already initialized") {
+		t.Fatalf("already-initialized result missing from progress: %v", progress)
+	}
+}
+
+func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	stateFile := filepath.Join(home, ".packy", "packs.json")
+	if err := os.MkdirAll(filepath.Dir(stateFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stateFile, []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PATH":                "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd:  func() (string, error) { return repositoryRoot, nil },
+		Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+
+	dashboard, err := newTUIBackend(opts, newWorkstationResolver(opts)).Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dashboard.Setup.Blockers) != 1 || !strings.Contains(dashboard.Setup.Blockers[0].Cause, "global Pack status") {
+		t.Fatalf("global status blocker missing or unclear: %#v", dashboard.Setup.Blockers)
+	}
+	if !dashboard.Project.Available || dashboard.Project.Root != repositoryRoot || len(dashboard.Project.Packs) == 0 {
+		t.Fatalf("global status blocker hid unaffected project inspection: %#v", dashboard.Project)
 	}
 }
 

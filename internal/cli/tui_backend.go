@@ -7,10 +7,13 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strings"
 
+	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/tui"
+	packyversion "github.com/yersonargotev/packy/internal/version"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
@@ -23,12 +26,19 @@ func RunTUI(ctx context.Context, opts Options, input io.Reader, output io.Writer
 }
 
 type tuiBackend struct {
-	opts     Options
-	resolver *workstation.Resolver
+	opts          Options
+	resolver      *workstation.Resolver
+	repositoryURL string
+	repositoryRef string
 }
 
 func newTUIBackend(opts Options, resolver *workstation.Resolver) *tuiBackend {
-	return &tuiBackend{opts: opts, resolver: resolver}
+	return &tuiBackend{
+		opts:          opts,
+		resolver:      resolver,
+		repositoryURL: bootstrap.DefaultRepositoryURL,
+		repositoryRef: defaultInitRepositoryRef("", packyversion.Value),
+	}
 }
 
 func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
@@ -36,26 +46,49 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	if err != nil {
 		return tui.Dashboard{}, fmt.Errorf("diagnose Packy health: %w", err)
 	}
+	dashboard := tui.Dashboard{
+		Health: healthForTUI(health),
+		Global: tui.Scope{Available: true},
+	}
 	catalog, err := discoverPackCatalog(b.opts, b.resolver)
 	if err != nil {
-		return tui.Dashboard{}, fmt.Errorf("discover reviewed Pack catalog: %w", err)
+		dashboard.Setup = tui.Setup{
+			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
+			Blockers: []tui.SetupBlocker{{
+				Cause:           fmt.Sprintf("discover reviewed Pack catalog: %v", err),
+				AffectedActions: []string{"Pack catalog inspection", "Pack lifecycle actions"},
+			}},
+		}
+		return dashboard, nil
 	}
 	details, err := catalog.ListDetails()
 	if err != nil {
-		return tui.Dashboard{}, fmt.Errorf("load reviewed Pack catalog: %w", err)
+		dashboard.Setup = tui.Setup{
+			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
+			Blockers: []tui.SetupBlocker{{
+				Cause:           fmt.Sprintf("load reviewed Pack catalog: %v", err),
+				AffectedActions: []string{"Pack catalog inspection", "Pack lifecycle actions"},
+			}},
+		}
+		return dashboard, nil
 	}
+	dashboard.Global.Packs = catalogPacksForTUI(details, nil)
 	facade, err := activationFacade(b.opts, b.resolver)
 	if err != nil {
-		return tui.Dashboard{}, fmt.Errorf("compose global Pack status: %w", err)
-	}
-	globalStatus, err := facade.Status(ctx, capabilitypack.StatusRequest{})
-	if err != nil {
-		return tui.Dashboard{}, fmt.Errorf("inspect global Pack status: %w", err)
-	}
-
-	dashboard := tui.Dashboard{
-		Health: healthForTUI(health),
-		Global: tui.Scope{Available: true, Packs: catalogPacksForTUI(details, globalStatusesForTUI(globalStatus))},
+		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+			Cause:           fmt.Sprintf("compose global Pack status: %v", err),
+			AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
+		})
+	} else {
+		globalStatus, statusErr := facade.Status(ctx, capabilitypack.StatusRequest{})
+		if statusErr != nil {
+			dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+				Cause:           fmt.Sprintf("inspect global Pack status: %v", statusErr),
+				AffectedActions: []string{"Global Pack status", "Pack lifecycle actions"},
+			})
+		} else {
+			dashboard.Global.Packs = catalogPacksForTUI(details, globalStatusesForTUI(globalStatus))
+		}
 	}
 	snapshot, err := b.resolver.Resolve(workstation.Options{})
 	if err != nil {
@@ -63,7 +96,11 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	}
 	currentDirectory, err := snapshot.CurrentDirectory()
 	if err != nil {
-		return tui.Dashboard{}, fmt.Errorf("resolve current directory: %w", err)
+		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+			Cause:           fmt.Sprintf("resolve current directory: %v", err),
+			AffectedActions: []string{"Current-project inspection", "Project Pack lifecycle actions"},
+		})
+		return dashboard, nil
 	}
 	projectRoot, err := capabilitypack.DiscoverProjectRoot(currentDirectory)
 	if err != nil {
@@ -71,7 +108,11 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		if errors.As(err, &absent) {
 			return dashboard, nil
 		}
-		return tui.Dashboard{}, fmt.Errorf("discover current project: %w", err)
+		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+			Cause:           fmt.Sprintf("discover current project: %v", err),
+			AffectedActions: []string{"Current-project inspection", "Project Pack lifecycle actions"},
+		})
+		return dashboard, nil
 	}
 
 	request := capabilitypack.ProjectStatusRequest{
@@ -81,10 +122,30 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	}
 	status, err := capabilitypack.InspectProjectStatus(ctx, request)
 	if err != nil {
-		return tui.Dashboard{}, fmt.Errorf("inspect current project: %w", err)
+		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
+			Cause:           fmt.Sprintf("inspect current project: %v", err),
+			AffectedActions: []string{"Current-project status", "Project Pack lifecycle actions"},
+		})
+		return dashboard, nil
 	}
 	dashboard.Project = tui.Scope{Available: true, Root: projectRoot, Packs: catalogPacksForTUI(details, projectStatusesForTUI(status))}
 	return dashboard, nil
+}
+
+func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	return initializeInstalledSource(b.resolver, initializationRequest{
+		RepositoryURL: b.repositoryURL,
+		RepositoryRef: b.repositoryRef,
+		ReportProgress: func(detail string) error {
+			progress(detail)
+			return nil
+		},
+	})
 }
 
 func healthForTUI(report setuphealth.Report) tui.Health {

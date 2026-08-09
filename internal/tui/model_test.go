@@ -14,9 +14,19 @@ import (
 )
 
 type fakeBackend struct {
-	dashboard tui.Dashboard
-	err       error
-	loads     int
+	dashboard       tui.Dashboard
+	err             error
+	loads           int
+	initializations int
+	initialize      func(func(string)) error
+}
+
+func (b *fakeBackend) Initialize(_ context.Context, progress func(string)) error {
+	b.initializations++
+	if b.initialize != nil {
+		return b.initialize(progress)
+	}
+	return nil
 }
 
 func TestRunEntersAndRestoresAlternateScreen(t *testing.T) {
@@ -274,4 +284,154 @@ func TestDashboardLoadsThroughInjectedBackendOutsideUpdate(t *testing.T) {
 			t.Fatalf("ready view missing %q:\n%s", want, view)
 		}
 	}
+}
+
+func TestUninitializedDashboardRequiresExplicitFocusedInitialization(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy", Passes: 1},
+		Setup: tui.Setup{
+			InitializationAvailable: true,
+			Blockers: []tui.SetupBlocker{{
+				Cause:           "Installed Source is missing",
+				AffectedActions: []string{"Pack catalog inspection", "Pack lifecycle actions"},
+			}},
+		},
+	}}
+	model := tui.NewModel(backend)
+	current, _ := model.Update(model.Init()())
+	view := ansi.Strip(current.View().Content)
+	for _, want := range []string{"healthy", "Installed Source is missing", "Affected actions: Pack catalog inspection, Pack lifecycle actions", "Initialize Packy", "selected", "Enter initialize"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("uninitialized dashboard missing %q:\n%s", want, view)
+		}
+	}
+	if backend.initializations != 0 {
+		t.Fatalf("entering the dashboard initialized Packy %d times", backend.initializations)
+	}
+
+	current, command := current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if command == nil || backend.initializations != 0 {
+		t.Fatalf("focused initialization was not scheduled explicitly: command=%v initializations=%d", command != nil, backend.initializations)
+	}
+	if view := ansi.Strip(current.View().Content); !strings.Contains(view, "Initialization in progress") {
+		t.Fatalf("initialization did not enter progress state:\n%s", view)
+	}
+	current, quit := current.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
+	if quit != nil || !strings.Contains(ansi.Strip(current.View().Content), "Initialization in progress") {
+		t.Fatal("active initialization allowed ordinary exit or stopped rendering progress")
+	}
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 20})
+	for _, line := range strings.Split(current.View().Content, "\n") {
+		if width := ansi.StringWidth(line); width > 48 {
+			t.Fatalf("active initialization froze responsive rendering: width=%d line=%q", width, ansi.Strip(line))
+		}
+	}
+}
+
+func TestSetupBlockersDisableOnlyAffectedActions(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "warnings", Warnings: 1},
+		Setup: tui.Setup{Blockers: []tui.SetupBlocker{{
+			Cause:           "project status is unavailable",
+			AffectedActions: []string{"Current-project status", "Project Pack lifecycle actions"},
+		}}},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0", Description: "Agent guidance"}}},
+	}}
+	current := loadModel(t, backend)
+	view := ansi.Strip(current.View().Content)
+	for _, want := range []string{"project status is unavailable", "Affected actions: Current-project status, Project Pack lifecycle actions", "argote"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("blocked dashboard missing %q:\n%s", want, view)
+		}
+	}
+	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if view := ansi.Strip(current.View().Content); !strings.Contains(view, "Pack details") || !strings.Contains(view, "Agent guidance") {
+		t.Fatalf("setup blocker disabled unaffected global inspection:\n%s", view)
+	}
+}
+
+func TestInitializationProgressResultReloadAndRetryAreRecoverable(t *testing.T) {
+	attempt := 0
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{Status: "healthy", Passes: 1},
+		Setup:  tui.Setup{InitializationAvailable: true},
+	}}
+	backend.initialize = func(progress func(string)) error {
+		attempt++
+		progress("cloning Installed Source")
+		if attempt == 1 {
+			return errors.New("network unavailable")
+		}
+		backend.dashboard.Setup = tui.Setup{}
+		backend.dashboard.Global = tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0"}}}
+		return nil
+	}
+
+	current := loadModel(t, backend)
+	current = runModelMessage(t, current, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(current.View().Content)
+	for _, want := range []string{"Initialization failed", "network unavailable", "cloning Installed Source", "Enter retry", "Esc dashboard"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("failed result missing %q:\n%s", want, view)
+		}
+	}
+	if backend.loads != 2 {
+		t.Fatalf("failed initialization loads = %d, want initial load plus fresh diagnosis", backend.loads)
+	}
+
+	current = runModelMessage(t, current, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(current.View().Content)
+	for _, want := range []string{"Initialization succeeded", "cloning Installed Source", "Enter dashboard"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("successful result missing %q:\n%s", want, view)
+		}
+	}
+	if backend.initializations != 2 || backend.loads != 3 {
+		t.Fatalf("retry/reload counts = initializations %d, loads %d; want 2 and 3", backend.initializations, backend.loads)
+	}
+
+	updated, _ := current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view = ansi.Strip(updated.View().Content)
+	if !strings.Contains(view, "argote") || strings.Contains(view, "Initialization succeeded") {
+		t.Fatalf("successful result did not continue to reloaded dashboard:\n%s", view)
+	}
+}
+
+func loadModel(t *testing.T, backend *fakeBackend) tea.Model {
+	t.Helper()
+	model := tui.NewModel(backend)
+	current, _ := model.Update(model.Init()())
+	return current
+}
+
+func runModelMessage(t *testing.T, model tea.Model, message tea.Msg) tea.Model {
+	t.Helper()
+	current, command := model.Update(message)
+	return runModelCommand(t, current, command)
+}
+
+func runModelCommand(t *testing.T, model tea.Model, command tea.Cmd) tea.Model {
+	t.Helper()
+	if command == nil {
+		t.Fatal("expected command")
+	}
+	queue := []tea.Cmd{command}
+	current := model
+	for len(queue) > 0 {
+		command, queue = queue[0], queue[1:]
+		message := command()
+		if batch, ok := message.(tea.BatchMsg); ok {
+			queue = append(queue, []tea.Cmd(batch)...)
+			continue
+		}
+		if message == nil {
+			continue
+		}
+		var next tea.Cmd
+		current, next = current.Update(message)
+		if next != nil {
+			queue = append(queue, next)
+		}
+	}
+	return current
 }
