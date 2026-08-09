@@ -98,6 +98,28 @@ func TestGlobalLifecycleOffersOnlyApplicableActionsAndRequestsTheChosenOperation
 	}
 }
 
+func TestChangingFromAnInactiveToActiveSurfaceRevealsItsLifecycleActions(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+		ID: "argote", Version: "2.0.0", Resources: []tui.Resource{{Identity: "skill:review", Role: "root"}}, SurfaceStatuses: []tui.SurfaceStatus{
+			{Name: "codex", Supported: true},
+			{Name: "opencode", Supported: true, Active: true, UpdateAvailable: true},
+		},
+	}}}}}
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Select Pack resources") || !strings.Contains(view, "codex") {
+		t.Fatalf("inactive default surface did not offer activation selection:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Choose lifecycle action", "opencode", "Update · selected", "Deactivate"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("active alternate surface missing %q:\n%s", want, view)
+		}
+	}
+}
+
 func TestGlobalStatusOmitsNoOpUpdateAndPartialDeactivationRequestsSelectedRoots(t *testing.T) {
 	backend := &fakeBackend{
 		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
@@ -156,6 +178,47 @@ func TestUpdateUsesSharedConsentApplyResultAndFreshReloadFlow(t *testing.T) {
 	}
 	if len(backend.applyRequests) != 1 || backend.applyRequests[0].Preview.Operation != "update" {
 		t.Fatalf("update Apply request = %#v", backend.applyRequests)
+	}
+}
+
+func TestDeactivationRefusalHasNoEffectsAndFailedUpdateRequiresFreshPreview(t *testing.T) {
+	deactivate := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "1.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true}},
+		}}}},
+		preview: tui.Preview{ID: "deactivate-refused", Digest: "digest", Operation: "deactivate", Disposition: "applicable", PackID: "argote", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}, Phases: []tui.PreviewPhase{{Kind: "destructive-cleanup", ApprovalRequired: true, Actions: []string{"remove owned projection"}}}},
+	}
+	model := loadModel(t, deactivate)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if command != nil || len(deactivate.applyRequests) != 0 || !strings.Contains(ansi.Strip(model.View().Content), "Immutable lifecycle preview") {
+		t.Fatalf("deactivation refusal produced effects: command=%v applies=%d", command != nil, len(deactivate.applyRequests))
+	}
+
+	update := &fakeBackend{
+		dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+			ID: "argote", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true}},
+		}}}},
+		preview:  tui.Preview{ID: "update-failed", Digest: "digest", Operation: "update", Disposition: "applicable", PackID: "argote", PackVersion: "2.0.0", Surface: "codex", Scope: "global", Phases: []tui.PreviewPhase{{Kind: "reversible-local", ApprovalRequired: true}}},
+		applyErr: errors.New("write failed"), applyResult: tui.ApplyResult{Stage: "apply", Verified: false},
+	}
+	model = loadModel(t, update)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Update failed") || !strings.Contains(view, "Enter create fresh preview") {
+		t.Fatalf("failed update did not require a fresh preview:\n%s", view)
+	}
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(update.previewRequests) != 2 || update.previewRequests[1].Operation != "update" {
+		t.Fatalf("failed update reused its preview: %#v", update.previewRequests)
 	}
 }
 

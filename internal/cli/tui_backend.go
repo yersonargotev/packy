@@ -182,25 +182,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 	if err != nil {
 		return tui.Preview{}, err
 	}
-	var plan capabilitypack.ReconciliationPlan
-	switch operation {
-	case string(capabilitypack.OperationActivate):
-		selection, selectionErr := selectionForTUI(request.Selection)
-		if selectionErr != nil {
-			return tui.Preview{}, selectionErr
-		}
-		plan, err = facade.Preview(ctx, capabilitypack.ActivationRequest{PackID: request.PackID, Surface: surface, Selection: selection})
-	case string(capabilitypack.OperationUpdate):
-		plan, err = facade.PreviewUpdate(ctx, capabilitypack.UpdateRequest{PackID: request.PackID, Surface: surface})
-	case string(capabilitypack.OperationDeactivate):
-		resources, resourcesErr := resourceIdentitiesFromTUI(request.Selection.Roots)
-		if resourcesErr != nil {
-			return tui.Preview{}, resourcesErr
-		}
-		plan, err = facade.PreviewDeactivate(ctx, capabilitypack.DeactivationRequest{PackID: request.PackID, Surface: surface, Resources: resources})
-	default:
-		return tui.Preview{}, fmt.Errorf("preview operation %q is unsupported", operation)
-	}
+	plan, err := globalPlanForTUI(ctx, facade, operation, request.PackID, surface, request.Selection)
 	if err != nil {
 		return tui.Preview{}, err
 	}
@@ -220,26 +202,8 @@ func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progre
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
 	}
-	var plan capabilitypack.ReconciliationPlan
 	surface := capabilitypack.Surface(request.Preview.Surface)
-	switch request.Preview.Operation {
-	case string(capabilitypack.OperationActivate):
-		selection, selectionErr := selectionForTUI(request.Preview.Selection)
-		if selectionErr != nil {
-			return tui.ApplyResult{Stage: "revalidation"}, selectionErr
-		}
-		plan, err = facade.Preview(ctx, capabilitypack.ActivationRequest{PackID: request.Preview.PackID, Surface: surface, Selection: selection})
-	case string(capabilitypack.OperationUpdate):
-		plan, err = facade.PreviewUpdate(ctx, capabilitypack.UpdateRequest{PackID: request.Preview.PackID, Surface: surface})
-	case string(capabilitypack.OperationDeactivate):
-		resources, resourcesErr := resourceIdentitiesFromTUI(request.Preview.Selection.Roots)
-		if resourcesErr != nil {
-			return tui.ApplyResult{Stage: "revalidation"}, resourcesErr
-		}
-		plan, err = facade.PreviewDeactivate(ctx, capabilitypack.DeactivationRequest{PackID: request.Preview.PackID, Surface: surface, Resources: resources})
-	default:
-		return tui.ApplyResult{Stage: "revalidation"}, fmt.Errorf("TUI Apply operation %q is unsupported", request.Preview.Operation)
-	}
+	plan, err := globalPlanForTUI(ctx, facade, request.Preview.Operation, request.Preview.PackID, surface, request.Preview.Selection)
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
 	}
@@ -270,6 +234,27 @@ func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progre
 		Details:        []string{fmt.Sprintf("%d projections owned", applied.Projections)},
 		PendingActions: append([]string(nil), applied.PendingHumanActions...),
 	}, nil
+}
+
+func globalPlanForTUI(ctx context.Context, facade capabilitypack.Facade, operation, packID string, surface capabilitypack.Surface, selection tui.Selection) (capabilitypack.ReconciliationPlan, error) {
+	switch operation {
+	case string(capabilitypack.OperationActivate):
+		selected, err := selectionForTUI(selection)
+		if err != nil {
+			return capabilitypack.ReconciliationPlan{}, err
+		}
+		return facade.Preview(ctx, capabilitypack.ActivationRequest{PackID: packID, Surface: surface, Selection: selected})
+	case string(capabilitypack.OperationUpdate):
+		return facade.PreviewUpdate(ctx, capabilitypack.UpdateRequest{PackID: packID, Surface: surface})
+	case string(capabilitypack.OperationDeactivate):
+		resources, err := resourceIdentitiesFromTUI(selection.Roots)
+		if err != nil {
+			return capabilitypack.ReconciliationPlan{}, err
+		}
+		return facade.PreviewDeactivate(ctx, capabilitypack.DeactivationRequest{PackID: packID, Surface: surface, Resources: resources})
+	default:
+		return capabilitypack.ReconciliationPlan{}, fmt.Errorf("preview operation %q is unsupported", operation)
+	}
 }
 
 func lifecyclePastTense(operation string) string {

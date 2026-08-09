@@ -636,18 +636,19 @@ func (m Model) updateActionChoice(message tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 }
 
 func firstLifecycleAction(status SurfaceStatus) string {
-	if !status.Active {
-		return "activate"
-	}
-	if status.UpdateAvailable {
-		return "update"
-	}
-	return "deactivate"
+	return lifecycleActionsForStatus(status)[0]
 }
 
 func (m Model) lifecycleActions() []string {
 	status := m.selectedSurfaceStatus()
-	if status == nil || !status.Active {
+	if status == nil {
+		return []string{"activate"}
+	}
+	return lifecycleActionsForStatus(*status)
+}
+
+func lifecycleActionsForStatus(status SurfaceStatus) []string {
+	if !status.Active {
 		return []string{"activate"}
 	}
 	actions := []string{}
@@ -692,11 +693,19 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if message.Code == tea.KeyRight && len(surfaces) > 0 {
 		m.surfaceIndex = nextRow(m.surfaceIndex, len(surfaces), 1)
 		m.selectionNotice = ""
+		if status := m.selectedSurfaceStatus(); !m.project && status != nil && status.Active {
+			m.selecting, m.choosingAction, m.actionChoice = false, true, 0
+			m.operation = firstLifecycleAction(*status)
+		}
 		return m, nil
 	}
 	if message.Code == tea.KeyLeft && len(surfaces) > 0 {
 		m.surfaceIndex = nextRow(m.surfaceIndex, len(surfaces), -1)
 		m.selectionNotice = ""
+		if status := m.selectedSurfaceStatus(); !m.project && status != nil && status.Active {
+			m.selecting, m.choosingAction, m.actionChoice = false, true, 0
+			m.operation = firstLifecycleAction(*status)
+		}
 		return m, nil
 	}
 	if !m.advancedSelection {

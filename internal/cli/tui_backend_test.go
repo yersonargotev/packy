@@ -413,6 +413,53 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 	}
 }
 
+func TestTUIProductionBackendShowsDriftAndFailsDeactivationClosed(t *testing.T) {
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	opts := Options{
+		Env: MapEnv{
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+			"PATH":                "",
+			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+		},
+		Getwd: func() (string, error) { return repositoryRoot, nil }, Runner: &fakeRunner{},
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	activate, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activate, ApprovedPhases: requiredTUIPhases(activate)}, func(tui.ApplyProgress) {}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(home, ".agents", "skills", "espera-que")
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("operator edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, home)
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Disposition == "applicable" || len(preview.Blockers) == 0 {
+		t.Fatalf("drifted deactivation did not fail closed: %#v", preview)
+	}
+	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(tui.ApplyProgress) {}); err == nil {
+		t.Fatal("drifted mixed deactivation unexpectedly applied")
+	}
+	if after := snapshotTree(t, home); after != before {
+		t.Fatalf("drift preview mutated HOME\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
 func requiredTUIPhases(preview tui.Preview) []string {
 	result := []string{}
 	for _, phase := range preview.Phases {
