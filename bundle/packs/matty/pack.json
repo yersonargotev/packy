@@ -1,6 +1,6 @@
 {
   "id": "matty",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Matty workflow",
   "selectable": true,
   "surfaces": [
@@ -37,6 +37,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Routes a situation to the appropriate skill or workflow",
       "id": "ask-matt",
       "kind": "skill",
       "requires": [],
@@ -71,6 +72,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Hands the current conversation to a fresh background agent",
       "id": "claude-handoff",
       "kind": "skill",
       "requires": [],
@@ -105,6 +107,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Reviews changes independently against repository standards and their originating specification",
       "id": "code-review",
       "kind": "skill",
       "requires": [],
@@ -139,6 +142,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Provides shared vocabulary and principles for designing deep modules",
       "id": "codebase-design",
       "kind": "skill",
       "requires": [],
@@ -173,6 +177,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides systematic diagnosis of hard bugs and performance regressions",
       "id": "diagnosing-bugs",
       "kind": "skill",
       "requires": [],
@@ -207,6 +212,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Builds and sharpens domain terminology and architectural decisions",
       "id": "domain-modeling",
       "kind": "skill",
       "requires": [],
@@ -241,6 +247,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Runs a relentless interview to sharpen a plan or design",
       "id": "grill-me",
       "kind": "skill",
       "requires": [],
@@ -275,6 +282,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Sharpens a plan or design through interview while recording domain decisions",
       "id": "grill-with-docs",
       "kind": "skill",
       "requires": [],
@@ -309,6 +317,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Stress-tests a plan, decision, or idea through a structured interview",
       "id": "grilling",
       "kind": "skill",
       "requires": [],
@@ -343,6 +352,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Compacts the current conversation into a handoff document for another agent",
       "id": "handoff",
       "kind": "skill",
       "requires": [],
@@ -377,6 +387,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Implements work from a specification or set of tickets",
       "id": "implement",
       "kind": "skill",
       "requires": [],
@@ -411,6 +422,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Finds and presents opportunities to deepen codebase modules",
       "id": "improve-codebase-architecture",
       "kind": "skill",
       "requires": [],
@@ -445,6 +457,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Develops workflow specifications through a stateful interview",
       "id": "loop-me",
       "kind": "skill",
       "requires": [],
@@ -479,6 +492,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Builds a throwaway prototype to answer a design question",
       "id": "prototype",
       "kind": "skill",
       "requires": [],
@@ -513,6 +527,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Investigates primary sources and records findings in the repository",
       "id": "research",
       "kind": "skill",
       "requires": [],
@@ -547,6 +562,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Resolves an in-progress Git merge or rebase conflict",
       "id": "resolving-merge-conflicts",
       "kind": "skill",
       "requires": [],
@@ -581,6 +597,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Configures a repository for the engineering skills and their supporting conventions",
       "id": "setup-matt-pocock-skills",
       "kind": "skill",
       "requires": [],
@@ -615,6 +632,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Configures dependency-cruiser to enforce deep modules in a TypeScript repository",
       "id": "setup-ts-deep-modules",
       "kind": "skill",
       "requires": [],
@@ -649,6 +667,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides test-driven development through red, green, and refactor cycles",
       "id": "tdd",
       "kind": "skill",
       "requires": [],
@@ -683,6 +702,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Teaches the user a new skill or concept within the workspace",
       "id": "teach",
       "kind": "skill",
       "requires": [],
@@ -717,6 +737,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Turns an unresolved decision into a questionnaire for another person",
       "id": "to-questionnaire",
       "kind": "skill",
       "requires": [],
@@ -751,6 +772,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Synthesizes the current conversation into a specification on the issue tracker",
       "id": "to-spec",
       "kind": "skill",
       "requires": [],
@@ -785,6 +807,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Breaks a plan or specification into dependency-aware tracer-bullet tickets",
       "id": "to-tickets",
       "kind": "skill",
       "requires": [],
@@ -819,6 +842,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Moves issue-tracker work through categorization, verification, and agent-ready briefing",
       "id": "triage",
       "kind": "skill",
       "requires": [],
@@ -853,6 +877,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Re-explains the last message in simpler, domain-aligned language",
       "id": "wait-what",
       "kind": "skill",
       "requires": [],
@@ -887,6 +912,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Maps and resolves decision tickets for work too large for one agent session",
       "id": "wayfinder",
       "kind": "skill",
       "requires": [],
@@ -921,6 +947,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Creates an interactive Bash guide for manual infrastructure and migration steps",
       "id": "wizard",
       "kind": "skill",
       "requires": [],
@@ -955,6 +982,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Shapes raw writing material into a grounded journey of narrative beats",
       "id": "writing-beats",
       "kind": "skill",
       "requires": [],
@@ -989,6 +1017,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Guides the creation of predictable instructions and documents for agents",
       "id": "writing-for-agents",
       "kind": "skill",
       "requires": [],
@@ -1023,6 +1052,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Explores a writing topic by collecting raw fragments without imposing structure",
       "id": "writing-fragments",
       "kind": "skill",
       "requires": [],
@@ -1057,6 +1087,7 @@
           "surface": "opencode"
         }
       ],
+      "description": "Shapes raw writing material into an article one grounded block at a time",
       "id": "writing-shape",
       "kind": "skill",
       "requires": [],
