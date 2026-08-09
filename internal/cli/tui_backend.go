@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -151,26 +152,43 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 	operation := request.Operation
 	surface := capabilitypack.Surface(request.Surface)
 	if request.Scope == "project" {
-		selection, err := selectionForTUI(request.Selection)
-		if err != nil {
-			return tui.Preview{}, err
-		}
 		if request.ProjectRoot == "" {
 			return tui.Preview{}, errors.New("project preview requires the current project root")
+		}
+		snapshot, projectRoot, err := b.requireCurrentProject(request.ProjectRoot)
+		if err != nil {
+			return tui.Preview{}, err
 		}
 		composition, err := resolvePackComposition(b.opts, b.resolver)
 		if err != nil {
 			return tui.Preview{}, err
 		}
 		facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil))
-		adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
-		preview, err := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{
-			PackID: request.PackID, Surface: surface, ProjectRoot: request.ProjectRoot, Selection: selection,
-		}, adapter)
-		if err != nil {
-			return tui.Preview{}, err
+		switch operation {
+		case "install":
+			selection, selectionErr := selectionForTUI(request.Selection)
+			if selectionErr != nil {
+				return tui.Preview{}, selectionErr
+			}
+			adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+			preview, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{
+				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, Selection: selection,
+			}, adapter)
+			if previewErr != nil {
+				return tui.Preview{}, previewErr
+			}
+			return projectPreviewForTUI(preview, projectRoot), nil
+		case "activate":
+			preview, previewErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{
+				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+			})
+			if previewErr != nil {
+				return tui.Preview{}, previewErr
+			}
+			return projectActivationPreviewForTUI(preview, projectRoot), nil
+		default:
+			return tui.Preview{}, fmt.Errorf("project preview operation %q is unsupported", operation)
 		}
-		return projectPreviewForTUI(preview), nil
 	}
 	if request.Scope != "global" {
 		return tui.Preview{}, fmt.Errorf("preview scope %q is unsupported", request.Scope)
@@ -191,8 +209,11 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 }
 
 func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
+	if request.Preview.Scope == "project" {
+		return b.applyProject(ctx, request, progress)
+	}
 	if request.Preview.Scope != "global" {
-		return tui.ApplyResult{Stage: "revalidation"}, errors.New("TUI Apply supports only global Pack lifecycle operations")
+		return tui.ApplyResult{Stage: "revalidation"}, fmt.Errorf("TUI Apply scope %q is unsupported", request.Preview.Scope)
 	}
 	progress(tui.ApplyProgress{Phase: "revalidation"})
 	facade, err := activationFacade(b.opts, b.resolver)
@@ -231,6 +252,113 @@ func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progre
 		Details:        []string{fmt.Sprintf("%d projections owned", applied.Projections)},
 		PendingActions: append([]string(nil), applied.PendingHumanActions...),
 	}, nil
+}
+
+func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest, progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
+	progress(tui.ApplyProgress{Phase: "revalidation"})
+	snapshot, projectRoot, err := b.requireCurrentProject(request.Preview.ProjectRoot)
+	if err != nil {
+		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	composition, err := resolvePackComposition(b.opts, b.resolver)
+	if err != nil {
+		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil))
+	surface := capabilitypack.Surface(request.Preview.Surface)
+	switch request.Preview.Operation {
+	case "install":
+		selection, selectionErr := selectionForTUI(request.Preview.Selection)
+		if selectionErr != nil {
+			return tui.ApplyResult{Stage: "revalidation"}, selectionErr
+		}
+		adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
+		fresh, previewErr := facade.PreviewProjectInstall(ctx, capabilitypack.ProjectInstallRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, Selection: selection}, adapter)
+		if previewErr != nil {
+			return tui.ApplyResult{Stage: "revalidation"}, previewErr
+		}
+		freshView := projectPreviewForTUI(fresh, projectRoot)
+		if freshView.ID != request.Preview.ID || freshView.Digest != request.Preview.Digest {
+			return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved preview is stale; create a fresh preview before Apply")
+		}
+		if err := validateTUIApprovals(request.ApprovedPhases, freshView); err != nil {
+			return tui.ApplyResult{Stage: "approval"}, err
+		}
+		progress(tui.ApplyProgress{Phase: "apply"})
+		applied, applyErr := facade.ApplyProjectInstall(ctx, capabilitypack.ProjectInstallApplyRequest{Preview: fresh, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+		if applyErr != nil {
+			return tui.ApplyResult{Stage: "apply", Summary: "Project installation stopped before verification"}, applyErr
+		}
+		progress(tui.ApplyProgress{Phase: "verification"})
+		result := tui.ApplyResult{Stage: "verification", Verified: applied.Status == "verified" || applied.Status == "no-op", Summary: fmt.Sprintf("Installed %s in the current project", request.Preview.PackID), Details: []string{"Project installation verified separately from personal runtime activation"}, RuntimeActivation: "not required"}
+		if capabilitypack.ProjectPackRequiresActivation(fresh.Lock, request.Preview.PackID, surface) {
+			activation, activationErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot)})
+			if activationErr != nil {
+				result.RuntimeActivation = "unknown"
+				result.PendingActions = append(result.PendingActions, "Reload project status before personal activation: "+activationErr.Error())
+			} else if activation.Disposition == capabilitypack.ProjectActivationPreviewable {
+				result.RuntimeActivation = "not yet activated"
+				result.FollowUpOperation = "activate"
+			} else if activation.Disposition == capabilitypack.ProjectActivationBlocked {
+				result.RuntimeActivation = "blocked"
+				result.PendingActions = append(result.PendingActions, "Personal project activation is blocked")
+			} else if activation.Disposition == capabilitypack.ProjectActivationInheritedGlobal {
+				result.RuntimeActivation = "inherited from global activation"
+			} else if activation.Disposition == capabilitypack.ProjectActivationConverged {
+				result.RuntimeActivation = "active"
+			}
+		}
+		return result, nil
+	case "activate":
+		adapter := projectRuntimeAdapter(b.opts, surface, snapshot)
+		fresh, previewErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
+		if previewErr != nil {
+			return tui.ApplyResult{Stage: "revalidation"}, previewErr
+		}
+		freshView := projectActivationPreviewForTUI(fresh, projectRoot)
+		if freshView.ID != request.Preview.ID || freshView.Digest != request.Preview.Digest {
+			return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved preview is stale; create a fresh preview before Apply")
+		}
+		if err := validateTUIApprovals(request.ApprovedPhases, freshView); err != nil {
+			return tui.ApplyResult{Stage: "approval"}, err
+		}
+		approvals := make([]capabilitypack.ProjectActivationApproval, 0, len(fresh.Categories))
+		for _, category := range fresh.Categories {
+			if category.ApprovalRequired {
+				approvals = append(approvals, facade.ApproveProjectActivation(fresh, category.Kind))
+			}
+		}
+		progress(tui.ApplyProgress{Phase: "apply"})
+		applied, applyErr := facade.ApplyProjectActivation(ctx, capabilitypack.ProjectActivationApplyRequest{Preview: fresh, Approvals: approvals, Adapter: adapter, Interactive: true})
+		if applyErr != nil {
+			return tui.ApplyResult{Stage: "apply", Summary: "Personal project activation stopped before verification"}, applyErr
+		}
+		progress(tui.ApplyProgress{Phase: "verification"})
+		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "active", Summary: fmt.Sprintf("Personally activated %s for the current project", request.Preview.PackID), Details: []string{"Project installation remains independently installed"}}, nil
+	default:
+		return tui.ApplyResult{Stage: "revalidation"}, fmt.Errorf("project Apply operation %q is unsupported", request.Preview.Operation)
+	}
+}
+
+func (b *tuiBackend) requireCurrentProject(expectedRoot string) (workstation.Snapshot, string, error) {
+	snapshot, err := b.resolver.Resolve(workstation.Options{})
+	if err != nil {
+		return workstation.Snapshot{}, "", err
+	}
+	currentDirectory, err := snapshot.CurrentDirectory()
+	if err != nil {
+		return workstation.Snapshot{}, "", fmt.Errorf("resolve the current Git project: %w", err)
+	}
+	projectRoot, err := capabilitypack.DiscoverProjectRoot(currentDirectory)
+	if err != nil {
+		return workstation.Snapshot{}, "", fmt.Errorf("project actions are unavailable outside the current Git project: %w", err)
+	}
+	currentIdentity, currentErr := filepath.EvalSymlinks(projectRoot)
+	expectedIdentity, expectedErr := filepath.EvalSymlinks(expectedRoot)
+	if currentErr != nil || expectedErr != nil || filepath.Clean(currentIdentity) != filepath.Clean(expectedIdentity) {
+		return workstation.Snapshot{}, "", fmt.Errorf("project action target %q is not the current Git project %q", expectedRoot, projectRoot)
+	}
+	return snapshot, projectRoot, nil
 }
 
 func globalPlanForTUI(ctx context.Context, facade capabilitypack.Facade, operation, packID string, surface capabilitypack.Surface, selection tui.Selection) (capabilitypack.ReconciliationPlan, error) {
@@ -329,10 +457,11 @@ func globalPreviewForTUI(report capabilitypack.JSONLifecyclePlan) tui.Preview {
 	return preview
 }
 
-func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview) tui.Preview {
+func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview, projectRoot string) tui.Preview {
 	preview := tui.Preview{
 		ID: report.Observation, Digest: report.Observation, Operation: "install", Disposition: string(report.Disposition),
 		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: string(report.Surface), Scope: "project",
+		ProjectRoot:    projectRoot,
 		Selection:      tui.Selection{Mode: string(report.Selection.Mode)},
 		PendingActions: append([]string(nil), report.Requirements...),
 	}
@@ -385,9 +514,51 @@ func projectPreviewForTUI(report capabilitypack.JSONProjectInstallPreview) tui.P
 	for _, blocker := range report.Blockers {
 		preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: blocker.Code, Subject: blocker.Resource.String(), Detail: blocker.Detail + "; " + blocker.Remediation})
 	}
-	actions := []string{"project manifest " + report.Manifest.Path, "project lock " + report.Lock.Path, "project notices " + report.Notices.Path}
+	actions := make([]string, 0, len(preview.Effects))
+	for _, effect := range preview.Effects {
+		actions = append(actions, strings.TrimSpace(effect.Kind+" "+effect.Target+" "+effect.Description))
+	}
 	preview.Phases = []tui.PreviewPhase{{Kind: "project-install", ApprovalRequired: report.Disposition == capabilitypack.ProjectInstallPreviewable, Actions: actions}}
 	return preview
+}
+
+func projectActivationPreviewForTUI(report capabilitypack.JSONProjectActivationPreview, projectRoot string) tui.Preview {
+	preview := tui.Preview{
+		ID: report.Digest, Digest: report.Digest, Operation: "activate", Disposition: string(report.Disposition),
+		PackID: report.Pack.ID, PackVersion: report.Pack.Version, Surface: string(report.Surface), Scope: "project", ProjectRoot: projectRoot,
+		Selection: tui.Selection{Mode: "all"},
+	}
+	for _, category := range report.Categories {
+		phase := tui.PreviewPhase{Kind: string(category.Kind), ApprovalRequired: category.ApprovalRequired}
+		for _, detail := range category.Details {
+			action := detail.Resource.String() + " — " + detail.Detail
+			phase.Actions = append(phase.Actions, action)
+			preview.Authorities = append(preview.Authorities, tui.PreviewAuthority{Resource: detail.Resource.String(), Detail: string(category.Kind) + " — " + detail.Detail})
+		}
+		preview.Phases = append(preview.Phases, phase)
+	}
+	for _, effect := range report.Effects {
+		preview.Effects = append(preview.Effects, tui.PreviewEffect{Kind: string(effect.Category), Target: effect.Target, Description: string(effect.Action) + " " + effect.Identity})
+	}
+	for _, effect := range report.RuntimeEffects {
+		if effect.Conflict != "" {
+			preview.Blockers = append(preview.Blockers, tui.PreviewBlocker{Kind: "runtime-conflict", Subject: effect.Resource.String(), Detail: effect.Conflict})
+		}
+	}
+	return preview
+}
+
+func validateTUIApprovals(approved []string, preview tui.Preview) error {
+	required := make([]string, 0)
+	for _, phase := range preview.Phases {
+		if phase.ApprovalRequired {
+			required = append(required, phase.Kind)
+		}
+	}
+	if !slices.Equal(approved, required) {
+		return fmt.Errorf("approved effect classes %v do not match required classes %v", approved, required)
+	}
+	return nil
 }
 
 func resourceIdentitiesForTUI(resources []capabilitypack.ResourceIdentity) []string {
@@ -512,6 +683,7 @@ func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[st
 	for _, entry := range report.Packs {
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
+			Installation: string(entry.Installation), Runtime: string(entry.Runtime), Active: entry.Runtime == capabilitypack.ProjectRuntimeActive || entry.Runtime == capabilitypack.ProjectRuntimeInheritedGlobal,
 			Configured: yesNo(entry.Readiness.Configured), Authorized: yesNo(entry.Readiness.Authorized), Usable: yesNo(entry.Readiness.Usable),
 			Ownership: len(entry.Projections), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
 		}
