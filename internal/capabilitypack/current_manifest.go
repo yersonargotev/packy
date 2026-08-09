@@ -129,6 +129,9 @@ func validateCurrentPack(pack Pack) error {
 		}
 		identities[identity] = true
 		ordered = append(ordered, identity)
+		if strings.TrimSpace(resource.Description) == "" {
+			return fmt.Errorf("Pack %q resource %q field description is required", pack.ID, identity)
+		}
 		if resource.Conflicts == nil {
 			return fmt.Errorf("Pack %q resource %q field conflicts is a required non-null array", pack.ID, identity)
 		}

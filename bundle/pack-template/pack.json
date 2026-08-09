@@ -12,6 +12,7 @@
       "kind": "instruction",
       "id": "example-guidance",
       "source": "pack-template/instructions/example-guidance.md",
+      "description": "Explains the reviewed guidance that agents should follow",
       "requires": [],
       "conflicts": [],
       "bindings": [

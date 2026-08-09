@@ -76,6 +76,60 @@ func TestValidatePackContentRequiresExplicitSelectability(t *testing.T) {
 	}
 }
 
+func TestLoadCurrentManifestRequiresDescriptionForEveryResourceKind(t *testing.T) {
+	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name, pack, kind, id string
+		description          any
+	}{
+		{"agent", "addy", "agent", "code-reviewer", nil},
+		{"asset", "addy", "asset", "accessibility-checklist", nil},
+		{"command", "addy", "command", "build", nil},
+		{"instruction", "argote", "instruction", "guidance", nil},
+		{"lifecycle", "engram", "lifecycle", "engram-memory", nil},
+		{"mcp server", "engram", "mcp_server", "engram", nil},
+		{"notice", "addy", "notice", "mit", nil},
+		{"skill", "addy", "skill", "api-and-interface-design", nil},
+		{"whitespace-only", "argote", "instruction", "guidance", " \n\t "},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var manifest map[string]any
+			path := filepath.Join(bundle, "packs", test.pack, "pack.json")
+			if err := json.Unmarshal(mustReadFile(t, path), &manifest); err != nil {
+				t.Fatal(err)
+			}
+			for _, value := range manifest["resources"].([]any) {
+				resource := value.(map[string]any)
+				if resource["kind"] == test.kind && resource["id"] == test.id {
+					if test.description == nil {
+						delete(resource, "description")
+					} else {
+						resource["description"] = test.description
+					}
+				}
+			}
+			encoded, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			invalidPath := filepath.Join(t.TempDir(), "pack.json")
+			if err := os.WriteFile(invalidPath, encoded, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = LoadCurrentManifest(invalidPath, bundle, false)
+			want := `Pack "` + test.pack + `" resource "` + test.kind + `:` + test.id + `" field description is required`
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("resource description error = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
 func TestValidatePortableContentReportsMissingSelectability(t *testing.T) {
 	bundle := t.TempDir()
 	packDir := writeCurrentPackFixture(t, bundle, "example-pack")
@@ -160,6 +214,9 @@ func TestCheckedInPackTemplateUsesCurrentContract(t *testing.T) {
 	if pack.ID != "example-pack" || pack.Version != "1.0.0" || pack.Selectable {
 		t.Fatalf("template Pack = %#v", pack)
 	}
+	if len(pack.Resources) != 1 || strings.TrimSpace(pack.Resources[0].Description) == "" {
+		t.Fatalf("template resources = %#v", pack.Resources)
+	}
 }
 
 func TestCheckedInCurrentManifestsOmitRetiredContractTerms(t *testing.T) {
@@ -209,6 +266,7 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
       "kind": "instruction",
       "id": "guide",
       "source": "packs/` + id + `/instructions/guide.md",
+	  "description": "Explains the reviewed guidance",
       "requires": [],
       "conflicts": [],
       "bindings": [
@@ -263,7 +321,7 @@ func writePortableFixture(t *testing.T, bundle, id, source string) {
 	if err := os.WriteFile(filepath.Join(bundle, source), []byte("inert\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"external_requirements":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared"}],"surface_exclusions":[]}],"exclusions":[]}`
+	manifest := `{"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"external_requirements":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared"}],"surface_exclusions":[]}],"exclusions":[]}`
 	if err := os.WriteFile(filepath.Join(bundle, "packs", id, "pack.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
