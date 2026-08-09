@@ -1,6 +1,6 @@
 {
   "id": "matty",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Matty workflow",
   "selectable": true,
   "surfaces": [
@@ -49,7 +49,15 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "opencode",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "opencode-primary-prompt",
+              "primary_prompt": {
+                "id": "matty-opencode-primary",
+                "source": "instructions/matty-opencode.md"
+              }
+            }
+          ]
         }
       ],
       "description": "Routes a situation to the appropriate skill or workflow",

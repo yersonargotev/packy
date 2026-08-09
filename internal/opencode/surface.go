@@ -124,6 +124,54 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 	desiredConfig := ""
 	configLoaded := false
 	for _, resource := range pack.Resources {
+		primaryPrompt, hasPrimaryPrompt := resource.SurfaceCapability(capabilitypack.SurfaceOpenCode, capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt)
+		if hasPrimaryPrompt {
+			data := primaryPrompt.PrimaryPrompt
+			content, err := os.ReadFile(filepath.Join(a.bundleRoot, filepath.Clean(data.Source)))
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read primary prompt capability %q source: %w", data.ID, err)
+			}
+			desiredContent := strings.TrimSpace(string(content)) + "\n"
+			currentPrompt, err := os.ReadFile(a.promptFile)
+			if err != nil && !os.IsNotExist(err) {
+				return capabilitypack.SurfaceInspection{}, fmt.Errorf("read OpenCode primary prompt: %w", err)
+			}
+			observed := "missing"
+			exists := err == nil
+			if exists {
+				observed = localprojection.FingerprintBytes(currentPrompt)
+			}
+			promptID := "primary_prompt:" + data.ID
+			projections = append(projections, capabilitypack.ObservedProjection{ID: promptID, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: localprojection.FingerprintBytes([]byte(desiredContent)), Action: capabilitypack.ProjectionAction{ID: promptID, Kind: capabilitypack.ActionOpenCodePrimaryPrompt, Target: a.promptFile, Content: desiredContent, Description: fmt.Sprintf("write OpenCode primary prompt %s at %s", data.ID, a.promptFile)}})
+
+			currentConfig, err := readOptionalSurfaceFile(a.configFile)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			if !configLoaded {
+				desiredConfig = currentConfig
+				configLoaded = true
+			}
+			inspection, err := Inspect(a.configFile, a.promptFile)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			merged, err := MergeInstructionProjection(currentConfig, a.configFile, a.promptFile)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			desiredConfig, err = MergeInstructionProjection(desiredConfig, a.configFile, a.promptFile)
+			if err != nil {
+				return capabilitypack.SurfaceInspection{}, err
+			}
+			refID := "opencode-primary-prompt-reference:" + data.ID
+			refDesired, refObserved := localprojection.FingerprintBytes([]byte(a.promptFile)), "missing"
+			if inspection.HasPackyInstruction {
+				refObserved = refDesired
+			}
+			projections = append(projections, capabilitypack.ObservedProjection{ID: refID, Exists: inspection.HasPackyInstruction, ObservedFingerprint: refObserved, DesiredFingerprint: refDesired, Action: capabilitypack.ProjectionAction{ID: refID, Kind: capabilitypack.ActionOpenCodeConfigReference, Target: a.configFile, Content: merged, Description: fmt.Sprintf("add OpenCode primary prompt reference in %s", a.configFile)}})
+			revisionParts = append(revisionParts, "primary-prompt="+localprojection.FingerprintBytes(currentPrompt), "config="+localprojection.FingerprintBytes([]byte(currentConfig)))
+		}
 		switch resource.Kind {
 		case "skill":
 			source := filepath.Join(a.bundleRoot, filepath.Clean(resource.Source))
@@ -351,11 +399,10 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 			continue
 		}
 		switch projection.Action.Kind {
-		case capabilitypack.ActionOpenCodeSkillLink, capabilitypack.ActionOpenCodeInstructionFile, capabilitypack.ActionOpenCodeAgentFile, capabilitypack.ActionOpenCodeCommandFile, capabilitypack.ActionOpenCodeAssetFile:
+		case capabilitypack.ActionOpenCodeSkillLink, capabilitypack.ActionOpenCodeInstructionFile, capabilitypack.ActionOpenCodePrimaryPrompt, capabilitypack.ActionOpenCodeAgentFile, capabilitypack.ActionOpenCodeCommandFile, capabilitypack.ActionOpenCodeAssetFile:
 			mode = capabilitypack.ProjectionDeleteTarget
 		case capabilitypack.ActionOpenCodeConfigReference:
-			id := strings.TrimPrefix(projection.ID, "opencode-instruction-reference:")
-			configContent, err = RemoveInstructionProjection(configContent, a.configFile, a.instructionPath(id))
+			configContent, err = RemoveInstructionProjection(configContent, a.configFile, a.configReferenceTarget(projection.ID))
 			if err != nil {
 				return capabilitypack.SurfaceInspection{}, err
 			}
@@ -435,6 +482,11 @@ func (a *SurfaceAdapter) inspectOwnedProjection(id, configContent string) (capab
 		projection.Exists, projection.ObservedFingerprint = exists, observed
 		projection.Action = capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionOpenCodeInstructionFile, Target: target}
 		return capabilitypack.RemovalCandidate(projection, capabilitypack.ProjectionDeleteTarget, "", fmt.Sprintf("remove OpenCode projection %s", id)), true, err
+	case strings.HasPrefix(id, "primary_prompt:"):
+		observed, exists, err := localprojection.FingerprintPath(a.promptFile)
+		projection.Exists, projection.ObservedFingerprint = exists, observed
+		projection.Action = capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionOpenCodePrimaryPrompt, Target: a.promptFile}
+		return capabilitypack.RemovalCandidate(projection, capabilitypack.ProjectionDeleteTarget, "", fmt.Sprintf("remove OpenCode projection %s", id)), true, err
 	case strings.HasPrefix(id, "opencode-instruction-reference:"):
 		resourceID := strings.TrimPrefix(id, "opencode-instruction-reference:")
 		target := a.instructionPath(resourceID)
@@ -447,6 +499,18 @@ func (a *SurfaceAdapter) inspectOwnedProjection(id, configContent string) (capab
 			projection.ObservedFingerprint = localprojection.FingerprintBytes([]byte(target))
 		}
 		content, err := RemoveInstructionProjection(configContent, a.configFile, target)
+		projection.Action = capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionOpenCodeConfigReference, Target: a.configFile}
+		return capabilitypack.RemovalCandidate(projection, capabilitypack.ProjectionRemoveContent, content, fmt.Sprintf("remove OpenCode projection %s", id)), true, err
+	case strings.HasPrefix(id, "opencode-primary-prompt-reference:"):
+		inspection, err := Inspect(a.configFile, a.promptFile)
+		if err != nil {
+			return capabilitypack.ObservedProjection{}, false, err
+		}
+		projection.Exists = inspection.HasPackyInstruction
+		if projection.Exists {
+			projection.ObservedFingerprint = localprojection.FingerprintBytes([]byte(a.promptFile))
+		}
+		content, err := RemoveInstructionProjection(configContent, a.configFile, a.promptFile)
 		projection.Action = capabilitypack.ProjectionAction{ID: id, Kind: capabilitypack.ActionOpenCodeConfigReference, Target: a.configFile}
 		return capabilitypack.RemovalCandidate(projection, capabilitypack.ProjectionRemoveContent, content, fmt.Sprintf("remove OpenCode projection %s", id)), true, err
 	case strings.HasPrefix(id, "mcp_server:"):
@@ -487,14 +551,14 @@ func (a *SurfaceAdapter) ApplyProjections(_ context.Context, actions []capabilit
 	for _, action := range actions {
 		switch action.Kind {
 		case capabilitypack.ActionOpenCodeConfigReference:
-			resourceID := strings.TrimPrefix(action.ID, "opencode-instruction-reference:")
+			target := a.configReferenceTarget(action.ID)
 			if action.Mode == capabilitypack.ProjectionRemoveContent {
-				if err := ValidateInstructionRemoval(action.Content, a.configFile, a.instructionPath(resourceID)); err != nil {
+				if err := ValidateInstructionRemoval(action.Content, a.configFile, target); err != nil {
 					return &capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("validate staged OpenCode config removal: %w", err)}
 				}
 				continue
 			}
-			if err := ValidateInstructionProjection(action.Content, a.instructionPath(resourceID)); err != nil {
+			if err := ValidateInstructionProjection(action.Content, target); err != nil {
 				return &capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("validate staged OpenCode config: %w", err)}
 			}
 		case capabilitypack.ActionOpenCodeMCPConfig:
@@ -516,7 +580,7 @@ func (a *SurfaceAdapter) ApplyProjections(_ context.Context, actions []capabilit
 		SymlinkKinds: map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionOpenCodeSkillLink: true},
 		TreeKinds:    map[capabilitypack.ProjectionActionKind]bool{capabilitypack.ActionCodexProjectSkillTree: true},
 		FileKinds: map[capabilitypack.ProjectionActionKind]bool{
-			capabilitypack.ActionOpenCodeInstructionFile: true, capabilitypack.ActionOpenCodeConfigReference: true, capabilitypack.ActionOpenCodeMCPConfig: true,
+			capabilitypack.ActionOpenCodeInstructionFile: true, capabilitypack.ActionOpenCodePrimaryPrompt: true, capabilitypack.ActionOpenCodeConfigReference: true, capabilitypack.ActionOpenCodeMCPConfig: true,
 			capabilitypack.ActionOpenCodeAgentFile: true, capabilitypack.ActionOpenCodeCommandFile: true, capabilitypack.ActionOpenCodeAssetFile: true,
 			capabilitypack.ActionProjectManifestFile: true, capabilitypack.ActionProjectLockFile: true, capabilitypack.ActionProjectNoticesFile: true,
 		},
@@ -693,7 +757,7 @@ func pathsOverlap(left, right string) bool {
 	return false
 }
 func exclusivePathKind(kind capabilitypack.ProjectionActionKind) bool {
-	return kind == capabilitypack.ActionOpenCodeSkillLink || kind == capabilitypack.ActionOpenCodeAgentFile || kind == capabilitypack.ActionOpenCodeCommandFile || kind == capabilitypack.ActionOpenCodeAssetFile
+	return kind == capabilitypack.ActionOpenCodeSkillLink || kind == capabilitypack.ActionOpenCodePrimaryPrompt || kind == capabilitypack.ActionOpenCodeAgentFile || kind == capabilitypack.ActionOpenCodeCommandFile || kind == capabilitypack.ActionOpenCodeAssetFile
 }
 
 func (a *SurfaceAdapter) inspectOccupiedNames() ([]capabilitypack.OccupiedName, error) {
@@ -773,6 +837,13 @@ func applyRecordedOccupancyOwnership(observation *capabilitypack.SurfaceInspecti
 
 func (a *SurfaceAdapter) instructionPath(id string) string {
 	return filepath.Join(filepath.Dir(a.promptFile), id+".md")
+}
+
+func (a *SurfaceAdapter) configReferenceTarget(id string) string {
+	if strings.HasPrefix(id, "opencode-primary-prompt-reference:") {
+		return a.promptFile
+	}
+	return a.instructionPath(strings.TrimPrefix(id, "opencode-instruction-reference:"))
 }
 
 func pendingActions(pack capabilitypack.Pack) []string {

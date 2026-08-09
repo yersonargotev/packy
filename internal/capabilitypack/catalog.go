@@ -234,15 +234,22 @@ type Binding struct {
 type SurfaceCapabilityType string
 
 const (
-	SurfaceCapabilityEngramIntegration  SurfaceCapabilityType = "engram-integration"
-	SurfaceCapabilityProjectInstruction SurfaceCapabilityType = "project-instruction"
+	SurfaceCapabilityEngramIntegration     SurfaceCapabilityType = "engram-integration"
+	SurfaceCapabilityOpenCodePrimaryPrompt SurfaceCapabilityType = "opencode-primary-prompt"
+	SurfaceCapabilityProjectInstruction    SurfaceCapabilityType = "project-instruction"
 )
 
 // SurfaceCapability is one reviewed host-native behavior requested by a
 // binding. Its closed wire shape deliberately cannot carry extension data.
 type SurfaceCapability struct {
 	Type               SurfaceCapabilityType         `json:"type"`
+	PrimaryPrompt      *PrimaryPromptCapability      `json:"primary_prompt,omitempty"`
 	ProjectInstruction *ProjectInstructionCapability `json:"project_instruction,omitempty"`
+}
+
+type PrimaryPromptCapability struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
 }
 
 type ProjectInstructionCapability struct {
@@ -616,6 +623,10 @@ func clonePack(pack Pack) Pack {
 			binding := &pack.Resources[i].Bindings[j]
 			binding.Capabilities = append([]SurfaceCapability(nil), binding.Capabilities...)
 			for k := range binding.Capabilities {
+				if binding.Capabilities[k].PrimaryPrompt != nil {
+					copy := *binding.Capabilities[k].PrimaryPrompt
+					binding.Capabilities[k].PrimaryPrompt = &copy
+				}
 				if binding.Capabilities[k].ProjectInstruction != nil {
 					copy := *binding.Capabilities[k].ProjectInstruction
 					binding.Capabilities[k].ProjectInstruction = &copy
@@ -884,12 +895,31 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			return fmt.Errorf("capabilities must be sorted by type without duplicates")
 		}
 		switch capability.Type {
+		case SurfaceCapabilityOpenCodePrimaryPrompt:
+			if binding.Surface != SurfaceOpenCode {
+				return fmt.Errorf("surface capability %q requires an opencode binding", capability.Type)
+			}
+			if capability.PrimaryPrompt == nil {
+				return fmt.Errorf("surface capability %q requires primary_prompt data", capability.Type)
+			}
+			if capability.ProjectInstruction != nil {
+				return fmt.Errorf("surface capability %q does not accept project_instruction data", capability.Type)
+			}
+			if !idPattern.MatchString(capability.PrimaryPrompt.ID) {
+				return fmt.Errorf("surface capability %q primary_prompt id must be lowercase kebab-case", capability.Type)
+			}
+			if err := validateSourcePath(capability.PrimaryPrompt.Source); err != nil {
+				return fmt.Errorf("surface capability %q primary_prompt source: %w", capability.Type, err)
+			}
 		case SurfaceCapabilityProjectInstruction:
 			if binding.Surface != SurfaceCodex && binding.Surface != SurfaceOpenCode {
 				return fmt.Errorf("surface capability %q requires a codex or opencode binding", capability.Type)
 			}
 			if capability.ProjectInstruction == nil {
 				return fmt.Errorf("surface capability %q requires project_instruction data", capability.Type)
+			}
+			if capability.PrimaryPrompt != nil {
+				return fmt.Errorf("surface capability %q does not accept primary_prompt data", capability.Type)
 			}
 			if !idPattern.MatchString(capability.ProjectInstruction.ID) {
 				return fmt.Errorf("surface capability %q project_instruction id must be lowercase kebab-case", capability.Type)
@@ -898,6 +928,9 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 				return fmt.Errorf("surface capability %q project_instruction source: %w", capability.Type, err)
 			}
 		case SurfaceCapabilityEngramIntegration:
+			if capability.PrimaryPrompt != nil {
+				return fmt.Errorf("surface capability %q does not accept primary_prompt data", capability.Type)
+			}
 			if capability.ProjectInstruction != nil {
 				return fmt.Errorf("surface capability %q does not accept project_instruction data", capability.Type)
 			}
@@ -1334,10 +1367,21 @@ func validatePackSources(pack Pack, bundleRoot string) error {
 		}
 		for _, binding := range resource.Bindings {
 			for _, capability := range binding.Capabilities {
-				if capability.Type != SurfaceCapabilityProjectInstruction || capability.ProjectInstruction == nil {
+				source := ""
+				switch capability.Type {
+				case SurfaceCapabilityOpenCodePrimaryPrompt:
+					if capability.PrimaryPrompt != nil {
+						source = capability.PrimaryPrompt.Source
+					}
+				case SurfaceCapabilityProjectInstruction:
+					if capability.ProjectInstruction != nil {
+						source = capability.ProjectInstruction.Source
+					}
+				}
+				if source == "" {
 					continue
 				}
-				if err := validateSource(bundleRoot, Resource{Kind: "instruction", Source: capability.ProjectInstruction.Source}); err != nil {
+				if err := validateSource(bundleRoot, Resource{Kind: "instruction", Source: source}); err != nil {
 					return fmt.Errorf("resource %q surface capability %q source: %w", resource.Kind+":"+resource.ID, capability.Type, err)
 				}
 			}

@@ -6,7 +6,7 @@
 
 Matty workflow
 
-- Version: `1.0.2`
+- Version: `1.0.3`
 - Supported surfaces: `claude`, `codex`, `opencode`
 - External requirements: None.
 

@@ -101,7 +101,11 @@ empty array. A binding that needs reusable host-native behavior selects only a
 reviewed typed capability. The `project-instruction` capability carries
 typed `project_instruction` data with a stable lowercase kebab-case `id` and a
 reviewed relative `source`; Codex and OpenCode translate it into an independently
-owned marked contribution in the project's `AGENTS.md`. Unknown capability
+owned marked contribution in the project's `AGENTS.md`. The
+`opencode-primary-prompt` capability carries typed `primary_prompt` data with
+the same identity and source constraints; OpenCode translates it into the
+global primary instruction document and its workstation configuration reference.
+Project guidance remains a separate `project-instruction` contribution. Unknown capability
 types, missing typed data, and extension fields are rejected during admission.
 
 The payload-free `engram-integration` capability explicitly enables Packy's
