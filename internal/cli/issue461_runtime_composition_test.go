@@ -36,7 +36,7 @@ func TestIssue461ProjectRuntimeCompositionUsesOneHumanAndStructuredVocabulary(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"schema_version":4`, `"runtime":"inherited-global"`, `"coverage":"inherited-global"`, `"global_version":"1.0.0"`} {
+	for _, want := range []string{`"schema_version":5`, `"runtime":"inherited-global"`, `"coverage":"inherited-global"`, `"global_version":"1.0.0"`} {
 		if !strings.Contains(string(encoded), want) {
 			t.Fatalf("structured status omitted %q: %s", want, encoded)
 		}

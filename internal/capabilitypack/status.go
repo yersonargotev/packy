@@ -12,6 +12,7 @@ type StatusRequest struct {
 	Surface       Surface
 	Resource      string
 	RequireUsable bool
+	PackyHome     string
 }
 
 type IntentStatus struct {
@@ -133,6 +134,7 @@ type StatusEntry struct {
 	Conditions            []ReadinessCondition
 	OptionalAuthorities   []OptionalAuthorityObservation
 	RuntimeModes          []RuntimeModeResult
+	ControlledCheck       ControlledCheckStatus
 	Projections           ProjectionSummary
 	ProjectionDetails     []ProjectionStatus
 	ResourceSelections    []ResourceSelectionStatus
@@ -167,8 +169,9 @@ type ActiveIntentObservation struct {
 
 // Facade is the single capability-pack use-case boundary consumed by the CLI.
 type Facade struct {
-	catalog    Catalog
-	activation *activationDependencies
+	catalog          Catalog
+	activation       *activationDependencies
+	controlledChecks ControlledCheckEvidenceStore
 }
 
 func NewFacade(catalog Catalog, options ...FacadeOption) Facade {
@@ -339,7 +342,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 			if request.Surface != "" && request.Surface != surface {
 				continue
 			}
-			entry, err := f.statusEntry(ctx, pack, surface)
+			entry, err := f.statusEntry(ctx, pack, surface, request.PackyHome)
 			if err != nil {
 				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
 			}
@@ -368,7 +371,7 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 	return report, nil
 }
 
-func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (StatusEntry, error) {
+func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface, packyHome string) (StatusEntry, error) {
 	if f.activation == nil || f.activation.store == nil {
 		return StatusEntry{}, fmt.Errorf("surface inspection is not configured")
 	}
@@ -376,10 +379,14 @@ func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface) (St
 	if err != nil {
 		return StatusEntry{}, err
 	}
-	return f.statusEntryWithState(ctx, pack, surface, state)
+	return f.statusEntryWithStateAt(ctx, pack, surface, state, packyHome)
 }
 
 func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Surface, state ActivationState) (StatusEntry, error) {
+	return f.statusEntryWithStateAt(ctx, pack, surface, state, "")
+}
+
+func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface Surface, state ActivationState, packyHome string) (StatusEntry, error) {
 	adapter := f.activation.adapters[surface]
 	if adapter == nil {
 		return StatusEntry{}, fmt.Errorf("no activation adapter configured for CLI surface %q", surface)
@@ -480,9 +487,19 @@ func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Sur
 	}
 	entry.Evidence = append(entry.Evidence, fresh.Evidence...)
 	entry.OptionalAuthorities = cloneOptionalAuthorities(fresh.OptionalAuthorities)
+	if store := f.controlledCheckStore(packyHome); store != nil {
+		identity := controlledCheckIdentityFor(evidencePack, surface, ControlledCheckGlobal, "", controlledCheckResources(ResourceGraphFor(evidencePack, selection, false)), observation)
+		entry.ControlledCheck, err = store.Status(ctx, identity)
+		if err != nil {
+			return StatusEntry{}, err
+		}
+	} else {
+		entry.ControlledCheck = ControlledCheckStatus{State: ControlledCheckUnknown}
+	}
 	entry.Readiness, entry.Conditions = evaluateReadiness(readinessEvaluation{
 		Pack: relevantPack, Surface: surface, Scope: ReadinessScopeGlobal,
 		Projections: entry.ProjectionDetails, Resolutions: resolutions, UnobservedRequirements: unobservedRequirements, Observation: fresh, Revision: observation.Revision,
+		ControlledCheck: &entry.ControlledCheck,
 	})
 	if entry.Intent.Active {
 		entry.Resources = deriveResourceStatuses(pack.ID, graph, entry.ProjectionDetails, fresh)

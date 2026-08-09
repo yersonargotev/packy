@@ -61,6 +61,17 @@ packy status --project
 packy status matty --surface codex --project --json
 ```
 
+For runtime behavior Packy cannot observe, preview and record a personal check
+against the exact installed project closure:
+
+```sh
+packy check orchestrate --surface codex --project --dry-run
+packy check orchestrate --surface codex --project --result positive
+```
+
+The result remains beneath Packy Home and is never written to `packy.json` or
+`packy.lock.json`; another workstation or clone therefore starts unknown.
+
 Every update preflights all receipt-owned projections. Drift or a target
 collision stops the operation before any write. `--force` remains limited to
 paths in the targeted receipt.

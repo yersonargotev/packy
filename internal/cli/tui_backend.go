@@ -164,7 +164,10 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 		if err != nil {
 			return tui.Preview{}, err
 		}
-		facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil))
+		facade := capabilitypack.NewFacade(composition.catalog,
+			capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil),
+			capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
+		)
 		switch operation {
 		case "install":
 			selection, selectionErr := selectionForTUI(request.Selection)
@@ -194,6 +197,15 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 				return tui.Preview{}, previewErr
 			}
 			return projectActivationPreviewForTUI(preview, projectRoot), nil
+		case "check":
+			preview, previewErr := facade.PreviewControlledCheck(ctx, capabilitypack.ControlledCheckRequest{
+				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot,
+				PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+			})
+			if previewErr != nil {
+				return tui.Preview{}, previewErr
+			}
+			return controlledCheckPreviewForTUI(preview, projectRoot), nil
 		case "deactivate":
 			preview, previewErr := capabilitypack.PreviewProjectDeactivation(ctx, capabilitypack.ProjectDeactivationRequest{
 				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
@@ -215,6 +227,23 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 	facade, err := activationFacade(b.opts, b.resolver)
 	if err != nil {
 		return tui.Preview{}, err
+	}
+	if operation == "check" {
+		snapshot, snapshotErr := b.resolver.Resolve(workstation.Options{})
+		if snapshotErr != nil {
+			return tui.Preview{}, snapshotErr
+		}
+		selection, selectionErr := selectionForTUI(request.Selection)
+		if selectionErr != nil {
+			return tui.Preview{}, selectionErr
+		}
+		preview, previewErr := facade.PreviewControlledCheck(ctx, capabilitypack.ControlledCheckRequest{
+			PackID: request.PackID, Surface: surface, PackyHome: snapshot.PackyHome(), Selection: selection,
+		})
+		if previewErr != nil {
+			return tui.Preview{}, previewErr
+		}
+		return controlledCheckPreviewForTUI(preview, ""), nil
 	}
 	plan, err := globalPlanForTUI(ctx, facade, operation, request.PackID, surface, request.Selection)
 	if err != nil {
@@ -238,6 +267,9 @@ func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progre
 	facade, err := activationFacade(b.opts, b.resolver)
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	if request.Preview.Operation == "check" {
+		return b.applyGlobalControlledCheck(ctx, facade, request, progress)
 	}
 	surface := capabilitypack.Surface(request.Preview.Surface)
 	plan, err := globalPlanForTUI(ctx, facade, request.Preview.Operation, request.Preview.PackID, surface, request.Preview.Selection)
@@ -283,9 +315,33 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
 	}
-	facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil))
+	facade := capabilitypack.NewFacade(composition.catalog,
+		capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil),
+		capabilitypack.WithControlledCheckEvidence(capabilitypack.NewFileControlledCheckStore(snapshot.PackyHome())),
+	)
 	surface := capabilitypack.Surface(request.Preview.Surface)
 	switch request.Preview.Operation {
+	case "check":
+		fresh, previewErr := facade.PreviewControlledCheck(ctx, capabilitypack.ControlledCheckRequest{
+			PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot,
+			PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+		})
+		if previewErr != nil {
+			return tui.ApplyResult{Stage: "revalidation"}, previewErr
+		}
+		if controlledCheckPreviewForTUI(fresh, projectRoot).Digest != request.Preview.Digest {
+			return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved controlled check preview is stale; create a fresh preview")
+		}
+		if err := validateControlledCheckTUIRequest(request); err != nil {
+			return tui.ApplyResult{Stage: "approval"}, err
+		}
+		progress(tui.ApplyProgress{Phase: "apply"})
+		evidence, recordErr := facade.RecordControlledCheck(ctx, fresh, controlledCheckResultValue(request.ControlledCheckResult))
+		if recordErr != nil {
+			return tui.ApplyResult{Stage: "apply", Summary: "Controlled runtime check was not recorded"}, recordErr
+		}
+		progress(tui.ApplyProgress{Phase: "verification"})
+		return tui.ApplyResult{Stage: "verification", Verified: evidence.State == capabilitypack.ControlledCheckCurrent, Summary: fmt.Sprintf("Recorded %s controlled runtime evidence for %s", request.ControlledCheckResult, request.Preview.PackID)}, nil
 	case "install":
 		selection, selectionErr := selectionForTUI(request.Preview.Selection)
 		if selectionErr != nil {
@@ -739,6 +795,74 @@ func validateTUIApprovals(approved []string, preview tui.Preview) error {
 	return nil
 }
 
+func controlledCheckPreviewForTUI(preview capabilitypack.ControlledCheckPreview, projectRoot string) tui.Preview {
+	scope, disposition := "global", "applicable"
+	if preview.Scope == capabilitypack.ControlledCheckProject {
+		scope, disposition = "project", "previewable"
+	}
+	result := tui.Preview{
+		ID: preview.ValidityIdentity, Digest: preview.ValidityIdentity, Operation: "check", Disposition: disposition,
+		PackID: preview.Pack, PackVersion: preview.PackVersion, Surface: string(preview.Surface), Scope: scope,
+		ProjectRoot: projectRoot, Selection: tui.Selection{Mode: "custom"},
+		Instructions: append([]string(nil), preview.Instructions...), ValidityIdentity: preview.ValidityIdentity, ProjectionRevision: preview.ProjectionRevision,
+		Phases: []tui.PreviewPhase{{Kind: "controlled-check", ApprovalRequired: true, Actions: []string{"record an explicit positive or negative personal result"}}},
+	}
+	for _, resource := range preview.Resources {
+		identity := resource.String()
+		result.Selection.Roots = append(result.Selection.Roots, identity)
+		result.Resources = append(result.Resources, tui.PreviewResource{Identity: identity})
+	}
+	return result
+}
+
+func validateControlledCheckTUIRequest(request tui.ApplyRequest) error {
+	if !slices.Equal(request.ApprovedPhases, []string{"controlled-check"}) {
+		return fmt.Errorf("controlled runtime check requires the controlled-check approval")
+	}
+	if request.ControlledCheckResult != "positive" && request.ControlledCheckResult != "negative" {
+		return fmt.Errorf("controlled runtime check result must be positive or negative")
+	}
+	return nil
+}
+
+func controlledCheckResultValue(result string) capabilitypack.ReadinessValue {
+	if result == "positive" {
+		return capabilitypack.ReadinessTrue
+	}
+	return capabilitypack.ReadinessFalse
+}
+
+func (b *tuiBackend) applyGlobalControlledCheck(ctx context.Context, facade capabilitypack.Facade, request tui.ApplyRequest, progress func(tui.ApplyProgress)) (tui.ApplyResult, error) {
+	snapshot, err := b.resolver.Resolve(workstation.Options{})
+	if err != nil {
+		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	selection, err := selectionForTUI(request.Preview.Selection)
+	if err != nil {
+		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	fresh, err := facade.PreviewControlledCheck(ctx, capabilitypack.ControlledCheckRequest{
+		PackID: request.Preview.PackID, Surface: capabilitypack.Surface(request.Preview.Surface),
+		PackyHome: snapshot.PackyHome(), Selection: selection,
+	})
+	if err != nil {
+		return tui.ApplyResult{Stage: "revalidation"}, err
+	}
+	if fresh.ValidityIdentity != request.Preview.Digest {
+		return tui.ApplyResult{Stage: "revalidation"}, errors.New("approved controlled check preview is stale; create a fresh preview")
+	}
+	if err := validateControlledCheckTUIRequest(request); err != nil {
+		return tui.ApplyResult{Stage: "approval"}, err
+	}
+	progress(tui.ApplyProgress{Phase: "apply"})
+	evidence, err := facade.RecordControlledCheck(ctx, fresh, controlledCheckResultValue(request.ControlledCheckResult))
+	if err != nil {
+		return tui.ApplyResult{Stage: "apply", Summary: "Controlled runtime check was not recorded"}, err
+	}
+	progress(tui.ApplyProgress{Phase: "verification"})
+	return tui.ApplyResult{Stage: "verification", Verified: evidence.State == capabilitypack.ControlledCheckCurrent, Summary: fmt.Sprintf("Recorded %s controlled runtime evidence for %s", request.ControlledCheckResult, request.Preview.PackID)}, nil
+}
+
 func resourceIdentitiesForTUI(resources []capabilitypack.ResourceIdentity) []string {
 	result := make([]string, 0, len(resources))
 	for _, resource := range resources {
@@ -838,10 +962,11 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
 			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateActionAvailable,
-			Configured: readinessForTUI(entry.Readiness.Configured),
-			Authorized: readinessForTUI(entry.Readiness.Authorized),
-			Usable:     readinessForTUI(entry.Readiness.Usable),
-			Blockers:   append([]string(nil), entry.Blockers...), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
+			Configured:           readinessForTUI(entry.Readiness.Configured),
+			Authorized:           readinessForTUI(entry.Readiness.Authorized),
+			Usable:               readinessForTUI(entry.Readiness.Usable),
+			ControlledCheckState: string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
+			Blockers: append([]string(nil), entry.Blockers...), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
 			Conditions: readinessConditionsForTUI(entry.Conditions),
 		}
 		for _, projection := range entry.ProjectionDetails {
@@ -868,6 +993,7 @@ func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[st
 			Installation: string(entry.Installation), Runtime: string(entry.Runtime), Active: entry.Runtime == capabilitypack.ProjectRuntimeActive || entry.Runtime == capabilitypack.ProjectRuntimeInheritedGlobal,
 			InstalledVersion: entry.Pack.Version,
 			Configured:       string(entry.Readiness.Configured), Authorized: string(entry.Readiness.Authorized), Usable: string(entry.Readiness.Usable),
+			ControlledCheckState: string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
 			Ownership: len(entry.Projections), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
 			Conditions: readinessConditionsForTUI(entry.Conditions),
 		}

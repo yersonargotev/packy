@@ -825,6 +825,86 @@ func TestRunEntersAndRestoresAlternateScreen(t *testing.T) {
 	}
 }
 
+func TestGlobalControlledRuntimeCheckRecordsPositiveResultAfterItsOwnPreview(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+		ID: "orchestrate", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:orchestrate", Role: "root"}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Configured: "true", Usable: "unknown"}},
+	}}}}}
+	backend.previewFor = func(request tui.PreviewRequest) (tui.Preview, error) {
+		if request.Operation != "check" || request.Scope != "global" || request.Selection.Mode != "all" {
+			return tui.Preview{}, errors.New("unexpected controlled-check preview request")
+		}
+		return tui.Preview{
+			ID: "runtime-check-global", Digest: "runtime-check-global", Operation: "check", Disposition: "applicable",
+			PackID: "orchestrate", PackVersion: "1.0.0", Surface: "codex", Scope: "global", Selection: request.Selection,
+			ValidityIdentity: "projection-revision=7; adapter=codex-1; host=codex-2", ProjectionRevision: "revision-7", Instructions: []string{"Run the reviewed delegation workflow in Codex."},
+			Phases: []tui.PreviewPhase{{Kind: "record-runtime-evidence", ApprovalRequired: true}},
+		}, nil
+	}
+	backend.applyResult = tui.ApplyResult{Stage: "verification", Verified: true, Summary: "Recorded current positive runtime evidence"}
+
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Immutable controlled runtime check", "Check instructions", "Projection revision: revision-7", "projection-revision=7", "Enter continue to consent"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("controlled-check preview missing %q:\n%s", want, view)
+		}
+	}
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Record controlled runtime check result") || !strings.Contains(view, "[ Positive ]") || !strings.Contains(view, "[ Negative ]") {
+		t.Fatalf("controlled-check result choice is not explicit:\n%s", view)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	if len(backend.applyRequests) != 1 || backend.applyRequests[0].ControlledCheckResult != "positive" {
+		t.Fatalf("controlled check Apply request = %#v, want positive result", backend.applyRequests)
+	}
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "Controlled runtime check succeeded") {
+		t.Fatalf("controlled-check result is not distinct from activation:\n%s", view)
+	}
+}
+
+func TestProjectControlledRuntimeCheckRecordsNegativeResultAndCanBeCancelled(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
+		ID: "orchestrate", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:orchestrate", Role: "root"}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Configured: "true", Usable: "stale"}},
+	}}}}}
+	backend.preview = tui.Preview{ID: "runtime-check-project", Digest: "runtime-check-project", Operation: "check", Disposition: "previewable", PackID: "orchestrate", PackVersion: "1.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project", Selection: tui.Selection{Mode: "all"}, Instructions: []string{"Confirm the runtime behavior."}, Phases: []tui.PreviewPhase{{Kind: "record-runtime-evidence", ApprovalRequired: true}}}
+	backend.applyResult = tui.ApplyResult{Stage: "verification", Verified: true}
+
+	model := loadModel(t, backend)
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if len(backend.previewRequests) != 1 || backend.previewRequests[0].Operation != "check" || backend.previewRequests[0].Scope != "project" {
+		t.Fatalf("project controlled-check preview request = %#v", backend.previewRequests)
+	}
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if len(backend.applyRequests) != 0 || !strings.Contains(ansi.Strip(model.View().Content), "Immutable controlled runtime check") {
+		t.Fatalf("cancelling the unselected check result applied evidence or left the preview")
+	}
+
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	model = runModelCommand(t, model, command)
+	if len(backend.applyRequests) != 1 || backend.applyRequests[0].ControlledCheckResult != "negative" {
+		t.Fatalf("controlled check Apply request = %#v, want negative result", backend.applyRequests)
+	}
+}
+
 func TestDashboardNavigationKeyMapAndNarrowLayout(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health: tui.Health{Status: "warnings", Passes: 2, Warnings: 1},
@@ -889,7 +969,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 				},
 				SurfaceStatuses: []tui.SurfaceStatus{
 					{Name: "claude", Supported: false},
-					{Name: "codex", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
+					{Name: "codex", Supported: true, Configured: "yes", Authorized: "yes", Usable: "no", ControlledCheckState: "stale", ControlledCheckResult: "true", ControlledCheckObserved: "2026-08-09T00:00:00Z", ControlledCheckIdentity: "check-identity", Ownership: 2, Drift: 1, Blockers: []string{"runtime unavailable"}, PendingActions: []string{"install helper"}, Evidence: []string{"projection verified with a deliberately long host-owned fingerprint"}},
 					{Name: "opencode", Supported: false},
 				},
 			},
@@ -917,6 +997,7 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 		"Requirements: git", "windows — POSIX shell required",
 		"skill:orchestrate (surface=claude, mode=unsupported", "code=surface-unsupported) — Codex only",
 		"claude: unsupported", "codex: supported", "configured=yes authorized=yes usable=no",
+		"Controlled runtime check: state=stale result=true", "identity=check-identity",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
 		"install helper", "projection verified", "opencode: unsupported",
 	} {

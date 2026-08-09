@@ -52,6 +52,19 @@ func TestDiagnoseReportsFalseConditionsAsWarnings(t *testing.T) {
 	}
 }
 
+func TestDiagnoseExposesControlledRuntimeCheckEvidence(t *testing.T) {
+	report := Diagnose("/sandbox/home", "/sandbox/xdg", Observation{ActivePacks: []ActivePack{{
+		ID: "orchestrate", Surface: "codex", ControlledCheckState: "stale", ControlledCheckResult: "true",
+		ControlledCheckObserved: "2026-08-09T00:00:00Z", ControlledCheckIdentity: "check-identity",
+	}}})
+	if report.Summary.Infos != 1 || len(report.Checks) != 3 {
+		t.Fatalf("report = %+v", report)
+	}
+	if detail := report.Checks[2].Detail; !strings.Contains(detail, "state=stale") || !strings.Contains(detail, "result=true") || !strings.Contains(detail, "identity=check-identity") {
+		t.Fatalf("controlled check detail = %q", detail)
+	}
+}
+
 func TestDiagnoseSummarizesActivePackHealth(t *testing.T) {
 	tests := []struct {
 		name     string

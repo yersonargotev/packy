@@ -2,7 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 9
+const StatusSchemaVersion = 10
 
 type JSONIntent struct {
 	State     string            `json:"state"`
@@ -76,6 +76,7 @@ type JSONStatusEntry struct {
 	Conditions          []ReadinessCondition          `json:"conditions"`
 	OptionalAuthorities []JSONOptionalAuthority       `json:"optional_authorities"`
 	RuntimeModes        []RuntimeModeResult           `json:"runtime_modes,omitempty"`
+	ControlledCheck     ControlledCheckStatus         `json:"controlled_check"`
 	Blockers            []string                      `json:"blockers"`
 	Evidence            []string                      `json:"evidence"`
 	PendingHumanActions []string                      `json:"pending_human_actions"`
@@ -111,6 +112,7 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 			Conditions:          append([]ReadinessCondition{}, entry.Conditions...),
 			OptionalAuthorities: jsonOptionalAuthorities(entry.OptionalAuthorities),
 			RuntimeModes:        sortedRuntimeModeResults(entry.RuntimeModes),
+			ControlledCheck:     entry.ControlledCheck,
 			ProjectionDetails:   jsonProjectionDetails(entry.ProjectionDetails), Contract: entry.Contract,
 			ResourceSelections: jsonResourceSelectionDetails(entry.ResourceSelections),
 			Resources:          jsonResourceStatuses(entry.Resources),

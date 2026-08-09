@@ -100,6 +100,8 @@ and receive a new Preview. Packy never retries it automatically.
   packy status engram --surface claude --require usable --json
   packy status engram --surface codex
   packy status engram --surface codex --require usable
+  packy check orchestrate --surface codex --dry-run
+  packy check orchestrate --surface codex --result positive
   packy install matty --surface codex --dry-run
   packy uninstall matty --dry-run
   packy activate matty --surface codex --dry-run
@@ -128,6 +130,7 @@ and receive a new Preview. Packy never retries it automatically.
 		newPackListCommand(opts, workstationResolver),
 		newPackShowCommand(opts, workstationResolver),
 		newPackStatusCommand(opts, workstationResolver),
+		newControlledCheckCommand(opts, workstationResolver),
 		newPackInstallCommand(opts, workstationResolver),
 		newPackUninstallCommand(opts, workstationResolver),
 		newPackActivateCommand(opts, workstationResolver),
@@ -313,14 +316,15 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 	observation.ActivePacks = make([]setuphealth.ActivePack, 0, len(status.Entries))
 	for _, entry := range status.Entries {
 		observation.ActivePacks = append(observation.ActivePacks, setuphealth.ActivePack{
-			ID:                  entry.Pack.ID,
-			Surface:             string(entry.Surface),
-			InspectionFailed:    entry.InspectionFailed,
-			UpdateAvailable:     entry.UpdateAvailable,
-			ProjectionProblems:  entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
-			MissingRequirements: len(entry.MissingRequirements),
-			PendingHumanActions: len(entry.PendingHumanActions),
-			Conditions:          setupHealthConditions(entry.Conditions),
+			ID:                   entry.Pack.ID,
+			Surface:              string(entry.Surface),
+			InspectionFailed:     entry.InspectionFailed,
+			UpdateAvailable:      entry.UpdateAvailable,
+			ProjectionProblems:   entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
+			MissingRequirements:  len(entry.MissingRequirements),
+			PendingHumanActions:  len(entry.PendingHumanActions),
+			Conditions:           setupHealthConditions(entry.Conditions),
+			ControlledCheckState: string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
 		})
 	}
 	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil

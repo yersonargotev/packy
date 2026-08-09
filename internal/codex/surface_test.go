@@ -37,6 +37,13 @@ func TestUnobservablePackReadinessIsUnknownRatherThanDenied(t *testing.T) {
 	if !matty.AuthorizationObserved || !matty.Authorized || matty.UsabilityObserved || matty.Usable || len(matty.PendingHumanActions) != 0 {
 		t.Fatalf("Matty runtime-unobservable readiness = %#v", matty)
 	}
+	withMetadata, err := adapter.inspectReadiness(context.Background(), capabilitypack.Pack{ID: "synthetic", Resources: []capabilitypack.Resource{{Kind: "skill", ID: "coordinate"}, {Kind: "lifecycle", ID: "session"}, {Kind: "notice", ID: "license"}}}, capabilitypack.SurfaceInspection{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !withMetadata.AuthorizationObserved || !withMetadata.Authorized || withMetadata.UsabilityObserved {
+		t.Fatalf("skill Pack metadata changed Codex discovery authorization: %#v", withMetadata)
+	}
 }
 
 func TestBindAdapterProvenancePublishesSharedSkillTopologyWithoutCreatingOpenCodeIntent(t *testing.T) {

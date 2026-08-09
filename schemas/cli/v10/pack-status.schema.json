@@ -1,0 +1,575 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v10/pack-status.schema.json",
+  "title": "Packy capability-pack status reports v10",
+  "$defs": {
+    "optional_bool": {
+      "type": "object",
+      "required": [
+        "state",
+        "value"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "known",
+            "unknown"
+          ]
+        },
+        "value": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "unknown"
+            },
+            "value": {
+              "type": "null"
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "readiness": {
+      "type": "object",
+      "required": [
+        "configured",
+        "authorized",
+        "usable"
+      ],
+      "properties": {
+        "configured": { "enum": ["true", "false", "unknown"] },
+        "authorized": { "enum": ["true", "false", "unknown"] },
+        "usable": { "enum": ["true", "false", "unknown"] }
+      },
+      "additionalProperties": false
+    },
+    "readiness_condition": {
+      "type": "object",
+      "required": ["type", "scope", "dimension", "value", "reason", "message", "evidence", "freshness"],
+      "properties": {
+        "type": { "enum": ["projection-integrity", "external-requirement", "surface-authorization", "runtime-usability"] },
+        "scope": { "type": "object", "required": ["kind", "pack", "surface"], "properties": { "kind": { "enum": ["global", "project"] }, "pack": { "type": "string" }, "surface": { "enum": ["claude", "codex", "opencode"] }, "resource": { "$ref": "#/$defs/resource_identity" } }, "additionalProperties": false },
+        "dimension": { "enum": ["configured", "authorized", "usable"] },
+        "value": { "enum": ["true", "false", "unknown"] },
+        "reason": { "enum": ["projection-verified", "projection-missing", "projection-drifted", "projection-ambiguous", "projection-unmanaged", "requirement-available", "requirement-missing", "requirement-unobservable", "authorization-confirmed", "authorization-denied", "authorization-unobservable", "runtime-confirmed", "runtime-rejected", "runtime-unobservable", "runtime-check-stale"] },
+        "message": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "freshness": { "type": "object", "required": ["observed_at", "validity_identity"], "properties": { "observed_at": { "type": "string", "format": "date-time" }, "validity_identity": { "type": "string" } }, "additionalProperties": false }
+      },
+      "additionalProperties": false
+    },
+    "controlled_check": {
+      "type": "object",
+      "required": ["state", "validity_identity"],
+      "properties": {
+        "state": { "enum": ["unknown", "current", "stale"] },
+        "result": { "enum": ["true", "false"] },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "validity_identity": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "optional_authority": {
+      "type": "object",
+      "required": [
+        "mode_id",
+        "authority",
+        "state",
+        "fallback"
+      ],
+      "properties": {
+        "mode_id": {
+          "type": "string"
+        },
+        "authority": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "fallback": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "required": [
+        "pack",
+        "pack_version",
+        "surface",
+        "intent",
+        "lifecycle_state",
+        "activation_role",
+        "update_available",
+        "projection_summary",
+        "projection_details",
+        "resource_selections",
+        "contract",
+        "readiness",
+        "conditions",
+        "optional_authorities",
+        "controlled_check",
+        "blockers",
+        "evidence",
+        "pending_human_actions",
+        "resources"
+      ],
+      "properties": {
+        "pack": {
+          "type": "string"
+        },
+        "pack_version": {
+          "type": "string"
+        },
+        "surface": {
+          "enum": [
+            "claude",
+            "codex",
+            "opencode"
+          ]
+        },
+        "intent": {
+          "type": "object",
+          "required": [
+            "state",
+            "active",
+            "revision",
+            "selection"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "absent",
+                "known"
+              ]
+            },
+            "active": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "revision": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "version": {
+              "type": "string"
+            },
+            "selection": {
+              "$ref": "#/$defs/selection"
+            }
+          },
+          "additionalProperties": false
+        },
+        "lifecycle_state": {
+          "enum": [
+            "active",
+            "inactive-clean",
+            "inactive-with-residuals"
+          ]
+        },
+        "update_available": {
+          "type": "boolean"
+        },
+        "projection_summary": {
+          "type": "object",
+          "required": [
+            "verified",
+            "missing",
+            "drifted",
+            "ambiguous",
+            "unmanaged"
+          ],
+          "properties": {
+            "verified": {
+              "type": "integer"
+            },
+            "missing": {
+              "type": "integer"
+            },
+            "drifted": {
+              "type": "integer"
+            },
+            "ambiguous": {
+              "type": "integer"
+            },
+            "unmanaged": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "projection_details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "target",
+              "owner",
+              "health",
+              "observed_fingerprint",
+              "desired_fingerprint"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string",
+                "not": {
+                  "pattern": "^(?:/|[A-Za-z]:[\\\\/])"
+                }
+              },
+              "owner": {
+                "type": "string"
+              },
+              "health": {
+                "enum": [
+                  "verified",
+                  "missing",
+                  "drifted",
+                  "ambiguous",
+                  "unmanaged"
+                ]
+              },
+              "observed_fingerprint": {
+                "type": "string"
+              },
+              "desired_fingerprint": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "uniqueItems": true
+        },
+        "contract": {
+          "$ref": "lifecycle-contract.schema.json"
+        },
+        "runtime_modes": {
+          "type": "array",
+          "items": {
+            "$ref": "runtime-mode.schema.json"
+          },
+          "uniqueItems": true
+        },
+        "readiness": {
+          "$ref": "#/$defs/readiness"
+        },
+        "conditions": { "type": "array", "items": { "$ref": "#/$defs/readiness_condition" } },
+        "controlled_check": { "$ref": "#/$defs/controlled_check" },
+        "optional_authorities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/optional_authority"
+          },
+          "uniqueItems": true
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "pending_human_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "resource_selections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "resource",
+              "selected",
+              "role",
+              "dependency_chain"
+            ],
+            "properties": {
+              "resource": {
+                "$ref": "#/$defs/resource_identity"
+              },
+              "selected": {
+                "type": "boolean"
+              },
+              "role": {
+                "enum": [
+                  "root",
+                  "dependency",
+                  "asset",
+                  "notice",
+                  "unselected"
+                ]
+              },
+              "dependency_chain": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "id"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "uniqueItems": true
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource_status"
+          }
+        },
+        "activation_role": {
+          "enum": [
+            "inactive",
+            "explicit",
+            "required",
+            "explicit-required"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "resource_identity": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "skill",
+            "instruction",
+            "mcp_server",
+            "lifecycle",
+            "agent",
+            "command",
+            "asset",
+            "notice"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "required": [
+        "mode",
+        "roots"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "all",
+            "custom"
+          ]
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource_identity"
+          },
+          "uniqueItems": true,
+          "maxItems": 1
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "mode": {
+              "const": "all"
+            },
+            "roots": {
+              "maxItems": 0
+            }
+          }
+        },
+        {
+          "properties": {
+            "mode": {
+              "const": "custom"
+            },
+            "roots": {
+              "minItems": 1,
+              "maxItems": 1
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "resource_status": {
+      "type": "object",
+      "required": [
+        "resource",
+        "role",
+        "dependency_chain",
+        "readiness",
+        "conditions",
+        "projection_summary",
+        "blockers"
+      ],
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/resource_identity"
+        },
+        "role": {
+          "enum": [
+            "root",
+            "dependency",
+            "asset",
+            "notice"
+          ]
+        },
+        "dependency_chain": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource_identity"
+          }
+        },
+        "readiness": {
+          "$ref": "#/$defs/readiness"
+        },
+        "conditions": { "type": "array", "items": { "$ref": "#/$defs/readiness_condition" } },
+        "projection_summary": {
+          "type": "object",
+          "required": [
+            "verified",
+            "missing",
+            "drifted",
+            "ambiguous",
+            "unmanaged"
+          ],
+          "properties": {
+            "verified": {
+              "type": "integer"
+            },
+            "missing": {
+              "type": "integer"
+            },
+            "drifted": {
+              "type": "integer"
+            },
+            "ambiguous": {
+              "type": "integer"
+            },
+            "unmanaged": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report",
+    "entries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 10
+    },
+    "report": {
+      "enum": [
+        "pack-status",
+        "pack-status-overview"
+      ]
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      },
+      "uniqueItems": true
+    },
+    "focused_resource": {
+      "$ref": "#/$defs/resource_status"
+    },
+    "requirement": {
+      "type": "object",
+      "required": [
+        "readiness",
+        "satisfied"
+      ],
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/resource_identity"
+        },
+        "readiness": {
+          "const": "usable"
+        },
+        "satisfied": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

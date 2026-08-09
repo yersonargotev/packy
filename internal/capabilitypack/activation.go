@@ -235,7 +235,12 @@ type ObservedProjectEffect struct {
 }
 
 type SurfaceInspection struct {
-	Revision                   string
+	Revision string
+	// ControlledCheck describes the host facts used to bind an explicit runtime
+	// check. Empty fields are normalized by the capability-pack domain so older
+	// adapters remain safe: they can never accidentally share evidence across a
+	// later adapter or observable host identity.
+	ControlledCheck            ControlledCheckDescriptor
 	Projections                []ObservedProjection
 	OccupiedNames              []OccupiedName
 	RuntimeModeEvidence        []RuntimeModeEvidence
@@ -265,6 +270,21 @@ type OccupiedName struct {
 type SurfaceAdapter interface {
 	InspectSurface(context.Context, SurfaceTransition) (SurfaceInspection, error)
 	ApplyProjections(context.Context, []ProjectionAction) *ProjectionActionError
+}
+
+type controlledCheckSurfaceAdapter struct {
+	SurfaceAdapter
+	descriptor ControlledCheckDescriptor
+}
+
+// WithControlledCheckDescriptor binds observable adapter and host facts to all
+// inspection paths without moving readiness policy into a driving adapter.
+func WithControlledCheckDescriptor(adapter SurfaceAdapter, descriptor ControlledCheckDescriptor) SurfaceAdapter {
+	return controlledCheckSurfaceAdapter{SurfaceAdapter: adapter, descriptor: descriptor}
+}
+
+func (a controlledCheckSurfaceAdapter) controlledCheckDescriptor() ControlledCheckDescriptor {
+	return a.descriptor
 }
 
 type ActivationIntent struct {
@@ -399,6 +419,13 @@ func WithExternalEffects(resolver ExecutableResolver, executor ExternalExecutor)
 		f.activation.resolver = resolver
 		f.activation.executor = executor
 	}
+}
+
+// WithControlledCheckEvidence injects workstation-local controlled runtime
+// evidence. It lets all facade reads, including Doctor's ActiveStatus, use
+// the same personal store without coupling them to a CLI path convention.
+func WithControlledCheckEvidence(store ControlledCheckEvidenceStore) FacadeOption {
+	return func(f *Facade) { f.controlledChecks = store }
 }
 
 type PlanPhase struct {
@@ -2267,6 +2294,20 @@ func inspectSurface(ctx context.Context, adapter SurfaceAdapter, transition Surf
 		return SurfaceInspection{}, err
 	}
 	observation = cloneSurfaceInspection(observation)
+	if provider, ok := adapter.(interface {
+		controlledCheckDescriptor() ControlledCheckDescriptor
+	}); ok {
+		descriptor := provider.controlledCheckDescriptor()
+		if observation.ControlledCheck.AdapterVersion == "" {
+			observation.ControlledCheck.AdapterVersion = descriptor.AdapterVersion
+		}
+		if observation.ControlledCheck.HostVersion == "" {
+			observation.ControlledCheck.HostVersion = descriptor.HostVersion
+		}
+		if len(observation.ControlledCheck.Instructions) == 0 {
+			observation.ControlledCheck.Instructions = append([]string(nil), descriptor.Instructions...)
+		}
+	}
 	seen := make(map[string]struct{}, len(observation.Projections))
 	for i := range observation.Projections {
 		projection := &observation.Projections[i]
@@ -2518,6 +2559,7 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 }
 
 func cloneSurfaceInspection(value SurfaceInspection) SurfaceInspection {
+	value.ControlledCheck.Instructions = append([]string(nil), value.ControlledCheck.Instructions...)
 	value.Projections = append([]ObservedProjection(nil), value.Projections...)
 	value.OccupiedNames = append([]OccupiedName(nil), value.OccupiedNames...)
 	value.RuntimeModeEvidence = cloneRuntimeModeEvidence(value.RuntimeModeEvidence)

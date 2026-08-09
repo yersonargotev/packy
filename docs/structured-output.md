@@ -11,7 +11,7 @@ persists the resulting installed Pack receipt, not the preview.
 | --- | --- |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
 | `packy show PACK --json` | `schemas/cli/v5/pack-show.schema.json` |
-| global Pack status | `schemas/cli/v9/pack-status.schema.json` |
+| global Pack status | `schemas/cli/v10/pack-status.schema.json` |
 | global Pack lifecycle | `schemas/cli/v10/pack-lifecycle.schema.json` |
 | project Pack lifecycle | `schemas/project/v1.0.0/` |
 
@@ -41,6 +41,11 @@ Pack reports describe the requested Pack, surface, selected resource closure,
 planned actions, blockers, installed receipt, projection health, and readiness
 needed for the current operation. Project reports keep direct intent separate
 from generated receipts.
+
+Status reports expose controlled runtime evidence as `unknown`, `current`, or
+`stale`. Current evidence carries only its positive or negative result,
+observation time, and validity identity; raw host output, credentials, and
+secret material are never recorded or emitted.
 
 Arrays representing sets use their schema-defined deterministic order. Arrays
 representing work preserve execution order.
