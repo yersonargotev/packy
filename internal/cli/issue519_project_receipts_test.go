@@ -73,7 +73,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 		t.Fatalf("project receipt document = %#v\n%s", lock, lockData)
 	}
 	for _, receipt := range lock.Receipts {
-		wantVersion := "1.0.1"
+		wantVersion := "1.1.0"
 		if receipt.Pack.ID == "argote" {
 			wantVersion = "1.0.2"
 		}

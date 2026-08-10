@@ -11,7 +11,7 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-func TestRenderAddyClaudeAgentExactBytesAndEffectiveDependency(t *testing.T) {
+func TestRenderClaudeClaudeAgentExactBytesAndEffectiveDependency(t *testing.T) {
 	authority := &capabilitypack.AgentAuthority{PermissionMode: "default", Authorities: []capabilitypack.AuthorityRecord{
 		{Portable: "browser", Declarations: []string{"optional-mode:browser-network:browser", "tool:browser"}, Outcome: "fallback", ClaudeTools: []string{}, Fallback: "static evidence-only analysis"},
 		{Portable: "commit", Declarations: []string{"optional-mode:privileged-shipping:commit"}, Outcome: "guarded", ClaudeTools: []string{"Bash"}, Fallback: "none"},
@@ -24,14 +24,18 @@ func TestRenderAddyClaudeAgentExactBytesAndEffectiveDependency(t *testing.T) {
 	}}
 	agent := capabilitypack.Resource{
 		Kind: "agent", ID: "code-reviewer", Description: "Portable catalog description", Requires: []string{"skill:using-agent-skills"},
-		Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "agent", Name: "addy-code-reviewer", AgentAuthority: authority}},
+		Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "agent", Name: "addy-code-reviewer", Capabilities: []capabilitypack.SurfaceCapability{{
+			Type: capabilitypack.SurfaceCapabilityClaudeAgentDocument, ClaudeAgentDocument: &capabilitypack.ClaudeAgentDocumentCapability{
+				Skills: []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "using-agent-skills"}}, Authority: *authority,
+			},
+		}}}},
 	}
 	pack := capabilitypack.Pack{ID: "addy", Version: "1.1.0", Resources: []capabilitypack.Resource{
 		agent,
 		{Kind: "skill", ID: "using-agent-skills", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "addy-using-agent-skills"}}},
 	}}
 	source := []byte("---\nname: code-reviewer\ndescription: \"Review: exactly.\"\n---\n\n# Review\n\nKeep these body bytes.  \n")
-	got, err := renderAddyClaudeAgent(pack, agent, agent.Bindings[0], source)
+	got, err := renderClaudeAgentDocument(pack, agent, agent.Bindings[0], source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +68,7 @@ func TestRenderAddyClaudeAgentExactBytesAndEffectiveDependency(t *testing.T) {
 	}
 }
 
-func TestDecodeAddyAgentSourceRejectsNegativeTwins(t *testing.T) {
+func TestDecodeClaudeAgentSourceRejectsNegativeTwins(t *testing.T) {
 	valid := "---\nname: reviewer\ndescription: Review exactly\n---\n\nBody\n"
 	tests := map[string][]byte{
 		"invalid UTF-8":       append([]byte(valid), 0xff),
@@ -77,17 +81,18 @@ func TestDecodeAddyAgentSourceRejectsNegativeTwins(t *testing.T) {
 	}
 	for name, source := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := decodeAddyAgentSource(source); err == nil {
-				t.Fatal("accepted invalid Addy agent source")
+			if _, err := decodeClaudeAgentSource(source); err == nil {
+				t.Fatal("accepted invalid Claude agent source")
 			}
 		})
 	}
 }
 
-func TestRenderAddyClaudeAgentRejectsPortableAndDependencyDrift(t *testing.T) {
-	authority := &capabilitypack.AgentAuthority{PermissionMode: "default"}
+func TestRenderClaudeClaudeAgentRejectsPortableAndDependencyDrift(t *testing.T) {
+	authority := capabilitypack.AgentAuthority{PermissionMode: "default"}
 	base := capabilitypack.Resource{Kind: "agent", ID: "reviewer", Description: "Review", Requires: []string{"skill:using-agent-skills"}}
-	binding := capabilitypack.Binding{Surface: capabilitypack.SurfaceClaude, Projection: "agent", Name: "reviewer", AgentAuthority: authority}
+	binding := capabilitypack.Binding{Surface: capabilitypack.SurfaceClaude, Projection: "agent", Name: "reviewer", Capabilities: []capabilitypack.SurfaceCapability{{Type: capabilitypack.SurfaceCapabilityClaudeAgentDocument, ClaudeAgentDocument: &capabilitypack.ClaudeAgentDocumentCapability{Skills: []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "using-agent-skills"}}, Authority: authority}}}}
+	base.Bindings = []capabilitypack.Binding{binding}
 	skill := capabilitypack.Resource{Kind: "skill", ID: "using-agent-skills", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "using-agent-skills"}}}
 	source := []byte("---\nname: reviewer\ndescription: Review\n---\n\nBody")
 	tests := []struct {
@@ -102,7 +107,7 @@ func TestRenderAddyClaudeAgentRejectsPortableAndDependencyDrift(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := renderAddyClaudeAgent(tt.pack, tt.agent, binding, tt.source); err == nil {
+			if _, err := renderClaudeAgentDocument(tt.pack, tt.agent, binding, tt.source); err == nil {
 				t.Fatal("accepted drift")
 			}
 		})
@@ -222,8 +227,9 @@ func TestRuntimeEvidenceInvalidatesOnHostPrecedencePolicyAndPortableIdentityChan
 	}
 }
 
-func TestAddyCodeReviewerAgentInspectApplyVerifyAndRemove(t *testing.T) {
-	bundle, pack := addyCompositeFixture(t)
+func TestClaudeAgentDocumentCapabilityWorksForSyntheticPack(t *testing.T) {
+	bundle, pack := claudeCompositeFixture(t)
+	pack.ID = "synthetic-agents"
 	pack.Resources[0].ID = "using-agent-skills"
 	pack.Resources[0].Bindings[0].Name = "using-agent-skills"
 	authority := codeReviewerAuthority()
@@ -232,7 +238,12 @@ func TestAddyCodeReviewerAgentInspectApplyVerifyAndRemove(t *testing.T) {
 		Source: "agents/code-reviewer.md", Requires: []string{"skill:using-agent-skills"},
 		Bindings: []capabilitypack.Binding{{
 			Surface: capabilitypack.SurfaceClaude, Projection: "agent", Name: "addy-code-reviewer",
-			AgentAuthority: authority,
+			Capabilities: []capabilitypack.SurfaceCapability{{
+				Type: capabilitypack.SurfaceCapabilityClaudeAgentDocument,
+				ClaudeAgentDocument: &capabilitypack.ClaudeAgentDocumentCapability{
+					Skills: []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "using-agent-skills"}}, Authority: *authority,
+				},
+			}},
 		}},
 	}
 	pack.Resources = append(pack.Resources, agent)
@@ -240,7 +251,7 @@ func TestAddyCodeReviewerAgentInspectApplyVerifyAndRemove(t *testing.T) {
 		ID: "browser-network", Authorities: []string{"browser", "network"}, Fallback: "static evidence-only analysis",
 	}}
 	source := []byte("---\nname: code-reviewer\ndescription: Review changes exactly\n---\n\n# Code reviewer\n\nPreserve this body.\n")
-	writeAddyFile(t, bundle, agent.Source, source, 0o644)
+	writeClaudeFixtureFile(t, bundle, agent.Source, source, 0o644)
 
 	home := t.TempDir()
 	layout := NewCanonicalLayout(home)

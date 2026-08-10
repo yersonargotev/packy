@@ -82,6 +82,9 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if !bound || binding.Projection != "skill" || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
+		if _, composite := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill); composite {
+			return a.claudeProjectCompositeProjection(pack, resource, binding, projectRoot)
+		}
 		source := filepath.Join(a.bundleRoot, resource.Source)
 		desired, err := localprojection.FingerprintCopiedTree(source)
 		if err != nil {
@@ -97,6 +100,9 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if !bound || binding.Projection != "skill" || resource.Source == "" {
 			return capabilitypack.ObservedProjection{}, false, nil
 		}
+		if _, composite := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill); composite {
+			return a.claudeProjectCompositeProjection(pack, resource, binding, projectRoot)
+		}
 		prompt, err := os.ReadFile(filepath.Join(a.bundleRoot, resource.Source))
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
@@ -110,12 +116,12 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 		if err != nil {
 			return capabilitypack.ObservedProjection{}, false, err
 		}
-		if pack.ID == "addy" && pack.Version == "1.1.0" {
-			content, err = renderAddyClaudeAgent(pack, resource, binding, content)
+		if _, hasAgentDocument := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeAgentDocument); hasAgentDocument {
+			content, err = renderClaudeAgentDocument(pack, resource, binding, content)
 		} else {
 			content, err = a.embedConsumerAssets(pack, resource, content)
-			if err == nil && binding.AgentAuthority != nil {
-				content = []byte(claudeAgentDocument(resource, binding.Name, *binding.AgentAuthority, content))
+			if err == nil && (len(resource.Tools) > 0 || len(resource.Permissions) > 0) {
+				err = fmt.Errorf("Claude agent %s is missing explicit authority translations", resource.ID)
 			}
 		}
 		if err != nil {
@@ -176,6 +182,25 @@ func (a *SurfaceAdapter) claudeProjectProjection(pack capabilitypack.Pack, resou
 	}
 }
 
+func (a *SurfaceAdapter) claudeProjectCompositeProjection(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, projectRoot string) (capabilitypack.ObservedProjection, bool, error) {
+	identity := capabilitypack.ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
+	composite, err := claudeCompositeSkill(pack, resource, binding, a.bundleRoot)
+	if err != nil {
+		return capabilitypack.ObservedProjection{}, false, err
+	}
+	target := filepath.Join(projectRoot, ".claude", "skills", binding.Name)
+	observed, exists, err := claudeProjectTreeFingerprint(target)
+	if err != nil {
+		return capabilitypack.ObservedProjection{}, false, err
+	}
+	files := make([]capabilitypack.ProjectionTreeFile, len(composite.Files))
+	for i, file := range composite.Files {
+		files[i] = capabilitypack.ProjectionTreeFile{Path: file.Path, Content: append([]byte(nil), file.Content...), Mode: file.Mode}
+	}
+	action := capabilitypack.ProjectionAction{ID: identity.String(), Surface: capabilitypack.SurfaceClaude, Kind: capabilitypack.ActionClaudeProjectSkillTree, Target: target, Version: composite.TreeFingerprint, Precondition: observed, PreviewOnly: true, TreeFiles: files}
+	return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: composite.TreeFingerprint, AdapterProvenance: "claude-project/v1/composite-skill", Action: action}, true, nil
+}
+
 func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal) (capabilitypack.SurfaceInspection, error) {
 	if goal == "" {
 		goal = capabilitypack.ProjectionPresent
@@ -213,7 +238,7 @@ func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot s
 		observed, exists := "missing", false
 		var err error
 		switch locked.Resource.Kind {
-		case "skill":
+		case "skill", "command":
 			action.Kind = capabilitypack.ActionClaudeProjectSkillTree
 			observed, exists, err = claudeProjectTreeFingerprint(target)
 		case "instruction":
@@ -397,7 +422,7 @@ func claudeLockedProjectTarget(locked capabilitypack.ProjectProjectionPlan, bind
 	case "skill":
 		return filepath.Join(".claude", "skills", binding.Name)
 	case "command":
-		return filepath.Join(".claude", "skills", binding.Name, "SKILL.md")
+		return filepath.Join(".claude", "skills", binding.Name)
 	case "agent":
 		return filepath.Join(".claude", "agents", binding.Name+".md")
 	case "instruction":

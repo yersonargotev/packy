@@ -499,7 +499,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
-	selectedPack, err := selectProjectPackResources(pack, selection)
+	selectedPack, err := selectProjectPackResources(pack, selection, request.Surface)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
 	}
@@ -798,7 +798,7 @@ func projectCompositionBlockers(values []PlanBlocker) []ProjectInstallBlocker {
 	return result
 }
 
-func selectProjectPackResources(pack Pack, selection ResourceSelection) (Pack, error) {
+func selectProjectPackResources(pack Pack, selection ResourceSelection, surface Surface) (Pack, error) {
 	selection, err := canonicalSelection(selection)
 	if err != nil {
 		return Pack{}, err
@@ -806,7 +806,7 @@ func selectProjectPackResources(pack Pack, selection ResourceSelection) (Pack, e
 	if selection.Mode == SelectionAll {
 		return clonePack(pack), nil
 	}
-	return selectPackResourceClosure(pack, selection)
+	return selectPackResourcesForSurface(pack, selection, surface)
 }
 
 func (f Facade) resolveProjectPackUnlocked(id string) (Pack, error) {

@@ -178,10 +178,19 @@ type ProjectionAction struct {
 	ContributionEndMarker   string               `json:"contribution_end_marker,omitempty"`
 	// ProjectionKey identifies the physical target when several surface
 	// adapters translate different logical projection IDs to one shared target.
-	ProjectionKey  string    `json:"projection_key,omitempty"`
-	Shared         bool      `json:"shared,omitempty"`
-	DiscoverableBy []Surface `json:"discoverable_by,omitempty"`
-	PreviewOnly    bool      `json:"preview_only,omitempty"`
+	ProjectionKey  string               `json:"projection_key,omitempty"`
+	Shared         bool                 `json:"shared,omitempty"`
+	DiscoverableBy []Surface            `json:"discoverable_by,omitempty"`
+	PreviewOnly    bool                 `json:"preview_only,omitempty"`
+	TreeFiles      []ProjectionTreeFile `json:"-"`
+}
+
+// ProjectionTreeFile carries one inert file for a generated tree projection.
+// It is execution-only plan data and is never part of structured CLI output.
+type ProjectionTreeFile struct {
+	Path    string
+	Content []byte
+	Mode    uint32
 }
 
 func RemovalCandidate(projection ObservedProjection, mode ProjectionActionMode, content, description string) ObservedProjection {

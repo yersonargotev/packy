@@ -143,18 +143,14 @@ func validateCurrentPack(pack Pack) error {
 		if err := validateResourceV3(resource, pack.Surfaces, nil); err != nil {
 			return fmt.Errorf("Pack %q resource %q: %w", pack.ID, identity, err)
 		}
-		for _, binding := range resource.Bindings {
-			if binding.AgentAuthority != nil {
-				if err := validateAgentAuthority(*binding.AgentAuthority, resource.Tools, resource.Permissions, []OptionalMode{}); err != nil {
-					return fmt.Errorf("Pack %q resource %q: %w", pack.ID, identity, err)
-				}
-			}
-		}
 	}
 	if !sort.StringsAreSorted(ordered) {
 		return fmt.Errorf("Pack %q field resources must be sorted by kind and id", pack.ID)
 	}
 	if err := validateDependencies(pack.Resources, identities, manifestSchemaV4); err != nil {
+		return fmt.Errorf("Pack %q: %w", pack.ID, err)
+	}
+	if err := validateClaudeCompositionCapabilities(pack, identities); err != nil {
 		return fmt.Errorf("Pack %q: %w", pack.ID, err)
 	}
 	if err := validateResourceConflicts(pack.Resources, identities); err != nil {
@@ -197,6 +193,83 @@ func validateCurrentPack(pack Pack) error {
 			}
 			if !managedTool {
 				return fmt.Errorf("Pack %q resource %q external host setup must manage an MCP server for tool %q", pack.ID, identity, setup.Tool)
+			}
+		}
+	}
+	return nil
+}
+
+func validateClaudeCompositionCapabilities(pack Pack, identities map[string]bool) error {
+	byIdentity := make(map[string]Resource, len(pack.Resources))
+	for _, resource := range pack.Resources {
+		byIdentity[resource.Kind+":"+resource.ID] = resource
+	}
+	for _, resource := range pack.Resources {
+		owner := resource.Kind + ":" + resource.ID
+		for _, binding := range resource.Bindings {
+			for _, capability := range binding.Capabilities {
+				var roles []struct {
+					name     string
+					values   []ResourceIdentity
+					kind     string
+					required bool
+				}
+				switch capability.Type {
+				case SurfaceCapabilityClaudeCompositeSkill:
+					roles = append(roles,
+						struct {
+							name     string
+							values   []ResourceIdentity
+							kind     string
+							required bool
+						}{"dependencies", capability.ClaudeCompositeSkill.Dependencies, "", true},
+						struct {
+							name     string
+							values   []ResourceIdentity
+							kind     string
+							required bool
+						}{"references", capability.ClaudeCompositeSkill.References, "asset", false},
+					)
+				case SurfaceCapabilityClaudeAgentDocument:
+					if err := validateAgentAuthority(capability.ClaudeAgentDocument.Authority, resource.Tools, resource.Permissions, []OptionalMode{}); err != nil {
+						return fmt.Errorf("resource %q Claude agent document authority: %w", owner, err)
+					}
+					roles = append(roles, struct {
+						name     string
+						values   []ResourceIdentity
+						kind     string
+						required bool
+					}{"skills", capability.ClaudeAgentDocument.Skills, "skill", true})
+				}
+				for _, role := range roles {
+					for i, value := range role.values {
+						identity := value.Kind + ":" + value.ID
+						if !identities[identity] || role.kind != "" && value.Kind != role.kind {
+							return fmt.Errorf("resource %q Claude capability %s contains invalid %q", owner, role.name, identity)
+						}
+						if i > 0 {
+							prior := role.values[i-1]
+							if prior.Kind > value.Kind || prior.Kind == value.Kind && prior.ID >= value.ID {
+								return fmt.Errorf("resource %q Claude capability %s must be sorted without duplicates", owner, role.name)
+							}
+						}
+						if role.required && !containsString(resource.Requires, identity) {
+							return fmt.Errorf("resource %q Claude capability %s must be a direct dependency %q", owner, role.name, identity)
+						}
+						dependency := byIdentity[identity]
+						if value.Kind == "skill" || value.Kind == "agent" {
+							matches := 0
+							for _, candidate := range dependency.Bindings {
+								if candidate.Surface == SurfaceClaude && candidate.Name != "" && candidate.Projection == value.Kind {
+									matches++
+								}
+							}
+							if matches != 1 {
+								return fmt.Errorf("resource %q Claude capability %s dependency %q has no unique Claude binding", owner, role.name, identity)
+							}
+						}
+					}
+				}
 			}
 		}
 	}

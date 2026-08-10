@@ -256,21 +256,22 @@ type RuntimeEvidence struct {
 }
 
 type Binding struct {
-	Surface        Surface             `json:"surface"`
-	Projection     string              `json:"projection"`
-	Name           string              `json:"name"`
-	Invocation     string              `json:"invocation"`
-	Mode           string              `json:"mode"`
-	Degradation    string              `json:"degradation,omitempty"`
-	Sharing        string              `json:"sharing"`
-	Capabilities   []SurfaceCapability `json:"capabilities"`
-	AgentAuthority *AgentAuthority     `json:"agent_authority,omitempty"`
-	Hook           *CommandHook        `json:"hook,omitempty"`
+	Surface      Surface             `json:"surface"`
+	Projection   string              `json:"projection"`
+	Name         string              `json:"name"`
+	Invocation   string              `json:"invocation"`
+	Mode         string              `json:"mode"`
+	Degradation  string              `json:"degradation,omitempty"`
+	Sharing      string              `json:"sharing"`
+	Capabilities []SurfaceCapability `json:"capabilities"`
+	Hook         *CommandHook        `json:"hook,omitempty"`
 }
 
 type SurfaceCapabilityType string
 
 const (
+	SurfaceCapabilityClaudeAgentDocument   SurfaceCapabilityType = "claude-agent-document"
+	SurfaceCapabilityClaudeCompositeSkill  SurfaceCapabilityType = "claude-composite-skill"
 	SurfaceCapabilityExternalHostSetup     SurfaceCapabilityType = "external-host-setup"
 	SurfaceCapabilityOpenCodePrimaryPrompt SurfaceCapabilityType = "opencode-primary-prompt"
 	SurfaceCapabilityProjectInstruction    SurfaceCapabilityType = "project-instruction"
@@ -279,10 +280,22 @@ const (
 // SurfaceCapability is one reviewed host-native behavior requested by a
 // binding. Its closed wire shape deliberately cannot carry extension data.
 type SurfaceCapability struct {
-	Type               SurfaceCapabilityType         `json:"type"`
-	ExternalHostSetup  *ExternalHostSetupCapability  `json:"external_host_setup,omitempty"`
-	PrimaryPrompt      *PrimaryPromptCapability      `json:"primary_prompt,omitempty"`
-	ProjectInstruction *ProjectInstructionCapability `json:"project_instruction,omitempty"`
+	ClaudeAgentDocument  *ClaudeAgentDocumentCapability  `json:"claude_agent_document,omitempty"`
+	ClaudeCompositeSkill *ClaudeCompositeSkillCapability `json:"claude_composite_skill,omitempty"`
+	Type                 SurfaceCapabilityType           `json:"type"`
+	ExternalHostSetup    *ExternalHostSetupCapability    `json:"external_host_setup,omitempty"`
+	PrimaryPrompt        *PrimaryPromptCapability        `json:"primary_prompt,omitempty"`
+	ProjectInstruction   *ProjectInstructionCapability   `json:"project_instruction,omitempty"`
+}
+
+type ClaudeCompositeSkillCapability struct {
+	Dependencies []ResourceIdentity `json:"dependencies"`
+	References   []ResourceIdentity `json:"references"`
+}
+
+type ClaudeAgentDocumentCapability struct {
+	Skills    []ResourceIdentity `json:"skills"`
+	Authority AgentAuthority     `json:"authority"`
 }
 
 type ExternalHostSetupCapability struct {
@@ -718,6 +731,22 @@ func clonePack(pack Pack) Pack {
 			binding := &pack.Resources[i].Bindings[j]
 			binding.Capabilities = append([]SurfaceCapability(nil), binding.Capabilities...)
 			for k := range binding.Capabilities {
+				if binding.Capabilities[k].ClaudeCompositeSkill != nil {
+					copy := *binding.Capabilities[k].ClaudeCompositeSkill
+					copy.Dependencies = append([]ResourceIdentity(nil), copy.Dependencies...)
+					copy.References = append([]ResourceIdentity(nil), copy.References...)
+					binding.Capabilities[k].ClaudeCompositeSkill = &copy
+				}
+				if binding.Capabilities[k].ClaudeAgentDocument != nil {
+					copy := *binding.Capabilities[k].ClaudeAgentDocument
+					copy.Skills = append([]ResourceIdentity(nil), copy.Skills...)
+					copy.Authority.Authorities = append([]AuthorityRecord(nil), copy.Authority.Authorities...)
+					for n := range copy.Authority.Authorities {
+						copy.Authority.Authorities[n].Declarations = append([]string(nil), copy.Authority.Authorities[n].Declarations...)
+						copy.Authority.Authorities[n].ClaudeTools = append([]string(nil), copy.Authority.Authorities[n].ClaudeTools...)
+					}
+					binding.Capabilities[k].ClaudeAgentDocument = &copy
+				}
 				if binding.Capabilities[k].ExternalHostSetup != nil {
 					copy := *binding.Capabilities[k].ExternalHostSetup
 					copy.SetupArgs = append([]string(nil), copy.SetupArgs...)
@@ -741,15 +770,6 @@ func clonePack(pack Pack) Pack {
 					copy := *binding.Capabilities[k].ProjectInstruction
 					binding.Capabilities[k].ProjectInstruction = &copy
 				}
-			}
-			if binding.AgentAuthority != nil {
-				copy := *binding.AgentAuthority
-				copy.Authorities = append([]AuthorityRecord(nil), copy.Authorities...)
-				for k := range copy.Authorities {
-					copy.Authorities[k].Declarations = append([]string(nil), copy.Authorities[k].Declarations...)
-					copy.Authorities[k].ClaudeTools = append([]string(nil), copy.Authorities[k].ClaudeTools...)
-				}
-				binding.AgentAuthority = &copy
 			}
 			if binding.Hook != nil {
 				copy := *binding.Hook
@@ -1009,7 +1029,7 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.ExternalHostSetup == nil {
 				return fmt.Errorf("surface capability %q requires external_host_setup data", capability.Type)
 			}
-			if capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
+			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
 				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
 			}
 			setup := capability.ExternalHostSetup
@@ -1061,7 +1081,7 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.ProjectInstruction != nil {
 				return fmt.Errorf("surface capability %q does not accept project_instruction data", capability.Type)
 			}
-			if capability.ExternalHostSetup != nil {
+			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.ExternalHostSetup != nil {
 				return fmt.Errorf("surface capability %q does not accept external_host_setup data", capability.Type)
 			}
 			if !idPattern.MatchString(capability.PrimaryPrompt.ID) {
@@ -1080,7 +1100,7 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if capability.PrimaryPrompt != nil {
 				return fmt.Errorf("surface capability %q does not accept primary_prompt data", capability.Type)
 			}
-			if capability.ExternalHostSetup != nil {
+			if capability.ClaudeAgentDocument != nil || capability.ClaudeCompositeSkill != nil || capability.ExternalHostSetup != nil {
 				return fmt.Errorf("surface capability %q does not accept external_host_setup data", capability.Type)
 			}
 			if !idPattern.MatchString(capability.ProjectInstruction.ID) {
@@ -1089,12 +1109,38 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 			if err := validateSourcePath(capability.ProjectInstruction.Source); err != nil {
 				return fmt.Errorf("surface capability %q project_instruction source: %w", capability.Type, err)
 			}
+		case SurfaceCapabilityClaudeCompositeSkill:
+			if binding.Surface != SurfaceClaude || binding.Projection != "skill" || resource.Kind != "skill" && resource.Kind != "command" {
+				return fmt.Errorf("surface capability %q requires a Claude skill or command binding", capability.Type)
+			}
+			if capability.ClaudeCompositeSkill == nil {
+				return fmt.Errorf("surface capability %q requires claude_composite_skill data", capability.Type)
+			}
+			if capability.ClaudeAgentDocument != nil || capability.ExternalHostSetup != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
+				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
+			}
+			if capability.ClaudeCompositeSkill.Dependencies == nil || capability.ClaudeCompositeSkill.References == nil {
+				return fmt.Errorf("surface capability %q dependencies and references are required non-null arrays", capability.Type)
+			}
+		case SurfaceCapabilityClaudeAgentDocument:
+			if binding.Surface != SurfaceClaude || binding.Projection != "agent" || resource.Kind != "agent" {
+				return fmt.Errorf("surface capability %q requires a Claude agent binding", capability.Type)
+			}
+			if capability.ClaudeAgentDocument == nil {
+				return fmt.Errorf("surface capability %q requires claude_agent_document data", capability.Type)
+			}
+			if capability.ClaudeCompositeSkill != nil || capability.ExternalHostSetup != nil || capability.PrimaryPrompt != nil || capability.ProjectInstruction != nil {
+				return fmt.Errorf("surface capability %q does not accept other capability data", capability.Type)
+			}
+			if capability.ClaudeAgentDocument.Skills == nil {
+				return fmt.Errorf("surface capability %q skills is a required non-null array", capability.Type)
+			}
 		default:
 			return fmt.Errorf("surface capability %q is unsupported", capability.Type)
 		}
 	}
 	if binding.Surface != SurfaceClaude {
-		if binding.AgentAuthority != nil || binding.Hook != nil {
+		if binding.Hook != nil {
 			return fmt.Errorf("Claude typed binding fields are forbidden on %s", binding.Surface)
 		}
 		return validateBinding(kind, binding)
@@ -1104,20 +1150,14 @@ func validateBindingV3(resource Resource, binding Binding, optionalModes []Optio
 		return fmt.Errorf("%s binding on claude must project as %s", kind, want)
 	}
 	currentContract := optionalModes == nil
-	if !currentContract && ((binding.AgentAuthority != nil) != (kind == "agent") || (binding.Hook != nil) != (kind == "lifecycle")) {
+	if !currentContract && (binding.Hook != nil) != (kind == "lifecycle") {
 		return fmt.Errorf("typed Claude binding field does not match %s projection", kind)
-	}
-	if binding.AgentAuthority != nil {
-		if currentContract {
-			if binding.AgentAuthority.PermissionMode != "default" || binding.AgentAuthority.Authorities == nil {
-				return fmt.Errorf("agent_authority permission_mode and authorities are invalid")
-			}
-			return nil
-		}
-		return validateAgentAuthority(*binding.AgentAuthority, resource.Tools, resource.Permissions, optionalModes)
 	}
 	if binding.Hook != nil {
 		return validateCommandHook(*binding.Hook)
+	}
+	if kind == "agent" && (len(resource.Tools) > 0 || len(resource.Permissions) > 0) && !resource.RequestsSurfaceCapability(SurfaceClaude, SurfaceCapabilityClaudeAgentDocument) {
+		return fmt.Errorf("Claude agent with tools or permissions requires %q", SurfaceCapabilityClaudeAgentDocument)
 	}
 	return nil
 }
