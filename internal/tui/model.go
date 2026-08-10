@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -268,11 +269,14 @@ type Model struct {
 	resultDetailsExpanded  bool
 	filtering              bool
 	filter                 string
+	detailScroll           int
+	auxScroll              int
 	initializing           bool
 	initializationResult   bool
 	initializationErr      error
 	initializationProgress []string
 	initializationEvents   chan tea.Msg
+	help                   help.Model
 }
 
 func NewModel(backend Backend) Model {
@@ -280,7 +284,7 @@ func NewModel(backend Backend) Model {
 }
 
 func newModel(ctx context.Context, backend Backend) Model {
-	return Model{backend: backend, ctx: ctx, applySpinner: spinner.New()}
+	return Model{backend: backend, ctx: ctx, applySpinner: spinner.New(), help: newHelpModel()}
 }
 
 // Run executes the full-screen dashboard with caller-owned process I/O.
@@ -314,6 +318,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = message.Width, message.Height
+		m.help.SetWidth(max(message.Width-4, 0))
 	case initializationProgress:
 		m.initializationProgress = append(m.initializationProgress, message.detail)
 		return m, waitForInitialization(m.initializationEvents)
@@ -321,11 +326,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.initializing = false
 		m.initializationResult = true
 		m.initializationErr = message.err
+		m.auxScroll = 0
 		m.initializationEvents = nil
 		return m, m.Init()
 	case previewResult:
 		m.previewing = false
 		m.previewErr = message.err
+		m.auxScroll = 0
 		if message.err == nil {
 			preview := message.preview
 			m.preview = &preview
@@ -339,6 +346,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.showingApplyResult = true
 		m.applyOutcome = message.result
 		m.applyErr = message.err
+		m.auxScroll = 0
 		m.applyEvents = nil
 		return m, m.Init()
 	case spinner.TickMsg:
@@ -361,6 +369,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(message, dashboardKeys.Quit) {
 				return m, tea.Quit
 			}
+			return m, nil
+		}
+		if message.Code == tea.KeyPgDown {
+			m.auxScroll += max(m.height-10, 1)
+			return m, nil
+		}
+		if message.Code == tea.KeyPgUp {
+			m.auxScroll = max(m.auxScroll-max(m.height-10, 1), 0)
 			return m, nil
 		}
 		if m.showingApplyResult {
@@ -432,6 +448,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 						return m.startApply(ApplyRequest{Preview: *m.preview, ControlledCheckResult: m.controlledCheckResult})
 					}
 					m.consenting, m.consentIndex, m.approvedPhases = true, 0, nil
+					m.auxScroll = 0
 					m.consentApprove = phases[0].Kind != "destructive-cleanup"
 				}
 				return m, nil
@@ -482,10 +499,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				if m.preview != nil && previewCanApply(*m.preview) {
 					if m.preview.Operation == "check" {
 						m.choosingCheckResult, m.controlledCheckResult = true, ""
+						m.auxScroll = 0
 						return m, nil
 					}
 					phases := requiredConsentPhases(*m.preview)
 					m.consenting, m.consentIndex, m.approvedPhases = true, 0, nil
+					m.auxScroll = 0
 					m.consentApprove = phases[0].Kind != "destructive-cleanup"
 				}
 				return m, nil
@@ -555,6 +574,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.selecting = false
 			} else if m.inspecting {
 				m.inspecting = false
+				m.detailScroll = 0
 			} else {
 				m.project = false
 			}
@@ -572,6 +592,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 					if len(actions) > 1 {
 						m.choosingAction = true
 						m.actionChoice = 0
+						m.auxScroll = 0
 						break
 					}
 					if m.operation == "install" {
@@ -582,6 +603,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				} else if status := m.selectedSurfaceStatus(); status != nil && (status.Active || status.ControlledCheckActionAvailable) {
 					m.choosingAction = true
 					m.actionChoice = 0
+					m.auxScroll = 0
 					m.operation = firstLifecycleAction(*status)
 				} else {
 					m.operation = "activate"
@@ -591,9 +613,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.inspecting = m.selectedPack() != nil
 				if m.inspecting {
 					m.surfaceIndex = preferredSurfaceIndex(*m.selectedPack(), m.project)
+					m.detailScroll = 0
 				}
 			}
 		case key.Matches(message, dashboardKeys.Down):
+			if m.inspecting {
+				m.detailScroll = min(m.detailScroll+1, m.detailViewportMaxOffset())
+				break
+			}
 			m.inspecting = false
 			if m.project {
 				m.projectRow = nextRow(m.projectRow, len(filteredPacks(m.dashboard.Project.Packs, m.filter)), 1)
@@ -601,6 +628,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.globalRow = nextRow(m.globalRow, len(filteredPacks(m.dashboard.Global.Packs, m.filter)), 1)
 			}
 		case key.Matches(message, dashboardKeys.Up):
+			if m.inspecting {
+				m.detailScroll = max(m.detailScroll-1, 0)
+				break
+			}
 			m.inspecting = false
 			if m.project {
 				m.projectRow = nextRow(m.projectRow, len(filteredPacks(m.dashboard.Project.Packs, m.filter)), -1)
@@ -617,6 +648,7 @@ func (m Model) startInitialization() (tea.Model, tea.Cmd) {
 	m.initializationResult = false
 	m.initializationErr = nil
 	m.initializationProgress = nil
+	m.auxScroll = 0
 	m.initializationEvents = make(chan tea.Msg, 64)
 	events := m.initializationEvents
 	initialize := func() tea.Msg {
@@ -686,6 +718,7 @@ func (m *Model) beginSelection() {
 	m.selectionRoot = 0
 	m.selectionPreviewFocus = false
 	m.selectionNotice = ""
+	m.auxScroll = 0
 	m.selectedRoots = make(map[string]bool)
 	for _, resource := range operationalRoots(*m.selectedPack()) {
 		m.selectedRoots[resource.Identity] = true
@@ -956,19 +989,10 @@ func (m Model) View() tea.View {
 	view := tea.NewView(m.render())
 	view.AltScreen = true
 	view.WindowTitle = "Packy"
+	view.BackgroundColor = mochaBase
+	view.ForegroundColor = mochaText
 	return view
 }
-
-var (
-	mochaBase  = lipgloss.Color("#1e1e2e")
-	mochaText  = lipgloss.Color("#cdd6f4")
-	mochaBlue  = lipgloss.Color("#89b4fa")
-	mochaGreen = lipgloss.Color("#a6e3a1")
-
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(mochaBlue)
-	goodStyle  = lipgloss.NewStyle().Bold(true).Foreground(mochaGreen)
-	bodyStyle  = lipgloss.NewStyle().Foreground(mochaText).Background(mochaBase)
-)
 
 func (m Model) render() string {
 	if m.terminalUndersized() {
@@ -986,95 +1010,142 @@ func (m Model) render() string {
 		}, "\n"))
 	}
 	if !m.loaded {
-		return m.renderBody(titleStyle.Render("Packy health") + "\n\nLoading Packy health…")
+		return m.renderPagedScreen("Packy health", "Loading workspace state", "Loading Packy health…", "Please wait")
 	}
 	if m.applying {
-		return m.renderBody(m.renderApplyProgress())
+		return m.renderApplyProgress()
 	}
 	if m.showingApplyResult {
-		return m.renderBody(m.renderApplyResult())
+		return m.renderApplyResult()
 	}
 	if m.err != nil {
-		return m.renderBody(titleStyle.Render("Packy health") + "\n\nUnable to load dashboard\n" + m.err.Error() + "\n\nr reload · q quit")
+		return m.renderPagedScreen("Packy health", "Unable to load dashboard", severityMarker("FAIL")+" "+m.err.Error(), "r reload · q quit")
 	}
 	if m.initializing {
-		return m.renderBody(m.renderInitializationProgress())
+		return m.renderInitializationProgress()
 	}
 	if m.initializationResult {
-		return m.renderBody(m.renderInitializationResult())
+		return m.renderInitializationResult()
 	}
 	if m.previewing {
-		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nCreating immutable preview…")
+		return m.renderPagedScreen("Immutable lifecycle preview", "Creating immutable preview…", "Inspecting the exact plan and safety boundaries", "Please wait")
 	}
 	if m.choosingAction {
-		return m.renderBody(m.renderActionChoice())
+		return m.renderActionChoice()
 	}
 	if m.previewErr != nil {
-		return m.renderBody(titleStyle.Render("Immutable lifecycle preview") + "\n\nUnable to create preview\n" + m.previewErr.Error() + "\n\nEsc back · q quit")
+		return m.renderPagedScreen("Immutable lifecycle preview", "Unable to create preview", severityMarker("FAIL")+" "+m.previewErr.Error(), "Esc back · q quit")
 	}
 	if m.preview != nil {
 		if m.choosingCheckResult {
-			return m.renderBody(m.renderControlledCheckResult())
+			return m.renderControlledCheckResult()
 		}
 		if m.consenting {
-			return m.renderBody(m.renderConsent())
+			return m.renderConsent()
 		}
 		return m.renderPreviewViewport(m.renderPreview(*m.preview))
 	}
 	if m.selecting {
-		return m.renderBody(m.renderSelection())
+		return m.renderSelection()
 	}
 	if m.inspecting {
-		return m.renderBody(m.renderDetail())
+		return m.renderDetail()
 	}
 
-	health := fmt.Sprintf("%s · %d pass · %d warnings · %d failures", m.dashboard.Health.Status, m.dashboard.Health.Passes, m.dashboard.Health.Warnings, m.dashboard.Health.Failures)
-	if m.dashboard.Health.Status == "healthy" {
-		health = goodStyle.Render(health)
-	}
-	healthLines := []string{health}
-	for _, check := range m.dashboard.Health.Checks {
-		healthLines = append(healthLines, fmt.Sprintf("  %s  %s — %s", check.Severity, check.Name, check.Detail))
-	}
+	return m.renderDashboard()
+}
+
+func (m Model) renderDashboard() string {
 	globalEmpty := "No reviewed Packs are available"
 	projectEmpty := "No reviewed Packs are available in this project scope"
 	if strings.TrimSpace(m.filter) != "" {
 		globalEmpty, projectEmpty = "No reviewed Packs match the filter", "No reviewed Packs match the filter"
 	}
-	global := m.renderScope("Workstation · global", filteredPacks(m.dashboard.Global.Packs, m.filter), m.globalRow, !m.project, globalEmpty)
-	project := "Current project\nNo Git project\nGlobal inspection remains available"
-	if m.dashboard.Project.Available {
-		project = m.renderScope("Current project", filteredPacks(m.dashboard.Project.Packs, m.filter), m.projectRow, m.project, projectEmpty) + "\n" + m.dashboard.Project.Root
+	width := m.width
+	if width <= 0 {
+		width = 100
 	}
-	scopes := global + "\n\n" + project
-	if m.width >= 96 {
-		scopes = lipgloss.JoinHorizontal(lipgloss.Top, global, "    ", project)
+	contentWidth := max(width-4, 44)
+	header := m.renderDashboardHeader(contentWidth)
+	health := panel(m.renderHealth(), contentWidth, false)
+	setup := m.renderSetup()
+	if setup != "" {
+		setup = "\n" + panel(setup, contentWidth, m.dashboard.Setup.InitializationAvailable)
+	}
+
+	globalPacks := filteredPacks(m.dashboard.Global.Packs, m.filter)
+	projectPacks := filteredPacks(m.dashboard.Project.Packs, m.filter)
+	global := panel(m.renderScope("Workstation · global", globalPacks, m.globalRow, !m.project, globalEmpty), contentWidth, !m.project)
+	project := panel(m.renderProjectScope(projectPacks, projectEmpty), contentWidth, m.project)
+	scopes := global + "\n" + project
+	if width >= 96 {
+		columnWidth := (contentWidth - 2) / 2
+		global = panel(m.renderScope("Workstation · global", globalPacks, m.globalRow, !m.project, globalEmpty), columnWidth, !m.project)
+		project = panel(m.renderProjectScope(projectPacks, projectEmpty), contentWidth-columnWidth-2, m.project)
+		scopes = lipgloss.JoinHorizontal(lipgloss.Top, global, "  ", project)
 	}
 	filter := ""
 	if m.filtering || m.filter != "" {
-		filter = "Filter: " + m.filter
+		matches := len(globalPacks) + len(projectPacks)
+		filter = "\n" + lipgloss.NewStyle().Foreground(mochaYellow).Render("Filter: ") + m.filter + dimStyle.Render(fmt.Sprintf(" · %d matches", matches))
 		if m.filtering {
-			filter += "_"
+			filter += lipgloss.NewStyle().Foreground(mochaMauve).Render("▌") + "  " + dimStyle.Render("Esc clear")
 		}
 	}
-	help := "↑/k ↓/j navigate · tab switch scope · / filter · enter inspect · ? help · r reload · q quit"
-	setup := m.renderSetup()
-	if setup != "" {
-		help = "Enter initialize · ? help · r reload · q quit"
+	help := m.help.ShortHelpView(dashboardHelpBindings())
+	if m.dashboard.Setup.InitializationAvailable {
+		help = m.help.ShortHelpView(setupHelpBindings())
 	}
 	if m.showHelp {
 		help = "arrows/j/k navigate · Tab/Shift+Tab switch scope · Enter inspect · Esc back · ? hide help · r reload · q quit · Ctrl+C quit"
 	}
-	return m.renderBody(strings.Join([]string{
-		titleStyle.Render("Packy health"),
-		strings.Join(healthLines, "\n"),
-		setup,
-		"",
-		scopes,
-		filter,
-		"",
-		help,
-	}, "\n"))
+	footer := lipgloss.NewStyle().Foreground(mochaSubtext0).Render(help)
+	content := strings.Join([]string{header, "", health + setup, "", scopes + filter, "", footer}, "\n")
+	return m.renderBody(lipgloss.NewStyle().Padding(0, 2).Render(content))
+}
+
+func (m Model) renderDashboardHeader(width int) string {
+	left := brandStyle.Render("PACKY") + "  " + titleStyle.Render("Packy health · workspace control")
+	right := statusBadge(m.dashboard.Health.Status)
+	if lipgloss.Width(left)+lipgloss.Width(right)+2 > width {
+		return left + "\n" + right
+	}
+	return left + strings.Repeat(" ", width-lipgloss.Width(left)-lipgloss.Width(right)) + right
+}
+
+func (m Model) renderHealth() string {
+	metrics := strings.Join([]string{
+		metric(m.dashboard.Health.Passes, "passing", mochaGreen),
+		metric(m.dashboard.Health.Warnings, "warnings", mochaYellow),
+		metric(m.dashboard.Health.Failures, "failures", mochaRed),
+	}, "   ")
+	lines := []string{sectionTitleStyle.Render("◆ System health") + "  " + metrics}
+	checks := m.dashboard.Health.Checks
+	limit := len(checks)
+	if m.height > 0 && m.height <= 26 {
+		limit = min(limit, 2)
+	} else if m.height > 0 && m.height <= 34 {
+		limit = min(limit, 4)
+	}
+	for _, check := range checks[:limit] {
+		lines = append(lines, severityMarker(check.Severity)+" "+check.Severity+"  "+lipgloss.NewStyle().Bold(true).Render(check.Name)+"  "+mutedStyle.Render(check.Detail))
+	}
+	if hidden := len(checks) - limit; hidden > 0 {
+		lines = append(lines, dimStyle.Render(fmt.Sprintf("… %d more checks · run packy doctor for the complete report", hidden)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderProjectScope(packs []Pack, empty string) string {
+	if !m.dashboard.Project.Available {
+		return strings.Join([]string{
+			sectionTitleStyle.Render("Current project"),
+			dimStyle.Render("No Git project"),
+			mutedStyle.Render("Global inspection remains available"),
+		}, "\n")
+	}
+	content := m.renderScope("Current project", packs, m.projectRow, m.project, empty)
+	return content + "\n" + dimStyle.Render(m.dashboard.Project.Root)
 }
 
 func (m Model) terminalUndersized() bool {
@@ -1085,21 +1156,21 @@ func (m Model) renderSetup() string {
 	if !m.dashboard.Setup.InitializationAvailable && len(m.dashboard.Setup.Blockers) == 0 {
 		return ""
 	}
-	lines := []string{"", "Setup"}
+	lines := []string{sectionTitleStyle.Render("◇ Setup required")}
 	for _, blocker := range m.dashboard.Setup.Blockers {
-		lines = append(lines, "  Blocked: "+blocker.Cause)
+		lines = append(lines, severityMarker("FAIL")+" Blocked: "+blocker.Cause)
 		if len(blocker.AffectedActions) > 0 {
-			lines = append(lines, "  Affected actions: "+strings.Join(blocker.AffectedActions, ", "))
+			lines = append(lines, "Affected actions: "+strings.Join(blocker.AffectedActions, ", "))
 		}
 	}
 	if m.dashboard.Setup.InitializationAvailable {
-		lines = append(lines, "", "› [ Initialize Packy ] · selected")
+		lines = append(lines, "", selectedRowStyle.Padding(0, 1).Render("› Initialize Packy")+" · selected")
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderInitializationProgress() string {
-	lines := []string{titleStyle.Render("Packy initialization"), "", "Initialization in progress"}
+	lines := []string{sectionHeading("Progress", 0)}
 	if len(m.initializationProgress) == 0 {
 		lines = append(lines, "Preparing Installed Source…")
 	} else {
@@ -1107,8 +1178,8 @@ func (m Model) renderInitializationProgress() string {
 			lines = append(lines, "  "+detail)
 		}
 	}
-	lines = append(lines, "", "Packy will return when initialization finishes")
-	return strings.Join(lines, "\n")
+	content := strings.Join(lines, "\n")
+	return m.renderViewportScreen("Packy initialization", "Initialization in progress", content, "Packy will return when initialization finishes", m.viewportMaxOffset(content))
 }
 
 func (m Model) renderInitializationResult() string {
@@ -1118,15 +1189,14 @@ func (m Model) renderInitializationResult() string {
 		status = "Initialization failed"
 		action = "Enter retry"
 	}
-	lines := []string{titleStyle.Render("Packy initialization"), "", status}
+	lines := []string{statusBadge(map[bool]string{true: "failed", false: "verified"}[m.initializationErr != nil]), sectionHeading("Activity", 0)}
 	for _, detail := range m.initializationProgress {
 		lines = append(lines, "  "+detail)
 	}
 	if m.initializationErr != nil {
 		lines = append(lines, "", m.initializationErr.Error())
 	}
-	lines = append(lines, "", action+" · Esc dashboard · q quit")
-	return strings.Join(lines, "\n")
+	return m.renderPagedScreen("Packy initialization", status, strings.Join(lines, "\n"), action+" · Esc dashboard · q quit")
 }
 
 func (m Model) renderBody(content string) string {
@@ -1141,58 +1211,87 @@ func (m Model) renderScope(title string, packs []Pack, row int, selected bool, e
 	if selected {
 		title += " · selected"
 	}
-	lines := []string{title}
-	if len(packs) == 0 {
-		return strings.Join(append(lines, "  "+empty), "\n")
+	titleLine := sectionTitleStyle.Render(title)
+	if selected {
+		titleLine = lipgloss.NewStyle().Bold(true).Foreground(mochaBlue).Render(title)
 	}
-	for index, pack := range packs {
-		marker := "  "
-		if selected && index == row {
-			marker = "› "
+	lines := []string{titleLine}
+	if len(packs) == 0 {
+		return strings.Join(append(lines, dimStyle.Render(empty)), "\n")
+	}
+	visible, offset := m.visibleScopePacks(packs, row, selected)
+	for index, pack := range visible {
+		actualIndex := offset + index
+		rowText := "  " + pack.ID + "  " + versionStyle.Render(pack.Version)
+		if selected && actualIndex == row {
+			rowText = selectedRowStyle.Padding(0, 1).Render("› "+pack.ID+"  "+pack.Version) + " · selected"
 		}
-		lines = append(lines, fmt.Sprintf("%s%s  %s", marker, pack.ID, pack.Version))
+		lines = append(lines, rowText)
+	}
+	if hidden := len(packs) - len(visible); hidden > 0 {
+		lines = append(lines, dimStyle.Render(fmt.Sprintf("… %d more · ↑/↓ navigate", hidden)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m Model) visibleScopePacks(packs []Pack, row int, selected bool) ([]Pack, int) {
+	limit := len(packs)
+	if m.height > 0 && m.height <= 26 {
+		limit = min(limit, 2)
+	} else if m.height > 0 && m.height <= 34 {
+		limit = min(limit, 4)
+	}
+	if limit == len(packs) {
+		return packs, 0
+	}
+	offset := 0
+	if selected && row >= limit {
+		offset = row - limit + 1
+	}
+	return packs[offset : offset+limit], offset
 }
 
 func (m Model) renderDetail() string {
 	pack := m.selectedPack()
 	if pack == nil {
-		return titleStyle.Render("Pack details") + "\n\nNo Pack selected\n\nEsc back"
+		return m.renderViewportScreen("Pack details", "Dashboard", "No Pack selected", "Esc back", 0)
 	}
 	scope := "Workstation · global"
-	root := ""
+	subtitle := pack.ID + " " + pack.Version + "  ·  " + scope
 	if m.project {
 		scope = "Current project"
-		root = "\nProject root: " + m.dashboard.Project.Root
+		subtitle = pack.ID + " " + pack.Version + "  ·  " + scope + "  ·  " + m.dashboard.Project.Root
 	}
+	return m.renderViewportScreen("Pack details · "+scope, subtitle, m.renderDetailContent(*pack), m.detailAction()+" · Esc back · / filter · r reload · q quit", m.detailScroll)
+}
+
+func (m Model) renderDetailContent(pack Pack) string {
 	lines := []string{
-		titleStyle.Render("Pack details · " + scope),
-		pack.ID + " " + pack.Version,
-		pack.Description + root,
+		sectionHeading("Overview", 0),
+		pack.Description,
 		"Requirements: " + joinOrNone(pack.Requirements),
 		"",
-		"Resources",
+		sectionHeading("Resources", len(pack.Resources)),
 	}
 	if len(pack.Resources) == 0 {
-		lines = append(lines, "  none")
+		lines = append(lines, dimStyle.Render("none"))
 	}
 	for _, resource := range pack.Resources {
-		line := "  " + resource.Identity + " [" + resource.Role + "]"
+		line := lipgloss.NewStyle().Bold(true).Foreground(mochaBlue).Render("• "+resource.Identity) + "  " + roleBadge(resource.Role)
 		if resource.Description != "" {
-			line += " — " + resource.Description
+			line += "\n  " + mutedStyle.Render(resource.Description)
 		}
 		lines = append(lines, line)
 		if len(resource.Requirements) > 0 {
-			lines = append(lines, "    requires "+strings.Join(resource.Requirements, ", "))
+			lines = append(lines, "  "+dimStyle.Render("requires ")+strings.Join(resource.Requirements, ", "))
 		}
 		if len(resource.Conflicts) > 0 {
-			lines = append(lines, "    conflicts "+strings.Join(resource.Conflicts, ", "))
+			lines = append(lines, "  "+lipgloss.NewStyle().Foreground(mochaRed).Render("conflicts ")+strings.Join(resource.Conflicts, ", "))
 		}
 	}
-	lines = append(lines, "", "Conflicts and exclusions")
+	lines = append(lines, "", sectionHeading("Conflicts and exclusions", len(pack.Exclusions)))
 	if len(pack.Exclusions) == 0 {
-		lines = append(lines, "  none")
+		lines = append(lines, dimStyle.Render("none"))
 	}
 	for _, exclusion := range pack.Exclusions {
 		identity := exclusion.ID
@@ -1209,18 +1308,18 @@ func (m Model) renderDetail() string {
 		if len(qualifiers) > 0 {
 			identity += " (" + strings.Join(qualifiers, ", ") + ")"
 		}
-		lines = append(lines, "  "+identity+" — "+exclusion.Reason)
+		lines = append(lines, lipgloss.NewStyle().Foreground(mochaRed).Render("• "+identity)+" — "+mutedStyle.Render(exclusion.Reason))
 	}
-	lines = append(lines, "", "CLI surfaces and status")
+	lines = append(lines, "", sectionHeading("CLI surfaces and status", len(pack.SurfaceStatuses)))
 	if len(pack.SurfaceStatuses) == 0 && len(pack.Surfaces) > 0 {
-		lines = append(lines, "  Available on: "+strings.Join(pack.Surfaces, ", "))
+		lines = append(lines, "Available on: "+strings.Join(pack.Surfaces, ", "))
 	}
 	for _, status := range pack.SurfaceStatuses {
 		if !status.Supported {
-			lines = append(lines, "  "+status.Name+": unsupported")
+			lines = append(lines, lipgloss.NewStyle().Bold(true).Render(status.Name+": unsupported")+"  "+statusBadge("unsupported"))
 			continue
 		}
-		lines = append(lines, "  "+status.Name+": supported")
+		lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(mochaSapphire).Render("◆ "+status.Name+": supported")+"  "+statusBadge("supported"))
 		if m.project {
 			installation, runtime := status.Installation, status.Runtime
 			if installation == "" {
@@ -1229,21 +1328,27 @@ func (m Model) renderDetail() string {
 			if runtime == "" {
 				runtime = "pending"
 			}
-			lines = append(lines, "    Project installation: "+installation, "    Personal runtime activation: "+runtime)
+			lines = append(lines, "  Project installation: "+installation, "  Personal runtime activation: "+runtime)
 		}
 		lines = append(lines,
-			fmt.Sprintf("    configured=%s authorized=%s usable=%s", status.Configured, status.Authorized, status.Usable),
-			fmt.Sprintf("    Controlled runtime check: state=%s result=%s observed_at=%s identity=%s", status.ControlledCheckState, status.ControlledCheckResult, status.ControlledCheckObserved, status.ControlledCheckIdentity),
-			fmt.Sprintf("    Ownership: %d projected paths", status.Ownership),
-			fmt.Sprintf("    Drift: %d projections", status.Drift),
-			"    Blockers: "+joinOrNone(status.Blockers),
-			"    Pending actions: "+joinOrNone(status.PendingActions),
-			"    Evidence: "+joinOrNone(status.Evidence),
+			fmt.Sprintf("  configured=%s authorized=%s usable=%s", status.Configured, status.Authorized, status.Usable),
+			fmt.Sprintf("  Controlled runtime check: state=%s result=%s", status.ControlledCheckState, status.ControlledCheckResult),
+			fmt.Sprintf("  observed_at=%s", status.ControlledCheckObserved),
+			fmt.Sprintf("  identity=%s", status.ControlledCheckIdentity),
+			fmt.Sprintf("  Ownership: %d projected paths", status.Ownership),
+			fmt.Sprintf("  Drift: %d projections", status.Drift),
+			"  Blockers: "+joinOrNone(status.Blockers),
+			"  Pending actions: "+joinOrNone(status.PendingActions),
+			"  Evidence: "+joinOrNone(status.Evidence),
 		)
 		for _, condition := range status.Conditions {
-			lines = append(lines, fmt.Sprintf("    Readiness condition: dimension=%s value=%s reason=%s message=%s", condition.Dimension, condition.Value, condition.Reason, condition.Message))
+			lines = append(lines, fmt.Sprintf("  Readiness condition: dimension=%s  value=%s  reason=%s\n  %s", condition.Dimension, condition.Value, condition.Reason, condition.Message))
 		}
 	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) detailAction() string {
 	action := "Enter select resources"
 	if !m.project {
 		actions := m.lifecycleActions()
@@ -1274,30 +1379,36 @@ func (m Model) renderDetail() string {
 			action = "Enter preview project Pack uninstall"
 		}
 	}
-	lines = append(lines, "", action+" · Esc back · / filter · r reload · q quit")
-	return strings.Join(lines, "\n")
+	return action
+}
+
+func (m Model) detailViewportMaxOffset() int {
+	pack := m.selectedPack()
+	if pack == nil {
+		return 0
+	}
+	return m.viewportMaxOffset(m.renderDetailContent(*pack))
 }
 
 func (m Model) renderActionChoice() string {
 	pack := m.selectedPack()
 	if pack == nil {
-		return titleStyle.Render("Choose lifecycle action") + "\n\nNo Pack selected\n\nEsc back"
+		return m.renderPagedScreen("Choose lifecycle action", "Pack details", "No Pack selected", "Esc back")
 	}
 	surface := selectedSurface(*pack, m.surfaceIndex)
 	title, scope := "Choose lifecycle action", "Workstation · global"
 	if m.project {
 		title, scope = "Choose project lifecycle action", "Current project"
 	}
-	lines := []string{titleStyle.Render(title), pack.ID + " · " + surface + " · " + scope, "CLI surface: " + surface + " · selected (←/→ change surface)", ""}
+	lines := []string{sectionHeading("Available actions", len(m.lifecycleActions())), "CLI surface: " + surface + " · selected (←/→ change surface)", ""}
 	for index, action := range m.lifecycleActions() {
-		marker := "  "
+		row := "  " + lifecycleActionLabel(action)
 		if index == m.actionChoice {
-			marker = "› "
+			row = selectedRowStyle.Padding(0, 1).Render("› " + lifecycleActionLabel(action) + " · selected")
 		}
-		lines = append(lines, marker+lifecycleActionLabel(action)+map[bool]string{true: " · selected"}[index == m.actionChoice])
+		lines = append(lines, row)
 	}
-	lines = append(lines, "", "↑/↓ choose · Enter continue · Esc back · q quit")
-	return strings.Join(lines, "\n")
+	return m.renderPagedScreen(title, pack.ID+" · "+surface+" · "+scope, strings.Join(lines, "\n"), "↑/↓ choose · Enter continue · Esc back · q quit")
 }
 
 func lifecycleActionLabel(action string) string {
@@ -1320,10 +1431,6 @@ func (m Model) renderSelection() string {
 	if surface == "" {
 		surface = "unavailable"
 	}
-	fullMarker, advancedMarker := "› ", "  "
-	if m.selectionChoice == 1 || m.advancedSelection {
-		fullMarker, advancedMarker = "  ", "› "
-	}
 	title := "Select Pack resources"
 	fullLabel, advancedLabel := "Full Pack", "Advanced operational roots"
 	if m.operation == "deactivate" {
@@ -1333,15 +1440,21 @@ func (m Model) renderSelection() string {
 	if m.advancedSelection {
 		advancedLabel += " · selected"
 	}
+	fullRow, advancedRow := "  "+fullLabel, "  "+advancedLabel
+	if !m.advancedSelection && m.selectionChoice == 0 {
+		fullRow = selectedRowStyle.Padding(0, 1).Render("› " + fullLabel + " · selected")
+	}
+	if m.selectionChoice == 1 || m.advancedSelection {
+		advancedRow = selectedRowStyle.Padding(0, 1).Render("› " + advancedLabel)
+	}
 	lines := []string{
-		titleStyle.Render(title),
-		pack.ID + " · " + surface + " · " + scope,
 		"CLI surface: " + surface + " · selected (←/→ change surface)",
 		"",
-		fullMarker + fullLabel + map[bool]string{true: " · selected"}[!m.advancedSelection && m.selectionChoice == 0],
-		advancedMarker + advancedLabel,
+		sectionHeading("Selection mode", 0),
+		fullRow,
+		advancedRow,
 		"",
-		"Resource roles",
+		sectionHeading("Resource roles", len(pack.Resources)),
 	}
 	if m.advancedSelection {
 		lines = append(lines, "  Operational roots")
@@ -1381,11 +1494,15 @@ func (m Model) renderSelection() string {
 		if m.selectionPreviewFocus {
 			marker = "› "
 		}
-		lines = append(lines, "", marker+"[ Preview selected roots ]", "Space/Enter toggle · Tab preview · Esc Full Pack · q quit")
+		lines = append(lines, "", marker+"[ Preview selected roots ]")
 	} else {
-		lines = append(lines, "", "Enter choose · Esc back · q quit")
+		lines = append(lines, "")
 	}
-	return strings.Join(lines, "\n")
+	footer := "Enter choose · Esc back · q quit"
+	if m.advancedSelection {
+		footer = "Space/Enter toggle · Tab preview · Esc Full Pack · q quit"
+	}
+	return m.renderPagedScreen(title, pack.ID+" · "+surface+" · "+scope, strings.Join(lines, "\n"), footer)
 }
 
 func operationalRoots(pack Pack) []Resource {
@@ -1590,44 +1707,39 @@ func (m Model) renderConsent() string {
 		effectsTitle = "Exact paths and effects"
 		warning = "Removal cannot be interrupted after Apply starts."
 	}
-	lines := []string{
-		titleStyle.Render(title), "", phase.Kind, "Exact plan: " + m.preview.ID + " · " + m.preview.Digest,
-	}
+	lines := []string{sectionHeading(effectsTitle, len(phase.Actions)), phase.Kind, "Exact plan: " + m.preview.ID + " · " + m.preview.Digest}
 	if warning != "" {
-		lines = append(lines, "", warning)
+		lines = append(lines, "", lipgloss.NewStyle().Bold(true).Foreground(mochaRed).Render("[DANGER] "+warning))
 	}
-	lines = append(lines, "", effectsTitle)
 	for _, action := range phase.Actions {
-		lines = append(lines, "  "+action)
+		lines = append(lines, "• "+action)
 	}
 	approve, cancel := "  [ Approve ]", "  [ Cancel ]"
 	if m.consentApprove {
-		approve = "› [ Approve ] · selected"
+		approve = lipgloss.NewStyle().Bold(true).Foreground(mochaBase).Background(mochaGreen).Padding(0, 1).Render("› [ Approve ] · selected")
 	} else {
-		cancel = "› [ Cancel ] · selected"
+		cancel = selectedRowStyle.Padding(0, 1).Render("› [ Cancel ] · selected")
 	}
-	lines = append(lines, "", approve, cancel, "", "↑/↓ or Tab choose · Enter confirm · Esc preview")
-	return strings.Join(lines, "\n")
+	choices := approve + "   " + cancel
+	return m.renderPagedScreen(title, m.preview.PackID+" · "+m.preview.Surface+" · "+m.preview.Scope, strings.Join(lines, "\n"), choices+"\n↑/↓ or Tab choose · Enter confirm · Esc preview")
 }
 
 func (m Model) renderControlledCheckResult() string {
 	preview := *m.preview
 	positive, negative := "  [ Positive ]", "  [ Negative ]"
 	if m.controlledCheckResult == "positive" {
-		positive = "› [ Positive ] · selected"
+		positive = lipgloss.NewStyle().Bold(true).Foreground(mochaBase).Background(mochaGreen).Padding(0, 1).Render("› [ Positive ] · selected")
 	} else if m.controlledCheckResult == "negative" {
-		negative = "› [ Negative ] · selected"
+		negative = lipgloss.NewStyle().Bold(true).Foreground(mochaBase).Background(mochaRed).Padding(0, 1).Render("› [ Negative ] · selected")
 	}
 	lines := []string{
-		titleStyle.Render("Record controlled runtime check result"), "",
-		preview.PackID + " " + preview.PackVersion + " · " + preview.Surface + " · " + preview.Scope,
 		"Exact plan: " + preview.ID + " · " + preview.Digest,
 		"Selection: " + checkSelection(preview.Selection),
 	}
 	if preview.ValidityIdentity != "" {
 		lines = append(lines, "Validity identity: "+preview.ValidityIdentity)
 	}
-	lines = append(lines, "", "Instructions")
+	lines = append(lines, "", sectionHeading("Instructions", len(preview.Instructions)))
 	if len(preview.Instructions) == 0 {
 		lines = append(lines, "  No instructions supplied")
 	} else {
@@ -1635,8 +1747,8 @@ func (m Model) renderControlledCheckResult() string {
 			lines = append(lines, "  "+instruction)
 		}
 	}
-	lines = append(lines, "", positive, negative, "", "↑/↓ or Tab choose · Enter record result · Esc preview")
-	return strings.Join(lines, "\n")
+	choices := positive + "   " + negative
+	return m.renderPagedScreen("Record controlled runtime check result", preview.PackID+" "+preview.PackVersion+" · "+preview.Surface+" · "+preview.Scope, strings.Join(lines, "\n"), choices+"\n↑/↓ or Tab choose · Enter record result · Esc preview")
 }
 
 func checkSelection(selection Selection) string {
@@ -1648,14 +1760,14 @@ func checkSelection(selection Selection) string {
 
 func (m Model) renderApplyProgress() string {
 	lines := []string{
-		titleStyle.Render("Apply in progress"), "",
+		sectionHeading("Current phase", 0),
 		fmt.Sprintf("%s %s · elapsed %s", m.applySpinner.View(), m.applyPhase, time.Since(m.applyStartedAt).Truncate(time.Second)),
-		"", "Apply is non-interruptible; ordinary exit waits for the operation to return.",
+		"", lipgloss.NewStyle().Foreground(mochaYellow).Render("Apply is non-interruptible; ordinary exit waits for the operation to return."),
 	}
 	if m.deferredQuit {
 		lines = append(lines, "Exit deferred until Apply returns.")
 	}
-	return strings.Join(lines, "\n")
+	return m.renderPagedScreen("Apply in progress", "Packy is applying the approved immutable plan", strings.Join(lines, "\n"), "Exit waits safely for Apply to finish")
 }
 
 func (m Model) renderApplyResult() string {
@@ -1694,7 +1806,7 @@ func (m Model) renderApplyResult() string {
 	if stage == "" {
 		stage = "apply"
 	}
-	lines := []string{titleStyle.Render(title), "", "Stage: " + stage, "Verification: " + verification}
+	lines := []string{statusBadge(map[bool]string{true: "verified", false: "failed"}[succeeded])}
 	if m.applyOutcome.Summary != "" {
 		lines = append(lines, "Summary: "+m.applyOutcome.Summary)
 	}
@@ -1739,33 +1851,48 @@ func (m Model) renderApplyResult() string {
 		}
 		action = "Enter preview personal project activation"
 	}
-	lines = append(lines, "", action+" · Esc dashboard · q quit")
-	return strings.Join(lines, "\n")
+	return m.renderPagedScreen(title, "Stage: "+stage+"  ·  Verification: "+verification, strings.Join(lines, "\n"), action+" · Esc dashboard · q quit")
 }
 
 func (m Model) renderPreviewViewport(content string) string {
-	styled := m.renderBody(content)
-	if m.height <= 0 {
-		return styled
+	if m.preview == nil {
+		return m.renderViewportScreen("Immutable lifecycle preview", "", content, "Esc back · q quit", m.previewScroll)
 	}
-	lines := strings.Split(styled, "\n")
-	if len(lines) <= m.height {
-		return styled
-	}
-	visible := max(m.height-1, 1)
-	maxOffset := max(len(lines)-visible, 0)
-	offset := min(m.previewScroll, maxOffset)
-	end := min(offset+visible, len(lines))
-	footer := fmt.Sprintf("↑/↓ scroll · lines %d–%d of %d", offset+1, end, len(lines))
-	return strings.Join(append(lines[offset:end], m.renderBody(footer)), "\n")
+	title, subtitle, body, footer := m.previewFrame(content)
+	return m.renderViewportScreen(title, subtitle, body, footer, m.previewScroll)
 }
 
 func (m Model) previewViewportMaxOffset() int {
-	if m.preview == nil || m.height <= 1 {
+	if m.preview == nil {
 		return 0
 	}
-	lines := strings.Split(m.renderBody(m.renderPreview(*m.preview)), "\n")
-	return max(len(lines)-(m.height-1), 0)
+	_, _, body, _ := m.previewFrame(m.renderPreview(*m.preview))
+	return m.viewportMaxOffset(body)
+}
+
+func (m Model) previewFrame(content string) (string, string, string, string) {
+	preview := *m.preview
+	title := "Immutable lifecycle preview"
+	if preview.Operation == "check" {
+		title = "Immutable controlled runtime check"
+	}
+	subtitle := preview.Operation + " " + preview.PackID + " " + preview.PackVersion + " · " + preview.Surface + " · " + preview.Scope
+	lines := strings.Split(content, "\n")
+	if len(lines) >= 2 {
+		lines = lines[2:]
+	}
+	footer := "Continue unavailable · Esc back · q quit"
+	if previewCanApply(preview) {
+		footer = "Enter continue to consent · Esc back · q quit"
+	}
+	if len(lines) > 0 && (strings.Contains(lines[len(lines)-1], "Esc back") || strings.Contains(lines[len(lines)-1], "Continue unavailable")) {
+		lines = lines[:len(lines)-1]
+	}
+	body := strings.Join(lines, "\n")
+	for _, section := range []string{"Check instructions", "Dependency closure", "Authorities", "Effects", "Diff", "Phases"} {
+		body = strings.ReplaceAll(body, "\n"+section+"\n", "\n"+sectionHeading(section, 0)+"\n")
+	}
+	return title, subtitle, body, footer
 }
 
 func renderPreviewBlockers(blockers []PreviewBlocker) string {

@@ -5,6 +5,9 @@ Git-reviewed capability Packs on Codex, OpenCode, and Claude Code.
 
 ## Highlights
 
+- The primary interactive TUI now uses a Catppuccin Mocha visual system with
+  responsive dashboard panels, accessible health labels, contextual help, and
+  fixed navigation around scrollable Pack details and lifecycle previews.
 - Controlled runtime checks now record scoped positive or negative personal
   evidence for host behavior Packy cannot observe, separately from activation.
 - Pack discovery and lifecycle commands now run directly at the root, such as
