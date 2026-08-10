@@ -93,6 +93,15 @@ func TestTUIBackendPreviewsAndRecordsControlledRuntimeCheck(t *testing.T) {
 	}
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	beforeCheck, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	orchestrateBefore := findTUIPack(beforeCheck.Global.Packs, "orchestrate")
+	beforeIndex := slices.IndexFunc(orchestrateBefore.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if beforeIndex < 0 || !orchestrateBefore.SurfaceStatuses[beforeIndex].ControlledCheckActionAvailable {
+		t.Fatalf("domain-owned controlled check action did not flow to TUI status: %#v", orchestrateBefore)
+	}
 	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "check", PackID: "orchestrate", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
 	if err != nil {
 		t.Fatal(err)
@@ -110,8 +119,45 @@ func TestTUIBackendPreviewsAndRecordsControlledRuntimeCheck(t *testing.T) {
 	}
 	orchestrate := findTUIPack(dashboard.Global.Packs, "orchestrate")
 	index := slices.IndexFunc(orchestrate.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
-	if index < 0 || orchestrate.SurfaceStatuses[index].Usable != "true" || orchestrate.SurfaceStatuses[index].ControlledCheckState != "current" || orchestrate.SurfaceStatuses[index].ControlledCheckResult != "true" || orchestrate.SurfaceStatuses[index].ControlledCheckIdentity == "" {
+	if index < 0 || orchestrate.SurfaceStatuses[index].Usable != "true" || orchestrate.SurfaceStatuses[index].ControlledCheckActionAvailable || orchestrate.SurfaceStatuses[index].ControlledCheckState != "current" || orchestrate.SurfaceStatuses[index].ControlledCheckResult != "true" || orchestrate.SurfaceStatuses[index].ControlledCheckIdentity == "" {
 		t.Fatalf("controlled check did not flow to TUI status: %#v", orchestrate)
+	}
+}
+
+func TestTUIBackendPreservesProjectControlledCheckActionMeaning(t *testing.T) {
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	opts, _, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
+	opts.Getwd = func() (string, error) { return project, nil }
+	if output, err := executeCommand(t, NewRootCommand(opts), "install", "orchestrate", "--surface", "codex", "--resource", "skill:orchestrate"); err != nil {
+		t.Fatalf("install project orchestrate: %v\n%s", err, output)
+	}
+	opts = opts.withDefaults()
+	backend := newTUIBackend(opts, newWorkstationResolver(opts))
+	dashboard, err := backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	orchestrate := findTUIPack(dashboard.Project.Packs, "orchestrate")
+	index := slices.IndexFunc(orchestrate.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || !orchestrate.SurfaceStatuses[index].ControlledCheckActionAvailable {
+		t.Fatalf("project controlled check action did not flow to TUI status: %#v", orchestrate)
+	}
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "check", PackID: "orchestrate", Surface: "codex", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: []string{"controlled-check"}, ControlledCheckResult: "positive"}, func(tui.ApplyProgress) {}); err != nil || !result.Verified {
+		t.Fatalf("record project controlled check = %#v, %v", result, err)
+	}
+	dashboard, err = backend.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	orchestrate = findTUIPack(dashboard.Project.Packs, "orchestrate")
+	index = slices.IndexFunc(orchestrate.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || orchestrate.SurfaceStatuses[index].ControlledCheckActionAvailable {
+		t.Fatalf("current positive project check still offered an action: %#v", orchestrate)
 	}
 }
 

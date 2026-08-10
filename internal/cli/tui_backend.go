@@ -964,10 +964,11 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
 			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateActionAvailable,
-			Configured:           readinessForTUI(entry.Readiness.Configured),
-			Authorized:           readinessForTUI(entry.Readiness.Authorized),
-			Usable:               readinessForTUI(entry.Readiness.Usable),
-			ControlledCheckState: string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
+			Configured:                     readinessForTUI(entry.Readiness.Configured),
+			Authorized:                     readinessForTUI(entry.Readiness.Authorized),
+			Usable:                         readinessForTUI(entry.Readiness.Usable),
+			ControlledCheckActionAvailable: entry.ControlledCheckActionAvailable,
+			ControlledCheckState:           string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
 			Blockers: append([]string(nil), entry.Blockers...), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
 			Conditions: readinessConditionsForTUI(entry.Conditions),
 		}
@@ -995,7 +996,8 @@ func projectStatusesForTUI(report capabilitypack.JSONProjectStatusReport) map[st
 			Installation: string(entry.Installation), Runtime: string(entry.Runtime), Active: entry.Runtime == capabilitypack.ProjectRuntimeActive || entry.Runtime == capabilitypack.ProjectRuntimeInheritedGlobal,
 			InstalledVersion: entry.Pack.Version,
 			Configured:       string(entry.Readiness.Configured), Authorized: string(entry.Readiness.Authorized), Usable: string(entry.Readiness.Usable),
-			ControlledCheckState: string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
+			ControlledCheckActionAvailable: entry.ControlledCheckActionAvailable,
+			ControlledCheckState:           string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
 			Ownership: len(entry.Projections), PendingActions: append([]string(nil), entry.PendingHumanActions...), Evidence: append([]string(nil), entry.Evidence...),
 			Conditions: readinessConditionsForTUI(entry.Conditions),
 		}

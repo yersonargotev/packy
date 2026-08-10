@@ -828,7 +828,7 @@ func TestRunEntersAndRestoresAlternateScreen(t *testing.T) {
 func TestGlobalControlledRuntimeCheckRecordsPositiveResultAfterItsOwnPreview(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
 		ID: "orchestrate", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:orchestrate", Role: "root"}},
-		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Configured: "true", Usable: "unknown"}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Configured: "false", Usable: "true", ControlledCheckActionAvailable: true}},
 	}}}}}
 	backend.previewFor = func(request tui.PreviewRequest) (tui.Preview, error) {
 		if request.Operation != "check" || request.Scope != "global" || request.Selection.Mode != "all" {
@@ -875,7 +875,7 @@ func TestGlobalControlledRuntimeCheckRecordsPositiveResultAfterItsOwnPreview(t *
 func TestProjectControlledRuntimeCheckRecordsNegativeResultAndCanBeCancelled(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Project: tui.Scope{Available: true, Root: "/workspace/project", Packs: []tui.Pack{{
 		ID: "orchestrate", Version: "1.0.0", Resources: []tui.Resource{{Identity: "skill:orchestrate", Role: "root"}},
-		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Configured: "true", Usable: "stale"}},
+		SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Installation: "installed", Configured: "false", Usable: "true", ControlledCheckActionAvailable: true}},
 	}}}}}
 	backend.preview = tui.Preview{ID: "runtime-check-project", Digest: "runtime-check-project", Operation: "check", Disposition: "previewable", PackID: "orchestrate", PackVersion: "1.0.0", Surface: "codex", Scope: "project", ProjectRoot: "/workspace/project", Selection: tui.Selection{Mode: "all"}, Instructions: []string{"Confirm the runtime behavior."}, Phases: []tui.PreviewPhase{{Kind: "record-runtime-evidence", ApprovalRequired: true}}}
 	backend.applyResult = tui.ApplyResult{Stage: "verification", Verified: true}
