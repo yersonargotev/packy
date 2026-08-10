@@ -128,26 +128,6 @@ func externalHostSetupAdapter(bundle, root string, surface capabilitypack.Surfac
 	return opencode.NewSurfaceAdapter(bundle, filepath.Join(root, "skills"), filepath.Join(root, "opencode.json"), filepath.Join(root, "primary.md"))
 }
 
-func syntheticExternalHostSetupPack(packID, instructionID, mcpID string, surface capabilitypack.Surface) capabilitypack.Pack {
-	setup := &capabilitypack.ExternalHostSetupCapability{
-		Tool: "engram", SetupArgs: []string{"setup", string(surface)},
-		ManagedResources: []capabilitypack.ResourceIdentity{{Kind: "instruction", ID: instructionID}, {Kind: "mcp_server", ID: mcpID}},
-	}
-	if surface == capabilitypack.SurfaceCodex {
-		setup.Codex = &capabilitypack.CodexHostSetup{
-			MCPArgs: []string{"mcp", "--tools=agent"}, InstructionsFile: "engram-instructions.md", InstructionsFingerprint: "74176fb0847b06fb725ae8992c9a5fa12022ff347ca3ee2ef3e77c6d318d5fb3",
-			CompactPromptFile: "engram-compact-prompt.md", CompactPromptFingerprint: "c779d9584c8ca16331ebb31a753f7fbb5bcb8193b229572a54da189ffaa97fd1",
-			MarketplaceRepository: "https://github.com/Gentleman-Programming/engram.git", MarketplaceRevision: "main", Plugin: "engram@engram",
-		}
-	} else {
-		setup.OpenCode = &capabilitypack.OpenCodeHostSetup{PluginFile: "plugins/engram.ts", TUIFile: "tui.json", TUIPlugin: "opencode-subagent-statusline"}
-	}
-	return capabilitypack.Pack{ID: packID, Version: "1.0.0", Resources: []capabilitypack.Resource{
-		{Kind: "instruction", ID: instructionID, Source: "instructions/" + instructionID + ".md"},
-		{Kind: "mcp_server", ID: mcpID, Command: "engram", Args: []string{"mcp", "--tools=agent"}, Bindings: []capabilitypack.Binding{{Surface: surface, Capabilities: []capabilitypack.SurfaceCapability{{Type: capabilitypack.SurfaceCapabilityExternalHostSetup, ExternalHostSetup: setup}}}}},
-	}}
-}
-
 func writeExternalHostSetupPack(t *testing.T, bundle, packID, instructionID, mcpID string, surface capabilitypack.Surface) {
 	t.Helper()
 	instruction := filepath.Join(bundle, "instructions", instructionID+".md")
