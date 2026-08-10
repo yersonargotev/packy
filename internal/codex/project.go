@@ -185,13 +185,14 @@ func codexProjectInstructionProjection(identity capabilitypack.ResourceIdentity,
 	} else if exists {
 		observed = state + ":" + localprojection.FingerprintBytes([]byte(document))
 	}
+	replaceable := state == "intact"
 	if state == "intact" && observed != desired {
 		state = "changed"
 	}
 	content := ""
 	if state == "missing" {
 		content = mergeBlock(document, block, start, end)
-	} else if state == "intact" {
+	} else if replaceable {
 		content = strings.Replace(document, fragment, block, 1)
 	}
 	fileMode := uint32(0o644)

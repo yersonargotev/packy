@@ -8,6 +8,7 @@ Persistent memory for agent work
 
 - Version: `1.0.2`
 - Supported surfaces: `claude`, `codex`, `opencode`
+- Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `engram`
 
 ## Resources
@@ -18,6 +19,8 @@ Persistent memory for agent work
   - Role: `operational`
   - Dependencies: None.
   - Notices: None.
+  - Codex capabilities: `project-instruction`
+  - Opencode capabilities: `project-instruction`
 
 ### Lifecycle
 
@@ -33,6 +36,8 @@ Persistent memory for agent work
   - Role: `operational`
   - Dependencies: `instruction:engram-memory`
   - Notices: None.
+  - Codex capabilities: `external-host-setup`
+  - Opencode capabilities: `external-host-setup`
 
 ## Pack exclusions
 

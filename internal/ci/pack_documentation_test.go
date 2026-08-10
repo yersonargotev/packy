@@ -81,13 +81,25 @@ func TestGeneratedPackPagesExposeDecisionUsefulInventory(t *testing.T) {
 		}
 		text := readFile(t, filepath.Join(root, "docs", "packs", entry.Name()))
 		for _, required := range []string{
-			"## Purpose", "- Version:", "- Supported surfaces:", "- External requirements:",
+			"## Purpose", "- Version:", "- Supported surfaces:", "- Readiness obligations:", "- External requirements:",
 			"## Resources", "  - Role:", "  - Dependencies:", "  - Notices:",
 			"## Pack exclusions", "## Inspect and preview", "packy show", "--dry-run",
 		} {
 			if !strings.Contains(text, required) {
 				t.Errorf("docs/packs/%s is missing %q", entry.Name(), required)
 			}
+		}
+	}
+}
+
+func TestGeneratedPackIndexDescribesTheCompleteAuthoringVocabulary(t *testing.T) {
+	text := readFile(t, filepath.Join(repositoryRoot(t), "docs", "packs", "index.md"))
+	for _, required := range []string{
+		"## Pack authoring vocabulary", "Readiness obligations:", "`runtime-usability`", "`surface-authorization`",
+		"Surface capabilities:", "`claude-agent-document`", "`claude-composite-skill`", "`external-host-setup`", "`opencode-primary-prompt`", "`project-instruction`",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("generated Pack index is missing %q", required)
 		}
 	}
 }

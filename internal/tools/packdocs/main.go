@@ -59,6 +59,16 @@ func renderIndex(details []capabilitypack.CatalogDetail) []byte {
 		pack := detail.Pack
 		fmt.Fprintf(&out, "- [%s](%s.md) — %s (version `%s`)\n", pack.ID, pack.ID, pack.Description, pack.Version)
 	}
+	out.WriteString("\n## Pack authoring vocabulary\n\n")
+	out.WriteString("Readiness obligations:\n\n")
+	out.WriteString("- `runtime-usability` — Requires fresh evidence that the selected Pack behavior is usable; unobservable runtime state remains unknown.\n")
+	out.WriteString("- `surface-authorization` — Requires fresh evidence of host authorization; missing observation remains unknown.\n")
+	out.WriteString("\nSurface capabilities:\n\n")
+	out.WriteString("- `claude-agent-document` — Builds a Claude agent document from reviewed skills and portable authority data.\n")
+	out.WriteString("- `claude-composite-skill` — Builds a Claude skill or command with reviewed dependency and reference roles.\n")
+	out.WriteString("- `external-host-setup` — Selects the reviewed Codex or OpenCode setup contract for a supported external tool.\n")
+	out.WriteString("- `opencode-primary-prompt` — Contributes reviewed source as OpenCode's global primary prompt.\n")
+	out.WriteString("- `project-instruction` — Contributes reviewed source as an independently owned marked project instruction for Codex or OpenCode.\n")
 	return out.Bytes()
 }
 
@@ -71,6 +81,7 @@ func renderPack(detail capabilitypack.CatalogDetail) []byte {
 	fmt.Fprintf(&out, "%s\n\n", pack.Description)
 	fmt.Fprintf(&out, "- Version: `%s`\n", pack.Version)
 	fmt.Fprintf(&out, "- Supported surfaces: %s\n", codeList(surfaces(pack.Surfaces)))
+	fmt.Fprintf(&out, "- Readiness obligations: %s\n", codeList(readinessObligations(pack.ReadinessObligations)))
 	fmt.Fprintf(&out, "- External requirements: %s\n", optionalCodeList(pack.Requires.Tools))
 
 	out.WriteString("\n## Resources\n")
@@ -90,6 +101,9 @@ func renderPack(detail capabilitypack.CatalogDetail) []byte {
 			fmt.Fprintf(&out, "  - %s exclusion (%s): %s\n", title(string(exclusion.Surface)), exclusion.Mode, exclusion.Reason)
 		}
 		for _, binding := range resource.Bindings {
+			if len(binding.Capabilities) > 0 {
+				fmt.Fprintf(&out, "  - %s capabilities: %s\n", title(string(binding.Surface)), codeList(surfaceCapabilities(binding.Capabilities)))
+			}
 			if binding.Degradation != "" {
 				fmt.Fprintf(&out, "  - %s degradation: `%s`\n", title(string(binding.Surface)), binding.Degradation)
 			}
@@ -110,6 +124,22 @@ func renderPack(detail capabilitypack.CatalogDetail) []byte {
 	fmt.Fprintf(&out, "packy activate %s --surface %s --dry-run\n", pack.ID, pack.Surfaces[0])
 	out.WriteString("```\n")
 	return out.Bytes()
+}
+
+func readinessObligations(values []capabilitypack.ReadinessObligation) []string {
+	result := make([]string, len(values))
+	for i, value := range values {
+		result[i] = string(value)
+	}
+	return result
+}
+
+func surfaceCapabilities(values []capabilitypack.SurfaceCapability) []string {
+	result := make([]string, len(values))
+	for i, value := range values {
+		result[i] = string(value.Type)
+	}
+	return result
 }
 
 func checkDocumentation(root string, expected map[string][]byte) error {

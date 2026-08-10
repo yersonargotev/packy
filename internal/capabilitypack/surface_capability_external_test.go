@@ -91,6 +91,7 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 			for _, packID := range []string{"synthetic-alpha", "synthetic-beta"} {
 				facade := capabilitypack.NewFacade(catalog)
 				project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
+				currentGuidance := "Shared project guidance from " + packID + "."
 				if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("# Foreign guidance\n"), 0o640); err != nil {
 					t.Fatal(err)
 				}
@@ -119,12 +120,50 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 				}
 
 				assertProjectInstructionContribution(t, project, packID, true)
+				updatedBundle := t.TempDir()
+				if err := os.CopyFS(updatedBundle, os.DirFS(bundle)); err != nil {
+					t.Fatal(err)
+				}
+				manifestPath := filepath.Join(updatedBundle, "packs", packID, "pack.json")
+				manifest, err := os.ReadFile(manifestPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				advanced := strings.Replace(string(manifest), `"version": "1.0.0"`, `"version": "1.0.1"`, 1)
+				if advanced == string(manifest) {
+					t.Fatal("synthetic project-instruction version did not advance")
+				}
+				if err := os.WriteFile(manifestPath, []byte(advanced), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				currentGuidance = "Updated shared project guidance from " + packID + "."
+				if err := os.WriteFile(filepath.Join(updatedBundle, "instructions", packID+".md"), []byte(currentGuidance+"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(updatedBundle)
+				if err != nil {
+					t.Fatal(err)
+				}
+				adapter = projectInstructionAdapter(t, updatedBundle, surface)
+				facade = capabilitypack.NewFacade(updatedCatalog)
+				update, err := facade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: project}, adapter)
+				if err != nil || update.Disposition != capabilitypack.ProjectInstallPreviewable {
+					t.Fatalf("%s update = %#v, err=%v", packID, update, err)
+				}
+				if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: update, PackyHome: packyHome, Adapter: adapter}); err != nil {
+					t.Fatal(err)
+				}
+				updatedDocument, err := os.ReadFile(filepath.Join(project, "AGENTS.md"))
+				if err != nil || !strings.Contains(string(updatedDocument), currentGuidance) {
+					t.Fatalf("%s updated project instruction = %q, err=%v", packID, updatedDocument, err)
+				}
+
 				agentsPath := filepath.Join(project, "AGENTS.md")
 				installedDocument, err := os.ReadFile(agentsPath)
 				if err != nil {
 					t.Fatal(err)
 				}
-				drifted := strings.Replace(string(installedDocument), "Shared project guidance from "+packID+".", "Locally changed guidance.", 1)
+				drifted := strings.Replace(string(installedDocument), currentGuidance, "Locally changed guidance.", 1)
 				if err := os.WriteFile(agentsPath, []byte(drifted), 0o640); err != nil {
 					t.Fatal(err)
 				}
