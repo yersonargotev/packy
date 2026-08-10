@@ -502,7 +502,7 @@ func verifyProjectProjectionObservation(projectRoot string, expected []ProjectPr
 		key := projection.ID + "\x00" + filepath.Clean(filepath.FromSlash(relative))
 		desired, ok := want[key]
 		if ok && (!projection.Exists || normalizeProjectProjectionFingerprint(projection.ObservedFingerprint) != desired) {
-			return fmt.Errorf("verify project projection %s: %w", projection.ID, ErrVerificationFailed)
+			return fmt.Errorf("verify project projection %s (exists=%t observed=%s desired=%s): %w", projection.ID, projection.Exists, normalizeProjectProjectionFingerprint(projection.ObservedFingerprint), desired, ErrVerificationFailed)
 		}
 		delete(want, key)
 	}

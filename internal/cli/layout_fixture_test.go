@@ -6,7 +6,6 @@ import (
 	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/codex"
-	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/opencode"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 	"github.com/yersonargotev/packy/internal/workstation"
@@ -22,7 +21,6 @@ type cliTestFixture struct {
 	skills          skillbundle.GlobalLayout
 	codex           codex.CanonicalLayout
 	opencode        opencode.CanonicalLayout
-	engram          engrambin.Topology
 }
 
 func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
@@ -61,6 +59,5 @@ func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
 		skills:          skillbundle.NewGlobalLayout(snapshot.Home()),
 		codex:           codex.NewCanonicalLayout(snapshot.Home()),
 		opencode:        opencode.NewCanonicalLayout(snapshot.ConfigurationHome()),
-		engram:          engrambin.NewTopology(snapshot.HomebrewPrefix()),
 	}
 }

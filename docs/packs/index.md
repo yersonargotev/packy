@@ -9,3 +9,18 @@ This index is generated from the bundled selectable Pack manifests. Use `packy s
 - [engram](engram.md) — Persistent memory for agent work (version `1.0.2`)
 - [matty](matty.md) — Matty workflow (version `1.0.3`)
 - [orchestrate](orchestrate.md) — Coordinate focused Codex subagents (version `1.0.1`)
+
+## Pack authoring vocabulary
+
+Readiness obligations:
+
+- `runtime-usability` — Requires fresh evidence that the selected Pack behavior is usable; unobservable runtime state remains unknown.
+- `surface-authorization` — Requires fresh evidence of host authorization; missing observation remains unknown.
+
+Surface capabilities:
+
+- `claude-agent-document` — Builds a Claude agent document from reviewed skills and portable authority data.
+- `claude-composite-skill` — Builds a Claude skill or command with reviewed dependency and reference roles.
+- `external-host-setup` — Selects the reviewed Codex or OpenCode setup contract for a supported external tool.
+- `opencode-primary-prompt` — Contributes reviewed source as OpenCode's global primary prompt.
+- `project-instruction` — Contributes reviewed source as an independently owned marked project instruction for Codex or OpenCode.

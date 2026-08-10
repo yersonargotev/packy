@@ -8,6 +8,7 @@ Matty workflow
 
 - Version: `1.0.3`
 - Supported surfaces: `claude`, `codex`, `opencode`
+- Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
 ## Resources
@@ -18,6 +19,8 @@ Matty workflow
   - Role: `operational`
   - Dependencies: None.
   - Notices: None.
+  - Codex capabilities: `project-instruction`
+  - Opencode capabilities: `opencode-primary-prompt`
 - `claude-handoff` — Hands the current conversation to a fresh background agent
   - Role: `operational`
   - Dependencies: None.

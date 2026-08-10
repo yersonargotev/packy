@@ -8,6 +8,7 @@ Yerson Argote's engineering and communication guidance
 
 - Version: `1.0.2`
 - Supported surfaces: `claude`, `codex`, `opencode`
+- Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
 ## Resources
@@ -18,6 +19,8 @@ Yerson Argote's engineering and communication guidance
   - Role: `operational`
   - Dependencies: None.
   - Notices: None.
+  - Codex capabilities: `project-instruction`
+  - Opencode capabilities: `project-instruction`
 
 ### Skill
 

@@ -28,6 +28,9 @@
         "target": {
           "type": "string"
         },
+        "content": {
+          "type": "string"
+        },
         "command": {
           "type": "string"
         },
@@ -39,6 +42,47 @@
         },
         "mode": {
           "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "file_mode": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "precondition": {
+          "type": "string"
+        },
+        "consequences": {
+          "type": "string"
+        },
+        "rollback_limits": {
+          "type": "string"
+        },
+        "adapter_provenance": {
+          "type": "string"
+        },
+        "contribution_start_marker": {
+          "type": "string"
+        },
+        "contribution_end_marker": {
+          "type": "string"
+        },
+        "projection_key": {
+          "type": "string"
+        },
+        "shared": {
+          "type": "boolean"
+        },
+        "discoverable_by": {
+          "type": "array",
+          "items": {
+            "enum": ["claude", "codex", "opencode"]
+          },
+          "uniqueItems": true
+        },
+        "preview_only": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false

@@ -107,26 +107,6 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	})
 }
 
-func TestReadinessAdaptersDoNotDispatchOnPackOrResourceIdentity(t *testing.T) {
-	root := repositoryRoot(t)
-	identityDispatch := regexp.MustCompile(`\b(?:pack|resource)\.ID\s*(?:==|!=)`)
-	for _, relative := range []string{"internal/codex/surface.go", "internal/opencode/surface.go"} {
-		text := readFile(t, filepath.Join(root, filepath.FromSlash(relative)))
-		start := strings.Index(text, "func (a *SurfaceAdapter) inspectReadiness")
-		if start < 0 {
-			t.Fatalf("%s readiness observation boundary is missing", relative)
-		}
-		end := strings.Index(text[start:], "func (a *SurfaceAdapter) inspectDesired")
-		if end < 0 {
-			t.Fatalf("%s readiness observation boundary is missing", relative)
-		}
-		readiness := text[start : start+end]
-		if identityDispatch.MatchString(readiness) {
-			t.Errorf("%s dispatches readiness observation by Pack or resource identity", relative)
-		}
-	}
-}
-
 func TestCurrentDocumentationLocalLinksResolve(t *testing.T) {
 	root := repositoryRoot(t)
 	paths := []string{filepath.Join(root, "README.md"), filepath.Join(root, "CONTEXT.md"), filepath.Join(root, "AGENTS.md")}

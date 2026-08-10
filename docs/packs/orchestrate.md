@@ -8,6 +8,7 @@ Coordinate focused Codex subagents
 
 - Version: `1.0.1`
 - Supported surfaces: `codex`
+- Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
 ## Resources

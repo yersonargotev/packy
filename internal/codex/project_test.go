@@ -173,7 +173,7 @@ func TestProjectInstructionCapabilityPreservesOnlyIntactContribution(t *testing.
 	}{
 		{name: "missing preserves foreign content", content: "# Team guidance\n", provenance: "missing", writable: true},
 		{name: "intact preserves surrounding content", content: "# Before\n" + desired + "\n# After\n", provenance: "intact", exists: true, writable: true},
-		{name: "changed marker contribution blocks", content: strings.Replace(desired, "skill trees", "different trees", 1), provenance: "changed", exists: true},
+		{name: "changed intact contribution proposes receipt-gated replacement", content: strings.Replace(desired, "skill trees", "different trees", 1), provenance: "changed", exists: true, writable: true},
 		{name: "orphaned marker blocks", content: start + "\n# incomplete\n", provenance: "malformed", exists: true},
 		{name: "duplicate markers block", content: desired + "\n" + desired, provenance: "ambiguous", exists: true},
 	} {
@@ -191,7 +191,11 @@ func TestProjectInstructionCapabilityPreservesOnlyIntactContribution(t *testing.
 			}
 			if test.writable {
 				want := "# Team guidance"
-				if test.provenance == "intact" {
+				if test.provenance == "changed" {
+					if projection.Action.Content != desired {
+						t.Fatalf("changed intact contribution replacement = %q, want %q", projection.Action.Content, desired)
+					}
+				} else if test.provenance == "intact" {
 					if !strings.Contains(projection.Action.Content, "# Before") || !strings.Contains(projection.Action.Content, "# After") {
 						t.Fatalf("foreign surrounding content was not preserved: %q", projection.Action.Content)
 					}

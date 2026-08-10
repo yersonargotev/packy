@@ -1,9 +1,14 @@
 package capabilitypack
 
 import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -75,10 +80,12 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 			t.Fatalf("%s introduced a concrete surface adapter outside Codex, OpenCode, or Claude Code", source.path)
 		}
 		if supportedHost {
-			for _, migratedIdentity := range []string{"addy", "engram", "matty"} {
-				if strings.Contains(source.text, `"`+migratedIdentity+`"`) {
-					t.Fatalf("%s dispatches host behavior by the migrated %s identity", source.path, migratedIdentity)
-				}
+			dispatches, err := literalIdentityDispatches(source.path, source.text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, dispatch := range dispatches {
+				t.Errorf("%s dispatches host behavior by literal identity %q", dispatch.position, dispatch.literal)
 			}
 			concreteAdapters += adapterDefinitions
 			inspectionImplementations += strings.Count(source.text, ") InspectSurface(")
@@ -121,5 +128,142 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 	}
 	if directInspections != 1 {
 		t.Fatalf("found %d direct production InspectSurface calls, want the private gateway only", directInspections)
+	}
+}
+
+type literalIdentityDispatch struct {
+	position token.Position
+	literal  string
+}
+
+func literalIdentityDispatches(path, source string) ([]literalIdentityDispatch, error) {
+	files := token.NewFileSet()
+	file, err := parser.ParseFile(files, path, source, 0)
+	if err != nil {
+		return nil, fmt.Errorf("parse adapter %s: %w", path, err)
+	}
+	var dispatches []literalIdentityDispatch
+	record := func(node ast.Node, expression, candidate ast.Expr) {
+		if !isIdentityExpression(expression) {
+			return
+		}
+		literal, ok := stringLiteral(candidate)
+		if !ok || literal == "" {
+			return
+		}
+		dispatches = append(dispatches, literalIdentityDispatch{position: files.Position(node.Pos()), literal: literal})
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch node := node.(type) {
+		case *ast.BinaryExpr:
+			if node.Op != token.EQL && node.Op != token.NEQ {
+				return true
+			}
+			record(node, node.X, node.Y)
+			record(node, node.Y, node.X)
+		case *ast.SwitchStmt:
+			if node.Tag == nil || !isIdentityExpression(node.Tag) {
+				return true
+			}
+			for _, statement := range node.Body.List {
+				clause, ok := statement.(*ast.CaseClause)
+				if !ok {
+					continue
+				}
+				for _, expression := range clause.List {
+					record(expression, node.Tag, expression)
+				}
+			}
+		}
+		return true
+	})
+	return dispatches, nil
+}
+
+func isIdentityExpression(expression ast.Expr) bool {
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expression = parenthesized.X
+	}
+	name := ""
+	switch expression := expression.(type) {
+	case *ast.SelectorExpr:
+		// Host runtime evidence has its own protocol identity. It is not a Pack,
+		// Pack version, or resource identity and may use a reviewed literal.
+		if expression.Sel.Name == "ID" {
+			if receiver, ok := expression.X.(*ast.Ident); ok && receiver.Name == "evidence" {
+				return false
+			}
+		}
+		name = expression.Sel.Name
+	case *ast.Ident:
+		name = expression.Name
+	}
+	name = strings.ToLower(name)
+	return name == "id" || name == "packid" || name == "resourceid" || name == "version" || name == "packversion"
+}
+
+func stringLiteral(expression ast.Expr) (string, bool) {
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expression = parenthesized.X
+	}
+	literal, ok := expression.(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		return "", false
+	}
+	value, err := strconv.Unquote(literal.Value)
+	return value, err == nil
+}
+
+func TestLiteralIdentityDispatchGuardIsNarrow(t *testing.T) {
+	for name, expression := range map[string]string{
+		"pack identity":               `pack.ID == "addy"`,
+		"reversed Pack identity":      `"engram" != pack.PackID`,
+		"resource identity":           `resource.ID != "memory"`,
+		"Pack version":                `pack.Version == "1.0.0"`,
+		"local resource identity":     `resourceID == "guide"`,
+		"parenthesized Pack identity": `(pack.ID) == ("matty")`,
+	} {
+		t.Run("reject "+name, func(t *testing.T) {
+			source := "package adapter\nfunc dispatch() { if " + expression + " {} }"
+			dispatches, err := literalIdentityDispatches(name+".go", source)
+			if err != nil || len(dispatches) != 1 {
+				t.Fatalf("dispatches = %#v, err=%v", dispatches, err)
+			}
+		})
+	}
+
+	t.Run("reject switch", func(t *testing.T) {
+		source := `package adapter
+func dispatch() { switch resource.ID { case "guide", "memory": } }`
+		dispatches, err := literalIdentityDispatches("switch.go", source)
+		if err != nil || len(dispatches) != 2 {
+			t.Fatalf("dispatches = %#v, err=%v", dispatches, err)
+		}
+	})
+
+	for name, expression := range map[string]string{
+		"requested Pack lookup":  `pack.ID == requestedID`,
+		"ownership":              `owner.PackID != pack.ID`,
+		"intent version":         `pack.Version != intent.Version`,
+		"resource lookup":        `resource.ID == selected.ID`,
+		"resource kind":          `resource.Kind == "skill"`,
+		"host evidence identity": `evidence.ID == "project_runtime:claude"`,
+		"empty identity":         `pack.ID == ""`,
+	} {
+		t.Run("allow "+name, func(t *testing.T) {
+			source := "package adapter\nfunc compare() { if " + expression + " {} }"
+			dispatches, err := literalIdentityDispatches(name+".go", source)
+			if err != nil || len(dispatches) != 0 {
+				t.Fatalf("dispatches = %#v, err=%v", dispatches, err)
+			}
+		})
 	}
 }
