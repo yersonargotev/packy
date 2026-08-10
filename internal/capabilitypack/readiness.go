@@ -91,16 +91,6 @@ func (status ReadinessStatus) SatisfiesUsable() bool {
 	return status.Configured == ReadinessTrue && status.Authorized == ReadinessTrue && status.Usable == ReadinessTrue
 }
 
-func readinessValue(observed, value bool) ReadinessValue {
-	if !observed {
-		return ReadinessUnknown
-	}
-	if value {
-		return ReadinessTrue
-	}
-	return ReadinessFalse
-}
-
 func configuredReadiness(value bool) ReadinessValue {
 	if value {
 		return ReadinessTrue
