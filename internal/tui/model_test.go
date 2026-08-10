@@ -991,18 +991,31 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	current, _ = current.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view = ansi.Strip(current.View().Content)
+	initialDetailView := view
+	allDetailViews := view
+	for range 12 {
+		current, _ = current.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
+		view = ansi.Strip(current.View().Content)
+		if lines := strings.Count(view, "\n") + 1; lines > 30 {
+			t.Fatalf("scrollable Pack detail height = %d, want <= 30:\n%s", lines, view)
+		}
+		allDetailViews += "\n" + view
+	}
+	if view == initialDetailView || !strings.Contains(view, "Pack details · Workstation · global") || !strings.Contains(view, "Enter select resources") {
+		t.Fatalf("Pack detail did not scroll while keeping its header and actions fixed:\n%s", view)
+	}
 	for _, want := range []string{
 		"Pack details · Workstation · global", "orchestrate 1.0.0", "Coordination workflow",
 		"skill:orchestrate", "Coordinate agents", "requires notice:mit", "conflicts skill:legacy",
 		"Requirements: git", "windows — POSIX shell required",
-		"skill:orchestrate (surface=claude, mode=unsupported", "code=surface-unsupported) — Codex only",
+		"skill:orchestrate (surface=claude", "mode=unsupported", "code=surface-unsupported)", "Codex only",
 		"claude: unsupported", "codex: supported", "configured=yes authorized=yes usable=no",
 		"Controlled runtime check: state=stale result=true", "identity=check-identity",
 		"Ownership: 2 projected paths", "Drift: 1 projections", "runtime unavailable",
 		"install helper", "projection verified", "opencode: unsupported",
 	} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("Pack detail missing %q:\n%s", want, view)
+		if !strings.Contains(allDetailViews, want) {
+			t.Fatalf("Pack detail missing %q after scrolling:\n%s", want, allDetailViews)
 		}
 	}
 	for _, line := range strings.Split(current.View().Content, "\n") {
@@ -1209,7 +1222,8 @@ func TestPreviewWrapsSafetyEvidenceInNarrowTerminalWithoutTruncation(t *testing.
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	view := ansi.Strip(model.View().Content)
 	for _, want := range []string{"the complete blocker detail remains visible", "a long pending action whose complete meaning must remain visible"} {
-		if !strings.Contains(strings.Join(strings.Fields(view), " "), want) {
+		borderless := strings.NewReplacer("│", " ", "╭", " ", "╮", " ", "╰", " ", "╯", " ", "─", " ").Replace(view)
+		if !strings.Contains(strings.Join(strings.Fields(borderless), " "), want) {
 			t.Fatalf("narrow preview truncated %q:\n%s", want, view)
 		}
 	}
@@ -1229,7 +1243,8 @@ func TestPreviewWrapsSafetyEvidenceInNarrowTerminalWithoutTruncation(t *testing.
 		seen += "\n" + view
 		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
 	}
-	normalized := strings.Join(strings.Fields(seen), " ")
+	borderless := strings.NewReplacer("│", " ", "╭", " ", "╮", " ", "╰", " ", "╯", " ", "─", " ").Replace(seen)
+	normalized := strings.Join(strings.Fields(borderless), " ")
 	for _, want := range []string{"Immutable lifecycle preview", "Dependency closure", "Authorities", "Effects", "Diff", "Blockers", "Phases", "Pending actions", "complete meaning must remain visible"} {
 		if !strings.Contains(normalized, want) {
 			t.Fatalf("scrollable preview never exposed %q:\n%s", want, seen)
@@ -1416,6 +1431,43 @@ func TestDashboardLoadsThroughInjectedBackendOutsideUpdate(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("ready view missing %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestDashboardUsesMochaPanelsAndAccessibleStatusLabels(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Health: tui.Health{
+			Status:   "failures",
+			Passes:   1,
+			Warnings: 1,
+			Failures: 1,
+			Checks: []tui.HealthCheck{
+				{Name: "ready", Severity: "PASS", Detail: "available"},
+				{Name: "limited", Severity: "WARN", Detail: "needs attention"},
+				{Name: "broken", Severity: "FAIL", Detail: "inspection failed"},
+			},
+		},
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{{ID: "argote", Version: "1.0.0"}}},
+	}}
+	current := loadModel(t, backend)
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	view := current.View()
+	plain := ansi.Strip(view.Content)
+
+	if view.BackgroundColor == nil || view.ForegroundColor == nil {
+		t.Fatal("dashboard did not set its terminal-wide Catppuccin foreground and background")
+	}
+	for _, want := range []string{
+		"PACKY", "Packy health · workspace control", "◆ System health",
+		"[FAIL] failures", "[OK] PASS", "[WARN] WARN", "[FAIL] FAIL",
+		"╭", "Workstation · global · selected", "•",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("themed dashboard missing %q:\n%s", want, plain)
+		}
+	}
+	if !strings.Contains(view.Content, "\x1b[") {
+		t.Fatal("themed dashboard did not emit terminal styling")
 	}
 }
 
