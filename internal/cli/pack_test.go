@@ -188,6 +188,10 @@ func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatu
 	if err != nil || !strings.Contains(unknown, "usable=unknown") || !strings.Contains(unknown, "Controlled runtime check: unknown") {
 		t.Fatalf("unknown status: err=%v\n%s", err, unknown)
 	}
+	focusedUnknown, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--resource", "skill:orchestrate", "--require", "usable")
+	if err == nil || !strings.Contains(focusedUnknown, "Focused resource: skill:orchestrate configured=true authorized=true usable=unknown") {
+		t.Fatalf("focused unknown strict status: err=%v\n%s", err, focusedUnknown)
+	}
 	preview, err := executeCommand(t, NewRootCommand(opts), "check", "orchestrate", "--surface", "codex", "--dry-run")
 	if err != nil {
 		t.Fatal(err)
@@ -210,6 +214,10 @@ func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatu
 	current, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--require", "usable")
 	if err != nil || !strings.Contains(current, "usable=true") || !strings.Contains(current, "Controlled runtime check: current result=true") {
 		t.Fatalf("current positive strict status: err=%v\n%s", err, current)
+	}
+	focusedCurrent, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--resource", "skill:orchestrate", "--require", "usable", "--json")
+	if err != nil || !strings.Contains(focusedCurrent, `"satisfied":true`) || !strings.Contains(focusedCurrent, `"reason":"runtime-confirmed"`) || !strings.Contains(focusedCurrent, `"controlled-check:`) {
+		t.Fatalf("focused current strict JSON status: err=%v\n%s", err, focusedCurrent)
 	}
 }
 
