@@ -270,7 +270,7 @@ type Model struct {
 	filtering              bool
 	filter                 string
 	detailScroll           int
-	auxScroll              int
+	pagedScreenScroll      int
 	initializing           bool
 	initializationResult   bool
 	initializationErr      error
@@ -326,13 +326,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.initializing = false
 		m.initializationResult = true
 		m.initializationErr = message.err
-		m.auxScroll = 0
+		m.pagedScreenScroll = 0
 		m.initializationEvents = nil
 		return m, m.Init()
 	case previewResult:
 		m.previewing = false
 		m.previewErr = message.err
-		m.auxScroll = 0
+		m.pagedScreenScroll = 0
 		if message.err == nil {
 			preview := message.preview
 			m.preview = &preview
@@ -346,7 +346,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.showingApplyResult = true
 		m.applyOutcome = message.result
 		m.applyErr = message.err
-		m.auxScroll = 0
+		m.pagedScreenScroll = 0
 		m.applyEvents = nil
 		return m, m.Init()
 	case spinner.TickMsg:
@@ -372,11 +372,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if message.Code == tea.KeyPgDown {
-			m.auxScroll += max(m.height-10, 1)
+			m.pagedScreenScroll += max(m.height-10, 1)
 			return m, nil
 		}
 		if message.Code == tea.KeyPgUp {
-			m.auxScroll = max(m.auxScroll-max(m.height-10, 1), 0)
+			m.pagedScreenScroll = max(m.pagedScreenScroll-max(m.height-10, 1), 0)
 			return m, nil
 		}
 		if m.showingApplyResult {
@@ -448,7 +448,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 						return m.startApply(ApplyRequest{Preview: *m.preview, ControlledCheckResult: m.controlledCheckResult})
 					}
 					m.consenting, m.consentIndex, m.approvedPhases = true, 0, nil
-					m.auxScroll = 0
+					m.pagedScreenScroll = 0
 					m.consentApprove = phases[0].Kind != "destructive-cleanup"
 				}
 				return m, nil
@@ -499,12 +499,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				if m.preview != nil && previewCanApply(*m.preview) {
 					if m.preview.Operation == "check" {
 						m.choosingCheckResult, m.controlledCheckResult = true, ""
-						m.auxScroll = 0
+						m.pagedScreenScroll = 0
 						return m, nil
 					}
 					phases := requiredConsentPhases(*m.preview)
 					m.consenting, m.consentIndex, m.approvedPhases = true, 0, nil
-					m.auxScroll = 0
+					m.pagedScreenScroll = 0
 					m.consentApprove = phases[0].Kind != "destructive-cleanup"
 				}
 				return m, nil
@@ -592,7 +592,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 					if len(actions) > 1 {
 						m.choosingAction = true
 						m.actionChoice = 0
-						m.auxScroll = 0
+						m.pagedScreenScroll = 0
 						break
 					}
 					if m.operation == "install" {
@@ -603,7 +603,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				} else if status := m.selectedSurfaceStatus(); status != nil && (status.Active || status.ControlledCheckActionAvailable) {
 					m.choosingAction = true
 					m.actionChoice = 0
-					m.auxScroll = 0
+					m.pagedScreenScroll = 0
 					m.operation = firstLifecycleAction(*status)
 				} else {
 					m.operation = "activate"
@@ -648,7 +648,7 @@ func (m Model) startInitialization() (tea.Model, tea.Cmd) {
 	m.initializationResult = false
 	m.initializationErr = nil
 	m.initializationProgress = nil
-	m.auxScroll = 0
+	m.pagedScreenScroll = 0
 	m.initializationEvents = make(chan tea.Msg, 64)
 	events := m.initializationEvents
 	initialize := func() tea.Msg {
@@ -718,7 +718,7 @@ func (m *Model) beginSelection() {
 	m.selectionRoot = 0
 	m.selectionPreviewFocus = false
 	m.selectionNotice = ""
-	m.auxScroll = 0
+	m.pagedScreenScroll = 0
 	m.selectedRoots = make(map[string]bool)
 	for _, resource := range operationalRoots(*m.selectedPack()) {
 		m.selectedRoots[resource.Identity] = true

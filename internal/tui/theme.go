@@ -103,7 +103,7 @@ func (m Model) renderViewportScreen(title, subtitle, content, footer string, off
 }
 
 func (m Model) renderPagedScreen(title, subtitle, content, footer string) string {
-	return m.renderFramedScreen(title, subtitle, content, footer, m.auxScroll, "PgUp/PgDn scroll")
+	return m.renderFramedScreen(title, subtitle, content, footer, m.pagedScreenScroll, "PgUp/PgDn scroll")
 }
 
 func (m Model) renderFramedScreen(title, subtitle, content, footer string, offset int, scrollHint string) string {
