@@ -401,7 +401,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 				if digestErr != nil {
 					return report, digestErr
 				}
-				identity := controlledCheckIdentityFor(readinessPack, surface, ControlledCheckProject, projectDigest, controlledCheckResources(projectLockForPack(installation.Lock, pack.ID).ResourceGraph), observation)
+				identity := controlledCheckIdentityFor(readinessPack, surface, ControlledCheckProject, projectDigest, controlledCheckResources(projectLockForPack(installation.Lock, pack.ID).ResourceGraph), observation, normalizedControlledCheckDescriptor(surface, observation.ControlledCheck))
 				controlledCheck, inspectErr = NewFileControlledCheckStore(request.PackyHome).Status(ctx, identity)
 				if inspectErr != nil {
 					return report, inspectErr
@@ -558,7 +558,8 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 			if digestErr != nil {
 				return report, digestErr
 			}
-			identity := controlledCheckIdentityFor(pack, status.Surface, ControlledCheckProject, digest, controlledCheckResources(projectLockForPack(installation.Lock, status.Pack.ID).ResourceGraph), SurfaceInspection{Revision: status.readinessRevision, ControlledCheck: status.controlledCheck})
+			observation := SurfaceInspection{Revision: status.readinessRevision, ControlledCheck: status.controlledCheck}
+			identity := controlledCheckIdentityFor(pack, status.Surface, ControlledCheckProject, digest, controlledCheckResources(projectLockForPack(installation.Lock, status.Pack.ID).ResourceGraph), observation, normalizedControlledCheckDescriptor(status.Surface, status.controlledCheck))
 			status.ControlledCheck, err = store.Status(ctx, identity)
 			if err != nil {
 				return report, err

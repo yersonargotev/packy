@@ -68,6 +68,70 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	}
 }
 
+func TestFacadeControlledCheckPreviewNormalizesInstructionsForGlobalAndProject(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		instructions []string
+		want         string
+	}{
+		{name: "adapter instructions", instructions: []string{"  Run the named Pack behavior.  "}, want: "Run the named Pack behavior."},
+		{name: "fallback instructions", want: "Verify the selected Pack behavior in codex, then record whether it succeeded."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pack := controlledCheckTestPack("app")
+			observation := controlledCheckTestObservation("codex-v1", "1.2.3")
+			observation.ControlledCheck.Instructions = test.instructions
+
+			for _, scope := range []ControlledCheckScope{ControlledCheckGlobal, ControlledCheckProject} {
+				t.Run(string(scope), func(t *testing.T) {
+					home := t.TempDir()
+					adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}
+					request := ControlledCheckRequest{PackID: pack.ID, Surface: SurfaceCodex, PackyHome: home, Adapter: adapter}
+					var facade Facade
+					if scope == ControlledCheckGlobal {
+						state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}}}
+						facade = NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
+					} else {
+						project := t.TempDir()
+						projectObservation := observation
+						projectObservation.Projections = append([]ObservedProjection(nil), observation.Projections...)
+						projectObservation.Projections[0].DesiredFingerprint = strings.Repeat("a", 64)
+						projectObservation.Projections[0].ObservedFingerprint = strings.Repeat("a", 64)
+						projectObservation.Projections[0].Action.Target = filepath.Join(project, ".agents", "skills", "guide")
+						projectObservation.Projections[0].Action.PreviewOnly = true
+						adapter = &fakeSurfaceAdapter{observations: []SurfaceInspection{projectObservation}}
+						request.Adapter = adapter
+						request.ProjectRoot = project
+						facade = NewFacade(Catalog{packs: []Pack{pack}})
+						install, err := facade.PreviewProjectInstall(context.Background(), ProjectInstallRequest{PackID: pack.ID, Surface: SurfaceCodex, ProjectRoot: project, Selection: ResourceSelection{Mode: SelectionAll}}, adapter)
+						if err != nil {
+							t.Fatal(err)
+						}
+						writeControlledCheckProjectInstallation(t, project, install)
+					}
+
+					preview, err := facade.PreviewControlledCheck(context.Background(), request)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(preview.Instructions) != 1 || preview.Instructions[0] != test.want || preview.AdapterVersion != "codex/v2" || preview.HostVersion != "1.2.3" {
+						t.Fatalf("preview = %#v", preview)
+					}
+					validity := preview.ValidityIdentity
+					preview.Instructions[0] = "mutated by caller"
+					repeated, err := facade.PreviewControlledCheck(context.Background(), request)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if repeated.ValidityIdentity != validity || len(repeated.Instructions) != 1 || repeated.Instructions[0] != test.want {
+						t.Fatalf("repeated preview = %#v", repeated)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestFacadeControlledCheckRejectsStalePreviewAndReportsStaleEvidence(t *testing.T) {
 	pack := controlledCheckTestPack("app")
 	state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}}}
@@ -183,11 +247,32 @@ func TestFileControlledCheckStoreRejectsUnknownJSONFields(t *testing.T) {
 }
 
 func controlledCheckTestPack(id string) Pack {
-	return Pack{manifestVersion: manifestSchemaV4, ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, ReadinessObligations: []ReadinessObligation{ReadinessSurfaceAuthorization, ReadinessRuntimeUsability}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}}, Contract: Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}}}
+	return Pack{manifestVersion: manifestSchemaV4, ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}}, Contract: Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}}}
 }
 
 func controlledCheckTestObservation(revision, host string) SurfaceInspection {
 	return SurfaceInspection{Revision: revision, ControlledCheck: ControlledCheckDescriptor{AdapterVersion: "codex/v2", HostVersion: host, Instructions: []string{"Run the named Pack behavior."}}, Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide"}}}, Readiness: ReadinessObservation{AuthorizationObserved: true, Authorized: true, UsabilityObserved: false}}
+}
+
+func writeControlledCheckProjectInstallation(t *testing.T, project string, preview JSONProjectInstallPreview) {
+	t.Helper()
+	manifest, err := marshalProjectManifest(preview.Manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := marshalProjectLock(preview.Lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string][]byte{
+		filepath.Join(project, "packy.json"):       manifest,
+		filepath.Join(project, "packy.lock.json"):  lock,
+		filepath.Join(project, "PACKY-NOTICES.md"): []byte(preview.noticeContent),
+	} {
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func hasReadinessReason(conditions []ReadinessCondition, reason ReadinessReason) bool {
