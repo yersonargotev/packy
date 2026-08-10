@@ -124,29 +124,30 @@ func UnknownOptionalAuthorities(pack Pack) []OptionalAuthorityObservation {
 }
 
 type StatusEntry struct {
-	Pack                  Pack
-	Surface               Surface
-	Intent                IntentStatus
-	IntentPresent         bool
-	UpdateAvailable       bool
-	UpdateActionAvailable bool
-	Readiness             ReadinessStatus
-	Conditions            []ReadinessCondition
-	OptionalAuthorities   []OptionalAuthorityObservation
-	RuntimeModes          []RuntimeModeResult
-	ControlledCheck       ControlledCheckStatus
-	Projections           ProjectionSummary
-	ProjectionDetails     []ProjectionStatus
-	ResourceSelections    []ResourceSelectionStatus
-	Resources             []ResourceStatus
-	Blockers              []string
-	MissingRequirements   []string
-	InspectionFailed      bool
-	PendingHumanActions   []string
-	Evidence              []string
-	Contract              LifecycleContract
-	ActivationRole        ActivationRole
-	LifecycleState        PackLifecycleState
+	Pack                           Pack
+	Surface                        Surface
+	Intent                         IntentStatus
+	IntentPresent                  bool
+	UpdateAvailable                bool
+	UpdateActionAvailable          bool
+	Readiness                      ReadinessStatus
+	Conditions                     []ReadinessCondition
+	OptionalAuthorities            []OptionalAuthorityObservation
+	RuntimeModes                   []RuntimeModeResult
+	ControlledCheck                ControlledCheckStatus
+	ControlledCheckActionAvailable bool
+	Projections                    ProjectionSummary
+	ProjectionDetails              []ProjectionStatus
+	ResourceSelections             []ResourceSelectionStatus
+	Resources                      []ResourceStatus
+	Blockers                       []string
+	MissingRequirements            []string
+	InspectionFailed               bool
+	PendingHumanActions            []string
+	Evidence                       []string
+	Contract                       LifecycleContract
+	ActivationRole                 ActivationRole
+	LifecycleState                 PackLifecycleState
 }
 
 type StatusRequirement struct {
@@ -502,6 +503,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		ControlledCheck: &entry.ControlledCheck,
 	}
 	entry.Readiness, entry.Conditions = evaluateReadiness(evaluation)
+	entry.ControlledCheckActionAvailable = controlledCheckActionAvailable(entry.Readiness, entry.Conditions)
 	if entry.Intent.Active {
 		entry.Resources = deriveResourceStatuses(graph, evaluation)
 	}

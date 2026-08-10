@@ -223,6 +223,18 @@ func aggregateReadinessDimension(conditions []ReadinessCondition, dimension Read
 	return result
 }
 
+func controlledCheckActionAvailable(readiness ReadinessStatus, conditions []ReadinessCondition) bool {
+	if readiness.Configured != ReadinessTrue {
+		return false
+	}
+	for _, condition := range conditions {
+		if condition.Type == ConditionRuntimeUsability {
+			return condition.Value != ReadinessTrue
+		}
+	}
+	return false
+}
+
 func projectionReason(health ProjectionHealth) ReadinessReason {
 	switch health {
 	case ProjectionVerified:

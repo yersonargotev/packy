@@ -28,7 +28,7 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unknown.Focused == nil || unknown.Focused.Readiness.Usable != ReadinessUnknown || unknown.Requirement.Satisfied || !hasReadinessReason(unknown.Focused.Conditions, ReasonRuntimeUnobservable) {
+	if unknown.Focused == nil || unknown.Focused.Readiness.Usable != ReadinessUnknown || unknown.Requirement.Satisfied || !unknown.Entries[0].ControlledCheckActionAvailable || !hasReadinessReason(unknown.Focused.Conditions, ReasonRuntimeUnobservable) {
 		t.Fatalf("unknown controlled check did not fail focused strict gate: %#v %#v", unknown.Focused, unknown.Requirement)
 	}
 	if _, err := facade.RecordControlledCheck(context.Background(), preview, ReadinessTrue); err != nil {
@@ -39,7 +39,7 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 		t.Fatal(err)
 	}
 	entry := report.Entries[0]
-	if entry.ControlledCheck.State != ControlledCheckCurrent || entry.ControlledCheck.Result != ReadinessTrue || !report.Requirement.Satisfied || entry.Readiness.Usable != ReadinessTrue {
+	if entry.ControlledCheck.State != ControlledCheckCurrent || entry.ControlledCheck.Result != ReadinessTrue || !report.Requirement.Satisfied || entry.Readiness.Usable != ReadinessTrue || entry.ControlledCheckActionAvailable {
 		t.Fatalf("positive controlled check did not satisfy strict gate: %#v %#v", entry, report.Requirement)
 	}
 	focused, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
@@ -56,7 +56,7 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Entries[0].Readiness.Usable != ReadinessFalse || report.Requirement.Satisfied {
+	if report.Entries[0].Readiness.Usable != ReadinessFalse || report.Requirement.Satisfied || !report.Entries[0].ControlledCheckActionAvailable {
 		t.Fatalf("negative controlled check did not fail strict gate: %#v %#v", report.Entries[0], report.Requirement)
 	}
 	focused, err = facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
@@ -95,7 +95,7 @@ func TestFacadeControlledCheckRejectsStalePreviewAndReportsStaleEvidence(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Entries[0].ControlledCheck.State != ControlledCheckStale || report.Entries[0].Readiness.Usable != ReadinessUnknown || report.Requirement.Satisfied || !hasReadinessReason(report.Entries[0].Conditions, ReasonRuntimeCheckStale) {
+	if report.Entries[0].ControlledCheck.State != ControlledCheckStale || report.Entries[0].Readiness.Usable != ReadinessUnknown || report.Requirement.Satisfied || !report.Entries[0].ControlledCheckActionAvailable || !hasReadinessReason(report.Entries[0].Conditions, ReasonRuntimeCheckStale) {
 		t.Fatalf("stale controlled check = %#v", report.Entries[0])
 	}
 	focused, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
@@ -104,6 +104,36 @@ func TestFacadeControlledCheckRejectsStalePreviewAndReportsStaleEvidence(t *test
 	}
 	if focused.Focused == nil || focused.Focused.Readiness.Usable != ReadinessUnknown || focused.Requirement.Satisfied || !hasReadinessReason(focused.Focused.Conditions, ReasonRuntimeCheckStale) {
 		t.Fatalf("stale controlled check did not fail focused strict gate: %#v %#v", focused.Focused, focused.Requirement)
+	}
+}
+
+func TestFacadeControlledCheckActionRequiresConfiguredRuntimeObligation(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		obligations []ReadinessObligation
+		configured  bool
+	}{
+		{name: "no runtime obligation", obligations: []ReadinessObligation{ReadinessSurfaceAuthorization}, configured: true},
+		{name: "projection not configured", obligations: []ReadinessObligation{ReadinessSurfaceAuthorization, ReadinessRuntimeUsability}, configured: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pack := controlledCheckTestPack("app")
+			pack.ReadinessObligations = test.obligations
+			state := ActivationState{Intent: ActivationIntent{PackID: pack.ID, Version: pack.Version, Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}, Ownership: []ProjectionOwnership{{ID: "skill:guide", ProjectionID: "skill:guide", PackID: pack.ID, Surface: SurfaceCodex, Fingerprint: "exact"}}}
+			observation := controlledCheckTestObservation("codex-v1", "1.2.3")
+			if !test.configured {
+				observation.Projections[0].Exists = false
+				observation.Projections[0].ObservedFingerprint = ""
+			}
+			facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{state: state}, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{observations: []SurfaceInspection{observation}}}))
+			report, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Entries[0].ControlledCheckActionAvailable {
+				t.Fatalf("controlled check action available without configured runtime obligation: %#v", report.Entries[0])
+			}
+		})
 	}
 }
 

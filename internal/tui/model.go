@@ -132,26 +132,27 @@ type Exclusion struct {
 }
 
 type SurfaceStatus struct {
-	Name                    string
-	Supported               bool
-	Active                  bool
-	UpdateAvailable         bool
-	InstalledVersion        string
-	Installation            string
-	Runtime                 string
-	Configured              string
-	Authorized              string
-	Usable                  string
-	ControlledCheckState    string
-	ControlledCheckResult   string
-	ControlledCheckObserved string
-	ControlledCheckIdentity string
-	Ownership               int
-	Drift                   int
-	Blockers                []string
-	PendingActions          []string
-	Evidence                []string
-	Conditions              []ReadinessCondition
+	Name                           string
+	Supported                      bool
+	Active                         bool
+	UpdateAvailable                bool
+	InstalledVersion               string
+	Installation                   string
+	Runtime                        string
+	Configured                     string
+	Authorized                     string
+	Usable                         string
+	ControlledCheckActionAvailable bool
+	ControlledCheckState           string
+	ControlledCheckResult          string
+	ControlledCheckObserved        string
+	ControlledCheckIdentity        string
+	Ownership                      int
+	Drift                          int
+	Blockers                       []string
+	PendingActions                 []string
+	Evidence                       []string
+	Conditions                     []ReadinessCondition
 }
 
 // ReadinessCondition is the presentation DTO for a domain readiness fact.
@@ -578,7 +579,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 					} else if m.operation != "" {
 						return m.startPreview()
 					}
-				} else if status := m.selectedSurfaceStatus(); status != nil && (status.Active || controlledCheckAvailable(*status)) {
+				} else if status := m.selectedSurfaceStatus(); status != nil && (status.Active || status.ControlledCheckActionAvailable) {
 					m.choosingAction = true
 					m.actionChoice = 0
 					m.operation = firstLifecycleAction(*status)
@@ -760,7 +761,7 @@ func lifecycleActionsForStatus(status SurfaceStatus) []string {
 		}
 		actions = append(actions, "deactivate")
 	}
-	if controlledCheckAvailable(status) {
+	if status.ControlledCheckActionAvailable {
 		actions = append(actions, "check")
 	}
 	return actions
@@ -793,17 +794,10 @@ func projectLifecycleActionsForStatus(status *SurfaceStatus) []string {
 	case "stale":
 		actions = append(actions, "activate", "deactivate")
 	}
-	if controlledCheckAvailable(*status) {
+	if status.ControlledCheckActionAvailable {
 		actions = append(actions, "check")
 	}
 	return append(actions, "uninstall")
-}
-
-func controlledCheckAvailable(status SurfaceStatus) bool {
-	if !status.Supported || status.Configured != "true" {
-		return false
-	}
-	return status.Usable == "unknown" || status.Usable == "false" || status.Usable == "stale"
 }
 
 func (m Model) selectedSurfaceStatus() *SurfaceStatus {

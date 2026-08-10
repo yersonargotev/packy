@@ -74,24 +74,25 @@ type ProjectProjectionStatus struct {
 }
 
 type JSONProjectPackStatus struct {
-	Pack                 ProjectManifestPack          `json:"pack"`
-	Surface              Surface                      `json:"surface"`
-	Installation         ProjectInstallationState     `json:"installation"`
-	Runtime              ProjectRuntimeState          `json:"runtime"`
-	RuntimeRequired      bool                         `json:"runtime_required"`
-	RuntimeEffects       []ProjectRuntimeEffectStatus `json:"runtime_effects"`
-	Readiness            ReadinessStatus              `json:"readiness"`
-	Conditions           []ReadinessCondition         `json:"conditions"`
-	Projections          []ProjectProjectionStatus    `json:"projections"`
-	Blockers             []ProjectInstallBlocker      `json:"blockers"`
-	PendingHumanActions  []string                     `json:"pending_human_actions"`
-	Evidence             []string                     `json:"evidence"`
-	ControlledCheck      ControlledCheckStatus        `json:"controlled_check"`
-	Requirement          string                       `json:"requirement,omitempty"`
-	RequirementSatisfied bool                         `json:"requirement_satisfied"`
-	readinessObservation ReadinessObservation
-	readinessRevision    string
-	controlledCheck      ControlledCheckDescriptor
+	Pack                           ProjectManifestPack          `json:"pack"`
+	Surface                        Surface                      `json:"surface"`
+	Installation                   ProjectInstallationState     `json:"installation"`
+	Runtime                        ProjectRuntimeState          `json:"runtime"`
+	RuntimeRequired                bool                         `json:"runtime_required"`
+	RuntimeEffects                 []ProjectRuntimeEffectStatus `json:"runtime_effects"`
+	Readiness                      ReadinessStatus              `json:"readiness"`
+	Conditions                     []ReadinessCondition         `json:"conditions"`
+	Projections                    []ProjectProjectionStatus    `json:"projections"`
+	Blockers                       []ProjectInstallBlocker      `json:"blockers"`
+	PendingHumanActions            []string                     `json:"pending_human_actions"`
+	Evidence                       []string                     `json:"evidence"`
+	ControlledCheck                ControlledCheckStatus        `json:"controlled_check"`
+	ControlledCheckActionAvailable bool                         `json:"-"`
+	Requirement                    string                       `json:"requirement,omitempty"`
+	RequirementSatisfied           bool                         `json:"requirement_satisfied"`
+	readinessObservation           ReadinessObservation
+	readinessRevision              string
+	controlledCheck                ControlledCheckDescriptor
 }
 
 type JSONProjectStatusReport struct {
@@ -416,7 +417,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			if runtimeRequired {
 				runtime, effects = projectPersonalRuntimeStatus(ctx, adapter, request.PackyHome, request.ProjectRoot, surfacePack, surface, state, packLock, categories)
 			}
-			status := JSONProjectPackStatus{Pack: surfacePack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Conditions: conditions, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), ControlledCheck: controlledCheck, RequirementSatisfied: true, readinessObservation: observation.Readiness, readinessRevision: observation.Revision, controlledCheck: observation.ControlledCheck}
+			status := JSONProjectPackStatus{Pack: surfacePack, Surface: surface, Installation: state, Runtime: runtime, RuntimeRequired: runtimeRequired, RuntimeEffects: effects, Readiness: readiness, Conditions: conditions, Projections: projections, Blockers: blockers, PendingHumanActions: append([]string{}, observation.Readiness.PendingHumanActions...), Evidence: append([]string{}, observation.Readiness.Evidence...), ControlledCheck: controlledCheck, ControlledCheckActionAvailable: controlledCheckActionAvailable(readiness, conditions), RequirementSatisfied: true, readinessObservation: observation.Readiness, readinessRevision: observation.Revision, controlledCheck: observation.ControlledCheck}
 			switch runtime {
 			case ProjectRuntimePending, ProjectRuntimeStale:
 				if runtimeRequired {
@@ -580,6 +581,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 			Projections: projectReadinessProjections(status.Projections, status.Installation), Resolutions: resolutions, UnobservedRequirements: unobservedRequirements,
 			Observation: status.readinessObservation, Revision: status.readinessRevision, ControlledCheck: &status.ControlledCheck,
 		})
+		status.ControlledCheckActionAvailable = controlledCheckActionAvailable(status.Readiness, status.Conditions)
 		if request.RequireUsable {
 			status.RequirementSatisfied = status.Installation == ProjectInstallationInstalled && status.Readiness.SatisfiesUsable() && (!status.RuntimeRequired || status.Runtime == ProjectRuntimeActive || status.Runtime == ProjectRuntimeInheritedGlobal)
 		}
