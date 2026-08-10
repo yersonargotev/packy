@@ -29,7 +29,6 @@ type Options struct {
 	Clock                  func() time.Time
 	Terminal               Terminal
 	SurfaceAdapters        map[capabilitypack.Surface]capabilitypack.SurfaceAdapter
-	EngramFacts            engrambin.Facts
 	EngramFormulaInspector func(context.Context, string) (engrambin.FormulaMetadata, error)
 	SetupHealthDiagnose    func() (setuphealth.Report, error)
 	ClaudeRunner           claudecode.Runner
@@ -63,7 +62,6 @@ func (o Options) withDefaults() Options {
 	if o.Clock == nil {
 		o.Clock = time.Now
 	}
-	o.EngramFacts = o.EngramFacts.WithDefaults()
 	if o.Terminal == nil {
 		o.Terminal = processTerminal{}
 	}

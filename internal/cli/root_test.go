@@ -16,7 +16,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
-	"github.com/yersonargotev/packy/internal/engrambin"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 )
@@ -384,10 +383,6 @@ func sandboxOptions(t *testing.T) (Options, *fakeRunner, string) {
 			"PACKY_SKILLS_SOURCE": sourceRoot,
 		},
 		Runner: runner,
-		EngramFacts: engrambin.Facts{
-			Version:        func(string) (string, error) { return "1.19.0", nil },
-			ServeProcesses: func() ([]engrambin.Process, error) { return nil, nil },
-		},
 	}, runner, home
 }
 
