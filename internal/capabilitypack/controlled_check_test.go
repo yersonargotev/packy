@@ -24,6 +24,13 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	if preview.CurrentEvidence.State != ControlledCheckUnknown || preview.AdapterVersion != "codex/v2" || preview.HostVersion != "1.2.3" || len(preview.Resources) != 1 || len(preview.Instructions) == 0 {
 		t.Fatalf("preview = %#v", preview)
 	}
+	unknown, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unknown.Focused == nil || unknown.Focused.Readiness.Usable != ReadinessUnknown || unknown.Requirement.Satisfied || !hasReadinessReason(unknown.Focused.Conditions, ReasonRuntimeUnobservable) {
+		t.Fatalf("unknown controlled check did not fail focused strict gate: %#v %#v", unknown.Focused, unknown.Requirement)
+	}
 	if _, err := facade.RecordControlledCheck(context.Background(), preview, ReadinessTrue); err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +42,13 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	if entry.ControlledCheck.State != ControlledCheckCurrent || entry.ControlledCheck.Result != ReadinessTrue || !report.Requirement.Satisfied || entry.Readiness.Usable != ReadinessTrue {
 		t.Fatalf("positive controlled check did not satisfy strict gate: %#v %#v", entry, report.Requirement)
 	}
+	focused, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if focused.Focused == nil || focused.Focused.Readiness.Usable != ReadinessTrue || !focused.Requirement.Satisfied || !hasReadinessReason(focused.Focused.Conditions, ReasonRuntimeConfirmed) {
+		t.Fatalf("positive controlled check did not satisfy focused strict gate: %#v %#v", focused.Focused, focused.Requirement)
+	}
 	if _, err := facade.RecordControlledCheck(context.Background(), preview, ReadinessFalse); err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +58,13 @@ func TestFacadeControlledCheckRecordsCurrentResultsAndGatesUsability(t *testing.
 	}
 	if report.Entries[0].Readiness.Usable != ReadinessFalse || report.Requirement.Satisfied {
 		t.Fatalf("negative controlled check did not fail strict gate: %#v %#v", report.Entries[0], report.Requirement)
+	}
+	focused, err = facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if focused.Focused == nil || focused.Focused.Readiness.Usable != ReadinessFalse || focused.Requirement.Satisfied || !hasReadinessReason(focused.Focused.Conditions, ReasonRuntimeRejected) {
+		t.Fatalf("negative controlled check did not fail focused strict gate: %#v %#v", focused.Focused, focused.Requirement)
 	}
 }
 
@@ -76,6 +97,13 @@ func TestFacadeControlledCheckRejectsStalePreviewAndReportsStaleEvidence(t *test
 	}
 	if report.Entries[0].ControlledCheck.State != ControlledCheckStale || report.Entries[0].Readiness.Usable != ReadinessUnknown || report.Requirement.Satisfied || !hasReadinessReason(report.Entries[0].Conditions, ReasonRuntimeCheckStale) {
 		t.Fatalf("stale controlled check = %#v", report.Entries[0])
+	}
+	focused, err := facade.Status(context.Background(), StatusRequest{PackID: pack.ID, Surface: SurfaceCodex, Resource: "skill:guide", RequireUsable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if focused.Focused == nil || focused.Focused.Readiness.Usable != ReadinessUnknown || focused.Requirement.Satisfied || !hasReadinessReason(focused.Focused.Conditions, ReasonRuntimeCheckStale) {
+		t.Fatalf("stale controlled check did not fail focused strict gate: %#v %#v", focused.Focused, focused.Requirement)
 	}
 }
 

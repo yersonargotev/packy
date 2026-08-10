@@ -496,13 +496,14 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	} else {
 		entry.ControlledCheck = ControlledCheckStatus{State: ControlledCheckUnknown}
 	}
-	entry.Readiness, entry.Conditions = evaluateReadiness(readinessEvaluation{
+	evaluation := readinessEvaluation{
 		Pack: relevantPack, Surface: surface, Scope: ReadinessScopeGlobal,
 		Projections: entry.ProjectionDetails, Resolutions: resolutions, UnobservedRequirements: unobservedRequirements, Observation: fresh, Revision: observation.Revision,
 		ControlledCheck: &entry.ControlledCheck,
-	})
+	}
+	entry.Readiness, entry.Conditions = evaluateReadiness(evaluation)
 	if entry.Intent.Active {
-		entry.Resources = deriveResourceStatuses(pack.ID, graph, entry.ProjectionDetails, fresh)
+		entry.Resources = deriveResourceStatuses(graph, evaluation)
 	}
 	if entry.Readiness.Configured == ReadinessTrue && len(fresh.PendingHumanActions) == 0 {
 		entry.PendingHumanActions = append(entry.PendingHumanActions, observation.PendingHumanActions...)
@@ -530,8 +531,9 @@ func lifecycleStateForStatus(entry StatusEntry, state ActivationState, packID st
 	return PackLifecycleInactiveClean
 }
 
-func deriveResourceStatuses(packID string, graph ResourceGraph, projections []ProjectionStatus, fresh ReadinessObservation) []ResourceStatus {
+func deriveResourceStatuses(graph ResourceGraph, evaluation readinessEvaluation) []ResourceStatus {
 	result := make([]ResourceStatus, 0, len(graph.Resources))
+	projections := evaluation.Projections
 	allConfigured := len(projections) > 0
 	for _, projection := range projections {
 		allConfigured = allConfigured && projection.Health == ProjectionVerified
@@ -541,8 +543,10 @@ func deriveResourceStatuses(packID string, graph ResourceGraph, projections []Pr
 			continue
 		}
 		status := ResourceStatus{Resource: fact.Resource, Role: fact.Role, DependencyChain: append([]ResourceIdentity{}, fact.DependencyChain...)}
+		resourceProjections := make([]ProjectionStatus, 0, len(projections))
 		for _, projection := range projections {
 			if projection.ID == fact.Resource.String() {
+				resourceProjections = append(resourceProjections, projection)
 				addProjectionHealth(&status.Projections, projection.Health)
 				if projection.Health != ProjectionVerified {
 					status.Blockers = append(status.Blockers, fmt.Sprintf("%s is %s", projection.ID, projection.Health))
@@ -550,13 +554,16 @@ func deriveResourceStatuses(packID string, graph ResourceGraph, projections []Pr
 			}
 		}
 		covered := status.Projections.Verified+status.Projections.Missing+status.Projections.Drifted+status.Projections.Ambiguous+status.Projections.Unmanaged > 0
-		status.Readiness.Configured = configuredReadiness(allConfigured)
-		if covered {
-			status.Readiness.Configured = configuredReadiness(status.Projections.Verified > 0 &&
-				status.Projections.Verified == status.Projections.Verified+status.Projections.Missing+status.Projections.Drifted+status.Projections.Ambiguous+status.Projections.Unmanaged)
+		if !covered {
+			resourceProjections = projections
 		}
-		status.Readiness.Authorized = readinessValue(fresh.AuthorizationObserved, fresh.Authorized)
-		status.Readiness.Usable = readinessValue(fresh.UsabilityObserved, fresh.Usable)
+		resourceEvaluation := evaluation
+		resourceEvaluation.Resource = &fact.Resource
+		resourceEvaluation.Projections = resourceProjections
+		status.Readiness, status.Conditions = evaluateReadiness(resourceEvaluation)
+		if !covered {
+			status.Readiness.Configured = configuredReadiness(allConfigured)
+		}
 		sort.Strings(status.Blockers)
 		result = append(result, status)
 	}

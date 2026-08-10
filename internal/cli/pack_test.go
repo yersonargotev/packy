@@ -22,6 +22,21 @@ import (
 
 type alwaysUsableAdapter struct{ delegate capabilitypack.SurfaceAdapter }
 
+type controlledCheckHostAdapter struct {
+	delegate    capabilitypack.SurfaceAdapter
+	hostVersion string
+}
+
+func (a *controlledCheckHostAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
+	inspection, err := a.delegate.InspectSurface(ctx, transition)
+	inspection.ControlledCheck.HostVersion = a.hostVersion
+	return inspection, err
+}
+
+func (a *controlledCheckHostAdapter) ApplyProjections(ctx context.Context, actions []capabilitypack.ProjectionAction) *capabilitypack.ProjectionActionError {
+	return a.delegate.ApplyProjections(ctx, actions)
+}
+
 func (a alwaysUsableAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
 	inspection, err := a.delegate.InspectSurface(ctx, transition)
 	inspection.Readiness = capabilitypack.ReadinessObservation{AuthorizationObserved: true, Authorized: true, UsabilityObserved: true, Usable: true, Evidence: []string{"fake runtime loaded capability"}}
@@ -177,6 +192,13 @@ func TestPackVerbHelpUsesFlatCommandPaths(t *testing.T) {
 func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatus(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
+	layout := resolvePackTestLayout(t, opts.Env)
+	bundleRoot := skillbundle.BundleRoot(opts.Env.Getenv("PACKY_SKILLS_SOURCE"))
+	adapter := &controlledCheckHostAdapter{
+		delegate:    codex.NewSurfaceAdapterWithConfig(bundleRoot, layout.skills.Root(), layout.codex.PromptFile(), layout.codex.ConfigFile()),
+		hostVersion: "codex/v1",
+	}
+	opts.SurfaceAdapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}
 	if _, err := executeCommand(t, NewRootCommand(opts), "activate", "orchestrate", "--surface", "codex"); err != nil {
 		t.Fatalf("activate orchestrate: %v", err)
 	}
@@ -187,6 +209,10 @@ func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatu
 	unknown, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex")
 	if err != nil || !strings.Contains(unknown, "usable=unknown") || !strings.Contains(unknown, "Controlled runtime check: unknown") {
 		t.Fatalf("unknown status: err=%v\n%s", err, unknown)
+	}
+	focusedUnknown, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--resource", "skill:orchestrate", "--require", "usable")
+	if err == nil || !strings.Contains(focusedUnknown, "Focused resource: skill:orchestrate configured=true authorized=true usable=unknown") {
+		t.Fatalf("focused unknown strict status: err=%v\n%s", err, focusedUnknown)
 	}
 	preview, err := executeCommand(t, NewRootCommand(opts), "check", "orchestrate", "--surface", "codex", "--dry-run")
 	if err != nil {
@@ -210,6 +236,22 @@ func TestControlledRuntimeCheckIsExplicitPersonalEvidenceAndSatisfiesStrictStatu
 	current, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--require", "usable")
 	if err != nil || !strings.Contains(current, "usable=true") || !strings.Contains(current, "Controlled runtime check: current result=true") {
 		t.Fatalf("current positive strict status: err=%v\n%s", err, current)
+	}
+	focusedCurrent, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--resource", "skill:orchestrate", "--require", "usable", "--json")
+	if err != nil || !strings.Contains(focusedCurrent, `"satisfied":true`) || !strings.Contains(focusedCurrent, `"reason":"runtime-confirmed"`) || !strings.Contains(focusedCurrent, `"controlled-check:`) {
+		t.Fatalf("focused current strict JSON status: err=%v\n%s", err, focusedCurrent)
+	}
+	adapter.hostVersion = "codex/v2"
+	focusedStale, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--resource", "skill:orchestrate", "--require", "usable", "--json")
+	if err == nil || !strings.Contains(focusedStale, `"usable":"unknown"`) || !strings.Contains(focusedStale, `"satisfied":false`) || !strings.Contains(focusedStale, `"reason":"runtime-check-stale"`) {
+		t.Fatalf("focused stale strict JSON status: err=%v\n%s", err, focusedStale)
+	}
+	if _, err := executeCommand(t, NewRootCommand(opts), "check", "orchestrate", "--surface", "codex", "--result", "negative"); err != nil {
+		t.Fatalf("record negative controlled check: %v", err)
+	}
+	focusedNegative, err := executeCommand(t, NewRootCommand(opts), "status", "orchestrate", "--surface", "codex", "--resource", "skill:orchestrate", "--require", "usable", "--json")
+	if err == nil || !strings.Contains(focusedNegative, `"usable":"false"`) || !strings.Contains(focusedNegative, `"satisfied":false`) || !strings.Contains(focusedNegative, `"reason":"runtime-rejected"`) || !strings.Contains(focusedNegative, "rerun the check") {
+		t.Fatalf("focused negative strict JSON status: err=%v\n%s", err, focusedNegative)
 	}
 }
 
