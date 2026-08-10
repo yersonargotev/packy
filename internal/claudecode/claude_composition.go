@@ -19,7 +19,7 @@ import (
 	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
-var addyReferenceIDs = []string{"accessibility-checklist", "definition-of-done", "observability-checklist", "orchestration-patterns", "performance-checklist", "security-checklist", "testing-patterns"}
+var claudeReferenceIDs = []string{"accessibility-checklist", "definition-of-done", "observability-checklist", "orchestration-patterns", "performance-checklist", "security-checklist", "testing-patterns"}
 
 type compositeFile struct {
 	Path    string `json:"path"`
@@ -53,8 +53,8 @@ func claudeCompositeSkillBuilder(pack capabilitypack.Pack, resource capabilitypa
 	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" {
 		return nil
 	}
-	if pack.ID == "addy" && (resource.Kind == "skill" || resource.Kind == "command") {
-		return addyCompositeSkill
+	if _, ok := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill); ok && (resource.Kind == "skill" || resource.Kind == "command") {
+		return composeClaudeSkill
 	}
 	return nil
 }
@@ -67,17 +67,18 @@ func claudeCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Reso
 	return builder(pack, resource, binding, bundleRoot)
 }
 
-// addyCompositeSkill is a pure translation: it reads selected bundle bytes but
+// composeClaudeSkill is a pure translation: it reads selected bundle bytes but
 // never interprets or executes skill content.
-func addyCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
-	if pack.ID != "addy" {
-		return compositeSkill{}, fmt.Errorf("composite Claude skills require the Addy Pack")
+func composeClaudeSkill(pack capabilitypack.Pack, resource capabilitypack.Resource, binding capabilitypack.Binding, bundleRoot string) (compositeSkill, error) {
+	capability, ok := resource.SurfaceCapability(capabilitypack.SurfaceClaude, capabilitypack.SurfaceCapabilityClaudeCompositeSkill)
+	if !ok || capability.ClaudeCompositeSkill == nil {
+		return compositeSkill{}, errors.New("resource does not declare Claude composite skill capability")
 	}
 	if resource.Kind != "skill" && resource.Kind != "command" {
-		return compositeSkill{}, fmt.Errorf("unsupported Addy composite kind %q", resource.Kind)
+		return compositeSkill{}, fmt.Errorf("unsupported Claude composite kind %q", resource.Kind)
 	}
 	if binding.Surface != capabilitypack.SurfaceClaude || binding.Projection != "skill" || binding.Name == "" {
-		return compositeSkill{}, errors.New("invalid Addy Claude skill binding")
+		return compositeSkill{}, errors.New("invalid Claude Claude skill binding")
 	}
 	source, err := safeBundlePath(bundleRoot, resource.Source)
 	if err != nil {
@@ -91,20 +92,20 @@ func addyCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 		var info os.FileInfo
 		info, err = os.Lstat(source)
 		if err == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
-			err = errors.New("Addy command source is not a regular file")
+			err = errors.New("Claude command source is not a regular file")
 		}
 		if err == nil {
 			raw, err = os.ReadFile(source)
 		}
 		if err == nil {
-			var command addyCommand
-			command, err = decodeAddyCommand(raw)
+			var command claudeCommandSource
+			command, err = decodeClaudeCommandSource(raw)
 			if err == nil {
 				var dependencies []string
-				dependencies, err = resolveAddyDependencies(pack, resource)
+				dependencies, err = resolveClaudeCompositeDependencies(pack, capability.ClaudeCompositeSkill.Dependencies)
 				if err == nil {
 					files = []compositeFile{
-						{Path: "SKILL.md", Content: renderAddyCommandSkill(binding.Name, command, dependencies), Mode: 0o644},
+						{Path: "SKILL.md", Content: renderClaudeCommandSkill(binding.Name, command, dependencies), Mode: 0o644},
 						{Path: "source/" + filepath.Base(resource.Source), Content: append([]byte(nil), raw...), Mode: 0o644},
 					}
 				}
@@ -114,8 +115,8 @@ func addyCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 	if err != nil {
 		return compositeSkill{}, err
 	}
-	for _, id := range addyReferenceIDs {
-		asset, err := uniqueResource(pack, "asset", id)
+	for _, reference := range capability.ClaudeCompositeSkill.References {
+		asset, err := uniqueResource(pack, reference.Kind, reference.ID)
 		if err != nil {
 			return compositeSkill{}, err
 		}
@@ -125,11 +126,11 @@ func addyCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 		}
 		content, err := os.ReadFile(path)
 		if err != nil {
-			return compositeSkill{}, fmt.Errorf("read Addy reference %s: %w", id, err)
+			return compositeSkill{}, fmt.Errorf("read Claude composite reference %s:%s: %w", reference.Kind, reference.ID, err)
 		}
 		info, err := os.Lstat(path)
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-			return compositeSkill{}, fmt.Errorf("Addy reference %s is not a regular file", id)
+			return compositeSkill{}, fmt.Errorf("Claude composite reference %s:%s is not a regular file", reference.Kind, reference.ID)
 		}
 		files = append(files, compositeFile{Path: "references/" + filepath.Base(asset.Source), Content: content, Mode: normalizedMode(info.Mode())})
 	}
@@ -160,11 +161,11 @@ func addyCompositeSkill(pack capabilitypack.Pack, resource capabilitypack.Resour
 
 func safeBundlePath(root, relative string) (string, error) {
 	if relative == "" || filepath.IsAbs(relative) || filepath.Clean(relative) != relative || relative == "." || strings.HasPrefix(filepath.ToSlash(relative), "../") {
-		return "", fmt.Errorf("unsafe Addy source path %q", relative)
+		return "", fmt.Errorf("unsafe Claude source path %q", relative)
 	}
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return "", fmt.Errorf("resolve Addy bundle root: %w", err)
+		return "", fmt.Errorf("resolve Claude bundle root: %w", err)
 	}
 	candidate := filepath.Join(root, filepath.FromSlash(relative))
 	resolved, err := filepath.EvalSymlinks(candidate)
@@ -173,7 +174,7 @@ func safeBundlePath(root, relative string) (string, error) {
 	}
 	within, err := filepath.Rel(canonicalRoot, resolved)
 	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) || filepath.IsAbs(within) {
-		return "", fmt.Errorf("Addy source escapes bundle root %q", relative)
+		return "", fmt.Errorf("Claude source escapes bundle root %q", relative)
 	}
 	return candidate, nil
 }
@@ -184,7 +185,7 @@ func readCompositeTree(root string) ([]compositeFile, error) {
 		return nil, err
 	}
 	if !info.IsDir() {
-		return nil, errors.New("Addy skill source is not a directory")
+		return nil, errors.New("Claude skill source is not a directory")
 	}
 	var files []compositeFile
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -192,7 +193,7 @@ func readCompositeTree(root string) ([]compositeFile, error) {
 			return walkErr
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("Addy skill source contains symlink %q", path)
+			return fmt.Errorf("Claude skill source contains symlink %q", path)
 		}
 		if entry.IsDir() {
 			return nil
@@ -202,7 +203,7 @@ func readCompositeTree(root string) ([]compositeFile, error) {
 			return err
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("Addy skill source contains non-regular file %q", path)
+			return fmt.Errorf("Claude skill source contains non-regular file %q", path)
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
@@ -245,29 +246,30 @@ func uniqueResource(pack capabilitypack.Pack, kind, id string) (capabilitypack.R
 	for i := range pack.Resources {
 		if pack.Resources[i].Kind == kind && pack.Resources[i].ID == id {
 			if found != nil {
-				return capabilitypack.Resource{}, fmt.Errorf("duplicate Addy dependency %s:%s", kind, id)
+				return capabilitypack.Resource{}, fmt.Errorf("duplicate Claude dependency %s:%s", kind, id)
 			}
 			r := pack.Resources[i]
 			found = &r
 		}
 	}
 	if found == nil {
-		return capabilitypack.Resource{}, fmt.Errorf("missing Addy dependency %s:%s", kind, id)
+		return capabilitypack.Resource{}, fmt.Errorf("missing Claude dependency %s:%s", kind, id)
 	}
 	return *found, nil
 }
 
-func resolveAddyDependencies(pack capabilitypack.Pack, command capabilitypack.Resource) ([]string, error) {
+func resolveClaudeCompositeDependencies(pack capabilitypack.Pack, requested []capabilitypack.ResourceIdentity) ([]string, error) {
 	seen := map[string]bool{}
 	result := []string{}
-	for _, required := range command.Requires {
+	for _, identity := range requested {
+		required := identity.Kind + ":" + identity.ID
 		if seen[required] {
-			return nil, fmt.Errorf("duplicate Addy requirement %q", required)
+			return nil, fmt.Errorf("duplicate Claude requirement %q", required)
 		}
 		seen[required] = true
 		parts := strings.Split(required, ":")
 		if len(parts) != 2 || (parts[0] != "skill" && parts[0] != "agent" && parts[0] != "asset") {
-			return nil, fmt.Errorf("unsupported Addy requirement %q", required)
+			return nil, fmt.Errorf("unsupported Claude requirement %q", required)
 		}
 		r, err := uniqueResource(pack, parts[0], parts[1])
 		if err != nil {
@@ -284,7 +286,7 @@ func resolveAddyDependencies(pack capabilitypack.Pack, command capabilitypack.Re
 			}
 		}
 		if len(names) != 1 || names[0] == "" {
-			return nil, fmt.Errorf("Addy dependency %s has %d Claude bindings", required, len(names))
+			return nil, fmt.Errorf("Claude dependency %s has %d Claude bindings", required, len(names))
 		}
 		result = append(result, parts[0]+":"+names[0])
 	}
@@ -292,11 +294,11 @@ func resolveAddyDependencies(pack capabilitypack.Pack, command capabilitypack.Re
 	return result, nil
 }
 
-type addyCommand struct{ Description, Prompt string }
+type claudeCommandSource struct{ Description, Prompt string }
 
-func decodeAddyCommand(data []byte) (addyCommand, error) {
+func decodeClaudeCommandSource(data []byte) (claudeCommandSource, error) {
 	if !utf8.Valid(data) {
-		return addyCommand{}, errors.New("Addy command is not valid UTF-8")
+		return claudeCommandSource{}, errors.New("Claude command is not valid UTF-8")
 	}
 	i, values := 0, map[string]string{}
 	for {
@@ -309,20 +311,20 @@ func decodeAddyCommand(data []byte) (addyCommand, error) {
 			i++
 		}
 		if start == i {
-			return addyCommand{}, fmt.Errorf("invalid Addy command TOML at byte %d", i)
+			return claudeCommandSource{}, fmt.Errorf("invalid Claude command TOML at byte %d", i)
 		}
 		key := string(data[start:i])
 		if key != "description" && key != "prompt" {
-			return addyCommand{}, fmt.Errorf("unknown Addy command key %q", key)
+			return claudeCommandSource{}, fmt.Errorf("unknown Claude command key %q", key)
 		}
 		if _, ok := values[key]; ok {
-			return addyCommand{}, fmt.Errorf("duplicate Addy command key %q", key)
+			return claudeCommandSource{}, fmt.Errorf("duplicate Claude command key %q", key)
 		}
 		for i < len(data) && (data[i] == ' ' || data[i] == '\t') {
 			i++
 		}
 		if i >= len(data) || data[i] != '=' {
-			return addyCommand{}, fmt.Errorf("invalid Addy command assignment %q", key)
+			return claudeCommandSource{}, fmt.Errorf("invalid Claude command assignment %q", key)
 		}
 		i++
 		for i < len(data) && (data[i] == ' ' || data[i] == '\t') {
@@ -330,7 +332,7 @@ func decodeAddyCommand(data []byte) (addyCommand, error) {
 		}
 		value, next, err := parseTOMLString(data, i)
 		if err != nil {
-			return addyCommand{}, fmt.Errorf("Addy command %s: %w", key, err)
+			return claudeCommandSource{}, fmt.Errorf("Claude command %s: %w", key, err)
 		}
 		values[key], i = value, next
 		for i < len(data) && (data[i] == ' ' || data[i] == '\t') {
@@ -342,16 +344,16 @@ func decodeAddyCommand(data []byte) (addyCommand, error) {
 			}
 		}
 		if i < len(data) && data[i] != '\n' && data[i] != '\r' {
-			return addyCommand{}, fmt.Errorf("trailing Addy command syntax at byte %d", i)
+			return claudeCommandSource{}, fmt.Errorf("trailing Claude command syntax at byte %d", i)
 		}
 	}
 	if _, ok := values["description"]; !ok {
-		return addyCommand{}, errors.New("Addy command is missing description")
+		return claudeCommandSource{}, errors.New("Claude command is missing description")
 	}
 	if _, ok := values["prompt"]; !ok {
-		return addyCommand{}, errors.New("Addy command is missing prompt")
+		return claudeCommandSource{}, errors.New("Claude command is missing prompt")
 	}
-	return addyCommand{values["description"], values["prompt"]}, nil
+	return claudeCommandSource{values["description"], values["prompt"]}, nil
 }
 
 func skipTOMLSpace(data []byte, i *int) {
@@ -429,7 +431,7 @@ func unescapeTOML(raw []byte) (string, error) {
 	return value, err
 }
 
-func renderAddyCommandSkill(name string, command addyCommand, dependencies []string) []byte {
+func renderClaudeCommandSkill(name string, command claudeCommandSource, dependencies []string) []byte {
 	var b strings.Builder
 	b.WriteString("---\nname: ")
 	b.WriteString(yamlScalar(name))

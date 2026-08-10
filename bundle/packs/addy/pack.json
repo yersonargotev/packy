@@ -1,6 +1,6 @@
 {
   "id": "addy",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Addy agent skills",
   "selectable": true,
   "surfaces": [
@@ -17,103 +17,115 @@
     {
       "bindings": [
         {
-          "agent_authority": {
-            "authorities": [
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:browser",
-                  "tool:browser"
-                ],
-                "fallback": "static evidence-only analysis",
-                "outcome": "fallback",
-                "portable": "browser"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:commit"
-                ],
-                "fallback": "none",
-                "outcome": "guarded",
-                "portable": "commit"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:deploy"
-                ],
-                "fallback": "none",
-                "outcome": "guarded",
-                "portable": "deploy"
-              },
-              {
-                "claude_tools": [
-                  "Glob",
-                  "Grep",
-                  "Read"
-                ],
-                "declarations": [
-                  "permission:filesystem"
-                ],
-                "fallback": "none",
-                "outcome": "native",
-                "portable": "filesystem"
-              },
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:network"
-                ],
-                "fallback": "static evidence-only analysis",
-                "outcome": "fallback",
-                "portable": "network"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:package-manager"
-                ],
-                "fallback": "report commands without running them",
-                "outcome": "native",
-                "portable": "package-manager"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:process"
-                ],
-                "fallback": "report commands without running them",
-                "outcome": "native",
-                "portable": "process"
-              },
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:subagent"
-                ],
-                "fallback": "sequential single-agent analysis",
-                "outcome": "fallback",
-                "portable": "subagent"
-              }
-            ],
-            "permission_mode": "default"
-          },
           "invocation": "@code-reviewer",
           "mode": "native",
           "name": "code-reviewer",
           "projection": "agent",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-agent-document",
+              "claude_agent_document": {
+                "skills": [
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "authority": {
+                  "authorities": [
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:browser",
+                        "tool:browser"
+                      ],
+                      "fallback": "static evidence-only analysis",
+                      "outcome": "fallback",
+                      "portable": "browser"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:commit"
+                      ],
+                      "fallback": "none",
+                      "outcome": "guarded",
+                      "portable": "commit"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:deploy"
+                      ],
+                      "fallback": "none",
+                      "outcome": "guarded",
+                      "portable": "deploy"
+                    },
+                    {
+                      "claude_tools": [
+                        "Glob",
+                        "Grep",
+                        "Read"
+                      ],
+                      "declarations": [
+                        "permission:filesystem"
+                      ],
+                      "fallback": "none",
+                      "outcome": "native",
+                      "portable": "filesystem"
+                    },
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:network"
+                      ],
+                      "fallback": "static evidence-only analysis",
+                      "outcome": "fallback",
+                      "portable": "network"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:package-manager"
+                      ],
+                      "fallback": "report commands without running them",
+                      "outcome": "native",
+                      "portable": "package-manager"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:process"
+                      ],
+                      "fallback": "report commands without running them",
+                      "outcome": "native",
+                      "portable": "process"
+                    },
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:subagent"
+                      ],
+                      "fallback": "sequential single-agent analysis",
+                      "outcome": "fallback",
+                      "portable": "subagent"
+                    }
+                  ],
+                  "permission_mode": "default"
+                }
+              }
+            }
+          ]
         },
         {
           "invocation": "$code-reviewer",
@@ -161,106 +173,118 @@
     {
       "bindings": [
         {
-          "agent_authority": {
-            "authorities": [
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:browser",
-                  "tool:browser"
-                ],
-                "fallback": "static evidence-only analysis",
-                "outcome": "fallback",
-                "portable": "browser"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:commit"
-                ],
-                "fallback": "none",
-                "outcome": "guarded",
-                "portable": "commit"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:deploy"
-                ],
-                "fallback": "none",
-                "outcome": "guarded",
-                "portable": "deploy"
-              },
-              {
-                "claude_tools": [
-                  "Glob",
-                  "Grep",
-                  "Read"
-                ],
-                "declarations": [
-                  "permission:filesystem"
-                ],
-                "fallback": "none",
-                "outcome": "native",
-                "portable": "filesystem"
-              },
-              {
-                "claude_tools": [
-                  "WebFetch",
-                  "WebSearch"
-                ],
-                "declarations": [
-                  "permission:network"
-                ],
-                "fallback": "static evidence-only analysis",
-                "outcome": "native",
-                "portable": "network"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:package-manager"
-                ],
-                "fallback": "report commands without running them",
-                "outcome": "native",
-                "portable": "package-manager"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:process"
-                ],
-                "fallback": "report commands without running them",
-                "outcome": "native",
-                "portable": "process"
-              },
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:subagent"
-                ],
-                "fallback": "sequential single-agent analysis",
-                "outcome": "fallback",
-                "portable": "subagent"
-              }
-            ],
-            "permission_mode": "default"
-          },
           "invocation": "@security-auditor",
           "mode": "native",
           "name": "security-auditor",
           "projection": "agent",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-agent-document",
+              "claude_agent_document": {
+                "skills": [
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "authority": {
+                  "authorities": [
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:browser",
+                        "tool:browser"
+                      ],
+                      "fallback": "static evidence-only analysis",
+                      "outcome": "fallback",
+                      "portable": "browser"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:commit"
+                      ],
+                      "fallback": "none",
+                      "outcome": "guarded",
+                      "portable": "commit"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:deploy"
+                      ],
+                      "fallback": "none",
+                      "outcome": "guarded",
+                      "portable": "deploy"
+                    },
+                    {
+                      "claude_tools": [
+                        "Glob",
+                        "Grep",
+                        "Read"
+                      ],
+                      "declarations": [
+                        "permission:filesystem"
+                      ],
+                      "fallback": "none",
+                      "outcome": "native",
+                      "portable": "filesystem"
+                    },
+                    {
+                      "claude_tools": [
+                        "WebFetch",
+                        "WebSearch"
+                      ],
+                      "declarations": [
+                        "permission:network"
+                      ],
+                      "fallback": "static evidence-only analysis",
+                      "outcome": "native",
+                      "portable": "network"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:package-manager"
+                      ],
+                      "fallback": "report commands without running them",
+                      "outcome": "native",
+                      "portable": "package-manager"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:process"
+                      ],
+                      "fallback": "report commands without running them",
+                      "outcome": "native",
+                      "portable": "process"
+                    },
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:subagent"
+                      ],
+                      "fallback": "sequential single-agent analysis",
+                      "outcome": "fallback",
+                      "portable": "subagent"
+                    }
+                  ],
+                  "permission_mode": "default"
+                }
+              }
+            }
+          ]
         },
         {
           "invocation": "$security-auditor",
@@ -308,105 +332,117 @@
     {
       "bindings": [
         {
-          "agent_authority": {
-            "authorities": [
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:browser",
-                  "tool:browser"
-                ],
-                "fallback": "static evidence-only analysis",
-                "outcome": "fallback",
-                "portable": "browser"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:commit"
-                ],
-                "fallback": "none",
-                "outcome": "guarded",
-                "portable": "commit"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:deploy"
-                ],
-                "fallback": "none",
-                "outcome": "guarded",
-                "portable": "deploy"
-              },
-              {
-                "claude_tools": [
-                  "Edit",
-                  "Glob",
-                  "Grep",
-                  "Read",
-                  "Write"
-                ],
-                "declarations": [
-                  "permission:filesystem"
-                ],
-                "fallback": "none",
-                "outcome": "native",
-                "portable": "filesystem"
-              },
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:network"
-                ],
-                "fallback": "static evidence-only analysis",
-                "outcome": "fallback",
-                "portable": "network"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:package-manager"
-                ],
-                "fallback": "report commands without running them",
-                "outcome": "native",
-                "portable": "package-manager"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:process"
-                ],
-                "fallback": "report commands without running them",
-                "outcome": "native",
-                "portable": "process"
-              },
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:subagent"
-                ],
-                "fallback": "sequential single-agent analysis",
-                "outcome": "fallback",
-                "portable": "subagent"
-              }
-            ],
-            "permission_mode": "default"
-          },
           "invocation": "@test-engineer",
           "mode": "native",
           "name": "test-engineer",
           "projection": "agent",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-agent-document",
+              "claude_agent_document": {
+                "skills": [
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "authority": {
+                  "authorities": [
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:browser",
+                        "tool:browser"
+                      ],
+                      "fallback": "static evidence-only analysis",
+                      "outcome": "fallback",
+                      "portable": "browser"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:commit"
+                      ],
+                      "fallback": "none",
+                      "outcome": "guarded",
+                      "portable": "commit"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:deploy"
+                      ],
+                      "fallback": "none",
+                      "outcome": "guarded",
+                      "portable": "deploy"
+                    },
+                    {
+                      "claude_tools": [
+                        "Edit",
+                        "Glob",
+                        "Grep",
+                        "Read",
+                        "Write"
+                      ],
+                      "declarations": [
+                        "permission:filesystem"
+                      ],
+                      "fallback": "none",
+                      "outcome": "native",
+                      "portable": "filesystem"
+                    },
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:network"
+                      ],
+                      "fallback": "static evidence-only analysis",
+                      "outcome": "fallback",
+                      "portable": "network"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:package-manager"
+                      ],
+                      "fallback": "report commands without running them",
+                      "outcome": "native",
+                      "portable": "package-manager"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:process"
+                      ],
+                      "fallback": "report commands without running them",
+                      "outcome": "native",
+                      "portable": "process"
+                    },
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:subagent"
+                      ],
+                      "fallback": "sequential single-agent analysis",
+                      "outcome": "fallback",
+                      "portable": "subagent"
+                    }
+                  ],
+                  "permission_mode": "default"
+                }
+              }
+            }
+          ]
         },
         {
           "invocation": "$test-engineer",
@@ -454,106 +490,118 @@
     {
       "bindings": [
         {
-          "agent_authority": {
-            "authorities": [
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:browser",
-                  "tool:browser"
-                ],
-                "fallback": "static evidence-only analysis",
-                "outcome": "fallback",
-                "portable": "browser"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:commit"
-                ],
-                "fallback": "none",
-                "outcome": "guarded",
-                "portable": "commit"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:deploy"
-                ],
-                "fallback": "none",
-                "outcome": "guarded",
-                "portable": "deploy"
-              },
-              {
-                "claude_tools": [
-                  "Glob",
-                  "Grep",
-                  "Read"
-                ],
-                "declarations": [
-                  "permission:filesystem"
-                ],
-                "fallback": "none",
-                "outcome": "native",
-                "portable": "filesystem"
-              },
-              {
-                "claude_tools": [
-                  "WebFetch",
-                  "WebSearch"
-                ],
-                "declarations": [
-                  "permission:network"
-                ],
-                "fallback": "static evidence-only analysis",
-                "outcome": "native",
-                "portable": "network"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:package-manager"
-                ],
-                "fallback": "report commands without running them",
-                "outcome": "native",
-                "portable": "package-manager"
-              },
-              {
-                "claude_tools": [
-                  "Bash"
-                ],
-                "declarations": [
-                  "permission:process"
-                ],
-                "fallback": "report commands without running them",
-                "outcome": "native",
-                "portable": "process"
-              },
-              {
-                "claude_tools": [],
-                "declarations": [
-                  "permission:subagent"
-                ],
-                "fallback": "sequential single-agent analysis",
-                "outcome": "fallback",
-                "portable": "subagent"
-              }
-            ],
-            "permission_mode": "default"
-          },
           "invocation": "@web-performance-auditor",
           "mode": "native",
           "name": "web-performance-auditor",
           "projection": "agent",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-agent-document",
+              "claude_agent_document": {
+                "skills": [
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "authority": {
+                  "authorities": [
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:browser",
+                        "tool:browser"
+                      ],
+                      "fallback": "static evidence-only analysis",
+                      "outcome": "fallback",
+                      "portable": "browser"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:commit"
+                      ],
+                      "fallback": "none",
+                      "outcome": "guarded",
+                      "portable": "commit"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:deploy"
+                      ],
+                      "fallback": "none",
+                      "outcome": "guarded",
+                      "portable": "deploy"
+                    },
+                    {
+                      "claude_tools": [
+                        "Glob",
+                        "Grep",
+                        "Read"
+                      ],
+                      "declarations": [
+                        "permission:filesystem"
+                      ],
+                      "fallback": "none",
+                      "outcome": "native",
+                      "portable": "filesystem"
+                    },
+                    {
+                      "claude_tools": [
+                        "WebFetch",
+                        "WebSearch"
+                      ],
+                      "declarations": [
+                        "permission:network"
+                      ],
+                      "fallback": "static evidence-only analysis",
+                      "outcome": "native",
+                      "portable": "network"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:package-manager"
+                      ],
+                      "fallback": "report commands without running them",
+                      "outcome": "native",
+                      "portable": "package-manager"
+                    },
+                    {
+                      "claude_tools": [
+                        "Bash"
+                      ],
+                      "declarations": [
+                        "permission:process"
+                      ],
+                      "fallback": "report commands without running them",
+                      "outcome": "native",
+                      "portable": "process"
+                    },
+                    {
+                      "claude_tools": [],
+                      "declarations": [
+                        "permission:subagent"
+                      ],
+                      "fallback": "sequential single-agent analysis",
+                      "outcome": "fallback",
+                      "portable": "subagent"
+                    }
+                  ],
+                  "permission_mode": "default"
+                }
+              }
+            }
+          ]
         },
         {
           "invocation": "$web-performance-auditor",
@@ -681,7 +729,53 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -727,7 +821,53 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -773,7 +913,53 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -819,7 +1005,57 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [
+                  {
+                    "kind": "agent",
+                    "id": "code-reviewer"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -866,7 +1102,65 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [
+                  {
+                    "kind": "agent",
+                    "id": "code-reviewer"
+                  },
+                  {
+                    "kind": "agent",
+                    "id": "security-auditor"
+                  },
+                  {
+                    "kind": "agent",
+                    "id": "test-engineer"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -915,7 +1209,53 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -961,7 +1301,57 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [
+                  {
+                    "kind": "agent",
+                    "id": "test-engineer"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -1008,7 +1398,57 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [
+                  {
+                    "kind": "agent",
+                    "id": "web-performance-auditor"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "skill",
+                    "id": "using-agent-skills"
+                  }
+                ],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "degradation": "codex-command-as-workflow-skill",
@@ -1063,7 +1503,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$api-and-interface-design",
@@ -1101,7 +1578,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$browser-testing-with-devtools",
@@ -1139,7 +1653,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$ci-cd-and-automation",
@@ -1177,7 +1728,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$code-review-and-quality",
@@ -1215,7 +1803,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$code-simplification",
@@ -1253,7 +1878,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$context-engineering",
@@ -1291,7 +1953,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$debugging-and-error-recovery",
@@ -1329,7 +2028,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$deprecation-and-migration",
@@ -1367,7 +2103,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$documentation-and-adrs",
@@ -1405,7 +2178,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$doubt-driven-development",
@@ -1443,7 +2253,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$frontend-ui-engineering",
@@ -1481,7 +2328,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$git-workflow-and-versioning",
@@ -1519,7 +2403,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$idea-refine",
@@ -1557,7 +2478,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$incremental-implementation",
@@ -1595,7 +2553,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$interview-me",
@@ -1633,7 +2628,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$observability-and-instrumentation",
@@ -1671,7 +2703,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$performance-optimization",
@@ -1709,7 +2778,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$planning-and-task-breakdown",
@@ -1747,7 +2853,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$security-and-hardening",
@@ -1785,7 +2928,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$shipping-and-launch",
@@ -1823,7 +3003,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$source-driven-development",
@@ -1861,7 +3078,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$spec-driven-development",
@@ -1899,7 +3153,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$test-driven-development",
@@ -1937,7 +3228,44 @@
           "projection": "skill",
           "sharing": "exclusive",
           "surface": "claude",
-          "capabilities": []
+          "capabilities": [
+            {
+              "type": "claude-composite-skill",
+              "claude_composite_skill": {
+                "dependencies": [],
+                "references": [
+                  {
+                    "kind": "asset",
+                    "id": "accessibility-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "definition-of-done"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "observability-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "orchestration-patterns"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "performance-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "security-checklist"
+                  },
+                  {
+                    "kind": "asset",
+                    "id": "testing-patterns"
+                  }
+                ]
+              }
+            }
+          ]
         },
         {
           "invocation": "$using-agent-skills",

@@ -12,10 +12,10 @@ import (
 	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
-func TestAddyCompositeSkillPreservesTreeAndReferences(t *testing.T) {
-	root, pack := addyCompositeFixture(t)
+func TestClaudeCompositeSkillPreservesTreeAndReferences(t *testing.T) {
+	root, pack := claudeCompositeFixture(t)
 	resource := pack.Resources[0]
-	got, err := addyCompositeSkill(pack, resource, resource.Bindings[0], root)
+	got, err := composeClaudeSkill(pack, resource, resource.Bindings[0], root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,13 +29,13 @@ func TestAddyCompositeSkillPreservesTreeAndReferences(t *testing.T) {
 	if !bytes.Equal(byPath["scripts/inert.sh"].Content, []byte("#!/bin/sh\nexit 97\n")) || byPath["scripts/inert.sh"].Mode != 0o755 {
 		t.Fatalf("executable source not preserved: %+v", byPath["scripts/inert.sh"])
 	}
-	for _, id := range addyReferenceIDs {
+	for _, id := range claudeReferenceIDs {
 		path := "references/" + id + ".md"
 		if string(byPath[path].Content) != id+"\n" || byPath[path].Mode != 0o644 {
 			t.Fatalf("reference %s=%+v", id, byPath[path])
 		}
 	}
-	again, err := addyCompositeSkill(pack, resource, resource.Bindings[0], root)
+	again, err := composeClaudeSkill(pack, resource, resource.Bindings[0], root)
 	if err != nil || got.TreeFingerprint != again.TreeFingerprint || got.DefinitionFingerprint != again.DefinitionFingerprint {
 		t.Fatalf("nondeterministic result: first=%+v second=%+v err=%v", got, again, err)
 	}
@@ -49,12 +49,45 @@ func TestAddyCompositeSkillPreservesTreeAndReferences(t *testing.T) {
 	}
 }
 
-func TestAddyCommandAliasDependenciesAndLiteralArguments(t *testing.T) {
-	root, pack := addyCompositeFixture(t)
+func TestClaudeCompositeSkillUsesDeclaredCapabilityForSyntheticPack(t *testing.T) {
+	root, pack := claudeCompositeFixture(t)
+	pack.ID = "synthetic-workflows"
+	references := make([]capabilitypack.ResourceIdentity, 0, len(claudeReferenceIDs))
+	for _, id := range claudeReferenceIDs {
+		references = append(references, capabilitypack.ResourceIdentity{Kind: "asset", ID: id})
+		pack.Resources[0].Requires = append(pack.Resources[0].Requires, "asset:"+id)
+	}
+	pack.Resources[0].Bindings[0].Capabilities = []capabilitypack.SurfaceCapability{{
+		Type: capabilitypack.SurfaceCapabilityClaudeCompositeSkill,
+		ClaudeCompositeSkill: &capabilitypack.ClaudeCompositeSkillCapability{
+			Dependencies: []capabilitypack.ResourceIdentity{}, References: references,
+		},
+	}}
+
+	got, err := claudeCompositeSkill(pack, pack.Resources[0], pack.Resources[0].Bindings[0], root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Files) != 10 || got.Ownership.PackID != "synthetic-workflows" {
+		t.Fatalf("composite = %+v", got)
+	}
+}
+
+func TestClaudeCommandAliasDependenciesAndLiteralArguments(t *testing.T) {
+	root, pack := claudeCompositeFixture(t)
 	command := capabilitypack.Resource{
 		Kind: "command", ID: "review", Source: "commands/review.toml",
 		Requires: []string{"skill:using-agent-skills", "agent:code-reviewer", "asset:definition-of-done"},
-		Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "addy-review"}},
+		Bindings: []capabilitypack.Binding{{
+			Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "addy-review",
+			Capabilities: []capabilitypack.SurfaceCapability{{
+				Type: capabilitypack.SurfaceCapabilityClaudeCompositeSkill,
+				ClaudeCompositeSkill: &capabilitypack.ClaudeCompositeSkillCapability{
+					Dependencies: []capabilitypack.ResourceIdentity{{Kind: "agent", ID: "code-reviewer"}, {Kind: "asset", ID: "definition-of-done"}, {Kind: "skill", ID: "using-agent-skills"}},
+					References:   claudeReferenceIdentities(),
+				},
+			}},
+		}},
 	}
 	pack.Resources = append(pack.Resources,
 		capabilitypack.Resource{Kind: "skill", ID: "using-agent-skills", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "addy-using-agent-skills"}}},
@@ -62,8 +95,8 @@ func TestAddyCommandAliasDependenciesAndLiteralArguments(t *testing.T) {
 		command,
 	)
 	source := []byte("description = \"Review carefully\"\nprompt = '''Keep $ARGUMENTS unchanged.\\nNext line.'''\n")
-	writeAddyFile(t, root, command.Source, source, 0o644)
-	got, err := addyCompositeSkill(pack, command, command.Bindings[0], root)
+	writeClaudeFixtureFile(t, root, command.Source, source, 0o644)
+	got, err := composeClaudeSkill(pack, command, command.Bindings[0], root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +117,7 @@ func TestAddyCommandAliasDependenciesAndLiteralArguments(t *testing.T) {
 	}
 }
 
-func TestAddyCommandStrictTOMLAndDependencies(t *testing.T) {
+func TestClaudeCommandStrictTOMLAndDependencies(t *testing.T) {
 	for name, input := range map[string][]byte{
 		"invalid utf8":   {0xff},
 		"unknown":        []byte("description=\"x\"\nprompt=\"y\"\nother=\"z\"\n"),
@@ -94,20 +127,31 @@ func TestAddyCommandStrictTOMLAndDependencies(t *testing.T) {
 		"invalid syntax": []byte("description=\"x\"\nprompt = [\"y\"]\n"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := decodeAddyCommand(input); err == nil {
+			if _, err := decodeClaudeCommandSource(input); err == nil {
 				t.Fatalf("accepted %q", input)
 			}
 		})
 	}
-	root, pack := addyCompositeFixture(t)
-	command := capabilitypack.Resource{Kind: "command", ID: "x", Source: "commands/x.toml", Requires: []string{"agent:absent"}, Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "x"}}}
-	writeAddyFile(t, root, command.Source, []byte("description=\"x\"\nprompt=\"y\"\n"), 0o644)
-	if _, err := addyCompositeSkill(pack, command, command.Bindings[0], root); err == nil || !strings.Contains(err.Error(), "missing") {
+	root, pack := claudeCompositeFixture(t)
+	command := capabilitypack.Resource{
+		Kind: "command", ID: "x", Source: "commands/x.toml", Requires: []string{"agent:absent"},
+		Bindings: []capabilitypack.Binding{{
+			Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "x",
+			Capabilities: []capabilitypack.SurfaceCapability{{
+				Type: capabilitypack.SurfaceCapabilityClaudeCompositeSkill,
+				ClaudeCompositeSkill: &capabilitypack.ClaudeCompositeSkillCapability{
+					Dependencies: []capabilitypack.ResourceIdentity{{Kind: "agent", ID: "absent"}}, References: claudeReferenceIdentities(),
+				},
+			}},
+		}},
+	}
+	writeClaudeFixtureFile(t, root, command.Source, []byte("description=\"x\"\nprompt=\"y\"\n"), 0o644)
+	if _, err := composeClaudeSkill(pack, command, command.Bindings[0], root); err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("missing dependency err=%v", err)
 	}
 }
 
-func TestAddyCommandStrictDecoderAcceptsReviewedCommandBytes(t *testing.T) {
+func TestClaudeCommandStrictDecoderAcceptsReviewedCommandBytes(t *testing.T) {
 	commands := filepath.Join("..", "..", "bundle", "commands")
 	entries, err := os.ReadDir(commands)
 	if err != nil {
@@ -123,7 +167,7 @@ func TestAddyCommandStrictDecoderAcceptsReviewedCommandBytes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		command, err := decodeAddyCommand(content)
+		command, err := decodeClaudeCommandSource(content)
 		if err != nil {
 			t.Fatalf("decode %s: %v", path, err)
 		}
@@ -137,9 +181,9 @@ func TestAddyCommandStrictDecoderAcceptsReviewedCommandBytes(t *testing.T) {
 	}
 }
 
-func TestAddyCompositePayloadRejectsTamperAndNoncanonicalData(t *testing.T) {
-	root, pack := addyCompositeFixture(t)
-	got, err := addyCompositeSkill(pack, pack.Resources[0], pack.Resources[0].Bindings[0], root)
+func TestClaudeCompositePayloadRejectsTamperAndNoncanonicalData(t *testing.T) {
+	root, pack := claudeCompositeFixture(t)
+	got, err := composeClaudeSkill(pack, pack.Resources[0], pack.Resources[0].Bindings[0], root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,16 +215,16 @@ func TestAddyCompositePayloadRejectsTamperAndNoncanonicalData(t *testing.T) {
 	if err := os.Symlink(outside, reference); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := addyCompositeSkill(pack, pack.Resources[0], pack.Resources[0].Bindings[0], root); err == nil || !strings.Contains(err.Error(), "escapes bundle root") {
+	if _, err := composeClaudeSkill(pack, pack.Resources[0], pack.Resources[0].Bindings[0], root); err == nil || !strings.Contains(err.Error(), "escapes bundle root") {
 		t.Fatalf("escaping source symlink was accepted: %v", err)
 	}
 }
 
-func TestAddyCompositeSurfaceStagesReplacesPreservesAndRemovesExactOwnership(t *testing.T) {
-	bundle, pack := addyCompositeFixture(t)
+func TestClaudeCompositeSurfaceStagesReplacesPreservesAndRemovesExactOwnership(t *testing.T) {
+	bundle, pack := claudeCompositeFixture(t)
 	home := t.TempDir()
 	sentinel := filepath.Join(home, "source-executed")
-	writeAddyFile(t, bundle, "skills/example/scripts/inert.sh", []byte("#!/bin/sh\n: > "+sentinel+"\n"), 0o755)
+	writeClaudeFixtureFile(t, bundle, "skills/example/scripts/inert.sh", []byte("#!/bin/sh\n: > "+sentinel+"\n"), 0o755)
 	layout := NewCanonicalLayout(home)
 	empty := StaticOwnershipSnapshot(NewOwnershipSnapshot())
 	adapter := NewSurfaceAdapter(bundle, layout, filepath.Join(home, "state-empty"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, empty)
@@ -208,7 +252,7 @@ func TestAddyCompositeSurfaceStagesReplacesPreservesAndRemovesExactOwnership(t *
 	}
 
 	record := compositeOwnershipRecord(t, installed.Projections[0], "addy")
-	writeAddyFile(t, bundle, "skills/example/notes.md", []byte("replacement"), 0o644)
+	writeClaudeFixtureFile(t, bundle, "skills/example/notes.md", []byte("replacement"), 0o644)
 	owned := NewSurfaceAdapter(bundle, layout, filepath.Join(home, "state-owned"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(NewOwnershipSnapshot(record)))
 	replacement, err := owned.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
 	if err != nil || replacement.Projections[0].DesiredFingerprint == record.Fingerprint {
@@ -292,13 +336,13 @@ func TestAddyCompositeSurfaceStagesReplacesPreservesAndRemovesExactOwnership(t *
 	}
 }
 
-func TestAddyCompositeOwnershipProviderReconstructsAlias(t *testing.T) {
-	bundle, pack := addyCompositeFixture(t)
+func TestClaudeCompositeOwnershipProviderReconstructsAlias(t *testing.T) {
+	bundle, pack := claudeCompositeFixture(t)
 	home := t.TempDir()
 	layout := NewCanonicalLayout(home)
 	alias := capabilitypack.SurfaceAlias{Kind: "skill", ID: "example", Name: "addy-example"}
 	aliased := resourceWithAliases(pack.Resources[0], []capabilitypack.SurfaceAlias{alias})
-	composite, err := addyCompositeSkill(pack, aliased, aliased.Bindings[0], bundle)
+	composite, err := composeClaudeSkill(pack, aliased, aliased.Bindings[0], bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,23 +377,44 @@ func compositeOwnershipRecord(t *testing.T, projection capabilitypack.ObservedPr
 	}
 }
 
-func addyCompositeFixture(t *testing.T) (string, capabilitypack.Pack) {
+func claudeCompositeFixture(t *testing.T) (string, capabilitypack.Pack) {
 	t.Helper()
 	root := t.TempDir()
-	skill := capabilitypack.Resource{Kind: "skill", ID: "example", Source: "skills/example", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "example"}}}
+	requires := make([]string, 0, len(claudeReferenceIDs))
+	for _, id := range claudeReferenceIDs {
+		requires = append(requires, "asset:"+id)
+	}
+	skill := capabilitypack.Resource{
+		Kind: "skill", ID: "example", Source: "skills/example", Requires: requires,
+		Bindings: []capabilitypack.Binding{{
+			Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "example",
+			Capabilities: []capabilitypack.SurfaceCapability{{
+				Type:                 capabilitypack.SurfaceCapabilityClaudeCompositeSkill,
+				ClaudeCompositeSkill: &capabilitypack.ClaudeCompositeSkillCapability{Dependencies: []capabilitypack.ResourceIdentity{}, References: claudeReferenceIdentities()},
+			}},
+		}},
+	}
 	resources := []capabilitypack.Resource{skill}
-	writeAddyFile(t, root, "skills/example/SKILL.md", []byte("skill bytes\n"), 0o644)
-	writeAddyFile(t, root, "skills/example/notes.md", []byte{0, 1, 2}, 0o644)
-	writeAddyFile(t, root, "skills/example/scripts/inert.sh", []byte("#!/bin/sh\nexit 97\n"), 0o755)
-	for _, id := range addyReferenceIDs {
+	writeClaudeFixtureFile(t, root, "skills/example/SKILL.md", []byte("skill bytes\n"), 0o644)
+	writeClaudeFixtureFile(t, root, "skills/example/notes.md", []byte{0, 1, 2}, 0o644)
+	writeClaudeFixtureFile(t, root, "skills/example/scripts/inert.sh", []byte("#!/bin/sh\nexit 97\n"), 0o755)
+	for _, id := range claudeReferenceIDs {
 		resource := capabilitypack.Resource{Kind: "asset", ID: id, Source: "references/" + id + ".md"}
 		resources = append(resources, resource)
-		writeAddyFile(t, root, resource.Source, []byte(id+"\n"), 0o644)
+		writeClaudeFixtureFile(t, root, resource.Source, []byte(id+"\n"), 0o644)
 	}
 	return root, capabilitypack.Pack{ID: "addy", Version: "1.1.0", Resources: resources}
 }
 
-func writeAddyFile(t *testing.T, root, relative string, content []byte, mode os.FileMode) {
+func claudeReferenceIdentities() []capabilitypack.ResourceIdentity {
+	result := make([]capabilitypack.ResourceIdentity, 0, len(claudeReferenceIDs))
+	for _, id := range claudeReferenceIDs {
+		result = append(result, capabilitypack.ResourceIdentity{Kind: "asset", ID: id})
+	}
+	return result
+}
+
+func writeClaudeFixtureFile(t *testing.T, root, relative string, content []byte, mode os.FileMode) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relative))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

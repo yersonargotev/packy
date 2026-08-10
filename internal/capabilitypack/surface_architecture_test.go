@@ -75,7 +75,7 @@ func TestSurfaceAdapterArchitectureCannotRegress(t *testing.T) {
 			t.Fatalf("%s introduced a concrete surface adapter outside Codex, OpenCode, or Claude Code", source.path)
 		}
 		if supportedHost {
-			for _, migratedIdentity := range []string{"matty", "engram"} {
+			for _, migratedIdentity := range []string{"addy", "engram", "matty"} {
 				if strings.Contains(source.text, `"`+migratedIdentity+`"`) {
 					t.Fatalf("%s dispatches host behavior by the migrated %s identity", source.path, migratedIdentity)
 				}

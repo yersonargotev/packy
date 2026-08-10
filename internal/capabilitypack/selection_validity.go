@@ -219,20 +219,82 @@ func selectPackResourcesForSurface(pack Pack, selection ResourceSelection, surfa
 	if err != nil {
 		return Pack{}, err
 	}
-	if selection.Mode != SelectionAll || pack.manifestVersion != manifestSchemaV4 {
+	if pack.manifestVersion != manifestSchemaV4 {
 		return selectPackResources(pack, selection)
 	}
-	roots, _, err := surfaceSelectionRoots(pack, selection, surface)
+	expanded := withSurfaceCapabilityDependencies(pack, surface)
+	if selection.Mode != SelectionAll {
+		return selectSurfacePackResourceClosure(pack, expanded, selection)
+	}
+	roots, _, err := surfaceSelectionRoots(expanded, selection, surface)
 	if err != nil {
 		return Pack{}, err
 	}
-	resources, _, err := resolveResourceClosure(pack, roots)
+	resources, _, err := resolveResourceClosure(expanded, roots)
 	if err != nil {
 		return Pack{}, err
 	}
 	selected := clonePack(pack)
-	selected.Resources = resources
+	selected.Resources = originalSurfaceResources(pack, resources)
 	return selected, nil
+}
+
+func selectSurfacePackResourceClosure(original, expanded Pack, selection ResourceSelection) (Pack, error) {
+	roots, err := resourceSelectionRoots(expanded, selection)
+	if err != nil {
+		return Pack{}, err
+	}
+	resources, _, err := resolveResourceClosure(expanded, roots)
+	if err != nil {
+		return Pack{}, err
+	}
+	selected := clonePack(original)
+	selected.Resources = originalSurfaceResources(original, resources)
+	return selected, nil
+}
+
+func withSurfaceCapabilityDependencies(pack Pack, surface Surface) Pack {
+	expanded := clonePack(pack)
+	if surface != SurfaceClaude {
+		return expanded
+	}
+	for i := range expanded.Resources {
+		resource := &expanded.Resources[i]
+		for _, binding := range resource.Bindings {
+			if binding.Surface != surface {
+				continue
+			}
+			for _, capability := range binding.Capabilities {
+				var dependencies []ResourceIdentity
+				switch capability.Type {
+				case SurfaceCapabilityClaudeCompositeSkill:
+					dependencies = append(dependencies, capability.ClaudeCompositeSkill.Dependencies...)
+					dependencies = append(dependencies, capability.ClaudeCompositeSkill.References...)
+				case SurfaceCapabilityClaudeAgentDocument:
+					dependencies = append(dependencies, capability.ClaudeAgentDocument.Skills...)
+				}
+				for _, dependency := range dependencies {
+					resource.Requires = append(resource.Requires, dependency.String())
+				}
+			}
+		}
+		resource.Requires = sortedUnique(resource.Requires)
+	}
+	return expanded
+}
+
+func originalSurfaceResources(original Pack, selected []Resource) []Resource {
+	wanted := make(map[ResourceIdentity]bool, len(selected))
+	for _, resource := range selected {
+		wanted[ResourceIdentity{Kind: resource.Kind, ID: resource.ID}] = true
+	}
+	result := make([]Resource, 0, len(selected))
+	for _, resource := range original.Resources {
+		if wanted[ResourceIdentity{Kind: resource.Kind, ID: resource.ID}] {
+			result = append(result, resource)
+		}
+	}
+	return result
 }
 
 func selectionBlockers(pack Pack, selection ResourceSelection, surface Surface) ([]PlanBlocker, SelectionValidity, error) {

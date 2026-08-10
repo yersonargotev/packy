@@ -56,9 +56,18 @@ func (e Executor) Apply(actions []capabilitypack.ProjectionAction) error {
 			case e.SymlinkKinds[action.Kind]:
 				change.SymlinkSource = action.Source
 			case e.TreeKinds[action.Kind]:
-				files, err := exactTreeFiles(action.Source)
-				if err != nil {
-					return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("read copied tree: %w", err)}
+				var files []TreeFile
+				if action.TreeFiles != nil {
+					files = make([]TreeFile, len(action.TreeFiles))
+					for i, file := range action.TreeFiles {
+						files[i] = TreeFile{Path: file.Path, Content: append([]byte(nil), file.Content...), Mode: fs.FileMode(file.Mode)}
+					}
+				} else {
+					var err error
+					files, err = exactTreeFiles(action.Source)
+					if err != nil {
+						return capabilitypack.ProjectionActionError{ID: action.ID, Err: fmt.Errorf("read copied tree: %w", err)}
+					}
 				}
 				change.TreeFiles = files
 				change.ExpectedTreeFingerprint = action.Version

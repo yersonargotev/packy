@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -10,6 +11,44 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
+
+func TestClaudeProjectUsesDeclaredCompositeSkillCapability(t *testing.T) {
+	bundle, pack := claudeCompositeFixture(t)
+	pack.ID = "synthetic-project"
+	project := t.TempDir()
+	adapter := NewSurfaceAdapter(bundle, NewCanonicalLayout(""), "", "", nil, nil)
+
+	inspection, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack, ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite, err := claudeCompositeSkill(pack, pack.Resources[0], pack.Resources[0].Bindings[0], bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var action capabilitypack.ProjectionAction
+	for _, projection := range inspection.Projections {
+		if projection.ID == "skill:example" {
+			if projection.DesiredFingerprint != composite.TreeFingerprint {
+				t.Fatalf("project fingerprint = %q, want composite %q", projection.DesiredFingerprint, composite.TreeFingerprint)
+			}
+			action = projection.Action
+		}
+	}
+	if action.ID == "" {
+		t.Fatal("composite skill projection missing")
+	}
+	action.PreviewOnly = false
+	if err := adapter.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{action}); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range composite.Files {
+		got, err := os.ReadFile(filepath.Join(action.Target, filepath.FromSlash(file.Path)))
+		if err != nil || !bytes.Equal(got, file.Content) {
+			t.Fatalf("project composite file %s = %q, err=%v", file.Path, got, err)
+		}
+	}
+}
 
 func TestClaudeProjectAdapterStructurallyMergesInstructionsAndMCP(t *testing.T) {
 	root := t.TempDir()

@@ -69,6 +69,10 @@ reviewed tool, setup-argument, managed-resource, and host-contract data. Engram
 uses it for Codex and OpenCode; an `engram` external requirement without that
 capability is observed through PATH like any other tool and receives no
 implicit setup behavior.
+`claude-composite-skill` projects a reviewed skill tree or command as a Claude
+skill together with explicitly declared dependency and reference roles.
+`claude-agent-document` projects a reviewed agent source, declared skill
+dependencies, and portable authority as one native Claude agent document.
 
 ### Pack activation
 
