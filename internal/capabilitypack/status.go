@@ -489,7 +489,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	entry.Evidence = append(entry.Evidence, fresh.Evidence...)
 	entry.OptionalAuthorities = cloneOptionalAuthorities(fresh.OptionalAuthorities)
 	if store := f.controlledCheckStore(packyHome); store != nil {
-		identity := controlledCheckIdentityFor(evidencePack, surface, ControlledCheckGlobal, "", controlledCheckResources(ResourceGraphFor(evidencePack, selection, false)), observation)
+		identity := controlledCheckIdentityFor(evidencePack, surface, ControlledCheckGlobal, "", controlledCheckResources(ResourceGraphFor(evidencePack, selection, false)), observation, normalizedControlledCheckDescriptor(surface, observation.ControlledCheck))
 		entry.ControlledCheck, err = store.Status(ctx, identity)
 		if err != nil {
 			return StatusEntry{}, err

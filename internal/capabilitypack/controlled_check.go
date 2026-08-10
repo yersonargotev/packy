@@ -219,7 +219,8 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 		return ControlledCheckIdentity{}, nil, err
 	}
 	resources := controlledCheckResources(ResourceGraphFor(pack, selection, false))
-	return controlledCheckIdentityFor(pack, request.Surface, ControlledCheckGlobal, "", resources, observation), controlledCheckInstructions(observation.ControlledCheck, pack, request.Surface), nil
+	descriptor := normalizedControlledCheckDescriptor(request.Surface, observation.ControlledCheck)
+	return controlledCheckIdentityFor(pack, request.Surface, ControlledCheckGlobal, "", resources, observation, descriptor), descriptor.Instructions, nil
 }
 
 func (f Facade) projectControlledCheckIdentity(ctx context.Context, request ControlledCheckRequest) (ControlledCheckIdentity, []string, error) {
@@ -255,7 +256,8 @@ func (f Facade) projectControlledCheckIdentity(ctx context.Context, request Cont
 		return ControlledCheckIdentity{}, nil, err
 	}
 	resources := controlledCheckResources(projectLockForPack(installation.Lock, request.PackID).ResourceGraph)
-	return controlledCheckIdentityFor(pack, request.Surface, ControlledCheckProject, digest, resources, observation), controlledCheckInstructions(observation.ControlledCheck, pack, request.Surface), nil
+	descriptor := normalizedControlledCheckDescriptor(request.Surface, observation.ControlledCheck)
+	return controlledCheckIdentityFor(pack, request.Surface, ControlledCheckProject, digest, resources, observation, descriptor), descriptor.Instructions, nil
 }
 
 func containsSurface(values []Surface, target Surface) bool {
@@ -267,8 +269,7 @@ func containsSurface(values []Surface, target Surface) bool {
 	return false
 }
 
-func controlledCheckIdentityFor(pack Pack, surface Surface, scope ControlledCheckScope, projectDigest string, resources []ResourceIdentity, observation SurfaceInspection) ControlledCheckIdentity {
-	descriptor := normalizedControlledCheckDescriptor(surface, observation.ControlledCheck)
+func controlledCheckIdentityFor(pack Pack, surface Surface, scope ControlledCheckScope, projectDigest string, resources []ResourceIdentity, observation SurfaceInspection, descriptor ControlledCheckDescriptor) ControlledCheckIdentity {
 	revision := observation.Revision
 	if revision == "" {
 		revision = observationDigest(observation)
@@ -291,10 +292,6 @@ func normalizedControlledCheckDescriptor(surface Surface, value ControlledCheckD
 		value.Instructions[i] = strings.TrimSpace(value.Instructions[i])
 	}
 	return value
-}
-
-func controlledCheckInstructions(descriptor ControlledCheckDescriptor, pack Pack, surface Surface) []string {
-	return normalizedControlledCheckDescriptor(surface, descriptor).Instructions
 }
 
 func controlledCheckResources(graph ResourceGraph) []ResourceIdentity {
