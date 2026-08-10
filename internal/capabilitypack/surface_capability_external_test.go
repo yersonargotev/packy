@@ -182,7 +182,6 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 			for _, packID := range []string{"synthetic-alpha", "synthetic-beta"} {
 				facade := capabilitypack.NewFacade(catalog)
 				project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
-				currentGuidance := "Shared project guidance from " + packID + "."
 				if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("# Foreign guidance\n"), 0o640); err != nil {
 					t.Fatal(err)
 				}
@@ -227,7 +226,7 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 				if err := os.WriteFile(manifestPath, []byte(advanced), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				currentGuidance = "Updated shared project guidance from " + packID + "."
+				currentGuidance := "Updated shared project guidance from " + packID + "."
 				if err := os.WriteFile(filepath.Join(updatedBundle, "instructions", packID+".md"), []byte(currentGuidance+"\n"), 0o600); err != nil {
 					t.Fatal(err)
 				}
