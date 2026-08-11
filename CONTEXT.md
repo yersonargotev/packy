@@ -64,11 +64,10 @@ contribution in a project's native instruction document.
 `opencode-primary-prompt` projects reviewed source as OpenCode's global primary
 instruction document and registers that document in workstation OpenCode
 configuration; project-native guidance remains owned by `project-instruction`.
-`external-host-setup` explicitly selects one supported tool-owned setup through
-reviewed tool, setup-argument, managed-resource, and host-contract data. Engram
-uses it for Codex and OpenCode; an `engram` external requirement without that
-capability is observed through PATH like any other tool and receives no
-implicit setup behavior.
+`external-executable-acquisition` explicitly selects one reviewed acquisition
+flow for a declared external requirement. It may install the shared executable
+but never grants a tool authority to configure a CLI surface. Engram uses it to
+retain its supported Homebrew flow without running tool-owned host setup.
 `claude-composite-skill` projects a reviewed skill tree or command as a Claude
 skill together with explicitly declared dependency and reference roles.
 `claude-agent-document` projects a reviewed agent source, declared skill

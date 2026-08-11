@@ -61,9 +61,9 @@ packy doctor
 packy list
 ```
 
-The catalog should list Addy at Pack version `1.1.0`, Argote and Engram at Pack
-version `1.0.2`, Matty at Pack version `1.0.3`, and Orchestrate at Pack version
-`1.0.1`.
+The catalog should list Addy at Pack version `1.1.0`, Argote at Pack version
+`1.0.2`, Engram at Pack version `2.0.0`, Matty at Pack version `1.0.3`, and
+Orchestrate at Pack version `1.0.1`.
 
 ## 5. Regenerate current projects
 

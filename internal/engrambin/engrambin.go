@@ -15,8 +15,8 @@ const (
 )
 
 // Acquirer resolves the reviewed Homebrew acquisition facts for the explicit
-// Engram integration capability. PATH availability is observed separately by
-// the generic tool observer.
+// Engram executable-acquisition capability. PATH availability is observed
+// separately by the generic tool observer.
 type Acquirer struct {
 	HomebrewPrefixEnv string
 	FormulaInspector  func(context.Context, string) (FormulaMetadata, error)

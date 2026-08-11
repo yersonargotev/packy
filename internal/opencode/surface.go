@@ -111,16 +111,6 @@ func skillOnlyReadiness(pack capabilitypack.Pack) bool {
 func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
 	var projections []capabilitypack.ObservedProjection
 	var revisionParts []string
-	if setup, ok := pack.ExternalHostSetup(capabilitypack.SurfaceOpenCode); ok {
-		external, err := a.inspectExternalHostSetupContract(setup)
-		if err != nil {
-			return capabilitypack.SurfaceInspection{}, err
-		}
-		projections = append(projections, external...)
-		for _, projection := range external {
-			revisionParts = append(revisionParts, projection.ID+"="+projection.ExactFingerprint)
-		}
-	}
 	desiredConfig := ""
 	configLoaded := false
 	for _, resource := range pack.Resources {
@@ -352,11 +342,10 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 		revisionParts = append(revisionParts, "occupied:"+name.Namespace+":"+name.Name+"="+name.OwnerType+":"+name.OwnerID+":"+name.Fingerprint)
 	}
 	sort.Strings(revisionParts)
-	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revisionParts, "\n"))), Projections: projections, OccupiedNames: occupied, PendingHumanActions: pendingActions(pack)}, nil
+	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revisionParts, "\n"))), Projections: projections, OccupiedNames: occupied}, nil
 }
 
 func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, desired capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
-	activeSetup, hasActiveSetup := active.ExternalHostSetup(capabilitypack.SurfaceOpenCode)
 	current, err := a.inspectDesired(ctx, active, resolutions)
 	if err != nil {
 		return capabilitypack.SurfaceInspection{}, err
@@ -380,28 +369,6 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 		}
 		mode := capabilitypack.ProjectionRemoveContent
 		projection.Action.Content = ""
-		if projection.ExternallyManaged {
-			if !hasActiveSetup {
-				return capabilitypack.SurfaceInspection{}, fmt.Errorf("external OpenCode projection %s has no declaring host setup capability", projection.ID)
-			}
-			switch strings.TrimPrefix(projection.ID, "external_setup:"+activeSetup.Tool+":opencode:") {
-			case "plugin":
-				mode = capabilitypack.ProjectionDeleteTarget
-			case "tui-plugin":
-				content, readErr := readExternalSetupFile(projection.Action.Target)
-				if readErr != nil {
-					return capabilitypack.SurfaceInspection{}, readErr
-				}
-				content, err = removeTopLevelStringArrayEntry(content, "plugin", activeSetup.OpenCode.TUIPlugin)
-				if err != nil {
-					return capabilitypack.SurfaceInspection{}, err
-				}
-				projection.Action.Content = content
-			}
-			projection = capabilitypack.RemovalCandidate(projection, mode, projection.Action.Content, fmt.Sprintf("remove exact receipt-backed OpenCode %s setup contribution %s", activeSetup.Tool, projection.ID))
-			result.Projections = append(result.Projections, projection)
-			continue
-		}
 		switch projection.Action.Kind {
 		case capabilitypack.ActionOpenCodeSkillLink, capabilitypack.ActionOpenCodeInstructionFile, capabilitypack.ActionOpenCodePrimaryPrompt, capabilitypack.ActionOpenCodeAgentFile, capabilitypack.ActionOpenCodeCommandFile, capabilitypack.ActionOpenCodeAssetFile:
 			mode = capabilitypack.ProjectionDeleteTarget
@@ -848,18 +815,6 @@ func (a *SurfaceAdapter) configReferenceTarget(id string) string {
 		return a.promptFile
 	}
 	return a.instructionPath(strings.TrimPrefix(id, "opencode-instruction-reference:"))
-}
-
-func pendingActions(pack capabilitypack.Pack) []string {
-	setup, ok := pack.ExternalHostSetup(capabilitypack.SurfaceOpenCode)
-	if !ok {
-		return nil
-	}
-	tool := strings.ToUpper(setup.Tool[:1]) + setup.Tool[1:]
-	return []string{
-		"review OpenCode permissions for " + tool + " if the host asks for tool access",
-		"reload OpenCode so the configured " + tool + " MCP server becomes available at runtime",
-	}
 }
 
 func readOptionalSurfaceFile(path string) (string, error) {

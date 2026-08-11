@@ -69,41 +69,33 @@ func TestFacadeShowExplainsPerSurfaceRootAndAllSelectability(t *testing.T) {
 	}
 }
 
-func TestExternalHostSetupIsSelectedOnlyWithItsDeclaringResourceClosure(t *testing.T) {
-	setup := &ExternalHostSetupCapability{
-		Tool: "engram", SetupArgs: []string{"setup", "codex"},
-		ManagedResources: []ResourceIdentity{{Kind: "instruction", ID: "notes"}, {Kind: "mcp_server", ID: "memory"}},
-		Codex: &CodexHostSetup{
-			MCPArgs: []string{"mcp", "--tools=agent"}, InstructionsFile: "engram-instructions.md", InstructionsFingerprint: "74176fb0847b06fb725ae8992c9a5fa12022ff347ca3ee2ef3e77c6d318d5fb3",
-			CompactPromptFile: "engram-compact-prompt.md", CompactPromptFingerprint: "c779d9584c8ca16331ebb31a753f7fbb5bcb8193b229572a54da189ffaa97fd1",
-			MarketplaceRepository: "https://github.com/Gentleman-Programming/engram.git", MarketplaceRevision: "main", Plugin: "engram@engram",
-		},
-	}
+func TestExternalExecutableAcquisitionIsSelectedOnlyWithItsDeclaringResourceClosure(t *testing.T) {
 	pack := Pack{
 		manifestVersion: manifestSchemaV4, ID: "portable", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Requires: Requirements{Tools: []string{"engram"}},
 		Resources: []Resource{
-			{Kind: "instruction", ID: "notes", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceCodex}}, SurfaceExclusions: []SurfaceExclusion{}},
-			{Kind: "mcp_server", ID: "memory", Requires: []string{"instruction:notes"}, Bindings: []Binding{{Surface: SurfaceCodex, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalHostSetup, ExternalHostSetup: setup}}}}, SurfaceExclusions: []SurfaceExclusion{}},
+			{Kind: "mcp_server", ID: "memory", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceCodex, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}},
 			{Kind: "skill", ID: "plain", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceCodex}}, SurfaceExclusions: []SurfaceExclusion{}},
 		},
 	}
-	resolver := &recordingReadinessResolver{paths: map[string]string{"engram": "/opt/reviewed/engram"}}
-	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}), WithExternalEffects(resolver, nil, nil))
+	resolver := &recordingReadinessResolver{paths: map[string]string{}}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: &fakeSurfaceAdapter{}}), WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityExternalExecutableAcquisition: &recordingAcquirer{}}, nil))
 
 	plain, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "plain"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planHasAction(plain, "external:engram:setup:codex") {
-		t.Fatal("unselected external host setup entered the plan")
+	if planHasAction(plain, "external:engram:acquire") {
+		t.Fatal("unselected acquisition entered the plan")
 	}
-
 	selected, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "mcp_server", ID: "memory"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !planHasAction(selected, "external:engram:setup:codex") {
-		t.Fatal("selected declaring resource closure omitted external host setup")
+	if !planHasAction(selected, "external:engram:acquire") {
+		t.Fatal("selected capability omitted acquisition")
+	}
+	if planHasAction(selected, "external:engram:setup:codex") {
+		t.Fatal("acquisition planned host setup")
 	}
 }
 

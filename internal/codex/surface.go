@@ -120,25 +120,7 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 	var revisionParts []string
 	var desiredPrompt string
 	promptLoaded := false
-	externalSetup, hasExternalSetup := pack.ExternalHostSetup(capabilitypack.SurfaceCodex)
-	if hasExternalSetup {
-		config, err := readOptionalFile(a.configFile)
-		if err != nil {
-			return capabilitypack.SurfaceInspection{}, err
-		}
-		externalProjections, err := a.inspectExternalHostSetupContract(config, externalSetup, resolutions)
-		if err != nil {
-			return capabilitypack.SurfaceInspection{}, err
-		}
-		projections = append(projections, externalProjections...)
-		for _, projection := range externalProjections {
-			revisionParts = append(revisionParts, projection.ID+"="+projection.ObservedFingerprint)
-		}
-	}
 	for _, resource := range pack.Resources {
-		if hasExternalSetup && externalSetup.Manages(resource) {
-			continue
-		}
 		switch resource.Kind {
 		case "skill":
 			source := filepath.Join(a.bundleRoot, filepath.Clean(resource.Source))
@@ -273,7 +255,7 @@ func (a *SurfaceAdapter) inspectDesired(_ context.Context, pack capabilitypack.P
 		revisionParts = append(revisionParts, "occupied:"+name.Namespace+":"+name.Name+"="+name.OwnerType+":"+name.OwnerID+":"+name.Fingerprint)
 	}
 	sort.Strings(revisionParts)
-	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revisionParts, "\n"))), Projections: projections, OccupiedNames: occupied, PendingHumanActions: pendingActions(pack)}, nil
+	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revisionParts, "\n"))), Projections: projections, OccupiedNames: occupied}, nil
 }
 
 func (a *SurfaceAdapter) inspectOccupiedNames() ([]capabilitypack.OccupiedName, error) {
@@ -336,7 +318,6 @@ func applyRecordedOccupancyOwnership(observation *capabilitypack.SurfaceInspecti
 }
 
 func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, desired capabilitypack.Pack, resolutions []capabilitypack.ExecutableResolution) (capabilitypack.SurfaceInspection, error) {
-	activeSetup, hasActiveSetup := active.ExternalHostSetup(capabilitypack.SurfaceCodex)
 	current, err := a.inspectDesired(ctx, active, resolutions)
 	if err != nil {
 		return capabilitypack.SurfaceInspection{}, err
@@ -364,31 +345,6 @@ func (a *SurfaceAdapter) inspectPriorTransition(ctx context.Context, active, des
 		}
 		mode := capabilitypack.ProjectionRemoveContent
 		content := ""
-		if projection.ExternallyManaged {
-			if !hasActiveSetup {
-				return capabilitypack.SurfaceInspection{}, fmt.Errorf("external Codex projection %s has no declaring host setup capability", projection.ID)
-			}
-			switch strings.TrimPrefix(projection.ID, "external_setup:"+activeSetup.Tool+":codex:") {
-			case "mcp":
-				configContent = removeTOMLSection(configContent, "mcp_servers."+activeSetup.Tool)
-			case "instructions-config":
-				configContent = removeTOMLTopLevelKey(configContent, "model_instructions_file")
-			case "compact-config":
-				configContent = removeTOMLTopLevelKey(configContent, "experimental_compact_prompt_file")
-			case "marketplace":
-				configContent = removeTOMLSection(configContent, "marketplaces."+activeSetup.Tool)
-			case "plugin":
-				configContent = removeTOMLSection(configContent, `plugins."`+activeSetup.Codex.Plugin+`"`)
-			case "instructions-file", "compact-file":
-				mode = capabilitypack.ProjectionDeleteTarget
-			}
-			if projection.Action.Target == a.configFile {
-				content = configContent
-			}
-			projection = capabilitypack.RemovalCandidate(projection, mode, content, fmt.Sprintf("remove exact receipt-backed Codex %s setup contribution %s", activeSetup.Tool, projection.ID))
-			result.Projections = append(result.Projections, projection)
-			continue
-		}
 		switch projection.Action.Kind {
 		case capabilitypack.ActionSkillLink:
 			mode = capabilitypack.ProjectionDeleteTarget
@@ -748,16 +704,4 @@ func readOptionalFile(path string) (string, error) {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}
 	return string(data), nil
-}
-
-func pendingActions(pack capabilitypack.Pack) []string {
-	setup, ok := pack.ExternalHostSetup(capabilitypack.SurfaceCodex)
-	if !ok {
-		return nil
-	}
-	tool := strings.ToUpper(setup.Tool[:1]) + setup.Tool[1:]
-	return []string{
-		"review and trust the " + tool + " integration in Codex through /hooks; Packy will not bypass hook trust",
-		"reload Codex so the configured " + tool + " MCP server becomes available at runtime",
-	}
 }

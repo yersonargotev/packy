@@ -4,40 +4,22 @@
 
 ## Purpose
 
-Persistent memory for agent work
+Selective durable memory for agent work
 
-- Version: `1.0.2`
-- Supported surfaces: `claude`, `codex`, `opencode`
+- Version: `2.0.0`
+- Supported surfaces: `codex`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `engram`
 
 ## Resources
 
-### Instruction
+### Skill
 
-- `engram-memory` — Guides agents to recall prior project work and preserve durable decisions and discoveries
+- `engram-memory` — Curates durable project memory through the Engram CLI
   - Role: `operational`
   - Dependencies: None.
   - Notices: None.
-  - Codex capabilities: `project-instruction`
-  - Opencode capabilities: `project-instruction`
-
-### Lifecycle
-
-- `engram-memory` — Runs Engram's host setup so Codex and OpenCode receive their native memory integration
-  - Role: `operational`
-  - Dependencies: None.
-  - Notices: None.
-  - Claude exclusion (optional): Generic lifecycle translation is unsupported on Claude; Packy uses the native instruction and exact user MCP binding and does not execute `engram setup claude-code`.
-
-### Mcp Server
-
-- `engram` — Makes Engram memory tools available to agents through MCP
-  - Role: `operational`
-  - Dependencies: `instruction:engram-memory`
-  - Notices: None.
-  - Codex capabilities: `external-host-setup`
-  - Opencode capabilities: `external-host-setup`
+  - Codex capabilities: `external-executable-acquisition`
 
 ## Pack exclusions
 
@@ -47,5 +29,5 @@ None.
 
 ```sh
 packy show engram
-packy activate engram --surface claude --dry-run
+packy activate engram --surface codex --dry-run
 ```

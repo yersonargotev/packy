@@ -511,3 +511,51 @@ func codexProjectBinding(resource capabilitypack.Resource) (string, bool) {
 	}
 	return "", false
 }
+
+func tomlSectionExists(content, section string) bool {
+	return tomlSectionContent(content, section) != ""
+}
+
+func tomlSectionContent(content, section string) string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	start := -1
+	for i, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "["+section+"]" {
+			start = i
+			continue
+		}
+		if start >= 0 && strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			return strings.TrimSpace(strings.Join(lines[start:i], "\n"))
+		}
+	}
+	if start >= 0 {
+		return strings.TrimSpace(strings.Join(lines[start:], "\n"))
+	}
+	return ""
+}
+
+func tomlSectionHas(content, section string, expected map[string]string) bool {
+	found := map[string]string{}
+	current := ""
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			current = strings.TrimSuffix(strings.TrimPrefix(line, "["), "]")
+			continue
+		}
+		if current != section {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			found[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"`)
+		}
+	}
+	for key, value := range expected {
+		if found[key] != value {
+			return false
+		}
+	}
+	return true
+}

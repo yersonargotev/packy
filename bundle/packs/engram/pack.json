@@ -1,12 +1,10 @@
 {
   "id": "engram",
-  "version": "1.0.2",
-  "description": "Persistent memory for agent work",
+  "version": "2.0.0",
+  "description": "Selective durable memory for agent work",
   "selectable": true,
   "surfaces": [
-    "claude",
-    "codex",
-    "opencode"
+    "codex"
   ],
   "readiness_obligations": [
     "runtime-usability",
@@ -17,176 +15,32 @@
   ],
   "resources": [
     {
-      "description": "Guides agents to recall prior project work and preserve durable decisions and discoveries",
-      "kind": "instruction",
+      "description": "Curates durable project memory through the Engram CLI",
+      "kind": "skill",
       "id": "engram-memory",
-      "source": "instructions/engram-memory.md",
+      "source": "skills/engram-memory",
       "requires": [],
-      "bindings": [
-        {
-          "surface": "claude",
-          "projection": "instruction",
-          "name": "engram-memory",
-          "invocation": "engram-memory",
-          "mode": "native",
-          "sharing": "shared",
-          "capabilities": []
-        },
-        {
-          "surface": "codex",
-          "projection": "instruction",
-          "name": "engram-memory",
-          "invocation": "engram-memory",
-          "mode": "native",
-          "sharing": "shared",
-          "capabilities": [
-            {
-              "type": "project-instruction",
-              "project_instruction": {
-                "id": "engram-memory",
-                "source": "instructions/engram-memory.md"
-              }
-            }
-          ]
-        },
-        {
-          "surface": "opencode",
-          "projection": "instruction",
-          "name": "engram-memory",
-          "invocation": "engram-memory",
-          "mode": "native",
-          "sharing": "shared",
-          "capabilities": [
-            {
-              "type": "project-instruction",
-              "project_instruction": {
-                "id": "engram-memory",
-                "source": "instructions/engram-memory.md"
-              }
-            }
-          ]
-        }
-      ],
-      "surface_exclusions": [],
-      "conflicts": []
-    },
-    {
-      "description": "Runs Engram's host setup so Codex and OpenCode receive their native memory integration",
-      "kind": "lifecycle",
-      "id": "engram-memory",
-      "requires": [],
+      "conflicts": [],
+      "notices": [],
       "bindings": [
         {
           "surface": "codex",
-          "projection": "lifecycle",
+          "projection": "skill",
           "name": "engram-memory",
-          "invocation": "engram-memory",
-          "mode": "native",
-          "sharing": "exclusive",
-          "capabilities": []
-        },
-        {
-          "surface": "opencode",
-          "projection": "lifecycle",
-          "name": "engram-memory",
-          "invocation": "engram-memory",
-          "mode": "native",
-          "sharing": "exclusive",
-          "capabilities": []
-        }
-      ],
-      "surface_exclusions": [
-        {
-          "surface": "claude",
-          "mode": "optional",
-          "code": "generic-lifecycle-unsupported",
-          "reason": "Generic lifecycle translation is unsupported on Claude; Packy uses the native instruction and exact user MCP binding and does not execute `engram setup claude-code`."
-        }
-      ],
-      "conflicts": []
-    },
-    {
-      "description": "Makes Engram memory tools available to agents through MCP",
-      "kind": "mcp_server",
-      "id": "engram",
-      "command": "engram",
-      "args": [
-        "mcp",
-        "--tools=agent"
-      ],
-      "requires": [
-        "instruction:engram-memory"
-      ],
-      "bindings": [
-        {
-          "surface": "claude",
-          "projection": "mcp_server",
-          "name": "engram",
-          "invocation": "engram",
-          "mode": "native",
-          "sharing": "exclusive",
-          "capabilities": []
-        },
-        {
-          "surface": "codex",
-          "projection": "mcp_server",
-          "name": "engram",
-          "invocation": "engram",
+          "invocation": "$engram-memory",
           "mode": "native",
           "sharing": "exclusive",
           "capabilities": [
             {
-              "type": "external-host-setup",
-              "external_host_setup": {
-                "tool": "engram",
-                "setup_args": ["setup", "codex"],
-                "managed_resources": [
-                  {"kind": "instruction", "id": "engram-memory"},
-                  {"kind": "mcp_server", "id": "engram"}
-                ],
-                "codex": {
-                  "mcp_args": ["mcp", "--tools=agent"],
-                  "instructions_file": "engram-instructions.md",
-                  "instructions_fingerprint": "74176fb0847b06fb725ae8992c9a5fa12022ff347ca3ee2ef3e77c6d318d5fb3",
-                  "compact_prompt_file": "engram-compact-prompt.md",
-                  "compact_prompt_fingerprint": "c779d9584c8ca16331ebb31a753f7fbb5bcb8193b229572a54da189ffaa97fd1",
-                  "marketplace_repository": "https://github.com/Gentleman-Programming/engram.git",
-                  "marketplace_revision": "main",
-                  "plugin": "engram@engram"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "surface": "opencode",
-          "projection": "mcp_server",
-          "name": "engram",
-          "invocation": "engram",
-          "mode": "native",
-          "sharing": "exclusive",
-          "capabilities": [
-            {
-              "type": "external-host-setup",
-              "external_host_setup": {
-                "tool": "engram",
-                "setup_args": ["setup", "opencode"],
-                "managed_resources": [
-                  {"kind": "instruction", "id": "engram-memory"},
-                  {"kind": "mcp_server", "id": "engram"}
-                ],
-                "opencode": {
-                  "plugin_file": "plugins/engram.ts",
-                  "tui_file": "tui.json",
-                  "tui_plugin": "opencode-subagent-statusline"
-                }
+              "type": "external-executable-acquisition",
+              "external_executable_acquisition": {
+                "tool": "engram"
               }
             }
           ]
         }
       ],
-      "surface_exclusions": [],
-      "conflicts": []
+      "surface_exclusions": []
     }
   ],
   "exclusions": []

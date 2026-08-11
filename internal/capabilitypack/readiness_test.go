@@ -337,31 +337,32 @@ func TestFacadeStatusObservesDifferentlyNamedExternalRequirementsWithoutToolDisp
 func TestExecutableAcquisitionRequiresExplicitReviewedCapability(t *testing.T) {
 	resolver := &recordingReadinessResolver{paths: map[string]string{}}
 	acquirer := &recordingAcquirer{}
-	facade := NewFacade(Catalog{}, WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityExternalHostSetup: acquirer}, nil))
-	plain := Pack{Requires: Requirements{Tools: []string{"engram"}}}
+	pack := Pack{
+		manifestVersion: manifestSchemaV4, ID: "acquisition", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		Requires: Requirements{Tools: []string{"engram"}}, Contract: Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+		Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "guide", Invocation: "guide", Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}}},
+	}
+	adapter := &fakeSurfaceAdapter{}
+	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(&fakeActivationStore{}, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}), WithExternalEffects(resolver, map[SurfaceCapabilityType]ExecutableAcquirer{SurfaceCapabilityExternalExecutableAcquisition: acquirer}, nil))
 
-	plainResolutions, err := facade.resolveExecutables(context.Background(), plain, SurfaceCodex, true)
+	missing, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if acquirer.calls != 0 || len(plainResolutions) != 1 || plainResolutions[0].AcquisitionSupported || plainResolutions[0].Capability != "" {
-		t.Fatalf("plain requirement gained acquisition: calls=%d resolutions=%#v", acquirer.calls, plainResolutions)
+	if acquirer.calls != 1 || !planHasAction(missing, "external:engram:acquire") {
+		t.Fatalf("missing executable preview = calls=%d phases=%#v", acquirer.calls, missing.Phases())
 	}
 
-	explicit := plain
-	explicit.Resources = []Resource{{Bindings: []Binding{{Surface: SurfaceCodex, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalHostSetup, ExternalHostSetup: &ExternalHostSetupCapability{Tool: "engram", SetupArgs: []string{"setup", "codex"}}}}}}}}
-	explicitResolutions, err := facade.resolveExecutables(context.Background(), explicit, SurfaceCodex, true)
+	resolver.paths["engram"] = "/opt/reviewed/engram"
+	available, err := facade.Preview(context.Background(), ActivationRequest{PackID: pack.ID, Surface: SurfaceCodex, Selection: ResourceSelection{Mode: SelectionAll}})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if acquirer.calls != 1 || len(explicitResolutions) != 1 || !explicitResolutions[0].AcquisitionSupported || explicitResolutions[0].Capability != SurfaceCapabilityExternalHostSetup || explicitResolutions[0].AcquisitionCommand != "brew" {
-		t.Fatalf("explicit acquisition = calls=%d resolutions=%#v", acquirer.calls, explicitResolutions)
-	}
-	if _, err := facade.resolveExecutables(context.Background(), explicit, SurfaceCodex, false); err != nil {
 		t.Fatal(err)
 	}
 	if acquirer.calls != 1 {
-		t.Fatalf("observation invoked acquisition capability: calls=%d", acquirer.calls)
+		t.Fatalf("available executable invoked acquisition: calls=%d", acquirer.calls)
+	}
+	if planHasAction(available, "external:engram:acquire") {
+		t.Fatalf("available executable preview retained acquisition: phases=%#v", available.Phases())
 	}
 }
 

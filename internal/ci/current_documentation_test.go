@@ -23,6 +23,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0033-make-the-tui-the-primary-interactive-interface.md"),
 		filepath.Join(root, "docs", "adr", "0034-make-packy-root-namespace-pack-oriented.md"),
 		filepath.Join(root, "docs", "adr", "0035-make-pack-readiness-capability-driven.md"),
+		filepath.Join(root, "docs", "adr", "0036-separate-executable-acquisition-from-host-setup.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
