@@ -32,11 +32,11 @@ func TestPackShowHumanRendersDeterministicDescriptiveInventory(t *testing.T) {
 	if first != second {
 		t.Fatalf("pack show output is not deterministic:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
-	want := "Resource: instruction:engram-memory — Guides agents to recall prior project work and preserve durable decisions and discoveries; role=operational dependencies=none notices=none"
+	want := "Resource: skill:engram-memory — Curates durable project memory through the Engram CLI; role=operational dependencies=none notices=none"
 	if !strings.Contains(first, want) {
 		t.Fatalf("pack show output lacks descriptive inventory line %q:\n%s", want, first)
 	}
-	if strings.Contains(first, "Resource: instruction:engram-memory role=") {
+	if strings.Contains(first, "Resource: skill:engram-memory role=") {
 		t.Fatalf("pack show retained the description-less resource graph line:\n%s", first)
 	}
 }
@@ -67,12 +67,12 @@ func TestPackShowJSONV5IncludesDescriptiveInventory(t *testing.T) {
 	if document.SchemaVersion != 5 {
 		t.Fatalf("schema version = %d, want 5", document.SchemaVersion)
 	}
-	if len(document.ResourceInventory) != 3 {
+	if len(document.ResourceInventory) != 1 {
 		t.Fatalf("resource inventory = %#v", document.ResourceInventory)
 	}
 	first := document.ResourceInventory[0]
-	if first.Resource.String() != "instruction:engram-memory" ||
-		first.Description != "Guides agents to recall prior project work and preserve durable decisions and discoveries" ||
+	if first.Resource.String() != "skill:engram-memory" ||
+		first.Description != "Curates durable project memory through the Engram CLI" ||
 		first.Role != capabilitypack.ResourceInventoryRoleOperational {
 		t.Fatalf("first resource inventory entry = %#v", first)
 	}

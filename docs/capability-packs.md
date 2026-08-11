@@ -108,15 +108,14 @@ global primary instruction document and its workstation configuration reference.
 Project guidance remains a separate `project-instruction` contribution. Unknown capability
 types, missing typed data, and extension fields are rejected during admission.
 
-The typed `external-host-setup` capability explicitly enables one supported
-tool-owned setup on that surface. Its reviewed data names the external tool,
-exact setup arguments, resources governed by that setup, and the closed Codex
-or OpenCode verification contract. Engram declares this capability on its MCP
-resource; selecting another resource does not inherit setup behavior unless
-dependency closure selects that declaration. External requirements remain the
-single source of tool readiness: every declared name is observed generically
-through PATH, and no tool receives acquisition or a `setup` command merely
-because of its name.
+The typed `external-executable-acquisition` capability explicitly enables one
+supported acquisition flow for a declared external requirement on that
+surface. Its reviewed data names the external tool. Engram declares the
+capability on its Codex skill so Packy can offer the supported Homebrew install
+when the executable is absent. External requirements remain the single source
+of tool readiness: every declared name is observed generically through PATH,
+and no tool receives acquisition merely because of its name. Acquisition never
+authorizes a tool-owned host setup command.
 
 The generated Pack catalog is derived from the manifests; it is not a second
 authoring source or manually maintained snapshot. Review and merge the manifest

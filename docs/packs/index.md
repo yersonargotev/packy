@@ -6,7 +6,7 @@ This index is generated from the bundled selectable Pack manifests. Use `packy s
 
 - [addy](addy.md) — Addy agent skills (version `1.1.0`)
 - [argote](argote.md) — Yerson Argote's engineering and communication guidance (version `1.0.2`)
-- [engram](engram.md) — Persistent memory for agent work (version `1.0.2`)
+- [engram](engram.md) — Selective durable memory for agent work (version `2.0.0`)
 - [matty](matty.md) — Matty workflow (version `1.0.3`)
 - [orchestrate](orchestrate.md) — Coordinate focused Codex subagents (version `1.0.1`)
 
@@ -21,6 +21,6 @@ Surface capabilities:
 
 - `claude-agent-document` — Builds a Claude agent document from reviewed skills and portable authority data.
 - `claude-composite-skill` — Builds a Claude skill or command with reviewed dependency and reference roles.
-- `external-host-setup` — Selects the reviewed Codex or OpenCode setup contract for a supported external tool.
+- `external-executable-acquisition` — Selects a reviewed acquisition flow for a declared external requirement.
 - `opencode-primary-prompt` — Contributes reviewed source as OpenCode's global primary prompt.
 - `project-instruction` — Contributes reviewed source as an independently owned marked project instruction for Codex or OpenCode.

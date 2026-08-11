@@ -66,7 +66,7 @@ func renderIndex(details []capabilitypack.CatalogDetail) []byte {
 	out.WriteString("\nSurface capabilities:\n\n")
 	out.WriteString("- `claude-agent-document` — Builds a Claude agent document from reviewed skills and portable authority data.\n")
 	out.WriteString("- `claude-composite-skill` — Builds a Claude skill or command with reviewed dependency and reference roles.\n")
-	out.WriteString("- `external-host-setup` — Selects the reviewed Codex or OpenCode setup contract for a supported external tool.\n")
+	out.WriteString("- `external-executable-acquisition` — Selects a reviewed acquisition flow for a declared external requirement.\n")
 	out.WriteString("- `opencode-primary-prompt` — Contributes reviewed source as OpenCode's global primary prompt.\n")
 	out.WriteString("- `project-instruction` — Contributes reviewed source as an independently owned marked project instruction for Codex or OpenCode.\n")
 	return out.Bytes()

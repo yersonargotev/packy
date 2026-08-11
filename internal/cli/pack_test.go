@@ -467,70 +467,7 @@ func engramActivationOptions(t *testing.T, terminal Terminal) (Options, string, 
 	env["OPENCODE_CONFIG"] = ""
 	env["OPENCODE_CONFIG_CONTENT"] = ""
 	env["OPENCODE_CONFIG_DIR"] = ""
-	configureEngramCodexSetupFixture(t, runner, env, engram)
 	return opts, home, repoRoot, runner
-}
-
-func configureEngramCodexSetupFixture(t *testing.T, runner *fakeRunner, env MapEnv, engram string) {
-	t.Helper()
-	instructionsGolden, err := os.ReadFile(filepath.Join("..", "codex", "testdata", "engram-1.19.0", "engram-instructions.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	compactGolden, err := os.ReadFile(filepath.Join("..", "codex", "testdata", "engram-1.19.0", "engram-compact-prompt.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	key := engram + " setup codex"
-	if runner.after == nil {
-		runner.after = map[string]func(){}
-	}
-	runner.after[key] = func() {
-		dir := filepath.Join(env["HOME"], ".codex")
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		instructions := filepath.Join(dir, "engram-instructions.md")
-		compact := filepath.Join(dir, "engram-compact-prompt.md")
-		config := `model_instructions_file = "` + instructions + `"
-experimental_compact_prompt_file = "` + compact + `"
-[mcp_servers.engram]
-command = "` + engram + `"
-args = ["mcp", "--tools=agent"]
-
-[marketplaces.engram]
-last_updated = "volatile"
-source_type = "git"
-source = "https://github.com/Gentleman-Programming/engram.git"
-ref = "main"
-
-[plugins."engram@engram"]
-enabled = true
-`
-		for path, content := range map[string][]byte{
-			filepath.Join(dir, "config.toml"): []byte(config),
-			instructions:                      instructionsGolden,
-			compact:                           compactGolden,
-		} {
-			if err := os.WriteFile(path, content, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	openCodeKey := engram + " setup opencode"
-	runner.after[openCodeKey] = func() {
-		dir := filepath.Join(env["XDG_CONFIG_HOME"], "opencode")
-		pluginDir := filepath.Join(dir, "plugins")
-		if err := os.MkdirAll(pluginDir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(pluginDir, "engram.ts"), []byte("// sandboxed Engram OpenCode plugin\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "tui.json"), []byte("{\n  \"plugin\": [\"opencode-subagent-statusline\"]\n}\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
 }
 
 func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
@@ -887,7 +824,7 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"PACK", "argote", "engram", "matty", "Yerson Argote's engineering and communication guidance", "Persistent memory", "codex, opencode"} {
+	for _, want := range []string{"PACK", "argote", "engram", "matty", "Yerson Argote's engineering and communication guidance", "Selective durable memory", "codex"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("list missing %q:\n%s", want, out)
 		}
@@ -896,7 +833,7 @@ func TestPackListAndShowAreSideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("show failed: %v\n%s", err, show)
 	}
-	for _, want := range []string{"Requires global tools: engram", "0 skill, 1 instruction, 1 mcp_server, 1 lifecycle"} {
+	for _, want := range []string{"Requires global tools: engram", "1 skill, 0 instruction, 0 mcp_server, 0 lifecycle"} {
 		if !strings.Contains(show, want) {
 			t.Fatalf("show missing %q:\n%s", want, show)
 		}
@@ -983,8 +920,8 @@ func TestPackStatusRendersBaselineWithoutSideEffects(t *testing.T) {
 		t.Fatalf("targeted status failed: %v\n%s", err, detail)
 	}
 	for _, want := range []string{
-		"engram 1.0.2 on codex", "Intent: inactive", "Resources: 0 selected", "Receipt ownership: 0 projected paths", "Drift: 0 projections",
-		"Readiness: configured=false, authorized=unknown, usable=false",
+		"engram 2.0.0 on codex", "Intent: inactive", "Resources: 0 selected", "Receipt ownership: 0 projected paths", "Drift: 0 projections",
+		"Readiness: configured=false, authorized=true, usable=false",
 		"Projections: 0 verified; 0 drifted; 0 ambiguous", "Pending human actions: none",
 	} {
 		if !strings.Contains(detail, want) {
@@ -1046,7 +983,7 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	entry := report.Entries[0]
-	if report.Report != "pack-status" || entry.Intent.State != "absent" || entry.Intent.Active != nil || entry.Readiness.Authorized != capabilitypack.ReadinessUnknown || entry.Readiness.Usable != capabilitypack.ReadinessFalse || entry.Blockers == nil || entry.Evidence == nil || entry.PendingHumanActions == nil {
+	if report.Report != "pack-status" || entry.Intent.State != "absent" || entry.Intent.Active != nil || entry.Readiness.Authorized != capabilitypack.ReadinessTrue || entry.Readiness.Usable != capabilitypack.ReadinessFalse || entry.Blockers == nil || entry.Evidence == nil || entry.PendingHumanActions == nil {
 		t.Fatalf("absence contract: %#v", entry)
 	}
 	if strings.Contains(detail, "Intent:") {
@@ -1310,7 +1247,7 @@ func TestPackActivateOpenCodePreservesUnmanagedContentAndDoesNotMutateCodex(t *t
 	}
 }
 
-func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T) {
+func TestPackActivateEngramDryRunShowsOnlyReviewedSkillAndNoEffects(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, repoRoot, runner := engramActivationOptions(t, terminal)
 	beforeHome := snapshotTree(t, home)
@@ -1320,9 +1257,14 @@ func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T)
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Pack: engram 1.0.2", "Phase: tool-host-setup", "engram setup codex", "Phase: host-follow-up", "/hooks"} {
+	for _, want := range []string{"Pack: engram 2.0.0", "Phase: reversible-local", "Logical resources: 1 skill", "link skill engram-memory"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, forbidden := range []string{"tool-host-setup", "engram setup", "host-follow-up", "mcp_servers.engram", "engram-instructions", "engram-compact", "engram@engram", "marketplaces.engram", "/hooks"} {
+		if strings.Contains(strings.ToLower(out), forbidden) {
+			t.Fatalf("output contains retired setup behavior %q:\n%s", forbidden, out)
 		}
 	}
 	if terminal.calls != 0 || len(runner.calls) != 0 {
@@ -1336,76 +1278,90 @@ func TestPackActivateEngramDryRunShowsGlobalResolutionAndNoEffects(t *testing.T)
 	}
 }
 
-func TestPackActivateEngramPromptsForExternalAuthorityAndReportsPendingActions(t *testing.T) {
+func TestPackActivateEngramInstallsOnlyTheReviewedSkill(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _, runner := engramActivationOptions(t, terminal)
 	out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("activate failed: %v\n%s", err, out)
 	}
-	if terminal.calls != 1 || len(terminal.prompts) != 1 || !strings.Contains(terminal.prompts[0], "tool-host-setup") {
+	if terminal.calls != 1 || len(terminal.prompts) != 1 || !strings.Contains(terminal.prompts[0], "reversible-local") {
 		t.Fatalf("prompts = %#v calls=%d", terminal.prompts, terminal.calls)
 	}
-	if len(runner.calls) != 1 || !strings.Contains(callStrings(runner.calls)[0], "setup codex") {
+	if len(runner.calls) != 0 {
 		t.Fatalf("external calls = %#v", runner.calls)
 	}
-	for _, want := range []string{"Readiness: configured=true, authorized=unknown, usable=unknown", "Pending human actions:", "/hooks", "reload Codex"} {
+	for _, want := range []string{"Readiness: configured=true, authorized=true, usable=unknown", "Verified plan"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(home, ".codex", "config.toml")); err != nil {
-		t.Fatalf("Codex MCP projection missing: %v", err)
+	target := filepath.Join(home, ".agents", "skills", "engram-memory")
+	if link, err := os.Readlink(target); err != nil || !strings.HasSuffix(link, "/skills/engram-memory") {
+		t.Fatalf("Engram skill link = %q, %v", link, err)
 	}
-}
-
-func TestPackActivateEngramNonTTYAndExternalCancellationAreSideEffectFree(t *testing.T) {
-	nonTTY := &fakeTerminal{interactive: false, approve: true}
-	opts, home, _, runner := engramActivationOptions(t, nonTTY)
-	_, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex")
-	if err == nil || !strings.Contains(err.Error(), "interactive terminal") {
-		t.Fatalf("non-TTY error = %v", err)
-	}
-	if len(runner.calls) != 0 || exists(filepath.Join(home, ".packy", "packs.json")) || exists(filepath.Join(home, ".codex")) {
-		t.Fatalf("non-TTY caused effects: calls=%v", runner.calls)
-	}
-
-	cancel := &fakeTerminal{interactive: true, approve: true, answers: []bool{false}}
-	opts, home, _, runner = engramActivationOptions(t, cancel)
-	out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex")
-	if err == nil || !strings.Contains(err.Error(), "cancelled") {
-		t.Fatalf("cancellation error = %v\n%s", err, out)
-	}
-	if cancel.calls != 1 || len(runner.calls) != 0 || exists(filepath.Join(home, ".packy", "packs.json")) || exists(filepath.Join(home, ".codex")) {
-		t.Fatalf("cancellation caused effects: prompts=%v calls=%v", cancel.prompts, runner.calls)
-	}
-}
-
-func TestPackActivateEngramSurfacesRemainIndependent(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _, runner := engramActivationOptions(t, terminal)
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex"); err != nil {
-		t.Fatalf("Codex activation failed: %v\n%s", err, out)
-	}
-	codexConfig := readFileString(t, filepath.Join(home, ".codex", "config.toml"))
-	if out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "opencode"); err != nil {
-		t.Fatalf("OpenCode activation failed: %v\n%s", err, out)
-	}
-	if strings.Contains(readFileString(t, filepath.Join(home, ".codex", "config.toml")), "opencode") || readFileString(t, filepath.Join(home, ".codex", "config.toml")) != codexConfig {
-		t.Fatal("OpenCode activation mutated Codex configuration")
-	}
-	openCodeConfig := readFileString(t, filepath.Join(home, "xdg", "opencode", "opencode.json"))
-	for _, want := range []string{"engram-memory.md", `"engram"`, "mcp"} {
-		if !strings.Contains(openCodeConfig, want) {
-			t.Fatalf("OpenCode config missing %q:\n%s", want, openCodeConfig)
+	for _, retired := range []string{
+		filepath.Join(home, ".codex", "engram-instructions.md"),
+		filepath.Join(home, ".codex", "engram-compact-prompt.md"),
+		filepath.Join(home, ".codex", "config.toml"),
+		filepath.Join(home, ".codex", "hooks"),
+	} {
+		if _, err := os.Stat(retired); !os.IsNotExist(err) {
+			t.Fatalf("activation created retired setup artifact %s: %v", retired, err)
 		}
 	}
-	if terminal.calls != 3 || len(runner.calls) != 2 {
-		t.Fatalf("surface approvals/calls = %d/%d", terminal.calls, len(runner.calls))
+}
+
+func TestPackActivateEngramAcquiresOnlyWhenExecutableIsMissing(t *testing.T) {
+	terminal := &fakeTerminal{interactive: true, approve: true}
+	opts, home, repoRoot := currentPackActivationOptions(t, terminal)
+	prefix := filepath.Join(t.TempDir(), "homebrew")
+	runner := &fakeRunner{}
+	opts.Runner = runner
+	opts.EngramFormulaInspector = func(_ context.Context, formula string) (engrambin.FormulaMetadata, error) {
+		return engrambin.FormulaMetadata{Source: formula, Version: "0.4.2"}, nil
 	}
-	state := readFileString(t, filepath.Join(home, ".packy", "packs.json"))
-	if !strings.Contains(state, `"surface": "codex"`) || !strings.Contains(state, `"surface": "opencode"`) {
-		t.Fatalf("state did not preserve both surfaces:\n%s", state)
+	env := opts.Env.(MapEnv)
+	env["HOMEBREW_PREFIX"] = prefix
+	env["PATH"] = ""
+	beforeHome := snapshotTree(t, home)
+	beforeBundle := snapshotTree(t, filepath.Join(repoRoot, "bundle"))
+
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex", "--dry-run")
+	if err != nil {
+		t.Fatalf("dry-run failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{"Phase: reversible-local", "Phase: executable-external", "brew install gentleman-programming/tap/engram"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("acquisition preview missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "tool-host-setup") || strings.Contains(out, "engram setup") || terminal.calls != 0 || len(runner.calls) != 0 {
+		t.Fatalf("acquisition preview included setup or effects: prompts=%d calls=%v\n%s", terminal.calls, runner.calls, out)
+	}
+	if snapshotTree(t, home) != beforeHome || snapshotTree(t, filepath.Join(repoRoot, "bundle")) != beforeBundle {
+		t.Fatal("acquisition dry-run mutated sandbox state")
+	}
+	runner.after = map[string]func(){
+		"brew install gentleman-programming/tap/engram": func() {
+			engram := writeEngramExecutable(t, filepath.Join(prefix, "bin"), "engram version 1.19.0")
+			runner.path = map[string]string{"engram": engram}
+		},
+	}
+	applied, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "codex")
+	if err != nil {
+		t.Fatalf("activation with acquisition failed: %v\n%s", err, applied)
+	}
+	if terminal.calls != 2 || len(runner.calls) != 1 || callStrings(runner.calls)[0] != "brew install gentleman-programming/tap/engram" {
+		t.Fatalf("acquisition effects prompts=%d calls=%v", terminal.calls, runner.calls)
+	}
+	if _, err := os.Readlink(filepath.Join(home, ".agents", "skills", "engram-memory")); err != nil {
+		t.Fatalf("Engram skill missing after acquisition: %v", err)
+	}
+
+	unsupported, err := executeCommand(t, NewRootCommand(opts), "activate", "engram", "--surface", "opencode", "--dry-run")
+	if err == nil || !strings.Contains(err.Error(), "lifecycle plan is not actionable") || !strings.Contains(unsupported, "declares no outcome on opencode") {
+		t.Fatalf("OpenCode selective mode unexpectedly supported: %v\n%s", err, unsupported)
 	}
 }
 

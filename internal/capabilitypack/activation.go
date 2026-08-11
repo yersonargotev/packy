@@ -47,7 +47,6 @@ type ProjectionActionMode string
 const (
 	ConsentReversibleLocal         ConsentKind          = "reversible-local"
 	ConsentExecutableExternal      ConsentKind          = "executable-external"
-	ConsentToolHostSetup           ConsentKind          = "tool-host-setup"
 	ConsentHostFollowUp            ConsentKind          = "host-follow-up"
 	ConsentDestructiveCleanup      ConsentKind          = "destructive-cleanup"
 	OperationActivate              Operation            = "activate"
@@ -354,31 +353,8 @@ func (e ProjectionActionError) Error() string {
 func (e ProjectionActionError) Unwrap() error { return e.Err }
 
 type ExternalEffect struct {
-	ID          string                 `json:"id"`
-	Fingerprint string                 `json:"fingerprint"`
-	Receipt     *ExternalEffectReceipt `json:"receipt,omitempty"`
-}
-
-type ExternalEffectReceipt struct {
-	SchemaVersion     int                      `json:"schema_version"`
-	EffectID          string                   `json:"effect_id"`
-	EffectFingerprint string                   `json:"effect_fingerprint"`
-	Surface           Surface                  `json:"surface"`
-	PackID            string                   `json:"pack_id"`
-	Contributions     []ExternalContribution   `json:"contributions"`
-	Reversal          ExternalReversalContract `json:"reversal"`
-}
-
-type ExternalContribution struct {
-	ID                  string `json:"id"`
-	ObservedFingerprint string `json:"observed_fingerprint"`
-	AdapterProvenance   string `json:"adapter_provenance"`
-}
-
-type ExternalReversalContract struct {
-	SchemaVersion   int         `json:"schema_version"`
-	Consent         ConsentKind `json:"consent"`
-	AuthorityLimits []string    `json:"authority_limits"`
+	ID          string `json:"id"`
+	Fingerprint string `json:"fingerprint"`
 }
 
 type ActivationState struct {
@@ -748,12 +724,6 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 			}
 			continue
 		}
-		if receipt, authorized := receiptForExternalProjection(state.External, request.Surface, projection, observation.Projections, nil); authorized {
-			if projection.Exists && !externalReceiptOwnerRemains(receipt, target.packs) {
-				plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, externalReceiptReversalAction(projection.Action, receipt))
-			}
-			continue
-		}
 		if projection.ExternallyManaged {
 			if projection.Exists {
 				plan.pendingHumanActions = append(plan.pendingHumanActions, fmt.Sprintf("preserved %s because no complete, exact, fresh external-effect receipt authorizes reversal; external executable, service, memory, data, sessions, credentials, and unrelated configuration remain untouched", projection.ID))
@@ -862,12 +832,6 @@ func (f Facade) previewPartialDeactivate(ctx context.Context, request Deactivati
 				detail := fmt.Sprintf("preserved projection %s because it is missing, drifted, ambiguous, unmanaged, or ownership no longer matches", projection.ID)
 				plan.pendingHumanActions = append(plan.pendingHumanActions, detail)
 				plan.blockers = append(plan.blockers, PlanBlocker{Kind: BlockerOwnership, Subject: projection.ID, Detail: detail})
-			}
-			continue
-		}
-		if receipt, authorized := receiptForExternalProjection(state.External, request.Surface, projection, observation.Projections, nil); authorized {
-			if projection.Exists && !externalReceiptOwnerRemains(receipt, target.packs) {
-				plan.phases = appendPhaseAction(plan.phases, ConsentDestructiveCleanup, externalReceiptReversalAction(projection.Action, receipt))
 			}
 			continue
 		}
@@ -1093,20 +1057,7 @@ func (f Facade) preview(ctx context.Context, request ActivationRequest, operatio
 		plan.phases = append(plan.phases, PlanPhase{Kind: ConsentReversibleLocal, ApprovalRequired: true, Actions: append([]ProjectionAction(nil), actions...)})
 	}
 	if len(externalActions) > 0 {
-		var acquisitionActions, setupActions []ProjectionAction
-		for _, action := range externalActions {
-			if action.Consent == ConsentToolHostSetup {
-				setupActions = append(setupActions, action)
-			} else {
-				acquisitionActions = append(acquisitionActions, action)
-			}
-		}
-		if len(acquisitionActions) > 0 {
-			plan.phases = append(plan.phases, PlanPhase{Kind: ConsentExecutableExternal, ApprovalRequired: true, Actions: acquisitionActions})
-		}
-		if len(setupActions) > 0 {
-			plan.phases = append(plan.phases, PlanPhase{Kind: ConsentToolHostSetup, ApprovalRequired: true, Actions: setupActions})
-		}
+		plan.phases = append(plan.phases, PlanPhase{Kind: ConsentExecutableExternal, ApprovalRequired: true, Actions: externalActions})
 	}
 	if len(destructiveActions) > 0 {
 		plan.phases = append(plan.phases, PlanPhase{Kind: ConsentDestructiveCleanup, ApprovalRequired: true, Actions: append([]ProjectionAction(nil), destructiveActions...)})
@@ -1222,7 +1173,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		return ApplyResult{}, err
 	}
 	pack, adapter, state := preflight.pack, preflight.adapter, preflight.state
-	currentComposition, combined, resolutions := preflight.composition, preflight.combined, preflight.resolutions
+	_, combined, resolutions := preflight.composition, preflight.combined, preflight.resolutions
 	if hasExternalCommand(request.Plan.phases) && f.activation.executor == nil {
 		return ApplyResult{}, fmt.Errorf("external effects are not configured")
 	}
@@ -1306,7 +1257,6 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	if len(verificationDesired) != len(request.Plan.desired) {
 		verifiedMatches = verificationMatchesSubset(verificationDesired, verified.Projections)
 	}
-	state.External = refreshExternalReceiptOwner(state.External, currentComposition.packs, request.Plan.surface)
 	if request.Plan.operation == OperationDeactivate && len(destructiveActions) > 0 {
 		verifiedMatches = verificationMatchesSubset(verificationDesired, verified.Projections)
 	} else if request.Plan.operation == OperationDeactivate {
@@ -1321,7 +1271,6 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	if !verifiedMatches {
 		return ApplyResult{}, fmt.Errorf("%w: %s", ErrVerificationFailed, verificationMismatch(request.Plan.desired, verified.Projections))
 	}
-	beforeExternal := cloneSurfaceInspection(verified)
 	for _, action := range externalActions {
 		var actionErr error
 		if action.Kind == ActionExternalCommand {
@@ -1331,30 +1280,16 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 		if actionErr != nil {
 			actionErr = ReportSafeError(actionErr, &request.Plan)
-			if action.Kind == ActionExternalCommand && action.Consent == ConsentToolHostSetup {
-				state.External = recordExternalEffect(state.External, action)
-				partial, inspectErr := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.operation, prior, combined, state.Ownership, resolutions))
-				if inspectErr == nil {
-					state.External = recordExternalReceipts(state.External, []ProjectionAction{action}, request.Plan.surface, currentComposition.packs, beforeExternal, partial)
-				}
-			}
 			if saveErr := checkpointExternalEffects(ctx, f.activation.store, request.Plan.surface, &state); saveErr != nil {
-				return ApplyResult{}, fmt.Errorf("external action %s failed: %v; could not persist verified external-effect receipts: %w", action.ID, actionErr, saveErr)
+				return ApplyResult{}, fmt.Errorf("external action %s failed: %v; could not persist external-effect state: %w", action.ID, actionErr, saveErr)
 			}
 			return ApplyResult{}, fmt.Errorf("external action %s failed; later actions stopped: %w", action.ID, actionErr)
 		}
 		if action.Kind == ActionExternalCommand {
 			state.External = recordExternalEffect(state.External, action)
-			if action.Consent == ConsentToolHostSetup {
-				partial, inspectErr := inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.operation, prior, combined, state.Ownership, resolutions))
-				if inspectErr == nil {
-					state.External = recordExternalReceipts(state.External, []ProjectionAction{action}, request.Plan.surface, currentComposition.packs, beforeExternal, partial)
-					beforeExternal = partial
-				}
-			}
 		}
 		if err := checkpointExternalEffects(ctx, f.activation.store, request.Plan.surface, &state); err != nil {
-			return ApplyResult{}, fmt.Errorf("external action %s completed but its verified receipt could not be persisted: %w", action.ID, err)
+			return ApplyResult{}, fmt.Errorf("external action %s completed but its state could not be persisted: %w", action.ID, err)
 		}
 	}
 	for _, action := range destructiveActions {
@@ -1366,9 +1301,6 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		verified, err = inspectSurface(ctx, adapter, surfaceTransitionFacts(request.Plan.surface, request.Plan.operation, prior, combined, state.Ownership, resolutions))
 		if err != nil {
 			return ApplyResult{}, ReportSafeError(err, &request.Plan)
-		}
-		if len(externalActions) > 0 {
-			state.External = recordExternalReceipts(state.External, externalActions, request.Plan.surface, currentComposition.packs, beforeExternal, verified)
 		}
 		verificationProjections := verified.Projections
 		if request.Plan.operation == OperationDeactivate {
@@ -1392,17 +1324,10 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 		if !matches {
 			if saveErr := checkpointExternalEffects(ctx, f.activation.store, request.Plan.surface, &state); saveErr != nil {
-				return ApplyResult{}, fmt.Errorf("%w: %s; could not persist verified external-effect receipts: %v", ErrVerificationFailed, verificationMismatch(request.Plan.desired, verified.Projections), saveErr)
+				return ApplyResult{}, fmt.Errorf("%w: %s; could not persist external-effect state: %v", ErrVerificationFailed, verificationMismatch(request.Plan.desired, verified.Projections), saveErr)
 			}
 			return ApplyResult{}, fmt.Errorf("%w: %s", ErrVerificationFailed, verificationMismatch(request.Plan.desired, verified.Projections))
 		}
-	}
-	if request.Plan.operation == OperationDeactivate && len(destructiveActions) > 0 {
-		completed := make([]string, 0, len(destructiveActions))
-		for _, action := range destructiveActions {
-			completed = append(completed, action.ID)
-		}
-		state.External = retireExternalReceipts(state.External, completed)
 	}
 	previousOwnership := cloneOwnership(state.Ownership)
 	state.Ownership = make([]ProjectionOwnership, 0, len(verified.Projections))
@@ -1855,8 +1780,7 @@ func hasExternalCommand(phases []PlanPhase) bool {
 }
 
 func externalEffectActions(phases []PlanPhase) []ProjectionAction {
-	actions := phaseActions(phases, ConsentExecutableExternal)
-	return append(actions, phaseActions(phases, ConsentToolHostSetup)...)
+	return phaseActions(phases, ConsentExecutableExternal)
 }
 
 func cloneOwnership(values []ProjectionOwnership) []ProjectionOwnership {
@@ -2262,37 +2186,6 @@ func (f Facade) externalPlan(operation Operation, pack Pack, surface Surface, st
 				actions = append(actions, acquisition)
 			}
 		}
-		if resolution.Capability != SurfaceCapabilityExternalHostSetup {
-			continue
-		}
-		setupCapability, ok := pack.externalHostSetup(surface, resolution.Tool)
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(resolution.Path) == "" {
-			blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "resolved tool has no executable path"})
-			continue
-		}
-		if surface == SurfaceClaude && hasNativeMCPBinding(pack, surface, resolution.Tool) {
-			// Claude's official user-scoped MCP projection is the setup effect.
-			// Running a tool-owned generic setup would import a second lifecycle.
-			continue
-		}
-		setup := ProjectionAction{
-			ID: "external:" + resolution.Tool + ":setup:" + string(surface), Kind: ActionExternalCommand, Consent: ConsentToolHostSetup,
-			Source: resolution.Path, Version: resolution.AcquisitionVersion, Command: resolution.Path, Args: append([]string(nil), setupCapability.SetupArgs...),
-			Description:    fmt.Sprintf("run %s setup %s", resolution.Path, surface),
-			Consequences:   fmt.Sprintf("allows %s to mutate the %s host configuration for its tool-owned setup", resolution.Tool, surfaceDisplayName(surface)),
-			RollbackLimits: "pack deactivation removes Packy-owned projections but does not delete tool-owned configuration, data, or credentials",
-		}
-		if externalEffectCompleted(state.External, setup) {
-			continue
-		}
-		if operation != OperationActivate && operation != OperationUpdate {
-			blockers = append(blockers, PlanBlocker{BlockerGlobalRequirement, resolution.Tool, "tool-owned host setup requires an explicit activation or update; preview one of those operations before retrying"})
-			continue
-		}
-		actions = append(actions, setup)
 	}
 	sortBlockers(blockers)
 	return actions, blockers
@@ -2736,192 +2629,8 @@ func recordExternalEffect(effects []ExternalEffect, action ProjectionAction) []E
 	return append(result, ExternalEffect{ID: action.ID, Fingerprint: want})
 }
 
-func recordExternalReceipts(effects []ExternalEffect, actions []ProjectionAction, surface Surface, packs []Pack, before, after SurfaceInspection) []ExternalEffect {
-	result := cloneExternalEffects(effects)
-	for _, action := range actions {
-		if action.Kind != ActionExternalCommand || action.Consent != ConsentToolHostSetup {
-			continue
-		}
-		var contributions []ExternalContribution
-		for _, effect := range result {
-			if effect.ID == action.ID && effect.Receipt != nil {
-				contributions = append(contributions, effect.Receipt.Contributions...)
-				break
-			}
-		}
-		for _, observed := range after.Projections {
-			if !observed.ExternallyManaged || !observed.Exists || observed.ObservedFingerprint != observed.DesiredFingerprint {
-				continue
-			}
-			prior, existed := observedProjectionByID(before.Projections, observed.ID)
-			existing := -1
-			for i := range contributions {
-				if contributions[i].ID == observed.ID {
-					existing = i
-					break
-				}
-			}
-			if existing < 0 && existed && prior.Exists {
-				// A setup command that converged or replaced an existing contribution
-				// did not create deletion authority for that contribution.
-				continue
-			}
-			exact := observed.ExactFingerprint
-			if exact == "" {
-				exact = observed.ObservedFingerprint
-			}
-			contribution := ExternalContribution{ID: observed.ID, ObservedFingerprint: exact, AdapterProvenance: observed.AdapterProvenance}
-			if existing >= 0 {
-				contributions[existing] = contribution
-			} else {
-				contributions = append(contributions, contribution)
-			}
-		}
-		if len(contributions) == 0 {
-			continue
-		}
-		sort.Slice(contributions, func(i, j int) bool { return contributions[i].ID < contributions[j].ID })
-		tool := externalSetupTool(action.ID)
-		receipt := &ExternalEffectReceipt{
-			SchemaVersion: 1, EffectID: action.ID, EffectFingerprint: externalEffectFingerprint(action), Surface: surface,
-			PackID: externalReceiptPackID(packs, surface, tool), Contributions: contributions,
-			Reversal: ExternalReversalContract{
-				SchemaVersion: 1, Consent: ConsentDestructiveCleanup,
-				AuthorityLimits: []string{"configuration contributions recorded by this receipt only", "external executable, service, memory, data, sessions, credentials, and unrelated configuration are preserved"},
-			},
-		}
-		for i := range result {
-			if result[i].ID == action.ID && result[i].Fingerprint == receipt.EffectFingerprint {
-				result[i].Receipt = receipt
-			}
-		}
-	}
-	return result
-}
-
-func observedProjectionByID(values []ObservedProjection, id string) (ObservedProjection, bool) {
-	for _, value := range values {
-		if value.ID == id {
-			return value, true
-		}
-	}
-	return ObservedProjection{}, false
-}
-
-func externalSetupTool(effectID string) string {
-	const prefix = "external:"
-	value := strings.TrimPrefix(effectID, prefix)
-	tool, _, _ := strings.Cut(value, ":setup:")
-	return tool
-}
-
-func externalReceiptPackID(packs []Pack, surface Surface, tool string) string {
-	for _, pack := range packs {
-		if _, ok := pack.externalHostSetup(surface, tool); ok {
-			return pack.ID
-		}
-	}
-	return ""
-}
-
 func cloneExternalEffects(values []ExternalEffect) []ExternalEffect {
-	result := append([]ExternalEffect(nil), values...)
-	for i := range result {
-		if result[i].Receipt == nil {
-			continue
-		}
-		receipt := *result[i].Receipt
-		receipt.Contributions = append([]ExternalContribution(nil), receipt.Contributions...)
-		receipt.Reversal.AuthorityLimits = append([]string(nil), receipt.Reversal.AuthorityLimits...)
-		result[i].Receipt = &receipt
-	}
-	return result
-}
-
-func receiptForExternalProjection(effects []ExternalEffect, surface Surface, projection ObservedProjection, observations []ObservedProjection, completed []string) (*ExternalEffectReceipt, bool) {
-	exact := projection.ExactFingerprint
-	if exact == "" {
-		exact = projection.ObservedFingerprint
-	}
-	for _, effect := range effects {
-		receipt := effect.Receipt
-		if receipt == nil || receipt.SchemaVersion != 1 || receipt.Reversal.SchemaVersion != 1 || receipt.Reversal.Consent != ConsentDestructiveCleanup ||
-			receipt.EffectID != effect.ID || receipt.EffectFingerprint != effect.Fingerprint || receipt.Surface != surface || receipt.PackID == "" {
-			continue
-		}
-		allExact := true
-		for _, sealed := range receipt.Contributions {
-			fresh, ok := observedProjectionByID(observations, sealed.ID)
-			freshExact := fresh.ExactFingerprint
-			if freshExact == "" {
-				freshExact = fresh.ObservedFingerprint
-			}
-			completedAndAbsent := ok && !fresh.Exists && slices.Contains(completed, sealed.ID)
-			if !completedAndAbsent && (!ok || !fresh.Exists || freshExact != sealed.ObservedFingerprint || fresh.AdapterProvenance != sealed.AdapterProvenance) {
-				allExact = false
-				break
-			}
-		}
-		if !allExact {
-			continue
-		}
-		for _, contribution := range receipt.Contributions {
-			if contribution.ID == projection.ID && contribution.ObservedFingerprint == exact && contribution.AdapterProvenance == projection.AdapterProvenance {
-				return receipt, true
-			}
-		}
-	}
-	return nil, false
-}
-
-func externalReceiptOwnerRemains(receipt *ExternalEffectReceipt, packs []Pack) bool {
-	if receipt == nil {
-		return false
-	}
-	return externalReceiptPackID(packs, receipt.Surface, externalSetupTool(receipt.EffectID)) == receipt.PackID
-}
-
-func externalReceiptReversalAction(action ProjectionAction, receipt *ExternalEffectReceipt) ProjectionAction {
-	action.Consent = ConsentDestructiveCleanup
-	action.Consequences = "removes only the exact external configuration contribution sealed by receipt " + receipt.EffectID
-	action.RollbackLimits = strings.Join(receipt.Reversal.AuthorityLimits, "; ")
-	return action
-}
-
-func refreshExternalReceiptOwner(effects []ExternalEffect, packs []Pack, surface Surface) []ExternalEffect {
-	result := cloneExternalEffects(effects)
-	for i := range result {
-		if result[i].Receipt == nil || result[i].Receipt.Surface != surface {
-			continue
-		}
-		packID := externalReceiptPackID(packs, surface, externalSetupTool(result[i].Receipt.EffectID))
-		if packID != "" {
-			result[i].Receipt.PackID = packID
-		}
-	}
-	return result
-}
-
-func retireExternalReceipts(effects []ExternalEffect, completedActions []string) []ExternalEffect {
-	removed := map[string]bool{}
-	for _, id := range completedActions {
-		removed[id] = true
-	}
-	result := make([]ExternalEffect, 0, len(effects))
-	for _, effect := range cloneExternalEffects(effects) {
-		if effect.Receipt == nil {
-			result = append(result, effect)
-			continue
-		}
-		complete := len(effect.Receipt.Contributions) > 0
-		for _, contribution := range effect.Receipt.Contributions {
-			complete = complete && removed[contribution.ID]
-		}
-		if !complete {
-			result = append(result, effect)
-		}
-	}
-	return result
+	return append([]ExternalEffect(nil), values...)
 }
 
 func phaseActions(phases []PlanPhase, kind ConsentKind) []ProjectionAction {
