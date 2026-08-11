@@ -699,7 +699,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	expectedReadiness, readinessConditions := evaluateReadiness(readinessEvaluation{
 		Pack: selectedPack, Surface: request.Surface, Scope: ReadinessScopeProject,
 		Projections: expectedProjectReadinessProjections(projections), Resolutions: resolutions, UnobservedRequirements: unobservedRequirements,
-		Observation: observation.Readiness, Revision: observation.Revision,
+		Observation: observation.Readiness, Revision: observation.Revision, ObservedAt: f.observationTime(),
 	})
 	report := JSONProjectInstallPreview{
 		SchemaVersion: ProjectInstallPreviewSchemaVersion, Report: "project-install-preview", DryRun: true,
