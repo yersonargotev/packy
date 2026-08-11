@@ -1,6 +1,6 @@
 ---
 name: engram-memory
-description: Project memory: Use when prior project knowledge could materially change the current approach, or when completed work produced a durable project decision, root cause, convention, configuration, or reusable discovery.
+description: Project memory only: Use when prior project knowledge could materially change the current approach, or when completed work produced a durable project decision, root cause, convention, configuration, or reusable discovery. User identity and personal preferences are outside scope.
 ---
 
 # Engram Memory
