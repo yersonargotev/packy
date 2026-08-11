@@ -60,12 +60,18 @@ func TestIssue645EngramSkillContract(t *testing.T) {
 
 	skillPath := filepath.Join(root, "bundle", "skills", "engram-memory", "SKILL.md")
 	skill := readFile(t, skillPath)
-	description := "description: Use when prior project knowledge could materially change the current approach, or when completed work produced a durable decision, root cause, convention, configuration, or reusable discovery."
-	if !strings.Contains(skill, description) {
+	description := "description: Project memory: Use when prior project knowledge could materially change the current approach, or when completed work produced a durable project decision, root cause, convention, configuration, or reusable discovery."
+	if !containsNormalizedText(skill, description) {
 		t.Fatalf("skill must expose exactly the two selective-memory triggers; missing %q", description)
 	}
 	for _, required := range []string{
 		"Search only when prior project knowledge could materially change the current\napproach.",
+		"one lookup intent at a time using one to three distinctive terms",
+		"Prefer literal project anchors",
+		"Inspect every returned memory for relevance",
+		"If a material project memory is expected and the first query is empty",
+		"remove generic terms and search the strongest literal anchor",
+		"Complete recall when relevant context is found or both targeted searches are\nempty.",
 		"engram search \"<narrow query>\" --project \"<project>\"\n--limit 5",
 		"at most one concise structured\nobservation",
 		"`What`, `Why`, and `Where`",
@@ -73,11 +79,10 @@ func TestIssue645EngramSkillContract(t *testing.T) {
 		"adds `--topic \"<topic>\"`",
 		"routine, transient, already documented, or\nlow-future-value results",
 		"CLI is unavailable, fails, or returns an\nerror, continue delivering the primary task",
-		"An empty result means no\nrelevant memory was found",
-		"If output is truncated, do not\ninfer the missing text or save it as fact. Refine the query once",
+		"If output is truncated, do not\ninfer the missing text or save it as fact",
 		"does not promise full observation retrieval, session\nlifecycle, automatic compaction recovery, or behavior equivalent to\n`engram setup`",
 	} {
-		if !strings.Contains(skill, required) {
+		if !containsNormalizedText(skill, required) {
 			t.Errorf("skill missing contract %q", required)
 		}
 	}
@@ -137,20 +142,28 @@ func TestIssue645EngramSkillScenariosStaySelective(t *testing.T) {
 		name string
 		want []string
 	}{
-		{"material prior decision", []string{"Search only when prior project knowledge could materially change"}},
+		{"material prior decision", []string{"Project memory: Use when prior project knowledge could materially change", "one lookup intent at a time", "Inspect every returned memory"}},
 		{"durable completed root cause", []string{"After the primary work is complete, save at most one concise structured"}},
 		{"routine work", []string{"Do\nnot search for routine work", "Complete without writing for routine"}},
-		{"empty search", []string{"An empty result means no"}},
-		{"truncated search", []string{"If output is truncated, do not", "Refine the query once"}},
+		{"expected empty search", []string{"If a material project memory is expected and the first query is empty", "remove generic terms and search the strongest literal anchor", "both targeted searches are\nempty"}},
+		{"truncated search", []string{"If output is truncated, do not"}},
+		{"identity or preference prompt", []string{"project memory", "identity, personal preferences"}},
 		{"topic upsert", []string{"only when the observation belongs to an evolving", "adds `--topic"}},
 		{"cli failure", []string{"continue delivering the primary task"}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			for _, want := range scenario.want {
-				if !strings.Contains(skill, want) {
+				if !containsNormalizedText(skill, want) {
 					t.Errorf("scenario %q missing guidance %q", scenario.name, want)
 				}
 			}
 		})
 	}
+}
+
+func containsNormalizedText(document, fragment string) bool {
+	normalize := func(value string) string {
+		return strings.Join(strings.Fields(value), " ")
+	}
+	return strings.Contains(normalize(document), normalize(fragment))
 }
