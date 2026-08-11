@@ -949,7 +949,7 @@ func isReadinessValue(value string) bool {
 func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 	repoRoot, _ := filepath.Abs(filepath.Join("..", ".."))
 	home := t.TempDir()
-	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}}
+	opts := Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}, Runner: &fakeRunner{}}
 	overview, err := executeCommand(t, NewRootCommand(opts), "status", "--json")
 	if err != nil {
 		t.Fatal(err)
