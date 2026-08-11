@@ -1,6 +1,6 @@
 ---
 name: engram-memory
-description: Use when prior project knowledge could materially change the current approach, or when completed work produced a durable decision, root cause, convention, configuration, or reusable discovery.
+description: Project memory only. Activate before work when a prior project decision, root cause, convention, configuration, or discovery could materially change the approach, or after work when it produced one of those durable project findings. Never activate for personal memory.
 ---
 
 # Engram Memory
@@ -11,9 +11,13 @@ part of the primary task's delivery path.
 ## Recall
 
 Search only when prior project knowledge could materially change the current
-approach. Form a narrow query from the decision, subsystem, failure, or
-convention that matters now. Choose the stable project identifier used by the
-current repository. Resolve this skill's directory and run its reviewed helper:
+approach. Search for one lookup intent at a time using one to three distinctive
+terms. Prefer literal project anchors such as an identifier, subsystem, error,
+decision, or convention name over sentences or collections of related
+concepts. One lookup intent names the subject of the search; it does not limit
+the number of returned memories. Choose the stable project identifier used by
+the current repository. Resolve this skill's directory and run its reviewed
+helper:
 
 ```bash
 bash "<skill-directory>/scripts/engram-memory" search "<project>" "<narrow query>"
@@ -22,12 +26,15 @@ bash "<skill-directory>/scripts/engram-memory" search "<project>" "<narrow query
 The helper invokes `engram search "<narrow query>" --project "<project>"
 --limit 5` and treats a CLI failure as best-effort.
 
-Use useful returned context as input to the task. An empty result means no
-relevant memory was found; continue normally. If output is truncated, do not
-infer the missing text or save it as fact. Refine the query once to the
-specific decision or subsystem, then continue with the available context. Do
-not search for routine work, curiosity, or background that cannot change the
-approach.
+Inspect every returned memory for relevance, then use useful context as input
+to the task. If a material project memory is expected and the first query is
+empty, refine once: remove generic terms and search the strongest literal
+anchor. If output is truncated, do not infer the missing text or save it as
+fact. Do not search for routine work, curiosity, or background that cannot
+change the approach.
+
+Complete recall when relevant context is found or both targeted searches are
+empty.
 
 ## Preserve
 
@@ -59,4 +66,5 @@ error, continue delivering the primary task and do not retry indefinitely.
 This skill provides curated CLI search and a possible single durable
 observation. It does not promise full observation retrieval, session
 lifecycle, automatic compaction recovery, or behavior equivalent to
-`engram setup`.
+`engram setup`. Project memory excludes user identity, personal preferences,
+collaborator profiles, and cross-project or global memory.
