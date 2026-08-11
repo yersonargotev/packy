@@ -60,7 +60,7 @@ func TestIssue645EngramSkillContract(t *testing.T) {
 
 	skillPath := filepath.Join(root, "bundle", "skills", "engram-memory", "SKILL.md")
 	skill := readFile(t, skillPath)
-	description := "description: Project memory only. Activate before work when a prior project decision, root cause, convention, configuration, or discovery could materially change the approach, or after work when it produced one of those durable project findings."
+	description := "description: Project memory only. Activate before work when a prior project decision, root cause, convention, configuration, or discovery could materially change the approach, or after work when it produced one of those durable project findings. Never activate for personal memory."
 	if !containsNormalizedText(skill, description) {
 		t.Fatalf("skill must expose exactly the two selective-memory triggers; missing %q", description)
 	}
@@ -147,7 +147,7 @@ func TestIssue645EngramSkillScenariosStaySelective(t *testing.T) {
 		{"routine work", []string{"Do\nnot search for routine work", "Complete without writing for routine"}},
 		{"expected empty search", []string{"If a material project memory is expected and the first query is empty", "remove generic terms and search the strongest literal anchor", "both targeted searches are\nempty"}},
 		{"truncated search", []string{"If output is truncated, do not"}},
-		{"identity or preference prompt", []string{"Project memory only", "Project memory excludes user identity, personal preferences"}},
+		{"identity or preference prompt", []string{"Never activate for personal memory", "Project memory excludes user identity, personal preferences"}},
 		{"topic upsert", []string{"only when the observation belongs to an evolving", "adds `--topic"}},
 		{"cli failure", []string{"continue delivering the primary task"}},
 	} {

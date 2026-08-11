@@ -1,6 +1,6 @@
 ---
 name: engram-memory
-description: Project memory only. Activate before work when a prior project decision, root cause, convention, configuration, or discovery could materially change the approach, or after work when it produced one of those durable project findings.
+description: Project memory only. Activate before work when a prior project decision, root cause, convention, configuration, or discovery could materially change the approach, or after work when it produced one of those durable project findings. Never activate for personal memory.
 ---
 
 # Engram Memory
