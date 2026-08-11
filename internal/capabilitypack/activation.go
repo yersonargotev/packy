@@ -388,6 +388,15 @@ type activationDependencies struct {
 
 type FacadeOption func(*Facade)
 
+// WithClock supplies the observation clock shared by facade use cases.
+func WithClock(clock func() time.Time) FacadeOption {
+	return func(f *Facade) {
+		if clock != nil {
+			f.clock = clock
+		}
+	}
+}
+
 func WithActivation(store ActivationStore, adapters map[Surface]SurfaceAdapter) FacadeOption {
 	return func(f *Facade) {
 		var resolver ExecutableResolver

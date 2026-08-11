@@ -260,7 +260,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if err != nil {
 				return err
 			}
-			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil), capabilitypack.WithExternalEffects(composition.tools, nil, nil))
+			facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithClock(opts.Clock), capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(composition.state.File()), nil), capabilitypack.WithExternalEffects(composition.tools, nil, nil))
 			adapter := projectInstallAdapter(capabilitypack.Surface(surface), composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 			report, err := facade.PreviewProjectInstall(cmd.Context(), capabilitypack.ProjectInstallRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, Selection: selection, Aliases: aliases}, adapter)
 			if err != nil {
@@ -648,7 +648,7 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 	if err != nil {
 		return err
 	}
-	facade := capabilitypack.NewFacade(composition.catalog)
+	facade := capabilitypack.NewFacade(composition.catalog, capabilitypack.WithClock(opts.Clock))
 	adapter := projectInstallAdapter(surface, composition.bundleRoot, composition.skills.Root(), composition.codex.PromptFile(), composition.codex.ConfigFile(), composition.openCode.ConfigFile(), composition.openCode.PromptFile())
 	report, err := facade.PreviewProjectUpdate(cmd.Context(), capabilitypack.ProjectUpdateRequest{PackID: packID, Surface: surface, ProjectRoot: projectRoot, Force: force}, adapter)
 	if err != nil {

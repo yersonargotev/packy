@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"time"
 )
 
 type StatusRequest struct {
@@ -173,14 +174,19 @@ type Facade struct {
 	catalog          Catalog
 	activation       *activationDependencies
 	controlledChecks ControlledCheckEvidenceStore
+	clock            func() time.Time
 }
 
 func NewFacade(catalog Catalog, options ...FacadeOption) Facade {
-	facade := Facade{catalog: catalog}
+	facade := Facade{catalog: catalog, clock: time.Now}
 	for _, option := range options {
 		option(&facade)
 	}
 	return facade
+}
+
+func (f Facade) observationTime() time.Time {
+	return f.clock().UTC().Truncate(time.Second)
 }
 
 func (f Facade) Status(ctx context.Context, request StatusRequest) (StatusReport, error) {

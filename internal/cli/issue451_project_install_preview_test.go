@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
@@ -14,6 +15,8 @@ import (
 func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testing.T) {
 	version, resources := checkedInMattyFacts(t)
 	opts, home, repoRoot := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
+	observedAt := time.Date(2026, time.August, 11, 3, 30, 0, 0, time.UTC)
+	opts.Clock = func() time.Time { return observedAt }
 	runner := opts.Runner.(*fakeRunner)
 	project := filepath.Join(t.TempDir(), "project")
 	nested := filepath.Join(project, "one", "two")
@@ -41,6 +44,9 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 			t.Fatalf("human preview missing %q:\n%s", want, human)
 		}
 	}
+	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--dry-run"); repeatErr != nil || again != human {
+		t.Fatalf("human preview is not deterministic: err=%v\nfirst=%s\nsecond=%s", repeatErr, human, again)
+	}
 
 	structured, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--dry-run", "--json")
 	if err != nil {
@@ -52,6 +58,11 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 	}
 	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != "matty" || report.Pack.Version != version || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != resources || len(report.Projections) != resources+1 || report.Manifest.Path != "packy.json" || report.Lock.SchemaVersion != 1 || len(report.Lock.Receipts) != 1 || report.Notices.Path != "PACKY-NOTICES.md" || report.Notices.Contributions == nil || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable || report.ExpectedReadiness.Configured != capabilitypack.ReadinessTrue || report.ExpectedReadiness.Usable != capabilitypack.ReadinessUnknown || len(report.Conditions) == 0 {
 		t.Fatalf("incomplete JSON preview: %#v", report)
+	}
+	for _, condition := range report.Conditions {
+		if condition.Freshness.ObservedAt != observedAt.Format(time.RFC3339) {
+			t.Fatalf("readiness observation time = %q, want %q", condition.Freshness.ObservedAt, observedAt.Format(time.RFC3339))
+		}
 	}
 	if again, repeatErr := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--dry-run", "--json"); repeatErr != nil || again != structured {
 		t.Fatalf("preview is not deterministic: err=%v\nfirst=%s\nsecond=%s", repeatErr, structured, again)
