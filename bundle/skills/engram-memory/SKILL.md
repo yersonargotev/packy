@@ -1,6 +1,6 @@
 ---
 name: engram-memory
-description: Project memory only: Use when prior project knowledge could materially change the current approach, or when completed work produced a durable project decision, root cause, convention, configuration, or reusable discovery. User identity and personal preferences are outside scope.
+description: Project memory only. Activate before work when a prior project decision, root cause, convention, configuration, or discovery could materially change the approach, or after work when it produced one of those durable project findings. Never activate for user identity, personal preferences, or collaborator profiles.
 ---
 
 # Engram Memory
