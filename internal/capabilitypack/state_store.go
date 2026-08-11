@@ -22,7 +22,6 @@ type activationDocument struct {
 	Revision      int                   `json:"revision"`
 	Activations   []ActivationState     `json:"activations"`
 	Ownership     []ProjectionOwnership `json:"ownership,omitempty"`
-	External      []ExternalEffect      `json:"-"`
 }
 
 type installedPackIdentity struct {
@@ -46,14 +45,12 @@ type installedPackReceipt struct {
 	Resources            []ResourceIdentity           `json:"resources"`
 	Projections          []installedProjection        `json:"projections"`
 	Sensitive            []ProjectSensitiveDisclosure `json:"sensitive,omitempty"`
-	ExternalEffects      []ExternalEffect             `json:"external_effects,omitempty"`
 }
 
 type installedReceiptDocument struct {
-	SchemaVersion   int                    `json:"schema_version"`
-	Revision        int                    `json:"revision"`
-	Receipts        []installedPackReceipt `json:"receipts"`
-	ExternalEffects []ExternalEffect       `json:"external_effects,omitempty"`
+	SchemaVersion int                    `json:"schema_version"`
+	Revision      int                    `json:"revision"`
+	Receipts      []installedPackReceipt `json:"receipts"`
 }
 
 func NewFileActivationStore(path string) *FileActivationStore {
@@ -122,7 +119,6 @@ func (s *FileActivationStore) save(surface Surface, expectedDocumentRevision, ex
 	document.SchemaVersion = 1
 	document.Revision++
 	document.Ownership = cloneOwnership(state.Ownership)
-	document.External = nil
 	for i := range document.Activations {
 		document.Activations[i].Ownership = nil
 	}
@@ -139,7 +135,6 @@ func (s *FileActivationStore) save(surface Surface, expectedDocumentRevision, ex
 func snapshotStateForSurface(document activationDocument, surface Surface) ActivationState {
 	state := activationForSurface(document, surface)
 	state.Ownership = cloneOwnership(document.Ownership)
-	state.External = cloneExternalEffects(document.External)
 	state.documentRevision = document.Revision
 	state.snapshotManaged = true
 	return state
@@ -220,7 +215,6 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 	document := activationDocument{SchemaVersion: 1, Revision: receipts.Revision, Activations: []ActivationState{}, Ownership: []ProjectionOwnership{}}
 	bySurface := map[Surface]*ActivationState{}
 	owners := map[string]ProjectionOwnership{}
-	external := map[string]ExternalEffect{}
 	for _, receipt := range receipts.Receipts {
 		if receipt.Pack.ID == "" || receipt.Pack.Version == "" || receipt.Surface == "" {
 			return activationDocument{}, fmt.Errorf("installed receipt requires Pack identity, version, and surface")
@@ -244,19 +238,10 @@ func activationDocumentFromReceipts(receipts installedReceiptDocument) (activati
 			}
 			owners[owner.ID] = owner
 		}
-		for _, effect := range receipt.ExternalEffects {
-			external[effect.ID] = effect
-		}
 	}
 	for _, state := range bySurface {
 		sort.Slice(state.Intents, func(i, j int) bool { return state.Intents[i].PackID < state.Intents[j].PackID })
 		document.Activations = append(document.Activations, *state)
-	}
-	for _, effect := range receipts.ExternalEffects {
-		external[effect.ID] = effect
-	}
-	for _, effect := range external {
-		document.External = append(document.External, effect)
 	}
 	for _, owner := range owners {
 		document.Ownership = append(document.Ownership, owner)
@@ -286,7 +271,6 @@ func canonicalizeActivationDocument(document *activationDocument) error {
 		}
 	}
 	sort.Slice(document.Ownership, func(i, j int) bool { return document.Ownership[i].ID < document.Ownership[j].ID })
-	sort.Slice(document.External, func(i, j int) bool { return document.External[i].ID < document.External[j].ID })
 	return nil
 }
 
@@ -309,15 +293,6 @@ func canonicalizeActivationState(state *ActivationState) error {
 			return err
 		}
 	}
-	seenEffects := map[string]bool{}
-	for i := range state.External {
-		effect := &state.External[i]
-		if seenEffects[effect.ID] {
-			return fmt.Errorf("duplicate external effect %q", effect.ID)
-		}
-		seenEffects[effect.ID] = true
-	}
-	sort.Slice(state.External, func(i, j int) bool { return state.External[i].ID < state.External[j].ID })
 	return nil
 }
 

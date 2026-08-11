@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+set -u
+
+operation=${1:-}
+if [[ -z "$operation" ]]; then
+  printf '%s\n' 'usage: engram-memory <search|save> ...' >&2
+  exit 2
+fi
+shift
+
+case "$operation" in
+  search)
+    if [[ $# -ne 2 || -z "$1" || -z "$2" ]]; then
+      printf '%s\n' 'usage: engram-memory search <project> <query>' >&2
+      exit 2
+    fi
+    if ! engram search "$2" --project "$1" --limit 5; then
+      printf '%s\n' 'Engram search failed; continuing without memory.' >&2
+    fi
+    ;;
+  save)
+    if [[ $# -lt 3 || $# -gt 4 || -z "$1" || -z "$2" || -z "$3" ]]; then
+      printf '%s\n' 'usage: engram-memory save <project> <title> <observation> [topic]' >&2
+      exit 2
+    fi
+    project=$1
+    title=$2
+    observation=$3
+    topic=${4:-}
+    args=(save "$title" "$observation" --project "$project")
+    if [[ -n "$topic" ]]; then
+      args+=(--topic "$topic")
+    fi
+    if ! engram "${args[@]}"; then
+      printf '%s\n' 'Engram save failed; continuing without blocking the primary task.' >&2
+    fi
+    ;;
+  *)
+    printf 'unknown Engram memory operation: %s\n' "$operation" >&2
+    exit 2
+    ;;
+esac

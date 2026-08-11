@@ -1052,9 +1052,6 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 			}
 		}
 		seen[key] = true
-		if len(receipt.ExternalEffects) != 0 {
-			return fmt.Errorf("project receipt for %s on %s contains personal external effects", receipt.Pack.ID, receipt.Surface)
-		}
 		if !validReadinessObligations(receipt.ReadinessObligations) {
 			return fmt.Errorf("project receipt for %s on %s has invalid readiness obligations", receipt.Pack.ID, receipt.Surface)
 		}

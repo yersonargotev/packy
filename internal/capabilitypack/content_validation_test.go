@@ -311,19 +311,6 @@ func currentFixtureResource(manifest map[string]any) map[string]any {
 	return manifest["resources"].([]any)[0].(map[string]any)
 }
 
-func copyCheckedInBundle(t *testing.T) string {
-	t.Helper()
-	source, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	destination := filepath.Join(t.TempDir(), "bundle")
-	if err := os.CopyFS(destination, os.DirFS(source)); err != nil {
-		t.Fatal(err)
-	}
-	return destination
-}
-
 func decodeManifestMap(t *testing.T, path string) map[string]any {
 	t.Helper()
 	var manifest map[string]any

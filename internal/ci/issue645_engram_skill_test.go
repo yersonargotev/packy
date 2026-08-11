@@ -3,6 +3,7 @@ package ci_test
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,11 +66,11 @@ func TestIssue645EngramSkillContract(t *testing.T) {
 	}
 	for _, required := range []string{
 		"Search only when prior project knowledge could materially change the current\napproach.",
-		"engram search \"<narrow query>\" --project \"<project>\" --limit 5",
+		"engram search \"<narrow query>\" --project \"<project>\"\n--limit 5",
 		"at most one concise structured\nobservation",
 		"`What`, `Why`, and `Where`",
-		"Where: <relevant subsystem or path>\" --project \"<project>\"",
-		"Add `--topic \"<topic>\"` only when the observation belongs to an evolving topic",
+		"The helper always invokes `engram save` with `--project`",
+		"adds `--topic \"<topic>\"`",
 		"routine, transient, already documented, or\nlow-future-value results",
 		"CLI is unavailable, fails, or returns an\nerror, continue delivering the primary task",
 		"An empty result means no\nrelevant memory was found",
@@ -85,6 +86,51 @@ func TestIssue645EngramSkillContract(t *testing.T) {
 	}
 }
 
+func TestIssue645EngramCLIHelper(t *testing.T) {
+	root := repositoryRoot(t)
+	helper := filepath.Join(root, "bundle", "skills", "engram-memory", "scripts", "engram-memory")
+	for _, scenario := range []struct {
+		name       string
+		args       []string
+		output     string
+		fail       bool
+		wantLog    string
+		wantOutput string
+	}{
+		{name: "empty search", args: []string{"search", "packy", "architecture"}, wantLog: "search\narchitecture\n--project\npacky\n--limit\n5\n"},
+		{name: "truncated search", args: []string{"search", "packy", "projection"}, output: strings.Repeat("x", 400), wantLog: "search\nprojection\n--project\npacky\n--limit\n5\n", wantOutput: strings.Repeat("x", 400)},
+		{name: "explicit project save", args: []string{"save", "packy", "Decision", "What: result\nWhy: reuse\nWhere: internal"}, wantLog: "save\nDecision\nWhat: result\nWhy: reuse\nWhere: internal\n--project\npacky\n"},
+		{name: "topic upsert", args: []string{"save", "packy", "Convention", "What: result\nWhy: reuse\nWhere: docs", "architecture/memory"}, wantLog: "save\nConvention\nWhat: result\nWhy: reuse\nWhere: docs\n--project\npacky\n--topic\narchitecture/memory\n"},
+		{name: "CLI failure is best effort", args: []string{"search", "packy", "failure"}, fail: true, wantLog: "search\nfailure\n--project\npacky\n--limit\n5\n", wantOutput: "Engram search failed; continuing without memory."},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			dir := t.TempDir()
+			logPath := filepath.Join(dir, "engram.log")
+			fake := filepath.Join(dir, "engram")
+			fakeScript := "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$ENGRAM_LOG\"\nif [ \"${ENGRAM_FAIL:-}\" = 1 ]; then exit 9; fi\nprintf '%s' \"${ENGRAM_OUTPUT:-}\"\n"
+			if err := os.WriteFile(fake, []byte(fakeScript), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			command := exec.Command("bash", append([]string{helper}, scenario.args...)...)
+			command.Env = append(os.Environ(), "PATH="+dir+":/usr/bin:/bin", "ENGRAM_LOG="+logPath, "ENGRAM_OUTPUT="+scenario.output)
+			if scenario.fail {
+				command.Env = append(command.Env, "ENGRAM_FAIL=1")
+			}
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("helper blocked the primary task: %v\n%s", err, output)
+			}
+			log, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(log) != scenario.wantLog || !strings.Contains(string(output), scenario.wantOutput) {
+				t.Fatalf("helper result log=%q output=%q", log, output)
+			}
+		})
+	}
+}
+
 func TestIssue645EngramSkillScenariosStaySelective(t *testing.T) {
 	skill := readFile(t, filepath.Join(repositoryRoot(t), "bundle", "skills", "engram-memory", "SKILL.md"))
 	for _, scenario := range []struct {
@@ -96,7 +142,7 @@ func TestIssue645EngramSkillScenariosStaySelective(t *testing.T) {
 		{"routine work", []string{"Do\nnot search for routine work", "Complete without writing for routine"}},
 		{"empty search", []string{"An empty result means no"}},
 		{"truncated search", []string{"If output is truncated, do not", "Refine the query once"}},
-		{"topic upsert", []string{"only when the observation belongs to an evolving topic"}},
+		{"topic upsert", []string{"only when the observation belongs to an evolving", "adds `--topic"}},
 		{"cli failure", []string{"continue delivering the primary task"}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {

@@ -352,20 +352,13 @@ func (e ProjectionActionError) Error() string {
 }
 func (e ProjectionActionError) Unwrap() error { return e.Err }
 
-type ExternalEffect struct {
-	ID          string `json:"id"`
-	Fingerprint string `json:"fingerprint"`
-}
-
 type ActivationState struct {
-	SchemaVersion      int                   `json:"schema_version"`
-	Intent             ActivationIntent      `json:"intent"`
-	Intents            []ActivationIntent    `json:"intents,omitempty"`
-	Ownership          []ProjectionOwnership `json:"ownership,omitempty"`
-	External           []ExternalEffect      `json:"external_effects,omitempty"`
-	documentRevision   int
-	snapshotManaged    bool
-	externalCheckpoint bool
+	SchemaVersion    int                   `json:"schema_version"`
+	Intent           ActivationIntent      `json:"intent"`
+	Intents          []ActivationIntent    `json:"intents,omitempty"`
+	Ownership        []ProjectionOwnership `json:"ownership,omitempty"`
+	documentRevision int
+	snapshotManaged  bool
 }
 
 type ActivationStore interface {
@@ -382,13 +375,6 @@ func saveActivationState(ctx context.Context, store ActivationStore, surface Sur
 	if err == nil {
 		state.documentRevision = revision
 	}
-	return err
-}
-
-func checkpointExternalEffects(ctx context.Context, store ActivationStore, surface Surface, state *ActivationState) error {
-	state.externalCheckpoint = true
-	err := saveActivationState(ctx, store, surface, state)
-	state.externalCheckpoint = false
 	return err
 }
 
@@ -1280,16 +1266,7 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		}
 		if actionErr != nil {
 			actionErr = ReportSafeError(actionErr, &request.Plan)
-			if saveErr := checkpointExternalEffects(ctx, f.activation.store, request.Plan.surface, &state); saveErr != nil {
-				return ApplyResult{}, fmt.Errorf("external action %s failed: %v; could not persist external-effect state: %w", action.ID, actionErr, saveErr)
-			}
 			return ApplyResult{}, fmt.Errorf("external action %s failed; later actions stopped: %w", action.ID, actionErr)
-		}
-		if action.Kind == ActionExternalCommand {
-			state.External = recordExternalEffect(state.External, action)
-		}
-		if err := checkpointExternalEffects(ctx, f.activation.store, request.Plan.surface, &state); err != nil {
-			return ApplyResult{}, fmt.Errorf("external action %s completed but its state could not be persisted: %w", action.ID, err)
 		}
 	}
 	for _, action := range destructiveActions {
@@ -1323,9 +1300,6 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 			matches = verificationMatchesDeactivation(request.Plan.desired, verificationProjections)
 		}
 		if !matches {
-			if saveErr := checkpointExternalEffects(ctx, f.activation.store, request.Plan.surface, &state); saveErr != nil {
-				return ApplyResult{}, fmt.Errorf("%w: %s; could not persist external-effect state: %v", ErrVerificationFailed, verificationMismatch(request.Plan.desired, verified.Projections), saveErr)
-			}
 			return ApplyResult{}, fmt.Errorf("%w: %s", ErrVerificationFailed, verificationMismatch(request.Plan.desired, verified.Projections))
 		}
 	}
@@ -2053,7 +2027,6 @@ func cloneActivationState(state ActivationState) ActivationState {
 		state.Intents[i].ReadinessObligations = append([]ReadinessObligation(nil), state.Intents[i].ReadinessObligations...)
 		state.Intents[i].ExternalRequirements = append([]string{}, state.Intents[i].ExternalRequirements...)
 	}
-	state.External = cloneExternalEffects(state.External)
 	return state
 }
 
@@ -2182,40 +2155,11 @@ func (f Facade) externalPlan(operation Operation, pack Pack, surface Surface, st
 				Consequences:   fmt.Sprintf("installs the shared global executable %s at %s for Packy and other workflows", resolution.Tool, resolution.Path),
 				RollbackLimits: "pack deactivation does not uninstall the shared executable or delete tool-owned data and credentials",
 			}
-			if !externalEffectCompleted(state.External, acquisition) {
-				actions = append(actions, acquisition)
-			}
+			actions = append(actions, acquisition)
 		}
 	}
 	sortBlockers(blockers)
 	return actions, blockers
-}
-
-func surfaceDisplayName(surface Surface) string {
-	switch surface {
-	case SurfaceCodex:
-		return "Codex"
-	case SurfaceOpenCode:
-		return "OpenCode"
-	case SurfaceClaude:
-		return "Claude Code"
-	default:
-		return string(surface)
-	}
-}
-
-func hasNativeMCPBinding(pack Pack, surface Surface, tool string) bool {
-	for _, resource := range pack.Resources {
-		if resource.Kind != "mcp_server" || resource.Command != tool {
-			continue
-		}
-		for _, binding := range resource.Bindings {
-			if binding.Surface == surface && binding.Projection == "mcp_server" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // inspectSurface is the only gateway from capability-pack policy to host
@@ -2598,39 +2542,6 @@ func sameResolutions(want, got []ExecutableResolution) bool {
 		}
 	}
 	return true
-}
-
-func externalEffectFingerprint(action ProjectionAction) string {
-	return digestJSON(struct {
-		ID, Kind, Command, Description string
-		Args                           []string
-	}{action.ID, string(action.Kind), action.Command, action.Description, action.Args})
-}
-
-func externalEffectCompleted(effects []ExternalEffect, action ProjectionAction) bool {
-	want := externalEffectFingerprint(action)
-	for _, effect := range effects {
-		if effect.ID == action.ID && effect.Fingerprint == want {
-			return true
-		}
-	}
-	return false
-}
-
-func recordExternalEffect(effects []ExternalEffect, action ProjectionAction) []ExternalEffect {
-	result := append([]ExternalEffect(nil), effects...)
-	want := externalEffectFingerprint(action)
-	for i := range result {
-		if result[i].ID == action.ID {
-			result[i].Fingerprint = want
-			return result
-		}
-	}
-	return append(result, ExternalEffect{ID: action.ID, Fingerprint: want})
-}
-
-func cloneExternalEffects(values []ExternalEffect) []ExternalEffect {
-	return append([]ExternalEffect(nil), values...)
 }
 
 func phaseActions(phases []PlanPhase, kind ConsentKind) []ProjectionAction {
