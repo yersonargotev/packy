@@ -723,7 +723,7 @@ func continuousTagChain(candidate Candidate) bool {
 }
 
 func eligibleAutomaticEvidence(candidate Candidate) bool {
-	eligible := validVerification(candidate.CommitVerify)
+	eligible := candidate.Release != nil && candidate.Release.Immutable || validVerification(candidate.CommitVerify)
 	if !completeVerification(candidate.CommitVerify) {
 		return false
 	}

@@ -69,6 +69,21 @@ func TestCheckSingleSourceAdmissionProducesDeterministicMutationFreePlan(t *test
 	}
 }
 
+func TestCheckSingleSourceAdmissionAcceptsImmutableStableReleaseWithoutSignature(t *testing.T) {
+	_, _, request, source := singleSourceAdmissionFixture(t)
+	source.candidate.Release.Immutable = true
+	source.candidate.CommitVerify = Verification{Reason: "unsigned"}
+
+	if _, err := (Engine{Source: source, Validate: acceptingBundleValidator()}).CheckSingleSourceAdmission(context.Background(), request); err != nil {
+		t.Fatalf("immutable stable release rejected: %v", err)
+	}
+
+	source.candidate.Release.Immutable = false
+	if _, err := (Engine{Source: source, Validate: acceptingBundleValidator()}).CheckSingleSourceAdmission(context.Background(), request); err == nil || !strings.Contains(err.Error(), "eligible verification evidence") {
+		t.Fatalf("mutable unsigned stable release error = %v", err)
+	}
+}
+
 func TestSingleSourceAdmissionBootstrapsFirstSourceFromReviewedBundle(t *testing.T) {
 	repository, _, request, source := singleSourceAdmissionFixture(t)
 	bundle := filepath.Join(repository, "bundle")
