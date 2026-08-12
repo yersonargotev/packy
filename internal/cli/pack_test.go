@@ -312,7 +312,7 @@ func TestRootCompletionOffersFlatPackVerbsWithoutPackGroup(t *testing.T) {
 		}
 		commands = append(commands, command)
 	}
-	want := []string{"activate", "check", "completion", "deactivate", "doctor", "help", "init", "install", "list", "show", "status", "uninstall", "update", "version"}
+	want := []string{"activate", "check", "completion", "deactivate", "doctor", "help", "init", "install", "list", "show", "status", "uninstall", "update", "verify", "version"}
 	if !reflect.DeepEqual(commands, want) {
 		t.Fatalf("root completion commands = %q, want %q\n%s", commands, want, out)
 	}

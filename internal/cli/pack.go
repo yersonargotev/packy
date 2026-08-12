@@ -1635,6 +1635,66 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 	return cmd
 }
 
+func newProjectVerifyCommand(getwd func() (string, error)) *cobra.Command {
+	var jsonOutput bool
+	cmd := &cobra.Command{
+		Use:   "verify",
+		Short: "Verify the current project's committed Pack contract",
+		Long:  "Verify packy.json, packy.lock.json, required notices, and every locked project projection without reading or changing personal runtime state.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cwd, err := getwd()
+			if err != nil {
+				return fmt.Errorf("resolve current directory: %w", err)
+			}
+			projectRoot, err := capabilitypack.DiscoverProjectRoot(cwd)
+			if err != nil {
+				return err
+			}
+			report := capabilitypack.VerifyProject(cmd.Context(), projectRoot, map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
+				capabilitypack.SurfaceClaude:   projectOfflineAdapter(capabilitypack.SurfaceClaude),
+				capabilitypack.SurfaceCodex:    projectOfflineAdapter(capabilitypack.SurfaceCodex),
+				capabilitypack.SurfaceOpenCode: projectOfflineAdapter(capabilitypack.SurfaceOpenCode),
+			})
+			if jsonOutput {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
+					return err
+				}
+			} else if err := renderProjectVerification(cmd, report); err != nil {
+				return err
+			}
+			if report.Result == capabilitypack.ProjectVerificationFailed {
+				return errors.New("project Pack verification failed")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
+	return cmd
+}
+
+func renderProjectVerification(cmd *cobra.Command, report capabilitypack.ProjectVerificationReport) error {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Project Pack verification: %s\nPacks: %d; surfaces: %d; projections: %d/%d verified; findings: %d\n", report.Result, report.Summary.Packs, report.Summary.Surfaces, report.Summary.Verified, report.Summary.Projections, report.Summary.Findings); err != nil {
+		return err
+	}
+	for _, finding := range report.Findings {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Finding: %s: %s\nRemediation: %s\n", finding.Code, finding.Detail, finding.Remediation); err != nil {
+			return err
+		}
+	}
+	for _, entry := range report.Entries {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s: %s; projections=%d/%d verified\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, entry.Installation, entry.Verified, entry.Projections); err != nil {
+			return err
+		}
+		for _, finding := range entry.Findings {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Finding: %s: %s\n  Remediation: %s\n", finding.Code, finding.Detail, finding.Remediation); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func projectOfflineAdapter(surface capabilitypack.Surface) capabilitypack.SurfaceAdapter {
 	if surface == "" {
 		return capabilitypack.NewProjectSurfaceAdapterSet(map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{

@@ -104,6 +104,19 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		t.Fatalf("project status: %v\n%s", err, projectStatus)
 	}
 	assertProjectStructuredOutput(t, root, "project-status.schema.json", projectStatus)
+	projectVerification, err := executeCommand(t, NewRootCommand(projectOpts), "verify", "--json")
+	if err != nil {
+		t.Fatalf("project verification: %v\n%s", err, projectVerification)
+	}
+	assertProjectStructuredOutput(t, root, "project-verification.schema.json", projectVerification)
+	emptyProject := t.TempDir()
+	writeTestGitWorktree(t, emptyProject)
+	projectOpts.Getwd = func() (string, error) { return emptyProject, nil }
+	failedVerification, err := executeCommand(t, NewRootCommand(projectOpts), "verify", "--json")
+	if err == nil {
+		t.Fatal("absent project verification unexpectedly passed")
+	}
+	assertProjectStructuredOutput(t, root, "project-verification.schema.json", failedVerification)
 }
 
 func TestStructuredOutputV3DoctorSchemaRejectsWrongVersionAndUnknownFields(t *testing.T) {

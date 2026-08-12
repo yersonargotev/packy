@@ -20,8 +20,10 @@ verbs.
 
 ## Decision
 
-Packy's root namespace is Pack-oriented. `list`, `show`, `status`, `install`,
-`uninstall`, `activate`, `update`, and `deactivate` are direct root commands.
+Packy's root namespace is Pack-oriented. `list`, `show`, `verify`, `status`,
+`install`, `uninstall`, `activate`, `update`, and `deactivate` are direct root commands.
+`verify` is the read-only project contract gate; it does not create a
+second lifecycle or inspect personal runtime state.
 The obsolete `pack` grouping command is absent and is not retained through an
 alias, forwarding command, fallback, or deprecation path.
 

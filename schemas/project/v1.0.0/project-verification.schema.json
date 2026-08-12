@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/project/v1.0.0/project-verification.schema.json",
+  "title": "Packy project verification report v1",
+  "type": "object",
+  "required": ["schema_version", "report", "project_root", "result", "summary", "entries", "findings"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report": { "const": "project-verification" },
+    "project_root": { "const": "<project-root>" },
+    "result": { "enum": ["passed", "failed"] },
+    "summary": {
+      "type": "object",
+      "required": ["packs", "surfaces", "projections", "verified", "findings"],
+      "properties": {
+        "packs": { "type": "integer", "minimum": 0 },
+        "surfaces": { "type": "integer", "minimum": 0 },
+        "projections": { "type": "integer", "minimum": 0 },
+        "verified": { "type": "integer", "minimum": 0 },
+        "findings": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pack", "surface", "installation", "projections", "verified", "findings"],
+        "properties": {
+          "pack": { "$ref": "project-contract-defs.schema.json#/$defs/installed_pack" },
+          "surface": { "$ref": "project-contract-defs.schema.json#/$defs/surface" },
+          "installation": { "enum": ["absent", "installed", "drifted", "blocked"] },
+          "projections": { "type": "integer", "minimum": 0 },
+          "verified": { "type": "integer", "minimum": 0 },
+          "findings": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/blocker" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "project-contract-defs.schema.json#/$defs/blocker" } }
+  },
+  "additionalProperties": false
+}
