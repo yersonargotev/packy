@@ -30,9 +30,10 @@ type installedPackIdentity struct {
 }
 
 type installedProjection struct {
-	ID     string `json:"id"`
-	Target string `json:"target"`
-	Digest string `json:"digest"`
+	ID       string `json:"id"`
+	Target   string `json:"target"`
+	Digest   string `json:"digest"`
+	FileMode uint32 `json:"file_mode,omitempty"`
 }
 
 type installedPackReceipt struct {

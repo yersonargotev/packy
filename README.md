@@ -92,6 +92,7 @@ packy init
 packy doctor
 packy list
 packy show <pack>
+packy verify
 packy activate <pack> --surface <surface>
 packy install <pack> --surface <surface>
 packy update <pack> --surface <surface>
@@ -104,12 +105,19 @@ Inspection and `--dry-run` do not mutate Pack state or CLI surfaces. Lifecycle
 commands operate on one Pack and receipt at a time. Update targets the current
 bundled Pack version; arbitrary versions and downgrades are unsupported.
 
+From a Git worktree, `packy verify` is the portable CI gate for the committed
+project Pack contract. It checks `packy.json`, `packy.lock.json`, required
+notices, and every locked projection without reading personal activation,
+runtime evidence, credentials, or executable availability. Use `--json` for
+the versioned `project-verification` report; exit status is zero only when the
+complete shared installation is intact.
+
 ## State and safety
 
 Packy keeps workstation state beneath `~/.packy`. A successful global
 activation or project installation records an installed Pack receipt with the
 Pack identity and version, surface, selected resource closure, projected paths,
-and content digests.
+content digests, and project projection file modes.
 
 Before mutation, Packy checks receipt-owned paths for drift and checks proposed
 paths for collisions. Ordinary update, deactivation, and removal stop without

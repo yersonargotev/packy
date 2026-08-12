@@ -102,6 +102,13 @@ type JSONProjectStatusReport struct {
 	Packs         []JSONProjectPackStatus `json:"packs"`
 }
 
+type ProjectInspectionScope string
+
+const (
+	ProjectInspectionScopeWorkstation ProjectInspectionScope = ""
+	ProjectInspectionScopeContract    ProjectInspectionScope = "contract"
+)
+
 type ProjectStatusRequest struct {
 	ProjectRoot      string
 	PackID           string
@@ -111,6 +118,7 @@ type ProjectStatusRequest struct {
 	PackyHome        string
 	Adapters         map[Surface]SurfaceAdapter
 	Resolver         ExecutableResolver
+	InspectionScope  ProjectInspectionScope
 }
 
 type ProjectInstallation struct {
@@ -352,12 +360,12 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			readinessPack := projectReadinessPack(packLock, surface, surfacePack)
 			resolutions, unobservedRequirements := observeProjectRequirements(ctx, readinessPack.Requires.Tools, request.Resolver)
 			observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{
-				ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent, ResolvedExecutables: resolutions,
+				ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent, ProjectInspectionScope: request.InspectionScope, ResolvedExecutables: resolutions,
 			})
 			if inspectErr != nil {
 				return report, inspectErr
 			}
-			projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID)
+			projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID, request.InspectionScope)
 			if inspectErr != nil {
 				return report, inspectErr
 			}
@@ -687,7 +695,7 @@ func pendingProjectRuntimeEffects(categories []ProjectActivationCategoryPreview)
 	return result
 }
 
-func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLockProposal, observation SurfaceInspection, surface Surface, packID string) ([]ProjectProjectionStatus, error) {
+func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLockProposal, observation SurfaceInspection, surface Surface, packID string, inspectionScope ProjectInspectionScope) ([]ProjectProjectionStatus, error) {
 	observed := make(map[ResourceIdentity]ObservedProjection, len(observation.Projections))
 	for _, projection := range observation.Projections {
 		resource, err := ParseResourceIdentity(projection.ID)
@@ -715,7 +723,15 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 		health := "missing"
 		if projection.Exists {
 			health = "drifted"
-			if projection.ObservedFingerprint == locked.DesiredFingerprint {
+			modeMatches := true
+			if inspectionScope == ProjectInspectionScopeContract {
+				info, statErr := os.Lstat(projection.Action.Target)
+				if statErr != nil {
+					return nil, statErr
+				}
+				modeMatches = uint32(info.Mode().Perm()) == locked.FileMode
+			}
+			if projection.ObservedFingerprint == locked.DesiredFingerprint && modeMatches {
 				health = "verified"
 			}
 		}
@@ -1034,9 +1050,10 @@ func inspectProjectNoticeFile(projectRoot string, installation ProjectInstallati
 		return false, nil, readErr
 	}
 	start, end := projectNoticeMarkers(packID, surface)
-	fragment, found := extractProjectContribution(string(noticesData), start, end)
+	notices := string(noticesData)
+	fragment, found := extractProjectContribution(notices, start, end)
 	locked, receiptFound := projectNoticeReceiptProjection(installation.Lock.Receipts, packID, surface)
-	if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest {
+	if !found || strings.Count(notices, start) != 1 || strings.Count(notices, end) != 1 || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest || uint32(noticesInfo.Mode().Perm()) != locked.FileMode {
 		return false, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution or mode differs from the lock", Remediation: "restore the exact locked notice contribution"}}, nil
 	}
 	return true, nil, nil

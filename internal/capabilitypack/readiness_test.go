@@ -54,7 +54,7 @@ func (a *syntheticRequirementAdapter) InspectSurface(_ context.Context, transiti
 		Revision: "synthetic-adapter-v1",
 		Projections: []ObservedProjection{{
 			ID: "skill:guide", Goal: ProjectionPresent, Exists: a.applied, ObservedFingerprint: observed, DesiredFingerprint: fingerprint, AdapterProvenance: "synthetic-adapter/v1",
-			Action: ProjectionAction{ID: "skill:guide", Kind: ActionSkillLink, Target: target, Description: "project synthetic guide", AdapterProvenance: "synthetic-adapter/v1", PreviewOnly: transition.ProjectRoot != ""},
+			Action: ProjectionAction{ID: "skill:guide", Kind: ActionSkillLink, Target: target, FileMode: 0o644, Description: "project synthetic guide", AdapterProvenance: "synthetic-adapter/v1", PreviewOnly: transition.ProjectRoot != ""},
 		}},
 	}, nil
 }

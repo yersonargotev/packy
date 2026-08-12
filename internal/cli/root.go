@@ -127,6 +127,7 @@ and receive a new Preview. Packy never retries it automatically.
 		newDoctorCommand(opts, workstationResolver),
 		newPackListCommand(opts, workstationResolver),
 		newPackShowCommand(opts, workstationResolver),
+		newProjectVerifyCommand(opts.Getwd),
 		newPackStatusCommand(opts, workstationResolver),
 		newControlledCheckCommand(opts, workstationResolver),
 		newPackInstallCommand(opts, workstationResolver),

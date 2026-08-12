@@ -100,7 +100,9 @@ The minimal current-state record for one Pack and surface: Pack identity and
 version, reviewed readiness obligations and external-requirement names,
 selected resource closure, projected paths, and content digests. It is the
 authority for safe update or removal of unchanged Pack-owned content and for
-offline readiness evaluation. It never contains runtime evidence.
+offline readiness evaluation. Project receipts also seal committed projection
+file modes for portable integrity verification. Receipts never contain runtime
+evidence.
 
 ### Project Pack lock
 

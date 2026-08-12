@@ -251,7 +251,7 @@ func controlledCheckTestPack(id string) Pack {
 }
 
 func controlledCheckTestObservation(revision, host string) SurfaceInspection {
-	return SurfaceInspection{Revision: revision, ControlledCheck: ControlledCheckDescriptor{AdapterVersion: "codex/v2", HostVersion: host, Instructions: []string{"Run the named Pack behavior."}}, Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide"}}}, Readiness: ReadinessObservation{AuthorizationObserved: true, Authorized: true, UsabilityObserved: false}}
+	return SurfaceInspection{Revision: revision, ControlledCheck: ControlledCheckDescriptor{AdapterVersion: "codex/v2", HostVersion: host, Instructions: []string{"Run the named Pack behavior."}}, Projections: []ObservedProjection{{ID: "skill:guide", Exists: true, ObservedFingerprint: "exact", DesiredFingerprint: "exact", Action: ProjectionAction{ID: "skill:guide", Target: "/tmp/guide", FileMode: 0o644}}}, Readiness: ReadinessObservation{AuthorizationObserved: true, Authorized: true, UsabilityObserved: false}}
 }
 
 func writeControlledCheckProjectInstallation(t *testing.T, project string, preview JSONProjectInstallPreview) {

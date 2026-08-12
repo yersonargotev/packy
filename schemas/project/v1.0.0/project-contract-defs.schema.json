@@ -97,11 +97,12 @@
     },
     "installed_projection": {
       "type": "object",
-      "required": ["id", "target", "digest"],
+      "required": ["id", "target", "digest", "file_mode"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "target": { "type": "string", "minLength": 1 },
-        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "file_mode": { "type": "integer", "minimum": 1, "maximum": 511 }
       },
       "additionalProperties": false
     },
