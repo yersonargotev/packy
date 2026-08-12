@@ -99,6 +99,23 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	}
 	assertProjectStructuredOutput(t, root, "project-preview.schema.json", projectDocuments[0])
 	assertProjectStructuredOutput(t, root, "project-apply.schema.json", projectDocuments[1])
+	lockData, err := os.ReadFile(filepath.Join(project, "packy.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lockDocument map[string]any
+	if err := json.Unmarshal(lockData, &lockDocument); err != nil {
+		t.Fatal(err)
+	}
+	projections := lockDocument["receipts"].([]any)[0].(map[string]any)["projections"].([]any)
+	delete(projections[0].(map[string]any), "file_mode")
+	missingMode, err := json.Marshal(lockDocument)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProjectStructuredOutput(t, root, "project-lock.schema.json", string(missingMode)); err == nil {
+		t.Fatal("project lock schema accepted a projection without file_mode")
+	}
 	projectStatus, err := executeCommand(t, NewRootCommand(projectOpts), "status", "matty", "--surface", "codex", "--project", "--json")
 	if err != nil {
 		t.Fatalf("project status: %v\n%s", err, projectStatus)
@@ -515,11 +532,18 @@ func assertStructuredOutput(t *testing.T, root, schemaName, document string) {
 
 func assertProjectStructuredOutput(t *testing.T, root, schemaName, instance string) {
 	t.Helper()
+	if err := validateProjectStructuredOutput(t, root, schemaName, instance); err != nil {
+		t.Fatalf("%s producer: %v\n%s", schemaName, err, instance)
+	}
+}
+
+func validateProjectStructuredOutput(t *testing.T, root, schemaName, instance string) error {
+	t.Helper()
 	compiler := jsonschema.NewCompiler()
 	schemaRoot := filepath.Join(root, "schemas", "project", "v1.0.0")
 	entries, err := os.ReadDir(schemaRoot)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -527,27 +551,25 @@ func assertProjectStructuredOutput(t *testing.T, root, schemaName, instance stri
 		}
 		schemaBytes, err := os.ReadFile(filepath.Join(schemaRoot, entry.Name()))
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
 		document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
 		if err != nil {
-			t.Fatalf("parse project schema %s: %v", entry.Name(), err)
+			return fmt.Errorf("parse project schema %s: %w", entry.Name(), err)
 		}
 		if err := compiler.AddResource("https://yersonargotev.github.io/packy/schemas/project/v1.0.0/"+entry.Name(), document); err != nil {
-			t.Fatal(err)
+			return err
 		}
 	}
 	schema, err := compiler.Compile("https://yersonargotev.github.io/packy/schemas/project/v1.0.0/" + schemaName)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	value, err := jsonschema.UnmarshalJSON(strings.NewReader(instance))
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
-	if err := schema.Validate(value); err != nil {
-		t.Fatalf("%s producer: %v\n%s", schemaName, err, instance)
-	}
+	return schema.Validate(value)
 }
 
 func validateStructuredOutput(t *testing.T, root, schemaName string, instance []byte) error {

@@ -117,7 +117,7 @@ complete shared installation is intact.
 Packy keeps workstation state beneath `~/.packy`. A successful global
 activation or project installation records an installed Pack receipt with the
 Pack identity and version, surface, selected resource closure, projected paths,
-and content digests.
+content digests, and project projection file modes.
 
 Before mutation, Packy checks receipt-owned paths for drift and checks proposed
 paths for collisions. Ordinary update, deactivation, and removal stop without

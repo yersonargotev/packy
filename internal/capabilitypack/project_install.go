@@ -954,21 +954,21 @@ func replaceProjectReceipt(receipts []installedPackReceipt, replacement installe
 	return result
 }
 
-func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) (string, uint32) {
+func projectReceiptProjectionMode(surface Surface, resource ResourceIdentity) string {
 	switch resource.Kind {
 	case "notice", "instruction":
-		return "merge_marked_file", 0o644
+		return "merge_marked_file"
 	case "mcp_server":
 		if surface == SurfaceCodex {
-			return "merge_marked_file", 0o644
+			return "merge_marked_file"
 		}
-		return "merge_structured_file", 0o644
+		return "merge_structured_file"
 	case "skill":
 		if surface == SurfaceCodex || surface == SurfaceClaude {
-			return "copy_tree", 0o700
+			return "copy_tree"
 		}
 	}
-	return "copy_file", 0o644
+	return "copy_file"
 }
 
 func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
@@ -1006,9 +1006,9 @@ func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
 			if err != nil {
 				return ProjectLockProposal{}, fmt.Errorf("project receipt projection identity: %w", err)
 			}
-			mode, fileMode := projectReceiptProjectionMode(receipt.Surface, resource)
+			mode := projectReceiptProjectionMode(receipt.Surface, resource)
 			lock.Projections = append(lock.Projections, ProjectProjectionPlan{
-				Resource: resource, Target: projection.Target, Mode: mode, FileMode: fileMode,
+				Resource: resource, Target: projection.Target, Mode: mode, FileMode: projection.FileMode,
 				DesiredFingerprint: projection.Digest, ObservedState: "installed", OwnerPack: receipt.Pack.ID, Surface: receipt.Surface,
 			})
 			name := resource.ID
@@ -1090,7 +1090,7 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 			projectionKey := filepath.Clean(projection.Target) + "\x00" + projection.ID
 			identity, identityErr := ParseResourceIdentity(projection.ID)
 			noticeProjection := projection.ID == projectNoticeProjectionID(receipt.Pack.ID, receipt.Surface) && projection.Target == "PACKY-NOTICES.md"
-			if identityErr != nil || !noticeProjection && !resourceSeen[identity] || !safeProjectContractTarget(projection.Target) || !projectDigestPattern.MatchString(projection.Digest) || projection.FileMode&^0o777 != 0 || noticeProjection && projection.FileMode == 0 || projectionSeen[projectionKey] {
+			if identityErr != nil || !noticeProjection && !resourceSeen[identity] || !safeProjectContractTarget(projection.Target) || !projectDigestPattern.MatchString(projection.Digest) || projection.FileMode == 0 || projection.FileMode&^0o777 != 0 || projectionSeen[projectionKey] {
 				return fmt.Errorf("project receipt for %s on %s has invalid projection evidence", receipt.Pack.ID, receipt.Surface)
 			}
 			if j > 0 {

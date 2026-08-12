@@ -108,10 +108,10 @@ packy verify --json
 ```
 
 Verification checks `packy.json`, `packy.lock.json`, required notices, and all
-locked project projections. It emits one deterministic `project-verification`
-report and exits successfully only when every installed Pack surface is
-intact. `packy status --project` remains the richer workstation view when
-personal runtime activation and readiness matter.
+locked project projections, including their filesystem modes. It emits one
+deterministic `project-verification` report and exits successfully only when
+every installed Pack surface is intact. `packy status --project` remains the
+richer workstation view when personal runtime activation and readiness matter.
 
 Tests and manual checks that resolve project or workstation paths must sandbox
 `HOME` and `XDG_CONFIG_HOME`.

@@ -97,7 +97,7 @@
     },
     "installed_projection": {
       "type": "object",
-      "required": ["id", "target", "digest"],
+      "required": ["id", "target", "digest", "file_mode"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "target": { "type": "string", "minLength": 1 },

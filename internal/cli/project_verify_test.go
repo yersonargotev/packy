@@ -93,6 +93,53 @@ func TestProjectVerifyFailsWithActionableDriftFinding(t *testing.T) {
 	}
 }
 
+func TestProjectVerifyRejectsChangedProjectionMode(t *testing.T) {
+	opts, project := installIssue453Project(t)
+	target := filepath.Join(project, "AGENTS.md")
+	if err := os.Chmod(target, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := executeCommand(t, NewRootCommand(opts), "verify", "--json")
+	if err == nil || !strings.Contains(out, `"target":"AGENTS.md"`) {
+		t.Fatalf("projection mode verification = %v\n%s", err, out)
+	}
+}
+
+func TestProjectLockRequiresProjectionModeEvidence(t *testing.T) {
+	_, project := installIssue453Project(t)
+	lockPath := filepath.Join(project, "packy.lock.json")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock map[string]any
+	if err := json.Unmarshal(data, &lock); err != nil {
+		t.Fatal(err)
+	}
+	receipts := lock["receipts"].([]any)
+	projections := receipts[0].(map[string]any)["projections"].([]any)
+	for _, value := range projections {
+		projection := value.(map[string]any)
+		if projection["target"] != "PACKY-NOTICES.md" {
+			delete(projection, "file_mode")
+			break
+		}
+	}
+	data, err = json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(lockPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := capabilitypack.LoadProjectInstallation(project); err == nil || !strings.Contains(err.Error(), "invalid projection evidence") {
+		t.Fatalf("load project lock without projection mode = %v", err)
+	}
+}
+
 func TestProjectVerifyFailsCleanlyWhenContractIsAbsent(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
 	project := t.TempDir()

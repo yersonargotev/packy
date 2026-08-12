@@ -32,7 +32,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		if transition.ProjectRoot == "" || len(transition.ProjectInstallation.Manifest.Packs) != 1 {
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("locked OpenCode project inspection requires one manifest pack and the project root")
 		}
-		return a.inspectLockedProject(transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectGoal, transition.ProjectContractOnly)
+		return a.inspectLockedProject(transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectGoal, transition.ProjectInspectionScope)
 	}
 	if transition.ProjectRoot != "" {
 		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)

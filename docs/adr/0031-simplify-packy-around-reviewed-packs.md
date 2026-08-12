@@ -24,9 +24,12 @@ the Pack SemVer, and run the focused Pack validator.
 A successful global activation or project installation writes an installed Pack receipt.
 The receipt records only the Pack identity and version, target
 surface and scope, selected resource closure, projected paths, and content
-digests needed to check ownership, drift, and collisions. Global and project
-state use the same receipt model, and each lifecycle command operates on one
-Pack and receipt.
+digests needed to check ownership, drift, and collisions. A project receipt
+also seals the filesystem mode of every committed projection so portable
+verification can detect permission drift without consulting the catalog or
+personal state. Global and project state share the receipt model while keeping
+project-only filesystem evidence out of global state, and each lifecycle
+command operates on one Pack and receipt.
 
 Repository integration uses native GitHub branch protection, ordinary CI,
 CodeQL, review, and human merge. Issues organize work but grant no merge

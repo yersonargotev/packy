@@ -214,7 +214,7 @@ func projectInstructionMarkers(id string) (string, string) {
 
 // inspectLockedProject validates and translates a supported committed project
 // lock without consulting Packy's catalog or original source trees.
-func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal, contractOnly bool) (capabilitypack.SurfaceInspection, error) {
+func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal, inspectionScope capabilitypack.ProjectInspectionScope) (capabilitypack.SurfaceInspection, error) {
 	if goal == "" {
 		goal = capabilitypack.ProjectionPresent
 	}
@@ -343,7 +343,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	sort.Strings(revision)
 	readiness := capabilitypack.ReadinessObservation{}
 	activationActions := []capabilitypack.ProjectionAction(nil)
-	if goal == capabilitypack.ProjectionPresent && !contractOnly {
+	if goal == capabilitypack.ProjectionPresent && inspectionScope != capabilitypack.ProjectInspectionScopeContract {
 		var err error
 		readiness, activationActions, err = a.inspectProjectRuntime(projectRoot, lock)
 		if err != nil {

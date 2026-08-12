@@ -231,16 +231,16 @@ const (
 // inspection. Capability-pack decides which facts are relevant to each use
 // case; adapters only translate those facts into host projections.
 type SurfaceTransition struct {
-	Prior                 Pack
-	Desired               Pack
-	CurrentOwnership      []ProjectionOwnership
-	ResidualOwnership     []ProjectionOwnership
-	ResolvedExecutables   []ExecutableResolution
-	ProjectRoot           string
-	ProjectInstallation   *ProjectInstallation
-	ProjectGoal           ProjectionGoal
-	ProjectContractOnly   bool
-	ProjectEffectReceipts []ProjectActivationEffectReceipt
+	Prior                  Pack
+	Desired                Pack
+	CurrentOwnership       []ProjectionOwnership
+	ResidualOwnership      []ProjectionOwnership
+	ResolvedExecutables    []ExecutableResolution
+	ProjectRoot            string
+	ProjectInstallation    *ProjectInstallation
+	ProjectGoal            ProjectionGoal
+	ProjectInspectionScope ProjectInspectionScope
+	ProjectEffectReceipts  []ProjectActivationEffectReceipt
 }
 
 type ProjectEffectState string

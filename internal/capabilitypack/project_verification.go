@@ -67,7 +67,7 @@ func VerifyProject(ctx context.Context, projectRoot string, adapters map[Surface
 		Entries:       []ProjectVerificationEntry{},
 		Findings:      []ProjectVerificationFinding{},
 	}
-	status, err := InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: projectRoot, Adapters: adapters, ContractOnly: true})
+	status, err := InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: projectRoot, Adapters: adapters, InspectionScope: ProjectInspectionScopeContract})
 	if err != nil {
 		report.Result = ProjectVerificationFailed
 		report.Findings = append(report.Findings, ProjectVerificationFinding{

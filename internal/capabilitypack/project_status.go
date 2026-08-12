@@ -102,6 +102,13 @@ type JSONProjectStatusReport struct {
 	Packs         []JSONProjectPackStatus `json:"packs"`
 }
 
+type ProjectInspectionScope string
+
+const (
+	ProjectInspectionScopeWorkstation ProjectInspectionScope = ""
+	ProjectInspectionScopeContract    ProjectInspectionScope = "contract"
+)
+
 type ProjectStatusRequest struct {
 	ProjectRoot      string
 	PackID           string
@@ -111,7 +118,7 @@ type ProjectStatusRequest struct {
 	PackyHome        string
 	Adapters         map[Surface]SurfaceAdapter
 	Resolver         ExecutableResolver
-	ContractOnly     bool
+	InspectionScope  ProjectInspectionScope
 }
 
 type ProjectInstallation struct {
@@ -353,12 +360,12 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			readinessPack := projectReadinessPack(packLock, surface, surfacePack)
 			resolutions, unobservedRequirements := observeProjectRequirements(ctx, readinessPack.Requires.Tools, request.Resolver)
 			observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{
-				ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent, ProjectContractOnly: request.ContractOnly, ResolvedExecutables: resolutions,
+				ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent, ProjectInspectionScope: request.InspectionScope, ResolvedExecutables: resolutions,
 			})
 			if inspectErr != nil {
 				return report, inspectErr
 			}
-			projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID)
+			projections, inspectErr := projectProjectionStatusesFromObservation(request.ProjectRoot, installation.Lock, observation, surface, pack.ID, request.InspectionScope)
 			if inspectErr != nil {
 				return report, inspectErr
 			}
@@ -688,7 +695,7 @@ func pendingProjectRuntimeEffects(categories []ProjectActivationCategoryPreview)
 	return result
 }
 
-func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLockProposal, observation SurfaceInspection, surface Surface, packID string) ([]ProjectProjectionStatus, error) {
+func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLockProposal, observation SurfaceInspection, surface Surface, packID string, inspectionScope ProjectInspectionScope) ([]ProjectProjectionStatus, error) {
 	observed := make(map[ResourceIdentity]ObservedProjection, len(observation.Projections))
 	for _, projection := range observation.Projections {
 		resource, err := ParseResourceIdentity(projection.ID)
@@ -716,7 +723,15 @@ func projectProjectionStatusesFromObservation(projectRoot string, lock ProjectLo
 		health := "missing"
 		if projection.Exists {
 			health = "drifted"
-			if projection.ObservedFingerprint == locked.DesiredFingerprint {
+			modeMatches := true
+			if inspectionScope == ProjectInspectionScopeContract {
+				info, statErr := os.Lstat(projection.Action.Target)
+				if statErr != nil {
+					return nil, statErr
+				}
+				modeMatches = uint32(info.Mode().Perm()) == locked.FileMode
+			}
+			if projection.ObservedFingerprint == locked.DesiredFingerprint && modeMatches {
 				health = "verified"
 			}
 		}

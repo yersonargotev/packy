@@ -136,7 +136,7 @@ func TestCodexProjectInspectionBuildsComposableMCPDefinition(t *testing.T) {
 	if err != nil || !withoutRequirement.Readiness.Authorized || withoutRequirement.Readiness.Usable || len(withoutRequirement.Readiness.PendingHumanActions) == 0 {
 		t.Fatalf("missing external requirement readiness = %+v, %v", withoutRequirement.Readiness, err)
 	}
-	contractOnly, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionPresent, ProjectContractOnly: true})
+	contractOnly, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionPresent, ProjectInspectionScope: capabilitypack.ProjectInspectionScopeContract})
 	if err != nil || len(contractOnly.Projections) != 1 || !reflect.DeepEqual(contractOnly.Readiness, capabilitypack.ReadinessObservation{}) || len(contractOnly.ProjectActivationActions) != 0 {
 		t.Fatalf("portable contract inspection included runtime facts = %+v, %v", contractOnly, err)
 	}

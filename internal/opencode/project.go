@@ -236,7 +236,7 @@ func projectInstructionMarkers(id string) (string, string) {
 	return "<!-- packy:project:instruction:" + id + ":start -->", "<!-- packy:project:instruction:" + id + ":end -->"
 }
 
-func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal, contractOnly bool) (capabilitypack.SurfaceInspection, error) {
+func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal, inspectionScope capabilitypack.ProjectInspectionScope) (capabilitypack.SurfaceInspection, error) {
 	if goal == "" {
 		goal = capabilitypack.ProjectionPresent
 	}
@@ -359,7 +359,7 @@ func (a *SurfaceAdapter) inspectLockedProject(projectRoot string, pack capabilit
 	}
 	sort.Strings(revision)
 	readiness := capabilitypack.ReadinessObservation{}
-	if goal == capabilitypack.ProjectionPresent && !contractOnly {
+	if goal == capabilitypack.ProjectionPresent && inspectionScope != capabilitypack.ProjectInspectionScopeContract {
 		readiness = inspectOpenCodeProjectRuntime(lock, projections)
 	}
 	return capabilitypack.SurfaceInspection{Revision: localprojection.FingerprintBytes([]byte(strings.Join(revision, "\n"))), Projections: projections, Readiness: readiness}, nil

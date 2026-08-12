@@ -115,7 +115,7 @@ func PreviewProjectUninstall(ctx context.Context, request ProjectUninstallReques
 	if err != nil {
 		return report, err
 	}
-	uninstallStatuses, err := projectProjectionStatusesFromObservation(request.ProjectRoot, scopedInstallation.Lock, observation, surface, pack.ID)
+	uninstallStatuses, err := projectProjectionStatusesFromObservation(request.ProjectRoot, scopedInstallation.Lock, observation, surface, pack.ID, ProjectInspectionScopeWorkstation)
 	if err != nil {
 		return report, err
 	}
