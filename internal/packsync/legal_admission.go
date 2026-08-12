@@ -11,8 +11,8 @@ import (
 const (
 	RedistributableDisposition = "redistributable"
 
-	IssueDeliveryLegalAdmissionEvidenceReference = "docs/research/evidence/issue-deliver-pack-1.0.0-legal-admission.json"
-	IssueDeliveryLegalAdmissionEvidenceSHA256    = "5ee40cad82c6d7cee0983b1b2fd3b69754ff7fd31726b5c944de0c04e9bd7194"
+	IssueDeliveryLegalAdmissionEvidenceReference = "docs/research/evidence/issue-deliver-pack-1.1.0-legal-admission.json"
+	IssueDeliveryLegalAdmissionEvidenceSHA256    = "33ed7f02d5b3cc55418dc2c1b4522f851480e6fe27333b9d7e8930dd6e664039"
 
 	VercelAgentSkillsLegalAdmissionEvidenceReference = "docs/research/evidence/vercel-agent-skills-legal-admission.json"
 	VercelAgentSkillsLegalAdmissionEvidenceSHA256    = "e98ea93b2fc7ee5e4b49364ab0fc4e13fe4b0801d6439bd7e07180a7751e6dc3"
@@ -60,23 +60,23 @@ type LegalAdmission struct {
 	Scope       LegalAdmissionScope
 }
 
-// IssueDeliveryLegalAdmissionExpected returns the immutable issue-654
+// IssueDeliveryLegalAdmissionExpected returns the immutable issue-664
 // admission anchor. Each call owns its scope slices so callers cannot mutate
 // the production binding observed by later callers.
 func IssueDeliveryLegalAdmissionExpected() LegalAdmissionExpected {
 	return LegalAdmissionExpected{
 		EvidenceReference: IssueDeliveryLegalAdmissionEvidenceReference,
 		EvidenceSHA256:    IssueDeliveryLegalAdmissionEvidenceSHA256,
-		EvidenceID:        "issue-deliver-pack-1.0.0-mit",
+		EvidenceID:        "issue-deliver-pack-1.1.0-mit",
 		Candidate: LegalAdmissionCandidate{
 			Repository:   "yersonargotev/issue-deliver-pack",
-			Commit:       "0534b2af6c164d56bc8a95a81758749a721d29ae",
-			READMEBlob:   "d0594e2c663e5352cc219ec28e474592e2d5c9f3",
-			READMELength: 1421,
-			READMESHA256: "b86b7fa0a968fe6fec6bf87b802904c38470983aafd8c765e76aa782131a2208",
+			Commit:       "d47cedd9ed8adc664f33a80a30b177eadb6b1ee4",
+			READMEBlob:   "64eca0cf0ac2f58d99b6966ea5dd59ba52175d62",
+			READMELength: 1729,
+			READMESHA256: "1118c4d81ff3843c5f09c7bbfccf8edd4f26dfc716280676a61f5578fd2dca3c",
 		},
 		Scope: LegalAdmissionScope{
-			SelectedRoots: []string{"LICENSE", "deliver-issue", "setup-issue-delivery"},
+			SelectedRoots: []string{"LICENSE", "deliver-issue", "deliver-issue-matt", "setup-issue-delivery"},
 			Exclusions:    []string{".github", ".gitignore", "AGENTS.md", "README.md", "scripts"},
 		},
 		Invalidation: "any release, candidate, selected-root, license, README identity, disposition, evidence digest, or scope change",

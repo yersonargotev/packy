@@ -19,10 +19,10 @@ func TestIssueDeliveryLegalAdmissionAcceptsTheApprovedEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if admission.EvidenceID != "issue-deliver-pack-1.0.0-mit" || admission.SHA256 != expected.EvidenceSHA256 || admission.Disposition != RedistributableDisposition {
+	if admission.EvidenceID != "issue-deliver-pack-1.1.0-mit" || admission.SHA256 != expected.EvidenceSHA256 || admission.Disposition != RedistributableDisposition {
 		t.Fatalf("admission = %+v", admission)
 	}
-	if !equalStrings(admission.Scope.SelectedRoots, []string{"LICENSE", "deliver-issue", "setup-issue-delivery"}) || !equalStrings(admission.Scope.Exclusions, []string{".github", ".gitignore", "AGENTS.md", "README.md", "scripts"}) {
+	if !equalStrings(admission.Scope.SelectedRoots, []string{"LICENSE", "deliver-issue", "deliver-issue-matt", "setup-issue-delivery"}) || !equalStrings(admission.Scope.Exclusions, []string{".github", ".gitignore", "AGENTS.md", "README.md", "scripts"}) {
 		t.Fatalf("scope = %+v", admission.Scope)
 	}
 }

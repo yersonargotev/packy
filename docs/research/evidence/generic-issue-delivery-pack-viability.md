@@ -1,31 +1,34 @@
 # Evidence: generic issue-delivery Pack viability
 
-This note records the primary-source evidence used by [issue
-654](https://github.com/yersonargotev/packy/issues/654). It supports a later
-admission decision; it neither registers a Pack Source nor materializes any
+This note records the primary-source evidence refreshed for [issue
+664](https://github.com/yersonargotev/packy/issues/664). It supports the
+admission decision; it does not itself register a Pack Source or materialize
 upstream content.
 
 ## Exact upstream candidate
 
 The canonical upstream is
 [`yersonargotev/issue-deliver-pack`](https://github.com/yersonargotev/issue-deliver-pack).
-Its published [`1.0.0` release](https://api.github.com/repos/yersonargotev/issue-deliver-pack/releases/tags/1.0.0)
+Its published [`1.1.0` release](https://api.github.com/repos/yersonargotev/issue-deliver-pack/releases/tags/1.1.0)
 is a non-draft, non-prerelease immutable release whose target is exactly
-[`0534b2af6c164d56bc8a95a81758749a721d29ae`](https://github.com/yersonargotev/issue-deliver-pack/commit/0534b2af6c164d56bc8a95a81758749a721d29ae).
-The release describes the two generic skills, their structural/policy checks,
-and CI. Its commit tree contains the selected roots `LICENSE`,
-`deliver-issue`, and `setup-issue-delivery`, plus the excluded roots `.github`,
+[`d47cedd9ed8adc664f33a80a30b177eadb6b1ee4`](https://github.com/yersonargotev/issue-deliver-pack/commit/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4).
+The commit is verified and adds the Matt-configured delivery workflow to the
+two policy-driven skills admitted in `1.0.0`. Its tree contains the selected
+roots `LICENSE`, `deliver-issue`, `deliver-issue-matt`, and
+`setup-issue-delivery`, plus the excluded roots `.github`,
 `.gitignore`, `AGENTS.md`, `README.md`, and `scripts`. [GitHub commit tree,
-`0534b2af`](https://api.github.com/repos/yersonargotev/issue-deliver-pack/git/trees/0534b2af6c164d56bc8a95a81758749a721d29ae?recursive=1)
+`d47cedd9`](https://api.github.com/repos/yersonargotev/issue-deliver-pack/git/trees/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4?recursive=1)
 
 The upstream [README at that exact
-commit](https://github.com/yersonargotev/issue-deliver-pack/blob/0534b2af6c164d56bc8a95a81758749a721d29ae/README.md)
+commit](https://github.com/yersonargotev/issue-deliver-pack/blob/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4/README.md)
 identifies `deliver-issue` as the execution workflow and
-`setup-issue-delivery` as the creator of the consumer-owned policy. It requires
-each installed skill to be projected as a sibling directory with its complete
-tree; it further says that a consumer must not install the setup skill without
-the delivery skill. This is evidence for the candidate identity and intended
-scope, not a replacement for Packy's admission contract.
+`setup-issue-delivery` as the creator of the consumer-owned policy, and offers
+`deliver-issue-matt` as an alternative workflow for a Matt-configured tracker.
+It requires each installed skill to be projected as a sibling directory with
+its complete tree. The Matt workflow explicitly requires the model-invoked
+`tdd` and `code-review` skills; Packy preserves that runtime requirement in the
+reviewed skill tree, while those companion skills remain owned by the separate
+`matty` Pack because Pack dependencies are intentionally Pack-local.
 
 ## Generic core and repository policy
 
@@ -33,7 +36,7 @@ The generic core owns the reusable, repository-neutral delivery sequence:
 explicit request for one approved issue; qualification; implementation and
 proof; protected pull-request review; protected merge; closure; and cleanup.
 The upstream [`deliver-issue` skill at
-`1.0.0`](https://github.com/yersonargotev/issue-deliver-pack/blob/0534b2af6c164d56bc8a95a81758749a721d29ae/deliver-issue/SKILL.md)
+`1.1.0`](https://github.com/yersonargotev/issue-deliver-pack/blob/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4/deliver-issue/SKILL.md)
 defines that sequence and requires a repository-owned policy before Git or
 GitHub state is changed.
 
@@ -41,7 +44,7 @@ Repository policy owns the local decisions that the generic core deliberately
 does not know: approval label, tracker conventions, validation commands,
 required CI, review criteria, merge method, cleanup rules, and the repository's
 architecture and domain instructions. The upstream [`setup-issue-delivery`
-skill at `1.0.0`](https://github.com/yersonargotev/issue-deliver-pack/blob/0534b2af6c164d56bc8a95a81758749a721d29ae/setup-issue-delivery/SKILL.md)
+skill at `1.1.0`](https://github.com/yersonargotev/issue-deliver-pack/blob/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4/setup-issue-delivery/SKILL.md)
 limits its write to `docs/agents/issue-delivery.md` and leaves those decisions
 to the consumer.
 
@@ -65,9 +68,9 @@ the repository root, and does not merge duplicate skill names. [OpenAI,
 *Build skills*](https://developers.openai.com/codex/skills/)
 
 Therefore a Pack admission can materialize only the reviewed complete trees as
-separate `deliver-issue` and `setup-issue-delivery` skill directories in the
-Codex repository-skill surface. It must preserve their root identities and
-relative references. It cannot safely flatten the two trees, partially project
+separate `deliver-issue`, `deliver-issue-matt`, and `setup-issue-delivery` skill
+directories in the Codex repository-skill surface. It must preserve their root
+identities and relative references. It cannot safely flatten the trees, partially project
 a referenced subtree, merge either skill into Packy's `AGENTS.md`, or translate
 the generic workflow into repository policy: each operation would change the
 skill layout or ownership asserted by the upstream source. The setup skill's
@@ -97,13 +100,14 @@ bypass, or replace it.
 
 ## Viability conclusion and invalidation
 
-The exact `1.0.0` candidate is viable as an independent canonical source for
-the two generic skills: it has a stable immutable release, a complete
+The exact `1.1.0` candidate is viable as an independent canonical source for
+the three generic skills: it has a stable immutable release, a complete
 Codex-compatible sibling-directory shape, an explicit generic/policy boundary,
-and upstream protected-branch controls. A future legal-admission record must
-bind this exact commit, the upstream README identity, license rights and notice
-obligations, the three selected roots, and all five exclusions before Packy
-can redistribute or project it.
+and upstream protected-branch controls. The legal-admission record binds this
+exact commit, the upstream README identity, both MIT license identities and
+notice obligations, the four selected roots, and all five exclusions before
+Packy redistributes or projects it. The Matt license stays inside the complete
+`deliver-issue-matt` tree, so its attribution travels with every projection.
 
 This conclusion is invalid if the candidate commit or release identity, selected
 or excluded scope, README or license identity, skill directory layout, Codex
