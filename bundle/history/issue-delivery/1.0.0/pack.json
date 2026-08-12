@@ -1,0 +1,84 @@
+{
+  "description": "Deliver approved issues through repository-owned policy",
+  "exclusions": [],
+  "external_requirements": [
+    "gh",
+    "git"
+  ],
+  "id": "issue-delivery",
+  "readiness_obligations": [
+    "runtime-usability",
+    "surface-authorization"
+  ],
+  "resources": [
+    {
+      "attribution": "Copyright (c) 2026 Yerson Argote",
+      "bindings": [],
+      "conflicts": [],
+      "description": "Preserve the upstream issue-delivery MIT license and attribution",
+      "id": "mit",
+      "kind": "notice",
+      "license": "MIT",
+      "requires": [],
+      "source": "notices/issue-delivery-mit",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "capabilities": [],
+          "invocation": "$deliver-issue",
+          "mode": "native",
+          "name": "deliver-issue",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        }
+      ],
+      "conflicts": [],
+      "description": "Deliver one approved issue through implementation, review, protected merge, and cleanup",
+      "id": "deliver-issue",
+      "kind": "skill",
+      "notices": [
+        "notice:mit"
+      ],
+      "requires": [],
+      "source": "skills/deliver-issue",
+      "surface_exclusions": []
+    },
+    {
+      "bindings": [
+        {
+          "capabilities": [],
+          "invocation": "$setup-issue-delivery",
+          "mode": "native",
+          "name": "setup-issue-delivery",
+          "projection": "skill",
+          "sharing": "exclusive",
+          "surface": "codex"
+        }
+      ],
+      "conflicts": [],
+      "description": "Set up repository-owned issue-delivery policy and its delivery skill",
+      "id": "setup-issue-delivery",
+      "kind": "skill",
+      "notices": [
+        "notice:mit"
+      ],
+      "requires": [
+        "skill:deliver-issue"
+      ],
+      "source": "skills/setup-issue-delivery",
+      "surface_exclusions": []
+    }
+  ],
+  "selectable": true,
+  "source_reference": {
+    "repository": "https://github.com/yersonargotev/issue-deliver-pack.git",
+    "revision": "1.0.0"
+  },
+  "surfaces": [
+    "codex"
+  ],
+  "version": "1.0.0"
+}

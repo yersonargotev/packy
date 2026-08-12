@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deliver Issue"
+  short_description: "Deliver one approved GitHub issue end to end"
+  default_prompt: "Use $deliver-issue to deliver approved GitHub issue #123 through review, CI, merge, and cleanup."

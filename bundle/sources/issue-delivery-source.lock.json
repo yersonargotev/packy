@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "generator": "packy-packsync",
+  "generator_version": "1",
+  "provider": "github",
+  "provider_api_version": "2022-11-28",
+  "source_id": "issue-delivery-source",
+  "repository": "yersonargotev/issue-deliver-pack",
+  "repository_id": 1331493580,
+  "owner": "yersonargotev",
+  "owner_id": 131540895,
+  "selector": {
+    "mode": "stable-release"
+  },
+  "candidate": {
+    "repository": "yersonargotev/issue-deliver-pack",
+    "repository_id": 1331493580,
+    "repository_node_id": "R_kgDOT1z6zA",
+    "repository_html_url": "https://github.com/yersonargotev/issue-deliver-pack",
+    "repository_clone_url": "https://github.com/yersonargotev/issue-deliver-pack.git",
+    "repository_api_url": "https://api.github.com/repos/yersonargotev/issue-deliver-pack",
+    "visibility": "public",
+    "owner": "yersonargotev",
+    "owner_id": 131540895,
+    "owner_node_id": "U_kgDOB9cnnw",
+    "public": true,
+    "archived": false,
+    "disabled": false,
+    "release": {
+      "id": 368941065,
+      "node_id": "RE_kwDOT1z6zM4V_ZgJ",
+      "tag": "1.0.0",
+      "name": "Issue Deliver Pack 1.0.0",
+      "target_commitish": "0534b2af6c164d56bc8a95a81758749a721d29ae",
+      "immutable": true,
+      "created_at": "2026-08-12T01:21:55Z",
+      "published_at": "2026-08-12T01:22:27Z",
+      "draft": false,
+      "prerelease": false,
+      "author": {
+        "login": "yersonargotev",
+        "id": 131540895,
+        "node_id": "U_kgDOB9cnnw"
+      }
+    },
+    "tag_ref_name": "refs/tags/1.0.0",
+    "tag_ref_type": "commit",
+    "tag_ref_sha": "0534b2af6c164d56bc8a95a81758749a721d29ae",
+    "commit": "0534b2af6c164d56bc8a95a81758749a721d29ae",
+    "commit_node_id": "C_kwDOT1z6zNoAKDA1MzRiMmFmNmMxNjRkNTZiYzhhOTVhODE3NTg3NDlhNzIxZDI5YWU",
+    "tree": "77878e16eee34f89fdd013b2ca51c2cb593fe6ed",
+    "parents": [
+      "e329ee7db9495680cd2e304b1b8eb2c780ac17d6"
+    ],
+    "commit_verification": {
+      "verified": false,
+      "reason": "unsigned",
+      "verified_at": null,
+      "signature_sha256": null,
+      "payload_sha256": null
+    }
+  },
+  "snapshot_sha256": "124f111e70833623ffa4ebc647561a3173d67a8266db941e64acbe2870178c8f",
+  "resources": [
+    {
+      "pack_id": "issue-delivery",
+      "kind": "notice",
+      "resource_id": "mit",
+      "upstream_path": "LICENSE",
+      "vendored_path": "bundle/notices/issue-delivery-mit",
+      "sha256": "818e3ec49456b6900a49e9aac2f3979b577f8bdec5b4908091dde8675d82dd21",
+      "files": [
+        {
+          "path": ".",
+          "size": 1070,
+          "mode": 420,
+          "sha256": "87f8e21a822271e2d7ec94b4aff29e80d3ec0d1b57460ef3394679ebac098998"
+        }
+      ]
+    },
+    {
+      "pack_id": "issue-delivery",
+      "kind": "skill",
+      "resource_id": "deliver-issue",
+      "upstream_path": "deliver-issue",
+      "vendored_path": "bundle/skills/deliver-issue",
+      "sha256": "cb966753b5464353e385b6c1691f4430c22da097a3df31f3e5b116f05f6c6c6f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 2162,
+          "mode": 420,
+          "sha256": "56b93e6785b0fc9282bd0baefcd3d7bc7f8d19f803b3d7cb1ae4034f52c8c1c7"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "size": 228,
+          "mode": 420,
+          "sha256": "8b24bbdfbbeaadb6f71eab16d7726145c38cbf8fd871cc73f559bf76fd0ffd3e"
+        },
+        {
+          "path": "references/01-qualify-and-isolate.md",
+          "size": 1223,
+          "mode": 420,
+          "sha256": "d4e5a5b1d5c35e9e7ab6f6aa83d28fb696fde1eab8870ffbf6648ae45fbc054f"
+        },
+        {
+          "path": "references/02-implement-and-prove.md",
+          "size": 1784,
+          "mode": 420,
+          "sha256": "75521cd5d5e979cc9ccf7a2c018a635e4213f1c56b8ada5e8d9735ad326e8107"
+        },
+        {
+          "path": "references/03-pull-request-and-review.md",
+          "size": 1984,
+          "mode": 420,
+          "sha256": "193ecdf3a438aa2a44d99622d648d0a93cff73ebc1cce89cc2ca714688befe2c"
+        },
+        {
+          "path": "references/04-freshness-and-merge.md",
+          "size": 1234,
+          "mode": 420,
+          "sha256": "1d5e057aee5607f3fcce3ccb5cdc9fab0795da33ab509a2bfcc378708b89f66d"
+        },
+        {
+          "path": "references/05-verify-and-clean-up.md",
+          "size": 1533,
+          "mode": 420,
+          "sha256": "cf00d3a5e8ac65def79ac0c420f3368aa650a9db948701a46b992c56bd743348"
+        },
+        {
+          "path": "references/common-invariants.md",
+          "size": 3045,
+          "mode": 420,
+          "sha256": "8618c64de3dabe2ec3bd6ab85d6c93128ae400509d062ae66dcefdff166300d2"
+        },
+        {
+          "path": "references/policy-contract.md",
+          "size": 3014,
+          "mode": 420,
+          "sha256": "618473e77b6dd003225b6b9982ac570561754431c171b43fd100dce688151991"
+        }
+      ]
+    },
+    {
+      "pack_id": "issue-delivery",
+      "kind": "skill",
+      "resource_id": "setup-issue-delivery",
+      "upstream_path": "setup-issue-delivery",
+      "vendored_path": "bundle/skills/setup-issue-delivery",
+      "sha256": "8efdaa490e31ec3be07e1839e984e52f1d945b13150192a32ba7956b1775c94f",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 4629,
+          "mode": 420,
+          "sha256": "c1d8dc2076965bbb958edb23703282600b39b32ac179337713592dc4159a653b"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "size": 265,
+          "mode": 420,
+          "sha256": "c5dd06b89b67e5c35fd0aa57d07b9a09c32d7aaa8af7176d8f75c4f07b1ff31d"
+        },
+        {
+          "path": "scripts/validate_policy.py",
+          "size": 8108,
+          "mode": 420,
+          "sha256": "c5a095b175329b3540335a665458828d4e7cea1abf6fe0c8a1d8d4a38a48b21c"
+        },
+        {
+          "path": "tests/test_validate_policy.py",
+          "size": 3800,
+          "mode": 420,
+          "sha256": "b8eaa2f6b3e79a89f961176264fddff70f8bc1365433bdbe5601ea1083ad1384"
+        }
+      ]
+    }
+  ]
+}
