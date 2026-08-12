@@ -4,9 +4,9 @@
 
 ## Purpose
 
-Deliver approved issues through repository-owned policy
+Deliver issues through policy-driven or Matt-configured workflows
 
-- Version: `1.0.0`
+- Version: `1.1.0`
 - Supported surfaces: `codex`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `gh`, `git`
@@ -23,6 +23,10 @@ Deliver approved issues through repository-owned policy
 ### Skill
 
 - `deliver-issue` — Deliver one approved issue through implementation, review, protected merge, and cleanup
+  - Role: `operational`
+  - Dependencies: None.
+  - Notices: `notice:mit`
+- `deliver-issue-matt` — Deliver one ready issue with Matt's workflow; requires the tdd and code-review skills from the matty Pack at runtime
   - Role: `operational`
   - Dependencies: None.
   - Notices: `notice:mit`
