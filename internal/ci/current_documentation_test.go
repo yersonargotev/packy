@@ -101,7 +101,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	})
 	requireDocumentationText(t, root, "docs/research/evidence/generic-issue-delivery-pack-viability.md", []string{
 		"Generic core and repository policy", "Codex materialization boundary", "GitHub controls remain repository-owned",
-		"0534b2af6c164d56bc8a95a81758749a721d29ae", "LICENSE", "deliver-issue", "setup-issue-delivery",
+		"d47cedd9ed8adc664f33a80a30b177eadb6b1ee4", "LICENSE", "deliver-issue", "deliver-issue-matt", "setup-issue-delivery",
 		".github", ".gitignore", "AGENTS.md", "README.md", "scripts",
 	})
 	requireDocumentationText(t, root, "docs/research/evidence/pack-readiness-architecture.md", []string{

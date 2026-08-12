@@ -27,14 +27,14 @@
     "archived": false,
     "disabled": false,
     "release": {
-      "id": 368941065,
-      "node_id": "RE_kwDOT1z6zM4V_ZgJ",
-      "tag": "1.0.0",
-      "name": "Issue Deliver Pack 1.0.0",
-      "target_commitish": "0534b2af6c164d56bc8a95a81758749a721d29ae",
+      "id": 369013933,
+      "node_id": "RE_kwDOT1z6zM4V_rSt",
+      "tag": "1.1.0",
+      "name": "Issue Deliver Pack 1.1.0",
+      "target_commitish": "d47cedd9ed8adc664f33a80a30b177eadb6b1ee4",
       "immutable": true,
-      "created_at": "2026-08-12T01:21:55Z",
-      "published_at": "2026-08-12T01:22:27Z",
+      "created_at": "2026-08-12T05:37:13Z",
+      "published_at": "2026-08-12T05:37:32Z",
       "draft": false,
       "prerelease": false,
       "author": {
@@ -43,24 +43,24 @@
         "node_id": "U_kgDOB9cnnw"
       }
     },
-    "tag_ref_name": "refs/tags/1.0.0",
+    "tag_ref_name": "refs/tags/1.1.0",
     "tag_ref_type": "commit",
-    "tag_ref_sha": "0534b2af6c164d56bc8a95a81758749a721d29ae",
-    "commit": "0534b2af6c164d56bc8a95a81758749a721d29ae",
-    "commit_node_id": "C_kwDOT1z6zNoAKDA1MzRiMmFmNmMxNjRkNTZiYzhhOTVhODE3NTg3NDlhNzIxZDI5YWU",
-    "tree": "77878e16eee34f89fdd013b2ca51c2cb593fe6ed",
+    "tag_ref_sha": "d47cedd9ed8adc664f33a80a30b177eadb6b1ee4",
+    "commit": "d47cedd9ed8adc664f33a80a30b177eadb6b1ee4",
+    "commit_node_id": "C_kwDOT1z6zNoAKGQ0N2NlZGQ5ZWQ4YWRjNjY0ZjMzYTgwYTMwYjE3N2VhZGI2YjFlZTQ",
+    "tree": "9231e8c0c5128a11addf7facdc51e05c96797b71",
     "parents": [
-      "e329ee7db9495680cd2e304b1b8eb2c780ac17d6"
+      "0534b2af6c164d56bc8a95a81758749a721d29ae"
     ],
     "commit_verification": {
-      "verified": false,
-      "reason": "unsigned",
-      "verified_at": null,
-      "signature_sha256": null,
-      "payload_sha256": null
+      "verified": true,
+      "reason": "valid",
+      "verified_at": "2026-08-12T05:42:16Z",
+      "signature_sha256": "7ff337d231bc0ebb7609e06ed00fda6c0f4964598f76970e8c56b2323c2f9308",
+      "payload_sha256": "822bcaa5a0668b719c9dac7d939c9802ae64d8b2ef47cc4da4cbf18e1de1b41c"
     }
   },
-  "snapshot_sha256": "124f111e70833623ffa4ebc647561a3173d67a8266db941e64acbe2870178c8f",
+  "snapshot_sha256": "3d72cfd0f9a7a98ad6dcfb808ca4858402f538285654dab3565a61c601af9719",
   "resources": [
     {
       "pack_id": "issue-delivery",
@@ -139,6 +139,70 @@
           "size": 3014,
           "mode": 420,
           "sha256": "618473e77b6dd003225b6b9982ac570561754431c171b43fd100dce688151991"
+        }
+      ]
+    },
+    {
+      "pack_id": "issue-delivery",
+      "kind": "skill",
+      "resource_id": "deliver-issue-matt",
+      "upstream_path": "deliver-issue-matt",
+      "vendored_path": "bundle/skills/deliver-issue-matt",
+      "sha256": "af6cfc62d157a38614a0da9cdd70efe0943ea3789eef3d777a33fbd4959d3beb",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1744,
+          "mode": 420,
+          "sha256": "6c3e70a9ec787b100ec49b0667d2f58e29d7add415964cbf4c8b0fa3ee97b607"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "size": 297,
+          "mode": 420,
+          "sha256": "4723b2f45c0ca759907662293540be4fa5265cbf12dc83f64685416a3b35696a"
+        },
+        {
+          "path": "references/01-qualify-and-isolate.md",
+          "size": 2922,
+          "mode": 420,
+          "sha256": "1f5f55f246890c2a6dd26379832a240b340230bc605e0fbe06a72436822db0b1"
+        },
+        {
+          "path": "references/02-implement-and-verify.md",
+          "size": 2135,
+          "mode": 420,
+          "sha256": "2da16afbe6f72b878b011c8b32b62a22f6a6c83527ecc6874af4f6f98ca8cfa5"
+        },
+        {
+          "path": "references/03-change-request-and-ci.md",
+          "size": 1559,
+          "mode": 420,
+          "sha256": "6c82e1bff5e67d3dc0af1b79d08ece431314f1531875a532b08462d0102e0be8"
+        },
+        {
+          "path": "references/04-integrate-and-clean-up.md",
+          "size": 2393,
+          "mode": 420,
+          "sha256": "adcbdcdfa17d21da497de805f8f5bfe362aa2c23c0b41aed661c8da43afa6d8e"
+        },
+        {
+          "path": "references/LICENSE-matt-pocock",
+          "size": 1068,
+          "mode": 420,
+          "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5"
+        },
+        {
+          "path": "references/implement.md",
+          "size": 690,
+          "mode": 420,
+          "sha256": "1066b3af170becdc50edd1f7b3d42eceb358bf201ea12898db4e835fd84c2737"
+        },
+        {
+          "path": "references/invariants.md",
+          "size": 2696,
+          "mode": 420,
+          "sha256": "178ae97ccc0b429894f76a97da586c287a48dc178ce39f72eacf27962f6a29c9"
         }
       ]
     },

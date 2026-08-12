@@ -296,6 +296,116 @@ func TestCheckedInOrchestrateSupportsMetadataOnlyReconfiguration(t *testing.T) {
 	}
 }
 
+func TestCheckedInIssueDeliveryReconfigurationAcceptsExactSelectedReleaseRevision(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := t.TempDir()
+	if err := copyTreeExact(filepath.Join(root, "bundle"), filepath.Join(repository, "bundle")); err != nil {
+		t.Fatal(err)
+	}
+	setIssueDeliveryHistoricalSourceRevision(t, repository, "1.0.0")
+	commitFixtureRepository(t, repository)
+
+	configBytes := mustReadFile(t, filepath.Join(repository, "bundle", "sources.json"))
+	config, err := LoadConfig(bytes.NewReader(configBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconfiguration, err := selectSource(config, "issue-delivery-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, _, present, err := readLock(sourceLockPath(repository, reconfiguration.ID))
+	if err != nil || !present || lock.Candidate.Release == nil {
+		t.Fatalf("read issue-delivery lock: present=%t err=%v candidate=%#v", present, err, lock.Candidate)
+	}
+	snapshot := t.TempDir()
+	for _, resource := range lock.Resources {
+		sourcePath := filepath.Join(repository, filepath.FromSlash(resource.VendoredPath))
+		targetPath := filepath.Join(snapshot, filepath.FromSlash(resource.UpstreamPath))
+		if err := copyTreeExact(sourcePath, targetPath); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifestPath := filepath.Join(repository, "bundle", "packs", "issue-delivery", "pack.json")
+	var proposed map[string]any
+	if err := json.Unmarshal(mustReadFile(t, manifestPath), &proposed); err != nil {
+		t.Fatal(err)
+	}
+	staleManifest, err := json.Marshal(proposed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := Engine{Source: &fixtureSource{root: snapshot, candidate: lock.Candidate}, Validate: acceptingBundleValidator()}
+	if _, err := engine.Check(context.Background(), CheckRequest{
+		RepositoryRoot: repository, SourceID: reconfiguration.ID, AcquisitionDir: t.TempDir(),
+		Reconfiguration: &reconfiguration, ProposedManifest: staleManifest,
+	}); err == nil {
+		t.Fatal("reconfiguration accepted a stale unchanged source reference revision")
+	}
+
+	proposed["source_reference"].(map[string]any)["revision"] = lock.Candidate.Release.Tag
+	proposedManifest, err := json.Marshal(proposed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := engine.Check(context.Background(), CheckRequest{
+		RepositoryRoot: repository, SourceID: reconfiguration.ID, AcquisitionDir: t.TempDir(),
+		Reconfiguration: &reconfiguration, ProposedManifest: proposedManifest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Status != "review-required" || len(plan.AffectedPacks) != 1 ||
+		plan.AffectedPacks[0].MechanicalFloor != LevelNone ||
+		!bytes.Contains(plan.ProposedManifest, []byte(`"revision": "1.1.0"`)) {
+		t.Fatalf("issue-delivery revision plan = %#v", plan)
+	}
+}
+
+func setIssueDeliveryHistoricalSourceRevision(t *testing.T, repository, revision string) {
+	t.Helper()
+	history := filepath.Join(repository, "bundle", "history", "issue-delivery", "1.1.0")
+	for _, path := range []string{
+		filepath.Join(repository, "bundle", "packs", "issue-delivery", "pack.json"),
+		filepath.Join(history, "pack.json"),
+	} {
+		var manifest map[string]any
+		if err := json.Unmarshal(mustReadFile(t, path), &manifest); err != nil {
+			t.Fatal(err)
+		}
+		manifest["source_reference"].(map[string]any)["revision"] = revision
+		data, err := json.MarshalIndent(manifest, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var artifact compositeHistoricalArtifact
+	artifactPath := filepath.Join(history, "artifact.json")
+	if err := json.Unmarshal(mustReadFile(t, artifactPath), &artifact); err != nil {
+		t.Fatal(err)
+	}
+	files, err := inventory(filepath.Join(history, "pack.json"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("inventory historical manifest: files=%#v err=%v", files, err)
+	}
+	files[0].Path = "pack.json"
+	artifact.Manifest = files[0]
+	artifact.AggregateSHA256 = compositeHistoricalAggregate(artifact)
+	data, err := json.MarshalIndent(artifact, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifactPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func metadataReconfigurationFixture(t *testing.T) (string, Engine, CheckRequest, Plan) {
 	t.Helper()
 	repository, _, admission, source := singleSourceAdmissionFixture(t)
