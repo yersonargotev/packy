@@ -84,6 +84,22 @@ func TestCompositeActionsPinExternalUses(t *testing.T) {
 	})
 }
 
+func TestArtifactUploadsUseTheReviewedNode24Action(t *testing.T) {
+	root := repositoryRoot(t)
+	want := "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1"
+	retired := "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2"
+
+	for _, name := range []string{"claude-canary.yml", "release.yml"} {
+		workflow := readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
+		if got := strings.Count(workflow.content, want); got != 1 {
+			t.Errorf("%s Node 24 upload-artifact occurrences = %d, want 1", name, got)
+		}
+		if strings.Contains(workflow.content, retired) {
+			t.Errorf("%s still uses the retired Node 20 upload-artifact revision", name)
+		}
+	}
+}
+
 func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 	root := repositoryRoot(t)
 	tests := []struct {
