@@ -1,0 +1,30 @@
+{
+  "schema_version": 3,
+  "pack_id": "issue-delivery",
+  "from_version": "1.0.0",
+  "to_version": "1.1.0",
+  "source_id": "issue-delivery-source",
+  "before_bindings": [
+    "issue-delivery/notice/mit",
+    "issue-delivery/skill/deliver-issue",
+    "issue-delivery/skill/setup-issue-delivery"
+  ],
+  "after_bindings": [
+    "issue-delivery/notice/mit",
+    "issue-delivery/skill/deliver-issue",
+    "issue-delivery/skill/deliver-issue-matt",
+    "issue-delivery/skill/setup-issue-delivery"
+  ],
+  "added": [
+    "issue-delivery/skill/deliver-issue-matt"
+  ],
+  "removed": null,
+  "before_manifest_sha256": "a493fa02e277fa4a868f3008df7dfe507675a886dffa20c433ec0bc9718443c3",
+  "after_manifest_sha256": "53a03022d9b51c178da5faf686f9da34046086a19a0e31ad6489f1d9e2649995",
+  "plan_id": "pack-sync-4a0384c18cc38ab8622f999d68ff04556708cabb2938091cefef888a6391f8bd",
+  "base_sha": "0fee75415e2ea3c200cfb73984948be921c13b0b",
+  "candidate_sha": "d47cedd9ed8adc664f33a80a30b177eadb6b1ee4",
+  "final_version": "1.1.0",
+  "claims_upstream_provenance": false,
+  "replaces_source_lock": false
+}

@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "pack_id": "issue-delivery",
+  "pack_version": "1.1.0",
+  "manifest": {
+    "path": "pack.json",
+    "size": 2835,
+    "mode": 420,
+    "sha256": "0da21c91024ddfbef58981fc72c5dfb72dde50b6bc14970aaf435a790d4783dc"
+  },
+  "resources": [
+    {
+      "kind": "notice",
+      "id": "mit",
+      "source": "notices/issue-delivery-mit",
+      "files": [
+        {
+          "path": "notices/issue-delivery-mit",
+          "size": 1070,
+          "mode": 420,
+          "sha256": "87f8e21a822271e2d7ec94b4aff29e80d3ec0d1b57460ef3394679ebac098998"
+        }
+      ],
+      "sha256": "dea5c227b99ccac6d7bb81993a203691f23019a160bace2787fd3498d0d0cd30"
+    },
+    {
+      "kind": "skill",
+      "id": "deliver-issue",
+      "source": "skills/deliver-issue",
+      "files": [
+        {
+          "path": "skills/deliver-issue/SKILL.md",
+          "size": 2162,
+          "mode": 420,
+          "sha256": "56b93e6785b0fc9282bd0baefcd3d7bc7f8d19f803b3d7cb1ae4034f52c8c1c7"
+        },
+        {
+          "path": "skills/deliver-issue/agents/openai.yaml",
+          "size": 228,
+          "mode": 420,
+          "sha256": "8b24bbdfbbeaadb6f71eab16d7726145c38cbf8fd871cc73f559bf76fd0ffd3e"
+        },
+        {
+          "path": "skills/deliver-issue/references/01-qualify-and-isolate.md",
+          "size": 1223,
+          "mode": 420,
+          "sha256": "d4e5a5b1d5c35e9e7ab6f6aa83d28fb696fde1eab8870ffbf6648ae45fbc054f"
+        },
+        {
+          "path": "skills/deliver-issue/references/02-implement-and-prove.md",
+          "size": 1784,
+          "mode": 420,
+          "sha256": "75521cd5d5e979cc9ccf7a2c018a635e4213f1c56b8ada5e8d9735ad326e8107"
+        },
+        {
+          "path": "skills/deliver-issue/references/03-pull-request-and-review.md",
+          "size": 1984,
+          "mode": 420,
+          "sha256": "193ecdf3a438aa2a44d99622d648d0a93cff73ebc1cce89cc2ca714688befe2c"
+        },
+        {
+          "path": "skills/deliver-issue/references/04-freshness-and-merge.md",
+          "size": 1234,
+          "mode": 420,
+          "sha256": "1d5e057aee5607f3fcce3ccb5cdc9fab0795da33ab509a2bfcc378708b89f66d"
+        },
+        {
+          "path": "skills/deliver-issue/references/05-verify-and-clean-up.md",
+          "size": 1533,
+          "mode": 420,
+          "sha256": "cf00d3a5e8ac65def79ac0c420f3368aa650a9db948701a46b992c56bd743348"
+        },
+        {
+          "path": "skills/deliver-issue/references/common-invariants.md",
+          "size": 3045,
+          "mode": 420,
+          "sha256": "8618c64de3dabe2ec3bd6ab85d6c93128ae400509d062ae66dcefdff166300d2"
+        },
+        {
+          "path": "skills/deliver-issue/references/policy-contract.md",
+          "size": 3014,
+          "mode": 420,
+          "sha256": "618473e77b6dd003225b6b9982ac570561754431c171b43fd100dce688151991"
+        }
+      ],
+      "sha256": "1c28c7af187583ac7c6c70022913a5f95ca6e4371883fdb7e56acf54f0416b34"
+    },
+    {
+      "kind": "skill",
+      "id": "deliver-issue-matt",
+      "source": "skills/deliver-issue-matt",
+      "files": [
+        {
+          "path": "skills/deliver-issue-matt/SKILL.md",
+          "size": 1744,
+          "mode": 420,
+          "sha256": "6c3e70a9ec787b100ec49b0667d2f58e29d7add415964cbf4c8b0fa3ee97b607"
+        },
+        {
+          "path": "skills/deliver-issue-matt/agents/openai.yaml",
+          "size": 297,
+          "mode": 420,
+          "sha256": "4723b2f45c0ca759907662293540be4fa5265cbf12dc83f64685416a3b35696a"
+        },
+        {
+          "path": "skills/deliver-issue-matt/references/01-qualify-and-isolate.md",
+          "size": 2922,
+          "mode": 420,
+          "sha256": "1f5f55f246890c2a6dd26379832a240b340230bc605e0fbe06a72436822db0b1"
+        },
+        {
+          "path": "skills/deliver-issue-matt/references/02-implement-and-verify.md",
+          "size": 2135,
+          "mode": 420,
+          "sha256": "2da16afbe6f72b878b011c8b32b62a22f6a6c83527ecc6874af4f6f98ca8cfa5"
+        },
+        {
+          "path": "skills/deliver-issue-matt/references/03-change-request-and-ci.md",
+          "size": 1559,
+          "mode": 420,
+          "sha256": "6c82e1bff5e67d3dc0af1b79d08ece431314f1531875a532b08462d0102e0be8"
+        },
+        {
+          "path": "skills/deliver-issue-matt/references/04-integrate-and-clean-up.md",
+          "size": 2393,
+          "mode": 420,
+          "sha256": "adcbdcdfa17d21da497de805f8f5bfe362aa2c23c0b41aed661c8da43afa6d8e"
+        },
+        {
+          "path": "skills/deliver-issue-matt/references/LICENSE-matt-pocock",
+          "size": 1068,
+          "mode": 420,
+          "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5"
+        },
+        {
+          "path": "skills/deliver-issue-matt/references/implement.md",
+          "size": 690,
+          "mode": 420,
+          "sha256": "1066b3af170becdc50edd1f7b3d42eceb358bf201ea12898db4e835fd84c2737"
+        },
+        {
+          "path": "skills/deliver-issue-matt/references/invariants.md",
+          "size": 2696,
+          "mode": 420,
+          "sha256": "178ae97ccc0b429894f76a97da586c287a48dc178ce39f72eacf27962f6a29c9"
+        }
+      ],
+      "sha256": "fbd7add5229c87fa42d86ce17bc539567740c2418f7cf102ba18d283d4a041fe"
+    },
+    {
+      "kind": "skill",
+      "id": "setup-issue-delivery",
+      "source": "skills/setup-issue-delivery",
+      "files": [
+        {
+          "path": "skills/setup-issue-delivery/SKILL.md",
+          "size": 4629,
+          "mode": 420,
+          "sha256": "c1d8dc2076965bbb958edb23703282600b39b32ac179337713592dc4159a653b"
+        },
+        {
+          "path": "skills/setup-issue-delivery/agents/openai.yaml",
+          "size": 265,
+          "mode": 420,
+          "sha256": "c5dd06b89b67e5c35fd0aa57d07b9a09c32d7aaa8af7176d8f75c4f07b1ff31d"
+        },
+        {
+          "path": "skills/setup-issue-delivery/scripts/validate_policy.py",
+          "size": 8108,
+          "mode": 420,
+          "sha256": "c5a095b175329b3540335a665458828d4e7cea1abf6fe0c8a1d8d4a38a48b21c"
+        },
+        {
+          "path": "skills/setup-issue-delivery/tests/test_validate_policy.py",
+          "size": 3800,
+          "mode": 420,
+          "sha256": "b8eaa2f6b3e79a89f961176264fddff70f8bc1365433bdbe5601ea1083ad1384"
+        }
+      ],
+      "sha256": "e61d4f19247da8baed4527af26fd8a7b5314439098f143b0841ac8d64e301e28"
+    }
+  ],
+  "aggregate_sha256": "2a216c2e046cad3d38817f5dfa7b99567c786b8628b2a8ae814fb853d99bee09"
+}

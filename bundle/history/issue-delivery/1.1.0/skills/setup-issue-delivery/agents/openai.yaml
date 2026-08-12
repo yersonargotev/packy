@@ -1,0 +1,6 @@
+interface:
+  display_name: "Setup Issue Delivery"
+  short_description: "Create or audit issue delivery policy"
+  default_prompt: "Use $setup-issue-delivery to configure this repository for safe end-to-end issue delivery."
+policy:
+  allow_implicit_invocation: false

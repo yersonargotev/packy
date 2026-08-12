@@ -24,6 +24,12 @@
         {
           "pack_id": "issue-delivery",
           "kind": "skill",
+          "resource_id": "deliver-issue-matt",
+          "upstream_path": "deliver-issue-matt"
+        },
+        {
+          "pack_id": "issue-delivery",
+          "kind": "skill",
           "resource_id": "setup-issue-delivery",
           "upstream_path": "setup-issue-delivery"
         }
