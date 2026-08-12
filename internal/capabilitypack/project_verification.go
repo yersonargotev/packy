@@ -1,6 +1,10 @@
 package capabilitypack
 
-import "context"
+import (
+	"context"
+	"path/filepath"
+	"strings"
+)
 
 const ProjectVerificationSchemaVersion = 1
 
@@ -63,11 +67,11 @@ func VerifyProject(ctx context.Context, projectRoot string, adapters map[Surface
 		Entries:       []ProjectVerificationEntry{},
 		Findings:      []ProjectVerificationFinding{},
 	}
-	status, err := InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: projectRoot, Adapters: adapters})
+	status, err := InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: projectRoot, Adapters: adapters, ContractOnly: true})
 	if err != nil {
 		report.Result = ProjectVerificationFailed
 		report.Findings = append(report.Findings, ProjectVerificationFinding{
-			Code: "project_contract_invalid", Detail: err.Error(),
+			Code: "project_contract_invalid", Detail: portableProjectError(err, projectRoot),
 			Remediation: "repair or reinstall the project Pack contract, then rerun packy verify",
 		})
 		report.Summary.Findings = 1
@@ -114,6 +118,16 @@ func VerifyProject(ctx context.Context, projectRoot string, adapters map[Surface
 	}
 	report.Summary.Packs = len(packIDs)
 	return report
+}
+
+func portableProjectError(err error, projectRoot string) string {
+	detail := err.Error()
+	for _, root := range []string{projectRoot, filepath.Clean(projectRoot)} {
+		if root != "" && root != "." {
+			detail = strings.ReplaceAll(detail, root, "<project-root>")
+		}
+	}
+	return detail
 }
 
 func verificationFindings(blockers []ProjectInstallBlocker) []ProjectVerificationFinding {

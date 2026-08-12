@@ -368,7 +368,7 @@ func finalizeProjectSurfaceUpdate(projectRoot string, target ProjectManifestPack
 		return JSONProjectInstallPreview{}, err
 	}
 	combinedNoticeBlock := renderProjectNoticeBlock(combined)
-	combined.Lock.Receipts = replaceProjectNoticeReceiptProjection(combined.Lock.Receipts, target.ID, combined.Surface, combinedNoticeBlock)
+	combined.Lock.Receipts = replaceProjectNoticeReceiptProjection(combined.Lock.Receipts, target.ID, combined.Surface, combinedNoticeBlock, combined.noticeMode)
 	if len(combined.Blockers) > 0 {
 		combined.Disposition = ProjectInstallBlocked
 	} else {
@@ -733,7 +733,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	if report.Lock.NoticesFileMode == 0 {
 		report.Lock.NoticesFileMode = noticeMode
 	}
-	report.Lock.Receipts = replaceProjectNoticeReceiptProjection(report.Lock.Receipts, pack.ID, request.Surface, renderProjectNoticeBlock(report))
+	report.Lock.Receipts = replaceProjectNoticeReceiptProjection(report.Lock.Receipts, pack.ID, request.Surface, renderProjectNoticeBlock(report), noticeMode)
 	report.noticeContent, report.noticeMode, report.noticeBefore, report.noticeIntact = noticeContent, noticeMode, noticeBefore, noticeIntact
 	report.Blockers = append(report.Blockers, noticeBlockers...)
 	if len(noticeBlockers) > 0 {
@@ -880,7 +880,7 @@ func projectReceipt(pack Pack, surface Surface, selection ResourceSelection, ali
 			selected[projection.Resource] = true
 		}
 		receipt.Projections = append(receipt.Projections, installedProjection{
-			ID: projection.Resource.String(), Target: projection.Target, Digest: projection.DesiredFingerprint,
+			ID: projection.Resource.String(), Target: projection.Target, Digest: projection.DesiredFingerprint, FileMode: projection.FileMode,
 		})
 	}
 	sort.Slice(receipt.Resources, func(i, j int) bool { return receipt.Resources[i].String() < receipt.Resources[j].String() })
@@ -896,7 +896,7 @@ func projectNoticeProjectionID(packID string, surface Surface) string {
 	return "notice:pack-" + packID + "-" + string(surface)
 }
 
-func replaceProjectNoticeReceiptProjection(receipts []installedPackReceipt, packID string, surface Surface, block string) []installedPackReceipt {
+func replaceProjectNoticeReceiptProjection(receipts []installedPackReceipt, packID string, surface Surface, block string, fileMode uint32) []installedPackReceipt {
 	result := append([]installedPackReceipt(nil), receipts...)
 	for i := range result {
 		if result[i].Pack.ID != packID || result[i].Surface != surface {
@@ -909,7 +909,7 @@ func replaceProjectNoticeReceiptProjection(receipts []installedPackReceipt, pack
 			}
 		}
 		projections = append(projections, installedProjection{
-			ID: projectNoticeProjectionID(packID, surface), Target: "PACKY-NOTICES.md", Digest: fingerprintProjectBytes([]byte(block)),
+			ID: projectNoticeProjectionID(packID, surface), Target: "PACKY-NOTICES.md", Digest: fingerprintProjectBytes([]byte(block)), FileMode: fileMode,
 		})
 		sort.Slice(projections, func(left, right int) bool {
 			leftKey := filepath.Clean(projections[left].Target) + "\x00" + projections[left].ID
@@ -997,7 +997,7 @@ func hydrateProjectLock(lock ProjectLockProposal) (ProjectLockProposal, error) {
 		for _, projection := range receipt.Projections {
 			if projection.ID == projectNoticeProjectionID(receipt.Pack.ID, receipt.Surface) {
 				if lock.NoticesFileMode == 0 {
-					lock.NoticesFileMode = 0o644
+					lock.NoticesFileMode = projection.FileMode
 					lock.NoticesSHA256 = projection.Digest
 				}
 				continue
@@ -1090,7 +1090,7 @@ func validateProjectReceipts(receipts []installedPackReceipt) error {
 			projectionKey := filepath.Clean(projection.Target) + "\x00" + projection.ID
 			identity, identityErr := ParseResourceIdentity(projection.ID)
 			noticeProjection := projection.ID == projectNoticeProjectionID(receipt.Pack.ID, receipt.Surface) && projection.Target == "PACKY-NOTICES.md"
-			if identityErr != nil || !noticeProjection && !resourceSeen[identity] || !safeProjectContractTarget(projection.Target) || !projectDigestPattern.MatchString(projection.Digest) || projectionSeen[projectionKey] {
+			if identityErr != nil || !noticeProjection && !resourceSeen[identity] || !safeProjectContractTarget(projection.Target) || !projectDigestPattern.MatchString(projection.Digest) || projection.FileMode&^0o777 != 0 || noticeProjection && projection.FileMode == 0 || projectionSeen[projectionKey] {
 				return fmt.Errorf("project receipt for %s on %s has invalid projection evidence", receipt.Pack.ID, receipt.Surface)
 			}
 			if j > 0 {

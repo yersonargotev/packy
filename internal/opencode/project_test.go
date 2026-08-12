@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -62,6 +63,10 @@ func TestLockedProjectRuntimeKeepsOpenCodeConsentAndSecretsHostOwned(t *testing.
 	}
 	if !containsOpenCodeDetail(inspection.Readiness.Evidence, "OpenCode project definitions match the lock") || !containsOpenCodeDetail(inspection.Readiness.Evidence, "hook artifact remains inert") {
 		t.Fatalf("runtime evidence = %#v", inspection.Readiness.Evidence)
+	}
+	contractOnly, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ProjectRoot: project, ProjectInstallation: &installation, ProjectGoal: capabilitypack.ProjectionPresent, ProjectContractOnly: true})
+	if err != nil || len(contractOnly.Projections) != 2 || !reflect.DeepEqual(contractOnly.Readiness, capabilitypack.ReadinessObservation{}) || len(contractOnly.ProjectActivationActions) != 0 {
+		t.Fatalf("portable contract inspection included runtime facts = %+v, %v", contractOnly, err)
 	}
 	if data, readErr := os.ReadFile(config); readErr != nil || strings.Contains(string(data), "token") {
 		t.Fatalf("project MCP declaration changed or included credentials: %q, %v", data, readErr)

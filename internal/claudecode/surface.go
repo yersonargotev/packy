@@ -58,7 +58,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		if transition.ProjectRoot == "" || len(transition.ProjectInstallation.Manifest.Packs) != 1 {
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("locked Claude project inspection requires one manifest pack and the project root")
 		}
-		return a.inspectLockedProject(ctx, transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectGoal)
+		return a.inspectLockedProject(ctx, transition.ProjectRoot, transition.ProjectInstallation.Manifest.Packs[0], transition.ProjectInstallation.Lock, transition.ProjectGoal, transition.ProjectContractOnly)
 	}
 	if transition.ProjectRoot != "" {
 		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)

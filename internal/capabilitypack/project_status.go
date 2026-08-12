@@ -111,6 +111,7 @@ type ProjectStatusRequest struct {
 	PackyHome        string
 	Adapters         map[Surface]SurfaceAdapter
 	Resolver         ExecutableResolver
+	ContractOnly     bool
 }
 
 type ProjectInstallation struct {
@@ -352,7 +353,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 			readinessPack := projectReadinessPack(packLock, surface, surfacePack)
 			resolutions, unobservedRequirements := observeProjectRequirements(ctx, readinessPack.Requires.Tools, request.Resolver)
 			observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{
-				ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent, ResolvedExecutables: resolutions,
+				ProjectRoot: request.ProjectRoot, ProjectInstallation: &scopedInstallation, ProjectGoal: ProjectionPresent, ProjectContractOnly: request.ContractOnly, ResolvedExecutables: resolutions,
 			})
 			if inspectErr != nil {
 				return report, inspectErr
@@ -1034,9 +1035,10 @@ func inspectProjectNoticeFile(projectRoot string, installation ProjectInstallati
 		return false, nil, readErr
 	}
 	start, end := projectNoticeMarkers(packID, surface)
-	fragment, found := extractProjectContribution(string(noticesData), start, end)
+	notices := string(noticesData)
+	fragment, found := extractProjectContribution(notices, start, end)
 	locked, receiptFound := projectNoticeReceiptProjection(installation.Lock.Receipts, packID, surface)
-	if !found || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest {
+	if !found || strings.Count(notices, start) != 1 || strings.Count(notices, end) != 1 || !receiptFound || fingerprintProjectBytes([]byte(fragment)) != locked.Digest || uint32(noticesInfo.Mode().Perm()) != locked.FileMode {
 		return false, []ProjectInstallBlocker{{Code: "project_drift", Target: "PACKY-NOTICES.md", Detail: "the mandatory project notice contribution or mode differs from the lock", Remediation: "restore the exact locked notice contribution"}}, nil
 	}
 	return true, nil, nil

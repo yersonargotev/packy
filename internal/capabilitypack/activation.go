@@ -239,6 +239,7 @@ type SurfaceTransition struct {
 	ProjectRoot           string
 	ProjectInstallation   *ProjectInstallation
 	ProjectGoal           ProjectionGoal
+	ProjectContractOnly   bool
 	ProjectEffectReceipts []ProjectActivationEffectReceipt
 }
 

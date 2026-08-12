@@ -201,7 +201,7 @@ func (a *SurfaceAdapter) claudeProjectCompositeProjection(pack capabilitypack.Pa
 	return capabilitypack.ObservedProjection{ID: identity.String(), Goal: capabilitypack.ProjectionPresent, Exists: exists, ObservedFingerprint: observed, DesiredFingerprint: composite.TreeFingerprint, AdapterProvenance: "claude-project/v1/composite-skill", Action: action}, true, nil
 }
 
-func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal) (capabilitypack.SurfaceInspection, error) {
+func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot string, pack capabilitypack.ProjectManifestPack, lock capabilitypack.ProjectLockProposal, goal capabilitypack.ProjectionGoal, contractOnly bool) (capabilitypack.SurfaceInspection, error) {
 	if goal == "" {
 		goal = capabilitypack.ProjectionPresent
 	}
@@ -294,7 +294,7 @@ func (a *SurfaceAdapter) inspectLockedProject(ctx context.Context, projectRoot s
 	sort.Strings(revision)
 	readiness := capabilitypack.ReadinessObservation{}
 	activationActions := []capabilitypack.ProjectionAction(nil)
-	if goal == capabilitypack.ProjectionPresent {
+	if goal == capabilitypack.ProjectionPresent && !contractOnly {
 		var runtimeRevision string
 		var runtimeErr error
 		readiness, activationActions, runtimeRevision, runtimeErr = a.inspectLockedProjectRuntime(ctx, projectRoot, pack, lock)
