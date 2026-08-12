@@ -6,7 +6,7 @@
     "path": "pack.json",
     "size": 2835,
     "mode": 420,
-    "sha256": "0da21c91024ddfbef58981fc72c5dfb72dde50b6bc14970aaf435a790d4783dc"
+    "sha256": "06ab1d477e8a7e5a9873ac54e23faece63943a11cb09b6ba1337c5f69329f60d"
   },
   "resources": [
     {
@@ -180,5 +180,5 @@
       "sha256": "e61d4f19247da8baed4527af26fd8a7b5314439098f143b0841ac8d64e301e28"
     }
   ],
-  "aggregate_sha256": "2a216c2e046cad3d38817f5dfa7b99567c786b8628b2a8ae814fb853d99bee09"
+  "aggregate_sha256": "edb33242b74790d42bf89d8653160629981321f4e003ca257ecc0b0a44bab50f"
 }

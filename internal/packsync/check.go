@@ -76,6 +76,11 @@ func (engine Engine) Check(ctx context.Context, request CheckRequest) (Plan, err
 		if !bytesEqual(initial.configBytes, fresh.configBytes) || !bytesEqual(initial.lockBytes, fresh.lockBytes) || initial.lockPresent != fresh.lockPresent || initial.lockSet.LockSetSHA256 != fresh.lockSet.LockSetSHA256 || !reflect.DeepEqual(initial.source, fresh.source) || initial.selector != fresh.selector {
 			return errors.New("local source configuration or provenance lock changed during Check; retry")
 		}
+		if fresh.reconfiguration != nil {
+			if err := validateSelectedReleaseRevision(fresh.currentManifestBytes, fresh.proposedManifestBytes, candidate); err != nil {
+				return err
+			}
+		}
 		manifests, manifestsHash, err := loadManifests(request.RepositoryRoot)
 		if err != nil {
 			return err

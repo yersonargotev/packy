@@ -98,7 +98,7 @@
   "selectable": true,
   "source_reference": {
     "repository": "https://github.com/yersonargotev/issue-deliver-pack.git",
-    "revision": "1.0.0"
+    "revision": "1.1.0"
   },
   "surfaces": [
     "codex"

@@ -51,8 +51,11 @@ func validateProtectedManifestMetadata(repositoryRoot, packID string, proposed [
 	if json.Unmarshal(current, &before) != nil || json.Unmarshal(proposed, &after) != nil {
 		return errors.New("compare current and proposed Pack provenance metadata")
 	}
-	if !reflect.DeepEqual(before["source_reference"], after["source_reference"]) {
-		return errors.New("proposed manifest must preserve source reference")
+	beforeReference, beforeHasReference := before["source_reference"].(map[string]any)
+	afterReference, afterHasReference := after["source_reference"].(map[string]any)
+	if beforeHasReference != afterHasReference ||
+		(beforeHasReference && beforeReference["repository"] != afterReference["repository"]) {
+		return errors.New("proposed manifest must preserve source reference repository")
 	}
 	beforeResources, err := manifestResourceObjects(before)
 	if err != nil {
@@ -76,6 +79,22 @@ func validateProtectedManifestMetadata(repositoryRoot, packID string, proposed [
 	return nil
 }
 
+func validateSelectedReleaseRevision(before, after []byte, candidate Candidate) error {
+	var current, proposed map[string]any
+	if json.Unmarshal(before, &current) != nil || json.Unmarshal(after, &proposed) != nil {
+		return errors.New("compare Pack source reference revision")
+	}
+	currentReference, currentOK := current["source_reference"].(map[string]any)
+	proposedReference, proposedOK := proposed["source_reference"].(map[string]any)
+	if currentOK != proposedOK || !currentOK || currentReference["revision"] == proposedReference["revision"] {
+		return nil
+	}
+	if candidate.Release == nil || proposedReference["revision"] != candidate.Release.Tag {
+		return errors.New("proposed source reference revision must equal the exact selected release tag")
+	}
+	return nil
+}
+
 func manifestReconfigurationFloor(before, after []byte) (ClassificationLevel, []string, error) {
 	var oldManifest, newManifest map[string]any
 	if err := json.Unmarshal(before, &oldManifest); err != nil {
@@ -89,6 +108,8 @@ func manifestReconfigurationFloor(before, after []byte) (ClassificationLevel, []
 	delete(newManifest, "version")
 	delete(oldManifest, "description")
 	delete(newManifest, "description")
+	delete(oldManifest, "source_reference")
+	delete(newManifest, "source_reference")
 	oldResources, err := manifestResourceObjects(oldManifest)
 	if err != nil {
 		return LevelNone, nil, err

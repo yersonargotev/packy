@@ -25,6 +25,12 @@ policy and every admission artifact: source admission configuration, reviewed sn
 legal notice, Pack manifest, catalog entry, and immutable history.
 An upstream release does not register a Pack or grant merge authority in Packy.
 
+When a source reconfiguration selects a newer immutable release, it may align
+the Pack manifest's informational `source_reference.revision` only to the exact
+release tag resolved for that sealed candidate. The source repository remains
+protected metadata, an arbitrary or stale revision is rejected, and the
+revision transition alone does not raise the Pack's compatibility floor.
+
 ## Consequences
 
 The generic workflow can evolve and be reviewed independently without
