@@ -4,6 +4,7 @@ This glossary is the current domain language for Packy `v0.2.0`. The accepted
 architecture is recorded in [ADR 0031](docs/adr/0031-simplify-packy-around-reviewed-packs.md)
 and [ADR 0033](docs/adr/0033-make-the-tui-the-primary-interactive-interface.md).
 Readiness architecture is recorded in [ADR 0035](docs/adr/0035-make-pack-readiness-capability-driven.md).
+Issue-delivery source authority is recorded in [ADR 0037](docs/adr/0037-source-issue-delivery-from-an-independent-release.md).
 
 ## Glossary
 
@@ -179,8 +180,12 @@ identity changes.
 
 ### Issue delivery
 
-The ordinary pull-request path protected by GitHub branch protection, required
-CI, CodeQL, review, and human merge.
+The end-to-end integration of one approved issue through qualification, proof, protected review and merge, closure, and cleanup.
+
+### Issue delivery policy
+
+The repository-owned contract that adapts issue delivery to local approval,
+validation, review, merge, and cleanup rules.
 
 ### Packy release
 

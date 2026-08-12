@@ -24,12 +24,16 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0034-make-packy-root-namespace-pack-oriented.md"),
 		filepath.Join(root, "docs", "adr", "0035-make-pack-readiness-capability-driven.md"),
 		filepath.Join(root, "docs", "adr", "0036-separate-executable-acquisition-from-host-setup.md"),
+		filepath.Join(root, "docs", "adr", "0037-source-issue-delivery-from-an-independent-release.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
 	}
 
-	wantResearch := filepath.Join(root, "docs", "research", "evidence", "pack-readiness-architecture.md")
+	wantResearch := []string{
+		filepath.Join(root, "docs", "research", "evidence", "generic-issue-delivery-pack-viability.md"),
+		filepath.Join(root, "docs", "research", "evidence", "pack-readiness-architecture.md"),
+	}
 	var research []string
 	if err := filepath.WalkDir(filepath.Join(root, "docs", "research"), func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -42,8 +46,8 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(research, "\n") != wantResearch {
-		t.Fatalf("current research = %v, want [%s]", research, wantResearch)
+	if strings.Join(research, "\n") != strings.Join(wantResearch, "\n") {
+		t.Fatalf("current research = %v, want %v", research, wantResearch)
 	}
 	if err := filepath.WalkDir(filepath.Join(root, ".scratch"), func(path string, entry os.DirEntry, err error) error {
 		if os.IsNotExist(err) {
@@ -69,6 +73,10 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"fail closed", "previous bundle", "two or more sources", "`yersonargotev/orchestrate-skill`",
 		"canonical exact-content source", "Eric Provencher",
 	})
+	requireDocumentationText(t, root, "docs/adr/0037-source-issue-delivery-from-an-independent-release.md", []string{
+		"`yersonargotev/issue-deliver-pack`", "immutable stable releases", "canonical authority",
+		"admission configuration", "reviewed snapshot", "legal notice", "Pack manifest", "catalog entry", "immutable history",
+	})
 	requireDocumentationText(t, root, "docs/adr/0033-make-the-tui-the-primary-interactive-interface.md", []string{
 		"Bubble Tea v2 TUI", "minimum Go version to 1.25", "same `internal/capabilitypack` behavior",
 		"one Pack, surface", "global or project", "preview, phase consent", "verification boundary",
@@ -88,7 +96,13 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	})
 	requireDocumentationText(t, root, "CONTEXT.md", []string{
 		"Readiness obligation", "Readiness condition", "Readiness dimensions", "Controlled runtime check",
-		"configured, authorized, or usable", "true, false, or unknown",
+		"configured, authorized, or usable", "true, false, or unknown", "Issue delivery policy",
+		"qualification, proof, protected review and merge, closure, and cleanup",
+	})
+	requireDocumentationText(t, root, "docs/research/evidence/generic-issue-delivery-pack-viability.md", []string{
+		"Generic core and repository policy", "Codex materialization boundary", "GitHub controls remain repository-owned",
+		"0534b2af6c164d56bc8a95a81758749a721d29ae", "LICENSE", "deliver-issue", "setup-issue-delivery",
+		".github", ".gitignore", "AGENTS.md", "README.md", "scripts",
 	})
 	requireDocumentationText(t, root, "docs/research/evidence/pack-readiness-architecture.md", []string{
 		"primary-source evidence", "Cockburn's original ports-and-adapters", "`True`,",
