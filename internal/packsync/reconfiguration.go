@@ -86,11 +86,14 @@ func validateSelectedReleaseRevision(before, after []byte, candidate Candidate) 
 	}
 	currentReference, currentOK := current["source_reference"].(map[string]any)
 	proposedReference, proposedOK := proposed["source_reference"].(map[string]any)
-	if currentOK != proposedOK || !currentOK || currentReference["revision"] == proposedReference["revision"] {
+	if currentOK != proposedOK || !currentOK {
 		return nil
 	}
-	if candidate.Release == nil || proposedReference["revision"] != candidate.Release.Tag {
+	if candidate.Release != nil && proposedReference["revision"] != candidate.Release.Tag {
 		return errors.New("proposed source reference revision must equal the exact selected release tag")
+	}
+	if candidate.Release == nil && currentReference["revision"] != proposedReference["revision"] {
+		return errors.New("proposed source reference revision requires a selected release tag")
 	}
 	return nil
 }

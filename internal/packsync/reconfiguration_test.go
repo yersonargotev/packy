@@ -334,12 +334,23 @@ func TestCheckedInIssueDeliveryReconfigurationAcceptsExactSelectedReleaseRevisio
 	if err := json.Unmarshal(mustReadFile(t, manifestPath), &proposed); err != nil {
 		t.Fatal(err)
 	}
+	staleManifest, err := json.Marshal(proposed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := Engine{Source: &fixtureSource{root: snapshot, candidate: lock.Candidate}, Validate: acceptingBundleValidator()}
+	if _, err := engine.Check(context.Background(), CheckRequest{
+		RepositoryRoot: repository, SourceID: reconfiguration.ID, AcquisitionDir: t.TempDir(),
+		Reconfiguration: &reconfiguration, ProposedManifest: staleManifest,
+	}); err == nil {
+		t.Fatal("reconfiguration accepted a stale unchanged source reference revision")
+	}
+
 	proposed["source_reference"].(map[string]any)["revision"] = lock.Candidate.Release.Tag
 	proposedManifest, err := json.Marshal(proposed)
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := Engine{Source: &fixtureSource{root: snapshot, candidate: lock.Candidate}, Validate: acceptingBundleValidator()}
 	plan, err := engine.Check(context.Background(), CheckRequest{
 		RepositoryRoot: repository, SourceID: reconfiguration.ID, AcquisitionDir: t.TempDir(),
 		Reconfiguration: &reconfiguration, ProposedManifest: proposedManifest,
