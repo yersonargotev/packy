@@ -11,6 +11,9 @@ import (
 const (
 	RedistributableDisposition = "redistributable"
 
+	IssueDeliveryLegalAdmissionEvidenceReference = "docs/research/evidence/issue-deliver-pack-1.0.0-legal-admission.json"
+	IssueDeliveryLegalAdmissionEvidenceSHA256    = "5ee40cad82c6d7cee0983b1b2fd3b69754ff7fd31726b5c944de0c04e9bd7194"
+
 	VercelAgentSkillsLegalAdmissionEvidenceReference = "docs/research/evidence/vercel-agent-skills-legal-admission.json"
 	VercelAgentSkillsLegalAdmissionEvidenceSHA256    = "e98ea93b2fc7ee5e4b49364ab0fc4e13fe4b0801d6439bd7e07180a7751e6dc3"
 
@@ -47,6 +50,7 @@ type LegalAdmissionExpected struct {
 	EvidenceID        string
 	Candidate         LegalAdmissionCandidate
 	Scope             LegalAdmissionScope
+	Invalidation      string
 }
 
 type LegalAdmission struct {
@@ -54,6 +58,29 @@ type LegalAdmission struct {
 	SHA256      string
 	Disposition string
 	Scope       LegalAdmissionScope
+}
+
+// IssueDeliveryLegalAdmissionExpected returns the immutable issue-654
+// admission anchor. Each call owns its scope slices so callers cannot mutate
+// the production binding observed by later callers.
+func IssueDeliveryLegalAdmissionExpected() LegalAdmissionExpected {
+	return LegalAdmissionExpected{
+		EvidenceReference: IssueDeliveryLegalAdmissionEvidenceReference,
+		EvidenceSHA256:    IssueDeliveryLegalAdmissionEvidenceSHA256,
+		EvidenceID:        "issue-deliver-pack-1.0.0-mit",
+		Candidate: LegalAdmissionCandidate{
+			Repository:   "yersonargotev/issue-deliver-pack",
+			Commit:       "0534b2af6c164d56bc8a95a81758749a721d29ae",
+			READMEBlob:   "d0594e2c663e5352cc219ec28e474592e2d5c9f3",
+			READMELength: 1421,
+			READMESHA256: "b86b7fa0a968fe6fec6bf87b802904c38470983aafd8c765e76aa782131a2208",
+		},
+		Scope: LegalAdmissionScope{
+			SelectedRoots: []string{"LICENSE", "deliver-issue", "setup-issue-delivery"},
+			Exclusions:    []string{".github", ".gitignore", "AGENTS.md", "README.md", "scripts"},
+		},
+		Invalidation: "any release, candidate, selected-root, license, README identity, disposition, evidence digest, or scope change",
+	}
 }
 
 // VercelAgentSkillsLegalAdmissionExpected returns the immutable issue-254
@@ -172,7 +199,7 @@ func ValidateLegalAdmission(raw []byte, expected LegalAdmissionExpected) (LegalA
 	if evidence.SchemaVersion != 1 || evidence.EvidenceID == "" || evidence.Issuer == "" || evidence.EvidenceOrigin == "" || evidence.Decision == "" || evidence.Validity == "" || evidence.Invalidation == "" || len(evidence.Rights) == 0 || len(evidence.Obligations) == 0 || len(evidence.Disclosures) == 0 || len(evidence.Scope.SelectedRoots) == 0 || evidence.Candidate.READMELength <= 0 {
 		return LegalAdmission{}, ErrLegalAdmissionShape
 	}
-	if evidence.EvidenceID != expected.EvidenceID || evidence.DurableReference != expected.EvidenceReference || evidence.Candidate != expected.Candidate || !equalStrings(evidence.Scope.SelectedRoots, expected.Scope.SelectedRoots) || !equalStrings(evidence.Scope.Exclusions, expected.Scope.Exclusions) {
+	if evidence.EvidenceID != expected.EvidenceID || evidence.DurableReference != expected.EvidenceReference || evidence.Candidate != expected.Candidate || !equalStrings(evidence.Scope.SelectedRoots, expected.Scope.SelectedRoots) || !equalStrings(evidence.Scope.Exclusions, expected.Scope.Exclusions) || expected.Invalidation != "" && evidence.Invalidation != expected.Invalidation {
 		return LegalAdmission{}, ErrLegalAdmissionBinding
 	}
 	if evidence.Disposition != RedistributableDisposition {

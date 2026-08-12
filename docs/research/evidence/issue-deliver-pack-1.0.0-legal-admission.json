@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "evidence_id": "issue-deliver-pack-1.0.0-mit",
+  "durable_reference": "docs/research/evidence/issue-deliver-pack-1.0.0-legal-admission.json",
+  "issuer": "Packy maintainer",
+  "evidence_origin": "MIT LICENSE in yersonargotev/issue-deliver-pack@1.0.0",
+  "decision": "admit the exact stable candidate for redistribution",
+  "candidate": {
+    "repository": "yersonargotev/issue-deliver-pack",
+    "commit": "0534b2af6c164d56bc8a95a81758749a721d29ae",
+    "readme_blob": "d0594e2c663e5352cc219ec28e474592e2d5c9f3",
+    "readme_length": 1421,
+    "readme_sha256": "b86b7fa0a968fe6fec6bf87b802904c38470983aafd8c765e76aa782131a2208"
+  },
+  "disposition": "redistributable",
+  "rights": [
+    "use, copy, modify, merge, publish, distribute, sublicense, and sell copies"
+  ],
+  "obligations": [
+    "preserve Yerson Argote's copyright notice and the MIT permission notice"
+  ],
+  "disclosures": [
+    "LICENSE, deliver-issue, and setup-issue-delivery are selected without rewriting upstream content",
+    ".github, .gitignore, AGENTS.md, README.md, and scripts are excluded"
+  ],
+  "scope": {
+    "selected_roots": [
+      "LICENSE",
+      "deliver-issue",
+      "setup-issue-delivery"
+    ],
+    "exclusions": [
+      ".github",
+      ".gitignore",
+      "AGENTS.md",
+      "README.md",
+      "scripts"
+    ]
+  },
+  "validity": "exact 1.0.0 candidate and selected-root digests only",
+  "invalidation": "any release, candidate, selected-root, license, README identity, disposition, evidence digest, or scope change"
+}
