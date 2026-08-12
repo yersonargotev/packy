@@ -2,6 +2,34 @@
   "schema_version": 1,
   "sources": [
     {
+      "id": "issue-delivery-source",
+      "provider": "github",
+      "repository": "yersonargotev/issue-deliver-pack",
+      "selector": {
+        "mode": "stable-release"
+      },
+      "resources": [
+        {
+          "pack_id": "issue-delivery",
+          "kind": "notice",
+          "resource_id": "mit",
+          "upstream_path": "LICENSE"
+        },
+        {
+          "pack_id": "issue-delivery",
+          "kind": "skill",
+          "resource_id": "deliver-issue",
+          "upstream_path": "deliver-issue"
+        },
+        {
+          "pack_id": "issue-delivery",
+          "kind": "skill",
+          "resource_id": "setup-issue-delivery",
+          "upstream_path": "setup-issue-delivery"
+        }
+      ]
+    },
+    {
       "id": "orchestrate-source",
       "provider": "github",
       "repository": "yersonargotev/orchestrate-skill",
