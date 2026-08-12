@@ -89,14 +89,13 @@ func TestArtifactUploadsUseTheReviewedNode24Action(t *testing.T) {
 	want := "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1"
 	retired := "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2"
 
-	for _, name := range []string{"claude-canary.yml", "release.yml"} {
-		workflow := readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
-		if got := strings.Count(workflow.content, want); got != 1 {
-			t.Errorf("%s Node 24 upload-artifact occurrences = %d, want 1", name, got)
-		}
-		if strings.Contains(workflow.content, retired) {
-			t.Errorf("%s still uses the retired Node 20 upload-artifact revision", name)
-		}
+	const name = "release.yml"
+	workflow := readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
+	if got := strings.Count(workflow.content, want); got != 1 {
+		t.Errorf("%s Node 24 upload-artifact occurrences = %d, want 1", name, got)
+	}
+	if strings.Contains(workflow.content, retired) {
+		t.Errorf("%s still uses the retired Node 20 upload-artifact revision", name)
 	}
 }
 
@@ -118,9 +117,6 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 		{name: "persisted pull request credential", workflow: "ci.yml", mutate: func(text string) string {
 			return strings.Replace(text, "persist-credentials: false", "persist-credentials: true", 1)
 		}, check: assertCheckoutCredentials},
-		{name: "manual branch privilege", workflow: "claude-canary.yml", mutate: func(text string) string {
-			return strings.Replace(text, "github.ref == 'refs/heads/main'", "github.ref != ''", 1)
-		}, check: assertTrustedPrivilegedExecution},
 		{name: "pull request CodeQL upload", workflow: "security-pr.yml", mutate: func(text string) string { return strings.Replace(text, "upload: false", "upload: true", 1) }, check: assertTrustedPrivilegedExecution},
 	}
 	for _, test := range tests {
@@ -144,7 +140,7 @@ func TestWorkflowTrustBoundaryMutationsFailClosed(t *testing.T) {
 func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 	root := repositoryRoot(t)
 	workflows := make(map[string]workflowDocument)
-	for _, name := range []string{"ci.yml", "claude-canary.yml", "release.yml", "security.yml", "security-pr.yml"} {
+	for _, name := range []string{"ci.yml", "release.yml", "security.yml", "security-pr.yml"} {
 		workflows[name] = readWorkflowDocument(t, root, filepath.Join(root, ".github", "workflows", name))
 	}
 
@@ -157,23 +153,6 @@ func TestWorkflowActorRefPermissionMatrix(t *testing.T) {
 		want := map[string]string{"contents": "read"}
 		if !reflect.DeepEqual(permissions, want) || strings.Contains(strings.Join(lines, "\n"), "secrets:") || strings.Contains(strings.Join(lines, "\n"), "environment:") {
 			t.Fatalf("CI job %q does not keep fork and Dependabot work read-only and secretless", job)
-		}
-	}
-
-	for _, boundary := range []struct {
-		workflow string
-		job      string
-	}{
-		{workflow: "claude-canary.yml", job: "stable-smoke"},
-	} {
-		block := strings.Join(workflows[boundary.workflow].jobs[boundary.job], "\n")
-		for _, marker := range []string{"github.repository == 'yersonargotev/packy'", "github.ref == 'refs/heads/main'"} {
-			if !strings.Contains(block, marker) {
-				t.Errorf("%s job %q does not fail closed outside %q", boundary.workflow, boundary.job, marker)
-			}
-		}
-		if strings.Contains(block, "github.actor ==") {
-			t.Errorf("%s job %q replaces workflow_dispatch's Owner/delegated-write authorization with a hard-coded actor", boundary.workflow, boundary.job)
 		}
 	}
 
@@ -317,9 +296,6 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 	".github/workflows/ci.yml": {
 		"validate": {"contents": "read"},
 	},
-	".github/workflows/claude-canary.yml": {
-		"stable-smoke": {"contents": "read", "issues": "write"},
-	},
 	".github/workflows/release.yml": {
 		"prepare":       {"contents": "read"},
 		"publish":       {"actions": "read", "contents": "write"},
@@ -448,10 +424,6 @@ func assertTrustedPrivilegedExecution(t errorReporter, workflow workflowDocument
 // Write-capable or secret-bearing jobs must name the trusted repository and a
 // protected ref boundary in their job-level gate.
 var trustedExecutionMarkers = map[string][]string{
-	".github/workflows/claude-canary.yml|stable-smoke": {
-		"github.repository == 'yersonargotev/packy'",
-		"refs/heads/main",
-	},
 	".github/workflows/release.yml|publish": {
 		"github.repository == 'yersonargotev/packy'",
 		"startsWith(github.ref, 'refs/tags/v')",
