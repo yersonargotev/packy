@@ -20,8 +20,8 @@ Compare the latest published release tag with the frozen commit. Require
 `docs/release-notes/next.md` on `origin/main` to account for every user-visible
 change in that range, contain exactly one `{{TAG}}` placeholder, and keep every
 factual version claim consistent with its repository authorities. Record a
-candidate release-note summary and diff evidence. Incomplete or inaccurate
-notes require the repository-change exception before publication.
+candidate release-note summary or diff evidence. Incomplete or inaccurate notes
+require the repository-change exception before publication.
 
 **Complete when:** the prior stable release, selected unused version, frozen
 commit, complete release delta, accurate release notes, and preserved operator
@@ -42,7 +42,7 @@ frozen commit and selected version.
 ## Approve
 
 Before the tag push, present the prior release, version, commit, validation
-results, release-note summary and diff evidence, and the external effects:
+results, release-note evidence as a summary or diff, and the external effects:
 pushing one new tag, creating one GitHub Release, and updating
 `yersonargotev/homebrew-tap`. Publication requires the user's approval of that
 exact version and commit.

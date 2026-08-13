@@ -36,8 +36,8 @@ Users moving from `v0.1.x` first follow the
    ./scripts/validate-packy.sh
    ```
 
-4. Present the exact version, commit, validation, release-note summary, diff
-   evidence, and publication effects for approval.
+4. Present the exact version, commit, validation, release-note evidence as a
+   summary or diff, and publication effects for approval.
 5. Create the version tag on the current `main` commit and push that tag.
 6. Wait for the Release workflow to build and validate the artifacts, create
    the GitHub Release, update `yersonargotev/homebrew-tap`, and test the

@@ -67,7 +67,7 @@ func TestReleaseGateRequiresFreshDecisionEvidence(t *testing.T) {
 		"every user-visible change",
 		"exactly one `{{TAG}}` placeholder",
 		"repository authorities",
-		"release-note summary and diff evidence",
+		"release-note summary or diff evidence",
 		"`release` and `homebrew` environment approvals",
 		"same workflow run, version, and commit",
 	} {
