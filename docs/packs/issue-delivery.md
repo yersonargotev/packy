@@ -6,7 +6,7 @@
 
 Deliver issues through policy-driven or Matt-configured workflows
 
-- Version: `1.1.0`
+- Version: `1.1.1`
 - Supported surfaces: `codex`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `gh`, `git`

@@ -1,7 +1,7 @@
 # Evidence: generic issue-delivery Pack viability
 
 This note records the primary-source evidence refreshed for [issue
-664](https://github.com/yersonargotev/packy/issues/664). It supports the
+668](https://github.com/yersonargotev/packy/issues/668). It supports the
 admission decision; it does not itself register a Pack Source or materialize
 upstream content.
 
@@ -9,18 +9,18 @@ upstream content.
 
 The canonical upstream is
 [`yersonargotev/issue-deliver-pack`](https://github.com/yersonargotev/issue-deliver-pack).
-Its published [`1.1.0` release](https://api.github.com/repos/yersonargotev/issue-deliver-pack/releases/tags/1.1.0)
+Its published [`1.1.1` release](https://api.github.com/repos/yersonargotev/issue-deliver-pack/releases/tags/1.1.1)
 is a non-draft, non-prerelease immutable release whose target is exactly
-[`d47cedd9ed8adc664f33a80a30b177eadb6b1ee4`](https://github.com/yersonargotev/issue-deliver-pack/commit/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4).
-The commit is verified and adds the Matt-configured delivery workflow to the
-two policy-driven skills admitted in `1.0.0`. Its tree contains the selected
+[`13fce3040948e9f51798908a9b08201b7e1438fe`](https://github.com/yersonargotev/issue-deliver-pack/commit/13fce3040948e9f51798908a9b08201b7e1438fe).
+The commit is verified and changes only the Matt-configured workflow plus its
+upstream validation. Its tree contains the selected
 roots `LICENSE`, `deliver-issue`, `deliver-issue-matt`, and
 `setup-issue-delivery`, plus the excluded roots `.github`,
 `.gitignore`, `AGENTS.md`, `README.md`, and `scripts`. [GitHub commit tree,
-`d47cedd9`](https://api.github.com/repos/yersonargotev/issue-deliver-pack/git/trees/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4?recursive=1)
+`13fce304`](https://api.github.com/repos/yersonargotev/issue-deliver-pack/git/trees/13fce3040948e9f51798908a9b08201b7e1438fe?recursive=1)
 
 The upstream [README at that exact
-commit](https://github.com/yersonargotev/issue-deliver-pack/blob/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4/README.md)
+commit](https://github.com/yersonargotev/issue-deliver-pack/blob/13fce3040948e9f51798908a9b08201b7e1438fe/README.md)
 identifies `deliver-issue` as the execution workflow and
 `setup-issue-delivery` as the creator of the consumer-owned policy, and offers
 `deliver-issue-matt` as an alternative workflow for a Matt-configured tracker.
@@ -36,7 +36,7 @@ The generic core owns the reusable, repository-neutral delivery sequence:
 explicit request for one approved issue; qualification; implementation and
 proof; protected pull-request review; protected merge; closure; and cleanup.
 The upstream [`deliver-issue` skill at
-`1.1.0`](https://github.com/yersonargotev/issue-deliver-pack/blob/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4/deliver-issue/SKILL.md)
+`1.1.1`](https://github.com/yersonargotev/issue-deliver-pack/blob/13fce3040948e9f51798908a9b08201b7e1438fe/deliver-issue/SKILL.md)
 defines that sequence and requires a repository-owned policy before Git or
 GitHub state is changed.
 
@@ -44,9 +44,15 @@ Repository policy owns the local decisions that the generic core deliberately
 does not know: approval label, tracker conventions, validation commands,
 required CI, review criteria, merge method, cleanup rules, and the repository's
 architecture and domain instructions. The upstream [`setup-issue-delivery`
-skill at `1.1.0`](https://github.com/yersonargotev/issue-deliver-pack/blob/d47cedd9ed8adc664f33a80a30b177eadb6b1ee4/setup-issue-delivery/SKILL.md)
+skill at `1.1.1`](https://github.com/yersonargotev/issue-deliver-pack/blob/13fce3040948e9f51798908a9b08201b7e1438fe/setup-issue-delivery/SKILL.md)
 limits its write to `docs/agents/issue-delivery.md` and leaves those decisions
 to the consumer.
+
+The `1.1.1` Matt workflow keeps that ownership boundary when it creates a
+delivery branch: an applicable consuming-repository branch convention takes
+precedence over the Pack's neutral typed fallback, while an already adopted
+compatible identity remains unchanged. This removes the earlier unconditional
+`codex/issue-*` prescription without introducing a Packy-specific rule.
 
 For Packy, that boundary maps to the existing
 [repository policy](../../../workflows/issue-delivery.md),
@@ -100,7 +106,7 @@ bypass, or replace it.
 
 ## Viability conclusion and invalidation
 
-The exact `1.1.0` candidate is viable as an independent canonical source for
+The exact `1.1.1` candidate is viable as an independent canonical source for
 the three generic skills: it has a stable immutable release, a complete
 Codex-compatible sibling-directory shape, an explicit generic/policy boundary,
 and upstream protected-branch controls. The legal-admission record binds this

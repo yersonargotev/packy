@@ -360,14 +360,14 @@ func TestCheckedInIssueDeliveryReconfigurationAcceptsExactSelectedReleaseRevisio
 	}
 	if plan.Status != "review-required" || len(plan.AffectedPacks) != 1 ||
 		plan.AffectedPacks[0].MechanicalFloor != LevelNone ||
-		!bytes.Contains(plan.ProposedManifest, []byte(`"revision": "1.1.0"`)) {
+		!bytes.Contains(plan.ProposedManifest, []byte(`"revision": "1.1.1"`)) {
 		t.Fatalf("issue-delivery revision plan = %#v", plan)
 	}
 }
 
 func setIssueDeliveryHistoricalSourceRevision(t *testing.T, repository, revision string) {
 	t.Helper()
-	history := filepath.Join(repository, "bundle", "history", "issue-delivery", "1.1.0")
+	history := filepath.Join(repository, "bundle", "history", "issue-delivery", "1.1.1")
 	for _, path := range []string{
 		filepath.Join(repository, "bundle", "packs", "issue-delivery", "pack.json"),
 		filepath.Join(history, "pack.json"),
