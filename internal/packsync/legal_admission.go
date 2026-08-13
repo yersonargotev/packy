@@ -11,8 +11,8 @@ import (
 const (
 	RedistributableDisposition = "redistributable"
 
-	IssueDeliveryLegalAdmissionEvidenceReference = "docs/research/evidence/issue-deliver-pack-1.1.0-legal-admission.json"
-	IssueDeliveryLegalAdmissionEvidenceSHA256    = "33ed7f02d5b3cc55418dc2c1b4522f851480e6fe27333b9d7e8930dd6e664039"
+	IssueDeliveryLegalAdmissionEvidenceReference = "docs/research/evidence/issue-deliver-pack-1.1.1-legal-admission.json"
+	IssueDeliveryLegalAdmissionEvidenceSHA256    = "d98d24af16066a62358a6d4fea911a21cdaddbafcb2545c106a9d77329ea9e5b"
 
 	VercelAgentSkillsLegalAdmissionEvidenceReference = "docs/research/evidence/vercel-agent-skills-legal-admission.json"
 	VercelAgentSkillsLegalAdmissionEvidenceSHA256    = "e98ea93b2fc7ee5e4b49364ab0fc4e13fe4b0801d6439bd7e07180a7751e6dc3"
@@ -60,17 +60,17 @@ type LegalAdmission struct {
 	Scope       LegalAdmissionScope
 }
 
-// IssueDeliveryLegalAdmissionExpected returns the immutable issue-664
+// IssueDeliveryLegalAdmissionExpected returns the immutable issue-668
 // admission anchor. Each call owns its scope slices so callers cannot mutate
 // the production binding observed by later callers.
 func IssueDeliveryLegalAdmissionExpected() LegalAdmissionExpected {
 	return LegalAdmissionExpected{
 		EvidenceReference: IssueDeliveryLegalAdmissionEvidenceReference,
 		EvidenceSHA256:    IssueDeliveryLegalAdmissionEvidenceSHA256,
-		EvidenceID:        "issue-deliver-pack-1.1.0-mit",
+		EvidenceID:        "issue-deliver-pack-1.1.1-mit",
 		Candidate: LegalAdmissionCandidate{
 			Repository:   "yersonargotev/issue-deliver-pack",
-			Commit:       "d47cedd9ed8adc664f33a80a30b177eadb6b1ee4",
+			Commit:       "13fce3040948e9f51798908a9b08201b7e1438fe",
 			READMEBlob:   "64eca0cf0ac2f58d99b6966ea5dd59ba52175d62",
 			READMELength: 1729,
 			READMESHA256: "1118c4d81ff3843c5f09c7bbfccf8edd4f26dfc716280676a61f5578fd2dca3c",

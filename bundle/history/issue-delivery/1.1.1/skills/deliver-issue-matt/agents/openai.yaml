@@ -1,0 +1,6 @@
+interface:
+  display_name: "Deliver Issue (Matt)"
+  short_description: "Deliver one ready issue through verified merge"
+  default_prompt: "Use $deliver-issue-matt to deliver ready issue #123 through implementation, verification, CI, merge, and cleanup."
+policy:
+  allow_implicit_invocation: false
