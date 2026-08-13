@@ -1,27 +1,21 @@
 # {{TAG}} — Packy v0.2
 
-This release establishes Packy as a focused installer and configurator for
-Git-reviewed capability Packs on Codex, OpenCode, and Claude Code.
+This release hardens Packy's immutable release gate so the approved
+publication describes the exact candidate it ships.
 
-## Highlights
+## Changes since the previous release
 
-- The primary interactive TUI now uses a Catppuccin Mocha visual system with
-  responsive dashboard panels, accessible health labels, contextual help, and
-  fixed navigation around scrollable Pack details and lifecycle previews.
-- Controlled runtime checks now record scoped positive or negative personal
-  evidence for host behavior Packy cannot observe, separately from activation.
-- Pack discovery and lifecycle commands now run directly at the root, such as
-  `packy list` and `packy activate`; the former intermediate grouping command
-  has been removed without an alias or deprecation path.
-- Argote `1.0.1` projects its engineering and communication guidance as one
-  cohesive instruction, so complete activation is collision-free on every
-  supported surface. Addy, Engram, and Matty remain at Pack version `1.0.0`.
-- Installed Pack receipts contain only current ownership, projection, and
-  digest data.
-- GitHub branch protection, CI, CodeQL, review, and human merge protect
-  integration.
-- One immutable version tag publishes Darwin and Linux archives for amd64 and
-  arm64, `SHA256SUMS`, one GitHub Release, and a matching Homebrew formula.
+- Release preparation now derives the default next patch from the latest
+  published stable release and rejects versions already present locally,
+  remotely, or in GitHub Releases.
+- Release notes must cover the complete candidate delta, retain one tag
+  placeholder, and keep factual version claims aligned with repository
+  authorities before approval.
+- The publication brief now includes release-note evidence, and its approval
+  applies to protected release and Homebrew deployments only when their
+  workflow run, version, and commit match exactly.
+
+Pack lifecycle behavior and the release artifact format are unchanged.
 
 ## Install or upgrade
 

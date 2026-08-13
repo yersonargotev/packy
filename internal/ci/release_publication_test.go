@@ -52,6 +52,64 @@ func TestReleaseWorkflowUsesConventionalImmutableTagPublication(t *testing.T) {
 	}
 }
 
+func TestReleaseGateRequiresFreshDecisionEvidence(t *testing.T) {
+	root := repositoryRoot(t)
+	workflow := readFile(t, filepath.Join(root, "workflows", "packy-release.md"))
+	maintainer := readFile(t, filepath.Join(root, "docs", "release.md"))
+	skill := readFile(t, filepath.Join(root, ".agents", "skills", "release-packy", "SKILL.md"))
+	notes := readFile(t, filepath.Join(root, "docs", "release-notes", "next.md"))
+	workflowText := strings.Join(strings.Fields(workflow), " ")
+	maintainerText := strings.Join(strings.Fields(maintainer), " ")
+
+	for _, required := range []string{
+		"latest published stable GitHub Release",
+		"next patch",
+		"every user-visible change",
+		"exactly one `{{TAG}}` placeholder",
+		"repository authorities",
+		"release-note summary and diff evidence",
+		"`release` and `homebrew` environment approvals",
+		"same workflow run, version, and commit",
+	} {
+		if !strings.Contains(workflowText, required) {
+			t.Errorf("release workflow contract is missing %q", required)
+		}
+	}
+	for _, required := range []string{
+		"latest published stable GitHub Release",
+		"next patch",
+		"every user-visible change",
+		"exactly one `{{TAG}}` placeholder",
+		"repository authorities",
+	} {
+		if !strings.Contains(maintainerText, required) {
+			t.Errorf("maintainer release contract is missing %q", required)
+		}
+	}
+
+	for _, required := range []string{
+		"Read the complete",
+		"Run the complete workflow contract",
+		"repository-change exception",
+	} {
+		if !strings.Contains(skill, required) {
+			t.Errorf("release skill gate is missing %q", required)
+		}
+	}
+	for _, duplicatedPhase := range []string{"## 1. Establish", "## 2. Prove", "## 3. Approve", "## 4. Publish once", "## 5. Verify and close"} {
+		if strings.Contains(skill, duplicatedPhase) {
+			t.Errorf("release skill duplicates workflow phase %q", duplicatedPhase)
+		}
+	}
+
+	if got := strings.Count(notes, "{{TAG}}"); got != 1 {
+		t.Errorf("next release notes contain %d tag placeholders; want exactly one", got)
+	}
+	if !strings.Contains(notes, "## Changes since the previous release") {
+		t.Error("next release notes do not identify the candidate delta")
+	}
+}
+
 func TestReleaseArtifactsAreArchivesWithOneChecksumManifest(t *testing.T) {
 	root := repositoryRoot(t)
 	build := readFile(t, filepath.Join(root, "scripts", "build-release-artifacts.sh"))
