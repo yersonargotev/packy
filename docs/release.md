@@ -24,20 +24,27 @@ Users moving from `v0.1.x` first follow the
 
 ## Maintainer flow
 
-1. Choose an unused `vX.Y.Z` version.
-2. Finalize `docs/release-notes/next.md` on `main`, retaining its single
-   `{{TAG}}` placeholder.
+1. Resolve the latest published stable GitHub Release. Use a supplied version,
+   or default to its next patch version, and prove the candidate is unused.
+2. Compare that release with the candidate commit. Finalize
+   `docs/release-notes/next.md` on `main` so it accounts for every user-visible
+   change, retains exactly one `{{TAG}}` placeholder, and keeps factual version
+   claims consistent with their repository authorities.
 3. Run focused checks, then the general local validation:
 
    ```sh
    ./scripts/validate-packy.sh
    ```
 
-4. Create the version tag on the current `main` commit and push that tag.
-5. Wait for the Release workflow to build and validate the artifacts, create
+4. Present the exact version, commit, validation, release-note evidence as a
+   summary or diff, and publication effects for approval.
+5. Create the version tag on the current `main` commit and push that tag.
+6. Wait for the Release workflow to build and validate the artifacts, create
    the GitHub Release, update `yersonargotev/homebrew-tap`, and test the
-   installed Homebrew binary.
-6. Confirm that the tag, GitHub Release, checksums, formula, and installed
+   installed Homebrew binary. The publication approval covers protected
+   `release` and `homebrew` deployments only for the same workflow run,
+   version, and commit.
+7. Confirm that the tag, GitHub Release, checksums, formula, and installed
    binary all name the same version.
 
 ## Artifact contract
