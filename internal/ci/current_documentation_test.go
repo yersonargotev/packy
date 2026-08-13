@@ -31,6 +31,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	}
 
 	wantResearch := []string{
+		filepath.Join(root, "docs", "research", "evidence", "engram-setup-codex-audit-2026-08-13.md"),
 		filepath.Join(root, "docs", "research", "evidence", "generic-issue-delivery-pack-viability.md"),
 		filepath.Join(root, "docs", "research", "evidence", "pack-readiness-architecture.md"),
 	}
@@ -103,6 +104,11 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Generic core and repository policy", "Codex materialization boundary", "GitHub controls remain repository-owned",
 		"d47cedd9ed8adc664f33a80a30b177eadb6b1ee4", "LICENSE", "deliver-issue", "deliver-issue-matt", "setup-issue-delivery",
 		".github", ".gitignore", "AGENTS.md", "README.md", "scripts",
+	})
+	requireDocumentationText(t, root, "docs/research/evidence/engram-setup-codex-audit-2026-08-13.md", []string{
+		"engram 1.20.0", "fresh temporary", "the real", "`~/.codex` was never modified",
+		"Observed installation inventory", "What should remain", "What should not remain",
+		"Conditional full-memory mode", "ADR 0036",
 	})
 	requireDocumentationText(t, root, "docs/research/evidence/pack-readiness-architecture.md", []string{
 		"primary-source evidence", "Cockburn's original ports-and-adapters", "`True`,",
