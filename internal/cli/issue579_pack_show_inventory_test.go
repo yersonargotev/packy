@@ -32,11 +32,11 @@ func TestPackShowHumanRendersDeterministicDescriptiveInventory(t *testing.T) {
 	if first != second {
 		t.Fatalf("pack show output is not deterministic:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
-	want := "Resource: skill:engram-memory — Curates durable project memory through the Engram CLI; role=operational dependencies=none notices=none"
+	want := "Resource: skill:engram-memory-cli — Uses Engram project memory safely through the CLI; role=operational dependencies=none notices=notice:mit"
 	if !strings.Contains(first, want) {
 		t.Fatalf("pack show output lacks descriptive inventory line %q:\n%s", want, first)
 	}
-	if strings.Contains(first, "Resource: skill:engram-memory role=") {
+	if strings.Contains(first, "Resource: skill:engram-memory-cli role=") {
 		t.Fatalf("pack show retained the description-less resource graph line:\n%s", first)
 	}
 }
@@ -67,13 +67,19 @@ func TestPackShowJSONV5IncludesDescriptiveInventory(t *testing.T) {
 	if document.SchemaVersion != 5 {
 		t.Fatalf("schema version = %d, want 5", document.SchemaVersion)
 	}
-	if len(document.ResourceInventory) != 1 {
+	if len(document.ResourceInventory) != 2 {
 		t.Fatalf("resource inventory = %#v", document.ResourceInventory)
 	}
 	first := document.ResourceInventory[0]
-	if first.Resource.String() != "skill:engram-memory" ||
-		first.Description != "Curates durable project memory through the Engram CLI" ||
-		first.Role != capabilitypack.ResourceInventoryRoleOperational {
+	if first.Resource.String() != "notice:mit" ||
+		first.Description != "Preserve the upstream Engram MIT license and attribution" ||
+		first.Role != capabilitypack.ResourceInventoryRoleNotice {
 		t.Fatalf("first resource inventory entry = %#v", first)
+	}
+	second := document.ResourceInventory[1]
+	if second.Resource.String() != "skill:engram-memory-cli" ||
+		second.Description != "Uses Engram project memory safely through the CLI" ||
+		second.Role != capabilitypack.ResourceInventoryRoleOperational {
+		t.Fatalf("second resource inventory entry = %#v", second)
 	}
 }

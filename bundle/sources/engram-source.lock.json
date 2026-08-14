@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "generator": "packy-packsync",
+  "generator_version": "1",
+  "provider": "github",
+  "provider_api_version": "2022-11-28",
+  "source_id": "engram-source",
+  "repository": "yersonargotev/engram",
+  "repository_id": 1164428006,
+  "owner": "yersonargotev",
+  "owner_id": 131540895,
+  "selector": {
+    "mode": "stable-release"
+  },
+  "candidate": {
+    "repository": "yersonargotev/engram",
+    "repository_id": 1164428006,
+    "repository_node_id": "R_kgDORWfC5g",
+    "repository_html_url": "https://github.com/yersonargotev/engram",
+    "repository_clone_url": "https://github.com/yersonargotev/engram.git",
+    "repository_api_url": "https://api.github.com/repos/yersonargotev/engram",
+    "visibility": "public",
+    "owner": "yersonargotev",
+    "owner_id": 131540895,
+    "owner_node_id": "U_kgDOB9cnnw",
+    "public": true,
+    "archived": false,
+    "disabled": false,
+    "release": {
+      "id": 370257404,
+      "node_id": "RE_kwDORWfC5s4WEa38",
+      "tag": "v2.0.0",
+      "name": "v2.0.0",
+      "target_commitish": "main",
+      "immutable": false,
+      "created_at": "2026-08-13T22:57:43Z",
+      "published_at": "2026-08-13T23:00:42Z",
+      "draft": false,
+      "prerelease": false,
+      "author": {
+        "login": "github-actions[bot]",
+        "id": 41898282,
+        "node_id": "MDM6Qm90NDE4OTgyODI="
+      }
+    },
+    "tag_ref_name": "refs/tags/v2.0.0",
+    "tag_ref_type": "tag",
+    "tag_ref_sha": "14568ec9d3aa1a762813edaa9cd2a84da9c84c85",
+    "tag_objects": [
+      {
+        "sha": "14568ec9d3aa1a762813edaa9cd2a84da9c84c85",
+        "name": "v2.0.0",
+        "target_sha": "ca403b6264aeac561f87940c139a97ead2f2d2f4",
+        "target_type": "commit",
+        "verification": {
+          "verified": false,
+          "reason": "unsigned",
+          "verified_at": null,
+          "signature_sha256": null,
+          "payload_sha256": null
+        }
+      }
+    ],
+    "commit": "ca403b6264aeac561f87940c139a97ead2f2d2f4",
+    "commit_node_id": "C_kwDORWfC5toAKGNhNDAzYjYyNjRhZWFjNTYxZjg3OTQwYzEzOWE5N2VhZDJmMmQyZjQ",
+    "tree": "c53b72aeb2f8674015f91dd252def3eeb4231565",
+    "parents": [
+      "42bf708d740dedb8603a91e3c3104fb876c2090d",
+      "4415de09c2c7aceee3ed5c94db52e93cf97ced31"
+    ],
+    "commit_verification": {
+      "verified": true,
+      "reason": "valid",
+      "verified_at": "2026-08-13T22:48:30Z",
+      "signature_sha256": "c919b8608cc4fa92dfff0d49d071efc9b4774ec0ef80ffcb549949ee47ff548c",
+      "payload_sha256": "c5eaf62a965482eb0f491e4429f03003f1bd55e56eb4bc05b1ad6dd53e5c162d"
+    }
+  },
+  "snapshot_sha256": "87474021dce014ed9300701590a12869ce8e22cad285a3a6a4e2c903c295f56b",
+  "resources": [
+    {
+      "pack_id": "engram",
+      "kind": "notice",
+      "resource_id": "mit",
+      "upstream_path": "LICENSE",
+      "vendored_path": "bundle/notices/engram-mit",
+      "sha256": "7dff7c106e9512cefeda87b1bd573bc0d9217ac436f7e271ca5eac5cf15e15c5",
+      "files": [
+        {
+          "path": ".",
+          "size": 1071,
+          "mode": 420,
+          "sha256": "09608597ddda4e5f9033ac407a0d401986d96376c47f6d46789ca38db672dc15"
+        }
+      ]
+    },
+    {
+      "pack_id": "engram",
+      "kind": "skill",
+      "resource_id": "engram-memory-cli",
+      "upstream_path": "skills/engram-memory-cli",
+      "vendored_path": "bundle/skills/engram-memory-cli",
+      "sha256": "2105b9a7212a3534f26040ffbcbd34e276026536fccd70b4b28eb3b842237464",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 3911,
+          "mode": 420,
+          "sha256": "20589b1e95c770c72dce5ef645c0c0730919ee5a3f5e5df1c3f48ce43d780f9d"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "size": 229,
+          "mode": 420,
+          "sha256": "e5d99dae07dd1fa1a8259dbcf9aebae67785f99e8688f5b4feda1b85ce2a1088"
+        },
+        {
+          "path": "references/curation.md",
+          "size": 3526,
+          "mode": 420,
+          "sha256": "6f671f02ffeeccfd7a95d9b0fc645806e6e6b1a037ddd43c58695a62ece6c5e6"
+        }
+      ]
+    }
+  ]
+}

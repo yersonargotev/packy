@@ -4,21 +4,28 @@
 
 ## Purpose
 
-Selective durable memory for agent work
+Upstream Engram CLI memory workflows for agent work
 
-- Version: `2.0.0`
+- Version: `3.0.0`
 - Supported surfaces: `codex`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `engram`
 
 ## Resources
 
-### Skill
+### Notice
 
-- `engram-memory` — Curates durable project memory through the Engram CLI
-  - Role: `operational`
+- `mit` — Preserve the upstream Engram MIT license and attribution
+  - Role: `notice`
   - Dependencies: None.
   - Notices: None.
+
+### Skill
+
+- `engram-memory-cli` — Uses Engram project memory safely through the CLI
+  - Role: `operational`
+  - Dependencies: None.
+  - Notices: `notice:mit`
   - Codex capabilities: `external-executable-acquisition`
 
 ## Pack exclusions

@@ -5,6 +5,9 @@ publication describes the exact candidate it ships.
 
 ## Changes since the previous release
 
+- The Engram Pack now vendors the exact `engram-memory-cli` skill from Engram
+  `v2.0.0`, preserves its MIT notice, and retires Packy's former
+  `engram-memory` skill and helper without compatibility aliases.
 - Release preparation now derives the default next patch from the latest
   published stable release and rejects versions already present locally,
   remotely, or in GitHub Releases.
