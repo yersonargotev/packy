@@ -159,3 +159,84 @@ func TestIssue672EngramHistoricalGenerationIsCompleteAndSealed(t *testing.T) {
 		t.Fatalf("historical resource evidence = %#v", artifact.Resources)
 	}
 }
+
+func TestIssue672EngramSourceLockSealsTheExactReleaseAndCompleteSelection(t *testing.T) {
+	root := repositoryRoot(t)
+	var config struct {
+		Sources []struct {
+			ID         string `json:"id"`
+			Repository string `json:"repository"`
+			Selector   struct {
+				Mode string `json:"mode"`
+			} `json:"selector"`
+			Resources []struct {
+				Kind         string `json:"kind"`
+				ResourceID   string `json:"resource_id"`
+				UpstreamPath string `json:"upstream_path"`
+			} `json:"resources"`
+		} `json:"sources"`
+	}
+	configData, err := os.ReadFile(filepath.Join(root, "bundle", "sources.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(configData, &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Sources) < 1 || config.Sources[0].ID != "engram-source" || config.Sources[0].Repository != "yersonargotev/engram" || config.Sources[0].Selector.Mode != "stable-release" || len(config.Sources[0].Resources) != 2 {
+		t.Fatalf("Engram source registration = %#v", config.Sources)
+	}
+	wantBindings := []struct {
+		Kind         string
+		ResourceID   string
+		UpstreamPath string
+	}{
+		{Kind: "notice", ResourceID: "mit", UpstreamPath: "LICENSE"},
+		{Kind: "skill", ResourceID: "engram-memory-cli", UpstreamPath: "skills/engram-memory-cli"},
+	}
+	for i, want := range wantBindings {
+		got := config.Sources[0].Resources[i]
+		if got.Kind != want.Kind || got.ResourceID != want.ResourceID || got.UpstreamPath != want.UpstreamPath {
+			t.Fatalf("Engram source binding %d = %#v, want %#v", i, got, want)
+		}
+	}
+
+	lockData, err := os.ReadFile(filepath.Join(root, "bundle", "sources", "engram-source.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockDigest := sha256.Sum256(lockData)
+	if hex.EncodeToString(lockDigest[:]) != "4490d7d6d1ec35d66fc42c817530b564b5b6f7e3cac1d59aab4b5ea0cbd1fc9d" {
+		t.Fatalf("Engram source lock digest = %x", lockDigest)
+	}
+	var lock struct {
+		SourceID  string `json:"source_id"`
+		Candidate struct {
+			Commit  string `json:"commit"`
+			Release struct {
+				Tag string `json:"tag"`
+			} `json:"release"`
+		} `json:"candidate"`
+		Resources []struct {
+			Kind         string `json:"kind"`
+			ResourceID   string `json:"resource_id"`
+			UpstreamPath string `json:"upstream_path"`
+			Files        []struct {
+				Path   string `json:"path"`
+				SHA256 string `json:"sha256"`
+			} `json:"files"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(lockData, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if lock.SourceID != "engram-source" || lock.Candidate.Release.Tag != "v2.0.0" || lock.Candidate.Commit != "ca403b6264aeac561f87940c139a97ead2f2d2f4" || len(lock.Resources) != 2 || len(lock.Resources[0].Files) != 1 || len(lock.Resources[1].Files) != 3 {
+		t.Fatalf("Engram source lock = %#v", lock)
+	}
+	for i, want := range wantBindings {
+		got := lock.Resources[i]
+		if got.Kind != want.Kind || got.ResourceID != want.ResourceID || got.UpstreamPath != want.UpstreamPath {
+			t.Fatalf("Engram locked binding %d = %#v, want %#v", i, got, want)
+		}
+	}
+}

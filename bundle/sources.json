@@ -2,6 +2,28 @@
   "schema_version": 1,
   "sources": [
     {
+      "id": "engram-source",
+      "provider": "github",
+      "repository": "yersonargotev/engram",
+      "selector": {
+        "mode": "stable-release"
+      },
+      "resources": [
+        {
+          "pack_id": "engram",
+          "kind": "notice",
+          "resource_id": "mit",
+          "upstream_path": "LICENSE"
+        },
+        {
+          "pack_id": "engram",
+          "kind": "skill",
+          "resource_id": "engram-memory-cli",
+          "upstream_path": "skills/engram-memory-cli"
+        }
+      ]
+    },
+    {
       "id": "issue-delivery-source",
       "provider": "github",
       "repository": "yersonargotev/issue-deliver-pack",
