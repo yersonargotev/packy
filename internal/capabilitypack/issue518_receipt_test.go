@@ -113,6 +113,54 @@ func TestIssue518UpdateRetiresOnlyRequestedPackProjectionMissingFromCurrentPack(
 	}
 }
 
+func TestIssue518UpdateRequiresForceToRetireDriftedResidualProjection(t *testing.T) {
+	oldTarget := filepath.Join(t.TempDir(), "old-guide")
+	newTarget := filepath.Join(t.TempDir(), "new-guide")
+	intent := ActivationIntent{
+		PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1,
+		Selection: ResourceSelection{Mode: SelectionAll},
+	}
+	state := ActivationState{
+		Intent: intent, Intents: []ActivationIntent{intent}, snapshotManaged: true,
+		Ownership: []ProjectionOwnership{{
+			ID: "path:" + oldTarget, ProjectionID: "skill:old-guide", Target: oldTarget, Fingerprint: "receipt-digest",
+			PackID: "app", Surface: SurfaceCodex,
+		}},
+	}
+	pack := Pack{
+		manifestVersion: manifestSchemaV4, ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex},
+		Resources: []Resource{{Kind: "skill", ID: "new-guide", Source: "new-guide", Bindings: testCapabilityBindings("new-guide")}},
+	}
+	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{
+		{
+			ID: "skill:new-guide", ObservedFingerprint: "missing", DesiredFingerprint: "new-digest",
+			Action: ProjectionAction{ID: "skill:new-guide", Target: newTarget, Description: "install new guide"},
+		},
+		RemovalCandidate(ObservedProjection{
+			ID: "skill:old-guide", Exists: true, ObservedFingerprint: "broken", ProjectionKey: "path:" + oldTarget,
+			Action: ProjectionAction{ID: "skill:old-guide", Kind: ActionSkillLink, Target: oldTarget, ProjectionKey: "path:" + oldTarget},
+		}, ProjectionDeleteTarget, "", "remove old guide"),
+	}}
+
+	ordinary, _, _ := updateFixture([]Pack{pack}, state, observation)
+	ordinaryPlan, err := ordinary.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ordinaryPlan.Applicable() || len(ordinaryPlan.Blockers()) != 1 || hasPhaseActionID(ordinaryPlan.Phases(), ConsentDestructiveCleanup, "skill:old-guide") {
+		t.Fatalf("ordinary drift plan: disposition=%s blockers=%#v phases=%#v", ordinaryPlan.Disposition(), ordinaryPlan.Blockers(), ordinaryPlan.Phases())
+	}
+
+	forced, _, _ := updateFixture([]Pack{pack}, state, observation)
+	forcedPlan, err := forced.PreviewUpdate(context.Background(), UpdateRequest{PackID: "app", Surface: SurfaceCodex, Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !forcedPlan.Applicable() || len(forcedPlan.Blockers()) != 0 || !hasPhaseActionID(forcedPlan.Phases(), ConsentDestructiveCleanup, "skill:old-guide") {
+		t.Fatalf("forced drift plan: disposition=%s blockers=%#v phases=%#v", forcedPlan.Disposition(), forcedPlan.Blockers(), forcedPlan.Phases())
+	}
+}
+
 func TestIssue518DistinctResourcesTargetingOnePathBlockBeforeMutation(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "shared.md")
 	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
