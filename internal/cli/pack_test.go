@@ -1257,7 +1257,7 @@ func TestPackActivateEngramDryRunShowsOnlyReviewedSkillAndNoEffects(t *testing.T
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Pack: engram 2.0.0", "Phase: reversible-local", "Logical resources: 1 skill", "link skill engram-memory"} {
+	for _, want := range []string{"Pack: engram 3.0.0", "Phase: reversible-local", "Logical resources: 1 skill, 0 instruction, 0 mcp_server, 0 lifecycle, 0 agent, 0 command, 0 asset, 1 notice", "link skill engram-memory-cli"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -1296,8 +1296,8 @@ func TestPackActivateEngramInstallsOnlyTheReviewedSkill(t *testing.T) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
-	target := filepath.Join(home, ".agents", "skills", "engram-memory")
-	if link, err := os.Readlink(target); err != nil || !strings.HasSuffix(link, "/skills/engram-memory") {
+	target := filepath.Join(home, ".agents", "skills", "engram-memory-cli")
+	if link, err := os.Readlink(target); err != nil || !strings.HasSuffix(link, "/skills/engram-memory-cli") {
 		t.Fatalf("Engram skill link = %q, %v", link, err)
 	}
 	for _, retired := range []string{
@@ -1355,7 +1355,7 @@ func TestPackActivateEngramAcquiresOnlyWhenExecutableIsMissing(t *testing.T) {
 	if terminal.calls != 2 || len(runner.calls) != 1 || callStrings(runner.calls)[0] != "brew install gentleman-programming/tap/engram" {
 		t.Fatalf("acquisition effects prompts=%d calls=%v", terminal.calls, runner.calls)
 	}
-	if _, err := os.Readlink(filepath.Join(home, ".agents", "skills", "engram-memory")); err != nil {
+	if _, err := os.Readlink(filepath.Join(home, ".agents", "skills", "engram-memory-cli")); err != nil {
 		t.Fatalf("Engram skill missing after acquisition: %v", err)
 	}
 

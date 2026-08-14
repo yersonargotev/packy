@@ -149,7 +149,7 @@ func TestIssue519ProjectInstallationAndPersonalActivationStayIndependent(t *test
 	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"); err != nil {
 		t.Fatalf("install Addy: %v\n%s", err, out)
 	}
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", "engram", "--surface", "codex", "--resource", "skill:engram-memory"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", "engram", "--surface", "codex", "--resource", "skill:engram-memory-cli"); err != nil {
 		t.Fatalf("install Engram while declining activation: %v\n%s", err, out)
 	}
 	lockPath := filepath.Join(project, "packy.lock.json")
