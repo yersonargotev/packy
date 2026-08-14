@@ -2406,8 +2406,15 @@ func surfaceTransitionFacts(surface Surface, operation Operation, prior, desired
 	adapterOwnership := adapterOwnershipForSurface(ownership, surface)
 	transition := SurfaceTransition{Desired: desired, CurrentOwnership: adapterOwnership, ResolvedExecutables: resolutions}
 	switch operation {
-	case OperationDeactivate, OperationUpdate:
+	case OperationDeactivate:
 		transition.Prior = prior
+	case OperationUpdate:
+		transition.Prior = prior
+		for _, owner := range adapterOwnership {
+			if owner.PackID == desired.ID {
+				transition.ResidualOwnership = append(transition.ResidualOwnership, owner)
+			}
+		}
 	}
 	return transition
 }
