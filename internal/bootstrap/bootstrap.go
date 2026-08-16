@@ -116,6 +116,9 @@ func ensureInstalledSourceRef(ctx context.Context, opts BootstrapOptions) (bool,
 	if err := validateFetchedInstalledSource(ctx, opts); err != nil {
 		return false, err
 	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if _, err := gitOutput(ctx, opts, "checkout", "--detach", "FETCH_HEAD"); err != nil {
 		return false, fmt.Errorf("checkout Installed Source ref %s: %w", ref, err)
 	}
@@ -130,11 +133,8 @@ func validateFetchedInstalledSource(ctx context.Context, opts BootstrapOptions) 
 	if err := os.Remove(validationRoot); err != nil {
 		return fmt.Errorf("prepare Installed Source validation worktree: %w", err)
 	}
-	if _, err := gitOutput(ctx, opts, "worktree", "add", "--detach", validationRoot, "FETCH_HEAD"); err != nil {
-		return fmt.Errorf("prepare fetched Installed Source for validation: %w", err)
-	}
 	defer func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+		cleanupCtx, cancel := newCleanupContext(ctx)
 		defer cancel()
 		_, gitCleanupErr := gitOutput(cleanupCtx, opts, "worktree", "remove", "--force", validationRoot)
 		removeErr := os.RemoveAll(validationRoot)
@@ -154,11 +154,18 @@ func validateFetchedInstalledSource(ctx context.Context, opts BootstrapOptions) 
 			}
 		}
 	}()
+	if _, err := gitOutput(ctx, opts, "worktree", "add", "--detach", validationRoot, "FETCH_HEAD"); err != nil {
+		return fmt.Errorf("prepare fetched Installed Source for validation: %w", err)
+	}
 
 	if err := validateInstalledSource(ctx, validationRoot); err != nil {
 		return fmt.Errorf("fetched Installed Source has an invalid skill bundle: %w", err)
 	}
 	return nil
+}
+
+func newCleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 }
 
 func fetchInstalledSourceRef(ctx context.Context, opts BootstrapOptions, ref string) error {
@@ -286,6 +293,9 @@ func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) (err error
 	}
 	if err := validateInstalledSource(ctx, tmp); err != nil {
 		return fmt.Errorf("cloned Packy Source of Truth has an invalid skill bundle: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := os.Rename(tmp, opts.InstalledSource.Root()); err != nil {
 		return fmt.Errorf("install cloned Packy Source of Truth: %w", err)

@@ -166,6 +166,88 @@ esac
 	}
 }
 
+func TestValidationWorktreeCleanupIsIndependentBoundedAndVisible(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
+	cancelParent()
+	cleanupCtx, cancelCleanup := newCleanupContext(parent)
+	defer cancelCleanup()
+	if cleanupCtx.Err() != nil {
+		t.Fatalf("cleanup context inherited cancellation: %v", cleanupCtx.Err())
+	}
+	if _, ok := cleanupCtx.Deadline(); !ok {
+		t.Fatal("cleanup context has no deadline")
+	}
+
+	root := filepath.Join(t.TempDir(), "installed")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	git := filepath.Join(bin, "git")
+	script := `#!/bin/sh
+shift 2
+if [ "$1" = worktree ] && [ "$2" = add ]; then
+  validation_root="$4"
+  for skill in engineering/ask-matt productivity/grilling in-progress/loop-me; do
+    mkdir -p "$validation_root/bundle/skills/$skill"
+    printf '%s\n' '---' 'name: fixture' '---' > "$validation_root/bundle/skills/$skill/SKILL.md"
+  done
+  exit 0
+fi
+echo 'simulated cleanup failure' >&2
+exit 23
+`
+	if err := os.WriteFile(git, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	err := validateFetchedInstalledSource(context.Background(), BootstrapOptions{InstalledSource: InstalledSourceAt(root)})
+	if err == nil || !strings.Contains(err.Error(), "clean up Installed Source validation worktree") || !strings.Contains(err.Error(), "simulated cleanup failure") {
+		t.Fatalf("cleanup error = %v; want visible Git cleanup diagnostic", err)
+	}
+}
+
+func TestCanceledValidationWorktreeAddPreservesCancellationAndCleanupFailure(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	git := filepath.Join(bin, "git")
+	script := `#!/bin/sh
+shift 2
+if [ "$1" = worktree ] && [ "$2" = add ]; then
+  exec sleep 300
+fi
+echo 'cleanup after canceled add failed' >&2
+exit 24
+`
+	if err := os.WriteFile(git, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := validateFetchedInstalledSource(ctx, BootstrapOptions{InstalledSource: InstalledSourceAt(root)})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("validation error = %v; want original context deadline", err)
+	}
+	if !strings.Contains(err.Error(), "cleanup after canceled add failed") {
+		t.Fatalf("validation error = %v; want joined cleanup diagnostic", err)
+	}
+	entries, readErr := os.ReadDir(filepath.Dir(root))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".packy-validate.") {
+			t.Fatalf("canceled validation left temporary directory %s", entry.Name())
+		}
+	}
+}
+
 func writeValidInstalledSource(t *testing.T, root string) {
 	t.Helper()
 	for _, relative := range []string{
