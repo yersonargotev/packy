@@ -15,6 +15,8 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+const postApplyInspectionTimeout = 30 * time.Second
+
 // Backend is the presentation-neutral seam through which the TUI loads Packy
 // state, initializes Packy's Installed Source, and applies consented previews.
 type Backend interface {
@@ -209,6 +211,8 @@ type initializationFinished struct {
 	err error
 }
 
+type requestCanceled struct{}
+
 type previewResult struct {
 	preview Preview
 	err     error
@@ -224,6 +228,7 @@ type applyProgressMessage struct{ phase string }
 type Model struct {
 	backend                Backend
 	ctx                    context.Context
+	cancel                 context.CancelFunc
 	dashboard              Dashboard
 	err                    error
 	loaded                 bool
@@ -259,11 +264,13 @@ type Model struct {
 	applyPhase             string
 	applyStartedAt         time.Time
 	applyEvents            chan tea.Msg
+	applyContext           context.Context
 	applySpinner           spinner.Model
 	deferredQuit           bool
 	showingApplyResult     bool
 	applyOutcome           ApplyResult
 	applyErr               error
+	applyReloadComplete    bool
 	applyReloaded          bool
 	applyReloadErr         error
 	resultDetailsExpanded  bool
@@ -284,19 +291,46 @@ func NewModel(backend Backend) Model {
 }
 
 func newModel(ctx context.Context, backend Backend) Model {
-	return Model{backend: backend, ctx: ctx, applySpinner: spinner.New(), help: newHelpModel()}
+	operationCtx, cancel := context.WithCancel(ctx)
+	return Model{backend: backend, ctx: operationCtx, cancel: cancel, applySpinner: spinner.New(), help: newHelpModel()}
 }
 
 // Run executes the full-screen dashboard with caller-owned process I/O.
 func Run(ctx context.Context, backend Backend, input io.Reader, output io.Writer) error {
-	program := tea.NewProgram(newModel(ctx, backend), tea.WithContext(ctx), tea.WithInput(input), tea.WithOutput(output))
+	model := newModel(ctx, backend)
+	defer model.cancel()
+	programCtx, stopProgram := context.WithCancel(context.WithoutCancel(ctx))
+	program := tea.NewProgram(model, tea.WithContext(programCtx), tea.WithInput(input), tea.WithOutput(output), tea.WithoutSignalHandler())
+	requestRelayDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			program.Send(requestCanceled{})
+		case <-requestRelayDone:
+		}
+	}()
 	_, err := program.Run()
+	stopProgram()
+	close(requestRelayDone)
 	return err
 }
 
 func (m Model) Init() tea.Cmd {
+	return m.load(m.ctx)
+}
+
+func (m Model) load(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		dashboard, err := m.backend.Load(m.ctx)
+		dashboard, err := m.backend.Load(ctx)
+		return loadResult{dashboard: dashboard, err: err}
+	}
+}
+
+func (m Model) loadPostApply() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.applyContext, postApplyInspectionTimeout)
+		defer cancel()
+		dashboard, err := m.backend.Load(ctx)
 		return loadResult{dashboard: dashboard, err: err}
 	}
 }
@@ -310,24 +344,37 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.globalRow = boundedRow(m.globalRow, len(m.dashboard.Global.Packs))
 		m.projectRow = boundedRow(m.projectRow, len(m.dashboard.Project.Packs))
 		if m.showingApplyResult {
+			m.applyReloadComplete = true
 			m.applyReloaded = message.err == nil
 			m.applyReloadErr = message.err
 			if m.deferredQuit {
-				return m, tea.Quit
+				return m.quit()
 			}
 		}
+		if message.err != nil && m.ctx.Err() != nil && !m.showingApplyResult {
+			return m.quit()
+		}
+	case requestCanceled:
+		if m.applying || (m.showingApplyResult && !m.applyReloadComplete) {
+			m.deferredQuit = true
+			return m, nil
+		}
+		return m.quit()
 	case tea.WindowSizeMsg:
 		m.width, m.height = message.Width, message.Height
 		m.help.SetWidth(max(message.Width-4, 0))
 	case initializationProgress:
 		m.initializationProgress = append(m.initializationProgress, message.detail)
-		return m, waitForInitialization(m.initializationEvents)
+		return m, waitForInitialization(m.ctx, m.initializationEvents)
 	case initializationFinished:
 		m.initializing = false
 		m.initializationResult = true
 		m.initializationErr = message.err
 		m.pagedScreenScroll = 0
 		m.initializationEvents = nil
+		if message.err != nil && m.ctx.Err() != nil {
+			return m.quit()
+		}
 		return m, m.Init()
 	case previewResult:
 		m.previewing = false
@@ -338,17 +385,21 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.preview = &preview
 			m.previewScroll = 0
 		}
+		if message.err != nil && m.ctx.Err() != nil {
+			return m.quit()
+		}
 	case applyProgressMessage:
 		m.applyPhase = message.phase
-		return m, waitForApply(m.applyEvents)
+		return m, waitForApply(m.applyContext, m.applyEvents)
 	case applyFinished:
 		m.applying = false
 		m.showingApplyResult = true
 		m.applyOutcome = message.result
 		m.applyErr = message.err
+		m.applyReloadComplete = false
 		m.pagedScreenScroll = 0
 		m.applyEvents = nil
-		return m, m.Init()
+		return m, m.loadPostApply()
 	case spinner.TickMsg:
 		if m.applying {
 			var command tea.Cmd
@@ -362,12 +413,21 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.showingApplyResult && !m.applyReloadComplete {
+			if key.Matches(message, dashboardKeys.Quit) || key.Matches(message, dashboardKeys.Back) {
+				m.deferredQuit = true
+			}
+			return m, nil
+		}
 		if m.initializing {
+			if key.Matches(message, dashboardKeys.Quit) || key.Matches(message, dashboardKeys.Back) {
+				return m.quit()
+			}
 			return m, nil
 		}
 		if m.terminalUndersized() {
 			if key.Matches(message, dashboardKeys.Quit) {
-				return m, tea.Quit
+				return m.quit()
 			}
 			return m, nil
 		}
@@ -385,7 +445,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.resultDetailsExpanded = !m.resultDetailsExpanded
 				return m, nil
 			case key.Matches(message, dashboardKeys.Quit):
-				return m, tea.Quit
+				return m.quit()
 			case key.Matches(message, dashboardKeys.Back):
 				m.leaveApplyResult()
 				m.preview, m.previewErr, m.selecting, m.inspecting = nil, nil, false, false
@@ -411,7 +471,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.initializationResult {
 			switch {
 			case key.Matches(message, dashboardKeys.Quit):
-				return m, tea.Quit
+				return m.quit()
 			case key.Matches(message, dashboardKeys.Back):
 				m.initializationResult = false
 				return m, nil
@@ -427,7 +487,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.preview != nil || m.previewErr != nil {
 			if m.choosingCheckResult {
 				if key.Matches(message, dashboardKeys.Quit) {
-					return m, tea.Quit
+					return m.quit()
 				}
 				if key.Matches(message, dashboardKeys.Back) {
 					m.choosingCheckResult, m.controlledCheckResult = false, ""
@@ -455,7 +515,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.consenting {
 				if key.Matches(message, dashboardKeys.Quit) {
-					return m, tea.Quit
+					return m.quit()
 				}
 				if key.Matches(message, dashboardKeys.Back) {
 					m.cancelConsent()
@@ -491,7 +551,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			switch {
 			case key.Matches(message, dashboardKeys.Quit):
-				return m, tea.Quit
+				return m.quit()
 			case key.Matches(message, dashboardKeys.Back):
 				m.preview, m.previewErr, m.controlledCheckResult = nil, nil, ""
 				return m, nil
@@ -549,7 +609,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case key.Matches(message, dashboardKeys.Quit):
-			return m, tea.Quit
+			return m.quit()
 		case key.Matches(message, dashboardKeys.Reload):
 			m.loaded, m.err, m.inspecting, m.selecting, m.preview = false, nil, false, false, nil
 			return m, m.Init()
@@ -653,18 +713,35 @@ func (m Model) startInitialization() (tea.Model, tea.Cmd) {
 	events := m.initializationEvents
 	initialize := func() tea.Msg {
 		err := m.backend.Initialize(m.ctx, func(detail string) {
-			events <- initializationProgress{detail: detail}
+			sendOperationEvent(m.ctx, events, initializationProgress{detail: detail})
 		})
-		events <- initializationFinished{err: err}
+		sendOperationEvent(m.ctx, events, initializationFinished{err: err})
 		close(events)
 		return nil
 	}
-	return m, tea.Batch(initialize, waitForInitialization(events))
+	return m, tea.Batch(initialize, waitForInitialization(m.ctx, events))
 }
 
-func waitForInitialization(events <-chan tea.Msg) tea.Cmd {
+func waitForInitialization(ctx context.Context, events <-chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
-		return <-events
+		select {
+		case message, ok := <-events:
+			if !ok {
+				return initializationFinished{err: ctx.Err()}
+			}
+			return message
+		case <-ctx.Done():
+			return initializationFinished{err: ctx.Err()}
+		}
+	}
+}
+
+func sendOperationEvent(ctx context.Context, events chan<- tea.Msg, message tea.Msg) bool {
+	select {
+	case events <- message:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -731,7 +808,7 @@ func (m Model) updateActionChoice(message tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		return m, nil
 	}
 	if key.Matches(message, dashboardKeys.Quit) {
-		return m, tea.Quit
+		return m.quit()
 	}
 	if key.Matches(message, dashboardKeys.Back) {
 		m.choosingAction = false
@@ -854,7 +931,7 @@ func (m Model) updateSelection(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(message, dashboardKeys.Quit) {
-		return m, tea.Quit
+		return m.quit()
 	}
 	if key.Matches(message, dashboardKeys.Back) {
 		if m.advancedSelection {
@@ -1672,25 +1749,45 @@ func (m Model) startApply(request ApplyRequest) (tea.Model, tea.Cmd) {
 	m.applyPhase = "revalidation"
 	m.applyStartedAt = time.Now()
 	m.applyEvents = make(chan tea.Msg, 64)
+	m.applyContext = context.WithoutCancel(m.ctx)
+	m.applyReloadComplete = false
 	m.deferredQuit = false
 	events := m.applyEvents
+	applyCtx := m.applyContext
 	apply := func() tea.Msg {
-		result, err := m.backend.Apply(m.ctx, request, func(progress ApplyProgress) {
-			events <- applyProgressMessage{phase: progress.Phase}
+		result, err := m.backend.Apply(applyCtx, request, func(progress ApplyProgress) {
+			sendOperationEvent(applyCtx, events, applyProgressMessage{phase: progress.Phase})
 		})
-		events <- applyFinished{result: result, err: err}
+		sendOperationEvent(applyCtx, events, applyFinished{result: result, err: err})
 		close(events)
 		return nil
 	}
-	return m, tea.Batch(apply, waitForApply(events), m.applySpinner.Tick)
+	return m, tea.Batch(apply, waitForApply(applyCtx, events), m.applySpinner.Tick)
 }
 
-func waitForApply(events <-chan tea.Msg) tea.Cmd {
-	return func() tea.Msg { return <-events }
+func waitForApply(ctx context.Context, events <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case message, ok := <-events:
+			if !ok {
+				return applyFinished{err: ctx.Err()}
+			}
+			return message
+		case <-ctx.Done():
+			return applyFinished{err: ctx.Err()}
+		}
+	}
+}
+
+func (m Model) quit() (tea.Model, tea.Cmd) {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	return m, tea.Quit
 }
 
 func (m *Model) leaveApplyResult() {
-	m.showingApplyResult, m.applyErr, m.applyReloaded, m.deferredQuit = false, nil, false, false
+	m.showingApplyResult, m.applyErr, m.applyReloadComplete, m.applyReloaded, m.deferredQuit = false, nil, false, false, false
 	m.applyReloadErr = nil
 	m.applyOutcome = ApplyResult{}
 	m.resultDetailsExpanded = false

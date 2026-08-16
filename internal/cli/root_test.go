@@ -86,6 +86,23 @@ func TestNoArgumentExecutionStartsTUIOnlyWithInteractiveInputAndOutput(t *testin
 	}
 }
 
+func TestNoArgumentExecutionPropagatesCommandContextToTUI(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	opts.Terminal = &fakeTerminal{interactive: true}
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "command-context")
+	opts.TUIRunner = func(got context.Context, _ Options, _ io.Reader, _ io.Writer) error {
+		if got.Value(contextKey{}) != "command-context" {
+			t.Fatalf("TUI context value = %v; want command context", got.Value(contextKey{}))
+		}
+		return nil
+	}
+
+	if _, err := executeCommandContext(t, ctx, NewRootCommand(opts)); err != nil {
+		t.Fatalf("interactive command failed: %v", err)
+	}
+}
+
 func TestDoctorJSONHealthyWarningsAndFailures(t *testing.T) {
 	t.Run("healthy", func(t *testing.T) {
 		opts, _, _ := sandboxOptions(t)

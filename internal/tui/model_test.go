@@ -1502,8 +1502,8 @@ func TestUninitializedDashboardRequiresExplicitFocusedInitialization(t *testing.
 		t.Fatalf("initialization did not enter progress state:\n%s", view)
 	}
 	current, quit := current.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
-	if quit != nil || !strings.Contains(ansi.Strip(current.View().Content), "Initialization in progress") {
-		t.Fatal("active initialization allowed ordinary exit or stopped rendering progress")
+	if quit == nil {
+		t.Fatal("active initialization did not make ordinary exit cancelable")
 	}
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 20})
 	for _, line := range strings.Split(current.View().Content, "\n") {
