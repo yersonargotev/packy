@@ -16,6 +16,7 @@ import (
 var structuredOutputFixtures = []struct {
 	version, fixture, schema string
 }{
+	{"v1", "pack-audit.json", "pack-audit.schema.json"},
 	{"v3", "doctor.json", "doctor.schema.json"},
 	{"v5", "pack-show.json", "pack-show.schema.json"},
 	{"v10", "pack-status.json", "pack-status.schema.json"},
@@ -56,6 +57,12 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertStructuredOutput(t, root, "doctor.schema.json", doctor)
+
+	auditOutput, err := executeCommand(t, NewRootCommand(opts), "audit", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertStructuredOutput(t, root, "pack-audit.schema.json", auditOutput)
 
 	packReadOpts := Options{Env: MapEnv{"HOME": t.TempDir(), "XDG_CONFIG_HOME": filepath.Join(t.TempDir(), "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(root, "bundle", "skills")}}
 	show, err := executeCommand(t, NewRootCommand(packReadOpts), "show", "engram", "--json")
@@ -144,6 +151,18 @@ func TestStructuredOutputV3DoctorSchemaRejectsWrongVersionAndUnknownFields(t *te
 	} {
 		if err := validateStructuredOutput(t, root, "doctor.schema.json", []byte(document)); err == nil {
 			t.Fatalf("invalid document passed: %s", document)
+		}
+	}
+}
+
+func TestPackAuditSchemaRejectsWrongVersionAndUnknownFields(t *testing.T) {
+	root, _ := filepath.Abs(filepath.Join("..", ".."))
+	for _, document := range []string{
+		`{"schema_version":2,"report":"packy-audit","result":"healthy","checks":[],"project":{"state":"absent","packs":0,"surfaces":0,"projections":0,"verified":0,"findings":0},"summary":{"passes":0,"infos":0,"warnings":0,"failures":0}}`,
+		`{"schema_version":1,"report":"packy-audit","result":"healthy","checks":[],"project":{"state":"absent","packs":0,"surfaces":0,"projections":0,"verified":0,"findings":0},"summary":{"passes":0,"infos":0,"warnings":0,"failures":0},"unknown":true}`,
+	} {
+		if err := validateStructuredOutput(t, root, "pack-audit.schema.json", []byte(document)); err == nil {
+			t.Fatalf("invalid audit document passed: %s", document)
 		}
 	}
 }

@@ -8,6 +8,8 @@ import (
 
 type Severity string
 
+type CheckScope string
+
 const (
 	Pass Severity = "PASS"
 	Info Severity = "INFO"
@@ -15,8 +17,14 @@ const (
 	Fail Severity = "FAIL"
 )
 
+const (
+	CheckScopeWorkstation CheckScope = "workstation"
+	CheckScopeGlobal      CheckScope = "global"
+)
+
 type Check struct {
 	Name     string
+	Scope    CheckScope
 	Severity Severity
 	Detail   string
 }
@@ -83,6 +91,7 @@ func Diagnose(homeDir, configHome string, observation Observation) Report {
 		Context:       Context{HomeDir: homeDir, ConfigHome: configHome},
 		Checks: []Check{{
 			Name:     "packy-core",
+			Scope:    CheckScopeWorkstation,
 			Severity: Pass,
 			Detail:   "Packy core is available; no capability-pack activation is implied",
 		}},
@@ -90,6 +99,7 @@ func Diagnose(homeDir, configHome string, observation Observation) Report {
 	for _, surface := range observation.FailedStateSurfaces {
 		report.Checks = append(report.Checks, Check{
 			Name:     fmt.Sprintf("pack-state-%s", surface),
+			Scope:    CheckScopeGlobal,
 			Severity: Fail,
 			Detail:   fmt.Sprintf("capability-pack activation state for %s could not be observed; run packy status", surface),
 		})
@@ -145,7 +155,7 @@ func diagnoseActivePack(pack ActivePack) []Check {
 	}
 	if len(findings) == 0 {
 		checks := append(informationalConditions(name, pack.Conditions), controlledCheckInformation(name, pack)...)
-		return append([]Check{{Name: name, Severity: Pass, Detail: fmt.Sprintf("active pack %s on %s has no confirmed health problems", pack.ID, pack.Surface)}}, checks...)
+		return append([]Check{{Name: name, Scope: CheckScopeGlobal, Severity: Pass, Detail: fmt.Sprintf("active pack %s on %s has no confirmed health problems", pack.ID, pack.Surface)}}, checks...)
 	}
 
 	remediation := []string{statusCommand}
@@ -158,6 +168,7 @@ func diagnoseActivePack(pack ActivePack) []Check {
 	checks := append(informationalConditions(name, pack.Conditions), controlledCheckInformation(name, pack)...)
 	return append([]Check{{
 		Name:     name,
+		Scope:    CheckScopeGlobal,
 		Severity: severity,
 		Detail:   fmt.Sprintf("active pack %s on %s has %s; run %s", pack.ID, pack.Surface, strings.Join(findings, ", "), strings.Join(remediation, "; then run ")),
 	}}, checks...)
@@ -167,7 +178,7 @@ func controlledCheckInformation(packName string, pack ActivePack) []Check {
 	if pack.ControlledCheckState != "current" && pack.ControlledCheckState != "stale" {
 		return nil
 	}
-	return []Check{{Name: packName + "-controlled-runtime-check", Severity: Info, Detail: fmt.Sprintf("controlled runtime check state=%s result=%s observed_at=%s identity=%s", pack.ControlledCheckState, pack.ControlledCheckResult, pack.ControlledCheckObserved, pack.ControlledCheckIdentity)}}
+	return []Check{{Name: packName + "-controlled-runtime-check", Scope: CheckScopeGlobal, Severity: Info, Detail: fmt.Sprintf("controlled runtime check state=%s result=%s observed_at=%s identity=%s", pack.ControlledCheckState, pack.ControlledCheckResult, pack.ControlledCheckObserved, pack.ControlledCheckIdentity)}}
 }
 
 func informationalConditions(packName string, conditions []ReadinessCondition) []Check {
@@ -178,6 +189,7 @@ func informationalConditions(packName string, conditions []ReadinessCondition) [
 		}
 		checks = append(checks, Check{
 			Name:     fmt.Sprintf("%s-%s-%s-%s", packName, condition.Dimension, condition.Type, condition.Reason),
+			Scope:    CheckScopeGlobal,
 			Severity: Info,
 			Detail:   condition.Message,
 		})

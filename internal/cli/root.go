@@ -91,6 +91,7 @@ and receive a new Preview. Packy never retries it automatically.
 
 ` + projectLifecycleHelp,
 		Example: `  packy list
+  packy audit --json
   packy show matty
   packy show engram --json
   packy status
@@ -125,6 +126,7 @@ and receive a new Preview. Packy never retries it automatically.
 		newVersionCommand(),
 		newInitCommand(opts, workstationResolver),
 		newDoctorCommand(opts, workstationResolver),
+		newAuditCommand(opts, workstationResolver),
 		newPackListCommand(opts, workstationResolver),
 		newPackShowCommand(opts, workstationResolver),
 		newProjectVerifyCommand(opts.Getwd),

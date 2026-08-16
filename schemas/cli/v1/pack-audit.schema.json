@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yersonargotev.github.io/packy/schemas/cli/v1/pack-audit.schema.json",
+  "title": "Packy audit report v1",
+  "type": "object",
+  "required": ["schema_version", "report", "result", "checks", "project", "summary"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report": { "const": "packy-audit" },
+    "result": { "enum": ["healthy", "warnings", "failures"] },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["scope", "severity", "code", "detail"],
+        "properties": {
+          "scope": { "enum": ["workstation", "global", "project"] },
+          "severity": { "enum": ["PASS", "INFO", "WARN", "FAIL"] },
+          "code": { "type": "string", "minLength": 1 },
+          "detail": { "type": "string", "minLength": 1 },
+          "remediation": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "project": {
+      "type": "object",
+      "required": ["state", "packs", "surfaces", "projections", "verified", "findings"],
+      "properties": {
+        "state": { "enum": ["unavailable", "absent", "verified", "failed"] },
+        "packs": { "type": "integer", "minimum": 0 },
+        "surfaces": { "type": "integer", "minimum": 0 },
+        "projections": { "type": "integer", "minimum": 0 },
+        "verified": { "type": "integer", "minimum": 0 },
+        "findings": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": ["passes", "infos", "warnings", "failures"],
+      "properties": {
+        "passes": { "type": "integer", "minimum": 0 },
+        "infos": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "failures": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

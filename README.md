@@ -90,6 +90,7 @@ packy activate <pack> --surface codex \
 ```text
 packy init
 packy doctor
+packy audit
 packy list
 packy show <pack>
 packy verify
@@ -111,6 +112,15 @@ notices, and every locked projection without reading personal activation,
 runtime evidence, credentials, or executable availability. Use `--json` for
 the versioned `project-verification` report; exit status is zero only when the
 complete shared installation is intact.
+
+`packy audit` is the read-only trust report for humans, support, and
+automation. It combines workstation health, active global Pack health, and
+portable verification of the current project's Pack contract in one redacted,
+deterministically ordered result. A missing Git project or an ordinary project
+without a Pack contract is informational. Warnings—including unobservable
+runtime readiness—remain successful; confirmed inspection or project-integrity
+failures return a non-zero status. Use `packy audit --json` for the versioned
+shareable report.
 
 ## State and safety
 
