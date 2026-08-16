@@ -17,7 +17,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughProjectLi
 		t.Run(packID, func(t *testing.T) {
 			bundle := t.TempDir()
 			writeClaudeCompositionPack(t, bundle, packID, "1.0.0", "Original workflow.\n")
-			catalog, err := capabilitypack.DiscoverForDurableIntents(bundle)
+			catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -36,7 +36,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughProjectLi
 
 			updatedBundle := t.TempDir()
 			writeClaudeCompositionPack(t, updatedBundle, packID, "1.0.1", "Updated workflow.\n")
-			updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(updatedBundle)
+			updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -88,7 +88,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughGlobalLif
 		t.Run(packID, func(t *testing.T) {
 			bundle := t.TempDir()
 			writeClaudeCompositionPack(t, bundle, packID, "1.0.0", "Original workflow.\n")
-			catalog, err := capabilitypack.DiscoverForDurableIntents(bundle)
+			catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -112,7 +112,7 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughGlobalLif
 
 			updatedBundle := t.TempDir()
 			writeClaudeCompositionPack(t, updatedBundle, packID, "1.0.1", "Original workflow.\n")
-			updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(updatedBundle)
+			updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
 			if err != nil {
 				t.Fatal(err)
 			}

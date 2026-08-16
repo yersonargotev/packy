@@ -10,6 +10,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/yersonargotev/packy/internal/bundletransaction"
 )
 
 type compositeFixtureSource struct {
@@ -100,6 +103,30 @@ func TestCompositeCheckApplyMaterializesCompleteCrossSourcePack(t *testing.T) {
 		if _, err := os.Stat(sourceLockPath(repository, id)); err != nil {
 			t.Fatalf("member %s lock absent: %v", id, err)
 		}
+	}
+}
+
+func TestCompositeCheckHonorsCancellationWhileReadingLocalBundle(t *testing.T) {
+	repository, provider, request := compositeFixture(t)
+	guard, err := bundletransaction.Acquire(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard.Release()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := (Engine{Source: provider, Validate: acceptingBundleValidator()}).CheckComposite(ctx, request)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("CheckComposite error = %v; want context deadline", err)
+		}
+	case <-time.After(75 * time.Millisecond):
+		t.Fatal("CheckComposite did not stop after context cancellation")
 	}
 }
 

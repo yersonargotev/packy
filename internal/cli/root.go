@@ -298,7 +298,7 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 	if len(intentObservation.Intents) == 0 {
 		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
 	}
-	facade, err := activationFacade(opts, resolver)
+	facade, err := activationFacade(ctx, opts, resolver)
 	if err != nil {
 		observation.ActivePacks = failedActivePackObservations(intentObservation.Intents)
 		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
@@ -358,7 +358,7 @@ type invocationSources struct {
 	skills    skillbundle.Source
 }
 
-func resolveInvocationSources(opts Options, snapshot workstation.Snapshot) (invocationSources, error) {
+func resolveInvocationSources(ctx context.Context, opts Options, snapshot workstation.Snapshot) (invocationSources, error) {
 	installed, err := bootstrap.ResolveInstalledSource(snapshot, "")
 	if err != nil {
 		return invocationSources{}, err
@@ -367,7 +367,7 @@ func resolveInvocationSources(opts Options, snapshot workstation.Snapshot) (invo
 	if err != nil {
 		return invocationSources{}, fmt.Errorf("resolve skill source root: %w", err)
 	}
-	skills, err := skillbundle.ResolveSource(skillbundle.SourceOptions{
+	skills, err := skillbundle.ResolveSource(ctx, skillbundle.SourceOptions{
 		ExplicitRoot:    opts.Env.Getenv("PACKY_SKILLS_SOURCE"),
 		RepositoryStart: currentDirectory,
 		InstalledSource: installed,

@@ -448,19 +448,19 @@ type CatalogDetail struct {
 }
 
 // Discover loads the strict initial catalog from a Packy-owned bundle root.
-func Discover(bundleRoot string) (Catalog, error) {
-	return discoverProductionCatalog(bundleRoot, true)
+func Discover(ctx context.Context, bundleRoot string) (Catalog, error) {
+	return discoverProductionCatalog(ctx, bundleRoot, true)
 }
 
 // DiscoverForDurableIntents retains the lifecycle-facing name while loading
 // only the current manifest generation.
-func DiscoverForDurableIntents(bundleRoot string) (Catalog, error) {
-	return discoverProductionCatalog(bundleRoot, false)
+func DiscoverForDurableIntents(ctx context.Context, bundleRoot string) (Catalog, error) {
+	return discoverProductionCatalog(ctx, bundleRoot, false)
 }
 
-func discoverProductionCatalog(bundleRoot string, validateSources bool) (Catalog, error) {
+func discoverProductionCatalog(ctx context.Context, bundleRoot string, validateSources bool) (Catalog, error) {
 	var catalog Catalog
-	err := bundletransaction.WithExclusive(context.Background(), filepath.Dir(filepath.Clean(bundleRoot)), func() error {
+	err := bundletransaction.WithExclusive(ctx, filepath.Dir(filepath.Clean(bundleRoot)), func() error {
 		var err error
 		catalog, err = discoverCurrentCatalogUnlocked(bundleRoot, validateSources)
 		return err
@@ -498,12 +498,12 @@ func discoverCurrentCatalogUnlocked(bundleRoot string, validateSources bool) (Ca
 	return Catalog{packs: packs, bundleRoot: bundleRoot, entries: metadata, deferSourceValidation: !validateSources}, nil
 }
 
-func (c Catalog) refreshed() (Catalog, error) {
+func (c Catalog) refreshed(ctx context.Context) (Catalog, error) {
 	if c.bundleRoot == "" {
 		return c, nil
 	}
 	var refreshed Catalog
-	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
+	err := c.withBundleLock(ctx, func(locked Catalog) error {
 		var err error
 		refreshed, err = discoverCurrentCatalogUnlocked(c.bundleRoot, !c.deferSourceValidation)
 		refreshed.transactionHeld = locked.transactionHeld
@@ -532,10 +532,10 @@ func (c Catalog) List() []Pack {
 
 // ListDetails returns detached metadata only after every advertised current
 // pack has passed the same fresh validation as ListCurrent.
-func (c Catalog) ListDetails() ([]CatalogDetail, error) {
+func (c Catalog) ListDetails(ctx context.Context) ([]CatalogDetail, error) {
 	var details []CatalogDetail
-	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
-		fresh, err := locked.refreshed()
+	err := c.withBundleLock(ctx, func(locked Catalog) error {
+		fresh, err := locked.refreshed(ctx)
 		if err != nil {
 			return err
 		}
@@ -552,8 +552,8 @@ func (c Catalog) ListDetails() ([]CatalogDetail, error) {
 	return details, err
 }
 
-func (c Catalog) ShowDetail(id string) (CatalogDetail, error) {
-	pack, err := c.Show(id)
+func (c Catalog) ShowDetail(ctx context.Context, id string) (CatalogDetail, error) {
+	pack, err := c.Show(ctx, id)
 	if err != nil {
 		return CatalogDetail{}, err
 	}
@@ -562,10 +562,10 @@ func (c Catalog) ShowDetail(id string) (CatalogDetail, error) {
 
 // ListCurrent returns only after every advertised catalog-current pack has
 // passed the same source validation as direct current selection.
-func (c Catalog) ListCurrent() ([]Pack, error) {
+func (c Catalog) ListCurrent(ctx context.Context) ([]Pack, error) {
 	var packs []Pack
-	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
-		fresh, err := locked.refreshed()
+	err := c.withBundleLock(ctx, func(locked Catalog) error {
+		fresh, err := locked.refreshed(ctx)
 		if err != nil {
 			return err
 		}
@@ -582,13 +582,13 @@ func (c Catalog) ListCurrent() ([]Pack, error) {
 	return packs, err
 }
 
-func (c Catalog) Show(id string) (Pack, error) {
+func (c Catalog) Show(ctx context.Context, id string) (Pack, error) {
 	if !c.deferSourceValidation {
 		return c.showUnlocked(id)
 	}
 	var pack Pack
-	err := c.withBundleLock(context.Background(), func(locked Catalog) error {
-		fresh, err := locked.refreshed()
+	err := c.withBundleLock(ctx, func(locked Catalog) error {
+		fresh, err := locked.refreshed(ctx)
 		if err != nil {
 			return err
 		}

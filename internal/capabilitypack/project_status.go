@@ -550,9 +550,9 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 		status := &report.Packs[i]
 		var pack Pack
 		if status.Pack.Version != "" {
-			pack, err = f.catalog.resolveIntentPack(status.Pack.ID, status.Pack.Version)
+			pack, err = f.catalog.resolveIntentPack(ctx, status.Pack.ID, status.Pack.Version)
 		} else {
-			pack, err = f.catalog.Show(status.Pack.ID)
+			pack, err = f.catalog.Show(ctx, status.Pack.ID)
 		}
 		if err != nil {
 			// The installed receipt remains authoritative when the reviewed

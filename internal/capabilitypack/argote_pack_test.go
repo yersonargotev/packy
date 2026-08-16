@@ -1,6 +1,7 @@
 package capabilitypack
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,11 +10,11 @@ import (
 )
 
 func TestCheckedInArgotePackHasCollisionFreeNativeRoots(t *testing.T) {
-	catalog, err := Discover(filepath.Join("..", "..", "bundle"))
+	catalog, err := Discover(context.Background(), filepath.Join("..", "..", "bundle"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack, err := catalog.Show("argote")
+	pack, err := catalog.Show(context.Background(), "argote")
 	if err != nil {
 		t.Fatal(err)
 	}

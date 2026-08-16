@@ -37,6 +37,9 @@ type BootstrapResult struct {
 }
 
 func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (BootstrapResult, error) {
+	if err := ctx.Err(); err != nil {
+		return BootstrapResult{}, err
+	}
 	if strings.TrimSpace(opts.InstalledSource.Root()) == "" {
 		return BootstrapResult{}, errors.New("installed source root is required")
 	}
@@ -45,13 +48,17 @@ func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (Bootstra
 	}
 
 	result := BootstrapResult{}
-	if validateInstalledSource(opts.InstalledSource.Root()) == nil {
+	validationErr := validateInstalledSource(ctx, opts.InstalledSource.Root())
+	if validationErr == nil {
 		updated, err := ensureInstalledSourceRef(ctx, opts)
 		if err != nil {
 			return BootstrapResult{}, err
 		}
 		result.Updated = updated
 		return result, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return BootstrapResult{}, err
 	}
 
 	info, err := os.Stat(opts.InstalledSource.Root())
@@ -141,7 +148,7 @@ func validateFetchedInstalledSource(ctx context.Context, opts BootstrapOptions) 
 		}
 	}()
 
-	if err := validateInstalledSource(validationRoot); err != nil {
+	if err := validateInstalledSource(ctx, validationRoot); err != nil {
 		return fmt.Errorf("fetched Installed Source has an invalid skill bundle: %w", err)
 	}
 	return nil
@@ -152,6 +159,8 @@ func fetchInstalledSourceRef(ctx context.Context, opts BootstrapOptions, ref str
 		tagRef := "refs/tags/" + ref
 		if _, err := gitOutput(ctx, opts, "fetch", "--depth", "1", "origin", tagRef+":"+tagRef); err == nil {
 			return nil
+		} else if ctx.Err() != nil {
+			return err
 		}
 	}
 	_, err := gitOutput(ctx, opts, "fetch", "--depth", "1", "origin", ref)
@@ -166,7 +175,10 @@ func ValidateInstalledSourceRef(ctx context.Context, opts BootstrapOptions) erro
 	if strings.TrimSpace(opts.InstalledSource.Root()) == "" {
 		return errors.New("installed source root is required")
 	}
-	if validateInstalledSource(opts.InstalledSource.Root()) != nil {
+	if err := validateInstalledSource(ctx, opts.InstalledSource.Root()); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
 		return fmt.Errorf("default Installed Source is missing or invalid at %s; run packy init to initialize it", skillbundle.InstalledSourceRoot(opts.InstalledSource))
 	}
 	matches, err := repositoryRefMatchesReadOnly(opts, fmt.Sprintf("run packy init to align it with %s", ref))
@@ -253,7 +265,7 @@ func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) error {
 	if _, err := runGit(ctx, opts, args...); err != nil {
 		return fmt.Errorf("clone Packy Source of Truth: %w", err)
 	}
-	if err := validateInstalledSource(tmp); err != nil {
+	if err := validateInstalledSource(ctx, tmp); err != nil {
 		return fmt.Errorf("cloned Packy Source of Truth has an invalid skill bundle: %w", err)
 	}
 	if err := os.Rename(tmp, opts.InstalledSource.Root()); err != nil {
@@ -301,8 +313,8 @@ func gitEnv(opts BootstrapOptions) []string {
 	return env
 }
 
-func validateInstalledSource(dir string) error {
-	return skillbundle.ValidateSource(skillbundle.SourceRoot(dir), "")
+func validateInstalledSource(ctx context.Context, dir string) error {
+	return skillbundle.ValidateSource(ctx, skillbundle.SourceRoot(dir), "")
 }
 
 func dirEmpty(dir string) (bool, error) {

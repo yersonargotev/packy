@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/bootstrap"
@@ -42,7 +43,7 @@ func newCLITestFixture(t *testing.T, opts Options) cliTestFixture {
 	if err != nil {
 		t.Fatalf("resolve Installed Source fixture: %v", err)
 	}
-	skillSource, err := skillbundle.ResolveSource(skillbundle.SourceOptions{
+	skillSource, err := skillbundle.ResolveSource(context.Background(), skillbundle.SourceOptions{
 		ExplicitRoot:    opts.Env.Getenv("PACKY_SKILLS_SOURCE"),
 		RepositoryStart: currentDirectory,
 		InstalledSource: installedSource,

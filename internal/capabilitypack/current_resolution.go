@@ -1,9 +1,12 @@
 package capabilitypack
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
-func (c Catalog) resolveIntentPack(id, version string) (Pack, error) {
-	pack, err := c.Show(id)
+func (c Catalog) resolveIntentPack(ctx context.Context, id, version string) (Pack, error) {
+	pack, err := c.Show(ctx, id)
 	if err != nil {
 		return Pack{}, err
 	}
@@ -13,8 +16,8 @@ func (c Catalog) resolveIntentPack(id, version string) (Pack, error) {
 	return pack, nil
 }
 
-func (c Catalog) ResolveIntentPack(id, version string) (Pack, error) {
-	return c.resolveIntentPack(id, version)
+func (c Catalog) ResolveIntentPack(ctx context.Context, id, version string) (Pack, error) {
+	return c.resolveIntentPack(ctx, id, version)
 }
 
 func (c Catalog) validateUpdateRoute(id, _, toVersion string, _ int, _ Surface) error {

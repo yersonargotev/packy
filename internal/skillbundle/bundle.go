@@ -47,7 +47,7 @@ type Source struct {
 // ancestor, then the package Installed Source. Selection is deliberately
 // separate from Discover validation so path-only commands can still inspect a
 // missing installation and mutating commands fail when they request resources.
-func ResolveSource(opts SourceOptions) (Source, error) {
+func ResolveSource(ctx context.Context, opts SourceOptions) (Source, error) {
 	repositoryStart, err := filepath.Abs(opts.RepositoryStart)
 	if err != nil {
 		return Source{}, fmt.Errorf("resolve repository start: %w", err)
@@ -62,7 +62,11 @@ func ResolveSource(opts SourceOptions) (Source, error) {
 
 	for dir := repositoryStart; ; dir = filepath.Dir(dir) {
 		candidate := SourceRoot(dir)
-		if SourceRootExists(candidate) {
+		exists, err := SourceRootExists(ctx, candidate)
+		if err != nil {
+			return Source{}, err
+		}
+		if exists {
 			return Source{Root: candidate, Origin: SourceOriginRepository}, nil
 		}
 		parent := filepath.Dir(dir)
@@ -96,15 +100,15 @@ func BundleRoot(skillSourceRoot string) string {
 	return filepath.Dir(filepath.Clean(skillSourceRoot))
 }
 
-func SourceRootExists(sourceRoot string) bool {
+func SourceRootExists(ctx context.Context, sourceRoot string) (bool, error) {
 	exists := false
 	repositoryRoot := filepath.Dir(BundleRoot(sourceRoot))
-	err := bundletransaction.WithExclusive(context.Background(), repositoryRoot, func() error {
+	err := bundletransaction.WithExclusive(ctx, repositoryRoot, func() error {
 		info, statErr := os.Stat(sourceRoot)
 		exists = statErr == nil && info.IsDir()
 		return nil
 	})
-	return err == nil && exists
+	return exists, err
 }
 
 // Skill is the installer's ownership metadata for one bundled skill.
@@ -148,9 +152,9 @@ func (err MalformedSourceError) Unwrap() error {
 // shape without knowing HOME or CLI state details. missingSourceHint adds
 // source-selection context to a MissingSourceError without moving validation out
 // of this package.
-func Discover(sourceRoot, linkDir, missingSourceHint string) ([]Skill, error) {
+func Discover(ctx context.Context, sourceRoot, linkDir, missingSourceHint string) ([]Skill, error) {
 	var skills []Skill
-	err := bundletransaction.WithExclusive(context.Background(), transactionRoot(sourceRoot), func() error {
+	err := bundletransaction.WithExclusive(ctx, transactionRoot(sourceRoot), func() error {
 		var err error
 		skills, err = discover(sourceRoot, linkDir, missingSourceHint)
 		return err
@@ -215,8 +219,8 @@ func transactionRoot(sourceRoot string) string {
 
 // ValidateSource verifies that a selected root contains the complete Packy v0
 // skill structure without writing or publishing any resources.
-func ValidateSource(sourceRoot, missingSourceHint string) error {
-	_, err := Discover(sourceRoot, "", missingSourceHint)
+func ValidateSource(ctx context.Context, sourceRoot, missingSourceHint string) error {
+	_, err := Discover(ctx, sourceRoot, "", missingSourceHint)
 	return err
 }
 

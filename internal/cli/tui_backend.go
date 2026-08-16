@@ -50,7 +50,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		Health: healthForTUI(health),
 		Global: tui.Scope{Available: true},
 	}
-	catalog, err := discoverPackCatalog(b.opts, b.resolver)
+	catalog, err := discoverPackCatalog(ctx, b.opts, b.resolver)
 	if err != nil {
 		dashboard.Setup = tui.Setup{
 			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
@@ -61,7 +61,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		}
 		return dashboard, nil
 	}
-	details, err := catalog.ListDetails()
+	details, err := catalog.ListDetails(ctx)
 	if err != nil {
 		dashboard.Setup = tui.Setup{
 			InitializationAvailable: strings.TrimSpace(b.opts.Env.Getenv("PACKY_SKILLS_SOURCE")) == "",
@@ -73,7 +73,7 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 		return dashboard, nil
 	}
 	dashboard.Global.Packs = catalogPacksForTUI(details, nil)
-	facade, err := activationFacade(b.opts, b.resolver)
+	facade, err := activationFacade(ctx, b.opts, b.resolver)
 	if err != nil {
 		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 			Cause:           fmt.Sprintf("compose global Pack status: %v", err),
@@ -118,10 +118,10 @@ func (b *tuiBackend) Load(ctx context.Context) (tui.Dashboard, error) {
 	request := capabilitypack.ProjectStatusRequest{
 		ProjectRoot: projectRoot,
 		PackyHome:   snapshot.PackyHome(),
-		Adapters:    projectStatusAdapters(b.opts, snapshot),
+		Adapters:    projectStatusAdapters(ctx, b.opts, snapshot),
 		Resolver:    projectExecutableResolver(b.opts, snapshot),
 	}
-	status, err := projectStatusFacade(b.opts, snapshot).InspectProjectStatus(ctx, request)
+	status, err := projectStatusFacade(ctx, b.opts, snapshot).InspectProjectStatus(ctx, request)
 	if err != nil {
 		dashboard.Setup.Blockers = append(dashboard.Setup.Blockers, tui.SetupBlocker{
 			Cause:           fmt.Sprintf("inspect current project: %v", err),
@@ -160,7 +160,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 		if err != nil {
 			return tui.Preview{}, err
 		}
-		composition, err := resolvePackComposition(b.opts, b.resolver)
+		composition, err := resolvePackComposition(ctx, b.opts, b.resolver)
 		if err != nil {
 			return tui.Preview{}, err
 		}
@@ -192,7 +192,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 			return projectPreviewForTUI(preview, projectRoot, "update"), nil
 		case "activate":
 			preview, previewErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{
-				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(ctx, b.opts, surface, snapshot),
 			})
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
@@ -201,7 +201,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 		case "check":
 			preview, previewErr := facade.PreviewControlledCheck(ctx, capabilitypack.ControlledCheckRequest{
 				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot,
-				PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+				PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(ctx, b.opts, surface, snapshot),
 			})
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
@@ -209,7 +209,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 			return controlledCheckPreviewForTUI(preview, projectRoot), nil
 		case "deactivate":
 			preview, previewErr := capabilitypack.PreviewProjectDeactivation(ctx, capabilitypack.ProjectDeactivationRequest{
-				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+				PackID: request.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(ctx, b.opts, surface, snapshot),
 			})
 			if previewErr != nil {
 				return tui.Preview{}, previewErr
@@ -225,7 +225,7 @@ func (b *tuiBackend) Preview(ctx context.Context, request tui.PreviewRequest) (t
 	if request.Scope != "global" {
 		return tui.Preview{}, fmt.Errorf("preview scope %q is unsupported", request.Scope)
 	}
-	facade, err := activationFacade(b.opts, b.resolver)
+	facade, err := activationFacade(ctx, b.opts, b.resolver)
 	if err != nil {
 		return tui.Preview{}, err
 	}
@@ -265,7 +265,7 @@ func (b *tuiBackend) Apply(ctx context.Context, request tui.ApplyRequest, progre
 		return tui.ApplyResult{Stage: "revalidation"}, fmt.Errorf("TUI Apply scope %q is unsupported", request.Preview.Scope)
 	}
 	progress(tui.ApplyProgress{Phase: "revalidation"})
-	facade, err := activationFacade(b.opts, b.resolver)
+	facade, err := activationFacade(ctx, b.opts, b.resolver)
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
 	}
@@ -312,7 +312,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
 	}
-	composition, err := resolvePackComposition(b.opts, b.resolver)
+	composition, err := resolvePackComposition(ctx, b.opts, b.resolver)
 	if err != nil {
 		return tui.ApplyResult{Stage: "revalidation"}, err
 	}
@@ -326,7 +326,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 	case "check":
 		fresh, previewErr := facade.PreviewControlledCheck(ctx, capabilitypack.ControlledCheckRequest{
 			PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot,
-			PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+			PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(ctx, b.opts, surface, snapshot),
 		})
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
@@ -369,7 +369,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		progress(tui.ApplyProgress{Phase: "verification"})
 		result := tui.ApplyResult{Stage: "verification", Verified: applied.Status == "verified" || applied.Status == "no-op", Summary: fmt.Sprintf("Installed %s in the current project", request.Preview.PackID), Details: []string{"Project installation verified separately from personal runtime activation"}, RuntimeActivation: "not required"}
 		if capabilitypack.ProjectPackRequiresActivation(fresh.Lock, request.Preview.PackID, surface) {
-			activation, activationErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(b.opts, surface, snapshot)})
+			activation, activationErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: projectRuntimeAdapter(ctx, b.opts, surface, snapshot)})
 			if activationErr != nil {
 				result.RuntimeActivation = "unknown"
 				result.PendingActions = append(result.PendingActions, "Reload project status before personal activation: "+activationErr.Error())
@@ -410,7 +410,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		progress(tui.ApplyProgress{Phase: "verification"})
 		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "verified" || applied.Status == "no-op", Summary: fmt.Sprintf("Updated %s in the current project", request.Preview.PackID), Details: []string{"Reviewed project intent and personal runtime activation remain separate"}}, nil
 	case "activate":
-		adapter := projectRuntimeAdapter(b.opts, surface, snapshot)
+		adapter := projectRuntimeAdapter(ctx, b.opts, surface, snapshot)
 		fresh, previewErr := facade.PreviewProjectActivation(ctx, capabilitypack.ProjectActivationRequest{PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
 		if previewErr != nil {
 			return tui.ApplyResult{Stage: "revalidation"}, previewErr
@@ -436,7 +436,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 		progress(tui.ApplyProgress{Phase: "verification"})
 		return tui.ApplyResult{Stage: "verification", Verified: applied.Status == "active", Summary: fmt.Sprintf("Personally activated %s for the current project", request.Preview.PackID), Details: []string{"Project installation remains independently installed"}}, nil
 	case "deactivate":
-		adapter := projectRuntimeAdapter(b.opts, surface, snapshot)
+		adapter := projectRuntimeAdapter(ctx, b.opts, surface, snapshot)
 		fresh, previewErr := capabilitypack.PreviewProjectDeactivation(ctx, capabilitypack.ProjectDeactivationRequest{
 			PackID: request.Preview.PackID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter,
 		})
@@ -497,7 +497,7 @@ func (b *tuiBackend) applyProject(ctx context.Context, request tui.ApplyRequest,
 func (b *tuiBackend) previewProjectUninstall(ctx context.Context, snapshot workstation.Snapshot, packID string, surface capabilitypack.Surface, projectRoot string) (tui.Preview, capabilitypack.ProjectPackUninstallPreview, error) {
 	preview, err := capabilitypack.PreviewProjectPackUninstall(ctx, capabilitypack.ProjectPackUninstallRequest{
 		PackID: packID, Surface: surface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(),
-		UninstallAdapter: projectOfflineAdapter(surface), RuntimeAdapter: projectRuntimeAdapter(b.opts, surface, snapshot),
+		UninstallAdapter: projectOfflineAdapter(surface), RuntimeAdapter: projectRuntimeAdapter(ctx, b.opts, surface, snapshot),
 	})
 	if err != nil {
 		return tui.Preview{}, capabilitypack.ProjectPackUninstallPreview{}, err

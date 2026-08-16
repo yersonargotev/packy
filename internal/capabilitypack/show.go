@@ -189,7 +189,7 @@ func (f Facade) Show(ctx context.Context, id string) (ShowReport, error) {
 }
 
 func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
-	detail, err := f.catalog.ShowDetail(id)
+	detail, err := f.catalog.ShowDetail(ctx, id)
 	if err != nil {
 		return ShowReport{}, err
 	}

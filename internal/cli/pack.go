@@ -136,7 +136,7 @@ func deactivateBeforeProjectUninstall(cmd *cobra.Command, opts Options, snapshot
 		surfaces = []capabilitypack.Surface{selected}
 	}
 	for _, projectSurface := range surfaces {
-		adapter := projectRuntimeAdapter(opts, projectSurface, snapshot)
+		adapter := projectRuntimeAdapter(cmd.Context(), opts, projectSurface, snapshot)
 		preview, previewErr := capabilitypack.PreviewProjectDeactivation(cmd.Context(), capabilitypack.ProjectDeactivationRequest{
 			PackID: packID, Surface: projectSurface, ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter,
 		})
@@ -256,7 +256,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if surface == "" {
 				return errors.New("--surface is required when installing a pack")
 			}
-			composition, err := resolvePackComposition(opts, workstationResolver)
+			composition, err := resolvePackComposition(cmd.Context(), opts, workstationResolver)
 			if err != nil {
 				return err
 			}
@@ -331,7 +331,7 @@ func newPackInstallCommand(opts Options, workstationResolver *workstation.Resolv
 			if err = renderReadinessConditions(cmd.OutOrStdout(), result.Conditions); err != nil {
 				return err
 			}
-			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), projectRuntimeAdapter(opts, report.Surface, snapshot))
+			return offerProjectActivation(cmd, opts, facade, report, projectRoot, snapshot.PackyHome(), projectRuntimeAdapter(cmd.Context(), opts, report.Surface, snapshot))
 		},
 	}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (codex)")
@@ -475,7 +475,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 			if err != nil {
 				return err
 			}
-			adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot)
+			adapter := projectRuntimeAdapter(cmd.Context(), opts, capabilitypack.Surface(surface), snapshot)
 			preview, err := capabilitypack.PreviewProjectDeactivation(cmd.Context(), capabilitypack.ProjectDeactivationRequest{PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot, PackyHome: snapshot.PackyHome(), Adapter: adapter})
 			if err != nil {
 				return err
@@ -505,7 +505,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 			}
 			resources = append(resources, resource)
 		}
-		facade, err := activationFacade(opts, workstationResolver)
+		facade, err := activationFacade(cmd.Context(), opts, workstationResolver)
 		if err != nil {
 			return err
 		}
@@ -608,7 +608,7 @@ func newPackUpdateCommand(opts Options, workstationResolver *workstation.Resolve
 			if err != nil {
 				return err
 			}
-			facade, err := activationFacade(opts, workstationResolver)
+			facade, err := activationFacade(cmd.Context(), opts, workstationResolver)
 			if err != nil {
 				return err
 			}
@@ -644,7 +644,7 @@ func runProjectPackUpdate(cmd *cobra.Command, opts Options, workstationResolver 
 	if err != nil {
 		return err
 	}
-	composition, err := resolvePackComposition(opts, workstationResolver)
+	composition, err := resolvePackComposition(cmd.Context(), opts, workstationResolver)
 	if err != nil {
 		return err
 	}
@@ -810,12 +810,12 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 					globalRelevant = globalRelevant || intent.PackID == args[0] && intent.Surface == capabilitypack.Surface(surface)
 				}
 				if globalRelevant {
-					facade, err = activationFacade(opts, workstationResolver)
+					facade, err = activationFacade(cmd.Context(), opts, workstationResolver)
 					if err != nil {
 						return err
 					}
 				}
-				adapter := projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot)
+				adapter := projectRuntimeAdapter(cmd.Context(), opts, capabilitypack.Surface(surface), snapshot)
 				preview, err := facade.PreviewProjectActivation(cmd.Context(), capabilitypack.ProjectActivationRequest{
 					PackID: args[0], Surface: capabilitypack.Surface(surface), ProjectRoot: projectRoot,
 					PackyHome: snapshot.PackyHome(), Adapter: adapter,
@@ -855,7 +855,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 					selection.Roots = append(selection.Roots, resource)
 				}
 			}
-			facade, err := activationFacade(opts, workstationResolver)
+			facade, err := activationFacade(cmd.Context(), opts, workstationResolver)
 			if err != nil {
 				return err
 			}
@@ -879,14 +879,14 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	return cmd
 }
 
-func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, snapshot workstation.Snapshot) capabilitypack.SurfaceAdapter {
+func projectRuntimeAdapter(ctx context.Context, opts Options, surface capabilitypack.Surface, snapshot workstation.Snapshot) capabilitypack.SurfaceAdapter {
 	if adapter := opts.SurfaceAdapters[surface]; adapter != nil {
 		return adapter
 	}
 	home := snapshot.Home()
 	if surface == capabilitypack.SurfaceCodex && home != "" {
 		layout := codex.NewCanonicalLayout(home)
-		return withControlledCheckFacts(opts, surface, codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile()))
+		return withControlledCheckFacts(ctx, opts, surface, codex.NewSurfaceAdapterWithConfig("", "", layout.PromptFile(), layout.ConfigFile()))
 	}
 	if surface == capabilitypack.SurfaceClaude && home != "" {
 		executable, _ := opts.ClaudeLookPath("claude")
@@ -900,16 +900,16 @@ func projectRuntimeAdapter(opts Options, surface capabilitypack.Surface, snapsho
 		if opts.ClaudeRuntimeEvidence != nil {
 			adapter = adapter.WithRuntimeEvidence(opts.ClaudeRuntimeEvidence)
 		}
-		return withControlledCheckFacts(opts, surface, adapter)
+		return withControlledCheckFacts(ctx, opts, surface, adapter)
 	}
-	return withControlledCheckFacts(opts, surface, projectOfflineAdapter(surface))
+	return withControlledCheckFacts(ctx, opts, surface, projectOfflineAdapter(surface))
 }
 
-func projectStatusAdapters(opts Options, snapshot workstation.Snapshot) map[capabilitypack.Surface]capabilitypack.SurfaceAdapter {
+func projectStatusAdapters(ctx context.Context, opts Options, snapshot workstation.Snapshot) map[capabilitypack.Surface]capabilitypack.SurfaceAdapter {
 	return map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-		capabilitypack.SurfaceClaude:   projectRuntimeAdapter(opts, capabilitypack.SurfaceClaude, snapshot),
-		capabilitypack.SurfaceCodex:    projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot),
-		capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(opts, capabilitypack.SurfaceOpenCode, snapshot),
+		capabilitypack.SurfaceClaude:   projectRuntimeAdapter(ctx, opts, capabilitypack.SurfaceClaude, snapshot),
+		capabilitypack.SurfaceCodex:    projectRuntimeAdapter(ctx, opts, capabilitypack.SurfaceCodex, snapshot),
+		capabilitypack.SurfaceOpenCode: projectRuntimeAdapter(ctx, opts, capabilitypack.SurfaceOpenCode, snapshot),
 	}
 }
 
@@ -917,8 +917,8 @@ func projectExecutableResolver(opts Options, snapshot workstation.Snapshot) capa
 	return toolbin.NewPATHResolver(opts.Runner.LookPath)
 }
 
-func projectStatusFacade(opts Options, snapshot workstation.Snapshot) capabilitypack.Facade {
-	adapters := projectStatusAdapters(opts, snapshot)
+func projectStatusFacade(ctx context.Context, opts Options, snapshot workstation.Snapshot) capabilitypack.Facade {
+	adapters := projectStatusAdapters(ctx, opts, snapshot)
 	return capabilitypack.NewFacade(capabilitypack.Catalog{},
 		capabilitypack.WithActivation(capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File()), adapters),
 		capabilitypack.WithExternalEffects(projectExecutableResolver(opts, snapshot), nil, nil),
@@ -1079,8 +1079,8 @@ func readinessValue(value capabilitypack.ReadinessValue) string {
 	return string(value)
 }
 
-func activationFacade(opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Facade, error) {
-	composition, err := resolvePackComposition(opts, workstationResolver)
+func activationFacade(ctx context.Context, opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Facade, error) {
+	composition, err := resolvePackComposition(ctx, opts, workstationResolver)
 	if err != nil {
 		return capabilitypack.Facade{}, err
 	}
@@ -1096,7 +1096,7 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 			claudePacks[pack.ID+"@"+pack.Version] = pack
 		}
 	}
-	claudeState, err := store.LoadSnapshot(context.Background(), capabilitypack.SurfaceClaude)
+	claudeState, err := store.LoadSnapshot(ctx, capabilitypack.SurfaceClaude)
 	if err != nil {
 		return capabilitypack.Facade{}, fmt.Errorf("load Claude activation contracts: %w", err)
 	}
@@ -1108,7 +1108,7 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 		if !intent.Active || intent.Surface != capabilitypack.SurfaceClaude {
 			continue
 		}
-		pack, resolveErr := composition.catalog.ResolveIntentPack(intent.PackID, intent.Version)
+		pack, resolveErr := composition.catalog.ResolveIntentPack(ctx, intent.PackID, intent.Version)
 		if resolveErr != nil {
 			return capabilitypack.Facade{}, fmt.Errorf("resolve Claude activation contract %s@%s: %w", intent.PackID, intent.Version, resolveErr)
 		}
@@ -1127,9 +1127,9 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 	adapters := opts.SurfaceAdapters
 	if adapters == nil {
 		adapters = map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{
-			capabilitypack.SurfaceCodex:    withControlledCheckFacts(opts, capabilitypack.SurfaceCodex, codexAdapter),
-			capabilitypack.SurfaceOpenCode: withControlledCheckFacts(opts, capabilitypack.SurfaceOpenCode, openCodeAdapter),
-			capabilitypack.SurfaceClaude:   withControlledCheckFacts(opts, capabilitypack.SurfaceClaude, claudeAdapter),
+			capabilitypack.SurfaceCodex:    withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceCodex, codexAdapter),
+			capabilitypack.SurfaceOpenCode: withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceOpenCode, openCodeAdapter),
+			capabilitypack.SurfaceClaude:   withControlledCheckFacts(ctx, opts, capabilitypack.SurfaceClaude, claudeAdapter),
 		}
 	}
 	return capabilitypack.NewFacade(composition.catalog,
@@ -1143,10 +1143,10 @@ func activationFacade(opts Options, workstationResolver *workstation.Resolver) (
 	), nil
 }
 
-func withControlledCheckFacts(opts Options, surface capabilitypack.Surface, adapter capabilitypack.SurfaceAdapter) capabilitypack.SurfaceAdapter {
+func withControlledCheckFacts(ctx context.Context, opts Options, surface capabilitypack.Surface, adapter capabilitypack.SurfaceAdapter) capabilitypack.SurfaceAdapter {
 	return capabilitypack.WithControlledCheckDescriptor(adapter, capabilitypack.ControlledCheckDescriptor{
 		AdapterVersion: "packy/" + packyversion.Value + "/" + string(surface) + "-surface/v1",
-		HostVersion:    observableSurfaceVersion(context.Background(), opts.Runner, string(surface)),
+		HostVersion:    observableSurfaceVersion(ctx, opts.Runner, string(surface)),
 		Instructions:   []string{fmt.Sprintf("In a fresh %s session, exercise the selected Pack behavior and record whether it succeeds.", surface)},
 	})
 }
@@ -1432,9 +1432,9 @@ func newControlledCheckCommand(opts Options, workstationResolver *workstation.Re
 				if err != nil {
 					return err
 				}
-				adapter = projectRuntimeAdapter(opts, capabilitypack.Surface(surface), snapshot)
+				adapter = projectRuntimeAdapter(cmd.Context(), opts, capabilitypack.Surface(surface), snapshot)
 			}
-			facade, err := activationFacade(opts, workstationResolver)
+			facade, err := activationFacade(cmd.Context(), opts, workstationResolver)
 			if err != nil {
 				return err
 			}
@@ -1546,9 +1546,9 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 				}
 				statusRequest := capabilitypack.ProjectStatusRequest{
 					ProjectRoot: projectRoot, PackID: packID, Surface: capabilitypack.Surface(surface), RequireInstalled: require == "installed", RequireUsable: require == "usable", PackyHome: snapshot.PackyHome(),
-					Adapters: projectStatusAdapters(opts, snapshot), Resolver: projectExecutableResolver(opts, snapshot),
+					Adapters: projectStatusAdapters(cmd.Context(), opts, snapshot), Resolver: projectExecutableResolver(opts, snapshot),
 				}
-				facade := projectStatusFacade(opts, snapshot)
+				facade := projectStatusFacade(cmd.Context(), opts, snapshot)
 				store := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(snapshot.PackyHome()).File())
 				global := capabilitypack.ObserveActiveIntents(cmd.Context(), store)
 				globalRelevant := packID == "" && (len(global.FailedSurfaces) > 0 || len(global.Intents) > 0)
@@ -1559,7 +1559,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 					globalRelevant = globalRelevant || intent.PackID == packID && (surface == "" || intent.Surface == capabilitypack.Surface(surface))
 				}
 				if globalRelevant {
-					fullFacade, facadeErr := activationFacade(opts, workstationResolver)
+					fullFacade, facadeErr := activationFacade(cmd.Context(), opts, workstationResolver)
 					if facadeErr != nil {
 						return facadeErr
 					}
@@ -1598,7 +1598,7 @@ func newPackStatusCommand(opts Options, workstationResolver *workstation.Resolve
 			if resource != "" && (packID == "" || surface == "") {
 				return fmt.Errorf("--resource is valid only for status of one pack and surface")
 			}
-			facade, err := activationFacade(opts, workstationResolver)
+			facade, err := activationFacade(cmd.Context(), opts, workstationResolver)
 			if err != nil {
 				return err
 			}
@@ -1997,11 +1997,11 @@ func newPackListCommand(opts Options, workstationResolver *workstation.Resolver)
 	return &cobra.Command{
 		Use: "list", Short: "List available capability packs", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			catalog, err := discoverPackCatalog(opts, workstationResolver)
+			catalog, err := discoverPackCatalog(cmd.Context(), opts, workstationResolver)
 			if err != nil {
 				return err
 			}
-			packs, err := catalog.ListCurrent()
+			packs, err := catalog.ListCurrent(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -2024,7 +2024,7 @@ func newPackShowCommand(opts Options, workstationResolver *workstation.Resolver)
 	cmd := &cobra.Command{
 		Use: "show <pack>", Short: "Show a capability pack", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			facade, err := activationFacade(opts, workstationResolver)
+			facade, err := activationFacade(cmd.Context(), opts, workstationResolver)
 			if err != nil {
 				return err
 			}
@@ -2054,20 +2054,20 @@ type packComposition struct {
 	engram     engrambin.Acquirer
 }
 
-func resolvePackComposition(opts Options, workstationResolver *workstation.Resolver) (packComposition, error) {
+func resolvePackComposition(ctx context.Context, opts Options, workstationResolver *workstation.Resolver) (packComposition, error) {
 	snapshot, err := workstationResolver.Resolve(workstation.Options{})
 	if err != nil {
 		return packComposition{}, err
 	}
-	sources, err := resolveInvocationSources(opts, snapshot)
+	sources, err := resolveInvocationSources(ctx, opts, snapshot)
 	if err != nil {
 		return packComposition{}, err
 	}
-	if err := skillbundle.ValidateSource(sources.skills.Root, sources.skills.MissingHint); err != nil {
+	if err := skillbundle.ValidateSource(ctx, sources.skills.Root, sources.skills.MissingHint); err != nil {
 		return packComposition{}, err
 	}
 	bundleRoot := skillbundle.BundleRoot(sources.skills.Root)
-	catalog, err := capabilitypack.DiscoverForDurableIntents(bundleRoot)
+	catalog, err := capabilitypack.DiscoverForDurableIntents(ctx, bundleRoot)
 	if err != nil {
 		return packComposition{}, err
 	}
@@ -2094,8 +2094,8 @@ func externalToolAcquirers(engram engrambin.Acquirer) map[capabilitypack.Surface
 	}
 }
 
-func discoverPackCatalog(opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Catalog, error) {
-	composition, err := resolvePackComposition(opts, workstationResolver)
+func discoverPackCatalog(ctx context.Context, opts Options, workstationResolver *workstation.Resolver) (capabilitypack.Catalog, error) {
+	composition, err := resolvePackComposition(ctx, opts, workstationResolver)
 	if err != nil {
 		return capabilitypack.Catalog{}, err
 	}
