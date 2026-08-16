@@ -15,17 +15,7 @@ import (
 )
 
 func TestPackListJSONReportsValidatedCatalogInCanonicalOrder(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
-	opts := Options{Env: MapEnv{
-		"HOME":                home,
-		"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-		"PATH":                "",
-		"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-	}}
+	opts, repositoryRoot := packListRepositoryOptions(t)
 
 	output, err := executeCommand(t, NewRootCommand(opts), "list", "--json")
 	if err != nil {
@@ -102,17 +92,7 @@ func TestPackListJSONRepresentsAnEmptyCatalogWithAnEmptyArray(t *testing.T) {
 }
 
 func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
-	opts := Options{Env: MapEnv{
-		"HOME":                home,
-		"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-		"PATH":                "",
-		"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-	}}
+	opts, _ := packListRepositoryOptions(t)
 
 	output, err := executeCommand(t, NewRootCommand(opts), "list")
 	if err != nil {
@@ -128,4 +108,19 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	if output != want {
 		t.Fatalf("human output changed:\n%s", output)
 	}
+}
+
+func packListRepositoryOptions(t *testing.T) (Options, string) {
+	t.Helper()
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	return Options{Env: MapEnv{
+		"HOME":                home,
+		"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+		"PATH":                "",
+		"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
+	}}, repositoryRoot
 }
