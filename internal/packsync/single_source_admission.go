@@ -109,7 +109,7 @@ func (engine Engine) CheckSingleSourceAdmission(ctx context.Context, request Sin
 	if !fullDigest(member.LegalAdmission.EvidenceSHA256) || member.LegalAdmission.EvidenceReference == "" || member.LegalAdmission.Disposition != RedistributableDisposition {
 		return SingleSourceAdmissionPlan{}, errors.New("initial single-source admission requires complete redistributable legal evidence")
 	}
-	initial, err := readCompositeLocal(request.RepositoryRoot, []CompositeRegistrationMember{member}, packID, true)
+	initial, err := readCompositeLocal(ctx, request.RepositoryRoot, []CompositeRegistrationMember{member}, packID, true)
 	if err != nil {
 		return SingleSourceAdmissionPlan{}, err
 	}

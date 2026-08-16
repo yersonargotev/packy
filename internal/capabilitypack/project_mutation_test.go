@@ -19,3 +19,21 @@ func TestProjectMutationErrorReportsOnlyADomainVerifiedRollback(t *testing.T) {
 		t.Fatalf("failed rollback reported verification: %v", failed)
 	}
 }
+
+func TestProjectMutationRollbackOutlivesCanceledRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	adapter := &fakeSurfaceAdapter{}
+
+	err := rollbackProjectMutation(ctx, adapter, nil, errors.New("write canceled"))
+	var mutationErr ProjectMutationError
+	if !errors.As(err, &mutationErr) || !mutationErr.RollbackVerified {
+		t.Fatalf("rollback error = %v; want independently verified rollback", err)
+	}
+	if adapter.applyContextErr != nil {
+		t.Fatalf("rollback context error = %v; want independent bounded context", adapter.applyContextErr)
+	}
+	if !adapter.applyContextDeadline {
+		t.Fatal("rollback context has no independent deadline")
+	}
+}

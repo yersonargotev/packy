@@ -190,7 +190,7 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 	selection := request.Selection
 	if intent, ok := intentForPack(state, request.PackID, request.Surface); ok {
 		selection = intent.Selection
-		pack, err = f.catalog.resolveIntentPack(intent.PackID, intent.Version)
+		pack, err = f.catalog.resolveIntentPack(ctx, intent.PackID, intent.Version)
 		if err != nil {
 			return ControlledCheckIdentity{}, nil, err
 		}
@@ -238,7 +238,7 @@ func (f Facade) projectControlledCheckIdentity(ctx context.Context, request Cont
 			version = intent.Version
 		}
 	}
-	pack, err := f.catalog.resolveIntentPack(request.PackID, version)
+	pack, err := f.catalog.resolveIntentPack(ctx, request.PackID, version)
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}

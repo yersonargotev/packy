@@ -156,7 +156,7 @@ func (engine Engine) CheckComposite(ctx context.Context, request CompositeCheckR
 		}
 	}
 
-	initial, err := readCompositeLocal(request.RepositoryRoot, members, request.PackID, false)
+	initial, err := readCompositeLocal(ctx, request.RepositoryRoot, members, request.PackID, false)
 	if err != nil {
 		return CompositePlan{}, err
 	}
@@ -326,8 +326,8 @@ type compositeLocal struct {
 	plan          CompositePlan
 }
 
-func readCompositeLocal(root string, members []CompositeRegistrationMember, packID string, allowSourceLess bool) (compositeLocal, error) {
-	guard, err := bundletransaction.Acquire(context.Background(), root)
+func readCompositeLocal(ctx context.Context, root string, members []CompositeRegistrationMember, packID string, allowSourceLess bool) (compositeLocal, error) {
+	guard, err := bundletransaction.Acquire(ctx, root)
 	if err != nil {
 		return compositeLocal{}, err
 	}

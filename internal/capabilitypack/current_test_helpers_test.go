@@ -13,14 +13,16 @@ type surfaceInspectionCall struct {
 }
 
 type fakeSurfaceAdapter struct {
-	observations []SurfaceInspection
-	readiness    []ReadinessObservation
-	calls        []surfaceInspectionCall
-	applied      [][]ProjectionAction
-	inspectCalls int
-	actions      []ProjectionAction
-	applyErr     error
-	inspect      func(SurfaceTransition) SurfaceInspection
+	observations         []SurfaceInspection
+	readiness            []ReadinessObservation
+	calls                []surfaceInspectionCall
+	applied              [][]ProjectionAction
+	inspectCalls         int
+	actions              []ProjectionAction
+	applyErr             error
+	applyContextErr      error
+	applyContextDeadline bool
+	inspect              func(SurfaceTransition) SurfaceInspection
 }
 
 func (f *fakeSurfaceAdapter) InspectSurface(_ context.Context, transition SurfaceTransition) (SurfaceInspection, error) {
@@ -60,7 +62,9 @@ func (f *fakeSurfaceAdapter) InspectSurface(_ context.Context, transition Surfac
 	return result, nil
 }
 
-func (f *fakeSurfaceAdapter) ApplyProjections(_ context.Context, actions []ProjectionAction) *ProjectionActionError {
+func (f *fakeSurfaceAdapter) ApplyProjections(ctx context.Context, actions []ProjectionAction) *ProjectionActionError {
+	f.applyContextErr = ctx.Err()
+	_, f.applyContextDeadline = ctx.Deadline()
 	f.actions = append(f.actions, actions...)
 	f.applied = append(f.applied, append([]ProjectionAction(nil), actions...))
 	if f.applyErr == nil {

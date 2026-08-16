@@ -61,7 +61,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := projectRuntimeAdapter(opts, capabilitypack.SurfaceCodex, snapshot)
+	adapter := projectRuntimeAdapter(context.Background(), opts, capabilitypack.SurfaceCodex, snapshot)
 	command := &cobra.Command{}
 	var output strings.Builder
 	command.SetOut(&output)

@@ -20,7 +20,7 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 			for _, packID := range []string{"synthetic-alpha", "synthetic-beta"} {
 				writeProjectInstructionPack(t, bundle, packID, surface)
 			}
-			catalog, err := capabilitypack.DiscoverForDurableIntents(bundle)
+			catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,7 +75,7 @@ func TestProjectInstructionCapabilityIsPackIdentityIndependent(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(updatedBundle, "instructions", packID+".md"), []byte(currentGuidance+"\n"), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(updatedBundle)
+				updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -124,7 +124,7 @@ func TestOpenCodePrimaryPromptCapabilityIsPackIdentityIndependent(t *testing.T) 
 	for _, packID := range []string{"synthetic-alpha", "synthetic-beta"} {
 		writePrimaryPromptPack(t, bundle, packID)
 	}
-	catalog, err := capabilitypack.DiscoverForDurableIntents(bundle)
+	catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestOpenCodePrimaryPromptCapabilityIsPackIdentityIndependent(t *testing.T) 
 			if err := os.WriteFile(filepath.Join(updatedBundle, "instructions", packID+".md"), []byte(updatedGuidance), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(updatedBundle)
+			updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
 			if err != nil {
 				t.Fatal(err)
 			}

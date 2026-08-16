@@ -26,7 +26,7 @@ func TestDiscoverWaitsForCompleteBundleTransaction(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := Discover(source, t.TempDir(), "")
+		_, err := Discover(context.Background(), source, t.TempDir(), "")
 		done <- err
 	}()
 	select {
@@ -68,7 +68,7 @@ func TestResolveSourceWaitsBetweenBundleRenames(t *testing.T) {
 	resolved := make(chan Source, 1)
 	resolveErr := make(chan error, 1)
 	go func() {
-		source, err := ResolveSource(SourceOptions{RepositoryStart: repository, InstalledSource: installed})
+		source, err := ResolveSource(context.Background(), SourceOptions{RepositoryStart: repository, InstalledSource: installed})
 		if err != nil {
 			resolveErr <- err
 			return
@@ -97,6 +97,23 @@ func TestResolveSourceWaitsBetweenBundleRenames(t *testing.T) {
 		t.Fatal(err)
 	case <-time.After(time.Second):
 		t.Fatal("ResolveSource did not resume after the bundle transaction")
+	}
+}
+
+func TestResolveSourceHonorsCancellationWhileWaitingForBundle(t *testing.T) {
+	repository := t.TempDir()
+	writeValidSkillSource(t, SourceRoot(repository))
+	guard, err := bundletransaction.Acquire(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard.Release()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+
+	_, err = ResolveSource(ctx, SourceOptions{RepositoryStart: repository, InstalledSource: installedSourceStub{bundleRoot: filepath.Join(t.TempDir(), "bundle")}})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ResolveSource error = %v; want context deadline", err)
 	}
 }
 
@@ -140,7 +157,7 @@ func TestResolveSourcePrecedenceAndFallbacks(t *testing.T) {
 			if err := os.MkdirAll(tt.opts.RepositoryStart, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			got, err := ResolveSource(tt.opts)
+			got, err := ResolveSource(context.Background(), tt.opts)
 			if err != nil {
 				t.Fatalf("ResolveSource: %v", err)
 			}
@@ -158,7 +175,7 @@ func TestResolveSourceKeepsInvalidExplicitOverrideSelected(t *testing.T) {
 	writeValidSkillSource(t, SourceRoot(installedRoot))
 	missingOverride := filepath.Join(t.TempDir(), "missing")
 
-	got, err := ResolveSource(SourceOptions{
+	got, err := ResolveSource(context.Background(), SourceOptions{
 		ExplicitRoot:    missingOverride,
 		RepositoryStart: repositoryRoot,
 		InstalledSource: installedSourceStub{bundleRoot: filepath.Join(installedRoot, "bundle")},
@@ -169,7 +186,7 @@ func TestResolveSourceKeepsInvalidExplicitOverrideSelected(t *testing.T) {
 	if got.Root != missingOverride || got.Origin != SourceOriginOverride || got.MissingHint != "" || got.IsDefault {
 		t.Fatalf("ResolveSource = %#v, want invalid override preserved without Installed Source guidance", got)
 	}
-	_, err = Discover(got.Root, t.TempDir(), got.MissingHint)
+	_, err = Discover(context.Background(), got.Root, t.TempDir(), got.MissingHint)
 	if err == nil || strings.Contains(err.Error(), "packy init") {
 		t.Fatalf("explicit override error = %v, want stable missing error without Installed Source guidance", err)
 	}
@@ -177,7 +194,7 @@ func TestResolveSourceKeepsInvalidExplicitOverrideSelected(t *testing.T) {
 
 func TestResolveSourceMakesRelativeOverrideAbsoluteFromRepositoryStart(t *testing.T) {
 	start := t.TempDir()
-	got, err := ResolveSource(SourceOptions{ExplicitRoot: filepath.Join("fixtures", "skills"), RepositoryStart: start, InstalledSource: installedSourceStub{bundleRoot: filepath.Join(t.TempDir(), "bundle")}})
+	got, err := ResolveSource(context.Background(), SourceOptions{ExplicitRoot: filepath.Join("fixtures", "skills"), RepositoryStart: start, InstalledSource: installedSourceStub{bundleRoot: filepath.Join(t.TempDir(), "bundle")}})
 	if err != nil {
 		t.Fatalf("ResolveSource: %v", err)
 	}
@@ -189,11 +206,11 @@ func TestResolveSourceMakesRelativeOverrideAbsoluteFromRepositoryStart(t *testin
 
 func TestResolveSourceMissingInstalledFallbackCarriesInitializationGuidance(t *testing.T) {
 	installedRoot := filepath.Join(t.TempDir(), "installed")
-	got, err := ResolveSource(SourceOptions{RepositoryStart: t.TempDir(), InstalledSource: installedSourceStub{bundleRoot: filepath.Join(installedRoot, "bundle")}})
+	got, err := ResolveSource(context.Background(), SourceOptions{RepositoryStart: t.TempDir(), InstalledSource: installedSourceStub{bundleRoot: filepath.Join(installedRoot, "bundle")}})
 	if err != nil {
 		t.Fatalf("ResolveSource: %v", err)
 	}
-	_, err = Discover(got.Root, t.TempDir(), got.MissingHint)
+	_, err = Discover(context.Background(), got.Root, t.TempDir(), got.MissingHint)
 	if err == nil {
 		t.Fatal("expected missing Installed Source error")
 	}
@@ -213,7 +230,7 @@ func TestBundleRootOwnsPhysicalSourceLayout(t *testing.T) {
 
 func TestDiscoverReportsMissingSourceWithHint(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "bundle", "skills")
-	_, err := Discover(missing, t.TempDir(), "run packy init to initialize it")
+	_, err := Discover(context.Background(), missing, t.TempDir(), "run packy init to initialize it")
 	if err == nil {
 		t.Fatal("expected missing source error")
 	}
@@ -236,7 +253,7 @@ func TestDiscoverValidatesRepresentativeSkillResources(t *testing.T) {
 	writeValidSkillSource(t, sourceRoot)
 	linkDir := t.TempDir()
 
-	skills, err := Discover(sourceRoot, linkDir, "")
+	skills, err := Discover(context.Background(), sourceRoot, linkDir, "")
 	if err != nil {
 		t.Fatalf("Discover valid source: %v", err)
 	}
@@ -301,7 +318,7 @@ func TestDiscoverRejectsMalformedSkillResources(t *testing.T) {
 			sourceRoot := filepath.Join(t.TempDir(), "bundle", "skills")
 			writeValidSkillSource(t, sourceRoot)
 			tt.breakSource(t, sourceRoot)
-			_, err := Discover(sourceRoot, t.TempDir(), "")
+			_, err := Discover(context.Background(), sourceRoot, t.TempDir(), "")
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Discover error = %v, want containing %q", err, tt.want)
 			}

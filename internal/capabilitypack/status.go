@@ -418,14 +418,14 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
 		if intent.Active || ownedResidual {
-			evidencePack, err = f.catalog.resolveIntentPack(intent.PackID, intent.Version)
+			evidencePack, err = f.catalog.resolveIntentPack(ctx, intent.PackID, intent.Version)
 			if err != nil {
 				return StatusEntry{}, err
 			}
-		} else if evidencePack, err = f.catalog.Show(pack.ID); err != nil {
+		} else if evidencePack, err = f.catalog.Show(ctx, pack.ID); err != nil {
 			return StatusEntry{}, err
 		}
-	} else if evidencePack, err = f.catalog.Show(pack.ID); err != nil {
+	} else if evidencePack, err = f.catalog.Show(ctx, pack.ID); err != nil {
 		return StatusEntry{}, err
 	}
 	if entry.Contract.AuthorityDisclosure == "" {

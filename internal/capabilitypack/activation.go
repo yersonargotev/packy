@@ -678,7 +678,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	oldVersion := requested.Version
 	if active && intent.Version != "" {
 		oldVersion = intent.Version
-		requested, err = f.catalog.resolveIntentPack(request.PackID, intent.Version)
+		requested, err = f.catalog.resolveIntentPack(ctx, request.PackID, intent.Version)
 		if err != nil {
 			return ReconciliationPlan{}, err
 		}
@@ -1487,7 +1487,7 @@ func priorCombinedPack(plan ReconciliationPlan, requested Pack) Pack {
 }
 
 func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (planPreflight, error) {
-	freshCatalog, err := f.catalog.refreshed()
+	freshCatalog, err := f.catalog.refreshed(ctx)
 	if err != nil {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("catalog or manifest changed after Preview: %v; rerun %s to preview a fresh plan", err, plan.operation)}
 	}
@@ -1531,7 +1531,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	if plan.operation == OperationDeactivate {
 		intent, ok := intentForPack(state, plan.pack.ID, plan.surface)
 		if ok && intent.Version != "" {
-			pack, err = f.catalog.resolveIntentPack(intent.PackID, intent.Version)
+			pack, err = f.catalog.resolveIntentPack(ctx, intent.PackID, intent.Version)
 			if err != nil {
 				return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("historical artifact changed after Preview: %v; rerun deactivate to preview a fresh plan", err)}
 			}
@@ -1643,7 +1643,7 @@ func (f Facade) activationInputsForOperation(ctx context.Context, request Activa
 	if operation == OperationActivate && hasIntent && intent.Active && intent.Version != pack.Version {
 		return Pack{}, nil, ActivationState{}, fmt.Errorf("capability pack %q is active at %s on %s; use explicit pack update to target catalog current %s", request.PackID, intent.Version, request.Surface, pack.Version)
 	}
-	pack, err = f.catalog.Show(request.PackID)
+	pack, err = f.catalog.Show(ctx, request.PackID)
 	if err != nil {
 		return Pack{}, nil, ActivationState{}, err
 	}

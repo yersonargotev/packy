@@ -16,7 +16,10 @@ import (
 	"time"
 )
 
-const projectInstallApplySchemaVersion = 2
+const (
+	projectInstallApplySchemaVersion = 2
+	projectRollbackTimeout           = 30 * time.Second
+)
 
 type ProjectInstallApplyRequest struct {
 	Preview                    JSONProjectInstallPreview
@@ -160,11 +163,13 @@ func (f Facade) ApplyProjectInstall(ctx context.Context, request ProjectInstallA
 }
 
 func rollbackProjectMutation(ctx context.Context, adapter SurfaceAdapter, reverse []ProjectionAction, cause error) error {
+	rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), projectRollbackTimeout)
+	defer cancel()
 	pending, err := pendingProjectReverse(reverse)
 	if err != nil {
 		return fmt.Errorf("project mutation failed (%v) and rollback could not be prepared: %w", cause, err)
 	}
-	if actionErr := adapter.ApplyProjections(ctx, pending); actionErr != nil {
+	if actionErr := adapter.ApplyProjections(rollbackCtx, pending); actionErr != nil {
 		return fmt.Errorf("project mutation failed (%v) and rollback failed: %w", cause, actionErr)
 	}
 	if err := verifyProjectReverse(reverse); err != nil {

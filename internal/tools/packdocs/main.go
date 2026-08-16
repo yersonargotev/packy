@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -21,11 +22,11 @@ func main() {
 		fail("usage: packdocs [--check] [--root PATH]")
 	}
 
-	catalog, err := capabilitypack.Discover(filepath.Join(*root, "bundle"))
+	catalog, err := capabilitypack.Discover(context.Background(), filepath.Join(*root, "bundle"))
 	if err != nil {
 		fail("discover Pack catalog: %v", err)
 	}
-	details, err := catalog.ListDetails()
+	details, err := catalog.ListDetails(context.Background())
 	if err != nil {
 		fail("load Pack catalog details: %v", err)
 	}

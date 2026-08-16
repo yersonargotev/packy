@@ -7,7 +7,7 @@ import "context"
 func withBundleObservation[T any](ctx context.Context, facade Facade, observe func(Facade) (T, error)) (T, error) {
 	var result T
 	err := facade.catalog.withBundleLock(ctx, func(locked Catalog) error {
-		fresh, err := locked.refreshed()
+		fresh, err := locked.refreshed(ctx)
 		if err != nil {
 			return err
 		}

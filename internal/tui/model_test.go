@@ -634,7 +634,7 @@ func TestApplicableActivationRequestsOnlyItsRequiredConsentClassesAndCanCancel(t
 		t.Fatalf("cancel did not return to the exact preview:\n%s", view)
 	}
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
+	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}))
 	if quit == nil || len(backend.applyRequests) != 0 {
 		t.Fatalf("quit during consent was ignored or applied effects: quit=%v applies=%d", quit != nil, len(backend.applyRequests))
 	}
@@ -741,7 +741,7 @@ func TestQuitDuringApplyIsVisibleThenCompletesAfterApplyAndFreshStatusReload(t *
 	model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	model, applyCommand := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
+	model, quit := model.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}))
 	if quit != nil || !strings.Contains(ansi.Strip(model.View().Content), "Exit deferred until Apply returns") {
 		t.Fatalf("ordinary quit was not visibly deferred: command=%v\n%s", quit != nil, ansi.Strip(model.View().Content))
 	}
@@ -1502,8 +1502,8 @@ func TestUninitializedDashboardRequiresExplicitFocusedInitialization(t *testing.
 		t.Fatalf("initialization did not enter progress state:\n%s", view)
 	}
 	current, quit := current.Update(tea.KeyPressMsg(tea.Key{Text: "q", Code: 'q'}))
-	if quit != nil || !strings.Contains(ansi.Strip(current.View().Content), "Initialization in progress") {
-		t.Fatal("active initialization allowed ordinary exit or stopped rendering progress")
+	if quit == nil {
+		t.Fatal("active initialization did not make ordinary exit cancelable")
 	}
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 48, Height: 20})
 	for _, line := range strings.Split(current.View().Content, "\n") {

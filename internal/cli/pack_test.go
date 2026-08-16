@@ -993,11 +993,11 @@ func TestPackStatusJSONOverviewAndTargetedAbsenceAreStable(t *testing.T) {
 
 func expectedPackSurfaceRows(t *testing.T, repoRoot string) map[string]bool {
 	t.Helper()
-	catalog, err := capabilitypack.Discover(filepath.Join(repoRoot, "bundle"))
+	catalog, err := capabilitypack.Discover(context.Background(), filepath.Join(repoRoot, "bundle"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	packs, err := catalog.ListCurrent()
+	packs, err := catalog.ListCurrent(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

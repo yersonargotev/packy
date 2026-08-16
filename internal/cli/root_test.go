@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/bootstrap"
@@ -82,6 +83,23 @@ func TestNoArgumentExecutionStartsTUIOnlyWithInteractiveInputAndOutput(t *testin
 				t.Fatalf("non-interactive startup did not emit clean textual help:\n%q", out)
 			}
 		})
+	}
+}
+
+func TestNoArgumentExecutionPropagatesCommandContextToTUI(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	opts.Terminal = &fakeTerminal{interactive: true}
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "command-context")
+	opts.TUIRunner = func(got context.Context, _ Options, _ io.Reader, _ io.Writer) error {
+		if got.Value(contextKey{}) != "command-context" {
+			t.Fatalf("TUI context value = %v; want command context", got.Value(contextKey{}))
+		}
+		return nil
+	}
+
+	if _, err := executeCommandContext(t, ctx, NewRootCommand(opts)); err != nil {
+		t.Fatalf("interactive command failed: %v", err)
 	}
 }
 
@@ -355,6 +373,16 @@ func executeCommand(t *testing.T, cmd *cobra.Command, args ...string) (string, e
 	return buf.String(), err
 }
 
+func executeCommandContext(t *testing.T, ctx context.Context, cmd *cobra.Command, args ...string) (string, error) {
+	t.Helper()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs(args)
+	err := cmd.ExecuteContext(ctx)
+	return buf.String(), err
+}
+
 func readFileString(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -583,6 +611,27 @@ func TestInitClonesDefaultInstalledSourceAndIsIdempotent(t *testing.T) {
 	}
 	if !strings.Contains(out, "already initialized") {
 		t.Fatalf("second init did not report idempotent state:\n%s", out)
+	}
+}
+
+func TestInitPropagatesCommandCancellationToGitClone(t *testing.T) {
+	opts, _, _ := sandboxOptions(t)
+	bin := t.TempDir()
+	git := filepath.Join(bin, "git")
+	if err := os.WriteFile(git, []byte("#!/bin/sh\nexec sleep 300\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	sourceRoot := filepath.Join(t.TempDir(), "installed")
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := executeCommandContext(t, ctx, NewRootCommand(opts), "init", "--source-root", sourceRoot, "--repository-url", "https://example.invalid/packy.git")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("init error = %v; want context deadline", err)
+	}
+	if _, err := os.Lstat(sourceRoot); !os.IsNotExist(err) {
+		t.Fatalf("canceled init installed source: %v", err)
 	}
 }
 

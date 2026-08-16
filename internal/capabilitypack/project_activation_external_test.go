@@ -20,7 +20,7 @@ func projectInstallFixture(t *testing.T) (capabilitypack.Facade, capabilitypack.
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := capabilitypack.DiscoverForDurableIntents(bundle)
+	catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := capabilitypack.DiscoverForDurableIntents(bundle)
+	catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(updatedBundle)
+	updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
 	if err != nil {
 		t.Fatal(err)
 	}

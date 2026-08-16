@@ -1,6 +1,7 @@
 package capabilitypack
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -365,11 +366,11 @@ func TestCheckedInCurrentManifestsOmitRetiredContractTerms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := Discover(bundle)
+	catalog, err := Discover(context.Background(), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
-	packs, err := catalog.ListCurrent()
+	packs, err := catalog.ListCurrent(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
