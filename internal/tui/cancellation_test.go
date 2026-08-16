@@ -164,6 +164,11 @@ func TestApplyAndFreshReloadOutliveCanceledRequest(t *testing.T) {
 	model := newModel(ctx, backend)
 
 	current, command := model.startApply(ApplyRequest{})
+	current, firstInterrupt := current.Update(requestCanceled{})
+	current, secondInterrupt := current.Update(requestCanceled{})
+	if firstInterrupt != nil || secondInterrupt != nil {
+		t.Fatal("repeated interrupts bypassed the non-interruptible Apply boundary")
+	}
 	batch, ok := command().(tea.BatchMsg)
 	if !ok || len(batch) < 2 {
 		t.Fatalf("Apply command = %#v; want operation and wait batch", command())
