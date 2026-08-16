@@ -139,7 +139,7 @@ func (b *tuiBackend) Initialize(ctx context.Context, progress func(string)) erro
 		return ctx.Err()
 	default:
 	}
-	return initializeInstalledSource(b.resolver, initializationRequest{
+	return initializeInstalledSource(ctx, b.resolver, initializationRequest{
 		RepositoryURL: b.repositoryURL,
 		RepositoryRef: b.repositoryRef,
 		ReportProgress: func(detail string) error {

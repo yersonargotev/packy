@@ -1,12 +1,14 @@
 package bootstrap
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -14,6 +16,8 @@ import (
 )
 
 const DefaultRepositoryURL = "https://github.com/yersonargotev/packy.git"
+
+const cleanupTimeout = 5 * time.Second
 
 // BootstrapOptions describes how packy init prepares the package-installed
 // Source of Truth checkout. It lives outside command construction so the CLI
@@ -32,7 +36,7 @@ type BootstrapResult struct {
 	Updated bool
 }
 
-func EnsureInstalledSource(opts BootstrapOptions) (BootstrapResult, error) {
+func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (BootstrapResult, error) {
 	if strings.TrimSpace(opts.InstalledSource.Root()) == "" {
 		return BootstrapResult{}, errors.New("installed source root is required")
 	}
@@ -42,7 +46,7 @@ func EnsureInstalledSource(opts BootstrapOptions) (BootstrapResult, error) {
 
 	result := BootstrapResult{}
 	if validateInstalledSource(opts.InstalledSource.Root()) == nil {
-		updated, err := ensureInstalledSourceRef(opts)
+		updated, err := ensureInstalledSourceRef(ctx, opts)
 		if err != nil {
 			return BootstrapResult{}, err
 		}
@@ -72,26 +76,26 @@ func EnsureInstalledSource(opts BootstrapOptions) (BootstrapResult, error) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return BootstrapResult{}, fmt.Errorf("git is required to clone the Packy Source of Truth into %s", opts.InstalledSource.Root())
 	}
-	if err := cloneInstalledSource(opts); err != nil {
+	if err := cloneInstalledSource(ctx, opts); err != nil {
 		return BootstrapResult{}, err
 	}
 	result.Cloned = true
 	return result, nil
 }
 
-func ensureInstalledSourceRef(opts BootstrapOptions) (bool, error) {
+func ensureInstalledSourceRef(ctx context.Context, opts BootstrapOptions) (bool, error) {
 	ref := strings.TrimSpace(opts.RepositoryRef)
 	if ref == "" {
 		return false, nil
 	}
-	matches, err := repositoryRefMatches(opts, fmt.Sprintf("cannot update it to %s", ref))
+	matches, err := repositoryRefMatches(ctx, opts, fmt.Sprintf("cannot update it to %s", ref))
 	if err != nil {
 		return false, err
 	}
 	if matches {
 		return false, nil
 	}
-	if dirty, err := repositoryDirty(opts); err != nil {
+	if dirty, err := repositoryDirty(ctx, opts); err != nil {
 		return false, err
 	} else if dirty {
 		return false, fmt.Errorf("Installed Source at %s has local changes; refusing to update to %s. Commit/stash them, move it aside, or pass --source-root", opts.InstalledSource.Root(), ref)
@@ -99,19 +103,19 @@ func ensureInstalledSourceRef(opts BootstrapOptions) (bool, error) {
 	if err := reportProgress(opts, fmt.Sprintf("updating Installed Source at %s to %s", opts.InstalledSource.Root(), ref)); err != nil {
 		return false, err
 	}
-	if err := fetchInstalledSourceRef(opts, ref); err != nil {
+	if err := fetchInstalledSourceRef(ctx, opts, ref); err != nil {
 		return false, fmt.Errorf("update Installed Source to %s: %w", ref, err)
 	}
-	if err := validateFetchedInstalledSource(opts); err != nil {
+	if err := validateFetchedInstalledSource(ctx, opts); err != nil {
 		return false, err
 	}
-	if _, err := gitOutput(opts, "checkout", "--detach", "FETCH_HEAD"); err != nil {
+	if _, err := gitOutput(ctx, opts, "checkout", "--detach", "FETCH_HEAD"); err != nil {
 		return false, fmt.Errorf("checkout Installed Source ref %s: %w", ref, err)
 	}
 	return true, nil
 }
 
-func validateFetchedInstalledSource(opts BootstrapOptions) (err error) {
+func validateFetchedInstalledSource(ctx context.Context, opts BootstrapOptions) (err error) {
 	validationRoot, err := os.MkdirTemp(filepath.Dir(opts.InstalledSource.Root()), ".packy-validate.*")
 	if err != nil {
 		return fmt.Errorf("create Installed Source validation directory: %w", err)
@@ -119,14 +123,21 @@ func validateFetchedInstalledSource(opts BootstrapOptions) (err error) {
 	if err := os.Remove(validationRoot); err != nil {
 		return fmt.Errorf("prepare Installed Source validation worktree: %w", err)
 	}
-	if _, err := gitOutput(opts, "worktree", "add", "--detach", validationRoot, "FETCH_HEAD"); err != nil {
+	if _, err := gitOutput(ctx, opts, "worktree", "add", "--detach", validationRoot, "FETCH_HEAD"); err != nil {
 		return fmt.Errorf("prepare fetched Installed Source for validation: %w", err)
 	}
 	defer func() {
-		_, cleanupErr := gitOutput(opts, "worktree", "remove", "--force", validationRoot)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+		defer cancel()
+		_, cleanupErr := gitOutput(cleanupCtx, opts, "worktree", "remove", "--force", validationRoot)
 		_ = os.RemoveAll(validationRoot)
-		if cleanupErr != nil && err == nil {
-			err = fmt.Errorf("clean up Installed Source validation worktree: %w", cleanupErr)
+		if cleanupErr != nil {
+			cleanupErr = fmt.Errorf("clean up Installed Source validation worktree: %w", cleanupErr)
+			if err == nil {
+				err = cleanupErr
+			} else {
+				err = errors.Join(err, cleanupErr)
+			}
 		}
 	}()
 
@@ -136,18 +147,18 @@ func validateFetchedInstalledSource(opts BootstrapOptions) (err error) {
 	return nil
 }
 
-func fetchInstalledSourceRef(opts BootstrapOptions, ref string) error {
+func fetchInstalledSourceRef(ctx context.Context, opts BootstrapOptions, ref string) error {
 	if strings.HasPrefix(ref, "v") {
 		tagRef := "refs/tags/" + ref
-		if _, err := gitOutput(opts, "fetch", "--depth", "1", "origin", tagRef+":"+tagRef); err == nil {
+		if _, err := gitOutput(ctx, opts, "fetch", "--depth", "1", "origin", tagRef+":"+tagRef); err == nil {
 			return nil
 		}
 	}
-	_, err := gitOutput(opts, "fetch", "--depth", "1", "origin", ref)
+	_, err := gitOutput(ctx, opts, "fetch", "--depth", "1", "origin", ref)
 	return err
 }
 
-func ValidateInstalledSourceRef(opts BootstrapOptions) error {
+func ValidateInstalledSourceRef(ctx context.Context, opts BootstrapOptions) error {
 	ref := strings.TrimSpace(opts.RepositoryRef)
 	if ref == "" {
 		return nil
@@ -190,37 +201,37 @@ func repositoryRefMatchesReadOnly(opts BootstrapOptions, missingGitReason string
 	return head.Hash() == *target, nil
 }
 
-func repositoryRefMatches(opts BootstrapOptions, missingGitReason string) (bool, error) {
+func repositoryRefMatches(ctx context.Context, opts BootstrapOptions, missingGitReason string) (bool, error) {
 	if _, err := os.Stat(filepath.Join(opts.InstalledSource.Root(), ".git")); err != nil {
 		if os.IsNotExist(err) {
 			return false, fmt.Errorf("Installed Source at %s is not a git checkout; %s. Move it aside or pass --source-root", opts.InstalledSource.Root(), missingGitReason)
 		}
 		return false, fmt.Errorf("inspect Installed Source git metadata: %w", err)
 	}
-	return repositoryAtRef(opts)
+	return repositoryAtRef(ctx, opts)
 }
 
-func repositoryAtRef(opts BootstrapOptions) (bool, error) {
-	head, err := gitOutput(opts, "rev-parse", "--verify", "HEAD")
+func repositoryAtRef(ctx context.Context, opts BootstrapOptions) (bool, error) {
+	head, err := gitOutput(ctx, opts, "rev-parse", "--verify", "HEAD")
 	if err != nil {
 		return false, fmt.Errorf("inspect Installed Source HEAD: %w", err)
 	}
-	target, err := gitOutput(opts, "rev-parse", "--verify", opts.RepositoryRef+"^{commit}")
+	target, err := gitOutput(ctx, opts, "rev-parse", "--verify", opts.RepositoryRef+"^{commit}")
 	if err != nil {
 		return false, nil
 	}
 	return strings.TrimSpace(head) == strings.TrimSpace(target), nil
 }
 
-func repositoryDirty(opts BootstrapOptions) (bool, error) {
-	status, err := gitOutput(opts, "status", "--porcelain")
+func repositoryDirty(ctx context.Context, opts BootstrapOptions) (bool, error) {
+	status, err := gitOutput(ctx, opts, "status", "--porcelain")
 	if err != nil {
 		return false, fmt.Errorf("inspect Installed Source status: %w", err)
 	}
 	return strings.TrimSpace(status) != "", nil
 }
 
-func cloneInstalledSource(opts BootstrapOptions) error {
+func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) error {
 	parent := filepath.Dir(opts.InstalledSource.Root())
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("create Installed Source parent: %w", err)
@@ -239,7 +250,7 @@ func cloneInstalledSource(opts BootstrapOptions) error {
 	if err := reportProgress(opts, fmt.Sprintf("cloning Installed Source into %s", opts.InstalledSource.Root())); err != nil {
 		return err
 	}
-	if _, err := runGit(opts, args...); err != nil {
+	if _, err := runGit(ctx, opts, args...); err != nil {
 		return fmt.Errorf("clone Packy Source of Truth: %w", err)
 	}
 	if err := validateInstalledSource(tmp); err != nil {
@@ -261,15 +272,18 @@ func reportProgress(opts BootstrapOptions, message string) error {
 	return nil
 }
 
-func gitOutput(opts BootstrapOptions, args ...string) (string, error) {
-	return runGit(opts, append([]string{"-C", opts.InstalledSource.Root()}, args...)...)
+func gitOutput(ctx context.Context, opts BootstrapOptions, args ...string) (string, error) {
+	return runGit(ctx, opts, append([]string{"-C", opts.InstalledSource.Root()}, args...)...)
 }
 
-func runGit(opts BootstrapOptions, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+func runGit(ctx context.Context, opts BootstrapOptions, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = gitEnv(opts)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return "", fmt.Errorf("git %s canceled: %w\n%s", strings.Join(args, " "), contextErr, strings.TrimSpace(string(output)))
+		}
 		return "", fmt.Errorf("git %s failed: %w\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	return string(output), nil

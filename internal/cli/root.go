@@ -167,7 +167,7 @@ func newInitCommand(opts Options, workstationResolver *workstation.Resolver) *co
 		Short: "Initialize Packy's package-installed source checkout",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return initializeInstalledSource(workstationResolver, initializationRequest{
+			return initializeInstalledSource(cmd.Context(), workstationResolver, initializationRequest{
 				Home:          strings.TrimSpace(homeFlag),
 				SourceRoot:    sourceRoot,
 				RepositoryURL: repositoryURL,
@@ -195,7 +195,7 @@ type initializationRequest struct {
 	ReportProgress func(string) error
 }
 
-func initializeInstalledSource(resolver *workstation.Resolver, request initializationRequest) error {
+func initializeInstalledSource(ctx context.Context, resolver *workstation.Resolver, request initializationRequest) error {
 	snapshot, err := resolver.Resolve(workstation.Options{Home: request.Home})
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func initializeInstalledSource(resolver *workstation.Resolver, request initializ
 	if err != nil {
 		return err
 	}
-	result, err := bootstrap.EnsureInstalledSource(bootstrap.BootstrapOptions{
+	result, err := bootstrap.EnsureInstalledSource(ctx, bootstrap.BootstrapOptions{
 		InstalledSource: installedSource,
 		RepositoryURL:   request.RepositoryURL,
 		RepositoryRef:   request.RepositoryRef,

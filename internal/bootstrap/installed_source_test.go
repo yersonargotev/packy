@@ -1,11 +1,14 @@
 package bootstrap
 
 import (
+	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/workstation"
 )
@@ -79,12 +82,47 @@ func TestInstalledSourceAtOwnsCheckoutAndBundleLayout(t *testing.T) {
 
 func TestValidateInstalledSourceRefUsesDescriptor(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "descriptor-source")
-	err := ValidateInstalledSourceRef(BootstrapOptions{
+	err := ValidateInstalledSourceRef(context.Background(), BootstrapOptions{
 		InstalledSource: InstalledSourceAt(root),
 		RepositoryRef:   "v1.2.3",
 	})
 	if err == nil || !strings.Contains(err.Error(), filepath.Join(root, "bundle", "skills")) {
 		t.Fatalf("ValidateInstalledSourceRef error = %v, want descriptor path", err)
+	}
+}
+
+func TestEnsureInstalledSourceCancelsGitCloneWithoutInstallingPartialSource(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "installed")
+	bin := t.TempDir()
+	git := filepath.Join(bin, "git")
+	if err := os.WriteFile(git, []byte("#!/bin/sh\nexec sleep 300\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := EnsureInstalledSource(ctx, BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		RepositoryURL:   "https://example.invalid/packy.git",
+		HomeDir:         t.TempDir(),
+		ConfigHome:      t.TempDir(),
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("EnsureInstalledSource error = %v; want context deadline", err)
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Fatalf("canceled clone installed source: %v", err)
+	}
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".packy-clone.") {
+			t.Fatalf("canceled clone left temporary directory %s", entry.Name())
+		}
 	}
 }
 
