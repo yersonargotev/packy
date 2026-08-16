@@ -120,6 +120,14 @@ A receipt-owned path whose current content differs from its recorded digest.
 Ordinary mutation stops before writing; force remains limited to paths in the
 targeted receipt.
 
+### Pack audit
+
+The read-only, redacted trust report that composes workstation health, active
+global Pack health, and portable verification of the current project's Pack
+contract. It preserves readiness severity: unknown observations are
+informational, warnings do not fail automation, and confirmed failures return
+a non-zero status after the complete report is emitted.
+
 ### Pack projection conflict
 
 An attempted operation in which distinct Pack resources target the same path.

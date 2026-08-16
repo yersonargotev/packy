@@ -55,6 +55,21 @@ type ProjectVerificationReport struct {
 	Findings      []ProjectVerificationFinding `json:"findings"`
 }
 
+// HasProjectContract reports whether either file in Packy's shared project
+// contract is present. An incomplete pair is present so callers can route it
+// through VerifyProject and receive the precise integrity finding.
+func HasProjectContract(projectRoot string) (bool, error) {
+	manifestMissing, err := projectPathMissing(filepath.Join(projectRoot, "packy.json"))
+	if err != nil {
+		return false, err
+	}
+	lockMissing, err := projectPathMissing(filepath.Join(projectRoot, "packy.lock.json"))
+	if err != nil {
+		return false, err
+	}
+	return !manifestMissing || !lockMissing, nil
+}
+
 // VerifyProject checks only the committed project contract and its projections.
 // It deliberately excludes personal activation, executable discovery, runtime
 // readiness, and controlled-check evidence so the result is portable in CI.

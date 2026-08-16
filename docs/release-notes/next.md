@@ -1,9 +1,21 @@
 # {{TAG}} — Packy v0.2
 
-This release makes global capability Pack updates clean up obsolete
-projections recorded by the updating Pack's installed receipt.
+This release adds a shareable Pack trust audit and makes global capability Pack
+updates clean up obsolete projections recorded by the updating Pack's
+installed receipt.
 
 ## Changes since the previous release
+
+- `packy audit` now combines workstation health, active global Pack health,
+  and portable verification of the current project's Pack contract in one
+  deterministic, redacted report. `packy audit --json` emits the checked-in
+  `packy-audit` v1 contract.
+- Audit preserves Packy's three-valued readiness semantics: unknown runtime
+  observations remain informational, warnings exit successfully, and only
+  confirmed failures return a non-zero status after emitting the full report.
+- Running Audit outside a Git worktree or in a project without a Pack contract
+  is informational. When a contract exists, Audit uses the same personal-state-
+  free verification boundary as `packy verify`.
 
 - Global capability Pack updates now retire projections owned by the updating
   Pack's installed receipt when those projections are absent from the current

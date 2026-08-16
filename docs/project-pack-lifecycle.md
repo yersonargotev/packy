@@ -107,6 +107,11 @@ evidence, or the bundled catalog:
 packy verify --json
 ```
 
+For a shareable view that also includes workstation and active global Pack
+health, run `packy audit` or `packy audit --json`. Audit treats a missing
+project contract as informational; when a contract exists, its project section
+uses the same portable verification boundary as `packy verify`.
+
 Verification checks `packy.json`, `packy.lock.json`, required notices, and all
 locked project projections, including their filesystem modes. It emits one
 deterministic `project-verification` report and exits successfully only when

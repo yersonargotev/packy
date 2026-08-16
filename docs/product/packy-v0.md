@@ -29,6 +29,9 @@ the generated [Pack catalog](../packs/index.md) for current discovery.
 - Unchanged receipt-owned projections can be updated or removed without
   granting authority over unrelated files.
 - The focused Pack validator gives maintainers a short authoring feedback loop.
+- One read-only Pack audit produces a redacted trust report across workstation,
+  active global Pack, and current-project contract health without collapsing
+  unknown readiness into failure.
 
 ## Clean-generation boundary
 

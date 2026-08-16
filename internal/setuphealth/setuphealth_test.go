@@ -13,6 +13,7 @@ func TestDiagnoseWithNoActivePacksIsHealthy(t *testing.T) {
 		Context:       Context{HomeDir: "/sandbox/home", ConfigHome: "/sandbox/xdg"},
 		Checks: []Check{{
 			Name:     "packy-core",
+			Scope:    CheckScopeWorkstation,
 			Severity: Pass,
 			Detail:   "Packy core is available; no capability-pack activation is implied",
 		}},

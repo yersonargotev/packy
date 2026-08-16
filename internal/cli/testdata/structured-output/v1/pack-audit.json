@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "report": "packy-audit",
+  "result": "healthy",
+  "checks": [
+    {
+      "scope": "workstation",
+      "severity": "PASS",
+      "code": "packy-core",
+      "detail": "Packy core is available"
+    },
+    {
+      "scope": "global",
+      "severity": "INFO",
+      "code": "active-global-packs-absent",
+      "detail": "no active global Packs were observed"
+    },
+    {
+      "scope": "project",
+      "severity": "INFO",
+      "code": "project-absent",
+      "detail": "the current Git project has no Pack contract"
+    }
+  ],
+  "project": {
+    "state": "absent",
+    "packs": 0,
+    "surfaces": 0,
+    "projections": 0,
+    "verified": 0,
+    "findings": 0
+  },
+  "summary": {
+    "passes": 1,
+    "infos": 2,
+    "warnings": 0,
+    "failures": 0
+  }
+}

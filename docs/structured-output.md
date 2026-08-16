@@ -9,6 +9,7 @@ persists the resulting installed Pack receipt, not the preview.
 
 | Command family | Schema |
 | --- | --- |
+| `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
 | `packy show PACK --json` | `schemas/cli/v5/pack-show.schema.json` |
 | global Pack status | `schemas/cli/v10/pack-status.schema.json` |
@@ -23,6 +24,7 @@ live producer examples, and reject the checked-in negative project fixtures.
 
 | Command | `report` |
 | --- | --- |
+| `packy audit --json` | `packy-audit` |
 | `packy doctor --json` | `doctor` |
 | `packy show PACK --json` | `pack-show` |
 | global Pack preview | `pack-lifecycle-preview` |
@@ -34,6 +36,14 @@ live producer examples, and reject the checked-in negative project fixtures.
 Project lifecycle output is a newline-delimited stream because one command can
 emit a preview and an apply result. Installation reports shared project state;
 activation reports personal runtime state.
+
+The Pack audit report is a deterministic, read-only composition of existing
+health meanings. Its checks retain their owning severity: informational
+unknown readiness does not become a warning, warnings do not fail automation,
+and confirmed failures produce a complete report before the command exits
+non-zero. Project verification remains portable and never includes personal
+activation or controlled-check evidence. Projects outside a Git worktree and
+Git projects without a Pack contract are reported as informational states.
 
 ## Current-state contract
 

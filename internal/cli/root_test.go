@@ -29,7 +29,7 @@ func TestRootHelpExposesPackLifecycleCommandsWithoutPackGroup(t *testing.T) {
 
 	for _, want := range []string{
 		"installer and configurator for reviewed capability Packs",
-		"list", "show", "activate", "install", "update", "status", "verify", "deactivate", "uninstall",
+		"audit", "list", "show", "activate", "install", "update", "status", "verify", "deactivate", "uninstall",
 		"Preview", "Apply", "consent", "stale plan", "Project installation",
 	} {
 		if !strings.Contains(out, want) {
