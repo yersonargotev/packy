@@ -136,8 +136,15 @@ func validateFetchedInstalledSource(ctx context.Context, opts BootstrapOptions) 
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		defer cancel()
-		_, cleanupErr := gitOutput(cleanupCtx, opts, "worktree", "remove", "--force", validationRoot)
-		_ = os.RemoveAll(validationRoot)
+		_, gitCleanupErr := gitOutput(cleanupCtx, opts, "worktree", "remove", "--force", validationRoot)
+		removeErr := os.RemoveAll(validationRoot)
+		var cleanupErr error
+		if gitCleanupErr != nil {
+			cleanupErr = fmt.Errorf("remove validation worktree: %w", gitCleanupErr)
+		}
+		if removeErr != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove validation directory: %w", removeErr))
+		}
 		if cleanupErr != nil {
 			cleanupErr = fmt.Errorf("clean up Installed Source validation worktree: %w", cleanupErr)
 			if err == nil {
@@ -230,6 +237,9 @@ func repositoryAtRef(ctx context.Context, opts BootstrapOptions) (bool, error) {
 	}
 	target, err := gitOutput(ctx, opts, "rev-parse", "--verify", opts.RepositoryRef+"^{commit}")
 	if err != nil {
+		if ctx.Err() != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	return strings.TrimSpace(head) == strings.TrimSpace(target), nil
@@ -243,7 +253,7 @@ func repositoryDirty(ctx context.Context, opts BootstrapOptions) (bool, error) {
 	return strings.TrimSpace(status) != "", nil
 }
 
-func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) error {
+func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) (err error) {
 	parent := filepath.Dir(opts.InstalledSource.Root())
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("create Installed Source parent: %w", err)
@@ -252,7 +262,16 @@ func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) error {
 	if err != nil {
 		return fmt.Errorf("create temporary clone directory: %w", err)
 	}
-	defer os.RemoveAll(tmp)
+	defer func() {
+		if cleanupErr := os.RemoveAll(tmp); cleanupErr != nil {
+			cleanupErr = fmt.Errorf("clean up temporary Installed Source clone: %w", cleanupErr)
+			if err == nil {
+				err = cleanupErr
+			} else {
+				err = errors.Join(err, cleanupErr)
+			}
+		}
+	}()
 
 	args := []string{"clone", "--depth", "1"}
 	if strings.TrimSpace(opts.RepositoryRef) != "" {
