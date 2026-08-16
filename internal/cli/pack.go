@@ -1994,7 +1994,8 @@ func renderPendingAction(actions []string) string {
 }
 
 func newPackListCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+	cmd := &cobra.Command{
 		Use: "list", Short: "List available capability packs", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			catalog, err := discoverPackCatalog(cmd.Context(), opts, workstationResolver)
@@ -2004,6 +2005,9 @@ func newPackListCommand(opts Options, workstationResolver *workstation.Resolver)
 			packs, err := catalog.ListCurrent(cmd.Context())
 			if err != nil {
 				return err
+			}
+			if jsonOutput {
+				return renderPackListJSON(cmd.OutOrStdout(), packs)
 			}
 			writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 			fmt.Fprintln(writer, "PACK\tVERSION\tDESCRIPTION\tAVAILABLE ON")
@@ -2017,6 +2021,8 @@ func newPackListCommand(opts Options, workstationResolver *workstation.Resolver)
 			return writer.Flush()
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON")
+	return cmd
 }
 
 func newPackShowCommand(opts Options, workstationResolver *workstation.Resolver) *cobra.Command {

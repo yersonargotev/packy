@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "report": "pack-list",
+  "packs": [
+    {
+      "id": "addy",
+      "version": "1.1.0",
+      "description": "Addy agent skills",
+      "surfaces": ["claude", "codex", "opencode"]
+    },
+    {
+      "id": "argote",
+      "version": "1.0.2",
+      "description": "Yerson Argote's engineering and communication guidance",
+      "surfaces": ["claude", "codex", "opencode"]
+    },
+    {
+      "id": "engram",
+      "version": "3.0.0",
+      "description": "Upstream Engram CLI memory workflows for agent work",
+      "surfaces": ["codex"]
+    },
+    {
+      "id": "issue-delivery",
+      "version": "1.1.1",
+      "description": "Deliver issues through policy-driven or Matt-configured workflows",
+      "surfaces": ["codex"]
+    },
+    {
+      "id": "matty",
+      "version": "1.0.3",
+      "description": "Matty workflow",
+      "surfaces": ["claude", "codex", "opencode"]
+    },
+    {
+      "id": "orchestrate",
+      "version": "1.0.1",
+      "description": "Coordinate focused Codex subagents",
+      "surfaces": ["codex"]
+    }
+  ]
+}
