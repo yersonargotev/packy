@@ -126,6 +126,63 @@ func TestEnsureInstalledSourceCancelsGitCloneWithoutInstallingPartialSource(t *t
 	}
 }
 
+func TestEnsureInstalledSourceDoesNotCheckoutAfterCanceledFetch(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	writeValidInstalledSource(t, root)
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	checkoutMarker := filepath.Join(t.TempDir(), "checkout")
+	git := filepath.Join(bin, "git")
+	script := `#!/bin/sh
+shift 2
+case "$1" in
+  rev-parse)
+    case "$3" in
+      HEAD) echo old ;;
+      *) echo new ;;
+    esac
+    ;;
+  status) exit 0 ;;
+  fetch) exec sleep 300 ;;
+  checkout) touch "$PACKY_CHECKOUT_MARKER" ;;
+esac
+`
+	if err := os.WriteFile(git, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PACKY_CHECKOUT_MARKER", checkoutMarker)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := EnsureInstalledSource(ctx, BootstrapOptions{InstalledSource: InstalledSourceAt(root), RepositoryRef: "v2.0.0"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("EnsureInstalledSource error = %v; want context deadline", err)
+	}
+	if _, err := os.Lstat(checkoutMarker); !os.IsNotExist(err) {
+		t.Fatalf("canceled fetch proceeded to checkout: %v", err)
+	}
+}
+
+func writeValidInstalledSource(t *testing.T, root string) {
+	t.Helper()
+	for _, relative := range []string{
+		"bundle/skills/engineering/ask-matt/SKILL.md",
+		"bundle/skills/productivity/grilling/SKILL.md",
+		"bundle/skills/in-progress/loop-me/SKILL.md",
+	} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("---\nname: fixture\n---\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestBootstrapOptionsHasOneInstalledSourceLocation(t *testing.T) {
 	typeOfOptions := reflect.TypeOf(BootstrapOptions{})
 	if _, found := typeOfOptions.FieldByName("SourceRoot"); found {
