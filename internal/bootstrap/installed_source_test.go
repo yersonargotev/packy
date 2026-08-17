@@ -168,7 +168,7 @@ func TestEnsureInstalledSourceCloneFailurePreservesExistingEmptySource(t *testin
 	if empty, readErr := dirEmpty(root); readErr != nil || !empty {
 		t.Fatalf("preserved Installed Source empty = %t, %v; want true", empty, readErr)
 	}
-	assertNoCloneDirectories(t, parent)
+	assertNoBootstrapDirectories(t, parent)
 }
 
 func TestEnsureInstalledSourcePrepublicationFailuresPreserveExistingEmptySource(t *testing.T) {
@@ -243,7 +243,7 @@ mkdir -p "$destination/bundle"
 			if empty, readErr := dirEmpty(root); readErr != nil || !empty {
 				t.Fatalf("preserved Installed Source empty = %t, %v; want true", empty, readErr)
 			}
-			assertNoCloneDirectories(t, parent)
+			assertNoBootstrapDirectories(t, parent)
 		})
 	}
 }
@@ -279,7 +279,7 @@ func TestEnsureInstalledSourceCancellationPreservesExistingEmptySource(t *testin
 	if empty, readErr := dirEmpty(root); readErr != nil || !empty {
 		t.Fatalf("preserved Installed Source empty = %t, %v; want true", empty, readErr)
 	}
-	assertNoCloneDirectories(t, parent)
+	assertNoBootstrapDirectories(t, parent)
 }
 
 func TestEnsureInstalledSourcePublishesCloneOverExistingEmptySource(t *testing.T) {
@@ -322,7 +322,7 @@ func TestEnsureInstalledSourcePublishesCloneOverExistingEmptySource(t *testing.T
 	if err := validateInstalledSource(context.Background(), root); err != nil {
 		t.Fatalf("published Installed Source: %v", err)
 	}
-	assertNoCloneDirectories(t, parent)
+	assertNoBootstrapDirectories(t, parent)
 }
 
 func TestEnsureInstalledSourceDoesNotConsumeDestinationChangedDuringClone(t *testing.T) {
@@ -352,7 +352,7 @@ func TestEnsureInstalledSourceDoesNotConsumeDestinationChangedDuringClone(t *tes
 	if _, statErr := os.Stat(filepath.Join(root, "concurrent")); statErr != nil {
 		t.Fatalf("concurrent Installed Source content: %v", statErr)
 	}
-	assertNoCloneDirectories(t, parent)
+	assertNoBootstrapDirectories(t, parent)
 }
 
 func TestEnsureInstalledSourceDoesNotConsumeReplacedEmptyDestination(t *testing.T) {
@@ -383,7 +383,7 @@ mkdir "$PACKY_SOURCE_ROOT"`)
 	if _, statErr := os.Stat(root); statErr != nil {
 		t.Fatalf("replacement Installed Source: %v", statErr)
 	}
-	assertNoCloneDirectories(t, parent)
+	assertNoBootstrapDirectories(t, parent)
 }
 
 func TestPublishClonedInstalledSourceRestoresConsumedDirectoryAfterRenameFailure(t *testing.T) {
@@ -403,9 +403,14 @@ func TestPublishClonedInstalledSourceRestoresConsumedDirectoryAfterRenameFailure
 		t.Fatal(err)
 	}
 	renameErr := errors.New("simulated rename failure")
+	renameCalls := 0
 
-	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(string, string) error {
-		return renameErr
+	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(source, destination string) error {
+		renameCalls++
+		if renameCalls == 2 {
+			return renameErr
+		}
+		return renameInstalledSourceNoReplace(source, destination)
 	})
 	if !errors.Is(err, renameErr) {
 		t.Fatalf("publishClonedInstalledSource error = %v; want rename failure", err)
@@ -436,15 +441,19 @@ func TestPublishClonedInstalledSourceDoesNotOverwriteConcurrentReplacement(t *te
 		t.Fatal(err)
 	}
 	var replacement os.FileInfo
+	renameCalls := 0
 
 	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(source, destination string) error {
-		if mkdirErr := os.Mkdir(destination, 0o750); mkdirErr != nil {
-			t.Fatal(mkdirErr)
-		}
-		var statErr error
-		replacement, statErr = os.Stat(destination)
-		if statErr != nil {
-			t.Fatal(statErr)
+		renameCalls++
+		if renameCalls == 2 {
+			if mkdirErr := os.Mkdir(destination, 0o750); mkdirErr != nil {
+				t.Fatal(mkdirErr)
+			}
+			var statErr error
+			replacement, statErr = os.Stat(destination)
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
 		}
 		return renameInstalledSourceNoReplace(source, destination)
 	})
@@ -457,6 +466,51 @@ func TestPublishClonedInstalledSourceDoesNotOverwriteConcurrentReplacement(t *te
 	}
 	if !os.SameFile(replacement, preserved) {
 		t.Fatal("concurrent Installed Source replacement was overwritten")
+	}
+}
+
+func TestPublishClonedInstalledSourceRestoresDestinationReplacedBeforeHold(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	emptyDestination, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(filepath.Dir(root), ".packy-clone.fixture")
+	if err := os.Mkdir(tmp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var replacement os.FileInfo
+	renameCalls := 0
+
+	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(source, destination string) error {
+		renameCalls++
+		if renameCalls == 1 {
+			if removeErr := os.Remove(source); removeErr != nil {
+				t.Fatal(removeErr)
+			}
+			if mkdirErr := os.Mkdir(source, 0o750); mkdirErr != nil {
+				t.Fatal(mkdirErr)
+			}
+			var statErr error
+			replacement, statErr = os.Stat(source)
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
+		}
+		return renameInstalledSourceNoReplace(source, destination)
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed during initialization") {
+		t.Fatalf("publishClonedInstalledSource error = %v; want concurrent destination change", err)
+	}
+	preserved, statErr := os.Stat(root)
+	if statErr != nil {
+		t.Fatalf("restored concurrent Installed Source replacement: %v", statErr)
+	}
+	if !os.SameFile(replacement, preserved) {
+		t.Fatal("concurrent Installed Source replacement was not restored")
 	}
 }
 
@@ -475,17 +529,21 @@ func TestPublishClonedInstalledSourceJoinsRestorationFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	renameErr := errors.New("simulated rename failure")
+	restoreErr := errors.New("simulated restoration failure")
+	renameCalls := 0
 
-	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(source, _ string) error {
-		if removeErr := os.RemoveAll(source); removeErr != nil {
-			t.Fatal(removeErr)
+	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(source, destination string) error {
+		renameCalls++
+		switch renameCalls {
+		case 2:
+			return renameErr
+		case 3:
+			return restoreErr
+		default:
+			return renameInstalledSourceNoReplace(source, destination)
 		}
-		if removeErr := os.Remove(parent); removeErr != nil {
-			t.Fatal(removeErr)
-		}
-		return renameErr
 	})
-	if !errors.Is(err, renameErr) || !strings.Contains(err.Error(), "restore empty Installed Source directory") {
+	if !errors.Is(err, renameErr) || !errors.Is(err, restoreErr) || !strings.Contains(err.Error(), "restore consumed empty Installed Source directory") {
 		t.Fatalf("publishClonedInstalledSource error = %v; want rename and restoration failures", err)
 	}
 }
@@ -506,15 +564,15 @@ cp -R "$PACKY_TEST_VALID_SOURCE/." "$destination"
 	}
 }
 
-func assertNoCloneDirectories(t *testing.T, parent string) {
+func assertNoBootstrapDirectories(t *testing.T, parent string) {
 	t.Helper()
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".packy-clone.") {
-			t.Fatalf("clone left temporary directory %s", entry.Name())
+		if strings.HasPrefix(entry.Name(), ".packy-clone.") || strings.HasPrefix(entry.Name(), ".packy-consumed.") {
+			t.Fatalf("bootstrap left temporary directory %s", entry.Name())
 		}
 	}
 }
