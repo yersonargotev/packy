@@ -62,6 +62,7 @@ func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (Bootstra
 	}
 
 	info, err := os.Stat(opts.InstalledSource.Root())
+	var emptyDestination os.FileInfo
 	switch {
 	case err == nil && !info.IsDir():
 		return BootstrapResult{}, fmt.Errorf("Installed Source path exists but is not a directory: %s", opts.InstalledSource.Root())
@@ -73,9 +74,7 @@ func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (Bootstra
 		if !empty {
 			return BootstrapResult{}, fmt.Errorf("Installed Source path exists but is not a valid Packy checkout: %s. Move it aside or pass --source-root", opts.InstalledSource.Root())
 		}
-		if err := os.Remove(opts.InstalledSource.Root()); err != nil {
-			return BootstrapResult{}, fmt.Errorf("remove empty Installed Source directory: %w", err)
-		}
+		emptyDestination = info
 	case !os.IsNotExist(err):
 		return BootstrapResult{}, fmt.Errorf("inspect Installed Source: %w", err)
 	}
@@ -83,7 +82,7 @@ func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (Bootstra
 	if _, err := exec.LookPath("git"); err != nil {
 		return BootstrapResult{}, fmt.Errorf("git is required to clone the Packy Source of Truth into %s", opts.InstalledSource.Root())
 	}
-	if err := cloneInstalledSource(ctx, opts); err != nil {
+	if err := cloneInstalledSource(ctx, opts, emptyDestination); err != nil {
 		return BootstrapResult{}, err
 	}
 	result.Cloned = true
@@ -260,7 +259,7 @@ func repositoryDirty(ctx context.Context, opts BootstrapOptions) (bool, error) {
 	return strings.TrimSpace(status) != "", nil
 }
 
-func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) (err error) {
+func cloneInstalledSource(ctx context.Context, opts BootstrapOptions, emptyDestination os.FileInfo) (err error) {
 	parent := filepath.Dir(opts.InstalledSource.Root())
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("create Installed Source parent: %w", err)
@@ -297,8 +296,61 @@ func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) (err error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, opts.InstalledSource.Root()); err != nil {
-		return fmt.Errorf("install cloned Packy Source of Truth: %w", err)
+	if err := publishClonedInstalledSource(tmp, opts.InstalledSource.Root(), emptyDestination, os.Rename); err != nil {
+		return err
+	}
+	return nil
+}
+
+func publishClonedInstalledSource(tmp, root string, emptyDestination os.FileInfo, rename func(string, string) error) error {
+	if emptyDestination != nil {
+		if err := consumeEmptyInstalledSource(root, emptyDestination); err != nil {
+			return err
+		}
+	}
+	if err := rename(tmp, root); err != nil {
+		installErr := fmt.Errorf("install cloned Packy Source of Truth: %w", err)
+		if emptyDestination == nil {
+			return installErr
+		}
+		if restoreErr := restoreEmptyInstalledSource(root, emptyDestination.Mode().Perm()); restoreErr != nil {
+			return errors.Join(installErr, restoreErr)
+		}
+		return installErr
+	}
+	return nil
+}
+
+func consumeEmptyInstalledSource(root string, expected os.FileInfo) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		return fmt.Errorf("revalidate empty Installed Source directory: %w", err)
+	}
+	if !info.IsDir() || !os.SameFile(expected, info) {
+		return fmt.Errorf("Installed Source path changed during initialization: %s", root)
+	}
+	empty, err := dirEmpty(root)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return fmt.Errorf("Installed Source path changed during initialization: %s", root)
+	}
+	if err := os.Remove(root); err != nil {
+		return fmt.Errorf("remove empty Installed Source directory for publication: %w", err)
+	}
+	return nil
+}
+
+func restoreEmptyInstalledSource(root string, mode os.FileMode) error {
+	if err := os.Mkdir(root, mode); err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return fmt.Errorf("restore empty Installed Source directory: %w", err)
+	}
+	if err := os.Chmod(root, mode); err != nil {
+		return fmt.Errorf("restore empty Installed Source directory permissions: %w", err)
 	}
 	return nil
 }

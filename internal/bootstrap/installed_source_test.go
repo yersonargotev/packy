@@ -126,6 +126,395 @@ func TestEnsureInstalledSourceCancelsGitCloneWithoutInstallingPartialSource(t *t
 	}
 }
 
+func TestEnsureInstalledSourceCloneFailurePreservesExistingEmptySource(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "installed")
+	if err := os.Mkdir(root, 0o711); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o711); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	configHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	bin := t.TempDir()
+	git := filepath.Join(bin, "git")
+	if err := os.WriteFile(git, []byte("#!/bin/sh\necho 'simulated clone failure' >&2\nexit 23\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := EnsureInstalledSource(context.Background(), BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		RepositoryURL:   "https://example.invalid/packy.git",
+		HomeDir:         home,
+		ConfigHome:      configHome,
+	})
+	if err == nil || !strings.Contains(err.Error(), "simulated clone failure") {
+		t.Fatalf("EnsureInstalledSource error = %v; want clone failure", err)
+	}
+	info, statErr := os.Stat(root)
+	if statErr != nil {
+		t.Fatalf("stat preserved Installed Source: %v", statErr)
+	}
+	if !info.IsDir() {
+		t.Fatalf("preserved Installed Source mode = %v; want directory", info.Mode())
+	}
+	if got := info.Mode().Perm(); got != 0o711 {
+		t.Fatalf("preserved Installed Source permissions = %o; want 711", got)
+	}
+	if empty, readErr := dirEmpty(root); readErr != nil || !empty {
+		t.Fatalf("preserved Installed Source empty = %t, %v; want true", empty, readErr)
+	}
+	assertNoCloneDirectories(t, parent)
+}
+
+func TestEnsureInstalledSourcePrepublicationFailuresPreserveExistingEmptySource(t *testing.T) {
+	tests := []struct {
+		name      string
+		prepare   func(*testing.T, string) BootstrapOptions
+		wantError string
+	}{
+		{
+			name: "missing Git",
+			prepare: func(t *testing.T, root string) BootstrapOptions {
+				t.Setenv("PATH", t.TempDir())
+				return BootstrapOptions{InstalledSource: InstalledSourceAt(root)}
+			},
+			wantError: "git is required",
+		},
+		{
+			name: "progress reporting",
+			prepare: func(t *testing.T, root string) BootstrapOptions {
+				bin := t.TempDir()
+				writeSuccessfulCloneGit(t, bin, "")
+				t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+				return BootstrapOptions{
+					InstalledSource: InstalledSourceAt(root),
+					ReportProgress: func(string) error {
+						return errors.New("simulated progress failure")
+					},
+				}
+			},
+			wantError: "simulated progress failure",
+		},
+		{
+			name: "staged source validation",
+			prepare: func(t *testing.T, root string) BootstrapOptions {
+				bin := t.TempDir()
+				git := filepath.Join(bin, "git")
+				script := `#!/bin/sh
+for argument in "$@"; do
+  destination="$argument"
+done
+mkdir -p "$destination/bundle"
+`
+				if err := os.WriteFile(git, []byte(script), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+				return BootstrapOptions{InstalledSource: InstalledSourceAt(root)}
+			},
+			wantError: "invalid skill bundle",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parent := t.TempDir()
+			root := filepath.Join(parent, "installed")
+			if err := os.Mkdir(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			home := t.TempDir()
+			configHome := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", configHome)
+			opts := tt.prepare(t, root)
+			opts.HomeDir = home
+			opts.ConfigHome = configHome
+
+			_, err := EnsureInstalledSource(context.Background(), opts)
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("EnsureInstalledSource error = %v; want %q", err, tt.wantError)
+			}
+			if empty, readErr := dirEmpty(root); readErr != nil || !empty {
+				t.Fatalf("preserved Installed Source empty = %t, %v; want true", empty, readErr)
+			}
+			assertNoCloneDirectories(t, parent)
+		})
+	}
+}
+
+func TestEnsureInstalledSourceCancellationPreservesExistingEmptySource(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "installed")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	git := filepath.Join(bin, "git")
+	if err := os.WriteFile(git, []byte("#!/bin/sh\nexec sleep 300\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	home := t.TempDir()
+	configHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := EnsureInstalledSource(ctx, BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		RepositoryURL:   "https://example.invalid/packy.git",
+		HomeDir:         home,
+		ConfigHome:      configHome,
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("EnsureInstalledSource error = %v; want context deadline", err)
+	}
+	if empty, readErr := dirEmpty(root); readErr != nil || !empty {
+		t.Fatalf("preserved Installed Source empty = %t, %v; want true", empty, readErr)
+	}
+	assertNoCloneDirectories(t, parent)
+}
+
+func TestEnsureInstalledSourcePublishesCloneOverExistingEmptySource(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "installed")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	writeSuccessfulCloneGit(t, bin, "")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	home := t.TempDir()
+	configHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	result, err := EnsureInstalledSource(context.Background(), BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		RepositoryURL:   "https://example.invalid/packy.git",
+		HomeDir:         home,
+		ConfigHome:      configHome,
+	})
+	if err != nil {
+		t.Fatalf("EnsureInstalledSource: %v", err)
+	}
+	if !result.Cloned {
+		t.Fatalf("EnsureInstalledSource result = %+v; want cloned", result)
+	}
+	published, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(original, published) {
+		t.Fatal("successful clone retained the consumed empty directory")
+	}
+	if err := validateInstalledSource(context.Background(), root); err != nil {
+		t.Fatalf("published Installed Source: %v", err)
+	}
+	assertNoCloneDirectories(t, parent)
+}
+
+func TestEnsureInstalledSourceDoesNotConsumeDestinationChangedDuringClone(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "installed")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	writeSuccessfulCloneGit(t, bin, `touch "$PACKY_SOURCE_ROOT/concurrent"`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PACKY_SOURCE_ROOT", root)
+	home := t.TempDir()
+	configHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	_, err := EnsureInstalledSource(context.Background(), BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		RepositoryURL:   "https://example.invalid/packy.git",
+		HomeDir:         home,
+		ConfigHome:      configHome,
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed during initialization") {
+		t.Fatalf("EnsureInstalledSource error = %v; want concurrent destination change", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "concurrent")); statErr != nil {
+		t.Fatalf("concurrent Installed Source content: %v", statErr)
+	}
+	assertNoCloneDirectories(t, parent)
+}
+
+func TestEnsureInstalledSourceDoesNotConsumeReplacedEmptyDestination(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "installed")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	writeSuccessfulCloneGit(t, bin, `rmdir "$PACKY_SOURCE_ROOT"
+mkdir "$PACKY_SOURCE_ROOT"`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PACKY_SOURCE_ROOT", root)
+	home := t.TempDir()
+	configHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	_, err := EnsureInstalledSource(context.Background(), BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		RepositoryURL:   "https://example.invalid/packy.git",
+		HomeDir:         home,
+		ConfigHome:      configHome,
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed during initialization") {
+		t.Fatalf("EnsureInstalledSource error = %v; want replaced destination error", err)
+	}
+	if _, statErr := os.Stat(root); statErr != nil {
+		t.Fatalf("replacement Installed Source: %v", statErr)
+	}
+	assertNoCloneDirectories(t, parent)
+}
+
+func TestPublishClonedInstalledSourceRestoresConsumedDirectoryAfterRenameFailure(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	if err := os.Mkdir(root, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	emptyDestination, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(filepath.Dir(root), ".packy-clone.fixture")
+	if err := os.Mkdir(tmp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	renameErr := errors.New("simulated rename failure")
+
+	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(string, string) error {
+		return renameErr
+	})
+	if !errors.Is(err, renameErr) {
+		t.Fatalf("publishClonedInstalledSource error = %v; want rename failure", err)
+	}
+	info, statErr := os.Stat(root)
+	if statErr != nil {
+		t.Fatalf("restored Installed Source: %v", statErr)
+	}
+	if got := info.Mode().Perm(); got != 0o777 {
+		t.Fatalf("restored Installed Source permissions = %o; want 777", got)
+	}
+	if empty, readErr := dirEmpty(root); readErr != nil || !empty {
+		t.Fatalf("restored Installed Source empty = %t, %v; want true", empty, readErr)
+	}
+}
+
+func TestPublishClonedInstalledSourceDoesNotOverwriteConcurrentReplacement(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	emptyDestination, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(filepath.Dir(root), ".packy-clone.fixture")
+	if err := os.Mkdir(tmp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	renameErr := errors.New("simulated rename failure")
+	want := []byte("concurrent state")
+
+	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(_, destination string) error {
+		if writeErr := os.WriteFile(destination, want, 0o640); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		return renameErr
+	})
+	if !errors.Is(err, renameErr) {
+		t.Fatalf("publishClonedInstalledSource error = %v; want rename failure", err)
+	}
+	got, readErr := os.ReadFile(root)
+	if readErr != nil {
+		t.Fatalf("concurrent Installed Source replacement: %v", readErr)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("concurrent Installed Source replacement = %q; want %q", got, want)
+	}
+}
+
+func TestPublishClonedInstalledSourceJoinsRestorationFailure(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "parent")
+	root := filepath.Join(parent, "installed")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	emptyDestination, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(parent, ".packy-clone.fixture")
+	if err := os.Mkdir(tmp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	renameErr := errors.New("simulated rename failure")
+
+	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(source, _ string) error {
+		if removeErr := os.RemoveAll(source); removeErr != nil {
+			t.Fatal(removeErr)
+		}
+		if removeErr := os.Remove(parent); removeErr != nil {
+			t.Fatal(removeErr)
+		}
+		return renameErr
+	})
+	if !errors.Is(err, renameErr) || !strings.Contains(err.Error(), "restore empty Installed Source directory") {
+		t.Fatalf("publishClonedInstalledSource error = %v; want rename and restoration failures", err)
+	}
+}
+
+func writeSuccessfulCloneGit(t *testing.T, bin, beforeExit string) {
+	t.Helper()
+	script := `#!/bin/sh
+for argument in "$@"; do
+  destination="$argument"
+done
+for skill in engineering/ask-matt productivity/grilling in-progress/loop-me; do
+  mkdir -p "$destination/bundle/skills/$skill"
+  printf '%s\n' '---' 'name: fixture' '---' > "$destination/bundle/skills/$skill/SKILL.md"
+done
+` + beforeExit + "\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertNoCloneDirectories(t *testing.T, parent string) {
+	t.Helper()
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".packy-clone.") {
+			t.Fatalf("clone left temporary directory %s", entry.Name())
+		}
+	}
+}
+
 func TestEnsureInstalledSourceDoesNotCheckoutAfterCanceledFetch(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "installed")
 	writeValidInstalledSource(t, root)
