@@ -937,7 +937,22 @@ func resourcesForTUI(detail capabilitypack.CatalogDetail) []tui.Resource {
 		result = append(result, tui.Resource{
 			Identity: identity, Description: resource.Description, Role: string(resource.Role),
 			Requirements: requirements, Conflicts: append([]string(nil), manifestResource.Conflicts...),
+			SurfaceCapabilities: surfaceCapabilitiesForTUI(manifestResource),
 		})
+	}
+	return result
+}
+
+func surfaceCapabilitiesForTUI(resource capabilitypack.Resource) []tui.SurfaceCapability {
+	var result []tui.SurfaceCapability
+	for _, binding := range resource.Bindings {
+		for _, capability := range binding.Capabilities {
+			view := tui.SurfaceCapability{Surface: string(binding.Surface), Type: string(capability.Type)}
+			if capability.ExternalExecutableAcquisition != nil {
+				view.Tool = capability.ExternalExecutableAcquisition.Tool
+			}
+			result = append(result, view)
+		}
 	}
 	return result
 }

@@ -85,6 +85,48 @@ func TestTUIProductionBackendUsesPackyOwnersWithoutMutatingState(t *testing.T) {
 	}
 }
 
+func TestTUICatalogAdapterPreservesSearchableSurfaceCapabilities(t *testing.T) {
+	details := []capabilitypack.CatalogDetail{{
+		Pack: capabilitypack.Pack{
+			ID: "synthetic", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceOpenCode},
+			Requires: capabilitypack.Requirements{Tools: []string{"pack-tool"}},
+			Resources: []capabilitypack.Resource{{
+				Kind: "skill", ID: "coordinate", Description: "Coordinate workers", RequiresTools: []string{"resource-tool"},
+				Bindings: []capabilitypack.Binding{{
+					Surface: capabilitypack.SurfaceOpenCode,
+					Capabilities: []capabilitypack.SurfaceCapability{{
+						Type:                          capabilitypack.SurfaceCapabilityExternalExecutableAcquisition,
+						ExternalExecutableAcquisition: &capabilitypack.ExternalExecutableAcquisitionCapability{Tool: "capability-tool"},
+					}},
+				}},
+			}},
+		},
+		ResourceInventory: []capabilitypack.DescriptiveResource{{
+			Resource:    capabilitypack.ResourceIdentity{Kind: "skill", ID: "coordinate"},
+			Description: "Coordinate workers", Role: capabilitypack.ResourceInventoryRoleOperational,
+		}},
+	}}
+
+	packs := catalogPacksForTUI(details, nil)
+	if len(packs) != 1 || len(packs[0].Resources) != 1 {
+		t.Fatalf("adapted catalog = %#v", packs)
+	}
+	resource := packs[0].Resources[0]
+	if !slices.Equal(packs[0].Surfaces, []string{"opencode"}) || !slices.Equal(packs[0].Requirements, []string{"pack-tool"}) {
+		t.Fatalf("Pack search metadata = %#v", packs[0])
+	}
+	if resource.Identity != "skill:coordinate" || resource.Description != "Coordinate workers" || !slices.Contains(resource.Requirements, "resource-tool") {
+		t.Fatalf("resource search metadata = %#v", resource)
+	}
+	if len(resource.SurfaceCapabilities) != 1 {
+		t.Fatalf("surface capabilities = %#v", resource.SurfaceCapabilities)
+	}
+	capability := resource.SurfaceCapabilities[0]
+	if capability.Surface != "opencode" || capability.Type != "external-executable-acquisition" || capability.Tool != "capability-tool" {
+		t.Fatalf("surface capability = %#v", capability)
+	}
+}
+
 func TestTUIBackendPreviewsAndRecordsControlledRuntimeCheck(t *testing.T) {
 	opts, _, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
 	if _, err := executeCommand(t, NewRootCommand(opts), "activate", "orchestrate", "--surface", "codex"); err != nil {
