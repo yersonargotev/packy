@@ -296,7 +296,7 @@ func cloneInstalledSource(ctx context.Context, opts BootstrapOptions, emptyDesti
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := publishClonedInstalledSource(tmp, opts.InstalledSource.Root(), emptyDestination, os.Rename); err != nil {
+	if err := publishClonedInstalledSource(tmp, opts.InstalledSource.Root(), emptyDestination, renameInstalledSourceNoReplace); err != nil {
 		return err
 	}
 	return nil

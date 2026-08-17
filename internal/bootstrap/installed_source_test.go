@@ -435,24 +435,28 @@ func TestPublishClonedInstalledSourceDoesNotOverwriteConcurrentReplacement(t *te
 	if err := os.Mkdir(tmp, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	renameErr := errors.New("simulated rename failure")
-	want := []byte("concurrent state")
+	var replacement os.FileInfo
 
-	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(_, destination string) error {
-		if writeErr := os.WriteFile(destination, want, 0o640); writeErr != nil {
-			t.Fatal(writeErr)
+	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(source, destination string) error {
+		if mkdirErr := os.Mkdir(destination, 0o750); mkdirErr != nil {
+			t.Fatal(mkdirErr)
 		}
-		return renameErr
+		var statErr error
+		replacement, statErr = os.Stat(destination)
+		if statErr != nil {
+			t.Fatal(statErr)
+		}
+		return renameInstalledSourceNoReplace(source, destination)
 	})
-	if !errors.Is(err, renameErr) {
-		t.Fatalf("publishClonedInstalledSource error = %v; want rename failure", err)
+	if err == nil {
+		t.Fatal("publishClonedInstalledSource succeeded over concurrent replacement")
 	}
-	got, readErr := os.ReadFile(root)
-	if readErr != nil {
-		t.Fatalf("concurrent Installed Source replacement: %v", readErr)
+	preserved, statErr := os.Stat(root)
+	if statErr != nil {
+		t.Fatalf("concurrent Installed Source replacement: %v", statErr)
 	}
-	if string(got) != string(want) {
-		t.Fatalf("concurrent Installed Source replacement = %q; want %q", got, want)
+	if !os.SameFile(replacement, preserved) {
+		t.Fatal("concurrent Installed Source replacement was overwritten")
 	}
 }
 
@@ -488,14 +492,14 @@ func TestPublishClonedInstalledSourceJoinsRestorationFailure(t *testing.T) {
 
 func writeSuccessfulCloneGit(t *testing.T, bin, beforeExit string) {
 	t.Helper()
+	fixture := filepath.Join(t.TempDir(), "source")
+	writeValidInstalledSource(t, fixture)
+	t.Setenv("PACKY_TEST_VALID_SOURCE", fixture)
 	script := `#!/bin/sh
 for argument in "$@"; do
   destination="$argument"
 done
-for skill in engineering/ask-matt productivity/grilling in-progress/loop-me; do
-  mkdir -p "$destination/bundle/skills/$skill"
-  printf '%s\n' '---' 'name: fixture' '---' > "$destination/bundle/skills/$skill/SKILL.md"
-done
+cp -R "$PACKY_TEST_VALID_SOURCE/." "$destination"
 ` + beforeExit + "\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
