@@ -488,8 +488,9 @@ func TestPublishClonedInstalledSourceRestoresDestinationReplacedBeforeHold(t *te
 	err = publishClonedInstalledSource(tmp, root, emptyDestination, func(source, destination string) error {
 		renameCalls++
 		if renameCalls == 1 {
-			if removeErr := os.Remove(source); removeErr != nil {
-				t.Fatal(removeErr)
+			displaced := source + ".displaced"
+			if renameErr := os.Rename(source, displaced); renameErr != nil {
+				t.Fatal(renameErr)
 			}
 			if mkdirErr := os.Mkdir(source, 0o750); mkdirErr != nil {
 				t.Fatal(mkdirErr)
