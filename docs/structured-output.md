@@ -10,6 +10,7 @@ persists the resulting installed Pack receipt, not the preview.
 | Command family | Schema |
 | --- | --- |
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
+| `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
 | `packy show PACK --json` | `schemas/cli/v5/pack-show.schema.json` |
 | global Pack status | `schemas/cli/v10/pack-status.schema.json` |
@@ -25,6 +26,7 @@ live producer examples, and reject the checked-in negative project fixtures.
 | Command | `report` |
 | --- | --- |
 | `packy audit --json` | `packy-audit` |
+| `packy list --json` | `pack-list` |
 | `packy doctor --json` | `doctor` |
 | `packy show PACK --json` | `pack-show` |
 | global Pack preview | `pack-lifecycle-preview` |

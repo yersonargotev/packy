@@ -17,6 +17,7 @@ var structuredOutputFixtures = []struct {
 	version, fixture, schema string
 }{
 	{"v1", "pack-audit.json", "pack-audit.schema.json"},
+	{"v1", "pack-list.json", "pack-list.schema.json"},
 	{"v3", "doctor.json", "doctor.schema.json"},
 	{"v5", "pack-show.json", "pack-show.schema.json"},
 	{"v10", "pack-status.json", "pack-status.schema.json"},
@@ -65,6 +66,14 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	assertStructuredOutput(t, root, "pack-audit.schema.json", auditOutput)
 
 	packReadOpts := Options{Env: MapEnv{"HOME": t.TempDir(), "XDG_CONFIG_HOME": filepath.Join(t.TempDir(), "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(root, "bundle", "skills")}}
+	list, err := executeCommand(t, NewRootCommand(packReadOpts), "list", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertStructuredOutput(t, root, "pack-list.schema.json", list)
+	if err := validateCanonicalOperatorOrder([]byte(list)); err != nil {
+		t.Fatalf("pack-list producer canonical order: %v", err)
+	}
 	show, err := executeCommand(t, NewRootCommand(packReadOpts), "show", "engram", "--json")
 	if err != nil {
 		t.Fatal(err)
@@ -430,6 +439,17 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 		return nil
 	}
 	switch document["report"] {
+	case "pack-list":
+		packs := document["packs"].([]any)
+		if err := requireOrdered("packs", packs, objectKey("id")); err != nil {
+			return err
+		}
+		for _, value := range packs {
+			pack := value.(map[string]any)
+			if err := requireStrings("packs.surfaces", pack["surfaces"].([]any)); err != nil {
+				return err
+			}
+		}
 	case "pack-show":
 		if err := requireStrings("surfaces", document["surfaces"].([]any)); err != nil {
 			return err
