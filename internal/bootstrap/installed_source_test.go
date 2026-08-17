@@ -362,7 +362,7 @@ func TestEnsureInstalledSourceDoesNotConsumeReplacedEmptyDestination(t *testing.
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	writeSuccessfulCloneGit(t, bin, `rmdir "$PACKY_SOURCE_ROOT"
+	writeSuccessfulCloneGit(t, bin, `mv "$PACKY_SOURCE_ROOT" "$PACKY_SOURCE_ROOT.displaced"
 mkdir "$PACKY_SOURCE_ROOT"`)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("PACKY_SOURCE_ROOT", root)
