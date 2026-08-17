@@ -1025,6 +1025,71 @@ func TestCatalogCanBeFilteredAndOpensCompletePackDetail(t *testing.T) {
 	}
 }
 
+func TestCatalogFilterMatchesSearchableCatalogMetadata(t *testing.T) {
+	backend := &fakeBackend{dashboard: tui.Dashboard{
+		Global: tui.Scope{Available: true, Packs: []tui.Pack{
+			{
+				ID: "coordination", Description: "Delegate complex work", Surfaces: []string{"opencode"}, Requirements: []string{"pack-tool", "shared-value"},
+				Resources: []tui.Resource{{
+					Identity: "skill:orchestrate", Description: "Route specialist agents", Requirements: []string{"resource-tool", "shared-value"},
+					SurfaceCapabilities: []tui.SurfaceCapability{{Surface: "opencode", Type: "external-executable-acquisition", Tool: "capability-tool"}},
+				}},
+			},
+			{ID: "guidance", Description: "Write instructions"},
+		}},
+	}}
+	filter := func(t *testing.T, query string) string {
+		t.Helper()
+		model := loadModel(t, backend)
+		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "/", Code: '/'}))
+		for _, character := range query {
+			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: string(character), Code: character}))
+		}
+		return ansi.Strip(model.View().Content)
+	}
+
+	for name, query := range map[string]string{
+		"Pack ID":                       "COORD",
+		"Pack description":              "complex work",
+		"supported CLI surface":         "OPENCode",
+		"Pack external requirement":     "pack-tool",
+		"resource identity":             "skill:orchestrate",
+		"resource description":          "specialist agents",
+		"resource external requirement": "resource-tool",
+		"surface capability type":       "executable-acquisition",
+		"capability tool":               "capability-tool",
+		"multiple matching fields":      "shared-value",
+	} {
+		t.Run(name, func(t *testing.T) {
+			view := filter(t, query)
+			if !strings.Contains(view, "coordination") || strings.Contains(view, "guidance") || !strings.Contains(view, "1 match") {
+				t.Fatalf("filter %q did not find exactly the owning Pack:\n%s", query, view)
+			}
+		})
+	}
+
+	t.Run("no match", func(t *testing.T) {
+		view := filter(t, "absent-catalog-value")
+		if !strings.Contains(view, "No reviewed Packs match the filter") || !strings.Contains(view, "0 matches") {
+			t.Fatalf("no-match filter result =\n%s", view)
+		}
+	})
+
+	t.Run("clearing restores catalog and navigation", func(t *testing.T) {
+		model := loadModel(t, backend)
+		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "/", Code: '/'}))
+		for _, character := range "skill:orchestrate" {
+			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: string(character), Code: character}))
+		}
+		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+		model, _ = model.Update(tea.KeyPressMsg(tea.Key{Text: "j", Code: 'j'}))
+		view := ansi.Strip(model.View().Content)
+		if !strings.Contains(view, "coordination") || !strings.Contains(view, "› guidance") || strings.Contains(view, "Filter:") {
+			t.Fatalf("clearing the filter did not restore catalog navigation:\n%s", view)
+		}
+	})
+}
+
 func TestPackLifecycleSelectionDefaultsToFullPackAndExplainsResourceRoles(t *testing.T) {
 	backend := &fakeBackend{dashboard: tui.Dashboard{
 		Health: tui.Health{Status: "healthy"},

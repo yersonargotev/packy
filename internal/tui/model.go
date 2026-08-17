@@ -119,11 +119,18 @@ type Pack struct {
 }
 
 type Resource struct {
-	Identity     string
-	Description  string
-	Role         string
-	Requirements []string
-	Conflicts    []string
+	Identity            string
+	Description         string
+	Role                string
+	Requirements        []string
+	Conflicts           []string
+	SurfaceCapabilities []SurfaceCapability
+}
+
+type SurfaceCapability struct {
+	Surface string
+	Type    string
+	Tool    string
 }
 
 type Exclusion struct {
@@ -1024,11 +1031,25 @@ func filteredPacks(packs []Pack, filter string) []Pack {
 	}
 	result := make([]Pack, 0, len(packs))
 	for _, pack := range packs {
-		if strings.Contains(strings.ToLower(pack.ID+" "+pack.Description), filter) {
+		if strings.Contains(strings.ToLower(packSearchText(pack)), filter) {
 			result = append(result, pack)
 		}
 	}
 	return result
+}
+
+func packSearchText(pack Pack) string {
+	values := []string{pack.ID, pack.Description}
+	values = append(values, pack.Surfaces...)
+	values = append(values, pack.Requirements...)
+	for _, resource := range pack.Resources {
+		values = append(values, resource.Identity, resource.Description)
+		values = append(values, resource.Requirements...)
+		for _, capability := range resource.SurfaceCapabilities {
+			values = append(values, capability.Surface, capability.Type, capability.Tool)
+		}
+	}
+	return strings.Join(values, " ")
 }
 
 func boundedRow(row, length int) int {
