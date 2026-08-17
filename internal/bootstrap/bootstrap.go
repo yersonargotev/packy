@@ -62,6 +62,7 @@ func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (Bootstra
 	}
 
 	info, err := os.Stat(opts.InstalledSource.Root())
+	var emptyDestination os.FileInfo
 	switch {
 	case err == nil && !info.IsDir():
 		return BootstrapResult{}, fmt.Errorf("Installed Source path exists but is not a directory: %s", opts.InstalledSource.Root())
@@ -73,9 +74,7 @@ func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (Bootstra
 		if !empty {
 			return BootstrapResult{}, fmt.Errorf("Installed Source path exists but is not a valid Packy checkout: %s. Move it aside or pass --source-root", opts.InstalledSource.Root())
 		}
-		if err := os.Remove(opts.InstalledSource.Root()); err != nil {
-			return BootstrapResult{}, fmt.Errorf("remove empty Installed Source directory: %w", err)
-		}
+		emptyDestination = info
 	case !os.IsNotExist(err):
 		return BootstrapResult{}, fmt.Errorf("inspect Installed Source: %w", err)
 	}
@@ -83,7 +82,7 @@ func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (Bootstra
 	if _, err := exec.LookPath("git"); err != nil {
 		return BootstrapResult{}, fmt.Errorf("git is required to clone the Packy Source of Truth into %s", opts.InstalledSource.Root())
 	}
-	if err := cloneInstalledSource(ctx, opts); err != nil {
+	if err := cloneInstalledSource(ctx, opts, emptyDestination); err != nil {
 		return BootstrapResult{}, err
 	}
 	result.Cloned = true
@@ -260,7 +259,7 @@ func repositoryDirty(ctx context.Context, opts BootstrapOptions) (bool, error) {
 	return strings.TrimSpace(status) != "", nil
 }
 
-func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) (err error) {
+func cloneInstalledSource(ctx context.Context, opts BootstrapOptions, emptyDestination os.FileInfo) (err error) {
 	parent := filepath.Dir(opts.InstalledSource.Root())
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("create Installed Source parent: %w", err)
@@ -297,8 +296,85 @@ func cloneInstalledSource(ctx context.Context, opts BootstrapOptions) (err error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, opts.InstalledSource.Root()); err != nil {
-		return fmt.Errorf("install cloned Packy Source of Truth: %w", err)
+	if err := publishClonedInstalledSource(tmp, opts.InstalledSource.Root(), emptyDestination, renameInstalledSourceNoReplace); err != nil {
+		return err
+	}
+	return nil
+}
+
+func publishClonedInstalledSource(tmp, root string, emptyDestination os.FileInfo, rename func(string, string) error) error {
+	heldDestination := ""
+	if emptyDestination != nil {
+		var err error
+		heldDestination, err = holdEmptyInstalledSource(root, emptyDestination, rename)
+		if err != nil {
+			return err
+		}
+	}
+	if err := rename(tmp, root); err != nil {
+		installErr := fmt.Errorf("install cloned Packy Source of Truth: %w", err)
+		if heldDestination == "" {
+			return installErr
+		}
+		if restoreErr := restoreHeldInstalledSource(heldDestination, root, rename); restoreErr != nil {
+			return errors.Join(installErr, restoreErr)
+		}
+		return installErr
+	}
+	if heldDestination != "" {
+		if err := os.Remove(heldDestination); err != nil {
+			return fmt.Errorf("clean up consumed empty Installed Source directory: %w", err)
+		}
+	}
+	return nil
+}
+
+func holdEmptyInstalledSource(root string, expected os.FileInfo, rename func(string, string) error) (string, error) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", fmt.Errorf("revalidate empty Installed Source directory: %w", err)
+	}
+	if !info.IsDir() || !os.SameFile(expected, info) {
+		return "", fmt.Errorf("Installed Source path changed during initialization: %s", root)
+	}
+	empty, err := dirEmpty(root)
+	if err != nil {
+		return "", err
+	}
+	if !empty {
+		return "", fmt.Errorf("Installed Source path changed during initialization: %s", root)
+	}
+	held, err := os.MkdirTemp(filepath.Dir(root), ".packy-consumed.*")
+	if err != nil {
+		return "", fmt.Errorf("reserve consumed Installed Source path: %w", err)
+	}
+	if err := os.Remove(held); err != nil {
+		return "", fmt.Errorf("prepare consumed Installed Source path: %w", err)
+	}
+	if err := rename(root, held); err != nil {
+		return "", fmt.Errorf("hold empty Installed Source directory for publication: %w", err)
+	}
+
+	moved, inspectErr := os.Stat(held)
+	if inspectErr == nil && moved.IsDir() && os.SameFile(expected, moved) {
+		empty, inspectErr = dirEmpty(held)
+		if inspectErr == nil && empty {
+			return held, nil
+		}
+	}
+	changedErr := fmt.Errorf("Installed Source path changed during initialization: %s", root)
+	if inspectErr != nil {
+		changedErr = errors.Join(changedErr, fmt.Errorf("inspect held Installed Source directory: %w", inspectErr))
+	}
+	if restoreErr := restoreHeldInstalledSource(held, root, rename); restoreErr != nil {
+		return "", errors.Join(changedErr, restoreErr)
+	}
+	return "", changedErr
+}
+
+func restoreHeldInstalledSource(held, root string, rename func(string, string) error) error {
+	if err := rename(held, root); err != nil {
+		return fmt.Errorf("restore consumed empty Installed Source directory from %s: %w", held, err)
 	}
 	return nil
 }
