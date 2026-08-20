@@ -8,7 +8,7 @@ This index is generated from the bundled selectable Pack manifests. Use `packy s
 - [argote](argote.md) — Yerson Argote's engineering and communication guidance (version `1.0.2`)
 - [engram](engram.md) — Upstream Engram CLI memory workflows for agent work (version `3.0.0`)
 - [issue-delivery](issue-delivery.md) — Deliver issues through policy-driven or Matt-configured workflows (version `1.1.1`)
-- [matty](matty.md) — Matty workflow (version `1.0.3`)
+- [matty](matty.md) — Matty workflow (version `1.0.4`)
 - [orchestrate](orchestrate.md) — Coordinate focused Codex subagents (version `1.0.1`)
 
 ## Pack authoring vocabulary

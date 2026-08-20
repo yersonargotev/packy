@@ -44,7 +44,7 @@ func TestIssue518ActivationPublishesMinimalInstalledPackReceipt(t *testing.T) {
 		t.Fatalf("receipt document = %#v\n%s", document, data)
 	}
 	receipt := document.Receipts[0]
-	if receipt.Pack.ID != "matty" || receipt.Pack.Version != "1.0.3" || receipt.Surface != "codex" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
+	if receipt.Pack.ID != "matty" || receipt.Pack.Version != "1.0.4" || receipt.Surface != "codex" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
 		t.Fatalf("receipt omitted installed Pack facts: %#v\n%s", receipt, data)
 	}
 	for _, projection := range receipt.Projections {
@@ -70,7 +70,7 @@ func TestIssue518StatusReportsCurrentReceiptWithoutHistoricalAttempts(t *testing
 	if err != nil {
 		t.Fatalf("status Matty: %v\n%s", err, human)
 	}
-	for _, fact := range []string{"matty 1.0.3 on codex", "Resources:", "Readiness:", "Receipt ownership:", "Drift:"} {
+	for _, fact := range []string{"matty 1.0.4 on codex", "Resources:", "Readiness:", "Receipt ownership:", "Drift:"} {
 		if !strings.Contains(human, fact) {
 			t.Fatalf("status omitted %q:\n%s", fact, human)
 		}
