@@ -762,7 +762,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.3"`, `"version": "1.0.4"`, 1)
+	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.4"`, `"version": "1.0.5"`, 1)
 	if updatedManifest == string(manifest) {
 		t.Fatal("Matty fixture version did not match the expected current version")
 	}
@@ -784,7 +784,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if update.Disposition != "previewable" || update.PackVersion != "1.0.4" {
+	if update.Disposition != "previewable" || update.PackVersion != "1.0.5" {
 		t.Fatalf("project update preview = %#v", update)
 	}
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: update, ApprovedPhases: requiredTUIPhases(update)}, func(tui.ApplyProgress) {}); err != nil {
@@ -794,7 +794,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(installation.Manifest.Packs) != 1 || installation.Manifest.Packs[0].Version != "1.0.4" {
+	if len(installation.Manifest.Packs) != 1 || installation.Manifest.Packs[0].Version != "1.0.5" {
 		t.Fatalf("project update did not record the selected Pack version: %#v", installation.Manifest.Packs)
 	}
 }

@@ -28,7 +28,7 @@
     },
     {
       "id": "matty",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "description": "Matty workflow",
       "surfaces": ["claude", "codex", "opencode"]
     },

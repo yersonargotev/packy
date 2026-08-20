@@ -6,7 +6,7 @@
 
 Matty workflow
 
-- Version: `1.0.3`
+- Version: `1.0.4`
 - Supported surfaces: `claude`, `codex`, `opencode`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
