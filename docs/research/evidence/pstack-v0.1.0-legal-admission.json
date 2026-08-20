@@ -1,0 +1,92 @@
+{
+  "candidate": {
+    "commit": "ddb726b4bcd16ac21c8082153b62740ab21a23ab",
+    "readme_blob": "23ec46e8f269e02d6a69e66f6648689aab87b327",
+    "readme_length": 631,
+    "readme_sha256": "7cf3958311911610fedca8e6d455cc28d546141cfcde5151e3908a749c83c491",
+    "repository": "yersonargotev/pstack"
+  },
+  "decision": "admit the exact stable candidate for redistribution",
+  "disclosures": [
+    "the resource review at docs/research/evidence/pstack-v0.1.0-resource-review.json accounts for all 156 files under pstack/",
+    "26 portable skill roots are selected without rewriting upstream content",
+    "pstack/LICENSE is selected as the notice and one selected skill reference remains dependency-only",
+    "Cursor metadata, agents, automations, guides, scripts, and unselected skills are excluded"
+  ],
+  "disposition": "redistributable",
+  "durable_reference": "docs/research/evidence/pstack-v0.1.0-legal-admission.json",
+  "evidence_id": "pstack-v0.1.0-mit",
+  "evidence_origin": "MIT LICENSE in yersonargotev/pstack@v0.1.0",
+  "invalidation": "any release, candidate, selected-root, license, README identity, disposition, evidence digest, or scope change",
+  "issuer": "Packy maintainer",
+  "obligations": [
+    "preserve Lauren Tan's copyright notice and the MIT permission notice"
+  ],
+  "rights": [
+    "use, copy, modify, merge, publish, distribute, sublicense, and sell copies"
+  ],
+  "schema_version": 1,
+  "scope": {
+    "exclusions": [
+      ".cursor-plugin",
+      "LICENSE",
+      "README.md",
+      "pstack/.cursor-plugin",
+      "pstack/.gitignore",
+      "pstack/README.md",
+      "pstack/agents",
+      "pstack/automations",
+      "pstack/docs",
+      "pstack/skills/architect",
+      "pstack/skills/arena",
+      "pstack/skills/automate-me",
+      "pstack/skills/blast-radius",
+      "pstack/skills/create-verification-skill",
+      "pstack/skills/figure-it-out",
+      "pstack/skills/how",
+      "pstack/skills/interrogate",
+      "pstack/skills/maintain-verification-skill",
+      "pstack/skills/no-comments",
+      "pstack/skills/poteto-mode",
+      "pstack/skills/recall",
+      "pstack/skills/reflect",
+      "pstack/skills/setup-pstack",
+      "pstack/skills/show-me-your-work",
+      "pstack/skills/swarm",
+      "pstack/skills/teach",
+      "pstack/skills/why",
+      "schemas",
+      "scripts"
+    ],
+    "selected_roots": [
+      "pstack/LICENSE",
+      "pstack/skills/bro",
+      "pstack/skills/principle-boundary-discipline",
+      "pstack/skills/principle-build-the-lever",
+      "pstack/skills/principle-encode-lessons-in-structure",
+      "pstack/skills/principle-exhaust-the-design-space",
+      "pstack/skills/principle-experience-first",
+      "pstack/skills/principle-fix-root-causes",
+      "pstack/skills/principle-foundational-thinking",
+      "pstack/skills/principle-guard-the-context-window",
+      "pstack/skills/principle-laziness-protocol",
+      "pstack/skills/principle-make-operations-idempotent",
+      "pstack/skills/principle-migrate-callers-then-delete-legacy-apis",
+      "pstack/skills/principle-minimize-reader-load",
+      "pstack/skills/principle-model-the-domain",
+      "pstack/skills/principle-never-block-on-the-human",
+      "pstack/skills/principle-outcome-oriented-execution",
+      "pstack/skills/principle-prove-it-works",
+      "pstack/skills/principle-redesign-from-first-principles",
+      "pstack/skills/principle-separate-before-serializing-shared-state",
+      "pstack/skills/principle-sequence-verifiable-units",
+      "pstack/skills/principle-subtract-before-you-add",
+      "pstack/skills/principle-type-system-discipline",
+      "pstack/skills/tdd",
+      "pstack/skills/technical-writing",
+      "pstack/skills/typescript-best-practices",
+      "pstack/skills/unslop"
+    ]
+  },
+  "validity": "exact candidate and selected-root digests only"
+}

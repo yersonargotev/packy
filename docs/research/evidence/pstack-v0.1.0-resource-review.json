@@ -1,0 +1,952 @@
+{
+  "commit": "ddb726b4bcd16ac21c8082153b62740ab21a23ab",
+  "counts": {
+    "adapted": 0,
+    "dependency-only": 2,
+    "excluded": 128,
+    "selected": 26
+  },
+  "inventory_root": "pstack",
+  "inventory_sha256": "6a51d681d061c014876623957ea112e52aacf344e829929af9f8c963bf3c4ec9",
+  "release": "v0.1.0",
+  "repository": "yersonargotev/pstack",
+  "resources": [
+    {
+      "path": "pstack/.cursor-plugin/plugin.json",
+      "disposition": "excluded",
+      "exclusion_id": "cursor-metadata",
+      "reason": "Cursor marketplace metadata is not a Packy capability."
+    },
+    {
+      "path": "pstack/.gitignore",
+      "disposition": "excluded",
+      "exclusion_id": "source-maintenance",
+      "reason": "Upstream repository metadata and source documentation remain inert."
+    },
+    {
+      "path": "pstack/LICENSE",
+      "disposition": "dependency-only",
+      "resource": "notice:pstack-mit",
+      "reason": "Required supporting content for selected resources; not an independently selectable capability."
+    },
+    {
+      "path": "pstack/README.md",
+      "disposition": "excluded",
+      "exclusion_id": "source-maintenance",
+      "reason": "Upstream repository metadata and source documentation remain inert."
+    },
+    {
+      "path": "pstack/agents/comment-sicko.md",
+      "disposition": "excluded",
+      "exclusion_id": "agents",
+      "reason": "Cursor agent metadata and invocation semantics require a future surface-specific adaptation."
+    },
+    {
+      "path": "pstack/agents/poteto-agent.md",
+      "disposition": "excluded",
+      "exclusion_id": "agents",
+      "reason": "Cursor agent metadata and invocation semantics require a future surface-specific adaptation."
+    },
+    {
+      "path": "pstack/automations/benny/FOR_AGENTS.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/README.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/skills/reproduce-and-fix-issues/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/skills/reproduce-and-fix-issues/references/control-adapter.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/skills/reproduce-and-fix-issues/references/feature-map.example.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/skills/reproduce-and-fix-issues/references/verify-existing-fix.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/skills/setup-benny/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/skills/triage-issue-reports/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/skills/triage-issue-reports/references/routing.example.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/templates/configuration.example.yaml",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/templates/reproduce-automation-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/automations/benny/templates/triage-automation-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "automations",
+      "reason": "Benny requires unsupported Cursor Automations, Slack, tracker, and host lifecycle behavior."
+    },
+    {
+      "path": "pstack/docs/guide/01-setup.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/02-poteto-mode.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/03-understand.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/04-design.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/05-build-and-clean.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/06-verify-and-ship.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/07-overnight.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/08-principles.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/09-make-it-yours.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/10-recipes-and-pitfalls.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/README.md",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/images/design.jpg",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/images/overnight.jpg",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/images/recipes.jpg",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/images/router.jpg",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/images/understanding.jpg",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/docs/guide/images/verification.jpg",
+      "disposition": "excluded",
+      "exclusion_id": "guides",
+      "reason": "The guide documents Cursor-only setup, models, transcripts, and automation behavior."
+    },
+    {
+      "path": "pstack/skills/architect/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/architect/references/design-red-flags.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/architect/references/rationale-template.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/architect/references/runner-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/arena/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/automate-me/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/blast-radius/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/bro/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:bro",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/create-verification-skill/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/create-verification-skill/references/feature-map-example/README.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/create-verification-skill/references/feature-map-example/create-note.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/create-verification-skill/references/feature-map-example/search.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/figure-it-out/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/how/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/how/references/critic-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/how/references/critique-rubric.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/how/references/explainer-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/how/references/explorer-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/interrogate/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/interrogate/references/code-quality-review.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/interrogate/references/lead-judgment.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/interrogate/references/reviewer-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/interrogate/references/rubric.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/maintain-verification-skill/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/no-comments/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/authoring-a-skill.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/autonomous-run.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/autopilot-full.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/autopilot-stack.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/babysit.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/bug-fix.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/eval.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/feature.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/hillclimb.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/investigation.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/multi-phase-plan.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/opening-a-pr.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/orchestrate.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/pause-safely.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/perf-issue.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/prototype.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/refactoring.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/runtime-forensics.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/session-pickup.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/shipping.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/trace-forensics.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/visual-parity.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/playbooks/worktree-cleanup.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/references/bugbot-triage.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/references/plan.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/bootstrap.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/bun.lock",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/orch/orch.test.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/orch/orch.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/orch/store.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/package.json",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/cli.test.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/cli.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/fakes.test-helper.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/github.test.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/github.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/policy.test.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/policy.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/render.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/tsconfig.json",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/types.compile.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/types.ts",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/watch-pr/watch-pr",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/poteto-mode/scripts/worktree-audit.sh",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/principle-boundary-discipline/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-boundary-discipline",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-build-the-lever/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-build-the-lever",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-encode-lessons-in-structure/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-encode-lessons-in-structure",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-exhaust-the-design-space/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-exhaust-the-design-space",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-experience-first/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-experience-first",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-fix-root-causes/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-fix-root-causes",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-foundational-thinking/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-foundational-thinking",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-guard-the-context-window/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-guard-the-context-window",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-laziness-protocol/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-laziness-protocol",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-make-operations-idempotent/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-make-operations-idempotent",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-migrate-callers-then-delete-legacy-apis/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-migrate-callers-then-delete-legacy-apis",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-minimize-reader-load/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-minimize-reader-load",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-model-the-domain/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-model-the-domain",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-never-block-on-the-human/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-never-block-on-the-human",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-outcome-oriented-execution/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-outcome-oriented-execution",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-prove-it-works/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-prove-it-works",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-redesign-from-first-principles/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-redesign-from-first-principles",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-separate-before-serializing-shared-state/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-separate-before-serializing-shared-state",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-sequence-verifiable-units/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-sequence-verifiable-units",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-subtract-before-you-add/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-subtract-before-you-add",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/principle-type-system-discipline/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:principle-type-system-discipline",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/recall/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/reflect/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/reflect/references/divergent-reviewer.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/reflect/references/judgment-reviewer.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/reflect/references/synthesizer.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/reflect/references/tooling-reviewer.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/setup-pstack/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/show-me-your-work/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/show-me-your-work/references/decision-log-template.tsv",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/show-me-your-work/scripts/log.sh",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/swarm/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/tdd/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:tdd",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/teach/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/technical-writing/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:technical-writing",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/typescript-best-practices/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:typescript-best-practices",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/typescript-best-practices/references/patterns.md",
+      "disposition": "dependency-only",
+      "resource": "skill:typescript-best-practices",
+      "reason": "Required supporting content for selected resources; not an independently selectable capability."
+    },
+    {
+      "path": "pstack/skills/unslop/SKILL.md",
+      "disposition": "selected",
+      "resource": "skill:unslop",
+      "reason": "Portable skill content selected byte-for-byte for every declared Packy surface."
+    },
+    {
+      "path": "pstack/skills/why/SKILL.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/epistemics.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/investigator-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/source-playbook.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/sources/code-archaeology.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/sources/databricks.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/sources/datadog.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/sources/incident-postmortem.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/sources/linear.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/sources/notion.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/sources/sentry.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/sources/slack.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    },
+    {
+      "path": "pstack/skills/why/references/synthesizer-prompt.md",
+      "disposition": "excluded",
+      "exclusion_id": "unselected-skills",
+      "reason": "The resource requires adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope."
+    }
+  ],
+  "schema_version": 1
+}
