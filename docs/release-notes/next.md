@@ -1,8 +1,8 @@
 # {{TAG}} — Packy v0.2
 
-This release adds a shareable Pack trust audit and makes global capability Pack
-updates clean up obsolete projections recorded by the updating Pack's
-installed receipt.
+This release adds a shareable Pack trust audit and versioned JSON catalog
+output, makes interruption and failed initialization safer, expands TUI search,
+adds the pstack Pack, and updates the bundled Matty and Engram Packs.
 
 ## Changes since the previous release
 
@@ -17,16 +17,29 @@ installed receipt.
   is informational. When a contract exists, Audit uses the same personal-state-
   free verification boundary as `packy verify`.
 
-- Global capability Pack updates now retire projections owned by the updating
-  Pack's installed receipt when those projections are absent from the current
-  reviewed Pack. Replacing a resource therefore removes its obsolete
-  projection while installing the replacement.
-- Cleanup remains limited to the Pack being updated; projections owned by
-  other active Packs are not retirement candidates.
-- Drift protection remains in effect. A broken or otherwise drifted obsolete
-  projection blocks the update unless the user explicitly supplies `--force`.
+- `packy list --json` now emits the checked-in `pack-list` v1 contract with
+  every current Pack and deterministic Pack and surface ordering. The existing
+  human-readable table is unchanged.
+- `Ctrl+C` now cancels pre-Apply initialization, preview, Installed Source Git
+  operations, and lock waits, while cleanup failures remain visible. Once TUI
+  Apply begins, exit remains deferred through repeated interrupts until Apply
+  and a bounded fresh inspection finish.
+- A failed `packy init` now preserves an accepted empty Installed Source with
+  its identity and permissions intact. An initially absent source remains
+  absent, and publication refuses to replace a concurrently created
+  destination.
+- TUI catalog search now matches case-insensitive literal text across Pack IDs
+  and descriptions, supported surfaces, external requirements, resource IDs,
+  descriptions and requirements, and surface capability types and tool names.
+- The new reviewed pstack Pack `1.0.0`, sourced from upstream `v0.1.1`, adds 26
+  portable engineering skills for Claude Code, Codex, and OpenCode.
+- The Matty Pack advances to `1.0.4` with the eight selected skill updates from
+  upstream `v1.2.3`, while retaining its existing surface bindings and
+  Packy-owned capabilities.
+- The Engram Pack advances to `3.1.0` with the exact `engram-memory-cli`
+  content from upstream `v2.2.0` and a new sealed bundle generation.
 
-Project Pack update behavior and the release artifact format are unchanged.
+The release artifact format is unchanged.
 
 ## Install or upgrade
 
