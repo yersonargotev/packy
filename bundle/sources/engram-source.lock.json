@@ -27,14 +27,14 @@
     "archived": false,
     "disabled": false,
     "release": {
-      "id": 370257404,
-      "node_id": "RE_kwDORWfC5s4WEa38",
-      "tag": "v2.0.0",
-      "name": "v2.0.0",
+      "id": 374114973,
+      "node_id": "RE_kwDORWfC5s4WTIqd",
+      "tag": "v2.2.0",
+      "name": "v2.2.0",
       "target_commitish": "main",
       "immutable": false,
-      "created_at": "2026-08-13T22:57:43Z",
-      "published_at": "2026-08-13T23:00:42Z",
+      "created_at": "2026-08-21T01:08:25Z",
+      "published_at": "2026-08-21T01:11:38Z",
       "draft": false,
       "prerelease": false,
       "author": {
@@ -43,14 +43,14 @@
         "node_id": "MDM6Qm90NDE4OTgyODI="
       }
     },
-    "tag_ref_name": "refs/tags/v2.0.0",
+    "tag_ref_name": "refs/tags/v2.2.0",
     "tag_ref_type": "tag",
-    "tag_ref_sha": "14568ec9d3aa1a762813edaa9cd2a84da9c84c85",
+    "tag_ref_sha": "c410748b2e14148163b3004ee16168d86baea531",
     "tag_objects": [
       {
-        "sha": "14568ec9d3aa1a762813edaa9cd2a84da9c84c85",
-        "name": "v2.0.0",
-        "target_sha": "ca403b6264aeac561f87940c139a97ead2f2d2f4",
+        "sha": "c410748b2e14148163b3004ee16168d86baea531",
+        "name": "v2.2.0",
+        "target_sha": "8da8d43284f757bf31ab0afa62f063c60b810b78",
         "target_type": "commit",
         "verification": {
           "verified": false,
@@ -61,22 +61,21 @@
         }
       }
     ],
-    "commit": "ca403b6264aeac561f87940c139a97ead2f2d2f4",
-    "commit_node_id": "C_kwDORWfC5toAKGNhNDAzYjYyNjRhZWFjNTYxZjg3OTQwYzEzOWE5N2VhZDJmMmQyZjQ",
-    "tree": "c53b72aeb2f8674015f91dd252def3eeb4231565",
+    "commit": "8da8d43284f757bf31ab0afa62f063c60b810b78",
+    "commit_node_id": "C_kwDORWfC5toAKDhkYThkNDMyODRmNzU3YmYzMWFiMGFmYTYyZjA2M2M2MGI4MTBiNzg",
+    "tree": "3f384c8e779f75afc45c013bfb5959d6b53c2b88",
     "parents": [
-      "42bf708d740dedb8603a91e3c3104fb876c2090d",
-      "4415de09c2c7aceee3ed5c94db52e93cf97ced31"
+      "7c49aa608d504bc3e96c8bc0c8043db527914d7c"
     ],
     "commit_verification": {
       "verified": true,
       "reason": "valid",
-      "verified_at": "2026-08-13T22:48:30Z",
-      "signature_sha256": "c919b8608cc4fa92dfff0d49d071efc9b4774ec0ef80ffcb549949ee47ff548c",
-      "payload_sha256": "c5eaf62a965482eb0f491e4429f03003f1bd55e56eb4bc05b1ad6dd53e5c162d"
+      "verified_at": "2026-08-20T16:55:04Z",
+      "signature_sha256": "eb8838ea9bbcd0da79e1dac616e69dc84a324850e0638f43216da177db653752",
+      "payload_sha256": "328be8592d7982920f8ba372fe00a14403705bebe18d4793977d30f34e21f87f"
     }
   },
-  "snapshot_sha256": "87474021dce014ed9300701590a12869ce8e22cad285a3a6a4e2c903c295f56b",
+  "snapshot_sha256": "cfde26f3a3e721ef30954c9e7371c2f83e82329aa6954248b3621107c940a098",
   "resources": [
     {
       "pack_id": "engram",
@@ -100,13 +99,13 @@
       "resource_id": "engram-memory-cli",
       "upstream_path": "skills/engram-memory-cli",
       "vendored_path": "bundle/skills/engram-memory-cli",
-      "sha256": "2105b9a7212a3534f26040ffbcbd34e276026536fccd70b4b28eb3b842237464",
+      "sha256": "ff11918ec97e8c32b93ba31f1c3e07c9984fc08b669cb23b43d78b8503719b2b",
       "files": [
         {
           "path": "SKILL.md",
-          "size": 3911,
+          "size": 4553,
           "mode": 420,
-          "sha256": "20589b1e95c770c72dce5ef645c0c0730919ee5a3f5e5df1c3f48ce43d780f9d"
+          "sha256": "e4110ddb51b8554af15490b6f17b186e33143e3ac9c47c620466fc840c94316e"
         },
         {
           "path": "agents/openai.yaml",
