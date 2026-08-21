@@ -8,15 +8,15 @@
   },
   "decision": "admit the exact stable candidate for redistribution",
   "disclosures": [
-    "the resource review at docs/research/evidence/pstack-v0.1.0-resource-review.json accounts for all 156 files under pstack/",
+    "the resource review at docs/research/evidence/pstack-v0.1.1-resource-review.json accounts for all 156 files under pstack/",
     "26 portable skill roots are selected without rewriting upstream content",
     "pstack/LICENSE is selected as the notice and one selected skill reference remains dependency-only",
     "Cursor metadata, agents, automations, guides, scripts, and unselected skills are excluded"
   ],
   "disposition": "redistributable",
-  "durable_reference": "docs/research/evidence/pstack-v0.1.0-legal-admission.json",
-  "evidence_id": "pstack-v0.1.0-mit",
-  "evidence_origin": "MIT LICENSE in yersonargotev/pstack@v0.1.0",
+  "durable_reference": "docs/research/evidence/pstack-v0.1.1-legal-admission.json",
+  "evidence_id": "pstack-v0.1.1-mit",
+  "evidence_origin": "MIT LICENSE in yersonargotev/pstack@v0.1.1",
   "invalidation": "any release, candidate, selected-root, license, README identity, disposition, evidence digest, or scope change",
   "issuer": "Packy maintainer",
   "obligations": [

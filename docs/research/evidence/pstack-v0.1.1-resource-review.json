@@ -8,7 +8,7 @@
   },
   "inventory_root": "pstack",
   "inventory_sha256": "6a51d681d061c014876623957ea112e52aacf344e829929af9f8c963bf3c4ec9",
-  "release": "v0.1.0",
+  "release": "v0.1.1",
   "repository": "yersonargotev/pstack",
   "resources": [
     {
