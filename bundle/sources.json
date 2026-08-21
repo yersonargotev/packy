@@ -78,6 +78,178 @@
           "upstream_path": "orchestrate"
         }
       ]
+    },
+    {
+      "id": "pstack-source",
+      "provider": "github",
+      "repository": "yersonargotev/pstack",
+      "selector": {
+        "mode": "stable-release"
+      },
+      "resources": [
+        {
+          "pack_id": "pstack",
+          "kind": "notice",
+          "resource_id": "pstack-mit",
+          "upstream_path": "pstack/LICENSE"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "bro",
+          "upstream_path": "pstack/skills/bro"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-boundary-discipline",
+          "upstream_path": "pstack/skills/principle-boundary-discipline"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-build-the-lever",
+          "upstream_path": "pstack/skills/principle-build-the-lever"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-encode-lessons-in-structure",
+          "upstream_path": "pstack/skills/principle-encode-lessons-in-structure"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-exhaust-the-design-space",
+          "upstream_path": "pstack/skills/principle-exhaust-the-design-space"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-experience-first",
+          "upstream_path": "pstack/skills/principle-experience-first"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-fix-root-causes",
+          "upstream_path": "pstack/skills/principle-fix-root-causes"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-foundational-thinking",
+          "upstream_path": "pstack/skills/principle-foundational-thinking"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-guard-the-context-window",
+          "upstream_path": "pstack/skills/principle-guard-the-context-window"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-laziness-protocol",
+          "upstream_path": "pstack/skills/principle-laziness-protocol"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-make-operations-idempotent",
+          "upstream_path": "pstack/skills/principle-make-operations-idempotent"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-migrate-callers-then-delete-legacy-apis",
+          "upstream_path": "pstack/skills/principle-migrate-callers-then-delete-legacy-apis"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-minimize-reader-load",
+          "upstream_path": "pstack/skills/principle-minimize-reader-load"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-model-the-domain",
+          "upstream_path": "pstack/skills/principle-model-the-domain"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-never-block-on-the-human",
+          "upstream_path": "pstack/skills/principle-never-block-on-the-human"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-outcome-oriented-execution",
+          "upstream_path": "pstack/skills/principle-outcome-oriented-execution"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-prove-it-works",
+          "upstream_path": "pstack/skills/principle-prove-it-works"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-redesign-from-first-principles",
+          "upstream_path": "pstack/skills/principle-redesign-from-first-principles"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-separate-before-serializing-shared-state",
+          "upstream_path": "pstack/skills/principle-separate-before-serializing-shared-state"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-sequence-verifiable-units",
+          "upstream_path": "pstack/skills/principle-sequence-verifiable-units"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-subtract-before-you-add",
+          "upstream_path": "pstack/skills/principle-subtract-before-you-add"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "principle-type-system-discipline",
+          "upstream_path": "pstack/skills/principle-type-system-discipline"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "tdd",
+          "upstream_path": "pstack/skills/tdd"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "technical-writing",
+          "upstream_path": "pstack/skills/technical-writing"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "typescript-best-practices",
+          "upstream_path": "pstack/skills/typescript-best-practices"
+        },
+        {
+          "pack_id": "pstack",
+          "kind": "skill",
+          "resource_id": "unslop",
+          "upstream_path": "pstack/skills/unslop"
+        }
+      ]
     }
   ]
 }
