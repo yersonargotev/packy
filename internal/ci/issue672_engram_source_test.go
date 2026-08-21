@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -49,7 +50,7 @@ func TestIssue672EngramPackUsesExactUpstreamSkill(t *testing.T) {
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Version != "3.0.0" || manifest.SourceReference.Repository != "https://github.com/yersonargotev/engram.git" || manifest.SourceReference.Revision != "v2.0.0" {
+	if manifest.Version != "3.1.0" || manifest.SourceReference.Repository != "https://github.com/yersonargotev/engram.git" || manifest.SourceReference.Revision != "v2.2.0" {
 		t.Fatalf("Engram generation identity = %#v", manifest)
 	}
 	if !reflect.DeepEqual(manifest.Surfaces, []string{"codex"}) || !reflect.DeepEqual(manifest.ReadinessObligations, []string{"runtime-usability", "surface-authorization"}) || !reflect.DeepEqual(manifest.ExternalRequirements, []string{"engram"}) {
@@ -71,7 +72,7 @@ func TestIssue672EngramPackUsesExactUpstreamSkill(t *testing.T) {
 	}
 
 	wantFiles := map[string]string{
-		"SKILL.md":               "20589b1e95c770c72dce5ef645c0c0730919ee5a3f5e5df1c3f48ce43d780f9d",
+		"SKILL.md":               "e4110ddb51b8554af15490b6f17b186e33143e3ac9c47c620466fc840c94316e",
 		"agents/openai.yaml":     "e5d99dae07dd1fa1a8259dbcf9aebae67785f99e8688f5b4feda1b85ce2a1088",
 		"references/curation.md": "6f671f02ffeeccfd7a95d9b0fc645806e6e6b1a037ddd43c58695a62ece6c5e6",
 	}
@@ -106,7 +107,27 @@ func TestIssue672EngramPackUsesExactUpstreamSkill(t *testing.T) {
 
 func TestIssue672EngramHistoricalGenerationIsCompleteAndSealed(t *testing.T) {
 	root := repositoryRoot(t)
-	historyRoot := filepath.Join(root, "bundle", "history", "engram", "3.0.0")
+	legacyRoot := filepath.Join(root, "bundle", "history", "engram", "3.0.0")
+	legacyFiles := map[string]string{
+		"artifact.json":                                   "239ef3e8b6b089c286790bf1d507050af3d1cf801804e3e8751c4c650af9e127",
+		"notices/engram-mit":                              "09608597ddda4e5f9033ac407a0d401986d96376c47f6d46789ca38db672dc15",
+		"pack.json":                                       "7c915b461ba3ef77aaec3f25e67d98afe5a6c661ef7d03671351275f56cf93c0",
+		"skills/engram-memory-cli/SKILL.md":               "20589b1e95c770c72dce5ef645c0c0730919ee5a3f5e5df1c3f48ce43d780f9d",
+		"skills/engram-memory-cli/agents/openai.yaml":     "e5d99dae07dd1fa1a8259dbcf9aebae67785f99e8688f5b4feda1b85ce2a1088",
+		"skills/engram-memory-cli/references/curation.md": "6f671f02ffeeccfd7a95d9b0fc645806e6e6b1a037ddd43c58695a62ece6c5e6",
+	}
+	for relative, want := range legacyFiles {
+		data, err := os.ReadFile(filepath.Join(legacyRoot, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(data)
+		if got := hex.EncodeToString(digest[:]); got != want {
+			t.Fatalf("historical Engram 3.0.0 %s digest = %s, want %s", relative, got, want)
+		}
+	}
+
+	historyRoot := filepath.Join(root, "bundle", "history", "engram", "3.1.0")
 	for _, relative := range []string{
 		"pack.json",
 		"notices/engram-mit",
@@ -127,7 +148,7 @@ func TestIssue672EngramHistoricalGenerationIsCompleteAndSealed(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(historical, current) {
-			t.Fatalf("historical %s does not preserve the current generation exactly", relative)
+			t.Fatalf("historical Engram 3.1.0 %s does not preserve the current generation exactly", relative)
 		}
 	}
 	var artifact struct {
@@ -135,12 +156,22 @@ func TestIssue672EngramHistoricalGenerationIsCompleteAndSealed(t *testing.T) {
 		PackID          string `json:"pack_id"`
 		PackVersion     string `json:"pack_version"`
 		AggregateSHA256 string `json:"aggregate_sha256"`
-		Resources       []struct {
+		Manifest        struct {
+			Path   string `json:"path"`
+			Size   int64  `json:"size"`
+			Mode   uint32 `json:"mode"`
+			SHA256 string `json:"sha256"`
+		} `json:"manifest"`
+		Resources []struct {
 			Kind   string `json:"kind"`
 			ID     string `json:"id"`
 			Source string `json:"source"`
+			SHA256 string `json:"sha256"`
 			Files  []struct {
-				Path string `json:"path"`
+				Path   string `json:"path"`
+				Size   int64  `json:"size"`
+				Mode   uint32 `json:"mode"`
+				SHA256 string `json:"sha256"`
 			} `json:"files"`
 		} `json:"resources"`
 	}
@@ -151,13 +182,58 @@ func TestIssue672EngramHistoricalGenerationIsCompleteAndSealed(t *testing.T) {
 	if err := json.Unmarshal(artifactData, &artifact); err != nil {
 		t.Fatal(err)
 	}
-	if artifact.SchemaVersion != 1 || artifact.PackID != "engram" || artifact.PackVersion != "3.0.0" || artifact.AggregateSHA256 != "6026f8916af6aced84c03fc596b8d939b99ffc3ba5e277c5dbf4c32cdc039ebc" || len(artifact.Resources) != 2 {
+	if artifact.SchemaVersion != 1 || artifact.PackID != "engram" || artifact.PackVersion != "3.1.0" || artifact.AggregateSHA256 != "c5915bc62fb2c34e11afba468705c1697cb573ed50ec166e8cd8f4095a1d5ff0" || len(artifact.Resources) != 2 {
 		t.Fatalf("historical Engram artifact = %#v", artifact)
+	}
+	if artifact.Manifest.Path != "pack.json" || artifact.Manifest.Size != 1615 || artifact.Manifest.Mode != 0o644 || artifact.Manifest.SHA256 != "9858083d7c5ba1bb286fd7517bd44484f525276df93afcf6322f4c653d29cf86" {
+		t.Fatalf("historical Engram manifest evidence = %#v", artifact.Manifest)
+	}
+	manifestDigest := sha256.Sum256(mustReadHistoricalFile(t, historyRoot, artifact.Manifest.Path, artifact.Manifest.Size, artifact.Manifest.Mode))
+	if got := hex.EncodeToString(manifestDigest[:]); got != artifact.Manifest.SHA256 {
+		t.Fatalf("historical Engram manifest digest = %s, want %s", got, artifact.Manifest.SHA256)
 	}
 	if artifact.Resources[0].Kind != "notice" || artifact.Resources[0].ID != "mit" || artifact.Resources[0].Source != "notices/engram-mit" || len(artifact.Resources[0].Files) != 1 ||
 		artifact.Resources[1].Kind != "skill" || artifact.Resources[1].ID != "engram-memory-cli" || artifact.Resources[1].Source != "skills/engram-memory-cli" || len(artifact.Resources[1].Files) != 3 {
 		t.Fatalf("historical resource evidence = %#v", artifact.Resources)
 	}
+	aggregate := sha256.New()
+	fmt.Fprintf(aggregate, "%d\x00%s\x00%s\n", artifact.SchemaVersion, artifact.PackID, artifact.PackVersion)
+	fmt.Fprintf(aggregate, "manifest\x00%s\x00%d\x00%04o\x00%s\n", artifact.Manifest.Path, artifact.Manifest.Size, artifact.Manifest.Mode, artifact.Manifest.SHA256)
+	for _, resource := range artifact.Resources {
+		resourceDigest := sha256.New()
+		for _, file := range resource.Files {
+			data := mustReadHistoricalFile(t, historyRoot, file.Path, file.Size, file.Mode)
+			digest := sha256.Sum256(data)
+			if got := hex.EncodeToString(digest[:]); got != file.SHA256 {
+				t.Fatalf("historical Engram %s digest = %s, want %s", file.Path, got, file.SHA256)
+			}
+			fmt.Fprintf(resourceDigest, "%s\x00%d\x00%04o\x00%s\n", file.Path, file.Size, file.Mode, file.SHA256)
+		}
+		if got := hex.EncodeToString(resourceDigest.Sum(nil)); got != resource.SHA256 {
+			t.Fatalf("historical Engram %s:%s resource digest = %s, want %s", resource.Kind, resource.ID, got, resource.SHA256)
+		}
+		fmt.Fprintf(aggregate, "%s\x00%s\x00%s\x00%s\n", resource.Kind, resource.ID, resource.Source, resource.SHA256)
+	}
+	if got := hex.EncodeToString(aggregate.Sum(nil)); got != artifact.AggregateSHA256 {
+		t.Fatalf("historical Engram aggregate digest = %s, want %s", got, artifact.AggregateSHA256)
+	}
+}
+
+func mustReadHistoricalFile(t *testing.T, root, relative string, size int64, mode uint32) []byte {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(relative))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(data)) != size || uint32(info.Mode().Perm()) != mode {
+		t.Fatalf("historical Engram %s size/mode = %d/%04o, want %d/%04o", relative, len(data), info.Mode().Perm(), size, mode)
+	}
+	return data
 }
 
 func TestIssue672EngramSourceLockSealsTheExactReleaseAndCompleteSelection(t *testing.T) {
@@ -206,7 +282,7 @@ func TestIssue672EngramSourceLockSealsTheExactReleaseAndCompleteSelection(t *tes
 		t.Fatal(err)
 	}
 	lockDigest := sha256.Sum256(lockData)
-	if hex.EncodeToString(lockDigest[:]) != "4490d7d6d1ec35d66fc42c817530b564b5b6f7e3cac1d59aab4b5ea0cbd1fc9d" {
+	if hex.EncodeToString(lockDigest[:]) != "f58eb802bb43908630f21016c467613d39405992048ccc1de405fd714b601641" {
 		t.Fatalf("Engram source lock digest = %x", lockDigest)
 	}
 	var lock struct {
@@ -230,7 +306,7 @@ func TestIssue672EngramSourceLockSealsTheExactReleaseAndCompleteSelection(t *tes
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatal(err)
 	}
-	if lock.SourceID != "engram-source" || lock.Candidate.Release.Tag != "v2.0.0" || lock.Candidate.Commit != "ca403b6264aeac561f87940c139a97ead2f2d2f4" || len(lock.Resources) != 2 || len(lock.Resources[0].Files) != 1 || len(lock.Resources[1].Files) != 3 {
+	if lock.SourceID != "engram-source" || lock.Candidate.Release.Tag != "v2.2.0" || lock.Candidate.Commit != "8da8d43284f757bf31ab0afa62f063c60b810b78" || len(lock.Resources) != 2 || len(lock.Resources[0].Files) != 1 || len(lock.Resources[1].Files) != 3 {
 		t.Fatalf("Engram source lock = %#v", lock)
 	}
 	for i, want := range wantBindings {
