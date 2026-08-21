@@ -98,13 +98,14 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pack list: %v\n%s", err, output)
 	}
-	want := "PACK            VERSION  DESCRIPTION                                                        AVAILABLE ON\n" +
-		"addy            1.1.0    Addy agent skills                                                  claude, codex, opencode\n" +
-		"argote          1.0.2    Yerson Argote's engineering and communication guidance             claude, codex, opencode\n" +
-		"engram          3.0.0    Upstream Engram CLI memory workflows for agent work                codex\n" +
-		"issue-delivery  1.1.1    Deliver issues through policy-driven or Matt-configured workflows  codex\n" +
-		"matty           1.0.4    Matty workflow                                                     claude, codex, opencode\n" +
-		"orchestrate     1.0.1    Coordinate focused Codex subagents                                 codex\n"
+	want := "PACK            VERSION  DESCRIPTION                                                            AVAILABLE ON\n" +
+		"addy            1.1.0    Addy agent skills                                                      claude, codex, opencode\n" +
+		"argote          1.0.2    Yerson Argote's engineering and communication guidance                 claude, codex, opencode\n" +
+		"engram          3.0.0    Upstream Engram CLI memory workflows for agent work                    codex\n" +
+		"issue-delivery  1.1.1    Deliver issues through policy-driven or Matt-configured workflows      codex\n" +
+		"matty           1.0.4    Matty workflow                                                         claude, codex, opencode\n" +
+		"orchestrate     1.0.1    Coordinate focused Codex subagents                                     codex\n" +
+		"pstack          1.0.0    Apply pstack's reviewed portable engineering workflows and principles  claude, codex, opencode\n"
 	if output != want {
 		t.Fatalf("human output changed:\n%s", output)
 	}
