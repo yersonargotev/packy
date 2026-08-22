@@ -101,7 +101,7 @@ func skillOnlyReadiness(pack capabilitypack.Pack) bool {
 		return false
 	}
 	for _, resource := range pack.Resources {
-		if resource.Kind != "skill" {
+		if resource.Kind != "skill" && resource.Kind != "lifecycle" && resource.Kind != "notice" {
 			return false
 		}
 	}

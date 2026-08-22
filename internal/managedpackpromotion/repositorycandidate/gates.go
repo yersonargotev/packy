@@ -36,7 +36,7 @@ func (productionGates) ValidateResources(ctx context.Context, repositoryRoot str
 }
 
 func (productionGates) ValidateSuite(ctx context.Context, repositoryRoot string) error {
-	return runSanitized(ctx, repositoryRoot, "./scripts/validate-packy.sh")
+	return runSanitized(ctx, repositoryRoot, "./scripts/validate-packy.sh", "--ci")
 }
 
 func runSanitized(ctx context.Context, repositoryRoot, name string, arguments ...string) error {

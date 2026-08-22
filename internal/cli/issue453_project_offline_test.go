@@ -24,7 +24,7 @@ func installIssue453Project(t *testing.T) (Options, string) {
 }
 
 func TestIssue453ProjectStatusReportsIndependentAxesOffline(t *testing.T) {
-	_, resources := checkedInMattyFacts(t)
+	facts := checkedInMattyFacts(t)
 	opts, project := installIssue453Project(t)
 	opts.Env = MapEnv{
 		"HOME": opts.Env.Getenv("HOME"), "XDG_CONFIG_HOME": opts.Env.Getenv("XDG_CONFIG_HOME"),
@@ -46,7 +46,7 @@ func TestIssue453ProjectStatusReportsIndependentAxesOffline(t *testing.T) {
 	if status.Pack.ID != "matty" || status.Surface != capabilitypack.SurfaceCodex || status.Installation != capabilitypack.ProjectInstallationInstalled || status.Runtime != capabilitypack.ProjectRuntimeNotRequired || !status.RequirementSatisfied {
 		t.Fatalf("project status axes = %#v", status)
 	}
-	if status.Projections == nil || status.Blockers == nil || len(status.Projections) != resources+1 {
+	if status.Projections == nil || status.Blockers == nil || len(status.Projections) != facts.Skills+1 {
 		t.Fatalf("project status omitted portable evidence: %#v", status)
 	}
 	if _, err := os.Stat(filepath.Join(project, "packy.lock.json")); err != nil {

@@ -29,8 +29,18 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 	if report.Selection.Mode != capabilitypack.SelectionCustom || len(report.Pack.Selection.Roots) != 1 || report.Pack.Selection.Roots[0] != wantRoot {
 		t.Fatalf("selection = %#v; pack = %#v", report.Selection, report.Pack)
 	}
-	if len(report.Selection.Resources) != 1 || report.Selection.Resources[0].Resource != wantRoot || report.Selection.Resources[0].Role != capabilitypack.ResourceRoleRoot {
+	facts := checkedInMattyFacts(t)
+	if len(report.Selection.Resources) != facts.Notices+1 {
 		t.Fatalf("resolved closure = %#v", report.Selection.Resources)
+	}
+	foundRoot := false
+	for _, resource := range report.Selection.Resources {
+		if resource.Resource == wantRoot && resource.Role == capabilitypack.ResourceRoleRoot {
+			foundRoot = true
+		}
+	}
+	if !foundRoot {
+		t.Fatalf("selected root missing from closure = %#v", report.Selection.Resources)
 	}
 	if len(report.Pack.Aliases) != 1 || report.Pack.Aliases[0].Name != "project-matt" {
 		t.Fatalf("manifest aliases = %#v", report.Pack.Aliases)
@@ -77,7 +87,7 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 }
 
 func TestIssue455ProjectManifestRejectsMovingAndMachineSpecificAuthority(t *testing.T) {
-	version, _ := checkedInMattyFacts(t)
+	version := checkedInMattyFacts(t).Version
 	versionField := `"version": "` + version + `"`
 	for _, test := range []struct {
 		name   string

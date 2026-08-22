@@ -8,7 +8,7 @@ import (
 )
 
 func TestIssue454PackWideUninstallPreviewsEveryRemovalWithoutMutation(t *testing.T) {
-	version, _ := checkedInMattyFacts(t)
+	version := checkedInMattyFacts(t).Version
 	opts, project := installIssue453Project(t)
 	before := snapshotTree(t, project)
 	terminal := opts.Terminal.(*fakeTerminal)
