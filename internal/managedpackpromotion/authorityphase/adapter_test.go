@@ -155,9 +155,13 @@ func TestSanitizeRemoteRemovesEmbeddedURLAuthority(t *testing.T) {
 
 func TestPrepublicationEnvironmentDoesNotResolveGoThroughAmbientPATH(t *testing.T) {
 	root := t.TempDir()
+	ambientHome := filepath.Join(root, "ambient-home")
+	if err := os.Mkdir(ambientHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	environment, err := prepublicationEnvironment(context.Background(), root, []string{
-		"PATH=" + t.TempDir(),
-		"HOME=" + t.TempDir(),
+		"PATH=" + filepath.Join(root, "ambient-path"),
+		"HOME=" + ambientHome,
 		"GH_TOKEN=must-not-reach-go-env",
 	})
 	if err != nil {
@@ -171,6 +175,20 @@ func TestPrepublicationEnvironmentDoesNotResolveGoThroughAmbientPATH(t *testing.
 		if !filepath.IsAbs(value) || filepath.Clean(value) != value {
 			t.Fatalf("%s = %q, want absolute clean path", key, value)
 		}
+	}
+	if childMode := environmentValue(environment, "GO_TELEMETRY_CHILD"); childMode != "2" {
+		t.Fatalf("GO_TELEMETRY_CHILD = %q, want child-of-child mode", childMode)
+	}
+	if err := filepath.WalkDir(ambientHome, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.Name() == "upload.token" {
+			t.Fatalf("Go telemetry sidecar token escaped into ambient HOME at %s", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("inspect ambient HOME after Go environment resolution: %v", err)
 	}
 }
 

@@ -601,8 +601,13 @@ func run(ctx context.Context, root string, environment []string, name string, ar
 func isolatedGitEnvironment(additions []string) []string {
 	values := map[string]string{
 		"GIT_CONFIG_GLOBAL":   "/dev/null",
+		"GIT_CONFIG_COUNT":    "2",
+		"GIT_CONFIG_KEY_0":    "maintenance.auto",
+		"GIT_CONFIG_KEY_1":    "gc.auto",
 		"GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_TERMINAL_PROMPT": "0",
+		"GIT_CONFIG_VALUE_0":  "false",
+		"GIT_CONFIG_VALUE_1":  "0",
 		"HOME":                filepath.Join(os.TempDir(), "packy-promotion-no-home"),
 		"LANG":                "C",
 		"LC_ALL":              "C",
