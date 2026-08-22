@@ -95,6 +95,12 @@ func linuxNetworkFilters() []unix.SockFilter {
 		bpfJump(unix.BPF_JMP|unix.BPF_JEQ|unix.BPF_K, workerAuditArch, 1, 0),
 		bpfStatement(unix.BPF_RET|unix.BPF_K, unix.SECCOMP_RET_KILL_PROCESS),
 		bpfStatement(unix.BPF_LD|unix.BPF_W|unix.BPF_ABS, 0),
+		// glibc falls back to clone when clone3 is unavailable. Returning
+		// ENOSYS keeps clone3 arguments out of the trust boundary while the
+		// clone rule below can inspect and require CLONE_THREAD.
+		bpfJump(unix.BPF_JMP|unix.BPF_JEQ|unix.BPF_K, unix.SYS_CLONE3, 0, 1),
+		bpfStatement(unix.BPF_RET|unix.BPF_K, unix.SECCOMP_RET_ERRNO|uint32(unix.ENOSYS)),
+		bpfStatement(unix.BPF_LD|unix.BPF_W|unix.BPF_ABS, 0),
 		// clone is also used by the Go runtime for OS threads. Permit only
 		// CLONE_THREAD and reject fork-like clones that create a process.
 		bpfJump(unix.BPF_JMP|unix.BPF_JEQ|unix.BPF_K, unix.SYS_CLONE, 0, 3),

@@ -65,3 +65,66 @@ func TestLinuxNetworkFilterChecksArchitectureAndDeniesSocket(t *testing.T) {
 		t.Fatal("filter does not deny socket with EPERM")
 	}
 }
+
+func TestLinuxNetworkFilterFallsBackFromClone3AndAllowsOnlyThreadClone(t *testing.T) {
+	filters := linuxNetworkFilters()
+	tests := []struct {
+		name    string
+		syscall uint32
+		flags   uint64
+		want    uint32
+	}{
+		{name: "clone3 fallback", syscall: unix.SYS_CLONE3, want: unix.SECCOMP_RET_ERRNO | uint32(unix.ENOSYS)},
+		{name: "thread clone", syscall: unix.SYS_CLONE, flags: unix.CLONE_THREAD, want: unix.SECCOMP_RET_ALLOW},
+		{name: "process clone", syscall: unix.SYS_CLONE, want: unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)},
+		{name: "exec", syscall: unix.SYS_EXECVE, want: unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := evaluateLinuxFilter(t, filters, test.syscall, test.flags)
+			if got != test.want {
+				t.Fatalf("seccomp action = %#x, want %#x", got, test.want)
+			}
+		})
+	}
+}
+
+func evaluateLinuxFilter(t *testing.T, filters []unix.SockFilter, syscall uint32, flags uint64) uint32 {
+	t.Helper()
+	var accumulator uint32
+	for index := 0; index < len(filters); {
+		filter := filters[index]
+		switch filter.Code {
+		case unix.BPF_LD | unix.BPF_W | unix.BPF_ABS:
+			switch filter.K {
+			case 0:
+				accumulator = syscall
+			case 4:
+				accumulator = workerAuditArch
+			case 16:
+				accumulator = uint32(flags)
+			default:
+				t.Fatalf("unsupported seccomp data offset %d", filter.K)
+			}
+			index++
+		case unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K:
+			if accumulator == filter.K {
+				index += int(filter.Jt) + 1
+			} else {
+				index += int(filter.Jf) + 1
+			}
+		case unix.BPF_JMP | unix.BPF_JSET | unix.BPF_K:
+			if accumulator&filter.K != 0 {
+				index += int(filter.Jt) + 1
+			} else {
+				index += int(filter.Jf) + 1
+			}
+		case unix.BPF_RET | unix.BPF_K:
+			return filter.K
+		default:
+			t.Fatalf("unsupported BPF instruction %#x", filter.Code)
+		}
+	}
+	t.Fatal("seccomp filter did not return an action")
+	return 0
+}

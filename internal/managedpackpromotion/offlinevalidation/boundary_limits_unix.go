@@ -12,7 +12,9 @@ const (
 	workerCPUSeconds = uint64(60)
 	workerFileBytes  = uint64(20 << 20)
 	workerOpenFiles  = uint64(64)
-	workerProcesses  = uint64(1)
+	// Linux counts threads against RLIMIT_NPROC. Match the Go runtime thread
+	// cap; seccomp (Linux) and sandbox-exec (Darwin) deny process creation.
+	workerProcesses  = uint64(workerMaxThreads)
 	workerStackBytes = uint64(64 << 20)
 )
 
