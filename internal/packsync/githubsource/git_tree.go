@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/packsync"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 type recursiveGitTree struct {
@@ -149,6 +151,8 @@ func validateRecursiveGitTree(tree recursiveGitTree, expectedRoot string, limits
 		return fmt.Errorf("Git tree entry count exceeds %d", limits.maxEntries)
 	}
 	seen := make(map[string]bool, len(tree.Entries))
+	portablePaths := make(map[string]string, len(tree.Entries))
+	caseFolder := cases.Fold()
 	treePaths := map[string]bool{"": true}
 	var declaredBytes int64
 	for _, entry := range tree.Entries {
@@ -156,6 +160,11 @@ func validateRecursiveGitTree(tree recursiveGitTree, expectedRoot string, limits
 			return fmt.Errorf("unsafe or duplicate Git tree path %q", entry.Path)
 		}
 		seen[entry.Path] = true
+		portablePath := norm.NFC.String(caseFolder.String(norm.NFC.String(entry.Path)))
+		if prior, exists := portablePaths[portablePath]; exists {
+			return fmt.Errorf("portable path collision between %q and %q", prior, entry.Path)
+		}
+		portablePaths[portablePath] = entry.Path
 		if depth := len(strings.Split(entry.Path, "/")); depth > limits.maxPathDepth {
 			return fmt.Errorf("Git tree path depth exceeds %d for %q", limits.maxPathDepth, entry.Path)
 		}

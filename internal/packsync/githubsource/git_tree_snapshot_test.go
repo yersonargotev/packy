@@ -161,6 +161,18 @@ func TestWithGitTreeSnapshotRejectsUnprovableTreesAndCleans(t *testing.T) {
 			want: "path depth",
 		},
 		{
+			name: "Unicode case-fold collision",
+			response: func() map[string]any {
+				response := validGitTreeResponse()
+				response["tree"] = []map[string]any{
+					{"path": "Straße", "mode": "100644", "type": "blob", "sha": manifestBlobSHA, "size": 17},
+					{"path": "STRASSE", "mode": "100644", "type": "blob", "sha": manifestBlobSHA, "size": 17},
+				}
+				return response
+			},
+			want: "portable path collision",
+		},
+		{
 			name:       "cancellation during blob acquisition",
 			response:   validGitTreeResponse,
 			cancelBlob: true,
