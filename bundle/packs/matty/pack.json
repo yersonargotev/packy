@@ -1,6 +1,7 @@
 {
+  "schema_version": 1,
   "id": "matty",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "Matty workflow",
   "selectable": true,
   "surfaces": [
@@ -13,7 +14,35 @@
     "surface-authorization"
   ],
   "external_requirements": [],
+  "origins": [
+    {
+      "id": "mattpocock-skills",
+      "repository": "mattpocock/skills",
+      "commit": "5b15a47f2d7150f545fbcacbfe381787fc0230dc",
+      "revision": "5b15a47f2d7150f545fbcacbfe381787fc0230dc"
+    }
+  ],
   "resources": [
+    {
+      "kind": "notice",
+      "id": "mit",
+      "source": "notices/matty-mit",
+      "description": "Preserves Matt Pocock's MIT license notice",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 Matt Pocock",
+      "requires": [],
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "LICENSE",
+        "relationship": "exact-copy"
+      },
+      "bindings": [],
+      "surface_exclusions": []
+    },
     {
       "bindings": [
         {
@@ -66,7 +95,15 @@
       "requires": [],
       "source": "skills/engineering/ask-matt",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/ask-matt",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -104,7 +141,15 @@
       "requires": [],
       "source": "skills/in-progress/claude-handoff",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/in-progress/claude-handoff",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -142,7 +187,15 @@
       "requires": [],
       "source": "skills/engineering/code-review",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/code-review",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -180,7 +233,15 @@
       "requires": [],
       "source": "skills/engineering/codebase-design",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/codebase-design",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -218,7 +279,15 @@
       "requires": [],
       "source": "skills/engineering/diagnosing-bugs",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/diagnosing-bugs",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -256,7 +325,15 @@
       "requires": [],
       "source": "skills/engineering/domain-modeling",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/domain-modeling",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -294,7 +371,15 @@
       "requires": [],
       "source": "skills/productivity/grill-me",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/productivity/grill-me",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -332,7 +417,15 @@
       "requires": [],
       "source": "skills/engineering/grill-with-docs",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/grill-with-docs",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -370,7 +463,15 @@
       "requires": [],
       "source": "skills/productivity/grilling",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/productivity/grilling",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -408,7 +509,15 @@
       "requires": [],
       "source": "skills/productivity/handoff",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/productivity/handoff",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -446,7 +555,15 @@
       "requires": [],
       "source": "skills/engineering/implement",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/implement",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -484,7 +601,15 @@
       "requires": [],
       "source": "skills/engineering/improve-codebase-architecture",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/improve-codebase-architecture",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -522,7 +647,15 @@
       "requires": [],
       "source": "skills/in-progress/loop-me",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/in-progress/loop-me",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -560,7 +693,15 @@
       "requires": [],
       "source": "skills/engineering/prototype",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/prototype",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -598,7 +739,15 @@
       "requires": [],
       "source": "skills/engineering/research",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/research",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -636,7 +785,15 @@
       "requires": [],
       "source": "skills/engineering/resolving-merge-conflicts",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/resolving-merge-conflicts",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -674,7 +831,15 @@
       "requires": [],
       "source": "skills/engineering/setup-matt-pocock-skills",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/setup-matt-pocock-skills",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -712,7 +877,15 @@
       "requires": [],
       "source": "skills/in-progress/setup-ts-deep-modules",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/in-progress/setup-ts-deep-modules",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -750,7 +923,15 @@
       "requires": [],
       "source": "skills/engineering/tdd",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/tdd",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -788,7 +969,15 @@
       "requires": [],
       "source": "skills/productivity/teach",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/productivity/teach",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -826,7 +1015,15 @@
       "requires": [],
       "source": "skills/productivity/to-questionnaire",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/productivity/to-questionnaire",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -864,7 +1061,15 @@
       "requires": [],
       "source": "skills/engineering/to-spec",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/to-spec",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -902,7 +1107,15 @@
       "requires": [],
       "source": "skills/engineering/to-tickets",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/to-tickets",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -940,7 +1153,15 @@
       "requires": [],
       "source": "skills/engineering/triage",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/triage",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -978,7 +1199,15 @@
       "requires": [],
       "source": "skills/productivity/wait-what",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/productivity/wait-what",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1016,7 +1245,15 @@
       "requires": [],
       "source": "skills/engineering/wayfinder",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/wayfinder",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1054,7 +1291,15 @@
       "requires": [],
       "source": "skills/engineering/wizard",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/wizard",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1092,7 +1337,15 @@
       "requires": [],
       "source": "skills/in-progress/writing-beats",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/in-progress/writing-beats",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1130,7 +1383,15 @@
       "requires": [],
       "source": "skills/productivity/writing-for-agents",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/productivity/writing-for-agents",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1168,7 +1429,15 @@
       "requires": [],
       "source": "skills/in-progress/writing-fragments",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/in-progress/writing-fragments",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1206,8 +1475,15 @@
       "requires": [],
       "source": "skills/in-progress/writing-shape",
       "surface_exclusions": [],
-      "conflicts": []
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/in-progress/writing-shape",
+        "relationship": "exact-copy"
+      }
     }
-  ],
-  "exclusions": []
+  ]
 }

@@ -6,141 +6,148 @@
 
 Matty workflow
 
-- Version: `1.0.4`
+- Version: `1.1.0`
 - Supported surfaces: `claude`, `codex`, `opencode`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
 ## Resources
 
+### Notice
+
+- `mit` — Preserves Matt Pocock's MIT license notice
+  - Role: `notice`
+  - Dependencies: None.
+  - Notices: `notice:mit`
+
 ### Skill
 
 - `ask-matt` — Routes a situation to the appropriate skill or workflow
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
   - Codex capabilities: `project-instruction`
   - Opencode capabilities: `opencode-primary-prompt`
 - `claude-handoff` — Hands the current conversation to a fresh background agent
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `code-review` — Reviews changes independently against repository standards and their originating specification
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `codebase-design` — Provides shared vocabulary and principles for designing deep modules
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `diagnosing-bugs` — Guides systematic diagnosis of hard bugs and performance regressions
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `domain-modeling` — Builds and sharpens domain terminology and architectural decisions
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `grill-me` — Runs a relentless interview to sharpen a plan or design
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `grill-with-docs` — Sharpens a plan or design through interview while recording domain decisions
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `grilling` — Stress-tests a plan, decision, or idea through a structured interview
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `handoff` — Compacts the current conversation into a handoff document for another agent
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `implement` — Implements work from a specification or set of tickets
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `improve-codebase-architecture` — Finds and presents opportunities to deepen codebase modules
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `loop-me` — Develops workflow specifications through a stateful interview
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `prototype` — Builds a throwaway prototype to answer a design question
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `research` — Investigates primary sources and records findings in the repository
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `resolving-merge-conflicts` — Resolves an in-progress Git merge or rebase conflict
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `setup-matt-pocock-skills` — Configures a repository for the engineering skills and their supporting conventions
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `setup-ts-deep-modules` — Configures dependency-cruiser to enforce deep modules in a TypeScript repository
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `tdd` — Guides test-driven development through red, green, and refactor cycles
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `teach` — Teaches the user a new skill or concept within the workspace
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `to-questionnaire` — Turns an unresolved decision into a questionnaire for another person
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `to-spec` — Synthesizes the current conversation into a specification on the issue tracker
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `to-tickets` — Breaks a plan or specification into dependency-aware tracer-bullet tickets
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `triage` — Moves issue-tracker work through categorization, verification, and agent-ready briefing
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `wait-what` — Re-explains the last message in simpler, domain-aligned language
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `wayfinder` — Maps and resolves decision tickets for work too large for one agent session
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `wizard` — Creates an interactive Bash guide for manual infrastructure and migration steps
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `writing-beats` — Shapes raw writing material into a grounded journey of narrative beats
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `writing-for-agents` — Guides the creation of predictable instructions and documents for agents
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `writing-fragments` — Explores a writing topic by collecting raw fragments without imposing structure
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 - `writing-shape` — Shapes raw writing material into an article one grounded block at a time
   - Role: `operational`
   - Dependencies: None.
-  - Notices: None.
+  - Notices: `notice:mit`
 
 ## Pack exclusions
 
