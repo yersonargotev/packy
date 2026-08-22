@@ -22,6 +22,26 @@ type currentManifest struct {
 	SourceReference      *SourceReference      `json:"source_reference,omitempty"`
 }
 
+type managedCurrentManifest struct {
+	SchemaVersion        int                   `json:"schema_version"`
+	ID                   string                `json:"id"`
+	Version              string                `json:"version"`
+	Description          string                `json:"description"`
+	Selectable           *bool                 `json:"selectable"`
+	Surfaces             []Surface             `json:"surfaces"`
+	ReadinessObligations []ReadinessObligation `json:"readiness_obligations"`
+	ExternalRequirements []string              `json:"external_requirements"`
+	Origins              []managedOriginWire   `json:"origins"`
+	Resources            []json.RawMessage     `json:"resources"`
+}
+
+type managedOriginWire struct {
+	ID         string `json:"id"`
+	Repository string `json:"repository"`
+	Commit     string `json:"commit"`
+	Revision   string `json:"revision,omitempty"`
+}
+
 type currentResourceWire struct {
 	Kind              string             `json:"kind"`
 	ID                string             `json:"id"`
@@ -42,17 +62,66 @@ type currentResourceWire struct {
 	SurfaceExclusions []SurfaceExclusion `json:"surface_exclusions"`
 }
 
-// LoadCurrentManifest loads the one current Pack authoring contract. It has no
-// schema selector and rejects fields from retired manifest generations.
+type managedCurrentResourceWire struct {
+	currentResourceWire
+	Origin *managedResourceOriginWire `json:"origin,omitempty"`
+}
+
+type managedResourceOriginWire struct {
+	ID           string `json:"id"`
+	Path         string `json:"path"`
+	Relationship string `json:"relationship"`
+}
+
+// LoadCurrentManifest loads either the legacy current Pack contract retained
+// during migration or a materialized Managed Pack Project schema v1 contract.
+// It rejects historical manifest generations and unknown fields.
 func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Pack{}, fmt.Errorf("read Pack manifest %s: %w", path, err)
 	}
+	var shape struct {
+		SchemaVersion json.RawMessage `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &shape); err != nil {
+		return Pack{}, fmt.Errorf("decode Pack manifest %s: %w", path, err)
+	}
+	if shape.SchemaVersion != nil {
+		return loadManagedCurrentManifest(data, path, bundleRoot, validateSources)
+	}
 	var raw currentManifest
 	if err := strictDecode(data, &raw); err != nil {
 		return Pack{}, fmt.Errorf("decode Pack manifest %s: %w", path, err)
 	}
+	return loadCurrentManifestRuntime(raw, path, bundleRoot, validateSources, false)
+}
+
+func loadManagedCurrentManifest(data []byte, path, bundleRoot string, validateSources bool) (Pack, error) {
+	var managed managedCurrentManifest
+	if err := strictDecode(data, &managed); err != nil {
+		return Pack{}, fmt.Errorf("decode Pack manifest %s: %w", path, err)
+	}
+	if managed.SchemaVersion != 1 {
+		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version must be 1", path)
+	}
+	if managed.Origins == nil {
+		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field origins is required", path)
+	}
+	return loadCurrentManifestRuntime(currentManifest{
+		ID:                   managed.ID,
+		Version:              managed.Version,
+		Description:          managed.Description,
+		Selectable:           managed.Selectable,
+		Surfaces:             managed.Surfaces,
+		ReadinessObligations: managed.ReadinessObligations,
+		ExternalRequirements: managed.ExternalRequirements,
+		Resources:            managed.Resources,
+		Exclusions:           []Exclusion{},
+	}, path, bundleRoot, validateSources, true)
+}
+
+func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, validateSources, managed bool) (Pack, error) {
 	if raw.Selectable == nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field selectable is required", path)
 	}
@@ -69,8 +138,8 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 		SourceReference:      raw.SourceReference,
 	}
 	for i, encoded := range raw.Resources {
-		var wire currentResourceWire
-		if err := strictDecode(encoded, &wire); err != nil {
+		wire, err := decodeCurrentResource(encoded, managed)
+		if err != nil {
 			return Pack{}, fmt.Errorf("Pack %q resource %d: %w", raw.ID, i, err)
 		}
 		pack.Resources = append(pack.Resources, Resource{
@@ -92,6 +161,21 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 		}
 	}
 	return pack, nil
+}
+
+func decodeCurrentResource(encoded json.RawMessage, managed bool) (currentResourceWire, error) {
+	if !managed {
+		var wire currentResourceWire
+		if err := strictDecode(encoded, &wire); err != nil {
+			return currentResourceWire{}, err
+		}
+		return wire, nil
+	}
+	var wire managedCurrentResourceWire
+	if err := strictDecode(encoded, &wire); err != nil {
+		return currentResourceWire{}, err
+	}
+	return wire.currentResourceWire, nil
 }
 
 // ValidateProjectPack validates the runtime-facing portion of a Managed Pack
