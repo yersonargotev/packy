@@ -135,21 +135,21 @@ func TestLoadCurrentManifestStillLoadsRealLegacyManifestDuringMigration(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifestPath := filepath.Join(bundleRoot, "packs", "pstack", "pack.json")
+	manifestPath := filepath.Join(bundleRoot, "packs", "issue-delivery", "pack.json")
 
 	pack, err := LoadCurrentManifest(manifestPath, bundleRoot, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.ID != "pstack" || pack.Version != "1.0.0" || !pack.Selectable {
+	if pack.ID != "issue-delivery" || pack.Version != "1.1.1" || !pack.Selectable {
 		t.Fatalf("legacy Pack identity and selection semantics = %#v", pack)
 	}
-	if len(pack.Resources) == 0 || len(pack.Contract.Exclusions) == 0 {
+	if len(pack.Resources) != 4 || pack.Contract.Exclusions == nil {
 		t.Fatalf("legacy resources or exclusions were not preserved: resources=%d exclusions=%#v", len(pack.Resources), pack.Contract.Exclusions)
 	}
 	if got, want := pack.SourceReference, (&SourceReference{
-		Repository: "https://github.com/yersonargotev/pstack.git",
-		Revision:   "v0.1.1",
+		Repository: "https://github.com/yersonargotev/issue-deliver-pack.git",
+		Revision:   "1.1.1",
 	}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("legacy source reference = %#v, want %#v", got, want)
 	}

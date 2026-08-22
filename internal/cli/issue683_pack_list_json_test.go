@@ -96,6 +96,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	opts, _ := packListRepositoryOptions(t)
 	addyVersion := checkedInPackVersion(t, "addy")
 	mattyVersion := checkedInMattyFacts(t).Version
+	pstackVersion := checkedInPackVersion(t, "pstack")
 
 	output, err := executeCommand(t, NewRootCommand(opts), "list")
 	if err != nil {
@@ -108,7 +109,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 		"issue-delivery  1.1.1    Deliver issues through policy-driven or Matt-configured workflows      codex\n" +
 		fmt.Sprintf("matty           %-7s  Matty workflow                                                         claude, codex, opencode\n", mattyVersion) +
 		"orchestrate     1.0.1    Coordinate focused Codex subagents                                     codex\n" +
-		"pstack          1.0.0    Apply pstack's reviewed portable engineering workflows and principles  claude, codex, opencode\n"
+		fmt.Sprintf("pstack          %-7s  Apply pstack's reviewed portable engineering workflows and principles  claude, codex, opencode\n", pstackVersion)
 	if output != want {
 		t.Fatalf("human output changed:\n%s", output)
 	}
