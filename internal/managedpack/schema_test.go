@@ -56,6 +56,9 @@ func TestPackSchemaRejectsDocumentsRejectedByTheContractValidator(t *testing.T) 
 	}{
 		{"retired field", func(manifest map[string]any) { manifest["exclusions"] = []any{} }},
 		{"traversal", func(manifest map[string]any) { resource(manifest)["source"] = "../guide" }},
+		{"git metadata origin path", func(manifest map[string]any) {
+			resource(manifest)["origin"].(map[string]any)["path"] = ".git/config"
+		}},
 		{"skill without source", func(manifest map[string]any) { delete(resource(manifest), "source") }},
 		{"capability without typed payload", func(manifest map[string]any) {
 			binding := resource(manifest)["bindings"].([]any)[1].(map[string]any)

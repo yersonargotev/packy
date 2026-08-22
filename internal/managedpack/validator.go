@@ -324,6 +324,9 @@ func validateManagedResources(manifest Manifest) error {
 		if err := validateRelativePath(resource.Origin.Path, true); err != nil {
 			return fmt.Errorf("resource %q origin path: %w", identity, err)
 		}
+		if hasPathComponent(resource.Origin.Path, ".git") {
+			return fmt.Errorf("resource %q origin path must not select Git metadata", identity)
+		}
 		if resource.Origin.Relationship != RelationshipExactCopy && resource.Origin.Relationship != RelationshipAdapted {
 			return fmt.Errorf("resource %q origin relationship must be exact-copy or adapted", identity)
 		}
@@ -378,6 +381,15 @@ func validateRelativePath(value string, allowDot bool) error {
 		return fmt.Errorf("%q must be a normalized repository-relative path", value)
 	}
 	return nil
+}
+
+func hasPathComponent(value, component string) bool {
+	for _, part := range strings.Split(value, "/") {
+		if part == component {
+			return true
+		}
+	}
+	return false
 }
 
 func validateOriginRelationship(projectRoot string, resource Resource, originRoot string) error {

@@ -70,7 +70,12 @@
     "originPath": {
       "oneOf": [
         {"const": "."},
-        {"$ref": "#/$defs/path"}
+        {
+          "allOf": [
+            {"$ref": "#/$defs/path"},
+            {"not": {"pattern": "(^|/)\\.git(/|$)"}}
+          ]
+        }
       ]
     },
     "origin": {

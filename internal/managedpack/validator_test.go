@@ -63,6 +63,9 @@ func TestValidateProjectRejectsMalformedManifestAndOriginRelationships(t *testin
 		{"invalid relationship", func(manifest map[string]any) {
 			resource(manifest)["origin"].(map[string]any)["relationship"] = "partial"
 		}, "relationship must be exact-copy or adapted"},
+		{"git metadata origin path", func(manifest map[string]any) {
+			resource(manifest)["origin"].(map[string]any)["path"] = ".git/config"
+		}, "must not select Git metadata"},
 		{"derived without notice", func(manifest map[string]any) { delete(resource(manifest), "notices") }, "must reference at least one notice"},
 		{"retired exclusions", func(manifest map[string]any) { manifest["exclusions"] = []any{} }, `unknown field "exclusions"`},
 		{"retired source reference", func(manifest map[string]any) {
@@ -219,6 +222,8 @@ func TestValidateProjectAcceptsExactCopyFromOriginRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(origin, "SKILL.md"), "managed guidance\n", 0o644)
+	writeFile(t, filepath.Join(origin, ".gitmodules"), "tracked content\n", 0o644)
+	writeFile(t, filepath.Join(project, "skills", "guide", ".gitmodules"), "tracked content\n", 0o644)
 	mutateManifest(t, project, func(manifest map[string]any) {
 		resource(manifest)["origin"].(map[string]any)["path"] = "."
 	})
