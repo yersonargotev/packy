@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -14,7 +15,7 @@ import (
 )
 
 // Command is one argument-safe git or gh invocation. Environment entries are
-// additions to the inherited process environment.
+// overrides applied to the publication process allowlist.
 type Command struct {
 	Directory   string
 	Executable  string
@@ -31,12 +32,65 @@ type ExecRunner struct{}
 func (ExecRunner) Run(ctx context.Context, command Command) (string, error) {
 	process := exec.CommandContext(ctx, command.Executable, command.Arguments...)
 	process.Dir = command.Directory
-	process.Env = append(os.Environ(), command.Environment...)
+	process.Env = publicationEnvironment(os.Environ(), command.Environment)
 	output, err := process.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%s failed: %w: %s", command.Executable, err, strings.TrimSpace(string(output)))
 	}
 	return string(output), nil
+}
+
+var publicationEnvironmentKeys = map[string]bool{
+	"GCM_INTERACTIVE":         true,
+	"GH_CONFIG_DIR":           true,
+	"GH_ENTERPRISE_TOKEN":     true,
+	"GH_HOST":                 true,
+	"GH_PROMPT_DISABLED":      true,
+	"GH_REPO":                 true,
+	"GH_TOKEN":                true,
+	"GITHUB_ENTERPRISE_TOKEN": true,
+	"GITHUB_TOKEN":            true,
+	"GIT_AUTHOR_EMAIL":        true,
+	"GIT_AUTHOR_NAME":         true,
+	"GIT_COMMITTER_EMAIL":     true,
+	"GIT_COMMITTER_NAME":      true,
+	"GIT_CONFIG_GLOBAL":       true,
+	"GIT_CONFIG_NOSYSTEM":     true,
+	"GIT_TERMINAL_PROMPT":     true,
+	"HOME":                    true,
+	"LANG":                    true,
+	"LC_ALL":                  true,
+	"LC_CTYPE":                true,
+	"PATH":                    true,
+	"SSH_AUTH_SOCK":           true,
+	"SSL_CERT_DIR":            true,
+	"SSL_CERT_FILE":           true,
+	"TMPDIR":                  true,
+	"XDG_CONFIG_HOME":         true,
+}
+
+func publicationEnvironment(inherited, overrides []string) []string {
+	values := map[string]string{
+		"GCM_INTERACTIVE":     "Never",
+		"GH_PROMPT_DISABLED":  "1",
+		"GIT_TERMINAL_PROMPT": "0",
+	}
+	for _, entry := range append(append([]string(nil), inherited...), overrides...) {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && publicationEnvironmentKeys[key] {
+			values[key] = value
+		}
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	environment := make([]string, 0, len(keys))
+	for _, key := range keys {
+		environment = append(environment, key+"="+values[key])
+	}
+	return environment
 }
 
 // NewCLI constructs the production git/gh-backed Publisher.

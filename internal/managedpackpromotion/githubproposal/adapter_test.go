@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -335,6 +336,39 @@ func TestCLIGatewayCreatesARegenerationCommitWithTheExactParentSet(t *testing.T)
 	wantPush := "push origin " + created + ":refs/heads/promote/addy-1.2.3"
 	if strings.Join(commands[2].Arguments, " ") != wantPush {
 		t.Fatalf("push command = %v, want %q", commands[2].Arguments, wantPush)
+	}
+}
+
+func TestPublicationProcessReceivesOnlyDeliveryAuthority(t *testing.T) {
+	environment := publicationEnvironment([]string{
+		"PATH=/safe/bin",
+		"HOME=/safe/home",
+		"XDG_CONFIG_HOME=/safe/config",
+		"GH_TOKEN=publication-token",
+		"SSH_AUTH_SOCK=/safe/agent.sock",
+		"AWS_SECRET_ACCESS_KEY=unrelated-secret",
+		"PACKY_ACQUIRED_PROJECT=/untrusted/project",
+		"HTTP_PROXY=http://credential:secret@proxy.test",
+		"GIT_AUTHOR_NAME=ambient-author",
+	}, []string{
+		"GIT_AUTHOR_NAME=" + botAuthorName,
+		"GIT_AUTHOR_EMAIL=" + botAuthorEmail,
+	})
+
+	want := []string{
+		"GCM_INTERACTIVE=Never",
+		"GH_PROMPT_DISABLED=1",
+		"GH_TOKEN=publication-token",
+		"GIT_AUTHOR_EMAIL=" + botAuthorEmail,
+		"GIT_AUTHOR_NAME=" + botAuthorName,
+		"GIT_TERMINAL_PROMPT=0",
+		"HOME=/safe/home",
+		"PATH=/safe/bin",
+		"SSH_AUTH_SOCK=/safe/agent.sock",
+		"XDG_CONFIG_HOME=/safe/config",
+	}
+	if !slices.Equal(environment, want) {
+		t.Fatalf("publication environment = %q, want %q", environment, want)
 	}
 }
 
