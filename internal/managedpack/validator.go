@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,7 +21,13 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-const SchemaVersion = 1
+const (
+	SchemaVersion        = 1
+	maxIndexedEntries    = 1024
+	maxIndexedPathDepth  = 32
+	maxIndexedFileBytes  = int64(8 << 20)
+	maxIndexedTotalBytes = int64(64 << 20)
+)
 
 var (
 	idPattern         = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -120,6 +127,29 @@ type declaredRoot struct {
 	owner string
 }
 
+type indexBudget struct {
+	entries   int
+	totalSize int64
+}
+
+func (budget *indexBudget) add(path string, info os.FileInfo) error {
+	budget.entries++
+	if budget.entries > maxIndexedEntries {
+		return fmt.Errorf("%q exceeds maximum entry count of %d", path, maxIndexedEntries)
+	}
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+	if info.Size() < 0 || info.Size() > maxIndexedFileBytes {
+		return fmt.Errorf("%q exceeds maximum file size of %d bytes", path, maxIndexedFileBytes)
+	}
+	if budget.totalSize > maxIndexedTotalBytes-info.Size() {
+		return fmt.Errorf("%q exceeds maximum aggregate size of %d bytes", path, maxIndexedTotalBytes)
+	}
+	budget.totalSize += info.Size()
+	return nil
+}
+
 // OriginResolver returns a local, exact checkout for a declared Origin.
 // ValidateProject only reads the returned tree and never executes its content.
 type OriginResolver interface {
@@ -129,6 +159,9 @@ type OriginResolver interface {
 // ValidateProject validates one root pack.json, its Declared Pack Closure,
 // and every declared provenance relationship.
 func ValidateProject(ctx context.Context, projectRoot string, resolver OriginResolver) (Validation, error) {
+	if err := ctx.Err(); err != nil {
+		return Validation{}, err
+	}
 	manifestPath := filepath.Join(projectRoot, "pack.json")
 	manifestInfo, err := os.Lstat(manifestPath)
 	if err != nil {
@@ -137,7 +170,10 @@ func ValidateProject(ctx context.Context, projectRoot string, resolver OriginRes
 	if !manifestInfo.Mode().IsRegular() || manifestInfo.Mode()&os.ModeSymlink != 0 {
 		return Validation{}, fmt.Errorf("root pack.json must be a regular file")
 	}
-	manifestData, err := os.ReadFile(manifestPath)
+	if manifestInfo.Size() > maxIndexedFileBytes {
+		return Validation{}, fmt.Errorf("root pack.json exceeds maximum file size of %d bytes", maxIndexedFileBytes)
+	}
+	manifestData, err := readFileBounded(ctx, manifestPath, manifestInfo)
 	if err != nil {
 		return Validation{}, fmt.Errorf("read root pack.json: %w", err)
 	}
@@ -154,7 +190,12 @@ func ValidateProject(ctx context.Context, projectRoot string, resolver OriginRes
 		origins[origin.ID] = origin
 	}
 	resolved := map[string]string{}
+	originBudget := &indexBudget{}
+	comparisonBudget := &indexBudget{}
 	for _, resource := range manifest.Resources {
+		if err := ctx.Err(); err != nil {
+			return Validation{}, err
+		}
 		if resource.Origin == nil {
 			continue
 		}
@@ -168,17 +209,20 @@ func ValidateProject(ctx context.Context, projectRoot string, resolver OriginRes
 			if err != nil {
 				return Validation{}, fmt.Errorf("resolve origin %q: %w", origin.ID, err)
 			}
+			if err := ctx.Err(); err != nil {
+				return Validation{}, err
+			}
 			if strings.TrimSpace(originRoot) == "" {
 				return Validation{}, fmt.Errorf("resolve origin %q: empty local root", origin.ID)
 			}
 			resolved[origin.ID] = originRoot
 		}
-		if err := validateOriginRelationship(projectRoot, resource, originRoot); err != nil {
+		if err := validateOriginRelationship(ctx, projectRoot, resource, originRoot, originBudget, comparisonBudget); err != nil {
 			return Validation{}, err
 		}
 	}
 
-	files, err := declaredClosure(projectRoot, manifest)
+	files, err := declaredClosure(ctx, projectRoot, manifest, manifestInfo.Size())
 	if err != nil {
 		return Validation{}, err
 	}
@@ -191,6 +235,236 @@ func ValidateProject(ctx context.Context, projectRoot string, resolver OriginRes
 		ClosureSHA256:  digestIndex(files),
 		Files:          files,
 	}, nil
+}
+
+// MaterializeClosure copies one exact validated Declared Pack Closure into a
+// destination bundle root. The manifest is placed at packs/<id>/pack.json;
+// every other closure member retains its bundle-relative path.
+func MaterializeClosure(ctx context.Context, projectRoot, destinationRoot string, validation Validation) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := validateMaterialization(validation); err != nil {
+		return err
+	}
+	if err := requireDirectory(projectRoot, "Managed Pack Project root"); err != nil {
+		return err
+	}
+
+	budget := &indexBudget{}
+	for _, record := range validation.Files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		sourcePath := filepath.Join(projectRoot, filepath.FromSlash(record.Path))
+		if err := rejectSymlinkComponents(ctx, projectRoot, record.Path); err != nil {
+			return fmt.Errorf("materialize source %q: %w", record.Path, err)
+		}
+		info, err := os.Lstat(sourcePath)
+		if err != nil {
+			return fmt.Errorf("materialize source %q: %w", record.Path, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("materialize source %q is not a regular file", record.Path)
+		}
+		if err := budget.add(record.Path, info); err != nil {
+			return fmt.Errorf("materialize source: %w", err)
+		}
+		if canonicalMode(info.Mode()) != record.Mode {
+			return fmt.Errorf("materialize source %q drifted from validated mode", record.Path)
+		}
+		digest, err := digestFile(ctx, sourcePath, info)
+		if err != nil {
+			return fmt.Errorf("materialize source %q: %w", record.Path, err)
+		}
+		if digest != record.SHA256 {
+			return fmt.Errorf("materialize source %q drifted from validated SHA-256", record.Path)
+		}
+		if record.Path == "pack.json" {
+			manifestData, err := readFileBounded(ctx, sourcePath, info)
+			if err != nil {
+				return fmt.Errorf("materialize source %q: %w", record.Path, err)
+			}
+			manifest, err := decodeManifest(manifestData)
+			if err != nil || !reflect.DeepEqual(manifest, validation.Manifest) {
+				return fmt.Errorf("materialize source pack.json drifted from validated manifest")
+			}
+		}
+	}
+
+	if err := ensureDirectory(ctx, destinationRoot, "."); err != nil {
+		return fmt.Errorf("prepare destination bundle root: %w", err)
+	}
+	for _, record := range validation.Files {
+		destinationPath := record.Path
+		if record.Path == "pack.json" {
+			destinationPath = filepath.ToSlash(filepath.Join("packs", validation.Manifest.ID, "pack.json"))
+		}
+		if err := copyClosureFile(ctx, projectRoot, destinationRoot, record, destinationPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMaterialization(validation Validation) error {
+	if !idPattern.MatchString(validation.Manifest.ID) {
+		return fmt.Errorf("materialize closure: invalid Pack ID %q", validation.Manifest.ID)
+	}
+	if len(validation.Files) == 0 || len(validation.Files) > maxIndexedEntries {
+		return fmt.Errorf("materialize closure: invalid file index size")
+	}
+	manifestFound := false
+	destinations := make(map[string]bool, len(validation.Files))
+	for index, record := range validation.Files {
+		if err := validateRelativePath(record.Path, false); err != nil {
+			return fmt.Errorf("materialize closure file path: %w", err)
+		}
+		if hasPathComponent(record.Path, ".git") || pathDepth(record.Path) > maxIndexedPathDepth {
+			return fmt.Errorf("materialize closure file path %q is not allowed", record.Path)
+		}
+		if index > 0 && validation.Files[index-1].Path >= record.Path {
+			return fmt.Errorf("materialize closure files must be sorted by path without duplicates")
+		}
+		if record.Mode != "100644" && record.Mode != "100755" {
+			return fmt.Errorf("materialize closure file %q has unsupported mode %q", record.Path, record.Mode)
+		}
+		if !validSHA256(record.SHA256) {
+			return fmt.Errorf("materialize closure file %q has invalid SHA-256", record.Path)
+		}
+		destinationPath := record.Path
+		if record.Path == "pack.json" {
+			if manifestFound || record.SHA256 != validation.ManifestSHA256 {
+				return fmt.Errorf("materialize closure manifest digest does not match pack.json")
+			}
+			manifestFound = true
+			destinationPath = filepath.ToSlash(filepath.Join("packs", validation.Manifest.ID, "pack.json"))
+		}
+		if destinations[destinationPath] {
+			return fmt.Errorf("materialize closure destination %q is duplicated", destinationPath)
+		}
+		destinations[destinationPath] = true
+	}
+	if !manifestFound {
+		return fmt.Errorf("materialize closure files must contain pack.json")
+	}
+	if !validSHA256(validation.ManifestSHA256) || digestIndex(validation.Files) != validation.ClosureSHA256 {
+		return fmt.Errorf("materialize closure digest does not match file index")
+	}
+	return nil
+}
+
+func copyClosureFile(ctx context.Context, projectRoot, destinationRoot string, record FileRecord, destinationRelative string) (resultErr error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ensureDirectory(ctx, destinationRoot, filepath.ToSlash(filepath.Dir(destinationRelative))); err != nil {
+		return fmt.Errorf("prepare materialized file %q: %w", destinationRelative, err)
+	}
+	destinationPath := filepath.Join(destinationRoot, filepath.FromSlash(destinationRelative))
+	mode := os.FileMode(0o644)
+	if record.Mode == "100755" {
+		mode = 0o755
+	}
+	destination, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return fmt.Errorf("create materialized file %q: %w", destinationRelative, err)
+	}
+	keep := false
+	closed := false
+	defer func() {
+		if !closed {
+			if closeErr := destination.Close(); resultErr == nil && closeErr != nil {
+				resultErr = fmt.Errorf("close materialized file %q: %w", destinationRelative, closeErr)
+			}
+		}
+		if !keep || resultErr != nil {
+			_ = os.Remove(destinationPath)
+		}
+	}()
+
+	sourcePath := filepath.Join(projectRoot, filepath.FromSlash(record.Path))
+	info, err := os.Lstat(sourcePath)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("materialize source %q drifted after validation", record.Path)
+	}
+	if canonicalMode(info.Mode()) != record.Mode {
+		return fmt.Errorf("materialize source %q drifted from validated mode", record.Path)
+	}
+	if err := copyRegularFile(ctx, sourcePath, info, destination); err != nil {
+		return fmt.Errorf("copy materialized file %q: %w", destinationRelative, err)
+	}
+	if err := destination.Chmod(mode); err != nil {
+		return fmt.Errorf("set materialized file %q mode: %w", destinationRelative, err)
+	}
+	if err := destination.Close(); err != nil {
+		return fmt.Errorf("close materialized file %q: %w", destinationRelative, err)
+	}
+	closed = true
+	if err := rejectSymlinkComponents(ctx, destinationRoot, destinationRelative); err != nil {
+		return fmt.Errorf("verify materialized file %q: %w", destinationRelative, err)
+	}
+	destinationInfo, err := os.Lstat(destinationPath)
+	if err != nil || destinationInfo.Mode()&os.ModeSymlink != 0 || !destinationInfo.Mode().IsRegular() {
+		return fmt.Errorf("verify materialized file %q: not a regular file", destinationRelative)
+	}
+	digest, err := digestFile(ctx, destinationPath, destinationInfo)
+	if err != nil {
+		return fmt.Errorf("verify materialized file %q: %w", destinationRelative, err)
+	}
+	if digest != record.SHA256 || canonicalMode(destinationInfo.Mode()) != record.Mode {
+		return fmt.Errorf("verify materialized file %q: content or mode differs from validation", destinationRelative)
+	}
+	keep = true
+	return nil
+}
+
+func requireDirectory(path, description string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("inspect %s: %w", description, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("%s must be a directory and not a symlink", description)
+	}
+	return nil
+}
+
+func ensureDirectory(ctx context.Context, root, relative string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := os.Mkdir(root, 0o755); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if err := requireDirectory(root, "destination bundle root"); err != nil {
+		return err
+	}
+	if relative == "." {
+		return nil
+	}
+	current := root
+	for _, component := range strings.Split(relative, "/") {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current = filepath.Join(current, component)
+		if err := os.Mkdir(current, 0o755); err != nil && !os.IsExist(err) {
+			return err
+		}
+		if err := requireDirectory(current, fmt.Sprintf("destination directory %q", relative)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
 }
 
 func decodeManifest(data []byte) (Manifest, error) {
@@ -392,19 +666,19 @@ func hasPathComponent(value, component string) bool {
 	return false
 }
 
-func validateOriginRelationship(projectRoot string, resource Resource, originRoot string) error {
+func validateOriginRelationship(ctx context.Context, projectRoot string, resource Resource, originRoot string, originBudget, comparisonBudget *indexBudget) error {
 	originPath := resource.Origin.Path
-	if err := rejectGitlinks(originRoot, []declaredRoot{{path: originPath, owner: resourceIdentity(resource)}}, fmt.Sprintf("origin %q", resource.Origin.ID)); err != nil {
+	if err := rejectGitlinks(ctx, originRoot, []declaredRoot{{path: originPath, owner: resourceIdentity(resource)}}, fmt.Sprintf("origin %q", resource.Origin.ID)); err != nil {
 		return err
 	}
-	originFiles, err := indexTree(originRoot, originPath, false)
+	originFiles, err := indexTree(ctx, originRoot, originPath, false, originBudget)
 	if err != nil {
 		return fmt.Errorf("resource %q origin path: %w", resourceIdentity(resource), err)
 	}
 	if resource.Origin.Relationship != RelationshipExactCopy {
 		return nil
 	}
-	projectFiles, err := indexTree(projectRoot, resource.Source, true)
+	projectFiles, err := indexTree(ctx, projectRoot, resource.Source, true, comparisonBudget)
 	if err != nil {
 		return fmt.Errorf("resource %q source: %w", resourceIdentity(resource), err)
 	}
@@ -414,7 +688,7 @@ func validateOriginRelationship(projectRoot string, resource Resource, originRoo
 	return nil
 }
 
-func declaredClosure(projectRoot string, manifest Manifest) ([]FileRecord, error) {
+func declaredClosure(ctx context.Context, projectRoot string, manifest Manifest, manifestSize int64) ([]FileRecord, error) {
 	var roots []declaredRoot
 	for _, resource := range manifest.Resources {
 		identity := resourceIdentity(resource)
@@ -446,12 +720,13 @@ func declaredClosure(projectRoot string, manifest Manifest) ([]FileRecord, error
 		}
 		unique = append(unique, root)
 	}
-	if err := rejectGitlinks(projectRoot, unique, "Managed Pack Project"); err != nil {
+	if err := rejectGitlinks(ctx, projectRoot, unique, "Managed Pack Project"); err != nil {
 		return nil, err
 	}
 	byPath := map[string]FileRecord{}
+	budget := &indexBudget{entries: 1, totalSize: manifestSize}
 	for _, root := range unique {
-		indexed, err := indexTree(projectRoot, root.path, true)
+		indexed, err := indexTree(ctx, projectRoot, root.path, true, budget)
 		if err != nil {
 			return nil, fmt.Errorf("Declared Pack Closure root %q: %w", root.path, err)
 		}
@@ -470,11 +745,14 @@ func declaredClosure(projectRoot string, manifest Manifest) ([]FileRecord, error
 	return files, nil
 }
 
-func indexTree(base, relative string, rejectGitMetadata bool) ([]FileRecord, error) {
+func indexTree(ctx context.Context, base, relative string, rejectGitMetadata bool, budget *indexBudget) ([]FileRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := validateRelativePath(relative, true); err != nil {
 		return nil, err
 	}
-	if err := rejectSymlinkComponents(base, relative); err != nil {
+	if err := rejectSymlinkComponents(ctx, base, relative); err != nil {
 		return nil, err
 	}
 	root := filepath.Join(base, filepath.FromSlash(relative))
@@ -487,6 +765,9 @@ func indexTree(base, relative string, rejectGitMetadata bool) ([]FileRecord, err
 	}
 	var files []FileRecord
 	err = filepath.WalkDir(root, func(name string, entry os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return walkErr
 		}
@@ -508,6 +789,12 @@ func indexTree(base, relative string, rejectGitMetadata bool) ([]FileRecord, err
 			}
 			return nil
 		}
+		if pathDepth(rel) > maxIndexedPathDepth {
+			return fmt.Errorf("%q exceeds maximum path depth of %d", rel, maxIndexedPathDepth)
+		}
+		if err := budget.add(rel, info); err != nil {
+			return err
+		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("%q is a symlink", rel)
 		}
@@ -517,11 +804,11 @@ func indexTree(base, relative string, rejectGitMetadata bool) ([]FileRecord, err
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("%q is not a regular file", rel)
 		}
-		data, err := os.ReadFile(name)
+		digest, err := digestFile(ctx, name, info)
 		if err != nil {
 			return err
 		}
-		files = append(files, FileRecord{Path: rel, Mode: canonicalMode(info.Mode()), SHA256: digestBytes(data)})
+		files = append(files, FileRecord{Path: rel, Mode: canonicalMode(info.Mode()), SHA256: digest})
 		return nil
 	})
 	if err != nil {
@@ -531,12 +818,15 @@ func indexTree(base, relative string, rejectGitMetadata bool) ([]FileRecord, err
 	return files, nil
 }
 
-func rejectSymlinkComponents(base, relative string) error {
+func rejectSymlinkComponents(ctx context.Context, base, relative string) error {
 	if relative == "." {
 		return nil
 	}
 	current := base
 	for _, component := range strings.Split(relative, "/") {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		current = filepath.Join(current, component)
 		info, err := os.Lstat(current)
 		if err != nil {
@@ -549,7 +839,10 @@ func rejectSymlinkComponents(base, relative string) error {
 	return nil
 }
 
-func rejectGitlinks(repositoryRoot string, roots []declaredRoot, scope string) error {
+func rejectGitlinks(ctx context.Context, repositoryRoot string, roots []declaredRoot, scope string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	repository, err := git.PlainOpen(repositoryRoot)
 	if err == git.ErrRepositoryNotExists {
 		return nil
@@ -562,6 +855,9 @@ func rejectGitlinks(repositoryRoot string, roots []declaredRoot, scope string) e
 		return fmt.Errorf("inspect %s Git index: %w", scope, err)
 	}
 	for _, entry := range index.Entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if entry.Mode != filemode.Submodule {
 			continue
 		}
@@ -602,6 +898,78 @@ func digestIndex(files []FileRecord) string {
 func digestBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func readFileBounded(ctx context.Context, path string, expected os.FileInfo) ([]byte, error) {
+	var data bytes.Buffer
+	data.Grow(int(expected.Size()))
+	if err := copyRegularFile(ctx, path, expected, &data); err != nil {
+		return nil, err
+	}
+	return data.Bytes(), nil
+}
+
+func digestFile(ctx context.Context, path string, expected os.FileInfo) (string, error) {
+	hash := sha256.New()
+	if err := copyRegularFile(ctx, path, expected, hash); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func copyRegularFile(ctx context.Context, path string, expected os.FileInfo, destination io.Writer) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(expected, opened) || opened.Size() != expected.Size() || canonicalMode(opened.Mode()) != canonicalMode(expected.Mode()) {
+		return fmt.Errorf("%q changed while being read", path)
+	}
+	written, err := io.Copy(destination, io.LimitReader(contextReader{ctx: ctx, reader: file}, maxIndexedFileBytes+1))
+	if err != nil {
+		return err
+	}
+	if written > maxIndexedFileBytes {
+		return fmt.Errorf("%q exceeds maximum file size of %d bytes", path, maxIndexedFileBytes)
+	}
+	if written != opened.Size() {
+		return fmt.Errorf("%q changed while being read", path)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (reader contextReader) Read(data []byte) (int, error) {
+	if err := reader.ctx.Err(); err != nil {
+		return 0, err
+	}
+	count, err := reader.reader.Read(data)
+	if contextErr := reader.ctx.Err(); contextErr != nil {
+		return count, contextErr
+	}
+	return count, err
+}
+
+func pathDepth(path string) int {
+	if path == "." {
+		return 0
+	}
+	return strings.Count(path, "/") + 1
 }
 
 func canonicalMode(mode os.FileMode) string {
