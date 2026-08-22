@@ -92,15 +92,18 @@ func currentGoCaches(ctx context.Context) (string, string, string) {
 	command := exec.CommandContext(ctx, "go", "env", "GOCACHE", "GOMODCACHE", "GOPATH")
 	command.Env = []string{
 		"GOENV=off",
+		"GOTELEMETRY=off",
+		"GOTOOLCHAIN=local",
 		"HOME=" + os.Getenv("HOME"),
 		"PATH=" + os.Getenv("PATH"),
+		"XDG_CONFIG_HOME=" + filepath.Join(os.TempDir(), "packy-promotion-go-env"),
 	}
 	output, err := command.Output()
 	if err != nil {
 		return os.Getenv("GOCACHE"), os.Getenv("GOMODCACHE"), os.Getenv("GOPATH")
 	}
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) != 3 {
+	if len(lines) != 3 || !filepath.IsAbs(lines[0]) || !filepath.IsAbs(lines[1]) || !filepath.IsAbs(lines[2]) {
 		return os.Getenv("GOCACHE"), os.Getenv("GOMODCACHE"), os.Getenv("GOPATH")
 	}
 	return lines[0], lines[1], lines[2]

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -531,12 +532,14 @@ func readTestFile(t *testing.T, path string) string {
 func gitOutput(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command.Env = testGitEnvironment(t.TempDir(), nil)
 	output, _ := command.Output()
 	return strings.TrimSpace(string(output))
 }
 
 func gitOutputNoTest(root string, args ...string) string {
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command.Env = testGitEnvironment(filepath.Join(os.TempDir(), "packy-test-no-home"), nil)
 	output, _ := command.Output()
 	return strings.TrimSpace(string(output))
 }
@@ -550,10 +553,40 @@ func runTestCommandEnv(t *testing.T, root string, environment []string, name str
 	t.Helper()
 	command := exec.Command(name, args...)
 	command.Dir = root
-	command.Env = append(os.Environ(), environment...)
+	command.Env = testGitEnvironment(t.TempDir(), environment)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("%s %s: %v\n%s", name, strings.Join(args, " "), err, output)
 	}
+}
+
+func testGitEnvironment(home string, additions []string) []string {
+	values := map[string]string{
+		"GIT_CONFIG_GLOBAL":   "/dev/null",
+		"GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_TERMINAL_PROMPT": "0",
+		"HOME":                home,
+		"LANG":                "C",
+		"LC_ALL":              "C",
+		"PATH":                os.Getenv("PATH"),
+		"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
+	}
+	for _, entry := range additions {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok || name == "" {
+			continue
+		}
+		values[name] = value
+	}
+	keys := make([]string, 0, len(values))
+	for name := range values {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	environment := make([]string, 0, len(keys))
+	for _, name := range keys {
+		environment = append(environment, name+"="+values[name])
+	}
+	return environment
 }
 
 func rejectionGate(t *testing.T, err error) managedpackpromotion.Gate {

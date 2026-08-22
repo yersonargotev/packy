@@ -579,7 +579,7 @@ func gitPaths(ctx context.Context, root string, arguments ...string) ([]string, 
 func run(ctx context.Context, root string, environment []string, name string, arguments ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, name, arguments...)
 	command.Dir = root
-	command.Env = append(os.Environ(), environment...)
+	command.Env = isolatedGitEnvironment(environment)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))
@@ -589,6 +589,36 @@ func run(ctx context.Context, root string, environment []string, name string, ar
 		return nil, fmt.Errorf("%w: %s", err, message)
 	}
 	return output, nil
+}
+
+func isolatedGitEnvironment(additions []string) []string {
+	values := map[string]string{
+		"GIT_CONFIG_GLOBAL":   "/dev/null",
+		"GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_TERMINAL_PROMPT": "0",
+		"HOME":                filepath.Join(os.TempDir(), "packy-promotion-no-home"),
+		"LANG":                "C",
+		"LC_ALL":              "C",
+		"PATH":                os.Getenv("PATH"),
+		"TMPDIR":              os.TempDir(),
+		"XDG_CONFIG_HOME":     filepath.Join(os.TempDir(), "packy-promotion-no-config"),
+	}
+	for _, entry := range additions {
+		name, value, ok := strings.Cut(entry, "=")
+		if ok && name != "" {
+			values[name] = value
+		}
+	}
+	keys := make([]string, 0, len(values))
+	for name := range values {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	environment := make([]string, 0, len(keys))
+	for _, name := range keys {
+		environment = append(environment, name+"="+values[name])
+	}
+	return environment
 }
 
 type fileState struct {
