@@ -153,6 +153,27 @@ func TestSanitizeRemoteRemovesEmbeddedURLAuthority(t *testing.T) {
 	}
 }
 
+func TestPrepublicationEnvironmentDoesNotResolveGoThroughAmbientPATH(t *testing.T) {
+	root := t.TempDir()
+	environment, err := prepublicationEnvironment(context.Background(), root, []string{
+		"PATH=" + t.TempDir(),
+		"HOME=" + t.TempDir(),
+		"GH_TOKEN=must-not-reach-go-env",
+	})
+	if err != nil {
+		t.Fatalf("prepublicationEnvironment() error = %v", err)
+	}
+	if environmentValue(environment, "GH_TOKEN") != "" {
+		t.Fatalf("prepublication environment retained GitHub authority: %q", environment)
+	}
+	for _, key := range []string{"GOROOT", "GOCACHE", "GOMODCACHE", "GOPATH"} {
+		value := environmentValue(environment, key)
+		if !filepath.IsAbs(value) || filepath.Clean(value) != value {
+			t.Fatalf("%s = %q, want absolute clean path", key, value)
+		}
+	}
+}
+
 func environmentValue(environment []string, key string) string {
 	for _, entry := range environment {
 		name, value, ok := strings.Cut(entry, "=")

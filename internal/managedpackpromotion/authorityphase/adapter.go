@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -213,7 +214,7 @@ func prepublicationEnvironment(ctx context.Context, root string, ambient []strin
 			return nil, fmt.Errorf("create prepublication environment directory: %w", err)
 		}
 	}
-	allowed := map[string]bool{"PATH": true, "GOROOT": true, "GOCACHE": true, "GOMODCACHE": true, "GOPATH": true, "SSL_CERT_FILE": true, "SSL_CERT_DIR": true}
+	allowed := map[string]bool{"PATH": true, "GOCACHE": true, "GOMODCACHE": true, "GOPATH": true, "SSL_CERT_FILE": true, "SSL_CERT_DIR": true}
 	for _, entry := range ambient {
 		key, value, ok := strings.Cut(entry, "=")
 		if ok && allowed[key] && value != "" {
@@ -223,7 +224,7 @@ func prepublicationEnvironment(ctx context.Context, root string, ambient []strin
 	if values["PATH"] == "" {
 		values["PATH"] = "/usr/local/go/bin:/usr/bin:/bin"
 	}
-	goValues, err := currentGoEnvironment(ctx, ambient)
+	goValues, err := currentGoEnvironment(ctx, ambient, values["HOME"])
 	if err != nil {
 		return nil, err
 	}
@@ -238,9 +239,25 @@ func prepublicationEnvironment(ctx context.Context, root string, ambient []strin
 	return sortedEnvironment(values), nil
 }
 
-func currentGoEnvironment(ctx context.Context, ambient []string) (map[string]string, error) {
-	command := exec.CommandContext(ctx, "go", "env", "-json", "GOCACHE", "GOMODCACHE", "GOPATH", "GOROOT")
-	command.Env = append([]string(nil), ambient...)
+func currentGoEnvironment(ctx context.Context, ambient []string, fallbackHome string) (map[string]string, error) {
+	goRoot := filepath.Clean(runtime.GOROOT())
+	goExecutable := filepath.Join(goRoot, "bin", "go")
+	if !filepath.IsAbs(goRoot) || !filepath.IsAbs(goExecutable) {
+		return nil, errors.New("Go runtime paths must be absolute")
+	}
+	environment := map[string]string{
+		"GOENV": "off", "GOTELEMETRY": "off", "GOTOOLCHAIN": "local",
+		"HOME": fallbackHome, "PATH": "/usr/bin:/bin",
+	}
+	allowed := map[string]bool{"HOME": true, "PATH": true, "GOCACHE": true, "GOMODCACHE": true, "GOPATH": true}
+	for _, entry := range ambient {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && allowed[key] && value != "" {
+			environment[key] = value
+		}
+	}
+	command := exec.CommandContext(ctx, goExecutable, "env", "-json", "GOCACHE", "GOMODCACHE", "GOPATH")
+	command.Env = sortedEnvironment(environment)
 	output, err := command.Output()
 	if err != nil {
 		return nil, fmt.Errorf("resolve Go cache environment for prepublication: %w", err)
@@ -252,6 +269,7 @@ func currentGoEnvironment(ctx context.Context, ambient []string) (map[string]str
 	if err := json.Unmarshal(output, &values); err != nil {
 		return nil, fmt.Errorf("decode Go cache environment: %w", err)
 	}
+	values["GOROOT"] = goRoot
 	return values, nil
 }
 
