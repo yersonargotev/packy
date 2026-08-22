@@ -13,7 +13,7 @@ import (
 )
 
 func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testing.T) {
-	version, resources := checkedInMattyFacts(t)
+	facts := checkedInMattyFacts(t)
 	opts, home, repoRoot := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
 	observedAt := time.Date(2026, time.August, 11, 3, 30, 0, 0, time.UTC)
 	opts.Clock = func() time.Time { return observedAt }
@@ -34,10 +34,10 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 		t.Fatalf("human preview: %v\n%s", err, human)
 	}
 	for _, want := range []string{
-		"Project install dry-run", "Project root: <project-root>", "Pack: matty " + version, "Surface: codex",
-		fmt.Sprintf("Selection: all (%d resources)", resources), "Manifest: packy.json", "Lock: packy.lock.json",
-		"Notices: PACKY-NOTICES.md (0 contributions)", filepath.Join(".agents", "skills", "ask-matt"),
-		"Reviewed Pack: matty@" + version, fmt.Sprintf("Lock receipt: %d resources, %d projections", resources, resources+1),
+		"Project install dry-run", "Project root: <project-root>", "Pack: matty " + facts.Version, "Surface: codex",
+		fmt.Sprintf("Selection: all (%d resources)", facts.Resources), "Manifest: packy.json", "Lock: packy.lock.json",
+		fmt.Sprintf("Notices: PACKY-NOTICES.md (%d contributions)", facts.Notices), filepath.Join(".agents", "skills", "ask-matt"),
+		"Reviewed Pack: matty@" + facts.Version, fmt.Sprintf("Lock receipt: %d resources, %d projections", facts.Resources, facts.Skills+1),
 		"Requirements: none", "Expected readiness: configured=true, authorized=unknown, usable=unknown", "Readiness condition:", "Blockers: none", "Disposition: previewable",
 	} {
 		if !strings.Contains(human, want) {
@@ -56,7 +56,7 @@ func TestIssue451MattyCodexProjectInstallPreviewIsCompleteAndEffectFree(t *testi
 	if err := json.Unmarshal([]byte(structured), &report); err != nil {
 		t.Fatalf("decode JSON preview: %v\n%s", err, structured)
 	}
-	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != "matty" || report.Pack.Version != version || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != resources || len(report.Projections) != resources+1 || report.Manifest.Path != "packy.json" || report.Lock.SchemaVersion != 1 || len(report.Lock.Receipts) != 1 || report.Notices.Path != "PACKY-NOTICES.md" || report.Notices.Contributions == nil || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable || report.ExpectedReadiness.Configured != capabilitypack.ReadinessTrue || report.ExpectedReadiness.Usable != capabilitypack.ReadinessUnknown || len(report.Conditions) == 0 {
+	if report.SchemaVersion != capabilitypack.ProjectInstallPreviewSchemaVersion || report.Report != "project-install-preview" || !report.DryRun || report.ProjectRoot != "<project-root>" || report.Pack.ID != "matty" || report.Pack.Version != facts.Version || report.Surface != capabilitypack.SurfaceCodex || report.Selection.Mode != capabilitypack.SelectionAll || len(report.Selection.Resources) != facts.Resources || len(report.Projections) != facts.Skills+1 || report.Manifest.Path != "packy.json" || report.Lock.SchemaVersion != 1 || len(report.Lock.Receipts) != 1 || report.Notices.Path != "PACKY-NOTICES.md" || len(report.Notices.Contributions) != facts.Notices || len(report.Blockers) != 0 || report.Disposition != capabilitypack.ProjectInstallPreviewable || report.ExpectedReadiness.Configured != capabilitypack.ReadinessTrue || report.ExpectedReadiness.Usable != capabilitypack.ReadinessUnknown || len(report.Conditions) == 0 {
 		t.Fatalf("incomplete JSON preview: %#v", report)
 	}
 	for _, condition := range report.Conditions {

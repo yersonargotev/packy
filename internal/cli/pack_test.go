@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	semver "github.com/Masterminds/semver/v3"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/codex"
 	"github.com/yersonargotev/packy/internal/engrambin"
@@ -430,11 +431,20 @@ func packActivationOptions(t *testing.T, terminal Terminal) (Options, string, st
 	return Options{Env: MapEnv{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(repoRoot, "bundle", "skills")}, Runner: &fakeRunner{}, Terminal: terminal}, home, repoRoot
 }
 
-func checkedInMattyFacts(t *testing.T) (string, int) {
+type mattyManifestFacts struct {
+	Version   string
+	Resources int
+	Skills    int
+	Notices   int
+}
+
+func checkedInMattyFacts(t *testing.T) mattyManifestFacts {
 	t.Helper()
 	var manifest struct {
-		Version   string            `json:"version"`
-		Resources []json.RawMessage `json:"resources"`
+		Version   string `json:"version"`
+		Resources []struct {
+			Kind string `json:"kind"`
+		} `json:"resources"`
 	}
 	data, err := os.ReadFile(filepath.Join("..", "..", "bundle", "packs", "matty", "pack.json"))
 	if err != nil {
@@ -443,7 +453,38 @@ func checkedInMattyFacts(t *testing.T) (string, int) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	return manifest.Version, len(manifest.Resources)
+	facts := mattyManifestFacts{Version: manifest.Version, Resources: len(manifest.Resources)}
+	for _, resource := range manifest.Resources {
+		switch resource.Kind {
+		case "skill":
+			facts.Skills++
+		case "notice":
+			facts.Notices++
+		}
+	}
+	return facts
+}
+
+func bumpManifestPatchVersion(t *testing.T, manifest string) (string, string) {
+	t.Helper()
+	var identity struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(manifest), &identity); err != nil {
+		t.Fatal(err)
+	}
+	current, err := semver.StrictNewVersion(identity.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := current.IncPatch().String()
+	oldField := `"version": "` + identity.Version + `"`
+	newField := `"version": "` + next + `"`
+	updated := strings.Replace(manifest, oldField, newField, 1)
+	if updated == manifest {
+		t.Fatalf("manifest does not contain %s", oldField)
+	}
+	return updated, next
 }
 
 func currentPackActivationOptions(t *testing.T, terminal Terminal) (Options, string, string) {
@@ -480,8 +521,8 @@ func TestPackActivateCodexDryRunIsCompletelySideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	_, resources := checkedInMattyFacts(t)
-	for _, want := range []string{"Activation dry-run plan plan-", "Digest:", "Phase: reversible-local", "link skill ask-matt", fmt.Sprintf("Logical resources: %d skill, 0 instruction", resources)} {
+	facts := checkedInMattyFacts(t)
+	for _, want := range []string{"Activation dry-run plan plan-", "Digest:", "Phase: reversible-local", "link skill ask-matt", fmt.Sprintf("Logical resources: %d skill, 0 instruction", facts.Skills)} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -761,12 +802,12 @@ func TestPackActivateCodexRejectsNonTTYBeforeEffects(t *testing.T) {
 func TestPackActivateCodexAppliesApprovedPlanAndRepeatIsNoOp(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _ := currentPackActivationOptions(t, terminal)
-	_, resourceCount := checkedInMattyFacts(t)
+	facts := checkedInMattyFacts(t)
 	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex")
 	if err != nil {
 		t.Fatalf("activate failed: %v\n%s", err, out)
 	}
-	if terminal.calls != 1 || !strings.Contains(out, "Verified plan") || !strings.Contains(out, fmt.Sprintf("%d Codex projections", resourceCount)) {
+	if terminal.calls != 1 || !strings.Contains(out, "Verified plan") || !strings.Contains(out, fmt.Sprintf("%d Codex projections", facts.Skills)) {
 		t.Fatalf("unexpected interaction/output: calls=%d\n%s", terminal.calls, out)
 	}
 	if target, err := os.Readlink(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil || !strings.HasSuffix(target, "/skills/engineering/ask-matt") {
@@ -1119,8 +1160,8 @@ func TestPackActivateOpenCodeDryRunIsCompletelySideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	_, resources := checkedInMattyFacts(t)
-	for _, want := range []string{"Activation dry-run plan plan-", "Surface: opencode", "link OpenCode skill ask-matt", fmt.Sprintf("Logical resources: %d skill, 0 instruction", resources)} {
+	facts := checkedInMattyFacts(t)
+	for _, want := range []string{"Activation dry-run plan plan-", "Surface: opencode", "link OpenCode skill ask-matt", fmt.Sprintf("Logical resources: %d skill, 0 instruction", facts.Skills)} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -1389,7 +1430,7 @@ func copyProductionCatalogBundle(t *testing.T, target, repoRoot string) {
 }
 
 func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
-	currentVersion, _ := checkedInMattyFacts(t)
+	currentVersion := checkedInMattyFacts(t).Version
 	for _, surface := range []string{"codex", "opencode"} {
 		t.Run(surface, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
