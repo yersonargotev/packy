@@ -94,6 +94,7 @@ func TestPackListJSONRepresentsAnEmptyCatalogWithAnEmptyArray(t *testing.T) {
 
 func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	opts, _ := packListRepositoryOptions(t)
+	addyVersion := checkedInPackVersion(t, "addy")
 	mattyVersion := checkedInMattyFacts(t).Version
 
 	output, err := executeCommand(t, NewRootCommand(opts), "list")
@@ -101,7 +102,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 		t.Fatalf("pack list: %v\n%s", err, output)
 	}
 	want := "PACK            VERSION  DESCRIPTION                                                            AVAILABLE ON\n" +
-		"addy            1.1.0    Addy agent skills                                                      claude, codex, opencode\n" +
+		fmt.Sprintf("addy            %-7s  Addy agent skills                                                      claude, codex, opencode\n", addyVersion) +
 		"argote          1.0.2    Yerson Argote's engineering and communication guidance                 claude, codex, opencode\n" +
 		"engram          3.1.0    Upstream Engram CLI memory workflows for agent work                    codex\n" +
 		"issue-delivery  1.1.1    Deliver issues through policy-driven or Matt-configured workflows      codex\n" +
