@@ -1,7 +1,7 @@
 // Package githubsource implements read-only acquisition from public GitHub
-// repositories using a caller-supplied HTTP client. It parses metadata and
-// archives as inert data and never invokes Git, shells, hooks, tests, or
-// upstream programs.
+// repositories using a caller-supplied HTTP client. It parses metadata,
+// legacy archives, and exact Managed Pack Git objects as inert data and never
+// invokes Git, shells, hooks, tests, or upstream programs.
 package githubsource
 
 import (
@@ -35,6 +35,7 @@ const (
 	maxArchiveFileBytes     = 128 << 20
 	maxArchiveEntries       = 100_000
 	maxArchivePathDepth     = 64
+	maxAnnotatedTagObjects  = 32
 )
 
 type archiveLimits struct {
@@ -54,6 +55,7 @@ var defaultArchiveLimits = archiveLimits{
 type Client struct {
 	httpClient    *http.Client
 	apiBase       string
+	rawBase       string
 	archiveLimits archiveLimits
 }
 
@@ -77,11 +79,12 @@ func New(httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &Client{httpClient: httpClient, apiBase: "https://api.github.com", archiveLimits: defaultArchiveLimits}
+	return &Client{httpClient: httpClient, apiBase: "https://api.github.com", rawBase: "https://raw.githubusercontent.com", archiveLimits: defaultArchiveLimits}
 }
 
 func newClient(httpClient *http.Client, apiBase string) *Client {
-	return &Client{httpClient: httpClient, apiBase: strings.TrimRight(apiBase, "/"), archiveLimits: defaultArchiveLimits}
+	base := strings.TrimRight(apiBase, "/")
+	return &Client{httpClient: httpClient, apiBase: base, rawBase: base, archiveLimits: defaultArchiveLimits}
 }
 
 func (client *Client) Releases(ctx context.Context, source packsync.SourceConfig) ([]packsync.Release, error) {
@@ -152,6 +155,9 @@ func (client *Client) ResolveRelease(ctx context.Context, source packsync.Source
 	object := ref.Object
 	seen := map[string]bool{}
 	for object.Type == "tag" {
+		if len(candidate.TagObjects) >= maxAnnotatedTagObjects {
+			return packsync.Candidate{}, fmt.Errorf("annotated tag object limit of %d exceeded", maxAnnotatedTagObjects)
+		}
 		if object.SHA == "" || seen[object.SHA] {
 			return packsync.Candidate{}, errors.New("tag chain is empty or cyclic")
 		}

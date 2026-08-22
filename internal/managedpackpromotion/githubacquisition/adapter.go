@@ -30,14 +30,17 @@ var (
 	gitObjectIDPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 )
 
-const maxManifestBytes = int64(8 << 20)
+const (
+	maxManifestBytes       = int64(8 << 20)
+	maxAnnotatedTagObjects = 32
+)
 
 // Source is the smallest read-only boundary needed from githubsource.Client.
 type Source interface {
 	Releases(context.Context, packsync.SourceConfig) ([]packsync.Release, error)
 	ResolveRelease(context.Context, packsync.SourceConfig, packsync.Release) (packsync.Candidate, error)
 	ResolveCommit(context.Context, packsync.SourceConfig, string) (packsync.Candidate, error)
-	WithSnapshot(context.Context, packsync.Candidate, string, func(string) error) error
+	WithGitTreeSnapshot(context.Context, packsync.Candidate, string, func(string) error) error
 }
 
 // Adapter implements managedpackpromotion.Acquirer with a read-only source.
@@ -225,6 +228,9 @@ func validateTagChain(candidate packsync.Candidate) string {
 	if len(candidate.TagObjects) == 0 {
 		return "annotated release tag has no tag object chain"
 	}
+	if len(candidate.TagObjects) > maxAnnotatedTagObjects {
+		return fmt.Sprintf("annotated tag object limit of %d exceeded", maxAnnotatedTagObjects)
+	}
 	seen := map[string]bool{}
 	for index, object := range candidate.TagObjects {
 		if !gitObjectIDPattern.MatchString(object.SHA) || !gitObjectIDPattern.MatchString(object.TargetSHA) || seen[object.SHA] {
@@ -374,7 +380,7 @@ func (adapter Adapter) snapshot(ctx context.Context, candidate packsync.Candidat
 	if err := os.Mkdir(stagingRoot, 0o700); err != nil {
 		return err
 	}
-	err := adapter.source.WithSnapshot(ctx, candidate, stagingRoot, func(snapshot string) error {
+	err := adapter.source.WithGitTreeSnapshot(ctx, candidate, stagingRoot, func(snapshot string) error {
 		return copyInertTree(ctx, snapshot, destination)
 	})
 	removeErr := os.Remove(stagingRoot)

@@ -100,6 +100,34 @@ func TestAdapterAcquireRejectsUnacceptableReleaseBeforeSnapshot(t *testing.T) {
 	}
 }
 
+func TestAdapterAcquireRejectsOversizedAnnotatedTagChainBeforeSnapshot(t *testing.T) {
+	temporary := t.TempDir()
+	t.Setenv("TMPDIR", temporary)
+	source := releaseOnlySource(t)
+	candidate := source.releaseCandidates[0]
+	candidate.TagObjects = make([]packsync.TagObject, 33)
+	for index := range candidate.TagObjects {
+		sha := fmt.Sprintf("%040x", index+1)
+		targetSHA := candidate.Commit
+		targetType := "commit"
+		if index+1 < len(candidate.TagObjects) {
+			targetSHA = fmt.Sprintf("%040x", index+2)
+			targetType = "tag"
+		}
+		candidate.TagObjects[index] = packsync.TagObject{SHA: sha, TargetSHA: targetSHA, TargetType: targetType}
+	}
+	candidate.TagRefSHA = candidate.TagObjects[0].SHA
+	source.releaseCandidates[0] = candidate
+
+	acquisition, err := githubacquisition.New(source).Acquire(context.Background(), "example/managed", testCoordinate())
+	assertRejection(t, err, managedpackpromotion.GateRelease)
+	if !strings.Contains(err.Error(), "tag object limit") {
+		t.Fatalf("Acquire() error = %v", err)
+	}
+	assertZeroAcquisition(t, acquisition)
+	assertEmptyDirectory(t, temporary)
+}
+
 func TestAdapterAcquireRejectsPrereleaseCoordinate(t *testing.T) {
 	temporary := t.TempDir()
 	t.Setenv("TMPDIR", temporary)
@@ -258,7 +286,7 @@ func (source *fakeSource) ResolveCommit(_ context.Context, _ packsync.SourceConf
 	return result, nil
 }
 
-func (source *fakeSource) WithSnapshot(_ context.Context, candidate packsync.Candidate, temporaryRoot string, visit func(string) error) error {
+func (source *fakeSource) WithGitTreeSnapshot(_ context.Context, candidate packsync.Candidate, temporaryRoot string, visit func(string) error) error {
 	if err := os.MkdirAll(temporaryRoot, 0o755); err != nil {
 		return err
 	}
