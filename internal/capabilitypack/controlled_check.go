@@ -206,7 +206,7 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 	if adapter == nil {
 		return ControlledCheckIdentity{}, nil, fmt.Errorf("no activation adapter configured for CLI surface %q", request.Surface)
 	}
-	selectedPack, err := selectPackResources(pack, selection)
+	selectedPack, err := selectPackResourcesForSurface(pack, selection, request.Surface)
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}
@@ -218,7 +218,7 @@ func (f Facade) controlledCheckIdentity(ctx context.Context, request ControlledC
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}
-	resources := controlledCheckResources(ResourceGraphFor(pack, selection, false))
+	resources := controlledCheckResources(resourceGraphForSurface(pack, selection, request.Surface, false))
 	descriptor := normalizedControlledCheckDescriptor(request.Surface, observation.ControlledCheck)
 	return controlledCheckIdentityFor(pack, request.Surface, ControlledCheckGlobal, "", resources, observation, descriptor), descriptor.Instructions, nil
 }
@@ -255,7 +255,7 @@ func (f Facade) projectControlledCheckIdentity(ctx context.Context, request Cont
 	if err != nil {
 		return ControlledCheckIdentity{}, nil, err
 	}
-	resources := controlledCheckResources(projectLockForPack(installation.Lock, request.PackID).ResourceGraph)
+	resources := projectReceiptResources(installation.Lock, request.PackID, request.Surface)
 	descriptor := normalizedControlledCheckDescriptor(request.Surface, observation.ControlledCheck)
 	return controlledCheckIdentityFor(pack, request.Surface, ControlledCheckProject, digest, resources, observation, descriptor), descriptor.Instructions, nil
 }

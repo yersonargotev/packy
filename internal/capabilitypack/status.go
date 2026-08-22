@@ -431,8 +431,8 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	if entry.Contract.AuthorityDisclosure == "" {
 		entry.Contract = LifecycleContractFor(pack, surface, nil)
 	}
-	entry.ResourceSelections = resourceSelectionFacts(evidencePack, selection, entry.Intent.Active || ownedResidual)
-	graph := ResourceGraphFor(evidencePack, selection, true)
+	entry.ResourceSelections = resourceSelectionFacts(evidencePack, selection, surface, entry.Intent.Active || ownedResidual)
+	graph := resourceGraphForSurface(evidencePack, selection, surface, true)
 	facts := make(map[string]ResourceClosureFact, len(graph.Resources))
 	for _, fact := range graph.Resources {
 		facts[fact.Resource.String()] = fact
@@ -450,7 +450,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	if err != nil {
 		return StatusEntry{}, err
 	}
-	selectedEvidencePack, err := selectPackResources(evidencePack, selection)
+	selectedEvidencePack, err := selectPackResourcesForSurface(evidencePack, selection, surface)
 	if err != nil {
 		return StatusEntry{}, err
 	}
@@ -495,7 +495,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	entry.Evidence = append(entry.Evidence, fresh.Evidence...)
 	entry.OptionalAuthorities = cloneOptionalAuthorities(fresh.OptionalAuthorities)
 	if store := f.controlledCheckStore(packyHome); store != nil {
-		identity := controlledCheckIdentityFor(evidencePack, surface, ControlledCheckGlobal, "", controlledCheckResources(ResourceGraphFor(evidencePack, selection, false)), observation, normalizedControlledCheckDescriptor(surface, observation.ControlledCheck))
+		identity := controlledCheckIdentityFor(evidencePack, surface, ControlledCheckGlobal, "", controlledCheckResources(resourceGraphForSurface(evidencePack, selection, surface, false)), observation, normalizedControlledCheckDescriptor(surface, observation.ControlledCheck))
 		entry.ControlledCheck, err = store.Status(ctx, identity)
 		if err != nil {
 			return StatusEntry{}, err

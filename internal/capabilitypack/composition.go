@@ -66,7 +66,7 @@ func (f Facade) composeProject(requested Pack, state ActivationState, surface Su
 		}
 		intentFacts = []ActivationIntent{intent}
 	}
-	selected, err := selectPackResources(requested, selection)
+	selected, err := selectPackResourcesForSurface(requested, selection, surface)
 	if err != nil {
 		return composition{}, err
 	}

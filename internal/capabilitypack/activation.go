@@ -671,7 +671,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 			return f.previewPartialDeactivate(ctx, request, requested, state, selection, nextSelection)
 		}
 	}
-	currentRequested, err := selectPackResources(requested, selection)
+	currentRequested, err := selectPackResourcesForSurface(requested, selection, request.Surface)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -683,7 +683,7 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 			return ReconciliationPlan{}, err
 		}
 	}
-	requested, err = selectPackResources(requested, selection)
+	requested, err = selectPackResourcesForSurface(requested, selection, request.Surface)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -772,11 +772,11 @@ func hasPackOwnership(values []ProjectionOwnership, packID string) bool {
 }
 
 func (f Facade) previewPartialDeactivate(ctx context.Context, request DeactivationRequest, requested Pack, state ActivationState, previousSelection, selection ResourceSelection) (ReconciliationPlan, error) {
-	previousPack, err := selectPackResources(requested, previousSelection)
+	previousPack, err := selectPackResourcesForSurface(requested, previousSelection, request.Surface)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	targetPack, err := selectPackResources(requested, selection)
+	targetPack, err := selectPackResourcesForSurface(requested, selection, request.Surface)
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
@@ -1499,11 +1499,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	if state.documentRevision != plan.documentRevision {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("capability-pack state revision changed from %d to %d after Preview; rerun %s to preview a fresh plan", plan.documentRevision, state.documentRevision, plan.operation)}
 	}
-	if plan.operation == OperationDeactivate {
-		pack, err = selectPackResources(pack, plan.selection)
-	} else {
-		pack, err = selectPackResourcesForSurface(pack, plan.selection, plan.surface)
-	}
+	pack, err = selectPackResourcesForSurface(pack, plan.selection, plan.surface)
 	if err != nil {
 		return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("resource selection became invalid after Preview: %v; rerun %s to preview a fresh plan", err, plan.operation)}
 	}
@@ -1550,7 +1546,7 @@ func (f Facade) preflightPlan(ctx context.Context, plan ReconciliationPlan) (pla
 	}
 	var current composition
 	if plan.operation == OperationDeactivate && plan.partialSelection {
-		previousPack, previousErr := selectPackResources(pack, plan.previousSelection)
+		previousPack, previousErr := selectPackResourcesForSurface(pack, plan.previousSelection, plan.surface)
 		if previousErr != nil {
 			return planPreflight{}, StalePlanError{Precondition: fmt.Sprintf("previous resource selection changed after Preview: %v; rerun deactivate to preview a fresh plan", previousErr)}
 		}
@@ -1669,6 +1665,7 @@ func (p *ReconciliationPlan) captureSensitiveEffects() {
 		p.intentFacts,
 		p.pack.ID,
 		p.selection,
+		p.surface,
 	)
 }
 func (p ReconciliationPlan) validSeal() bool {

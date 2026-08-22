@@ -28,6 +28,11 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughProjectLi
 			if err != nil || install.Disposition != capabilitypack.ProjectInstallPreviewable {
 				t.Fatalf("install = %#v, err=%v", install, err)
 			}
+			assertClaudeGuideFact(t, install.Selection.Resources)
+			assertClaudeGuideFact(t, install.Lock.ResourceGraph.Resources)
+			if len(install.Lock.Receipts) != 1 || !containsClaudeGuide(install.Lock.Receipts[0].Resources) {
+				t.Fatalf("receipt resources = %#v", install.Lock.Receipts)
+			}
 			if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: packyHome, Adapter: adapter}); err != nil {
 				t.Fatal(err)
 			}
@@ -104,11 +109,16 @@ func TestClaudeCompositionCapabilitiesArePackIdentityIndependentThroughGlobalLif
 			if err != nil || !activation.Applicable() {
 				t.Fatalf("activation = %#v, err=%v", activation.Blockers(), err)
 			}
+			assertClaudeGuideFact(t, activation.JSONReport(true).ResourceGraph.Resources)
 			activated, err := facade.Apply(context.Background(), capabilitypack.ApplyRequest{Plan: activation, Approvals: approvalsFor(t, facade, activation), Interactive: true})
 			if err != nil || !activated.Verified {
 				t.Fatalf("activation result = %#v, err=%v", activated, err)
 			}
 			assertClaudeGlobalVerified(t, facade, packID)
+			controlled, err := facade.PreviewControlledCheck(context.Background(), capabilitypack.ControlledCheckRequest{PackID: packID, Surface: capabilitypack.SurfaceClaude, PackyHome: t.TempDir()})
+			if err != nil || !containsClaudeGuide(controlled.Resources) {
+				t.Fatalf("controlled check resources = %#v, err=%v", controlled.Resources, err)
+			}
 
 			updatedBundle := t.TempDir()
 			writeClaudeCompositionPack(t, updatedBundle, packID, "1.0.1", "Original workflow.\n")
@@ -174,6 +184,43 @@ func assertClaudeGlobalVerified(t *testing.T, facade capabilitypack.Facade, pack
 	if err != nil || len(status.Entries) != 1 || status.Entries[0].Projections.Verified == 0 || status.Entries[0].Projections.Missing != 0 || status.Entries[0].Projections.Drifted != 0 || status.Entries[0].Projections.Ambiguous != 0 || status.Entries[0].Projections.Unmanaged != 0 {
 		t.Fatalf("global status = %#v, err=%v", status, err)
 	}
+	found := false
+	for _, resource := range status.Entries[0].ResourceSelections {
+		if resource.Resource == (capabilitypack.ResourceIdentity{Kind: "asset", ID: "guide"}) {
+			found = resource.Selected && resource.Role == capabilitypack.ResourceRoleAsset && validClaudeGuideChain(resource.DependencyChain)
+		}
+	}
+	if !found {
+		t.Fatalf("global resource selections = %#v", status.Entries[0].ResourceSelections)
+	}
+}
+
+func assertClaudeGuideFact(t *testing.T, facts []capabilitypack.ResourceClosureFact) {
+	t.Helper()
+	for _, fact := range facts {
+		if fact.Resource == (capabilitypack.ResourceIdentity{Kind: "asset", ID: "guide"}) {
+			if fact.Role != capabilitypack.ResourceRoleAsset || !validClaudeGuideChain(fact.DependencyChain) {
+				t.Fatalf("guide fact = %#v", fact)
+			}
+			return
+		}
+	}
+	t.Fatalf("guide asset missing from closure: %#v", facts)
+}
+
+func containsClaudeGuide(resources []capabilitypack.ResourceIdentity) bool {
+	for _, resource := range resources {
+		if resource == (capabilitypack.ResourceIdentity{Kind: "asset", ID: "guide"}) {
+			return true
+		}
+	}
+	return false
+}
+
+func validClaudeGuideChain(chain []capabilitypack.ResourceIdentity) bool {
+	return len(chain) == 2 &&
+		chain[0] == (capabilitypack.ResourceIdentity{Kind: "skill", ID: "workflow"}) &&
+		chain[1] == (capabilitypack.ResourceIdentity{Kind: "asset", ID: "guide"})
 }
 
 func assertClaudeProjectVerified(t *testing.T, project, packyHome, packID string, adapter capabilitypack.SurfaceAdapter) {
@@ -246,7 +293,7 @@ func writeClaudeCompositionPack(t *testing.T, bundle, packID, version, workflow 
     },
     {
       "kind": "skill", "id": "workflow", "source": "skills/workflow", "description": "Workflow",
-      "requires": ["asset:guide"], "conflicts": [],
+      "requires": [], "conflicts": [],
       "bindings": [{"surface":"claude","projection":"skill","name":"workflow","invocation":"/workflow","mode":"native","sharing":"exclusive","capabilities":[{"type":"claude-composite-skill","claude_composite_skill":{"dependencies":[],"references":[{"kind":"asset","id":"guide"}]}}]}],
       "surface_exclusions": []
     }

@@ -31,7 +31,7 @@ func (f Facade) composeProjectRuntime(ctx context.Context, installation ProjectI
 	if err != nil {
 		return result, fmt.Errorf("resolve global activation contract %s@%s: %w", intent.PackID, intent.Version, err)
 	}
-	globalSelected, err := selectPackResources(globalPack, intent.Selection)
+	globalSelected, err := selectPackResourcesForSurface(globalPack, intent.Selection, surface)
 	if err != nil {
 		return result, fmt.Errorf("resolve global activation resource selection: %w", err)
 	}
