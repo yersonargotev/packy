@@ -25,9 +25,9 @@ func TestPromotionModuleComposesRepresentativeManagedPackFixtures(t *testing.T) 
 	sourceRoot := composedSourceRoot(t)
 	executable := composedPromotePackExecutable(t, sourceRoot)
 
-	for _, fixtureName := range []string{"small", "matty", "pstack"} {
+	for _, fixtureName := range []string{"small", "synthetic-medium", "synthetic-large"} {
 		t.Run(fixtureName, func(t *testing.T) {
-			fixture := newComposedFixture(t, sourceRoot, fixtureName)
+			fixture := newComposedFixture(t, fixtureName)
 			repositoryRoot, _, baseSHA := composedPackyRepository(t, fixture.baseTree)
 			gates := &composedGates{
 				t: t, sourceRepository: repositoryRoot, sourceBaseSHA: baseSHA,
@@ -152,7 +152,7 @@ type composedFixture struct {
 	projectTreeBefore composedTree
 }
 
-func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
+func newComposedFixture(t *testing.T, name string) composedFixture {
 	t.Helper()
 	currentRoot := t.TempDir()
 	var currentManifest []byte
@@ -177,18 +177,10 @@ func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 		writeTestFile(t, filepath.Join(currentRoot, "notices", "fixture"), "small fixture notice\n", 0o644)
 		writeTestFile(t, filepath.Join(currentRoot, "skills", "guide", "SKILL.md"), "small fixture guidance\n", 0o644)
 		currentManifest = []byte(smallManifest)
-	case "matty", "pstack":
-		manifestPath := filepath.Join(sourceRoot, "bundle", "packs", name, "pack.json")
-		manifestData, err := os.ReadFile(manifestPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		managedManifestData := composedManagedManifest(t, manifestData)
-		writeTestFile(t, filepath.Join(currentRoot, "pack.json"), string(managedManifestData), 0o644)
-		for _, source := range composedManifestSources(t, managedManifestData) {
-			composedCopyPath(t, filepath.Join(sourceRoot, "bundle", filepath.FromSlash(source)), filepath.Join(currentRoot, filepath.FromSlash(source)))
-		}
-		currentManifest = append([]byte(nil), manifestData...)
+	case "synthetic-medium":
+		currentManifest = composedWriteSyntheticManagedPack(t, currentRoot, name, "2.4.6", 12, 2)
+	case "synthetic-large":
+		currentManifest = composedWriteSyntheticManagedPack(t, currentRoot, name, "7.8.9", 36, 3)
 	default:
 		t.Fatalf("unknown composed fixture %q", name)
 	}
@@ -276,6 +268,55 @@ func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 		releaseCandidate: releaseCandidate, originFixtures: originFixtures, wantValidation: wantValidation,
 		projectTreeBefore: composedReadTree(t, candidateRoot),
 	}
+}
+
+func composedWriteSyntheticManagedPack(t *testing.T, root, id, version string, resourceCount, filesPerResource int) []byte {
+	t.Helper()
+	const noticeID = "synthetic-license"
+	originID := id + "-upstream"
+	resources := []any{map[string]any{
+		"kind": "notice", "id": noticeID, "source": "notices/" + noticeID,
+		"description": "Synthetic fixture notice", "license": "MIT", "attribution": "Synthetic Fixture Authors",
+		"requires": []any{}, "conflicts": []any{}, "bindings": []any{}, "surface_exclusions": []any{},
+	}}
+	writeTestFile(t, filepath.Join(root, "notices", noticeID), "synthetic fixture notice\n", 0o644)
+	for index := 1; index <= resourceCount; index++ {
+		resourceID := fmt.Sprintf("workflow-%02d", index)
+		source := "skills/" + resourceID
+		resources = append(resources, map[string]any{
+			"kind": "skill", "id": resourceID, "source": source,
+			"description": "Synthetic workflow " + resourceID,
+			"requires":    []any{}, "conflicts": []any{}, "notices": []any{"notice:" + noticeID},
+			"origin": map[string]any{"id": originID, "path": source, "relationship": "exact-copy"},
+			"bindings": []any{map[string]any{
+				"surface": "codex", "projection": "skill", "name": resourceID,
+				"invocation": resourceID, "mode": "native", "sharing": "exclusive", "capabilities": []any{},
+			}},
+			"surface_exclusions": []any{},
+		})
+		writeTestFile(t, filepath.Join(root, filepath.FromSlash(source), "SKILL.md"), "synthetic guidance for "+resourceID+"\n", 0o644)
+		for fileIndex := 2; fileIndex <= filesPerResource; fileIndex++ {
+			path := filepath.Join(root, filepath.FromSlash(source), "references", fmt.Sprintf("reference-%02d.md", fileIndex-1))
+			writeTestFile(t, path, fmt.Sprintf("synthetic reference %02d for %s\n", fileIndex-1, resourceID), 0o644)
+		}
+	}
+	document := map[string]any{
+		"schema_version": 1, "id": id, "version": version,
+		"description": "Generated synthetic Managed Pack fixture", "selectable": true,
+		"surfaces": []any{"codex"}, "readiness_obligations": []any{}, "external_requirements": []any{},
+		"origins": []any{map[string]any{
+			"id": originID, "repository": "fixture/" + originID,
+			"commit": strings.Repeat("b", 40), "revision": "synthetic-v" + version,
+		}},
+		"resources": resources,
+	}
+	manifest, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest = append(manifest, '\n')
+	writeTestFile(t, filepath.Join(root, "pack.json"), string(manifest), 0o644)
+	return manifest
 }
 
 func newComposedUpdateFixture(t *testing.T, previous composedFixture, admittedTree composedTree) composedFixture {
@@ -614,25 +655,6 @@ type composedFile struct {
 
 type composedTree map[string]composedFile
 
-func composedManagedManifest(t *testing.T, data []byte) []byte {
-	t.Helper()
-	var document map[string]any
-	if err := json.Unmarshal(data, &document); err != nil {
-		t.Fatal(err)
-	}
-	document["schema_version"] = 1
-	if _, exists := document["origins"]; !exists {
-		document["origins"] = []any{}
-	}
-	delete(document, "exclusions")
-	delete(document, "source_reference")
-	encoded, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return append(encoded, '\n')
-}
-
 func composedSetManifestVersion(t *testing.T, manifest, version string) []byte {
 	t.Helper()
 	var document map[string]any
@@ -645,6 +667,34 @@ func composedSetManifestVersion(t *testing.T, manifest, version string) []byte {
 		t.Fatal(err)
 	}
 	return append(encoded, '\n')
+}
+
+func TestSyntheticPromotionFixturePreservesProvenanceAfterMutation(t *testing.T) {
+	root := t.TempDir()
+	manifest := composedWriteSyntheticManagedPack(t, root, "synthetic-provenance", "1.2.3", 1, 1)
+	origins := newComposedOriginFixtures(t, root)
+	exact, err := managedpack.ValidateProject(context.Background(), root, composedOriginResolver(origins))
+	if err != nil {
+		t.Fatalf("validate exact-copy fixture: %v", err)
+	}
+	if got := exact.Manifest.Resources[1].Origin; got == nil || got.Relationship != managedpack.RelationshipExactCopy {
+		t.Fatalf("initial resource origin = %#v, want exact-copy", got)
+	}
+
+	mutationPath := "skills/workflow-01/SKILL.md"
+	writeTestFile(t, filepath.Join(root, filepath.FromSlash(mutationPath)), "adapted synthetic guidance\n", 0o644)
+	writeTestFile(t, filepath.Join(root, "pack.json"), string(composedAdaptExactCopyMutation(t, manifest, mutationPath)), 0o644)
+	adapted, err := managedpack.ValidateProject(context.Background(), root, composedOriginResolver(origins))
+	if err != nil {
+		t.Fatalf("validate adapted fixture: %v", err)
+	}
+	resource := adapted.Manifest.Resources[1]
+	if resource.Origin == nil || resource.Origin.Relationship != managedpack.RelationshipAdapted {
+		t.Fatalf("mutated resource origin = %#v, want adapted", resource.Origin)
+	}
+	if !reflect.DeepEqual(resource.Notices, []string{"notice:synthetic-license"}) {
+		t.Fatalf("mutated resource notices = %#v, want preserved synthetic notice", resource.Notices)
+	}
 }
 
 func composedAdaptExactCopyMutation(t *testing.T, manifest []byte, mutationPath string) []byte {
@@ -669,40 +719,6 @@ func composedAdaptExactCopyMutation(t *testing.T, manifest []byte, mutationPath 
 		return append(encoded, '\n')
 	}
 	return manifest
-}
-
-func composedManifestSources(t *testing.T, manifest []byte) []string {
-	t.Helper()
-	var document any
-	if err := json.Unmarshal(manifest, &document); err != nil {
-		t.Fatal(err)
-	}
-	set := map[string]bool{}
-	var visit func(any)
-	visit = func(value any) {
-		switch typed := value.(type) {
-		case map[string]any:
-			for key, nested := range typed {
-				if key == "source" {
-					if source, ok := nested.(string); ok && source != "" {
-						set[source] = true
-					}
-				}
-				visit(nested)
-			}
-		case []any:
-			for _, nested := range typed {
-				visit(nested)
-			}
-		}
-	}
-	visit(document)
-	result := make([]string, 0, len(set))
-	for source := range set {
-		result = append(result, source)
-	}
-	sort.Strings(result)
-	return result
 }
 
 func composedTreeFromValidation(t *testing.T, root string, validation managedpack.Validation) composedTree {
