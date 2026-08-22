@@ -13,6 +13,13 @@ import (
 
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// TagObject pins one annotated Git tag object and its immediate target.
+type TagObject struct {
+	SHA        string `json:"sha"`
+	TargetSHA  string `json:"target_sha"`
+	TargetType string `json:"target_type"`
+}
+
 // AdmissionRecord pins one immutable admitted Managed Pack generation.
 type AdmissionRecord struct {
 	SchemaVersion    int          `json:"schema_version"`
@@ -23,7 +30,9 @@ type AdmissionRecord struct {
 	ReleaseID        int64        `json:"release_id"`
 	ReleaseImmutable bool         `json:"release_immutable"`
 	Tag              string       `json:"tag"`
-	TagObject        string       `json:"tag_object"`
+	TagRefType       string       `json:"tag_ref_type"`
+	TagRefSHA        string       `json:"tag_ref_sha"`
+	TagObjects       []TagObject  `json:"tag_objects"`
 	Commit           string       `json:"commit"`
 	RootTree         string       `json:"root_tree"`
 	ManifestSHA256   string       `json:"manifest_sha256"`
@@ -40,7 +49,9 @@ type admissionWire struct {
 	ReleaseID        int64        `json:"release_id"`
 	ReleaseImmutable *bool        `json:"release_immutable"`
 	Tag              string       `json:"tag"`
-	TagObject        string       `json:"tag_object"`
+	TagRefType       string       `json:"tag_ref_type"`
+	TagRefSHA        string       `json:"tag_ref_sha"`
+	TagObjects       []TagObject  `json:"tag_objects"`
 	Commit           string       `json:"commit"`
 	RootTree         string       `json:"root_tree"`
 	ManifestSHA256   string       `json:"manifest_sha256"`
@@ -81,7 +92,8 @@ func LoadAdmissionRecord(path string) (AdmissionRecord, error) {
 	record := AdmissionRecord{
 		SchemaVersion: wire.SchemaVersion, PackID: wire.PackID, PackVersion: wire.PackVersion,
 		Project: wire.Project, RepositoryID: wire.RepositoryID, ReleaseID: wire.ReleaseID,
-		ReleaseImmutable: *wire.ReleaseImmutable, Tag: wire.Tag, TagObject: wire.TagObject,
+		ReleaseImmutable: *wire.ReleaseImmutable, Tag: wire.Tag, TagRefType: wire.TagRefType,
+		TagRefSHA: wire.TagRefSHA, TagObjects: wire.TagObjects,
 		Commit: wire.Commit, RootTree: wire.RootTree, ManifestSHA256: wire.ManifestSHA256,
 		ClosureSHA256: wire.ClosureSHA256, Files: wire.Files,
 	}
@@ -159,9 +171,40 @@ func validateAdmissionRecord(record AdmissionRecord) error {
 	if record.Tag != wantTag {
 		return fmt.Errorf("Pack Admission Record tag must be %q", wantTag)
 	}
-	for field, value := range map[string]string{"tag_object": record.TagObject, "commit": record.Commit, "root_tree": record.RootTree} {
+	for field, value := range map[string]string{"tag_ref_sha": record.TagRefSHA, "commit": record.Commit, "root_tree": record.RootTree} {
 		if !commitPattern.MatchString(value) {
 			return fmt.Errorf("Pack Admission Record %s must be a full lowercase Git object ID", field)
+		}
+	}
+	if record.TagObjects == nil {
+		return fmt.Errorf("Pack Admission Record tag_objects must be an array")
+	}
+	if len(record.TagObjects) == 0 {
+		if record.TagRefType != "commit" || record.TagRefSHA != record.Commit {
+			return fmt.Errorf("Pack Admission Record lightweight tag ref must point directly to commit")
+		}
+	} else {
+		if record.TagRefType != "tag" || record.TagRefSHA != record.TagObjects[0].SHA {
+			return fmt.Errorf("Pack Admission Record annotated tag ref must point to the first tag object")
+		}
+		seenObjects := make(map[string]struct{}, len(record.TagObjects))
+		for i, object := range record.TagObjects {
+			if !commitPattern.MatchString(object.SHA) || !commitPattern.MatchString(object.TargetSHA) {
+				return fmt.Errorf("Pack Admission Record tag object IDs must be full lowercase Git object IDs")
+			}
+			if _, exists := seenObjects[object.SHA]; exists {
+				return fmt.Errorf("Pack Admission Record tag object chain must not repeat objects")
+			}
+			seenObjects[object.SHA] = struct{}{}
+			wantSHA := record.Commit
+			wantType := "commit"
+			if i+1 < len(record.TagObjects) {
+				wantSHA = record.TagObjects[i+1].SHA
+				wantType = "tag"
+			}
+			if object.TargetSHA != wantSHA || object.TargetType != wantType {
+				return fmt.Errorf("Pack Admission Record tag object chain must be continuous through commit")
+			}
 		}
 	}
 	if !sha256Pattern.MatchString(record.ManifestSHA256) || !sha256Pattern.MatchString(record.ClosureSHA256) {

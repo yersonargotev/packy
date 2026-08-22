@@ -113,10 +113,17 @@ Promotion writes one Pack Admission Record to
 `managed-packs/admissions/<pack-id>/<version>.json`. The v1 schema is
 [`schemas/managed-pack/v1/admission-record.schema.json`](../schemas/managed-pack/v1/admission-record.schema.json).
 Each append-only record pins repository and release numeric IDs, the immutable
-release assertion, canonical `pack-v<version>` tag, tag object, peeled commit,
-root tree, manifest and closure digests, and the complete sorted file index.
-An existing record is never replaced, and a new record is linked into its final
-path only after its complete contents have been written and synchronized.
+release assertion, canonical `pack-v<version>` tag, tag ref type and SHA, the
+complete ordered annotated-tag object chain, peeled commit, root tree, manifest
+and closure digests, and the complete sorted file index. `tag_objects` is
+ordered from the tag ref toward the commit. Each entry pins its object SHA,
+immediate target SHA, and target type. A lightweight tag has `tag_ref_type` set
+to `"commit"`, a `tag_ref_sha` equal to `commit`, and an empty `tag_objects`
+array. An annotated tag has `tag_ref_type` set to `"tag"`, a `tag_ref_sha` equal
+to the first entry's SHA, each entry targets the next tag object, and the final
+entry targets `commit`. An existing record is never replaced, and a new record
+is linked into its final path only after its complete contents have been written
+and synchronized.
 
 The current bundled catalog remains valid while its seven Packs migrate via
 higher immutable Managed Pack releases. This transition does not add a schema
