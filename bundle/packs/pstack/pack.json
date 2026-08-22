@@ -1,72 +1,26 @@
 {
-  "description": "Apply pstack's reviewed portable engineering workflows and principles",
-  "exclusions": [
-    {
-      "id": "agents",
-      "reason": "Cursor agent metadata and invocation semantics require a future surface-specific adaptation",
-      "source_paths": [
-        "pstack/agents/**"
-      ]
-    },
-    {
-      "id": "automations",
-      "reason": "Benny requires Cursor Automations, Slack actions, tracker adapters, and unsupported host lifecycle behavior",
-      "source_paths": [
-        "pstack/automations/**"
-      ]
-    },
-    {
-      "id": "cursor-metadata",
-      "reason": "Cursor marketplace metadata is not a Packy capability",
-      "source_paths": [
-        "pstack/.cursor-plugin/**"
-      ]
-    },
-    {
-      "id": "guides",
-      "reason": "Upstream guides describe Cursor-only installation, routing, models, transcripts, and automation behavior",
-      "source_paths": [
-        "pstack/docs/**"
-      ]
-    },
-    {
-      "id": "source-maintenance",
-      "reason": "Upstream repository metadata and source documentation remain inert",
-      "source_paths": [
-        "pstack/.gitignore",
-        "pstack/README.md"
-      ]
-    },
-    {
-      "id": "unselected-skills",
-      "reason": "These skills require adaptation, unsupported runtime assumptions, or dependencies outside the exact portable initial scope",
-      "source_paths": [
-        "pstack/skills/architect/**",
-        "pstack/skills/arena/**",
-        "pstack/skills/automate-me/**",
-        "pstack/skills/blast-radius/**",
-        "pstack/skills/create-verification-skill/**",
-        "pstack/skills/figure-it-out/**",
-        "pstack/skills/how/**",
-        "pstack/skills/interrogate/**",
-        "pstack/skills/maintain-verification-skill/**",
-        "pstack/skills/no-comments/**",
-        "pstack/skills/poteto-mode/**",
-        "pstack/skills/recall/**",
-        "pstack/skills/reflect/**",
-        "pstack/skills/setup-pstack/**",
-        "pstack/skills/show-me-your-work/**",
-        "pstack/skills/swarm/**",
-        "pstack/skills/teach/**",
-        "pstack/skills/why/**"
-      ]
-    }
-  ],
-  "external_requirements": [],
+  "schema_version": 1,
   "id": "pstack",
+  "version": "1.0.1",
+  "description": "Apply pstack's reviewed portable engineering workflows and principles",
+  "selectable": true,
+  "surfaces": [
+    "claude",
+    "codex",
+    "opencode"
+  ],
   "readiness_obligations": [
     "runtime-usability",
     "surface-authorization"
+  ],
+  "external_requirements": [],
+  "origins": [
+    {
+      "id": "cursor-plugins",
+      "repository": "cursor/plugins",
+      "commit": "fd6dd6f7276956a532bb78a748a8d2818b6eb5f4",
+      "revision": "pstack 0.14.1"
+    }
   ],
   "resources": [
     {
@@ -79,7 +33,15 @@
       "license": "MIT",
       "requires": [],
       "source": "notices/pstack-mit",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/LICENSE",
+        "relationship": "exact-copy"
+      },
+      "notices": [
+        "notice:pstack-mit"
+      ]
     },
     {
       "bindings": [
@@ -120,7 +82,12 @@
       ],
       "requires": [],
       "source": "skills/bro",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/bro",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -161,7 +128,12 @@
       ],
       "requires": [],
       "source": "skills/principle-boundary-discipline",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-boundary-discipline",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -206,7 +178,12 @@
         "skill:principle-prove-it-works"
       ],
       "source": "skills/principle-build-the-lever",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-build-the-lever",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -247,7 +224,12 @@
       ],
       "requires": [],
       "source": "skills/principle-encode-lessons-in-structure",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-encode-lessons-in-structure",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -288,7 +270,12 @@
       ],
       "requires": [],
       "source": "skills/principle-exhaust-the-design-space",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-exhaust-the-design-space",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -329,7 +316,12 @@
       ],
       "requires": [],
       "source": "skills/principle-experience-first",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-experience-first",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -370,7 +362,12 @@
       ],
       "requires": [],
       "source": "skills/principle-fix-root-causes",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-fix-root-causes",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -411,7 +408,12 @@
       ],
       "requires": [],
       "source": "skills/principle-foundational-thinking",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-foundational-thinking",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -452,7 +454,12 @@
       ],
       "requires": [],
       "source": "skills/principle-guard-the-context-window",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-guard-the-context-window",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -493,7 +500,12 @@
       ],
       "requires": [],
       "source": "skills/principle-laziness-protocol",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-laziness-protocol",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -534,7 +546,12 @@
       ],
       "requires": [],
       "source": "skills/principle-make-operations-idempotent",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-make-operations-idempotent",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -575,7 +592,12 @@
       ],
       "requires": [],
       "source": "skills/principle-migrate-callers-then-delete-legacy-apis",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-migrate-callers-then-delete-legacy-apis",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -618,7 +640,12 @@
         "skill:principle-guard-the-context-window"
       ],
       "source": "skills/principle-minimize-reader-load",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-minimize-reader-load",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -659,7 +686,12 @@
       ],
       "requires": [],
       "source": "skills/principle-model-the-domain",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-model-the-domain",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -700,7 +732,12 @@
       ],
       "requires": [],
       "source": "skills/principle-never-block-on-the-human",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-never-block-on-the-human",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -741,7 +778,12 @@
       ],
       "requires": [],
       "source": "skills/principle-outcome-oriented-execution",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-outcome-oriented-execution",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -782,7 +824,12 @@
       ],
       "requires": [],
       "source": "skills/principle-prove-it-works",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-prove-it-works",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -823,7 +870,12 @@
       ],
       "requires": [],
       "source": "skills/principle-redesign-from-first-principles",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-redesign-from-first-principles",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -864,7 +916,12 @@
       ],
       "requires": [],
       "source": "skills/principle-separate-before-serializing-shared-state",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-separate-before-serializing-shared-state",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -905,7 +962,12 @@
       ],
       "requires": [],
       "source": "skills/principle-sequence-verifiable-units",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-sequence-verifiable-units",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -946,7 +1008,12 @@
       ],
       "requires": [],
       "source": "skills/principle-subtract-before-you-add",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-subtract-before-you-add",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -987,7 +1054,12 @@
       ],
       "requires": [],
       "source": "skills/principle-type-system-discipline",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/principle-type-system-discipline",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1028,7 +1100,12 @@
       ],
       "requires": [],
       "source": "skills/tdd",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/tdd",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1071,7 +1148,12 @@
         "skill:unslop"
       ],
       "source": "skills/technical-writing",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/technical-writing",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1115,7 +1197,12 @@
         "skill:principle-type-system-discipline"
       ],
       "source": "skills/typescript-best-practices",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/typescript-best-practices",
+        "relationship": "exact-copy"
+      }
     },
     {
       "bindings": [
@@ -1156,18 +1243,12 @@
       ],
       "requires": [],
       "source": "skills/unslop",
-      "surface_exclusions": []
+      "surface_exclusions": [],
+      "origin": {
+        "id": "cursor-plugins",
+        "path": "pstack/skills/unslop",
+        "relationship": "exact-copy"
+      }
     }
-  ],
-  "selectable": true,
-  "source_reference": {
-    "repository": "https://github.com/yersonargotev/pstack.git",
-    "revision": "v0.1.1"
-  },
-  "surfaces": [
-    "claude",
-    "codex",
-    "opencode"
-  ],
-  "version": "1.0.0"
+  ]
 }
