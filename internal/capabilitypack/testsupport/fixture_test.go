@@ -61,6 +61,11 @@ func TestRoleConstructorsUseDeliberatelySyntheticIdentities(t *testing.T) {
 			t.Fatalf("fixture %d ID = %q, want %q", i, got, wantIDs[i])
 		}
 	}
+	firstResource := first.Manifest().Resources[0]
+	secondResource := second.Manifest().Resources[0]
+	if firstResource.Kind == secondResource.Kind && firstResource.ID == secondResource.ID {
+		t.Fatalf("collision fixtures reuse resource identity %s:%s", firstResource.Kind, firstResource.ID)
+	}
 }
 
 func TestCandidateRewritesVersionAndCapabilityRichOwnsRuntimeLifecycle(t *testing.T) {

@@ -295,9 +295,17 @@ func CollisionPair(firstID, secondID string) (Fixture, Fixture) {
 
 func collisionFixture(id string) Fixture {
 	fixture := PortableAllSurfaces(id)
-	for i := range fixture.manifest.Resources[0].Bindings {
-		fixture.manifest.Resources[0].Bindings[i].Name = "shared-guidance"
-		fixture.manifest.Resources[0].Bindings[i].Invocation = "shared-guidance"
+	resource := &fixture.manifest.Resources[0]
+	resource.ID = id + "-guidance"
+	for i := range resource.Bindings {
+		resource.Bindings[i].Name = "shared-guidance"
+		resource.Bindings[i].Invocation = "shared-guidance"
+		for j := range resource.Bindings[i].Capabilities {
+			capability := &resource.Bindings[i].Capabilities[j]
+			if capability.ProjectInstruction != nil {
+				capability.ProjectInstruction.ID = id + "-project"
+			}
+		}
 	}
 	return fixture
 }
