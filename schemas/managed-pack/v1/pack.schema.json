@@ -73,7 +73,7 @@
         {
           "allOf": [
             {"$ref": "#/$defs/path"},
-            {"not": {"pattern": "(^|/)\\.git(/|$)"}}
+            {"not": {"pattern": "(^|/)\\.[gG][iI][tT](/|$)"}}
           ]
         }
       ]

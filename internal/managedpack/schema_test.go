@@ -59,6 +59,9 @@ func TestPackSchemaRejectsDocumentsRejectedByTheContractValidator(t *testing.T) 
 		{"git metadata origin path", func(manifest map[string]any) {
 			resource(manifest)["origin"].(map[string]any)["path"] = ".git/config"
 		}},
+		{"case-folded git metadata origin path", func(manifest map[string]any) {
+			resource(manifest)["origin"].(map[string]any)["path"] = ".GIT/config"
+		}},
 		{"skill without source", func(manifest map[string]any) { delete(resource(manifest), "source") }},
 		{"capability without typed payload", func(manifest map[string]any) {
 			binding := resource(manifest)["bindings"].([]any)[1].(map[string]any)

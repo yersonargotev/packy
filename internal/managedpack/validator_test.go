@@ -66,6 +66,9 @@ func TestValidateProjectRejectsMalformedManifestAndOriginRelationships(t *testin
 		{"git metadata origin path", func(manifest map[string]any) {
 			resource(manifest)["origin"].(map[string]any)["path"] = ".git/config"
 		}, "must not select Git metadata"},
+		{"case-folded git metadata origin path", func(manifest map[string]any) {
+			resource(manifest)["origin"].(map[string]any)["path"] = ".GIT/config"
+		}, "must not select Git metadata"},
 		{"derived without notice", func(manifest map[string]any) { delete(resource(manifest), "notices") }, "must reference at least one notice"},
 		{"retired exclusions", func(manifest map[string]any) { manifest["exclusions"] = []any{} }, `unknown field "exclusions"`},
 		{"retired source reference", func(manifest map[string]any) {

@@ -385,7 +385,7 @@ func validateRelativePath(value string, allowDot bool) error {
 
 func hasPathComponent(value, component string) bool {
 	for _, part := range strings.Split(value, "/") {
-		if part == component {
+		if strings.EqualFold(part, component) {
 			return true
 		}
 	}

@@ -25,9 +25,9 @@ SemVer vocabulary as the reviewed catalog, with these Managed Pack additions:
 - A derived resource has one `origin` object containing the origin `id`, its
   normalized repository-relative `path`, and a whole-resource `relationship`
   of `exact-copy` or `adapted`. The origin path `.` names the External Source
-  Project root. An origin path cannot select a `.git` path component because
-  checkout metadata is not part of the declared commit tree; tracked files
-  such as `.gitmodules` remain valid content.
+  Project root. An origin path cannot select a `.git` path component (with any
+  capitalization) because checkout metadata is not part of the declared
+  commit tree; tracked files such as `.gitmodules` remain valid content.
 - Every derived resource references at least one declared notice. A derived
   notice may link itself when that notice file carries its own terms.
   An `exact-copy` resource must have the same complete relative file set and
