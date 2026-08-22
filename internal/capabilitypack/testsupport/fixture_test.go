@@ -17,6 +17,12 @@ func TestPortableAllSurfacesWritesBundleAndDerivesVersions(t *testing.T) {
 	if got, want := fixture.CandidateVersion(), "1.0.1"; got != want {
 		t.Fatalf("CandidateVersion() = %q, want %q", got, want)
 	}
+	if got, want := fixture.ID(), "portable-one"; got != want {
+		t.Fatalf("ID() = %q, want %q", got, want)
+	}
+	if got, want := fixture.OperationalResource(), (ResourceIdentity{Kind: "instruction", ID: "guidance"}); got != want {
+		t.Fatalf("OperationalResource() = %#v, want %#v", got, want)
+	}
 	manifest := fixture.Manifest()
 	if got, want := manifest.ID, "portable-one"; got != want {
 		t.Fatalf("manifest ID = %q, want %q", got, want)

@@ -20,11 +20,10 @@ type projectInstallFixture struct {
 	adapter        capabilitypack.SurfaceAdapter
 	project        string
 	packyHome      string
-	bundle         string
 	packID         string
 	resource       capabilitypack.ResourceIdentity
 	currentVersion string
-	candidate      string
+	candidate      testsupport.Fixture
 }
 
 func newProjectInstallFixture(t *testing.T) projectInstallFixture {
@@ -38,25 +37,15 @@ func newProjectInstallFixture(t *testing.T) projectInstallFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := fixture.Manifest()
-	resource := capabilitypack.ResourceIdentity{Kind: "skill", ID: "helper"}
-	found := false
-	for _, candidate := range manifest.Resources {
-		if candidate.Kind == resource.Kind && candidate.ID == resource.ID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("synthetic Pack %q has no operational resource %s:%s", manifest.ID, resource.Kind, resource.ID)
-	}
+	resourceIdentity := fixture.OperationalResource()
+	resource := capabilitypack.ResourceIdentity{Kind: resourceIdentity.Kind, ID: resourceIdentity.ID}
 	project := t.TempDir()
 	adapter := codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(t.TempDir(), "global-skills"), filepath.Join(t.TempDir(), "global-AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
 	return projectInstallFixture{
 		facade: capabilitypack.NewFacade(catalog), adapter: adapter, project: project,
-		packyHome: filepath.Join(t.TempDir(), ".packy"), bundle: bundle,
-		packID: manifest.ID, resource: resource,
-		currentVersion: fixture.CurrentVersion(), candidate: fixture.CandidateVersion(),
+		packyHome: filepath.Join(t.TempDir(), ".packy"),
+		packID:    fixture.ID(), resource: resource,
+		currentVersion: fixture.CurrentVersion(), candidate: fixture.Candidate(),
 	}
 }
 
@@ -76,24 +65,7 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	updatedBundle := t.TempDir()
-	if err := os.CopyFS(updatedBundle, os.DirFS(fixture.bundle)); err != nil {
-		t.Fatal(err)
-	}
-	manifestPath := filepath.Join(updatedBundle, "packs", fixture.packID, "pack.json")
-	manifest, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	updatedManifest := strings.Replace(
-		string(manifest),
-		`"version": "`+fixture.currentVersion+`"`,
-		`"version": "`+fixture.candidate+`"`,
-		1,
-	)
-	if updatedManifest == string(manifest) {
-		t.Fatal("synthetic fixture version was not updated")
-	}
-	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
+	if err := fixture.candidate.WriteBundle(updatedBundle); err != nil {
 		t.Fatal(err)
 	}
 	updatedCatalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), updatedBundle)
@@ -105,6 +77,9 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 	preview, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project}, updatedAdapter)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if preview.Pack.Version != fixture.candidate.CurrentVersion() {
+		t.Fatalf("updated fixture version = %q, want candidate %q", preview.Pack.Version, fixture.candidate.CurrentVersion())
 	}
 	freshness, err := updatedFacade.CheckProjectInstallFreshness(context.Background(), preview, updatedAdapter)
 	if err != nil {

@@ -96,6 +96,7 @@ type Capability struct {
 	ProjectInstruction            *SourceCapability              `json:"project_instruction,omitempty"`
 }
 
+// ResourceIdentity identifies one deliberately synthetic fixture resource.
 type ResourceIdentity struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
@@ -146,6 +147,7 @@ type Fixture struct {
 	manifest    Manifest
 	files       map[string][]byte
 	originFiles map[string]map[string][]byte
+	operational ResourceIdentity
 }
 
 // PortableAllSurfaces returns one instruction that projects to every supported
@@ -158,6 +160,7 @@ func PortableAllSurfaces(id string) Fixture {
 		derivedResource(id, "instruction", "guidance", source, "Portable synthetic guidance", portableBindings("guidance", source)),
 		noticeResource(id),
 	}
+	fixture.operational = ResourceIdentity{Kind: "instruction", ID: "guidance"}
 	fixture.files[source] = bytes
 	fixture.files[noticePath(id)] = noticeBytes(id)
 	fixture.originFiles[originID(id)]["guidance.md"] = append([]byte(nil), bytes...)
@@ -249,6 +252,7 @@ func CapabilityRich(id string) Fixture {
 			SurfaceExclusions: []SurfaceExclusion{},
 		},
 	}
+	fixture.operational = ResourceIdentity{Kind: "skill", ID: "helper"}
 	fixture.files[instructionSource] = instructionBytes
 	fixture.files[helperSource+"/SKILL.md"] = helperSkill
 	fixture.files[helperSource+"/references/guide.md"] = helperReference
@@ -281,6 +285,7 @@ func ExternalTool(id string) Fixture {
 			}}),
 		}),
 	}
+	fixture.operational = ResourceIdentity{Kind: "skill", ID: "memory"}
 	fixture.files[source+"/SKILL.md"] = bytes
 	fixture.files[noticePath(id)] = noticeBytes(id)
 	fixture.originFiles[originID(id)]["memory/SKILL.md"] = append([]byte(nil), bytes...)
@@ -297,6 +302,7 @@ func collisionFixture(id string) Fixture {
 	fixture := PortableAllSurfaces(id)
 	resource := &fixture.manifest.Resources[0]
 	resource.ID = id + "-guidance"
+	fixture.operational = ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
 	for i := range resource.Bindings {
 		resource.Bindings[i].Name = "shared-guidance"
 		resource.Bindings[i].Invocation = "shared-guidance"
@@ -322,6 +328,20 @@ func (f Fixture) Manifest() Manifest {
 		panic(fmt.Sprintf("clone synthetic Pack manifest: %v", err))
 	}
 	return result
+}
+
+// ID returns the synthetic Pack identity without exposing manifest layout to
+// callers that only need to drive Pack lifecycle behavior.
+func (f Fixture) ID() string {
+	return f.manifest.ID
+}
+
+// OperationalResource returns the role's project-safe primary resource.
+func (f Fixture) OperationalResource() ResourceIdentity {
+	if f.operational.Kind == "" || f.operational.ID == "" {
+		panic(fmt.Sprintf("synthetic Pack %q has no operational resource", f.manifest.ID))
+	}
+	return f.operational
 }
 
 func (f Fixture) CurrentVersion() string {
@@ -450,6 +470,7 @@ func (f Fixture) clone() Fixture {
 		manifest:    f.Manifest(),
 		files:       make(map[string][]byte, len(f.files)),
 		originFiles: make(map[string]map[string][]byte, len(f.originFiles)),
+		operational: f.operational,
 	}
 	for path, data := range f.files {
 		result.files[path] = append([]byte(nil), data...)
