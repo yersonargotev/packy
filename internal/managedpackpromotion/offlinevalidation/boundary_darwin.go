@@ -16,6 +16,7 @@ import (
 const (
 	darwinSandboxExecutable = "/usr/bin/sandbox-exec"
 	darwinSandboxProfile    = `(version 1)(allow default)(deny network*)(deny process-fork)`
+	darwinWorkerProcesses   = uint64(1)
 )
 
 func workerCommand(ctx context.Context, invocation processInvocation) (*exec.Cmd, error) {
@@ -42,7 +43,10 @@ func installWorkerBoundary() error {
 	if err := installRuntimeBounds(); err != nil {
 		return err
 	}
-	if err := installResourceLimits(baseWorkerResourceLimits(), nativeRlimitSystem()); err != nil {
+	limits := append(baseWorkerResourceLimits(), resourceLimit{
+		name: "process", resource: unix.RLIMIT_NPROC, maximum: darwinWorkerProcesses,
+	})
+	if err := installResourceLimits(limits, nativeRlimitSystem()); err != nil {
 		return err
 	}
 	return verifyDarwinNetworkDenied()

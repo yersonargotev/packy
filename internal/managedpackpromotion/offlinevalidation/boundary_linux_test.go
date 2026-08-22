@@ -89,6 +89,25 @@ func TestLinuxNetworkFilterFallsBackFromClone3AndAllowsOnlyThreadClone(t *testin
 	}
 }
 
+func TestLinuxNetworkFilterRejectsAlternateABISyscallsBeforeTheDenylist(t *testing.T) {
+	if workerForbiddenSyscallMask == 0 {
+		t.Skip("architecture has no alternate syscall ABI mask")
+	}
+	filters := linuxNetworkFilters()
+	for name, syscall := range map[string]uint32{
+		"clone":  unix.SYS_CLONE,
+		"socket": unix.SYS_SOCKET,
+		"exec":   unix.SYS_EXECVE,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := evaluateLinuxFilter(t, filters, syscall|workerForbiddenSyscallMask, unix.CLONE_THREAD)
+			if got != unix.SECCOMP_RET_KILL_PROCESS {
+				t.Fatalf("alternate-ABI seccomp action = %#x, want KILL_PROCESS", got)
+			}
+		})
+	}
+}
+
 func evaluateLinuxFilter(t *testing.T, filters []unix.SockFilter, syscall uint32, flags uint64) uint32 {
 	t.Helper()
 	var accumulator uint32

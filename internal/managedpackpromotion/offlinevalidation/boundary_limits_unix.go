@@ -12,9 +12,6 @@ const (
 	workerCPUSeconds = uint64(60)
 	workerFileBytes  = uint64(20 << 20)
 	workerOpenFiles  = uint64(64)
-	// Linux counts threads against RLIMIT_NPROC. Match the Go runtime thread
-	// cap; seccomp (Linux) and sandbox-exec (Darwin) deny process creation.
-	workerProcesses  = uint64(workerMaxThreads)
 	workerStackBytes = uint64(64 << 20)
 )
 
@@ -77,7 +74,6 @@ func baseWorkerResourceLimits() []resourceLimit {
 		{name: "core file", resource: unix.RLIMIT_CORE, maximum: 0},
 		{name: "output file", resource: unix.RLIMIT_FSIZE, maximum: workerFileBytes},
 		{name: "open file", resource: unix.RLIMIT_NOFILE, maximum: workerOpenFiles},
-		{name: "process", resource: unix.RLIMIT_NPROC, maximum: workerProcesses},
 		{name: "stack", resource: unix.RLIMIT_STACK, maximum: workerStackBytes},
 	}
 }

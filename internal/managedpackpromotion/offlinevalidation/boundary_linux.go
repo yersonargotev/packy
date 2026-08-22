@@ -95,6 +95,16 @@ func linuxNetworkFilters() []unix.SockFilter {
 		bpfJump(unix.BPF_JMP|unix.BPF_JEQ|unix.BPF_K, workerAuditArch, 1, 0),
 		bpfStatement(unix.BPF_RET|unix.BPF_K, unix.SECCOMP_RET_KILL_PROCESS),
 		bpfStatement(unix.BPF_LD|unix.BPF_W|unix.BPF_ABS, 0),
+	}
+	if workerForbiddenSyscallMask != 0 {
+		// AUDIT_ARCH_X86_64 also covers the x32 ABI. Reject its syscall bit
+		// before exact syscall-number comparisons can reach the allow action.
+		filters = append(filters,
+			bpfJump(unix.BPF_JMP|unix.BPF_JSET|unix.BPF_K, workerForbiddenSyscallMask, 0, 1),
+			bpfStatement(unix.BPF_RET|unix.BPF_K, unix.SECCOMP_RET_KILL_PROCESS),
+		)
+	}
+	filters = append(filters,
 		// glibc falls back to clone when clone3 is unavailable. Returning
 		// ENOSYS keeps clone3 arguments out of the trust boundary while the
 		// clone rule below can inspect and require CLONE_THREAD.
@@ -108,7 +118,7 @@ func linuxNetworkFilters() []unix.SockFilter {
 		bpfJump(unix.BPF_JMP|unix.BPF_JSET|unix.BPF_K, unix.CLONE_THREAD, 1, 0),
 		bpfStatement(unix.BPF_RET|unix.BPF_K, unix.SECCOMP_RET_ERRNO|uint32(unix.EPERM)),
 		bpfStatement(unix.BPF_LD|unix.BPF_W|unix.BPF_ABS, 0),
-	}
+	)
 	deniedSyscalls := []uint32{
 		unix.SYS_SOCKET, unix.SYS_SOCKETPAIR, unix.SYS_CONNECT, unix.SYS_ACCEPT,
 		unix.SYS_ACCEPT4, unix.SYS_BIND, unix.SYS_LISTEN, unix.SYS_SENDTO,
