@@ -26,6 +26,17 @@ func TestValidatePortableContentValidatesEveryManifestAndReferencedResource(t *t
 	}
 }
 
+func TestBindingReferencedSourcePathsOwnsTypedCapabilityVocabulary(t *testing.T) {
+	binding := Binding{Capabilities: []SurfaceCapability{
+		{Type: SurfaceCapabilityOpenCodePrimaryPrompt, PrimaryPrompt: &PrimaryPromptCapability{Source: "instructions/primary.md"}},
+		{Type: SurfaceCapabilityProjectInstruction, ProjectInstruction: &ProjectInstructionCapability{Source: "instructions/project.md"}},
+	}}
+	want := []string{"instructions/primary.md", "instructions/project.md"}
+	if got := binding.ReferencedSourcePaths(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("referenced source paths = %#v, want %#v", got, want)
+	}
+}
+
 func TestValidatePortableContentRejectsRetiredPackDirectories(t *testing.T) {
 	bundle := t.TempDir()
 	writePortableFixture(t, bundle, "current", "instructions/current.md")

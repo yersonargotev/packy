@@ -24,7 +24,8 @@ SemVer vocabulary as the reviewed catalog, with these Managed Pack additions:
 - A resource with no `origin` is authored by the Managed Pack Project.
 - A derived resource has one `origin` object containing the origin `id`, its
   normalized repository-relative `path`, and a whole-resource `relationship`
-  of `exact-copy` or `adapted`.
+  of `exact-copy` or `adapted`. The origin path `.` names the External Source
+  Project root.
 - Every derived resource references at least one declared notice. A derived
   notice may link itself when that notice file carries its own terms.
   An `exact-copy` resource must have the same complete relative file set and
@@ -52,7 +53,9 @@ root.
 
 The Declared Pack Closure is `pack.json` plus the deterministic union of every
 resource and typed-capability source root. Paths must be normalized and
-repository-relative. Distinct roots may not be equal or contain one another.
+repository-relative. A resource and its own typed capability may repeat the
+same root, which contributes one union member. Roots owned by different
+resources may not be equal, and distinct roots may not contain one another.
 Every referenced path must exist and contain only directories and regular
 files; absolute paths, traversal, symlinks, submodules, and special files are
 rejected.

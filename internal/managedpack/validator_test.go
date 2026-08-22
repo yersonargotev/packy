@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"golang.org/x/sys/unix"
 )
 
@@ -167,6 +170,23 @@ func TestValidateProjectChecksCapabilityLayoutWhenResourceHasNoSource(t *testing
 	}
 }
 
+func TestValidateProjectRejectsSourceOnDeclarationOnlyResource(t *testing.T) {
+	project := t.TempDir()
+	writeFile(t, filepath.Join(project, "instructions", "guide.md"), "guidance\n", 0o644)
+	writeFile(t, filepath.Join(project, "pack.json"), lifecycleManifest, 0o644)
+	mutateManifest(t, project, func(manifest map[string]any) {
+		lifecycle := manifest["resources"].([]any)[0].(map[string]any)
+		lifecycle["source"] = "instructions/guide.md"
+		capability := lifecycle["bindings"].([]any)[0].(map[string]any)["capabilities"].([]any)[0].(map[string]any)
+		capability["project_instruction"].(map[string]any)["source"] = "instructions/guide.md"
+	})
+
+	_, err := ValidateProject(context.Background(), project, nil)
+	if err == nil || !strings.Contains(err.Error(), "does not own a source root") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestValidateProjectRequiresNoticeCoverageForDerivedNotice(t *testing.T) {
 	project, origin := writeValidProject(t)
 	writeFile(t, filepath.Join(origin, "LICENSE"), "MIT notice\n", 0o644)
@@ -190,6 +210,44 @@ func TestValidateProjectRequiresNoticeCoverageForDerivedNotice(t *testing.T) {
 	})
 	if _, err := ValidateProject(context.Background(), project, originResolver{"upstream": origin}); err != nil {
 		t.Fatalf("self-covered derived notice: %v", err)
+	}
+}
+
+func TestValidateProjectAcceptsExactCopyFromOriginRoot(t *testing.T) {
+	project, origin := writeValidProject(t)
+	if err := os.RemoveAll(filepath.Join(origin, "guide")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(origin, "SKILL.md"), "managed guidance\n", 0o644)
+	mutateManifest(t, project, func(manifest map[string]any) {
+		resource(manifest)["origin"].(map[string]any)["path"] = "."
+	})
+
+	if _, err := ValidateProject(context.Background(), project, originResolver{"upstream": origin}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateProjectRejectsSubmoduleInExactCopyOrigin(t *testing.T) {
+	project, origin := writeValidProject(t)
+	repository, err := git.PlainInit(origin, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := repository.Storer.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := index.Add("guide/vendor")
+	entry.Mode = filemode.Submodule
+	entry.Hash = plumbing.NewHash("0123456789abcdef0123456789abcdef01234567")
+	if err := repository.Storer.SetIndex(index); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ValidateProject(context.Background(), project, originResolver{"upstream": origin})
+	if err == nil || !strings.Contains(err.Error(), "origin \"upstream\"") || !strings.Contains(err.Error(), "submodule") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

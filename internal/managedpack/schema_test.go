@@ -95,6 +95,26 @@ func TestPackSchemaRejectsDocumentsRejectedByTheContractValidator(t *testing.T) 
 	}
 }
 
+func TestPackSchemaAcceptsOriginRootPath(t *testing.T) {
+	var manifest map[string]any
+	if err := json.Unmarshal([]byte(validManifest), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	resource(manifest)["origin"].(map[string]any)["path"] = "."
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled := compileSchema(t, filepath.Join("..", "..", "schemas", "managed-pack", "v1", "pack.schema.json"), "pack.schema.json")
+	if err := compiled.Validate(instance); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func compileSchema(t *testing.T, path, resource string) *jsonschema.Schema {
 	t.Helper()
 	compiler := jsonschema.NewCompiler()

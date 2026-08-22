@@ -343,7 +343,10 @@ func validateCanonicalLayout(resource Resource) error {
 			"skill": "skills", "instruction": "instructions", "agent": "agents",
 			"command": "commands", "asset": "assets", "notice": "notices",
 		}[resource.Kind]
-		if want != "" && strings.Split(resource.Source, "/")[0] != want {
+		if want == "" {
+			return fmt.Errorf("resource kind %q does not own a source root", resource.Kind)
+		}
+		if strings.Split(resource.Source, "/")[0] != want {
 			return fmt.Errorf("source %q must use the canonical %s/ layout", resource.Source, want)
 		}
 	}
@@ -361,18 +364,7 @@ func validateCanonicalLayout(resource Resource) error {
 func capabilitySources(resource Resource) []string {
 	var sources []string
 	for _, binding := range resource.Bindings {
-		for _, capability := range binding.Capabilities {
-			switch capability.Type {
-			case capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt:
-				if capability.PrimaryPrompt != nil {
-					sources = append(sources, capability.PrimaryPrompt.Source)
-				}
-			case capabilitypack.SurfaceCapabilityProjectInstruction:
-				if capability.ProjectInstruction != nil {
-					sources = append(sources, capability.ProjectInstruction.Source)
-				}
-			}
-		}
+		sources = append(sources, binding.ReferencedSourcePaths()...)
 	}
 	return sources
 }
@@ -390,6 +382,9 @@ func validateRelativePath(value string, allowDot bool) error {
 
 func validateOriginRelationship(projectRoot string, resource Resource, originRoot string) error {
 	originPath := resource.Origin.Path
+	if err := rejectGitlinks(originRoot, []declaredRoot{{path: originPath, owner: resourceIdentity(resource)}}, fmt.Sprintf("origin %q", resource.Origin.ID)); err != nil {
+		return err
+	}
 	originFiles, err := indexTree(originRoot, originPath, false)
 	if err != nil {
 		return fmt.Errorf("resource %q origin path: %w", resourceIdentity(resource), err)
@@ -439,7 +434,7 @@ func declaredClosure(projectRoot string, manifest Manifest) ([]FileRecord, error
 		}
 		unique = append(unique, root)
 	}
-	if err := rejectGitlinks(projectRoot, unique); err != nil {
+	if err := rejectGitlinks(projectRoot, unique, "Managed Pack Project"); err != nil {
 		return nil, err
 	}
 	byPath := map[string]FileRecord{}
@@ -542,17 +537,17 @@ func rejectSymlinkComponents(base, relative string) error {
 	return nil
 }
 
-func rejectGitlinks(projectRoot string, roots []declaredRoot) error {
-	repository, err := git.PlainOpen(projectRoot)
+func rejectGitlinks(repositoryRoot string, roots []declaredRoot, scope string) error {
+	repository, err := git.PlainOpen(repositoryRoot)
 	if err == git.ErrRepositoryNotExists {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("inspect Managed Pack Project Git index: %w", err)
+		return fmt.Errorf("inspect %s Git index: %w", scope, err)
 	}
 	index, err := repository.Storer.Index()
 	if err != nil {
-		return fmt.Errorf("inspect Managed Pack Project Git index: %w", err)
+		return fmt.Errorf("inspect %s Git index: %w", scope, err)
 	}
 	for _, entry := range index.Entries {
 		if entry.Mode != filemode.Submodule {
@@ -560,8 +555,8 @@ func rejectGitlinks(projectRoot string, roots []declaredRoot) error {
 		}
 		path := filepath.ToSlash(entry.Name)
 		for _, root := range roots {
-			if path == root.path || strings.HasPrefix(path, root.path+"/") {
-				return fmt.Errorf("Declared Pack Closure root %q contains submodule %q", root.path, path)
+			if root.path == "." || path == root.path || strings.HasPrefix(path, root.path+"/") {
+				return fmt.Errorf("%s root %q contains submodule %q", scope, root.path, path)
 			}
 		}
 	}

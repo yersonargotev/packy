@@ -67,6 +67,12 @@
         {"not": {"pattern": "//|/$"}}
       ]
     },
+    "originPath": {
+      "oneOf": [
+        {"const": "."},
+        {"$ref": "#/$defs/path"}
+      ]
+    },
     "origin": {
       "type": "object",
       "additionalProperties": false,
@@ -87,7 +93,7 @@
       "required": ["id", "path", "relationship"],
       "properties": {
         "id": {"$ref": "#/$defs/id"},
-        "path": {"$ref": "#/$defs/path"},
+        "path": {"$ref": "#/$defs/originPath"},
         "relationship": {"enum": ["exact-copy", "adapted"]}
       }
     },
