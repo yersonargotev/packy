@@ -103,19 +103,35 @@ func WriteAdmissionRecord(root string, record AdmissionRecord) (string, error) {
 		return "", fmt.Errorf("create Pack Admission Record directory: %w", err)
 	}
 	path := filepath.Join(directory, record.PackVersion+".json")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	temporary, err := os.CreateTemp(directory, ".admission-*.tmp")
 	if err != nil {
+		return "", fmt.Errorf("create temporary Pack Admission Record: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o644); err != nil {
+		_ = temporary.Close()
+		return "", fmt.Errorf("set Pack Admission Record mode: %w", err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return "", fmt.Errorf("write Pack Admission Record: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return "", fmt.Errorf("sync Pack Admission Record: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return "", fmt.Errorf("close Pack Admission Record: %w", err)
+	}
+	if err := os.Link(temporaryPath, path); err != nil {
 		if os.IsExist(err) {
 			return "", fmt.Errorf("Pack Admission Record %s already exists", path)
 		}
-		return "", fmt.Errorf("create Pack Admission Record: %w", err)
+		return "", fmt.Errorf("publish Pack Admission Record: %w", err)
 	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return "", fmt.Errorf("write Pack Admission Record: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return "", fmt.Errorf("close Pack Admission Record: %w", err)
+	if err := os.Remove(temporaryPath); err != nil {
+		return "", fmt.Errorf("remove published Pack Admission Record temporary file: %w", err)
 	}
 	return path, nil
 }

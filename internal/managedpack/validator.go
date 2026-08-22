@@ -36,11 +36,19 @@ type Origin struct {
 	Revision   string `json:"revision,omitempty"`
 }
 
+// Relationship is one reviewed whole-resource provenance relationship.
+type Relationship string
+
+const (
+	RelationshipExactCopy Relationship = "exact-copy"
+	RelationshipAdapted   Relationship = "adapted"
+)
+
 // ResourceOrigin describes a whole-resource provenance relationship.
 type ResourceOrigin struct {
-	ID           string `json:"id"`
-	Path         string `json:"path"`
-	Relationship string `json:"relationship"`
+	ID           string       `json:"id"`
+	Path         string       `json:"path"`
+	Relationship Relationship `json:"relationship"`
 }
 
 // Resource is one Pack resource plus its Managed Pack provenance.
@@ -304,11 +312,11 @@ func validateManagedResources(manifest Manifest) error {
 				return fmt.Errorf("resource %q notice %q does not exist", identity, notice)
 			}
 		}
-		if resource.Kind == "notice" && len(resource.Notices) != 0 {
-			return fmt.Errorf("resource %q may not reference notices", identity)
-		}
 		if resource.Origin == nil {
 			continue
+		}
+		if resource.Source == "" {
+			return fmt.Errorf("derived resource %q must have a source", identity)
 		}
 		if !origins[resource.Origin.ID] {
 			return fmt.Errorf("resource %q references unknown origin %q", identity, resource.Origin.ID)
@@ -316,10 +324,10 @@ func validateManagedResources(manifest Manifest) error {
 		if err := validateRelativePath(resource.Origin.Path, true); err != nil {
 			return fmt.Errorf("resource %q origin path: %w", identity, err)
 		}
-		if resource.Origin.Relationship != "exact-copy" && resource.Origin.Relationship != "adapted" {
+		if resource.Origin.Relationship != RelationshipExactCopy && resource.Origin.Relationship != RelationshipAdapted {
 			return fmt.Errorf("resource %q origin relationship must be exact-copy or adapted", identity)
 		}
-		if resource.Kind != "notice" && len(resource.Notices) == 0 {
+		if len(resource.Notices) == 0 {
 			return fmt.Errorf("derived resource %q must reference at least one notice", identity)
 		}
 	}
@@ -327,38 +335,46 @@ func validateManagedResources(manifest Manifest) error {
 }
 
 func validateCanonicalLayout(resource Resource) error {
-	if resource.Source == "" {
-		return nil
+	if resource.Source != "" {
+		if err := validateRelativePath(resource.Source, false); err != nil {
+			return fmt.Errorf("source: %w", err)
+		}
+		want := map[string]string{
+			"skill": "skills", "instruction": "instructions", "agent": "agents",
+			"command": "commands", "asset": "assets", "notice": "notices",
+		}[resource.Kind]
+		if want != "" && strings.Split(resource.Source, "/")[0] != want {
+			return fmt.Errorf("source %q must use the canonical %s/ layout", resource.Source, want)
+		}
 	}
-	if err := validateRelativePath(resource.Source, false); err != nil {
-		return fmt.Errorf("source: %w", err)
-	}
-	want := map[string]string{
-		"skill": "skills", "instruction": "instructions", "agent": "agents",
-		"command": "commands", "asset": "assets", "notice": "notices",
-	}[resource.Kind]
-	if want != "" && strings.Split(resource.Source, "/")[0] != want {
-		return fmt.Errorf("source %q must use the canonical %s/ layout", resource.Source, want)
-	}
-	for _, binding := range resource.Bindings {
-		for _, capability := range binding.Capabilities {
-			var source string
-			switch capability.Type {
-			case capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt:
-				if capability.PrimaryPrompt != nil {
-					source = capability.PrimaryPrompt.Source
-				}
-			case capabilitypack.SurfaceCapabilityProjectInstruction:
-				if capability.ProjectInstruction != nil {
-					source = capability.ProjectInstruction.Source
-				}
-			}
-			if source != "" && !strings.HasPrefix(source, "instructions/") {
-				return fmt.Errorf("surface capability source %q must use the canonical instructions/ layout", source)
-			}
+	for _, source := range capabilitySources(resource) {
+		if err := validateRelativePath(source, false); err != nil {
+			return fmt.Errorf("surface capability source: %w", err)
+		}
+		if !strings.HasPrefix(source, "instructions/") {
+			return fmt.Errorf("surface capability source %q must use the canonical instructions/ layout", source)
 		}
 	}
 	return nil
+}
+
+func capabilitySources(resource Resource) []string {
+	var sources []string
+	for _, binding := range resource.Bindings {
+		for _, capability := range binding.Capabilities {
+			switch capability.Type {
+			case capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt:
+				if capability.PrimaryPrompt != nil {
+					sources = append(sources, capability.PrimaryPrompt.Source)
+				}
+			case capabilitypack.SurfaceCapabilityProjectInstruction:
+				if capability.ProjectInstruction != nil {
+					sources = append(sources, capability.ProjectInstruction.Source)
+				}
+			}
+		}
+	}
+	return sources
 }
 
 func validateRelativePath(value string, allowDot bool) error {
@@ -378,7 +394,7 @@ func validateOriginRelationship(projectRoot string, resource Resource, originRoo
 	if err != nil {
 		return fmt.Errorf("resource %q origin path: %w", resourceIdentity(resource), err)
 	}
-	if resource.Origin.Relationship != "exact-copy" {
+	if resource.Origin.Relationship != RelationshipExactCopy {
 		return nil
 	}
 	projectFiles, err := indexTree(projectRoot, resource.Source, true)
@@ -398,23 +414,8 @@ func declaredClosure(projectRoot string, manifest Manifest) ([]FileRecord, error
 		if resource.Source != "" {
 			roots = append(roots, declaredRoot{resource.Source, identity})
 		}
-		for _, binding := range resource.Bindings {
-			for _, capability := range binding.Capabilities {
-				var source string
-				switch capability.Type {
-				case capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt:
-					if capability.PrimaryPrompt != nil {
-						source = capability.PrimaryPrompt.Source
-					}
-				case capabilitypack.SurfaceCapabilityProjectInstruction:
-					if capability.ProjectInstruction != nil {
-						source = capability.ProjectInstruction.Source
-					}
-				}
-				if source != "" {
-					roots = append(roots, declaredRoot{source, identity})
-				}
-			}
+		for _, source := range capabilitySources(resource) {
+			roots = append(roots, declaredRoot{source, identity})
 		}
 	}
 	sort.Slice(roots, func(i, j int) bool {

@@ -1,6 +1,7 @@
 package managedpack
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,6 +26,13 @@ func TestWriteAdmissionRecordIsCanonicalAndAppendOnly(t *testing.T) {
 	}
 	if _, err := WriteAdmissionRecord(root, record); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("second write error = %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "1.0.0.json" {
+		t.Fatalf("admission directory entries = %#v", entries)
 	}
 }
 

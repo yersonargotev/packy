@@ -156,6 +156,43 @@ func TestValidateProjectEnforcesExactCopyAndAllowsNoticedAdaptation(t *testing.T
 	}
 }
 
+func TestValidateProjectChecksCapabilityLayoutWhenResourceHasNoSource(t *testing.T) {
+	project := t.TempDir()
+	writeFile(t, filepath.Join(project, "prompts", "guide.md"), "guidance\n", 0o644)
+	writeFile(t, filepath.Join(project, "pack.json"), lifecycleManifest, 0o644)
+
+	_, err := ValidateProject(context.Background(), project, nil)
+	if err == nil || !strings.Contains(err.Error(), "canonical instructions/ layout") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestValidateProjectRequiresNoticeCoverageForDerivedNotice(t *testing.T) {
+	project, origin := writeValidProject(t)
+	writeFile(t, filepath.Join(origin, "LICENSE"), "MIT notice\n", 0o644)
+	mutateManifest(t, project, func(manifest map[string]any) {
+		notice := manifest["resources"].([]any)[0].(map[string]any)
+		notice["origin"] = map[string]any{
+			"id":           "upstream",
+			"path":         "LICENSE",
+			"relationship": "exact-copy",
+		}
+	})
+
+	_, err := ValidateProject(context.Background(), project, originResolver{"upstream": origin})
+	if err == nil || !strings.Contains(err.Error(), "must reference at least one notice") {
+		t.Fatalf("error = %v", err)
+	}
+
+	mutateManifest(t, project, func(manifest map[string]any) {
+		notice := manifest["resources"].([]any)[0].(map[string]any)
+		notice["notices"] = []any{"notice:mit"}
+	})
+	if _, err := ValidateProject(context.Background(), project, originResolver{"upstream": origin}); err != nil {
+		t.Fatalf("self-covered derived notice: %v", err)
+	}
+}
+
 func writeFile(t *testing.T, name, content string, mode os.FileMode) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
@@ -283,6 +320,48 @@ const validManifest = `{
           "mode": "native",
           "sharing": "shared",
           "capabilities": []
+        }
+      ],
+      "surface_exclusions": []
+    }
+  ]
+}
+`
+
+const lifecycleManifest = `{
+  "schema_version": 1,
+  "id": "example",
+  "version": "1.0.0",
+  "description": "Example Managed Pack",
+  "selectable": true,
+  "surfaces": ["codex"],
+  "readiness_obligations": ["runtime-usability", "surface-authorization"],
+  "external_requirements": [],
+  "origins": [],
+  "resources": [
+    {
+      "kind": "lifecycle",
+      "id": "guide",
+      "description": "Contributes project guidance",
+      "requires": [],
+      "conflicts": [],
+      "bindings": [
+        {
+          "surface": "codex",
+          "projection": "lifecycle",
+          "name": "guide",
+          "invocation": "guide",
+          "mode": "native",
+          "sharing": "exclusive",
+          "capabilities": [
+            {
+              "type": "project-instruction",
+              "project_instruction": {
+                "id": "guide",
+                "source": "prompts/guide.md"
+              }
+            }
+          ]
         }
       ],
       "surface_exclusions": []

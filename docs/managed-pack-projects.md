@@ -9,7 +9,12 @@ authoring contract; unrelated repository files are outside the Pack.
 The current and only accepted project schema is
 [`schemas/managed-pack/v1/pack.schema.json`](../schemas/managed-pack/v1/pack.schema.json).
 Packy rejects unknown fields and any `schema_version` other than `1`. The
-manifest uses the same Pack resource, surface, capability, readiness, and
+JSON Schema owns the closed wire shape and kind/type discriminators. The
+Packy validator is the normative machine check for ordered sets, cross-field
+references, filesystem types, provenance equality, and deterministic closure;
+a schema-only pass is not complete project validation.
+
+The manifest uses the same Pack resource, surface, capability, readiness, and
 SemVer vocabulary as the reviewed catalog, with these Managed Pack additions:
 
 - `origins` is a sorted catalog of immutable public External Source Project
@@ -20,7 +25,8 @@ SemVer vocabulary as the reviewed catalog, with these Managed Pack additions:
 - A derived resource has one `origin` object containing the origin `id`, its
   normalized repository-relative `path`, and a whole-resource `relationship`
   of `exact-copy` or `adapted`.
-- Every derived non-notice resource references at least one declared notice.
+- Every derived resource references at least one declared notice. A derived
+  notice may link itself when that notice file carries its own terms.
   An `exact-copy` resource must have the same complete relative file set and
   bytes as its origin path. Any changed or additional byte makes the entire
   resource `adapted`.
@@ -104,7 +110,8 @@ Promotion writes one Pack Admission Record to
 Each append-only record pins repository and release numeric IDs, the immutable
 release assertion, canonical `pack-v<version>` tag, tag object, peeled commit,
 root tree, manifest and closure digests, and the complete sorted file index.
-An existing record is never replaced.
+An existing record is never replaced, and a new record is linked into its final
+path only after its complete contents have been written and synchronized.
 
 The current bundled catalog remains valid while its seven Packs migrate via
 higher immutable Managed Pack releases. This transition does not add a schema

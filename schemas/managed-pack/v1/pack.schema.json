@@ -59,7 +59,13 @@
     "path": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^[^/].*$"
+      "allOf": [
+        {"not": {"pattern": "^/"}},
+        {"not": {"pattern": "\\\\"}},
+        {"not": {"pattern": "(^|/)\\.\\.(/|$)"}},
+        {"not": {"pattern": "(^|/)\\.(/|$)"}},
+        {"not": {"pattern": "//|/$"}}
+      ]
     },
     "origin": {
       "type": "object",
@@ -116,62 +122,90 @@
       }
     },
     "capability": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "enum": [
-            "claude-agent-document",
-            "claude-composite-skill",
-            "external-executable-acquisition",
-            "opencode-primary-prompt",
-            "project-instruction"
-          ]
-        },
-        "claude_agent_document": {
+      "oneOf": [
+        {
           "type": "object",
           "additionalProperties": false,
-          "required": ["skills", "authority"],
+          "required": ["type", "claude_agent_document"],
           "properties": {
-            "skills": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}},
-            "authority": {"$ref": "#/$defs/agentAuthority"}
+            "type": {"const": "claude-agent-document"},
+            "claude_agent_document": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["skills", "authority"],
+              "properties": {
+                "skills": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}},
+                "authority": {"$ref": "#/$defs/agentAuthority"}
+              }
+            }
           }
         },
-        "claude_composite_skill": {
+        {
           "type": "object",
           "additionalProperties": false,
-          "required": ["dependencies", "references"],
+          "required": ["type", "claude_composite_skill"],
           "properties": {
-            "dependencies": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}},
-            "references": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}}
+            "type": {"const": "claude-composite-skill"},
+            "claude_composite_skill": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dependencies", "references"],
+              "properties": {
+                "dependencies": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}},
+                "references": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}}
+              }
+            }
           }
         },
-        "external_executable_acquisition": {
+        {
           "type": "object",
           "additionalProperties": false,
-          "required": ["tool"],
-          "properties": {"tool": {"$ref": "#/$defs/id"}}
-        },
-        "primary_prompt": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["id", "source"],
+          "required": ["type", "external_executable_acquisition"],
           "properties": {
-            "id": {"$ref": "#/$defs/id"},
-            "source": {"$ref": "#/$defs/path"}
+            "type": {"const": "external-executable-acquisition"},
+            "external_executable_acquisition": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tool"],
+              "properties": {"tool": {"$ref": "#/$defs/id"}}
+            }
           }
         },
-        "project_instruction": {
+        {
           "type": "object",
           "additionalProperties": false,
-          "required": ["id", "source"],
+          "required": ["type", "primary_prompt"],
           "properties": {
-            "id": {"$ref": "#/$defs/id"},
-            "source": {"$ref": "#/$defs/path"}
+            "type": {"const": "opencode-primary-prompt"},
+            "primary_prompt": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "source"],
+              "properties": {
+                "id": {"$ref": "#/$defs/id"},
+                "source": {"allOf": [{"$ref": "#/$defs/path"}, {"pattern": "^instructions/"}]}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "project_instruction"],
+          "properties": {
+            "type": {"const": "project-instruction"},
+            "project_instruction": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "source"],
+              "properties": {
+                "id": {"$ref": "#/$defs/id"},
+                "source": {"allOf": [{"$ref": "#/$defs/path"}, {"pattern": "^instructions/"}]}
+              }
+            }
           }
         }
-      }
+      ]
     },
     "hook": {
       "type": "object",
@@ -248,7 +282,48 @@
         "origin": {"$ref": "#/$defs/resourceOrigin"},
         "bindings": {"type": "array", "items": {"$ref": "#/$defs/binding"}},
         "surface_exclusions": {"type": "array", "items": {"$ref": "#/$defs/surfaceExclusion"}}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "agent"}}, "required": ["kind"]},
+          "then": {"required": ["source", "mode", "tools", "permissions"], "properties": {"source": {"pattern": "^agents/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "asset"}}, "required": ["kind"]},
+          "then": {"required": ["source"], "properties": {"source": {"pattern": "^assets/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "command"}}, "required": ["kind"]},
+          "then": {"required": ["source", "arguments"], "properties": {"source": {"pattern": "^commands/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "instruction"}}, "required": ["kind"]},
+          "then": {"required": ["source"], "properties": {"source": {"pattern": "^instructions/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "notice"}}, "required": ["kind"]},
+          "then": {"required": ["source", "license", "attribution"], "properties": {"source": {"pattern": "^notices/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "skill"}}, "required": ["kind"]},
+          "then": {"required": ["source"], "properties": {"source": {"pattern": "^skills/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "mcp_server"}}, "required": ["kind"]},
+          "then": {
+            "required": ["command", "args"],
+            "not": {"anyOf": [{"required": ["source"]}, {"required": ["origin"]}]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "lifecycle"}}, "required": ["kind"]},
+          "then": {"not": {"anyOf": [{"required": ["source"]}, {"required": ["origin"]}]}}
+        },
+        {
+          "if": {"required": ["origin"]},
+          "then": {"required": ["source", "notices"], "properties": {"notices": {"minItems": 1}}}
+        }
+      ]
     }
   }
 }
