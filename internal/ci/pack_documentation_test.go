@@ -6,12 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func TestGeneratedPackDocumentationIsCurrent(t *testing.T) {
 	root := repositoryRoot(t)
 	command := exec.Command("go", "run", "./internal/tools/packdocs", "--check", "--root", root)
 	command.Dir = root
+	command.Env = testprocess.GoOfflineEnv(t)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("generated Pack documentation is not current: %v\n%s", err, output)
 	}
@@ -46,6 +49,7 @@ func TestPackDocumentationCheckRejectsDriftedOutput(t *testing.T) {
 
 			command := exec.Command("go", "run", "./internal/tools/packdocs", "--check", "--root", temporaryRoot)
 			command.Dir = root
+			command.Env = testprocess.GoOfflineEnv(t)
 			if output, err := command.CombinedOutput(); err == nil {
 				t.Fatalf("Pack documentation check accepted %s output:\n%s", name, output)
 			}

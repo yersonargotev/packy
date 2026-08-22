@@ -130,8 +130,9 @@ func containsArtifactLiteral(node ast.Node, known map[string]bool) bool {
 
 func TestAmbientWorkstationReadsStayAtApprovedProcessEdges(t *testing.T) {
 	allowed := map[string]map[string]bool{
-		filepath.Join("..", "cli", "env.go"):  {"Getenv": true},
-		filepath.Join("..", "cli", "root.go"): {"Getwd": true},
+		filepath.Join("..", "cli", "env.go"):                 {"Getenv": true},
+		filepath.Join("..", "cli", "root.go"):                {"Getwd": true},
+		filepath.Join("..", "testprocess", "environment.go"): {"Getenv": true},
 	}
 	files, err := filepath.Glob(filepath.Join("..", "*", "*.go"))
 	if err != nil {

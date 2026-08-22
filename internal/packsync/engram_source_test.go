@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func TestEngramInspectionRejectsAlteredOrIncompleteSelectedContent(t *testing.T) {
@@ -53,9 +55,11 @@ func TestEngramInspectionRejectsAlteredOrIncompleteSelectedContent(t *testing.T)
 			if err := os.CopyFS(filepath.Join(repository, "bundle"), os.DirFS(filepath.Join(root, "bundle"))); err != nil {
 				t.Fatal(err)
 			}
+			environment := testprocess.Env(t)
 			for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "packy@example.invalid"}, {"config", "user.name", "Packy Test"}, {"add", "bundle"}, {"commit", "-qm", "fixture"}} {
 				command := exec.Command("git", args...)
 				command.Dir = repository
+				command.Env = environment
 				if output, err := command.CombinedOutput(); err != nil {
 					t.Fatalf("git %v: %v\n%s", args, err, output)
 				}
