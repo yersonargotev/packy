@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,9 +79,9 @@ func gateEnvironment(ctx context.Context, home, config, cache, temporary string)
 		"GIT_TERMINAL_PROMPT=0",
 		"GOCACHE=" + goCache,
 		"GOMODCACHE=" + goModCache,
-		"GONOPROXY=*",
+		"GONOPROXY=none",
 		"GOPATH=" + goPath,
-		"GOPROXY=off",
+		"GOPROXY=" + moduleCacheProxyURL(goModCache),
 		"GOSUMDB=off",
 		"GOTOOLCHAIN=local",
 		"GOVCS=*:off",
@@ -94,6 +95,15 @@ func gateEnvironment(ctx context.Context, home, config, cache, temporary string)
 		"XDG_CACHE_HOME=" + cache,
 		"XDG_CONFIG_HOME=" + config,
 	}, nil
+}
+
+func moduleCacheProxyURL(goModCache string) string {
+	proxyPath := filepath.ToSlash(filepath.Join(goModCache, "cache", "download"))
+	if runtime.GOOS == "windows" {
+		proxyPath = "/" + proxyPath
+	}
+	proxyURL := (&url.URL{Scheme: "file", Path: proxyPath}).String()
+	return strings.NewReplacer(",", "%2C", "|", "%7C").Replace(proxyURL)
 }
 
 func currentGoCaches(ctx context.Context) (string, string, string, error) {

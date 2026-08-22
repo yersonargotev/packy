@@ -374,11 +374,24 @@ func TestGateEnvironmentIsAnExplicitCredentialFreeOfflineAllowlist(t *testing.T)
 	}
 	for _, required := range []string{
 		"HOME=/sandbox/home", "XDG_CONFIG_HOME=/sandbox/config", "XDG_CACHE_HOME=/sandbox/cache", "TMPDIR=/sandbox/tmp",
-		"PATH=/safe/bin", "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOVCS=*:off", "GIT_CONFIG_GLOBAL=/dev/null",
+		"PATH=/safe/bin", "GONOPROXY=none", "GOPROXY=" + moduleCacheProxyURL(filepath.Join(cacheRoot, "modules")),
+		"GOSUMDB=off", "GOTOOLCHAIN=local", "GOVCS=*:off", "GIT_CONFIG_GLOBAL=/dev/null",
 		"GOCACHE=" + filepath.Join(cacheRoot, "build"), "GOMODCACHE=" + filepath.Join(cacheRoot, "modules"), "GOPATH=" + filepath.Join(cacheRoot, "path"),
 	} {
 		if !strings.Contains(joined, required) {
 			t.Fatalf("gate environment lacks %q:\n%s", required, joined)
+		}
+	}
+}
+
+func TestModuleCacheProxyURLEscapesFallbackSeparators(t *testing.T) {
+	proxyURL := moduleCacheProxyURL(filepath.Join(t.TempDir(), "module,cache|root"))
+	if strings.ContainsAny(proxyURL, ",|") {
+		t.Fatalf("module cache proxy URL retained a GOPROXY fallback separator: %q", proxyURL)
+	}
+	for _, escaped := range []string{"%2C", "%7C"} {
+		if !strings.Contains(proxyURL, escaped) {
+			t.Fatalf("module cache proxy URL = %q, want %q", proxyURL, escaped)
 		}
 	}
 }
