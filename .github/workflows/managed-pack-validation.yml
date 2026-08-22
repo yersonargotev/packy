@@ -1,0 +1,44 @@
+name: Managed Pack validation
+
+on:
+  workflow_call:
+    inputs:
+      packy_ref:
+        description: Immutable Packy ref whose Managed Pack contract is enforced
+        required: false
+        type: string
+        default: main
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate Managed Pack Project
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out Managed Pack Project
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: managed-pack-project
+          persist-credentials: false
+
+      - name: Check out Packy validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: yersonargotev/packy
+          ref: ${{ inputs.packy_ref }}
+          path: packy-validator
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packy-validator/go.mod
+          cache: false
+
+      - name: Validate the public contract
+        working-directory: packy-validator
+        run: go run ./internal/tools/managedpackvalidate --project ../managed-pack-project

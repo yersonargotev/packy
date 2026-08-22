@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yersonargotev/packy/schemas/managed-pack/v1/admission-record.schema.json",
+  "title": "Pack Admission Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pack_id",
+    "pack_version",
+    "project",
+    "repository_id",
+    "release_id",
+    "release_immutable",
+    "tag",
+    "tag_object",
+    "commit",
+    "root_tree",
+    "manifest_sha256",
+    "closure_sha256",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "pack_id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "pack_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "project": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "repository_id": {"type": "integer", "minimum": 1},
+    "release_id": {"type": "integer", "minimum": 1},
+    "release_immutable": {"const": true},
+    "tag": {"type": "string", "pattern": "^pack-v.+$"},
+    "tag_object": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "root_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "closure_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "mode", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "mode": {"enum": ["100644", "100755"]},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}

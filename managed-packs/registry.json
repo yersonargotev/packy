@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "packs": [
+    {
+      "pack_id": "addy",
+      "project": "yersonargotev/skills-addy"
+    },
+    {
+      "pack_id": "argote",
+      "project": "yersonargotev/argote"
+    },
+    {
+      "pack_id": "engram",
+      "project": "yersonargotev/engram"
+    },
+    {
+      "pack_id": "issue-delivery",
+      "project": "yersonargotev/issue-deliver-pack"
+    },
+    {
+      "pack_id": "matty",
+      "project": "yersonargotev/skills-mattpocock"
+    },
+    {
+      "pack_id": "orchestrate",
+      "project": "yersonargotev/orchestrate-skill"
+    },
+    {
+      "pack_id": "pstack",
+      "project": "yersonargotev/pstack"
+    }
+  ]
+}

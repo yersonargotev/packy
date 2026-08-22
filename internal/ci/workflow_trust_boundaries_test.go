@@ -296,6 +296,9 @@ var minimumJobPermissions = map[string]map[string]map[string]string{
 	".github/workflows/ci.yml": {
 		"validate": {"contents": "read"},
 	},
+	".github/workflows/managed-pack-validation.yml": {
+		"validate": {"contents": "read"},
+	},
 	".github/workflows/release.yml": {
 		"prepare":       {"contents": "read"},
 		"publish":       {"actions": "read", "contents": "write"},

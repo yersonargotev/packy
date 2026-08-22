@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yersonargotev/packy/schemas/managed-pack/v1/pack.schema.json",
+  "title": "Managed Pack Project manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "description",
+    "selectable",
+    "surfaces",
+    "readiness_obligations",
+    "external_requirements",
+    "origins",
+    "resources"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"$ref": "#/$defs/id"},
+    "version": {"$ref": "#/$defs/semver"},
+    "description": {"type": "string", "minLength": 1},
+    "selectable": {"type": "boolean"},
+    "surfaces": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["claude", "codex", "opencode"]}
+    },
+    "readiness_obligations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["runtime-usability", "surface-authorization"]}
+    },
+    "external_requirements": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "origins": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/origin"}
+    },
+    "resources": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/resource"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        {"not": {"pattern": "^/"}},
+        {"not": {"pattern": "\\\\"}},
+        {"not": {"pattern": "(^|/)\\.\\.(/|$)"}},
+        {"not": {"pattern": "(^|/)\\.(/|$)"}},
+        {"not": {"pattern": "//|/$"}}
+      ]
+    },
+    "originPath": {
+      "oneOf": [
+        {"const": "."},
+        {
+          "allOf": [
+            {"$ref": "#/$defs/path"},
+            {"not": {"pattern": "(^|/)\\.[gG][iI][tT](/|$)"}}
+          ]
+        }
+      ]
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repository", "commit"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "revision": {"type": "string", "minLength": 1}
+      }
+    },
+    "resourceOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "relationship"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "path": {"$ref": "#/$defs/originPath"},
+        "relationship": {"enum": ["exact-copy", "adapted"]}
+      }
+    },
+    "resourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/id"},
+        "id": {"$ref": "#/$defs/id"}
+      }
+    },
+    "agentAuthorityRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["portable", "declarations", "outcome", "claude_tools", "fallback"],
+      "properties": {
+        "portable": {"type": "string"},
+        "declarations": {"type": "array", "items": {"type": "string"}},
+        "outcome": {"type": "string"},
+        "claude_tools": {"type": "array", "items": {"type": "string"}},
+        "fallback": {"type": "string"}
+      }
+    },
+    "agentAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["permission_mode", "authorities"],
+      "properties": {
+        "permission_mode": {"type": "string"},
+        "authorities": {"type": "array", "items": {"$ref": "#/$defs/agentAuthorityRecord"}}
+      }
+    },
+    "capability": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "claude_agent_document"],
+          "properties": {
+            "type": {"const": "claude-agent-document"},
+            "claude_agent_document": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["skills", "authority"],
+              "properties": {
+                "skills": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}},
+                "authority": {"$ref": "#/$defs/agentAuthority"}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "claude_composite_skill"],
+          "properties": {
+            "type": {"const": "claude-composite-skill"},
+            "claude_composite_skill": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dependencies", "references"],
+              "properties": {
+                "dependencies": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}},
+                "references": {"type": "array", "items": {"$ref": "#/$defs/resourceIdentity"}}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "external_executable_acquisition"],
+          "properties": {
+            "type": {"const": "external-executable-acquisition"},
+            "external_executable_acquisition": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tool"],
+              "properties": {"tool": {"$ref": "#/$defs/id"}}
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "primary_prompt"],
+          "properties": {
+            "type": {"const": "opencode-primary-prompt"},
+            "primary_prompt": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "source"],
+              "properties": {
+                "id": {"$ref": "#/$defs/id"},
+                "source": {"allOf": [{"$ref": "#/$defs/path"}, {"pattern": "^instructions/"}]}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "project_instruction"],
+          "properties": {
+            "type": {"const": "project-instruction"},
+            "project_instruction": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "source"],
+              "properties": {
+                "id": {"$ref": "#/$defs/id"},
+                "source": {"allOf": [{"$ref": "#/$defs/path"}, {"pattern": "^instructions/"}]}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "event", "matcher", "command", "args", "timeout_seconds", "blocking", "failure", "authorities"],
+      "properties": {
+        "type": {"type": "string"},
+        "event": {"type": "string"},
+        "matcher": {"type": "string"},
+        "command": {"type": "string"},
+        "args": {"type": "array", "items": {"type": "string"}},
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "blocking": {"type": "boolean"},
+        "failure": {"type": "string"},
+        "authorities": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "projection", "name", "invocation", "mode", "sharing", "capabilities"],
+      "properties": {
+        "surface": {"enum": ["claude", "codex", "opencode"]},
+        "projection": {"type": "string", "minLength": 1},
+        "name": {"$ref": "#/$defs/id"},
+        "invocation": {"type": "string", "minLength": 1},
+        "mode": {"enum": ["native", "degraded"]},
+        "degradation": {"type": "string"},
+        "sharing": {"enum": ["exclusive", "shared"]},
+        "capabilities": {"type": "array", "items": {"$ref": "#/$defs/capability"}},
+        "hook": {"$ref": "#/$defs/hook"}
+      }
+    },
+    "surfaceExclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "mode", "code", "reason"],
+      "properties": {
+        "surface": {"enum": ["claude", "codex", "opencode"]},
+        "mode": {"enum": ["mandatory", "optional"]},
+        "code": {"$ref": "#/$defs/id"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "arguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["none", "freeform"]},
+        "placeholder": {"type": "string"}
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "description", "requires", "conflicts", "bindings", "surface_exclusions"],
+      "properties": {
+        "kind": {"enum": ["agent", "asset", "command", "instruction", "lifecycle", "mcp_server", "notice", "skill"]},
+        "id": {"$ref": "#/$defs/id"},
+        "source": {"$ref": "#/$defs/path"},
+        "command": {"type": "string"},
+        "args": {"type": "array", "items": {"type": "string"}},
+        "description": {"type": "string", "minLength": 1},
+        "mode": {"type": "string"},
+        "tools": {"type": "array", "items": {"type": "string"}},
+        "permissions": {"type": "array", "items": {"type": "string"}},
+        "arguments": {"$ref": "#/$defs/arguments"},
+        "license": {"type": "string"},
+        "attribution": {"type": "string"},
+        "requires": {"type": "array", "items": {"type": "string"}},
+        "conflicts": {"type": "array", "items": {"type": "string"}},
+        "notices": {"type": "array", "items": {"type": "string"}},
+        "origin": {"$ref": "#/$defs/resourceOrigin"},
+        "bindings": {"type": "array", "items": {"$ref": "#/$defs/binding"}},
+        "surface_exclusions": {"type": "array", "items": {"$ref": "#/$defs/surfaceExclusion"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "agent"}}, "required": ["kind"]},
+          "then": {"required": ["source", "mode", "tools", "permissions"], "properties": {"source": {"pattern": "^agents/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "asset"}}, "required": ["kind"]},
+          "then": {"required": ["source"], "properties": {"source": {"pattern": "^assets/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "command"}}, "required": ["kind"]},
+          "then": {"required": ["source", "arguments"], "properties": {"source": {"pattern": "^commands/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "instruction"}}, "required": ["kind"]},
+          "then": {"required": ["source"], "properties": {"source": {"pattern": "^instructions/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "notice"}}, "required": ["kind"]},
+          "then": {"required": ["source", "license", "attribution"], "properties": {"source": {"pattern": "^notices/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "skill"}}, "required": ["kind"]},
+          "then": {"required": ["source"], "properties": {"source": {"pattern": "^skills/"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "mcp_server"}}, "required": ["kind"]},
+          "then": {
+            "required": ["command", "args"],
+            "not": {"anyOf": [{"required": ["source"]}, {"required": ["origin"]}]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "lifecycle"}}, "required": ["kind"]},
+          "then": {"not": {"anyOf": [{"required": ["source"]}, {"required": ["origin"]}]}}
+        },
+        {
+          "if": {"required": ["origin"]},
+          "then": {"required": ["source", "notices"], "properties": {"notices": {"minItems": 1}}}
+        }
+      ]
+    }
+  }
+}

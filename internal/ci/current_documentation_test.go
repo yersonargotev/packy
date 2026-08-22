@@ -25,6 +25,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		filepath.Join(root, "docs", "adr", "0035-make-pack-readiness-capability-driven.md"),
 		filepath.Join(root, "docs", "adr", "0036-separate-executable-acquisition-from-host-setup.md"),
 		filepath.Join(root, "docs", "adr", "0037-source-issue-delivery-from-an-independent-release.md"),
+		filepath.Join(root, "docs", "adr", "0038-promote-releases-from-managed-pack-projects.md"),
 	}
 	if strings.Join(adrs, "\n") != strings.Join(wantADR, "\n") {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
@@ -78,6 +79,11 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"`yersonargotev/issue-deliver-pack`", "immutable stable releases", "canonical authority",
 		"admission configuration", "reviewed snapshot", "legal notice", "Pack manifest", "catalog entry", "immutable history",
 	})
+	requireDocumentationText(t, root, "docs/adr/0038-promote-releases-from-managed-pack-projects.md", []string{
+		"Managed Pack Project", "root", "schema v1 `pack.json`", "exact-copy", "adapted",
+		"Declared Pack Closure", "Managed Pack Registry", "Admission Records",
+		"yersonargotev/skills-addy", "yersonargotev/pstack", "supersedes ADR 0032", "ADR 0035",
+	})
 	requireDocumentationText(t, root, "docs/adr/0033-make-the-tui-the-primary-interactive-interface.md", []string{
 		"Bubble Tea v2 TUI", "minimum Go version to 1.25", "same `internal/capabilitypack` behavior",
 		"one Pack, surface", "global or project", "preview, phase consent", "verification boundary",
@@ -99,6 +105,8 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Readiness obligation", "Readiness condition", "Readiness dimensions", "Controlled runtime check",
 		"configured, authorized, or usable", "true, false, or unknown", "Issue delivery policy",
 		"qualification, proof, protected review and merge, closure, and cleanup",
+		"Managed Pack Project", "External Source Project", "Managed Pack Registry",
+		"Declared Pack Closure", "Pack Admission Record", "Managed Pack Promotion",
 	})
 	requireDocumentationText(t, root, "docs/research/evidence/generic-issue-delivery-pack-viability.md", []string{
 		"Generic core and repository policy", "Codex materialization boundary", "GitHub controls remain repository-owned",

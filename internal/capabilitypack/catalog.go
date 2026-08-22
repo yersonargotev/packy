@@ -230,6 +230,26 @@ type Binding struct {
 	Hook         *CommandHook        `json:"hook,omitempty"`
 }
 
+// ReferencedSourcePaths returns the typed capability paths owned by this
+// binding. Keeping this switch with the capability vocabulary prevents callers
+// from silently omitting a new source-bearing capability.
+func (b Binding) ReferencedSourcePaths() []string {
+	var paths []string
+	for _, capability := range b.Capabilities {
+		switch capability.Type {
+		case SurfaceCapabilityOpenCodePrimaryPrompt:
+			if capability.PrimaryPrompt != nil {
+				paths = append(paths, capability.PrimaryPrompt.Source)
+			}
+		case SurfaceCapabilityProjectInstruction:
+			if capability.ProjectInstruction != nil {
+				paths = append(paths, capability.ProjectInstruction.Source)
+			}
+		}
+	}
+	return paths
+}
+
 type SurfaceCapabilityType string
 
 const (
@@ -1430,23 +1450,9 @@ func validatePackSources(pack Pack, bundleRoot string) error {
 			}
 		}
 		for _, binding := range resource.Bindings {
-			for _, capability := range binding.Capabilities {
-				source := ""
-				switch capability.Type {
-				case SurfaceCapabilityOpenCodePrimaryPrompt:
-					if capability.PrimaryPrompt != nil {
-						source = capability.PrimaryPrompt.Source
-					}
-				case SurfaceCapabilityProjectInstruction:
-					if capability.ProjectInstruction != nil {
-						source = capability.ProjectInstruction.Source
-					}
-				}
-				if source == "" {
-					continue
-				}
+			for _, source := range binding.ReferencedSourcePaths() {
 				if err := validateSource(bundleRoot, Resource{Kind: "instruction", Source: source}); err != nil {
-					return fmt.Errorf("resource %q surface capability %q source: %w", resource.Kind+":"+resource.ID, capability.Type, err)
+					return fmt.Errorf("resource %q surface capability source: %w", resource.Kind+":"+resource.ID, err)
 				}
 			}
 		}
