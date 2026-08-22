@@ -136,6 +136,9 @@ func outerModuleCache() (string, error) {
 	if runtime.GOOS == "windows" {
 		goExecutable += ".exe"
 	}
+	// HOME is intentionally the outer value only for deriving Go's default
+	// module cache. GOENV and child telemetry remain disabled, and this value is
+	// never returned to the sandboxed child.
 	environment := []string{
 		"GOENV=off",
 		"GOTOOLCHAIN=local",

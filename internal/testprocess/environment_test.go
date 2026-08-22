@@ -167,29 +167,7 @@ func TestEnvMakesRealGitIgnoreHostConfigurationAndAutomaticMaintenance(t *testin
 
 func TestEnvRejectsMalformedDuplicateAndProtectedAdditions(t *testing.T) {
 	t.Setenv("PATH", "/host/bin")
-	tests := map[string][]string{
-		"missing equals":           {"MALFORMED"},
-		"empty key":                {"=value"},
-		"NUL in key":               {"BAD\x00KEY=value"},
-		"NUL in value":             {"BAD=value\x00tail"},
-		"duplicate caller key":     {"DUPLICATE=first", "DUPLICATE=second"},
-		"HOME":                     {"HOME=/replacement"},
-		"TMPDIR":                   {"TMPDIR=/replacement"},
-		"LANG":                     {"LANG=en_US.UTF-8"},
-		"LC_ALL":                   {"LC_ALL=en_US.UTF-8"},
-		"XDG_CACHE_HOME":           {"XDG_CACHE_HOME=/replacement"},
-		"XDG_CONFIG_HOME":          {"XDG_CONFIG_HOME=/replacement"},
-		"XDG_DATA_HOME":            {"XDG_DATA_HOME=/replacement"},
-		"XDG_STATE_HOME":           {"XDG_STATE_HOME=/replacement"},
-		"GO_TELEMETRY_CHILD":       {"GO_TELEMETRY_CHILD=0"},
-		"GIT_CONFIG_GLOBAL":        {"GIT_CONFIG_GLOBAL=/replacement"},
-		"GIT_CONFIG_NOSYSTEM":      {"GIT_CONFIG_NOSYSTEM=0"},
-		"GIT_TERMINAL_PROMPT":      {"GIT_TERMINAL_PROMPT=1"},
-		"GIT_CONFIG_COUNT":         {"GIT_CONFIG_COUNT=0"},
-		"GIT_CONFIG_KEY pattern":   {"GIT_CONFIG_KEY_9=core.editor"},
-		"GIT_CONFIG_VALUE pattern": {"GIT_CONFIG_VALUE_9=unsafe"},
-	}
-	for name, additions := range tests {
+	for name, additions := range envRejectionCases {
 		t.Run(name, func(t *testing.T) {
 			command := exec.Command(os.Args[0], "-test.run=^TestEnvRejectionHelper$")
 			command.Env = Env(t, "PACKY_TESTPROCESS_REJECTION="+name)
@@ -204,34 +182,35 @@ func TestEnvRejectsMalformedDuplicateAndProtectedAdditions(t *testing.T) {
 	}
 }
 
+var envRejectionCases = map[string][]string{
+	"missing equals":           {"MALFORMED"},
+	"empty key":                {"=value"},
+	"NUL in key":               {"BAD\x00KEY=value"},
+	"NUL in value":             {"BAD=value\x00tail"},
+	"duplicate caller key":     {"DUPLICATE=first", "DUPLICATE=second"},
+	"HOME":                     {"HOME=/replacement"},
+	"TMPDIR":                   {"TMPDIR=/replacement"},
+	"LANG":                     {"LANG=en_US.UTF-8"},
+	"LC_ALL":                   {"LC_ALL=en_US.UTF-8"},
+	"XDG_CACHE_HOME":           {"XDG_CACHE_HOME=/replacement"},
+	"XDG_CONFIG_HOME":          {"XDG_CONFIG_HOME=/replacement"},
+	"XDG_DATA_HOME":            {"XDG_DATA_HOME=/replacement"},
+	"XDG_STATE_HOME":           {"XDG_STATE_HOME=/replacement"},
+	"GO_TELEMETRY_CHILD":       {"GO_TELEMETRY_CHILD=0"},
+	"GIT_CONFIG_GLOBAL":        {"GIT_CONFIG_GLOBAL=/replacement"},
+	"GIT_CONFIG_NOSYSTEM":      {"GIT_CONFIG_NOSYSTEM=0"},
+	"GIT_TERMINAL_PROMPT":      {"GIT_TERMINAL_PROMPT=1"},
+	"GIT_CONFIG_COUNT":         {"GIT_CONFIG_COUNT=0"},
+	"GIT_CONFIG_KEY pattern":   {"GIT_CONFIG_KEY_9=core.editor"},
+	"GIT_CONFIG_VALUE pattern": {"GIT_CONFIG_VALUE_9=unsafe"},
+}
+
 func TestEnvRejectionHelper(t *testing.T) {
 	name := os.Getenv("PACKY_TESTPROCESS_REJECTION")
 	if name == "" {
 		return
 	}
-	additions := map[string][]string{
-		"missing equals":           {"MALFORMED"},
-		"empty key":                {"=value"},
-		"NUL in key":               {"BAD\x00KEY=value"},
-		"NUL in value":             {"BAD=value\x00tail"},
-		"duplicate caller key":     {"DUPLICATE=first", "DUPLICATE=second"},
-		"HOME":                     {"HOME=/replacement"},
-		"TMPDIR":                   {"TMPDIR=/replacement"},
-		"LANG":                     {"LANG=en_US.UTF-8"},
-		"LC_ALL":                   {"LC_ALL=en_US.UTF-8"},
-		"XDG_CACHE_HOME":           {"XDG_CACHE_HOME=/replacement"},
-		"XDG_CONFIG_HOME":          {"XDG_CONFIG_HOME=/replacement"},
-		"XDG_DATA_HOME":            {"XDG_DATA_HOME=/replacement"},
-		"XDG_STATE_HOME":           {"XDG_STATE_HOME=/replacement"},
-		"GO_TELEMETRY_CHILD":       {"GO_TELEMETRY_CHILD=0"},
-		"GIT_CONFIG_GLOBAL":        {"GIT_CONFIG_GLOBAL=/replacement"},
-		"GIT_CONFIG_NOSYSTEM":      {"GIT_CONFIG_NOSYSTEM=0"},
-		"GIT_TERMINAL_PROMPT":      {"GIT_TERMINAL_PROMPT=1"},
-		"GIT_CONFIG_COUNT":         {"GIT_CONFIG_COUNT=0"},
-		"GIT_CONFIG_KEY pattern":   {"GIT_CONFIG_KEY_9=core.editor"},
-		"GIT_CONFIG_VALUE pattern": {"GIT_CONFIG_VALUE_9=unsafe"},
-	}[name]
-	Env(t, additions...)
+	Env(t, envRejectionCases[name]...)
 }
 
 func TestGoOfflineEnvUsesFreshWritableCachesAndOneEscapedLocalProxy(t *testing.T) {
