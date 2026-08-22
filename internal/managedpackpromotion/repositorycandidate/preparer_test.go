@@ -9,12 +9,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func TestPrepareBuildsAnExactDetachedCandidateOnlyAfterEveryGatePasses(t *testing.T) {
@@ -27,7 +27,7 @@ func TestPrepareBuildsAnExactDetachedCandidateOnlyAfterEveryGatePasses(t *testin
 	projectRoot, validation := managedProject(t, "1.1.0", "new guidance\n", nil)
 	acquired := acquisition()
 	acquired.ProjectRoot = projectRoot
-	gates := &fakeGates{generateDocs: func(root string) error {
+	gates := &fakeGates{t: t, generateDocs: func(root string) error {
 		writeTestFile(t, filepath.Join(root, "docs", "packs", "example.md"), "new pack docs\n", 0o644)
 		writeTestFile(t, filepath.Join(root, "docs", "packs", "index.md"), "new index\n", 0o644)
 		return nil
@@ -117,7 +117,7 @@ func TestPrepareReturnsNoChangeOnlyForTheExactAdmittedCoordinateAndBytes(t *test
 		"docs/packs/index.md":                         "current index\n",
 	})
 	acquired := acquisitionFor("1.1.0", projectRoot)
-	gates := &fakeGates{}
+	gates := &fakeGates{t: t}
 
 	prepared, err := newWithGates(gates).Prepare(context.Background(), repositoryRoot, acquired, validation)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestPrepareDoesNotReturnNoChangeWhenTheTargetStillOwnsResidualBytes(t *test
 		"docs/packs/index.md":                         "current index\n",
 	})
 
-	_, err = newWithGates(&fakeGates{}).Prepare(context.Background(), repositoryRoot, acquisitionFor("1.1.0", projectRoot), validation)
+	_, err = newWithGates(&fakeGates{t: t}).Prepare(context.Background(), repositoryRoot, acquisitionFor("1.1.0", projectRoot), validation)
 	if got := rejectionGate(t, err); got != managedpackpromotion.GateSemVer {
 		t.Fatalf("residual coordinate gate = %s, want semver instead of no-change", got)
 	}
@@ -185,7 +185,7 @@ func TestPrepareEnforcesMonotonicSemVerAndMechanicalCompatibilityFloor(t *testin
 			}
 			repositoryRoot, _, _ := packyRepository(t, files)
 			projectRoot, validation := managedProject(t, test.candidateVersion, "new\n", test.candidateMutate)
-			_, err := newWithGates(&fakeGates{}).Prepare(context.Background(), repositoryRoot, acquisitionFor(test.candidateVersion, projectRoot), validation)
+			_, err := newWithGates(&fakeGates{t: t}).Prepare(context.Background(), repositoryRoot, acquisitionFor(test.candidateVersion, projectRoot), validation)
 			if got := rejectionGate(t, err); got != test.wantGate {
 				t.Fatalf("rejection gate = %s, want %s", got, test.wantGate)
 			}
@@ -201,7 +201,7 @@ func TestPrepareAllowsAHigherIncrementToSatisfyTheMechanicalFloor(t *testing.T) 
 		"docs/packs/index.md":            "old index\n",
 	})
 	projectRoot, validation := managedProject(t, "2.0.0", "new\n", func(manifest map[string]any) { addResource(manifest, "other", "skills/other") })
-	prepared, err := newWithGates(&fakeGates{}).Prepare(context.Background(), repositoryRoot, acquisitionFor("2.0.0", projectRoot), validation)
+	prepared, err := newWithGates(&fakeGates{t: t}).Prepare(context.Background(), repositoryRoot, acquisitionFor("2.0.0", projectRoot), validation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,11 +222,11 @@ func TestPrepareSealsTheSameInputsIntoTheSameDetachedCommitAndCandidateID(t *tes
 	})
 	projectRoot, validation := managedProject(t, "1.0.1", "new\n", nil)
 	acquired := acquisitionFor("1.0.1", projectRoot)
-	first, err := newWithGates(&fakeGates{}).Prepare(context.Background(), repositoryRoot, acquired, validation)
+	first, err := newWithGates(&fakeGates{t: t}).Prepare(context.Background(), repositoryRoot, acquired, validation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := newWithGates(&fakeGates{}).Prepare(context.Background(), repositoryRoot, acquired, validation)
+	second, err := newWithGates(&fakeGates{t: t}).Prepare(context.Background(), repositoryRoot, acquired, validation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestPrepareRejectsOverlappingOrDriftingCrossPackRootsAndAllowsAnExactShared
 				"docs/packs/index.md":            "old index\n",
 			})
 			projectRoot, validation := managedProject(t, "2.0.0", test.content, func(manifest map[string]any) { resourceDocument(manifest)["source"] = test.root })
-			prepared, err := newWithGates(&fakeGates{}).Prepare(context.Background(), repositoryRoot, acquisitionFor("2.0.0", projectRoot), validation)
+			prepared, err := newWithGates(&fakeGates{t: t}).Prepare(context.Background(), repositoryRoot, acquisitionFor("2.0.0", projectRoot), validation)
 			if test.wantReject {
 				if got := rejectionGate(t, err); got != managedpackpromotion.GateOwnership {
 					t.Fatalf("rejection gate = %s, want ownership", got)
@@ -297,7 +297,7 @@ func TestPrepareRetiresOnlyUnsharedTargetPathsAndPreservesAnotherPacksContributi
 	})
 	projectRoot, validation := managedProject(t, "2.0.0", "replacement\n", func(manifest map[string]any) { resourceDocument(manifest)["source"] = "skills/replacement" })
 
-	prepared, err := newWithGates(&fakeGates{}).Prepare(context.Background(), repositoryRoot, acquisitionFor("2.0.0", projectRoot), validation)
+	prepared, err := newWithGates(&fakeGates{t: t}).Prepare(context.Background(), repositoryRoot, acquisitionFor("2.0.0", projectRoot), validation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,10 +318,10 @@ func TestPrepareGateFailuresAndAllowlistViolationsLeaveTheSourceWithoutProposalS
 		gates    *fakeGates
 		wantGate managedpackpromotion.Gate
 	}{
-		{name: "generated docs", gates: &fakeGates{generateDocs: func(string) error { return errors.New("docs failed") }}, wantGate: managedpackpromotion.GateGeneratedDocs},
-		{name: "resource fitness", gates: &fakeGates{resourceError: errors.New("catalog failed")}, wantGate: managedpackpromotion.GateResourceSurfaces},
-		{name: "complete suite", gates: &fakeGates{suiteError: errors.New("suite failed")}, wantGate: managedpackpromotion.GatePackySuite},
-		{name: "allowlist", gates: &fakeGates{generateDocs: func(root string) error {
+		{name: "generated docs", gates: &fakeGates{t: t, generateDocs: func(string) error { return errors.New("docs failed") }}, wantGate: managedpackpromotion.GateGeneratedDocs},
+		{name: "resource fitness", gates: &fakeGates{t: t, resourceError: errors.New("catalog failed")}, wantGate: managedpackpromotion.GateResourceSurfaces},
+		{name: "complete suite", gates: &fakeGates{t: t, suiteError: errors.New("suite failed")}, wantGate: managedpackpromotion.GatePackySuite},
+		{name: "allowlist", gates: &fakeGates{t: t, generateDocs: func(root string) error {
 			if err := os.WriteFile(filepath.Join(root, "unexpected.txt"), []byte("drift\n"), 0o644); err != nil {
 				return err
 			}
@@ -418,6 +418,7 @@ func TestIsolatedGitEnvironmentDisablesAutomaticMaintenance(t *testing.T) {
 }
 
 type fakeGates struct {
+	t                    *testing.T
 	calls                int
 	observedDetachedBase bool
 	generateDocs         func(string) error
@@ -445,9 +446,9 @@ func (g *fakeGates) ValidateSuite(_ context.Context, root string) error {
 
 func (g *fakeGates) observe(root string) {
 	g.calls++
-	head := gitOutputNoTest(root, "rev-parse", "HEAD")
-	subject := gitOutputNoTest(root, "log", "-1", "--format=%s")
-	if len(head) == 40 && subject == "fixture" && gitOutputNoTest(root, "symbolic-ref", "-q", "HEAD") == "" {
+	head := gitOutput(g.t, root, "rev-parse", "HEAD")
+	subject := gitOutput(g.t, root, "log", "-1", "--format=%s")
+	if len(head) == 40 && subject == "fixture" && gitOutput(g.t, root, "symbolic-ref", "-q", "HEAD") == "" {
 		g.observedDetachedBase = true
 	}
 }
@@ -574,14 +575,7 @@ func readTestFile(t *testing.T, path string) string {
 func gitOutput(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = testGitEnvironment(t.TempDir(), nil)
-	output, _ := command.Output()
-	return strings.TrimSpace(string(output))
-}
-
-func gitOutputNoTest(root string, args ...string) string {
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = testGitEnvironment(filepath.Join(os.TempDir(), "packy-test-no-home"), nil)
+	command.Env = testprocess.Env(t)
 	output, _ := command.Output()
 	return strings.TrimSpace(string(output))
 }
@@ -595,40 +589,10 @@ func runTestCommandEnv(t *testing.T, root string, environment []string, name str
 	t.Helper()
 	command := exec.Command(name, args...)
 	command.Dir = root
-	command.Env = testGitEnvironment(t.TempDir(), environment)
+	command.Env = testprocess.Env(t, environment...)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("%s %s: %v\n%s", name, strings.Join(args, " "), err, output)
 	}
-}
-
-func testGitEnvironment(home string, additions []string) []string {
-	values := map[string]string{
-		"GIT_CONFIG_GLOBAL":   "/dev/null",
-		"GIT_CONFIG_NOSYSTEM": "1",
-		"GIT_TERMINAL_PROMPT": "0",
-		"HOME":                home,
-		"LANG":                "C",
-		"LC_ALL":              "C",
-		"PATH":                os.Getenv("PATH"),
-		"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-	}
-	for _, entry := range additions {
-		name, value, ok := strings.Cut(entry, "=")
-		if !ok || name == "" {
-			continue
-		}
-		values[name] = value
-	}
-	keys := make([]string, 0, len(values))
-	for name := range values {
-		keys = append(keys, name)
-	}
-	sort.Strings(keys)
-	environment := make([]string, 0, len(keys))
-	for _, name := range keys {
-		environment = append(environment, name+"="+values[name])
-	}
-	return environment
 }
 
 func rejectionGate(t *testing.T, err error) managedpackpromotion.Gate {

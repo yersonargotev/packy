@@ -3,6 +3,7 @@
 - Read the relevant accepted ADR under `docs/adr/` before changing architecture; keep architectural decisions there rather than duplicating them here.
 - Keep Packy domain behavior in its owning package under `internal/`; `internal/cli` should adapt that behavior to commands and state.
 - Sandbox `HOME` and `XDG_CONFIG_HOME` for tests or manual checks that resolve or write user paths.
+- Give every real child process owned by test code an explicit environment from `internal/testprocess`; keep a literal minimal or production environment only when that exact environment is the contract under test.
 - Prefer focused tests for the touched package while iterating. Use
   `./scripts/validate-packy.sh` for cross-cutting changes and keep `go test ./...`
   green while the repository has no vendored upstream Go content.

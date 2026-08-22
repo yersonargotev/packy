@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func TestPromoteSeparatesPrepublicationFromMutationAuthority(t *testing.T) {
@@ -243,6 +244,7 @@ func runTestCommand(t *testing.T, directory string, name string, arguments ...st
 	t.Helper()
 	command := exec.Command(name, arguments...)
 	command.Dir = directory
+	command.Env = testprocess.Env(t)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %s: %v: %s", name, strings.Join(arguments, " "), err, output)

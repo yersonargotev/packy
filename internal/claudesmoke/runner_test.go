@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func TestResolveSelector(t *testing.T) {
@@ -177,6 +179,7 @@ func TestSandboxBoundaryAllowsOnlyConfiguredRootWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cmd.Env = testprocess.Env(t)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("inside write: %v: %s", err, out)
 	}
@@ -184,6 +187,7 @@ func TestSandboxBoundaryAllowsOnlyConfiguredRootWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cmd.Env = testprocess.Env(t)
 	if err := cmd.Run(); err == nil {
 		t.Fatal("outside write escaped sandbox")
 	}
@@ -206,6 +210,7 @@ func TestSandboxBoundaryDeniesCheckoutReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cmd.Env = testprocess.Env(t)
 	if output, err := cmd.CombinedOutput(); err == nil {
 		t.Fatalf("checkout fixture escaped read boundary: %s", output)
 	}
@@ -244,12 +249,7 @@ func TestObserveAddyQualificationAcquiresInstalledSourceState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gitHome, gitConfig := t.TempDir(), t.TempDir()
-	gitEnv := []string{
-		"HOME=" + gitHome, "XDG_CONFIG_HOME=" + gitConfig,
-		"PATH=" + filepath.Dir(gitExecutable) + ":/usr/bin:/bin",
-		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
-	}
+	gitEnv := testprocess.Env(t, "PATH="+strings.Join([]string{filepath.Dir(gitExecutable), "/usr/bin", "/bin"}, string(os.PathListSeparator)))
 	runGit := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command(gitExecutable, args...)
@@ -470,7 +470,9 @@ func TestLoggedStubCapturesExternalInvocation(t *testing.T) {
 	if !externalLogEmpty(logPath) {
 		t.Fatal("new external invocation log is not empty")
 	}
-	if err := exec.Command(stub, "setup").Run(); err != nil {
+	command := exec.Command(stub, "setup")
+	command.Env = testprocess.Env(t)
+	if err := command.Run(); err != nil {
 		t.Fatal(err)
 	}
 	if externalLogEmpty(logPath) {
@@ -609,8 +611,11 @@ func TestClaudeInterposerRecordsSafeNestedCommands(t *testing.T) {
 	if err := createClaudeInterposer(wrapper, real, log); err != nil {
 		t.Fatal(err)
 	}
+	environment := testprocess.Env(t)
 	for _, args := range [][]string{{"--version"}, {"mcp", "list"}, {"mcp", "get", "engram"}, {"mcp", "add", "engram", "--scope", "user", "--", "engram", "mcp"}, {"mcp", "remove", "engram", "--scope", "user"}} {
-		if out, err := exec.CommandContext(context.Background(), wrapper, args...).CombinedOutput(); err != nil {
+		command := exec.CommandContext(context.Background(), wrapper, args...)
+		command.Env = environment
+		if out, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("safe %v: %v: %s", args, err, out)
 		}
 	}
@@ -636,8 +641,11 @@ func TestClaudeInterposerBlocksForbiddenShapesBeforeRealBinary(t *testing.T) {
 	if err := createClaudeInterposer(wrapper, real, filepath.Join(root, "log")); err != nil {
 		t.Fatal(err)
 	}
+	environment := testprocess.Env(t)
 	for _, args := range [][]string{{}, {"--print", "hello"}, {"login"}, {"auth"}, {"model", "opus"}, {"mcp", "add", "x", "--scope", "project", "--", "engram"}, {"mcp", "remove", "x"}, {"mcp", "list", "extra"}} {
-		if err := exec.Command(wrapper, args...).Run(); err == nil {
+		command := exec.Command(wrapper, args...)
+		command.Env = environment
+		if err := command.Run(); err == nil {
 			t.Fatalf("forbidden shape succeeded: %v", args)
 		}
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -685,15 +693,11 @@ func TestPrepareInstallableSourceAdaptsFullSHAWithoutMutatingCheckout(t *testing
 	}
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
-	gitHome, gitConfig := filepath.Join(root, "git-home"), filepath.Join(root, "git-config")
-	if err := os.MkdirAll(gitConfig, 0700); err != nil {
-		t.Fatal(err)
-	}
 	gitExecutable, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
 	}
-	gitEnv := []string{"HOME=" + gitHome, "XDG_CONFIG_HOME=" + gitConfig, "PATH=" + filepath.Dir(gitExecutable) + ":/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null"}
+	gitEnv := testprocess.Env(t, "PATH="+strings.Join([]string{filepath.Dir(gitExecutable), "/usr/bin", "/bin"}, string(os.PathListSeparator)))
 	runGit := func(dir string, args ...string) string {
 		t.Helper()
 		cmd := exec.Command(gitExecutable, args...)

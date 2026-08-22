@@ -16,6 +16,7 @@ import (
 	"github.com/yersonargotev/packy/internal/packclassification"
 	"github.com/yersonargotev/packy/internal/packsync"
 	"github.com/yersonargotev/packy/internal/packsyncworkflow"
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 func TestInspectRoutesV23RegisterToSingleSourceAdmission(t *testing.T) {
@@ -375,20 +376,7 @@ func (fake *fakeSingleSourceAdmissionGateway) Finalize(context.Context, packsync
 
 func initializeToolRepository(t *testing.T, repository string) {
 	t.Helper()
-	userRoot := t.TempDir()
-	environment := make([]string, 0, len(os.Environ())+4)
-	for _, entry := range os.Environ() {
-		if strings.HasPrefix(entry, "HOME=") || strings.HasPrefix(entry, "XDG_CONFIG_HOME=") || strings.HasPrefix(entry, "GIT_CONFIG_NOSYSTEM=") || strings.HasPrefix(entry, "GIT_CONFIG_GLOBAL=") {
-			continue
-		}
-		environment = append(environment, entry)
-	}
-	environment = append(environment,
-		"HOME="+userRoot,
-		"XDG_CONFIG_HOME="+filepath.Join(userRoot, "xdg"),
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+filepath.Join(userRoot, "gitconfig"),
-	)
+	environment := testprocess.Env(t)
 	commands := [][]string{
 		{"init", "-b", "main"},
 		{"config", "user.name", "Fixture"},

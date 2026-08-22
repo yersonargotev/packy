@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
 const bundleGoModule = "module github.com/yersonargotev/packy/bundle\n\ngo 1.25.0\n"
@@ -53,21 +55,9 @@ func writeFixtureFile(t *testing.T, root, relative, contents string) {
 
 func runRootGoTool(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	sandbox := t.TempDir()
 	command := exec.Command("go", args...)
 	command.Dir = root
-	command.Env = []string{
-		"PATH=" + os.Getenv("PATH"),
-		"HOME=" + filepath.Join(sandbox, "home"),
-		"XDG_CONFIG_HOME=" + filepath.Join(sandbox, "xdg"),
-		"GOCACHE=" + filepath.Join(sandbox, "cache"),
-		"GOMODCACHE=" + filepath.Join(sandbox, "modcache"),
-		"GOPATH=" + filepath.Join(sandbox, "gopath"),
-		"GOENV=off",
-		"GOPROXY=off",
-		"GOSUMDB=off",
-		"GOTOOLCHAIN=local",
-	}
+	command.Env = testprocess.GoOfflineEnv(t)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("go %s failed: %v\n%s", strings.Join(args, " "), err, output)

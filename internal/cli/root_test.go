@@ -18,6 +18,7 @@ import (
 	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/setuphealth"
+	"github.com/yersonargotev/packy/internal/testprocess"
 	packyversion "github.com/yersonargotev/packy/internal/version"
 )
 
@@ -969,8 +970,7 @@ func createPackySourceRepo(t *testing.T) string {
 func runGitCommand(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	home := t.TempDir()
-	cmd.Env = append(os.Environ(), "HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, "xdg-config"), "GIT_CONFIG_NOSYSTEM=1")
+	cmd.Env = testprocess.Env(t)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, output)
