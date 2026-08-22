@@ -144,14 +144,17 @@ go run ./internal/tools/promotepack <pack-id>@<version>
 ```
 
 The adapter is intentionally outside `cmd/packy` and Packy's release artifacts.
-It has three separate phases. Public acquisition fetches the registered Managed
-Pack Project release and exact origin commits without using Packy write
-credentials. A separate credential-free, no-network worker validates the inert
-local trees and seals the Declared Pack Closure. Only then does a fresh process
-materialize the candidate, run every repository admission gate, and publish or
-adopt an automation-owned ready pull request through normal fast-forward Git
-operations. Project or origin hooks, scripts, tests, builds, and binaries are
-never executed.
+The parent coordinator first creates a temporary Packy snapshot whose Git remote
+contains no embedded credentials. A fresh credential-free prepublication process
+then fetches the registered Managed Pack Project release and exact origin commits,
+uses a separate credential-free, no-network worker to validate the inert local
+trees and seal the Declared Pack Closure, materializes the candidate, and runs
+every repository admission gate. After that process exits, a distinct fresh
+least-privilege mutation process receives only the sealed Candidate and publishes
+or adopts an automation-owned ready pull request through normal fast-forward Git
+operations. Every protocol file is identity- and digest-bound inside one temporary
+owner-only directory, which the parent removes after the result. Project or origin
+hooks, scripts, tests, builds, and binaries are never executed.
 
 The command reports exactly one proposal, deterministic no-change, or typed
 policy rejection. Promotion never replaces an admission record, never adopts a

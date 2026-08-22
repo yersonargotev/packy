@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
+	"github.com/yersonargotev/packy/internal/managedpackpromotion/authorityphase"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/offlinevalidation"
 )
 
@@ -77,19 +78,38 @@ func TestRunRejectsInvalidInvocationBeforeConstructingPromotion(t *testing.T) {
 }
 
 func TestRunRoutesTheHiddenWorkerModeWithoutPromotionDependencies(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	called := false
-	exit := run(context.Background(), []string{offlinevalidation.ModeArgument, "request", "response"}, &stdout, &stderr, dependencies{
-		runOfflineWorker: func(args []string, gotStdout, gotStderr io.Writer) int {
-			called = true
-			if strings.Join(args, ",") != "request,response" || gotStdout != &stdout || gotStderr != &stderr {
-				t.Fatalf("worker args = %q, stdout = %T, stderr = %T", args, gotStdout, gotStderr)
+	tests := []struct {
+		mode string
+		deps func(func(context.Context, []string, io.Writer, io.Writer) int) dependencies
+	}{
+		{offlinevalidation.ModeArgument, func(run func(context.Context, []string, io.Writer, io.Writer) int) dependencies {
+			return dependencies{runOfflineWorker: func(args []string, stdout, stderr io.Writer) int {
+				return run(context.Background(), args, stdout, stderr)
+			}}
+		}},
+		{authorityphase.PrepareModeArgument, func(run func(context.Context, []string, io.Writer, io.Writer) int) dependencies {
+			return dependencies{runPrepublicationWorker: run}
+		}},
+		{authorityphase.PublishModeArgument, func(run func(context.Context, []string, io.Writer, io.Writer) int) dependencies {
+			return dependencies{runPublicationWorker: run}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.mode, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			called := false
+			worker := func(_ context.Context, args []string, gotStdout, gotStderr io.Writer) int {
+				called = true
+				if strings.Join(args, ",") != "request,response" || gotStdout != &stdout || gotStderr != &stderr {
+					t.Fatalf("worker args = %q, stdout = %T, stderr = %T", args, gotStdout, gotStderr)
+				}
+				return 23
 			}
-			return 23
-		},
-	})
-	if exit != 23 || !called || stdout.Len() != 0 || stderr.Len() != 0 {
-		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exit, stdout.String(), stderr.String())
+			exit := run(context.Background(), []string{test.mode, "request", "response"}, &stdout, &stderr, test.deps(worker))
+			if exit != 23 || !called || stdout.Len() != 0 || stderr.Len() != 0 {
+				t.Fatalf("exit = %d, stdout = %q, stderr = %q", exit, stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 

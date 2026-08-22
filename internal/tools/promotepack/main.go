@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
+	"github.com/yersonargotev/packy/internal/managedpackpromotion/authorityphase"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubacquisition"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubproposal"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/offlinevalidation"
@@ -29,10 +30,12 @@ type promoter interface {
 }
 
 type dependencies struct {
-	executable       func() (string, error)
-	repositoryRoot   func(context.Context) (string, error)
-	newPromoter      func(string) promoter
-	runOfflineWorker func([]string, io.Writer, io.Writer) int
+	executable              func() (string, error)
+	repositoryRoot          func(context.Context) (string, error)
+	newPromoter             func(string) promoter
+	runOfflineWorker        func([]string, io.Writer, io.Writer) int
+	runPrepublicationWorker func(context.Context, []string, io.Writer, io.Writer) int
+	runPublicationWorker    func(context.Context, []string, io.Writer, io.Writer) int
 }
 
 func main() {
@@ -46,6 +49,20 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps depe
 			return 1
 		}
 		return deps.runOfflineWorker(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == authorityphase.PrepareModeArgument {
+		if deps.runPrepublicationWorker == nil {
+			fmt.Fprintln(stderr, "promotepack prepublication worker dependency is incomplete")
+			return 1
+		}
+		return deps.runPrepublicationWorker(ctx, args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == authorityphase.PublishModeArgument {
+		if deps.runPublicationWorker == nil {
+			fmt.Fprintln(stderr, "promotepack publication worker dependency is incomplete")
+			return 1
+		}
+		return deps.runPublicationWorker(ctx, args[1:], stdout, stderr)
 	}
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, usage)
@@ -120,6 +137,19 @@ func productionDependencies() dependencies {
 	return dependencies{
 		executable:       os.Executable,
 		runOfflineWorker: offlinevalidation.Run,
+		runPrepublicationWorker: func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+			executable, err := absoluteExecutable()
+			if err != nil {
+				fmt.Fprintf(stderr, "resolve promotepack worker executable: %v\n", err)
+				return 1
+			}
+			return authorityphase.RunPrepublication(ctx, args, stdout, stderr, func(publisher managedpackpromotion.Publisher) authorityphase.Promoter {
+				return newPrepublicationModule(executable, publisher)
+			})
+		},
+		runPublicationWorker: func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+			return authorityphase.RunPublication(ctx, args, stdout, stderr, githubproposal.NewCLI())
+		},
 		repositoryRoot: func(ctx context.Context) (string, error) {
 			command := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 			output, err := command.Output()
@@ -132,14 +162,28 @@ func productionDependencies() dependencies {
 			}
 			return filepath.Clean(root), nil
 		},
-		newPromoter: func(executable string) promoter {
-			publicClient := &http.Client{Timeout: 2 * time.Minute}
-			return managedpackpromotion.NewModule(
-				githubacquisition.New(githubsource.New(publicClient)),
-				offlinevalidation.New(executable),
-				repositorycandidate.New(),
-				githubproposal.NewCLI(),
-			)
-		},
+		newPromoter: func(executable string) promoter { return authorityphase.New(executable) },
 	}
+}
+
+func absoluteExecutable() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	executable, err = filepath.Abs(executable)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(executable), nil
+}
+
+func newPrepublicationModule(executable string, publisher managedpackpromotion.Publisher) managedpackpromotion.Module {
+	publicClient := &http.Client{Timeout: 2 * time.Minute}
+	return managedpackpromotion.NewModule(
+		githubacquisition.New(githubsource.New(publicClient)),
+		offlinevalidation.New(executable),
+		repositorycandidate.New(),
+		publisher,
+	)
 }
