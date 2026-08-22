@@ -1,7 +1,7 @@
 // Package githubsource implements read-only acquisition from public GitHub
-// repositories using a caller-supplied HTTP client. It parses metadata and
-// archives as inert data and never invokes Git, shells, hooks, tests, or
-// upstream programs.
+// repositories using a caller-supplied HTTP client. It parses metadata,
+// legacy archives, and exact Managed Pack Git objects as inert data and never
+// invokes Git, shells, hooks, tests, or upstream programs.
 package githubsource
 
 import (
@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,11 +27,36 @@ import (
 	"github.com/yersonargotev/packy/internal/packsync"
 )
 
-const maxArchiveBytes = 256 << 20
+const (
+	// Archive limits bound each independently exhaustible resource using
+	// slash-separated archive metadata so behavior does not vary by host OS.
+	maxArchiveBytes         = 256 << 20
+	maxArchiveExpandedBytes = 1 << 30
+	maxArchiveFileBytes     = 128 << 20
+	maxArchiveEntries       = 100_000
+	maxArchivePathDepth     = 64
+	maxAnnotatedTagObjects  = 32
+)
+
+type archiveLimits struct {
+	maxExpandedBytes int64
+	maxFileBytes     int64
+	maxEntries       int
+	maxPathDepth     int
+}
+
+var defaultArchiveLimits = archiveLimits{
+	maxExpandedBytes: maxArchiveExpandedBytes,
+	maxFileBytes:     maxArchiveFileBytes,
+	maxEntries:       maxArchiveEntries,
+	maxPathDepth:     maxArchivePathDepth,
+}
 
 type Client struct {
-	httpClient *http.Client
-	apiBase    string
+	httpClient    *http.Client
+	apiBase       string
+	rawBase       string
+	archiveLimits archiveLimits
 }
 
 // HTTPError preserves rate-limit and service response metadata for the
@@ -53,11 +79,12 @@ func New(httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &Client{httpClient: httpClient, apiBase: "https://api.github.com"}
+	return &Client{httpClient: httpClient, apiBase: "https://api.github.com", rawBase: "https://raw.githubusercontent.com", archiveLimits: defaultArchiveLimits}
 }
 
 func newClient(httpClient *http.Client, apiBase string) *Client {
-	return &Client{httpClient: httpClient, apiBase: strings.TrimRight(apiBase, "/")}
+	base := strings.TrimRight(apiBase, "/")
+	return &Client{httpClient: httpClient, apiBase: base, rawBase: base, archiveLimits: defaultArchiveLimits}
 }
 
 func (client *Client) Releases(ctx context.Context, source packsync.SourceConfig) ([]packsync.Release, error) {
@@ -128,6 +155,9 @@ func (client *Client) ResolveRelease(ctx context.Context, source packsync.Source
 	object := ref.Object
 	seen := map[string]bool{}
 	for object.Type == "tag" {
+		if len(candidate.TagObjects) >= maxAnnotatedTagObjects {
+			return packsync.Candidate{}, fmt.Errorf("annotated tag object limit of %d exceeded", maxAnnotatedTagObjects)
+		}
 		if object.SHA == "" || seen[object.SHA] {
 			return packsync.Candidate{}, errors.New("tag chain is empty or cyclic")
 		}
@@ -202,7 +232,7 @@ func (client *Client) WithSnapshot(ctx context.Context, candidate packsync.Candi
 	if err := os.Mkdir(snapshot, 0o755); err != nil {
 		return err
 	}
-	if err := extractArchive(io.LimitReader(response.Body, maxArchiveBytes+1), snapshot); err != nil {
+	if err := extractArchive(ctx, io.LimitReader(response.Body, maxArchiveBytes+1), snapshot, client.archiveLimits); err != nil {
 		return fmt.Errorf("extract inert archive: %w", err)
 	}
 	return visit(snapshot)
@@ -343,14 +373,17 @@ func (client *Client) request(ctx context.Context, endpoint string) (*http.Reque
 	return request, nil
 }
 
-func extractArchive(source io.Reader, destination string) error {
-	gzipReader, err := gzip.NewReader(source)
+func extractArchive(ctx context.Context, source io.Reader, destination string, limits archiveLimits) error {
+	gzipReader, err := gzip.NewReader(contextReader{ctx: ctx, reader: source})
 	if err != nil {
 		return err
 	}
 	defer gzipReader.Close()
-	reader := tar.NewReader(gzipReader)
+	expandedReader := &expandedArchiveReader{reader: gzipReader, remaining: limits.maxExpandedBytes, maximum: limits.maxExpandedBytes}
+	reader := tar.NewReader(contextReader{ctx: ctx, reader: expandedReader})
 	root := ""
+	var declaredFileBytes int64
+	entryCount := 0
 	seen := map[string]bool{}
 	for {
 		header, err := reader.Next()
@@ -359,6 +392,13 @@ func extractArchive(source io.Reader, destination string) error {
 		}
 		if err != nil {
 			return err
+		}
+		entryCount++
+		if entryCount > limits.maxEntries {
+			return fmt.Errorf("archive entry count exceeds %d", limits.maxEntries)
+		}
+		if header.Size < 0 {
+			return fmt.Errorf("archive header size is negative for %q", header.Name)
 		}
 		if header.Typeflag == tar.TypeXGlobalHeader || header.Typeflag == tar.TypeXHeader {
 			continue
@@ -373,6 +413,9 @@ func extractArchive(source io.Reader, destination string) error {
 		}
 		if parts[0] != root {
 			return errors.New("archive has multiple roots")
+		}
+		if len(parts)-1 > limits.maxPathDepth {
+			return fmt.Errorf("archive path depth exceeds %d for %q", limits.maxPathDepth, header.Name)
 		}
 		if len(parts) == 1 {
 			if header.Typeflag != tar.TypeDir {
@@ -396,6 +439,16 @@ func extractArchive(source io.Reader, destination string) error {
 				return err
 			}
 		case tar.TypeReg, tar.TypeRegA:
+			if header.Size > limits.maxFileBytes {
+				return fmt.Errorf("archive file size exceeds %d bytes for %s", limits.maxFileBytes, relative)
+			}
+			if header.Size > math.MaxInt64-declaredFileBytes {
+				return errors.New("archive expanded size overflows")
+			}
+			declaredFileBytes += header.Size
+			if declaredFileBytes > limits.maxExpandedBytes {
+				return fmt.Errorf("archive expanded size exceeds %d bytes", limits.maxExpandedBytes)
+			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
@@ -410,7 +463,7 @@ func extractArchive(source io.Reader, destination string) error {
 			if err != nil {
 				return err
 			}
-			_, copyErr := io.CopyN(file, reader, header.Size)
+			_, copyErr := io.CopyN(file, contextReader{ctx: ctx, reader: reader}, header.Size)
 			closeErr := file.Close()
 			if copyErr != nil {
 				return copyErr
@@ -433,6 +486,43 @@ func extractArchive(source io.Reader, destination string) error {
 		return errors.New("archive is empty")
 	}
 	return nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+type expandedArchiveReader struct {
+	reader    io.Reader
+	remaining int64
+	maximum   int64
+}
+
+func (reader *expandedArchiveReader) Read(buffer []byte) (int, error) {
+	if reader.remaining <= 0 {
+		return 0, fmt.Errorf("archive expanded size exceeds %d bytes", reader.maximum)
+	}
+	if int64(len(buffer)) > reader.remaining {
+		buffer = buffer[:int(reader.remaining)+1]
+	}
+	read, err := reader.reader.Read(buffer)
+	if int64(read) > reader.remaining {
+		return 0, fmt.Errorf("archive expanded size exceeds %d bytes", reader.maximum)
+	}
+	reader.remaining -= int64(read)
+	return read, err
+}
+
+func (reader contextReader) Read(buffer []byte) (int, error) {
+	if err := reader.ctx.Err(); err != nil {
+		return 0, err
+	}
+	read, err := reader.reader.Read(buffer)
+	if contextErr := reader.ctx.Err(); contextErr != nil {
+		return 0, contextErr
+	}
+	return read, err
 }
 
 func safeArchiveLink(relative, link string) bool {

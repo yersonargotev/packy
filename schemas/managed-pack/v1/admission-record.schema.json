@@ -13,7 +13,9 @@
     "release_id",
     "release_immutable",
     "tag",
-    "tag_object",
+    "tag_ref_type",
+    "tag_ref_sha",
+    "tag_objects",
     "commit",
     "root_tree",
     "manifest_sha256",
@@ -32,7 +34,21 @@
     "release_id": {"type": "integer", "minimum": 1},
     "release_immutable": {"const": true},
     "tag": {"type": "string", "pattern": "^pack-v.+$"},
-    "tag_object": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "tag_ref_type": {"enum": ["commit", "tag"]},
+    "tag_ref_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "tag_objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha", "target_sha", "target_type"],
+        "properties": {
+          "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "target_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "target_type": {"enum": ["commit", "tag"]}
+        }
+      }
+    },
     "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "root_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -51,5 +67,15 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"tag_ref_type": {"const": "commit"}}},
+      "then": {"properties": {"tag_objects": {"maxItems": 0}}}
+    },
+    {
+      "if": {"properties": {"tag_ref_type": {"const": "tag"}}},
+      "then": {"properties": {"tag_objects": {"minItems": 1}}}
+    }
+  ]
 }

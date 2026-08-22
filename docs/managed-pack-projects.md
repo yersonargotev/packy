@@ -74,6 +74,11 @@ The manifest digest is the SHA-256 of the exact root `pack.json` bytes. This
 makes manifest, closure, and file-index identity deterministic without
 executing project content.
 
+The end-user `bundle/` is an inert data boundary, including when admitted
+resources contain `.go` or `*_test.go` files. Its nested `go.mod` prevents root
+`go list`, `go test`, `go vet`, and golangci-lint `./...` patterns from
+discovering or executing arbitrary admitted Go content.
+
 ## Preventive validation
 
 Managed Pack Projects call Packy's reusable workflow before publishing an
@@ -113,11 +118,44 @@ Promotion writes one Pack Admission Record to
 `managed-packs/admissions/<pack-id>/<version>.json`. The v1 schema is
 [`schemas/managed-pack/v1/admission-record.schema.json`](../schemas/managed-pack/v1/admission-record.schema.json).
 Each append-only record pins repository and release numeric IDs, the immutable
-release assertion, canonical `pack-v<version>` tag, tag object, peeled commit,
-root tree, manifest and closure digests, and the complete sorted file index.
-An existing record is never replaced, and a new record is linked into its final
-path only after its complete contents have been written and synchronized.
+release assertion, canonical `pack-v<version>` tag, tag ref type and SHA, the
+complete ordered annotated-tag object chain, peeled commit, root tree, manifest
+and closure digests, and the complete sorted file index. `tag_objects` is
+ordered from the tag ref toward the commit. Each entry pins its object SHA,
+immediate target SHA, and target type. A lightweight tag has `tag_ref_type` set
+to `"commit"`, a `tag_ref_sha` equal to `commit`, and an empty `tag_objects`
+array. An annotated tag has `tag_ref_type` set to `"tag"`, a `tag_ref_sha` equal
+to the first entry's SHA, each entry targets the next tag object, and the final
+entry targets `commit`. An existing record is never replaced, and a new record
+is linked into its final path only after its complete contents have been written
+and synchronized.
 
 The current bundled catalog remains valid while its seven Packs migrate via
 higher immutable Managed Pack releases. This transition does not add a schema
 selector to the catalog loader or retain a permanent multi-version loader.
+
+## Promotion
+
+Packy maintainers promote exactly one immutable release from the repository
+root with the repository-private adapter:
+
+```sh
+go run ./internal/tools/promotepack <pack-id>@<version>
+```
+
+The adapter is intentionally outside `cmd/packy` and Packy's release artifacts.
+The parent coordinator first creates a temporary Packy snapshot whose Git remote
+contains no embedded credentials. A fresh credential-free prepublication process
+then fetches the registered Managed Pack Project release and exact origin commits,
+uses a separate credential-free, no-network worker to validate the inert local
+trees and seal the Declared Pack Closure, materializes the candidate, and runs
+every repository admission gate. After that process exits, a distinct fresh
+least-privilege mutation process receives only the sealed Candidate and publishes
+or adopts an automation-owned ready pull request through normal fast-forward Git
+operations. Every protocol file is identity- and digest-bound inside one temporary
+owner-only directory, which the parent removes after the result. Project or origin
+hooks, scripts, tests, builds, and binaries are never executed.
+
+The command reports exactly one proposal, deterministic no-change, or typed
+policy rejection. Promotion never replaces an admission record, never adopts a
+human-edited branch or pull request, and never force-pushes automation state.

@@ -28,6 +28,16 @@ a typed rejection, or one protected pull-request proposal. Acquisition,
 offline validation, and GitHub mutation remain separate authority phases, and
 project content is never executed.
 
+The private command's parent coordinator never parses Managed Pack Project
+content. It creates a temporary Packy snapshot with a credential-free remote
+and launches a fresh prepublication process without GitHub write credentials;
+that process owns acquisition, offline validation, candidate preparation, and
+every admission gate behind the single promotion module interface. It stages
+only the sealed Candidate into an owner-only, bounded, identity- and
+digest-bound protocol. A distinct fresh least-privilege mutation process then
+receives only that Candidate and may publish or adopt the protected proposal.
+The parent removes all protocol and candidate state after the typed result.
+
 Packy owns the reviewed one-to-one Managed Pack Registry and append-only Pack
 Admission Records outside the end-user bundle. The initial registry is:
 
