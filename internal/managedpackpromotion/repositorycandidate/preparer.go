@@ -312,23 +312,46 @@ func compatibilityFloor(current, candidate managedpack.Manifest) (versionLevel, 
 	if missingKey(oldReadiness, newReadiness) != "" || missingKey(oldRequirements, newRequirements) != "" || current.Selectable != candidate.Selectable {
 		return majorLevel, "removing or breaking a Pack contract"
 	}
+	if missingKey(newRequirements, oldRequirements) != "" {
+		return majorLevel, "adding a mandatory external requirement"
+	}
 	oldResources := resourceMap(current.Resources)
 	newResources := resourceMap(candidate.Resources)
 	if missingKey(oldResources, newResources) != "" {
 		return majorLevel, "removing a resource"
 	}
-	additiveContract := false
 	for identity, oldResource := range oldResources {
 		change := compareResourceContract(oldResource, newResources[identity])
 		if change == majorLevel {
 			return majorLevel, "breaking an existing resource contract"
 		}
-		additiveContract = additiveContract || change == minorLevel
 	}
-	if missingKey(newSurfaces, oldSurfaces) != "" || missingKey(newReadiness, oldReadiness) != "" || missingKey(newRequirements, oldRequirements) != "" || missingKey(newResources, oldResources) != "" || additiveContract {
+	resourcesAdded := false
+	for identity, resource := range newResources {
+		if _, exists := oldResources[identity]; exists {
+			continue
+		}
+		if resourceHasMandatoryContract(resource) {
+			return majorLevel, "adding a resource with a mandatory graph, requirement, authority, or surface capability"
+		}
+		resourcesAdded = true
+	}
+	if missingKey(newSurfaces, oldSurfaces) != "" || missingKey(newReadiness, oldReadiness) != "" || resourcesAdded {
 		return minorLevel, "adding to the Pack or an existing resource contract"
 	}
 	return patchLevel, "changing existing Pack content or metadata"
+}
+
+func resourceHasMandatoryContract(resource managedpack.Resource) bool {
+	if len(resource.Requires)+len(resource.Conflicts)+len(resource.Tools)+len(resource.Permissions) > 0 {
+		return true
+	}
+	for _, binding := range resource.Bindings {
+		if len(binding.Capabilities) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func stringSet[T ~string](values []T) map[string]T {
@@ -363,53 +386,7 @@ func compareResourceContract(left, right managedpack.Resource) versionLevel {
 	if reflect.DeepEqual(left, right) {
 		return patchLevel
 	}
-	var oldContract, newContract any
-	oldData, oldErr := json.Marshal(left)
-	newData, newErr := json.Marshal(right)
-	if oldErr != nil || newErr != nil || json.Unmarshal(oldData, &oldContract) != nil || json.Unmarshal(newData, &newContract) != nil {
-		return majorLevel
-	}
-	if structurallyContains(newContract, oldContract) {
-		return minorLevel
-	}
 	return majorLevel
-}
-
-func structurallyContains(candidate, current any) bool {
-	switch currentValue := current.(type) {
-	case map[string]any:
-		candidateValue, ok := candidate.(map[string]any)
-		if !ok {
-			return false
-		}
-		for key, value := range currentValue {
-			candidateField, exists := candidateValue[key]
-			if !exists || !structurallyContains(candidateField, value) {
-				return false
-			}
-		}
-		return true
-	case []any:
-		candidateValue, ok := candidate.([]any)
-		if !ok {
-			return false
-		}
-		for _, value := range currentValue {
-			found := false
-			for _, candidateItem := range candidateValue {
-				if structurallyContains(candidateItem, value) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
-		}
-		return true
-	default:
-		return reflect.DeepEqual(candidate, current)
-	}
 }
 
 func candidateAllowlist(coordinate managedpackpromotion.Coordinate, validation managedpack.Validation, changedBundlePaths map[string]bool) map[string]bool {
