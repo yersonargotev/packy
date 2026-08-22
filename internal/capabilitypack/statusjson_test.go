@@ -80,10 +80,10 @@ func TestStatusJSONCarriesFocusedResourceReadinessAndRequirement(t *testing.T) {
 func TestStatusJSONPreservesUnobservableExternalRequirementReason(t *testing.T) {
 	condition := ReadinessCondition{
 		Type: ConditionExternalRequirement, Dimension: ReadinessUsable, Value: ReadinessUnknown,
-		Reason: ReasonRequirementUnobservable, Message: "external requirement engram cannot be observed",
-		Evidence: []string{"executable:engram"}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "engram/requirement"},
+		Reason: ReasonRequirementUnobservable, Message: "external requirement example-tool cannot be observed",
+		Evidence: []string{"executable:example-tool"}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "external-tool/requirement"},
 	}
-	report := (StatusReport{Entries: []StatusEntry{{Pack: Pack{ID: "engram", Version: "1"}, Surface: SurfaceCodex, Conditions: []ReadinessCondition{condition}}}}).JSONReport(false)
+	report := (StatusReport{Entries: []StatusEntry{{Pack: Pack{ID: "external-tool", Version: "1"}, Surface: SurfaceCodex, Conditions: []ReadinessCondition{condition}}}}).JSONReport(false)
 	if len(report.Entries) != 1 || len(report.Entries[0].Conditions) != 1 || report.Entries[0].Conditions[0].Reason != ReasonRequirementUnobservable {
 		t.Fatalf("condition reason lost: %#v", report.Entries)
 	}

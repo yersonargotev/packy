@@ -10,75 +10,88 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/codex"
 )
 
-func projectInstallFixture(t *testing.T) (capabilitypack.Facade, capabilitypack.SurfaceAdapter, string, string) {
+type projectInstallFixture struct {
+	facade         capabilitypack.Facade
+	adapter        capabilitypack.SurfaceAdapter
+	project        string
+	packyHome      string
+	bundle         string
+	packID         string
+	resource       capabilitypack.ResourceIdentity
+	currentVersion string
+	candidate      string
+}
+
+func newProjectInstallFixture(t *testing.T) projectInstallFixture {
 	t.Helper()
-	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
-	if err != nil {
+	fixture := testsupport.CapabilityRich("project-runtime")
+	bundle := t.TempDir()
+	if err := fixture.WriteBundle(bundle); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
+	manifest := fixture.Manifest()
+	resource := capabilitypack.ResourceIdentity{Kind: "skill", ID: "helper"}
+	found := false
+	for _, candidate := range manifest.Resources {
+		if candidate.Kind == resource.Kind && candidate.ID == resource.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("synthetic Pack %q has no operational resource %s:%s", manifest.ID, resource.Kind, resource.ID)
+	}
 	project := t.TempDir()
 	adapter := codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(t.TempDir(), "global-skills"), filepath.Join(t.TempDir(), "global-AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
-	return capabilitypack.NewFacade(catalog), adapter, project, filepath.Join(t.TempDir(), ".packy")
+	return projectInstallFixture{
+		facade: capabilitypack.NewFacade(catalog), adapter: adapter, project: project,
+		packyHome: filepath.Join(t.TempDir(), ".packy"), bundle: bundle,
+		packID: manifest.ID, resource: resource,
+		currentVersion: fixture.CurrentVersion(), candidate: fixture.CandidateVersion(),
+	}
 }
 
 func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
-	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
+	fixture := newProjectInstallFixture(t)
+	install, err := fixture.facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
+		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project,
+		Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{fixture.resource}},
+	}, fixture.adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := capabilitypack.DiscoverForDurableIntents(context.Background(), bundle)
-	if err != nil {
-		t.Fatal(err)
+	if install.Pack.Version != fixture.currentVersion {
+		t.Fatalf("installed fixture version = %q, want current %q", install.Pack.Version, fixture.currentVersion)
 	}
-	project := t.TempDir()
-	adapter := codex.NewSurfaceAdapterWithConfig(bundle, filepath.Join(t.TempDir(), "global-skills"), filepath.Join(t.TempDir(), "global-AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
-	facade := capabilitypack.NewFacade(catalog)
-	install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
-		PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project,
-		Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{{Kind: "skill", ID: "ask-matt"}}},
-	}, adapter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: filepath.Join(t.TempDir(), ".packy"), Adapter: adapter}); err != nil {
+	if _, err := fixture.facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: fixture.packyHome, Adapter: fixture.adapter}); err != nil {
 		t.Fatal(err)
 	}
 	updatedBundle := t.TempDir()
-	if err := os.CopyFS(updatedBundle, os.DirFS(bundle)); err != nil {
+	if err := os.CopyFS(updatedBundle, os.DirFS(fixture.bundle)); err != nil {
 		t.Fatal(err)
 	}
-	manifestPath := filepath.Join(updatedBundle, "packs", "matty", "pack.json")
+	manifestPath := filepath.Join(updatedBundle, "packs", fixture.packID, "pack.json")
 	manifest, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var manifestDocument struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal(manifest, &manifestDocument); err != nil {
-		t.Fatal(err)
-	}
-	currentVersion, err := semver.StrictNewVersion(manifestDocument.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
 	updatedManifest := strings.Replace(
 		string(manifest),
-		`"version": "`+currentVersion.String()+`"`,
-		`"version": "`+currentVersion.IncPatch().String()+`"`,
+		`"version": "`+fixture.currentVersion+`"`,
+		`"version": "`+fixture.candidate+`"`,
 		1,
 	)
 	if updatedManifest == string(manifest) {
-		t.Fatal("Matty fixture version was not updated")
+		t.Fatal("synthetic fixture version was not updated")
 	}
 	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
 		t.Fatal(err)
@@ -89,7 +102,7 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 	}
 	updatedAdapter := codex.NewSurfaceAdapterWithConfig(updatedBundle, filepath.Join(t.TempDir(), "global-skills"), filepath.Join(t.TempDir(), "global-AGENTS.md"), filepath.Join(t.TempDir(), "config.toml"))
 	updatedFacade := capabilitypack.NewFacade(updatedCatalog)
-	preview, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project}, updatedAdapter)
+	preview, err := updatedFacade.PreviewProjectUpdate(context.Background(), capabilitypack.ProjectUpdateRequest{PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project}, updatedAdapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,17 +116,18 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 }
 
 func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) {
-	facade, adapter, project, packyHome := projectInstallFixture(t)
-	install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
-		PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project,
-	}, adapter)
+	fixture := newProjectInstallFixture(t)
+	install, err := fixture.facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
+		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project,
+		Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{fixture.resource}},
+	}, fixture.adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: packyHome, Adapter: adapter}); err != nil {
-		t.Fatal(err)
+	if _, err := fixture.facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: fixture.packyHome, Adapter: fixture.adapter}); err != nil {
+		t.Fatalf("apply synthetic project install: %v; preview=%+v", err, install)
 	}
-	lockPath := filepath.Join(project, "packy.lock.json")
+	lockPath := filepath.Join(fixture.project, "packy.lock.json")
 	var lock capabilitypack.ProjectLockProposal
 	lockData, err := os.ReadFile(lockPath)
 	if err != nil {
@@ -123,12 +137,12 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 		t.Fatal(err)
 	}
 	lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
-		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "mcp_server"},
-		{Category: capabilitypack.ProjectActivationHooks, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "lifecycle"},
-		{Category: capabilitypack.ProjectActivationPlugins, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "plugin"},
-		{Category: capabilitypack.ProjectActivationExternalRequirements, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "tool:node"},
-		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "project-trust"},
-		{Category: capabilitypack.ProjectActivationAuthentication, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "environment-reference:PACKY_TEST_TOKEN"},
+		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: fixture.resource, Detail: "mcp_server"},
+		{Category: capabilitypack.ProjectActivationHooks, Surface: capabilitypack.SurfaceCodex, Resource: fixture.resource, Detail: "lifecycle"},
+		{Category: capabilitypack.ProjectActivationPlugins, Surface: capabilitypack.SurfaceCodex, Resource: fixture.resource, Detail: "plugin"},
+		{Category: capabilitypack.ProjectActivationExternalRequirements, Surface: capabilitypack.SurfaceCodex, Resource: fixture.resource, Detail: "tool:fixture-tool"},
+		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: fixture.resource, Detail: "project-trust"},
+		{Category: capabilitypack.ProjectActivationAuthentication, Surface: capabilitypack.SurfaceCodex, Resource: fixture.resource, Detail: "environment-reference:PACKY_TEST_TOKEN"},
 	}
 	updatedLock, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
@@ -138,8 +152,8 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	preview, err := facade.PreviewProjectActivation(context.Background(), capabilitypack.ProjectActivationRequest{
-		PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter,
+	preview, err := fixture.facade.PreviewProjectActivation(context.Background(), capabilitypack.ProjectActivationRequest{
+		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project, PackyHome: fixture.packyHome, Adapter: fixture.adapter,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -163,22 +177,22 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 			}
 		}
 	}
-	if _, err := facade.ApplyProjectActivation(context.Background(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Adapter: adapter}); err == nil || !strings.Contains(err.Error(), "interactive") {
+	if _, err := fixture.facade.ApplyProjectActivation(context.Background(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Adapter: fixture.adapter}); err == nil || !strings.Contains(err.Error(), "interactive") {
 		t.Fatalf("non-interactive activation error = %v", err)
 	}
 	approvals := make([]capabilitypack.ProjectActivationApproval, 0, len(preview.Categories))
 	for _, category := range preview.Categories {
-		approvals = append(approvals, facade.ApproveProjectActivation(preview, category.Kind))
+		approvals = append(approvals, fixture.facade.ApproveProjectActivation(preview, category.Kind))
 	}
-	result, err := facade.ApplyProjectActivation(context.Background(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Approvals: approvals, Adapter: adapter, Interactive: true})
+	result, err := fixture.facade.ApplyProjectActivation(context.Background(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Approvals: approvals, Adapter: fixture.adapter, Interactive: true})
 	if err != nil || result.Status != "active" {
 		t.Fatalf("apply = %+v, %v", result, err)
 	}
-	status, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: packyHome, RequireUsable: true, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}})
+	status, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: fixture.project, PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, PackyHome: fixture.packyHome, RequireUsable: true, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: fixture.adapter}})
 	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeActive {
 		t.Fatalf("status = %+v, %v", status, err)
 	}
-	statePath := filepath.Join(packyHome, "projects", projectActivationDigest(t, project), "state-matty-codex.json")
+	statePath := filepath.Join(fixture.packyHome, "projects", projectActivationDigest(t, fixture.project), "state-"+fixture.packID+"-codex.json")
 	state, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +209,7 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err := os.WriteFile(statePath, incompleteState, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	blocked, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: packyHome, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}})
+	blocked, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: fixture.project, PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, PackyHome: fixture.packyHome, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: fixture.adapter}})
 	if err != nil || len(blocked.Packs) != 1 || blocked.Packs[0].Runtime != capabilitypack.ProjectRuntimeBlocked {
 		t.Fatalf("incomplete personal state did not fail closed: %+v, %v", blocked, err)
 	}
@@ -213,7 +227,7 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 	if err := os.WriteFile(lockPath, append(changedLock, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	status, err = capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: packyHome, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}})
+	status, err = capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: fixture.project, PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, PackyHome: fixture.packyHome, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: fixture.adapter}})
 	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeStale {
 		t.Fatalf("changed sensitive lock status = %+v, %v", status, err)
 	}
@@ -242,8 +256,8 @@ func TestProjectActivationPreviewsAndPersistsSeparateCodexConsent(t *testing.T) 
 }
 
 func TestProjectActivationRequiresAProjectInstallation(t *testing.T) {
-	_, adapter, project, packyHome := projectInstallFixture(t)
-	_, err := capabilitypack.NewFacade(capabilitypack.Catalog{}).PreviewProjectActivation(context.Background(), capabilitypack.ProjectActivationRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
+	fixture := newProjectInstallFixture(t)
+	_, err := capabilitypack.NewFacade(capabilitypack.Catalog{}).PreviewProjectActivation(context.Background(), capabilitypack.ProjectActivationRequest{PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project, PackyHome: fixture.packyHome, Adapter: fixture.adapter})
 	if err == nil || !strings.Contains(err.Error(), "project installation") {
 		t.Fatalf("missing installation error = %v", err)
 	}
@@ -260,26 +274,29 @@ func projectActivationDigest(t *testing.T, root string) string {
 }
 
 func TestProjectActivationIsNotRequiredForDeclarativeOnlyInstallation(t *testing.T) {
-	facade, adapter, project, packyHome := projectInstallFixture(t)
-	install, err := facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project}, adapter)
+	fixture := newProjectInstallFixture(t)
+	install, err := fixture.facade.PreviewProjectInstall(context.Background(), capabilitypack.ProjectInstallRequest{
+		PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project,
+		Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{fixture.resource}},
+	}, fixture.adapter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: packyHome, Adapter: adapter}); err != nil {
-		t.Fatal(err)
+	if _, err := fixture.facade.ApplyProjectInstall(context.Background(), capabilitypack.ProjectInstallApplyRequest{Preview: install, PackyHome: fixture.packyHome, Adapter: fixture.adapter}); err != nil {
+		t.Fatalf("apply synthetic project install: %v; preview=%+v", err, install)
 	}
-	preview, err := facade.PreviewProjectActivation(context.Background(), capabilitypack.ProjectActivationRequest{PackID: "matty", Surface: capabilitypack.SurfaceCodex, ProjectRoot: project, PackyHome: packyHome, Adapter: adapter})
+	preview, err := fixture.facade.PreviewProjectActivation(context.Background(), capabilitypack.ProjectActivationRequest{PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, ProjectRoot: fixture.project, PackyHome: fixture.packyHome, Adapter: fixture.adapter})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if preview.Disposition != capabilitypack.ProjectActivationNotRequired || preview.RuntimeRequired || len(preview.Categories) != 0 {
 		t.Fatalf("declarative preview = %+v", preview)
 	}
-	status, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: packyHome, RequireUsable: true, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter}})
+	status, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{ProjectRoot: fixture.project, PackID: fixture.packID, Surface: capabilitypack.SurfaceCodex, PackyHome: fixture.packyHome, RequireUsable: true, Adapters: map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: fixture.adapter}})
 	if err != nil || len(status.Packs) != 1 || status.Packs[0].Runtime != capabilitypack.ProjectRuntimeNotRequired || status.Packs[0].RequirementSatisfied || status.Packs[0].Readiness.Configured != capabilitypack.ReadinessTrue || status.Packs[0].Readiness.Authorized != capabilitypack.ReadinessUnknown || status.Packs[0].Readiness.Usable != capabilitypack.ReadinessUnknown {
 		t.Fatalf("declarative status = %+v, %v", status, err)
 	}
-	if _, err := facade.ApplyProjectActivation(context.Background(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Adapter: adapter, Interactive: true}); err == nil || !strings.Contains(err.Error(), "not-required") {
+	if _, err := fixture.facade.ApplyProjectActivation(context.Background(), capabilitypack.ProjectActivationApplyRequest{Preview: preview, Adapter: fixture.adapter, Interactive: true}); err == nil || !strings.Contains(err.Error(), "not-required") {
 		t.Fatalf("empty activation error = %v", err)
 	}
 }

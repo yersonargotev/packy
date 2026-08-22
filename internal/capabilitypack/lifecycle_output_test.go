@@ -81,10 +81,10 @@ func TestSensitiveEffectOriginsIncludeOnlySurfaceCapabilityDependencies(t *testi
 }
 
 func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
-	pack := Pack{ID: "addy", Version: "1.0.0",
+	pack := Pack{ID: "lifecycle-fixture", Version: "1.0.0",
 		Resources: []Resource{
 			{Kind: "agent", ID: "reviewer", Permissions: []string{"network", "filesystem", "network"}, Bindings: []Binding{
-				{Surface: SurfaceOpenCode, Projection: "agent", Name: "addy-reviewer", Invocation: "@addy-reviewer", Mode: "native", Sharing: "exclusive"},
+				{Surface: SurfaceOpenCode, Projection: "agent", Name: "fixture-reviewer", Invocation: "@fixture-reviewer", Mode: "native", Sharing: "exclusive"},
 				{Surface: SurfaceCodex, Projection: "agent", Name: "reviewer", Invocation: "delegate", Mode: "degraded", Degradation: "no nested delegation", Sharing: "exclusive"},
 			}},
 			{Kind: "skill", ID: "run", Permissions: []string{"process"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "run", Invocation: "$run", Mode: "native", Sharing: "shared"}}},
@@ -183,9 +183,9 @@ func TestLifecycleCompatibilityBlocksExcludedDependencyAndRendersSurfaceExclusio
 }
 
 func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
-	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "addy", Version: "1.0.0", manifestVersion: manifestSchemaV3}, operation: OperationActivate,
+	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "lifecycle-report", Version: "1.0.0", manifestVersion: manifestSchemaV3}, operation: OperationActivate,
 		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}},
-		readiness: ReadinessStatus{Configured: ReadinessFalse, Authorized: ReadinessUnknown, Usable: ReadinessUnknown}, conditions: []ReadinessCondition{{Type: ConditionRuntimeUsability, Dimension: ReadinessUsable, Value: ReadinessUnknown, Reason: ReasonRuntimeUnobservable, Message: "runtime usability cannot be observed", Evidence: []string{}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "addy/usable"}}}, pendingEvidence: []string{"z", "a"},
+		readiness: ReadinessStatus{Configured: ReadinessFalse, Authorized: ReadinessUnknown, Usable: ReadinessUnknown}, conditions: []ReadinessCondition{{Type: ConditionRuntimeUsability, Dimension: ReadinessUsable, Value: ReadinessUnknown, Reason: ReasonRuntimeUnobservable, Message: "runtime usability cannot be observed", Evidence: []string{}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "lifecycle-report/usable"}}}, pendingEvidence: []string{"z", "a"},
 		blockers:            []PlanBlocker{{Kind: BlockerAlias, Subject: "z", Detail: "collision"}},
 		pendingHumanActions: []string{"z", "a"}, phases: []PlanPhase{{Kind: ConsentReversibleLocal, Digest: "phase", ApprovalRequired: true,
 			Actions: []ProjectionAction{{ID: "z"}, {ID: "a"}}}}}
@@ -207,7 +207,7 @@ func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 	if got.Contract.Compatibility != CompatibilityBlocked || got.ExpectedReadiness.Configured != ReadinessFalse || !reflect.DeepEqual(got.PendingEvidence, []string{"a", "z"}) {
 		t.Fatalf("planned lifecycle facts = %#v", got)
 	}
-	if len(got.Conditions) != 1 || got.Conditions[0].Value != ReadinessUnknown || got.Conditions[0].Freshness.ValidityIdentity != "addy/usable" {
+	if len(got.Conditions) != 1 || got.Conditions[0].Value != ReadinessUnknown || got.Conditions[0].Freshness.ValidityIdentity != "lifecycle-report/usable" {
 		t.Fatalf("conditions lost from lifecycle plan: %#v", got.Conditions)
 	}
 	failure := JSONFailureFor("apply", ErrStalePlan, &plan, nil, nil)
@@ -226,13 +226,13 @@ func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
 func TestLifecycleReportRedactsSealedExternalHostContent(t *testing.T) {
 	plan := ReconciliationPlan{pack: Pack{ID: "p", Version: "1"}, phases: []PlanPhase{
 		{Kind: ConsentReversibleLocal, Actions: []ProjectionAction{{ID: "instruction:x", Content: "foreign-document"}}},
-		{Kind: ConsentExecutableExternal, Actions: []ProjectionAction{{ID: "hook:x", Consent: ConsentExecutableExternal, Content: "foreign-secret", Args: []string{"mcp", "add", "--env", "TOKEN=secret", "--env=OTHER=value"}, Description: "event=SessionStart command=engram"}}},
+		{Kind: ConsentExecutableExternal, Actions: []ProjectionAction{{ID: "hook:x", Consent: ConsentExecutableExternal, Content: "foreign-secret", Args: []string{"mcp", "add", "--env", "TOKEN=secret", "--env=OTHER=value"}, Description: "event=SessionStart command=example-tool"}}},
 	}}
 	encoded, err := json.Marshal(plan.JSONReport(true))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), "foreign-secret") || strings.Contains(string(encoded), "foreign-document") || strings.Contains(string(encoded), "TOKEN=secret") || strings.Contains(string(encoded), "OTHER=value") || !strings.Contains(string(encoded), "redacted") || !strings.Contains(string(encoded), "event=SessionStart command=engram") {
+	if strings.Contains(string(encoded), "foreign-secret") || strings.Contains(string(encoded), "foreign-document") || strings.Contains(string(encoded), "TOKEN=secret") || strings.Contains(string(encoded), "OTHER=value") || !strings.Contains(string(encoded), "redacted") || !strings.Contains(string(encoded), "event=SessionStart command=example-tool") {
 		t.Fatalf("report = %s", encoded)
 	}
 	cause := errors.New("apply failed for TOKEN=secret, OTHER=value, and foreign-document")

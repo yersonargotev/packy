@@ -12,12 +12,12 @@ import (
 
 func TestProjectControlledCheckResourcesAreScopedToTheReceiptSurface(t *testing.T) {
 	lock := ProjectLockProposal{Receipts: []installedPackReceipt{
-		{Pack: installedPackIdentity{ID: "addy", Version: "2.0.3"}, Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "notice", ID: "mit"}, {Kind: "skill", ID: "api"}}},
-		{Pack: installedPackIdentity{ID: "addy", Version: "2.0.3"}, Surface: SurfaceClaude, Resources: []ResourceIdentity{{Kind: "asset", ID: "guide"}, {Kind: "notice", ID: "mit"}, {Kind: "skill", ID: "workflow"}}},
+		{Pack: installedPackIdentity{ID: "receipt-scope", Version: "2.0.3"}, Surface: SurfaceCodex, Resources: []ResourceIdentity{{Kind: "notice", ID: "terms"}, {Kind: "skill", ID: "api"}}},
+		{Pack: installedPackIdentity{ID: "receipt-scope", Version: "2.0.3"}, Surface: SurfaceClaude, Resources: []ResourceIdentity{{Kind: "asset", ID: "guide"}, {Kind: "notice", ID: "terms"}, {Kind: "skill", ID: "workflow"}}},
 	}}
 
-	want := []ResourceIdentity{{Kind: "notice", ID: "mit"}, {Kind: "skill", ID: "api"}}
-	if got := projectReceiptResources(lock, "addy", SurfaceCodex); !reflect.DeepEqual(got, want) {
+	want := []ResourceIdentity{{Kind: "notice", ID: "terms"}, {Kind: "skill", ID: "api"}}
+	if got := projectReceiptResources(lock, "receipt-scope", SurfaceCodex); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Codex controlled-check resources = %#v, want %#v", got, want)
 	}
 }
