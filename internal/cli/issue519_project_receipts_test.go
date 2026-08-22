@@ -10,6 +10,36 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
+func setManifestResourceRequires(t *testing.T, manifest string, identity capabilitypack.ResourceIdentity, requires []string) string {
+	t.Helper()
+	var document map[string]any
+	if err := json.Unmarshal([]byte(manifest), &document); err != nil {
+		t.Fatal(err)
+	}
+	resources, ok := document["resources"].([]any)
+	if !ok {
+		t.Fatal("manifest resources are missing")
+	}
+	found := false
+	for _, value := range resources {
+		resource, ok := value.(map[string]any)
+		if !ok || resource["kind"] != identity.Kind || resource["id"] != identity.ID {
+			continue
+		}
+		resource["requires"] = requires
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("manifest resource %s was not found", identity)
+	}
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data) + "\n"
+}
+
 func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, _, _ := packActivationOptions(t, terminal)
@@ -298,10 +328,8 @@ func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncomp
 	if err != nil {
 		t.Fatal(err)
 	}
-	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.4"`, `"version": "1.0.5"`, 1)
-	if updatedManifest == string(manifest) {
-		t.Fatal("Matty fixture version did not match the expected current version")
-	}
+	currentVersion := checkedInMattyFacts(t).Version
+	updatedManifest, updatedVersion := bumpManifestPatchVersion(t, string(manifest))
 	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -318,16 +346,13 @@ func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncomp
 			versions[receipt.Surface] = receipt.Pack.Version
 		}
 	}
-	if versions[capabilitypack.SurfaceCodex] != "1.0.5" || versions[capabilitypack.SurfaceOpenCode] != "1.0.4" {
+	if versions[capabilitypack.SurfaceCodex] != updatedVersion || versions[capabilitypack.SurfaceOpenCode] != currentVersion {
 		t.Fatalf("compatible shared update did not retain per-surface versions: %#v", versions)
 	}
 	if out, err := executeCommand(t, NewRootCommand(opts), "update", "matty", "--surface", "opencode", "--project"); err != nil {
 		t.Fatalf("compatible OpenCode shared update: %v\n%s", err, out)
 	}
-	updatedAgain := strings.Replace(updatedManifest, `"version": "1.0.5"`, `"version": "1.0.6"`, 1)
-	if updatedAgain == updatedManifest {
-		t.Fatal("updated Matty fixture version did not match")
-	}
+	updatedAgain, _ := bumpManifestPatchVersion(t, updatedManifest)
 	if err := os.WriteFile(manifestPath, []byte(updatedAgain), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -362,10 +387,7 @@ func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	withDependency := strings.Replace(string(manifest), `"requires": [],`, `"requires": ["skill:code-review"],`, 1)
-	if withDependency == string(manifest) {
-		t.Fatal("Matty fixture omitted the expected empty ask-matt dependency list")
-	}
+	withDependency := setManifestResourceRequires(t, string(manifest), capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, []string{"skill:code-review"})
 	if err := os.WriteFile(manifestPath, []byte(withDependency), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -378,8 +400,8 @@ func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t
 	if _, err := os.Stat(retiredPath); err != nil {
 		t.Fatalf("shared dependency was not installed: %v", err)
 	}
-	withoutDependency := strings.Replace(withDependency, `"requires": ["skill:code-review"],`, `"requires": [],`, 1)
-	withoutDependency = strings.Replace(withoutDependency, `"version": "1.0.4"`, `"version": "1.0.5"`, 1)
+	withoutDependency := setManifestResourceRequires(t, withDependency, capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, []string{})
+	withoutDependency, _ = bumpManifestPatchVersion(t, withoutDependency)
 	if err := os.WriteFile(manifestPath, []byte(withoutDependency), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -28,7 +28,11 @@ func TestUnobservablePackReadinessIsUnknownRatherThanDenied(t *testing.T) {
 	if observed.AuthorizationObserved || observed.Authorized || observed.UsabilityObserved || observed.Usable {
 		t.Fatalf("unobservable readiness = %#v", observed)
 	}
-	matty, err := adapter.inspectReadiness(context.Background(), capabilitypack.Pack{ID: "synthetic", Resources: []capabilitypack.Resource{{Kind: "skill", ID: "guide"}}}, capabilitypack.SurfaceInspection{}, nil)
+	matty, err := adapter.inspectReadiness(context.Background(), capabilitypack.Pack{ID: "synthetic", Resources: []capabilitypack.Resource{
+		{Kind: "skill", ID: "guide"},
+		{Kind: "lifecycle", ID: "setup"},
+		{Kind: "notice", ID: "mit"},
+	}}, capabilitypack.SurfaceInspection{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

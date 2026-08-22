@@ -12,7 +12,7 @@ import (
 )
 
 func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *testing.T) {
-	version, resources := checkedInMattyFacts(t)
+	facts := checkedInMattyFacts(t)
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, repoRoot := packActivationOptions(t, terminal)
 	project := filepath.Join(t.TempDir(), "project")
@@ -64,7 +64,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatalf("decode manifest: %v\n%s", err, manifestData)
 	}
-	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Version != version || manifest.Packs[0].SurfaceIntents[0].Surface != capabilitypack.SurfaceCodex {
+	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Version != facts.Version || manifest.Packs[0].SurfaceIntents[0].Surface != capabilitypack.SurfaceCodex {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 
@@ -76,7 +76,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatalf("decode lock: %v\n%s", err, lockData)
 	}
-	if lock.SchemaVersion != 1 || len(lock.Receipts) != 1 || len(lock.Receipts[0].Resources) != resources+1 || len(lock.Receipts[0].Projections) != resources+2 {
+	if lock.SchemaVersion != 1 || len(lock.Receipts) != 1 || len(lock.Receipts[0].Resources) != facts.Resources+1 || len(lock.Receipts[0].Projections) != facts.Skills+2 {
 		t.Fatalf("lock = %#v", lock)
 	}
 

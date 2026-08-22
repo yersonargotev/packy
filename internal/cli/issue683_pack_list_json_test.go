@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -93,6 +94,7 @@ func TestPackListJSONRepresentsAnEmptyCatalogWithAnEmptyArray(t *testing.T) {
 
 func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	opts, _ := packListRepositoryOptions(t)
+	mattyVersion := checkedInMattyFacts(t).Version
 
 	output, err := executeCommand(t, NewRootCommand(opts), "list")
 	if err != nil {
@@ -103,7 +105,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 		"argote          1.0.2    Yerson Argote's engineering and communication guidance                 claude, codex, opencode\n" +
 		"engram          3.1.0    Upstream Engram CLI memory workflows for agent work                    codex\n" +
 		"issue-delivery  1.1.1    Deliver issues through policy-driven or Matt-configured workflows      codex\n" +
-		"matty           1.0.4    Matty workflow                                                         claude, codex, opencode\n" +
+		fmt.Sprintf("matty           %-7s  Matty workflow                                                         claude, codex, opencode\n", mattyVersion) +
 		"orchestrate     1.0.1    Coordinate focused Codex subagents                                     codex\n" +
 		"pstack          1.0.0    Apply pstack's reviewed portable engineering workflows and principles  claude, codex, opencode\n"
 	if output != want {
