@@ -65,8 +65,62 @@ func TestPublisherAppendsAnUntouchedProposalWithoutRewritingHistory(t *testing.T
 	if strings.Join(gateway.mutations, ",") != "commit,push,edit-pr" {
 		t.Fatalf("mutations = %v", gateway.mutations)
 	}
-	if gateway.lastCommit.ParentSHA != oldHead {
-		t.Fatalf("append parent = %q, want %q", gateway.lastCommit.ParentSHA, oldHead)
+	if strings.Join(gateway.lastCommit.ParentSHAs, ",") != oldHead {
+		t.Fatalf("append parents = %q, want %q", gateway.lastCommit.ParentSHAs, oldHead)
+	}
+}
+
+func TestPublisherRegeneratesAnUntouchedStaleProposalOnTheNewBaseWithAMergeCommit(t *testing.T) {
+	old, gateway := publishedFixture(t)
+	oldHead := gateway.branch.HeadSHA
+	candidate := rebuiltCandidate(old, gateway)
+
+	publication, err := New(gateway).Publish(context.Background(), candidate)
+	if err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if publication.Proposal == nil || publication.Proposal.HeadSHA == oldHead {
+		t.Fatalf("Publish() = %+v", publication)
+	}
+	if strings.Join(gateway.mutations, ",") != "commit,push,edit-pr" {
+		t.Fatalf("mutations = %v", gateway.mutations)
+	}
+	wantParents := []string{oldHead, candidate.BaseSHA}
+	if strings.Join(gateway.lastCommit.ParentSHAs, ",") != strings.Join(wantParents, ",") {
+		t.Fatalf("regeneration parents = %v, want %v", gateway.lastCommit.ParentSHAs, wantParents)
+	}
+
+	publication, err = New(gateway).Publish(context.Background(), candidate)
+	if err != nil {
+		t.Fatalf("second Publish() error = %v", err)
+	}
+	if publication.NoChangeReason == "" || strings.Join(gateway.mutations, ",") != "commit,push,edit-pr" {
+		t.Fatalf("second publication = %+v, mutations = %v", publication, gateway.mutations)
+	}
+}
+
+func TestPublisherRejectsStaleProposalsWithHumanOrForeignState(t *testing.T) {
+	tests := map[string]func(*fakeGateway){
+		"human-edited metadata": func(gateway *fakeGateway) {
+			gateway.pullRequests[0].Body += "\nhuman note"
+			gateway.pullRequests[0].LastEditor = "maintainer"
+		},
+		"foreign branch history": func(gateway *fakeGateway) {
+			gateway.branch.Commits[len(gateway.branch.Commits)-1].Message = "Promote foreign-1.2.3"
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			old, gateway := publishedFixture(t)
+			candidate := rebuiltCandidate(old, gateway)
+			mutate(gateway)
+
+			_, err := New(gateway).Publish(context.Background(), candidate)
+			assertRejectionGate(t, err, managedpackpromotion.GateProposalOwnership)
+			if len(gateway.mutations) != 0 {
+				t.Fatalf("mutations = %v", gateway.mutations)
+			}
+		})
 	}
 }
 
@@ -153,7 +207,7 @@ func TestPublisherRecoversMetadataOneHeadBehindAfterProjectionLag(t *testing.T) 
 	record := recordFor(candidate, gateway.actor, "")
 	head, err := gateway.Commit(context.Background(), CommitRequest{
 		RepositoryRoot: candidate.RepositoryRoot,
-		ParentSHA:      gateway.branch.HeadSHA,
+		ParentSHAs:     []string{gateway.branch.HeadSHA},
 		TreeSHA:        candidate.ResultTreeSHA,
 		Message:        commitMessage(candidate, record),
 	})
@@ -180,7 +234,7 @@ func TestPublisherRecoversTheExactOwnedBranchWhenPullRequestProjectionIsAbsent(t
 	gateway := newFakeGateway(candidate)
 	record := recordFor(candidate, gateway.actor, "")
 	head, err := gateway.Commit(context.Background(), CommitRequest{
-		RepositoryRoot: candidate.RepositoryRoot, ParentSHA: candidate.BaseSHA,
+		RepositoryRoot: candidate.RepositoryRoot, ParentSHAs: []string{candidate.BaseSHA},
 		TreeSHA: candidate.ResultTreeSHA, Message: commitMessage(candidate, record),
 	})
 	if err != nil {
@@ -238,6 +292,52 @@ func TestCLIGatewayFailsClosedWhenTheLastContentEditorsIdentityIsUnavailable(t *
 	}
 }
 
+func TestCLIGatewayCreatesARegenerationCommitWithTheExactParentSet(t *testing.T) {
+	tree := strings.Repeat("c", 40)
+	oldHead := strings.Repeat("d", 40)
+	newBase := strings.Repeat("e", 40)
+	created := strings.Repeat("f", 40)
+	var commands []Command
+	runner := runnerFunc(func(_ context.Context, command Command) (string, error) {
+		commands = append(commands, command)
+		switch command.Arguments[0] {
+		case "commit-tree":
+			return created + "\n", nil
+		case "show":
+			return tree + "\x00" + oldHead + " " + newBase + "\n", nil
+		case "push":
+			return "", nil
+		default:
+			return "", fmt.Errorf("unexpected command: %+v", command)
+		}
+	})
+
+	gateway := &cliGateway{runner: runner}
+	head, err := gateway.Commit(context.Background(), CommitRequest{
+		RepositoryRoot: "/tmp/packy", ParentSHAs: []string{oldHead, newBase}, TreeSHA: tree, Message: "regenerate",
+	})
+	if err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+	if err := gateway.FastForwardPush(context.Background(), "/tmp/packy", head, "promote/addy-1.2.3"); err != nil {
+		t.Fatalf("FastForwardPush() error = %v", err)
+	}
+	if head != created || len(commands) != 3 {
+		t.Fatalf("head = %q, commands = %+v", head, commands)
+	}
+	want := []string{"commit-tree", tree, "-p", oldHead, "-p", newBase, "-m", "regenerate"}
+	if strings.Join(commands[0].Arguments, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("commit-tree arguments = %v, want %v", commands[0].Arguments, want)
+	}
+	if strings.Join(commands[1].Arguments, " ") != "show -s --format=%T%x00%P "+created {
+		t.Fatalf("verification command = %v", commands[1].Arguments)
+	}
+	wantPush := "push origin " + created + ":refs/heads/promote/addy-1.2.3"
+	if strings.Join(commands[2].Arguments, " ") != wantPush {
+		t.Fatalf("push command = %v, want %q", commands[2].Arguments, wantPush)
+	}
+}
+
 func testCandidate() managedpackpromotion.Candidate {
 	return managedpackpromotion.Candidate{
 		ID:             strings.Repeat("1", 64),
@@ -250,6 +350,18 @@ func testCandidate() managedpackpromotion.Candidate {
 		ResultTreeSHA:  strings.Repeat("c", 40),
 		Branch:         "promote/addy-1.2.3",
 	}
+}
+
+func rebuiltCandidate(old managedpackpromotion.Candidate, gateway *fakeGateway) managedpackpromotion.Candidate {
+	candidate := old
+	candidate.ID = strings.Repeat("2", 64)
+	candidate.BaseSHA = strings.Repeat("8", 40)
+	candidate.HeadSHA = strings.Repeat("e", 40)
+	candidate.ResultTreeSHA = strings.Repeat("f", 40)
+	candidate.Summary = "Regenerate addy 1.2.3 after all gates passed on the new base."
+	gateway.base = candidate.BaseSHA
+	gateway.branch.BaseAncestor = false
+	return candidate
 }
 
 type fakeGateway struct {
@@ -292,7 +404,7 @@ func (gateway *fakeGateway) Commit(_ context.Context, request CommitRequest) (st
 	gateway.lastCommit = request
 	head := strings.Repeat(string(rune('d'+gateway.commitCount-1)), 40)
 	gateway.commits[head] = Commit{
-		SHA: head, Parents: []string{request.ParentSHA}, TreeSHA: request.TreeSHA,
+		SHA: head, Parents: append([]string(nil), request.ParentSHAs...), TreeSHA: request.TreeSHA,
 		AuthorName: botAuthorName, AuthorEmail: botAuthorEmail,
 		CommitterName: botAuthorName, CommitterEmail: botAuthorEmail, Message: request.Message,
 	}
@@ -329,6 +441,12 @@ type publicationRunner struct {
 	commands        []Command
 	sawGraphQL      bool
 	graphqlResponse string
+}
+
+type runnerFunc func(context.Context, Command) (string, error)
+
+func (run runnerFunc) Run(ctx context.Context, command Command) (string, error) {
+	return run(ctx, command)
 }
 
 func (runner *publicationRunner) Run(_ context.Context, command Command) (string, error) {
@@ -417,6 +535,9 @@ func (gateway *fakeGateway) FastForwardPush(_ context.Context, _ string, head, b
 	commit, ok := gateway.commits[head]
 	if !ok {
 		return errors.New("unknown commit")
+	}
+	if gateway.branch != nil && (len(commit.Parents) == 0 || commit.Parents[0] != gateway.branch.HeadSHA) {
+		return errors.New("push is not a fast-forward")
 	}
 	commits := []Commit{commit}
 	if gateway.branch != nil {

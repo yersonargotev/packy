@@ -84,7 +84,7 @@ type PullRequest struct {
 
 type CommitRequest struct {
 	RepositoryRoot string
-	ParentSHA      string
+	ParentSHAs     []string
 	TreeSHA        string
 	Message        string
 }
@@ -160,7 +160,7 @@ func (adapter *Adapter) create(ctx context.Context, candidate managedpackpromoti
 func (adapter *Adapter) adopt(ctx context.Context, candidate managedpackpromotion.Candidate, observed Observation) (managedpackpromotion.Publication, error) {
 	branch := observed.Branch
 	if reason := ownedBranch(branch, candidate, observed.Actor); reason != "" {
-		return reject(managedpackpromotion.GateProposalOwnership, reason)
+		return adapter.regenerateStale(ctx, candidate, observed, reason)
 	}
 	if len(observed.PullRequests) == 0 {
 		if !latestCommitMatches(branch, candidate, observed.Actor) {
@@ -197,15 +197,31 @@ func (adapter *Adapter) adopt(ctx context.Context, candidate managedpackpromotio
 		return managedpackpromotion.Publication{NoChangeReason: "the exact automation-owned proposal already exists"}, nil
 	}
 
-	return adapter.update(ctx, candidate, observed, pr)
+	return adapter.update(ctx, candidate, observed, pr, []string{branch.HeadSHA})
 }
 
-func (adapter *Adapter) update(ctx context.Context, candidate managedpackpromotion.Candidate, observed Observation, pr PullRequest) (managedpackpromotion.Publication, error) {
-	parent := observed.Branch.HeadSHA
+func (adapter *Adapter) regenerateStale(ctx context.Context, candidate managedpackpromotion.Candidate, observed Observation, branchReason string) (managedpackpromotion.Publication, error) {
+	if observed.Branch == nil || len(observed.PullRequests) != 1 {
+		return reject(managedpackpromotion.GateProposalOwnership, branchReason)
+	}
+	pr := observed.PullRequests[0]
+	record, _, reason := ownedPullRequestOnAnyBase(pr, candidate, observed.Actor)
+	if reason != "" || pr.HeadSHA != observed.Branch.HeadSHA || record.HeadSHA != observed.Branch.HeadSHA ||
+		record.TreeSHA != observed.Branch.TreeSHA || record.BaseSHA == candidate.BaseSHA ||
+		!latestCommitMatchesRecord(observed.Branch, record, observed.Actor) {
+		return reject(managedpackpromotion.GateProposalOwnership, branchReason)
+	}
+	if reason := ownedBranchAtBase(observed.Branch, candidate, observed.Actor, record.BaseSHA, false); reason != "" {
+		return reject(managedpackpromotion.GateProposalOwnership, reason)
+	}
+	return adapter.update(ctx, candidate, observed, pr, []string{observed.Branch.HeadSHA, candidate.BaseSHA})
+}
+
+func (adapter *Adapter) update(ctx context.Context, candidate managedpackpromotion.Candidate, observed Observation, pr PullRequest, parents []string) (managedpackpromotion.Publication, error) {
 	record := recordFor(candidate, observed.Actor, "")
 	head, err := adapter.gateway.Commit(ctx, CommitRequest{
 		RepositoryRoot: candidate.RepositoryRoot,
-		ParentSHA:      parent,
+		ParentSHAs:     append([]string(nil), parents...),
 		TreeSHA:        candidate.ResultTreeSHA,
 		Message:        commitMessage(candidate, record),
 	})
@@ -235,10 +251,11 @@ func (adapter *Adapter) update(ctx context.Context, candidate managedpackpromoti
 	if afterPush.PullRequests[0].Body == bodyFor(candidate, observed.Actor, head) && afterPush.PullRequests[0].Title == titleFor(candidate) {
 		return adapter.verifyFinal(candidate, afterPush, pr.Number, head)
 	}
-	if _, _, reason := ownedPullRequest(afterPush.PullRequests[0], candidate, observed.Actor); reason != "" {
+	oldRecord, _, reason := ownedPullRequestOnAnyBase(afterPush.PullRequests[0], candidate, observed.Actor)
+	if reason != "" {
 		return reject(managedpackpromotion.GateProposalOwnership, reason)
 	}
-	if !isRecoverableMetadataLag(afterPush.Branch, mustRecord(afterPush.PullRequests[0].Body), candidate, observed.Actor) {
+	if !isRecoverableMetadataLag(afterPush.Branch, oldRecord, candidate, observed.Actor) {
 		return reject(managedpackpromotion.GateProposalOwnership, "pull request metadata changed while the proposal branch was being updated")
 	}
 	return adapter.editAndVerify(ctx, candidate, afterPush, pr, head)
@@ -413,6 +430,17 @@ func parseRecord(encoded string) (publicationRecord, error) {
 }
 
 func ownedPullRequest(pr PullRequest, candidate managedpackpromotion.Candidate, actor string) (publicationRecord, string, string) {
+	record, summary, reason := ownedPullRequestOnAnyBase(pr, candidate, actor)
+	if reason != "" {
+		return publicationRecord{}, "", reason
+	}
+	if record.BaseSHA != candidate.BaseSHA {
+		return publicationRecord{}, "", "pull request ownership metadata belongs to a different proposal base"
+	}
+	return record, summary, ""
+}
+
+func ownedPullRequestOnAnyBase(pr PullRequest, candidate managedpackpromotion.Candidate, actor string) (publicationRecord, string, string) {
 	if pr.State != "OPEN" {
 		return publicationRecord{}, "", "the deterministic branch has a closed or merged pull request"
 	}
@@ -436,34 +464,88 @@ func ownedPullRequest(pr PullRequest, candidate managedpackpromotion.Candidate, 
 		return publicationRecord{}, "", "pull request body was edited or has invalid ownership metadata"
 	}
 	if record.Owner != actor || record.Coordinate != candidate.Coordinate.String() || record.Project != candidate.Project ||
-		record.BaseSHA != candidate.BaseSHA || record.Branch != candidate.Branch {
+		record.Branch != candidate.Branch {
 		return publicationRecord{}, "", "pull request ownership metadata belongs to a different proposal"
 	}
 	return record, summary, ""
 }
 
 func ownedBranch(branch *Branch, candidate managedpackpromotion.Candidate, actor string) string {
-	if branch == nil || branch.Name != candidate.Branch || !branch.BaseAncestor {
+	return ownedBranchAtBase(branch, candidate, actor, candidate.BaseSHA, true)
+}
+
+func ownedBranchAtBase(branch *Branch, candidate managedpackpromotion.Candidate, actor, expectedBase string, requireBaseAncestor bool) string {
+	if branch == nil || branch.Name != candidate.Branch || (requireBaseAncestor && !branch.BaseAncestor) {
 		return "the deterministic branch is missing or is not descended from the sealed base"
 	}
 	if len(branch.Commits) == 0 || branch.Commits[0].SHA != branch.HeadSHA {
 		return "the deterministic branch history cannot be proven from the sealed base"
 	}
-	for _, commit := range branch.Commits {
-		if commit.AuthorName != botAuthorName || commit.AuthorEmail != botAuthorEmail ||
-			commit.CommitterName != botAuthorName || commit.CommitterEmail != botAuthorEmail {
-			return "the deterministic branch contains a non-automation commit"
+	if branch.TreeSHA != branch.Commits[0].TreeSHA {
+		return "the deterministic branch tree does not equal its observed head commit"
+	}
+
+	oldest := branch.Commits[len(branch.Commits)-1]
+	if !automationCommit(oldest) || len(oldest.Parents) != 1 {
+		return "the deterministic branch does not begin with its automation-owned candidate"
+	}
+	activeBase := oldest.Parents[0]
+	if strings.TrimSpace(oldest.Message) != "Promote "+candidate.Coordinate.String() {
+		record, err := parseCommitRecord(oldest.Message)
+		if err != nil || record.Owner != actor || record.Coordinate != candidate.Coordinate.String() ||
+			record.Project != candidate.Project || record.Branch != candidate.Branch || record.TreeSHA != oldest.TreeSHA ||
+			record.BaseSHA != activeBase {
+			return "the deterministic branch does not begin with its automation-owned candidate"
 		}
-		if isOwnedDetachedCandidateCommit(commit, candidate) {
-			continue
+	}
+	for index := len(branch.Commits) - 2; index >= 0; index-- {
+		commit := branch.Commits[index]
+		previous := branch.Commits[index+1]
+		if !automationCommit(commit) || len(commit.Parents) < 1 || len(commit.Parents) > 2 || commit.Parents[0] != previous.SHA {
+			return "the deterministic branch contains non-append-only history"
 		}
 		record, err := parseCommitRecord(commit.Message)
 		if err != nil || record.Owner != actor || record.Coordinate != candidate.Coordinate.String() ||
-			record.Project != candidate.Project || record.BaseSHA != candidate.BaseSHA || record.Branch != candidate.Branch {
+			record.Project != candidate.Project || record.Branch != candidate.Branch || record.TreeSHA != commit.TreeSHA {
 			return "the deterministic branch contains a commit without matching automation ownership"
 		}
+		if len(commit.Parents) == 1 {
+			if record.BaseSHA != activeBase {
+				return "the deterministic branch contains an append commit for a different base"
+			}
+		} else {
+			if commit.Parents[1] != record.BaseSHA || record.BaseSHA == activeBase {
+				return "the deterministic branch contains an invalid base-regeneration merge"
+			}
+			activeBase = record.BaseSHA
+		}
+	}
+	if activeBase != expectedBase {
+		return "the deterministic branch history belongs to a different base"
 	}
 	return ""
+}
+
+func automationCommit(commit Commit) bool {
+	return commit.AuthorName == botAuthorName && commit.AuthorEmail == botAuthorEmail &&
+		commit.CommitterName == botAuthorName && commit.CommitterEmail == botAuthorEmail
+}
+
+func latestCommitMatchesRecord(branch *Branch, record publicationRecord, actor string) bool {
+	if branch == nil || len(branch.Commits) == 0 || branch.HeadSHA != record.HeadSHA || branch.TreeSHA != record.TreeSHA {
+		return false
+	}
+	latest := branch.Commits[0]
+	if latest.SHA == record.CandidateSHA {
+		return automationCommit(latest) && latest.TreeSHA == record.TreeSHA && len(latest.Parents) == 1 &&
+			latest.Parents[0] == record.BaseSHA && strings.TrimSpace(latest.Message) == "Promote "+record.Coordinate
+	}
+	commitRecord, err := parseCommitRecord(latest.Message)
+	if err != nil {
+		return false
+	}
+	commitRecord.HeadSHA = record.HeadSHA
+	return commitRecord == record && record.Owner == actor
 }
 
 func exactPublishedBranch(branch *Branch, candidate managedpackpromotion.Candidate, actor, head string) string {
@@ -497,16 +579,12 @@ func isOwnedDetachedCandidateCommit(commit Commit, candidate managedpackpromotio
 }
 
 func isRecoverableMetadataLag(branch *Branch, old publicationRecord, candidate managedpackpromotion.Candidate, actor string) bool {
-	if !latestCommitMatches(branch, candidate, actor) || len(branch.Commits[0].Parents) != 1 || branch.Commits[0].Parents[0] != old.HeadSHA {
+	if !latestCommitMatches(branch, candidate, actor) || len(branch.Commits[0].Parents) < 1 ||
+		len(branch.Commits[0].Parents) > 2 || branch.Commits[0].Parents[0] != old.HeadSHA {
 		return false
 	}
 	return old.Owner == actor && old.Coordinate == candidate.Coordinate.String() && old.Project == candidate.Project &&
-		old.BaseSHA == candidate.BaseSHA && old.Branch == candidate.Branch
-}
-
-func mustRecord(body string) publicationRecord {
-	record, _, _ := parseBody(body)
-	return record
+		old.Branch == candidate.Branch
 }
 
 func validateCandidate(candidate managedpackpromotion.Candidate) error {

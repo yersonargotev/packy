@@ -135,12 +135,23 @@ func (gateway *cliGateway) Observe(ctx context.Context, candidate managedpackpro
 }
 
 func (gateway *cliGateway) Commit(ctx context.Context, request CommitRequest) (string, error) {
+	if len(request.ParentSHAs) == 0 || len(request.ParentSHAs) > 2 {
+		return "", errors.New("publication commit requires one or two parents")
+	}
+	arguments := []string{"commit-tree", request.TreeSHA}
+	for _, parent := range request.ParentSHAs {
+		if !sha1Pattern.MatchString(parent) {
+			return "", errors.New("publication commit has a malformed parent identity")
+		}
+		arguments = append(arguments, "-p", parent)
+	}
+	arguments = append(arguments, "-m", request.Message)
 	output, err := gateway.runWithEnvironment(ctx, request.RepositoryRoot, []string{
 		"GIT_AUTHOR_NAME=" + botAuthorName,
 		"GIT_AUTHOR_EMAIL=" + botAuthorEmail,
 		"GIT_COMMITTER_NAME=" + botAuthorName,
 		"GIT_COMMITTER_EMAIL=" + botAuthorEmail,
-	}, "git", "commit-tree", request.TreeSHA, "-p", request.ParentSHA, "-m", request.Message)
+	}, "git", arguments...)
 	if err != nil {
 		return "", err
 	}
@@ -152,8 +163,8 @@ func (gateway *cliGateway) Commit(ctx context.Context, request CommitRequest) (s
 	if err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(verify) != request.TreeSHA+"\x00"+request.ParentSHA {
-		return "", errors.New("created publication commit does not have the requested tree and parent")
+	if strings.TrimSpace(verify) != request.TreeSHA+"\x00"+strings.Join(request.ParentSHAs, " ") {
+		return "", errors.New("created publication commit does not have the requested tree and parents")
 	}
 	return head, nil
 }
