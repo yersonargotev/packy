@@ -87,7 +87,7 @@ func RunPublication(ctx context.Context, args []string, _ io.Writer, stderr io.W
 		return 1
 	}
 	publication, err := publisher.Publish(ctx, request.Candidate)
-	result := managedpackpromotion.Result{}
+	var result managedpackpromotion.Result
 	if err != nil {
 		var rejection *managedpackpromotion.RejectionError
 		if !errors.As(err, &rejection) {

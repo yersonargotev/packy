@@ -593,11 +593,9 @@ func composedTreeFromValidation(t *testing.T, root string, validation managedpac
 	result := composedTree{}
 	for _, record := range validation.Files {
 		sourcePath := filepath.Join(root, filepath.FromSlash(record.Path))
-		destination := record.Path
+		destination := "bundle/" + record.Path
 		if record.Path == "pack.json" {
 			destination = filepath.ToSlash(filepath.Join("bundle", "packs", validation.Manifest.ID, "pack.json"))
-		} else {
-			destination = "bundle/" + record.Path
 		}
 		info, err := os.Stat(sourcePath)
 		if err != nil {
