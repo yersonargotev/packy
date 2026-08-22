@@ -235,12 +235,6 @@ func (gateway *cliGateway) CreatePullRequest(ctx context.Context, mutation PullR
 	return err
 }
 
-func (gateway *cliGateway) EditPullRequest(ctx context.Context, number int, mutation PullRequestMutation) error {
-	_, err := gateway.run(ctx, mutation.RepositoryRoot, "gh", "pr", "edit", strconv.Itoa(number),
-		"--title", mutation.Title, "--body", mutation.Body)
-	return err
-}
-
 type listedPullRequest struct {
 	Number           int             `json:"number"`
 	URL              string          `json:"url"`
@@ -279,39 +273,49 @@ func (gateway *cliGateway) observePullRequests(ctx context.Context, candidate ma
 
 	pullRequests := make([]PullRequest, 0, len(listed))
 	for _, item := range listed {
-		author, editor, err := gateway.observeEditors(ctx, candidate.RepositoryRoot, owner, name, item.Number)
+		author, edits, err := gateway.observeEditors(ctx, candidate.RepositoryRoot, owner, name, item.Number)
 		if err != nil {
 			return nil, err
+		}
+		lastEditor := ""
+		if len(edits) > 0 {
+			lastEditor = edits[len(edits)-1].Editor
 		}
 		autoMerge := len(item.AutoMergeRequest) != 0 && string(item.AutoMergeRequest) != "null"
 		pullRequests = append(pullRequests, PullRequest{
 			Number: item.Number, URL: item.URL, State: item.State, Draft: item.Draft, AutoMerge: autoMerge,
 			BaseBranch: item.BaseBranch, HeadBranch: item.HeadBranch, HeadSHA: item.HeadSHA,
-			Title: item.Title, Body: item.Body, Author: author, LastEditor: editor,
+			Title: item.Title, Body: item.Body, Author: author, LastEditor: lastEditor, ContentEdits: edits,
 		})
 	}
 	return pullRequests, nil
 }
 
-const pullRequestEditorsQuery = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){author{login}userContentEdits(last:1){nodes{editor{login}}}}}}`
+const pullRequestEditorsQuery = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){author{login}userContentEdits(first:100){totalCount pageInfo{hasNextPage}nodes{id editor{login}}}}}}`
 
 const unavailableEditor = "<unavailable-user-content-editor>"
 
-func (gateway *cliGateway) observeEditors(ctx context.Context, repositoryRoot, owner, name string, number int) (string, string, error) {
+func (gateway *cliGateway) observeEditors(ctx context.Context, repositoryRoot, owner, name string, number int) (string, []ContentEdit, error) {
 	output, err := gateway.run(ctx, repositoryRoot, "gh", "api", "graphql",
 		"-F", "owner="+owner, "-F", "name="+name, "-F", "number="+strconv.Itoa(number), "-f", "query="+pullRequestEditorsQuery)
 	if err != nil {
-		return "", "", err
+		return "", nil, err
 	}
 	var response struct {
-		Data struct {
+		Errors []json.RawMessage `json:"errors"`
+		Data   struct {
 			Repository struct {
 				PullRequest struct {
 					Author *struct {
 						Login string `json:"login"`
 					} `json:"author"`
-					UserContentEdits struct {
+					UserContentEdits *struct {
+						TotalCount *int `json:"totalCount"`
+						PageInfo   *struct {
+							HasNextPage bool `json:"hasNextPage"`
+						} `json:"pageInfo"`
 						Nodes []struct {
+							ID     string `json:"id"`
 							Editor *struct {
 								Login string `json:"login"`
 							} `json:"editor"`
@@ -322,22 +326,38 @@ func (gateway *cliGateway) observeEditors(ctx context.Context, repositoryRoot, o
 		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(output), &response); err != nil {
-		return "", "", fmt.Errorf("decode pull request editor observation: %w", err)
+		return "", nil, fmt.Errorf("decode pull request editor observation: %w", err)
+	}
+	if len(response.Errors) != 0 {
+		return "", nil, errors.New("GitHub returned errors while observing pull request content edits")
 	}
 	if response.Data.Repository.PullRequest.Author == nil || response.Data.Repository.PullRequest.Author.Login == "" {
-		return "", "", errors.New("pull request has no observable author")
+		return "", nil, errors.New("pull request has no observable author")
 	}
-	editor := ""
-	edits := response.Data.Repository.PullRequest.UserContentEdits.Nodes
-	if len(edits) > 0 {
-		last := edits[len(edits)-1]
-		if last.Editor == nil || last.Editor.Login == "" {
-			editor = unavailableEditor
-		} else {
-			editor = last.Editor.Login
+	history := response.Data.Repository.PullRequest.UserContentEdits
+	if history == nil || history.TotalCount == nil || history.PageInfo == nil || history.Nodes == nil {
+		return "", nil, errors.New("pull request content edit history is unavailable")
+	}
+	if history.PageInfo.HasNextPage || *history.TotalCount != len(history.Nodes) {
+		return "", nil, errors.New("pull request content edit history is incomplete")
+	}
+	edits := make([]ContentEdit, 0, len(history.Nodes))
+	identities := make(map[string]struct{}, len(history.Nodes))
+	for _, node := range history.Nodes {
+		if node.ID == "" {
+			return "", nil, errors.New("pull request content edit has no observable identity")
 		}
+		if _, duplicate := identities[node.ID]; duplicate {
+			return "", nil, errors.New("pull request content edit history has duplicate identities")
+		}
+		identities[node.ID] = struct{}{}
+		editor := unavailableEditor
+		if node.Editor != nil && node.Editor.Login != "" {
+			editor = node.Editor.Login
+		}
+		edits = append(edits, ContentEdit{ID: node.ID, Editor: editor})
 	}
-	return response.Data.Repository.PullRequest.Author.Login, editor, nil
+	return response.Data.Repository.PullRequest.Author.Login, edits, nil
 }
 
 func parseRemoteRefs(output, branch string) (string, string, error) {

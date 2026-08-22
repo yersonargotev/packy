@@ -30,6 +30,19 @@ func TestPublisherCreatesOneReadyProposalFromASealedCandidate(t *testing.T) {
 	if gateway.pullRequests[0].Draft || gateway.pullRequests[0].AutoMerge {
 		t.Fatalf("proposal must be ready without auto-merge: %+v", gateway.pullRequests[0])
 	}
+	wantRecord := proposalRecord{
+		Branch: "promote/addy-1.2.3", Coordinate: "addy@1.2.3", Owner: "packy-bot",
+		Project: "yersonargotev/skills-addy", Version: 1,
+	}
+	record, summary, err := parseBody(gateway.pullRequests[0].Body)
+	if err != nil || record != wantRecord || summary != candidate.Summary {
+		t.Fatalf("immutable proposal body = record %+v, summary %q, error %v", record, summary, err)
+	}
+	for _, mutableSeal := range []string{candidate.ID, candidate.BaseSHA, candidate.HeadSHA, candidate.ResultTreeSHA} {
+		if strings.Contains(gateway.pullRequests[0].Body, mutableSeal) {
+			t.Fatalf("immutable proposal body contains candidate-specific seal %q", mutableSeal)
+		}
+	}
 }
 
 func TestPublisherReturnsNoChangeForTheExactUntouchedProposal(t *testing.T) {
@@ -50,11 +63,11 @@ func TestPublisherReturnsNoChangeForTheExactUntouchedProposal(t *testing.T) {
 func TestPublisherAppendsAnUntouchedProposalWithoutRewritingHistory(t *testing.T) {
 	old, gateway := publishedFixture(t)
 	oldHead := gateway.branch.HeadSHA
+	oldTitle, oldBody := gateway.pullRequests[0].Title, gateway.pullRequests[0].Body
 	candidate := old
 	candidate.ID = strings.Repeat("2", 64)
 	candidate.HeadSHA = strings.Repeat("e", 40)
 	candidate.ResultTreeSHA = strings.Repeat("f", 40)
-	candidate.Summary = "Update addy 1.2.3 with a newly gated Packy candidate."
 
 	publication, err := New(gateway).Publish(context.Background(), candidate)
 	if err != nil {
@@ -63,17 +76,41 @@ func TestPublisherAppendsAnUntouchedProposalWithoutRewritingHistory(t *testing.T
 	if publication.Proposal == nil || publication.Proposal.HeadSHA == oldHead {
 		t.Fatalf("Publish() = %+v", publication)
 	}
-	if strings.Join(gateway.mutations, ",") != "commit,push,edit-pr" {
+	if strings.Join(gateway.mutations, ",") != "commit,push" {
 		t.Fatalf("mutations = %v", gateway.mutations)
 	}
 	if strings.Join(gateway.lastCommit.ParentSHAs, ",") != oldHead {
 		t.Fatalf("append parents = %q, want %q", gateway.lastCommit.ParentSHAs, oldHead)
+	}
+	if gateway.pullRequests[0].Title != oldTitle || gateway.pullRequests[0].Body != oldBody || len(gateway.pullRequests[0].ContentEdits) != 0 {
+		t.Fatalf("immutable proposal metadata changed: %+v", gateway.pullRequests[0])
+	}
+}
+
+func TestPublisherDoesNotOverwriteAHumanEditRacingAnOrdinaryUpdate(t *testing.T) {
+	old, gateway := publishedFixture(t)
+	candidate := old
+	candidate.ID = strings.Repeat("2", 64)
+	candidate.HeadSHA = strings.Repeat("e", 40)
+	candidate.ResultTreeSHA = strings.Repeat("f", 40)
+	gateway.afterObserve = func(gateway *fakeGateway, count int) {
+		if count == 2 {
+			gateway.pullRequests[0].Body += "\nhuman note"
+			gateway.pullRequests[0].LastEditor = "maintainer"
+		}
+	}
+
+	_, err := New(gateway).Publish(context.Background(), candidate)
+	assertRejectionGate(t, err, managedpackpromotion.GateProposalOwnership)
+	if strings.Join(gateway.mutations, ",") != "commit,push" {
+		t.Fatalf("mutations = %v, want append and push without metadata edit", gateway.mutations)
 	}
 }
 
 func TestPublisherRegeneratesAnUntouchedStaleProposalOnTheNewBaseWithAMergeCommit(t *testing.T) {
 	old, gateway := publishedFixture(t)
 	oldHead := gateway.branch.HeadSHA
+	oldTitle, oldBody := gateway.pullRequests[0].Title, gateway.pullRequests[0].Body
 	candidate := rebuiltCandidate(old, gateway)
 
 	publication, err := New(gateway).Publish(context.Background(), candidate)
@@ -83,20 +120,40 @@ func TestPublisherRegeneratesAnUntouchedStaleProposalOnTheNewBaseWithAMergeCommi
 	if publication.Proposal == nil || publication.Proposal.HeadSHA == oldHead {
 		t.Fatalf("Publish() = %+v", publication)
 	}
-	if strings.Join(gateway.mutations, ",") != "commit,push,edit-pr" {
+	if strings.Join(gateway.mutations, ",") != "commit,push" {
 		t.Fatalf("mutations = %v", gateway.mutations)
 	}
 	wantParents := []string{oldHead, candidate.BaseSHA}
 	if strings.Join(gateway.lastCommit.ParentSHAs, ",") != strings.Join(wantParents, ",") {
 		t.Fatalf("regeneration parents = %v, want %v", gateway.lastCommit.ParentSHAs, wantParents)
 	}
+	if gateway.pullRequests[0].Title != oldTitle || gateway.pullRequests[0].Body != oldBody || len(gateway.pullRequests[0].ContentEdits) != 0 {
+		t.Fatalf("immutable proposal metadata changed: %+v", gateway.pullRequests[0])
+	}
 
 	publication, err = New(gateway).Publish(context.Background(), candidate)
 	if err != nil {
 		t.Fatalf("second Publish() error = %v", err)
 	}
-	if publication.NoChangeReason == "" || strings.Join(gateway.mutations, ",") != "commit,push,edit-pr" {
+	if publication.NoChangeReason == "" || strings.Join(gateway.mutations, ",") != "commit,push" {
 		t.Fatalf("second publication = %+v, mutations = %v", publication, gateway.mutations)
+	}
+}
+
+func TestPublisherDoesNotOverwriteAHumanEditRacingAStaleBaseRegeneration(t *testing.T) {
+	old, gateway := publishedFixture(t)
+	candidate := rebuiltCandidate(old, gateway)
+	gateway.afterObserve = func(gateway *fakeGateway, count int) {
+		if count == 2 {
+			gateway.pullRequests[0].Title = "Human title"
+			gateway.pullRequests[0].LastEditor = "maintainer"
+		}
+	}
+
+	_, err := New(gateway).Publish(context.Background(), candidate)
+	assertRejectionGate(t, err, managedpackpromotion.GateProposalOwnership)
+	if strings.Join(gateway.mutations, ",") != "commit,push" {
+		t.Fatalf("mutations = %v, want regeneration and push without metadata edit", gateway.mutations)
 	}
 }
 
@@ -134,6 +191,10 @@ func TestPublisherRejectsHumanProposalEdits(t *testing.T) {
 		"title": func(gateway *fakeGateway) {
 			gateway.pullRequests[0].Title = "Edited title"
 			gateway.pullRequests[0].LastEditor = "maintainer"
+		},
+		"bot content edit": func(gateway *fakeGateway) {
+			gateway.pullRequests[0].LastEditor = gateway.actor
+			gateway.pullRequests[0].ContentEdits = []ContentEdit{{ID: "edit-1", Editor: gateway.actor}}
 		},
 		"branch head": func(gateway *fakeGateway) {
 			head := strings.Repeat("9", 40)
@@ -196,16 +257,13 @@ func TestPublisherRejectsCompetingAndClosedPullRequests(t *testing.T) {
 	}
 }
 
-func TestPublisherRecoversMetadataOneHeadBehindAfterProjectionLag(t *testing.T) {
+func TestPublisherRecoversAnAppendCompletedBeforeThePriorProcessStopped(t *testing.T) {
 	old, gateway := publishedFixture(t)
 	candidate := old
 	candidate.ID = strings.Repeat("2", 64)
 	candidate.HeadSHA = strings.Repeat("e", 40)
 	candidate.ResultTreeSHA = strings.Repeat("f", 40)
-	candidate.Summary = "Update addy after a fully gated retry."
-	oldBody := gateway.pullRequests[0].Body
-
-	record := recordFor(candidate, gateway.actor, "")
+	record := recordFor(candidate, gateway.actor)
 	head, err := gateway.Commit(context.Background(), CommitRequest{
 		RepositoryRoot: candidate.RepositoryRoot,
 		ParentSHAs:     []string{gateway.branch.HeadSHA},
@@ -218,14 +276,13 @@ func TestPublisherRecoversMetadataOneHeadBehindAfterProjectionLag(t *testing.T) 
 	if err := gateway.FastForwardPush(context.Background(), candidate.RepositoryRoot, head, candidate.Branch); err != nil {
 		t.Fatal(err)
 	}
-	gateway.pullRequests[0].Body = oldBody // GitHub metadata projection is one head behind.
 	gateway.mutations = nil
 
 	publication, err := New(gateway).Publish(context.Background(), candidate)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
-	if publication.Proposal == nil || strings.Join(gateway.mutations, ",") != "edit-pr" {
+	if publication.NoChangeReason == "" || len(gateway.mutations) != 0 {
 		t.Fatalf("publication = %+v, mutations = %v", publication, gateway.mutations)
 	}
 }
@@ -233,7 +290,7 @@ func TestPublisherRecoversMetadataOneHeadBehindAfterProjectionLag(t *testing.T) 
 func TestPublisherRecoversTheExactOwnedBranchWhenPullRequestProjectionIsAbsent(t *testing.T) {
 	candidate := testCandidate()
 	gateway := newFakeGateway(candidate)
-	record := recordFor(candidate, gateway.actor, "")
+	record := recordFor(candidate, gateway.actor)
 	head, err := gateway.Commit(context.Background(), CommitRequest{
 		RepositoryRoot: candidate.RepositoryRoot, ParentSHAs: []string{candidate.BaseSHA},
 		TreeSHA: candidate.ResultTreeSHA, Message: commitMessage(candidate, record),
@@ -282,14 +339,60 @@ func TestCLIGatewayFailsClosedWhenTheLastContentEditorsIdentityIsUnavailable(t *
 	runner := &publicationRunner{
 		candidate: testCandidate(),
 		graphqlResponse: `{"data":{"repository":{"pullRequest":{"author":{"login":"packy-bot"},` +
-			`"userContentEdits":{"nodes":[{"editor":null}]}}}}}`,
+			`"userContentEdits":{"totalCount":1,"pageInfo":{"hasNextPage":false},` +
+			`"nodes":[{"id":"edit-1","editor":null}]}}}}}`,
 	}
-	author, editor, err := (&cliGateway{runner: runner}).observeEditors(context.Background(), "/tmp/packy", "yersonargotev", "packy", 17)
+	author, edits, err := (&cliGateway{runner: runner}).observeEditors(context.Background(), "/tmp/packy", "yersonargotev", "packy", 17)
 	if err != nil {
 		t.Fatalf("observeEditors() error = %v", err)
 	}
-	if author != "packy-bot" || editor != unavailableEditor {
-		t.Fatalf("author/editor = %q/%q", author, editor)
+	if author != "packy-bot" || len(edits) != 1 || edits[0] != (ContentEdit{ID: "edit-1", Editor: unavailableEditor}) {
+		t.Fatalf("author/edits = %q/%+v", author, edits)
+	}
+}
+
+func TestCLIPublisherRejectsAHumanEditHiddenByALaterBotEdit(t *testing.T) {
+	candidate := testCandidate()
+	runner := &publicationRunner{
+		candidate: candidate, publishedHead: candidate.HeadSHA, branchExists: true, prExists: true,
+		prTitle: titleFor(candidate), prBody: bodyFor(candidate, "packy-bot"),
+		graphqlResponse: `{"data":{"repository":{"pullRequest":{"author":{"login":"packy-bot"},` +
+			`"userContentEdits":{"totalCount":2,"pageInfo":{"hasNextPage":false},"nodes":[` +
+			`{"id":"edit-human","editor":{"login":"maintainer"}},` +
+			`{"id":"edit-bot","editor":{"login":"packy-bot"}}]}}}}}`,
+	}
+
+	_, err := NewCLIWithRunner(runner).Publish(context.Background(), candidate)
+	assertRejectionGate(t, err, managedpackpromotion.GateProposalOwnership)
+	if commandNamed(runner.commands, "gh", "pr", "edit") {
+		t.Fatal("publisher edited metadata after observing a human content edit")
+	}
+}
+
+func TestCLIPublisherFailsClosedWhenContentEditHistoryIsTruncated(t *testing.T) {
+	candidate := testCandidate()
+	runner := &publicationRunner{
+		candidate: candidate, publishedHead: candidate.HeadSHA, branchExists: true, prExists: true,
+		prTitle: titleFor(candidate), prBody: bodyFor(candidate, "packy-bot"),
+		graphqlResponse: `{"data":{"repository":{"pullRequest":{"author":{"login":"packy-bot"},` +
+			`"userContentEdits":{"totalCount":101,"pageInfo":{"hasNextPage":true},"nodes":[]}}}}}`,
+	}
+
+	_, err := NewCLIWithRunner(runner).Publish(context.Background(), candidate)
+	assertRejectionGate(t, err, managedpackpromotion.GatePublication)
+	if commandNamed(runner.commands, "gh", "pr", "edit") {
+		t.Fatal("publisher edited metadata with incomplete content edit history")
+	}
+	var query string
+	for _, command := range runner.commands {
+		if commandNamed([]Command{command}, "gh", "api", "graphql") {
+			query = flagValue(command.Arguments, "-f")
+		}
+	}
+	for _, required := range []string{"userContentEdits(first:100)", "totalCount", "hasNextPage", "nodes{id editor{login}}"} {
+		if !strings.Contains(query, required) {
+			t.Fatalf("GraphQL query %q lacks %q", query, required)
+		}
 	}
 }
 
@@ -392,7 +495,6 @@ func rebuiltCandidate(old managedpackpromotion.Candidate, gateway *fakeGateway) 
 	candidate.BaseSHA = strings.Repeat("8", 40)
 	candidate.HeadSHA = strings.Repeat("e", 40)
 	candidate.ResultTreeSHA = strings.Repeat("f", 40)
-	candidate.Summary = "Regenerate addy 1.2.3 after all gates passed on the new base."
 	gateway.base = candidate.BaseSHA
 	gateway.branch.BaseAncestor = false
 	return candidate
@@ -408,6 +510,8 @@ type fakeGateway struct {
 	commitCount  int
 	commits      map[string]Commit
 	lastCommit   CommitRequest
+	observeCount int
+	afterObserve func(*fakeGateway, int)
 }
 
 func newFakeGateway(candidate managedpackpromotion.Candidate) *fakeGateway {
@@ -429,7 +533,12 @@ func (gateway *fakeGateway) VerifyCandidate(context.Context, managedpackpromotio
 }
 
 func (gateway *fakeGateway) Observe(context.Context, managedpackpromotion.Candidate) (Observation, error) {
-	return Observation{Actor: gateway.actor, BaseSHA: gateway.base, Branch: gateway.branch, PullRequests: append([]PullRequest(nil), gateway.pullRequests...)}, nil
+	gateway.observeCount++
+	observed := Observation{Actor: gateway.actor, BaseSHA: gateway.base, Branch: gateway.branch, PullRequests: append([]PullRequest(nil), gateway.pullRequests...)}
+	if gateway.afterObserve != nil {
+		gateway.afterObserve(gateway, gateway.observeCount)
+	}
+	return observed, nil
 }
 
 func (gateway *fakeGateway) Commit(_ context.Context, request CommitRequest) (string, error) {
@@ -453,6 +562,7 @@ func publishedFixture(t *testing.T) (managedpackpromotion.Candidate, *fakeGatewa
 		t.Fatalf("create fixture: %v", err)
 	}
 	gateway.mutations = nil
+	gateway.observeCount = 0
 	return candidate, gateway
 }
 
@@ -549,7 +659,8 @@ func (runner *publicationRunner) Run(_ context.Context, command Command) (string
 			if runner.graphqlResponse != "" {
 				return runner.graphqlResponse, nil
 			}
-			return `{"data":{"repository":{"pullRequest":{"author":{"login":"packy-bot"},"userContentEdits":{"nodes":[]}}}}}`, nil
+			return `{"data":{"repository":{"pullRequest":{"author":{"login":"packy-bot"},` +
+				`"userContentEdits":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}}}}`, nil
 		}
 	}
 	return "", fmt.Errorf("unexpected command: %s %v", command.Executable, args)
@@ -562,6 +673,25 @@ func flagValue(arguments []string, flag string) string {
 		}
 	}
 	return ""
+}
+
+func commandNamed(commands []Command, executable string, arguments ...string) bool {
+	for _, command := range commands {
+		if command.Executable != executable || len(command.Arguments) < len(arguments) {
+			continue
+		}
+		matched := true
+		for index := range arguments {
+			if command.Arguments[index] != arguments[index] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func (gateway *fakeGateway) FastForwardPush(_ context.Context, _ string, head, branch string) error {
@@ -591,16 +721,5 @@ func (gateway *fakeGateway) CreatePullRequest(_ context.Context, mutation PullRe
 		HeadBranch: mutation.HeadBranch, HeadSHA: gateway.branch.HeadSHA, Title: mutation.Title,
 		Body: mutation.Body, Author: gateway.actor,
 	}}
-	return nil
-}
-
-func (gateway *fakeGateway) EditPullRequest(_ context.Context, number int, mutation PullRequestMutation) error {
-	gateway.mutations = append(gateway.mutations, "edit-pr")
-	if len(gateway.pullRequests) != 1 || gateway.pullRequests[0].Number != number {
-		return errors.New("unknown pull request")
-	}
-	gateway.pullRequests[0].Title = mutation.Title
-	gateway.pullRequests[0].Body = mutation.Body
-	gateway.pullRequests[0].LastEditor = gateway.actor
 	return nil
 }
