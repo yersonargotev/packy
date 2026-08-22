@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -77,8 +78,17 @@ func TestRunRejectsInvalidInvocationBeforeConstructingPromotion(t *testing.T) {
 
 func TestRunRoutesTheHiddenWorkerModeWithoutPromotionDependencies(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	exit := run(context.Background(), []string{offlinevalidation.ModeArgument}, &stdout, &stderr, dependencies{})
-	if exit != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "offline validation worker requires") {
+	called := false
+	exit := run(context.Background(), []string{offlinevalidation.ModeArgument, "request", "response"}, &stdout, &stderr, dependencies{
+		runOfflineWorker: func(args []string, gotStdout, gotStderr io.Writer) int {
+			called = true
+			if strings.Join(args, ",") != "request,response" || gotStdout != &stdout || gotStderr != &stderr {
+				t.Fatalf("worker args = %q, stdout = %T, stderr = %T", args, gotStdout, gotStderr)
+			}
+			return 23
+		},
+	})
+	if exit != 23 || !called || stdout.Len() != 0 || stderr.Len() != 0 {
 		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exit, stdout.String(), stderr.String())
 	}
 }

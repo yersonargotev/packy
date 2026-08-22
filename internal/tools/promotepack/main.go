@@ -29,9 +29,10 @@ type promoter interface {
 }
 
 type dependencies struct {
-	executable     func() (string, error)
-	repositoryRoot func(context.Context) (string, error)
-	newPromoter    func(string) promoter
+	executable       func() (string, error)
+	repositoryRoot   func(context.Context) (string, error)
+	newPromoter      func(string) promoter
+	runOfflineWorker func([]string, io.Writer, io.Writer) int
 }
 
 func main() {
@@ -40,7 +41,11 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps dependencies) int {
 	if len(args) > 0 && args[0] == offlinevalidation.ModeArgument {
-		return offlinevalidation.Run(args[1:], stdout, stderr)
+		if deps.runOfflineWorker == nil {
+			fmt.Fprintln(stderr, "promotepack offline worker dependency is incomplete")
+			return 1
+		}
+		return deps.runOfflineWorker(args[1:], stdout, stderr)
 	}
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, usage)
@@ -113,7 +118,8 @@ func renderResult(result managedpackpromotion.Result, stdout, stderr io.Writer) 
 
 func productionDependencies() dependencies {
 	return dependencies{
-		executable: os.Executable,
+		executable:       os.Executable,
+		runOfflineWorker: offlinevalidation.Run,
 		repositoryRoot: func(ctx context.Context) (string, error) {
 			command := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 			output, err := command.Output()
