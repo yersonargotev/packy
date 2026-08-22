@@ -206,8 +206,22 @@ func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 	candidateRoot := t.TempDir()
 	composedWriteTree(t, candidateRoot, composedReadTree(t, currentRoot))
 	mutationPath := ""
+	for _, resource := range currentValidation.Manifest.Resources {
+		if resource.Origin == nil || resource.Origin.Relationship != managedpack.RelationshipExactCopy {
+			continue
+		}
+		for _, file := range currentValidation.Files {
+			if file.Path == resource.Source || strings.HasPrefix(file.Path, resource.Source+"/") {
+				mutationPath = file.Path
+				break
+			}
+		}
+		if mutationPath != "" {
+			break
+		}
+	}
 	for _, file := range currentValidation.Files {
-		if file.Path != "pack.json" {
+		if mutationPath == "" && file.Path != "pack.json" {
 			mutationPath = file.Path
 			break
 		}
@@ -216,7 +230,7 @@ func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 		t.Fatalf("%s fixture has no closure file to update", name)
 	}
 	candidateManifest := composedSetManifestVersion(t, readTestFile(t, filepath.Join(candidateRoot, "pack.json")), candidateVersion)
-	candidateManifest = composedAdaptExactCopyMutation(t, candidateManifest, currentValidation.Manifest, mutationPath)
+	candidateManifest = composedAdaptExactCopyMutation(t, candidateManifest, mutationPath)
 	writeTestFile(t, filepath.Join(candidateRoot, "pack.json"), string(candidateManifest), 0o644)
 	mutationFile := filepath.Join(candidateRoot, filepath.FromSlash(mutationPath))
 	info, err := os.Stat(mutationFile)
@@ -633,52 +647,28 @@ func composedSetManifestVersion(t *testing.T, manifest, version string) []byte {
 	return append(encoded, '\n')
 }
 
-func composedAdaptExactCopyMutation(t *testing.T, manifest []byte, validated managedpack.Manifest, mutationPath string) []byte {
+func composedAdaptExactCopyMutation(t *testing.T, manifest []byte, mutationPath string) []byte {
 	t.Helper()
-	var owner *managedpack.Resource
-	for index := range validated.Resources {
-		resource := &validated.Resources[index]
-		if resource.Source == "" || mutationPath != resource.Source && !strings.HasPrefix(mutationPath, resource.Source+"/") {
-			continue
-		}
-		if owner != nil {
-			t.Fatalf("mutation path %q is owned by resources %q and %q", mutationPath, owner.ID, resource.ID)
-		}
-		owner = resource
-	}
-	if owner == nil || owner.Origin == nil || owner.Origin.Relationship != managedpack.RelationshipExactCopy {
-		return manifest
-	}
-
-	var document map[string]any
+	var document managedpack.Manifest
 	if err := json.Unmarshal(manifest, &document); err != nil {
 		t.Fatal(err)
 	}
-	resources, ok := document["resources"].([]any)
-	if !ok {
-		t.Fatal("composed manifest resources are not an array")
-	}
-	found := false
-	for _, value := range resources {
-		resource, ok := value.(map[string]any)
-		if !ok || resource["kind"] != owner.Kind || resource["id"] != owner.ID {
+	for index := range document.Resources {
+		resource := &document.Resources[index]
+		if resource.Source == "" || mutationPath != resource.Source && !strings.HasPrefix(mutationPath, resource.Source+"/") {
 			continue
 		}
-		origin, ok := resource["origin"].(map[string]any)
-		if !ok {
-			t.Fatalf("derived resource %q has no origin object", owner.ID)
+		if resource.Origin == nil || resource.Origin.Relationship != managedpack.RelationshipExactCopy {
+			return manifest
 		}
-		origin["relationship"] = string(managedpack.RelationshipAdapted)
-		found = true
+		resource.Origin.Relationship = managedpack.RelationshipAdapted
+		encoded, err := json.MarshalIndent(document, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return append(encoded, '\n')
 	}
-	if !found {
-		t.Fatalf("mutation resource %q is absent from composed manifest", owner.ID)
-	}
-	encoded, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return append(encoded, '\n')
+	return manifest
 }
 
 func composedManifestSources(t *testing.T, manifest []byte) []string {
