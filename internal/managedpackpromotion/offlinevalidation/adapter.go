@@ -17,10 +17,13 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
 )
+
+const workerTimeout = 5 * time.Minute
 
 // ModeArgument is the private command argument that routes execution to Run.
 const ModeArgument = "--packy-internal-offline-validation-worker"
@@ -46,6 +49,8 @@ func (adapter Adapter) Validate(ctx context.Context, acquisition managedpackprom
 	if err := ctx.Err(); err != nil {
 		return managedpack.Validation{}, err
 	}
+	workerContext, cancelWorker := context.WithTimeout(ctx, workerTimeout)
+	defer cancelWorker()
 	if err := validateExecutable(adapter.executable); err != nil {
 		return managedpack.Validation{}, err
 	}
@@ -80,9 +85,12 @@ func (adapter Adapter) Validate(ctx context.Context, acquisition managedpackprom
 		Stdout:     stdout,
 		Stderr:     stderr,
 	}
-	if err := adapter.runner.Run(ctx, invocation); err != nil {
+	if err := adapter.runner.Run(workerContext, invocation); err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			return managedpack.Validation{}, contextErr
+		}
+		if contextErr := workerContext.Err(); contextErr != nil {
+			return managedpack.Validation{}, fmt.Errorf("offline validation worker exceeded its resource-bounded execution window: %w", contextErr)
 		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
@@ -51,7 +52,11 @@ func TestAdapterValidateRunsTheExactExecutableWithAnIsolatedEnvironment(t *testi
 	}
 
 	wantValidation := fakeValidation()
-	runner := processRunnerFunc(func(_ context.Context, invocation processInvocation) error {
+	runner := processRunnerFunc(func(ctx context.Context, invocation processInvocation) error {
+		deadline, bounded := ctx.Deadline()
+		if !bounded || time.Until(deadline) <= 0 || time.Until(deadline) > workerTimeout {
+			t.Fatalf("worker context deadline = %v, bounded = %t", deadline, bounded)
+		}
 		if invocation.Executable != executable {
 			t.Fatalf("executable = %q, want %q", invocation.Executable, executable)
 		}
