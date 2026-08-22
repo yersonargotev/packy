@@ -11,6 +11,14 @@ import (
 )
 
 func setManifestResourceRequires(t *testing.T, manifest string, identity capabilitypack.ResourceIdentity, requires []string) string {
+	return setManifestResourceList(t, manifest, identity, "requires", requires)
+}
+
+func setManifestResourceNotices(t *testing.T, manifest string, identity capabilitypack.ResourceIdentity, notices []string) string {
+	return setManifestResourceList(t, manifest, identity, "notices", notices)
+}
+
+func setManifestResourceList(t *testing.T, manifest string, identity capabilitypack.ResourceIdentity, field string, values []string) string {
 	t.Helper()
 	var document map[string]any
 	if err := json.Unmarshal([]byte(manifest), &document); err != nil {
@@ -26,7 +34,7 @@ func setManifestResourceRequires(t *testing.T, manifest string, identity capabil
 		if !ok || resource["kind"] != identity.Kind || resource["id"] != identity.ID {
 			continue
 		}
-		resource["requires"] = requires
+		resource[field] = values
 		found = true
 		break
 	}
@@ -103,10 +111,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 		t.Fatalf("project receipt document = %#v\n%s", lock, lockData)
 	}
 	for _, receipt := range lock.Receipts {
-		wantVersion := "1.1.0"
-		if receipt.Pack.ID == "argote" {
-			wantVersion = "1.0.2"
-		}
+		wantVersion := checkedInPackVersion(t, receipt.Pack.ID)
 		if receipt.Pack.ID == "" || receipt.Pack.Version != wantVersion || receipt.Surface != "codex" || len(receipt.Resources) == 0 || len(receipt.Projections) == 0 {
 			t.Fatalf("incomplete project Pack receipt = %#v\n%s", receipt, lockData)
 		}
@@ -445,13 +450,9 @@ func TestIssue626ProjectNoticesUseOnlyTheSelectedSurfaceIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resource := `"id": "api-and-interface-design",
-      "kind": "skill",`
-	withNotice := strings.Replace(string(manifest), resource, resource+"\n      \"notices\": [\"notice:mit\"],", 1)
-	if withNotice == string(manifest) {
-		t.Fatal("Addy fixture omitted api-and-interface-design")
-	}
-	if err := os.WriteFile(manifestPath, []byte(withNotice), 0o600); err != nil {
+	withNotice := setManifestResourceNotices(t, string(manifest), capabilitypack.ResourceIdentity{Kind: "skill", ID: "api-and-interface-design"}, []string{"notice:mit"})
+	selectedNotices := setManifestResourceNotices(t, withNotice, capabilitypack.ResourceIdentity{Kind: "skill", ID: "browser-testing-with-devtools"}, []string{})
+	if err := os.WriteFile(manifestPath, []byte(selectedNotices), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := executeCommand(t, NewRootCommand(opts), "install", "addy", "--surface", "codex", "--resource", "skill:api-and-interface-design"); err != nil {

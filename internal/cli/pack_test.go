@@ -465,6 +465,24 @@ func checkedInMattyFacts(t *testing.T) mattyManifestFacts {
 	return facts
 }
 
+func checkedInPackVersion(t *testing.T, packID string) string {
+	t.Helper()
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	data, err := os.ReadFile(filepath.Join("..", "..", "bundle", "packs", packID, "pack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version == "" {
+		t.Fatalf("checked-in Pack %q has no version", packID)
+	}
+	return manifest.Version
+}
+
 func bumpManifestPatchVersion(t *testing.T, manifest string) (string, string) {
 	t.Helper()
 	var identity struct {
@@ -1415,16 +1433,7 @@ func copyPackBundleForUpdate(t *testing.T, repoRoot string) string {
 
 func copyProductionCatalogBundle(t *testing.T, target, repoRoot string) {
 	t.Helper()
-	for _, dir := range []string{"skills", "instructions", "agents", "commands", "references", "notices", "packs"} {
-		if err := os.CopyFS(filepath.Join(target, dir), os.DirFS(filepath.Join(repoRoot, "bundle", dir))); err != nil {
-			t.Fatal(err)
-		}
-	}
-	data, err := os.ReadFile(filepath.Join(repoRoot, "bundle", "LICENSE"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(target, "LICENSE"), data, 0o600); err != nil {
+	if err := os.CopyFS(target, os.DirFS(filepath.Join(repoRoot, "bundle"))); err != nil {
 		t.Fatal(err)
 	}
 }
