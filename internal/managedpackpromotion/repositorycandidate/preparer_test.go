@@ -396,6 +396,27 @@ func TestModuleCacheProxyURLEscapesFallbackSeparators(t *testing.T) {
 	}
 }
 
+func TestIsolatedGitEnvironmentDisablesAutomaticMaintenance(t *testing.T) {
+	environment := isolatedGitEnvironment(nil)
+	for _, setting := range []struct {
+		key  string
+		want string
+	}{
+		{key: "maintenance.auto", want: "false"},
+		{key: "gc.auto", want: "0"},
+	} {
+		command := exec.Command("git", "config", "--get", setting.key)
+		command.Env = environment
+		output, err := command.Output()
+		if err != nil {
+			t.Fatalf("read isolated Git setting %s: %v", setting.key, err)
+		}
+		if got := strings.TrimSpace(string(output)); got != setting.want {
+			t.Fatalf("isolated Git setting %s = %q, want %q", setting.key, got, setting.want)
+		}
+	}
+}
+
 type fakeGates struct {
 	calls                int
 	observedDetachedBase bool

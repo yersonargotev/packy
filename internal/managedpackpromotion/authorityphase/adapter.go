@@ -26,6 +26,8 @@ const (
 	PublishModeArgument = "--packy-internal-publication-worker"
 	phaseTimeout        = 20 * time.Minute
 	maxProcessOutput    = 64 << 10
+	// Go treats mode 2 as a nested telemetry child and does not start a detached sidecar.
+	goTelemetryChildMode = "2"
 )
 
 type Adapter struct {
@@ -207,7 +209,7 @@ func prepublicationEnvironment(ctx context.Context, root string, ambient []strin
 		"HOME": filepath.Join(root, "home"), "TMPDIR": filepath.Join(root, "tmp"),
 		"XDG_CACHE_HOME": filepath.Join(root, "xdg-cache"), "XDG_CONFIG_HOME": filepath.Join(root, "xdg-config"),
 		"XDG_DATA_HOME": filepath.Join(root, "xdg-data"), "XDG_STATE_HOME": filepath.Join(root, "xdg-state"),
-		"LANG": "C", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0", "GOENV": "off", "GOTELEMETRY": "off", "GOTOOLCHAIN": "local",
+		"LANG": "C", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0", "GOENV": "off", "GOTOOLCHAIN": "local", "GO_TELEMETRY_CHILD": goTelemetryChildMode,
 	}
 	for _, path := range []string{values["HOME"], values["TMPDIR"], values["XDG_CACHE_HOME"], values["XDG_CONFIG_HOME"], values["XDG_DATA_HOME"], values["XDG_STATE_HOME"]} {
 		if err := os.MkdirAll(path, 0o700); err != nil {
@@ -246,7 +248,7 @@ func currentGoEnvironment(ctx context.Context, ambient []string, fallbackHome st
 		return nil, errors.New("Go runtime paths must be absolute")
 	}
 	environment := map[string]string{
-		"GOENV": "off", "GOTELEMETRY": "off", "GOTOOLCHAIN": "local",
+		"GOENV": "off", "GOTOOLCHAIN": "local", "GO_TELEMETRY_CHILD": goTelemetryChildMode,
 		"HOME": fallbackHome, "PATH": "/usr/bin:/bin",
 	}
 	allowed := map[string]bool{"HOME": true, "PATH": true, "GOCACHE": true, "GOMODCACHE": true, "GOPATH": true}
