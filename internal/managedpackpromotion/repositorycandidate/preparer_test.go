@@ -353,6 +353,27 @@ func TestPrepareGateFailuresAndAllowlistViolationsLeaveTheSourceWithoutProposalS
 	}
 }
 
+func TestGateEnvironmentIsAnExplicitCredentialFreeOfflineAllowlist(t *testing.T) {
+	t.Setenv("PATH", "/safe/bin")
+	t.Setenv("GITHUB_TOKEN", "must-not-cross-the-gate")
+	t.Setenv("UNRELATED_AMBIENT_VALUE", "must-not-cross-the-gate")
+	environment := gateEnvironment(context.Background(), "/sandbox/home", "/sandbox/config", "/sandbox/cache", "/sandbox/tmp")
+	joined := strings.Join(environment, "\n")
+	for _, forbidden := range []string{"GITHUB_TOKEN", "UNRELATED_AMBIENT_VALUE", "must-not-cross-the-gate"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("gate environment retained %q:\n%s", forbidden, joined)
+		}
+	}
+	for _, required := range []string{
+		"HOME=/sandbox/home", "XDG_CONFIG_HOME=/sandbox/config", "XDG_CACHE_HOME=/sandbox/cache", "TMPDIR=/sandbox/tmp",
+		"PATH=/safe/bin", "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOVCS=*:off", "GIT_CONFIG_GLOBAL=/dev/null",
+	} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("gate environment lacks %q:\n%s", required, joined)
+		}
+	}
+}
+
 type fakeGates struct {
 	calls                int
 	observedDetachedBase bool

@@ -42,29 +42,16 @@ func runSanitized(ctx context.Context, repositoryRoot, name string, arguments ..
 		return fmt.Errorf("create gate sandbox: %w", err)
 	}
 	defer os.RemoveAll(sandbox)
-	goCache, goModCache, goPath := currentGoCaches(ctx)
-	environment := make([]string, 0, len(os.Environ())+12)
-	for _, value := range os.Environ() {
-		name, _, _ := strings.Cut(value, "=")
-		if !sensitiveEnvironment(name) {
-			environment = append(environment, value)
+	home := filepath.Join(sandbox, "home")
+	config := filepath.Join(sandbox, "xdg", "config")
+	cache := filepath.Join(sandbox, "xdg", "cache")
+	temporary := filepath.Join(sandbox, "tmp")
+	for _, directory := range []string{home, config, cache, temporary} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			return err
 		}
 	}
-	environment = append(environment,
-		"HOME="+filepath.Join(sandbox, "home"),
-		"XDG_CONFIG_HOME="+filepath.Join(sandbox, "xdg"),
-		"PACKY_VALIDATION_HOME="+filepath.Join(sandbox, "home"),
-		"PACKY_VALIDATION_CONFIG_HOME="+filepath.Join(sandbox, "xdg"),
-		"GOPROXY=off", "GONOPROXY=*", "GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
-		"GOCACHE="+goCache, "GOMODCACHE="+goModCache, "GOPATH="+goPath,
-	)
-	if err := os.MkdirAll(filepath.Join(sandbox, "home"), 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(sandbox, "xdg"), 0o755); err != nil {
-		return err
-	}
+	environment := gateEnvironment(ctx, home, config, cache, temporary)
 	command := exec.CommandContext(ctx, name, arguments...)
 	command.Dir = repositoryRoot
 	command.Env = environment
@@ -75,22 +62,39 @@ func runSanitized(ctx context.Context, repositoryRoot, name string, arguments ..
 	return nil
 }
 
-func sensitiveEnvironment(name string) bool {
-	upper := strings.ToUpper(name)
-	if upper == "HOME" || upper == "XDG_CONFIG_HOME" || upper == "GOPROXY" || upper == "GONOPROXY" ||
-		upper == "PACKY_VALIDATION_HOME" || upper == "PACKY_VALIDATION_CONFIG_HOME" ||
-		upper == "HTTP_PROXY" || upper == "HTTPS_PROXY" || upper == "ALL_PROXY" || upper == "NO_PROXY" ||
-		upper == "SSH_AUTH_SOCK" || upper == "SSH_ASKPASS" || upper == "GIT_ASKPASS" ||
-		upper == "GIT_SSH" || upper == "GIT_SSH_COMMAND" || upper == "GIT_CREDENTIAL_HELPER" ||
-		strings.HasPrefix(upper, "GIT_CONFIG_") || strings.HasPrefix(upper, "GH_") || strings.HasPrefix(upper, "GITHUB_") ||
-		strings.HasPrefix(upper, "AWS_") || strings.HasPrefix(upper, "AZURE_") || strings.HasPrefix(upper, "GOOGLE_") {
-		return true
+func gateEnvironment(ctx context.Context, home, config, cache, temporary string) []string {
+	goCache, goModCache, goPath := currentGoCaches(ctx)
+	return []string{
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+		"GOCACHE=" + goCache,
+		"GOMODCACHE=" + goModCache,
+		"GONOPROXY=*",
+		"GOPATH=" + goPath,
+		"GOPROXY=off",
+		"GOSUMDB=off",
+		"GOTOOLCHAIN=local",
+		"GOVCS=*:off",
+		"HOME=" + home,
+		"LANG=C",
+		"LC_ALL=C",
+		"PACKY_VALIDATION_CONFIG_HOME=" + config,
+		"PACKY_VALIDATION_HOME=" + home,
+		"PATH=" + os.Getenv("PATH"),
+		"TMPDIR=" + temporary,
+		"XDG_CACHE_HOME=" + cache,
+		"XDG_CONFIG_HOME=" + config,
 	}
-	return strings.HasSuffix(upper, "_TOKEN") || strings.HasSuffix(upper, "_SECRET") || strings.HasSuffix(upper, "_PASSWORD") || strings.HasSuffix(upper, "_CREDENTIAL")
 }
 
 func currentGoCaches(ctx context.Context) (string, string, string) {
 	command := exec.CommandContext(ctx, "go", "env", "GOCACHE", "GOMODCACHE", "GOPATH")
+	command.Env = []string{
+		"GOENV=off",
+		"HOME=" + os.Getenv("HOME"),
+		"PATH=" + os.Getenv("PATH"),
+	}
 	output, err := command.Output()
 	if err != nil {
 		return os.Getenv("GOCACHE"), os.Getenv("GOMODCACHE"), os.Getenv("GOPATH")
