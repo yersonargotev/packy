@@ -128,3 +128,26 @@ and synchronized.
 The current bundled catalog remains valid while its seven Packs migrate via
 higher immutable Managed Pack releases. This transition does not add a schema
 selector to the catalog loader or retain a permanent multi-version loader.
+
+## Promotion
+
+Packy maintainers promote exactly one immutable release from the repository
+root with the repository-private adapter:
+
+```sh
+go run ./internal/tools/promotepack <pack-id>@<version>
+```
+
+The adapter is intentionally outside `cmd/packy` and Packy's release artifacts.
+It has three separate phases. Public acquisition fetches the registered Managed
+Pack Project release and exact origin commits without using Packy write
+credentials. A separate credential-free, no-network worker validates the inert
+local trees and seals the Declared Pack Closure. Only then does a fresh process
+materialize the candidate, run every repository admission gate, and publish or
+adopt an automation-owned ready pull request through normal fast-forward Git
+operations. Project or origin hooks, scripts, tests, builds, and binaries are
+never executed.
+
+The command reports exactly one proposal, deterministic no-change, or typed
+policy rejection. Promotion never replaces an admission record, never adopts a
+human-edited branch or pull request, and never force-pushes automation state.
