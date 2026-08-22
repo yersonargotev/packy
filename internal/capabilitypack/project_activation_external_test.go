@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/codex"
 )
@@ -60,9 +61,24 @@ func TestProjectUpdateFreshnessReplaysTheExactSurfaceUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updatedManifest := strings.Replace(string(manifest), `"version": "1.0.4"`, `"version": "1.0.5"`, 1)
+	var manifestDocument struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(manifest, &manifestDocument); err != nil {
+		t.Fatal(err)
+	}
+	currentVersion, err := semver.StrictNewVersion(manifestDocument.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedManifest := strings.Replace(
+		string(manifest),
+		`"version": "`+currentVersion.String()+`"`,
+		`"version": "`+currentVersion.IncPatch().String()+`"`,
+		1,
+	)
 	if updatedManifest == string(manifest) {
-		t.Fatal("Matty fixture version did not match")
+		t.Fatal("Matty fixture version was not updated")
 	}
 	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
 		t.Fatal(err)

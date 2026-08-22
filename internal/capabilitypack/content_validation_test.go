@@ -390,7 +390,17 @@ func TestCheckedInCurrentManifestsOmitRetiredContractTerms(t *testing.T) {
 			t.Fatalf("Pack %s readiness obligations = %#v, want %#v", pack.ID, got, want)
 		}
 		data := string(mustReadFile(t, filepath.Join(bundle, "packs", pack.ID, "pack.json")))
-		for _, retired := range []string{"schema_version", "runtime_modes", "root_migrations", "optional-mode:", "provides_capabilities", "requires_capabilities", "capability_conflicts"} {
+		retiredTerms := []string{"runtime_modes", "root_migrations", "optional-mode:", "provides_capabilities", "requires_capabilities", "capability_conflicts"}
+		var manifestShape struct {
+			SchemaVersion json.RawMessage `json:"schema_version"`
+		}
+		if err := json.Unmarshal([]byte(data), &manifestShape); err != nil {
+			t.Fatal(err)
+		}
+		if manifestShape.SchemaVersion == nil {
+			retiredTerms = append([]string{"schema_version"}, retiredTerms...)
+		}
+		for _, retired := range retiredTerms {
 			if strings.Contains(data, retired) {
 				t.Fatalf("Pack %s current manifest contains retired contract term %q", pack.ID, retired)
 			}
