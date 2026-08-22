@@ -34,6 +34,7 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 	wantResearch := []string{
 		filepath.Join(root, "docs", "research", "evidence", "engram-setup-codex-audit-2026-08-13.md"),
 		filepath.Join(root, "docs", "research", "evidence", "generic-issue-delivery-pack-viability.md"),
+		filepath.Join(root, "docs", "research", "evidence", "managed-pack-followups-root-cause-2026-08-22.md"),
 		filepath.Join(root, "docs", "research", "evidence", "pack-readiness-architecture.md"),
 	}
 	var research []string
