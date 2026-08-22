@@ -94,6 +94,19 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 	return pack, nil
 }
 
+// ValidateProjectPack validates the runtime-facing portion of a Managed Pack
+// manifest against the same capability vocabulary used by Packy's catalog.
+// Managed Pack provenance and closure remain owned by internal/managedpack.
+func ValidateProjectPack(pack Pack, projectRoot string) error {
+	pack.manifestVersion = manifestSchemaV4
+	pack.Contract = Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}}
+	pack.SourceReference = nil
+	if err := validateCurrentPack(pack); err != nil {
+		return err
+	}
+	return validatePackSources(pack, projectRoot)
+}
+
 func validateCurrentPack(pack Pack) error {
 	if !idPattern.MatchString(pack.ID) {
 		return fmt.Errorf("Pack %q field id must be lowercase kebab-case", pack.ID)

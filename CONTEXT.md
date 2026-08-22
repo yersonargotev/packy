@@ -4,7 +4,7 @@ This glossary is the current domain language for Packy `v0.2.0`. The accepted
 architecture is recorded in [ADR 0031](docs/adr/0031-simplify-packy-around-reviewed-packs.md)
 and [ADR 0033](docs/adr/0033-make-the-tui-the-primary-interactive-interface.md).
 Readiness architecture is recorded in [ADR 0035](docs/adr/0035-make-pack-readiness-capability-driven.md).
-Issue-delivery source authority is recorded in [ADR 0037](docs/adr/0037-source-issue-delivery-from-an-independent-release.md).
+Managed Pack authoring and promotion are recorded in [ADR 0038](docs/adr/0038-promote-releases-from-managed-pack-projects.md).
 
 ## Glossary
 
@@ -37,13 +37,48 @@ runtime usability.
 The single `pack.json` contract for a Pack. It declares identity, version,
 description, selectability, supported surfaces, resources, bindings,
 intra-Pack dependencies, external requirements, readiness obligations,
-conflicts, and exclusions.
+conflicts, and Managed Pack provenance. Existing catalog manifests retain their
+legacy fields only while the seven Packs migrate.
+
+### Managed Pack Project
+
+The one public, maintainer-controlled repository that authors one Pack through
+a root schema v1 `pack.json`, canonical bundle-relative resources, declared
+origins, and immutable self-contained Pack releases.
+
+### External Source Project
+
+A public repository named by a Managed Pack origin at one exact commit. It
+contributes provenance bytes but does not authorize a Pack identity or release.
+
+### Managed Pack Registry
+
+Packy's reviewed one-to-one mapping from each Pack ID to its canonical Managed
+Pack Project. It lives outside the end-user bundle.
+
+### Declared Pack Closure
+
+The root `pack.json` plus the deterministic union of every resource and typed
+surface-capability source root declared by the manifest.
+
+### Pack Admission Record
+
+The append-only, Packy-owned record for one admitted Pack version. It pins the
+immutable project release and Git identities plus manifest, closure, file mode,
+and content digests, and is not part of the end-user bundle.
+
+### Managed Pack Promotion
+
+Packy's private operation that validates one registered immutable Managed Pack
+release and returns no change, a typed rejection, or one protected proposal.
 
 ### Pack Source
 
 One upstream provenance declaration for selected Pack resources and legal
 notices. Its configuration identifies a stable release, while its lock records
 the exact selected content used to reproduce and review a bundle generation.
+It is the legacy catalog-maintenance model retained only until every current
+Pack migrates to a Managed Pack Project.
 
 ### Pack resource
 
