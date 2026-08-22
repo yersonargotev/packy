@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubacquisition"
@@ -28,6 +29,9 @@ func TestPromotionModuleComposesRepresentativeManagedPackFixtures(t *testing.T) 
 	for _, fixtureName := range []string{"small", "synthetic-medium", "synthetic-large"} {
 		t.Run(fixtureName, func(t *testing.T) {
 			fixture := newComposedFixture(t, fixtureName)
+			if wantResources := map[string]int{"synthetic-medium": 12, "synthetic-large": 36}[fixtureName]; wantResources != 0 {
+				assertComposedSyntheticFixtureContract(t, fixture.wantValidation.Manifest, wantResources)
+			}
 			repositoryRoot, _, baseSHA := composedPackyRepository(t, fixture.baseTree)
 			gates := &composedGates{
 				t: t, sourceRepository: repositoryRoot, sourceBaseSHA: baseSHA,
@@ -133,6 +137,35 @@ func TestPromotionModuleComposesRepresentativeManagedPackFixtures(t *testing.T) 
 			assertComposedRepositoryUnchanged(t, admittedRoot, admittedSHA)
 			repeatSource.assertCleaned(t)
 		})
+	}
+}
+
+func assertComposedSyntheticFixtureContract(t *testing.T, manifest managedpack.Manifest, wantResources int) {
+	t.Helper()
+	wantSurfaces := []capabilitypack.Surface{
+		capabilitypack.SurfaceClaude,
+		capabilitypack.SurfaceCodex,
+		capabilitypack.SurfaceOpenCode,
+	}
+	if !reflect.DeepEqual(manifest.Surfaces, wantSurfaces) {
+		t.Fatalf("synthetic fixture surfaces = %#v, want %#v", manifest.Surfaces, wantSurfaces)
+	}
+	wantObligations := []capabilitypack.ReadinessObligation{
+		capabilitypack.ReadinessRuntimeUsability,
+		capabilitypack.ReadinessSurfaceAuthorization,
+	}
+	if !reflect.DeepEqual(manifest.ReadinessObligations, wantObligations) {
+		t.Fatalf("synthetic fixture readiness obligations = %#v, want %#v", manifest.ReadinessObligations, wantObligations)
+	}
+	if len(manifest.Resources) != wantResources+1 {
+		t.Fatalf("synthetic fixture resources = %d, want %d plus notice", len(manifest.Resources)-1, wantResources)
+	}
+	bindings := 0
+	for _, resource := range manifest.Resources {
+		bindings += len(resource.Bindings)
+	}
+	if bindings != wantResources*len(wantSurfaces) {
+		t.Fatalf("synthetic fixture bindings = %d, want %d", bindings, wantResources*len(wantSurfaces))
 	}
 }
 
@@ -274,25 +307,26 @@ func composedWriteSyntheticManagedPack(t *testing.T, root, id, version string, r
 	t.Helper()
 	const noticeID = "synthetic-license"
 	originID := id + "-upstream"
-	resources := []any{map[string]any{
-		"kind": "notice", "id": noticeID, "source": "notices/" + noticeID,
-		"description": "Synthetic fixture notice", "license": "MIT", "attribution": "Synthetic Fixture Authors",
-		"requires": []any{}, "conflicts": []any{}, "bindings": []any{}, "surface_exclusions": []any{},
+	resources := []managedpack.Resource{{
+		Kind: "notice", ID: noticeID, Source: "notices/" + noticeID,
+		Description: "Synthetic fixture notice", License: "MIT", Attribution: "Synthetic Fixture Authors",
+		Requires: []string{}, Conflicts: []string{}, Bindings: []capabilitypack.Binding{},
+		SurfaceExclusions: []capabilitypack.SurfaceExclusion{},
 	}}
 	writeTestFile(t, filepath.Join(root, "notices", noticeID), "synthetic fixture notice\n", 0o644)
 	for index := 1; index <= resourceCount; index++ {
 		resourceID := fmt.Sprintf("workflow-%02d", index)
 		source := "skills/" + resourceID
-		resources = append(resources, map[string]any{
-			"kind": "skill", "id": resourceID, "source": source,
-			"description": "Synthetic workflow " + resourceID,
-			"requires":    []any{}, "conflicts": []any{}, "notices": []any{"notice:" + noticeID},
-			"origin": map[string]any{"id": originID, "path": source, "relationship": "exact-copy"},
-			"bindings": []any{map[string]any{
-				"surface": "codex", "projection": "skill", "name": resourceID,
-				"invocation": resourceID, "mode": "native", "sharing": "exclusive", "capabilities": []any{},
-			}},
-			"surface_exclusions": []any{},
+		resources = append(resources, managedpack.Resource{
+			Kind: "skill", ID: resourceID, Source: source, Description: "Synthetic workflow " + resourceID,
+			Requires: []string{}, Conflicts: []string{}, Notices: []string{"notice:" + noticeID},
+			Origin: &managedpack.ResourceOrigin{ID: originID, Path: source, Relationship: managedpack.RelationshipExactCopy},
+			Bindings: []capabilitypack.Binding{
+				{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: resourceID, Invocation: "/" + resourceID, Mode: "native", Sharing: "exclusive", Capabilities: []capabilitypack.SurfaceCapability{}},
+				{Surface: capabilitypack.SurfaceCodex, Projection: "skill", Name: resourceID, Invocation: "$" + resourceID, Mode: "native", Sharing: "exclusive", Capabilities: []capabilitypack.SurfaceCapability{}},
+				{Surface: capabilitypack.SurfaceOpenCode, Projection: "skill", Name: resourceID, Invocation: "/" + resourceID, Mode: "native", Sharing: "exclusive", Capabilities: []capabilitypack.SurfaceCapability{}},
+			},
+			SurfaceExclusions: []capabilitypack.SurfaceExclusion{},
 		})
 		writeTestFile(t, filepath.Join(root, filepath.FromSlash(source), "SKILL.md"), "synthetic guidance for "+resourceID+"\n", 0o644)
 		for fileIndex := 2; fileIndex <= filesPerResource; fileIndex++ {
@@ -300,17 +334,29 @@ func composedWriteSyntheticManagedPack(t *testing.T, root, id, version string, r
 			writeTestFile(t, path, fmt.Sprintf("synthetic reference %02d for %s\n", fileIndex-1, resourceID), 0o644)
 		}
 	}
-	document := map[string]any{
-		"schema_version": 1, "id": id, "version": version,
-		"description": "Generated synthetic Managed Pack fixture", "selectable": true,
-		"surfaces": []any{"codex"}, "readiness_obligations": []any{}, "external_requirements": []any{},
-		"origins": []any{map[string]any{
-			"id": originID, "repository": "fixture/" + originID,
-			"commit": strings.Repeat("b", 40), "revision": "synthetic-v" + version,
+	manifestDocument := managedpack.Manifest{
+		SchemaVersion: managedpack.SchemaVersion,
+		ID:            id,
+		Version:       version,
+		Description:   "Generated synthetic Managed Pack fixture",
+		Selectable:    true,
+		Surfaces: []capabilitypack.Surface{
+			capabilitypack.SurfaceClaude,
+			capabilitypack.SurfaceCodex,
+			capabilitypack.SurfaceOpenCode,
+		},
+		ReadinessObligations: []capabilitypack.ReadinessObligation{
+			capabilitypack.ReadinessRuntimeUsability,
+			capabilitypack.ReadinessSurfaceAuthorization,
+		},
+		ExternalRequirements: []string{},
+		Origins: []managedpack.Origin{{
+			ID: originID, Repository: "fixture/" + originID,
+			Commit: strings.Repeat("b", 40), Revision: "synthetic-v" + version,
 		}},
-		"resources": resources,
+		Resources: resources,
 	}
-	manifest, err := json.MarshalIndent(document, "", "  ")
+	manifest, err := json.MarshalIndent(manifestDocument, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
