@@ -187,10 +187,7 @@ func (adapter *Adapter) adopt(ctx context.Context, candidate managedpackpromotio
 		return reject(managedpackpromotion.GateProposalOwnership, "the pull request head does not equal the observed remote branch head")
 	}
 
-	if latestCommitMatches(branch, candidate, observed.Actor) {
-		if summary != candidate.Summary {
-			return reject(managedpackpromotion.GateProposalOwnership, "the sealed proposal summary differs from the published automation metadata")
-		}
+	if latestProjectionMatches(branch, candidate, observed.Actor, summary) {
 		return managedpackpromotion.Publication{NoChangeReason: "the exact automation-owned proposal already exists"}, nil
 	}
 
@@ -202,8 +199,8 @@ func (adapter *Adapter) regenerateStale(ctx context.Context, candidate managedpa
 		return reject(managedpackpromotion.GateProposalOwnership, branchReason)
 	}
 	pr := observed.PullRequests[0]
-	_, summary, reason := ownedPullRequest(pr, candidate, observed.Actor)
-	if reason != "" || summary != candidate.Summary || pr.HeadSHA != observed.Branch.HeadSHA {
+	_, _, reason := ownedPullRequest(pr, candidate, observed.Actor)
+	if reason != "" || pr.HeadSHA != observed.Branch.HeadSHA {
 		return reject(managedpackpromotion.GateProposalOwnership, branchReason)
 	}
 	staleBase, reason := ownedBranchBase(observed.Branch, candidate, observed.Actor, false)
@@ -248,12 +245,9 @@ func (adapter *Adapter) update(ctx context.Context, candidate managedpackpromoti
 		!samePullRequestAfterBranchAdvance(pr, afterPush.PullRequests[0], head) {
 		return reject(managedpackpromotion.GateProposalOwnership, "pull request identity changed while the proposal branch was being updated")
 	}
-	_, summary, reason := ownedPullRequest(afterPush.PullRequests[0], candidate, observed.Actor)
+	_, _, reason := ownedPullRequest(afterPush.PullRequests[0], candidate, observed.Actor)
 	if reason != "" {
 		return reject(managedpackpromotion.GateProposalOwnership, reason)
-	}
-	if summary != candidate.Summary {
-		return reject(managedpackpromotion.GateProposalOwnership, "the sealed proposal summary differs from the immutable proposal metadata")
 	}
 	final, err := adapter.observe(ctx, candidate)
 	if err != nil {
@@ -306,7 +300,7 @@ func (adapter *Adapter) verifyFinal(candidate managedpackpromotion.Candidate, ob
 	if reason != "" {
 		return reject(managedpackpromotion.GateProposalOwnership, reason)
 	}
-	if pr.HeadSHA != expectedHead || !latestCommitMatches(observed.Branch, candidate, observed.Actor) || summary != candidate.Summary {
+	if pr.HeadSHA != expectedHead || !latestProjectionMatches(observed.Branch, candidate, observed.Actor, summary) {
 		return reject(managedpackpromotion.GatePublication, "published pull request does not equal the sealed candidate")
 	}
 	return managedpackpromotion.Publication{Proposal: &managedpackpromotion.Proposal{
@@ -334,6 +328,7 @@ type publicationRecord struct {
 	Coordinate   string `json:"coordinate"`
 	Owner        string `json:"owner"`
 	Project      string `json:"project"`
+	Summary      string `json:"summary"`
 	TreeSHA      string `json:"tree"`
 	Version      int    `json:"version"`
 }
@@ -350,7 +345,8 @@ func recordFor(candidate managedpackpromotion.Candidate, owner string) publicati
 	return publicationRecord{
 		BaseSHA: candidate.BaseSHA, Branch: candidate.Branch, CandidateSHA: candidate.HeadSHA,
 		CandidateID: candidate.ID, Coordinate: candidate.Coordinate.String(),
-		Owner: owner, Project: candidate.Project, TreeSHA: candidate.ResultTreeSHA, Version: 1,
+		Owner: owner, Project: candidate.Project, Summary: candidate.Summary,
+		TreeSHA: candidate.ResultTreeSHA, Version: 1,
 	}
 }
 
@@ -358,7 +354,7 @@ func (record publicationRecord) matchesCandidate(candidate managedpackpromotion.
 	return record.BaseSHA == candidate.BaseSHA && record.Branch == candidate.Branch &&
 		record.CandidateSHA == candidate.HeadSHA && record.CandidateID == candidate.ID &&
 		record.Coordinate == candidate.Coordinate.String() && record.Project == candidate.Project &&
-		record.TreeSHA == candidate.ResultTreeSHA && record.Version == 1
+		record.Summary == candidate.Summary && record.TreeSHA == candidate.ResultTreeSHA && record.Version == 1
 }
 
 func titleFor(candidate managedpackpromotion.Candidate) string {
@@ -383,7 +379,7 @@ func mutationFor(candidate managedpackpromotion.Candidate, owner string) PullReq
 
 func commitMessage(candidate managedpackpromotion.Candidate, record publicationRecord) string {
 	encoded, _ := json.Marshal(record)
-	return titleFor(candidate) + "\n\n" + commitPrefix + string(encoded)
+	return titleFor(candidate) + "\n\n" + candidate.Summary + "\n\n" + commitPrefix + string(encoded)
 }
 
 func parseBody(body string) (proposalRecord, string, error) {
@@ -434,7 +430,8 @@ func parseCommitRecord(message string) (publicationRecord, error) {
 		return publicationRecord{}, err
 	}
 	canonical, _ := json.Marshal(record)
-	if encoded != string(canonical) {
+	prose := "Promote Managed Pack " + record.Coordinate + "\n\n" + record.Summary
+	if encoded != string(canonical) || message[:index] != prose {
 		return publicationRecord{}, errors.New("commit ownership record is not canonical")
 	}
 	return record, nil
@@ -451,7 +448,7 @@ func parseRecord(encoded string) (publicationRecord, error) {
 		return publicationRecord{}, errors.New("ownership marker has trailing JSON")
 	}
 	coordinate, coordinateErr := managedpackpromotion.ParseCoordinate(record.Coordinate)
-	if record.Version != 1 || strings.TrimSpace(record.Owner) == "" || strings.TrimSpace(record.CandidateID) == "" ||
+	if record.Version != 1 || strings.TrimSpace(record.Owner) == "" || strings.TrimSpace(record.CandidateID) == "" || strings.TrimSpace(record.Summary) == "" ||
 		coordinateErr != nil || coordinate.String() != record.Coordinate || !projectPattern.MatchString(record.Project) || !validBranch(record.Branch) ||
 		!sha1Pattern.MatchString(record.BaseSHA) || !sha1Pattern.MatchString(record.CandidateSHA) ||
 		!sha1Pattern.MatchString(record.TreeSHA) {
@@ -484,7 +481,7 @@ func ownedPullRequest(pr PullRequest, candidate managedpackpromotion.Candidate, 
 		return proposalRecord{}, "", "pull request body was edited or has invalid ownership metadata"
 	}
 	if record.Owner != actor || record.Coordinate != candidate.Coordinate.String() || record.Project != candidate.Project ||
-		record.Branch != candidate.Branch {
+		record.Branch != candidate.Branch || strings.TrimSpace(summary) == "" {
 		return proposalRecord{}, "", "pull request ownership metadata belongs to a different proposal"
 	}
 	return record, summary, ""
@@ -575,6 +572,17 @@ func latestCommitMatches(branch *Branch, candidate managedpackpromotion.Candidat
 	}
 	if branch.HeadSHA == candidate.HeadSHA && isDetachedCandidateCommit(branch.Commits[0], candidate) {
 		return true
+	}
+	record, err := parseCommitRecord(branch.Commits[0].Message)
+	return err == nil && record.Owner == actor && record.matchesCandidate(candidate)
+}
+
+func latestProjectionMatches(branch *Branch, candidate managedpackpromotion.Candidate, actor, proposalSummary string) bool {
+	if branch == nil || len(branch.Commits) == 0 || branch.TreeSHA != candidate.ResultTreeSHA {
+		return false
+	}
+	if branch.HeadSHA == candidate.HeadSHA && isDetachedCandidateCommit(branch.Commits[0], candidate) {
+		return proposalSummary == candidate.Summary
 	}
 	record, err := parseCommitRecord(branch.Commits[0].Message)
 	return err == nil && record.Owner == actor && record.matchesCandidate(candidate)

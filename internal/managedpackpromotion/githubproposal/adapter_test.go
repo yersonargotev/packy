@@ -68,6 +68,7 @@ func TestPublisherAppendsAnUntouchedProposalWithoutRewritingHistory(t *testing.T
 	candidate.ID = strings.Repeat("2", 64)
 	candidate.HeadSHA = strings.Repeat("e", 40)
 	candidate.ResultTreeSHA = strings.Repeat("f", 40)
+	candidate.Summary = "Recomputed sealed summary after a Packy correction."
 
 	publication, err := New(gateway).Publish(context.Background(), candidate)
 	if err != nil {
@@ -84,6 +85,10 @@ func TestPublisherAppendsAnUntouchedProposalWithoutRewritingHistory(t *testing.T
 	}
 	if gateway.pullRequests[0].Title != oldTitle || gateway.pullRequests[0].Body != oldBody || len(gateway.pullRequests[0].ContentEdits) != 0 {
 		t.Fatalf("immutable proposal metadata changed: %+v", gateway.pullRequests[0])
+	}
+	record, err := parseCommitRecord(gateway.lastCommit.Message)
+	if err != nil || record.Summary != candidate.Summary || !strings.Contains(gateway.lastCommit.Message, candidate.Summary) {
+		t.Fatalf("append-only candidate summary = %+v, message %q, error %v", record, gateway.lastCommit.Message, err)
 	}
 }
 
@@ -112,6 +117,7 @@ func TestPublisherRegeneratesAnUntouchedStaleProposalOnTheNewBaseWithAMergeCommi
 	oldHead := gateway.branch.HeadSHA
 	oldTitle, oldBody := gateway.pullRequests[0].Title, gateway.pullRequests[0].Body
 	candidate := rebuiltCandidate(old, gateway)
+	candidate.Summary = "Recomputed stale-base summary after a Packy correction."
 
 	publication, err := New(gateway).Publish(context.Background(), candidate)
 	if err != nil {
@@ -129,6 +135,10 @@ func TestPublisherRegeneratesAnUntouchedStaleProposalOnTheNewBaseWithAMergeCommi
 	}
 	if gateway.pullRequests[0].Title != oldTitle || gateway.pullRequests[0].Body != oldBody || len(gateway.pullRequests[0].ContentEdits) != 0 {
 		t.Fatalf("immutable proposal metadata changed: %+v", gateway.pullRequests[0])
+	}
+	record, err := parseCommitRecord(gateway.lastCommit.Message)
+	if err != nil || record.Summary != candidate.Summary || !strings.Contains(gateway.lastCommit.Message, candidate.Summary) {
+		t.Fatalf("stale-base candidate summary = %+v, message %q, error %v", record, gateway.lastCommit.Message, err)
 	}
 
 	publication, err = New(gateway).Publish(context.Background(), candidate)
