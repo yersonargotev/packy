@@ -52,6 +52,34 @@ func TestResourceGraphForAllTreatsEveryOperationalResourceAsSelectableRoot(t *te
 	}
 }
 
+func TestSensitiveEffectOriginsIncludeOnlySurfaceCapabilityDependencies(t *testing.T) {
+	pack := Pack{manifestVersion: manifestSchemaV4, ID: "synthetic", Resources: []Resource{
+		{Kind: "agent", ID: "reviewer", Permissions: []string{"network"}, Requires: []string{}},
+		{Kind: "skill", ID: "workflow", Requires: []string{}, Bindings: []Binding{{
+			Surface: SurfaceClaude,
+			Capabilities: []SurfaceCapability{{
+				Type: SurfaceCapabilityClaudeCompositeSkill,
+				ClaudeCompositeSkill: &ClaudeCompositeSkillCapability{
+					Dependencies: []ResourceIdentity{{Kind: "agent", ID: "reviewer"}},
+					References:   []ResourceIdentity{},
+				},
+			}},
+		}}},
+	}}
+	selection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "workflow"}}}
+	activation := []PlannedActivation{{Pack: pack, Role: ActivationRequested, Selection: selection}}
+
+	claude := sensitiveEffectOriginsForComposition([]Pack{pack}, activation, nil, pack.ID, selection, SurfaceClaude)
+	if len(claude) != 1 || claude[0].Resource != (ResourceIdentity{Kind: "agent", ID: "reviewer"}) ||
+		!reflect.DeepEqual(claude[0].DependencyChain, []ResourceIdentity{{Kind: "skill", ID: "workflow"}, {Kind: "agent", ID: "reviewer"}}) ||
+		!reflect.DeepEqual(claude[0].PromptAuthorities, []string{"network"}) {
+		t.Fatalf("Claude sensitive effects = %#v", claude)
+	}
+	if codex := sensitiveEffectOriginsForComposition([]Pack{pack}, activation, nil, pack.ID, selection, SurfaceCodex); len(codex) != 0 {
+		t.Fatalf("Codex sensitive effects = %#v", codex)
+	}
+}
+
 func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
 	pack := Pack{ID: "addy", Version: "1.0.0",
 		Resources: []Resource{

@@ -533,7 +533,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 	}
 	selectedPack = composition.combinedPack()
 	compositionBlockers := projectCompositionBlockers(composition.blockers)
-	graph := mergeProjectResourceGraphs(ResourceGraph{Resources: []ResourceClosureFact{}}, ResourceGraphFor(pack, selection, false))
+	graph := mergeProjectResourceGraphs(ResourceGraph{Resources: []ResourceClosureFact{}}, resourceGraphForSurface(pack, selection, request.Surface, false))
 	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{Desired: selectedPack, ProjectRoot: request.ProjectRoot})
 	if err != nil {
 		return JSONProjectInstallPreview{}, err
@@ -711,7 +711,7 @@ func (f Facade) previewProjectInstall(ctx context.Context, request ProjectInstal
 		Projections: projections, Requirements: append([]string{}, requirements...), Blockers: append([]ProjectInstallBlocker{}, blockers...), Disposition: disposition,
 		ExpectedReadiness: expectedReadiness, Conditions: readinessConditions,
 	}
-	report.Lock.Receipts = replaceProjectReceipt(existingLock.Receipts, projectReceipt(selectedPack, request.Surface, selection, aliases, ResourceGraphFor(pack, selection, false), projections))
+	report.Lock.Receipts = replaceProjectReceipt(existingLock.Receipts, projectReceipt(selectedPack, request.Surface, selection, aliases, resourceGraphForSurface(pack, selection, request.Surface, false), projections))
 	manifestBytes, err := marshalProjectManifest(report.Manifest)
 	if err != nil {
 		return JSONProjectInstallPreview{}, err

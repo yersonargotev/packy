@@ -187,6 +187,24 @@ func projectLockForPack(lock ProjectLockProposal, packID string) ProjectLockProp
 	return lock
 }
 
+func projectReceiptResources(lock ProjectLockProposal, packID string, surface Surface) []ResourceIdentity {
+	resources := map[ResourceIdentity]bool{}
+	for _, receipt := range lock.Receipts {
+		if receipt.Pack.ID != packID || receipt.Surface != surface {
+			continue
+		}
+		for _, resource := range receipt.Resources {
+			resources[resource] = true
+		}
+	}
+	result := make([]ResourceIdentity, 0, len(resources))
+	for resource := range resources {
+		result = append(result, resource)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].String() < result[j].String() })
+	return result
+}
+
 func projectProjectionOwnedByPack(projection ProjectProjectionPlan, packID string) bool {
 	return projection.OwnerPack == packID
 }
@@ -409,7 +427,7 @@ func InspectProjectStatus(ctx context.Context, request ProjectStatusRequest) (JS
 				if digestErr != nil {
 					return report, digestErr
 				}
-				identity := controlledCheckIdentityFor(readinessPack, surface, ControlledCheckProject, projectDigest, controlledCheckResources(projectLockForPack(installation.Lock, pack.ID).ResourceGraph), observation, normalizedControlledCheckDescriptor(surface, observation.ControlledCheck))
+				identity := controlledCheckIdentityFor(readinessPack, surface, ControlledCheckProject, projectDigest, projectReceiptResources(installation.Lock, pack.ID, surface), observation, normalizedControlledCheckDescriptor(surface, observation.ControlledCheck))
 				controlledCheck, inspectErr = NewFileControlledCheckStore(request.PackyHome).Status(ctx, identity)
 				if inspectErr != nil {
 					return report, inspectErr
@@ -567,7 +585,7 @@ func (f Facade) InspectProjectStatus(ctx context.Context, request ProjectStatusR
 				return report, digestErr
 			}
 			observation := SurfaceInspection{Revision: status.readinessRevision, ControlledCheck: status.controlledCheck}
-			identity := controlledCheckIdentityFor(pack, status.Surface, ControlledCheckProject, digest, controlledCheckResources(projectLockForPack(installation.Lock, status.Pack.ID).ResourceGraph), observation, normalizedControlledCheckDescriptor(status.Surface, status.controlledCheck))
+			identity := controlledCheckIdentityFor(pack, status.Surface, ControlledCheckProject, digest, projectReceiptResources(installation.Lock, status.Pack.ID, status.Surface), observation, normalizedControlledCheckDescriptor(status.Surface, status.controlledCheck))
 			status.ControlledCheck, err = store.Status(ctx, identity)
 			if err != nil {
 				return report, err

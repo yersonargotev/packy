@@ -131,7 +131,7 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 		Counts: pack.ResourceCounts(), DependencyClosure: []string{}, Bindings: []LifecycleBinding{},
 		Exclusions: []LifecycleExclusion{}, OptionalModes: []OptionalMode{}, PromptAuthorities: []string{}, Aliases: []SurfaceAlias{},
 		AuthorityDisclosure: "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
-		ResourceGraph:       ResourceGraphFor(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, true),
+		ResourceGraph:       resourceGraphForSurface(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, surface, true),
 		SelectionValidity:   SelectionValidityFor(pack, surface),
 	}
 	if !contract.CompatibilityObserved {
@@ -261,6 +261,10 @@ func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) Re
 	return ResourceGraph{Resources: facts}
 }
 
+func resourceGraphForSurface(pack Pack, selection ResourceSelection, surface Surface, inventory bool) ResourceGraph {
+	return ResourceGraphFor(withSurfaceCapabilityDependencies(pack, surface), selection, inventory)
+}
+
 func SensitiveEffectOriginsFor(pack Pack, selection ResourceSelection) []SensitiveEffectOrigin {
 	resources := make(map[string]Resource, len(pack.Resources))
 	for _, resource := range pack.Resources {
@@ -305,6 +309,10 @@ func SensitiveEffectOriginsFor(pack Pack, selection ResourceSelection) []Sensiti
 		return sensitiveEffectOriginKey(origins[i]) < sensitiveEffectOriginKey(origins[j])
 	})
 	return origins
+}
+
+func sensitiveEffectOriginsForSurface(pack Pack, selection ResourceSelection, surface Surface) []SensitiveEffectOrigin {
+	return SensitiveEffectOriginsFor(withSurfaceCapabilityDependencies(pack, surface), selection)
 }
 
 func resourceDependencyPaths(pack Pack, root ResourceIdentity) (map[string][][]ResourceIdentity, error) {
@@ -428,7 +436,7 @@ func cloneSensitiveEffectOrigins(values []SensitiveEffectOrigin) []SensitiveEffe
 	return result
 }
 
-func sensitiveEffectOriginsForComposition(packs []Pack, activations []PlannedActivation, intents []ActivationIntent, requestedPackID string, requestedSelection ResourceSelection) []SensitiveEffectOrigin {
+func sensitiveEffectOriginsForComposition(packs []Pack, activations []PlannedActivation, intents []ActivationIntent, requestedPackID string, requestedSelection ResourceSelection, surface Surface) []SensitiveEffectOrigin {
 	selections := make(map[string]ResourceSelection, len(packs))
 	for _, intent := range intents {
 		selections[intent.PackID] = cloneSelection(intent.Selection)
@@ -445,7 +453,7 @@ func sensitiveEffectOriginsForComposition(packs []Pack, activations []PlannedAct
 		if !ok {
 			selection = ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}
 		}
-		origins = append(origins, SensitiveEffectOriginsFor(pack, selection)...)
+		origins = append(origins, sensitiveEffectOriginsForSurface(pack, selection, surface)...)
 	}
 	sort.Slice(origins, func(i, j int) bool {
 		return sensitiveEffectOriginKey(origins[i]) < sensitiveEffectOriginKey(origins[j])
@@ -544,7 +552,7 @@ func compatibilityFor(pack Pack, surface Surface) Compatibility {
 
 func (p ReconciliationPlan) LifecycleContract() LifecycleContract {
 	contract := LifecycleContractFor(p.pack, p.surface, p.aliases)
-	contract.ResourceGraph = ResourceGraphFor(p.pack, p.selection, false)
+	contract.ResourceGraph = resourceGraphForSurface(p.pack, p.selection, p.surface, false)
 	if p.selectionValidity.Roots != nil {
 		contract.SelectionValidity = p.selectionValidity
 	}
@@ -637,7 +645,7 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 	selection, _ := canonicalSelection(p.selection)
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
-		Surface: p.surface, IntentRevision: p.intentRevision, DocumentRevision: p.documentRevision, Selection: selection, ResourceGraph: ResourceGraphFor(p.pack, selection, false),
+		Surface: p.surface, IntentRevision: p.intentRevision, DocumentRevision: p.documentRevision, Selection: selection, ResourceGraph: resourceGraphForSurface(p.pack, selection, p.surface, false),
 		SensitiveEffects: p.SensitiveEffects(), Contract: contract, Aliases: contract.Aliases,
 		Blockers: blockers, Phases: phases, PendingHumanActions: sortedCopy(p.pendingHumanActions),
 		ExpectedReadiness: p.readiness, Conditions: append([]ReadinessCondition{}, p.Conditions()...), Evidence: sortedCopy(p.observedEvidence), PendingEvidence: sortedCopy(p.pendingEvidence),
