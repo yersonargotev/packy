@@ -147,6 +147,7 @@ type composedFixture struct {
 	mutationPath      string
 	release           packsync.Release
 	releaseCandidate  packsync.Candidate
+	originFixtures    map[string]composedOriginFixture
 	wantValidation    managedpack.Validation
 	projectTreeBefore composedTree
 }
@@ -154,13 +155,28 @@ type composedFixture struct {
 func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 	t.Helper()
 	currentRoot := t.TempDir()
-	var legacyManifest []byte
+	var currentManifest []byte
 	switch name {
 	case "small":
-		smallManifest := strings.Replace(managedManifest("1.0.0", "", nil), `"id": "example"`, `"id": "small"`, 1)
+		smallManifest := strings.Replace(managedManifest("1.0.0", "", func(document map[string]any) {
+			document["origins"] = []any{map[string]any{
+				"id": "small-upstream", "repository": "fixture/small-upstream", "commit": strings.Repeat("a", 40),
+			}}
+			resources := document["resources"].([]any)
+			resources[0].(map[string]any)["origin"] = map[string]any{
+				"id": "small-upstream", "path": "skills/guide", "relationship": "exact-copy",
+			}
+			resources[0].(map[string]any)["notices"] = []any{"notice:fixture"}
+			document["resources"] = append([]any{map[string]any{
+				"kind": "notice", "id": "fixture", "source": "notices/fixture",
+				"description": "Fixture notice", "license": "MIT", "attribution": "Fixture Authors",
+				"requires": []any{}, "conflicts": []any{}, "bindings": []any{}, "surface_exclusions": []any{},
+			}}, resources...)
+		}), `"id": "example"`, `"id": "small"`, 1)
 		writeTestFile(t, filepath.Join(currentRoot, "pack.json"), smallManifest, 0o644)
+		writeTestFile(t, filepath.Join(currentRoot, "notices", "fixture"), "small fixture notice\n", 0o644)
 		writeTestFile(t, filepath.Join(currentRoot, "skills", "guide", "SKILL.md"), "small fixture guidance\n", 0o644)
-		legacyManifest = composedLegacyManifest(t, []byte(smallManifest))
+		currentManifest = []byte(smallManifest)
 	case "matty", "pstack":
 		manifestPath := filepath.Join(sourceRoot, "bundle", "packs", name, "pack.json")
 		manifestData, err := os.ReadFile(manifestPath)
@@ -172,12 +188,13 @@ func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 		for _, source := range composedManifestSources(t, managedManifestData) {
 			composedCopyPath(t, filepath.Join(sourceRoot, "bundle", filepath.FromSlash(source)), filepath.Join(currentRoot, filepath.FromSlash(source)))
 		}
-		legacyManifest = append([]byte(nil), manifestData...)
+		currentManifest = append([]byte(nil), manifestData...)
 	default:
 		t.Fatalf("unknown composed fixture %q", name)
 	}
 
-	currentValidation, err := managedpack.ValidateProject(context.Background(), currentRoot, nil)
+	originFixtures := newComposedOriginFixtures(t, currentRoot)
+	currentValidation, err := managedpack.ValidateProject(context.Background(), currentRoot, composedOriginResolver(originFixtures))
 	if err != nil {
 		t.Fatalf("validate current %s fixture: %v", name, err)
 	}
@@ -209,7 +226,7 @@ func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 	updated := readTestFile(t, mutationFile) + "\nManaged Pack Promotion composed fixture update.\n"
 	writeTestFile(t, mutationFile, updated, info.Mode().Perm())
 
-	wantValidation, err := managedpack.ValidateProject(context.Background(), candidateRoot, nil)
+	wantValidation, err := managedpack.ValidateProject(context.Background(), candidateRoot, composedOriginResolver(originFixtures))
 	if err != nil {
 		t.Fatalf("validate candidate %s fixture: %v", name, err)
 	}
@@ -229,7 +246,7 @@ func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 		TagRefSHA: commitSHA, Commit: commitSHA, Tree: treeSHA,
 	}
 	baseTree := composedTreeFromValidation(t, currentRoot, currentValidation)
-	baseTree["bundle/packs/"+name+"/pack.json"] = composedFile{data: legacyManifest, mode: 0o644}
+	baseTree["bundle/packs/"+name+"/pack.json"] = composedFile{data: currentManifest, mode: 0o644}
 	baseTree["managed-packs/registry.json"] = composedFile{
 		data: []byte(fmt.Sprintf("{\n  \"schema_version\": 1,\n  \"packs\": [\n    {\n      \"pack_id\": %q,\n      \"project\": %q\n    }\n  ]\n}\n", name, project)),
 		mode: 0o644,
@@ -242,7 +259,7 @@ func newComposedFixture(t *testing.T, sourceRoot, name string) composedFixture {
 		coordinate:  managedpackpromotion.Coordinate{PackID: name, Version: candidateVersion},
 		projectRoot: candidateRoot, projectManifest: projectManifest, projectTree: projectTree,
 		baseTree: baseTree, mutationPath: mutationPath, release: release,
-		releaseCandidate: releaseCandidate, wantValidation: wantValidation,
+		releaseCandidate: releaseCandidate, originFixtures: originFixtures, wantValidation: wantValidation,
 		projectTreeBefore: composedReadTree(t, candidateRoot),
 	}
 }
@@ -264,7 +281,7 @@ func newComposedUpdateFixture(t *testing.T, previous composedFixture, admittedTr
 		t.Fatal(err)
 	}
 	writeTestFile(t, mutationFile, readTestFile(t, mutationFile)+"\nSecond Managed Pack Promotion composed fixture update.\n", info.Mode().Perm())
-	wantValidation, err := managedpack.ValidateProject(context.Background(), candidateRoot, nil)
+	wantValidation, err := managedpack.ValidateProject(context.Background(), candidateRoot, composedOriginResolver(previous.originFixtures))
 	if err != nil {
 		t.Fatalf("validate higher-version fixture: %v", err)
 	}
@@ -286,9 +303,64 @@ func newComposedUpdateFixture(t *testing.T, previous composedFixture, admittedTr
 		coordinate:  managedpackpromotion.Coordinate{PackID: previous.id, Version: candidateVersion},
 		projectRoot: candidateRoot, projectManifest: []byte(readTestFile(t, filepath.Join(candidateRoot, "pack.json"))),
 		projectTree: projectTree, baseTree: admittedTree, mutationPath: previous.mutationPath,
-		release: release, releaseCandidate: releaseCandidate, wantValidation: wantValidation,
+		release: release, releaseCandidate: releaseCandidate, originFixtures: previous.originFixtures, wantValidation: wantValidation,
 		projectTreeBefore: composedReadTree(t, candidateRoot),
 	}
+}
+
+type composedOriginFixture struct {
+	origin    managedpack.Origin
+	root      string
+	tree      composedTree
+	candidate packsync.Candidate
+}
+
+type composedOriginResolver map[string]composedOriginFixture
+
+func (resolver composedOriginResolver) Resolve(_ context.Context, origin managedpack.Origin) (string, error) {
+	fixture, exists := resolver[origin.ID]
+	if !exists || !reflect.DeepEqual(fixture.origin, origin) {
+		return "", fmt.Errorf("unexpected composed origin %#v", origin)
+	}
+	return fixture.root, nil
+}
+
+func newComposedOriginFixtures(t *testing.T, projectRoot string) map[string]composedOriginFixture {
+	t.Helper()
+	var manifest managedpack.Manifest
+	if err := json.Unmarshal([]byte(readTestFile(t, filepath.Join(projectRoot, "pack.json"))), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := make(map[string]composedOriginFixture, len(manifest.Origins))
+	for index, origin := range manifest.Origins {
+		fixtures[origin.ID] = composedOriginFixture{
+			origin: origin,
+			root:   t.TempDir(),
+			candidate: packsync.Candidate{
+				Repository: origin.Repository, RepositoryID: int64(3000 + index), Public: true, Commit: origin.Commit,
+			},
+		}
+	}
+	for _, resource := range manifest.Resources {
+		if resource.Origin == nil {
+			continue
+		}
+		fixture, exists := fixtures[resource.Origin.ID]
+		if !exists {
+			t.Fatalf("resource %s:%s references missing composed origin %q", resource.Kind, resource.ID, resource.Origin.ID)
+		}
+		composedCopyPath(
+			t,
+			filepath.Join(projectRoot, filepath.FromSlash(resource.Source)),
+			filepath.Join(fixture.root, filepath.FromSlash(resource.Origin.Path)),
+		)
+	}
+	for id, fixture := range fixtures {
+		fixture.tree = composedReadTree(t, fixture.root)
+		_, fixture.candidate.Tree = composedGitIdentity(t, fixture.tree)
+		fixtures[id] = fixture
+	}
+	return fixtures
 }
 
 type composedSource struct {
@@ -316,16 +388,36 @@ func (source *composedSource) ResolveRelease(_ context.Context, config packsync.
 	return source.fixture.releaseCandidate, nil
 }
 
-func (source *composedSource) ResolveCommit(_ context.Context, _ packsync.SourceConfig, commit string) (packsync.Candidate, error) {
-	return packsync.Candidate{}, fmt.Errorf("unexpected origin commit resolution for %q", commit)
+func (source *composedSource) ResolveCommit(_ context.Context, config packsync.SourceConfig, commit string) (packsync.Candidate, error) {
+	for _, fixture := range source.fixture.originFixtures {
+		if fixture.origin.Commit != commit || fixture.origin.Repository != config.Repository {
+			continue
+		}
+		if config.Provider != "github" {
+			source.t.Fatalf("origin commit config = %#v, want GitHub", config)
+		}
+		return fixture.candidate, nil
+	}
+	return packsync.Candidate{}, fmt.Errorf("unexpected origin commit resolution for %s at %q", config.Repository, commit)
 }
 
 func (source *composedSource) WithGitTreeSnapshot(ctx context.Context, candidate packsync.Candidate, temporaryRoot string, visit func(string) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	tree := source.fixture.projectTree
 	if !reflect.DeepEqual(candidate, source.fixture.releaseCandidate) {
-		source.t.Fatalf("snapshot candidate = %#v", candidate)
+		found := false
+		for _, fixture := range source.fixture.originFixtures {
+			if reflect.DeepEqual(candidate, fixture.candidate) {
+				tree = fixture.tree
+				found = true
+				break
+			}
+		}
+		if !found {
+			source.t.Fatalf("snapshot candidate = %#v", candidate)
+		}
 	}
 	entries, err := os.ReadDir(temporaryRoot)
 	if err != nil || len(entries) != 0 {
@@ -333,7 +425,7 @@ func (source *composedSource) WithGitTreeSnapshot(ctx context.Context, candidate
 	}
 	source.snapshotRoots = append(source.snapshotRoots, temporaryRoot)
 	snapshot := filepath.Join(temporaryRoot, "snapshot")
-	composedWriteTree(source.t, snapshot, source.fixture.projectTree)
+	composedWriteTree(source.t, snapshot, tree)
 	visitErr := visit(snapshot)
 	removeErr := os.RemoveAll(snapshot)
 	return errors.Join(visitErr, removeErr)
@@ -341,8 +433,9 @@ func (source *composedSource) WithGitTreeSnapshot(ctx context.Context, candidate
 
 func (source *composedSource) assertCleaned(t *testing.T) {
 	t.Helper()
-	if len(source.snapshotRoots) != 1 {
-		t.Fatalf("snapshot calls = %d, want 1", len(source.snapshotRoots))
+	wantCalls := 1 + len(source.fixture.originFixtures)
+	if len(source.snapshotRoots) != wantCalls {
+		t.Fatalf("snapshot calls = %d, want %d", len(source.snapshotRoots), wantCalls)
 	}
 	for _, root := range source.snapshotRoots {
 		if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
@@ -514,25 +607,11 @@ func composedManagedManifest(t *testing.T, data []byte) []byte {
 		t.Fatal(err)
 	}
 	document["schema_version"] = 1
-	document["origins"] = []any{}
+	if _, exists := document["origins"]; !exists {
+		document["origins"] = []any{}
+	}
 	delete(document, "exclusions")
 	delete(document, "source_reference")
-	encoded, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return append(encoded, '\n')
-}
-
-func composedLegacyManifest(t *testing.T, data []byte) []byte {
-	t.Helper()
-	var document map[string]any
-	if err := json.Unmarshal(data, &document); err != nil {
-		t.Fatal(err)
-	}
-	delete(document, "schema_version")
-	delete(document, "origins")
-	document["exclusions"] = []any{}
 	encoded, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
 		t.Fatal(err)
