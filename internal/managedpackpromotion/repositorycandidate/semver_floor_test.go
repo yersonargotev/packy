@@ -35,6 +35,33 @@ func TestManagedSemVerFloorRequiresMajorForAnAddedResourceGraphConstraint(t *tes
 	}
 }
 
+func TestManagedSemVerFloorLeavesRequirementAndConflictRemovalToHumanReview(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*managedpack.Manifest)
+	}{
+		{name: "external requirement", mutate: func(manifest *managedpack.Manifest) {
+			manifest.ExternalRequirements = []string{"helper-cli"}
+		}},
+		{name: "resource requirement", mutate: func(manifest *managedpack.Manifest) {
+			manifest.Resources[0].Requires = []string{"asset:shared"}
+		}},
+		{name: "resource conflict", mutate: func(manifest *managedpack.Manifest) {
+			manifest.Resources[0].Conflicts = []string{"skill:other"}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			current := semverManifest("1.0.0")
+			test.mutate(&current)
+			candidate := semverManifest("1.0.1")
+
+			if err := enforceVersionFloor(current, candidate); err != nil {
+				t.Fatalf("removal should remain human-reviewed at patch: %v", err)
+			}
+		})
+	}
+}
+
 func TestManagedSemVerFloorDistinguishesIsolatedAndMandatoryNewResources(t *testing.T) {
 	t.Run("isolated resource accepts minor", func(t *testing.T) {
 		current := semverManifest("1.0.0")
@@ -120,6 +147,19 @@ func TestManagedSemVerFloorAllowsMetadataAndProvenanceOnlyPatch(t *testing.T) {
 
 	if err := enforceVersionFloor(current, candidate); err != nil {
 		t.Fatalf("metadata-only patch: %v", err)
+	}
+}
+
+func TestManagedSemVerFloorLeavesLegalMetadataChangesToHumanReview(t *testing.T) {
+	current := semverManifest("1.0.0")
+	current.Resources[0].License = "MIT"
+	current.Resources[0].Attribution = "Original author"
+	candidate := semverManifest("1.0.1")
+	candidate.Resources[0].License = "Apache-2.0"
+	candidate.Resources[0].Attribution = "Current author"
+
+	if err := enforceVersionFloor(current, candidate); err != nil {
+		t.Fatalf("legal metadata change should remain human-reviewed at patch: %v", err)
 	}
 }
 

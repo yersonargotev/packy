@@ -309,7 +309,7 @@ func compatibilityFloor(current, candidate managedpack.Manifest) (versionLevel, 
 	newReadiness := stringSet(candidate.ReadinessObligations)
 	oldRequirements := stringSet(current.ExternalRequirements)
 	newRequirements := stringSet(candidate.ExternalRequirements)
-	if missingKey(oldReadiness, newReadiness) != "" || missingKey(oldRequirements, newRequirements) != "" || current.Selectable != candidate.Selectable {
+	if missingKey(oldReadiness, newReadiness) != "" || current.Selectable != candidate.Selectable {
 		return majorLevel, "removing or breaking a Pack contract"
 	}
 	if missingKey(newRequirements, oldRequirements) != "" {
@@ -380,13 +380,20 @@ func missingKey[A, B any](left map[string]A, right map[string]B) string {
 }
 
 func compareResourceContract(left, right managedpack.Resource) versionLevel {
-	left.Description, right.Description = "", ""
-	left.Origin, right.Origin = nil, nil
-	left.Notices, right.Notices = nil, nil
-	if reflect.DeepEqual(left, right) {
-		return patchLevel
+	if missingKey(stringSet(right.Requires), stringSet(left.Requires)) != "" ||
+		missingKey(stringSet(right.Conflicts), stringSet(left.Conflicts)) != "" ||
+		resourceProjectionChanged(left, right) {
+		return majorLevel
 	}
-	return majorLevel
+	return patchLevel
+}
+
+func resourceProjectionChanged(left, right managedpack.Resource) bool {
+	return left.Source != right.Source || left.Command != right.Command ||
+		!reflect.DeepEqual(left.Args, right.Args) || left.Mode != right.Mode ||
+		!reflect.DeepEqual(left.Tools, right.Tools) || !reflect.DeepEqual(left.Permissions, right.Permissions) ||
+		!reflect.DeepEqual(left.Bindings, right.Bindings) || !reflect.DeepEqual(left.Arguments, right.Arguments) ||
+		!reflect.DeepEqual(left.SurfaceExclusions, right.SurfaceExclusions)
 }
 
 func candidateAllowlist(coordinate managedpackpromotion.Coordinate, validation managedpack.Validation, changedBundlePaths map[string]bool) map[string]bool {
