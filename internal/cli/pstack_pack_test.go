@@ -48,6 +48,7 @@ func TestPstackActivationPreviewsProjectThroughEverySurfaceAdapter(t *testing.T)
 
 func previewPstackActivation(t *testing.T, opts Options, surface string, extra ...string) capabilitypack.JSONLifecyclePlan {
 	t.Helper()
+	wantVersion := checkedInPackVersion(t, "pstack")
 	args := []string{"activate", "pstack", "--surface", surface, "--dry-run", "--json"}
 	args = append(args, extra...)
 	out, err := executeCommand(t, NewRootCommand(opts), args...)
@@ -58,7 +59,7 @@ func previewPstackActivation(t *testing.T, opts Options, surface string, extra .
 	if err := json.Unmarshal([]byte(out), &report); err != nil {
 		t.Fatalf("decode %s pstack preview: %v\n%s", surface, err, out)
 	}
-	if report.Report != "pack-lifecycle-preview" || report.Pack != "pstack" || report.PackVersion != "1.0.0" || string(report.Surface) != surface || !report.DryRun || len(report.Blockers) != 0 {
+	if report.Report != "pack-lifecycle-preview" || report.Pack != "pstack" || report.PackVersion != wantVersion || string(report.Surface) != surface || !report.DryRun || len(report.Blockers) != 0 {
 		t.Fatalf("invalid %s pstack preview: %#v", surface, report)
 	}
 	return report
