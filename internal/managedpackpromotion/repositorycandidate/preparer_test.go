@@ -358,7 +358,14 @@ func TestGateEnvironmentIsAnExplicitCredentialFreeOfflineAllowlist(t *testing.T)
 	t.Setenv("PATH", "/safe/bin")
 	t.Setenv("GITHUB_TOKEN", "must-not-cross-the-gate")
 	t.Setenv("UNRELATED_AMBIENT_VALUE", "must-not-cross-the-gate")
-	environment := gateEnvironment(context.Background(), "/sandbox/home", "/sandbox/config", "/sandbox/cache", "/sandbox/tmp")
+	cacheRoot := t.TempDir()
+	t.Setenv("GOCACHE", filepath.Join(cacheRoot, "build"))
+	t.Setenv("GOMODCACHE", filepath.Join(cacheRoot, "modules"))
+	t.Setenv("GOPATH", filepath.Join(cacheRoot, "path"))
+	environment, err := gateEnvironment(context.Background(), "/sandbox/home", "/sandbox/config", "/sandbox/cache", "/sandbox/tmp")
+	if err != nil {
+		t.Fatal(err)
+	}
 	joined := strings.Join(environment, "\n")
 	for _, forbidden := range []string{"GITHUB_TOKEN", "UNRELATED_AMBIENT_VALUE", "must-not-cross-the-gate"} {
 		if strings.Contains(joined, forbidden) {
@@ -368,6 +375,7 @@ func TestGateEnvironmentIsAnExplicitCredentialFreeOfflineAllowlist(t *testing.T)
 	for _, required := range []string{
 		"HOME=/sandbox/home", "XDG_CONFIG_HOME=/sandbox/config", "XDG_CACHE_HOME=/sandbox/cache", "TMPDIR=/sandbox/tmp",
 		"PATH=/safe/bin", "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOVCS=*:off", "GIT_CONFIG_GLOBAL=/dev/null",
+		"GOCACHE=" + filepath.Join(cacheRoot, "build"), "GOMODCACHE=" + filepath.Join(cacheRoot, "modules"), "GOPATH=" + filepath.Join(cacheRoot, "path"),
 	} {
 		if !strings.Contains(joined, required) {
 			t.Fatalf("gate environment lacks %q:\n%s", required, joined)

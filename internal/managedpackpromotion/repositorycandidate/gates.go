@@ -2,10 +2,12 @@ package repositorycandidate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -51,7 +53,10 @@ func runSanitized(ctx context.Context, repositoryRoot, name string, arguments ..
 			return err
 		}
 	}
-	environment := gateEnvironment(ctx, home, config, cache, temporary)
+	environment, err := gateEnvironment(ctx, home, config, cache, temporary)
+	if err != nil {
+		return err
+	}
 	command := exec.CommandContext(ctx, name, arguments...)
 	command.Dir = repositoryRoot
 	command.Env = environment
@@ -62,8 +67,11 @@ func runSanitized(ctx context.Context, repositoryRoot, name string, arguments ..
 	return nil
 }
 
-func gateEnvironment(ctx context.Context, home, config, cache, temporary string) []string {
-	goCache, goModCache, goPath := currentGoCaches(ctx)
+func gateEnvironment(ctx context.Context, home, config, cache, temporary string) ([]string, error) {
+	goCache, goModCache, goPath, err := currentGoCaches(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return []string{
 		"GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_CONFIG_NOSYSTEM=1",
@@ -85,12 +93,15 @@ func gateEnvironment(ctx context.Context, home, config, cache, temporary string)
 		"TMPDIR=" + temporary,
 		"XDG_CACHE_HOME=" + cache,
 		"XDG_CONFIG_HOME=" + config,
-	}
+	}, nil
 }
 
-func currentGoCaches(ctx context.Context) (string, string, string) {
-	command := exec.CommandContext(ctx, "go", "env", "GOCACHE", "GOMODCACHE", "GOPATH")
-	command.Env = []string{
+func currentGoCaches(ctx context.Context) (string, string, string, error) {
+	goExecutable := filepath.Join(runtime.GOROOT(), "bin", "go")
+	if !filepath.IsAbs(goExecutable) {
+		return "", "", "", errors.New("Go executable path is not absolute")
+	}
+	environment := []string{
 		"GOENV=off",
 		"GOTELEMETRY=off",
 		"GOTOOLCHAIN=local",
@@ -98,13 +109,29 @@ func currentGoCaches(ctx context.Context) (string, string, string) {
 		"PATH=" + os.Getenv("PATH"),
 		"XDG_CONFIG_HOME=" + filepath.Join(os.TempDir(), "packy-promotion-go-env"),
 	}
+	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH"} {
+		if value := os.Getenv(name); value != "" {
+			if !filepath.IsAbs(value) || filepath.Clean(value) != value {
+				return "", "", "", fmt.Errorf("%s must be an absolute clean path", name)
+			}
+			environment = append(environment, name+"="+value)
+		}
+	}
+	command := exec.CommandContext(ctx, goExecutable, "env", "GOCACHE", "GOMODCACHE", "GOPATH")
+	command.Env = environment
 	output, err := command.Output()
 	if err != nil {
-		return os.Getenv("GOCACHE"), os.Getenv("GOMODCACHE"), os.Getenv("GOPATH")
+		return "", "", "", fmt.Errorf("resolve preserved Go caches: %w", err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) != 3 || !filepath.IsAbs(lines[0]) || !filepath.IsAbs(lines[1]) || !filepath.IsAbs(lines[2]) {
-		return os.Getenv("GOCACHE"), os.Getenv("GOMODCACHE"), os.Getenv("GOPATH")
+	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
+	if len(lines) != 3 {
+		return "", "", "", errors.New("go env returned an incomplete Go cache configuration")
 	}
-	return lines[0], lines[1], lines[2]
+	for index := range lines {
+		lines[index] = strings.TrimSuffix(lines[index], "\r")
+		if !filepath.IsAbs(lines[index]) || filepath.Clean(lines[index]) != lines[index] {
+			return "", "", "", errors.New("go env returned a non-absolute Go cache path")
+		}
+	}
+	return lines[0], lines[1], lines[2], nil
 }
