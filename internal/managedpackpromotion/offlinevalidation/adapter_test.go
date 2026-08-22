@@ -22,7 +22,10 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestAdapterValidateRunsTheProductionWorkerProcess(t *testing.T) {
+// Run refuses to read the request unless the platform boundary's live network
+// probe is denied, so a successful validation also proves the real child is
+// running without network capability.
+func TestAdapterValidateRunsTheProductionWorkerWithNetworkDenied(t *testing.T) {
 	acquisition := writeAcquisitionFixture(t)
 	executable, err := os.Executable()
 	if err != nil {

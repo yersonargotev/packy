@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -288,7 +287,10 @@ func (run processRunnerFunc) Run(ctx context.Context, invocation processInvocati
 type execProcessRunner struct{}
 
 func (execProcessRunner) Run(ctx context.Context, invocation processInvocation) error {
-	command := exec.CommandContext(ctx, invocation.Executable, invocation.Args...)
+	command, err := workerCommand(ctx, invocation)
+	if err != nil {
+		return err
+	}
 	command.Env = append([]string(nil), invocation.Env...)
 	command.Dir = invocation.Dir
 	command.Stdin = nil

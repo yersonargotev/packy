@@ -29,6 +29,18 @@ var originIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 // isolation and passes the request and response paths after routing the hidden
 // worker mode.
 func Run(args []string, stdout, stderr io.Writer) int {
+	return runWithBoundary(args, stdout, stderr, installWorkerBoundary)
+}
+
+func runWithBoundary(args []string, stdout, stderr io.Writer, install func() error) int {
+	if install == nil {
+		fmt.Fprintln(stderr, "install offline validation boundary: installer is required")
+		return 1
+	}
+	if err := install(); err != nil {
+		fmt.Fprintf(stderr, "install offline validation boundary: %v\n", err)
+		return 1
+	}
 	if len(args) != 2 {
 		fmt.Fprintln(stderr, "offline validation worker requires request and response paths")
 		return 2

@@ -19,7 +19,7 @@ func TestRunValidatesAcquiredLocalTreesAndSealsTheResponse(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	if exitCode := Run([]string{requestPath, responsePath}, &stdout, &stderr); exitCode != 0 {
+	if exitCode := runUnitWorker([]string{requestPath, responsePath}, &stdout, &stderr); exitCode != 0 {
 		t.Fatalf("Run() exit code = %d, stderr = %s", exitCode, stderr.String())
 	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
@@ -126,7 +126,7 @@ func TestRunRejectsAnOriginReachedThroughASymlinkedAcquisitionDirectory(t *testi
 	}
 
 	var stderr bytes.Buffer
-	if exitCode := Run([]string{requestPath, responsePath}, io.Discard, &stderr); exitCode != 1 {
+	if exitCode := runUnitWorker([]string{requestPath, responsePath}, io.Discard, &stderr); exitCode != 1 {
 		t.Fatalf("Run() exit code = %d, stderr = %q", exitCode, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "origins") || !strings.Contains(stderr.String(), "symlink") {
@@ -192,7 +192,7 @@ func TestRunSealsValidationFailuresWithTheirTypedGate(t *testing.T) {
 			request, requestPath, responsePath := writeWorkerFixture(t)
 			test.edit(t, request)
 			var stderr bytes.Buffer
-			if exitCode := Run([]string{requestPath, responsePath}, io.Discard, &stderr); exitCode != 0 {
+			if exitCode := runUnitWorker([]string{requestPath, responsePath}, io.Discard, &stderr); exitCode != 0 {
 				t.Fatalf("Run() exit code = %d, stderr = %q", exitCode, stderr.String())
 			}
 			response := readResponse(t, responsePath)
@@ -217,6 +217,10 @@ func rewriteWorkerRequest(t *testing.T, request workerRequest) {
 	if err := os.WriteFile(requestPath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func runUnitWorker(args []string, stdout, stderr io.Writer) int {
+	return runWithBoundary(args, stdout, stderr, func() error { return nil })
 }
 
 const validManifest = `{
