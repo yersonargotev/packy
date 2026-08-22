@@ -74,6 +74,11 @@ The manifest digest is the SHA-256 of the exact root `pack.json` bytes. This
 makes manifest, closure, and file-index identity deterministic without
 executing project content.
 
+The end-user `bundle/` is an inert data boundary, including when admitted
+resources contain `.go` or `*_test.go` files. Its nested `go.mod` prevents root
+`go list`, `go test`, `go vet`, and golangci-lint `./...` patterns from
+discovering or executing arbitrary admitted Go content.
+
 ## Preventive validation
 
 Managed Pack Projects call Packy's reusable workflow before publishing an
