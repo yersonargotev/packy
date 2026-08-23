@@ -45,6 +45,11 @@ adds the pstack Pack, and updates the bundled Matty and Engram Packs.
   `yersonargotev/engram` Managed Pack Project release `pack-v3.1.1`, updating
   Packy's outdated `engram-memory-cli` guidance while preserving its selective
   Codex-only runtime contract.
+- The reviewed Orchestrate Pack advances to `1.0.2` through the public
+  `yersonargotev/orchestrate-skill` Managed Pack Project release
+  `pack-v1.0.2`, preserving the exact `$orchestrate` skill and MIT notice,
+  authoring the source-less `coordinate-session` lifecycle, and keeping runtime
+  usability unknown until the controlled capability check runs.
 - Managed Pack preventive validation now materializes and runtime-loads the
   exact sealed bundle before publication, checks every supported
   surface/selection row, and reports actionable content-free exact-copy drift.

@@ -54,7 +54,7 @@ func TestIssue703EngramManagedPackOwnsCurrentRuntimeContractAndClosure(t *testin
 	if record.PackID != pack.ID || record.PackVersion != pack.Version || record.Project != "yersonargotev/engram" || !record.ReleaseImmutable || record.Tag != "pack-v"+pack.Version {
 		t.Fatalf("Engram admission identity = %#v", record)
 	}
-	actual := currentEngramClosure(t, bundleRoot, manifestPath, pack.Resources)
+	actual := currentManagedPackClosure(t, bundleRoot, manifestPath, pack.Resources)
 	if !reflect.DeepEqual(actual, record.Files) {
 		t.Fatalf("current Engram closure = %#v; want admitted closure %#v", actual, record.Files)
 	}
@@ -63,10 +63,10 @@ func TestIssue703EngramManagedPackOwnsCurrentRuntimeContractAndClosure(t *testin
 	}
 }
 
-func currentEngramClosure(t *testing.T, bundleRoot, manifestPath string, resources []capabilitypack.Resource) []managedpack.FileRecord {
+func currentManagedPackClosure(t *testing.T, bundleRoot, manifestPath string, resources []capabilitypack.Resource) []managedpack.FileRecord {
 	t.Helper()
 	records := map[string]managedpack.FileRecord{
-		"pack.json": currentEngramFile(t, manifestPath, "pack.json"),
+		"pack.json": currentManagedPackFile(t, manifestPath, "pack.json"),
 	}
 	for _, resource := range resources {
 		roots := []string{resource.Source}
@@ -86,7 +86,7 @@ func currentEngramClosure(t *testing.T, bundleRoot, manifestPath string, resourc
 					return err
 				}
 				relative = filepath.ToSlash(relative)
-				records[relative] = currentEngramFile(t, path, relative)
+				records[relative] = currentManagedPackFile(t, path, relative)
 				return nil
 			})
 			if err != nil {
@@ -106,14 +106,14 @@ func currentEngramClosure(t *testing.T, bundleRoot, manifestPath string, resourc
 	return closure
 }
 
-func currentEngramFile(t *testing.T, path, relative string) managedpack.FileRecord {
+func currentManagedPackFile(t *testing.T, path, relative string) managedpack.FileRecord {
 	t.Helper()
 	info, err := os.Lstat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !info.Mode().IsRegular() {
-		t.Fatalf("current Engram closure member %s has non-regular mode %s", relative, info.Mode())
+		t.Fatalf("current Managed Pack closure member %s has non-regular mode %s", relative, info.Mode())
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

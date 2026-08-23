@@ -27,10 +27,12 @@ Pack version and supported surfaces, and each Pack is independently selectable.
 ### Orchestrate Pack
 
 The accepted Codex-only Pack that contributes the exact upstream
-`$orchestrate` coordination skill and its MIT notice. Its canonical source is a
-stable release of `yersonargotev/orchestrate-skill`; Packy preserves Eric
-Provencher's attribution and treats configured projection separately from
-runtime usability.
+`$orchestrate` coordination skill, its MIT notice, and the Pack-authored
+`coordinate-session` lifecycle. The public `yersonargotev/orchestrate-skill`
+Managed Pack Project releases the complete Pack and declares the exact external
+origin revision for the derived skill and notice. Its Pack Admission Record is
+Packy's provenance authority. Packy preserves Eric Provencher's attribution and
+treats configured projection separately from runtime usability.
 
 ### Pack manifest
 

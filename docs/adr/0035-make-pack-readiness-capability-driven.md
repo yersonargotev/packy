@@ -101,6 +101,6 @@ comparisons described above.
 This ADR establishes the target architecture only. The incremental delivery
 work in issues 619 through 625 chooses and implements the individual tracer
 bullets; it must not retain retired manifest or structured-output contracts as
-compatibility paths. ADR 0032 remains authoritative that Orchestrate is
+compatibility paths. This ADR remains authoritative that Orchestrate is
 configured after exact projection and runtime-unknown until a fresh controlled
 runtime check observes delegation.
