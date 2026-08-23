@@ -47,5 +47,13 @@ manual one-time reset, with warnings before the user removes prior workstation
 state or project declarations. Packy ships no reset command or automatic
 cleanup.
 
-Historical Git remains available, but the checked-out documentation contains
-only this accepted architecture record and current operating guidance.
+Historical Git remains available. Checked-out documentation dedicated
+exclusively to retired systems remains excluded, preserving the cleanup
+established by [issue 521](https://github.com/yersonargotev/packy/issues/521).
+
+Durable, dated, non-normative evidence governed by the current
+[research evidence contract](../research/README.md) may remain checked out.
+Such evidence may support decisions but does not become current authority
+merely by remaining in the repository: accepted ADRs define current
+architecture, and [CONTEXT.md](../../CONTEXT.md) defines current domain
+language.
