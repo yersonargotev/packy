@@ -429,6 +429,19 @@ func TestLoadCurrentManifestSynthetic(t *testing.T) {
 func TestValidatePackContentLive(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(repositoryRoot(), "bundle"), "live-pack") }
 func TestValidatePackContentTemporary(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(t.TempDir(), "bundle"), "live-pack") }
 func TestValidatePackContentSynthetic(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(repositoryRoot(), "bundle"), "synthetic-pack") }
+func TestValidatePackContentLiveDirectory(t *testing.T) {
+	bundleRoot := filepath.Join(repositoryRoot(), "bundle")
+	_, _ = ValidatePackContent(bundleRoot, filepath.Join(bundleRoot, "packs", "live-pack"))
+}
+func TestValidatePackContentTemporaryDirectory(t *testing.T) {
+	_ = repositoryRoot()
+	bundleRoot := filepath.Join(t.TempDir(), "bundle")
+	_, _ = ValidatePackContent(bundleRoot, filepath.Join(bundleRoot, "packs", "live-pack"))
+}
+func TestValidatePackContentSyntheticDirectory(t *testing.T) {
+	bundleRoot := filepath.Join(repositoryRoot(), "bundle")
+	_, _ = ValidatePackContent(bundleRoot, filepath.Join(bundleRoot, "packs", "synthetic-pack"))
+}
 func TestUnrelatedRootAndSyntheticCatalogList(t *testing.T) { _ = repositoryRoot(); listWithOptions(t, syntheticOptions(t)) }
 func TestCallSensitiveOptionsList(t *testing.T) { root := repositoryRoot(); _ = optionsIdentity(liveOptions(root)); listWithOptions(t, optionsIdentity(syntheticOptions(t))) }
 func TestReceiverShadowing(t *testing.T) {
@@ -472,6 +485,7 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestDirectTypedLiveListCurrent",
 		"sample/scenarios_test.go:TestLoadCurrentManifestLive",
 		"sample/scenarios_test.go:TestValidatePackContentLive",
+		"sample/scenarios_test.go:TestValidatePackContentLiveDirectory",
 		"sample/scenarios_test.go:TestReceiverShadowing",
 	} {
 		if !got[want] {
@@ -492,6 +506,8 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestLoadCurrentManifestSynthetic",
 		"sample/scenarios_test.go:TestValidatePackContentTemporary",
 		"sample/scenarios_test.go:TestValidatePackContentSynthetic",
+		"sample/scenarios_test.go:TestValidatePackContentTemporaryDirectory",
+		"sample/scenarios_test.go:TestValidatePackContentSyntheticDirectory",
 	} {
 		if got[unwanted] {
 			t.Fatalf("synthetic content validation was classified as live: %s: %+v", unwanted, findings)
@@ -994,10 +1010,8 @@ func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSACont
 		}
 	}
 	if analyzer.isCapabilitypackFunction(callee, "ValidatePackContent") && len(call.Args) >= 2 && context.isLiveBundleRoot(call.Args[0]) {
-		for id := range context.stringValues(call.Args[1], map[ssa.Value]bool{}) {
-			if _, real := analyzer.inventory.packIDs[id]; real {
-				direct = append(direct, fmt.Sprintf("validates real Pack %q through ValidatePackContent", id))
-			}
+		if id := analyzer.validatePackContentID(context, call.Args[1]); id != "" {
+			direct = append(direct, fmt.Sprintf("validates real Pack %q through ValidatePackContent", id))
 		}
 	}
 	if analyzer.isNamedFunction(callee, "/internal/cli", "executeCommand") || analyzer.fixture && callee.Name() == "executeCommand" {
@@ -1049,6 +1063,30 @@ func ssaFunctionPackagePath(function *ssa.Function) string {
 			return function.Pkg.Pkg.Path()
 		}
 		function = function.Parent()
+	}
+	return ""
+}
+
+func (analyzer *realCatalogSSAAnalyzer) validatePackContentID(context *realCatalogSSAContext, value ssa.Value) string {
+	values := context.stringValues(value, map[ssa.Value]bool{})
+	for candidate := range values {
+		if _, real := analyzer.inventory.packIDs[candidate]; real {
+			return candidate
+		}
+	}
+	if !context.valueContainsRepositoryRoot(value, map[ssa.Value]bool{}) {
+		return ""
+	}
+	for candidate := range values {
+		parts := strings.Split(filepath.ToSlash(filepath.Clean(candidate)), "/")
+		for index := 0; index+1 < len(parts); index++ {
+			if parts[index] != "packs" {
+				continue
+			}
+			if _, real := analyzer.inventory.packIDs[parts[index+1]]; real {
+				return parts[index+1]
+			}
+		}
 	}
 	return ""
 }
