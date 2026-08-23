@@ -392,6 +392,9 @@ func liveFacade() Facade { return facadeFor(Catalog{bundleRoot: filepath.Join(re
 func facadeIdentity(facade Facade) Facade { return facade }
 func catalogFor(root string) Catalog { return Catalog{bundleRoot: root} }
 var packageCatalog = Catalog{bundleRoot: filepath.Join("..", "..", "bundle")}
+var packageHelperCatalog = catalogFor(filepath.Join("..", "..", "bundle"))
+var packageDurableCatalog, _ = DiscoverForDurableIntents(ctx, filepath.Join("..", "..", "bundle"))
+var packageNestedFacade = Facade{catalog: Catalog{bundleRoot: filepath.Join("..", "..", "bundle")}}
 func syntheticOptions(t *testing.T) Options {
 	bundleRoot := filepath.Join(t.TempDir(), "bundle")
 	return Options{Env: MapEnv{"PACKY_SKILLS_SOURCE": filepath.Join(bundleRoot, "skills")}}
@@ -431,12 +434,23 @@ func TestCatalogShowDetailSynthetic(t *testing.T) { _, _ = (Catalog{}).ShowDetai
 func TestUnrelatedShowDetail(t *testing.T) { unrelated := unrelatedView{}; unrelated.ShowDetail(ctx, "live-pack") }
 func TestCatalogBindingDirect(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _ = catalog }
 func TestCatalogBindingThroughHelper(t *testing.T) { _ = catalogFor(filepath.Join(repositoryRoot(), "bundle")) }
+func TestCatalogBindingThroughFunctionVariable(t *testing.T) { bind := catalogFor; _ = bind(filepath.Join(repositoryRoot(), "bundle")) }
+func TestCatalogBindingThroughFunctionVariableSynthetic(t *testing.T) { bind := catalogFor; _ = bind(filepath.Join(t.TempDir(), "bundle")) }
 func TestCatalogBindingOverwritten(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog.bundleRoot = filepath.Join(t.TempDir(), "bundle"); _ = catalog }
 func TestPackageCatalogBinding(t *testing.T) { _ = packageCatalog.List() }
+func TestPackageHelperCatalogBinding(t *testing.T) { _ = packageHelperCatalog.List() }
+func TestPackageDurableCatalogBinding(t *testing.T) { _, _ = packageDurableCatalog.ListCurrent(ctx) }
+func TestPackageNestedFacadeBinding(t *testing.T) { packageNestedFacade.Status(ctx, StatusRequest{}) }
 func TestCatalogLookupLiveReceiverSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog.Show(ctx, "synthetic-pack") }
 func TestCatalogLookupTemporaryReceiver(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}; catalog.Show(ctx, "synthetic-pack") }
 type unrelatedCatalog struct { bundleRoot string }
 func TestUnrelatedCatalogBinding(t *testing.T) { catalog := unrelatedCatalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _ = catalog }
+type catalogSource Catalog
+type unrelatedCatalogSource struct { bundleRoot string }
+type unrelatedCatalogTarget unrelatedCatalogSource
+func TestCatalogBindingThroughConversion(t *testing.T) { source := catalogSource{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _ = Catalog(source) }
+func TestCatalogBindingThroughTemporaryConversion(t *testing.T) { source := catalogSource{bundleRoot: filepath.Join(t.TempDir(), "bundle")}; _ = Catalog(source) }
+func TestUnrelatedCatalogLikeConversion(t *testing.T) { source := unrelatedCatalogSource{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _ = unrelatedCatalogTarget(source) }
 func TestFacadeStatusLive(t *testing.T) { facadeFor(Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}).Status(ctx, StatusRequest{}) }
 func TestFacadeActiveStatusLive(t *testing.T) { liveFacade().ActiveStatus(ctx) }
 func TestFacadePreviewProjectInstallLive(t *testing.T) { facadeIdentity(liveFacade()).PreviewProjectInstall(ctx, ProjectInstallRequest{}, nil) }
@@ -548,8 +562,13 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestCatalogShowDetailLive",
 		"sample/scenarios_test.go:TestCatalogBindingDirect",
 		"sample/scenarios_test.go:TestCatalogBindingThroughHelper",
+		"sample/scenarios_test.go:TestCatalogBindingThroughFunctionVariable",
+		"sample/scenarios_test.go:TestCatalogBindingThroughConversion",
 		"sample/scenarios_test.go:TestCatalogBindingOverwritten",
 		"sample/scenarios_test.go:TestPackageCatalogBinding",
+		"sample/scenarios_test.go:TestPackageHelperCatalogBinding",
+		"sample/scenarios_test.go:TestPackageDurableCatalogBinding",
+		"sample/scenarios_test.go:TestPackageNestedFacadeBinding",
 		"sample/scenarios_test.go:TestCatalogLookupLiveReceiverSynthetic",
 		"sample/scenarios_test.go:TestFacadeStatusLive",
 		"sample/scenarios_test.go:TestFacadeActiveStatusLive",
@@ -601,11 +620,16 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		}
 	}
 	for test, detail := range map[string]string{
-		"sample/scenarios_test.go:TestCatalogBindingDirect":               "binds the checked-in bundle",
-		"sample/scenarios_test.go:TestCatalogBindingThroughHelper":        "binds the checked-in bundle",
-		"sample/scenarios_test.go:TestCatalogBindingOverwritten":          "binds the checked-in bundle",
-		"sample/scenarios_test.go:TestPackageCatalogBinding":              "binds the checked-in bundle",
-		"sample/scenarios_test.go:TestCatalogLookupLiveReceiverSynthetic": "Catalog bound to the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogBindingDirect":                  "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogBindingThroughHelper":           "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogBindingThroughFunctionVariable": "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogBindingThroughConversion":       "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogBindingOverwritten":             "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestPackageCatalogBinding":                 "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestPackageHelperCatalogBinding":           "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestPackageDurableCatalogBinding":          "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestPackageNestedFacadeBinding":            "Facade boundary",
+		"sample/scenarios_test.go:TestCatalogLookupLiveReceiverSynthetic":    "Catalog bound to the checked-in bundle",
 	} {
 		if !strings.Contains(strings.Join(detailsByTest[test], "\n"), detail) {
 			t.Errorf("missing %q for %s: %v", detail, test, detailsByTest[test])
@@ -637,6 +661,9 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestUnrelatedShowDetail",
 		"sample/scenarios_test.go:TestCatalogLookupTemporaryReceiver",
 		"sample/scenarios_test.go:TestUnrelatedCatalogBinding",
+		"sample/scenarios_test.go:TestCatalogBindingThroughFunctionVariableSynthetic",
+		"sample/scenarios_test.go:TestCatalogBindingThroughTemporaryConversion",
+		"sample/scenarios_test.go:TestUnrelatedCatalogLikeConversion",
 		"sample/scenarios_test.go:TestFacadeTemporary",
 		"sample/scenarios_test.go:TestFacadeEmpty",
 		"sample/scenarios_test.go:TestFacadeConditionalTemporary",
@@ -1039,7 +1066,7 @@ func (analyzer *realCatalogSSAAnalyzer) contextFor(root *ssa.Function) *realCata
 		for _, block := range function.Blocks {
 			for _, instruction := range block.Instrs {
 				if store, ok := instruction.(*ssa.Store); ok {
-					queue = append(queue, possibleSSAFunctions(store.Val, map[ssa.Value]bool{})...)
+					queue = append(queue, possibleSSAFunctions(store.Val, analyzer, map[ssa.Value]bool{})...)
 				}
 				if closure, ok := instruction.(*ssa.MakeClosure); ok {
 					if target, ok := closure.Fn.(*ssa.Function); ok {
@@ -1052,12 +1079,12 @@ func (analyzer *realCatalogSSAAnalyzer) contextFor(root *ssa.Function) *realCata
 					continue
 				}
 				call := callInstruction.Common()
-				for _, callee := range possibleSSAFunctions(call.Value, map[ssa.Value]bool{}) {
+				for _, callee := range possibleSSAFunctions(call.Value, analyzer, map[ssa.Value]bool{}) {
 					context.calls[callee] = append(context.calls[callee], call)
 					queue = append(queue, callee)
 				}
 				for _, argument := range call.Args {
-					queue = append(queue, possibleSSAFunctions(argument, map[ssa.Value]bool{})...)
+					queue = append(queue, possibleSSAFunctions(argument, analyzer, map[ssa.Value]bool{})...)
 				}
 			}
 		}
@@ -1065,7 +1092,7 @@ func (analyzer *realCatalogSSAAnalyzer) contextFor(root *ssa.Function) *realCata
 	return context
 }
 
-func possibleSSAFunctions(value ssa.Value, seen map[ssa.Value]bool) []*ssa.Function {
+func possibleSSAFunctions(value ssa.Value, analyzer *realCatalogSSAAnalyzer, seen map[ssa.Value]bool) []*ssa.Function {
 	if value == nil || seen[value] {
 		return nil
 	}
@@ -1081,13 +1108,21 @@ func possibleSSAFunctions(value ssa.Value, seen map[ssa.Value]bool) []*ssa.Funct
 	case *ssa.Phi:
 		var result []*ssa.Function
 		for _, edge := range value.Edges {
-			result = append(result, possibleSSAFunctions(edge, seen)...)
+			result = append(result, possibleSSAFunctions(edge, analyzer, seen)...)
+		}
+		return result
+	case *ssa.UnOp:
+		var result []*ssa.Function
+		for _, store := range analyzer.storesFor(value.X) {
+			result = append(result, possibleSSAFunctions(store.Val, analyzer, seen)...)
 		}
 		return result
 	case *ssa.ChangeType:
-		return possibleSSAFunctions(value.X, seen)
+		return possibleSSAFunctions(value.X, analyzer, seen)
+	case *ssa.Convert:
+		return possibleSSAFunctions(value.X, analyzer, seen)
 	case *ssa.MakeInterface:
-		return possibleSSAFunctions(value.X, seen)
+		return possibleSSAFunctions(value.X, analyzer, seen)
 	}
 	return nil
 }
@@ -1113,11 +1148,11 @@ func (analyzer *realCatalogSSAAnalyzer) functionFindings(context *realCatalogSSA
 			if callInstruction, ok := instruction.(ssa.CallInstruction); ok {
 				call := callInstruction.Common()
 				details = append(details, analyzer.callFindings(context, function, call)...)
-				for _, callee := range possibleSSAFunctions(call.Value, map[ssa.Value]bool{}) {
+				for _, callee := range possibleSSAFunctions(call.Value, analyzer, map[ssa.Value]bool{}) {
 					details = append(details, analyzer.calledFunctionFindings(context, callee, call, path)...)
 				}
 				for _, argument := range call.Args {
-					for _, callee := range possibleSSAFunctions(argument, map[ssa.Value]bool{}) {
+					for _, callee := range possibleSSAFunctions(argument, analyzer, map[ssa.Value]bool{}) {
 						details = append(details, analyzer.functionFindings(context, callee, path)...)
 					}
 				}
@@ -1126,7 +1161,7 @@ func (analyzer *realCatalogSSAAnalyzer) functionFindings(context *realCatalogSSA
 			if !ok {
 				continue
 			}
-			for _, callee := range possibleSSAFunctions(store.Val, map[ssa.Value]bool{}) {
+			for _, callee := range possibleSSAFunctions(store.Val, analyzer, map[ssa.Value]bool{}) {
 				details = append(details, analyzer.functionFindings(context, callee, path)...)
 			}
 			owner, field, ok := ssaFieldIdentity(store.Addr)
@@ -1662,6 +1697,18 @@ func (context *realCatalogSSAContext) catalogUsesLiveBundle(value ssa.Value, see
 	}
 	seen[value] = true
 	defer delete(seen, value)
+	if context.analyzer.isCapabilitypackValue(value, "Catalog") {
+		switch converted := value.(type) {
+		case *ssa.ChangeType:
+			if context.sourceStructFieldUsesLiveBundle(converted.X, "bundleRoot") {
+				return true
+			}
+		case *ssa.Convert:
+			if context.sourceStructFieldUsesLiveBundle(converted.X, "bundleRoot") {
+				return true
+			}
+		}
+	}
 
 	for _, bundleRoot := range context.receiverFieldValues(value, "Catalog", "bundleRoot") {
 		if context.isLiveBundleRoot(bundleRoot) {
@@ -1697,6 +1744,28 @@ func (context *realCatalogSSAContext) catalogUsesLiveBundle(value ssa.Value, see
 	return false
 }
 
+func (context *realCatalogSSAContext) sourceStructFieldUsesLiveBundle(value ssa.Value, fieldName string) bool {
+	named := namedType(value.Type())
+	if named == nil {
+		return false
+	}
+	structure, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	for index := 0; index < structure.NumFields(); index++ {
+		if structure.Field(index).Name() != fieldName {
+			continue
+		}
+		for _, fieldValue := range context.fieldValues(value, index) {
+			if context.isLiveBundleRoot(fieldValue) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (context *realCatalogSSAContext) receiverFieldValues(value ssa.Value, typeName, fieldName string) []ssa.Value {
 	named := namedType(value.Type())
 	if named == nil || named.Obj().Name() != typeName || named.Obj().Pkg() == nil {
@@ -1724,6 +1793,9 @@ func (context *realCatalogSSAContext) facadeUsesLiveCatalog(value ssa.Value, see
 	seen[value] = true
 	defer delete(seen, value)
 
+	if context.facadeStoresLiveCatalog(value) {
+		return true
+	}
 	for _, catalog := range context.receiverFieldValues(value, "Facade", "catalog") {
 		if context.catalogUsesLiveBundle(catalog, map[ssa.Value]bool{}) {
 			return true
@@ -1761,6 +1833,32 @@ func (context *realCatalogSSAContext) facadeUsesLiveCatalog(value ssa.Value, see
 	return false
 }
 
+func (context *realCatalogSSAContext) facadeStoresLiveCatalog(value ssa.Value) bool {
+	base := value
+	if loaded, ok := value.(*ssa.UnOp); ok && loaded.Op == token.MUL {
+		base = loaded.X
+	}
+	for _, store := range context.analyzer.storesFor(base) {
+		bundleAddress, ok := store.Addr.(*ssa.FieldAddr)
+		if !ok {
+			continue
+		}
+		catalogOwner, bundleField, ok := ssaFieldIdentity(bundleAddress)
+		if !ok || !context.analyzer.isCapabilitypackType(catalogOwner, "Catalog") || bundleField != "bundleRoot" {
+			continue
+		}
+		catalogAddress, ok := bundleAddress.X.(*ssa.FieldAddr)
+		if !ok || !sameSSAAddress(catalogAddress.X, base) {
+			continue
+		}
+		facadeOwner, catalogField, ok := ssaFieldIdentity(catalogAddress)
+		if ok && context.analyzer.isCapabilitypackType(facadeOwner, "Facade") && catalogField == "catalog" && context.isLiveBundleRoot(store.Val) {
+			return true
+		}
+	}
+	return false
+}
+
 func (context *realCatalogSSAContext) isLiveBundleRoot(value ssa.Value) bool {
 	for candidate := range context.stringValues(value, map[ssa.Value]bool{}) {
 		if isRepositoryBundlePath(candidate) {
@@ -1772,10 +1870,10 @@ func (context *realCatalogSSAContext) isLiveBundleRoot(value ssa.Value) bool {
 
 func (context *realCatalogSSAContext) discoverUsesLiveBundle(call *ssa.CallCommon) bool {
 	callee := call.StaticCallee()
-	if callee == nil || callee.Name() != "Discover" {
+	if callee == nil || callee.Name() != "Discover" && callee.Name() != "DiscoverForDurableIntents" {
 		return false
 	}
-	if !context.analyzer.fixture && !context.analyzer.isNamedFunction(callee, "/internal/capabilitypack", "Discover") {
+	if !context.analyzer.fixture && !context.analyzer.isCapabilitypackFunction(callee, callee.Name()) {
 		return false
 	}
 	for _, argument := range call.Args {
@@ -2429,7 +2527,7 @@ func (analyzer *realCatalogSSAAnalyzer) storesFor(address ssa.Value) []*ssa.Stor
 
 func (context *realCatalogSSAContext) callReturnValues(call *ssa.CallCommon, index int) []ssa.Value {
 	callee := call.StaticCallee()
-	if callee == nil || !context.functions[callee] {
+	if !context.canInspectCall(callee) {
 		return nil
 	}
 	return functionReturnValues(callee, index)
@@ -2437,7 +2535,7 @@ func (context *realCatalogSSAContext) callReturnValues(call *ssa.CallCommon, ind
 
 func (context *realCatalogSSAContext) withCallBinding(call *ssa.CallCommon, analyze func()) {
 	callee := call.StaticCallee()
-	if callee == nil || !context.functions[callee] {
+	if !context.canInspectCall(callee) {
 		analyze()
 		return
 	}
@@ -2449,6 +2547,17 @@ func (context *realCatalogSSAContext) withCallBinding(call *ssa.CallCommon, anal
 	} else {
 		delete(context.activeCalls, callee)
 	}
+}
+
+func (context *realCatalogSSAContext) canInspectCall(function *ssa.Function) bool {
+	if function == nil {
+		return false
+	}
+	if context.functions[function] {
+		return true
+	}
+	filename := context.analyzer.fset.Position(function.Pos()).Filename
+	return context.analyzer.ownedFunction(function) && strings.HasSuffix(filename, "_test.go")
 }
 
 func functionReturnValues(function *ssa.Function, index int) []ssa.Value {
