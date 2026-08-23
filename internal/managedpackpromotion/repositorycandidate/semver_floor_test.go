@@ -14,7 +14,7 @@ func TestManagedSemVerFloorRequiresMajorForAnAddedExternalRequirement(t *testing
 	candidate := semverManifest("1.1.0")
 	candidate.ExternalRequirements = []string{"helper-cli"}
 
-	requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate))
+	requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)))
 }
 
 func TestManagedSemVerFloorRequiresMajorForAnAddedResourceGraphConstraint(t *testing.T) {
@@ -30,7 +30,7 @@ func TestManagedSemVerFloorRequiresMajorForAnAddedResourceGraphConstraint(t *tes
 			candidate := semverManifest("1.1.0")
 			test.mutate(&candidate.Resources[0])
 
-			requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate))
+			requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)))
 		})
 	}
 }
@@ -55,7 +55,7 @@ func TestManagedSemVerFloorLeavesRequirementAndConflictRemovalToHumanReview(t *t
 			test.mutate(&current)
 			candidate := semverManifest("1.0.1")
 
-			if err := enforceVersionFloor(current, candidate); err != nil {
+			if err := enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)); err != nil {
 				t.Fatalf("removal should remain human-reviewed at patch: %v", err)
 			}
 		})
@@ -68,7 +68,7 @@ func TestManagedSemVerFloorDistinguishesIsolatedAndMandatoryNewResources(t *test
 		candidate := semverManifest("1.1.0")
 		candidate.Resources = append(candidate.Resources, semverResource("asset", "shared"))
 
-		if err := enforceVersionFloor(current, candidate); err != nil {
+		if err := enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)); err != nil {
 			t.Fatalf("isolated resource with minor increment: %v", err)
 		}
 	})
@@ -78,7 +78,7 @@ func TestManagedSemVerFloorDistinguishesIsolatedAndMandatoryNewResources(t *test
 		candidate := semverManifest("1.0.1")
 		candidate.Resources = append(candidate.Resources, semverResource("asset", "shared"))
 
-		requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate))
+		requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)))
 	})
 
 	for _, test := range []struct {
@@ -108,7 +108,7 @@ func TestManagedSemVerFloorDistinguishesIsolatedAndMandatoryNewResources(t *test
 			test.mutate(&added)
 			candidate.Resources = append(candidate.Resources, added)
 
-			requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate))
+			requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)))
 		})
 	}
 }
@@ -122,7 +122,7 @@ func TestManagedSemVerFloorRequiresMajorForAnExistingBindingProjectionChange(t *
 		candidate := semverManifest("1.1.0")
 		candidate.Resources[0].Bindings = []capabilitypack.Binding{binding}
 
-		requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate))
+		requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)))
 	})
 
 	t.Run("projection changed", func(t *testing.T) {
@@ -132,7 +132,7 @@ func TestManagedSemVerFloorRequiresMajorForAnExistingBindingProjectionChange(t *
 		candidate.Resources[0].Bindings = []capabilitypack.Binding{binding}
 		candidate.Resources[0].Bindings[0].Projection = "command"
 
-		requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate))
+		requireCompatibilityFloorRejection(t, enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)))
 	})
 }
 
@@ -145,7 +145,7 @@ func TestManagedSemVerFloorAllowsMetadataAndProvenanceOnlyPatch(t *testing.T) {
 		ID: "upstream", Path: "guide", Relationship: managedpack.RelationshipAdapted,
 	}
 
-	if err := enforceVersionFloor(current, candidate); err != nil {
+	if err := enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)); err != nil {
 		t.Fatalf("metadata-only patch: %v", err)
 	}
 }
@@ -158,7 +158,7 @@ func TestManagedSemVerFloorLeavesLegalMetadataChangesToHumanReview(t *testing.T)
 	candidate.Resources[0].License = "Apache-2.0"
 	candidate.Resources[0].Attribution = "Current author"
 
-	if err := enforceVersionFloor(current, candidate); err != nil {
+	if err := enforceVersionFloor(current, candidate, compareSemanticChanges(current, nil, candidate, nil)); err != nil {
 		t.Fatalf("legal metadata change should remain human-reviewed at patch: %v", err)
 	}
 }

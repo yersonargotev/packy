@@ -48,7 +48,7 @@ func TestPrepareBuildsAnExactDetachedCandidateOnlyAfterEveryGatePasses(t *testin
 	if candidate.BaseSHA != baseSHA || candidate.HeadSHA == baseSHA || len(candidate.HeadSHA) != 40 || len(candidate.ResultTreeSHA) != 40 || len(candidate.ID) != 64 {
 		t.Fatalf("candidate seals = %#v", candidate)
 	}
-	for _, evidence := range []string{"repository `101`", "release `202`", "pack-v1.1.0", validation.ManifestSHA256, validation.ClosureSHA256, "Compatibility floor", "complete Packy suite passed"} {
+	for _, evidence := range []string{"repository `101`", "release `202`", "pack-v1.1.0", validation.ManifestSHA256, validation.ClosureSHA256, "Mechanical floor", "complete Packy suite passed"} {
 		if !strings.Contains(candidate.Summary, evidence) {
 			t.Fatalf("candidate summary lacks %q:\n%s", evidence, candidate.Summary)
 		}
