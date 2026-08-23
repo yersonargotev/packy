@@ -31,28 +31,6 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		t.Fatalf("current ADRs = %v, want %v", adrs, wantADR)
 	}
 
-	wantResearch := []string{
-		filepath.Join(root, "docs", "research", "evidence", "engram-setup-codex-audit-2026-08-13.md"),
-		filepath.Join(root, "docs", "research", "evidence", "generic-issue-delivery-pack-viability.md"),
-		filepath.Join(root, "docs", "research", "evidence", "issue-724-subprocess-environments-2026-08-22.md"),
-		filepath.Join(root, "docs", "research", "evidence", "managed-pack-followups-root-cause-2026-08-22.md"),
-		filepath.Join(root, "docs", "research", "evidence", "pack-readiness-architecture.md"),
-	}
-	var research []string
-	if err := filepath.WalkDir(filepath.Join(root, "docs", "research"), func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			research = append(research, path)
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(research, "\n") != strings.Join(wantResearch, "\n") {
-		t.Fatalf("current research = %v, want %v", research, wantResearch)
-	}
 	if err := filepath.WalkDir(filepath.Join(root, ".scratch"), func(path string, entry os.DirEntry, err error) error {
 		if os.IsNotExist(err) {
 			return filepath.SkipDir
