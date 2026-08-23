@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
 )
@@ -45,8 +47,42 @@ func TestRunValidatesAcquiredLocalTreesAndSealsTheResponse(t *testing.T) {
 	if response.Preflight.Validation.Manifest.ID != "example" || response.Preflight.Validation.Manifest.Version != "1.0.0" {
 		t.Fatalf("validation manifest = %#v", response.Preflight.Validation.Manifest)
 	}
-	if response.Preflight.Validation.ManifestSHA256 == "" || response.Preflight.Validation.ClosureSHA256 == "" || response.Preflight.RuntimeManifestSHA256 == "" || len(response.Preflight.Fitness.Rows) != 6 || response.PreflightSHA256 == "" {
+	if response.Preflight.Validation.ManifestSHA256 == "" || response.Preflight.Validation.ClosureSHA256 == "" || response.Preflight.RuntimeManifestSHA256 == "" || response.Preflight.Fitness.RowCount != 6 || response.Preflight.Fitness.SHA256 == "" || response.PreflightSHA256 == "" {
 		t.Fatalf("response digests = %#v", response)
+	}
+}
+
+func TestWorkerResponseCapacityDoesNotGrowWithALargeQuadraticFitnessMatrix(t *testing.T) {
+	resources := make([]capabilitypack.ResourceIdentity, 500)
+	for index := range resources {
+		resources[index] = capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: fmt.Sprintf("server-%03d", index)}
+	}
+	rows := make([]capabilitypack.RuntimeFitnessRow, 0, 3*501)
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceClaude, capabilitypack.SurfaceCodex, capabilitypack.SurfaceOpenCode} {
+		rows = append(rows, capabilitypack.RuntimeFitnessRow{
+			Surface: surface, Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}, Resources: resources,
+		})
+		for _, root := range resources {
+			rows = append(rows, capabilitypack.RuntimeFitnessRow{
+				Surface: surface, Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{root}}, Resources: resources,
+			})
+		}
+	}
+	preflight := managedpack.PreflightResult{Fitness: capabilitypack.RuntimeFitnessMatrix{Rows: rows}}.Evidence()
+	response := workerResponse{Status: responseAccepted, Preflight: preflight}
+	response.PreflightSHA256 = preflightDigest(preflight)
+	response.ResponseSHA256 = responseDigest(response)
+	path := filepath.Join(t.TempDir(), "response.json")
+
+	if err := writeWorkerResponse(path, response); err != nil {
+		t.Fatalf("write compact response for large quadratic fitness matrix: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() >= 4096 {
+		t.Fatalf("compact response size = %d, want less than 4096 bytes", info.Size())
 	}
 }
 

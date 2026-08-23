@@ -3,6 +3,7 @@ package managedpack
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,31 @@ import (
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
+
+func TestPreflightEvidenceSealsTheCompleteFitnessMatrixWithoutEmbeddingRows(t *testing.T) {
+	firstResult := PreflightResult{Fitness: capabilitypack.RuntimeFitnessMatrix{Rows: []capabilitypack.RuntimeFitnessRow{
+		{Surface: capabilitypack.SurfaceCodex, Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}},
+	}}}
+	secondResult := firstResult
+	secondResult.Fitness.Rows = append([]capabilitypack.RuntimeFitnessRow(nil), firstResult.Fitness.Rows...)
+	secondResult.Fitness.Rows[0].Surface = capabilitypack.SurfaceClaude
+
+	first := firstResult.Evidence()
+	second := secondResult.Evidence()
+	if first.Fitness.RowCount != 1 || !validSHA256(first.Fitness.SHA256) {
+		t.Fatalf("fitness evidence = %#v", first.Fitness)
+	}
+	if first.Fitness.SHA256 == second.Fitness.SHA256 {
+		t.Fatalf("fitness evidence did not seal changed matrix: first=%#v second=%#v", first.Fitness, second.Fitness)
+	}
+	encoded, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(`"surface"`)) || bytes.Contains(encoded, []byte(`"selection"`)) {
+		t.Fatalf("fitness matrix rows leaked into compact evidence: %s", encoded)
+	}
+}
 
 func TestPreflightLoadsTheExactMaterializedRuntimeAndReturnsDeterministicFitness(t *testing.T) {
 	project, origin := writeValidProject(t)

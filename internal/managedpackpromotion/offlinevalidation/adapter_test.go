@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
 )
@@ -37,7 +36,7 @@ func TestAdapterValidateRunsTheProductionWorkerWithNetworkDenied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if preflight.Validation.Manifest.ID != "example" || preflight.Validation.Manifest.Version != "1.0.0" || preflight.Validation.ClosureSHA256 == "" || preflight.RuntimeManifestSHA256 == "" || len(preflight.Fitness.Rows) != 6 {
+	if preflight.Validation.Manifest.ID != "example" || preflight.Validation.Manifest.Version != "1.0.0" || preflight.Validation.ClosureSHA256 == "" || preflight.RuntimeManifestSHA256 == "" || preflight.Fitness.RowCount != 6 || preflight.Fitness.SHA256 == "" {
 		t.Fatalf("preflight = %#v", preflight)
 	}
 }
@@ -243,7 +242,7 @@ func fakeValidation() managedpack.Validation {
 func fakePreflight() managedpack.PreflightEvidence {
 	return managedpack.PreflightEvidence{
 		Validation: fakeValidation(), RuntimeManifestSHA256: strings.Repeat("e", 64),
-		Fitness: capabilitypack.RuntimeFitnessMatrix{Rows: []capabilitypack.RuntimeFitnessRow{}},
+		Fitness: managedpack.RuntimeFitnessEvidence{RowCount: 1, SHA256: strings.Repeat("f", 64)},
 	}
 }
 

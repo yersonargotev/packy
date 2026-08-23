@@ -25,17 +25,30 @@ type PreflightResult struct {
 // preventive and offline-promotion adapters. It is informational; promotion
 // still reacquires content and runs every repository admission gate.
 type PreflightEvidence struct {
-	Validation            Validation                          `json:"validation"`
-	RuntimeManifestSHA256 string                              `json:"runtime_manifest_sha256"`
-	Fitness               capabilitypack.RuntimeFitnessMatrix `json:"fitness"`
+	Validation            Validation             `json:"validation"`
+	RuntimeManifestSHA256 string                 `json:"runtime_manifest_sha256"`
+	Fitness               RuntimeFitnessEvidence `json:"fitness"`
+}
+
+// RuntimeFitnessEvidence seals a complete deterministic fitness matrix in a
+// protocol-bounded representation. RowCount makes its shape inspectable while
+// SHA256 preserves exact preventive/promotion parity without repeating every
+// dependency closure in worker output.
+type RuntimeFitnessEvidence struct {
+	RowCount int    `json:"row_count"`
+	SHA256   string `json:"sha256"`
 }
 
 // Evidence returns the serializable identity and fitness result for this
 // exact preflight without exposing its temporary materialized bundle.
 func (result PreflightResult) Evidence() PreflightEvidence {
+	fitnessData, err := json.Marshal(result.Fitness)
+	if err != nil {
+		panic(fmt.Sprintf("encode runtime fitness evidence: %v", err))
+	}
 	return PreflightEvidence{
 		Validation: result.Validation, RuntimeManifestSHA256: result.RuntimeManifestSHA256,
-		Fitness: result.Fitness,
+		Fitness: RuntimeFitnessEvidence{RowCount: len(result.Fitness.Rows), SHA256: digestBytes(fitnessData)},
 	}
 }
 
