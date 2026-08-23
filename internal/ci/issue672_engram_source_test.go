@@ -4,11 +4,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/managedpack"
 )
 
 func TestIssue672EngramPackPreservesReviewedRuntimeContract(t *testing.T) {
@@ -67,33 +72,113 @@ func TestIssue672EngramPackPreservesReviewedRuntimeContract(t *testing.T) {
 		t.Fatalf("Engram skill binding = %#v", binding)
 	}
 
-	wantFiles := map[string]bool{
-		"SKILL.md":               true,
-		"agents/openai.yaml":     true,
-		"references/curation.md": true,
+	resourceSources := make([]string, 0, len(manifest.Resources))
+	for _, resource := range manifest.Resources {
+		resourceSources = append(resourceSources, resource.Source)
 	}
-	skillRoot := filepath.Join(root, "bundle", "skills", "engram-memory-cli")
-	gotFiles := map[string]bool{}
-	err = filepath.WalkDir(skillRoot, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil || entry.IsDir() {
-			return walkErr
-		}
-		relative, err := filepath.Rel(skillRoot, path)
-		if err != nil {
-			return err
-		}
-		gotFiles[filepath.ToSlash(relative)] = true
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(gotFiles, wantFiles) {
-		t.Fatalf("vendored Engram skill inventory = %#v; want reviewed tree %#v", gotFiles, wantFiles)
-	}
+	assertEngramCurrentClosureIsSealed(t, root, manifest.Version, resourceSources)
 	if _, err := os.Stat(filepath.Join(root, "bundle", "skills", "engram-memory")); !os.IsNotExist(err) {
 		t.Fatalf("obsolete Packy-authored skill remains: %v", err)
 	}
+}
+
+func assertEngramCurrentClosureIsSealed(t *testing.T, root, version string, resourceSources []string) {
+	t.Helper()
+	actual := currentEngramFileRecords(t, root, resourceSources)
+	admissionPath := filepath.Join(root, "managed-packs", "admissions", "engram", version+".json")
+	record, err := managedpack.LoadAdmissionRecord(admissionPath)
+	if err == nil {
+		manifestPath := filepath.Join(root, "bundle", "packs", "engram", "pack.json")
+		actual = append(actual, currentEngramFileRecord(t, manifestPath, "pack.json"))
+		sort.Slice(actual, func(i, j int) bool { return actual[i].Path < actual[j].Path })
+		if !reflect.DeepEqual(actual, record.Files) {
+			t.Fatalf("current Engram closure = %#v; want admitted closure %#v", actual, record.Files)
+		}
+		return
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+
+	var lock struct {
+		Resources []struct {
+			VendoredPath string `json:"vendored_path"`
+			Files        []struct {
+				Path   string `json:"path"`
+				Mode   uint32 `json:"mode"`
+				SHA256 string `json:"sha256"`
+			} `json:"files"`
+		} `json:"resources"`
+	}
+	lockData, err := os.ReadFile(filepath.Join(root, "bundle", "sources", "engram-source.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(lockData, &lock); err != nil {
+		t.Fatal(err)
+	}
+	want := make([]managedpack.FileRecord, 0, len(actual))
+	for _, resource := range lock.Resources {
+		base := filepath.ToSlash(strings.TrimPrefix(resource.VendoredPath, "bundle/"))
+		for _, file := range resource.Files {
+			path := base
+			if file.Path != "." {
+				path += "/" + file.Path
+			}
+			want = append(want, managedpack.FileRecord{Path: path, Mode: fmt.Sprintf("100%03o", file.Mode), SHA256: file.SHA256})
+		}
+	}
+	sort.Slice(want, func(i, j int) bool { return want[i].Path < want[j].Path })
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatalf("current Engram resources = %#v; want legacy locked resources %#v", actual, want)
+	}
+}
+
+func currentEngramFileRecords(t *testing.T, root string, resourceSources []string) []managedpack.FileRecord {
+	t.Helper()
+	bundleRoot := filepath.Join(root, "bundle")
+	records := make(map[string]managedpack.FileRecord)
+	for _, source := range resourceSources {
+		err := filepath.WalkDir(filepath.Join(bundleRoot, filepath.FromSlash(source)), func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil || entry.IsDir() {
+				return walkErr
+			}
+			relative, err := filepath.Rel(bundleRoot, path)
+			if err != nil {
+				return err
+			}
+			relative = filepath.ToSlash(relative)
+			records[relative] = currentEngramFileRecord(t, path, relative)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := make([]string, 0, len(records))
+	for path := range records {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	ordered := make([]managedpack.FileRecord, 0, len(paths))
+	for _, path := range paths {
+		ordered = append(ordered, records[path])
+	}
+	return ordered
+}
+
+func currentEngramFileRecord(t *testing.T, path, relative string) managedpack.FileRecord {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	return managedpack.FileRecord{Path: relative, Mode: fmt.Sprintf("100%03o", info.Mode().Perm()), SHA256: hex.EncodeToString(digest[:])}
 }
 
 func TestIssue672EngramHistoricalGenerationIsCompleteAndSealed(t *testing.T) {
