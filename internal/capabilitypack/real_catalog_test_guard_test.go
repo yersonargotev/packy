@@ -389,10 +389,9 @@ func optionsIdentity(options Options) Options { return options }
 func listCatalog(catalog Catalog) { _, _ = catalog.ListCurrent(ctx) }
 func facadeFor(catalog Catalog) Facade { return Facade{catalog: catalog} }
 func liveFacade() Facade { return facadeFor(Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}) }
-func configuredLiveFacade() Facade { facade := liveFacade(); facade.activation = struct{}{}; return facade }
 func facadeIdentity(facade Facade) Facade { return facade }
-func catalogIdentity(catalog Catalog) Catalog { return catalog }
-func boolIdentity(value bool) bool { return value }
+func catalogFor(root string) Catalog { return Catalog{bundleRoot: root} }
+var packageCatalog = Catalog{bundleRoot: filepath.Join("..", "..", "bundle")}
 func syntheticOptions(t *testing.T) Options {
 	bundleRoot := filepath.Join(t.TempDir(), "bundle")
 	return Options{Env: MapEnv{"PACKY_SKILLS_SOURCE": filepath.Join(bundleRoot, "skills")}}
@@ -430,44 +429,14 @@ func TestCatalogListDetailsTemporary(t *testing.T) { catalog := Catalog{bundleRo
 func TestCatalogShowDetailLive(t *testing.T) { _, _ = (Catalog{}).ShowDetail(ctx, "live-pack") }
 func TestCatalogShowDetailSynthetic(t *testing.T) { _, _ = (Catalog{}).ShowDetail(ctx, "synthetic-pack") }
 func TestUnrelatedShowDetail(t *testing.T) { unrelated := unrelatedView{}; unrelated.ShowDetail(ctx, "live-pack") }
-func TestCatalogShowDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}; catalog.Show(ctx, "synthetic-pack") }
-func TestCatalogShowNonDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog.Show(ctx, "synthetic-pack") }
-func TestCatalogShowTemporaryDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle"), deferSourceValidation: true}; catalog.Show(ctx, "synthetic-pack") }
-func TestCatalogShowEmptySynthetic(t *testing.T) { (Catalog{}).Show(ctx, "synthetic-pack") }
-func TestUnrelatedShowLookup(t *testing.T) { unrelated := unrelatedView{}; unrelated.Show(ctx, "live-pack") }
-func TestCatalogShowDetailDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}; _, _ = catalog.ShowDetail(ctx, "synthetic-pack") }
-func TestCatalogShowDetailNonDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _, _ = catalog.ShowDetail(ctx, "synthetic-pack") }
-func TestCatalogShowDetailTemporaryDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle"), deferSourceValidation: true}; _, _ = catalog.ShowDetail(ctx, "synthetic-pack") }
-func TestCatalogResolveIntentPackLive(t *testing.T) {
-	catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}
-	_, _ = catalog.ResolveIntentPack(ctx, "live-pack", "1.0.0")
-}
-func TestCatalogResolveIntentPackSynthetic(t *testing.T) {
-	catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}
-	_, _ = catalog.ResolveIntentPack(ctx, "synthetic-pack", "1.0.0")
-}
-func TestCatalogResolveIntentPackNonDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _, _ = catalog.ResolveIntentPack(ctx, "synthetic-pack", "1.0.0") }
-func TestCatalogResolveIntentPackTemporaryDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle"), deferSourceValidation: true}; _, _ = catalog.ResolveIntentPack(ctx, "synthetic-pack", "1.0.0") }
-func TestCatalogResolveIntentPackEmptySynthetic(t *testing.T) { _, _ = (Catalog{}).ResolveIntentPack(ctx, "synthetic-pack", "1.0.0") }
-func TestUnrelatedResolveIntentPack(t *testing.T) { unrelated := unrelatedView{}; unrelated.ResolveIntentPack(ctx, "live-pack", "1.0.0") }
-func TestCatalogDeferredFactsSplitAcrossBranches(t *testing.T) {
-	catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}
-	if t.Name() != "" { catalog = Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle"), deferSourceValidation: true} }
-	catalog.Show(ctx, "synthetic-pack")
-}
-func TestCatalogDeferredFactsSameBranch(t *testing.T) {
-	catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}
-	if t.Name() != "" { catalog = Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true} }
-	catalog.Show(ctx, "synthetic-pack")
-}
-func TestCatalogDeferredThroughHelper(t *testing.T) { showPack(Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}, "synthetic-pack") }
-func TestCatalogDeferredFalseThroughHelper(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: boolIdentity(false)}; catalog.Show(ctx, "synthetic-pack") }
-func TestCatalogDeferredTrueThroughHelper(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: boolIdentity(true)}; catalog.Show(ctx, "synthetic-pack") }
-func TestCatalogCopyThenDeferred(t *testing.T) { source := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog := source; catalog.deferSourceValidation = true; catalog.Show(ctx, "synthetic-pack") }
-func TestCatalogCopyThenLiveRoot(t *testing.T) { source := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle"), deferSourceValidation: true}; catalog := source; catalog.bundleRoot = filepath.Join(repositoryRoot(), "bundle"); catalog.Show(ctx, "synthetic-pack") }
-func TestCatalogCopyThroughHelper(t *testing.T) { catalog := catalogIdentity(Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}); catalog.deferSourceValidation = true; catalog.Show(ctx, "synthetic-pack") }
-func TestCatalogPointerMutation(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; pointer := &catalog; pointer.deferSourceValidation = true; pointer.Show(ctx, "synthetic-pack") }
-func TestCatalogLoopCarriedDeferred(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; for index := 0; index < 2; index++ { catalog.Show(ctx, "synthetic-pack"); catalog.deferSourceValidation = true } }
+func TestCatalogBindingDirect(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _ = catalog }
+func TestCatalogBindingThroughHelper(t *testing.T) { _ = catalogFor(filepath.Join(repositoryRoot(), "bundle")) }
+func TestCatalogBindingOverwritten(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog.bundleRoot = filepath.Join(t.TempDir(), "bundle"); _ = catalog }
+func TestPackageCatalogBinding(t *testing.T) { _ = packageCatalog.List() }
+func TestCatalogLookupLiveReceiverSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog.Show(ctx, "synthetic-pack") }
+func TestCatalogLookupTemporaryReceiver(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}; catalog.Show(ctx, "synthetic-pack") }
+type unrelatedCatalog struct { bundleRoot string }
+func TestUnrelatedCatalogBinding(t *testing.T) { catalog := unrelatedCatalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _ = catalog }
 func TestFacadeStatusLive(t *testing.T) { facadeFor(Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}).Status(ctx, StatusRequest{}) }
 func TestFacadeActiveStatusLive(t *testing.T) { liveFacade().ActiveStatus(ctx) }
 func TestFacadePreviewProjectInstallLive(t *testing.T) { facadeIdentity(liveFacade()).PreviewProjectInstall(ctx, ProjectInstallRequest{}, nil) }
@@ -477,33 +446,18 @@ func TestFacadePreviewUpdateLive(t *testing.T) { liveFacade().PreviewUpdate(ctx,
 func TestFacadePreviewDeactivateLive(t *testing.T) { liveFacade().PreviewDeactivate(ctx, DeactivationRequest{}) }
 func TestFacadeApplyLive(t *testing.T) { liveFacade().Apply(ctx, ApplyRequest{}) }
 func TestFacadeShowLiveSynthetic(t *testing.T) { liveFacade().Show(ctx, "synthetic-pack") }
-func TestFacadeCheckProjectInstallFreshnessLive(t *testing.T) { liveFacade().CheckProjectInstallFreshness(ctx, JSONProjectInstallPreview{projectRoot: "synthetic-project"}, nil) }
-func TestFacadeApplyProjectInstallLive(t *testing.T) { liveFacade().ApplyProjectInstall(ctx, ProjectInstallApplyRequest{Preview: JSONProjectInstallPreview{projectRoot: "synthetic-project"}, PackyHome: "synthetic-home", Adapter: struct{}{}}) }
-func TestFacadePreviewControlledCheckLive(t *testing.T) { liveFacade().PreviewControlledCheck(ctx, ControlledCheckRequest{PackID: "synthetic-pack", Surface: SurfaceCodex, ProjectRoot: "synthetic-project", PackyHome: "synthetic-home", Adapter: struct{}{}}) }
-func TestFacadePreviewControlledCheckConfiguredLive(t *testing.T) { configuredLiveFacade().PreviewControlledCheck(ctx, ControlledCheckRequest{PackID: "synthetic-pack", Surface: SurfaceCodex, PackyHome: "synthetic-home"}) }
-func TestFacadeRecordControlledCheckLive(t *testing.T) { liveFacade().RecordControlledCheck(ctx, ControlledCheckPreview{ValidityIdentity: "synthetic-identity", request: ControlledCheckRequest{PackID: "synthetic-pack", Surface: SurfaceCodex, ProjectRoot: "synthetic-project", PackyHome: "synthetic-home", Adapter: struct{}{}}}, ReadinessTrue) }
-func TestFacadeInspectProjectStatusLive(t *testing.T) { liveFacade().InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: "synthetic-project"}) }
-func TestFacadePreviewProjectActivationLive(t *testing.T) { liveFacade().PreviewProjectActivation(ctx, ProjectActivationRequest{PackID: "synthetic-pack", Surface: SurfaceCodex, ProjectRoot: "synthetic-project", PackyHome: "synthetic-home", Adapter: struct{}{}}) }
-func TestFacadeApplyProjectActivationLive(t *testing.T) { liveFacade().ApplyProjectActivation(ctx, ProjectActivationApplyRequest{Preview: JSONProjectActivationPreview{Pack: Pack{ID: "synthetic-pack"}, Surface: SurfaceCodex, projectRoot: "synthetic-project", packyHome: "synthetic-home"}, Adapter: struct{}{}, Interactive: true}) }
-func TestFacadeConditionalEarlyReturns(t *testing.T) {
-	liveFacade().CheckProjectInstallFreshness(ctx, JSONProjectInstallPreview{}, nil)
-	liveFacade().ApplyProjectInstall(ctx, ProjectInstallApplyRequest{})
-	liveFacade().ApplyProjectInstall(ctx, ProjectInstallApplyRequest{Preview: JSONProjectInstallPreview{projectRoot: "synthetic-project", Disposition: ProjectInstallBlocked}, PackyHome: "synthetic-home", Adapter: struct{}{}})
-	liveFacade().PreviewControlledCheck(ctx, ControlledCheckRequest{})
-	liveFacade().PreviewControlledCheck(ctx, ControlledCheckRequest{PackID: "synthetic-pack", Surface: SurfaceCodex, PackyHome: "synthetic-home"})
-	liveFacade().RecordControlledCheck(ctx, ControlledCheckPreview{ValidityIdentity: "synthetic-identity", request: ControlledCheckRequest{PackID: "synthetic-pack", Surface: SurfaceCodex, PackyHome: "synthetic-home"}}, ReadinessUnknown)
-	liveFacade().PreviewProjectActivation(ctx, ProjectActivationRequest{})
-	liveFacade().PreviewProjectActivation(ctx, ProjectActivationRequest{PackID: "synthetic-pack", Surface: Surface("invalid"), ProjectRoot: "synthetic-project", PackyHome: "synthetic-home", Adapter: struct{}{}})
-	liveFacade().ApplyProjectActivation(ctx, ProjectActivationApplyRequest{Preview: JSONProjectActivationPreview{Pack: Pack{ID: "synthetic-pack"}, Surface: SurfaceCodex, projectRoot: "synthetic-project", packyHome: "synthetic-home"}, Adapter: struct{}{}, Interactive: false})
-	liveFacade().ApplyProjectActivation(ctx, ProjectActivationApplyRequest{Preview: JSONProjectActivationPreview{Pack: Pack{ID: "synthetic-pack"}, Surface: SurfaceCodex, projectRoot: "synthetic-project", packyHome: "synthetic-home", Disposition: ProjectActivationBlocked}, Adapter: struct{}{}, Interactive: true})
-}
-func TestFacadeInspectProjectStatusEmptyRoot(t *testing.T) { liveFacade().InspectProjectStatus(ctx, ProjectStatusRequest{}) }
-func TestFacadeApplyProjectActivationMissingPack(t *testing.T) { liveFacade().ApplyProjectActivation(ctx, ProjectActivationApplyRequest{Preview: JSONProjectActivationPreview{Surface: SurfaceCodex, projectRoot: "synthetic-project", packyHome: "synthetic-home"}, Adapter: struct{}{}, Interactive: true}) }
-func TestFacadeApplyProjectActivationInvalidSurface(t *testing.T) { liveFacade().ApplyProjectActivation(ctx, ProjectActivationApplyRequest{Preview: JSONProjectActivationPreview{Pack: Pack{ID: "synthetic-pack"}, Surface: Surface("invalid"), projectRoot: "synthetic-project", packyHome: "synthetic-home"}, Adapter: struct{}{}, Interactive: true}) }
-func TestFacadeConditionalTemporary(t *testing.T) { facadeFor(Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}).PreviewControlledCheck(ctx, ControlledCheckRequest{PackID: "synthetic-pack", Surface: SurfaceCodex, PackyHome: "synthetic-home"}) }
-func TestFacadeConditionalEmpty(t *testing.T) { (Facade{}).InspectProjectStatus(ctx, ProjectStatusRequest{ProjectRoot: "synthetic-project"}) }
-func TestUnrelatedFacadeConditionalName(t *testing.T) { unrelated := unrelatedView{}; unrelated.PreviewControlledCheck(ctx, ControlledCheckRequest{PackID: "synthetic-pack", Surface: SurfaceCodex, PackyHome: "synthetic-home"}) }
+func TestFacadeCheckProjectInstallFreshnessLive(t *testing.T) { liveFacade().CheckProjectInstallFreshness(ctx, JSONProjectInstallPreview{}, nil) }
+func TestFacadeApplyProjectInstallLive(t *testing.T) { liveFacade().ApplyProjectInstall(ctx, ProjectInstallApplyRequest{}) }
+func TestFacadePreviewControlledCheckLive(t *testing.T) { liveFacade().PreviewControlledCheck(ctx, ControlledCheckRequest{}) }
+func TestFacadeRecordControlledCheckLive(t *testing.T) { liveFacade().RecordControlledCheck(ctx, ControlledCheckPreview{}, ReadinessValue(0)) }
+func TestFacadeInspectProjectStatusLive(t *testing.T) { liveFacade().InspectProjectStatus(ctx, ProjectStatusRequest{}) }
+func TestFacadePreviewProjectActivationLive(t *testing.T) { liveFacade().PreviewProjectActivation(ctx, ProjectActivationRequest{}) }
+func TestFacadeApplyProjectActivationLive(t *testing.T) { liveFacade().ApplyProjectActivation(ctx, ProjectActivationApplyRequest{}) }
+func TestFacadeConditionalTemporary(t *testing.T) { facadeFor(Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}).PreviewControlledCheck(ctx, ControlledCheckRequest{}) }
+func TestFacadeConditionalEmpty(t *testing.T) { (Facade{}).InspectProjectStatus(ctx, ProjectStatusRequest{}) }
+func TestUnrelatedFacadeConditionalName(t *testing.T) { unrelated := unrelatedView{}; unrelated.PreviewControlledCheck(ctx, ControlledCheckRequest{}) }
 func TestFacadePureExports(t *testing.T) { facade := liveFacade(); _ = facade.Approve(ReconciliationPlan{}, ConsentKind(0)); _ = facade.ApproveProjectActivation(JSONProjectActivationPreview{}, ProjectActivationCategory(0)); _ = NewFacade(Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}); _ = (Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}).List() }
+func TestFacadePureExportsTemporary(t *testing.T) { facade := facadeFor(Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}); _ = facade.Approve(ReconciliationPlan{}, ConsentKind(0)); _ = (Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}).List() }
 func TestFacadeTemporary(t *testing.T) { facadeFor(Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}).Status(ctx, StatusRequest{}) }
 func TestFacadeEmpty(t *testing.T) { (Facade{}).ActiveStatus(ctx) }
 func TestLoadCurrentManifestLive(t *testing.T) {
@@ -569,8 +523,10 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := map[string]bool{}
+	detailsByTest := map[string][]string{}
 	for _, finding := range findings {
 		got[finding.test] = true
+		detailsByTest[finding.test] = append(detailsByTest[finding.test], finding.detail)
 	}
 	for _, want := range []string{
 		"sample/scenarios_test.go:TestCrossFileHelper",
@@ -590,18 +546,11 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestValidatePortableContentLive",
 		"sample/scenarios_test.go:TestCatalogListDetailsLive",
 		"sample/scenarios_test.go:TestCatalogShowDetailLive",
-		"sample/scenarios_test.go:TestCatalogShowDeferredSynthetic",
-		"sample/scenarios_test.go:TestCatalogShowDetailDeferredSynthetic",
-		"sample/scenarios_test.go:TestCatalogResolveIntentPackLive",
-		"sample/scenarios_test.go:TestCatalogResolveIntentPackSynthetic",
-		"sample/scenarios_test.go:TestCatalogDeferredFactsSameBranch",
-		"sample/scenarios_test.go:TestCatalogDeferredThroughHelper",
-		"sample/scenarios_test.go:TestCatalogDeferredTrueThroughHelper",
-		"sample/scenarios_test.go:TestCatalogCopyThenDeferred",
-		"sample/scenarios_test.go:TestCatalogCopyThenLiveRoot",
-		"sample/scenarios_test.go:TestCatalogCopyThroughHelper",
-		"sample/scenarios_test.go:TestCatalogPointerMutation",
-		"sample/scenarios_test.go:TestCatalogLoopCarriedDeferred",
+		"sample/scenarios_test.go:TestCatalogBindingDirect",
+		"sample/scenarios_test.go:TestCatalogBindingThroughHelper",
+		"sample/scenarios_test.go:TestCatalogBindingOverwritten",
+		"sample/scenarios_test.go:TestPackageCatalogBinding",
+		"sample/scenarios_test.go:TestCatalogLookupLiveReceiverSynthetic",
 		"sample/scenarios_test.go:TestFacadeStatusLive",
 		"sample/scenarios_test.go:TestFacadeActiveStatusLive",
 		"sample/scenarios_test.go:TestFacadePreviewProjectInstallLive",
@@ -614,11 +563,11 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestFacadeCheckProjectInstallFreshnessLive",
 		"sample/scenarios_test.go:TestFacadeApplyProjectInstallLive",
 		"sample/scenarios_test.go:TestFacadePreviewControlledCheckLive",
-		"sample/scenarios_test.go:TestFacadePreviewControlledCheckConfiguredLive",
 		"sample/scenarios_test.go:TestFacadeRecordControlledCheckLive",
 		"sample/scenarios_test.go:TestFacadeInspectProjectStatusLive",
 		"sample/scenarios_test.go:TestFacadePreviewProjectActivationLive",
 		"sample/scenarios_test.go:TestFacadeApplyProjectActivationLive",
+		"sample/scenarios_test.go:TestFacadePureExports",
 		"sample/scenarios_test.go:TestLoadCurrentManifestLive",
 		"sample/scenarios_test.go:TestValidatePackContentLive",
 		"sample/scenarios_test.go:TestValidatePackContentLiveDirectory",
@@ -627,6 +576,39 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 	} {
 		if !got[want] {
 			t.Errorf("missing finding for %s: %+v", want, findings)
+		}
+	}
+	for _, test := range []string{
+		"sample/scenarios_test.go:TestFacadeStatusLive",
+		"sample/scenarios_test.go:TestFacadeActiveStatusLive",
+		"sample/scenarios_test.go:TestFacadePreviewProjectInstallLive",
+		"sample/scenarios_test.go:TestFacadePreviewProjectUpdateLive",
+		"sample/scenarios_test.go:TestFacadePreviewLive",
+		"sample/scenarios_test.go:TestFacadePreviewUpdateLive",
+		"sample/scenarios_test.go:TestFacadePreviewDeactivateLive",
+		"sample/scenarios_test.go:TestFacadeApplyLive",
+		"sample/scenarios_test.go:TestFacadeShowLiveSynthetic",
+		"sample/scenarios_test.go:TestFacadeCheckProjectInstallFreshnessLive",
+		"sample/scenarios_test.go:TestFacadeApplyProjectInstallLive",
+		"sample/scenarios_test.go:TestFacadePreviewControlledCheckLive",
+		"sample/scenarios_test.go:TestFacadeRecordControlledCheckLive",
+		"sample/scenarios_test.go:TestFacadeInspectProjectStatusLive",
+		"sample/scenarios_test.go:TestFacadePreviewProjectActivationLive",
+		"sample/scenarios_test.go:TestFacadeApplyProjectActivationLive",
+	} {
+		if !strings.Contains(strings.Join(detailsByTest[test], "\n"), "Facade boundary") {
+			t.Errorf("missing typed Facade sink finding for %s: %v", test, detailsByTest[test])
+		}
+	}
+	for test, detail := range map[string]string{
+		"sample/scenarios_test.go:TestCatalogBindingDirect":               "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogBindingThroughHelper":        "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogBindingOverwritten":          "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestPackageCatalogBinding":              "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogLookupLiveReceiverSynthetic": "Catalog bound to the checked-in bundle",
+	} {
+		if !strings.Contains(strings.Join(detailsByTest[test], "\n"), detail) {
+			t.Errorf("missing %q for %s: %v", detail, test, detailsByTest[test])
 		}
 	}
 	if got["sample/scenarios_test.go:TestSyntheticCatalogList"] {
@@ -653,28 +635,14 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestCatalogListDetailsTemporary",
 		"sample/scenarios_test.go:TestCatalogShowDetailSynthetic",
 		"sample/scenarios_test.go:TestUnrelatedShowDetail",
-		"sample/scenarios_test.go:TestCatalogShowNonDeferredSynthetic",
-		"sample/scenarios_test.go:TestCatalogShowTemporaryDeferredSynthetic",
-		"sample/scenarios_test.go:TestCatalogShowEmptySynthetic",
-		"sample/scenarios_test.go:TestUnrelatedShowLookup",
-		"sample/scenarios_test.go:TestCatalogShowDetailNonDeferredSynthetic",
-		"sample/scenarios_test.go:TestCatalogShowDetailTemporaryDeferredSynthetic",
-		"sample/scenarios_test.go:TestCatalogResolveIntentPackNonDeferredSynthetic",
-		"sample/scenarios_test.go:TestCatalogResolveIntentPackTemporaryDeferredSynthetic",
-		"sample/scenarios_test.go:TestCatalogResolveIntentPackEmptySynthetic",
-		"sample/scenarios_test.go:TestUnrelatedResolveIntentPack",
-		"sample/scenarios_test.go:TestCatalogDeferredFactsSplitAcrossBranches",
-		"sample/scenarios_test.go:TestCatalogDeferredFalseThroughHelper",
+		"sample/scenarios_test.go:TestCatalogLookupTemporaryReceiver",
+		"sample/scenarios_test.go:TestUnrelatedCatalogBinding",
 		"sample/scenarios_test.go:TestFacadeTemporary",
 		"sample/scenarios_test.go:TestFacadeEmpty",
-		"sample/scenarios_test.go:TestFacadeConditionalEarlyReturns",
-		"sample/scenarios_test.go:TestFacadeInspectProjectStatusEmptyRoot",
-		"sample/scenarios_test.go:TestFacadeApplyProjectActivationMissingPack",
-		"sample/scenarios_test.go:TestFacadeApplyProjectActivationInvalidSurface",
 		"sample/scenarios_test.go:TestFacadeConditionalTemporary",
 		"sample/scenarios_test.go:TestFacadeConditionalEmpty",
 		"sample/scenarios_test.go:TestUnrelatedFacadeConditionalName",
-		"sample/scenarios_test.go:TestFacadePureExports",
+		"sample/scenarios_test.go:TestFacadePureExportsTemporary",
 	} {
 		if got[unwanted] {
 			t.Fatalf("synthetic content validation was classified as live: %s: %+v", unwanted, findings)
@@ -802,9 +770,9 @@ func NewRootCommand(Options) *rootCommand { return &rootCommand{} }
 func executeCommand(*testing.T, *rootCommand, ...string) (string, error) { return "", nil }
 type ActivationRequest struct { PackID string }
 type SurfaceAlias struct { Kind, ID, Name string }
-type Catalog struct { bundleRoot string; deferSourceValidation bool }
-type Facade struct { catalog Catalog; activation any }
-type Pack struct { ID string }
+type Catalog struct { bundleRoot string }
+type Facade struct { catalog Catalog }
+type Pack struct{}
 type CatalogDetail struct{}
 type StatusRequest struct{}
 type ProjectInstallRequest struct{}
@@ -813,22 +781,15 @@ type UpdateRequest struct{}
 type DeactivationRequest struct{}
 type ApplyRequest struct{}
 type SurfaceAdapter interface{}
-type Surface string
-const SurfaceCodex Surface = "codex"
-type ProjectInstallDisposition string
-const ProjectInstallBlocked ProjectInstallDisposition = "blocked"
-type JSONProjectInstallPreview struct { projectRoot string; Disposition ProjectInstallDisposition }
-type ProjectInstallApplyRequest struct { Preview JSONProjectInstallPreview; PackyHome string; Adapter SurfaceAdapter }
-type ControlledCheckRequest struct { PackID string; Surface Surface; ProjectRoot string; PackyHome string; Adapter SurfaceAdapter }
-type ControlledCheckPreview struct { ValidityIdentity string; request ControlledCheckRequest }
-type ReadinessValue string
-const ( ReadinessUnknown ReadinessValue = "unknown"; ReadinessTrue ReadinessValue = "true" )
-type ProjectStatusRequest struct { ProjectRoot string }
-type ProjectActivationRequest struct { PackID string; Surface Surface; ProjectRoot string; PackyHome string; Adapter SurfaceAdapter }
-type ProjectActivationDisposition string
-const ProjectActivationBlocked ProjectActivationDisposition = "blocked"
-type JSONProjectActivationPreview struct { Pack Pack; Surface Surface; projectRoot string; packyHome string; Disposition ProjectActivationDisposition }
-type ProjectActivationApplyRequest struct { Preview JSONProjectActivationPreview; Adapter SurfaceAdapter; Interactive bool }
+type JSONProjectInstallPreview struct{}
+type ProjectInstallApplyRequest struct{}
+type ControlledCheckRequest struct{}
+type ControlledCheckPreview struct{}
+type ReadinessValue int
+type ProjectStatusRequest struct{}
+type ProjectActivationRequest struct{}
+type JSONProjectActivationPreview struct{}
+type ProjectActivationApplyRequest struct{}
 type ReconciliationPlan struct{}
 type ConsentKind int
 type ApprovalReceipt struct{}
@@ -1146,6 +1107,9 @@ func (analyzer *realCatalogSSAAnalyzer) functionFindings(context *realCatalogSSA
 	aliasFields := map[ssa.Value]map[string]ssa.Value{}
 	for _, block := range function.Blocks {
 		for _, instruction := range block.Instrs {
+			if value, ok := instruction.(ssa.Value); ok && analyzer.isCapabilitypackValue(value, "Catalog") && context.catalogUsesLiveBundle(value, map[ssa.Value]bool{}) {
+				details = append(details, "binds the checked-in bundle to Catalog.bundleRoot")
+			}
 			if callInstruction, ok := instruction.(ssa.CallInstruction); ok {
 				call := callInstruction.Common()
 				details = append(details, analyzer.callFindings(context, function, call)...)
@@ -1168,6 +1132,11 @@ func (analyzer *realCatalogSSAAnalyzer) functionFindings(context *realCatalogSSA
 			owner, field, ok := ssaFieldIdentity(store.Addr)
 			if !ok {
 				continue
+			}
+			// Binding the checked-in bundle is itself the forbidden dependency;
+			// later overwrites and non-observing uses do not make it synthetic.
+			if analyzer.isCapabilitypackType(owner, "Catalog") && field == "bundleRoot" && context.isLiveBundleRoot(store.Val) {
+				details = append(details, "binds the checked-in bundle to Catalog.bundleRoot")
 			}
 			if (isLifecycleType(owner) || analyzer.fixture && lifecycleTypeName(owner.Obj().Name())) && field == "PackID" {
 				for id := range context.stringValues(store.Val, map[ssa.Value]bool{}) {
@@ -1242,7 +1211,7 @@ func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSACont
 	if analyzer.isCapabilitypackFunction(callee, "ValidatePortableContent") && len(call.Args) > 0 && context.isLiveBundleRoot(call.Args[0]) {
 		direct = append(direct, "enumerates the checked-in Pack catalog through portable content validation")
 	}
-	if analyzer.isFacadeObservation(callee) && len(call.Args) > 0 && context.facadeUsesLiveCatalog(call.Args[0], map[ssa.Value]bool{}) && analyzer.facadeObservationCanReachCatalog(context, callee, call.Args) {
+	if analyzer.isFacadeObservation(callee) && len(call.Args) > 0 && context.facadeUsesLiveCatalog(call.Args[0], map[ssa.Value]bool{}) {
 		direct = append(direct, "observes the checked-in Pack catalog through the Facade boundary")
 	}
 	if analyzer.isNamedFunction(callee, "/internal/cli", "executeCommand") || analyzer.fixture && callee.Name() == "executeCommand" {
@@ -1268,8 +1237,8 @@ func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSACont
 				}
 			}
 		}
-		if len(call.Args) > 0 && context.catalogHasLiveDeferredAlternative(call.Args[0], map[ssa.Value]bool{}) {
-			details = append(details, "enumerates the checked-in Pack catalog through deferred source validation")
+		if len(call.Args) > 0 && context.catalogUsesLiveBundle(call.Args[0], map[ssa.Value]bool{}) {
+			details = append(details, "looks up a Pack through a Catalog bound to the checked-in bundle")
 		}
 		return append(direct, details...)
 	}
@@ -1388,65 +1357,21 @@ func (analyzer *realCatalogSSAAnalyzer) isFacadeObservation(function *ssa.Functi
 		"CheckProjectInstallFreshness", "ApplyProjectInstall", "PreviewControlledCheck", "RecordControlledCheck", "InspectProjectStatus", "PreviewProjectActivation", "ApplyProjectActivation":
 		return true
 	default:
+		// Pure exports stay outside the sink set. A test that constructs a live
+		// Catalog for one is still reported by the independent binding rule.
 		return false
 	}
 }
 
-func (analyzer *realCatalogSSAAnalyzer) facadeObservationCanReachCatalog(context *realCatalogSSAContext, function *ssa.Function, arguments []ssa.Value) bool {
-	if len(arguments) < 3 {
-		return function.Name() == "ActiveStatus"
-	}
-	request := arguments[2]
-	switch function.Name() {
-	case "CheckProjectInstallFreshness":
-		return context.fieldCanBeNonEmptyString(request, "projectRoot")
-	case "ApplyProjectInstall":
-		return context.fieldCanBeNonEmptyString(request, "Preview", "projectRoot") &&
-			context.fieldCanBeNonEmptyString(request, "PackyHome") &&
-			context.fieldCanBeNonNil(request, "Adapter") &&
-			context.fieldCanAvoidStrings(request, []string{"Preview", "Disposition"}, "blocked")
-	case "PreviewControlledCheck":
-		return context.controlledCheckRequestCanReachCatalog(arguments[0], request)
-	case "RecordControlledCheck":
-		return context.fieldCanBeNonEmptyString(request, "ValidityIdentity") &&
-			context.fieldCanBeNonEmptyString(request, "request", "PackID") &&
-			context.fieldCanBeNonEmptyString(request, "request", "Surface") &&
-			context.fieldCanBeNonEmptyString(request, "request", "PackyHome") &&
-			(context.fieldCanBeNonNil(arguments[0], "activation") ||
-				context.fieldCanBeNonEmptyString(request, "request", "ProjectRoot") && context.fieldCanBeNonNil(request, "request", "Adapter")) &&
-			len(arguments) > 3 && context.valueCanBeOneOfStrings(arguments[3], "true", "false")
-	case "InspectProjectStatus":
-		return context.fieldCanBeNonEmptyString(request, "ProjectRoot")
-	case "PreviewProjectActivation":
-		return context.fieldCanBeNonEmptyString(request, "PackID") &&
-			context.fieldCanBeOneOfStrings(request, []string{"Surface"}, "codex", "opencode", "claude") &&
-			context.fieldCanBeNonEmptyString(request, "ProjectRoot") &&
-			context.fieldCanBeNonEmptyString(request, "PackyHome") &&
-			context.fieldCanBeNonNil(request, "Adapter")
-	case "ApplyProjectActivation":
-		return context.fieldCanBeNonEmptyString(request, "Preview", "projectRoot") &&
-			context.fieldCanBeNonEmptyString(request, "Preview", "packyHome") &&
-			context.fieldCanBeNonEmptyString(request, "Preview", "Pack", "ID") &&
-			context.fieldCanBeOneOfStrings(request, []string{"Preview", "Surface"}, "codex", "opencode", "claude") &&
-			context.fieldCanAvoidStrings(request, []string{"Preview", "Disposition"}, "not-required", "inherited-global", "blocked") &&
-			context.fieldCanBeNonNil(request, "Adapter") && context.fieldCanBeTrue(request, "Interactive")
-	default:
-		return true
-	}
+func (analyzer *realCatalogSSAAnalyzer) isCapabilitypackValue(value ssa.Value, name string) bool {
+	return analyzer.isCapabilitypackType(namedType(value.Type()), name)
 }
 
-func (context *realCatalogSSAContext) valueCanBeOneOfStrings(value ssa.Value, candidates ...string) bool {
-	return context.valuesCanBeOneOfStrings([]ssa.Value{value}, candidates...)
-}
-
-func (context *realCatalogSSAContext) controlledCheckRequestCanReachCatalog(facade, request ssa.Value) bool {
-	// A controlled check can reach Catalog through either a project request or
-	// the Facade's configured global activation engine.
-	return context.fieldCanBeNonEmptyString(request, "PackID") &&
-		context.fieldCanBeNonEmptyString(request, "Surface") &&
-		context.fieldCanBeNonEmptyString(request, "PackyHome") &&
-		(context.fieldCanBeNonNil(facade, "activation") ||
-			context.fieldCanBeNonEmptyString(request, "ProjectRoot") && context.fieldCanBeNonNil(request, "Adapter"))
+func (analyzer *realCatalogSSAAnalyzer) isCapabilitypackType(named *types.Named, name string) bool {
+	if named == nil || named.Obj().Name() != name || named.Obj().Pkg() == nil {
+		return false
+	}
+	return analyzer.fixture || strings.HasSuffix(named.Obj().Pkg().Path(), "/internal/capabilitypack")
 }
 
 func (analyzer *realCatalogSSAAnalyzer) isCatalogLookup(function *ssa.Function) bool {
@@ -1790,430 +1715,6 @@ func (context *realCatalogSSAContext) receiverFieldValues(value ssa.Value, typeN
 		}
 	}
 	return nil
-}
-
-func (context *realCatalogSSAContext) namedFieldValues(value ssa.Value, fields []string, seen map[ssa.Value]bool) []ssa.Value {
-	if value == nil || seen[value] {
-		return nil
-	}
-	seen[value] = true
-	defer delete(seen, value)
-
-	result := context.storedFieldValues(value, fields)
-	if len(fields) > 1 {
-		for _, nested := range context.storedFieldValues(value, fields[:1]) {
-			result = append(result, context.namedFieldValues(nested, fields[1:], map[ssa.Value]bool{})...)
-		}
-	}
-	switch value := value.(type) {
-	case *ssa.Call:
-		context.withCallBinding(value.Common(), func() {
-			for _, returned := range context.callReturnValues(value.Common(), 0) {
-				result = append(result, context.namedFieldValues(returned, fields, seen)...)
-			}
-		})
-	case *ssa.Extract:
-		if call, ok := value.Tuple.(*ssa.Call); ok {
-			context.withCallBinding(call.Common(), func() {
-				for _, returned := range context.callReturnValues(call.Common(), value.Index) {
-					result = append(result, context.namedFieldValues(returned, fields, seen)...)
-				}
-			})
-		}
-	default:
-		for _, dependency := range context.valueDependencies(value) {
-			result = append(result, context.namedFieldValues(dependency, fields, seen)...)
-		}
-	}
-	return result
-}
-
-func (context *realCatalogSSAContext) storedFieldValues(value ssa.Value, fields []string) []ssa.Value {
-	named := namedType(value.Type())
-	var path []int
-	for _, fieldName := range fields {
-		if named == nil {
-			return nil
-		}
-		structure, ok := named.Underlying().(*types.Struct)
-		if !ok {
-			return nil
-		}
-		field := structFieldIndex(structure, fieldName)
-		if field < 0 {
-			return nil
-		}
-		path = append(path, field)
-		named = namedType(structure.Field(field).Type())
-	}
-	base := value
-	if loaded, ok := value.(*ssa.UnOp); ok && loaded.Op == token.MUL {
-		base = loaded.X
-	}
-	var result []ssa.Value
-	for _, store := range context.analyzer.storesFor(base) {
-		storedPath, ok := ssaFieldPath(store.Addr, base)
-		if ok && slicesEqual(storedPath, path) {
-			result = append(result, store.Val)
-		}
-	}
-	return result
-}
-
-func slicesEqual(left, right []int) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
-}
-
-func (context *realCatalogSSAContext) fieldCanBeNonEmptyString(value ssa.Value, fields ...string) bool {
-	for _, fieldValue := range context.namedFieldValues(value, fields, map[ssa.Value]bool{}) {
-		values := context.stringValues(fieldValue, map[ssa.Value]bool{})
-		for candidate := range values {
-			if candidate != "" {
-				return true
-			}
-		}
-		if len(values) == 0 {
-			if constantValue, ok := fieldValue.(*ssa.Const); !ok || constantValue.Value != nil {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (context *realCatalogSSAContext) fieldCanBeOneOfStrings(value ssa.Value, fields []string, candidates ...string) bool {
-	return context.valuesCanBeOneOfStrings(context.namedFieldValues(value, fields, map[ssa.Value]bool{}), candidates...)
-}
-
-func (context *realCatalogSSAContext) fieldCanAvoidStrings(value ssa.Value, fields []string, forbidden ...string) bool {
-	values := context.namedFieldValues(value, fields, map[ssa.Value]bool{})
-	if len(values) == 0 {
-		return true
-	}
-	blocked := map[string]bool{}
-	for _, candidate := range forbidden {
-		blocked[candidate] = true
-	}
-	for _, fieldValue := range values {
-		strings := context.stringValues(fieldValue, map[ssa.Value]bool{})
-		if len(strings) == 0 {
-			return true
-		}
-		for candidate := range strings {
-			if !blocked[candidate] {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func structFieldIndex(structure *types.Struct, name string) int {
-	for index := 0; index < structure.NumFields(); index++ {
-		if structure.Field(index).Name() == name {
-			return index
-		}
-	}
-	return -1
-}
-
-func ssaFieldPath(address, base ssa.Value) ([]int, bool) {
-	var reversed []int
-	for {
-		field, ok := address.(*ssa.FieldAddr)
-		if !ok {
-			break
-		}
-		reversed = append(reversed, field.Field)
-		address = field.X
-	}
-	if !sameSSAAddress(address, base) {
-		return nil, false
-	}
-	path := make([]int, len(reversed))
-	for index := range reversed {
-		path[len(reversed)-1-index] = reversed[index]
-	}
-	return path, true
-}
-
-func (context *realCatalogSSAContext) fieldCanBeNonNil(value ssa.Value, fields ...string) bool {
-	for _, fieldValue := range context.namedFieldValues(value, fields, map[ssa.Value]bool{}) {
-		if constantValue, ok := fieldValue.(*ssa.Const); !ok || constantValue.Value != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func (context *realCatalogSSAContext) fieldCanBeTrue(value ssa.Value, fields ...string) bool {
-	for _, fieldValue := range context.namedFieldValues(value, fields, map[ssa.Value]bool{}) {
-		for _, alternative := range context.booleanAlternatives(fieldValue, map[ssa.Value]bool{}) {
-			if alternative {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (context *realCatalogSSAContext) valuesCanBeOneOfStrings(values []ssa.Value, candidates ...string) bool {
-	allowed := map[string]bool{}
-	for _, candidate := range candidates {
-		allowed[candidate] = true
-	}
-	for _, value := range values {
-		strings := context.stringValues(value, map[ssa.Value]bool{})
-		if len(strings) == 0 {
-			return true
-		}
-		for candidate := range strings {
-			if allowed[candidate] {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (context *realCatalogSSAContext) catalogHasLiveDeferredAlternative(value ssa.Value, seen map[ssa.Value]bool) bool {
-	for state := range context.catalogStates(value, seen) {
-		if state.deferred && context.isLiveBundleRoot(state.bundleRoot) {
-			return true
-		}
-	}
-	return false
-}
-
-type catalogReceiverState struct {
-	bundleRoot ssa.Value
-	deferred   bool
-}
-
-func (context *realCatalogSSAContext) catalogStates(value ssa.Value, seen map[ssa.Value]bool) map[catalogReceiverState]struct{} {
-	result := map[catalogReceiverState]struct{}{}
-	if value == nil || seen[value] {
-		return result
-	}
-	seen[value] = true
-	defer delete(seen, value)
-
-	merge := func(states map[catalogReceiverState]struct{}) {
-		for state := range states {
-			result[state] = struct{}{}
-		}
-	}
-	switch value := value.(type) {
-	case *ssa.Call:
-		context.withCallBinding(value.Common(), func() {
-			for _, returned := range context.callReturnValues(value.Common(), 0) {
-				merge(context.catalogStates(returned, seen))
-			}
-		})
-		return result
-	case *ssa.Extract:
-		if call, ok := value.Tuple.(*ssa.Call); ok {
-			context.withCallBinding(call.Common(), func() {
-				for _, returned := range context.callReturnValues(call.Common(), value.Index) {
-					merge(context.catalogStates(returned, seen))
-				}
-			})
-			return result
-		}
-	case *ssa.Parameter, *ssa.FreeVar, *ssa.Phi, *ssa.ChangeType, *ssa.Convert, *ssa.MakeInterface:
-		for _, dependency := range context.valueDependencies(value) {
-			merge(context.catalogStates(dependency, seen))
-		}
-		return result
-	}
-	return context.catalogAllocationStatesAtLoad(value, seen)
-}
-
-func (context *realCatalogSSAContext) catalogAllocationStatesAtLoad(value ssa.Value, seen map[ssa.Value]bool) map[catalogReceiverState]struct{} {
-	observed := map[catalogReceiverState]struct{}{}
-	loaded, ok := value.(*ssa.UnOp)
-	if !ok || loaded.Op != token.MUL {
-		return observed
-	}
-	allocation := context.catalogAllocationRoot(loaded.X)
-	named := namedType(allocation.Type())
-	if named == nil || named.Obj().Name() != "Catalog" || named.Obj().Pkg() == nil || !context.analyzer.fixture && !strings.HasSuffix(named.Obj().Pkg().Path(), "/internal/capabilitypack") {
-		return observed
-	}
-	structure, ok := named.Underlying().(*types.Struct)
-	if !ok {
-		return observed
-	}
-	bundleField, deferredField := -1, -1
-	for index := 0; index < structure.NumFields(); index++ {
-		switch structure.Field(index).Name() {
-		case "bundleRoot":
-			bundleField = index
-		case "deferSourceValidation":
-			deferredField = index
-		}
-	}
-	if bundleField < 0 || deferredField < 0 || loaded.Block() == nil || loaded.Parent() == nil || len(loaded.Parent().Blocks) == 0 {
-		return observed
-	}
-
-	initial := map[catalogReceiverState]struct{}{{}: {}}
-	incoming := map[*ssa.BasicBlock]map[catalogReceiverState]struct{}{loaded.Parent().Blocks[0]: initial}
-	queue := []*ssa.BasicBlock{loaded.Parent().Blocks[0]}
-	queued := map[*ssa.BasicBlock]bool{loaded.Parent().Blocks[0]: true}
-	for len(queue) > 0 {
-		block := queue[0]
-		queue = queue[1:]
-		queued[block] = false
-		states := cloneCatalogReceiverStates(incoming[block])
-		for _, instruction := range block.Instrs {
-			if instruction == loaded {
-				for state := range states {
-					observed[state] = struct{}{}
-				}
-				continue
-			}
-			store, ok := instruction.(*ssa.Store)
-			if !ok {
-				continue
-			}
-			field, fieldStore := store.Addr.(*ssa.FieldAddr)
-			if !fieldStore && sameSSAAddress(context.catalogAllocationRoot(store.Addr), allocation) {
-				copied := context.catalogStates(store.Val, seen)
-				if len(copied) == 0 {
-					copied = map[catalogReceiverState]struct{}{{}: {}}
-				}
-				states = cloneCatalogReceiverStates(copied)
-				continue
-			}
-			if !fieldStore || !sameSSAAddress(context.catalogAllocationRoot(field.X), allocation) {
-				continue
-			}
-			switch field.Field {
-			case bundleField:
-				states = updateCatalogReceiverStates(states, func(state catalogReceiverState) []catalogReceiverState {
-					state.bundleRoot = store.Val
-					return []catalogReceiverState{state}
-				})
-			case deferredField:
-				states = updateCatalogReceiverStates(states, func(state catalogReceiverState) []catalogReceiverState {
-					result := make([]catalogReceiverState, 0, 2)
-					for _, deferred := range context.booleanAlternatives(store.Val, map[ssa.Value]bool{}) {
-						state.deferred = deferred
-						result = append(result, state)
-					}
-					return result
-				})
-			}
-		}
-		if states == nil {
-			continue
-		}
-		for _, successor := range block.Succs {
-			if incoming[successor] == nil {
-				incoming[successor] = map[catalogReceiverState]struct{}{}
-			}
-			changed := false
-			for state := range states {
-				if _, exists := incoming[successor][state]; !exists {
-					incoming[successor][state] = struct{}{}
-					changed = true
-				}
-			}
-			if changed && !queued[successor] {
-				queue = append(queue, successor)
-				queued[successor] = true
-			}
-		}
-	}
-	return observed
-}
-
-func (context *realCatalogSSAContext) catalogAllocationRoot(value ssa.Value) ssa.Value {
-	root := addressRoot(value)
-	if _, indirect := root.(*ssa.UnOp); !indirect {
-		return root
-	}
-	for _, dependency := range context.valueDependencies(root) {
-		candidate := addressRoot(dependency)
-		candidateType := namedType(candidate.Type())
-		if candidateType != nil && candidateType.Obj().Name() == "Catalog" {
-			return candidate
-		}
-	}
-	return root
-}
-
-func cloneCatalogReceiverStates(states map[catalogReceiverState]struct{}) map[catalogReceiverState]struct{} {
-	cloned := make(map[catalogReceiverState]struct{}, len(states))
-	for state := range states {
-		cloned[state] = struct{}{}
-	}
-	return cloned
-}
-
-func updateCatalogReceiverStates(states map[catalogReceiverState]struct{}, update func(catalogReceiverState) []catalogReceiverState) map[catalogReceiverState]struct{} {
-	result := map[catalogReceiverState]struct{}{}
-	for state := range states {
-		for _, updated := range update(state) {
-			result[updated] = struct{}{}
-		}
-	}
-	return result
-}
-
-func (context *realCatalogSSAContext) booleanAlternatives(value ssa.Value, seen map[ssa.Value]bool) []bool {
-	if value == nil || seen[value] {
-		return []bool{false, true}
-	}
-	seen[value] = true
-	defer delete(seen, value)
-
-	constantValue, ok := value.(*ssa.Const)
-	if ok && constantValue.Value != nil && constantValue.Value.Kind() == constant.Bool {
-		return []bool{constant.BoolVal(constantValue.Value)}
-	}
-	alternatives := map[bool]struct{}{}
-	merge := func(values []bool) {
-		for _, candidate := range values {
-			alternatives[candidate] = struct{}{}
-		}
-	}
-	switch value := value.(type) {
-	case *ssa.Call:
-		context.withCallBinding(value.Common(), func() {
-			for _, returned := range context.callReturnValues(value.Common(), 0) {
-				merge(context.booleanAlternatives(returned, seen))
-			}
-		})
-	case *ssa.Extract:
-		if call, ok := value.Tuple.(*ssa.Call); ok {
-			context.withCallBinding(call.Common(), func() {
-				for _, returned := range context.callReturnValues(call.Common(), value.Index) {
-					merge(context.booleanAlternatives(returned, seen))
-				}
-			})
-		}
-	default:
-		for _, dependency := range context.valueDependencies(value) {
-			merge(context.booleanAlternatives(dependency, seen))
-		}
-	}
-	if len(alternatives) == 1 {
-		if _, ok := alternatives[false]; ok {
-			return []bool{false}
-		}
-		return []bool{true}
-	}
-	return []bool{false, true}
 }
 
 func (context *realCatalogSSAContext) facadeUsesLiveCatalog(value ssa.Value, seen map[ssa.Value]bool) bool {
