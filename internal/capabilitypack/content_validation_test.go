@@ -175,29 +175,23 @@ func TestLoadCurrentManifestRequiresReadinessObligations(t *testing.T) {
 }
 
 func TestLoadCurrentManifestRequiresDescriptionForEveryResourceKind(t *testing.T) {
-	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	tests := []struct {
-		name, pack, kind, id string
-		description          any
+		name, kind, id string
+		description    any
 	}{
-		{"agent", "addy", "agent", "code-reviewer", nil},
-		{"asset", "addy", "asset", "accessibility-checklist", nil},
-		{"command", "addy", "command", "build", nil},
-		{"instruction", "argote", "instruction", "guidance", nil},
-		{"notice", "addy", "notice", "mit", nil},
-		{"skill", "addy", "skill", "api-and-interface-design", nil},
-		{"whitespace-only", "argote", "instruction", "guidance", " \n\t "},
+		{"agent", "agent", "reviewer", nil},
+		{"asset", "asset", "checklist", nil},
+		{"command", "command", "build", nil},
+		{"instruction", "instruction", "guidance", nil},
+		{"notice", "notice", "terms", nil},
+		{"skill", "skill", "api-design", nil},
+		{"whitespace-only", "instruction", "guidance", " \n\t "},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var manifest map[string]any
-			path := filepath.Join(bundle, "packs", test.pack, "pack.json")
-			if err := json.Unmarshal(mustReadFile(t, path), &manifest); err != nil {
-				t.Fatal(err)
-			}
+			bundle := t.TempDir()
+			path := writeResourceDescriptionFixture(t, bundle)
+			manifest := decodeManifestMap(t, path)
 			for _, value := range manifest["resources"].([]any) {
 				resource := value.(map[string]any)
 				if resource["kind"] == test.kind && resource["id"] == test.id {
@@ -212,18 +206,77 @@ func TestLoadCurrentManifestRequiresDescriptionForEveryResourceKind(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			invalidPath := filepath.Join(t.TempDir(), "pack.json")
-			if err := os.WriteFile(invalidPath, encoded, 0o600); err != nil {
+			if err := os.WriteFile(path, encoded, 0o600); err != nil {
 				t.Fatal(err)
 			}
 
-			_, err = LoadCurrentManifest(invalidPath, bundle, false)
-			want := `Pack "` + test.pack + `" resource "` + test.kind + `:` + test.id + `" field description is required`
+			_, err = LoadCurrentManifest(path, bundle, false)
+			want := `Pack "resource-descriptions" resource "` + test.kind + `:` + test.id + `" field description is required`
 			if err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("resource description error = %v, want %q", err, want)
 			}
 		})
 	}
+}
+
+func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
+	t.Helper()
+	manifestPath := filepath.Join(bundle, "packs", "resource-descriptions", "pack.json")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{
+  "id": "resource-descriptions",
+  "version": "1.0.0",
+  "description": "Synthetic resource description fixture",
+  "selectable": true,
+  "surfaces": ["codex"],
+  "readiness_obligations": ["runtime-usability", "surface-authorization"],
+  "external_requirements": [],
+  "resources": [
+    {
+      "kind": "agent", "id": "reviewer", "source": "agents/reviewer.md",
+      "description": "Reviews a synthetic change", "mode": "subagent", "tools": [], "permissions": [],
+      "requires": [], "conflicts": [],
+      "bindings": [{"surface": "codex", "projection": "agent", "name": "reviewer", "invocation": "$reviewer", "mode": "native", "sharing": "exclusive", "capabilities": []}],
+      "surface_exclusions": []
+    },
+    {
+      "kind": "asset", "id": "checklist", "source": "assets/checklist.md",
+      "description": "Supplies a synthetic checklist", "requires": [], "conflicts": [], "bindings": [], "surface_exclusions": []
+    },
+    {
+      "kind": "command", "id": "build", "source": "commands/build.md",
+      "description": "Builds a synthetic target", "arguments": {"mode": "none"},
+      "requires": [], "conflicts": [],
+      "bindings": [{"surface": "codex", "projection": "skill", "name": "build", "invocation": "$build", "mode": "degraded", "degradation": "codex-command-as-workflow-skill", "sharing": "exclusive", "capabilities": []}],
+      "surface_exclusions": []
+    },
+    {
+      "kind": "instruction", "id": "guidance", "source": "instructions/guidance.md",
+      "description": "Projects synthetic guidance", "requires": [], "conflicts": [],
+      "bindings": [{"surface": "codex", "projection": "instruction", "name": "guidance", "invocation": "guidance", "mode": "native", "sharing": "shared", "capabilities": []}],
+      "surface_exclusions": []
+    },
+    {
+      "kind": "notice", "id": "terms", "source": "notices/terms",
+      "description": "Preserves synthetic terms", "license": "MIT", "attribution": "Fixture Authors",
+      "requires": [], "conflicts": [], "bindings": [], "surface_exclusions": []
+    },
+    {
+      "kind": "skill", "id": "api-design", "source": "skills/api-design",
+      "description": "Designs a synthetic API", "requires": [], "conflicts": [],
+      "bindings": [{"surface": "codex", "projection": "skill", "name": "api-design", "invocation": "$api-design", "mode": "native", "sharing": "exclusive", "capabilities": []}],
+      "surface_exclusions": []
+    }
+  ],
+  "exclusions": []
+}
+`)
+	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return manifestPath
 }
 
 func TestValidatePortableContentReportsMissingSelectability(t *testing.T) {
@@ -299,7 +352,7 @@ func TestValidatePackContentRejectsRetiredExternalHostSetupCapability(t *testing
 	path := filepath.Join(packDir, "pack.json")
 	manifest := decodeManifestMap(t, path)
 	binding := currentFixtureResource(manifest)["bindings"].([]any)[0].(map[string]any)
-	binding["capabilities"] = []any{map[string]any{"type": "external-host-setup", "external_host_setup": map[string]any{"tool": "engram"}}}
+	binding["capabilities"] = []any{map[string]any{"type": "external-host-setup", "external_host_setup": map[string]any{"tool": "example-tool"}}}
 	writeManifestMap(t, path, manifest)
 	if _, err := ValidatePackContent(bundle, packDir); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("retired capability error = %v", err)

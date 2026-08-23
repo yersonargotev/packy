@@ -10,6 +10,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/tui"
 )
 
@@ -128,8 +129,14 @@ func TestTUICatalogAdapterPreservesSearchableSurfaceCapabilities(t *testing.T) {
 }
 
 func TestTUIBackendPreviewsAndRecordsControlledRuntimeCheck(t *testing.T) {
-	opts, _, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
-	if _, err := executeCommand(t, NewRootCommand(opts), "activate", "orchestrate", "--surface", "codex"); err != nil {
+	pack := testsupport.ExternalTool("tui-controlled-global")
+	manifest := pack.Manifest()
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+	opts := fixture.options
+	makeSyntheticExternalToolObservable(t, &opts)
+	resource := syntheticResource(t, pack, "skill", "memory")
+	resourceID := resource.Kind + ":" + resource.ID
+	if _, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "codex", "--resource", resourceID); err != nil {
 		t.Fatal(err)
 	}
 	opts = opts.withDefaults()
@@ -138,12 +145,12 @@ func TestTUIBackendPreviewsAndRecordsControlledRuntimeCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	orchestrateBefore := findTUIPack(beforeCheck.Global.Packs, "orchestrate")
-	beforeIndex := slices.IndexFunc(orchestrateBefore.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
-	if beforeIndex < 0 || !orchestrateBefore.SurfaceStatuses[beforeIndex].ControlledCheckActionAvailable {
-		t.Fatalf("domain-owned controlled check action did not flow to TUI status: %#v", orchestrateBefore)
+	packBefore := findTUIPack(beforeCheck.Global.Packs, manifest.ID)
+	beforeIndex := slices.IndexFunc(packBefore.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if beforeIndex < 0 || !packBefore.SurfaceStatuses[beforeIndex].ControlledCheckActionAvailable {
+		t.Fatalf("domain-owned controlled check action did not flow to TUI status: %#v", packBefore)
 	}
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "check", PackID: "orchestrate", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "check", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,20 +165,25 @@ func TestTUIBackendPreviewsAndRecordsControlledRuntimeCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	orchestrate := findTUIPack(dashboard.Global.Packs, "orchestrate")
-	index := slices.IndexFunc(orchestrate.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
-	if index < 0 || orchestrate.SurfaceStatuses[index].Usable != "true" || orchestrate.SurfaceStatuses[index].ControlledCheckActionAvailable || orchestrate.SurfaceStatuses[index].ControlledCheckState != "current" || orchestrate.SurfaceStatuses[index].ControlledCheckResult != "true" || orchestrate.SurfaceStatuses[index].ControlledCheckIdentity == "" {
-		t.Fatalf("controlled check did not flow to TUI status: %#v", orchestrate)
+	packStatus := findTUIPack(dashboard.Global.Packs, manifest.ID)
+	index := slices.IndexFunc(packStatus.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || packStatus.SurfaceStatuses[index].Usable != "true" || packStatus.SurfaceStatuses[index].ControlledCheckActionAvailable || packStatus.SurfaceStatuses[index].ControlledCheckState != "current" || packStatus.SurfaceStatuses[index].ControlledCheckResult != "true" || packStatus.SurfaceStatuses[index].ControlledCheckIdentity == "" {
+		t.Fatalf("controlled check did not flow to TUI status: %#v", packStatus)
 	}
 }
 
 func TestTUIBackendPreservesProjectControlledCheckActionMeaning(t *testing.T) {
+	pack := testsupport.PortableAllSurfaces("tui-controlled-project")
+	manifest := pack.Manifest()
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
-	opts, _, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+	opts := fixture.options
 	opts.Getwd = func() (string, error) { return project, nil }
-	if output, err := executeCommand(t, NewRootCommand(opts), "install", "orchestrate", "--surface", "codex", "--resource", "skill:orchestrate"); err != nil {
-		t.Fatalf("install project orchestrate: %v\n%s", err, output)
+	resource := syntheticResource(t, pack, "instruction", "guidance")
+	resourceID := resource.Kind + ":" + resource.ID
+	if output, err := executeCommand(t, NewRootCommand(opts), "install", manifest.ID, "--surface", "codex", "--resource", resourceID); err != nil {
+		t.Fatalf("install synthetic project Pack: %v\n%s", err, output)
 	}
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
@@ -179,12 +191,12 @@ func TestTUIBackendPreservesProjectControlledCheckActionMeaning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	orchestrate := findTUIPack(dashboard.Project.Packs, "orchestrate")
-	index := slices.IndexFunc(orchestrate.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
-	if index < 0 || !orchestrate.SurfaceStatuses[index].ControlledCheckActionAvailable {
-		t.Fatalf("project controlled check action did not flow to TUI status: %#v", orchestrate)
+	packStatus := findTUIPack(dashboard.Project.Packs, manifest.ID)
+	index := slices.IndexFunc(packStatus.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || !packStatus.SurfaceStatuses[index].ControlledCheckActionAvailable {
+		t.Fatalf("project controlled check action did not flow to TUI status: %#v", packStatus)
 	}
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "check", PackID: "orchestrate", Surface: "codex", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "check", PackID: manifest.ID, Surface: "codex", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,10 +207,10 @@ func TestTUIBackendPreservesProjectControlledCheckActionMeaning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	orchestrate = findTUIPack(dashboard.Project.Packs, "orchestrate")
-	index = slices.IndexFunc(orchestrate.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
-	if index < 0 || orchestrate.SurfaceStatuses[index].ControlledCheckActionAvailable {
-		t.Fatalf("current positive project check still offered an action: %#v", orchestrate)
+	packStatus = findTUIPack(dashboard.Project.Packs, manifest.ID)
+	index = slices.IndexFunc(packStatus.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
+	if index < 0 || packStatus.SurfaceStatuses[index].ControlledCheckActionAvailable {
+		t.Fatalf("current positive project check still offered an action: %#v", packStatus)
 	}
 }
 
@@ -266,11 +278,11 @@ func TestTUIProductionBackendGuidesAndInitializesMissingInstalledSource(t *testi
 }
 
 func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
+	pack := testsupport.PortableAllSurfaces("tui-project-inspection")
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, pack)
+	home := fixture.home
 	stateFile := filepath.Join(home, ".packy", "packs.json")
 	if err := os.MkdirAll(filepath.Dir(stateFile), 0o700); err != nil {
 		t.Fatal(err)
@@ -278,17 +290,13 @@ func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *
 	if err := os.WriteFile(stateFile, []byte("not-json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	opts := Options{
-		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-			"PATH":                "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd:  func() (string, error) { return repositoryRoot, nil },
-		Runner: &fakeRunner{},
-	}
+	opts := fixture.options
+	opts.Getwd = func() (string, error) { return project, nil }
 	opts = opts.withDefaults()
+	projectRoot, err := filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	dashboard, err := newTUIBackend(opts, newWorkstationResolver(opts)).Load(context.Background())
 	if err != nil {
@@ -297,36 +305,29 @@ func TestTUIProductionBackendKeepsProjectInspectionWhenGlobalStatusIsBlocked(t *
 	if len(dashboard.Setup.Blockers) != 1 || !strings.Contains(dashboard.Setup.Blockers[0].Cause, "global Pack status") {
 		t.Fatalf("global status blocker missing or unclear: %#v", dashboard.Setup.Blockers)
 	}
-	if !dashboard.Project.Available || dashboard.Project.Root != repositoryRoot || len(dashboard.Project.Packs) == 0 {
+	if !dashboard.Project.Available || dashboard.Project.Root != projectRoot || len(dashboard.Project.Packs) == 0 {
 		t.Fatalf("global status blocker hid unaffected project inspection: %#v", dashboard.Project)
 	}
 }
 
 func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
-	opts := Options{
-		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-			"PATH":                "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd:  func() (string, error) { return repositoryRoot, nil },
-		Runner: &fakeRunner{},
-	}
+	synthetic := testsupport.CapabilityRich("tui-selection")
+	manifest := synthetic.Manifest()
+	projectRoot := t.TempDir()
+	writeTestGitWorktree(t, projectRoot)
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	home := fixture.home
+	opts := fixture.options
+	opts.Getwd = func() (string, error) { return projectRoot, nil }
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	dashboard, err := backend.Load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack := findTUIPack(dashboard.Global.Packs, "argote")
+	pack := findTUIPack(dashboard.Global.Packs, manifest.ID)
 	if pack == nil {
-		t.Fatal("argote Pack missing from reviewed catalog")
+		t.Fatal("synthetic Pack missing from isolated catalog")
 	}
 	var root string
 	for _, resource := range pack.Resources {
@@ -336,32 +337,32 @@ func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState
 		}
 	}
 	if root == "" {
-		t.Fatalf("argote Pack exposes no operational root: %#v", pack.Resources)
+		t.Fatalf("synthetic Pack exposes no operational root: %#v", pack.Resources)
 	}
 	before := snapshotTree(t, home)
-	if _, err := backend.Preview(context.Background(), tui.PreviewRequest{PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}}); err == nil || !strings.Contains(err.Error(), "operation") {
+	if _, err := backend.Preview(context.Background(), tui.PreviewRequest{PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}}); err == nil || !strings.Contains(err.Error(), "operation") {
 		t.Fatalf("missing lifecycle operation was accepted: %v", err)
 	}
 
 	full, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	partial, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
+		Operation: "activate", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	project, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "install", PackID: "argote", Surface: "codex", Scope: "project", ProjectRoot: repositoryRoot, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: manifest.ID, Surface: "codex", Scope: "project", ProjectRoot: projectRoot, Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if full.ID == "" || full.Digest == "" || full.PackID != "argote" || full.Surface != "codex" || full.Scope != "global" || full.Selection.Mode != "all" {
+	if full.ID == "" || full.Digest == "" || full.PackID != manifest.ID || full.Surface != "codex" || full.Scope != "global" || full.Selection.Mode != "all" {
 		t.Fatalf("full-Pack preview omitted its immutable exact target: %#v", full)
 	}
 	if partial.ID == "" || partial.Digest == "" || partial.Selection.Mode != "custom" || !slices.Equal(partial.Selection.Roots, []string{root}) {
@@ -370,7 +371,7 @@ func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState
 	if len(full.Resources) == 0 || len(partial.Resources) == 0 {
 		t.Fatalf("preview omitted resource closure: full=%#v partial=%#v", full.Resources, partial.Resources)
 	}
-	if project.ID == "" || project.PackID != "argote" || project.Surface != "codex" || project.Scope != "project" || project.Operation != "install" {
+	if project.ID == "" || project.PackID != manifest.ID || project.Surface != "codex" || project.Scope != "project" || project.Operation != "install" {
 		t.Fatalf("project preview omitted its immutable exact target: %#v", project)
 	}
 	effectKinds := make(map[string]bool)
@@ -394,25 +395,15 @@ func TestTUIProductionBackendPreviewsFullAndPartialSelectionWithoutMutatingState
 }
 
 func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivation(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
-	opts := Options{
-		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-			"PATH":                "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd:  func() (string, error) { return repositoryRoot, nil },
-		Runner: &fakeRunner{},
-	}
+	synthetic := testsupport.PortableAllSurfaces("tui-exact-activation")
+	manifest := synthetic.Manifest()
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	home := fixture.home
+	opts := fixture.options
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -441,16 +432,16 @@ func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivati
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Verified || result.Stage != "verification" || !strings.Contains(result.Summary, "argote") || !slices.Equal(progress, []string{"revalidation", "apply", "verification"}) {
+	if !result.Verified || result.Stage != "verification" || !strings.Contains(result.Summary, manifest.ID) || !slices.Equal(progress, []string{"revalidation", "apply", "verification"}) {
 		t.Fatalf("activation result/progress = %#v / %v", result, progress)
 	}
 	dashboard, err := backend.Load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack := findTUIPack(dashboard.Global.Packs, "argote")
+	pack := findTUIPack(dashboard.Global.Packs, manifest.ID)
 	if pack == nil {
-		t.Fatal("fresh status omitted argote")
+		t.Fatal("fresh status omitted synthetic Pack")
 	}
 	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
 	if index < 0 || pack.SurfaceStatuses[index].Configured != "true" {
@@ -459,34 +450,26 @@ func TestTUIProductionBackendRejectsStaleApprovalAndAppliesAnExactGlobalActivati
 }
 
 func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
+	synthetic := testsupport.PortableAllSurfaces("tui-project-install")
+	manifest := synthetic.Manifest()
 	project := filepath.Join(t.TempDir(), "project")
 	writeTestGitWorktree(t, project)
 	otherProject := filepath.Join(t.TempDir(), "other-project")
 	writeTestGitWorktree(t, otherProject)
 	currentDirectory := project
-	opts := Options{
-		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-			"PATH":                "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd: func() (string, error) { return currentDirectory, nil }, Runner: &fakeRunner{},
-	}
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	home := fixture.home
+	opts := fixture.options
+	opts.Getwd = func() (string, error) { return currentDirectory, nil }
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 	if _, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "install", PackID: "argote", Surface: "codex", Scope: "project", ProjectRoot: otherProject, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: manifest.ID, Surface: "codex", Scope: "project", ProjectRoot: otherProject, Selection: tui.Selection{Mode: "all"},
 	}); err == nil || !strings.Contains(err.Error(), "current Git project") {
 		t.Fatalf("project preview accepted a different Git repository: %v", err)
 	}
 	install, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "install", PackID: "matty", Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -536,7 +519,7 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack := findTUIPack(dashboard.Project.Packs, "matty")
+	pack := findTUIPack(dashboard.Project.Packs, manifest.ID)
 	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
 	if index < 0 || pack.SurfaceStatuses[index].Installation != "installed" {
 		t.Fatalf("fresh project status did not retain project installation: %#v", pack)
@@ -544,25 +527,18 @@ func TestTUIProductionBackendInstallsThenPersonallyActivatesInTheCurrentProject(
 }
 
 func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInstalledProjectPack(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
+	synthetic := testsupport.PortableAllSurfaces("tui-project-uninstall")
+	manifest := synthetic.Manifest()
 	project := filepath.Join(t.TempDir(), "project")
 	writeTestGitWorktree(t, project)
-	opts := Options{
-		Env: MapEnv{
-			"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
-	}
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	opts := fixture.options
+	opts.Getwd = func() (string, error) { return project, nil }
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 
 	install, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "install", PackID: "matty", Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -570,7 +546,7 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: "matty", Surface: "opencode", Scope: "project", ProjectRoot: project})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -604,7 +580,7 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 
 	var progress []string
 	result, err = backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(update tui.ApplyProgress) { progress = append(progress, update.Phase) })
-	if err != nil || !result.Verified || !strings.Contains(result.Summary, "Uninstalled matty") || !slices.Equal(progress, []string{"revalidation", "apply", "verification"}) {
+	if err != nil || !result.Verified || !strings.Contains(result.Summary, "Uninstalled "+manifest.ID) || !slices.Equal(progress, []string{"revalidation", "apply", "verification"}) {
 		t.Fatalf("project uninstall result = %#v / %v / %v", result, progress, err)
 	}
 	for _, target := range []string{"packy.json", "packy.lock.json"} {
@@ -616,7 +592,7 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack := findTUIPack(dashboard.Project.Packs, "matty")
+	pack := findTUIPack(dashboard.Project.Packs, manifest.ID)
 	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "opencode" })
 	if index < 0 || (pack.SurfaceStatuses[index].Installation != "" && pack.SurfaceStatuses[index].Installation != "absent") || pack.SurfaceStatuses[index].Runtime == "active" {
 		t.Fatalf("fresh status did not verify complete uninstall: %#v", pack)
@@ -624,35 +600,28 @@ func TestTUIProductionBackendCoordinatesPersonalDeactivationAndUninstallsAnInsta
 }
 
 func TestTUIProductionBackendShowsProjectUninstallDriftAndRefusesApply(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
+	synthetic := testsupport.PortableAllSurfaces("tui-project-drift")
+	manifest := synthetic.Manifest()
 	project := filepath.Join(t.TempDir(), "project")
 	writeTestGitWorktree(t, project)
-	opts := Options{
-		Env: MapEnv{
-			"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
-	}
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	opts := fixture.options
+	opts.Getwd = func() (string, error) { return project, nil }
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
-	install, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: "matty", Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
+	install, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
-	projectionPath := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
+	projectionPath := syntheticProjectProjectionTarget(t, project)
 	if err := os.WriteFile(projectionPath, []byte("operator edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: "matty", Surface: "opencode", Scope: "project", ProjectRoot: project})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: manifest.ID, Surface: "opencode", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -667,37 +636,70 @@ func TestTUIProductionBackendShowsProjectUninstallDriftAndRefusesApply(t *testin
 	}
 }
 
-func TestTUIProductionBackendUninstallsOnlyTheSelectedProjectSurface(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
+func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
+	synthetic := testsupport.CapabilityRich("tui-selected-surface")
+	packID := synthetic.ID()
+	shared := synthetic.OperationalResource()
+	codexOnly := testsupport.ResourceIdentity{Kind: "instruction", ID: "guidance"}
 	project := filepath.Join(t.TempDir(), "project")
 	writeTestGitWorktree(t, project)
-	opts := Options{
-		Env: MapEnv{
-			"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, "xdg"), "PATH": "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd: func() (string, error) { return project, nil }, Runner: &fakeRunner{},
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, synthetic)
+	opts := fixture.options
+	opts.Getwd = func() (string, error) { return project, nil }
+	installs := []struct {
+		surface string
+		roots   []string
+	}{
+		{surface: "codex", roots: []string{codexOnly.String(), shared.String()}},
+		{surface: "opencode", roots: []string{shared.String()}},
+	}
+	for _, current := range installs {
+		args := []string{"install", packID, "--surface", current.surface}
+		for _, root := range current.roots {
+			args = append(args, "--resource", root)
+		}
+		if output, installErr := executeCommand(t, NewRootCommand(opts), args...); installErr != nil {
+			t.Fatalf("install %s synthetic Pack: %v\n%s", current.surface, installErr, output)
+		}
 	}
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
-	for _, surface := range []string{"codex", "opencode"} {
-		install, previewErr := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: "matty", Surface: surface, Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
-		if previewErr != nil {
-			t.Fatal(previewErr)
-		}
-		if _, applyErr := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); applyErr != nil {
-			t.Fatal(applyErr)
-		}
-	}
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: "matty", Surface: "codex", Scope: "project", ProjectRoot: project})
+	before, err := capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Surface != "codex" || !slices.Contains(preview.Diff.Changed, "packy.json") || !slices.Contains(preview.Diff.Changed, "packy.lock.json") || !slices.Contains(preview.Diff.Removed, "AGENTS.md") {
+	type projectionKey struct {
+		resource capabilitypack.ResourceIdentity
+		target   string
+	}
+	projectionSurfaces := map[projectionKey]map[capabilitypack.Surface]bool{}
+	for _, projection := range before.Lock.Projections {
+		if projection.OwnerPack != packID || projection.Target == "PACKY-NOTICES.md" {
+			continue
+		}
+		key := projectionKey{resource: projection.Resource, target: projection.Target}
+		if projectionSurfaces[key] == nil {
+			projectionSurfaces[key] = map[capabilitypack.Surface]bool{}
+		}
+		projectionSurfaces[key][projection.Surface] = true
+	}
+	var removedTarget, retainedTarget string
+	for key, surfaces := range projectionSurfaces {
+		switch {
+		case surfaces[capabilitypack.SurfaceCodex] && surfaces[capabilitypack.SurfaceOpenCode]:
+			retainedTarget = key.target
+		case surfaces[capabilitypack.SurfaceCodex] && !surfaces[capabilitypack.SurfaceOpenCode]:
+			removedTarget = key.target
+		}
+	}
+	if removedTarget == "" || retainedTarget == "" || removedTarget == retainedTarget {
+		t.Fatalf("synthetic installation lacks distinct removed/retained projections: %#v", before.Lock.Projections)
+	}
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: packID, Surface: "codex", Scope: "project", ProjectRoot: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Surface != "codex" || !slices.Contains(preview.Diff.Changed, "packy.json") || !slices.Contains(preview.Diff.Changed, "packy.lock.json") || !slices.Contains(preview.Diff.Removed, removedTarget) || !slices.Contains(preview.Diff.Retained, retainedTarget) {
 		t.Fatalf("selected-surface uninstall preview = %#v", preview)
 	}
 	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(tui.ApplyProgress) {})
@@ -711,7 +713,13 @@ func TestTUIProductionBackendUninstallsOnlyTheSelectedProjectSurface(t *testing.
 	if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}) {
 		t.Fatalf("selected-surface uninstall changed retained intent: %#v", installation.Manifest.Packs)
 	}
-	for _, retained := range []string{"packy.json", "packy.lock.json", filepath.Join(".agents", "skills", "ask-matt", "SKILL.md")} {
+	if len(installation.Lock.Receipts) != 1 || installation.Lock.Receipts[0].Surface != capabilitypack.SurfaceOpenCode {
+		t.Fatalf("selected-surface uninstall retained wrong receipts: %#v", installation.Lock.Receipts)
+	}
+	if _, err := os.Stat(filepath.Join(project, filepath.FromSlash(removedTarget))); !os.IsNotExist(err) {
+		t.Fatalf("selected-surface uninstall retained Codex-only target %s: %v", removedTarget, err)
+	}
+	for _, retained := range []string{"packy.json", "packy.lock.json", retainedTarget} {
 		if _, err := os.Stat(filepath.Join(project, retained)); err != nil {
 			t.Fatalf("selected-surface uninstall removed retained %s: %v", retained, err)
 		}
@@ -719,28 +727,17 @@ func TestTUIProductionBackendUninstallsOnlyTheSelectedProjectSurface(t *testing.
 }
 
 func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
+	synthetic := testsupport.PortableAllSurfaces("tui-project-update")
+	manifest := synthetic.Manifest()
 	project := filepath.Join(t.TempDir(), "project")
 	writeTestGitWorktree(t, project)
-	bundle := copyPackBundleForUpdate(t, repositoryRoot)
-	opts := Options{
-		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-			"PATH":                "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(bundle, "skills"),
-		},
-		Getwd:  func() (string, error) { return project, nil },
-		Runner: &fakeRunner{},
-	}
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	opts := fixture.options
+	opts.Getwd = func() (string, error) { return project, nil }
 	backend := newTUIBackend(opts.withDefaults(), newWorkstationResolver(opts.withDefaults()))
 
 	install, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "install", PackID: "matty", Surface: "codex", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
+		Operation: "install", PackID: manifest.ID, Surface: "codex", Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -749,7 +746,7 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	noOp, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "matty", Surface: "codex", Scope: "project", ProjectRoot: project})
+	noOp, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: manifest.ID, Surface: "codex", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -757,13 +754,8 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
 		t.Fatalf("catalog-current project update was not an explicit no-op: %#v", noOp)
 	}
 
-	manifestPath := filepath.Join(bundle, "packs", "matty", "pack.json")
-	manifest, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	updatedManifest, updatedVersion := bumpManifestPatchVersion(t, string(manifest))
-	if err := os.WriteFile(manifestPath, []byte(updatedManifest), 0o600); err != nil {
+	updatedVersion := synthetic.CandidateVersion()
+	if err := synthetic.Candidate().WriteBundle(fixture.bundleRoot); err != nil {
 		t.Fatal(err)
 	}
 
@@ -771,13 +763,13 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack := findTUIPack(dashboard.Project.Packs, "matty")
+	pack := findTUIPack(dashboard.Project.Packs, manifest.ID)
 	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
 	if index < 0 || !pack.SurfaceStatuses[index].UpdateAvailable {
-		t.Fatalf("updated catalog did not offer a Matty update: %#v", pack)
+		t.Fatalf("updated catalog did not offer a synthetic Pack update: %#v", pack)
 	}
 
-	update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "matty", Surface: "codex", Scope: "project", ProjectRoot: project})
+	update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: manifest.ID, Surface: "codex", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,26 +788,15 @@ func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
 	}
 }
 func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeactivation(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
-	opts := Options{
-		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-			"PATH":                "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd:  func() (string, error) { return repositoryRoot, nil },
-		Runner: &fakeRunner{},
-	}
+	synthetic := testsupport.CapabilityRich("tui-partial-deactivation")
+	manifest := synthetic.Manifest()
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	opts := fixture.options
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
 
 	activate, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "activate", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -824,7 +805,7 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 		t.Fatal(err)
 	}
 
-	update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: "argote", Surface: "codex", Scope: "global"})
+	update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: manifest.ID, Surface: "codex", Scope: "global"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -832,13 +813,15 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 		t.Fatalf("catalog-current update = %#v; want explicit no-op", update)
 	}
 
+	resource := syntheticResource(t, synthetic, "instruction", "guidance")
+	root := resource.Kind + ":" + resource.ID
 	partial, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "deactivate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{"skill:espera-que"}},
+		Operation: "deactivate", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{root}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if partial.Operation != "deactivate" || partial.Disposition != "applicable" || !slices.Equal(partial.Selection.Roots, []string{"skill:espera-que"}) || len(partial.Diff.Removed) == 0 || len(partial.Diff.Retained) == 0 {
+	if partial.Operation != "deactivate" || partial.Disposition != "applicable" || !slices.Equal(partial.Selection.Roots, []string{root}) || len(partial.Diff.Removed) == 0 || len(partial.Diff.Retained) == 0 {
 		t.Fatalf("partial deactivation preview = %#v", partial)
 	}
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: partial, ApprovedPhases: requiredTUIPhases(partial)}, func(tui.ApplyProgress) {}); err != nil {
@@ -846,7 +829,7 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 	}
 
 	complete, err := backend.Preview(context.Background(), tui.PreviewRequest{
-		Operation: "deactivate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
+		Operation: "deactivate", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -860,42 +843,36 @@ func TestTUIProductionBackendPreviewsNoOpUpdateAndAppliesPartialThenCompleteDeac
 	if err != nil || !result.Verified || !strings.Contains(result.Summary, "Deactivated") {
 		t.Fatalf("complete deactivation = %#v, %v", result, err)
 	}
-	dashboard, err := backend.Load(context.Background())
+	state, err := capabilitypack.NewFileActivationStore(capabilitypack.NewStateLayout(fixture.home).File()).LoadSnapshot(context.Background(), capabilitypack.SurfaceCodex)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack := findTUIPack(dashboard.Global.Packs, "argote")
-	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
-	if index < 0 || pack.SurfaceStatuses[index].Active || pack.SurfaceStatuses[index].Ownership != 0 {
-		t.Fatalf("fresh status retained deactivated Pack: %#v", pack)
+	if state.Intent.Active || slices.ContainsFunc(state.Intents, func(intent capabilitypack.ActivationIntent) bool {
+		return intent.PackID == manifest.ID && intent.Active
+	}) || slices.ContainsFunc(state.Ownership, func(ownership capabilitypack.ProjectionOwnership) bool { return ownership.PackID == manifest.ID }) {
+		t.Fatalf("fresh activation state retained deactivated Pack: %#v", state)
 	}
 }
 
 func TestTUIProductionBackendShowsDriftAndFailsDeactivationClosed(t *testing.T) {
-	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := t.TempDir()
-	opts := Options{
-		Env: MapEnv{
-			"HOME":                home,
-			"XDG_CONFIG_HOME":     filepath.Join(home, "xdg"),
-			"PATH":                "",
-			"PACKY_SKILLS_SOURCE": filepath.Join(repositoryRoot, "bundle", "skills"),
-		},
-		Getwd: func() (string, error) { return repositoryRoot, nil }, Runner: &fakeRunner{},
-	}
+	synthetic := testsupport.ExternalTool("tui-global-drift")
+	manifest := synthetic.Manifest()
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	home := fixture.home
+	opts := fixture.options
+	makeSyntheticExternalToolObservable(t, &opts)
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
-	activate, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
+	resource := syntheticResource(t, synthetic, "skill", "memory")
+	resourceID := resource.Kind + ":" + resource.ID
+	activate, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "activate", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{resourceID}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activate, ApprovedPhases: requiredTUIPhases(activate)}, func(tui.ApplyProgress) {}); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(home, ".agents", "skills", "espera-que")
+	target := filepath.Join(home, ".agents", "skills", resource.ID)
 	if err := os.Remove(target); err != nil {
 		t.Fatal(err)
 	}
@@ -907,12 +884,12 @@ func TestTUIProductionBackendShowsDriftAndFailsDeactivationClosed(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack := findTUIPack(dashboard.Global.Packs, "argote")
+	pack := findTUIPack(dashboard.Global.Packs, manifest.ID)
 	index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == "codex" })
 	if index < 0 || !pack.SurfaceStatuses[index].UpdateAvailable {
 		t.Fatalf("drifted active selection did not offer Update: %#v", pack)
 	}
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: "argote", Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "all"}})
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: manifest.ID, Surface: "codex", Scope: "global", Selection: tui.Selection{Mode: "custom", Roots: []string{resourceID}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -935,6 +912,14 @@ func requiredTUIPhases(preview tui.Preview) []string {
 		}
 	}
 	return result
+}
+
+func makeSyntheticExternalToolObservable(t *testing.T, opts *Options) {
+	t.Helper()
+	executable := writeEngramExecutable(t, filepath.Join(t.TempDir(), "bin"), "engram version 1.19.0")
+	opts.Runner = &fakeRunner{path: map[string]string{"engram": executable}}
+	env := opts.Env.(MapEnv)
+	env["PATH"] = filepath.Dir(executable)
 }
 
 func findTUIPack(packs []tui.Pack, id string) *tui.Pack {

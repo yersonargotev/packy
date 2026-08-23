@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/audit"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 )
 
@@ -18,7 +19,7 @@ func TestAuditReportsUnknownRuntimeWithoutFailingAutomation(t *testing.T) {
 	opts.SetupHealthDiagnose = func() (setuphealth.Report, error) {
 		return setuphealth.Report{Checks: []setuphealth.Check{
 			{Name: "packy-core", Scope: setuphealth.CheckScopeWorkstation, Severity: setuphealth.Pass, Detail: "Packy core is available"},
-			{Name: "pack-orchestrate-codex-usable", Scope: setuphealth.CheckScopeGlobal, Severity: setuphealth.Info, Detail: "runtime usability cannot be observed"},
+			{Name: "pack-capability-rich-codex-usable", Scope: setuphealth.CheckScopeGlobal, Severity: setuphealth.Info, Detail: "runtime usability cannot be observed"},
 		}}, nil
 	}
 
@@ -40,7 +41,7 @@ func TestAuditWarningsAreMachineReadableAndExitZero(t *testing.T) {
 	opts, _, _ := sandboxOptions(t)
 	opts.Getwd = func() (string, error) { return t.TempDir(), nil }
 	opts.SetupHealthDiagnose = func() (setuphealth.Report, error) {
-		return setuphealth.Report{Checks: []setuphealth.Check{{Name: "pack-matty-codex", Scope: setuphealth.CheckScopeGlobal, Severity: setuphealth.Warn, Detail: "one projection finding"}}}, nil
+		return setuphealth.Report{Checks: []setuphealth.Check{{Name: "pack-portable-alpha-codex", Scope: setuphealth.CheckScopeGlobal, Severity: setuphealth.Warn, Detail: "one projection finding"}}}, nil
 	}
 
 	output, err := executeCommand(t, NewRootCommand(opts), "audit", "--json")
@@ -97,12 +98,16 @@ func TestAuditFailsClosedWhenCurrentDirectoryCannotBeInspected(t *testing.T) {
 }
 
 func TestAuditVerifiesProjectContractAndDetectsDriftWithoutMutation(t *testing.T) {
+	pack := testsupport.PortableAllSurfaces("audit-project")
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	fixture := newSyntheticCLIFixture(t, terminal, pack)
+	home := fixture.home
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
+	opts := fixture.options
 	opts.Getwd = func() (string, error) { return project, nil }
-	if output, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt"); err != nil {
+	resource := syntheticResource(t, pack, "instruction", "guidance")
+	if output, err := executeCommand(t, NewRootCommand(opts), "install", pack.Manifest().ID, "--surface", "codex", "--resource", resource.Kind+":"+resource.ID); err != nil {
 		t.Fatalf("install: %v\n%s", err, output)
 	}
 
@@ -123,7 +128,7 @@ func TestAuditVerifiesProjectContractAndDetectsDriftWithoutMutation(t *testing.T
 		t.Fatal("audit mutated state or requested approval")
 	}
 
-	drift := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
+	drift := syntheticProjectProjectionTarget(t, project)
 	if err := os.WriteFile(drift, []byte("operator drift\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

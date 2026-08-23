@@ -79,7 +79,7 @@ func TestClaudeCommandAliasDependenciesAndLiteralArguments(t *testing.T) {
 		Kind: "command", ID: "review", Source: "commands/review.toml",
 		Requires: []string{"skill:using-agent-skills", "agent:code-reviewer", "asset:definition-of-done"},
 		Bindings: []capabilitypack.Binding{{
-			Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "addy-review",
+			Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "synthetic-review",
 			Capabilities: []capabilitypack.SurfaceCapability{{
 				Type: capabilitypack.SurfaceCapabilityClaudeCompositeSkill,
 				ClaudeCompositeSkill: &capabilitypack.ClaudeCompositeSkillCapability{
@@ -90,8 +90,8 @@ func TestClaudeCommandAliasDependenciesAndLiteralArguments(t *testing.T) {
 		}},
 	}
 	pack.Resources = append(pack.Resources,
-		capabilitypack.Resource{Kind: "skill", ID: "using-agent-skills", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "addy-using-agent-skills"}}},
-		capabilitypack.Resource{Kind: "agent", ID: "code-reviewer", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "agent", Name: "addy-code-reviewer"}}},
+		capabilitypack.Resource{Kind: "skill", ID: "using-agent-skills", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "skill", Name: "synthetic-using-agent-skills"}}},
+		capabilitypack.Resource{Kind: "agent", ID: "code-reviewer", Bindings: []capabilitypack.Binding{{Surface: capabilitypack.SurfaceClaude, Projection: "agent", Name: "synthetic-code-reviewer"}}},
 		command,
 	)
 	source := []byte("description = \"Review carefully\"\nprompt = '''Keep $ARGUMENTS unchanged.\\nNext line.'''\n")
@@ -101,7 +101,7 @@ func TestClaudeCommandAliasDependenciesAndLiteralArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(got.Files[0].Content)
-	for _, want := range []string{"agent:addy-code-reviewer", "skill:addy-using-agent-skills", "reference:definition-of-done.md", "`$ARGUMENTS`", `Keep $ARGUMENTS unchanged.\nNext line.`} {
+	for _, want := range []string{"agent:synthetic-code-reviewer", "skill:synthetic-using-agent-skills", "reference:definition-of-done.md", "`$ARGUMENTS`", `Keep $ARGUMENTS unchanged.\nNext line.`} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("SKILL.md missing %q:\n%s", want, content)
 		}
@@ -251,7 +251,7 @@ func TestClaudeCompositeSurfaceStagesReplacesPreservesAndRemovesExactOwnership(t
 		t.Fatalf("identical inspection=%+v err=%v", installed, err)
 	}
 
-	record := compositeOwnershipRecord(t, installed.Projections[0], "addy")
+	record := compositeOwnershipRecord(t, installed.Projections[0], "synthetic-composite")
 	writeClaudeFixtureFile(t, bundle, "skills/example/notes.md", []byte("replacement"), 0o644)
 	owned := NewSurfaceAdapter(bundle, layout, filepath.Join(home, "state-owned"), "claude", &recordingRunner{result: Result{Stdout: "2.1.203"}}, StaticOwnershipSnapshot(NewOwnershipSnapshot(record)))
 	replacement, err := owned.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
@@ -261,7 +261,7 @@ func TestClaudeCompositeSurfaceStagesReplacesPreservesAndRemovesExactOwnership(t
 	if applyErr := owned.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{replacement.Projections[0].Action}); applyErr != nil {
 		t.Fatalf("exact-owned replacement failed: %v", applyErr)
 	}
-	replacementRecord := compositeOwnershipRecord(t, replacement.Projections[0], "addy")
+	replacementRecord := compositeOwnershipRecord(t, replacement.Projections[0], "synthetic-composite")
 
 	foreign := NewSurfaceAdapter(bundle, layout, filepath.Join(home, "state-foreign"), "claude", &recordingRunner{}, empty)
 	if applyErr := foreign.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{replacement.Projections[0].Action}); applyErr == nil || !strings.Contains(applyErr.Error(), "foreign") {
@@ -318,7 +318,7 @@ func TestClaudeCompositeSurfaceStagesReplacesPreservesAndRemovesExactOwnership(t
 		t.Fatalf("removal inspection=%+v err=%v", removalInspection, err)
 	}
 	sharedRecord := replacementRecord
-	sharedRecord.Contributors = []string{"addy", "other"}
+	sharedRecord.Contributors = []string{"synthetic-composite", "other"}
 	sharedRecord.DeletionAuthorized = false
 	shared := NewSurfaceAdapter(bundle, layout, filepath.Join(home, "state-shared"), "claude", &recordingRunner{}, StaticOwnershipSnapshot(NewOwnershipSnapshot(sharedRecord)))
 	if applyErr := shared.ApplyProjections(context.Background(), []capabilitypack.ProjectionAction{removalInspection.Projections[0].Action}); applyErr == nil || !strings.Contains(applyErr.Error(), "not authorized") {
@@ -340,25 +340,25 @@ func TestClaudeCompositeOwnershipProviderReconstructsAlias(t *testing.T) {
 	bundle, pack := claudeCompositeFixture(t)
 	home := t.TempDir()
 	layout := NewCanonicalLayout(home)
-	alias := capabilitypack.SurfaceAlias{Kind: "skill", ID: "example", Name: "addy-example"}
+	alias := capabilitypack.SurfaceAlias{Kind: "skill", ID: "example", Name: "synthetic-example"}
 	aliased := resourceWithAliases(pack.Resources[0], []capabilitypack.SurfaceAlias{alias})
 	composite, err := composeClaudeSkill(pack, aliased, aliased.Bindings[0], bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
 	state := capabilitypack.ActivationState{
-		Intent: capabilitypack.ActivationIntent{PackID: "addy", Version: "1.1.0", Surface: capabilitypack.SurfaceClaude, Active: true, Aliases: []capabilitypack.SurfaceAlias{alias}},
+		Intent: capabilitypack.ActivationIntent{PackID: "synthetic-composite", Version: "1.1.0", Surface: capabilitypack.SurfaceClaude, Active: true, Aliases: []capabilitypack.SurfaceAlias{alias}},
 		Ownership: []capabilitypack.ProjectionOwnership{{
-			ID: "skill:addy-example", PackID: "addy", Surface: capabilitypack.SurfaceClaude, Fingerprint: composite.TreeFingerprint,
+			ID: "skill:synthetic-example", PackID: "synthetic-composite", Surface: capabilitypack.SurfaceClaude, Fingerprint: composite.TreeFingerprint,
 		}},
 	}
-	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"addy": pack}, layout, bundle)
+	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"synthetic-composite": pack}, layout, bundle)
 	snapshot, err := provider.ObserveOwnership(context.Background())
 	if err != nil || len(snapshot.Records) != 1 {
 		t.Fatalf("snapshot=%+v err=%v", snapshot, err)
 	}
 	record := snapshot.Records[0]
-	if record.Kind != string(ActionSkillTree) || record.Target != filepath.Join(layout.SkillsDir, "addy-example") || record.Composite != composite.Ownership || record.Fingerprint != composite.TreeFingerprint {
+	if record.Kind != string(ActionSkillTree) || record.Target != filepath.Join(layout.SkillsDir, "synthetic-example") || record.Composite != composite.Ownership || record.Fingerprint != composite.TreeFingerprint {
 		t.Fatalf("record=%+v", record)
 	}
 
@@ -403,7 +403,7 @@ func claudeCompositeFixture(t *testing.T) (string, capabilitypack.Pack) {
 		resources = append(resources, resource)
 		writeClaudeFixtureFile(t, root, resource.Source, []byte(id+"\n"), 0o644)
 	}
-	return root, capabilitypack.Pack{ID: "addy", Version: "1.1.0", Resources: resources}
+	return root, capabilitypack.Pack{ID: "synthetic-composite", Version: "1.1.0", Resources: resources}
 }
 
 func claudeReferenceIdentities() []capabilitypack.ResourceIdentity {

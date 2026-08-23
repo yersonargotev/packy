@@ -8,16 +8,19 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 )
 
 func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
-	opts, _, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
+	pack := testsupport.CapabilityRich("project-closure")
+	opts := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack).options
+	packID := pack.Manifest().ID
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex",
-		"--resource", "skill:ask-matt", "--alias", "skill:ask-matt=project-matt", "--dry-run", "--json")
+	out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex",
+		"--resource", "skill:helper", "--alias", "skill:helper=project-helper", "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("preview selected project resources: %v\n%s", err, out)
 	}
@@ -25,32 +28,31 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &report); err != nil {
 		t.Fatalf("decode preview: %v\n%s", err, out)
 	}
-	wantRoot := capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}
+	wantRoot := capabilitypack.ResourceIdentity{Kind: "skill", ID: "helper"}
 	if report.Selection.Mode != capabilitypack.SelectionCustom || len(report.Pack.Selection.Roots) != 1 || report.Pack.Selection.Roots[0] != wantRoot {
 		t.Fatalf("selection = %#v; pack = %#v", report.Selection, report.Pack)
 	}
-	facts := checkedInMattyFacts(t)
-	if len(report.Selection.Resources) != facts.Notices+1 {
+	wantClosure := map[capabilitypack.ResourceIdentity]capabilitypack.ResourceRole{
+		wantRoot:                    capabilitypack.ResourceRoleRoot,
+		{Kind: "notice", ID: "mit"}: capabilitypack.ResourceRoleNotice,
+	}
+	if len(report.Selection.Resources) != len(wantClosure) {
 		t.Fatalf("resolved closure = %#v", report.Selection.Resources)
 	}
-	foundRoot := false
 	for _, resource := range report.Selection.Resources {
-		if resource.Resource == wantRoot && resource.Role == capabilitypack.ResourceRoleRoot {
-			foundRoot = true
+		if wantRole, ok := wantClosure[resource.Resource]; !ok || resource.Role != wantRole {
+			t.Fatalf("unexpected closure member = %#v; want %#v", resource, wantClosure)
 		}
 	}
-	if !foundRoot {
-		t.Fatalf("selected root missing from closure = %#v", report.Selection.Resources)
-	}
-	if len(report.Pack.Aliases) != 1 || report.Pack.Aliases[0].Name != "project-matt" {
+	if len(report.Pack.Aliases) != 1 || report.Pack.Aliases[0].Name != "project-helper" {
 		t.Fatalf("manifest aliases = %#v", report.Pack.Aliases)
 	}
-	if len(report.Projections) != 2 {
+	if len(report.Projections) == 0 {
 		t.Fatalf("projections = %#v", report.Projections)
 	}
 	foundAlias := false
 	for _, projection := range report.Projections {
-		if projection.Resource == wantRoot && filepath.ToSlash(projection.Target) == ".agents/skills/project-matt" {
+		if projection.Resource == wantRoot && filepath.ToSlash(projection.Target) == ".agents/skills/project-helper" {
 			foundAlias = true
 		}
 	}
@@ -58,8 +60,8 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 		t.Fatalf("aliased project projection missing: %#v", report.Projections)
 	}
 
-	applyOut, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex",
-		"--resource", "skill:ask-matt", "--alias", "skill:ask-matt=project-matt")
+	applyOut, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex",
+		"--resource", "skill:helper", "--alias", "skill:helper=project-helper")
 	if err != nil {
 		t.Fatalf("install selected project resources: %v\n%s", err, applyOut)
 	}
@@ -78,16 +80,16 @@ func TestIssue455ProjectInstallPersistsExplicitRootsAndAliases(t *testing.T) {
 	if len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Selection.Mode != capabilitypack.SelectionCustom || len(manifest.Packs[0].SurfaceIntents[0].Aliases) != 1 {
 		t.Fatalf("persisted project intent = %#v", manifest.Packs[0])
 	}
-	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "project-matt", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "project-helper", "SKILL.md")); err != nil {
 		t.Fatalf("aliased selected skill was not copied: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "code-review")); !os.IsNotExist(err) {
-		t.Fatalf("unselected skill was materialized: %v", err)
+	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "workflow")); !os.IsNotExist(err) {
+		t.Fatalf("unselected workflow skill was materialized: %v", err)
 	}
 }
 
 func TestIssue455ProjectManifestRejectsMovingAndMachineSpecificAuthority(t *testing.T) {
-	version := checkedInMattyFacts(t).Version
+	version := testsupport.PortableAllSurfaces("project-portable").CurrentVersion()
 	versionField := `"version": "` + version + `"`
 	for _, test := range []struct {
 		name   string
@@ -107,7 +109,9 @@ func TestIssue455ProjectManifestRejectsMovingAndMachineSpecificAuthority(t *test
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			opts, project := installIssue453Project(t)
+			installation := installIssue453Project(t)
+			opts, project := installation.options, installation.project
+			packID := installation.pack.Manifest().ID
 			manifestPath := filepath.Join(project, "packy.json")
 			data, err := os.ReadFile(manifestPath)
 			if err != nil {
@@ -117,7 +121,7 @@ func TestIssue455ProjectManifestRejectsMovingAndMachineSpecificAuthority(t *test
 				t.Fatal(err)
 			}
 			before := snapshotTree(t, project)
-			_, err = executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project")
+			_, err = executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project")
 			if err == nil {
 				t.Fatal("invalid project authority was accepted")
 			}

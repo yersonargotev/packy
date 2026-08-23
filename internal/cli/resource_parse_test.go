@@ -5,12 +5,14 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 )
 
 func TestResourceParseFailuresUseJSONLifecycleFailure(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, _, _ := packActivationOptions(t, terminal)
-	packID := "mat" + "ty"
+	pack := testsupport.PortableAllSurfaces("resource-parse")
+	opts := newSyntheticCLIFixture(t, terminal, pack).options
+	packID := pack.Manifest().ID
 	for _, args := range [][]string{
 		{"activate", packID, "--surface", "codex", "--resource", "malformed", "--json"},
 		{"deactivate", packID, "--surface", "codex", "--resource", "malformed", "--json"},

@@ -5,27 +5,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 )
 
 func TestIssue454PackWideUninstallPreviewsEveryRemovalWithoutMutation(t *testing.T) {
-	version := checkedInMattyFacts(t).Version
-	opts, project := installIssue453Project(t)
+	installation := installIssue453Project(t)
+	opts, project := installation.options, installation.project
+	manifest := installation.pack.Manifest()
+	guidanceTarget := syntheticProjectTarget(t, installation, capabilitypack.ResourceIdentity{Kind: "instruction", ID: "guidance"})
+	relativeGuidanceTarget, err := filepath.Rel(project, guidanceTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
 	before := snapshotTree(t, project)
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
 
-	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty", "--dry-run")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", manifest.ID, "--dry-run")
 	if err != nil {
 		t.Fatalf("pack-wide uninstall dry-run: %v\n%s", err, out)
 	}
 	for _, want := range []string{
 		"COMPLETE PROJECT PACK UNINSTALL DRY-RUN",
-		"Pack: matty " + version,
+		"Pack: " + manifest.ID + " " + installation.pack.CurrentVersion(),
 		"Scope: complete pack",
 		"packy.json",
 		"packy.lock.json",
 		"PACKY-NOTICES.md",
-		"skill:ask-matt -> .agents/skills/ask-matt",
+		"instruction:guidance -> " + filepath.ToSlash(relativeGuidanceTarget),
 		"Disposition: previewable",
 	} {
 		if !strings.Contains(out, want) {
@@ -42,7 +51,10 @@ func TestIssue454PackWideUninstallPreviewsEveryRemovalWithoutMutation(t *testing
 
 func TestIssue454PackWideUninstallRemovesOnlyExactOwnedContent(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, _, _ := packActivationOptions(t, terminal)
+	pack := testsupport.PortableAllSurfaces("project-uninstall")
+	fixture := newSyntheticCLIFixture(t, terminal, pack)
+	opts := fixture.options
+	packID := pack.Manifest().ID
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
@@ -59,12 +71,12 @@ func TestIssue454PackWideUninstallRemovesOnlyExactOwnedContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitBefore := snapshotTree(t, filepath.Join(project, ".git"))
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err != nil {
 		t.Fatalf("seed install: %v\n%s", err, out)
 	}
 	terminal.calls = 0
 
-	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", packID)
 	if err != nil {
 		t.Fatalf("pack-wide uninstall: %v\n%s", err, out)
 	}
@@ -81,13 +93,13 @@ func TestIssue454PackWideUninstallRemovesOnlyExactOwnedContent(t *testing.T) {
 			t.Fatalf("owned contract target %s remains: %v", target, err)
 		}
 	}
-	if entries, err := os.ReadDir(filepath.Join(project, ".agents", "skills")); err != nil || len(entries) != 0 {
+	if entries, err := os.ReadDir(filepath.Join(project, ".agents", "skills")); err != nil && !os.IsNotExist(err) || err == nil && len(entries) != 0 {
 		t.Fatalf("owned skill projections remain: entries=%v err=%v", entries, err)
 	}
-	if got := readFileString(t, agentsPath); !strings.Contains(got, "foreign agents preamble") || !strings.Contains(got, "foreign agents epilogue") || strings.Contains(got, "packy:project:matty:codex") {
+	if got := readFileString(t, agentsPath); !strings.Contains(got, "foreign agents preamble") || !strings.Contains(got, "foreign agents epilogue") || strings.Contains(got, "packy:project:") {
 		t.Fatalf("foreign AGENTS.md content was not preserved exactly around the removed contribution: %q", got)
 	}
-	if got := readFileString(t, noticesPath); !strings.Contains(got, "foreign notices preamble") || !strings.Contains(got, "foreign notices epilogue") || strings.Contains(got, "packy:project:matty:notices") {
+	if got := readFileString(t, noticesPath); !strings.Contains(got, "foreign notices preamble") || !strings.Contains(got, "foreign notices epilogue") || strings.Contains(got, "packy:project:"+packID+":notices") {
 		t.Fatalf("foreign notices content was not preserved exactly around the removed contribution: %q", got)
 	}
 	if got := readFileString(t, unrelatedPath); got != "unrelated dirty content\n" {
@@ -102,11 +114,13 @@ func TestIssue454PackWideUninstallRemovesOnlyExactOwnedContent(t *testing.T) {
 }
 
 func TestIssue454SurfaceUninstallRemovesOnlyTheSelectedContributor(t *testing.T) {
-	opts, project := installIssue453Project(t)
+	installation := installIssue453Project(t)
+	opts, project := installation.options, installation.project
+	packID := installation.pack.Manifest().ID
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
 
-	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", packID, "--surface", "codex")
 	if err != nil {
 		t.Fatalf("surface uninstall: %v\n%s", err, out)
 	}
@@ -124,15 +138,17 @@ func TestIssue454SurfaceUninstallRemovesOnlyTheSelectedContributor(t *testing.T)
 }
 
 func TestIssue454UninstallPreservesDriftAndForeignMatchingContent(t *testing.T) {
-	opts, project := installIssue453Project(t)
-	drift := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
+	installation := installIssue453Project(t)
+	opts, project := installation.options, installation.project
+	packID := installation.pack.Manifest().ID
+	drift := syntheticProjectTarget(t, installation, capabilitypack.ResourceIdentity{Kind: "instruction", ID: "guidance"})
 	if err := os.WriteFile(drift, []byte("owned drift\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, project)
 	terminal := opts.Terminal.(*fakeTerminal)
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", packID)
 	if err == nil || !strings.Contains(out, "project_drift") {
 		t.Fatalf("drifted uninstall = err:%v\n%s", err, out)
 	}
@@ -144,14 +160,16 @@ func TestIssue454UninstallPreservesDriftAndForeignMatchingContent(t *testing.T) 
 		t.Fatal(err)
 	}
 	before = snapshotTree(t, project)
-	_, err = executeCommand(t, NewRootCommand(opts), "uninstall", "matty")
+	_, err = executeCommand(t, NewRootCommand(opts), "uninstall", packID)
 	if err == nil || snapshotTree(t, project) != before {
 		t.Fatalf("matching bytes without lock were adopted or removed: %v", err)
 	}
 }
 
 func TestIssue454UninstallRejectsConcurrentChangeAfterApproval(t *testing.T) {
-	opts, project := installIssue453Project(t)
+	installation := installIssue453Project(t)
+	opts, project := installation.options, installation.project
+	packID := installation.pack.Manifest().ID
 	terminal := opts.Terminal.(*fakeTerminal)
 	target := filepath.Join(project, "AGENTS.md")
 	terminal.onApprove = func() {
@@ -165,7 +183,7 @@ func TestIssue454UninstallRejectsConcurrentChangeAfterApproval(t *testing.T) {
 		}
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", "matty")
+	out, err := executeCommand(t, NewRootCommand(opts), "uninstall", packID)
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("concurrent uninstall = err:%v\n%s", err, out)
 	}

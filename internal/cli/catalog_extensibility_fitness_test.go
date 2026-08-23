@@ -3,59 +3,71 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/tui"
 )
 
-func TestRenamedCatalogPackPreservesReadinessAcrossSurfacesScopesAndPresentations(t *testing.T) {
+func TestUnrelatedSyntheticPacksPreserveReadinessAcrossSurfacesScopesAndPresentations(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, _, repoRoot := packActivationOptions(t, terminal)
-	bundle := copyPackBundleForUpdate(t, repoRoot)
-	writeCatalogFitnessPacks(t, bundle)
-	opts.Env.(MapEnv)["PACKY_SKILLS_SOURCE"] = filepath.Join(bundle, "skills")
+	cases := []struct {
+		pack                testsupport.Fixture
+		surface             string
+		globalAuthorization string
+		pendingActions      int
+		projectScope        bool
+	}{
+		{pack: testsupport.PortableAllSurfaces("fitness-cedar"), surface: "codex", globalAuthorization: "unknown", projectScope: true},
+		{pack: testsupport.PortableAllSurfaces("fitness-orbit"), surface: "opencode", globalAuthorization: "unknown", projectScope: true},
+		{pack: testsupport.PortableAllSurfaces("fitness-sable"), surface: "claude", globalAuthorization: "unknown", pendingActions: 3},
+	}
+	packs := make([]testsupport.Fixture, 0, len(cases))
+	for _, test := range cases {
+		packs = append(packs, test.pack)
+	}
+	fixture := newSyntheticCLIFixture(t, terminal, packs...)
+	opts := fixture.options
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	globalAuthorization := map[string]string{"codex": "true", "opencode": "true", "claude": "unknown"}
-	for _, surface := range []string{"codex", "opencode", "claude"} {
-		packID := "renamed-" + surface
-		preview, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", surface, "--dry-run", "--json")
+	for _, test := range cases {
+		manifest := test.pack.Manifest()
+		activateArgs := []string{"activate", manifest.ID, "--surface", test.surface}
+		preview, err := executeCommand(t, NewRootCommand(opts), append(activateArgs, "--dry-run", "--json")...)
 		if err != nil {
-			t.Fatalf("%s preview: %v\n%s", surface, err, preview)
+			t.Fatalf("%s/%s preview: %v\n%s", manifest.ID, test.surface, err, preview)
 		}
 		if !json.Valid([]byte(preview)) {
-			t.Fatalf("%s lifecycle preview is not JSON: %s", surface, preview)
+			t.Fatalf("%s/%s lifecycle preview is not JSON: %s", manifest.ID, test.surface, preview)
 		}
 		assertStructuredOutput(t, root, "pack-lifecycle.schema.json", preview)
-		for _, fact := range []string{`"configured":"true"`, `"authorized":"` + globalAuthorization[surface] + `"`, `"usable":"unknown"`, `"surface-authorization"`, `"runtime-usability"`} {
+		for _, fact := range []string{`"configured":"true"`, `"authorized":"` + test.globalAuthorization + `"`, `"usable":"unknown"`, `"surface-authorization"`, `"runtime-usability"`} {
 			if !strings.Contains(preview, fact) {
-				t.Fatalf("%s preview omitted %s:\n%s", surface, fact, preview)
+				t.Fatalf("%s/%s preview omitted %s:\n%s", manifest.ID, test.surface, fact, preview)
 			}
 		}
-		if out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", surface); err != nil || !strings.Contains(out, "Apply result facts: verified=yes") {
-			t.Fatalf("%s activation: %v\n%s", surface, err, out)
+		if out, err := executeCommand(t, NewRootCommand(opts), activateArgs...); err != nil || !strings.Contains(out, "Apply result facts: verified=yes") {
+			t.Fatalf("%s/%s activation: %v\n%s", manifest.ID, test.surface, err, out)
 		}
-		status, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", surface, "--json")
+		status, err := executeCommand(t, NewRootCommand(opts), "status", manifest.ID, "--surface", test.surface, "--json")
 		if err != nil {
-			t.Fatalf("%s status: %v\n%s", surface, err, status)
+			t.Fatalf("%s/%s status: %v\n%s", manifest.ID, test.surface, err, status)
 		}
 		assertStructuredOutput(t, root, "pack-status.schema.json", status)
-		for _, fact := range []string{`"configured":"true"`, `"authorized":"` + globalAuthorization[surface] + `"`, `"usable":"unknown"`, `"type":"surface-authorization"`, `"type":"runtime-usability"`} {
+		for _, fact := range []string{`"configured":"true"`, `"authorized":"` + test.globalAuthorization + `"`, `"usable":"unknown"`, `"type":"surface-authorization"`, `"type":"runtime-usability"`} {
 			if !strings.Contains(status, fact) {
-				t.Fatalf("%s status omitted %s:\n%s", surface, fact, status)
+				t.Fatalf("%s/%s status omitted %s:\n%s", manifest.ID, test.surface, fact, status)
 			}
 		}
-		strict, strictErr := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", surface, "--require", "usable")
+		strict, strictErr := executeCommand(t, NewRootCommand(opts), "status", manifest.ID, "--surface", test.surface, "--require", "usable")
 		if strictErr == nil || !strings.Contains(strict, "usable=unknown") {
-			t.Fatalf("%s strict usability did not fail closed: %v\n%s", surface, strictErr, strict)
+			t.Fatalf("%s/%s strict usability did not fail closed: %v\n%s", manifest.ID, test.surface, strictErr, strict)
 		}
 	}
 
@@ -68,24 +80,28 @@ func TestRenamedCatalogPackPreservesReadinessAcrossSurfacesScopesAndPresentation
 		t.Fatalf("Doctor did not preserve informational unknown conditions and actionable Claude work:\n%s", doctor)
 	}
 
-	project := t.TempDir()
-	writeTestGitWorktree(t, project)
-	opts.Getwd = func() (string, error) { return project, nil }
-	for _, surface := range []string{"claude", "codex", "opencode"} {
-		packID := "renamed-" + surface
-		installed, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", surface, "--json")
+	for _, test := range cases {
+		if !test.projectScope {
+			continue
+		}
+		project := t.TempDir()
+		writeTestGitWorktree(t, project)
+		opts.Getwd = func() (string, error) { return project, nil }
+		manifest := test.pack.Manifest()
+		installArgs := []string{"install", manifest.ID, "--surface", test.surface}
+		installed, err := executeCommand(t, NewRootCommand(opts), append(installArgs, "--json")...)
 		if err != nil {
-			t.Fatalf("%s project install: %v\n%s", surface, err, installed)
+			t.Fatalf("%s/%s project install: %v\n%s", manifest.ID, test.surface, err, installed)
 		}
 		projectDocuments := strings.Split(strings.TrimSpace(installed), "\n")
 		if len(projectDocuments) != 2 {
-			t.Fatalf("%s project install JSON documents = %d\n%s", surface, len(projectDocuments), installed)
+			t.Fatalf("%s/%s project install JSON documents = %d\n%s", manifest.ID, test.surface, len(projectDocuments), installed)
 		}
 		assertProjectStructuredOutput(t, root, "project-preview.schema.json", projectDocuments[0])
 		assertProjectStructuredOutput(t, root, "project-apply.schema.json", projectDocuments[1])
-		status, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", surface, "--project", "--json")
+		status, err := executeCommand(t, NewRootCommand(opts), "status", manifest.ID, "--surface", test.surface, "--project", "--json")
 		if err != nil || !strings.Contains(status, `"configured":"true"`) || !strings.Contains(status, `"authorized":"unknown"`) || !strings.Contains(status, `"usable":"unknown"`) {
-			t.Fatalf("%s project status: %v\n%s", surface, err, status)
+			t.Fatalf("%s/%s project status: %v\n%s", manifest.ID, test.surface, err, status)
 		}
 		assertProjectStructuredOutput(t, root, "project-status.schema.json", status)
 	}
@@ -95,60 +111,19 @@ func TestRenamedCatalogPackPreservesReadinessAcrossSurfacesScopesAndPresentation
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, surface := range []string{"claude", "codex", "opencode"} {
-		pack := findTUIPack(dashboard.Global.Packs, "renamed-"+surface)
+	for _, test := range cases {
+		manifest := test.pack.Manifest()
+		pack := findTUIPack(dashboard.Global.Packs, manifest.ID)
 		if pack == nil {
-			t.Fatalf("TUI omitted renamed %s Pack: %#v", surface, dashboard.Global.Packs)
+			t.Fatalf("TUI omitted synthetic Pack %s: %#v", manifest.ID, dashboard.Global.Packs)
 		}
-		index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == surface })
-		wantPending := 0
-		if surface == "claude" {
-			wantPending = 3
+		index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == test.surface })
+		if index < 0 || pack.SurfaceStatuses[index].Configured != "true" || pack.SurfaceStatuses[index].Authorized != test.globalAuthorization || pack.SurfaceStatuses[index].Usable != "unknown" || len(pack.SurfaceStatuses[index].Conditions) < 3 || len(pack.SurfaceStatuses[index].PendingActions) != test.pendingActions {
+			t.Fatalf("TUI %s/%s readiness/actions = %#v", manifest.ID, test.surface, pack.SurfaceStatuses)
 		}
-		if index < 0 || pack.SurfaceStatuses[index].Configured != "true" || pack.SurfaceStatuses[index].Authorized != globalAuthorization[surface] || pack.SurfaceStatuses[index].Usable != "unknown" || len(pack.SurfaceStatuses[index].Conditions) < 3 || len(pack.SurfaceStatuses[index].PendingActions) != wantPending {
-			t.Fatalf("TUI %s readiness/actions = %#v", surface, pack.SurfaceStatuses)
-		}
-		preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: "renamed-" + surface, Surface: surface, Scope: "global"})
+		preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "deactivate", PackID: manifest.ID, Surface: test.surface, Scope: "global"})
 		if err != nil || preview.Operation != "deactivate" || len(preview.Phases) == 0 || len(preview.Phases[0].Actions) == 0 {
-			t.Fatalf("TUI %s lifecycle preview = %#v, err=%v", surface, preview, err)
-		}
-	}
-}
-
-func writeCatalogFitnessPacks(t *testing.T, bundle string) {
-	t.Helper()
-	for _, surface := range []string{"claude", "codex", "opencode"} {
-		packID, resourceID := "renamed-"+surface, "renamed-"+surface+"-guide"
-		skill := filepath.Join(bundle, "skills", resourceID)
-		if err := os.MkdirAll(skill, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("# "+resourceID+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		pack := filepath.Join(bundle, "packs", packID)
-		if err := os.MkdirAll(pack, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		manifest := fmt.Sprintf(`{
-  "id": %q,
-  "version": "1.0.0",
-  "description": "Synthetic catalog fitness Pack",
-  "selectable": true,
-	  "surfaces": [%q],
-  "readiness_obligations": ["runtime-usability", "surface-authorization"],
-  "external_requirements": [],
-  "resources": [{
-	    "kind": "skill", "id": %q, "source": %q, "description": "Synthetic renamed guide",
-    "requires": [], "conflicts": [],
-	    "bindings": [{"surface":%q,"projection":"skill","name":%q,"invocation":%q,"mode":"native","sharing":"exclusive","capabilities":[]}],
-    "surface_exclusions": []
-  }],
-  "exclusions": []
-}
-	`, packID, surface, resourceID, "skills/"+resourceID, surface, resourceID, resourceID)
-		if err := os.WriteFile(filepath.Join(pack, "pack.json"), []byte(manifest), 0o600); err != nil {
-			t.Fatal(err)
+			t.Fatalf("TUI %s/%s lifecycle preview = %#v, err=%v", manifest.ID, test.surface, preview, err)
 		}
 	}
 }
