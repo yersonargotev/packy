@@ -1319,7 +1319,8 @@ func TestPackActivateEngramDryRunShowsOnlyReviewedSkillAndNoEffects(t *testing.T
 	if err != nil {
 		t.Fatalf("dry-run failed: %v\n%s", err, out)
 	}
-	for _, want := range []string{"Pack: engram 3.1.0", "Phase: reversible-local", "Logical resources: 1 skill, 0 instruction, 0 mcp_server, 0 lifecycle, 0 agent, 0 command, 0 asset, 1 notice", "link skill engram-memory-cli"} {
+	engramVersion := checkedInPackVersion(t, "engram")
+	for _, want := range []string{"Pack: engram " + engramVersion, "Phase: reversible-local", "Logical resources: 1 skill, 0 instruction, 0 mcp_server, 0 lifecycle, 0 agent, 0 command, 0 asset, 1 notice", "link skill engram-memory-cli"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
