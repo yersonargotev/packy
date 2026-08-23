@@ -169,11 +169,14 @@ func currentEngramFileRecords(t *testing.T, root string, resourceSources []strin
 
 func currentEngramFileRecord(t *testing.T, path, relative string) managedpack.FileRecord {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(path)
+	if !info.Mode().IsRegular() {
+		t.Fatalf("current Engram closure member %s has non-regular mode %s", relative, info.Mode())
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
