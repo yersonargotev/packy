@@ -1,4 +1,0 @@
-interface:
-  display_name: "Engram Memory CLI"
-  short_description: "Use Engram project memory safely from the CLI"
-  default_prompt: "Use $engram-memory-cli to recall and preserve durable project knowledge with the Engram CLI."
