@@ -66,7 +66,6 @@ var realCatalogTestExceptions = map[string]realCatalogException{
 	"internal/cli/pstack_pack_test.go:TestPstackActivationPreviewsProjectThroughEverySurfaceAdapter":                         {realCatalogPublicContract, "Protects pstack's public all-surface projection and dependency-closing preview contract."},
 	"internal/cli/tui_backend_test.go:TestTUIProductionBackendUsesPackyOwnersWithoutMutatingState":                           {realCatalogPublicContract, "Protects the selectable Orchestrate catalog entry and its manifest-owned description, resources, and supported-surface matrix in the production TUI backend."},
 	"internal/packsync/reconfiguration_test.go:TestCheckedInIssueDeliveryReconfigurationAcceptsExactSelectedReleaseRevision": {realCatalogGeneratedEvidence, "Protects Issue Delivery's checked-in legacy reconfiguration and selected-release admission evidence."},
-	"internal/packsync/reconfiguration_test.go:TestCheckedInOrchestrateSupportsMetadataOnlyReconfiguration":                  {realCatalogGeneratedEvidence, "Protects Orchestrate's checked-in metadata-only reconfiguration admission contract."},
 }
 
 type realCatalogInventory struct {
