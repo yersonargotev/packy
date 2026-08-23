@@ -3,6 +3,7 @@ package repositorycandidate
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -78,8 +79,8 @@ func TestSemanticReportResourcesGraphBindingsAndCapabilitiesAreIndependent(t *te
 	report := compareSemanticChanges(current, nil, candidate, nil)
 
 	wantChanges := []string{
-		"Binding `skill:guide/codex` structurally changed.",
-		"Capability `skill:guide/codex/project-instruction` structurally changed.",
+		"Binding `skill:guide/codex` changed from `{" + `"surface":"codex","projection":"skill","name":"guide","invocation":"","mode":"native","sharing":"exclusive","capabilities":null` + "}` to `{" + `"surface":"codex","projection":"command","name":"guide","invocation":"","mode":"native","sharing":"exclusive","capabilities":null` + "}`.",
+		"Capability `skill:guide/codex/project-instruction` changed from `{" + `"type":"project-instruction","project_instruction":{"id":"guide","source":"instructions/old.md"}` + "}` to `{" + `"type":"project-instruction","project_instruction":{"id":"guide","source":"instructions/new.md"}` + "}`.",
 		"Conflict edge `skill:guide — skill:new-rival` added.",
 		"Conflict edge `skill:guide — skill:rival` removed.",
 		"Requires edge `skill:guide → asset:new` added.",
@@ -143,7 +144,7 @@ func TestSemanticReportProvenanceLegalAndNoticeContentStayHumanReviewed(t *testi
 	report := compareSemanticChanges(current, currentFiles, candidate, candidateFiles)
 
 	wantChanges := []string{
-		"Resource `notice:mit` attribution changed.",
+		"Resource `notice:mit` attribution changed from `Original author` to `Current author`.",
 		"Notice resource `notice:mit` content changed.",
 		"Resource `notice:mit` license changed from `MIT` to `Apache-2.0`.",
 		"Resource `skill:guide` notice association `notice:mit` added.",
@@ -168,6 +169,54 @@ func TestSemanticReportProvenanceLegalAndNoticeContentStayHumanReviewed(t *testi
 		if item.detail == "" {
 			t.Fatal("human-judgment item lacks review detail")
 		}
+	}
+}
+
+func TestSemanticReportExpandsAddedAndRemovedResourceReviewEvidence(t *testing.T) {
+	terms := semanticResource("notice", "terms")
+	terms.License = "MIT"
+	terms.Attribution = "Example author"
+	terms.Notices = []string{"notice:terms"}
+	terms.Origin = &managedpack.ResourceOrigin{ID: "upstream", Path: "LICENSE", Relationship: managedpack.RelationshipExactCopy}
+	files := []managedpack.FileRecord{{Path: "notices/terms/LICENSE", Mode: "100644", SHA256: "terms"}}
+	tests := []struct {
+		name           string
+		current        []managedpack.Resource
+		currentFiles   []managedpack.FileRecord
+		candidate      []managedpack.Resource
+		candidateFiles []managedpack.FileRecord
+		want           []string
+	}{
+		{
+			name:    "added",
+			current: semanticManifest("1.0.0").Resources, candidate: append(semanticManifest("1.0.1").Resources, terms), candidateFiles: files,
+			want: []string{"Resource `notice:terms` added.", "Notice resource `notice:terms` content changed.", "Resource `notice:terms` changed from authored to derived (`upstream:LICENSE`, `exact-copy`).", "Resource `notice:terms` license changed from `` to `MIT`.", "Resource `notice:terms` notice association `notice:terms` added."},
+		},
+		{
+			name:    "removed",
+			current: append(semanticManifest("1.0.0").Resources, terms), currentFiles: files, candidate: semanticManifest("2.0.0").Resources,
+			want: []string{"Resource `notice:terms` removed.", "Notice resource `notice:terms` content changed.", "Resource `notice:terms` changed from derived (`upstream:LICENSE`, `exact-copy`) to authored.", "Resource `notice:terms` license changed from `MIT` to ``.", "Resource `notice:terms` notice association `notice:terms` removed."},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			current := semanticManifest("1.0.0")
+			current.Origins = []managedpack.Origin{{ID: "upstream", Repository: "owner/upstream", Commit: "aaa"}}
+			current.Resources = test.current
+			candidate := semanticManifest("2.0.0")
+			candidate.Origins = current.Origins
+			candidate.Resources = test.candidate
+			report := compareSemanticChanges(current, test.currentFiles, candidate, test.candidateFiles)
+			changes := semanticDetails(report.changes)
+			for _, want := range test.want {
+				if !containsString(changes, want) {
+					t.Fatalf("changes lack %q: %#v", want, changes)
+				}
+			}
+			if len(report.humanJudgment) < 4 {
+				t.Fatalf("resource review evidence is incomplete: %#v", report.humanJudgment)
+			}
+		})
 	}
 }
 
@@ -324,11 +373,57 @@ func TestSemanticReportUsesOnlySuppliedResourceFileIndexesAndExactSourcePrefixes
 			t.Fatalf("content classification = %#v", report)
 		}
 	})
+
+	t.Run("typed capability content is human reviewed", func(t *testing.T) {
+		binding := capabilitypack.Binding{Surface: capabilitypack.SurfaceCodex, Capabilities: []capabilitypack.SurfaceCapability{{
+			Type:               capabilitypack.SurfaceCapabilityProjectInstruction,
+			ProjectInstruction: &capabilitypack.ProjectInstructionCapability{ID: "guide", Source: "instructions/guide.md"},
+		}}}
+		current.Resources[0].Bindings = []capabilitypack.Binding{binding}
+		candidate.Resources[0].Bindings = []capabilitypack.Binding{binding}
+		currentWithInstruction := append(currentFiles, managedpack.FileRecord{Path: "instructions/guide.md", Mode: "100644", SHA256: "old-instruction"})
+		candidateWithInstruction := []managedpack.FileRecord{
+			{Path: "skills/guide/SKILL.md", Mode: "100644", SHA256: "same"},
+			{Path: "instructions/guide.md", Mode: "100644", SHA256: "new-instruction"},
+		}
+		report := compareSemanticChanges(current, currentWithInstruction, candidate, candidateWithInstruction)
+		if got := semanticDetails(report.changes); !containsString(got, "Resource `skill:guide` content changed.") {
+			t.Fatalf("typed capability content change is absent: %#v", got)
+		}
+		if len(report.humanJudgment) != 1 {
+			t.Fatalf("typed capability content classification = %#v", report)
+		}
+	})
+}
+
+func TestSemanticReportShowsStructuralBeforeAndAfterValues(t *testing.T) {
+	current := semanticManifest("1.0.0")
+	current.Resources[0].Attribution = "Old author"
+	current.Resources[0].Bindings = []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "skill", Name: "guide"}}
+	candidate := semanticManifest("2.0.0")
+	candidate.Resources[0].Attribution = "New author"
+	candidate.Resources[0].Bindings = []capabilitypack.Binding{{Surface: capabilitypack.SurfaceCodex, Projection: "command", Name: "guide"}}
+	report := compareSemanticChanges(current, nil, candidate, nil)
+	markdown := report.renderMarkdown()
+	for _, want := range []string{"attribution changed from `Old author` to `New author`", "Binding `skill:guide/codex` changed from `{\"surface\":\"codex\",\"projection\":\"skill\"", "to `{\"surface\":\"codex\",\"projection\":\"command\""} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("Markdown lacks %q:\n%s", want, markdown)
+		}
+	}
 }
 
 func containsReason(reasons []semanticReason, want string) bool {
 	for _, reason := range reasons {
 		if reason.detail == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
 			return true
 		}
 	}

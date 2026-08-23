@@ -42,7 +42,7 @@ func compareSemanticChanges(current managedpack.Manifest, currentFiles []managed
 	compareStringCollection(&report, "Pack contract", "readiness obligation", stringsOf(current.ReadinessObligations), stringsOf(candidate.ReadinessObligations), minorLevel, majorLevel)
 	compareStringCollection(&report, "Pack contract", "external requirement", current.ExternalRequirements, candidate.ExternalRequirements, majorLevel, patchLevel)
 	if current.Description != candidate.Description {
-		detail := "Pack description changed."
+		detail := fmt.Sprintf("Pack description changed from `%s` to `%s`.", current.Description, candidate.Description)
 		report.addChange("Metadata", "pack:description", detail)
 		report.addReason(patchLevel, "changed Pack description")
 		report.addHuman("Metadata", "pack:description", "Pack description changed; review its meaning.")
@@ -121,13 +121,21 @@ func compareResources(report *semanticReport, previous []managedpack.Resource, p
 		} else {
 			report.addReason(minorLevel, "added isolated resource "+identity)
 		}
+		empty := managedpack.Resource{Kind: resource.Kind}
+		compareBindings(report, identity, nil, resource.Bindings, false)
+		compareResourceReviewMetadata(report, identity, empty, resource)
+		compareResourceContent(report, identity, empty, previousFiles, resource, candidateFiles)
 	}
-	for identity := range oldResources {
+	for identity, resource := range oldResources {
 		if _, exists := newResources[identity]; exists {
 			continue
 		}
 		report.addChange("Resources", identity, fmt.Sprintf("Resource `%s` removed.", identity))
 		report.addReason(majorLevel, "removed resource "+identity)
+		empty := managedpack.Resource{Kind: resource.Kind}
+		compareBindings(report, identity, resource.Bindings, nil, false)
+		compareResourceReviewMetadata(report, identity, resource, empty)
+		compareResourceContent(report, identity, resource, previousFiles, empty, candidateFiles)
 	}
 	for identity, oldResource := range oldResources {
 		newResource, exists := newResources[identity]
@@ -135,7 +143,7 @@ func compareResources(report *semanticReport, previous []managedpack.Resource, p
 			continue
 		}
 		compareProjection(report, identity, oldResource, newResource)
-		compareBindings(report, identity, oldResource.Bindings, newResource.Bindings)
+		compareBindings(report, identity, oldResource.Bindings, newResource.Bindings, true)
 		compareResourceMetadata(report, identity, oldResource, newResource)
 		contentChanged := compareResourceContent(report, identity, oldResource, previousFiles, newResource, candidateFiles)
 		if canonicalResource(oldResource) != canonicalResource(newResource) ||
@@ -147,11 +155,15 @@ func compareResources(report *semanticReport, previous []managedpack.Resource, p
 
 func compareResourceMetadata(report *semanticReport, identity string, previous, candidate managedpack.Resource) {
 	if previous.Description != candidate.Description {
-		detail := fmt.Sprintf("Resource `%s` description changed.", identity)
+		detail := fmt.Sprintf("Resource `%s` description changed from `%s` to `%s`.", identity, previous.Description, candidate.Description)
 		report.addChange("Metadata", identity+":description", detail)
 		report.addReason(patchLevel, "changed description of "+identity)
 		report.addHuman("Metadata", identity+":description", strings.TrimSuffix(detail, ".")+"; review its meaning.")
 	}
+	compareResourceReviewMetadata(report, identity, previous, candidate)
+}
+
+func compareResourceReviewMetadata(report *semanticReport, identity string, previous, candidate managedpack.Resource) {
 	if previous.License != candidate.License {
 		detail := fmt.Sprintf("Resource `%s` license changed from `%s` to `%s`.", identity, previous.License, candidate.License)
 		report.addChange("Legal", identity+":license", detail)
@@ -159,7 +171,7 @@ func compareResourceMetadata(report *semanticReport, identity string, previous, 
 		report.addHuman("Legal", identity+":license", strings.TrimSuffix(detail, ".")+"; review the declared legal metadata.")
 	}
 	if previous.Attribution != candidate.Attribution {
-		detail := fmt.Sprintf("Resource `%s` attribution changed.", identity)
+		detail := fmt.Sprintf("Resource `%s` attribution changed from `%s` to `%s`.", identity, previous.Attribution, candidate.Attribution)
 		report.addChange("Legal", identity+":attribution", detail)
 		report.addReason(patchLevel, "changed attribution metadata of "+identity)
 		report.addHuman("Legal", identity+":attribution", strings.TrimSuffix(detail, ".")+"; review the declared legal metadata.")
@@ -226,10 +238,10 @@ func (report *semanticReport) addProvenance(identity, field, detail, reason stri
 }
 
 func compareResourceContent(report *semanticReport, identity string, previous managedpack.Resource, previousFiles []managedpack.FileRecord, candidate managedpack.Resource, candidateFiles []managedpack.FileRecord) bool {
-	if canonicalJSON(resourceFiles(previous.Source, previousFiles)) == canonicalJSON(resourceFiles(candidate.Source, candidateFiles)) {
+	if canonicalJSON(resourceFiles(previous, previousFiles)) == canonicalJSON(resourceFiles(candidate, candidateFiles)) {
 		return false
 	}
-	if previous.Kind != "notice" || candidate.Kind != "notice" {
+	if previous.Kind != "notice" && candidate.Kind != "notice" {
 		detail := fmt.Sprintf("Resource `%s` content changed.", identity)
 		report.addChange("Content", identity+":content", detail)
 		report.addReason(patchLevel, "changed content of "+identity)
@@ -243,21 +255,55 @@ func compareResourceContent(report *semanticReport, identity string, previous ma
 	return true
 }
 
-func resourceFiles(source string, files []managedpack.FileRecord) map[string]managedpack.FileRecord {
+type resourceFileRoot struct {
+	identity string
+	path     string
+}
+
+func resourceFiles(resource managedpack.Resource, files []managedpack.FileRecord) map[string]managedpack.FileRecord {
 	result := map[string]managedpack.FileRecord{}
-	for _, file := range files {
-		if file.Path != source && !strings.HasPrefix(file.Path, source+"/") {
-			continue
+	for _, root := range resourceFileRoots(resource) {
+		for _, file := range files {
+			if file.Path != root.path && !strings.HasPrefix(file.Path, root.path+"/") {
+				continue
+			}
+			relative := strings.TrimPrefix(strings.TrimPrefix(file.Path, root.path), "/")
+			if relative == "" {
+				relative = "."
+			}
+			key := root.identity + "/" + relative
+			copy := file
+			copy.Path = key
+			result[key] = copy
 		}
-		relative := strings.TrimPrefix(strings.TrimPrefix(file.Path, source), "/")
-		if relative == "" {
-			relative = "."
-		}
-		copy := file
-		copy.Path = relative
-		result[relative] = copy
 	}
 	return result
+}
+
+func resourceFileRoots(resource managedpack.Resource) []resourceFileRoot {
+	var roots []resourceFileRoot
+	if resource.Source != "" {
+		roots = append(roots, resourceFileRoot{identity: "resource", path: resource.Source})
+	}
+	for _, binding := range resource.Bindings {
+		for _, capability := range binding.Capabilities {
+			identity := "capability:" + string(binding.Surface) + ":" + string(capability.Type)
+			switch capability.Type {
+			case capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt:
+				if capability.PrimaryPrompt != nil && capability.PrimaryPrompt.Source != "" {
+					roots = append(roots, resourceFileRoot{identity: identity, path: capability.PrimaryPrompt.Source})
+				}
+			case capabilitypack.SurfaceCapabilityProjectInstruction:
+				if capability.ProjectInstruction != nil && capability.ProjectInstruction.Source != "" {
+					roots = append(roots, resourceFileRoot{identity: identity, path: capability.ProjectInstruction.Source})
+				}
+			}
+		}
+	}
+	sort.Slice(roots, func(i, j int) bool {
+		return roots[i].identity+"\x00"+roots[i].path < roots[j].identity+"\x00"+roots[j].path
+	})
+	return roots
 }
 
 func canonicalResource(value managedpack.Resource) string {
@@ -378,7 +424,7 @@ func compareProjectionValue(report *semanticReport, identity, field, previous, c
 	report.addReason(majorLevel, "changed projection "+field+" of "+identity)
 }
 
-func compareBindings(report *semanticReport, resourceIdentity string, previous, candidate []capabilitypack.Binding) {
+func compareBindings(report *semanticReport, resourceIdentity string, previous, candidate []capabilitypack.Binding, classifyFloor bool) {
 	oldBindings := bindingMap(previous)
 	newBindings := bindingMap(candidate)
 	for key, binding := range newBindings {
@@ -386,10 +432,14 @@ func compareBindings(report *semanticReport, resourceIdentity string, previous, 
 		identity := resourceIdentity + "/" + key
 		if !exists {
 			report.addChange("Bindings", identity, fmt.Sprintf("Binding `%s` added.", identity))
-			report.addReason(majorLevel, "added binding "+identity)
+			if classifyFloor {
+				report.addReason(majorLevel, "added binding "+identity)
+			}
 		} else if canonicalBinding(old) != canonicalBinding(binding) {
-			report.addChange("Bindings", identity, fmt.Sprintf("Binding `%s` structurally changed.", identity))
-			report.addReason(majorLevel, "changed binding "+identity)
+			report.addChange("Bindings", identity, fmt.Sprintf("Binding `%s` changed from `%s` to `%s`.", identity, canonicalBinding(old), canonicalBinding(binding)))
+			if classifyFloor {
+				report.addReason(majorLevel, "changed binding "+identity)
+			}
 		}
 	}
 	for key := range oldBindings {
@@ -398,9 +448,11 @@ func compareBindings(report *semanticReport, resourceIdentity string, previous, 
 		}
 		identity := resourceIdentity + "/" + key
 		report.addChange("Bindings", identity, fmt.Sprintf("Binding `%s` removed.", identity))
-		report.addReason(majorLevel, "removed binding "+identity)
+		if classifyFloor {
+			report.addReason(majorLevel, "removed binding "+identity)
+		}
 	}
-	compareCapabilities(report, resourceIdentity, previous, candidate)
+	compareCapabilities(report, resourceIdentity, previous, candidate, classifyFloor)
 }
 
 func bindingMap(values []capabilitypack.Binding) map[string]capabilitypack.Binding {
@@ -422,7 +474,7 @@ func canonicalBinding(value capabilitypack.Binding) string {
 	return canonicalJSON(value)
 }
 
-func compareCapabilities(report *semanticReport, resourceIdentity string, previous, candidate []capabilitypack.Binding) {
+func compareCapabilities(report *semanticReport, resourceIdentity string, previous, candidate []capabilitypack.Binding, classifyFloor bool) {
 	oldCapabilities := capabilityMap(previous)
 	newCapabilities := capabilityMap(candidate)
 	for key, capability := range newCapabilities {
@@ -430,10 +482,14 @@ func compareCapabilities(report *semanticReport, resourceIdentity string, previo
 		old, exists := oldCapabilities[key]
 		if !exists {
 			report.addChange("Capabilities", identity, fmt.Sprintf("Capability `%s` added.", identity))
-			report.addReason(majorLevel, "added capability "+identity)
+			if classifyFloor {
+				report.addReason(majorLevel, "added capability "+identity)
+			}
 		} else if canonicalCapability(old) != canonicalCapability(capability) {
-			report.addChange("Capabilities", identity, fmt.Sprintf("Capability `%s` structurally changed.", identity))
-			report.addReason(majorLevel, "changed capability "+identity)
+			report.addChange("Capabilities", identity, fmt.Sprintf("Capability `%s` changed from `%s` to `%s`.", identity, canonicalCapability(old), canonicalCapability(capability)))
+			if classifyFloor {
+				report.addReason(majorLevel, "changed capability "+identity)
+			}
 		}
 	}
 	for key := range oldCapabilities {
@@ -442,7 +498,9 @@ func compareCapabilities(report *semanticReport, resourceIdentity string, previo
 		}
 		identity := resourceIdentity + "/" + key
 		report.addChange("Capabilities", identity, fmt.Sprintf("Capability `%s` removed.", identity))
-		report.addReason(majorLevel, "removed capability "+identity)
+		if classifyFloor {
+			report.addReason(majorLevel, "removed capability "+identity)
+		}
 	}
 }
 
