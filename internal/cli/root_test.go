@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/bootstrap"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 	"github.com/yersonargotev/packy/internal/testprocess"
 	packyversion "github.com/yersonargotev/packy/internal/version"
@@ -170,10 +171,13 @@ func TestDoctorJSONHealthyWarningsAndFailures(t *testing.T) {
 
 func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 	t.Run("converged active pack", func(t *testing.T) {
+		pack := testsupport.PortableAllSurfaces("doctor-portable")
+		manifest := pack.Manifest()
 		terminal := &fakeTerminal{interactive: true, approve: true}
-		opts, home, _ := packActivationOptions(t, terminal)
+		fixture := newSyntheticCLIFixture(t, terminal, pack)
+		opts, home := fixture.options, fixture.home
 		opts.SurfaceAdapters = alwaysUsableAdapters(t, opts)
-		if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "codex"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
 		before := snapshotTree(t, home)
@@ -183,7 +187,8 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("doctor: %v\n%s", err, human)
 		}
-		for _, want := range []string{"PASS packy-core", "PASS pack-matty-codex", "no confirmed health problems", "SUMMARY status=healthy passes=2"} {
+		checkName := "pack-" + manifest.ID + "-codex"
+		for _, want := range []string{"PASS packy-core", "PASS " + checkName, "no confirmed health problems", "SUMMARY status=healthy passes=2"} {
 			if !strings.Contains(human, want) {
 				t.Fatalf("human doctor missing %q:\n%s", want, human)
 			}
@@ -197,7 +202,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 			Checks  []setupHealthJSONCheck `json:"checks"`
 			Summary setupHealthJSONSummary `json:"summary"`
 		}
-		if err := json.Unmarshal([]byte(jsonOutput), &report); err != nil || len(report.Checks) != 2 || report.Checks[1].Name != "pack-matty-codex" || report.Summary.Status != "healthy" {
+		if err := json.Unmarshal([]byte(jsonOutput), &report); err != nil || len(report.Checks) != 2 || report.Checks[1].Name != checkName || report.Summary.Status != "healthy" {
 			t.Fatalf("doctor JSON = %+v err=%v\n%s", report, err, jsonOutput)
 		}
 		if snapshotTree(t, home) != before || terminal.calls != prompts {
@@ -206,12 +211,15 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 	})
 
 	t.Run("active drift warns with current remediation", func(t *testing.T) {
+		pack := testsupport.PortableAllSurfaces("doctor-drift")
+		manifest := pack.Manifest()
 		terminal := &fakeTerminal{interactive: true, approve: true}
-		opts, home, _ := currentPackActivationOptions(t, terminal)
-		if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
+		fixture := newSyntheticCLIFixture(t, terminal, pack)
+		opts, home := fixture.options, fixture.home
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "codex"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
-		if err := os.Remove(filepath.Join(home, ".agents", "skills", "ask-matt")); err != nil {
+		if err := os.Remove(filepath.Join(home, ".codex", "AGENTS.md")); err != nil {
 			t.Fatal(err)
 		}
 		before := snapshotTree(t, home)
@@ -221,7 +229,7 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("doctor error=%v\n%s", err, out)
 		}
-		for _, want := range []string{"WARN pack-matty-codex", "projection findings", "packy activate matty --surface codex", "packy status matty --surface codex"} {
+		for _, want := range []string{"WARN pack-" + manifest.ID + "-codex", "projection findings", "packy activate " + manifest.ID + " --surface codex", "packy status " + manifest.ID + " --surface codex"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("drift doctor missing %q:\n%s", want, out)
 			}
@@ -232,14 +240,17 @@ func TestDoctorReportsOnlyActivePackHealthWithoutSideEffects(t *testing.T) {
 	})
 
 	t.Run("unobservable runtime is informational", func(t *testing.T) {
+		pack := testsupport.PortableAllSurfaces("doctor-unobservable")
+		manifest := pack.Manifest()
 		terminal := &fakeTerminal{interactive: true, approve: true}
-		opts, home, _ := packActivationOptions(t, terminal)
-		if out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex"); err != nil {
+		fixture := newSyntheticCLIFixture(t, terminal, pack)
+		opts, home := fixture.options, fixture.home
+		if out, err := executeCommand(t, NewRootCommand(opts), "activate", manifest.ID, "--surface", "codex"); err != nil {
 			t.Fatalf("activate: %v\n%s", err, out)
 		}
 		before := snapshotTree(t, home)
 		out, err := executeCommand(t, NewRootCommand(opts), "doctor")
-		if err != nil || !strings.Contains(out, "INFO pack-matty-codex-usable-runtime-usability-runtime-unobservable") || !strings.Contains(out, "SUMMARY status=healthy") || !strings.Contains(out, "infos=1") || strings.Contains(out, "WARN pack-matty-codex") {
+		if err != nil || !strings.Contains(out, "INFO pack-"+manifest.ID+"-codex-usable-runtime-usability-runtime-unobservable") || !strings.Contains(out, "SUMMARY status=healthy") || !strings.Contains(out, "infos=") || strings.Contains(out, "WARN pack-"+manifest.ID+"-codex") {
 			t.Fatalf("informational doctor: %v\n%s", err, out)
 		}
 		if snapshotTree(t, home) != before {
@@ -254,9 +265,9 @@ func TestDoctorPreservesUnknownConditionsForBundledPackHealth(t *testing.T) {
 		{Type: capabilitypack.ConditionSurfaceAuthorization, Dimension: capabilitypack.ReadinessAuthorized, Value: capabilitypack.ReadinessUnknown, Reason: capabilitypack.ReasonAuthorizationUnknown, Message: "surface authorization cannot be observed"},
 	}
 	report := setuphealth.Diagnose("/sandbox/home", "/sandbox/xdg", setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{
-		{ID: "matty", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
-		{ID: "argote", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
-		{ID: "orchestrate", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
+		{ID: "portable-alpha", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
+		{ID: "portable-beta", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
+		{ID: "capability-rich", Surface: "codex", Conditions: setupHealthConditions(unknownConditions)},
 	}})
 	if report.Summary.Status != "healthy" || report.Summary.Warnings != 0 || report.Summary.Failures != 0 || report.Summary.Infos != 6 {
 		t.Fatalf("report summary = %+v", report.Summary)
@@ -280,10 +291,10 @@ func TestDoctorHumanAndJSONScenarioContracts(t *testing.T) {
 	}{
 		{name: "no pack", checkName: "packy-core", severity: setuphealth.Pass, status: "healthy"},
 		{name: "inactive pack", checkName: "packy-core", severity: setuphealth.Pass, status: "healthy"},
-		{name: "converged", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex"}}}, checkName: "pack-matty-codex", severity: setuphealth.Pass, status: "healthy"},
-		{name: "drifted", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex", ProjectionProblems: 1}}}, checkName: "pack-matty-codex", severity: setuphealth.Warn, status: "warnings"},
-		{name: "missing requirement", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex", MissingRequirements: 1}}}, checkName: "pack-matty-codex", severity: setuphealth.Warn, status: "warnings"},
-		{name: "pending human action", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "matty", Surface: "codex", PendingHumanActions: 1}}}, checkName: "pack-matty-codex", severity: setuphealth.Warn, status: "warnings"},
+		{name: "converged", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "codex"}}}, checkName: "pack-portable-alpha-codex", severity: setuphealth.Pass, status: "healthy"},
+		{name: "drifted", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "codex", ProjectionProblems: 1}}}, checkName: "pack-portable-alpha-codex", severity: setuphealth.Warn, status: "warnings"},
+		{name: "missing requirement", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "codex", MissingRequirements: 1}}}, checkName: "pack-portable-alpha-codex", severity: setuphealth.Warn, status: "warnings"},
+		{name: "pending human action", observation: setuphealth.Observation{ActivePacks: []setuphealth.ActivePack{{ID: "portable-alpha", Surface: "codex", PendingHumanActions: 1}}}, checkName: "pack-portable-alpha-codex", severity: setuphealth.Warn, status: "warnings"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

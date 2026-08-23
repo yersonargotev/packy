@@ -10,17 +10,21 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
 func TestIssue459ProjectActivationRequiresAnInstalledPack(t *testing.T) {
-	opts, home, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
+	pack := testsupport.PortableAllSurfaces("project-activation-absent")
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+	opts, home := fixture.options, fixture.home
+	packID := pack.Manifest().ID
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
 	beforeProject, beforeHome := snapshotTree(t, project), snapshotTree(t, home)
-	_, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--project")
+	_, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--project")
 	if err == nil || !strings.Contains(err.Error(), "project installation") {
 		t.Fatalf("activation without installation error = %v", err)
 	}
@@ -31,11 +35,16 @@ func TestIssue459ProjectActivationRequiresAnInstalledPack(t *testing.T) {
 
 func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	pack := testsupport.PortableAllSurfaces("project-activation")
+	fixture := newSyntheticCLIFixture(t, terminal, pack)
+	opts, home := fixture.options, fixture.home
+	packID := pack.Manifest().ID
+	resource := syntheticResource(t, pack, "instruction", "guidance")
+	resourceID := capabilitypack.ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
@@ -44,8 +53,8 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	installation.Lock.Receipts[0].Sensitive = []capabilitypack.ProjectSensitiveDisclosure{
-		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "mcp_server"},
-		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: capabilitypack.ResourceIdentity{Kind: "skill", ID: "ask-matt"}, Detail: "project-trust"},
+		{Category: capabilitypack.ProjectActivationMCP, Surface: capabilitypack.SurfaceCodex, Resource: resourceID, Detail: "mcp_server"},
+		{Category: capabilitypack.ProjectActivationTrust, Surface: capabilitypack.SurfaceCodex, Resource: resourceID, Detail: "project-trust"},
 	}
 	lock, err := json.MarshalIndent(installation.Lock, "", "  ")
 	if err != nil {
@@ -93,7 +102,7 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 		t.Fatalf("personal Codex project trust = %q, %v", trust, err)
 	}
 	status, err := capabilitypack.InspectProjectStatus(context.Background(), capabilitypack.ProjectStatusRequest{
-		ProjectRoot: project, PackID: "matty", Surface: capabilitypack.SurfaceCodex, PackyHome: filepath.Join(home, ".packy"),
+		ProjectRoot: project, PackID: packID, Surface: capabilitypack.SurfaceCodex, PackyHome: filepath.Join(home, ".packy"),
 		RequireUsable: true,
 		Adapters:      map[capabilitypack.Surface]capabilitypack.SurfaceAdapter{capabilitypack.SurfaceCodex: adapter},
 	})
@@ -104,11 +113,11 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	terminal.calls = 0
-	driftPreview, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--project", "--dry-run")
+	driftPreview, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--project", "--dry-run")
 	if err != nil || !strings.Contains(driftPreview, "Runtime activation: previewable") || !strings.Contains(driftPreview, "Personal effect: codex-project-trust") || terminal.calls != 0 {
 		t.Fatalf("drifted trust preview prompts=%d: %v\n%s", terminal.calls, err, driftPreview)
 	}
-	if _, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--project"); err != nil {
+	if _, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--project"); err != nil {
 		t.Fatalf("repair drifted trust: %v", err)
 	}
 	trust, err = os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
@@ -119,16 +128,19 @@ func TestIssue459InteractiveInstallCanOfferSeparateActivation(t *testing.T) {
 
 func TestIssue459DeclarativeProjectActivationIsNotRequired(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
+	pack := testsupport.PortableAllSurfaces("project-declarative")
+	fixture := newSyntheticCLIFixture(t, terminal, pack)
+	opts, home := fixture.options, fixture.home
+	packID := pack.Manifest().ID
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
 
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "codex", "--project")
+	out, err := executeCommand(t, NewRootCommand(opts), "activate", packID, "--surface", "codex", "--project")
 	if err != nil || !strings.Contains(out, "Runtime activation: not-required") {
 		t.Fatalf("declarative activation: %v\n%s", err, out)
 	}
@@ -142,15 +154,17 @@ func TestIssue459DeclarativeProjectActivationIsNotRequired(t *testing.T) {
 }
 
 func TestIssue459ProjectUsableEnforcementRequiresPersonalActivation(t *testing.T) {
-	opts, _, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
+	pack := testsupport.PortableAllSurfaces("project-usable")
+	opts := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack).options
+	packID := pack.Manifest().ID
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", packID, "--surface", "codex"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
-	out, err := executeCommand(t, NewRootCommand(opts), "status", "matty", "--surface", "codex", "--project", "--require", "usable")
+	out, err := executeCommand(t, NewRootCommand(opts), "status", packID, "--surface", "codex", "--project", "--require", "usable")
 	if err == nil || !strings.Contains(out, "configured=true, authorized=unknown, usable=unknown") {
 		t.Fatalf("declarative project usability must fail closed without runtime evidence: %v\n%s", err, out)
 	}

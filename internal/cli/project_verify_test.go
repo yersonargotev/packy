@@ -10,10 +10,38 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 )
 
+func installSyntheticVerificationProject(t *testing.T, pack testsupport.Fixture) (Options, string) {
+	t.Helper()
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+	project := t.TempDir()
+	writeTestGitWorktree(t, project)
+	fixture.options.Getwd = func() (string, error) { return project, nil }
+	if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", pack.Manifest().ID, "--surface", "codex"); err != nil {
+		t.Fatalf("seed synthetic project install: %v\n%s", err, out)
+	}
+	return fixture.options, project
+}
+
+func syntheticProjectProjectionTarget(t *testing.T, project string) string {
+	t.Helper()
+	installation, err := capabilitypack.LoadProjectInstallation(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range installation.Lock.Projections {
+		if projection.Target != "PACKY-NOTICES.md" {
+			return filepath.Join(project, filepath.FromSlash(projection.Target))
+		}
+	}
+	t.Fatal("synthetic project has no non-notice projection")
+	return ""
+}
+
 func TestProjectVerifyPassesOfflineWithoutPersonalState(t *testing.T) {
-	opts, project := installIssue453Project(t)
+	opts, project := installSyntheticVerificationProject(t, testsupport.PortableAllSurfaces("verify-offline"))
 	opts.Env = MapEnv{}
 	before := snapshotTree(t, project)
 
@@ -35,11 +63,13 @@ func TestProjectVerifyPassesOfflineWithoutPersonalState(t *testing.T) {
 
 func TestProjectVerifyRunsWithNoHomeOrPath(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, _, _ := packActivationOptions(t, terminal)
+	pack := testsupport.ExternalTool("verify-empty-environment")
+	fixture := newSyntheticCLIFixture(t, terminal, pack)
+	opts := fixture.options
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", "engram", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), "install", pack.Manifest().ID, "--surface", "codex"); err != nil {
 		t.Fatalf("seed external-requirement project: %v\n%s", err, out)
 	}
 
@@ -73,8 +103,8 @@ func TestProjectVerifyEmptyEnvironmentHelper(t *testing.T) {
 }
 
 func TestProjectVerifyFailsWithActionableDriftFinding(t *testing.T) {
-	opts, project := installIssue453Project(t)
-	drift := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
+	opts, project := installSyntheticVerificationProject(t, testsupport.PortableAllSurfaces("verify-drift"))
+	drift := syntheticProjectProjectionTarget(t, project)
 	if err := os.WriteFile(drift, []byte("drift\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +124,8 @@ func TestProjectVerifyFailsWithActionableDriftFinding(t *testing.T) {
 }
 
 func TestProjectVerifyRejectsChangedProjectionMode(t *testing.T) {
-	opts, project := installIssue453Project(t)
-	target := filepath.Join(project, "AGENTS.md")
+	opts, project := installSyntheticVerificationProject(t, testsupport.PortableAllSurfaces("verify-projection-mode"))
+	target := syntheticProjectProjectionTarget(t, project)
 	if err := os.Chmod(target, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +137,7 @@ func TestProjectVerifyRejectsChangedProjectionMode(t *testing.T) {
 }
 
 func TestProjectLockRequiresProjectionModeEvidence(t *testing.T) {
-	_, project := installIssue453Project(t)
+	_, project := installSyntheticVerificationProject(t, testsupport.PortableAllSurfaces("verify-lock-evidence"))
 	lockPath := filepath.Join(project, "packy.lock.json")
 	data, err := os.ReadFile(lockPath)
 	if err != nil {
@@ -153,7 +183,7 @@ func TestProjectVerifyFailsCleanlyWhenContractIsAbsent(t *testing.T) {
 }
 
 func TestProjectVerifyRejectsDuplicateNoticeContributions(t *testing.T) {
-	opts, project := installIssue453Project(t)
+	opts, project := installSyntheticVerificationProject(t, testsupport.PortableAllSurfaces("verify-duplicate-notices"))
 	noticesPath := filepath.Join(project, "PACKY-NOTICES.md")
 	notices, err := os.ReadFile(noticesPath)
 	if err != nil {
@@ -170,7 +200,7 @@ func TestProjectVerifyRejectsDuplicateNoticeContributions(t *testing.T) {
 }
 
 func TestProjectVerifyRejectsChangedNoticeMode(t *testing.T) {
-	opts, project := installIssue453Project(t)
+	opts, project := installSyntheticVerificationProject(t, testsupport.PortableAllSurfaces("verify-notice-mode"))
 	noticesPath := filepath.Join(project, "PACKY-NOTICES.md")
 	if err := os.Chmod(noticesPath, 0o600); err != nil {
 		t.Fatal(err)
@@ -183,8 +213,8 @@ func TestProjectVerifyRejectsChangedNoticeMode(t *testing.T) {
 }
 
 func TestProjectVerifyRedactsProjectRootFromInspectionErrors(t *testing.T) {
-	opts, project := installIssue453Project(t)
-	target := filepath.Join(project, "AGENTS.md")
+	opts, project := installSyntheticVerificationProject(t, testsupport.PortableAllSurfaces("verify-redaction"))
+	target := syntheticProjectProjectionTarget(t, project)
 	if err := os.Remove(target); err != nil {
 		t.Fatal(err)
 	}

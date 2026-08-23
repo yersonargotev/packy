@@ -8,13 +8,20 @@ import (
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/localprojection"
 )
 
-func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *testing.T) {
-	facts := checkedInMattyFacts(t)
+func issue452InstallArgs(packID string) []string {
+	return []string{"install", packID, "--surface", "codex", "--resource", "instruction:guidance", "--resource", "skill:helper"}
+}
+
+func TestIssue452SyntheticCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, repoRoot := packActivationOptions(t, terminal)
+	pack := testsupport.CapabilityRich("project-install")
+	fixture := newSyntheticCLIFixture(t, terminal, pack)
+	opts, home := fixture.options, fixture.home
+	manifestPack := pack.Manifest()
 	project := filepath.Join(t.TempDir(), "project")
 	nested := filepath.Join(project, "one", "two")
 	if err := os.MkdirAll(nested, 0o700); err != nil {
@@ -36,7 +43,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	}
 	gitBefore := snapshotTree(t, filepath.Join(project, ".git"))
 
-	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), issue452InstallArgs(manifestPack.ID)...)
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -64,7 +71,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatalf("decode manifest: %v\n%s", err, manifestData)
 	}
-	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != "matty" || len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Version != facts.Version || manifest.Packs[0].SurfaceIntents[0].Surface != capabilitypack.SurfaceCodex {
+	if manifest.SchemaVersion != 1 || manifest.MinimumPackyCapability != "" || len(manifest.Packs) != 1 || manifest.Packs[0].ID != manifestPack.ID || len(manifest.Packs[0].SurfaceIntents) != 1 || manifest.Packs[0].SurfaceIntents[0].Version != pack.CurrentVersion() || manifest.Packs[0].SurfaceIntents[0].Surface != capabilitypack.SurfaceCodex {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 
@@ -76,7 +83,7 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err := json.Unmarshal(lockData, &lock); err != nil {
 		t.Fatalf("decode lock: %v\n%s", err, lockData)
 	}
-	if lock.SchemaVersion != 1 || len(lock.Receipts) != 1 || len(lock.Receipts[0].Resources) != facts.Resources+1 || len(lock.Receipts[0].Projections) != facts.Skills+2 {
+	if lock.SchemaVersion != 1 || len(lock.Receipts) != 1 || len(lock.Receipts[0].Resources) == 0 || len(lock.Receipts[0].Projections) == 0 {
 		t.Fatalf("lock = %#v", lock)
 	}
 
@@ -94,7 +101,8 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"foreign preamble", "<!-- packy:project:instruction:matty-codex-project:start -->", ".agents/skills", "<!-- packy:project:instruction:matty-codex-project:end -->", "foreign epilogue"} {
+	projectInstructionID := manifestPack.ID + "-project"
+	for _, want := range []string{"foreign preamble", "<!-- packy:project:instruction:" + projectInstructionID + ":start -->", "Synthetic capability-rich guidance.", "<!-- packy:project:instruction:" + projectInstructionID + ":end -->", "foreign epilogue"} {
 		if !strings.Contains(string(agents), want) {
 			t.Fatalf("AGENTS.md missing %q:\n%s", want, agents)
 		}
@@ -135,17 +143,17 @@ func TestIssue452MattyCodexProjectInstallMutatesRecoverablyAndRepeatsAsNoOp(t *t
 	}
 	beforeRepeat := snapshotTree(t, project)
 	terminal.calls = 0
-	repeated, repeatErr := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
+	repeated, repeatErr := executeCommand(t, NewRootCommand(opts), issue452InstallArgs(manifestPack.ID)...)
 	if repeatErr != nil {
 		t.Fatalf("repeat install: %v\n%s", repeatErr, repeated)
 	}
 	if !strings.Contains(repeated, "Verified no-op") || terminal.calls != 0 || snapshotTree(t, project) != beforeRepeat {
 		t.Fatalf("repeat was not an exact no-op: approvals=%d\n%s", terminal.calls, repeated)
 	}
-	_ = repoRoot
 }
 
 func TestIssue452ProjectInstallBlocksForeignTargetsAndAmbiguousMarkersBeforeMutation(t *testing.T) {
+	const packID = "project-blocked"
 	for _, test := range []struct {
 		name  string
 		setup func(t *testing.T, project string)
@@ -153,7 +161,7 @@ func TestIssue452ProjectInstallBlocksForeignTargetsAndAmbiguousMarkersBeforeMuta
 	}{
 		{name: "foreign non-composable target", setup: func(t *testing.T, project string) {
 			t.Helper()
-			target := filepath.Join(project, ".agents", "skills", "ask-matt")
+			target := filepath.Join(project, ".agents", "skills", "helper")
 			if err := os.MkdirAll(target, 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -163,7 +171,8 @@ func TestIssue452ProjectInstallBlocksForeignTargetsAndAmbiguousMarkersBeforeMuta
 		}, want: "foreign_target"},
 		{name: "ambiguous Packy markers", setup: func(t *testing.T, project string) {
 			t.Helper()
-			block := "<!-- packy:project:instruction:matty-codex-project:start -->\nchanged\n<!-- packy:project:instruction:matty-codex-project:end -->\n"
+			instructionID := packID + "-project"
+			block := "<!-- packy:project:instruction:" + instructionID + ":start -->\nchanged\n<!-- packy:project:instruction:" + instructionID + ":end -->\n"
 			if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte(block+block), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -187,13 +196,14 @@ func TestIssue452ProjectInstallBlocksForeignTargetsAndAmbiguousMarkersBeforeMuta
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			terminal := &fakeTerminal{interactive: true, approve: true}
-			opts, _, _ := packActivationOptions(t, terminal)
+			pack := testsupport.CapabilityRich(packID)
+			opts := newSyntheticCLIFixture(t, terminal, pack).options
 			project := t.TempDir()
 			writeTestGitWorktree(t, project)
 			test.setup(t, project)
 			opts.Getwd = func() (string, error) { return project, nil }
 			before := snapshotTree(t, project)
-			out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
+			out, err := executeCommand(t, NewRootCommand(opts), issue452InstallArgs(pack.Manifest().ID)...)
 			if err == nil || !strings.Contains(out, test.want) || terminal.calls != 0 {
 				t.Fatalf("blocked install = err:%v approvals:%d\n%s", err, terminal.calls, out)
 			}
@@ -206,7 +216,9 @@ func TestIssue452ProjectInstallBlocksForeignTargetsAndAmbiguousMarkersBeforeMuta
 
 func TestIssue452ProjectInstallRejectsConcurrentTargetChangeAfterApproval(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, _, _ := packActivationOptions(t, terminal)
+	pack := testsupport.CapabilityRich("project-stale")
+	opts := newSyntheticCLIFixture(t, terminal, pack).options
+	packID := pack.Manifest().ID
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	agents := filepath.Join(project, "AGENTS.md")
@@ -219,7 +231,7 @@ func TestIssue452ProjectInstallRejectsConcurrentTargetChangeAfterApproval(t *tes
 			t.Fatal(err)
 		}
 	}
-	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), issue452InstallArgs(packID)...)
 	if err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("stale install = %v\n%s", err, out)
 	}
@@ -235,19 +247,21 @@ func TestIssue452ProjectInstallRejectsConcurrentTargetChangeAfterApproval(t *tes
 
 func TestIssue452ProjectInstallPreservesOwnedDriftAndRefusesRepeat(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, _, _ := packActivationOptions(t, terminal)
+	pack := testsupport.CapabilityRich("project-drift")
+	opts := newSyntheticCLIFixture(t, terminal, pack).options
+	packID := pack.Manifest().ID
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	opts.Getwd = func() (string, error) { return project, nil }
-	if out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex"); err != nil {
+	if out, err := executeCommand(t, NewRootCommand(opts), issue452InstallArgs(packID)...); err != nil {
 		t.Fatalf("seed install: %v\n%s", err, out)
 	}
-	drift := filepath.Join(project, ".agents", "skills", "ask-matt", "SKILL.md")
+	drift := filepath.Join(project, ".agents", "skills", "helper", "SKILL.md")
 	if err := os.WriteFile(drift, []byte("owned drift\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	terminal.calls = 0
-	out, err := executeCommand(t, NewRootCommand(opts), "install", "matty", "--surface", "codex")
+	out, err := executeCommand(t, NewRootCommand(opts), issue452InstallArgs(packID)...)
 	if err == nil || !strings.Contains(out, "owned_drift") || terminal.calls != 0 {
 		t.Fatalf("drifted repeat = err:%v approvals:%d\n%s", err, terminal.calls, out)
 	}

@@ -8,6 +8,9 @@ import (
 	"testing"
 )
 
+// TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox is the one
+// real-catalog CLI integration smoke: it protects Matty's reviewed Claude
+// projection and cleanup contract end to end.
 func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T) {
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	opts, home, _ := packActivationOptions(t, terminal)
@@ -69,11 +72,7 @@ func TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox(t *testing.T)
 	if err != nil || string(instructions) != "operator-owned guidance\n" {
 		t.Fatalf("Claude last-contributor cleanup changed foreign instructions: err=%v\n%s", err, instructions)
 	}
-}
 
-func TestClaudeBlockedActivationExecutesZeroEffects(t *testing.T) {
-	terminal := &fakeTerminal{interactive: true, approve: true}
-	opts, home, _ := packActivationOptions(t, terminal)
 	foreignSkill := filepath.Join(home, ".claude", "skills", "ask-matt")
 	if err := os.MkdirAll(foreignSkill, 0o700); err != nil {
 		t.Fatal(err)
@@ -81,6 +80,7 @@ func TestClaudeBlockedActivationExecutesZeroEffects(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(foreignSkill, "FOREIGN.md"), []byte("foreign\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	terminal.calls = 0
 	before := snapshotTree(t, home)
 	out, err := executeCommand(t, NewRootCommand(opts), "activate", "matty", "--surface", "claude")
 	if err == nil || !strings.Contains(out, "Compatibility: blocked") || !strings.Contains(out, "Expected readiness: configured=false") || !strings.Contains(out, "Cannot apply activation: 1 blockers") {

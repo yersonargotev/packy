@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/setuphealth"
 )
 
@@ -65,7 +66,10 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	}
 	assertStructuredOutput(t, root, "pack-audit.schema.json", auditOutput)
 
-	packReadOpts := Options{Env: MapEnv{"HOME": t.TempDir(), "XDG_CONFIG_HOME": filepath.Join(t.TempDir(), "xdg"), "PATH": "", "PACKY_SKILLS_SOURCE": filepath.Join(root, "bundle", "skills")}}
+	pack := testsupport.PortableAllSurfaces("schema-portable")
+	manifest := pack.Manifest()
+	packReadFixture := newSyntheticCLIFixture(t, &fakeTerminal{}, pack)
+	packReadOpts := packReadFixture.options
 	list, err := executeCommand(t, NewRootCommand(packReadOpts), "list", "--json")
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +78,7 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	if err := validateCanonicalOperatorOrder([]byte(list)); err != nil {
 		t.Fatalf("pack-list producer canonical order: %v", err)
 	}
-	show, err := executeCommand(t, NewRootCommand(packReadOpts), "show", "engram", "--json")
+	show, err := executeCommand(t, NewRootCommand(packReadOpts), "show", manifest.ID, "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,14 +87,13 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		t.Fatalf("pack-show producer canonical order: %v", err)
 	}
 
-	status, err := executeCommand(t, NewRootCommand(packReadOpts), "status", "ma"+"tty", "--surface", "claude", "--json")
+	status, err := executeCommand(t, NewRootCommand(packReadOpts), "status", manifest.ID, "--surface", "claude", "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertStructuredOutput(t, root, "pack-status.schema.json", status)
 
-	packOpts, _, _ := packActivationOptions(t, &fakeTerminal{})
-	preview, err := executeCommand(t, NewRootCommand(packOpts), "activate", "ma"+"tty", "--surface", "claude", "--dry-run", "--json")
+	preview, err := executeCommand(t, NewRootCommand(packReadOpts), "activate", manifest.ID, "--surface", "claude", "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("pack preview: %v\n%s", err, preview)
 	}
@@ -98,14 +101,17 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
-	projectOpts, _, _ := packActivationOptions(t, &fakeTerminal{interactive: true, approve: true})
+	projectFixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, pack)
+	projectOpts := projectFixture.options
 	projectOpts.Getwd = func() (string, error) { return project, nil }
-	projectPreview, err := executeCommand(t, NewRootCommand(projectOpts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--dry-run", "--json")
+	resource := syntheticResource(t, pack, "instruction", "guidance")
+	resourceID := resource.Kind + ":" + resource.ID
+	projectPreview, err := executeCommand(t, NewRootCommand(projectOpts), "install", manifest.ID, "--surface", "codex", "--resource", resourceID, "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("project preview: %v\n%s", err, projectPreview)
 	}
 	assertProjectStructuredOutput(t, root, "project-preview.schema.json", projectPreview)
-	applied, err := executeCommand(t, NewRootCommand(projectOpts), "install", "matty", "--surface", "codex", "--resource", "skill:ask-matt", "--json")
+	applied, err := executeCommand(t, NewRootCommand(projectOpts), "install", manifest.ID, "--surface", "codex", "--resource", resourceID, "--json")
 	if err != nil {
 		t.Fatalf("project install: %v\n%s", err, applied)
 	}
@@ -132,7 +138,7 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 	if err := validateProjectStructuredOutput(t, root, "project-lock.schema.json", string(missingMode)); err == nil {
 		t.Fatal("project lock schema accepted a projection without file_mode")
 	}
-	projectStatus, err := executeCommand(t, NewRootCommand(projectOpts), "status", "matty", "--surface", "codex", "--project", "--json")
+	projectStatus, err := executeCommand(t, NewRootCommand(projectOpts), "status", manifest.ID, "--surface", "codex", "--project", "--json")
 	if err != nil {
 		t.Fatalf("project status: %v\n%s", err, projectStatus)
 	}
