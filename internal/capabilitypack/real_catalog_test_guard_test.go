@@ -263,10 +263,17 @@ import (
 const catalogPackID = "live-"+"pack"
 var packagePackID = "live-pack"
 func catalogHelper() string { return filepath.Join("bundle", "packs", "live-pack", "pack.json") }
+func literalManifest() string { return "bundle/packs/live-pack/pack.json" }
 func lifecycleArgs(packID string) []string { return []string{"activate", packID} }
 func executeArgs(t *testing.T, args []string) { executeCommand(t, NewRootCommand(Options{}), args...) }
-func TestThroughHelper(t *testing.T) { _ = catalogHelper() }
+func identity(packID string) string { return packID }
+func TestThroughHelper(t *testing.T) { _, _ = os.ReadFile(catalogHelper()) }
 func TestDirectManifestLiteral(t *testing.T) { _, _ = os.ReadFile("bundle/packs/live-pack/pack.json") }
+func TestLocalManifestLiteral(t *testing.T) { manifest := "bundle/packs/live-pack/pack.json"; _, _ = os.Open(manifest) }
+func TestHelperManifestLiteral(t *testing.T) { _, _ = os.Open(literalManifest()) }
+func TestSplitPackIDManifest(t *testing.T) { _, _ = os.ReadFile(filepath.Join("bundle", "packs", "live-"+"pack", "pack.json")) }
+func TestSplitMattyManifest(t *testing.T) { _, _ = os.ReadFile(filepath.Join("bundle", "packs", "mat"+"ty", "pack.json")) }
+func TestTemporaryManifest(t *testing.T) { _, _ = os.ReadFile(filepath.Join(t.TempDir(), "bundle", "packs", "live-pack", "pack.json")) }
 func TestTypedLifecycle(t *testing.T) { _ = ActivationRequest{PackID: "live-pack"} }
 func TestCLILifecycle(t *testing.T) { executeCommand(t, NewRootCommand(Options{}), "activate", "live-"+"pack", "--surface", "codex") }
 func TestVariableCLILifecycle(t *testing.T) { packID := "live-"+"pack"; executeCommand(t, NewRootCommand(Options{}), "activate", packID, "--surface", "codex") }
@@ -293,9 +300,10 @@ func TestUnrelatedVariable(t *testing.T) { packID := "live-pack"; _ = packID }
 func TestSyntheticVariable(t *testing.T) { packID := "synthetic-pack"; executeCommand(t, NewRootCommand(Options{}), "activate", packID) }
 func TestUnrelatedSlice(t *testing.T) { _ = []string{"activate", "live-pack"} }
 func TestUnrelatedShow(t *testing.T) { unrelated := unrelatedView{}; unrelated.Show(ctx, "live-pack") }
+func TestCallSensitiveLifecycle(t *testing.T) { _ = identity("live-pack"); executeCommand(t, NewRootCommand(Options{}), "activate", identity("synthetic-pack")) }
 `
 	inventory := realCatalogInventory{
-		packIDs: map[string]struct{}{"live-pack": {}},
+		packIDs: map[string]struct{}{"live-pack": {}, "matty": {}},
 		resourceAliases: map[realCatalogResourceAlias]struct{}{
 			{kind: "skill", id: "guide", name: "live-guide"}: {},
 		},
@@ -311,6 +319,10 @@ func TestUnrelatedShow(t *testing.T) { unrelated := unrelatedView{}; unrelated.S
 	for _, want := range []string{
 		"sample_test.go:TestThroughHelper",
 		"sample_test.go:TestDirectManifestLiteral",
+		"sample_test.go:TestLocalManifestLiteral",
+		"sample_test.go:TestHelperManifestLiteral",
+		"sample_test.go:TestSplitPackIDManifest",
+		"sample_test.go:TestSplitMattyManifest",
 		"sample_test.go:TestTypedLifecycle",
 		"sample_test.go:TestCLILifecycle",
 		"sample_test.go:TestVariableCLILifecycle",
@@ -338,6 +350,8 @@ func TestUnrelatedShow(t *testing.T) { unrelated := unrelatedView{}; unrelated.S
 		"sample_test.go:TestSyntheticVariable",
 		"sample_test.go:TestUnrelatedSlice",
 		"sample_test.go:TestUnrelatedShow",
+		"sample_test.go:TestCallSensitiveLifecycle",
+		"sample_test.go:TestTemporaryManifest",
 	} {
 		if got[unwanted] {
 			t.Fatalf("unrelated or synthetic variable was classified as a dependency: %s: %+v", unwanted, findings)
@@ -367,33 +381,44 @@ func newSyntheticFixture() syntheticFixture { return syntheticFixture{} }
 func repositoryRoot() string { root, _ := filepath.Abs(filepath.Join("..", "..")); return root }
 func liveOptions(root string) Options { return Options{Getwd: func() (string, error) { return root, nil }} }
 func listWithOptions(t *testing.T, options Options) { executeCommand(t, NewRootCommand(options), "list") }
+func optionsIdentity(options Options) Options { return options }
+func listCatalog(catalog Catalog) { _, _ = catalog.ListCurrent(ctx) }
 func syntheticOptions(t *testing.T) Options {
 	bundleRoot := filepath.Join(t.TempDir(), "bundle")
 	return Options{Env: MapEnv{"PACKY_SKILLS_SOURCE": filepath.Join(bundleRoot, "skills")}}
 }`),
 		"sample/scenarios_test.go": []byte(`package sample
-import "testing"
-func TestCrossFileHelper(t *testing.T) { _ = crossFileManifest() }
-func TestParameterizedManifestHelper(t *testing.T) { _ = manifestFor("live-pack") }
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+func TestCrossFileHelper(t *testing.T) { _, _ = os.ReadFile(crossFileManifest()) }
+func TestParameterizedManifestHelper(t *testing.T) { _, _ = os.ReadFile(manifestFor("live-pack")) }
 func TestParameterizedTypedRequestHelper(t *testing.T) { _ = requestFor("live-pack") }
 func TestParameterizedAliasHelper(t *testing.T) { _ = aliasFor("skill", "guide", "live-guide") }
 func TestParameterizedLookupHelper(t *testing.T) { catalog, _ := Discover(ctx, "bundle"); showPack(catalog, "live-pack") }
 func TestParameterizedLifecycleHelper(t *testing.T) { executeLifecycle(t, "activate", "live-pack") }
-func TestReceiverMethod(t *testing.T) { _ = fixture{}.live() }
-func TestVariableReceiverMethod(t *testing.T) { f := fixture{}; _ = f.live() }
+func TestReceiverMethod(t *testing.T) { _, _ = os.ReadFile(fixture{}.live()) }
+func TestVariableReceiverMethod(t *testing.T) { f := fixture{}; _, _ = os.ReadFile(f.live()) }
 func TestParameterizedReceiverMethod(t *testing.T) { fixture{}.activate(t, "live-pack") }
-func TestSyntheticFactoryReceiverMethod(t *testing.T) { _ = newSyntheticFixture().live() }
+func TestSyntheticFactoryReceiverMethod(t *testing.T) { _, _ = os.ReadFile(newSyntheticFixture().live()) }
 func TestLiveCatalogList(t *testing.T) { root := repositoryRoot(); options := liveOptions(root); listWithOptions(t, options) }
+func TestTypedLiveListCurrent(t *testing.T) { root := repositoryRoot(); catalog, _ := Discover(ctx, filepath.Join(root, "bundle")); listCatalog(catalog) }
+func TestDirectTypedLiveListCurrent(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog.ListCurrent(ctx) }
 func TestSyntheticCatalogList(t *testing.T) { executeCommand(t, NewRootCommand(syntheticOptions(t)), "list") }
+func TestTypedSyntheticListCurrent(t *testing.T) { catalog, _ := Discover(ctx, filepath.Join(t.TempDir(), "bundle")); listCatalog(catalog) }
+func TestDirectTypedSyntheticListCurrent(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}; catalog.ListCurrent(ctx) }
 func TestUnrelatedRootAndSyntheticCatalogList(t *testing.T) { _ = repositoryRoot(); listWithOptions(t, syntheticOptions(t)) }
+func TestCallSensitiveOptionsList(t *testing.T) { root := repositoryRoot(); _ = optionsIdentity(liveOptions(root)); listWithOptions(t, optionsIdentity(syntheticOptions(t))) }
 func TestReceiverShadowing(t *testing.T) {
 	f := fixture{}
-	_ = f.live()
-	t.Run("synthetic", func(t *testing.T) { f := syntheticFixture{}; _ = f.live() })
+	_, _ = os.ReadFile(f.live())
+	t.Run("synthetic", func(t *testing.T) { f := syntheticFixture{}; _, _ = os.ReadFile(f.live()) })
 }
 func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 	f := fixture{}
-	t.Run("synthetic", func(t *testing.T) { f := syntheticFixture{}; _ = f.live() })
+	t.Run("synthetic", func(t *testing.T) { f := syntheticFixture{}; _, _ = os.ReadFile(f.live()) })
 	_ = f
 }
 `),
@@ -423,6 +448,8 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestVariableReceiverMethod",
 		"sample/scenarios_test.go:TestParameterizedReceiverMethod",
 		"sample/scenarios_test.go:TestLiveCatalogList",
+		"sample/scenarios_test.go:TestTypedLiveListCurrent",
+		"sample/scenarios_test.go:TestDirectTypedLiveListCurrent",
 		"sample/scenarios_test.go:TestReceiverShadowing",
 	} {
 		if !got[want] {
@@ -432,8 +459,17 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 	if got["sample/scenarios_test.go:TestSyntheticCatalogList"] {
 		t.Fatalf("synthetic temporary catalog list was classified as live: %+v", findings)
 	}
+	if got["sample/scenarios_test.go:TestTypedSyntheticListCurrent"] {
+		t.Fatalf("synthetic Catalog.ListCurrent was classified as live: %+v", findings)
+	}
+	if got["sample/scenarios_test.go:TestDirectTypedSyntheticListCurrent"] {
+		t.Fatalf("direct synthetic Catalog.ListCurrent was classified as live: %+v", findings)
+	}
 	if got["sample/scenarios_test.go:TestUnrelatedRootAndSyntheticCatalogList"] {
 		t.Fatalf("unrelated repository root was correlated with synthetic list options: %+v", findings)
+	}
+	if got["sample/scenarios_test.go:TestCallSensitiveOptionsList"] {
+		t.Fatalf("an unrelated live options helper call contaminated a synthetic list call: %+v", findings)
 	}
 	if got["sample/scenarios_test.go:TestSyntheticFactoryReceiverMethod"] {
 		t.Fatalf("synthetic same-name receiver inherited the live method finding: %+v", findings)
@@ -443,7 +479,7 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 	}
 }
 
-func TestRealCatalogDependencyScannerPrefilterSelectsCandidatePackages(t *testing.T) {
+func TestRealCatalogDependencyScannerSelectsEveryTestPackage(t *testing.T) {
 	workspace := t.TempDir()
 	for path, source := range map[string]string{
 		"candidate/scenario_test.go": `package candidate
@@ -461,12 +497,12 @@ func TestUnrelated() { values := []string{"temporary", "fixture"}; _ = values }
 			t.Fatal(err)
 		}
 	}
-	patterns, err := realCatalogCandidatePackagePatterns(workspace, realCatalogInventory{packIDs: map[string]struct{}{"live-pack": {}}})
+	patterns, err := repositoryTestPackagePatterns(workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := strings.Join(patterns, ","), "./candidate"; got != want {
-		t.Fatalf("candidate package patterns = %q, want %q", got, want)
+	if got, want := strings.Join(patterns, ","), "./candidate,./unrelated"; got != want {
+		t.Fatalf("repository test package patterns = %q, want %q", got, want)
 	}
 }
 
@@ -551,9 +587,10 @@ func NewRootCommand(Options) *rootCommand { return &rootCommand{} }
 func executeCommand(*testing.T, *rootCommand, ...string) (string, error) { return "", nil }
 type ActivationRequest struct { PackID string }
 type SurfaceAlias struct { Kind, ID, Name string }
-type Catalog struct{}
-func Discover(context.Context, string) (Catalog, error) { return Catalog{}, nil }
+type Catalog struct{ bundleRoot string }
+func Discover(_ context.Context, bundleRoot string) (Catalog, error) { return Catalog{bundleRoot: bundleRoot}, nil }
 func (Catalog) Show(context.Context, string) {}
+func (Catalog) ListCurrent(context.Context) ([]string, error) { return nil, nil }
 type unrelatedView struct{}
 func (unrelatedView) Show(context.Context, string) {}
 `
@@ -579,10 +616,12 @@ type realCatalogSSAAnalyzer struct {
 }
 
 type realCatalogSSAContext struct {
-	analyzer  *realCatalogSSAAnalyzer
-	functions map[*ssa.Function]bool
-	calls     map[*ssa.Function][]*ssa.CallCommon
-	closures  map[*ssa.Function][]*ssa.MakeClosure
+	analyzer    *realCatalogSSAAnalyzer
+	root        *ssa.Function
+	functions   map[*ssa.Function]bool
+	calls       map[*ssa.Function][]*ssa.CallCommon
+	closures    map[*ssa.Function][]*ssa.MakeClosure
+	activeCalls map[*ssa.Function]*ssa.CallCommon
 }
 
 type ssaRootKey struct {
@@ -591,7 +630,7 @@ type ssaRootKey struct {
 }
 
 func scanRealCatalogWorkspace(root string, inventory realCatalogInventory, fixture bool) ([]realCatalogFinding, error) {
-	patterns, err := realCatalogCandidatePackagePatterns(root, inventory)
+	patterns, err := repositoryTestPackagePatterns(root)
 	if err != nil {
 		return nil, err
 	}
@@ -685,22 +724,7 @@ func buildRealCatalogSSA(fset *token.FileSet, loaded []*packages.Package) *ssa.P
 	return program
 }
 
-func realCatalogCandidatePackagePatterns(root string, inventory realCatalogInventory) ([]string, error) {
-	// A new catalog dependency must introduce either a semantic sink or a live
-	// inventory token somewhere in its package, including cross-file helpers.
-	tokens := []string{
-		"bundle/packs/", "executeCommand(", "AllowedCommand(", "runAllowed(", "runInteractiveRestricted(",
-		"ActivationRequest", "UpdateRequest", "DeactivationRequest", "ReconcileRequest", "StatusRequest", "ControlledCheckRequest",
-		"ProjectInstallRequest", "ProjectUpdateRequest", "ProjectUninstallRequest", "ProjectStatusRequest", "ProjectActivationRequest", "ActivationIntent",
-		"SurfaceAlias", "CommandEvidence", "Discover(", "DiscoverForDurableIntents(", "ListCurrent(", ".Show(", "findTUIPack(", "checkedInPackVersion(",
-	}
-	for id := range inventory.packIDs {
-		tokens = append(tokens, id)
-	}
-	for alias := range inventory.resourceAliases {
-		tokens = append(tokens, alias.name)
-	}
-
+func repositoryTestPackagePatterns(root string) ([]string, error) {
 	directories := map[string]bool{}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -715,17 +739,7 @@ func realCatalogCandidatePackagePatterns(root string, inventory realCatalogInven
 		if !strings.HasSuffix(entry.Name(), "_test.go") || entry.Name() == "real_catalog_test_guard_test.go" {
 			return nil
 		}
-		source, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		text := string(source)
-		for _, token := range tokens {
-			if token != "" && strings.Contains(text, token) {
-				directories[filepath.Dir(path)] = true
-				break
-			}
-		}
+		directories[filepath.Dir(path)] = true
 		return nil
 	})
 	if err != nil {
@@ -768,7 +782,11 @@ func (analyzer *realCatalogSSAAnalyzer) isTestRoot(function *ssa.Function) bool 
 }
 
 func (analyzer *realCatalogSSAAnalyzer) contextFor(root *ssa.Function) *realCatalogSSAContext {
-	context := &realCatalogSSAContext{analyzer: analyzer, functions: map[*ssa.Function]bool{}, calls: map[*ssa.Function][]*ssa.CallCommon{}, closures: map[*ssa.Function][]*ssa.MakeClosure{}}
+	context := &realCatalogSSAContext{
+		analyzer: analyzer, root: root,
+		functions: map[*ssa.Function]bool{}, calls: map[*ssa.Function][]*ssa.CallCommon{}, closures: map[*ssa.Function][]*ssa.MakeClosure{},
+		activeCalls: map[*ssa.Function]*ssa.CallCommon{},
+	}
 	queue := []*ssa.Function{root}
 	for len(queue) > 0 {
 		function := queue[0]
@@ -838,39 +856,59 @@ func possibleSSAFunctions(value ssa.Value, seen map[ssa.Value]bool) []*ssa.Funct
 }
 
 func (analyzer *realCatalogSSAAnalyzer) findings(context *realCatalogSSAContext) []string {
+	return uniqueStrings(analyzer.functionFindings(context, context.root, map[*ssa.Function]bool{}))
+}
+
+func (analyzer *realCatalogSSAAnalyzer) functionFindings(context *realCatalogSSAContext, function *ssa.Function, path map[*ssa.Function]bool) []string {
+	if function == nil || !context.functions[function] || path[function] {
+		return nil
+	}
+	path[function] = true
+	defer delete(path, function)
+
 	var details []string
 	aliasFields := map[ssa.Value]map[string]ssa.Value{}
-	for function := range context.functions {
-		for _, block := range function.Blocks {
-			for _, instruction := range block.Instrs {
-				if callInstruction, ok := instruction.(ssa.CallInstruction); ok {
-					details = append(details, analyzer.callFindings(context, function, callInstruction.Common())...)
+	for _, block := range function.Blocks {
+		for _, instruction := range block.Instrs {
+			if callInstruction, ok := instruction.(ssa.CallInstruction); ok {
+				call := callInstruction.Common()
+				details = append(details, analyzer.callFindings(context, function, call)...)
+				for _, callee := range possibleSSAFunctions(call.Value, map[ssa.Value]bool{}) {
+					details = append(details, analyzer.calledFunctionFindings(context, callee, call, path)...)
 				}
-				store, ok := instruction.(*ssa.Store)
-				if !ok {
-					continue
-				}
-				owner, field, ok := ssaFieldIdentity(store.Addr)
-				if !ok {
-					continue
-				}
-				if (isLifecycleType(owner) || analyzer.fixture && lifecycleTypeName(owner.Obj().Name())) && field == "PackID" {
-					for id := range context.stringValues(store.Val, map[ssa.Value]bool{}) {
-						if _, real := analyzer.inventory.packIDs[id]; real {
-							details = append(details, fmt.Sprintf("passes real Pack %q through %s.PackID", id, owner.Obj().Name()))
-						}
+				for _, argument := range call.Args {
+					for _, callee := range possibleSSAFunctions(argument, map[ssa.Value]bool{}) {
+						details = append(details, analyzer.functionFindings(context, callee, path)...)
 					}
 				}
-				if owner.Obj().Name() == "CommandEvidence" && field == "Args" && strings.HasSuffix(owner.Obj().Pkg().Path(), "/internal/claudesmoke") {
-					details = append(details, analyzer.commandFindings(context.sequences(store.Val))...)
-				}
-				if owner.Obj().Name() == "SurfaceAlias" {
-					base := store.Addr.(*ssa.FieldAddr).X
-					if aliasFields[base] == nil {
-						aliasFields[base] = map[string]ssa.Value{}
+			}
+			store, ok := instruction.(*ssa.Store)
+			if !ok {
+				continue
+			}
+			for _, callee := range possibleSSAFunctions(store.Val, map[ssa.Value]bool{}) {
+				details = append(details, analyzer.functionFindings(context, callee, path)...)
+			}
+			owner, field, ok := ssaFieldIdentity(store.Addr)
+			if !ok {
+				continue
+			}
+			if (isLifecycleType(owner) || analyzer.fixture && lifecycleTypeName(owner.Obj().Name())) && field == "PackID" {
+				for id := range context.stringValues(store.Val, map[ssa.Value]bool{}) {
+					if _, real := analyzer.inventory.packIDs[id]; real {
+						details = append(details, fmt.Sprintf("passes real Pack %q through %s.PackID", id, owner.Obj().Name()))
 					}
-					aliasFields[base][field] = store.Val
 				}
+			}
+			if owner.Obj().Name() == "CommandEvidence" && field == "Args" && strings.HasSuffix(owner.Obj().Pkg().Path(), "/internal/claudesmoke") {
+				details = append(details, analyzer.commandFindings(context.sequences(store.Val))...)
+			}
+			if owner.Obj().Name() == "SurfaceAlias" {
+				base := store.Addr.(*ssa.FieldAddr).X
+				if aliasFields[base] == nil {
+					aliasFields[base] = map[string]ssa.Value{}
+				}
+				aliasFields[base][field] = store.Val
 			}
 		}
 	}
@@ -886,7 +924,22 @@ func (analyzer *realCatalogSSAAnalyzer) findings(context *realCatalogSSAContext)
 			}
 		}
 	}
-	return uniqueStrings(details)
+	return details
+}
+
+func (analyzer *realCatalogSSAAnalyzer) calledFunctionFindings(context *realCatalogSSAContext, function *ssa.Function, call *ssa.CallCommon, path map[*ssa.Function]bool) []string {
+	if !context.functions[function] {
+		return nil
+	}
+	previous, hadPrevious := context.activeCalls[function]
+	context.activeCalls[function] = call
+	details := analyzer.functionFindings(context, function, path)
+	if hadPrevious {
+		context.activeCalls[function] = previous
+	} else {
+		delete(context.activeCalls, function)
+	}
+	return details
 }
 
 func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSAContext, caller *ssa.Function, call *ssa.CallCommon) []string {
@@ -895,13 +948,9 @@ func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSACont
 		return nil
 	}
 	var direct []string
-	for _, argument := range call.Args {
-		if isDirectSSAString(argument, map[ssa.Value]bool{}) {
-			for value := range context.stringValues(argument, map[ssa.Value]bool{}) {
-				if detail := analyzer.manifestPathFinding(value); detail != "" {
-					direct = append(direct, detail)
-				}
-			}
+	if analyzer.isFilePathSink(callee) && len(call.Args) > 0 {
+		if detail := analyzer.manifestValueFinding(context, caller, call.Args[0], map[ssa.Value]bool{}); detail != "" {
+			direct = append(direct, detail)
 		}
 	}
 	if analyzer.isNamedFunction(callee, "/internal/cli", "executeCommand") || analyzer.fixture && callee.Name() == "executeCommand" {
@@ -929,7 +978,10 @@ func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSACont
 		}
 		return append(direct, details...)
 	}
-	if analyzer.isNamedFunction(callee, "/internal/capabilitypack", "Discover") || analyzer.isNamedFunction(callee, "/internal/capabilitypack", "DiscoverForDurableIntents") {
+	if analyzer.isCatalogListCurrent(callee) && len(call.Args) > 0 && context.catalogUsesLiveBundle(call.Args[0], map[ssa.Value]bool{}) {
+		return append(direct, "enumerates the checked-in Pack catalog through implicit discovery/list")
+	}
+	if analyzer.isNamedFunction(callee, "/internal/capabilitypack", "DiscoverForDurableIntents") {
 		for _, argument := range call.Args {
 			for value := range context.stringValues(argument, map[ssa.Value]bool{}) {
 				if isRepositoryBundlePath(value) {
@@ -939,12 +991,6 @@ func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSACont
 			if context.valueContainsRepositoryRoot(argument, map[ssa.Value]bool{}) && context.valueContainsPathPart(argument, "bundle", map[ssa.Value]bool{}) {
 				return append(direct, "enumerates the checked-in Pack catalog through implicit discovery/list")
 			}
-		}
-	}
-	if analyzer.isNamedFunction(callee, "path/filepath", "Join") {
-		packSyncContract := strings.HasSuffix(ssaFunctionPackagePath(caller), "/internal/packsync")
-		if detail := analyzer.manifestJoinFinding(context, call.Args, packSyncContract); detail != "" {
-			return append(direct, detail)
 		}
 	}
 	return direct
@@ -958,32 +1004,6 @@ func ssaFunctionPackagePath(function *ssa.Function) string {
 		function = function.Parent()
 	}
 	return ""
-}
-
-func isDirectSSAString(value ssa.Value, seen map[ssa.Value]bool) bool {
-	if value == nil || seen[value] {
-		return false
-	}
-	seen[value] = true
-	switch value := value.(type) {
-	case *ssa.Const:
-		return value.Value != nil && value.Value.Kind() == constant.String
-	case *ssa.BinOp:
-		return value.Op == token.ADD && isDirectSSAString(value.X, seen) && isDirectSSAString(value.Y, seen)
-	case *ssa.ChangeType:
-		return isDirectSSAString(value.X, seen)
-	case *ssa.Convert:
-		return isDirectSSAString(value.X, seen)
-	case *ssa.MakeInterface:
-		return isDirectSSAString(value.X, seen)
-	case *ssa.Phi:
-		for _, edge := range value.Edges {
-			if isDirectSSAString(edge, seen) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (analyzer *realCatalogSSAAnalyzer) commandFindings(sequences [][]string) []string {
@@ -1038,6 +1058,29 @@ func (analyzer *realCatalogSSAAnalyzer) isCatalogShow(function *ssa.Function) bo
 	return analyzer.fixture || strings.HasSuffix(named.Obj().Pkg().Path(), "/internal/capabilitypack")
 }
 
+func (analyzer *realCatalogSSAAnalyzer) isCatalogListCurrent(function *ssa.Function) bool {
+	if function == nil || function.Name() != "ListCurrent" || function.Signature.Recv() == nil {
+		return false
+	}
+	named := namedType(function.Signature.Recv().Type())
+	if named == nil || named.Obj().Name() != "Catalog" {
+		return false
+	}
+	return analyzer.fixture || strings.HasSuffix(named.Obj().Pkg().Path(), "/internal/capabilitypack")
+}
+
+func (analyzer *realCatalogSSAAnalyzer) isFilePathSink(function *ssa.Function) bool {
+	if function == nil || function.Pkg == nil || function.Pkg.Pkg.Path() != "os" {
+		return false
+	}
+	switch function.Name() {
+	case "ReadFile", "WriteFile", "Open", "OpenFile", "Readlink", "Stat", "Lstat":
+		return true
+	default:
+		return false
+	}
+}
+
 func (analyzer *realCatalogSSAAnalyzer) isKnownLookup(function *ssa.Function) bool {
 	if function == nil || function.Pkg == nil || !strings.HasSuffix(function.Pkg.Pkg.Path(), "/internal/cli") {
 		return false
@@ -1085,6 +1128,126 @@ func ssaFieldIdentity(address ssa.Value) (*types.Named, string, bool) {
 	return named, structure.Field(fieldAddress.Field).Name(), true
 }
 
+func (analyzer *realCatalogSSAAnalyzer) manifestValueFinding(context *realCatalogSSAContext, caller *ssa.Function, value ssa.Value, seen map[ssa.Value]bool) string {
+	if value == nil || seen[value] {
+		return ""
+	}
+	seen[value] = true
+	defer delete(seen, value)
+
+	packSyncContract := strings.HasSuffix(ssaFunctionPackagePath(caller), "/internal/packsync")
+	if packSyncContract {
+		for candidate := range context.stringValues(value, map[ssa.Value]bool{}) {
+			if detail := analyzer.manifestPathFinding(candidate); detail != "" {
+				return detail
+			}
+		}
+	}
+	switch value := value.(type) {
+	case *ssa.Const, *ssa.BinOp:
+		for candidate := range context.stringValues(value, map[ssa.Value]bool{}) {
+			if detail := analyzer.manifestPathFinding(candidate); detail != "" && (packSyncContract || isRepositoryRelativeManifestPath(candidate)) {
+				return detail
+			}
+		}
+	case *ssa.Call:
+		call := value.Common()
+		callee := call.StaticCallee()
+		if analyzer.isNamedFunction(callee, "path/filepath", "Join") {
+			return analyzer.manifestJoinFinding(context, call.Args, packSyncContract)
+		}
+		var detail string
+		context.withCallBinding(call, func() {
+			for _, returned := range context.callReturnValues(call, 0) {
+				if detail == "" {
+					detail = analyzer.manifestValueFinding(context, callee, returned, seen)
+				}
+			}
+		})
+		return detail
+	case *ssa.Extract:
+		if call, ok := value.Tuple.(*ssa.Call); ok {
+			var detail string
+			context.withCallBinding(call.Common(), func() {
+				for _, returned := range context.callReturnValues(call.Common(), value.Index) {
+					if detail == "" {
+						detail = analyzer.manifestValueFinding(context, call.Common().StaticCallee(), returned, seen)
+					}
+				}
+			})
+			return detail
+		}
+		return analyzer.manifestValueFinding(context, caller, value.Tuple, seen)
+	case *ssa.Parameter:
+		for _, argument := range context.parameterArguments(value) {
+			if detail := analyzer.manifestValueFinding(context, caller, argument, seen); detail != "" {
+				return detail
+			}
+		}
+	case *ssa.FreeVar:
+		for _, binding := range context.freeVarBindings(value) {
+			if detail := analyzer.manifestValueFinding(context, caller, binding, seen); detail != "" {
+				return detail
+			}
+		}
+	case *ssa.UnOp:
+		if address, ok := value.X.(*ssa.IndexAddr); ok {
+			if detail := analyzer.manifestValueFinding(context, caller, address.X, seen); detail != "" {
+				return detail
+			}
+			for _, store := range context.analyzer.storesFor(addressRoot(address.X)) {
+				if detail := analyzer.manifestValueFinding(context, caller, store.Val, seen); detail != "" {
+					return detail
+				}
+			}
+		}
+		for _, stored := range context.rootStoredValues(value.X) {
+			if detail := analyzer.manifestValueFinding(context, caller, stored, seen); detail != "" {
+				return detail
+			}
+		}
+	case *ssa.Field:
+		for _, stored := range context.fieldValues(value.X, value.Field) {
+			if detail := analyzer.manifestValueFinding(context, caller, stored, seen); detail != "" {
+				return detail
+			}
+		}
+	case *ssa.Index:
+		for _, stored := range context.indexValues(value.X, value.Index) {
+			if detail := analyzer.manifestValueFinding(context, caller, stored, seen); detail != "" {
+				return detail
+			}
+		}
+	case *ssa.Next:
+		return analyzer.manifestValueFinding(context, caller, value.Iter, seen)
+	case *ssa.Range:
+		return analyzer.manifestValueFinding(context, caller, value.X, seen)
+	case *ssa.Slice:
+		return analyzer.manifestValueFinding(context, caller, value.X, seen)
+	case *ssa.Alloc, *ssa.MakeSlice, *ssa.Global:
+		for _, stored := range context.analyzer.storesFor(value) {
+			if detail := analyzer.manifestValueFinding(context, caller, stored.Val, seen); detail != "" {
+				return detail
+			}
+		}
+	case *ssa.Phi:
+		for _, edge := range value.Edges {
+			if detail := analyzer.manifestValueFinding(context, caller, edge, seen); detail != "" {
+				return detail
+			}
+		}
+	case *ssa.ChangeType:
+		return analyzer.manifestValueFinding(context, caller, value.X, seen)
+	case *ssa.Convert:
+		return analyzer.manifestValueFinding(context, caller, value.X, seen)
+	case *ssa.MakeInterface:
+		return analyzer.manifestValueFinding(context, caller, value.X, seen)
+	case *ssa.ChangeInterface:
+		return analyzer.manifestValueFinding(context, caller, value.X, seen)
+	}
+	return ""
+}
+
 func (analyzer *realCatalogSSAAnalyzer) manifestJoinFinding(context *realCatalogSSAContext, arguments []ssa.Value, packSyncContract bool) string {
 	if len(arguments) == 1 {
 		for _, sequence := range context.sequences(arguments[0]) {
@@ -1108,8 +1271,11 @@ func (analyzer *realCatalogSSAAnalyzer) manifestJoinFinding(context *realCatalog
 		}
 		for id := range parts[index+1] {
 			if _, real := analyzer.inventory.packIDs[id]; real {
+				if packSyncContract {
+					return fmt.Sprintf("opens live manifest bundle/packs/%s/pack.json", id)
+				}
 				if index > 0 {
-					if _, bundle := parts[index-1]["bundle"]; bundle && (packSyncContract || index == 1 || anyValueContainsRepositoryRoot(context, arguments[:index-1])) {
+					if _, bundle := parts[index-1]["bundle"]; bundle && (index == 1 || anyValueContainsRepositoryRoot(context, arguments[:index-1])) {
 						return fmt.Sprintf("opens live manifest bundle/packs/%s/pack.json", id)
 					}
 				}
@@ -1153,9 +1319,100 @@ func (analyzer *realCatalogSSAAnalyzer) manifestPathFinding(value string) string
 	return ""
 }
 
+func isRepositoryRelativeManifestPath(value string) bool {
+	clean := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(value)), "./")
+	return strings.HasPrefix(clean, "bundle/packs/")
+}
+
 func isRepositoryBundlePath(value string) bool {
 	clean := filepath.ToSlash(filepath.Clean(value))
 	return clean == "../../bundle" || strings.HasSuffix(clean, "/bundle") && strings.Contains(clean, "../..")
+}
+
+func (context *realCatalogSSAContext) catalogUsesLiveBundle(value ssa.Value, seen map[ssa.Value]bool) bool {
+	if value == nil || seen[value] {
+		return false
+	}
+	seen[value] = true
+	defer delete(seen, value)
+
+	for _, bundleRoot := range context.catalogBundleRootValues(value) {
+		if context.isLiveBundleRoot(bundleRoot) {
+			return true
+		}
+	}
+	if extracted, ok := value.(*ssa.Extract); ok {
+		if call, ok := extracted.Tuple.(*ssa.Call); ok && context.discoverUsesLiveBundle(call.Common()) {
+			return true
+		}
+	}
+	if call, ok := value.(*ssa.Call); ok {
+		if context.discoverUsesLiveBundle(call.Common()) {
+			return true
+		}
+		usesLiveBundle := false
+		context.withCallBinding(call.Common(), func() {
+			for _, returned := range context.callReturnValues(call.Common(), 0) {
+				if context.catalogUsesLiveBundle(returned, seen) {
+					usesLiveBundle = true
+				}
+			}
+		})
+		if usesLiveBundle {
+			return true
+		}
+	}
+	for _, dependency := range context.valueDependencies(value) {
+		if context.catalogUsesLiveBundle(dependency, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+func (context *realCatalogSSAContext) catalogBundleRootValues(value ssa.Value) []ssa.Value {
+	named := namedType(value.Type())
+	if named == nil || named.Obj().Name() != "Catalog" || named.Obj().Pkg() == nil {
+		return nil
+	}
+	if !context.analyzer.fixture && !strings.HasSuffix(named.Obj().Pkg().Path(), "/internal/capabilitypack") {
+		return nil
+	}
+	structure, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return nil
+	}
+	for index := 0; index < structure.NumFields(); index++ {
+		if structure.Field(index).Name() == "bundleRoot" {
+			return context.fieldValues(value, index)
+		}
+	}
+	return nil
+}
+
+func (context *realCatalogSSAContext) isLiveBundleRoot(value ssa.Value) bool {
+	for candidate := range context.stringValues(value, map[ssa.Value]bool{}) {
+		if isRepositoryBundlePath(candidate) {
+			return true
+		}
+	}
+	return context.valueContainsRepositoryRoot(value, map[ssa.Value]bool{}) && context.valueContainsPathPart(value, "bundle", map[ssa.Value]bool{})
+}
+
+func (context *realCatalogSSAContext) discoverUsesLiveBundle(call *ssa.CallCommon) bool {
+	callee := call.StaticCallee()
+	if callee == nil || callee.Name() != "Discover" {
+		return false
+	}
+	if !context.analyzer.fixture && !context.analyzer.isNamedFunction(callee, "/internal/capabilitypack", "Discover") {
+		return false
+	}
+	for _, argument := range call.Args {
+		if context.isLiveBundleRoot(argument) {
+			return true
+		}
+	}
+	return false
 }
 
 func (context *realCatalogSSAContext) stringValues(value ssa.Value, seen map[ssa.Value]bool) map[string]struct{} {
@@ -1256,11 +1513,13 @@ func (context *realCatalogSSAContext) stringValues(value ssa.Value, seen map[ssa
 
 func (context *realCatalogSSAContext) callReturnStrings(call *ssa.CallCommon, index int, seen map[ssa.Value]bool) map[string]struct{} {
 	result := map[string]struct{}{}
-	for _, returned := range context.callReturnValues(call, index) {
-		for value := range context.stringValues(returned, seen) {
-			result[value] = struct{}{}
+	context.withCallBinding(call, func() {
+		for _, returned := range context.callReturnValues(call, index) {
+			for value := range context.stringValues(returned, seen) {
+				result[value] = struct{}{}
+			}
 		}
-	}
+	})
 	return result
 }
 
@@ -1276,13 +1535,17 @@ func (context *realCatalogSSAContext) parameterArguments(parameter *ssa.Paramete
 	if index < 0 {
 		return nil
 	}
-	var result []ssa.Value
-	for _, call := range context.calls[parent] {
-		if index < len(call.Args) {
-			result = append(result, call.Args[index])
+	if active := context.activeCalls[parent]; active != nil {
+		if index < len(active.Args) {
+			return []ssa.Value{active.Args[index]}
 		}
+		return nil
 	}
-	return result
+	calls := context.calls[parent]
+	if len(calls) == 1 && index < len(calls[0].Args) {
+		return []ssa.Value{calls[0].Args[index]}
+	}
+	return nil
 }
 
 func (context *realCatalogSSAContext) freeVarBindings(variable *ssa.FreeVar) []ssa.Value {
@@ -1541,17 +1804,19 @@ func (context *realCatalogSSAContext) callReturnSequences(call *ssa.CallCommon, 
 		return nil
 	}
 	var result [][]string
-	for _, returned := range context.callReturnValues(call, index) {
-		result = append(result, context.sequencesSeen(returned, seen)...)
-	}
-	for _, block := range callee.Blocks {
-		for _, instruction := range block.Instrs {
-			called, ok := instruction.(*ssa.Call)
-			if ok && isStringSlice(called.Type()) {
-				result = append(result, context.sequencesSeen(called, seen)...)
+	context.withCallBinding(call, func() {
+		for _, returned := range context.callReturnValues(call, index) {
+			result = append(result, context.sequencesSeen(returned, seen)...)
+		}
+		for _, block := range callee.Blocks {
+			for _, instruction := range block.Instrs {
+				called, ok := instruction.(*ssa.Call)
+				if ok && isStringSlice(called.Type()) {
+					result = append(result, context.sequencesSeen(called, seen)...)
+				}
 			}
 		}
-	}
+	})
 	return result
 }
 
@@ -1619,10 +1884,16 @@ func (context *realCatalogSSAContext) commandUsesLiveOptions(value ssa.Value, se
 		if callee != nil && (context.analyzer.isNamedFunction(callee, "/internal/cli", "NewRootCommand") || context.analyzer.fixture && callee.Name() == "NewRootCommand") {
 			return len(call.Common().Args) > 0 && context.valueContainsRepositoryRoot(call.Common().Args[0], map[ssa.Value]bool{})
 		}
-		for _, returned := range context.callReturnValues(call.Common(), 0) {
-			if context.commandUsesLiveOptions(returned, seen) {
-				return true
+		usesLiveOptions := false
+		context.withCallBinding(call.Common(), func() {
+			for _, returned := range context.callReturnValues(call.Common(), 0) {
+				if context.commandUsesLiveOptions(returned, seen) {
+					usesLiveOptions = true
+				}
 			}
+		})
+		if usesLiveOptions {
+			return true
 		}
 	}
 	for _, dependency := range context.valueDependencies(value) {
@@ -1653,10 +1924,16 @@ func (context *realCatalogSSAContext) valueContainsRepositoryRoot(value ssa.Valu
 				}
 			}
 		}
-		for _, returned := range context.callReturnValues(call.Common(), 0) {
-			if context.valueContainsRepositoryRoot(returned, seen) {
-				return true
+		containsRoot := false
+		context.withCallBinding(call.Common(), func() {
+			for _, returned := range context.callReturnValues(call.Common(), 0) {
+				if context.valueContainsRepositoryRoot(returned, seen) {
+					containsRoot = true
+				}
 			}
+		})
+		if containsRoot {
+			return true
 		}
 	}
 	if closure, ok := value.(*ssa.MakeClosure); ok {
@@ -1728,10 +2005,10 @@ func (context *realCatalogSSAContext) valueDependencies(value ssa.Value) []ssa.V
 		return context.indexValues(value.X, value.Index)
 	case *ssa.Extract:
 		if call, ok := value.Tuple.(*ssa.Call); ok {
-			return append(append([]ssa.Value{call}, call.Common().Args...), context.callReturnValues(call.Common(), value.Index)...)
+			return append([]ssa.Value{call}, call.Common().Args...)
 		}
 	case *ssa.Call:
-		return append(append([]ssa.Value(nil), value.Common().Args...), context.callReturnValues(value.Common(), 0)...)
+		return append([]ssa.Value(nil), value.Common().Args...)
 	case *ssa.Phi:
 		return value.Edges
 	case *ssa.ChangeType:
@@ -1793,6 +2070,22 @@ func (context *realCatalogSSAContext) callReturnValues(call *ssa.CallCommon, ind
 		return nil
 	}
 	return functionReturnValues(callee, index)
+}
+
+func (context *realCatalogSSAContext) withCallBinding(call *ssa.CallCommon, analyze func()) {
+	callee := call.StaticCallee()
+	if callee == nil || !context.functions[callee] {
+		analyze()
+		return
+	}
+	previous, hadPrevious := context.activeCalls[callee]
+	context.activeCalls[callee] = call
+	analyze()
+	if hadPrevious {
+		context.activeCalls[callee] = previous
+	} else {
+		delete(context.activeCalls, callee)
+	}
 }
 
 func functionReturnValues(function *ssa.Function, index int) []ssa.Value {
