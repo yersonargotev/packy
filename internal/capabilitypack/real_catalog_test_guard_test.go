@@ -243,6 +243,12 @@ type realCatalogFunction struct {
 	facts realCatalogFunctionFacts
 }
 
+type realCatalogFunctionDeclaration struct {
+	path     string
+	key      string
+	function *ast.FuncDecl
+}
+
 func TestGenericTestsDoNotDependOnTheRealPackCatalog(t *testing.T) {
 	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -313,6 +319,9 @@ import "path/filepath"
 func crossFileManifest() string { return filepath.Join("bundle", "packs", "live-pack", "pack.json") }
 type fixture struct{}
 func (fixture) live() string { return filepath.Join("bundle", "packs", "live-pack", "pack.json") }
+type syntheticFixture struct{}
+func (syntheticFixture) live() string { return "temporary synthetic bundle" }
+func newSyntheticFixture() syntheticFixture { return syntheticFixture{} }
 func liveOptions(t *testing.T) Options {
 	repositoryRoot, _ := filepath.Abs(filepath.Join("..", ".."))
 	return Options{Getwd: func() (string, error) { return repositoryRoot, nil }}
@@ -324,6 +333,8 @@ func syntheticOptions(t *testing.T) Options {
 		"sample/scenarios_test.go": []byte(`package sample
 func TestCrossFileHelper(t *testing.T) { _ = crossFileManifest() }
 func TestReceiverMethod(t *testing.T) { _ = fixture{}.live() }
+func TestVariableReceiverMethod(t *testing.T) { f := fixture{}; _ = f.live() }
+func TestSyntheticFactoryReceiverMethod(t *testing.T) { _ = newSyntheticFixture().live() }
 func TestLiveCatalogList(t *testing.T) { executeCommand(t, NewRootCommand(liveOptions(t)), "list") }
 func TestSyntheticCatalogList(t *testing.T) { executeCommand(t, NewRootCommand(syntheticOptions(t)), "list") }
 `),
@@ -340,6 +351,7 @@ func TestSyntheticCatalogList(t *testing.T) { executeCommand(t, NewRootCommand(s
 	for _, want := range []string{
 		"sample/scenarios_test.go:TestCrossFileHelper",
 		"sample/scenarios_test.go:TestReceiverMethod",
+		"sample/scenarios_test.go:TestVariableReceiverMethod",
 		"sample/scenarios_test.go:TestLiveCatalogList",
 	} {
 		if !got[want] {
@@ -348,6 +360,9 @@ func TestSyntheticCatalogList(t *testing.T) { executeCommand(t, NewRootCommand(s
 	}
 	if got["sample/scenarios_test.go:TestSyntheticCatalogList"] {
 		t.Fatalf("synthetic temporary catalog list was classified as live: %+v", findings)
+	}
+	if got["sample/scenarios_test.go:TestSyntheticFactoryReceiverMethod"] {
+		t.Fatalf("synthetic same-name receiver inherited the live method finding: %+v", findings)
 	}
 }
 
@@ -427,18 +442,13 @@ func scanRealCatalogSource(path string, source []byte, inventory realCatalogInve
 }
 
 func scanRealCatalogSources(sources map[string][]byte, inventory realCatalogInventory) ([]realCatalogFinding, error) {
-	packages := map[string]map[string]realCatalogFunction{}
+	packageDeclarations := map[string][]realCatalogFunctionDeclaration{}
 	for path, source := range sources {
 		parsed, err := parser.ParseFile(token.NewFileSet(), path, source, 0)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
 		packageKey := filepath.ToSlash(filepath.Dir(path)) + ":" + parsed.Name.Name
-		functions := packages[packageKey]
-		if functions == nil {
-			functions = map[string]realCatalogFunction{}
-			packages[packageKey] = functions
-		}
 		for _, declaration := range parsed.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
 			if !ok || function.Body == nil {
@@ -448,13 +458,25 @@ func scanRealCatalogSources(sources map[string][]byte, inventory realCatalogInve
 			if receiver := declaredReceiverType(function); receiver != "" {
 				key = "method:" + receiver + "." + function.Name.Name
 			}
-			facts := inspectRealCatalogFunction(function, inventory)
-			functions[key] = realCatalogFunction{path: path, name: function.Name.Name, facts: facts}
+			packageDeclarations[packageKey] = append(packageDeclarations[packageKey], realCatalogFunctionDeclaration{path: path, key: key, function: function})
 		}
 	}
 
 	var findings []realCatalogFinding
-	for _, functions := range packages {
+	for _, declarations := range packageDeclarations {
+		factoryReturns := map[string]string{}
+		for _, declaration := range declarations {
+			if strings.HasPrefix(declaration.key, "func:") {
+				if result := declaredFactoryReturnType(declaration.function); result != "" {
+					factoryReturns[declaration.function.Name.Name] = result
+				}
+			}
+		}
+		functions := map[string]realCatalogFunction{}
+		for _, declaration := range declarations {
+			facts := inspectRealCatalogFunction(declaration.function, inventory, factoryReturns)
+			functions[declaration.key] = realCatalogFunction{path: declaration.path, name: declaration.function.Name.Name, facts: facts}
+		}
 		for key, function := range functions {
 			if !strings.HasPrefix(key, "func:Test") {
 				continue
@@ -472,8 +494,9 @@ func scanRealCatalogSources(sources map[string][]byte, inventory realCatalogInve
 	return findings, nil
 }
 
-func inspectRealCatalogFunction(function *ast.FuncDecl, inventory realCatalogInventory) realCatalogFunctionFacts {
+func inspectRealCatalogFunction(function *ast.FuncDecl, inventory realCatalogInventory, factoryReturns map[string]string) realCatalogFunctionFacts {
 	facts := realCatalogFunctionFacts{}
+	localTypes := realCatalogLocalTypes(function, factoryReturns)
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		if expression, ok := node.(ast.Expr); ok {
 			if detail := realCatalogPathDependency(expression, inventory.packIDs); detail != "" {
@@ -482,7 +505,7 @@ func inspectRealCatalogFunction(function *ast.FuncDecl, inventory realCatalogInv
 		}
 		switch node := node.(type) {
 		case *ast.CallExpr:
-			if call, ok := realCatalogCallEdge(node); ok {
+			if call, ok := realCatalogCallEdge(node, localTypes, factoryReturns); ok {
 				facts.calls = append(facts.calls, call)
 			}
 			facts.enumeratesCatalog = facts.enumeratesCatalog || realCatalogEnumerationCall(node)
@@ -530,12 +553,6 @@ func collectRealCatalogFunctionFacts(key string, functions map[string]realCatalo
 			keys = nil
 			if call.receiverType != "" {
 				keys = append(keys, "method:"+call.receiverType+"."+call.name)
-			} else {
-				for candidate := range functions {
-					if strings.HasPrefix(candidate, "method:") && strings.HasSuffix(candidate, "."+call.name) {
-						keys = append(keys, candidate)
-					}
-				}
 			}
 		}
 		for _, calledKey := range keys {
@@ -550,12 +567,12 @@ func collectRealCatalogFunctionFacts(key string, functions map[string]realCatalo
 	return result
 }
 
-func realCatalogCallEdge(call *ast.CallExpr) (realCatalogCall, bool) {
+func realCatalogCallEdge(call *ast.CallExpr, localTypes, factoryReturns map[string]string) (realCatalogCall, bool) {
 	switch function := call.Fun.(type) {
 	case *ast.Ident:
 		return realCatalogCall{name: function.Name}, true
 	case *ast.SelectorExpr:
-		return realCatalogCall{name: function.Sel.Name, receiverType: receiverExpressionType(function.X), method: true}, true
+		return realCatalogCall{name: function.Sel.Name, receiverType: realCatalogExpressionType(function.X, localTypes, factoryReturns), method: true}, true
 	default:
 		return realCatalogCall{}, false
 	}
@@ -565,24 +582,107 @@ func declaredReceiverType(function *ast.FuncDecl) string {
 	if function.Recv == nil || len(function.Recv.List) != 1 {
 		return ""
 	}
-	return receiverExpressionType(function.Recv.List[0].Type)
+	return declaredTypeName(function.Recv.List[0].Type)
 }
 
-func receiverExpressionType(expression ast.Expr) string {
+func declaredTypeName(expression ast.Expr) string {
 	switch expression := expression.(type) {
 	case *ast.Ident:
 		return expression.Name
 	case *ast.StarExpr:
-		return receiverExpressionType(expression.X)
+		return declaredTypeName(expression.X)
 	case *ast.ParenExpr:
-		return receiverExpressionType(expression.X)
-	case *ast.CompositeLit:
-		return expressionName(expression.Type)
-	case *ast.UnaryExpr:
-		return receiverExpressionType(expression.X)
+		return declaredTypeName(expression.X)
+	case *ast.SelectorExpr:
+		return expression.Sel.Name
+	case *ast.IndexExpr:
+		return declaredTypeName(expression.X)
+	case *ast.IndexListExpr:
+		return declaredTypeName(expression.X)
 	default:
 		return ""
 	}
+}
+
+func declaredFactoryReturnType(function *ast.FuncDecl) string {
+	if function.Type.Results == nil || len(function.Type.Results.List) != 1 {
+		return ""
+	}
+	return declaredTypeName(function.Type.Results.List[0].Type)
+}
+
+func realCatalogLocalTypes(function *ast.FuncDecl, factoryReturns map[string]string) map[string]string {
+	types := map[string]string{}
+	addFields := func(fields *ast.FieldList) {
+		if fields == nil {
+			return
+		}
+		for _, field := range fields.List {
+			typeName := declaredTypeName(field.Type)
+			for _, name := range field.Names {
+				if typeName != "" {
+					types[name.Name] = typeName
+				}
+			}
+		}
+	}
+	addFields(function.Recv)
+	addFields(function.Type.Params)
+
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		switch node := node.(type) {
+		case *ast.AssignStmt:
+			for index, left := range node.Lhs {
+				name, ok := left.(*ast.Ident)
+				if !ok || index >= len(node.Rhs) {
+					continue
+				}
+				if typeName := realCatalogExpressionType(node.Rhs[index], types, factoryReturns); typeName != "" {
+					types[name.Name] = typeName
+				}
+			}
+		case *ast.DeclStmt:
+			declaration, ok := node.Decl.(*ast.GenDecl)
+			if !ok || declaration.Tok != token.VAR {
+				break
+			}
+			for _, spec := range declaration.Specs {
+				value, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for index, name := range value.Names {
+					typeName := declaredTypeName(value.Type)
+					if typeName == "" && index < len(value.Values) {
+						typeName = realCatalogExpressionType(value.Values[index], types, factoryReturns)
+					}
+					if typeName != "" {
+						types[name.Name] = typeName
+					}
+				}
+			}
+		}
+		return true
+	})
+	return types
+}
+
+func realCatalogExpressionType(expression ast.Expr, localTypes, factoryReturns map[string]string) string {
+	switch expression := expression.(type) {
+	case *ast.Ident:
+		return localTypes[expression.Name]
+	case *ast.CompositeLit:
+		return declaredTypeName(expression.Type)
+	case *ast.UnaryExpr:
+		return realCatalogExpressionType(expression.X, localTypes, factoryReturns)
+	case *ast.ParenExpr:
+		return realCatalogExpressionType(expression.X, localTypes, factoryReturns)
+	case *ast.CallExpr:
+		if function, ok := expression.Fun.(*ast.Ident); ok {
+			return factoryReturns[function.Name]
+		}
+	}
+	return ""
 }
 
 func realCatalogEnumerationCall(call *ast.CallExpr) bool {
