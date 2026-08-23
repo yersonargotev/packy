@@ -1,6 +1,7 @@
 {
+  "schema_version": 1,
   "id": "argote",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Yerson Argote's engineering and communication guidance",
   "selectable": true,
   "surfaces": [
@@ -13,6 +14,7 @@
     "surface-authorization"
   ],
   "external_requirements": [],
+  "origins": [],
   "resources": [
     {
       "description": "Defines default engineering principles and neutral-Spanish communication guidance",
@@ -108,6 +110,5 @@
       ],
       "surface_exclusions": []
     }
-  ],
-  "exclusions": []
+  ]
 }

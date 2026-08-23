@@ -6,7 +6,7 @@
 
 Yerson Argote's engineering and communication guidance
 
-- Version: `1.0.2`
+- Version: `1.0.3`
 - Supported surfaces: `claude`, `codex`, `opencode`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
