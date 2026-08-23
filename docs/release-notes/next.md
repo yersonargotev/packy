@@ -31,6 +31,10 @@ adds the pstack Pack, and updates the bundled Matty and Engram Packs.
 - TUI catalog search now matches case-insensitive literal text across Pack IDs
   and descriptions, supported surfaces, external requirements, resource IDs,
   descriptions and requirements, and surface capability types and tool names.
+- The reviewed Argote Pack advances to `1.0.3` through the public
+  `yersonargotev/argote` Managed Pack Project release `pack-v1.0.3`, preserving
+  its engineering and communication guidance on Claude Code, Codex, and
+  OpenCode.
 - The reviewed pstack Pack advances to `1.0.1` through its public Managed Pack
   Project release, preserving 26 portable engineering skills for Claude Code,
   Codex, and OpenCode while sealing their origin and license evidence.
