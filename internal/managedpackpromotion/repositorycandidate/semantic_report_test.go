@@ -500,6 +500,24 @@ func TestSemanticReportEscapesFreeFormMarkdownValues(t *testing.T) {
 	}
 }
 
+func TestMarkdownCodePadsBoundaryBackticks(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "leading", value: "`@maintainer", want: "`` `@maintainer ``"},
+		{name: "trailing", value: "@maintainer`", want: "`` @maintainer` ``"},
+		{name: "both", value: "`@maintainer`", want: "`` `@maintainer` ``"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := markdownCode(test.value); got != test.want {
+				t.Fatalf("markdownCode(%q) = %q, want %q", test.value, got, test.want)
+			}
+		})
+	}
+}
+
 func containsReason(reasons []semanticReason, want string) bool {
 	for _, reason := range reasons {
 		if reason.detail == want {

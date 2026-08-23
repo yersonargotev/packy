@@ -623,6 +623,9 @@ func markdownCode(value string) string {
 		}
 	}
 	delimiter := strings.Repeat("`", longest+1)
+	if strings.HasPrefix(escaped, "`") || strings.HasSuffix(escaped, "`") {
+		escaped = " " + escaped + " "
+	}
 	return delimiter + escaped + delimiter
 }
 
