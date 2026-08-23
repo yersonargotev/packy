@@ -265,6 +265,8 @@ var packagePackID = "live-pack"
 func catalogHelper() string { return filepath.Join("bundle", "packs", "live-pack", "pack.json") }
 func literalManifest() string { return "bundle/packs/live-pack/pack.json" }
 func lifecycleArgs(packID string) []string { return []string{"activate", packID} }
+func labels() []string { return []string{"activate", "live-pack"} }
+func syntheticArgs(packID string) []string { _ = labels(); return []string{"activate", packID} }
 func executeArgs(t *testing.T, args []string) { executeCommand(t, NewRootCommand(Options{}), args...) }
 func identity(packID string) string { return packID }
 func TestThroughHelper(t *testing.T) { _, _ = os.ReadFile(catalogHelper()) }
@@ -301,6 +303,7 @@ func TestSyntheticVariable(t *testing.T) { packID := "synthetic-pack"; executeCo
 func TestUnrelatedSlice(t *testing.T) { _ = []string{"activate", "live-pack"} }
 func TestUnrelatedShow(t *testing.T) { unrelated := unrelatedView{}; unrelated.Show(ctx, "live-pack") }
 func TestCallSensitiveLifecycle(t *testing.T) { _ = identity("live-pack"); executeCommand(t, NewRootCommand(Options{}), "activate", identity("synthetic-pack")) }
+func TestDiscardedHelperSequence(t *testing.T) { executeArgs(t, syntheticArgs("synthetic-pack")) }
 `
 	inventory := realCatalogInventory{
 		packIDs: map[string]struct{}{"live-pack": {}, "matty": {}},
@@ -351,6 +354,7 @@ func TestCallSensitiveLifecycle(t *testing.T) { _ = identity("live-pack"); execu
 		"sample_test.go:TestUnrelatedSlice",
 		"sample_test.go:TestUnrelatedShow",
 		"sample_test.go:TestCallSensitiveLifecycle",
+		"sample_test.go:TestDiscardedHelperSequence",
 		"sample_test.go:TestTemporaryManifest",
 	} {
 		if got[unwanted] {
@@ -1807,14 +1811,6 @@ func (context *realCatalogSSAContext) callReturnSequences(call *ssa.CallCommon, 
 	context.withCallBinding(call, func() {
 		for _, returned := range context.callReturnValues(call, index) {
 			result = append(result, context.sequencesSeen(returned, seen)...)
-		}
-		for _, block := range callee.Blocks {
-			for _, instruction := range block.Instrs {
-				called, ok := instruction.(*ssa.Call)
-				if ok && isStringSlice(called.Type()) {
-					result = append(result, context.sequencesSeen(called, seen)...)
-				}
-			}
 		}
 	})
 	return result
