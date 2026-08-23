@@ -98,6 +98,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	argoteVersion := checkedInPackVersion(t, "argote")
 	engramVersion := checkedInPackVersion(t, "engram")
 	mattyVersion := checkedInMattyFacts(t).Version
+	orchestrateVersion := checkedInPackVersion(t, "orchestrate")
 	pstackVersion := checkedInPackVersion(t, "pstack")
 
 	output, err := executeCommand(t, NewRootCommand(opts), "list")
@@ -110,7 +111,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 		fmt.Sprintf("engram          %-7s  Upstream Engram CLI memory workflows for agent work                    codex\n", engramVersion) +
 		"issue-delivery  1.1.1    Deliver issues through policy-driven or Matt-configured workflows      codex\n" +
 		fmt.Sprintf("matty           %-7s  Matty workflow                                                         claude, codex, opencode\n", mattyVersion) +
-		"orchestrate     1.0.1    Coordinate focused Codex subagents                                     codex\n" +
+		fmt.Sprintf("orchestrate     %-7s  Coordinate focused Codex subagents                                     codex\n", orchestrateVersion) +
 		fmt.Sprintf("pstack          %-7s  Apply pstack's reviewed portable engineering workflows and principles  claude, codex, opencode\n", pstackVersion)
 	if output != want {
 		t.Fatalf("human output changed:\n%s", output)
