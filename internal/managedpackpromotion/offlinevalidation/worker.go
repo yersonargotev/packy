@@ -51,7 +51,7 @@ func runWithBoundary(args []string, stdout, stderr io.Writer, install func() err
 		return 1
 	}
 
-	validation, validationErr := managedpack.ValidateProject(context.Background(), request.ProjectRoot, mapResolver(request.OriginRoots))
+	preflight, validationErr := managedpack.Preflight(context.Background(), request.ProjectRoot, mapResolver(request.OriginRoots))
 	response := workerResponse{
 		Protocol: request.Protocol, Token: request.Token, Nonce: request.Nonce,
 		RequestSHA256: request.RequestSHA256,
@@ -61,6 +61,7 @@ func runWithBoundary(args []string, stdout, stderr io.Writer, install func() err
 		response.Gate = validationGate(validationErr)
 		response.Reason = validationErr.Error()
 	} else {
+		validation := preflight.Validation
 		response.Status = responseAccepted
 		response.Validation = validation
 		response.ValidationSHA256 = validationDigest(validation)
@@ -245,10 +246,14 @@ func validRandomIdentity(value string, size int) bool {
 }
 
 func validationGate(err error) managedpackpromotion.Gate {
+	if managedpack.IsRuntimeFitnessFailure(err) {
+		return managedpackpromotion.GateResourceSurfaces
+	}
+	if managedpack.IsExactCopyMismatch(err) {
+		return managedpackpromotion.GateExactCopies
+	}
 	reason := strings.ToLower(err.Error())
 	switch {
-	case strings.Contains(reason, "exact-copy"):
-		return managedpackpromotion.GateExactCopies
 	case strings.Contains(reason, "notice"):
 		return managedpackpromotion.GateNotices
 	case strings.Contains(reason, "origin"):

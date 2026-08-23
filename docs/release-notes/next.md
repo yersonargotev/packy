@@ -39,6 +39,9 @@ adds the pstack Pack, and updates the bundled Matty and Engram Packs.
   Packy-owned capabilities.
 - The Engram Pack advances to `3.1.0` with the exact `engram-memory-cli`
   content from upstream `v2.2.0` and a new sealed bundle generation.
+- Managed Pack preventive validation now materializes and runtime-loads the
+  exact sealed bundle before publication, checks every supported
+  surface/selection row, and reports actionable content-free exact-copy drift.
 
 The release artifact format is unchanged.
 

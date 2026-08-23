@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,11 +23,13 @@ import (
 )
 
 const (
-	SchemaVersion        = 1
-	maxIndexedEntries    = 1024
-	maxIndexedPathDepth  = 32
-	maxIndexedFileBytes  = int64(8 << 20)
-	maxIndexedTotalBytes = int64(64 << 20)
+	SchemaVersion                    = 1
+	maxIndexedEntries                = 1024
+	maxIndexedPathDepth              = 32
+	maxIndexedFileBytes              = int64(8 << 20)
+	maxIndexedTotalBytes             = int64(64 << 20)
+	maxExactCopyMismatchDetails      = 10
+	maxExactCopyDiagnosticValueBytes = 512
 )
 
 var (
@@ -120,6 +123,54 @@ type Validation struct {
 	ManifestSHA256 string
 	ClosureSHA256  string
 	Files          []FileRecord
+}
+
+type exactCopyDifference struct {
+	class         string
+	path          string
+	projectSHA256 string
+	originSHA256  string
+}
+
+type exactCopyMismatchError struct {
+	resource    string
+	origin      string
+	originPath  string
+	differences []exactCopyDifference
+	total       int
+}
+
+func (e *exactCopyMismatchError) Error() string {
+	var message strings.Builder
+	fmt.Fprintf(
+		&message,
+		"resource %q exact-copy mismatch with origin %q path %q",
+		boundedDiagnosticValue(e.resource),
+		boundedDiagnosticValue(e.origin),
+		boundedDiagnosticValue(e.originPath),
+	)
+	for _, difference := range e.differences {
+		fmt.Fprintf(
+			&message,
+			"; mismatch=%s path=%q project_sha256=%q origin_sha256=%q",
+			difference.class,
+			boundedDiagnosticValue(difference.path),
+			difference.projectSHA256,
+			difference.originSHA256,
+		)
+	}
+	if omitted := e.total - len(e.differences); omitted > 0 {
+		fmt.Fprintf(&message, "; %d additional differences omitted", omitted)
+	}
+	message.WriteString("; restore exact bytes from the declared origin or declare the complete resource \"adapted\" and review its notices")
+	return message.String()
+}
+
+// IsExactCopyMismatch reports whether validation rejected an exact-copy
+// resource because its relative file set or bytes differ from the origin.
+func IsExactCopyMismatch(err error) bool {
+	var mismatch *exactCopyMismatchError
+	return errors.As(err, &mismatch)
 }
 
 type declaredRoot struct {
@@ -682,8 +733,16 @@ func validateOriginRelationship(ctx context.Context, projectRoot string, resourc
 	if err != nil {
 		return fmt.Errorf("resource %q source: %w", resourceIdentity(resource), err)
 	}
-	if !sameContent(projectFiles, resource.Source, originFiles, resource.Origin.Path) {
-		return fmt.Errorf("resource %q exact-copy content differs from origin %q path %q", resourceIdentity(resource), resource.Origin.ID, originPath)
+	differences := exactCopyDifferences(projectFiles, resource.Source, originFiles, resource.Origin.Path)
+	if len(differences) > 0 {
+		reported := differences
+		if len(reported) > maxExactCopyMismatchDetails {
+			reported = reported[:maxExactCopyMismatchDetails]
+		}
+		return &exactCopyMismatchError{
+			resource: resourceIdentity(resource), origin: resource.Origin.ID, originPath: originPath,
+			differences: reported, total: len(differences),
+		}
 	}
 	return nil
 }
@@ -871,20 +930,55 @@ func rejectGitlinks(ctx context.Context, repositoryRoot string, roots []declared
 	return nil
 }
 
-func sameContent(left []FileRecord, leftRoot string, right []FileRecord, rightRoot string) bool {
-	if len(left) != len(right) {
-		return false
+func exactCopyDifferences(project []FileRecord, projectRoot string, origin []FileRecord, originRoot string) []exactCopyDifference {
+	projectByPath := relativeFileRecords(project, projectRoot)
+	originByPath := relativeFileRecords(origin, originRoot)
+	paths := make([]string, 0, len(projectByPath)+len(originByPath))
+	seen := make(map[string]bool, len(projectByPath)+len(originByPath))
+	for path := range projectByPath {
+		paths = append(paths, path)
+		seen[path] = true
 	}
-	for i := range left {
-		leftRel, leftErr := filepath.Rel(filepath.FromSlash(leftRoot), filepath.FromSlash(left[i].Path))
-		rightRel, rightErr := filepath.Rel(filepath.FromSlash(rightRoot), filepath.FromSlash(right[i].Path))
-		leftRel = filepath.ToSlash(leftRel)
-		rightRel = filepath.ToSlash(rightRel)
-		if leftErr != nil || rightErr != nil || leftRel != rightRel || left[i].SHA256 != right[i].SHA256 {
-			return false
+	for path := range originByPath {
+		if !seen[path] {
+			paths = append(paths, path)
 		}
 	}
-	return true
+	sort.Strings(paths)
+
+	differences := make([]exactCopyDifference, 0)
+	for _, path := range paths {
+		projectFile, inProject := projectByPath[path]
+		originFile, inOrigin := originByPath[path]
+		switch {
+		case !inProject:
+			differences = append(differences, exactCopyDifference{class: "missing", path: path, projectSHA256: "-", originSHA256: originFile.SHA256})
+		case !inOrigin:
+			differences = append(differences, exactCopyDifference{class: "additional", path: path, projectSHA256: projectFile.SHA256, originSHA256: "-"})
+		case projectFile.SHA256 != originFile.SHA256:
+			differences = append(differences, exactCopyDifference{class: "changed", path: path, projectSHA256: projectFile.SHA256, originSHA256: originFile.SHA256})
+		}
+	}
+	return differences
+}
+
+func relativeFileRecords(files []FileRecord, root string) map[string]FileRecord {
+	result := make(map[string]FileRecord, len(files))
+	for _, file := range files {
+		relative, err := filepath.Rel(filepath.FromSlash(root), filepath.FromSlash(file.Path))
+		if err != nil {
+			continue
+		}
+		result[filepath.ToSlash(relative)] = file
+	}
+	return result
+}
+
+func boundedDiagnosticValue(value string) string {
+	if len(value) <= maxExactCopyDiagnosticValueBytes {
+		return value
+	}
+	return value[:maxExactCopyDiagnosticValueBytes] + "..."
 }
 
 func digestIndex(files []FileRecord) string {

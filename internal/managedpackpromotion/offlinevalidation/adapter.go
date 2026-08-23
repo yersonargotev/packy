@@ -257,7 +257,8 @@ func readWorkerResponse(path string, request workerRequest) (workerResponse, err
 
 func allowedValidationGate(gate managedpackpromotion.Gate) bool {
 	return gate == managedpackpromotion.GateValidation || gate == managedpackpromotion.GateOrigins ||
-		gate == managedpackpromotion.GateExactCopies || gate == managedpackpromotion.GateNotices
+		gate == managedpackpromotion.GateExactCopies || gate == managedpackpromotion.GateNotices ||
+		gate == managedpackpromotion.GateResourceSurfaces
 }
 
 func pathWithin(parent, child string) bool {

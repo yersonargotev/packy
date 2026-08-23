@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,9 +22,52 @@ func TestRunValidatesProjectWithLocalOrigin(t *testing.T) {
 	if exit != 0 {
 		t.Fatalf("exit = %d, stderr = %s", exit, stderr.String())
 	}
-	if output := stdout.String(); !strings.Contains(output, "validated example@1.0.0") || !strings.Contains(output, "files=3") {
+	if output := stdout.String(); !strings.Contains(output, "validated example@1.0.0") || !strings.Contains(output, "files=3") || !strings.Contains(output, "fitness_rows=2") {
 		t.Fatalf("stdout = %q", output)
 	}
+}
+
+func TestRunRejectsRuntimeProjectionCollisions(t *testing.T) {
+	project := t.TempDir()
+	origin := t.TempDir()
+	writeToolFile(t, filepath.Join(project, "notices", "mit"), "MIT notice\n")
+	writeToolFile(t, filepath.Join(project, "skills", "guide", "SKILL.md"), "guidance\n")
+	writeToolFile(t, filepath.Join(project, "skills", "other", "SKILL.md"), "other\n")
+	writeToolFile(t, filepath.Join(origin, "guide", "SKILL.md"), "guidance\n")
+	writeToolFile(t, filepath.Join(project, "pack.json"), toolManifestWithProjectionCollision(t))
+
+	var stdout, stderr bytes.Buffer
+	exit := run([]string{"--project", project, "--origin", "upstream=" + origin}, &stdout, &stderr)
+	if exit != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "runtime fitness") || !strings.Contains(stderr.String(), "projection collision") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exit, stdout.String(), stderr.String())
+	}
+}
+
+func toolManifestWithProjectionCollision(t *testing.T) string {
+	t.Helper()
+	var manifest map[string]any
+	if err := json.Unmarshal([]byte(toolManifest), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	resources := manifest["resources"].([]any)
+	encoded, err := json.Marshal(resources[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var other map[string]any
+	if err := json.Unmarshal(encoded, &other); err != nil {
+		t.Fatal(err)
+	}
+	other["id"] = "other"
+	other["source"] = "skills/other"
+	delete(other, "origin")
+	delete(other, "notices")
+	manifest["resources"] = append(resources, other)
+	encoded, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded) + "\n"
 }
 
 func writeToolFile(t *testing.T, name, content string) {

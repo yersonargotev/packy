@@ -187,6 +187,42 @@ func TestRunSealsValidationFailuresWithTheirTypedGate(t *testing.T) {
 			gate: managedpackpromotion.GateNotices,
 			want: "notice",
 		},
+		{
+			name: "runtime fitness",
+			edit: func(t *testing.T, request workerRequest) {
+				writeTestFile(t, filepath.Join(request.ProjectRoot, "skills", "other", "SKILL.md"), "other guidance\n", 0o644)
+				path := filepath.Join(request.ProjectRoot, "pack.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var manifest map[string]any
+				if err := json.Unmarshal(data, &manifest); err != nil {
+					t.Fatal(err)
+				}
+				resources := manifest["resources"].([]any)
+				encoded, err := json.Marshal(resources[1])
+				if err != nil {
+					t.Fatal(err)
+				}
+				var other map[string]any
+				if err := json.Unmarshal(encoded, &other); err != nil {
+					t.Fatal(err)
+				}
+				other["id"] = "other"
+				other["source"] = "skills/other"
+				delete(other, "origin")
+				delete(other, "notices")
+				manifest["resources"] = append(resources, other)
+				encoded, err = json.MarshalIndent(manifest, "", "  ")
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeTestFile(t, path, string(encoded)+"\n", 0o644)
+			},
+			gate: managedpackpromotion.GateResourceSurfaces,
+			want: "runtime fitness",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request, requestPath, responsePath := writeWorkerFixture(t)

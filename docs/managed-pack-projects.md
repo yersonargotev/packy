@@ -94,15 +94,28 @@ jobs:
 
 For reproducible project controls, set the workflow's optional `packy_ref`
 input to an immutable Packy commit. The workflow checks out public origins at
-their declared commits and runs the same `internal/managedpack` validator that
-Managed Pack Promotion consumes. It reads content but never runs project or
-origin scripts, hooks, tests, builds, or binaries.
+their declared commits and runs the same `internal/managedpack` preflight that
+Managed Pack Promotion consumes. Preflight validates and seals the Declared
+Pack Closure, materializes its exact runtime bundle layout in temporary
+storage, loads that artifact through Packy's production manifest path, and
+evaluates every supported surface with `all` and each selectable resource
+root. It reads content but never runs project or origin scripts, hooks, tests,
+builds, or binaries. Promotion independently reacquires the immutable release
+and repeats preflight plus every repository admission gate; preventive
+evidence is never admission authority.
 
 Packy maintainers can run the adapter directly:
 
 ```sh
 go run ./internal/tools/managedpackvalidate --project /path/to/project
 ```
+
+Successful output includes the sealed manifest and closure digests, closure
+file count, and deterministic runtime-fitness row count. Validation failures
+for an `exact-copy` resource report a bounded, sorted, content-free set of
+missing, additional, or changed relative paths and their SHA-256 values, with
+instructions to restore exact bytes or declare the complete resource `adapted`
+and review its notices.
 
 Tests and offline callers may repeat `--origin <id>=<local-root>` to supply an
 already acquired exact origin tree.
