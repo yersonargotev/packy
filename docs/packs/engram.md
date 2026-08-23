@@ -6,7 +6,7 @@
 
 Upstream Engram CLI memory workflows for agent work
 
-- Version: `3.1.0`
+- Version: `3.1.1`
 - Supported surfaces: `codex`
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `engram`

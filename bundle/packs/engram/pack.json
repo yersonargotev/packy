@@ -1,65 +1,62 @@
 {
-  "description": "Upstream Engram CLI memory workflows for agent work",
-  "exclusions": [],
-  "external_requirements": [
-    "engram"
-  ],
+  "schema_version": 1,
   "id": "engram",
+  "version": "3.1.1",
+  "description": "Upstream Engram CLI memory workflows for agent work",
+  "selectable": true,
+  "surfaces": [
+    "codex"
+  ],
   "readiness_obligations": [
     "runtime-usability",
     "surface-authorization"
   ],
+  "external_requirements": [
+    "engram"
+  ],
+  "origins": [],
   "resources": [
     {
-      "attribution": "Copyright (c) 2026 Alan Buscaglia",
-      "bindings": [],
-      "conflicts": [],
-      "description": "Preserve the upstream Engram MIT license and attribution",
-      "id": "mit",
       "kind": "notice",
-      "license": "MIT",
-      "requires": [],
+      "id": "mit",
       "source": "notices/engram-mit",
-      "surface_exclusions": []
+      "description": "Preserve the upstream Engram MIT license and attribution",
+      "requires": [],
+      "conflicts": [],
+      "bindings": [],
+      "surface_exclusions": [],
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 Alan Buscaglia"
     },
     {
-      "bindings": [
-        {
-          "capabilities": [
-            {
-              "external_executable_acquisition": {
-                "tool": "engram"
-              },
-              "type": "external-executable-acquisition"
-            }
-          ],
-          "invocation": "$engram-memory-cli",
-          "mode": "native",
-          "name": "engram-memory-cli",
-          "projection": "skill",
-          "sharing": "exclusive",
-          "surface": "codex"
-        }
-      ],
-      "conflicts": [],
-      "description": "Uses Engram project memory safely through the CLI",
-      "id": "engram-memory-cli",
       "kind": "skill",
+      "id": "engram-memory-cli",
+      "source": "skills/engram-memory-cli",
+      "description": "Uses Engram project memory safely through the CLI",
+      "requires": [],
+      "conflicts": [],
       "notices": [
         "notice:mit"
       ],
-      "requires": [],
-      "source": "skills/engram-memory-cli",
+      "bindings": [
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "engram-memory-cli",
+          "invocation": "$engram-memory-cli",
+          "mode": "native",
+          "sharing": "exclusive",
+          "capabilities": [
+            {
+              "type": "external-executable-acquisition",
+              "external_executable_acquisition": {
+                "tool": "engram"
+              }
+            }
+          ]
+        }
+      ],
       "surface_exclusions": []
     }
-  ],
-  "selectable": true,
-  "source_reference": {
-    "repository": "https://github.com/yersonargotev/engram.git",
-    "revision": "v2.2.0"
-  },
-  "surfaces": [
-    "codex"
-  ],
-  "version": "3.1.0"
+  ]
 }
