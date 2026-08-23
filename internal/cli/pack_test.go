@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	semver "github.com/Masterminds/semver/v3"
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/capabilitypack/testsupport"
 	"github.com/yersonargotev/packy/internal/codex"
@@ -491,28 +490,6 @@ func checkedInPackVersion(t *testing.T, packID string) string {
 		t.Fatalf("checked-in Pack %q has no version", packID)
 	}
 	return manifest.Version
-}
-
-func bumpManifestPatchVersion(t *testing.T, manifest string) (string, string) {
-	t.Helper()
-	var identity struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal([]byte(manifest), &identity); err != nil {
-		t.Fatal(err)
-	}
-	current, err := semver.StrictNewVersion(identity.Version)
-	if err != nil {
-		t.Fatal(err)
-	}
-	next := current.IncPatch().String()
-	oldField := `"version": "` + identity.Version + `"`
-	newField := `"version": "` + next + `"`
-	updated := strings.Replace(manifest, oldField, newField, 1)
-	if updated == manifest {
-		t.Fatalf("manifest does not contain %s", oldField)
-	}
-	return updated, next
 }
 
 func currentPackActivationOptions(t *testing.T, terminal Terminal) (Options, string, string) {
