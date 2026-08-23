@@ -1453,20 +1453,6 @@ func TestPackActivateEngramAcquiresOnlyWhenExecutableIsMissing(t *testing.T) {
 	}
 }
 
-func copyPackBundleForUpdate(t *testing.T, repoRoot string) string {
-	t.Helper()
-	root := t.TempDir()
-	copyProductionCatalogBundle(t, root, repoRoot)
-	return root
-}
-
-func copyProductionCatalogBundle(t *testing.T, target, repoRoot string) {
-	t.Helper()
-	if err := os.CopyFS(target, os.DirFS(filepath.Join(repoRoot, "bundle"))); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestPackDeactivateDryRunApplyAndInactiveNoOpOnBothSurfaces(t *testing.T) {
 	for _, surface := range []string{"codex", "opencode"} {
 		t.Run(surface, func(t *testing.T) {
