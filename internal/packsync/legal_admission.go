@@ -11,9 +11,6 @@ import (
 const (
 	RedistributableDisposition = "redistributable"
 
-	EngramLegalAdmissionEvidenceReference = "docs/research/evidence/engram-2.0.0-legal-admission.json"
-	EngramLegalAdmissionEvidenceSHA256    = "4049920281a1e7ea3abc828664f7e61513bdca7bc2a2e4469522f3808b53b230"
-
 	IssueDeliveryLegalAdmissionEvidenceReference = "docs/research/evidence/issue-deliver-pack-1.1.1-legal-admission.json"
 	IssueDeliveryLegalAdmissionEvidenceSHA256    = "d98d24af16066a62358a6d4fea911a21cdaddbafcb2545c106a9d77329ea9e5b"
 
@@ -61,52 +58,6 @@ type LegalAdmission struct {
 	SHA256      string
 	Disposition string
 	Scope       LegalAdmissionScope
-}
-
-// EngramLegalAdmissionExpected returns the immutable issue-672 admission
-// anchor. Each call owns its scope slices so callers cannot mutate the
-// production binding observed by later callers.
-func EngramLegalAdmissionExpected() LegalAdmissionExpected {
-	return LegalAdmissionExpected{
-		EvidenceReference: EngramLegalAdmissionEvidenceReference,
-		EvidenceSHA256:    EngramLegalAdmissionEvidenceSHA256,
-		EvidenceID:        "engram-2.0.0-mit",
-		Candidate: LegalAdmissionCandidate{
-			Repository:   "yersonargotev/engram",
-			Commit:       "ca403b6264aeac561f87940c139a97ead2f2d2f4",
-			READMEBlob:   "2162b67f8095435b693914aae816c0b00186b11c",
-			READMELength: 26155,
-			READMESHA256: "e4a1528943723f0f6002452fa8983d6fc4026bc61553f07b0f33be68787e19ee",
-		},
-		Scope: LegalAdmissionScope{
-			SelectedRoots: []string{"LICENSE", "skills/engram-memory-cli"},
-			Exclusions: []string{
-				"README.md",
-				"skills/architecture-guardrails",
-				"skills/backlog-triage",
-				"skills/branch-pr",
-				"skills/business-rules",
-				"skills/catalog.md",
-				"skills/commit-hygiene",
-				"skills/cultural-norms",
-				"skills/dashboard-htmx",
-				"skills/docs-alignment",
-				"skills/gentleman-bubbletea",
-				"skills/issue-creation",
-				"skills/memory-protocol",
-				"skills/plugin-thin",
-				"skills/pr-review-deep",
-				"skills/project-structure",
-				"skills/sdd-flow",
-				"skills/server-api",
-				"skills/testing-coverage",
-				"skills/tui-quality",
-				"skills/ui-elements",
-				"skills/visual-language",
-			},
-		},
-		Invalidation: "any release, candidate, selected-root, license, README identity, disposition, evidence digest, or scope change",
-	}
 }
 
 // IssueDeliveryLegalAdmissionExpected returns the immutable issue-668

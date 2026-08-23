@@ -1,0 +1,163 @@
+package ci_test
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"testing"
+
+	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/managedpack"
+)
+
+func TestIssue703EngramManagedPackOwnsCurrentRuntimeContractAndClosure(t *testing.T) {
+	root := repositoryRoot(t)
+	bundleRoot := filepath.Join(root, "bundle")
+	manifestPath := filepath.Join(bundleRoot, "packs", "engram", "pack.json")
+	pack, err := capabilitypack.LoadCurrentManifest(manifestPath, bundleRoot, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.ID != "engram" || pack.Version == "" || !reflect.DeepEqual(pack.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) ||
+		!reflect.DeepEqual(pack.ReadinessObligations, []capabilitypack.ReadinessObligation{capabilitypack.ReadinessRuntimeUsability, capabilitypack.ReadinessSurfaceAuthorization}) ||
+		!reflect.DeepEqual(pack.Requires.Tools, []string{"engram"}) {
+		t.Fatalf("Engram runtime identity = %#v", pack)
+	}
+	counts := pack.ResourceCounts()
+	if counts.Skills != 1 || counts.Notices != 1 || counts.MCPServers != 0 || counts.Lifecycles != 0 || counts.Agents != 0 || counts.Commands != 0 || counts.Assets != 0 || counts.Instructions != 0 {
+		t.Fatalf("Engram resource counts = %#v", counts)
+	}
+	if len(pack.Resources) != 2 {
+		t.Fatalf("Engram resources = %#v", pack.Resources)
+	}
+	notice, skill := pack.Resources[0], pack.Resources[1]
+	if notice.Kind != "notice" || notice.ID != "mit" || notice.Source != "notices/engram-mit" || notice.License != "MIT" || notice.Attribution != "Copyright (c) 2026 Alan Buscaglia" {
+		t.Fatalf("Engram legal notice = %#v", notice)
+	}
+	if skill.Kind != "skill" || skill.ID != "engram-memory-cli" || skill.Source != "skills/engram-memory-cli" || !reflect.DeepEqual(skill.Notices, []string{"notice:mit"}) || len(skill.Bindings) != 1 {
+		t.Fatalf("Engram skill = %#v", skill)
+	}
+	binding := skill.Bindings[0]
+	if binding.Surface != capabilitypack.SurfaceCodex || binding.Projection != "skill" || binding.Name != "engram-memory-cli" || binding.Invocation != "$engram-memory-cli" || binding.Mode != "native" || binding.Sharing != "exclusive" || len(binding.Capabilities) != 1 || binding.Capabilities[0].Type != capabilitypack.SurfaceCapabilityExternalExecutableAcquisition || binding.Capabilities[0].ExternalExecutableAcquisition == nil || binding.Capabilities[0].ExternalExecutableAcquisition.Tool != "engram" {
+		t.Fatalf("Engram skill binding = %#v", binding)
+	}
+
+	record, err := managedpack.LoadAdmissionRecord(filepath.Join(root, "managed-packs", "admissions", "engram", pack.Version+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.PackID != pack.ID || record.PackVersion != pack.Version || record.Project != "yersonargotev/engram" || !record.ReleaseImmutable || record.Tag != "pack-v"+pack.Version {
+		t.Fatalf("Engram admission identity = %#v", record)
+	}
+	actual := currentEngramClosure(t, bundleRoot, manifestPath, pack.Resources)
+	if !reflect.DeepEqual(actual, record.Files) {
+		t.Fatalf("current Engram closure = %#v; want admitted closure %#v", actual, record.Files)
+	}
+	if _, err := os.Stat(filepath.Join(bundleRoot, "skills", "engram-memory")); !os.IsNotExist(err) {
+		t.Fatalf("obsolete Packy-authored skill remains: %v", err)
+	}
+}
+
+func currentEngramClosure(t *testing.T, bundleRoot, manifestPath string, resources []capabilitypack.Resource) []managedpack.FileRecord {
+	t.Helper()
+	records := map[string]managedpack.FileRecord{
+		"pack.json": currentEngramFile(t, manifestPath, "pack.json"),
+	}
+	for _, resource := range resources {
+		roots := []string{resource.Source}
+		for _, binding := range resource.Bindings {
+			roots = append(roots, binding.ReferencedSourcePaths()...)
+		}
+		for _, relativeRoot := range roots {
+			if relativeRoot == "" {
+				continue
+			}
+			err := filepath.WalkDir(filepath.Join(bundleRoot, filepath.FromSlash(relativeRoot)), func(path string, entry os.DirEntry, walkErr error) error {
+				if walkErr != nil || entry.IsDir() {
+					return walkErr
+				}
+				relative, err := filepath.Rel(bundleRoot, path)
+				if err != nil {
+					return err
+				}
+				relative = filepath.ToSlash(relative)
+				records[relative] = currentEngramFile(t, path, relative)
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	paths := make([]string, 0, len(records))
+	for path := range records {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	closure := make([]managedpack.FileRecord, 0, len(paths))
+	for _, path := range paths {
+		closure = append(closure, records[path])
+	}
+	return closure
+}
+
+func currentEngramFile(t *testing.T, path, relative string) managedpack.FileRecord {
+	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Fatalf("current Engram closure member %s has non-regular mode %s", relative, info.Mode())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	return managedpack.FileRecord{Path: relative, Mode: fmt.Sprintf("100%03o", info.Mode().Perm()), SHA256: hex.EncodeToString(digest[:])}
+}
+
+func TestIssue703EngramLegacyAuthorityIsAbsent(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, relative := range []string{
+		"bundle/history/engram",
+		"bundle/sources/engram-source.lock.json",
+		"docs/research/evidence/engram-2.0.0-legal-admission.json",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative))); !os.IsNotExist(err) {
+			t.Errorf("legacy Engram authority remains at %s: %v", relative, err)
+		}
+	}
+
+	var configuration struct {
+		Sources []struct {
+			ID        string `json:"id"`
+			Resources []struct {
+				PackID string `json:"pack_id"`
+			} `json:"resources"`
+		} `json:"sources"`
+	}
+	data, err := os.ReadFile(filepath.Join(root, "bundle", "sources.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &configuration); err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range configuration.Sources {
+		if source.ID == "engram-source" {
+			t.Errorf("legacy Engram source registration remains: %#v", source)
+		}
+		for _, resource := range source.Resources {
+			if resource.PackID == "engram" {
+				t.Errorf("legacy Engram source binding remains in %s", source.ID)
+			}
+		}
+	}
+}

@@ -41,8 +41,10 @@ adds the pstack Pack, and updates the bundled Matty and Engram Packs.
 - The Matty Pack advances to `1.0.4` with the eight selected skill updates from
   upstream `v1.2.3`, while retaining its existing surface bindings and
   Packy-owned capabilities.
-- The Engram Pack advances to `3.1.0` with the exact `engram-memory-cli`
-  content from upstream `v2.2.0` and a new sealed bundle generation.
+- The reviewed Engram Pack advances to `3.1.1` through the public
+  `yersonargotev/engram` Managed Pack Project release `pack-v3.1.1`, updating
+  Packy's outdated `engram-memory-cli` guidance while preserving its selective
+  Codex-only runtime contract.
 - Managed Pack preventive validation now materializes and runtime-loads the
   exact sealed bundle before publication, checks every supported
   surface/selection row, and reports actionable content-free exact-copy drift.
