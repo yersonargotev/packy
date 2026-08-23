@@ -151,6 +151,20 @@ func TestMaterializeClosureRejectsSourceDrift(t *testing.T) {
 	}
 }
 
+func TestMaterializeClosureRejectsValidatedManifestDrift(t *testing.T) {
+	project, origin := writeValidProject(t)
+	validation, err := ValidateProject(context.Background(), project, originResolver{"upstream": origin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation.Manifest.Version = "9.9.9"
+
+	err = MaterializeClosure(context.Background(), project, t.TempDir(), validation)
+	if err == nil || !strings.Contains(err.Error(), "drifted from validated manifest") {
+		t.Fatalf("error = %v, want validated manifest drift rejection", err)
+	}
+}
+
 func assertFileContent(t *testing.T, path, want string) {
 	t.Helper()
 	data, err := os.ReadFile(path)
