@@ -34,28 +34,6 @@
           "upstream_path": "setup-issue-delivery"
         }
       ]
-    },
-    {
-      "id": "orchestrate-source",
-      "provider": "github",
-      "repository": "yersonargotev/orchestrate-skill",
-      "selector": {
-        "mode": "stable-release"
-      },
-      "resources": [
-        {
-          "pack_id": "orchestrate",
-          "kind": "notice",
-          "resource_id": "mit",
-          "upstream_path": "LICENSE"
-        },
-        {
-          "pack_id": "orchestrate",
-          "kind": "skill",
-          "resource_id": "orchestrate",
-          "upstream_path": "orchestrate"
-        }
-      ]
     }
   ]
 }
