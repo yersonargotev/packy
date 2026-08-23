@@ -424,6 +424,15 @@ func TestCatalogListDetailsTemporary(t *testing.T) { catalog := Catalog{bundleRo
 func TestCatalogShowDetailLive(t *testing.T) { _, _ = (Catalog{}).ShowDetail(ctx, "live-pack") }
 func TestCatalogShowDetailSynthetic(t *testing.T) { _, _ = (Catalog{}).ShowDetail(ctx, "synthetic-pack") }
 func TestUnrelatedShowDetail(t *testing.T) { unrelated := unrelatedView{}; unrelated.ShowDetail(ctx, "live-pack") }
+func TestCatalogResolveIntentPackLive(t *testing.T) {
+	catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}
+	_, _ = catalog.ResolveIntentPack(ctx, "live-pack", "1.0.0")
+}
+func TestCatalogResolveIntentPackSynthetic(t *testing.T) {
+	catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}
+	_, _ = catalog.ResolveIntentPack(ctx, "synthetic-pack", "1.0.0")
+}
+func TestUnrelatedResolveIntentPack(t *testing.T) { unrelated := unrelatedView{}; unrelated.ResolveIntentPack(ctx, "live-pack", "1.0.0") }
 func TestLoadCurrentManifestLive(t *testing.T) {
 	root := repositoryRoot()
 	manifest := filepath.Join(root, "bundle", "packs", "live-pack", "pack.json")
@@ -508,6 +517,7 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestValidatePortableContentLive",
 		"sample/scenarios_test.go:TestCatalogListDetailsLive",
 		"sample/scenarios_test.go:TestCatalogShowDetailLive",
+		"sample/scenarios_test.go:TestCatalogResolveIntentPackLive",
 		"sample/scenarios_test.go:TestLoadCurrentManifestLive",
 		"sample/scenarios_test.go:TestValidatePackContentLive",
 		"sample/scenarios_test.go:TestValidatePackContentLiveDirectory",
@@ -542,6 +552,8 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestCatalogListDetailsTemporary",
 		"sample/scenarios_test.go:TestCatalogShowDetailSynthetic",
 		"sample/scenarios_test.go:TestUnrelatedShowDetail",
+		"sample/scenarios_test.go:TestCatalogResolveIntentPackSynthetic",
+		"sample/scenarios_test.go:TestUnrelatedResolveIntentPack",
 	} {
 		if got[unwanted] {
 			t.Fatalf("synthetic content validation was classified as live: %s: %+v", unwanted, findings)
@@ -669,7 +681,7 @@ func NewRootCommand(Options) *rootCommand { return &rootCommand{} }
 func executeCommand(*testing.T, *rootCommand, ...string) (string, error) { return "", nil }
 type ActivationRequest struct { PackID string }
 type SurfaceAlias struct { Kind, ID, Name string }
-type Catalog struct{ bundleRoot string }
+type Catalog struct { bundleRoot string; deferSourceValidation bool }
 type Pack struct{}
 type CatalogDetail struct{}
 func Discover(_ context.Context, bundleRoot string) (Catalog, error) { return Catalog{bundleRoot: bundleRoot}, nil }
@@ -678,12 +690,14 @@ func (Catalog) Show(context.Context, string) {}
 func (Catalog) ListCurrent(context.Context) ([]string, error) { return nil, nil }
 func (Catalog) ListDetails(context.Context) ([]CatalogDetail, error) { return nil, nil }
 func (Catalog) ShowDetail(context.Context, string) (CatalogDetail, error) { return CatalogDetail{}, nil }
+func (Catalog) ResolveIntentPack(context.Context, string, string) (Pack, error) { return Pack{}, nil }
 func LoadCurrentManifest(string, string, bool) (Pack, error) { return Pack{}, nil }
 func ValidatePackContent(string, string) (Pack, error) { return Pack{}, nil }
 func ValidatePortableContent(string) error { return nil }
 type unrelatedView struct{}
 func (unrelatedView) Show(context.Context, string) {}
 func (unrelatedView) ShowDetail(context.Context, string) {}
+func (unrelatedView) ResolveIntentPack(context.Context, string, string) {}
 `
 	for path := range sources {
 		directory := filepath.Dir(filepath.Join(workspace, filepath.FromSlash(path)))
@@ -1174,7 +1188,7 @@ func (analyzer *realCatalogSSAAnalyzer) isQualificationDriver(function *ssa.Func
 }
 
 func (analyzer *realCatalogSSAAnalyzer) isCatalogLookup(function *ssa.Function) bool {
-	if function == nil || (function.Name() != "Show" && function.Name() != "ShowDetail") || function.Signature.Recv() == nil {
+	if function == nil || (function.Name() != "Show" && function.Name() != "ShowDetail" && function.Name() != "ResolveIntentPack") || function.Signature.Recv() == nil {
 		return false
 	}
 	named := namedType(function.Signature.Recv().Type())
