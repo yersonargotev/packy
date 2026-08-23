@@ -899,8 +899,9 @@ func TestRealPackCatalogListAndShowPreserveArgoteEngramMattyPublicContracts(t *t
 	if err != nil {
 		t.Fatalf("show Argote failed: %v\n%s", err, argoteShow)
 	}
+	argoteVersion := checkedInPackVersion(t, "argote")
 	for _, want := range []string{
-		"argote 1.0.2", "Supported CLI surfaces: claude, codex, opencode", "Resources: 1 skill, 1 instruction",
+		"argote " + argoteVersion, "Supported CLI surfaces: claude, codex, opencode", "Resources: 1 skill, 1 instruction",
 		"Resource: instruction:guidance — Defines default engineering principles and neutral-Spanish communication guidance; role=operational dependencies=none notices=none",
 		"Resource: skill:espera-que — Re-explains the last point in neutral Spanish when it did not land; role=operational dependencies=none notices=none",
 	} {
