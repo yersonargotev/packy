@@ -85,6 +85,8 @@ func TestSemanticReportResourcesGraphBindingsAndCapabilitiesAreIndependent(t *te
 		"Conflict edge `skill:guide — skill:rival` removed.",
 		"Requires edge `skill:guide → asset:new` added.",
 		"Requires edge `skill:guide → asset:old` removed.",
+		"Resource `asset:added` added as authored.",
+		"Resource `asset:removed` removed as authored.",
 		"Resource `asset:added` added.",
 		"Resource `asset:removed` removed.",
 		"Resource `skill:guide` modified.",
@@ -96,11 +98,13 @@ func TestSemanticReportResourcesGraphBindingsAndCapabilitiesAreIndependent(t *te
 	wantReasons := []string{
 		"added conflict edge skill:guide — skill:new-rival",
 		"added isolated resource asset:added",
+		"added provenance of asset:added",
 		"added requires edge skill:guide → asset:new",
 		"changed binding skill:guide/codex",
 		"changed capability skill:guide/codex/project-instruction",
 		"changed projection source of skill:guide",
 		"removed conflict edge skill:guide — skill:rival",
+		"removed provenance of asset:removed",
 		"removed requires edge skill:guide → asset:old",
 		"removed resource asset:removed",
 	}
@@ -110,6 +114,8 @@ func TestSemanticReportResourcesGraphBindingsAndCapabilitiesAreIndependent(t *te
 	wantHuman := []string{
 		"Conflict edge `skill:guide — skill:rival` removed; review its meaning.",
 		"Requires edge `skill:guide → asset:old` removed; review its meaning.",
+		"Resource `asset:added` added as authored; review its provenance.",
+		"Resource `asset:removed` removed as authored; review its provenance.",
 	}
 	if got := semanticDetails(report.humanJudgment); !reflect.DeepEqual(got, wantHuman) {
 		t.Fatalf("human judgment = %#v\nwant %#v", got, wantHuman)
@@ -148,8 +154,8 @@ func TestSemanticReportProvenanceLegalAndNoticeContentStayHumanReviewed(t *testi
 		"Notice resource `notice:mit` content changed.",
 		"Resource `notice:mit` license changed from `MIT` to `Apache-2.0`.",
 		"Resource `skill:guide` notice association `notice:mit` added.",
-		"Origin `gone` removed.",
-		"Origin `new` added.",
+		"Origin `gone` removed: repository `owner/gone`, commit `111`, revision `old`.",
+		"Origin `new` added: repository `owner/new`, commit `222`, revision `new`.",
 		"Origin `upstream` commit changed from `aaa` to `bbb`.",
 		"Origin `upstream` repository changed from `owner/old` to `owner/current`.",
 		"Origin `upstream` revision changed from `v1` to `v2`.",
@@ -190,12 +196,12 @@ func TestSemanticReportExpandsAddedAndRemovedResourceReviewEvidence(t *testing.T
 		{
 			name:    "added",
 			current: semanticManifest("1.0.0").Resources, candidate: append(semanticManifest("1.0.1").Resources, terms), candidateFiles: files,
-			want: []string{"Resource `notice:terms` added.", "Notice resource `notice:terms` content changed.", "Resource `notice:terms` changed from authored to derived (`upstream:LICENSE`, `exact-copy`).", "Resource `notice:terms` license changed from `` to `MIT`.", "Resource `notice:terms` notice association `notice:terms` added."},
+			want: []string{"Resource `notice:terms` added.", "Notice resource `notice:terms` content added.", "Resource `notice:terms` added as derived from `upstream:LICENSE` (`exact-copy`).", "Resource `notice:terms` license added as `MIT`.", "Resource `notice:terms` attribution added as `Example author`.", "Resource `notice:terms` notice association `notice:terms` added."},
 		},
 		{
 			name:    "removed",
 			current: append(semanticManifest("1.0.0").Resources, terms), currentFiles: files, candidate: semanticManifest("2.0.0").Resources,
-			want: []string{"Resource `notice:terms` removed.", "Notice resource `notice:terms` content changed.", "Resource `notice:terms` changed from derived (`upstream:LICENSE`, `exact-copy`) to authored.", "Resource `notice:terms` license changed from `MIT` to ``.", "Resource `notice:terms` notice association `notice:terms` removed."},
+			want: []string{"Resource `notice:terms` removed.", "Notice resource `notice:terms` content removed.", "Resource `notice:terms` removed as derived from `upstream:LICENSE` (`exact-copy`).", "Resource `notice:terms` license `MIT` removed.", "Resource `notice:terms` attribution `Example author` removed.", "Resource `notice:terms` notice association `notice:terms` removed."},
 		},
 	}
 	for _, test := range tests {
@@ -211,6 +217,11 @@ func TestSemanticReportExpandsAddedAndRemovedResourceReviewEvidence(t *testing.T
 			for _, want := range test.want {
 				if !containsString(changes, want) {
 					t.Fatalf("changes lack %q: %#v", want, changes)
+				}
+			}
+			for _, misleading := range []string{"changed from authored", "to authored", "changed from ``", "to ``"} {
+				if strings.Contains(report.renderMarkdown(), misleading) {
+					t.Fatalf("resource absence rendered as a false transition %q:\n%s", misleading, report.renderMarkdown())
 				}
 			}
 			if len(report.humanJudgment) < 4 {
@@ -379,19 +390,38 @@ func TestSemanticReportUsesOnlySuppliedResourceFileIndexesAndExactSourcePrefixes
 			Type:               capabilitypack.SurfaceCapabilityProjectInstruction,
 			ProjectInstruction: &capabilitypack.ProjectInstructionCapability{ID: "guide", Source: "instructions/guide.md"},
 		}}}
-		current.Resources[0].Bindings = []capabilitypack.Binding{binding}
-		candidate.Resources[0].Bindings = []capabilitypack.Binding{binding}
+		currentWithCapability := cloneSemanticManifest(t, current)
+		candidateWithCapability := cloneSemanticManifest(t, candidate)
+		currentWithCapability.Resources[0].Bindings = []capabilitypack.Binding{binding}
+		candidateWithCapability.Resources[0].Bindings = []capabilitypack.Binding{binding}
 		currentWithInstruction := append(currentFiles, managedpack.FileRecord{Path: "instructions/guide.md", Mode: "100644", SHA256: "old-instruction"})
 		candidateWithInstruction := []managedpack.FileRecord{
 			{Path: "skills/guide/SKILL.md", Mode: "100644", SHA256: "same"},
 			{Path: "instructions/guide.md", Mode: "100644", SHA256: "new-instruction"},
 		}
-		report := compareSemanticChanges(current, currentWithInstruction, candidate, candidateWithInstruction)
+		report := compareSemanticChanges(currentWithCapability, currentWithInstruction, candidateWithCapability, candidateWithInstruction)
 		if got := semanticDetails(report.changes); !containsString(got, "Resource `skill:guide` content changed.") {
 			t.Fatalf("typed capability content change is absent: %#v", got)
 		}
 		if len(report.humanJudgment) != 1 {
 			t.Fatalf("typed capability content classification = %#v", report)
+		}
+	})
+
+	t.Run("a repeated resource and capability root contributes once", func(t *testing.T) {
+		candidateWithCapability := cloneSemanticManifest(t, candidate)
+		candidateWithCapability.Resources[0].Bindings = []capabilitypack.Binding{{
+			Surface: capabilitypack.SurfaceCodex,
+			Capabilities: []capabilitypack.SurfaceCapability{{
+				Type:               capabilitypack.SurfaceCapabilityProjectInstruction,
+				ProjectInstruction: &capabilitypack.ProjectInstructionCapability{ID: "guide", Source: "skills/guide"},
+			}},
+		}}
+		report := compareSemanticChanges(current, currentFiles, candidateWithCapability, currentFiles)
+		for _, detail := range semanticDetails(report.changes) {
+			if strings.Contains(detail, "content changed") {
+				t.Fatalf("repeated closure root produced a false content delta: %#v", report.changes)
+			}
 		}
 	})
 }
@@ -408,6 +438,24 @@ func TestSemanticReportShowsStructuralBeforeAndAfterValues(t *testing.T) {
 	for _, want := range []string{"attribution changed from `Old author` to `New author`", "Binding `skill:guide/codex` changed from `{\"surface\":\"codex\",\"projection\":\"skill\"", "to `{\"surface\":\"codex\",\"projection\":\"command\""} {
 		if !strings.Contains(markdown, want) {
 			t.Fatalf("Markdown lacks %q:\n%s", want, markdown)
+		}
+	}
+}
+
+func TestSemanticReportEscapesFreeFormMarkdownValues(t *testing.T) {
+	current := semanticManifest("1.0.0")
+	candidate := semanticManifest("1.0.1")
+	candidate.Description = "Changed `description`\n### Forged gate\n- passed"
+	candidate.Resources[0].Attribution = "Author ```name```\n## Forged evidence"
+	markdown := compareSemanticChanges(current, nil, candidate, nil).renderMarkdown()
+	for _, injected := range []string{"\n### Forged gate", "\n## Forged evidence"} {
+		if strings.Contains(markdown, injected) {
+			t.Fatalf("free-form value injected Markdown %q:\n%s", injected, markdown)
+		}
+	}
+	for _, escaped := range []string{"\\n### Forged gate\\n- passed", "\\n## Forged evidence"} {
+		if !strings.Contains(markdown, escaped) {
+			t.Fatalf("Markdown lacks escaped value %q:\n%s", escaped, markdown)
 		}
 	}
 }
