@@ -636,36 +636,70 @@ func TestTUIProductionBackendShowsProjectUninstallDriftAndRefusesApply(t *testin
 	}
 }
 
-func TestTUIProductionBackendUninstallsOnlyTheSelectedProjectSurface(t *testing.T) {
-	synthetic := testsupport.PortableAllSurfaces("tui-selected-surface")
-	manifest := synthetic.Manifest()
+func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
+	synthetic := testsupport.CapabilityRich("tui-selected-surface")
+	packID := synthetic.ID()
+	shared := synthetic.OperationalResource()
+	codexOnly := testsupport.ResourceIdentity{Kind: "instruction", ID: "guidance"}
 	project := filepath.Join(t.TempDir(), "project")
 	writeTestGitWorktree(t, project)
-	fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+	fixture := newSyntheticCLIFixture(t, &fakeTerminal{interactive: true, approve: true}, synthetic)
 	opts := fixture.options
 	opts.Getwd = func() (string, error) { return project, nil }
+	installs := []struct {
+		surface string
+		roots   []string
+	}{
+		{surface: "codex", roots: []string{codexOnly.String(), shared.String()}},
+		{surface: "opencode", roots: []string{shared.String()}},
+	}
+	for _, current := range installs {
+		args := []string{"install", packID, "--surface", current.surface}
+		for _, root := range current.roots {
+			args = append(args, "--resource", root)
+		}
+		if output, installErr := executeCommand(t, NewRootCommand(opts), args...); installErr != nil {
+			t.Fatalf("install %s synthetic Pack: %v\n%s", current.surface, installErr, output)
+		}
+	}
 	opts = opts.withDefaults()
 	backend := newTUIBackend(opts, newWorkstationResolver(opts))
-	for _, surface := range []string{"codex", "opencode"} {
-		install, previewErr := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "install", PackID: manifest.ID, Surface: surface, Scope: "project", ProjectRoot: project, Selection: tui.Selection{Mode: "all"}})
-		if previewErr != nil {
-			t.Fatal(previewErr)
-		}
-		if _, applyErr := backend.Apply(context.Background(), tui.ApplyRequest{Preview: install, ApprovedPhases: requiredTUIPhases(install)}, func(tui.ApplyProgress) {}); applyErr != nil {
-			t.Fatal(applyErr)
-		}
-	}
-	retainedProjection := syntheticProjectProjectionTarget(t, project)
-	retainedTarget, err := filepath.Rel(project, retainedProjection)
+	before, err := capabilitypack.LoadProjectInstallation(project)
 	if err != nil {
 		t.Fatal(err)
 	}
-	retainedTarget = filepath.ToSlash(retainedTarget)
-	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: manifest.ID, Surface: "codex", Scope: "project", ProjectRoot: project})
+	type projectionKey struct {
+		resource capabilitypack.ResourceIdentity
+		target   string
+	}
+	projectionSurfaces := map[projectionKey]map[capabilitypack.Surface]bool{}
+	for _, projection := range before.Lock.Projections {
+		if projection.OwnerPack != packID || projection.Target == "PACKY-NOTICES.md" {
+			continue
+		}
+		key := projectionKey{resource: projection.Resource, target: projection.Target}
+		if projectionSurfaces[key] == nil {
+			projectionSurfaces[key] = map[capabilitypack.Surface]bool{}
+		}
+		projectionSurfaces[key][projection.Surface] = true
+	}
+	var removedTarget, retainedTarget string
+	for key, surfaces := range projectionSurfaces {
+		switch {
+		case surfaces[capabilitypack.SurfaceCodex] && surfaces[capabilitypack.SurfaceOpenCode]:
+			retainedTarget = key.target
+		case surfaces[capabilitypack.SurfaceCodex] && !surfaces[capabilitypack.SurfaceOpenCode]:
+			removedTarget = key.target
+		}
+	}
+	if removedTarget == "" || retainedTarget == "" || removedTarget == retainedTarget {
+		t.Fatalf("synthetic installation lacks distinct removed/retained projections: %#v", before.Lock.Projections)
+	}
+	preview, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "uninstall", PackID: packID, Surface: "codex", Scope: "project", ProjectRoot: project})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Surface != "codex" || !slices.Contains(preview.Diff.Changed, "packy.json") || !slices.Contains(preview.Diff.Changed, "packy.lock.json") || !slices.Contains(preview.Diff.Retained, retainedTarget) {
+	if preview.Surface != "codex" || !slices.Contains(preview.Diff.Changed, "packy.json") || !slices.Contains(preview.Diff.Changed, "packy.lock.json") || !slices.Contains(preview.Diff.Removed, removedTarget) || !slices.Contains(preview.Diff.Retained, retainedTarget) {
 		t.Fatalf("selected-surface uninstall preview = %#v", preview)
 	}
 	result, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: preview, ApprovedPhases: requiredTUIPhases(preview)}, func(tui.ApplyProgress) {})
@@ -678,6 +712,12 @@ func TestTUIProductionBackendUninstallsOnlyTheSelectedProjectSurface(t *testing.
 	}
 	if len(installation.Manifest.Packs) != 1 || !slices.Equal(installation.Manifest.Packs[0].Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceOpenCode}) {
 		t.Fatalf("selected-surface uninstall changed retained intent: %#v", installation.Manifest.Packs)
+	}
+	if len(installation.Lock.Receipts) != 1 || installation.Lock.Receipts[0].Surface != capabilitypack.SurfaceOpenCode {
+		t.Fatalf("selected-surface uninstall retained wrong receipts: %#v", installation.Lock.Receipts)
+	}
+	if _, err := os.Stat(filepath.Join(project, filepath.FromSlash(removedTarget))); !os.IsNotExist(err) {
+		t.Fatalf("selected-surface uninstall retained Codex-only target %s: %v", removedTarget, err)
 	}
 	for _, retained := range []string{"packy.json", "packy.lock.json", retainedTarget} {
 		if _, err := os.Stat(filepath.Join(project, retained)); err != nil {

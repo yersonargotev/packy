@@ -280,13 +280,22 @@ func TestGenericTestsDoNotDependOnTheRealPackCatalog(t *testing.T) {
 func TestRealCatalogDependencyScannerAttributesHelperDependenciesToTests(t *testing.T) {
 	source := `package sample
 import "path/filepath"
+const catalogPackID = "live-"+"pack"
 func catalogHelper() string { return filepath.Join("bundle", "packs", "live-pack", "pack.json") }
 func TestThroughHelper(t *testing.T) { _ = catalogHelper() }
 func TestDirectManifestLiteral(t *testing.T) { path := "bundle/packs/live-pack/pack.json"; _ = path }
 func TestTypedLifecycle(t *testing.T) { _ = ActivationRequest{PackID: "live-pack"} }
 func TestCLILifecycle(t *testing.T) { run("activate", "live-"+"pack", "--surface", "codex") }
+func TestVariableCLILifecycle(t *testing.T) { packID := "live-"+"pack"; run("activate", packID, "--surface", "codex") }
+func TestVariableTypedLifecycle(t *testing.T) { packID := "live-pack"; _ = ActivationRequest{PackID: packID} }
+func TestVariableLookup(t *testing.T) { packID := "live-pack"; catalog.Show(ctx, packID) }
+func TestPackageConstantLookup(t *testing.T) { catalog.Show(ctx, catalogPackID) }
+func TestVariableResourceAlias(t *testing.T) { kind, id, name := "skill", "guide", "live-guide"; _ = SurfaceAlias{Kind: kind, ID: id, Name: name} }
+func TestVariableManifestPath(t *testing.T) { packID := "live-pack"; manifest := filepath.Join("bundle", "packs", packID, "pack.json"); os.ReadFile(manifest) }
 func TestRealResourceAlias(t *testing.T) { _ = SurfaceAlias{Kind: "skill", ID: "guide", Name: "live-guide"} }
 func TestUnrelatedLiteral(t *testing.T) { _ = "live-pack" }
+func TestUnrelatedVariable(t *testing.T) { packID := "live-pack"; _ = packID }
+func TestSyntheticVariable(t *testing.T) { packID := "synthetic-pack"; run("activate", packID) }
 `
 	inventory := realCatalogInventory{
 		packIDs: map[string]struct{}{"live-pack": {}},
@@ -302,13 +311,30 @@ func TestUnrelatedLiteral(t *testing.T) { _ = "live-pack" }
 	for _, finding := range findings {
 		got[finding.test] = true
 	}
-	for _, want := range []string{"sample_test.go:TestThroughHelper", "sample_test.go:TestDirectManifestLiteral", "sample_test.go:TestTypedLifecycle", "sample_test.go:TestCLILifecycle", "sample_test.go:TestRealResourceAlias"} {
+	for _, want := range []string{
+		"sample_test.go:TestThroughHelper",
+		"sample_test.go:TestDirectManifestLiteral",
+		"sample_test.go:TestTypedLifecycle",
+		"sample_test.go:TestCLILifecycle",
+		"sample_test.go:TestVariableCLILifecycle",
+		"sample_test.go:TestVariableTypedLifecycle",
+		"sample_test.go:TestVariableLookup",
+		"sample_test.go:TestPackageConstantLookup",
+		"sample_test.go:TestVariableResourceAlias",
+		"sample_test.go:TestVariableManifestPath",
+		"sample_test.go:TestRealResourceAlias",
+	} {
 		if !got[want] {
 			t.Errorf("missing finding for %s: %+v", want, findings)
 		}
 	}
 	if got["sample_test.go:TestUnrelatedLiteral"] {
 		t.Fatalf("unrelated real-ID literal was classified as a dependency: %+v", findings)
+	}
+	for _, unwanted := range []string{"sample_test.go:TestUnrelatedVariable", "sample_test.go:TestSyntheticVariable"} {
+		if got[unwanted] {
+			t.Fatalf("unrelated or synthetic variable was classified as a dependency: %s: %+v", unwanted, findings)
+		}
 	}
 }
 
@@ -443,12 +469,17 @@ func scanRealCatalogSource(path string, source []byte, inventory realCatalogInve
 
 func scanRealCatalogSources(sources map[string][]byte, inventory realCatalogInventory) ([]realCatalogFinding, error) {
 	packageDeclarations := map[string][]realCatalogFunctionDeclaration{}
+	packageConstantCandidates := map[string]map[string][]ast.Expr{}
 	for path, source := range sources {
 		parsed, err := parser.ParseFile(token.NewFileSet(), path, source, 0)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
 		packageKey := filepath.ToSlash(filepath.Dir(path)) + ":" + parsed.Name.Name
+		if packageConstantCandidates[packageKey] == nil {
+			packageConstantCandidates[packageKey] = map[string][]ast.Expr{}
+		}
+		collectPackageStringConstantCandidates(parsed, packageConstantCandidates[packageKey])
 		for _, declaration := range parsed.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
 			if !ok || function.Body == nil {
@@ -463,7 +494,8 @@ func scanRealCatalogSources(sources map[string][]byte, inventory realCatalogInve
 	}
 
 	var findings []realCatalogFinding
-	for _, declarations := range packageDeclarations {
+	for packageKey, declarations := range packageDeclarations {
+		packageConstants := resolveStableStringCandidates(packageConstantCandidates[packageKey], nil)
 		factoryReturns := map[string]string{}
 		for _, declaration := range declarations {
 			if strings.HasPrefix(declaration.key, "func:") {
@@ -474,7 +506,7 @@ func scanRealCatalogSources(sources map[string][]byte, inventory realCatalogInve
 		}
 		functions := map[string]realCatalogFunction{}
 		for _, declaration := range declarations {
-			facts := inspectRealCatalogFunction(declaration.function, inventory, factoryReturns)
+			facts := inspectRealCatalogFunction(declaration.function, inventory, factoryReturns, packageConstants)
 			functions[declaration.key] = realCatalogFunction{path: declaration.path, name: declaration.function.Name.Name, facts: facts}
 		}
 		for key, function := range functions {
@@ -494,12 +526,13 @@ func scanRealCatalogSources(sources map[string][]byte, inventory realCatalogInve
 	return findings, nil
 }
 
-func inspectRealCatalogFunction(function *ast.FuncDecl, inventory realCatalogInventory, factoryReturns map[string]string) realCatalogFunctionFacts {
+func inspectRealCatalogFunction(function *ast.FuncDecl, inventory realCatalogInventory, factoryReturns map[string]string, packageConstants map[string]string) realCatalogFunctionFacts {
 	facts := realCatalogFunctionFacts{}
 	localTypes := realCatalogLocalTypes(function, factoryReturns)
+	stringBindings := realCatalogLocalStringBindings(function, packageConstants)
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		if expression, ok := node.(ast.Expr); ok {
-			if detail := realCatalogPathDependency(expression, inventory.packIDs); detail != "" {
+			if detail := realCatalogPathDependency(expression, inventory.packIDs, stringBindings); detail != "" {
 				facts.direct = append(facts.direct, detail)
 			}
 		}
@@ -508,26 +541,26 @@ func inspectRealCatalogFunction(function *ast.FuncDecl, inventory realCatalogInv
 			if call, ok := realCatalogCallEdge(node, localTypes, factoryReturns); ok {
 				facts.calls = append(facts.calls, call)
 			}
-			facts.enumeratesCatalog = facts.enumeratesCatalog || realCatalogEnumerationCall(node)
-			facts.repositoryRoot = facts.repositoryRoot || realCatalogRepositoryRootCall(node)
-			facts.liveCatalogSource = facts.liveCatalogSource || realCatalogRepositoryBundleCall(node)
-			if detail := realCatalogCLILifecycleDependency(node, inventory.packIDs); detail != "" {
+			facts.enumeratesCatalog = facts.enumeratesCatalog || realCatalogEnumerationCall(node, stringBindings)
+			facts.repositoryRoot = facts.repositoryRoot || realCatalogRepositoryRootCall(node, stringBindings)
+			facts.liveCatalogSource = facts.liveCatalogSource || realCatalogRepositoryBundleCall(node, stringBindings)
+			if detail := realCatalogCLILifecycleDependency(node, inventory.packIDs, stringBindings); detail != "" {
 				facts.direct = append(facts.direct, detail)
 			}
-			if detail := realCatalogLookupDependency(node, inventory.packIDs); detail != "" {
+			if detail := realCatalogLookupDependency(node, inventory.packIDs, stringBindings); detail != "" {
 				facts.direct = append(facts.direct, detail)
 			}
 		case *ast.CompositeLit:
-			strings := literalStrings(node)
-			facts.configuredBundle = facts.configuredBundle || containsLiteral(strings, "PACKY_SKILLS_SOURCE") && containsAdjacentLiterals(strings, "bundle", "skills")
+			strings := literalStringsWithBindings(node, stringBindings)
+			facts.configuredBundle = facts.configuredBundle || containsLiteral(strings, "PACKY_SKILLS_SOURCE") && (containsAdjacentLiterals(strings, "bundle", "skills") || containsCleanPath(strings, "bundle/skills"))
 			facts.defaultWorkingTree = facts.defaultWorkingTree || keyedFieldPresent(node, "Getwd")
-			if detail := realCatalogCLILifecycleDependency(node, inventory.packIDs); detail != "" {
+			if detail := realCatalogCLILifecycleDependency(node, inventory.packIDs, stringBindings); detail != "" {
 				facts.direct = append(facts.direct, detail)
 			}
-			if detail := realCatalogTypedLifecycleDependency(node, inventory.packIDs); detail != "" {
+			if detail := realCatalogTypedLifecycleDependency(node, inventory.packIDs, stringBindings); detail != "" {
 				facts.direct = append(facts.direct, detail)
 			}
-			if detail := realCatalogAliasDependency(node, inventory.resourceAliases); detail != "" {
+			if detail := realCatalogAliasDependency(node, inventory.resourceAliases, stringBindings); detail != "" {
 				facts.direct = append(facts.direct, detail)
 			}
 		}
@@ -611,6 +644,105 @@ func declaredFactoryReturnType(function *ast.FuncDecl) string {
 	return declaredTypeName(function.Type.Results.List[0].Type)
 }
 
+func collectPackageStringConstantCandidates(file *ast.File, candidates map[string][]ast.Expr) {
+	for _, declaration := range file.Decls {
+		group, ok := declaration.(*ast.GenDecl)
+		if !ok || group.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range group.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for index, name := range value.Names {
+				if index < len(value.Values) {
+					candidates[name.Name] = append(candidates[name.Name], value.Values[index])
+				}
+			}
+		}
+	}
+}
+
+func realCatalogLocalStringBindings(function *ast.FuncDecl, packageConstants map[string]string) map[string]string {
+	candidates := map[string][]ast.Expr{}
+	for _, fields := range []*ast.FieldList{function.Type.Params, function.Type.Results} {
+		if fields == nil {
+			continue
+		}
+		for _, field := range fields.List {
+			for _, name := range field.Names {
+				candidates[name.Name] = append(candidates[name.Name], nil)
+			}
+		}
+	}
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		if _, nested := node.(*ast.FuncLit); nested {
+			return false
+		}
+		switch node := node.(type) {
+		case *ast.AssignStmt:
+			for index, left := range node.Lhs {
+				name, ok := left.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				if index < len(node.Rhs) {
+					candidates[name.Name] = append(candidates[name.Name], node.Rhs[index])
+				} else {
+					candidates[name.Name] = append(candidates[name.Name], nil)
+				}
+			}
+		case *ast.DeclStmt:
+			group, ok := node.Decl.(*ast.GenDecl)
+			if !ok || group.Tok != token.CONST && group.Tok != token.VAR {
+				break
+			}
+			for _, spec := range group.Specs {
+				value, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for index, name := range value.Names {
+					if index < len(value.Values) {
+						candidates[name.Name] = append(candidates[name.Name], value.Values[index])
+					} else {
+						candidates[name.Name] = append(candidates[name.Name], nil)
+					}
+				}
+			}
+		}
+		return true
+	})
+	return resolveStableStringCandidates(candidates, packageConstants)
+}
+
+func resolveStableStringCandidates(candidates map[string][]ast.Expr, seed map[string]string) map[string]string {
+	bindings := map[string]string{}
+	for name, value := range seed {
+		bindings[name] = value
+	}
+	for name := range candidates {
+		delete(bindings, name)
+	}
+	for progress := true; progress; {
+		progress = false
+		for name, expressions := range candidates {
+			if len(expressions) != 1 {
+				continue
+			}
+			value, ok := constantStringWithBindings(expressions[0], bindings)
+			current, exists := bindings[name]
+			if !ok || exists && current == value {
+				continue
+			}
+			bindings[name] = value
+			progress = true
+		}
+	}
+	return bindings
+}
+
 func realCatalogLocalTypes(function *ast.FuncDecl, factoryReturns map[string]string) map[string]string {
 	types := map[string]string{}
 	addFields := func(fields *ast.FieldList) {
@@ -685,7 +817,7 @@ func realCatalogExpressionType(expression ast.Expr, localTypes, factoryReturns m
 	return ""
 }
 
-func realCatalogEnumerationCall(call *ast.CallExpr) bool {
+func realCatalogEnumerationCall(call *ast.CallExpr, bindings map[string]string) bool {
 	name := expressionName(call.Fun)
 	if name == "Discover" || name == "ListCurrent" {
 		return true
@@ -693,7 +825,7 @@ func realCatalogEnumerationCall(call *ast.CallExpr) bool {
 	if name != "executeCommand" {
 		return false
 	}
-	values := literalStrings(call)
+	values := literalStringsWithBindings(call, bindings)
 	for index, value := range values {
 		if value != "list" {
 			continue
@@ -706,12 +838,16 @@ func realCatalogEnumerationCall(call *ast.CallExpr) bool {
 	return false
 }
 
-func realCatalogRepositoryRootCall(call *ast.CallExpr) bool {
-	return expressionName(call.Fun) == "Abs" && containsAdjacentLiterals(literalStrings(call), "..", "..")
+func realCatalogRepositoryRootCall(call *ast.CallExpr, bindings map[string]string) bool {
+	values := literalStringsWithBindings(call, bindings)
+	return expressionName(call.Fun) == "Abs" && (containsAdjacentLiterals(values, "..", "..") || containsCleanPath(values, "../.."))
 }
 
-func realCatalogRepositoryBundleCall(call *ast.CallExpr) bool {
-	values := literalStrings(call)
+func realCatalogRepositoryBundleCall(call *ast.CallExpr, bindings map[string]string) bool {
+	values := literalStringsWithBindings(call, bindings)
+	if containsCleanPath(values, "../../bundle") {
+		return true
+	}
 	for index := 0; index+2 < len(values); index++ {
 		if values[index] == ".." && values[index+1] == ".." && values[index+2] == "bundle" {
 			return true
@@ -752,8 +888,17 @@ func containsAdjacentLiterals(values []string, first, second string) bool {
 	return false
 }
 
-func realCatalogPathDependency(node ast.Node, packIDs map[string]struct{}) string {
-	parts := literalStrings(node)
+func containsCleanPath(values []string, want string) bool {
+	for _, value := range values {
+		if filepath.ToSlash(filepath.Clean(value)) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func realCatalogPathDependency(node ast.Node, packIDs map[string]struct{}, bindings map[string]string) string {
+	parts := literalStringsWithBindings(node, bindings)
 	for index := range parts {
 		if index+2 >= len(parts) || parts[index] != "packs" || parts[index+2] != "pack.json" {
 			continue
@@ -773,8 +918,8 @@ func realCatalogPathDependency(node ast.Node, packIDs map[string]struct{}) strin
 	return ""
 }
 
-func realCatalogCLILifecycleDependency(node ast.Node, packIDs map[string]struct{}) string {
-	values := literalStrings(node)
+func realCatalogCLILifecycleDependency(node ast.Node, packIDs map[string]struct{}, bindings map[string]string) string {
+	values := literalStringsWithBindings(node, bindings)
 	verbs := map[string]struct{}{"activate": {}, "deactivate": {}, "install": {}, "uninstall": {}, "update": {}, "status": {}, "show": {}, "check": {}}
 	for index := 0; index+1 < len(values); index++ {
 		if _, ok := verbs[values[index]]; !ok {
@@ -787,13 +932,13 @@ func realCatalogCLILifecycleDependency(node ast.Node, packIDs map[string]struct{
 	return ""
 }
 
-func realCatalogLookupDependency(call *ast.CallExpr, packIDs map[string]struct{}) string {
+func realCatalogLookupDependency(call *ast.CallExpr, packIDs map[string]struct{}, bindings map[string]string) string {
 	name := expressionName(call.Fun)
 	lookups := map[string]struct{}{"Show": {}, "findTUIPack": {}, "checkedInPackVersion": {}}
 	if _, ok := lookups[name]; !ok {
 		return ""
 	}
-	for _, value := range literalStrings(call) {
+	for _, value := range literalStringsWithBindings(call, bindings) {
 		if _, ok := packIDs[value]; ok {
 			return fmt.Sprintf("looks up real Pack %q through %s", value, name)
 		}
@@ -801,7 +946,7 @@ func realCatalogLookupDependency(call *ast.CallExpr, packIDs map[string]struct{}
 	return ""
 }
 
-func realCatalogTypedLifecycleDependency(literal *ast.CompositeLit, packIDs map[string]struct{}) string {
+func realCatalogTypedLifecycleDependency(literal *ast.CompositeLit, packIDs map[string]struct{}, bindings map[string]string) string {
 	typeName := expressionName(literal.Type)
 	lifecycleTypes := map[string]struct{}{
 		"ActivationRequest": {}, "UpdateRequest": {}, "DeactivationRequest": {}, "ReconcileRequest": {}, "StatusRequest": {}, "ControlledCheckRequest": {},
@@ -810,7 +955,7 @@ func realCatalogTypedLifecycleDependency(literal *ast.CompositeLit, packIDs map[
 	if _, ok := lifecycleTypes[typeName]; !ok {
 		return ""
 	}
-	fields := keyedLiteralStrings(literal)
+	fields := keyedLiteralStrings(literal, bindings)
 	id := fields["PackID"]
 	if _, ok := packIDs[id]; !ok {
 		return ""
@@ -818,11 +963,11 @@ func realCatalogTypedLifecycleDependency(literal *ast.CompositeLit, packIDs map[
 	return fmt.Sprintf("passes real Pack %q through %s.PackID", id, typeName)
 }
 
-func realCatalogAliasDependency(literal *ast.CompositeLit, aliases map[realCatalogResourceAlias]struct{}) string {
+func realCatalogAliasDependency(literal *ast.CompositeLit, aliases map[realCatalogResourceAlias]struct{}, bindings map[string]string) string {
 	if expressionName(literal.Type) != "SurfaceAlias" {
 		return ""
 	}
-	fields := keyedLiteralStrings(literal)
+	fields := keyedLiteralStrings(literal, bindings)
 	alias := realCatalogResourceAlias{kind: fields["Kind"], id: fields["ID"], name: fields["Name"]}
 	if _, ok := aliases[alias]; !ok {
 		return ""
@@ -831,10 +976,14 @@ func realCatalogAliasDependency(literal *ast.CompositeLit, aliases map[realCatal
 }
 
 func literalStrings(node ast.Node) []string {
+	return literalStringsWithBindings(node, nil)
+}
+
+func literalStringsWithBindings(node ast.Node, bindings map[string]string) []string {
 	var values []string
 	ast.Inspect(node, func(node ast.Node) bool {
 		if expression, ok := node.(ast.Expr); ok {
-			value, constant := constantString(expression)
+			value, constant := constantStringWithBindings(expression, bindings)
 			if constant {
 				values = append(values, value)
 				return false
@@ -845,7 +994,7 @@ func literalStrings(node ast.Node) []string {
 	return values
 }
 
-func keyedLiteralStrings(literal *ast.CompositeLit) map[string]string {
+func keyedLiteralStrings(literal *ast.CompositeLit, bindings map[string]string) map[string]string {
 	fields := map[string]string{}
 	for _, element := range literal.Elts {
 		keyValue, ok := element.(*ast.KeyValueExpr)
@@ -856,12 +1005,16 @@ func keyedLiteralStrings(literal *ast.CompositeLit) map[string]string {
 		if !ok {
 			continue
 		}
-		fields[key.Name], _ = constantString(keyValue.Value)
+		fields[key.Name], _ = constantStringWithBindings(keyValue.Value, bindings)
 	}
 	return fields
 }
 
 func constantString(expression ast.Expr) (string, bool) {
+	return constantStringWithBindings(expression, nil)
+}
+
+func constantStringWithBindings(expression ast.Expr, bindings map[string]string) (string, bool) {
 	switch expression := expression.(type) {
 	case *ast.BasicLit:
 		if expression.Kind != token.STRING {
@@ -873,12 +1026,39 @@ func constantString(expression ast.Expr) (string, bool) {
 		if expression.Op != token.ADD {
 			return "", false
 		}
-		left, leftOK := constantString(expression.X)
-		right, rightOK := constantString(expression.Y)
+		left, leftOK := constantStringWithBindings(expression.X, bindings)
+		right, rightOK := constantStringWithBindings(expression.Y, bindings)
 		return left + right, leftOK && rightOK
+	case *ast.Ident:
+		value, ok := bindings[expression.Name]
+		return value, ok
+	case *ast.ParenExpr:
+		return constantStringWithBindings(expression.X, bindings)
+	case *ast.CallExpr:
+		if !isFilepathJoin(expression.Fun) || len(expression.Args) == 0 {
+			return "", false
+		}
+		parts := make([]string, len(expression.Args))
+		for index, argument := range expression.Args {
+			part, ok := constantStringWithBindings(argument, bindings)
+			if !ok {
+				return "", false
+			}
+			parts[index] = part
+		}
+		return filepath.Join(parts...), true
 	default:
 		return "", false
 	}
+}
+
+func isFilepathJoin(expression ast.Expr) bool {
+	selector, ok := expression.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Join" {
+		return false
+	}
+	qualifier, ok := selector.X.(*ast.Ident)
+	return ok && qualifier.Name == "filepath"
 }
 
 func expressionName(expression ast.Expr) string {
