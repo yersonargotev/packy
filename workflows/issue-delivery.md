@@ -164,8 +164,13 @@ continuing. Small, well-bounded deltas may proceed with focused proof alone.
 After every acceptance criterion has implementation and focused proof, every
 applicable tracer result is valid for the stable exact HEAD, and every required
 proportional local review is clean, run the applicable focused checks. Use
-`./scripts/validate-packy.sh` for cross-cutting changes. Keep `HOME` and
-`XDG_CONFIG_HOME` sandboxed for checks that resolve or write user paths.
+`./scripts/validate-changed.sh` or `./scripts/validate-packy.sh` whenever the
+wrapper's scope fits, and use `./scripts/validate-packy.sh` for cross-cutting
+changes. For a manual focused Go check outside those wrappers, resolve the
+effective `GOCACHE`, `GOMODCACHE`, and `GOPATH` before exporting sandboxed
+`HOME` and `XDG_CONFIG_HOME`, then preserve those resolved values in the check
+environment. Keep the user paths sandboxed for checks that resolve or write
+them.
 
 When the issue changes no CLI behavior, still build the binary and run its
 `version` command as a sanity check, then manually verify the actual changed
@@ -264,6 +269,13 @@ the operator checkout retains its exact recorded branch, HEAD, and status when
 a temporary worktree was used. When the operator checkout was the selected
 workspace, return it to clean `main` and fast-forward it to the verified
 protected-main result without discarding any unexpected change.
+
+Before deleting workflow-owned temporary state, resolve one exact target path
+and validate that it belongs to this run. Refuse an empty, broad, unresolved,
+or non-owned target. Use a policy-compatible exact-path operation such as
+`find <owned-path> -depth -delete` rather than an `rm -f`/`rm -rf`-style
+command; do not weaken sandbox, approval, or rules configuration to permit
+deletion. Verify afterward that the intended temporary path no longer exists.
 
 Produce a success brief containing links to the issue and pull request, the
 final candidate and merge SHAs, required CI, final Standards and Spec review,
