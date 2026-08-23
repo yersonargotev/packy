@@ -2,6 +2,7 @@ package managedpack
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,9 +15,28 @@ import (
 // runtime manifest and deterministic fitness matrix loaded from its
 // materialized Declared Pack Closure.
 type PreflightResult struct {
-	Validation      Validation
-	RuntimeManifest capabilitypack.Pack
-	Fitness         capabilitypack.RuntimeFitnessMatrix
+	Validation            Validation
+	RuntimeManifest       capabilitypack.Pack
+	RuntimeManifestSHA256 string
+	Fitness               capabilitypack.RuntimeFitnessMatrix
+}
+
+// PreflightEvidence is the deterministic, serializable proof returned by
+// preventive and offline-promotion adapters. It is informational; promotion
+// still reacquires content and runs every repository admission gate.
+type PreflightEvidence struct {
+	Validation            Validation                          `json:"validation"`
+	RuntimeManifestSHA256 string                              `json:"runtime_manifest_sha256"`
+	Fitness               capabilitypack.RuntimeFitnessMatrix `json:"fitness"`
+}
+
+// Evidence returns the serializable identity and fitness result for this
+// exact preflight without exposing its temporary materialized bundle.
+func (result PreflightResult) Evidence() PreflightEvidence {
+	return PreflightEvidence{
+		Validation: result.Validation, RuntimeManifestSHA256: result.RuntimeManifestSHA256,
+		Fitness: result.Fitness,
+	}
 }
 
 type runtimeFitnessError struct {
@@ -62,9 +82,16 @@ func Preflight(ctx context.Context, projectRoot string, resolver OriginResolver)
 	if err := ctx.Err(); err != nil {
 		return PreflightResult{}, err
 	}
+	runtimeManifestData, err := json.Marshal(runtimeManifest)
+	if err != nil {
+		return PreflightResult{}, fmt.Errorf("encode runtime manifest identity: %w", err)
+	}
 	fitness, err := capabilitypack.EvaluateRuntimeFitness(runtimeManifest)
 	if err != nil {
 		return PreflightResult{}, &runtimeFitnessError{err: err}
 	}
-	return PreflightResult{Validation: validation, RuntimeManifest: runtimeManifest, Fitness: fitness}, nil
+	return PreflightResult{
+		Validation: validation, RuntimeManifest: runtimeManifest,
+		RuntimeManifestSHA256: digestBytes(runtimeManifestData), Fitness: fitness,
+	}, nil
 }

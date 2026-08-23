@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -16,6 +17,11 @@ import (
 
 func TestRunValidatesAcquiredLocalTreesAndSealsTheResponse(t *testing.T) {
 	request, requestPath, responsePath := writeWorkerFixture(t)
+	direct, err := managedpack.Preflight(context.Background(), request.ProjectRoot, mapResolver(request.OriginRoots))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEvidence := direct.Evidence()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -33,10 +39,13 @@ func TestRunValidatesAcquiredLocalTreesAndSealsTheResponse(t *testing.T) {
 	if response.Status != responseAccepted || response.Gate != "" || response.Reason != "" {
 		t.Fatalf("response outcome = %#v", response)
 	}
-	if response.Validation.Manifest.ID != "example" || response.Validation.Manifest.Version != "1.0.0" {
-		t.Fatalf("validation manifest = %#v", response.Validation.Manifest)
+	if !reflect.DeepEqual(response.Preflight, wantEvidence) {
+		t.Fatalf("worker preflight evidence differs from direct preventive evidence:\nworker: %#v\ndirect: %#v", response.Preflight, wantEvidence)
 	}
-	if response.Validation.ManifestSHA256 == "" || response.Validation.ClosureSHA256 == "" || response.ValidationSHA256 == "" {
+	if response.Preflight.Validation.Manifest.ID != "example" || response.Preflight.Validation.Manifest.Version != "1.0.0" {
+		t.Fatalf("validation manifest = %#v", response.Preflight.Validation.Manifest)
+	}
+	if response.Preflight.Validation.ManifestSHA256 == "" || response.Preflight.Validation.ClosureSHA256 == "" || response.Preflight.RuntimeManifestSHA256 == "" || len(response.Preflight.Fitness.Rows) != 6 || response.PreflightSHA256 == "" {
 		t.Fatalf("response digests = %#v", response)
 	}
 }

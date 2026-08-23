@@ -195,7 +195,7 @@ func TestValidateProjectReportsBoundedDeterministicExactCopyDifferences(t *testi
 		`mismatch=missing path="b-missing.txt"`,
 		`mismatch=additional path="c-additional.txt"`,
 		`3 additional differences omitted`,
-		`restore exact bytes from the declared origin or declare the complete resource "adapted" and review its notices`,
+		`restore exact bytes from the declared origin or explicitly declare the whole resource "adapted" and review its notices`,
 	} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("exact-copy error = %q, want %q", message, want)

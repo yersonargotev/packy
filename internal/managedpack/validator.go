@@ -162,7 +162,7 @@ func (e *exactCopyMismatchError) Error() string {
 	if omitted := e.total - len(e.differences); omitted > 0 {
 		fmt.Fprintf(&message, "; %d additional differences omitted", omitted)
 	}
-	message.WriteString("; restore exact bytes from the declared origin or declare the complete resource \"adapted\" and review its notices")
+	message.WriteString("; restore exact bytes from the declared origin or explicitly declare the whole resource \"adapted\" and review its notices")
 	return message.String()
 }
 

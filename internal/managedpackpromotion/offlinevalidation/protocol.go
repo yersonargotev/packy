@@ -32,16 +32,16 @@ type workerRequest struct {
 }
 
 type workerResponse struct {
-	Protocol         int                       `json:"protocol"`
-	Token            string                    `json:"token"`
-	Nonce            string                    `json:"nonce"`
-	RequestSHA256    string                    `json:"request_sha256"`
-	Status           responseStatus            `json:"status"`
-	Gate             managedpackpromotion.Gate `json:"gate,omitempty"`
-	Reason           string                    `json:"reason,omitempty"`
-	Validation       managedpack.Validation    `json:"validation"`
-	ValidationSHA256 string                    `json:"validation_sha256,omitempty"`
-	ResponseSHA256   string                    `json:"response_sha256"`
+	Protocol        int                           `json:"protocol"`
+	Token           string                        `json:"token"`
+	Nonce           string                        `json:"nonce"`
+	RequestSHA256   string                        `json:"request_sha256"`
+	Status          responseStatus                `json:"status"`
+	Gate            managedpackpromotion.Gate     `json:"gate,omitempty"`
+	Reason          string                        `json:"reason,omitempty"`
+	Preflight       managedpack.PreflightEvidence `json:"preflight"`
+	PreflightSHA256 string                        `json:"preflight_sha256,omitempty"`
+	ResponseSHA256  string                        `json:"response_sha256"`
 }
 
 func requestDigest(request workerRequest) string {
@@ -49,8 +49,8 @@ func requestDigest(request workerRequest) string {
 	return jsonDigest(request)
 }
 
-func validationDigest(validation managedpack.Validation) string {
-	return jsonDigest(validation)
+func preflightDigest(preflight managedpack.PreflightEvidence) string {
+	return jsonDigest(preflight)
 }
 
 func responseDigest(response workerResponse) string {

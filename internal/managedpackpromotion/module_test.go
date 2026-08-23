@@ -545,9 +545,9 @@ type validatorStub struct {
 	calls      int
 }
 
-func (stub *validatorStub) Validate(context.Context, managedpackpromotion.Acquisition) (managedpack.Validation, error) {
+func (stub *validatorStub) Validate(context.Context, managedpackpromotion.Acquisition) (managedpack.PreflightEvidence, error) {
 	stub.calls++
-	return stub.validation, stub.err
+	return managedpack.PreflightEvidence{Validation: stub.validation}, stub.err
 }
 
 type preparerStub struct {

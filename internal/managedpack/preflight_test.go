@@ -34,6 +34,9 @@ func TestPreflightLoadsTheExactMaterializedRuntimeAndReturnsDeterministicFitness
 	if first.Validation.ManifestSHA256 == "" || first.Validation.ClosureSHA256 == "" {
 		t.Fatalf("validation identity = %#v", first.Validation)
 	}
+	if !validSHA256(first.RuntimeManifestSHA256) {
+		t.Fatalf("runtime manifest identity = %q", first.RuntimeManifestSHA256)
+	}
 	var executableSkill bool
 	for _, file := range first.Validation.Files {
 		if file.Path == "skills/guide/SKILL.md" && file.Mode == "100755" {

@@ -114,8 +114,8 @@ Successful output includes the sealed manifest and closure digests, closure
 file count, and deterministic runtime-fitness row count. Validation failures
 for an `exact-copy` resource report a bounded, sorted, content-free set of
 missing, additional, or changed relative paths and their SHA-256 values, with
-instructions to restore exact bytes or declare the complete resource `adapted`
-and review its notices.
+instructions to restore exact bytes or explicitly declare the whole resource
+`adapted` and review its notices.
 
 Tests and offline callers may repeat `--origin <id>=<local-root>` to supply an
 already acquired exact origin tree.

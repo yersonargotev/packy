@@ -61,10 +61,9 @@ func runWithBoundary(args []string, stdout, stderr io.Writer, install func() err
 		response.Gate = validationGate(validationErr)
 		response.Reason = validationErr.Error()
 	} else {
-		validation := preflight.Validation
 		response.Status = responseAccepted
-		response.Validation = validation
-		response.ValidationSHA256 = validationDigest(validation)
+		response.Preflight = preflight.Evidence()
+		response.PreflightSHA256 = preflightDigest(response.Preflight)
 	}
 	response.ResponseSHA256 = responseDigest(response)
 	if err := writeWorkerResponse(args[1], response); err != nil {

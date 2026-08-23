@@ -12,13 +12,17 @@ type RuntimeFitnessMatrix struct {
 	Rows []RuntimeFitnessRow `json:"rows"`
 }
 
+// RuntimeFitnessRow records one declared surface and selection outcome.
 type RuntimeFitnessRow struct {
-	Surface     Surface             `json:"surface"`
-	Selection   ResourceSelection   `json:"selection"`
-	Resources   []ResourceIdentity  `json:"resources"`
-	Projections []RuntimeProjection `json:"projections"`
+	Surface      Surface               `json:"surface"`
+	Selection    ResourceSelection     `json:"selection"`
+	Availability SelectionAvailability `json:"availability"`
+	Resources    []ResourceIdentity    `json:"resources"`
+	Projections  []RuntimeProjection   `json:"projections"`
 }
 
+// RuntimeProjection identifies one host-native name claimed by a selected
+// resource binding.
 type RuntimeProjection struct {
 	Resource   ResourceIdentity `json:"resource"`
 	Projection string           `json:"projection"`
@@ -42,10 +46,6 @@ func EvaluateRuntimeFitness(pack Pack) (RuntimeFitnessMatrix, error) {
 		result.Rows = append(result.Rows, row)
 
 		for _, root := range roots {
-			resource := resourceMap(pack)[root.String()]
-			if _, excluded := exclusionFor(resource, surface); excluded {
-				continue
-			}
 			selection := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{root}}
 			row, err := evaluateRuntimeFitnessRow(pack, surface, selection)
 			if err != nil {
@@ -67,6 +67,12 @@ func evaluateRuntimeFitnessRow(pack Pack, surface Surface, selection ResourceSel
 		return RuntimeFitnessRow{}, fmt.Errorf("evaluate runtime fitness for %s selection %s: %w", surface, fitnessSelectionName(selection), err)
 	}
 	if !availability.Available {
+		if validUnavailableFitnessRow(selection, availability) {
+			return RuntimeFitnessRow{
+				Surface: surface, Selection: selection, Availability: availability,
+				Resources: []ResourceIdentity{}, Projections: []RuntimeProjection{},
+			}, nil
+		}
 		return RuntimeFitnessRow{}, fmt.Errorf(
 			"evaluate runtime fitness for %s selection %s: unavailable: %s",
 			surface, fitnessSelectionName(selection), renderFitnessReasons(availability.Reasons),
@@ -101,7 +107,20 @@ func evaluateRuntimeFitnessRow(pack Pack, surface Surface, selection ResourceSel
 	if err := rejectRuntimeProjectionCollisions(surface, selection, projections); err != nil {
 		return RuntimeFitnessRow{}, err
 	}
-	return RuntimeFitnessRow{Surface: surface, Selection: selection, Resources: resources, Projections: projections}, nil
+	return RuntimeFitnessRow{Surface: surface, Selection: selection, Availability: availability, Resources: resources, Projections: projections}, nil
+}
+
+func validUnavailableFitnessRow(selection ResourceSelection, availability SelectionAvailability) bool {
+	if selection.Mode != SelectionCustom || len(selection.Roots) != 1 || len(availability.Reasons) == 0 {
+		return false
+	}
+	root := selection.Roots[0]
+	for _, reason := range availability.Reasons {
+		if reason.Code != SelectionReasonRootExcluded || reason.Resource != root {
+			return false
+		}
+	}
+	return true
 }
 
 func rejectRuntimeProjectionCollisions(surface Surface, selection ResourceSelection, projections []RuntimeProjection) error {

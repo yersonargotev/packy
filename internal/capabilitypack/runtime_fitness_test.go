@@ -41,8 +41,8 @@ func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *test
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("fitness matrix is not deterministic:\nfirst:  %#v\nsecond: %#v", first, second)
 	}
-	if len(first.Rows) != 7 {
-		t.Fatalf("row count = %d, want 7: %#v", len(first.Rows), first.Rows)
+	if len(first.Rows) != 8 {
+		t.Fatalf("row count = %d, want 8: %#v", len(first.Rows), first.Rows)
 	}
 	wantSelections := []struct {
 		surface Surface
@@ -50,6 +50,7 @@ func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *test
 		root    string
 	}{
 		{SurfaceCodex, SelectionAll, ""},
+		{SurfaceCodex, SelectionCustom, "agent:opencode-only"},
 		{SurfaceCodex, SelectionCustom, "instruction:shared"},
 		{SurfaceCodex, SelectionCustom, "skill:consumer"},
 		{SurfaceOpenCode, SelectionAll, ""},
@@ -67,7 +68,11 @@ func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *test
 			t.Fatalf("row %d identity = %s/%s/%s, want %s/%s/%s", i, row.Surface, row.Selection.Mode, root, want.surface, want.mode, want.root)
 		}
 	}
-	consumer := first.Rows[2]
+	excluded := first.Rows[1]
+	if excluded.Availability.Available || len(excluded.Availability.Reasons) != 1 || excluded.Availability.Reasons[0].Code != SelectionReasonRootExcluded || len(excluded.Resources) != 0 || len(excluded.Projections) != 0 {
+		t.Fatalf("surface-excluded row = %#v", excluded)
+	}
+	consumer := first.Rows[3]
 	if got, want := consumer.Resources, []ResourceIdentity{{Kind: "instruction", ID: "shared"}, {Kind: "notice", ID: "license"}, {Kind: "skill", ID: "consumer"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("consumer closure = %#v, want %#v", got, want)
 	}

@@ -69,10 +69,11 @@ func (module Module) Promote(ctx context.Context, request Request) (result Resul
 	}
 	acquisition.Release.Project = project
 
-	validation, err := module.validator.Validate(ctx, acquisition)
+	preflight, err := module.validator.Validate(ctx, acquisition)
 	if err != nil {
 		return resultForError(err)
 	}
+	validation := preflight.Validation
 	if validation.Manifest.ID != request.Coordinate.PackID {
 		return rejected(GateValidation, fmt.Sprintf("manifest Pack ID %q does not match coordinate %q", validation.Manifest.ID, request.Coordinate.PackID)), nil
 	}
