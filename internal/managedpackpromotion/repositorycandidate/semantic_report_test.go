@@ -408,6 +408,46 @@ func TestSemanticReportUsesOnlySuppliedResourceFileIndexesAndExactSourcePrefixes
 		}
 	})
 
+	t.Run("content swapped between capability roots stays visible", func(t *testing.T) {
+		bindings := []capabilitypack.Binding{
+			{
+				Surface: capabilitypack.SurfaceCodex,
+				Capabilities: []capabilitypack.SurfaceCapability{{
+					Type:               capabilitypack.SurfaceCapabilityProjectInstruction,
+					ProjectInstruction: &capabilitypack.ProjectInstructionCapability{ID: "guide", Source: "instructions/codex.md"},
+				}},
+			},
+			{
+				Surface: capabilitypack.SurfaceOpenCode,
+				Capabilities: []capabilitypack.SurfaceCapability{{
+					Type:          capabilitypack.SurfaceCapabilityOpenCodePrimaryPrompt,
+					PrimaryPrompt: &capabilitypack.PrimaryPromptCapability{ID: "guide", Source: "instructions/opencode.md"},
+				}},
+			},
+		}
+		currentWithCapabilities := cloneSemanticManifest(t, current)
+		candidateWithCapabilities := cloneSemanticManifest(t, candidate)
+		currentWithCapabilities.Resources[0].Bindings = bindings
+		candidateWithCapabilities.Resources[0].Bindings = bindings
+		currentWithInstructions := append(currentFiles,
+			managedpack.FileRecord{Path: "instructions/codex.md", Mode: "100644", SHA256: "codex"},
+			managedpack.FileRecord{Path: "instructions/opencode.md", Mode: "100644", SHA256: "opencode"},
+		)
+		candidateWithInstructions := []managedpack.FileRecord{
+			{Path: "skills/guide/SKILL.md", Mode: "100644", SHA256: "same"},
+			{Path: "instructions/codex.md", Mode: "100644", SHA256: "opencode"},
+			{Path: "instructions/opencode.md", Mode: "100644", SHA256: "codex"},
+		}
+
+		report := compareSemanticChanges(currentWithCapabilities, currentWithInstructions, candidateWithCapabilities, candidateWithInstructions)
+		if got := semanticDetails(report.changes); !containsString(got, "Resource `skill:guide` content changed.") {
+			t.Fatalf("capability root content swap is absent: %#v", got)
+		}
+		if len(report.humanJudgment) != 1 {
+			t.Fatalf("capability root content swap classification = %#v", report)
+		}
+	})
+
 	t.Run("a repeated resource and capability root contributes once", func(t *testing.T) {
 		candidateWithCapability := cloneSemanticManifest(t, candidate)
 		candidateWithCapability.Resources[0].Bindings = []capabilitypack.Binding{{

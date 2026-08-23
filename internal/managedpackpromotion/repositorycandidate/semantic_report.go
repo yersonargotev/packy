@@ -312,7 +312,7 @@ func compareResourceContent(report *semanticReport, identity string, previous ma
 	return true
 }
 
-func resourceFiles(resource managedpack.Resource, files []managedpack.FileRecord) []map[string]managedpack.FileRecord {
+func resourceFiles(resource managedpack.Resource, files []managedpack.FileRecord) map[string]map[string]managedpack.FileRecord {
 	roots := map[string]bool{}
 	if resource.Source != "" {
 		roots[resource.Source] = true
@@ -324,7 +324,7 @@ func resourceFiles(resource managedpack.Resource, files []managedpack.FileRecord
 			}
 		}
 	}
-	var result []map[string]managedpack.FileRecord
+	result := map[string]map[string]managedpack.FileRecord{}
 	for root := range roots {
 		tree := map[string]managedpack.FileRecord{}
 		for _, file := range files {
@@ -340,10 +340,9 @@ func resourceFiles(resource managedpack.Resource, files []managedpack.FileRecord
 			tree[relative] = copy
 		}
 		if len(tree) > 0 {
-			result = append(result, tree)
+			result[root] = tree
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return canonicalJSON(result[i]) < canonicalJSON(result[j]) })
 	return result
 }
 
