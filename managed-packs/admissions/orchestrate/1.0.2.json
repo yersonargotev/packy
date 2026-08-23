@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "pack_id": "orchestrate",
+  "pack_version": "1.0.2",
+  "project": "yersonargotev/orchestrate-skill",
+  "repository_id": 1327217855,
+  "release_id": 375317485,
+  "release_immutable": true,
+  "tag": "pack-v1.0.2",
+  "tag_ref_type": "commit",
+  "tag_ref_sha": "fdae7b6cc227cd1cd0e3cafb5ab1c66cca231cac",
+  "tag_objects": [],
+  "commit": "fdae7b6cc227cd1cd0e3cafb5ab1c66cca231cac",
+  "root_tree": "7abb5c2f3d35127af72fec9eb487fc2da45e4ba0",
+  "manifest_sha256": "5b6d7a55f1603590f01b4d9c56741f2034194af90f1b479878350f3f0b613e69",
+  "closure_sha256": "527d6123689105800e5c537bf485609e1c74e84bc6a6b4fd580c057d70d1bd95",
+  "files": [
+    {
+      "path": "notices/mit",
+      "mode": "100644",
+      "sha256": "c46a5f93c655d8a890391242058d050cbc6ff575d751f27477f22d1f8d53fba4"
+    },
+    {
+      "path": "pack.json",
+      "mode": "100644",
+      "sha256": "5b6d7a55f1603590f01b4d9c56741f2034194af90f1b479878350f3f0b613e69"
+    },
+    {
+      "path": "skills/orchestrate/SKILL.md",
+      "mode": "100644",
+      "sha256": "1eaa114f4271a76ab67429d43a7cc05462994e3c61685a5c40cf19ca041cbe71"
+    },
+    {
+      "path": "skills/orchestrate/agents/openai.yaml",
+      "mode": "100644",
+      "sha256": "769869faa8f5c919b77bbdf8686c46e08774d796af7a6aabdf9717d57bba72a8"
+    }
+  ]
+}

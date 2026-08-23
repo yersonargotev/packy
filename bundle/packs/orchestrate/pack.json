@@ -1,69 +1,9 @@
 {
-  "description": "Coordinate focused Codex subagents",
-  "exclusions": [],
-  "external_requirements": [],
+  "schema_version": 1,
   "id": "orchestrate",
-  "resources": [
-    {
-      "bindings": [
-        {
-          "invocation": "coordinate-session",
-          "mode": "native",
-          "name": "coordinate-session",
-          "projection": "lifecycle",
-          "sharing": "exclusive",
-          "surface": "codex",
-          "capabilities": []
-        }
-      ],
-      "conflicts": [],
-      "description": "Track the Orchestrate coordination session lifecycle",
-      "id": "coordinate-session",
-      "kind": "lifecycle",
-      "requires": [],
-      "surface_exclusions": []
-    },
-    {
-      "attribution": "Copyright (c) 2026 Eric Provencher",
-      "bindings": [],
-      "conflicts": [],
-      "description": "Preserve the upstream Orchestrate MIT license and attribution",
-      "id": "mit",
-      "kind": "notice",
-      "license": "MIT",
-      "requires": [],
-      "source": "notices/mit",
-      "surface_exclusions": []
-    },
-    {
-      "bindings": [
-        {
-          "invocation": "$orchestrate",
-          "mode": "native",
-          "name": "orchestrate",
-          "projection": "skill",
-          "sharing": "exclusive",
-          "surface": "codex",
-          "capabilities": []
-        }
-      ],
-      "conflicts": [],
-      "description": "Coordinate focused Codex subagents for substantial tasks",
-      "id": "orchestrate",
-      "kind": "skill",
-      "notices": [
-        "notice:mit"
-      ],
-      "requires": [],
-      "source": "skills/orchestrate",
-      "surface_exclusions": []
-    }
-  ],
+  "version": "1.0.2",
+  "description": "Coordinate focused Codex subagents",
   "selectable": true,
-  "source_reference": {
-    "repository": "https://github.com/yersonargotev/orchestrate-skill.git",
-    "revision": "1.0.1"
-  },
   "surfaces": [
     "codex"
   ],
@@ -71,5 +11,82 @@
     "runtime-usability",
     "surface-authorization"
   ],
-  "version": "1.0.1"
+  "external_requirements": [],
+  "origins": [
+    {
+      "id": "orchestrate-skill",
+      "repository": "yersonargotev/orchestrate-skill",
+      "commit": "bd9d77b3c43a2544cea68d08492cbf306752cd22",
+      "revision": "1.0.1"
+    }
+  ],
+  "resources": [
+    {
+      "kind": "lifecycle",
+      "id": "coordinate-session",
+      "description": "Track the Orchestrate coordination session lifecycle",
+      "requires": [],
+      "conflicts": [],
+      "bindings": [
+        {
+          "surface": "codex",
+          "projection": "lifecycle",
+          "name": "coordinate-session",
+          "invocation": "coordinate-session",
+          "mode": "native",
+          "sharing": "exclusive",
+          "capabilities": []
+        }
+      ],
+      "surface_exclusions": []
+    },
+    {
+      "kind": "notice",
+      "id": "mit",
+      "source": "notices/mit",
+      "description": "Preserve the upstream Orchestrate MIT license and attribution",
+      "requires": [],
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "bindings": [],
+      "surface_exclusions": [],
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 Eric Provencher",
+      "origin": {
+        "id": "orchestrate-skill",
+        "path": "LICENSE",
+        "relationship": "exact-copy"
+      }
+    },
+    {
+      "kind": "skill",
+      "id": "orchestrate",
+      "source": "skills/orchestrate",
+      "description": "Coordinate focused Codex subagents for substantial tasks",
+      "requires": [],
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "bindings": [
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "orchestrate",
+          "invocation": "$orchestrate",
+          "mode": "native",
+          "sharing": "exclusive",
+          "capabilities": []
+        }
+      ],
+      "surface_exclusions": [],
+      "origin": {
+        "id": "orchestrate-skill",
+        "path": "orchestrate",
+        "relationship": "exact-copy"
+      }
+    }
+  ]
 }
