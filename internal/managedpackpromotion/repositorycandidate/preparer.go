@@ -99,7 +99,12 @@ func (p preparer) Prepare(ctx context.Context, repositoryRoot string, acquisitio
 	if err != nil {
 		return result, managedpackpromotion.Reject(managedpackpromotion.GateValidation, err.Error())
 	}
-	if err := enforceVersionFloor(current, validation.Manifest); err != nil {
+	currentFiles, err := currentFileEvidence(clone, current)
+	if err != nil {
+		return result, managedpackpromotion.Reject(managedpackpromotion.GateValidation, fmt.Sprintf("load current Pack file evidence: %v", err))
+	}
+	report := compareSemanticChanges(current, currentFiles, validation.Manifest, validation.Files)
+	if err := enforceVersionFloor(current, validation.Manifest, report); err != nil {
 		return result, err
 	}
 
@@ -131,7 +136,7 @@ func (p preparer) Prepare(ctx context.Context, repositoryRoot string, acquisitio
 		return result, err
 	}
 
-	summary, err := candidateSummary(ctx, clone, acquisition, validation, current)
+	summary, err := candidateSummary(ctx, clone, acquisition, validation, report)
 	if err != nil {
 		return result, err
 	}
@@ -257,7 +262,7 @@ func loadCurrentManifest(repositoryRoot, packID string) (managedpack.Manifest, e
 	return manifest, nil
 }
 
-func enforceVersionFloor(current, candidate managedpack.Manifest) error {
+func enforceVersionFloor(current, candidate managedpack.Manifest, report semanticReport) error {
 	from, err := semver.StrictNewVersion(current.Version)
 	if err != nil {
 		return managedpackpromotion.Reject(managedpackpromotion.GateSemVer, fmt.Sprintf("current Pack version %q is not SemVer", current.Version))
@@ -269,10 +274,13 @@ func enforceVersionFloor(current, candidate managedpack.Manifest) error {
 	if !to.GreaterThan(from) {
 		return managedpackpromotion.Reject(managedpackpromotion.GateSemVer, fmt.Sprintf("candidate version %s must be greater than current version %s", to, from))
 	}
-	floor, reason := compatibilityFloor(current, candidate)
 	actual := changeLevel(from, to)
-	if actual < floor {
-		return managedpackpromotion.Reject(managedpackpromotion.GateCompatibilityFloor, fmt.Sprintf("%s requires at least a %s version increment; %s to %s is %s", reason, floor, from, to, actual))
+	if actual < report.floor {
+		reasons := make([]string, len(report.floorReasons))
+		for i, reason := range report.floorReasons {
+			reasons[i] = reason.detail
+		}
+		return managedpackpromotion.Reject(managedpackpromotion.GateCompatibilityFloor, fmt.Sprintf("%s requires at least a %s version increment; %s to %s is %s", strings.Join(reasons, "; "), report.floor, from, to, actual))
 	}
 	return nil
 }
@@ -297,49 +305,6 @@ func changeLevel(from, to *semver.Version) versionLevel {
 		return minorLevel
 	}
 	return patchLevel
-}
-
-func compatibilityFloor(current, candidate managedpack.Manifest) (versionLevel, string) {
-	oldSurfaces := stringSet(current.Surfaces)
-	newSurfaces := stringSet(candidate.Surfaces)
-	if missingKey(oldSurfaces, newSurfaces) != "" {
-		return majorLevel, "removing a supported surface"
-	}
-	oldReadiness := stringSet(current.ReadinessObligations)
-	newReadiness := stringSet(candidate.ReadinessObligations)
-	oldRequirements := stringSet(current.ExternalRequirements)
-	newRequirements := stringSet(candidate.ExternalRequirements)
-	if missingKey(oldReadiness, newReadiness) != "" || current.Selectable != candidate.Selectable {
-		return majorLevel, "removing or breaking a Pack contract"
-	}
-	if missingKey(newRequirements, oldRequirements) != "" {
-		return majorLevel, "adding a mandatory external requirement"
-	}
-	oldResources := resourceMap(current.Resources)
-	newResources := resourceMap(candidate.Resources)
-	if missingKey(oldResources, newResources) != "" {
-		return majorLevel, "removing a resource"
-	}
-	for identity, oldResource := range oldResources {
-		change := compareResourceContract(oldResource, newResources[identity])
-		if change == majorLevel {
-			return majorLevel, "breaking an existing resource contract"
-		}
-	}
-	resourcesAdded := false
-	for identity, resource := range newResources {
-		if _, exists := oldResources[identity]; exists {
-			continue
-		}
-		if resourceHasMandatoryContract(resource) {
-			return majorLevel, "adding a resource with a mandatory graph, requirement, authority, or surface capability"
-		}
-		resourcesAdded = true
-	}
-	if missingKey(newSurfaces, oldSurfaces) != "" || missingKey(newReadiness, oldReadiness) != "" || resourcesAdded {
-		return minorLevel, "adding to the Pack or an existing resource contract"
-	}
-	return patchLevel, "changing existing Pack content or metadata"
 }
 
 func resourceHasMandatoryContract(resource managedpack.Resource) bool {
@@ -368,32 +333,6 @@ func resourceMap(resources []managedpack.Resource) map[string]managedpack.Resour
 		result[resource.Kind+":"+resource.ID] = resource
 	}
 	return result
-}
-
-func missingKey[A, B any](left map[string]A, right map[string]B) string {
-	for key := range left {
-		if _, ok := right[key]; !ok {
-			return key
-		}
-	}
-	return ""
-}
-
-func compareResourceContract(left, right managedpack.Resource) versionLevel {
-	if missingKey(stringSet(right.Requires), stringSet(left.Requires)) != "" ||
-		missingKey(stringSet(right.Conflicts), stringSet(left.Conflicts)) != "" ||
-		resourceProjectionChanged(left, right) {
-		return majorLevel
-	}
-	return patchLevel
-}
-
-func resourceProjectionChanged(left, right managedpack.Resource) bool {
-	return left.Source != right.Source || left.Command != right.Command ||
-		!reflect.DeepEqual(left.Args, right.Args) || left.Mode != right.Mode ||
-		!reflect.DeepEqual(left.Tools, right.Tools) || !reflect.DeepEqual(left.Permissions, right.Permissions) ||
-		!reflect.DeepEqual(left.Bindings, right.Bindings) || !reflect.DeepEqual(left.Arguments, right.Arguments) ||
-		!reflect.DeepEqual(left.SurfaceExclusions, right.SurfaceExclusions)
 }
 
 func candidateAllowlist(coordinate managedpackpromotion.Coordinate, validation managedpack.Validation, changedBundlePaths map[string]bool) map[string]bool {
@@ -469,7 +408,7 @@ func candidateID(coordinate managedpackpromotion.Coordinate, project, base, head
 	return hex.EncodeToString(digest[:])
 }
 
-func candidateSummary(ctx context.Context, repositoryRoot string, acquisition managedpackpromotion.Acquisition, validation managedpack.Validation, current managedpack.Manifest) (string, error) {
+func candidateSummary(ctx context.Context, repositoryRoot string, acquisition managedpackpromotion.Acquisition, validation managedpack.Validation, report semanticReport) (string, error) {
 	coordinate := validation.Manifest.ID + "@" + validation.Manifest.Version
 	changes, err := changedPathSummary(ctx, repositoryRoot)
 	if err != nil {
@@ -482,53 +421,20 @@ func candidateSummary(ctx context.Context, repositoryRoot string, acquisition ma
 	if len(chain) == 0 {
 		chain = []string{"lightweight tag directly references commit"}
 	}
-	origins := make([]string, len(validation.Manifest.Origins))
-	for i, origin := range validation.Manifest.Origins {
-		origins[i] = fmt.Sprintf("%s=%s@%s", origin.ID, origin.Repository, origin.Commit)
-		if origin.Revision != "" {
-			origins[i] += " (" + origin.Revision + ")"
-		}
-	}
-	if len(origins) == 0 {
-		origins = []string{"none"}
-	}
-	var adaptations, notices []string
-	for _, resource := range validation.Manifest.Resources {
-		identity := resource.Kind + ":" + resource.ID
-		if resource.Origin != nil && resource.Origin.Relationship == managedpack.RelationshipAdapted {
-			adaptations = append(adaptations, identity+" from "+resource.Origin.ID+":"+resource.Origin.Path)
-		}
-		for _, notice := range resource.Notices {
-			notices = append(notices, identity+" -> "+notice)
-		}
-	}
-	if len(adaptations) == 0 {
-		adaptations = []string{"none"}
-	}
-	if len(notices) == 0 {
-		notices = []string{"none"}
-	}
-	sort.Strings(adaptations)
-	sort.Strings(notices)
-	floor, floorReason := compatibilityFloor(current, validation.Manifest)
 	return fmt.Sprintf("Promote `%s` from immutable Managed Pack release `%s`.\n\n"+
 		"- Release identity: repository `%d`, release `%d`, tag `%s`, ref `%s` (`%s`)\n"+
 		"- Tag chain: %s\n"+
 		"- Peeled commit/tree: `%s` / `%s`\n"+
 		"- Manifest/closure SHA-256: `%s` / `%s`\n"+
-		"- Origins: %s\n"+
-		"- Adaptations: %s\n"+
-		"- Notice coverage: %s\n"+
-		"- Compatibility floor: `%s` (%s); version `%s` → `%s`\n"+
 		"- Repository changes: %s\n"+
-		"- Admission gates: generated docs, resource/catalog fitness, and complete Packy suite passed before this detached commit.",
+		"- Admission gates: generated docs, resource/catalog fitness, and complete Packy suite passed before this detached commit.\n\n"+
+		"%s",
 		coordinate, acquisition.Release.Project,
 		acquisition.Release.RepositoryID, acquisition.Release.ReleaseID, acquisition.Release.Tag,
 		acquisition.Release.TagRef.SHA, acquisition.Release.TagRef.Type,
 		strings.Join(chain, "; "), acquisition.Release.CommitSHA, acquisition.Release.RootTreeSHA,
 		validation.ManifestSHA256, validation.ClosureSHA256,
-		strings.Join(origins, "; "), strings.Join(adaptations, "; "), strings.Join(notices, "; "),
-		floor, floorReason, current.Version, validation.Manifest.Version, strings.Join(changes, "; "),
+		strings.Join(changes, "; "), report.renderMarkdown(),
 	), nil
 }
 
