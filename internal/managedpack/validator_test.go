@@ -3,6 +3,7 @@ package managedpack
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -153,7 +154,7 @@ func TestValidateProjectEnforcesExactCopyAndAllowsNoticedAdaptation(t *testing.T
 	writeFile(t, filepath.Join(project, "skills", "guide", "SKILL.md"), "adapted guidance\n", 0o644)
 
 	_, err := ValidateProject(context.Background(), project, originResolver{"upstream": origin})
-	if err == nil || !strings.Contains(err.Error(), "exact-copy content differs") {
+	if err == nil || !IsExactCopyMismatch(err) || !strings.Contains(err.Error(), "exact-copy mismatch") {
 		t.Fatalf("exact-copy error = %v", err)
 	}
 
@@ -162,6 +163,54 @@ func TestValidateProjectEnforcesExactCopyAndAllowsNoticedAdaptation(t *testing.T
 	})
 	if _, err := ValidateProject(context.Background(), project, originResolver{"upstream": origin}); err != nil {
 		t.Fatalf("noticed adaptation: %v", err)
+	}
+}
+
+func TestValidateProjectReportsBoundedDeterministicExactCopyDifferences(t *testing.T) {
+	project, origin := writeValidProject(t)
+	projectRoot := filepath.Join(project, "skills", "guide")
+	originRoot := filepath.Join(origin, "guide")
+	writeFile(t, filepath.Join(projectRoot, "a-changed.txt"), "project secret\n", 0o644)
+	writeFile(t, filepath.Join(originRoot, "a-changed.txt"), "origin secret\n", 0o644)
+	writeFile(t, filepath.Join(originRoot, "b-missing.txt"), "missing secret\n", 0o644)
+	writeFile(t, filepath.Join(projectRoot, "c-additional.txt"), "additional secret\n", 0o644)
+	for i := 0; i < maxExactCopyMismatchDetails; i++ {
+		writeFile(t, filepath.Join(projectRoot, fmt.Sprintf("extra-%02d.txt", i)), "bounded secret\n", 0o644)
+	}
+
+	_, first := ValidateProject(context.Background(), project, originResolver{"upstream": origin})
+	_, second := ValidateProject(context.Background(), project, originResolver{"upstream": origin})
+	if first == nil || second == nil || first.Error() != second.Error() {
+		t.Fatalf("exact-copy diagnostics are not deterministic:\nfirst:  %v\nsecond: %v", first, second)
+	}
+	if !IsExactCopyMismatch(first) {
+		t.Fatalf("error type = %T, want exact-copy mismatch", first)
+	}
+	message := first.Error()
+	for _, want := range []string{
+		`resource "skill:guide"`, `origin "upstream" path "guide"`,
+		`mismatch=changed path="a-changed.txt"`,
+		`project_sha256="` + digestBytes([]byte("project secret\n")) + `"`,
+		`origin_sha256="` + digestBytes([]byte("origin secret\n")) + `"`,
+		`mismatch=missing path="b-missing.txt"`,
+		`mismatch=additional path="c-additional.txt"`,
+		`3 additional differences omitted`,
+		`restore exact bytes from the declared origin or explicitly declare the whole resource "adapted" and review its notices`,
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("exact-copy error = %q, want %q", message, want)
+		}
+	}
+	if changed, missing, additional := strings.Index(message, `path="a-changed.txt"`), strings.Index(message, `path="b-missing.txt"`), strings.Index(message, `path="c-additional.txt"`); changed < 0 || changed >= missing || missing >= additional {
+		t.Fatalf("mismatch ordering is not deterministic by relative path: %q", message)
+	}
+	if got := strings.Count(message, "mismatch="); got != maxExactCopyMismatchDetails {
+		t.Fatalf("reported mismatch count = %d, want %d: %q", got, maxExactCopyMismatchDetails, message)
+	}
+	for _, secret := range []string{"project secret", "origin secret", "missing secret", "additional secret", "bounded secret"} {
+		if strings.Contains(message, secret) {
+			t.Fatalf("exact-copy diagnostic exposed file content %q: %q", secret, message)
+		}
 	}
 }
 

@@ -4,18 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/capabilitypack"
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
 )
 
 func TestRunValidatesAcquiredLocalTreesAndSealsTheResponse(t *testing.T) {
 	request, requestPath, responsePath := writeWorkerFixture(t)
+	direct, err := managedpack.Preflight(context.Background(), request.ProjectRoot, mapResolver(request.OriginRoots))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEvidence := direct.Evidence()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -33,11 +41,48 @@ func TestRunValidatesAcquiredLocalTreesAndSealsTheResponse(t *testing.T) {
 	if response.Status != responseAccepted || response.Gate != "" || response.Reason != "" {
 		t.Fatalf("response outcome = %#v", response)
 	}
-	if response.Validation.Manifest.ID != "example" || response.Validation.Manifest.Version != "1.0.0" {
-		t.Fatalf("validation manifest = %#v", response.Validation.Manifest)
+	if !reflect.DeepEqual(response.Preflight, wantEvidence) {
+		t.Fatalf("worker preflight evidence differs from direct preventive evidence:\nworker: %#v\ndirect: %#v", response.Preflight, wantEvidence)
 	}
-	if response.Validation.ManifestSHA256 == "" || response.Validation.ClosureSHA256 == "" || response.ValidationSHA256 == "" {
+	if response.Preflight.Validation.Manifest.ID != "example" || response.Preflight.Validation.Manifest.Version != "1.0.0" {
+		t.Fatalf("validation manifest = %#v", response.Preflight.Validation.Manifest)
+	}
+	if response.Preflight.Validation.ManifestSHA256 == "" || response.Preflight.Validation.ClosureSHA256 == "" || response.Preflight.RuntimeManifestSHA256 == "" || response.Preflight.Fitness.RowCount != 6 || response.Preflight.Fitness.SHA256 == "" || response.PreflightSHA256 == "" {
 		t.Fatalf("response digests = %#v", response)
+	}
+}
+
+func TestWorkerResponseCapacityDoesNotGrowWithALargeQuadraticFitnessMatrix(t *testing.T) {
+	resources := make([]capabilitypack.ResourceIdentity, 500)
+	for index := range resources {
+		resources[index] = capabilitypack.ResourceIdentity{Kind: "mcp_server", ID: fmt.Sprintf("server-%03d", index)}
+	}
+	rows := make([]capabilitypack.RuntimeFitnessRow, 0, 3*501)
+	for _, surface := range []capabilitypack.Surface{capabilitypack.SurfaceClaude, capabilitypack.SurfaceCodex, capabilitypack.SurfaceOpenCode} {
+		rows = append(rows, capabilitypack.RuntimeFitnessRow{
+			Surface: surface, Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionAll}, Resources: resources,
+		})
+		for _, root := range resources {
+			rows = append(rows, capabilitypack.RuntimeFitnessRow{
+				Surface: surface, Selection: capabilitypack.ResourceSelection{Mode: capabilitypack.SelectionCustom, Roots: []capabilitypack.ResourceIdentity{root}}, Resources: resources,
+			})
+		}
+	}
+	preflight := managedpack.PreflightResult{Fitness: capabilitypack.RuntimeFitnessMatrix{Rows: rows}}.Evidence()
+	response := workerResponse{Status: responseAccepted, Preflight: preflight}
+	response.PreflightSHA256 = preflightDigest(preflight)
+	response.ResponseSHA256 = responseDigest(response)
+	path := filepath.Join(t.TempDir(), "response.json")
+
+	if err := writeWorkerResponse(path, response); err != nil {
+		t.Fatalf("write compact response for large quadratic fitness matrix: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() >= 4096 {
+		t.Fatalf("compact response size = %d, want less than 4096 bytes", info.Size())
 	}
 }
 
@@ -186,6 +231,42 @@ func TestRunSealsValidationFailuresWithTheirTypedGate(t *testing.T) {
 			},
 			gate: managedpackpromotion.GateNotices,
 			want: "notice",
+		},
+		{
+			name: "runtime fitness",
+			edit: func(t *testing.T, request workerRequest) {
+				writeTestFile(t, filepath.Join(request.ProjectRoot, "skills", "other", "SKILL.md"), "other guidance\n", 0o644)
+				path := filepath.Join(request.ProjectRoot, "pack.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var manifest map[string]any
+				if err := json.Unmarshal(data, &manifest); err != nil {
+					t.Fatal(err)
+				}
+				resources := manifest["resources"].([]any)
+				encoded, err := json.Marshal(resources[1])
+				if err != nil {
+					t.Fatal(err)
+				}
+				var other map[string]any
+				if err := json.Unmarshal(encoded, &other); err != nil {
+					t.Fatal(err)
+				}
+				other["id"] = "other"
+				other["source"] = "skills/other"
+				delete(other, "origin")
+				delete(other, "notices")
+				manifest["resources"] = append(resources, other)
+				encoded, err = json.MarshalIndent(manifest, "", "  ")
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeTestFile(t, path, string(encoded)+"\n", 0o644)
+			},
+			gate: managedpackpromotion.GateResourceSurfaces,
+			want: "runtime fitness",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

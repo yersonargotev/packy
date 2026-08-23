@@ -170,9 +170,9 @@ type Acquirer interface {
 }
 
 // OfflineValidator validates acquired public trees in the isolated offline
-// process and returns their sealed Declared Pack Closure.
+// process and returns their sealed preflight evidence.
 type OfflineValidator interface {
-	Validate(context.Context, Acquisition) (managedpack.Validation, error)
+	Validate(context.Context, Acquisition) (managedpack.PreflightEvidence, error)
 }
 
 // CandidatePreparer runs every repository admission gate and materializes one

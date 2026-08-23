@@ -83,12 +83,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	defer os.RemoveAll(temporary)
 
-	result, err := managedpack.ValidateProject(context.Background(), *project, resolver{local: localOrigins, temporary: temporary})
+	result, err := managedpack.Preflight(context.Background(), *project, resolver{local: localOrigins, temporary: temporary})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "validated %s@%s manifest_sha256=%s closure_sha256=%s files=%d\n",
-		result.Manifest.ID, result.Manifest.Version, result.ManifestSHA256, result.ClosureSHA256, len(result.Files))
+	validation := result.Validation
+	fmt.Fprintf(stdout, "validated %s@%s manifest_sha256=%s closure_sha256=%s files=%d fitness_rows=%d\n",
+		validation.Manifest.ID, validation.Manifest.Version, validation.ManifestSHA256, validation.ClosureSHA256,
+		len(validation.Files), len(result.Fitness.Rows))
 	return 0
 }

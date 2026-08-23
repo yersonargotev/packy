@@ -44,34 +44,34 @@ func newWithRunner(executable string, runner processRunner) Adapter {
 }
 
 // Validate validates only the local trees sealed into acquisition.
-func (adapter Adapter) Validate(ctx context.Context, acquisition managedpackpromotion.Acquisition) (managedpack.Validation, error) {
+func (adapter Adapter) Validate(ctx context.Context, acquisition managedpackpromotion.Acquisition) (managedpack.PreflightEvidence, error) {
 	if err := ctx.Err(); err != nil {
-		return managedpack.Validation{}, err
+		return managedpack.PreflightEvidence{}, err
 	}
 	workerContext, cancelWorker := context.WithTimeout(ctx, workerTimeout)
 	defer cancelWorker()
 	if err := validateExecutable(adapter.executable); err != nil {
-		return managedpack.Validation{}, err
+		return managedpack.PreflightEvidence{}, err
 	}
 	if adapter.runner == nil {
-		return managedpack.Validation{}, errors.New("offline validation process runner is required")
+		return managedpack.PreflightEvidence{}, errors.New("offline validation process runner is required")
 	}
 	if err := validateAcquisitionRoots(acquisition.ProjectRoot, acquisition.OriginRoots); err != nil {
-		return managedpack.Validation{}, fmt.Errorf("validate acquired local roots: %w", err)
+		return managedpack.PreflightEvidence{}, fmt.Errorf("validate acquired local roots: %w", err)
 	}
 
 	protocolRoot, err := os.MkdirTemp("", "packy-offline-validation-")
 	if err != nil {
-		return managedpack.Validation{}, fmt.Errorf("create offline validation protocol directory: %w", err)
+		return managedpack.PreflightEvidence{}, fmt.Errorf("create offline validation protocol directory: %w", err)
 	}
 	defer os.RemoveAll(protocolRoot)
 	environment, err := isolatedEnvironment(protocolRoot)
 	if err != nil {
-		return managedpack.Validation{}, err
+		return managedpack.PreflightEvidence{}, err
 	}
 	request, requestPath, responsePath, err := createWorkerRequest(protocolRoot, acquisition)
 	if err != nil {
-		return managedpack.Validation{}, err
+		return managedpack.PreflightEvidence{}, err
 	}
 
 	stdout := newCappedBuffer(maxProcessOutputBytes)
@@ -86,31 +86,31 @@ func (adapter Adapter) Validate(ctx context.Context, acquisition managedpackprom
 	}
 	if err := adapter.runner.Run(workerContext, invocation); err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
-			return managedpack.Validation{}, contextErr
+			return managedpack.PreflightEvidence{}, contextErr
 		}
 		if contextErr := workerContext.Err(); contextErr != nil {
-			return managedpack.Validation{}, fmt.Errorf("offline validation worker exceeded its resource-bounded execution window: %w", contextErr)
+			return managedpack.PreflightEvidence{}, fmt.Errorf("offline validation worker exceeded its resource-bounded execution window: %w", contextErr)
 		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
-			return managedpack.Validation{}, fmt.Errorf("run offline validation worker: %w: %s", err, detail)
+			return managedpack.PreflightEvidence{}, fmt.Errorf("run offline validation worker: %w: %s", err, detail)
 		}
-		return managedpack.Validation{}, fmt.Errorf("run offline validation worker: %w", err)
+		return managedpack.PreflightEvidence{}, fmt.Errorf("run offline validation worker: %w", err)
 	}
 	if stdout.Len() != 0 || stdout.Overflowed() {
-		return managedpack.Validation{}, errors.New("offline validation worker wrote unexpected standard output")
+		return managedpack.PreflightEvidence{}, errors.New("offline validation worker wrote unexpected standard output")
 	}
 	response, err := readWorkerResponse(responsePath, request)
 	if err != nil {
-		return managedpack.Validation{}, fmt.Errorf("read offline validation response: %w", err)
+		return managedpack.PreflightEvidence{}, fmt.Errorf("read offline validation response: %w", err)
 	}
 	switch response.Status {
 	case responseAccepted:
-		return response.Validation, nil
+		return response.Preflight, nil
 	case responseRejected:
-		return managedpack.Validation{}, managedpackpromotion.Reject(response.Gate, response.Reason)
+		return managedpack.PreflightEvidence{}, managedpackpromotion.Reject(response.Gate, response.Reason)
 	default:
-		return managedpack.Validation{}, fmt.Errorf("offline validation response has unsupported status %q", response.Status)
+		return managedpack.PreflightEvidence{}, fmt.Errorf("offline validation response has unsupported status %q", response.Status)
 	}
 }
 
@@ -239,15 +239,15 @@ func readWorkerResponse(path string, request workerRequest) (workerResponse, err
 		if response.Gate != "" || response.Reason != "" {
 			return workerResponse{}, errors.New("accepted response contains a rejection")
 		}
-		if response.ValidationSHA256 == "" || response.ValidationSHA256 != validationDigest(response.Validation) {
-			return workerResponse{}, errors.New("validation digest does not match its payload")
+		if response.PreflightSHA256 == "" || response.PreflightSHA256 != preflightDigest(response.Preflight) {
+			return workerResponse{}, errors.New("preflight digest does not match its payload")
 		}
 	case responseRejected:
 		if !allowedValidationGate(response.Gate) || strings.TrimSpace(response.Reason) == "" {
 			return workerResponse{}, errors.New("rejected response has an invalid gate or reason")
 		}
-		if response.ValidationSHA256 != "" || !reflect.DeepEqual(response.Validation, managedpack.Validation{}) {
-			return workerResponse{}, errors.New("rejected response contains validation output")
+		if response.PreflightSHA256 != "" || !reflect.DeepEqual(response.Preflight, managedpack.PreflightEvidence{}) {
+			return workerResponse{}, errors.New("rejected response contains preflight output")
 		}
 	default:
 		return workerResponse{}, fmt.Errorf("unsupported response status %q", response.Status)
@@ -257,7 +257,8 @@ func readWorkerResponse(path string, request workerRequest) (workerResponse, err
 
 func allowedValidationGate(gate managedpackpromotion.Gate) bool {
 	return gate == managedpackpromotion.GateValidation || gate == managedpackpromotion.GateOrigins ||
-		gate == managedpackpromotion.GateExactCopies || gate == managedpackpromotion.GateNotices
+		gate == managedpackpromotion.GateExactCopies || gate == managedpackpromotion.GateNotices ||
+		gate == managedpackpromotion.GateResourceSurfaces
 }
 
 func pathWithin(parent, child string) bool {

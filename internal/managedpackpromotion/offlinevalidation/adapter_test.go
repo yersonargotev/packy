@@ -32,12 +32,12 @@ func TestAdapterValidateRunsTheProductionWorkerWithNetworkDenied(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	validation, err := New(executable).Validate(context.Background(), acquisition)
+	preflight, err := New(executable).Validate(context.Background(), acquisition)
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if validation.Manifest.ID != "example" || validation.Manifest.Version != "1.0.0" || validation.ClosureSHA256 == "" {
-		t.Fatalf("validation = %#v", validation)
+	if preflight.Validation.Manifest.ID != "example" || preflight.Validation.Manifest.Version != "1.0.0" || preflight.Validation.ClosureSHA256 == "" || preflight.RuntimeManifestSHA256 == "" || preflight.Fitness.RowCount != 6 || preflight.Fitness.SHA256 == "" {
+		t.Fatalf("preflight = %#v", preflight)
 	}
 }
 
@@ -54,7 +54,7 @@ func TestAdapterValidateRunsTheExactExecutableWithAnIsolatedEnvironment(t *testi
 		t.Fatal(err)
 	}
 
-	wantValidation := fakeValidation()
+	wantPreflight := fakePreflight()
 	runner := processRunnerFunc(func(ctx context.Context, invocation processInvocation) error {
 		deadline, bounded := ctx.Deadline()
 		if !bounded || time.Until(deadline) <= 0 || time.Until(deadline) > workerTimeout {
@@ -103,7 +103,7 @@ func TestAdapterValidateRunsTheExactExecutableWithAnIsolatedEnvironment(t *testi
 		response := workerResponse{
 			Protocol: request.Protocol, Token: request.Token, Nonce: request.Nonce,
 			RequestSHA256: request.RequestSHA256, Status: responseAccepted,
-			Validation: wantValidation, ValidationSHA256: validationDigest(wantValidation),
+			Preflight: wantPreflight, PreflightSHA256: preflightDigest(wantPreflight),
 		}
 		response.ResponseSHA256 = responseDigest(response)
 		return writeWorkerResponse(invocation.Args[2], response)
@@ -113,8 +113,8 @@ func TestAdapterValidateRunsTheExactExecutableWithAnIsolatedEnvironment(t *testi
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if !reflect.DeepEqual(got, wantValidation) {
-		t.Fatalf("validation = %#v, want %#v", got, wantValidation)
+	if !reflect.DeepEqual(got, wantPreflight) {
+		t.Fatalf("preflight = %#v, want %#v", got, wantPreflight)
 	}
 }
 
@@ -165,9 +165,9 @@ func TestAdapterValidateRejectsStaleOrTamperedWorkerOutputAsOperationalFailure(t
 			want: "identity",
 		},
 		{
-			name: "tampered validation",
+			name: "tampered preflight",
 			edit: func(response *workerResponse) {
-				response.Validation.Manifest.ID = "tampered"
+				response.Preflight.Validation.Manifest.ID = "tampered"
 			},
 			want: "response digest",
 		},
@@ -179,11 +179,11 @@ func TestAdapterValidateRejectsStaleOrTamperedWorkerOutputAsOperationalFailure(t
 				if readErr != nil {
 					return readErr
 				}
-				validation := fakeValidation()
+				preflight := fakePreflight()
 				response := workerResponse{
 					Protocol: request.Protocol, Token: request.Token, Nonce: request.Nonce,
 					RequestSHA256: request.RequestSHA256, Status: responseAccepted,
-					Validation: validation, ValidationSHA256: validationDigest(validation),
+					Preflight: preflight, PreflightSHA256: preflightDigest(preflight),
 				}
 				response.ResponseSHA256 = responseDigest(response)
 				test.edit(&response)
@@ -236,6 +236,13 @@ func fakeValidation() managedpack.Validation {
 		ManifestSHA256: digest,
 		ClosureSHA256:  strings.Repeat("d", 64),
 		Files:          []managedpack.FileRecord{{Path: "pack.json", Mode: "100644", SHA256: digest}},
+	}
+}
+
+func fakePreflight() managedpack.PreflightEvidence {
+	return managedpack.PreflightEvidence{
+		Validation: fakeValidation(), RuntimeManifestSHA256: strings.Repeat("e", 64),
+		Fitness: managedpack.RuntimeFitnessEvidence{RowCount: 1, SHA256: strings.Repeat("f", 64)},
 	}
 }
 

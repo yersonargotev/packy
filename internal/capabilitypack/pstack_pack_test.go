@@ -41,36 +41,12 @@ func TestCheckedInPstackPackPreservesCompatibilityMatrix(t *testing.T) {
 		}
 	}
 
-	for _, surface := range pack.Surfaces {
-		assertPstackSelectionTargets(t, pack, surface, ResourceSelection{Mode: SelectionAll})
-		for _, resource := range pack.Resources {
-			if resource.Kind != "skill" {
-				continue
-			}
-			assertPstackSelectionTargets(t, pack, surface, ResourceSelection{
-				Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: resource.Kind, ID: resource.ID}},
-			})
-		}
-	}
-}
-
-func assertPstackSelectionTargets(t *testing.T, pack Pack, surface Surface, selection ResourceSelection) {
-	t.Helper()
-	selected, err := selectPackResources(pack, selection)
+	matrix, err := EvaluateRuntimeFitness(pack)
 	if err != nil {
-		t.Fatalf("select pstack %s roots %+v: %v", surface, selection.Roots, err)
+		t.Fatal(err)
 	}
-	targets := map[string]string{}
-	for _, resource := range selected.Resources {
-		for _, binding := range resource.Bindings {
-			if binding.Surface != surface {
-				continue
-			}
-			if previous := targets[binding.Name]; previous != "" {
-				t.Fatalf("pstack %s selection has target collision %q between %s and %s", surface, binding.Name, previous, resource.ID)
-			}
-			targets[binding.Name] = resource.ID
-		}
+	if len(matrix.Rows) != 81 {
+		t.Fatalf("pstack runtime fitness rows = %d, want 81", len(matrix.Rows))
 	}
 }
 
