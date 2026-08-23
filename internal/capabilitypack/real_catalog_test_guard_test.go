@@ -424,6 +424,14 @@ func TestCatalogListDetailsTemporary(t *testing.T) { catalog := Catalog{bundleRo
 func TestCatalogShowDetailLive(t *testing.T) { _, _ = (Catalog{}).ShowDetail(ctx, "live-pack") }
 func TestCatalogShowDetailSynthetic(t *testing.T) { _, _ = (Catalog{}).ShowDetail(ctx, "synthetic-pack") }
 func TestUnrelatedShowDetail(t *testing.T) { unrelated := unrelatedView{}; unrelated.ShowDetail(ctx, "live-pack") }
+func TestCatalogShowDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}; catalog.Show(ctx, "synthetic-pack") }
+func TestCatalogShowNonDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog.Show(ctx, "synthetic-pack") }
+func TestCatalogShowTemporaryDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle"), deferSourceValidation: true}; catalog.Show(ctx, "synthetic-pack") }
+func TestCatalogShowEmptySynthetic(t *testing.T) { (Catalog{}).Show(ctx, "synthetic-pack") }
+func TestUnrelatedShowLookup(t *testing.T) { unrelated := unrelatedView{}; unrelated.Show(ctx, "live-pack") }
+func TestCatalogShowDetailDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}; _, _ = catalog.ShowDetail(ctx, "synthetic-pack") }
+func TestCatalogShowDetailNonDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _, _ = catalog.ShowDetail(ctx, "synthetic-pack") }
+func TestCatalogShowDetailTemporaryDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle"), deferSourceValidation: true}; _, _ = catalog.ShowDetail(ctx, "synthetic-pack") }
 func TestCatalogResolveIntentPackLive(t *testing.T) {
 	catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}
 	_, _ = catalog.ResolveIntentPack(ctx, "live-pack", "1.0.0")
@@ -432,6 +440,9 @@ func TestCatalogResolveIntentPackSynthetic(t *testing.T) {
 	catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle"), deferSourceValidation: true}
 	_, _ = catalog.ResolveIntentPack(ctx, "synthetic-pack", "1.0.0")
 }
+func TestCatalogResolveIntentPackNonDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _, _ = catalog.ResolveIntentPack(ctx, "synthetic-pack", "1.0.0") }
+func TestCatalogResolveIntentPackTemporaryDeferredSynthetic(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle"), deferSourceValidation: true}; _, _ = catalog.ResolveIntentPack(ctx, "synthetic-pack", "1.0.0") }
+func TestCatalogResolveIntentPackEmptySynthetic(t *testing.T) { _, _ = (Catalog{}).ResolveIntentPack(ctx, "synthetic-pack", "1.0.0") }
 func TestUnrelatedResolveIntentPack(t *testing.T) { unrelated := unrelatedView{}; unrelated.ResolveIntentPack(ctx, "live-pack", "1.0.0") }
 func TestLoadCurrentManifestLive(t *testing.T) {
 	root := repositoryRoot()
@@ -517,7 +528,10 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestValidatePortableContentLive",
 		"sample/scenarios_test.go:TestCatalogListDetailsLive",
 		"sample/scenarios_test.go:TestCatalogShowDetailLive",
+		"sample/scenarios_test.go:TestCatalogShowDeferredSynthetic",
+		"sample/scenarios_test.go:TestCatalogShowDetailDeferredSynthetic",
 		"sample/scenarios_test.go:TestCatalogResolveIntentPackLive",
+		"sample/scenarios_test.go:TestCatalogResolveIntentPackSynthetic",
 		"sample/scenarios_test.go:TestLoadCurrentManifestLive",
 		"sample/scenarios_test.go:TestValidatePackContentLive",
 		"sample/scenarios_test.go:TestValidatePackContentLiveDirectory",
@@ -552,7 +566,15 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestCatalogListDetailsTemporary",
 		"sample/scenarios_test.go:TestCatalogShowDetailSynthetic",
 		"sample/scenarios_test.go:TestUnrelatedShowDetail",
-		"sample/scenarios_test.go:TestCatalogResolveIntentPackSynthetic",
+		"sample/scenarios_test.go:TestCatalogShowNonDeferredSynthetic",
+		"sample/scenarios_test.go:TestCatalogShowTemporaryDeferredSynthetic",
+		"sample/scenarios_test.go:TestCatalogShowEmptySynthetic",
+		"sample/scenarios_test.go:TestUnrelatedShowLookup",
+		"sample/scenarios_test.go:TestCatalogShowDetailNonDeferredSynthetic",
+		"sample/scenarios_test.go:TestCatalogShowDetailTemporaryDeferredSynthetic",
+		"sample/scenarios_test.go:TestCatalogResolveIntentPackNonDeferredSynthetic",
+		"sample/scenarios_test.go:TestCatalogResolveIntentPackTemporaryDeferredSynthetic",
+		"sample/scenarios_test.go:TestCatalogResolveIntentPackEmptySynthetic",
 		"sample/scenarios_test.go:TestUnrelatedResolveIntentPack",
 	} {
 		if got[unwanted] {
@@ -1085,7 +1107,21 @@ func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSACont
 	if analyzer.isQualificationDriver(callee) && len(call.Args) > 0 {
 		return append(direct, analyzer.commandFindings(context.sequences(call.Args[len(call.Args)-1]))...)
 	}
-	if analyzer.isCatalogLookup(callee) || analyzer.isKnownLookup(callee) {
+	if analyzer.isCatalogLookup(callee) {
+		var details []string
+		for _, argument := range call.Args {
+			for id := range context.stringValues(argument, map[ssa.Value]bool{}) {
+				if _, real := analyzer.inventory.packIDs[id]; real {
+					details = append(details, fmt.Sprintf("looks up real Pack %q through %s", id, callee.Name()))
+				}
+			}
+		}
+		if len(call.Args) > 0 && context.catalogUsesLiveBundle(call.Args[0], map[ssa.Value]bool{}) && context.catalogDefersSourceValidation(call.Args[0], map[ssa.Value]bool{}) {
+			details = append(details, "enumerates the checked-in Pack catalog through deferred source validation")
+		}
+		return append(direct, details...)
+	}
+	if analyzer.isKnownLookup(callee) {
 		var details []string
 		for _, argument := range call.Args {
 			for id := range context.stringValues(argument, map[ssa.Value]bool{}) {
@@ -1476,7 +1512,7 @@ func (context *realCatalogSSAContext) catalogUsesLiveBundle(value ssa.Value, see
 	seen[value] = true
 	defer delete(seen, value)
 
-	for _, bundleRoot := range context.catalogBundleRootValues(value) {
+	for _, bundleRoot := range context.catalogFieldValues(value, "bundleRoot") {
 		if context.isLiveBundleRoot(bundleRoot) {
 			return true
 		}
@@ -1510,7 +1546,7 @@ func (context *realCatalogSSAContext) catalogUsesLiveBundle(value ssa.Value, see
 	return false
 }
 
-func (context *realCatalogSSAContext) catalogBundleRootValues(value ssa.Value) []ssa.Value {
+func (context *realCatalogSSAContext) catalogFieldValues(value ssa.Value, fieldName string) []ssa.Value {
 	named := namedType(value.Type())
 	if named == nil || named.Obj().Name() != "Catalog" || named.Obj().Pkg() == nil {
 		return nil
@@ -1523,11 +1559,96 @@ func (context *realCatalogSSAContext) catalogBundleRootValues(value ssa.Value) [
 		return nil
 	}
 	for index := 0; index < structure.NumFields(); index++ {
-		if structure.Field(index).Name() == "bundleRoot" {
+		if structure.Field(index).Name() == fieldName {
 			return context.fieldValues(value, index)
 		}
 	}
 	return nil
+}
+
+func (context *realCatalogSSAContext) catalogDefersSourceValidation(value ssa.Value, seen map[ssa.Value]bool) bool {
+	if value == nil || seen[value] {
+		return false
+	}
+	seen[value] = true
+	defer delete(seen, value)
+
+	for _, deferred := range context.catalogFieldValues(value, "deferSourceValidation") {
+		if context.valueCanBeTrue(deferred, map[ssa.Value]bool{}) {
+			return true
+		}
+	}
+	switch value := value.(type) {
+	case *ssa.Call:
+		found := false
+		context.withCallBinding(value.Common(), func() {
+			for _, returned := range context.callReturnValues(value.Common(), 0) {
+				if context.catalogDefersSourceValidation(returned, seen) {
+					found = true
+				}
+			}
+		})
+		return found
+	case *ssa.Extract:
+		if call, ok := value.Tuple.(*ssa.Call); ok {
+			found := false
+			context.withCallBinding(call.Common(), func() {
+				for _, returned := range context.callReturnValues(call.Common(), value.Index) {
+					if context.catalogDefersSourceValidation(returned, seen) {
+						found = true
+					}
+				}
+			})
+			return found
+		}
+	case *ssa.Parameter, *ssa.FreeVar, *ssa.Phi, *ssa.ChangeType, *ssa.Convert, *ssa.MakeInterface:
+		for _, dependency := range context.valueDependencies(value) {
+			if context.catalogDefersSourceValidation(dependency, seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (context *realCatalogSSAContext) valueCanBeTrue(value ssa.Value, seen map[ssa.Value]bool) bool {
+	if value == nil || seen[value] {
+		return false
+	}
+	seen[value] = true
+	defer delete(seen, value)
+	switch value := value.(type) {
+	case *ssa.Const:
+		return value.Value != nil && value.Value.Kind() == constant.Bool && constant.BoolVal(value.Value)
+	case *ssa.Call:
+		found := false
+		context.withCallBinding(value.Common(), func() {
+			for _, returned := range context.callReturnValues(value.Common(), 0) {
+				if context.valueCanBeTrue(returned, seen) {
+					found = true
+				}
+			}
+		})
+		return found
+	case *ssa.Extract:
+		if call, ok := value.Tuple.(*ssa.Call); ok {
+			found := false
+			context.withCallBinding(call.Common(), func() {
+				for _, returned := range context.callReturnValues(call.Common(), value.Index) {
+					if context.valueCanBeTrue(returned, seen) {
+						found = true
+					}
+				}
+			})
+			return found
+		}
+	}
+	for _, dependency := range context.valueDependencies(value) {
+		if context.valueCanBeTrue(dependency, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 func (context *realCatalogSSAContext) isLiveBundleRoot(value ssa.Value) bool {
