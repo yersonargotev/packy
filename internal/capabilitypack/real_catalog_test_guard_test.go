@@ -413,6 +413,22 @@ func TestDirectTypedLiveListCurrent(t *testing.T) { catalog := Catalog{bundleRoo
 func TestSyntheticCatalogList(t *testing.T) { executeCommand(t, NewRootCommand(syntheticOptions(t)), "list") }
 func TestTypedSyntheticListCurrent(t *testing.T) { catalog, _ := Discover(ctx, filepath.Join(t.TempDir(), "bundle")); listCatalog(catalog) }
 func TestDirectTypedSyntheticListCurrent(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(t.TempDir(), "bundle")}; catalog.ListCurrent(ctx) }
+func TestLoadCurrentManifestLive(t *testing.T) {
+	root := repositoryRoot()
+	manifest := filepath.Join(root, "bundle", "packs", "live-pack", "pack.json")
+	_, _ = LoadCurrentManifest(manifest, filepath.Join(root, "bundle"), true)
+}
+func TestLoadCurrentManifestTemporary(t *testing.T) {
+	root := t.TempDir()
+	_, _ = LoadCurrentManifest(filepath.Join(root, "bundle", "packs", "live-pack", "pack.json"), filepath.Join(root, "bundle"), true)
+}
+func TestLoadCurrentManifestSynthetic(t *testing.T) {
+	root := repositoryRoot()
+	_, _ = LoadCurrentManifest(filepath.Join(root, "bundle", "packs", "synthetic-pack", "pack.json"), filepath.Join(root, "bundle"), true)
+}
+func TestValidatePackContentLive(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(repositoryRoot(), "bundle"), "live-pack") }
+func TestValidatePackContentTemporary(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(t.TempDir(), "bundle"), "live-pack") }
+func TestValidatePackContentSynthetic(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(repositoryRoot(), "bundle"), "synthetic-pack") }
 func TestUnrelatedRootAndSyntheticCatalogList(t *testing.T) { _ = repositoryRoot(); listWithOptions(t, syntheticOptions(t)) }
 func TestCallSensitiveOptionsList(t *testing.T) { root := repositoryRoot(); _ = optionsIdentity(liveOptions(root)); listWithOptions(t, optionsIdentity(syntheticOptions(t))) }
 func TestReceiverShadowing(t *testing.T) {
@@ -454,6 +470,8 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestLiveCatalogList",
 		"sample/scenarios_test.go:TestTypedLiveListCurrent",
 		"sample/scenarios_test.go:TestDirectTypedLiveListCurrent",
+		"sample/scenarios_test.go:TestLoadCurrentManifestLive",
+		"sample/scenarios_test.go:TestValidatePackContentLive",
 		"sample/scenarios_test.go:TestReceiverShadowing",
 	} {
 		if !got[want] {
@@ -468,6 +486,16 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 	}
 	if got["sample/scenarios_test.go:TestDirectTypedSyntheticListCurrent"] {
 		t.Fatalf("direct synthetic Catalog.ListCurrent was classified as live: %+v", findings)
+	}
+	for _, unwanted := range []string{
+		"sample/scenarios_test.go:TestLoadCurrentManifestTemporary",
+		"sample/scenarios_test.go:TestLoadCurrentManifestSynthetic",
+		"sample/scenarios_test.go:TestValidatePackContentTemporary",
+		"sample/scenarios_test.go:TestValidatePackContentSynthetic",
+	} {
+		if got[unwanted] {
+			t.Fatalf("synthetic content validation was classified as live: %s: %+v", unwanted, findings)
+		}
 	}
 	if got["sample/scenarios_test.go:TestUnrelatedRootAndSyntheticCatalogList"] {
 		t.Fatalf("unrelated repository root was correlated with synthetic list options: %+v", findings)
@@ -592,9 +620,12 @@ func executeCommand(*testing.T, *rootCommand, ...string) (string, error) { retur
 type ActivationRequest struct { PackID string }
 type SurfaceAlias struct { Kind, ID, Name string }
 type Catalog struct{ bundleRoot string }
+type Pack struct{}
 func Discover(_ context.Context, bundleRoot string) (Catalog, error) { return Catalog{bundleRoot: bundleRoot}, nil }
 func (Catalog) Show(context.Context, string) {}
 func (Catalog) ListCurrent(context.Context) ([]string, error) { return nil, nil }
+func LoadCurrentManifest(string, string, bool) (Pack, error) { return Pack{}, nil }
+func ValidatePackContent(string, string) (Pack, error) { return Pack{}, nil }
 type unrelatedView struct{}
 func (unrelatedView) Show(context.Context, string) {}
 `
@@ -957,6 +988,18 @@ func (analyzer *realCatalogSSAAnalyzer) callFindings(context *realCatalogSSACont
 			direct = append(direct, detail)
 		}
 	}
+	if analyzer.isCapabilitypackFunction(callee, "LoadCurrentManifest") && len(call.Args) > 0 {
+		if detail := analyzer.manifestValueFinding(context, caller, call.Args[0], map[ssa.Value]bool{}); detail != "" {
+			direct = append(direct, detail)
+		}
+	}
+	if analyzer.isCapabilitypackFunction(callee, "ValidatePackContent") && len(call.Args) >= 2 && context.isLiveBundleRoot(call.Args[0]) {
+		for id := range context.stringValues(call.Args[1], map[ssa.Value]bool{}) {
+			if _, real := analyzer.inventory.packIDs[id]; real {
+				direct = append(direct, fmt.Sprintf("validates real Pack %q through ValidatePackContent", id))
+			}
+		}
+	}
 	if analyzer.isNamedFunction(callee, "/internal/cli", "executeCommand") || analyzer.fixture && callee.Name() == "executeCommand" {
 		if len(call.Args) == 0 {
 			return nil
@@ -1042,6 +1085,10 @@ func (analyzer *realCatalogSSAAnalyzer) isNamedFunction(function *ssa.Function, 
 		return false
 	}
 	return strings.HasSuffix(function.Pkg.Pkg.Path(), packageSuffix)
+}
+
+func (analyzer *realCatalogSSAAnalyzer) isCapabilitypackFunction(function *ssa.Function, name string) bool {
+	return analyzer.isNamedFunction(function, "/internal/capabilitypack", name) || analyzer.fixture && function != nil && function.Name() == name
 }
 
 func (analyzer *realCatalogSSAAnalyzer) isQualificationDriver(function *ssa.Function) bool {
