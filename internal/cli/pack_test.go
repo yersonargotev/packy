@@ -176,7 +176,7 @@ func resolvePackTestLayout(t *testing.T, env Env) packTestLayout {
 }
 
 func TestPackVerbHelpUsesFlatCommandPaths(t *testing.T) {
-	opts, _, _ := packActivationOptions(t, &fakeTerminal{})
+	opts, _, _ := sandboxOptions(t)
 	for _, verb := range []string{"list", "show", "check", "activate", "install", "update", "status", "deactivate", "uninstall"} {
 		t.Run(verb, func(t *testing.T) {
 			out, err := executeCommand(t, NewRootCommand(opts), verb, "--help")

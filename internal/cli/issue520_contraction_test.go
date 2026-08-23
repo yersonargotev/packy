@@ -8,7 +8,7 @@ import (
 )
 
 func TestIssue520RecoveryOrientedReconcileCommandIsRemoved(t *testing.T) {
-	opts, _, _ := packActivationOptions(t, &fakeTerminal{})
+	opts, _, _ := sandboxOptions(t)
 	out, err := executeCommand(t, NewRootCommand(opts), "reconcile")
 	if err == nil || !strings.Contains(err.Error(), `unknown command "reconcile"`) {
 		t.Fatalf("reconcile route error = %v, output:\n%s", err, out)
