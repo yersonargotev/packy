@@ -96,6 +96,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	opts, _ := packListRepositoryOptions(t)
 	addyVersion := checkedInPackVersion(t, "addy")
 	argoteVersion := checkedInPackVersion(t, "argote")
+	engramVersion := checkedInPackVersion(t, "engram")
 	mattyVersion := checkedInMattyFacts(t).Version
 	pstackVersion := checkedInPackVersion(t, "pstack")
 
@@ -106,7 +107,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	want := "PACK            VERSION  DESCRIPTION                                                            AVAILABLE ON\n" +
 		fmt.Sprintf("addy            %-7s  Addy agent skills                                                      claude, codex, opencode\n", addyVersion) +
 		fmt.Sprintf("argote          %-7s  Yerson Argote's engineering and communication guidance                 claude, codex, opencode\n", argoteVersion) +
-		"engram          3.1.0    Upstream Engram CLI memory workflows for agent work                    codex\n" +
+		fmt.Sprintf("engram          %-7s  Upstream Engram CLI memory workflows for agent work                    codex\n", engramVersion) +
 		"issue-delivery  1.1.1    Deliver issues through policy-driven or Matt-configured workflows      codex\n" +
 		fmt.Sprintf("matty           %-7s  Matty workflow                                                         claude, codex, opencode\n", mattyVersion) +
 		"orchestrate     1.0.1    Coordinate focused Codex subagents                                     codex\n" +

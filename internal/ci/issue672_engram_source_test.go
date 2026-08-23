@@ -4,25 +4,26 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
+
+	"github.com/yersonargotev/packy/internal/managedpack"
 )
 
-func TestIssue672EngramPackUsesExactUpstreamSkill(t *testing.T) {
+func TestIssue672EngramPackPreservesReviewedRuntimeContract(t *testing.T) {
 	root := repositoryRoot(t)
 	var manifest struct {
 		Version              string   `json:"version"`
 		Surfaces             []string `json:"surfaces"`
 		ReadinessObligations []string `json:"readiness_obligations"`
 		ExternalRequirements []string `json:"external_requirements"`
-		SourceReference      struct {
-			Repository string `json:"repository"`
-			Revision   string `json:"revision"`
-		} `json:"source_reference"`
-		Resources []struct {
+		Resources            []struct {
 			Kind        string   `json:"kind"`
 			ID          string   `json:"id"`
 			Source      string   `json:"source"`
@@ -50,7 +51,7 @@ func TestIssue672EngramPackUsesExactUpstreamSkill(t *testing.T) {
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Version != "3.1.0" || manifest.SourceReference.Repository != "https://github.com/yersonargotev/engram.git" || manifest.SourceReference.Revision != "v2.2.0" {
+	if manifest.Version == "" {
 		t.Fatalf("Engram generation identity = %#v", manifest)
 	}
 	if !reflect.DeepEqual(manifest.Surfaces, []string{"codex"}) || !reflect.DeepEqual(manifest.ReadinessObligations, []string{"runtime-usability", "surface-authorization"}) || !reflect.DeepEqual(manifest.ExternalRequirements, []string{"engram"}) {
@@ -71,38 +72,116 @@ func TestIssue672EngramPackUsesExactUpstreamSkill(t *testing.T) {
 		t.Fatalf("Engram skill binding = %#v", binding)
 	}
 
-	wantFiles := map[string]string{
-		"SKILL.md":               "e4110ddb51b8554af15490b6f17b186e33143e3ac9c47c620466fc840c94316e",
-		"agents/openai.yaml":     "e5d99dae07dd1fa1a8259dbcf9aebae67785f99e8688f5b4feda1b85ce2a1088",
-		"references/curation.md": "6f671f02ffeeccfd7a95d9b0fc645806e6e6b1a037ddd43c58695a62ece6c5e6",
+	resourceSources := make([]string, 0, len(manifest.Resources))
+	for _, resource := range manifest.Resources {
+		resourceSources = append(resourceSources, resource.Source)
 	}
-	skillRoot := filepath.Join(root, "bundle", "skills", "engram-memory-cli")
-	gotFiles := map[string]string{}
-	err = filepath.WalkDir(skillRoot, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil || entry.IsDir() {
-			return walkErr
-		}
-		relative, err := filepath.Rel(skillRoot, path)
-		if err != nil {
-			return err
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		digest := sha256.Sum256(data)
-		gotFiles[filepath.ToSlash(relative)] = hex.EncodeToString(digest[:])
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(gotFiles, wantFiles) {
-		t.Fatalf("vendored Engram skill inventory = %#v; want exact upstream tree %#v", gotFiles, wantFiles)
-	}
+	assertEngramCurrentClosureIsSealed(t, root, manifest.Version, resourceSources)
 	if _, err := os.Stat(filepath.Join(root, "bundle", "skills", "engram-memory")); !os.IsNotExist(err) {
 		t.Fatalf("obsolete Packy-authored skill remains: %v", err)
 	}
+}
+
+func assertEngramCurrentClosureIsSealed(t *testing.T, root, version string, resourceSources []string) {
+	t.Helper()
+	actual := currentEngramFileRecords(t, root, resourceSources)
+	admissionPath := filepath.Join(root, "managed-packs", "admissions", "engram", version+".json")
+	record, err := managedpack.LoadAdmissionRecord(admissionPath)
+	if err == nil {
+		manifestPath := filepath.Join(root, "bundle", "packs", "engram", "pack.json")
+		actual = append(actual, currentEngramFileRecord(t, manifestPath, "pack.json"))
+		sort.Slice(actual, func(i, j int) bool { return actual[i].Path < actual[j].Path })
+		if !reflect.DeepEqual(actual, record.Files) {
+			t.Fatalf("current Engram closure = %#v; want admitted closure %#v", actual, record.Files)
+		}
+		return
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+
+	var lock struct {
+		Resources []struct {
+			VendoredPath string `json:"vendored_path"`
+			Files        []struct {
+				Path   string `json:"path"`
+				Mode   uint32 `json:"mode"`
+				SHA256 string `json:"sha256"`
+			} `json:"files"`
+		} `json:"resources"`
+	}
+	lockData, err := os.ReadFile(filepath.Join(root, "bundle", "sources", "engram-source.lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(lockData, &lock); err != nil {
+		t.Fatal(err)
+	}
+	want := make([]managedpack.FileRecord, 0, len(actual))
+	for _, resource := range lock.Resources {
+		base := filepath.ToSlash(strings.TrimPrefix(resource.VendoredPath, "bundle/"))
+		for _, file := range resource.Files {
+			path := base
+			if file.Path != "." {
+				path += "/" + file.Path
+			}
+			want = append(want, managedpack.FileRecord{Path: path, Mode: fmt.Sprintf("100%03o", file.Mode), SHA256: file.SHA256})
+		}
+	}
+	sort.Slice(want, func(i, j int) bool { return want[i].Path < want[j].Path })
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatalf("current Engram resources = %#v; want legacy locked resources %#v", actual, want)
+	}
+}
+
+func currentEngramFileRecords(t *testing.T, root string, resourceSources []string) []managedpack.FileRecord {
+	t.Helper()
+	bundleRoot := filepath.Join(root, "bundle")
+	records := make(map[string]managedpack.FileRecord)
+	for _, source := range resourceSources {
+		err := filepath.WalkDir(filepath.Join(bundleRoot, filepath.FromSlash(source)), func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil || entry.IsDir() {
+				return walkErr
+			}
+			relative, err := filepath.Rel(bundleRoot, path)
+			if err != nil {
+				return err
+			}
+			relative = filepath.ToSlash(relative)
+			records[relative] = currentEngramFileRecord(t, path, relative)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := make([]string, 0, len(records))
+	for path := range records {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	ordered := make([]managedpack.FileRecord, 0, len(paths))
+	for _, path := range paths {
+		ordered = append(ordered, records[path])
+	}
+	return ordered
+}
+
+func currentEngramFileRecord(t *testing.T, path, relative string) managedpack.FileRecord {
+	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Fatalf("current Engram closure member %s has non-regular mode %s", relative, info.Mode())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	return managedpack.FileRecord{Path: relative, Mode: fmt.Sprintf("100%03o", info.Mode().Perm()), SHA256: hex.EncodeToString(digest[:])}
 }
 
 func TestIssue672EngramHistoricalGenerationIsCompleteAndSealed(t *testing.T) {
@@ -128,29 +207,6 @@ func TestIssue672EngramHistoricalGenerationIsCompleteAndSealed(t *testing.T) {
 	}
 
 	historyRoot := filepath.Join(root, "bundle", "history", "engram", "3.1.0")
-	for _, relative := range []string{
-		"pack.json",
-		"notices/engram-mit",
-		"skills/engram-memory-cli/SKILL.md",
-		"skills/engram-memory-cli/agents/openai.yaml",
-		"skills/engram-memory-cli/references/curation.md",
-	} {
-		currentRelative := relative
-		if relative == "pack.json" {
-			currentRelative = "packs/engram/pack.json"
-		}
-		current, err := os.ReadFile(filepath.Join(root, "bundle", filepath.FromSlash(currentRelative)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		historical, err := os.ReadFile(filepath.Join(historyRoot, filepath.FromSlash(relative)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(historical, current) {
-			t.Fatalf("historical Engram 3.1.0 %s does not preserve the current generation exactly", relative)
-		}
-	}
 	var artifact struct {
 		SchemaVersion   int    `json:"schema_version"`
 		PackID          string `json:"pack_id"`
