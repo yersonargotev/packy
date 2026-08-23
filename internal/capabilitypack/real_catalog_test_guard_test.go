@@ -383,6 +383,7 @@ type syntheticFixture struct{}
 func (syntheticFixture) live() string { return "temporary synthetic bundle" }
 func newSyntheticFixture() syntheticFixture { return syntheticFixture{} }
 func repositoryRoot() string { root, _ := filepath.Abs(filepath.Join("..", "..")); return root }
+func aliasedRepositoryRoot() string { absolute := filepath.Abs; root, _ := absolute(filepath.Join("..", "..")); return root }
 func liveOptions(root string) Options { return Options{Getwd: func() (string, error) { return root, nil }} }
 func listWithOptions(t *testing.T, options Options) { executeCommand(t, NewRootCommand(options), "list") }
 func optionsIdentity(options Options) Options { return options }
@@ -440,6 +441,7 @@ func TestCatalogShowDetailSynthetic(t *testing.T) { _, _ = (Catalog{}).ShowDetai
 func TestUnrelatedShowDetail(t *testing.T) { unrelated := unrelatedView{}; unrelated.ShowDetail(ctx, "live-pack") }
 func TestCatalogBindingDirect(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; _ = catalog }
 func TestCatalogBindingThroughHelper(t *testing.T) { _ = catalogFor(filepath.Join(repositoryRoot(), "bundle")) }
+func TestCatalogBindingThroughAliasedAbsHelper(t *testing.T) { _ = catalogFor(filepath.Join(aliasedRepositoryRoot(), "bundle")) }
 func TestCatalogBindingThroughFunctionVariable(t *testing.T) { bind := catalogFor; _ = bind(filepath.Join(repositoryRoot(), "bundle")) }
 func TestCatalogBindingThroughFunctionVariableSynthetic(t *testing.T) { bind := catalogFor; _ = bind(filepath.Join(t.TempDir(), "bundle")) }
 func TestCatalogBindingOverwritten(t *testing.T) { catalog := Catalog{bundleRoot: filepath.Join(repositoryRoot(), "bundle")}; catalog.bundleRoot = filepath.Join(t.TempDir(), "bundle"); _ = catalog }
@@ -496,8 +498,12 @@ func TestLoadCurrentManifestSynthetic(t *testing.T) {
 	root := repositoryRoot()
 	_, _ = LoadCurrentManifest(filepath.Join(root, "bundle", "packs", "synthetic-pack", "pack.json"), filepath.Join(root, "bundle"), true)
 }
-func TestAliasedManifestSink(t *testing.T) { read := os.ReadFile; _, _ = read(filepath.Join("bundle", "packs", "live-pack", "pack.json")) }
+func TestAliasedManifestSink(t *testing.T) { join := filepath.Join; read := os.ReadFile; _, _ = read(join("bundle", "packs", "live-pack", "pack.json")) }
+func TestAliasedManifestSinkTemporary(t *testing.T) { join := filepath.Join; read := os.ReadFile; _, _ = read(join(t.TempDir(), "bundle", "packs", "live-pack", "pack.json")) }
+func TestAliasedManifestSinkUnrelated(t *testing.T) { join := filepath.Join; read := os.ReadFile; _, _ = read(join("fixtures", "packs", "live-pack", "pack.json")) }
 func TestAliasedLifecycleSink(t *testing.T) { run := executeCommand; _, _ = run(t, NewRootCommand(Options{}), "activate", "live-pack") }
+func TestAliasedNewRootLiveList(t *testing.T) { build := NewRootCommand; executeCommand(t, build(liveOptions(repositoryRoot())), "list") }
+func TestAliasedNewRootTemporaryList(t *testing.T) { build := NewRootCommand; executeCommand(t, build(syntheticOptions(t)), "list") }
 func TestValidatePackContentLive(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(repositoryRoot(), "bundle"), "live-pack") }
 func TestValidatePackContentTemporary(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(t.TempDir(), "bundle"), "live-pack") }
 func TestValidatePackContentSynthetic(t *testing.T) { _, _ = ValidatePackContent(filepath.Join(repositoryRoot(), "bundle"), "synthetic-pack") }
@@ -574,6 +580,7 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestCatalogShowDetailLive",
 		"sample/scenarios_test.go:TestCatalogBindingDirect",
 		"sample/scenarios_test.go:TestCatalogBindingThroughHelper",
+		"sample/scenarios_test.go:TestCatalogBindingThroughAliasedAbsHelper",
 		"sample/scenarios_test.go:TestCatalogBindingThroughFunctionVariable",
 		"sample/scenarios_test.go:TestCatalogBindingThroughConversion",
 		"sample/scenarios_test.go:TestCatalogBindingOverwritten",
@@ -604,6 +611,7 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestLoadCurrentManifestLive",
 		"sample/scenarios_test.go:TestAliasedManifestSink",
 		"sample/scenarios_test.go:TestAliasedLifecycleSink",
+		"sample/scenarios_test.go:TestAliasedNewRootLiveList",
 		"sample/scenarios_test.go:TestValidatePackContentLive",
 		"sample/scenarios_test.go:TestValidatePackContentLiveDirectory",
 		"sample/scenarios_test.go:TestValidatePackContentRelativeDirectory",
@@ -638,6 +646,7 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 	for test, detail := range map[string]string{
 		"sample/scenarios_test.go:TestCatalogBindingDirect":                  "binds the checked-in bundle",
 		"sample/scenarios_test.go:TestCatalogBindingThroughHelper":           "binds the checked-in bundle",
+		"sample/scenarios_test.go:TestCatalogBindingThroughAliasedAbsHelper": "binds the checked-in bundle",
 		"sample/scenarios_test.go:TestCatalogBindingThroughFunctionVariable": "binds the checked-in bundle",
 		"sample/scenarios_test.go:TestCatalogBindingThroughConversion":       "binds the checked-in bundle",
 		"sample/scenarios_test.go:TestCatalogBindingOverwritten":             "binds the checked-in bundle",
@@ -665,6 +674,8 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 	for _, unwanted := range []string{
 		"sample/scenarios_test.go:TestLoadCurrentManifestTemporary",
 		"sample/scenarios_test.go:TestLoadCurrentManifestSynthetic",
+		"sample/scenarios_test.go:TestAliasedManifestSinkTemporary",
+		"sample/scenarios_test.go:TestAliasedManifestSinkUnrelated",
 		"sample/scenarios_test.go:TestValidatePackContentTemporary",
 		"sample/scenarios_test.go:TestValidatePackContentSynthetic",
 		"sample/scenarios_test.go:TestValidatePackContentTemporaryDirectory",
@@ -682,6 +693,7 @@ func TestReceiverShadowingDoesNotReuseOuterType(t *testing.T) {
 		"sample/scenarios_test.go:TestUnrelatedCatalogBinding",
 		"sample/scenarios_test.go:TestCatalogBindingThroughFunctionVariableSynthetic",
 		"sample/scenarios_test.go:TestAliasedCatalogBuilderTemporary",
+		"sample/scenarios_test.go:TestAliasedNewRootTemporaryList",
 		"sample/scenarios_test.go:TestCatalogBindingThroughTemporaryConversion",
 		"sample/scenarios_test.go:TestUnrelatedCatalogLikeConversion",
 		"sample/scenarios_test.go:TestFacadeTemporary",
@@ -1159,6 +1171,15 @@ func (context *realCatalogSSAContext) resolvedCallees(call *ssa.CallCommon) []*s
 	return result
 }
 
+func (context *realCatalogSSAContext) callMatches(call *ssa.CallCommon, match func(*ssa.Function) bool) bool {
+	for _, callee := range context.resolvedCallees(call) {
+		if match(callee) {
+			return true
+		}
+	}
+	return false
+}
+
 func (analyzer *realCatalogSSAAnalyzer) findings(context *realCatalogSSAContext) []string {
 	return uniqueStrings(analyzer.functionFindings(context, context.root, map[*ssa.Function]bool{}))
 }
@@ -1550,8 +1571,7 @@ func (analyzer *realCatalogSSAAnalyzer) manifestValueFinding(context *realCatalo
 		}
 	case *ssa.Call:
 		call := value.Common()
-		callee := call.StaticCallee()
-		if analyzer.isNamedFunction(callee, "path/filepath", "Join") {
+		if context.callMatches(call, func(callee *ssa.Function) bool { return analyzer.isNamedFunction(callee, "path/filepath", "Join") }) {
 			return analyzer.manifestJoinFinding(context, call.Args, packSyncContract)
 		}
 		var detail string
@@ -1952,8 +1972,9 @@ func (context *realCatalogSSAContext) stringValues(value ssa.Value, seen map[ssa
 			merge(context.callReturnStrings(call.Common(), value.Index, seen))
 		}
 	case *ssa.Call:
-		callee := value.Common().StaticCallee()
-		if callee != nil && context.analyzer.isNamedFunction(callee, "path/filepath", "Join") {
+		if context.callMatches(value.Common(), func(callee *ssa.Function) bool {
+			return context.analyzer.isNamedFunction(callee, "path/filepath", "Join")
+		}) {
 			if len(value.Common().Args) == 1 {
 				for _, parts := range context.sequencesSeen(value.Common().Args[0], seen) {
 					result[filepath.Join(parts...)] = struct{}{}
@@ -2329,8 +2350,9 @@ func (context *realCatalogSSAContext) valueContainsPathPart(value ssa.Value, par
 		}
 	}
 	if call, ok := value.(*ssa.Call); ok {
-		callee := call.Common().StaticCallee()
-		if callee != nil && context.analyzer.isNamedFunction(callee, "path/filepath", "Join") {
+		if context.callMatches(call.Common(), func(callee *ssa.Function) bool {
+			return context.analyzer.isNamedFunction(callee, "path/filepath", "Join")
+		}) {
 			for _, argument := range call.Common().Args {
 				for _, sequence := range context.sequences(argument) {
 					for _, candidate := range sequence {
@@ -2357,8 +2379,9 @@ func (context *realCatalogSSAContext) commandUsesLiveOptions(value ssa.Value, se
 	seen[value] = true
 	defer delete(seen, value)
 	if call, ok := value.(*ssa.Call); ok {
-		callee := call.Common().StaticCallee()
-		if callee != nil && (context.analyzer.isNamedFunction(callee, "/internal/cli", "NewRootCommand") || context.analyzer.fixture && callee.Name() == "NewRootCommand") {
+		if context.callMatches(call.Common(), func(callee *ssa.Function) bool {
+			return context.analyzer.isNamedFunction(callee, "/internal/cli", "NewRootCommand") || context.analyzer.fixture && callee.Name() == "NewRootCommand"
+		}) {
 			return len(call.Common().Args) > 0 && context.valueContainsRepositoryRoot(call.Common().Args[0], map[ssa.Value]bool{})
 		}
 		usesLiveOptions := false
@@ -2386,11 +2409,14 @@ func (context *realCatalogSSAContext) valueContainsRepositoryRoot(value ssa.Valu
 	seen[value] = true
 	defer delete(seen, value)
 	if call, ok := value.(*ssa.Call); ok {
-		callee := call.Common().StaticCallee()
-		if context.functionBuildsRepositoryRoot(callee, map[*ssa.Function]bool{}) {
-			return true
+		for _, callee := range context.resolvedCallees(call.Common()) {
+			if context.functionBuildsRepositoryRoot(callee, map[*ssa.Function]bool{}) {
+				return true
+			}
 		}
-		if callee != nil && context.analyzer.isNamedFunction(callee, "path/filepath", "Abs") {
+		if context.callMatches(call.Common(), func(callee *ssa.Function) bool {
+			return context.analyzer.isNamedFunction(callee, "path/filepath", "Abs")
+		}) {
 			for _, argument := range call.Common().Args {
 				for path := range context.stringValues(argument, map[ssa.Value]bool{}) {
 					if isRepositoryRelativePath(path) {
@@ -2441,8 +2467,9 @@ func (context *realCatalogSSAContext) functionBuildsRepositoryRoot(function *ssa
 				continue
 			}
 			call := callInstruction.Common()
-			callee := call.StaticCallee()
-			if callee != nil && context.analyzer.isNamedFunction(callee, "path/filepath", "Abs") {
+			if context.callMatches(call, func(callee *ssa.Function) bool {
+				return context.analyzer.isNamedFunction(callee, "path/filepath", "Abs")
+			}) {
 				for _, argument := range call.Args {
 					for path := range context.stringValues(argument, map[ssa.Value]bool{}) {
 						if isRepositoryRelativePath(path) {
@@ -2451,8 +2478,10 @@ func (context *realCatalogSSAContext) functionBuildsRepositoryRoot(function *ssa
 					}
 				}
 			}
-			if context.functionBuildsRepositoryRoot(callee, seen) {
-				return true
+			for _, callee := range context.resolvedCallees(call) {
+				if context.functionBuildsRepositoryRoot(callee, seen) {
+					return true
+				}
 			}
 		}
 	}
