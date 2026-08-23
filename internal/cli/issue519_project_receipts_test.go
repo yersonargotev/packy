@@ -109,8 +109,7 @@ func TestIssue519ProjectPacksUseIndependentReceipts(t *testing.T) {
 	if got := projectReceiptJSON(t, updatedData, second.ID()); got != beforeSecond {
 		t.Fatalf("updating first Pack changed second receipt\nbefore: %s\nafter:  %s", beforeSecond, got)
 	}
-	firstResource := syntheticResource(t, first, firstRoot.Kind, firstRoot.ID)
-	firstSkill := filepath.Join(project, ".agents", "skills", firstResource.Bindings[0].Name, "SKILL.md")
+	firstSkill := projectSkillReceiptTarget(t, project, beforeFirst, firstRoot)
 	originalSkill, err := os.ReadFile(firstSkill)
 	if err != nil {
 		t.Fatal(err)
@@ -351,24 +350,17 @@ func TestIssue626ProjectUpdateAdvancesCompatibleSharedProjectionThenBlocksIncomp
 }
 
 func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t *testing.T) {
-	pack := testsupport.CapabilityRich("retirement-shared")
+	workflow := testsupport.ResourceIdentity{Kind: "skill", ID: "workflow"}
+	helper := testsupport.ResourceIdentity{Kind: "skill", ID: "helper"}
+	pack := testsupport.CapabilityRich("retirement-shared").WithRetainedRequirements(workflow, helper)
 	terminal := &fakeTerminal{interactive: true, approve: true}
 	fixture := newSyntheticCLIFixture(t, terminal, pack)
 	project := t.TempDir()
 	writeTestGitWorktree(t, project)
 	fixture.options.Getwd = func() (string, error) { return project, nil }
 	packID := pack.ID()
-	initialManifest := pack.Manifest()
-	for index := range initialManifest.Resources {
-		resource := &initialManifest.Resources[index]
-		if resource.Kind == "skill" && resource.ID == "workflow" {
-			resource.Requires = []string{"skill:helper"}
-			resource.Bindings[0].Capabilities = []testsupport.Capability{}
-		}
-	}
-	writeSyntheticManifest(t, fixture.bundleRoot, initialManifest)
 	for _, surface := range []string{"codex", "opencode"} {
-		if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", packID, "--surface", surface, "--resource", "skill:workflow"); err != nil {
+		if out, err := executeCommand(t, NewRootCommand(fixture.options), "install", packID, "--surface", surface, "--resource", workflow.String()); err != nil {
 			t.Fatalf("install dependency fixture on %s: %v\n%s", surface, err, out)
 		}
 	}
@@ -376,19 +368,10 @@ func TestIssue626ProjectUpdateRetiresAProjectionOnlyAfterItsLastSurfaceUpdates(t
 	if _, err := os.Stat(retiredPath); err != nil {
 		t.Fatalf("shared dependency was not installed: %v", err)
 	}
-	candidate := pack.Candidate()
+	candidate := pack.Candidate().WithRetainedRequirements(workflow)
 	if err := candidate.WriteBundle(fixture.bundleRoot); err != nil {
 		t.Fatal(err)
 	}
-	manifest := candidate.Manifest()
-	for index := range manifest.Resources {
-		resource := &manifest.Resources[index]
-		if resource.Kind == "skill" && resource.ID == "workflow" {
-			resource.Requires = []string{}
-			resource.Bindings[0].Capabilities = []testsupport.Capability{}
-		}
-	}
-	writeSyntheticManifest(t, fixture.bundleRoot, manifest)
 	lockPath := filepath.Join(project, "packy.lock.json")
 	before, err := os.ReadFile(lockPath)
 	if err != nil {
@@ -486,18 +469,6 @@ func TestIssue519DriftedNoticeBlocksReceiptRemoval(t *testing.T) {
 	}
 }
 
-func writeSyntheticManifest(t *testing.T, bundleRoot string, manifest testsupport.Manifest) {
-	t.Helper()
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(bundleRoot, "packs", manifest.ID, "pack.json")
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func projectReceiptJSON(t *testing.T, data []byte, packID string) string {
 	t.Helper()
 	var document struct {
@@ -520,6 +491,26 @@ func projectReceiptJSON(t *testing.T, data []byte, packID string) string {
 		}
 	}
 	t.Fatalf("receipt for %s not found in %s", packID, data)
+	return ""
+}
+
+func projectSkillReceiptTarget(t *testing.T, project, receiptJSON string, resource testsupport.ResourceIdentity) string {
+	t.Helper()
+	var receipt struct {
+		Projections []struct {
+			ID     string `json:"id"`
+			Target string `json:"target"`
+		} `json:"projections"`
+	}
+	if err := json.Unmarshal([]byte(receiptJSON), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range receipt.Projections {
+		if projection.ID == resource.String() && projection.Target != "" {
+			return filepath.Join(project, filepath.FromSlash(projection.Target), "SKILL.md")
+		}
+	}
+	t.Fatalf("receipt projections = %#v, want target for %s", receipt.Projections, resource)
 	return ""
 }
 

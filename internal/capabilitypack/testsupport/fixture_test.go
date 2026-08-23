@@ -67,10 +67,23 @@ func TestRoleConstructorsUseDeliberatelySyntheticIdentities(t *testing.T) {
 			t.Fatalf("fixture %d ID = %q, want %q", i, got, wantIDs[i])
 		}
 	}
-	firstResource := first.Manifest().Resources[0]
-	secondResource := second.Manifest().Resources[0]
+	firstResource := manifestResource(t, first.Manifest(), first.OperationalResource())
+	secondResource := manifestResource(t, second.Manifest(), second.OperationalResource())
 	if firstResource.Kind == secondResource.Kind && firstResource.ID == secondResource.ID {
 		t.Fatalf("collision fixtures reuse resource identity %s:%s", firstResource.Kind, firstResource.ID)
+	}
+	if firstResource.Source == secondResource.Source {
+		t.Fatalf("collision fixtures reuse source %q", firstResource.Source)
+	}
+	if len(firstResource.Bindings) != len(secondResource.Bindings) {
+		t.Fatalf("collision fixture bindings differ: %#v vs %#v", firstResource.Bindings, secondResource.Bindings)
+	}
+	for index := range firstResource.Bindings {
+		firstBinding := firstResource.Bindings[index]
+		secondBinding := secondResource.Bindings[index]
+		if firstBinding.Surface != secondBinding.Surface || firstBinding.Projection != secondBinding.Projection || firstBinding.Name != secondBinding.Name {
+			t.Fatalf("collision fixtures do not share target binding %d: %#v vs %#v", index, firstBinding, secondBinding)
+		}
 	}
 }
 
@@ -90,6 +103,64 @@ func TestCandidateRewritesVersionAndCapabilityRichOwnsRuntimeLifecycle(t *testin
 	}
 }
 
+func TestWithRetainedRequirementsKeepsCapabilityReferencesCoherentAndWritesBundle(t *testing.T) {
+	workflow := ResourceIdentity{Kind: "skill", ID: "workflow"}
+	helper := ResourceIdentity{Kind: "skill", ID: "helper"}
+	current := CapabilityRich("requirements-one")
+	narrowed := current.WithRetainedRequirements(workflow, helper)
+
+	currentWorkflow := manifestResource(t, current.Manifest(), workflow)
+	if got, want := currentWorkflow.Requires, []string{"asset:reference", "skill:helper"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("current requirements = %#v, want %#v", got, want)
+	}
+	narrowedWorkflow := manifestResource(t, narrowed.Manifest(), workflow)
+	if got, want := narrowedWorkflow.Requires, []string{"skill:helper"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("narrowed requirements = %#v, want %#v", got, want)
+	}
+	composite := narrowedWorkflow.Bindings[0].Capabilities[0].ClaudeCompositeSkill
+	if composite == nil || !reflect.DeepEqual(composite.Dependencies, []ResourceIdentity{helper}) || len(composite.References) != 0 {
+		t.Fatalf("narrowed Claude capability = %#v", composite)
+	}
+
+	retired := narrowed.Candidate().WithRetainedRequirements(workflow)
+	retiredWorkflow := manifestResource(t, retired.Manifest(), workflow)
+	retiredComposite := retiredWorkflow.Bindings[0].Capabilities[0].ClaudeCompositeSkill
+	if len(retiredWorkflow.Requires) != 0 || retiredComposite == nil || len(retiredComposite.Dependencies) != 0 || len(retiredComposite.References) != 0 {
+		t.Fatalf("retired requirement contract = resource %#v capability %#v", retiredWorkflow, retiredComposite)
+	}
+	if retired.CurrentVersion() != narrowed.CandidateVersion() {
+		t.Fatalf("retired candidate version = %q, want %q", retired.CurrentVersion(), narrowed.CandidateVersion())
+	}
+
+	bundleRoot := t.TempDir()
+	if err := retired.WriteBundle(bundleRoot); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(bundleRoot, "packs", retired.ID(), "pack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written Manifest
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(written, retired.Manifest()) {
+		t.Fatalf("written retained-requirement manifest = %#v, want %#v", written, retired.Manifest())
+	}
+}
+
+func TestWithRetainedRequirementsRejectsInventedDependency(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("WithRetainedRequirements accepted an undeclared dependency")
+		}
+	}()
+	CapabilityRich("requirements-one").WithRetainedRequirements(
+		ResourceIdentity{Kind: "skill", ID: "workflow"},
+		ResourceIdentity{Kind: "skill", ID: "missing"},
+	)
+}
+
 func hasResource(resources []Resource, kind, id string) bool {
 	for _, resource := range resources {
 		if resource.Kind == kind && resource.ID == id {
@@ -97,4 +168,15 @@ func hasResource(resources []Resource, kind, id string) bool {
 		}
 	}
 	return false
+}
+
+func manifestResource(t *testing.T, manifest Manifest, identity ResourceIdentity) Resource {
+	t.Helper()
+	for _, resource := range manifest.Resources {
+		if resource.Kind == identity.Kind && resource.ID == identity.ID {
+			return resource
+		}
+	}
+	t.Fatalf("manifest %q has no resource %s", manifest.ID, identity)
+	return Resource{}
 }

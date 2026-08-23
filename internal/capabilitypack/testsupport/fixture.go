@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -100,6 +101,10 @@ type Capability struct {
 type ResourceIdentity struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
+}
+
+func (identity ResourceIdentity) String() string {
+	return identity.Kind + ":" + identity.ID
 }
 
 type ClaudeCompositeSkill struct {
@@ -374,6 +379,47 @@ func (f Fixture) WithVersion(version string) Fixture {
 	return result
 }
 
+// WithRetainedRequirements returns an independent fixture whose resource keeps
+// only the supplied requirements from its existing closure. Capability-specific
+// resource references are pruned to the same subset so the portable manifest
+// remains internally coherent. It deliberately cannot invent dependencies.
+func (f Fixture) WithRetainedRequirements(identity ResourceIdentity, requirements ...ResourceIdentity) Fixture {
+	result := f.clone()
+	resource := result.resource(identity.String())
+	existing := make(map[string]bool, len(resource.Requires))
+	for _, requirement := range resource.Requires {
+		existing[requirement] = true
+	}
+	retained := make(map[string]bool, len(requirements))
+	resource.Requires = make([]string, 0, len(requirements))
+	for _, requirement := range requirements {
+		key := requirement.String()
+		if !existing[key] {
+			panic(fmt.Sprintf("synthetic Pack resource %q does not require %q", identity, requirement))
+		}
+		if retained[key] {
+			panic(fmt.Sprintf("synthetic Pack resource %q repeats requirement %q", identity, requirement))
+		}
+		retained[key] = true
+		resource.Requires = append(resource.Requires, key)
+	}
+	sort.Strings(resource.Requires)
+	for bindingIndex := range resource.Bindings {
+		binding := &resource.Bindings[bindingIndex]
+		for capabilityIndex := range binding.Capabilities {
+			capability := &binding.Capabilities[capabilityIndex]
+			if capability.ClaudeAgentDocument != nil {
+				capability.ClaudeAgentDocument.Skills = retainResourceIdentities(capability.ClaudeAgentDocument.Skills, retained)
+			}
+			if capability.ClaudeCompositeSkill != nil {
+				capability.ClaudeCompositeSkill.Dependencies = retainResourceIdentities(capability.ClaudeCompositeSkill.Dependencies, retained)
+				capability.ClaudeCompositeSkill.References = retainResourceIdentities(capability.ClaudeCompositeSkill.References, retained)
+			}
+		}
+	}
+	return result
+}
+
 // WithExactCopyBytes changes one file in a derived resource and mirrors the
 // bytes into its declared origin tree. Use "." when the resource source is a
 // file, or a slash-separated path relative to a source directory.
@@ -479,6 +525,16 @@ func (f Fixture) clone() Fixture {
 		result.originFiles[origin] = make(map[string][]byte, len(files))
 		for path, data := range files {
 			result.originFiles[origin][path] = append([]byte(nil), data...)
+		}
+	}
+	return result
+}
+
+func retainResourceIdentities(identities []ResourceIdentity, retained map[string]bool) []ResourceIdentity {
+	result := make([]ResourceIdentity, 0, len(identities))
+	for _, identity := range identities {
+		if retained[identity.String()] {
+			result = append(result, identity)
 		}
 	}
 	return result

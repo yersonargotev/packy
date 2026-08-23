@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,10 +17,9 @@ import (
 type realCatalogExceptionCategory string
 
 const (
-	realCatalogPublicContract       realCatalogExceptionCategory = "public contract"
-	realCatalogGeneratedEvidence    realCatalogExceptionCategory = "generated catalog/docs/admission"
-	realCatalogIntegrationSmoke     realCatalogExceptionCategory = "one explicit integration smoke"
-	realCatalogLegacyLoaderIssue706 realCatalogExceptionCategory = "temporary legacy loader owned by #706"
+	realCatalogPublicContract    realCatalogExceptionCategory = "public contract"
+	realCatalogGeneratedEvidence realCatalogExceptionCategory = "generated catalog/docs/admission"
+	realCatalogIntegrationSmoke  realCatalogExceptionCategory = "one explicit integration smoke"
 )
 
 type realCatalogException struct {
@@ -40,6 +38,10 @@ var realCatalogTestExceptions = map[string]realCatalogException{
 	"internal/capabilitypack/pstack_pack_test.go:TestCheckedInPstackPackPreservesCompatibilityMatrix": {
 		category:      realCatalogPublicContract,
 		justification: "Protects pstack's checked-in 81-case resource-selection and three-surface compatibility matrix.",
+	},
+	"internal/capabilitypack/content_validation_test.go:TestCheckedInCurrentManifestsOmitRetiredContractTerms": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects every checked-in manifest against retired schema and capability terms.",
 	},
 	"internal/ci/issue672_engram_source_test.go:TestIssue672EngramPackUsesExactUpstreamSkill": {
 		category:      realCatalogGeneratedEvidence,
@@ -69,6 +71,34 @@ var realCatalogTestExceptions = map[string]realCatalogException{
 		category:      realCatalogGeneratedEvidence,
 		justification: "Protects diagnostic Addy qualification evidence when release validation fails.",
 	},
+	"internal/claudesmoke/addy_qualification_test.go:TestAddyQualificationCanonicalOutput": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects the canonical Addy qualification artifact emitted for release evidence.",
+	},
+	"internal/claudesmoke/addy_qualification_test.go:TestAddyQualificationProductionBoundary": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects the production boundary that binds real Addy qualification observations.",
+	},
+	"internal/claudesmoke/addy_qualification_test.go:TestAddyQualificationRejectsOneFactSafetyFailures": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects Addy qualification rejection when any required release-safety fact fails.",
+	},
+	"internal/claudesmoke/addy_qualification_test.go:TestBindAddyQualificationUsesInSandboxObservations": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects binding of sandboxed Addy lifecycle observations into qualification evidence.",
+	},
+	"internal/claudesmoke/addy_qualification_test.go:TestProductionAddyQualificationRejectsStaleCollection": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects production Addy qualification against stale collected release evidence.",
+	},
+	"internal/claudesmoke/release_evidence_test.go:TestValidateReleaseAddyQualificationMatrixRequiresOneSyntheticRun": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects the release evidence matrix combining real Addy qualification with its required synthetic run.",
+	},
+	"internal/claudesmoke/release_evidence_test.go:TestValidateReleaseEvidenceMatrixUsesCanonicalEvidence": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects canonical Addy qualification evidence in the complete release validation matrix.",
+	},
 	"internal/cli/claude_pack_tracer_test.go:TestClaudeMattyTracerActivatesStatusesAndDeactivatesInSandbox": {
 		category:      realCatalogIntegrationSmoke,
 		justification: "Runs the one end-to-end real-catalog smoke across Matty's Claude activation, status, update, and deactivation lifecycle.",
@@ -85,6 +115,10 @@ var realCatalogTestExceptions = map[string]realCatalogException{
 		category:      realCatalogGeneratedEvidence,
 		justification: "Protects the complete checked-in catalog's generated human list ordering, versions, descriptions, and surfaces.",
 	},
+	"internal/cli/issue683_pack_list_json_test.go:TestPackListJSONReportsValidatedCatalogInCanonicalOrder": {
+		category:      realCatalogGeneratedEvidence,
+		justification: "Protects the generated JSON catalog against the validated checked-in catalog and its canonical ordering.",
+	},
 	"internal/cli/pack_test.go:TestArgoteActivationPreviewIsApplicableOnEverySurface": {
 		category:      realCatalogPublicContract,
 		justification: "Protects Argote's reviewed all-surface activation and collision-free native projection contract.",
@@ -92,6 +126,10 @@ var realCatalogTestExceptions = map[string]realCatalogException{
 	"internal/cli/pack_test.go:TestArgoteCodexActivationSurvivesReceiptReloadAndCanBeDeactivated": {
 		category:      realCatalogPublicContract,
 		justification: "Protects Argote's checked-in Codex projection, receipt reload, status, and deactivation contract.",
+	},
+	"internal/cli/pack_test.go:TestPackListUsesOneCapturedWorkstationForSkillSource": {
+		category:      realCatalogPublicContract,
+		justification: "Protects repository Skill Source discovery and the single captured-workstation boundary while enumerating the checked-in catalog.",
 	},
 	"internal/cli/pack_test.go:TestCurrentMattyActivationProjectsSurfaceCapabilities": {
 		category:      realCatalogPublicContract,
@@ -184,8 +222,25 @@ type realCatalogFinding struct {
 }
 
 type realCatalogFunctionFacts struct {
-	direct []string
-	calls  []string
+	direct             []string
+	calls              []realCatalogCall
+	enumeratesCatalog  bool
+	repositoryRoot     bool
+	configuredBundle   bool
+	defaultWorkingTree bool
+	liveCatalogSource  bool
+}
+
+type realCatalogCall struct {
+	name         string
+	receiverType string
+	method       bool
+}
+
+type realCatalogFunction struct {
+	path  string
+	name  string
+	facts realCatalogFunctionFacts
 }
 
 func TestGenericTestsDoNotDependOnTheRealPackCatalog(t *testing.T) {
@@ -251,6 +306,51 @@ func TestUnrelatedLiteral(t *testing.T) { _ = "live-pack" }
 	}
 }
 
+func TestRealCatalogDependencyScannerFollowsPackageHelpersAndMethodsAndClassifiesLiveListOnly(t *testing.T) {
+	sources := map[string][]byte{
+		"sample/helpers_test.go": []byte(`package sample
+import "path/filepath"
+func crossFileManifest() string { return filepath.Join("bundle", "packs", "live-pack", "pack.json") }
+type fixture struct{}
+func (fixture) live() string { return filepath.Join("bundle", "packs", "live-pack", "pack.json") }
+func liveOptions(t *testing.T) Options {
+	repositoryRoot, _ := filepath.Abs(filepath.Join("..", ".."))
+	return Options{Getwd: func() (string, error) { return repositoryRoot, nil }}
+}
+func syntheticOptions(t *testing.T) Options {
+	bundleRoot := filepath.Join(t.TempDir(), "bundle")
+	return Options{Env: MapEnv{"PACKY_SKILLS_SOURCE": filepath.Join(bundleRoot, "skills")}}
+}`),
+		"sample/scenarios_test.go": []byte(`package sample
+func TestCrossFileHelper(t *testing.T) { _ = crossFileManifest() }
+func TestReceiverMethod(t *testing.T) { _ = fixture{}.live() }
+func TestLiveCatalogList(t *testing.T) { executeCommand(t, NewRootCommand(liveOptions(t)), "list") }
+func TestSyntheticCatalogList(t *testing.T) { executeCommand(t, NewRootCommand(syntheticOptions(t)), "list") }
+`),
+	}
+	inventory := realCatalogInventory{packIDs: map[string]struct{}{"live-pack": {}}, resourceAliases: map[realCatalogResourceAlias]struct{}{}}
+	findings, err := scanRealCatalogSources(sources, inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, finding := range findings {
+		got[finding.test] = true
+	}
+	for _, want := range []string{
+		"sample/scenarios_test.go:TestCrossFileHelper",
+		"sample/scenarios_test.go:TestReceiverMethod",
+		"sample/scenarios_test.go:TestLiveCatalogList",
+	} {
+		if !got[want] {
+			t.Errorf("missing finding for %s: %+v", want, findings)
+		}
+	}
+	if got["sample/scenarios_test.go:TestSyntheticCatalogList"] {
+		t.Fatalf("synthetic temporary catalog list was classified as live: %+v", findings)
+	}
+}
+
 func loadRealCatalogInventory(packsRoot string) (realCatalogInventory, error) {
 	inventory := realCatalogInventory{packIDs: map[string]struct{}{}, resourceAliases: map[realCatalogResourceAlias]struct{}{}}
 	entries, err := os.ReadDir(packsRoot)
@@ -294,8 +394,8 @@ func loadRealCatalogInventory(packsRoot string) (realCatalogInventory, error) {
 }
 
 func scanRealCatalogDependencies(repositoryRoot string, inventory realCatalogInventory) ([]realCatalogFinding, error) {
-	var findings []realCatalogFinding
-	err := filepath.WalkDir(repositoryRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+	sources := map[string][]byte{}
+	err := filepath.WalkDir(repositoryRoot, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -313,86 +413,243 @@ func scanRealCatalogDependencies(repositoryRoot string, inventory realCatalogInv
 		if err != nil {
 			return err
 		}
-		fileFindings, err := scanRealCatalogSource(filepath.ToSlash(relative), data, inventory)
-		if err != nil {
-			return err
-		}
-		findings = append(findings, fileFindings...)
+		sources[filepath.ToSlash(relative)] = data
 		return nil
 	})
-	return findings, err
+	if err != nil {
+		return nil, err
+	}
+	return scanRealCatalogSources(sources, inventory)
 }
 
 func scanRealCatalogSource(path string, source []byte, inventory realCatalogInventory) ([]realCatalogFinding, error) {
-	parsed, err := parser.ParseFile(token.NewFileSet(), path, source, 0)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	functions := map[string]realCatalogFunctionFacts{}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Body == nil || function.Recv != nil {
-			continue
+	return scanRealCatalogSources(map[string][]byte{path: source}, inventory)
+}
+
+func scanRealCatalogSources(sources map[string][]byte, inventory realCatalogInventory) ([]realCatalogFinding, error) {
+	packages := map[string]map[string]realCatalogFunction{}
+	for path, source := range sources {
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, source, 0)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
-		facts := realCatalogFunctionFacts{}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			if expression, ok := node.(ast.Expr); ok {
-				if detail := realCatalogPathDependency(expression, inventory.packIDs); detail != "" {
-					facts.direct = append(facts.direct, detail)
-				}
+		packageKey := filepath.ToSlash(filepath.Dir(path)) + ":" + parsed.Name.Name
+		functions := packages[packageKey]
+		if functions == nil {
+			functions = map[string]realCatalogFunction{}
+			packages[packageKey] = functions
+		}
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
 			}
-			switch node := node.(type) {
-			case *ast.CallExpr:
-				if name, ok := node.Fun.(*ast.Ident); ok {
-					facts.calls = append(facts.calls, name.Name)
-				}
-				if detail := realCatalogCLILifecycleDependency(node, inventory.packIDs); detail != "" {
-					facts.direct = append(facts.direct, detail)
-				}
-				if detail := realCatalogLookupDependency(node, inventory.packIDs); detail != "" {
-					facts.direct = append(facts.direct, detail)
-				}
-			case *ast.CompositeLit:
-				if detail := realCatalogCLILifecycleDependency(node, inventory.packIDs); detail != "" {
-					facts.direct = append(facts.direct, detail)
-				}
-				if detail := realCatalogTypedLifecycleDependency(node, inventory.packIDs); detail != "" {
-					facts.direct = append(facts.direct, detail)
-				}
-				if detail := realCatalogAliasDependency(node, inventory.resourceAliases); detail != "" {
-					facts.direct = append(facts.direct, detail)
-				}
+			key := "func:" + function.Name.Name
+			if receiver := declaredReceiverType(function); receiver != "" {
+				key = "method:" + receiver + "." + function.Name.Name
 			}
-			return true
-		})
-		functions[function.Name.Name] = facts
+			facts := inspectRealCatalogFunction(function, inventory)
+			functions[key] = realCatalogFunction{path: path, name: function.Name.Name, facts: facts}
+		}
 	}
 
 	var findings []realCatalogFinding
-	for name := range functions {
-		if !strings.HasPrefix(name, "Test") {
-			continue
-		}
-		details := collectRealCatalogFunctionDetails(name, functions, map[string]bool{})
-		for _, detail := range details {
-			findings = append(findings, realCatalogFinding{test: path + ":" + name, detail: detail})
+	for _, functions := range packages {
+		for key, function := range functions {
+			if !strings.HasPrefix(key, "func:Test") {
+				continue
+			}
+			facts := collectRealCatalogFunctionFacts(key, functions, map[string]bool{})
+			details := append([]string(nil), facts.direct...)
+			if facts.enumeratesCatalog && facts.liveCatalogSource {
+				details = append(details, "enumerates the checked-in Pack catalog through implicit discovery/list")
+			}
+			for _, detail := range uniqueStrings(details) {
+				findings = append(findings, realCatalogFinding{test: function.path + ":" + function.name, detail: detail})
+			}
 		}
 	}
 	return findings, nil
 }
 
-func collectRealCatalogFunctionDetails(name string, functions map[string]realCatalogFunctionFacts, visiting map[string]bool) []string {
-	if visiting[name] {
-		return nil
+func inspectRealCatalogFunction(function *ast.FuncDecl, inventory realCatalogInventory) realCatalogFunctionFacts {
+	facts := realCatalogFunctionFacts{}
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		if expression, ok := node.(ast.Expr); ok {
+			if detail := realCatalogPathDependency(expression, inventory.packIDs); detail != "" {
+				facts.direct = append(facts.direct, detail)
+			}
+		}
+		switch node := node.(type) {
+		case *ast.CallExpr:
+			if call, ok := realCatalogCallEdge(node); ok {
+				facts.calls = append(facts.calls, call)
+			}
+			facts.enumeratesCatalog = facts.enumeratesCatalog || realCatalogEnumerationCall(node)
+			facts.repositoryRoot = facts.repositoryRoot || realCatalogRepositoryRootCall(node)
+			facts.liveCatalogSource = facts.liveCatalogSource || realCatalogRepositoryBundleCall(node)
+			if detail := realCatalogCLILifecycleDependency(node, inventory.packIDs); detail != "" {
+				facts.direct = append(facts.direct, detail)
+			}
+			if detail := realCatalogLookupDependency(node, inventory.packIDs); detail != "" {
+				facts.direct = append(facts.direct, detail)
+			}
+		case *ast.CompositeLit:
+			strings := literalStrings(node)
+			facts.configuredBundle = facts.configuredBundle || containsLiteral(strings, "PACKY_SKILLS_SOURCE") && containsAdjacentLiterals(strings, "bundle", "skills")
+			facts.defaultWorkingTree = facts.defaultWorkingTree || keyedFieldPresent(node, "Getwd")
+			if detail := realCatalogCLILifecycleDependency(node, inventory.packIDs); detail != "" {
+				facts.direct = append(facts.direct, detail)
+			}
+			if detail := realCatalogTypedLifecycleDependency(node, inventory.packIDs); detail != "" {
+				facts.direct = append(facts.direct, detail)
+			}
+			if detail := realCatalogAliasDependency(node, inventory.resourceAliases); detail != "" {
+				facts.direct = append(facts.direct, detail)
+			}
+		}
+		return true
+	})
+	facts.liveCatalogSource = facts.liveCatalogSource || facts.repositoryRoot && (facts.configuredBundle || facts.defaultWorkingTree)
+	return facts
+}
+
+func collectRealCatalogFunctionFacts(key string, functions map[string]realCatalogFunction, visiting map[string]bool) realCatalogFunctionFacts {
+	if visiting[key] {
+		return realCatalogFunctionFacts{}
 	}
-	visiting[name] = true
-	facts := functions[name]
-	details := append([]string(nil), facts.direct...)
-	for _, call := range facts.calls {
-		details = append(details, collectRealCatalogFunctionDetails(call, functions, visiting)...)
+	function, ok := functions[key]
+	if !ok {
+		return realCatalogFunctionFacts{}
 	}
-	delete(visiting, name)
-	return uniqueStrings(details)
+	visiting[key] = true
+	result := function.facts
+	for _, call := range function.facts.calls {
+		keys := []string{"func:" + call.name}
+		if call.method {
+			keys = nil
+			if call.receiverType != "" {
+				keys = append(keys, "method:"+call.receiverType+"."+call.name)
+			} else {
+				for candidate := range functions {
+					if strings.HasPrefix(candidate, "method:") && strings.HasSuffix(candidate, "."+call.name) {
+						keys = append(keys, candidate)
+					}
+				}
+			}
+		}
+		for _, calledKey := range keys {
+			called := collectRealCatalogFunctionFacts(calledKey, functions, visiting)
+			result.direct = append(result.direct, called.direct...)
+			result.enumeratesCatalog = result.enumeratesCatalog || called.enumeratesCatalog
+			result.liveCatalogSource = result.liveCatalogSource || called.liveCatalogSource
+		}
+	}
+	delete(visiting, key)
+	result.direct = uniqueStrings(result.direct)
+	return result
+}
+
+func realCatalogCallEdge(call *ast.CallExpr) (realCatalogCall, bool) {
+	switch function := call.Fun.(type) {
+	case *ast.Ident:
+		return realCatalogCall{name: function.Name}, true
+	case *ast.SelectorExpr:
+		return realCatalogCall{name: function.Sel.Name, receiverType: receiverExpressionType(function.X), method: true}, true
+	default:
+		return realCatalogCall{}, false
+	}
+}
+
+func declaredReceiverType(function *ast.FuncDecl) string {
+	if function.Recv == nil || len(function.Recv.List) != 1 {
+		return ""
+	}
+	return receiverExpressionType(function.Recv.List[0].Type)
+}
+
+func receiverExpressionType(expression ast.Expr) string {
+	switch expression := expression.(type) {
+	case *ast.Ident:
+		return expression.Name
+	case *ast.StarExpr:
+		return receiverExpressionType(expression.X)
+	case *ast.ParenExpr:
+		return receiverExpressionType(expression.X)
+	case *ast.CompositeLit:
+		return expressionName(expression.Type)
+	case *ast.UnaryExpr:
+		return receiverExpressionType(expression.X)
+	default:
+		return ""
+	}
+}
+
+func realCatalogEnumerationCall(call *ast.CallExpr) bool {
+	name := expressionName(call.Fun)
+	if name == "Discover" || name == "ListCurrent" {
+		return true
+	}
+	if name != "executeCommand" {
+		return false
+	}
+	values := literalStrings(call)
+	for index, value := range values {
+		if value != "list" {
+			continue
+		}
+		if index > 0 && values[index-1] == "pack" || index+1 < len(values) && values[index+1] == "--help" {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func realCatalogRepositoryRootCall(call *ast.CallExpr) bool {
+	return expressionName(call.Fun) == "Abs" && containsAdjacentLiterals(literalStrings(call), "..", "..")
+}
+
+func realCatalogRepositoryBundleCall(call *ast.CallExpr) bool {
+	values := literalStrings(call)
+	for index := 0; index+2 < len(values); index++ {
+		if values[index] == ".." && values[index+1] == ".." && values[index+2] == "bundle" {
+			return true
+		}
+	}
+	return false
+}
+
+func keyedFieldPresent(literal *ast.CompositeLit, field string) bool {
+	for _, element := range literal.Elts {
+		keyValue, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := keyValue.Key.(*ast.Ident)
+		if ok && key.Name == field {
+			return true
+		}
+	}
+	return false
+}
+
+func containsLiteral(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAdjacentLiterals(values []string, first, second string) bool {
+	for index := 0; index+1 < len(values); index++ {
+		if values[index] == first && values[index+1] == second {
+			return true
+		}
+	}
+	return false
 }
 
 func realCatalogPathDependency(node ast.Node, packIDs map[string]struct{}) string {
@@ -538,7 +795,7 @@ func expressionName(expression ast.Expr) string {
 func validateRealCatalogExceptions(t *testing.T, findings []realCatalogFinding) {
 	t.Helper()
 	allowedCategories := map[realCatalogExceptionCategory]struct{}{
-		realCatalogPublicContract: {}, realCatalogGeneratedEvidence: {}, realCatalogIntegrationSmoke: {}, realCatalogLegacyLoaderIssue706: {},
+		realCatalogPublicContract: {}, realCatalogGeneratedEvidence: {}, realCatalogIntegrationSmoke: {},
 	}
 	foundTests := map[string]struct{}{}
 	for _, finding := range findings {
