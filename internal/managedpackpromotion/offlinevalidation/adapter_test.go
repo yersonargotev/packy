@@ -2,6 +2,7 @@ package offlinevalidation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -38,6 +39,40 @@ func TestAdapterValidateRunsTheProductionWorkerWithNetworkDenied(t *testing.T) {
 	}
 	if preflight.Validation.Manifest.ID != "example" || preflight.Validation.Manifest.Version != "1.0.0" || preflight.Validation.ClosureSHA256 == "" || preflight.RuntimeManifestSHA256 == "" || preflight.Fitness.RowCount != 6 || preflight.Fitness.SHA256 == "" {
 		t.Fatalf("preflight = %#v", preflight)
+	}
+}
+
+func TestAdapterValidatePreservesMaterializableManifestAcrossWorkerProtocol(t *testing.T) {
+	acquisition := writeAcquisitionFixture(t)
+	manifestPath := filepath.Join(acquisition.ProjectRoot, "pack.json")
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	resources := manifest["resources"].([]any)
+	resources[0].(map[string]any)["notices"] = []any{}
+	manifestData, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, append(manifestData, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	preflight, err := New(executable).Validate(context.Background(), acquisition)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if err := managedpack.MaterializeClosure(context.Background(), acquisition.ProjectRoot, t.TempDir(), preflight.Validation); err != nil {
+		t.Fatalf("MaterializeClosure() after worker protocol = %v", err)
 	}
 }
 

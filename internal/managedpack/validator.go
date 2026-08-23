@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -337,7 +336,11 @@ func MaterializeClosure(ctx context.Context, projectRoot, destinationRoot string
 				return fmt.Errorf("materialize source %q: %w", record.Path, err)
 			}
 			manifest, err := decodeManifest(manifestData)
-			if err != nil || !reflect.DeepEqual(manifest, validation.Manifest) {
+			matches := false
+			if err == nil {
+				matches, err = equalManifestWireValues(manifest, validation.Manifest)
+			}
+			if err != nil || !matches {
 				return fmt.Errorf("materialize source pack.json drifted from validated manifest")
 			}
 		}
@@ -356,6 +359,20 @@ func MaterializeClosure(ctx context.Context, projectRoot, destinationRoot string
 		}
 	}
 	return nil
+}
+
+// equalManifestWireValues compares the public JSON representation so an
+// optional empty collection remains equivalent after a protocol round trip.
+func equalManifestWireValues(left, right Manifest) (bool, error) {
+	leftData, err := json.Marshal(left)
+	if err != nil {
+		return false, err
+	}
+	rightData, err := json.Marshal(right)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(leftData, rightData), nil
 }
 
 func validateMaterialization(validation Validation) error {
