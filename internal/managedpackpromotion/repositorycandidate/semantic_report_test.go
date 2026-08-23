@@ -500,15 +500,19 @@ func TestSemanticReportEscapesFreeFormMarkdownValues(t *testing.T) {
 	}
 }
 
-func TestMarkdownCodePadsBoundaryBackticks(t *testing.T) {
+func TestMarkdownCodePreservesBoundaryValues(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		value string
 		want  string
 	}{
+		{name: "empty", value: "", want: "`\"\"`"},
 		{name: "leading", value: "`@maintainer", want: "`` `@maintainer ``"},
 		{name: "trailing", value: "@maintainer`", want: "`` @maintainer` ``"},
 		{name: "both", value: "`@maintainer`", want: "`` `@maintainer` ``"},
+		{name: "boundary spaces", value: " @maintainer ", want: "`  @maintainer  `"},
+		{name: "spaces and backticks", value: " `@maintainer` ", want: "``  `@maintainer`  ``"},
+		{name: "only spaces", value: " ", want: "` `"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := markdownCode(test.value); got != test.want {

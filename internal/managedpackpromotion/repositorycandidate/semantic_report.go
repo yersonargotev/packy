@@ -616,6 +616,9 @@ func canonicalJSON(value any) string {
 
 func markdownCode(value string) string {
 	escaped := strings.NewReplacer("\r", "\\r", "\n", "\\n", "\t", "\\t").Replace(value)
+	if escaped == "" {
+		return "`\"\"`"
+	}
 	longest := 0
 	for _, run := range strings.FieldsFunc(escaped, func(value rune) bool { return value != '`' }) {
 		if len(run) > longest {
@@ -623,7 +626,8 @@ func markdownCode(value string) string {
 		}
 	}
 	delimiter := strings.Repeat("`", longest+1)
-	if strings.HasPrefix(escaped, "`") || strings.HasSuffix(escaped, "`") {
+	boundarySpaces := strings.HasPrefix(escaped, " ") && strings.HasSuffix(escaped, " ") && strings.Trim(escaped, " ") != ""
+	if strings.HasPrefix(escaped, "`") || strings.HasSuffix(escaped, "`") || boundarySpaces {
 		escaped = " " + escaped + " "
 	}
 	return delimiter + escaped + delimiter
