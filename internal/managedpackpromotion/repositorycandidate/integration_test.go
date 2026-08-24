@@ -18,8 +18,8 @@ import (
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubacquisition"
+	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubsource"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/offlinevalidation"
-	"github.com/yersonargotev/packy/internal/packsync"
 )
 
 func TestPromotionModuleComposesRepresentativeManagedPackFixtures(t *testing.T) {
@@ -178,8 +178,8 @@ type composedFixture struct {
 	projectTree       composedTree
 	baseTree          composedTree
 	mutationPath      string
-	release           packsync.Release
-	releaseCandidate  packsync.Candidate
+	release           githubsource.Release
+	releaseCandidate  githubsource.Candidate
 	originFixtures    map[string]composedOriginFixture
 	wantValidation    managedpack.Validation
 	projectTreeBefore composedTree
@@ -275,11 +275,11 @@ func newComposedFixture(t *testing.T, name string) composedFixture {
 	project := "fixture/" + name
 	tag := "pack-v" + candidateVersion
 	published := time.Unix(1_700_000_000, 0).UTC()
-	release := packsync.Release{
-		ID: int64(1000 + len(name)), Tag: tag, Name: tag, Target: commitSHA,
-		Immutable: true, CreatedAt: published, PublishedAt: published,
+	release := githubsource.Release{
+		ID: int64(1000 + len(name)), Tag: tag,
+		Immutable: true, PublishedAt: published,
 	}
-	releaseCandidate := packsync.Candidate{
+	releaseCandidate := githubsource.Candidate{
 		Repository: project, RepositoryID: int64(2000 + len(name)), Public: true,
 		Release: &release, TagRefName: "refs/tags/" + tag, TagRefType: "commit",
 		TagRefSHA: commitSHA, Commit: commitSHA, Tree: treeSHA,
@@ -390,11 +390,11 @@ func newComposedUpdateFixture(t *testing.T, previous composedFixture, admittedTr
 	commitSHA, treeSHA := composedGitIdentity(t, projectTree)
 	tag := "pack-v" + candidateVersion
 	published := time.Unix(1_700_000_100, 0).UTC()
-	release := packsync.Release{
-		ID: previous.release.ID + 1, Tag: tag, Name: tag, Target: commitSHA,
-		Immutable: true, CreatedAt: published, PublishedAt: published,
+	release := githubsource.Release{
+		ID: previous.release.ID + 1, Tag: tag,
+		Immutable: true, PublishedAt: published,
 	}
-	releaseCandidate := packsync.Candidate{
+	releaseCandidate := githubsource.Candidate{
 		Repository: previous.project, RepositoryID: previous.releaseCandidate.RepositoryID, Public: true,
 		Release: &release, TagRefName: "refs/tags/" + tag, TagRefType: "commit",
 		TagRefSHA: commitSHA, Commit: commitSHA, Tree: treeSHA,
@@ -413,7 +413,7 @@ type composedOriginFixture struct {
 	origin    managedpack.Origin
 	root      string
 	tree      composedTree
-	candidate packsync.Candidate
+	candidate githubsource.Candidate
 }
 
 type composedOriginResolver map[string]composedOriginFixture
@@ -437,7 +437,7 @@ func newComposedOriginFixtures(t *testing.T, projectRoot string) map[string]comp
 		fixtures[origin.ID] = composedOriginFixture{
 			origin: origin,
 			root:   t.TempDir(),
-			candidate: packsync.Candidate{
+			candidate: githubsource.Candidate{
 				Repository: origin.Repository, RepositoryID: int64(3000 + index), Public: true, Commit: origin.Commit,
 			},
 		}
@@ -475,34 +475,31 @@ func newComposedSource(t *testing.T, fixture composedFixture) *composedSource {
 	return &composedSource{t: t, fixture: fixture}
 }
 
-func (source *composedSource) Releases(_ context.Context, config packsync.SourceConfig) ([]packsync.Release, error) {
-	if config.Provider != "github" || config.Repository != source.fixture.project {
-		source.t.Fatalf("release config = %#v", config)
+func (source *composedSource) Releases(_ context.Context, repository string) ([]githubsource.Release, error) {
+	if repository != source.fixture.project {
+		source.t.Fatalf("release repository = %q", repository)
 	}
-	return []packsync.Release{source.fixture.release}, nil
+	return []githubsource.Release{source.fixture.release}, nil
 }
 
-func (source *composedSource) ResolveRelease(_ context.Context, config packsync.SourceConfig, release packsync.Release) (packsync.Candidate, error) {
-	if config.Repository != source.fixture.project || !reflect.DeepEqual(release, source.fixture.release) {
-		source.t.Fatalf("resolved release = %#v for %#v", release, config)
+func (source *composedSource) ResolveRelease(_ context.Context, repository string, release githubsource.Release) (githubsource.Candidate, error) {
+	if repository != source.fixture.project || !reflect.DeepEqual(release, source.fixture.release) {
+		source.t.Fatalf("resolved release = %#v for %q", release, repository)
 	}
 	return source.fixture.releaseCandidate, nil
 }
 
-func (source *composedSource) ResolveCommit(_ context.Context, config packsync.SourceConfig, commit string) (packsync.Candidate, error) {
+func (source *composedSource) ResolveCommit(_ context.Context, repository, commit string) (githubsource.Candidate, error) {
 	for _, fixture := range source.fixture.originFixtures {
-		if fixture.origin.Commit != commit || fixture.origin.Repository != config.Repository {
+		if fixture.origin.Commit != commit || fixture.origin.Repository != repository {
 			continue
-		}
-		if config.Provider != "github" {
-			source.t.Fatalf("origin commit config = %#v, want GitHub", config)
 		}
 		return fixture.candidate, nil
 	}
-	return packsync.Candidate{}, fmt.Errorf("unexpected origin commit resolution for %s at %q", config.Repository, commit)
+	return githubsource.Candidate{}, fmt.Errorf("unexpected origin commit resolution for %s at %q", repository, commit)
 }
 
-func (source *composedSource) WithGitTreeSnapshot(ctx context.Context, candidate packsync.Candidate, temporaryRoot string, visit func(string) error) error {
+func (source *composedSource) WithGitTreeSnapshot(ctx context.Context, candidate githubsource.Candidate, temporaryRoot string, visit func(string) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
