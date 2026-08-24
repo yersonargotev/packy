@@ -200,13 +200,11 @@ func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) Re
 	if err != nil {
 		return ResourceGraph{Resources: []ResourceClosureFact{}}
 	}
-	chains := map[string][]ResourceIdentity{}
-	ordered := pack.Resources
 	roots, err := resourceSelectionRoots(pack, selection)
 	if err != nil {
 		return ResourceGraph{Resources: []ResourceClosureFact{}}
 	}
-	ordered, chains, err = resolveResourceClosure(pack, roots)
+	ordered, chains, err := resolveResourceClosure(pack, roots)
 	if err != nil {
 		return ResourceGraph{Resources: []ResourceClosureFact{}}
 	}
