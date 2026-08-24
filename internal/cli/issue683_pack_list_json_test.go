@@ -97,6 +97,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 	addyVersion := checkedInPackVersion(t, "addy")
 	argoteVersion := checkedInPackVersion(t, "argote")
 	engramVersion := checkedInPackVersion(t, "engram")
+	issueDeliveryVersion := checkedInPackVersion(t, "issue-delivery")
 	mattyVersion := checkedInMattyFacts(t).Version
 	orchestrateVersion := checkedInPackVersion(t, "orchestrate")
 	pstackVersion := checkedInPackVersion(t, "pstack")
@@ -109,7 +110,7 @@ func TestPackListHumanOutputRemainsUnchanged(t *testing.T) {
 		fmt.Sprintf("addy            %-7s  Addy agent skills                                                      claude, codex, opencode\n", addyVersion) +
 		fmt.Sprintf("argote          %-7s  Yerson Argote's engineering and communication guidance                 claude, codex, opencode\n", argoteVersion) +
 		fmt.Sprintf("engram          %-7s  Upstream Engram CLI memory workflows for agent work                    codex\n", engramVersion) +
-		"issue-delivery  1.1.1    Deliver issues through policy-driven or Matt-configured workflows      codex\n" +
+		fmt.Sprintf("issue-delivery  %-7s  Deliver issues through policy-driven or Matt-configured workflows      codex\n", issueDeliveryVersion) +
 		fmt.Sprintf("matty           %-7s  Matty workflow                                                         claude, codex, opencode\n", mattyVersion) +
 		fmt.Sprintf("orchestrate     %-7s  Coordinate focused Codex subagents                                     codex\n", orchestrateVersion) +
 		fmt.Sprintf("pstack          %-7s  Apply pstack's reviewed portable engineering workflows and principles  claude, codex, opencode\n", pstackVersion)

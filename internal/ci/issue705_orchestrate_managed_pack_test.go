@@ -184,7 +184,19 @@ func assertRemainingLegacySourcesAreClosed(t *testing.T, root string, sources []
 				continue
 			}
 			if pack.SourceReference == nil {
-				t.Errorf("source %s consumer %s lacks source_reference", source.ID, resource.PackID)
+				if source.ID != "issue-delivery-source" || resource.PackID != "issue-delivery" {
+					t.Errorf("source %s consumer %s lacks source_reference", source.ID, resource.PackID)
+					continue
+				}
+				recordPath := filepath.Join(root, "managed-packs", "admissions", pack.ID, pack.Version+".json")
+				record, err := managedpack.LoadAdmissionRecord(recordPath)
+				if err != nil {
+					t.Errorf("source %s consumer %s has neither source_reference nor current admission: %v", source.ID, resource.PackID, err)
+					continue
+				}
+				if record.PackID != pack.ID || record.PackVersion != pack.Version {
+					t.Errorf("source %s consumer %s admission identity = %s@%s", source.ID, resource.PackID, record.PackID, record.PackVersion)
+				}
 			}
 		}
 	}
