@@ -3,7 +3,6 @@ package ci_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -121,43 +120,4 @@ func currentManagedPackFile(t *testing.T, path, relative string) managedpack.Fil
 	}
 	digest := sha256.Sum256(data)
 	return managedpack.FileRecord{Path: relative, Mode: fmt.Sprintf("100%03o", info.Mode().Perm()), SHA256: hex.EncodeToString(digest[:])}
-}
-
-func TestIssue703EngramLegacyAuthorityIsAbsent(t *testing.T) {
-	root := repositoryRoot(t)
-	for _, relative := range []string{
-		"bundle/history/engram",
-		"bundle/sources/engram-source.lock.json",
-		"docs/research/evidence/engram-2.0.0-legal-admission.json",
-	} {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative))); !os.IsNotExist(err) {
-			t.Errorf("legacy Engram authority remains at %s: %v", relative, err)
-		}
-	}
-
-	var configuration struct {
-		Sources []struct {
-			ID        string `json:"id"`
-			Resources []struct {
-				PackID string `json:"pack_id"`
-			} `json:"resources"`
-		} `json:"sources"`
-	}
-	data, err := os.ReadFile(filepath.Join(root, "bundle", "sources.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &configuration); err != nil {
-		t.Fatal(err)
-	}
-	for _, source := range configuration.Sources {
-		if source.ID == "engram-source" {
-			t.Errorf("legacy Engram source registration remains: %#v", source)
-		}
-		for _, resource := range source.Resources {
-			if resource.PackID == "engram" {
-				t.Errorf("legacy Engram source binding remains in %s", source.ID)
-			}
-		}
-	}
 }

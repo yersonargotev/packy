@@ -97,10 +97,29 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"primary-source evidence", "Cockburn's original ports-and-adapters", "`True`,",
 		"GitHub App manifest", "does not define additional Pack behavior or contracts",
 	})
-	requireDocumentationText(t, root, "bundle/pack-template/README.md", []string{
-		"Copy this directory", "one `pack.json`", "maintainer-selected SemVer", "reviewed content",
-		"./scripts/validate-pack-content.sh <pack-id>",
+	requireDocumentationText(t, root, "docs/capability-packs.md", []string{
+		"Managed Pack Project", "complete authoring contract", "pack-v<version>",
+		"Promotion independently", "reacquires, validates, and admits",
 	})
+	requireDocumentationText(t, root, "docs/managed-pack-projects.md", []string{
+		"one public repository that authors exactly one Pack", "root `pack.json`",
+		"reusable workflow", "Managed Pack Promotion",
+	})
+	requireDocumentationText(t, root, "README.md", []string{
+		"Managed Pack Project", "root schema v1", "preventive validation", "pack-v<version>",
+	})
+	for _, path := range []string{"CONTEXT.md", "README.md", "docs/capability-packs.md", "docs/managed-pack-projects.md", "docs/release-notes/next.md"} {
+		requireDocumentationDoesNotContain(t, root, path, []string{
+			"Pack Source", "single-source Pack admission", "Composite Pack Source Bundle", "pack-template",
+		})
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "bundle", "pack-template"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("retired in-bundle Pack template contains %d entries", len(entries))
+	}
 	requireDocumentationText(t, root, "docs/release.md", []string{
 		"version tag", "Darwin", "Linux", "SHA256SUMS", "GitHub Release", "Homebrew formula", "newer version",
 	})
@@ -163,6 +182,16 @@ func requireDocumentationText(t *testing.T, root, path string, required []string
 	for _, want := range required {
 		if !strings.Contains(text, want) {
 			t.Errorf("%s missing current documentation contract text %q", path, want)
+		}
+	}
+}
+
+func requireDocumentationDoesNotContain(t *testing.T, root, path string, forbidden []string) {
+	t.Helper()
+	text := readFile(t, filepath.Join(root, filepath.FromSlash(path)))
+	for _, unwanted := range forbidden {
+		if strings.Contains(text, unwanted) {
+			t.Errorf("%s contains retired current documentation text %q", path, unwanted)
 		}
 	}
 }

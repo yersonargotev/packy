@@ -74,14 +74,6 @@ and content digests, and is not part of the end-user bundle.
 Packy's private operation that validates one registered immutable Managed Pack
 release and returns no change, a typed rejection, or one protected proposal.
 
-### Pack Source
-
-One upstream provenance declaration for selected Pack resources and legal
-notices. Its configuration identifies a stable release, while its lock records
-the exact selected content used to reproduce and review a bundle generation.
-It is the legacy catalog-maintenance model retained only until every current
-Pack migrates to a Managed Pack Project.
-
 ### Pack resource
 
 One host-independent capability contributed by a Pack. A surface adapter turns
@@ -170,24 +162,13 @@ a non-zero status after the complete report is emitted.
 An attempted operation in which distinct Pack resources target the same path.
 It fails before mutation, even when the proposed bytes match.
 
-### Pack authoring workflow
+### Managed Pack authoring workflow
 
-Copy the standard Pack template when needed, add or edit reviewed content,
-update the one manifest and maintainer-selected SemVer, then run the focused
-validator for that Pack.
-
-### Single-source Pack admission
-
-The atomic initial transition that creates one previously absent Pack and its
-one Pack Source as a complete bundle generation. It admits the source and
-selected content, legal notice, Pack manifest, catalog entry, and initial
-history together or publishes none of them.
-
-### Composite Pack Source Bundle
-
-The two-or-more-source unit used to admit a previously absent Pack whose
-initial provenance spans multiple Pack Sources. It is distinct from
-single-source Pack admission.
+Author exactly one Pack in its public Managed Pack Project: maintain the root
+schema v1 `pack.json`, its final bundle-relative reviewed resources, and any
+immutable external origins. Run preventive validation, publish an immutable
+`pack-v<version>` release, then let Packy promote that registered release into
+the reviewed catalog.
 
 ### External requirement
 

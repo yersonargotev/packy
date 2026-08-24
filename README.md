@@ -141,10 +141,13 @@ configuration. Tests and manual verification must sandbox `HOME` and
 
 ## Pack authoring
 
-To add a Pack, copy [the Pack template](bundle/pack-template/README.md), edit
-its reviewed content and one manifest, choose the Pack SemVer, and run the
-focused validator. Full authoring details are in
-[Capability Packs](docs/capability-packs.md).
+To add or update a Pack, author it in its public [Managed Pack Project](docs/managed-pack-projects.md):
+maintain the root schema v1 `pack.json`, reviewed bundle-relative resources,
+and immutable origins; run
+preventive validation; and publish an immutable `pack-v<version>` release.
+Packy then independently validates and promotes the registered release into
+the bundled catalog. Full lifecycle details are in [Capability
+Packs](docs/capability-packs.md).
 
 ## Verification
 

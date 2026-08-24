@@ -53,8 +53,8 @@ adds the pstack Pack, and updates the bundled Matty and Engram Packs.
 - The reviewed Issue Delivery Pack advances to `1.1.2` through the public
   `yersonargotev/issue-deliver-pack` Managed Pack Project release
   `pack-v1.1.2`, preserving its three Codex skills and Packy integration and
-  dependency behavior while replacing legacy source, history, legal, and
-  compatibility authority with its Pack Admission Record.
+  dependency behavior while recording its immutable project and origin
+  provenance in its Pack Admission Record.
 - Managed Pack preventive validation now materializes and runtime-loads the
   exact sealed bundle before publication, checks every supported
   surface/selection row, and reports actionable content-free exact-copy drift.
