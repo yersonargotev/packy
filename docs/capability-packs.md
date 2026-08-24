@@ -75,8 +75,8 @@ drift report; its authority is limited to paths in the targeted receipt.
 ## Authoring and promoting one Pack
 
 Every Pack is authored in exactly one public, maintainer-controlled [Managed Pack Project](managed-pack-projects.md).
-Its root schema v1 `pack.json` and declared bundle-relative resource roots are
-the complete authoring contract;
+Each project owns one `pack.json` manifest using schema v1, and its declared
+bundle-relative resource roots form the complete authoring contract;
 the bundled catalog is not an authoring location.
 
 1. Create or update the Managed Pack Project's reviewed resources and root

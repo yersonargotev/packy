@@ -28,7 +28,7 @@ func TestRunValidatesOneNamedPack(t *testing.T) {
 	if err := os.MkdirAll(packDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	invalid := `{"id":"not argote","version":"1.0.0","description":"Argote","selectable":true,"surfaces":["codex"],"external_requirements":[],"resources":[],"exclusions":[]}`
+	invalid := `{"schema_version":1,"id":"not argote","version":"1.0.0","description":"Argote","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[]}`
 	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(invalid), 0o600); err != nil {
 		t.Fatal(err)
 	}
