@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 10
+const LifecycleJSONSchemaVersion = 11
 
 type ResourceRole string
 
@@ -90,17 +90,15 @@ type LifecycleContract struct {
 	SelectionValidity     SelectionValidity    `json:"selection_validity"`
 }
 
-// LifecycleExclusion is the rendered union of portable source exclusions and
-// v3 surface outcomes. Surface exclusions retain the resource and stable code
-// that explain compatibility without being mistaken for runtime projections.
+// LifecycleExclusion reports one current Managed Pack surface outcome that
+// explains compatibility without being mistaken for a runtime projection.
 type LifecycleExclusion struct {
-	ID           string   `json:"id"`
-	ResourceKind string   `json:"resource_kind,omitempty"`
-	Surface      Surface  `json:"surface,omitempty"`
-	Mode         string   `json:"mode,omitempty"`
-	Code         string   `json:"code,omitempty"`
-	SourcePaths  []string `json:"source_paths"`
-	Reason       string   `json:"reason"`
+	ID           string  `json:"id"`
+	ResourceKind string  `json:"resource_kind,omitempty"`
+	Surface      Surface `json:"surface,omitempty"`
+	Mode         string  `json:"mode,omitempty"`
+	Code         string  `json:"code,omitempty"`
+	Reason       string  `json:"reason"`
 }
 
 type Compatibility string
@@ -127,15 +125,12 @@ type LifecycleBinding struct {
 // surface. Every slice is allocated so JSON preserves [] rather than null.
 func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) LifecycleContract {
 	contract := LifecycleContract{
-		Compatibility: compatibilityFor(pack, surface), CompatibilityObserved: pack.manifestVersion >= manifestSchemaV3,
+		Compatibility: compatibilityFor(pack, surface), CompatibilityObserved: true,
 		Counts: pack.ResourceCounts(), DependencyClosure: []string{}, Bindings: []LifecycleBinding{},
 		Exclusions: []LifecycleExclusion{}, OptionalModes: []OptionalMode{}, PromptAuthorities: []string{}, Aliases: []SurfaceAlias{},
 		AuthorityDisclosure: "Activation grants only the sealed local projection actions; later workflow effects require host approval.",
 		ResourceGraph:       resourceGraphForSurface(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, surface, true),
 		SelectionValidity:   SelectionValidityFor(pack, surface),
-	}
-	if !contract.CompatibilityObserved {
-		contract.Compatibility = ""
 	}
 	authorities := []string{}
 	for _, resource := range pack.Resources {
@@ -165,18 +160,12 @@ func LifecycleContractFor(pack Pack, surface Surface, aliases []SurfaceAlias) Li
 		return a.Name < b.Name
 	})
 	contract.PromptAuthorities = sortedUnique(authorities)
-	for _, exclusion := range pack.Contract.Exclusions {
-		contract.Exclusions = append(contract.Exclusions, LifecycleExclusion{ID: exclusion.ID, SourcePaths: sortedUnique(exclusion.SourcePaths), Reason: exclusion.Reason})
-	}
 	for _, resource := range pack.Resources {
 		for _, exclusion := range resource.SurfaceExclusions {
 			if exclusion.Surface == surface {
-				contract.Exclusions = append(contract.Exclusions, LifecycleExclusion{ID: resource.Kind + ":" + resource.ID, ResourceKind: resource.Kind, Surface: surface, Mode: exclusion.Mode, Code: exclusion.Code, SourcePaths: []string{}, Reason: exclusion.Reason})
+				contract.Exclusions = append(contract.Exclusions, LifecycleExclusion{ID: resource.Kind + ":" + resource.ID, ResourceKind: resource.Kind, Surface: surface, Mode: exclusion.Mode, Code: exclusion.Code, Reason: exclusion.Reason})
 			}
 		}
-	}
-	for i := range contract.Exclusions {
-		contract.Exclusions[i].SourcePaths = sortedUnique(contract.Exclusions[i].SourcePaths)
 	}
 	sort.Slice(contract.Exclusions, func(i, j int) bool {
 		if contract.Exclusions[i].ID != contract.Exclusions[j].ID {
@@ -213,20 +202,13 @@ func ResourceGraphFor(pack Pack, selection ResourceSelection, inventory bool) Re
 	}
 	chains := map[string][]ResourceIdentity{}
 	ordered := pack.Resources
-	if selection.Mode == SelectionAll && pack.manifestVersion != manifestSchemaV4 {
-		for _, resource := range pack.Resources {
-			identity := ResourceIdentity{Kind: resource.Kind, ID: resource.ID}
-			chains[identity.String()] = []ResourceIdentity{identity}
-		}
-	} else {
-		roots, err := resourceSelectionRoots(pack, selection)
-		if err != nil {
-			return ResourceGraph{Resources: []ResourceClosureFact{}}
-		}
-		ordered, chains, err = resolveResourceClosure(pack, roots)
-		if err != nil {
-			return ResourceGraph{Resources: []ResourceClosureFact{}}
-		}
+	roots, err := resourceSelectionRoots(pack, selection)
+	if err != nil {
+		return ResourceGraph{Resources: []ResourceClosureFact{}}
+	}
+	ordered, chains, err = resolveResourceClosure(pack, roots)
+	if err != nil {
+		return ResourceGraph{Resources: []ResourceClosureFact{}}
 	}
 	source := ordered
 	if inventory {
@@ -482,9 +464,6 @@ func identityChainLess(a, b []ResourceIdentity) bool {
 }
 
 func compatibilityFor(pack Pack, surface Surface) Compatibility {
-	if pack.manifestVersion < manifestSchemaV3 {
-		return CompatibilityComplete
-	}
 	result := CompatibilityComplete
 	resources := make(map[string]Resource, len(pack.Resources))
 	included := make(map[string]bool, len(pack.Resources))

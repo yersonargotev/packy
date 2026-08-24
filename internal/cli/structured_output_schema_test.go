@@ -21,10 +21,10 @@ var structuredOutputFixtures = []struct {
 	{"v1", "pack-list.json", "pack-list.schema.json"},
 	{"v3", "doctor.json", "doctor.schema.json"},
 	{"v5", "pack-show.json", "pack-show.schema.json"},
-	{"v10", "pack-status.json", "pack-status.schema.json"},
-	{"v10", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
-	{"v10", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
-	{"v10", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
+	{"v11", "pack-status.json", "pack-status.schema.json"},
+	{"v11", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
+	{"v11", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
+	{"v11", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
 }
 
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
@@ -184,7 +184,7 @@ func TestPackAuditSchemaRejectsWrongVersionAndUnknownFields(t *testing.T) {
 
 func TestPackStatusSchemaAcceptsUnobservableExternalRequirementReason(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v10", "pack-status.json"))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v11", "pack-status.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestPackStatusSchemaAcceptsUnobservableExternalRequirementReason(t *testing
 
 func TestPackLifecycleSchemaRejectsIncompleteReadinessCondition(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v10", "pack-lifecycle-preview.json"))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v11", "pack-lifecycle-preview.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,12 +399,6 @@ func validateCanonicalOperatorOrder(instance []byte) error {
 		}
 		for _, check := range checks {
 			if err := requireOrdered(name+"."+check.suffix, check.values, check.key); err != nil {
-				return err
-			}
-		}
-		for _, value := range contract["exclusions"].([]any) {
-			exclusion := value.(map[string]any)
-			if err := requireStrings(name+".exclusions.source_paths", exclusion["source_paths"].([]any)); err != nil {
 				return err
 			}
 		}

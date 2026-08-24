@@ -38,7 +38,7 @@ func TestIssue518FailedApplicationDoesNotReplaceInstalledReceipt(t *testing.T) {
 		Action: ProjectionAction{ID: "instruction:guide", Target: target, Content: "new", Description: "write guide", AdapterProvenance: "test-adapter/v1"},
 	}}}
 	adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{observation, observation}, applyErr: errors.New("disk full")}
-	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
+	pack := Pack{ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
 	facade := NewFacade(Catalog{packs: []Pack{pack}}, WithActivation(store, map[Surface]SurfaceAdapter{SurfaceCodex: adapter}))
 	plan, err := facade.PreviewUpdate(ctx, UpdateRequest{PackID: "app", Surface: SurfaceCodex})
 	if err != nil {
@@ -79,7 +79,7 @@ func TestIssue518UpdateRetiresOnlyRequestedPackProjectionMissingFromCurrentPack(
 		},
 	}
 	pack := Pack{
-		manifestVersion: manifestSchemaV4, ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex},
 		Resources: []Resource{{Kind: "skill", ID: "new-guide", Source: "new-guide", Bindings: testCapabilityBindings("new-guide")}},
 	}
 	adapter := &fakeSurfaceAdapter{inspect: func(transition SurfaceTransition) SurfaceInspection {
@@ -128,7 +128,7 @@ func TestIssue518UpdateRequiresForceToRetireDriftedResidualProjection(t *testing
 		}},
 	}
 	pack := Pack{
-		manifestVersion: manifestSchemaV4, ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex},
 		Resources: []Resource{{Kind: "skill", ID: "new-guide", Source: "new-guide", Bindings: testCapabilityBindings("new-guide")}},
 	}
 	observation := SurfaceInspection{Revision: "host", Projections: []ObservedProjection{
@@ -163,7 +163,7 @@ func TestIssue518UpdateRequiresForceToRetireDriftedResidualProjection(t *testing
 
 func TestIssue518DistinctResourcesTargetingOnePathBlockBeforeMutation(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "shared.md")
-	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
 		{Kind: "instruction", ID: "one", Source: "one.md"},
 		{Kind: "instruction", ID: "two", Source: "two.md"},
 	}}
@@ -201,7 +201,7 @@ func TestIssue518DistinctResourcesTargetingOnePathBlockBeforeMutation(t *testing
 
 func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "guide.md")
-	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
+	pack := Pack{ID: "app", Version: "2.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide.md", Bindings: testCapabilityBindings("guide")}}}
 	state := ActivationState{
 		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
 		Ownership: []ProjectionOwnership{{
@@ -249,7 +249,7 @@ func TestIssue518ForceUpdateIsLimitedToReceiptOwnedTargets(t *testing.T) {
 
 func TestIssue518ForceDeactivationIsLimitedToReceiptOwnedTargets(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "guide")
-	pack := Pack{manifestVersion: manifestSchemaV4, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
+	pack := Pack{ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Bindings: testCapabilityBindings("guide")}}}
 	state := ActivationState{
 		Intent: ActivationIntent{PackID: "app", Version: "1.0.0", Surface: SurfaceCodex, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll}},
 		Ownership: []ProjectionOwnership{{

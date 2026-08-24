@@ -39,8 +39,7 @@ treats configured projection separately from runtime usability.
 The single `pack.json` contract for a Pack. It declares identity, version,
 description, selectability, supported surfaces, resources, bindings,
 intra-Pack dependencies, external requirements, readiness obligations,
-conflicts, and Managed Pack provenance. Existing catalog manifests retain their
-legacy fields only while the seven Packs migrate.
+conflicts, and Managed Pack provenance.
 
 ### Managed Pack Project
 

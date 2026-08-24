@@ -67,7 +67,6 @@ func (a *syntheticRequirementAdapter) ApplyProjections(_ context.Context, _ []Pr
 
 func TestFacadeStatusPreservesConditionTruthAndAggregatesDimensions(t *testing.T) {
 	pack := Pack{
-		manifestVersion:      manifestSchemaV4,
 		ID:                   "app",
 		Version:              "1.0.0",
 		Surfaces:             []Surface{SurfaceCodex},
@@ -76,7 +75,7 @@ func TestFacadeStatusPreservesConditionTruthAndAggregatesDimensions(t *testing.T
 			Kind: "skill", ID: "guide", Source: "guide", Description: "Guide",
 			Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{},
 		}},
-		Contract: Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+		Contract: Contract{OptionalModes: []OptionalMode{}},
 	}
 	state := ActivationState{
 		Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
@@ -213,12 +212,12 @@ func TestFacadeProjectLifecycleUsesIdentityAgnosticReadiness(t *testing.T) {
 	for index, identity := range []struct{ pack, resource string }{{"alpha", "guide"}, {"beta", "coordinate"}} {
 		root := t.TempDir()
 		pack := Pack{
-			manifestVersion: manifestSchemaV4, ID: identity.pack, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+			ID: identity.pack, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
 			ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
 			Requires:             Requirements{Tools: []string{}},
 			Resources: []Resource{{Kind: "skill", ID: identity.resource, Source: identity.resource, Description: "Synthetic skill",
 				Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings(identity.resource), SurfaceExclusions: []SurfaceExclusion{}}},
-			Contract: Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+			Contract: Contract{OptionalModes: []OptionalMode{}},
 		}
 		projectionID := "skill:" + identity.resource
 		adapter := &fakeSurfaceAdapter{observations: []SurfaceInspection{{
@@ -241,11 +240,11 @@ func TestFacadeProjectLifecycleUsesIdentityAgnosticReadiness(t *testing.T) {
 
 func TestFacadeStatusDerivesExternalRequirementConditionFromExistingRequirement(t *testing.T) {
 	pack := Pack{
-		manifestVersion: manifestSchemaV4, ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "app", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
 		ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
 		Requires:             Requirements{Tools: []string{"helper"}},
 		Resources:            []Resource{{Kind: "skill", ID: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
-		Contract:             Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+		Contract:             Contract{OptionalModes: []OptionalMode{}},
 	}
 	state := ActivationState{
 		Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
@@ -294,10 +293,10 @@ func TestFacadeStatusObservesDifferentlyNamedExternalRequirementsWithoutToolDisp
 	} {
 		t.Run(scenario.tool, func(t *testing.T) {
 			pack := Pack{
-				manifestVersion: manifestSchemaV4, ID: "synthetic-pack", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+				ID: "synthetic-pack", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
 				Requires:  Requirements{Tools: []string{scenario.tool}},
 				Resources: []Resource{{Kind: "skill", ID: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
-				Contract:  Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+				Contract:  Contract{OptionalModes: []OptionalMode{}},
 			}
 			state := ActivationState{
 				Intent:    ActivationIntent{PackID: pack.ID, Surface: SurfaceCodex, Version: pack.Version, Active: true, Revision: 1, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}},
@@ -338,8 +337,8 @@ func TestExecutableAcquisitionRequiresExplicitReviewedCapability(t *testing.T) {
 	resolver := &recordingReadinessResolver{paths: map[string]string{}}
 	acquirer := &recordingAcquirer{}
 	pack := Pack{
-		manifestVersion: manifestSchemaV4, ID: "acquisition", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
-		Requires: Requirements{Tools: []string{"engram"}}, Contract: Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+		ID: "acquisition", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		Requires: Requirements{Tools: []string{"engram"}}, Contract: Contract{OptionalModes: []OptionalMode{}},
 		Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "guide", Invocation: "guide", Mode: "native", Sharing: "exclusive", Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}}},
 	}
 	adapter := &fakeSurfaceAdapter{}
@@ -384,10 +383,10 @@ func TestExternalPlanDoesNotInventSetupForOrdinaryToolRequirement(t *testing.T) 
 func TestSyntheticExternalRequirementsDrivePreviewApplyStatusAndMissingGate(t *testing.T) {
 	packFor := func(id, tool string) Pack {
 		return Pack{
-			manifestVersion: manifestSchemaV4, ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+			ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
 			Requires:  Requirements{Tools: []string{tool}},
 			Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Synthetic guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
-			Contract:  Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+			Contract:  Contract{OptionalModes: []OptionalMode{}},
 		}
 	}
 
@@ -440,11 +439,11 @@ func TestSyntheticExternalRequirementsDrivePreviewApplyStatusAndMissingGate(t *t
 func TestProjectActivationPreviewUsesGenericRequirementResolver(t *testing.T) {
 	project, packyHome := t.TempDir(), filepath.Join(t.TempDir(), ".packy")
 	pack := Pack{
-		manifestVersion: manifestSchemaV4, ID: "synthetic-project", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
+		ID: "synthetic-project", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex},
 		ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
 		Requires:             Requirements{Tools: []string{"project-helper"}},
 		Resources:            []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Synthetic guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}},
-		Contract:             Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+		Contract:             Contract{OptionalModes: []OptionalMode{}},
 	}
 	adapter := &syntheticRequirementAdapter{target: filepath.Join(project, ".agents", "skills", "guide")}
 	resolver := &recordingReadinessResolver{paths: map[string]string{"project-helper": "/tmp/project-helper"}}

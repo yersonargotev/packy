@@ -190,6 +190,23 @@ func TestValidateRepositoryIntegrityRequiresTheExactCurrentAdmissionAndClosure(t
 	}
 }
 
+func TestValidateRepositoryIntegrityRejectsEveryRetiredGenericSourcePath(t *testing.T) {
+	for _, relative := range retiredRepositoryPaths {
+		t.Run(relative, func(t *testing.T) {
+			fixture := writeRepositoryFixture(t)
+			path := filepath.Join(fixture.root, filepath.FromSlash(relative))
+			if filepath.Ext(path) == "" {
+				if err := os.MkdirAll(path, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				writeFile(t, path, "{}\n", 0o644)
+			}
+			assertRepositoryIntegrityError(t, fixture.root, fmt.Sprintf("retired generic Pack Source path %q", relative))
+		})
+	}
+}
+
 type repositoryFixture struct {
 	root   string
 	record AdmissionRecord

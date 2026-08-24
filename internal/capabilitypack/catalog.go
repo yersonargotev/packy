@@ -14,13 +14,6 @@ import (
 	"github.com/yersonargotev/packy/internal/bundletransaction"
 )
 
-const (
-	manifestSchemaV1 = 1
-	manifestSchemaV2 = 2
-	manifestSchemaV3 = 3
-	manifestSchemaV4 = 4
-)
-
 // SupportedSurfaces returns Packy's complete product-owned CLI surface set in
 // stable display order. Pack manifests decide which members each Pack supports.
 func SupportedSurfaces() []Surface {
@@ -375,14 +368,7 @@ type CommandArguments struct {
 }
 
 type Contract struct {
-	Exclusions    []Exclusion    `json:"exclusions"`
 	OptionalModes []OptionalMode `json:"optional_modes"`
-}
-
-type Exclusion struct {
-	ID          string   `json:"id"`
-	SourcePaths []string `json:"source_paths"`
-	Reason      string   `json:"reason"`
 }
 
 type OptionalMode struct {
@@ -392,7 +378,6 @@ type OptionalMode struct {
 }
 
 type Pack struct {
-	manifestVersion      int
 	ID                   string
 	Version              string
 	Description          string
@@ -614,7 +599,7 @@ func (c Catalog) showUnlocked(id string) (Pack, error) {
 	for _, pack := range c.packs {
 		if pack.ID == id {
 			if c.deferSourceValidation {
-				if err := validatePackSources(pack, c.bundleRoot); err != nil {
+				if err := validatePackResourceSources(pack, c.bundleRoot); err != nil {
 					return Pack{}, fmt.Errorf("invalid catalog-current pack %q: %w", id, err)
 				}
 			}
@@ -688,10 +673,6 @@ func clonePack(pack Pack) Pack {
 				binding.Hook = &copy
 			}
 		}
-	}
-	pack.Contract.Exclusions = append([]Exclusion(nil), pack.Contract.Exclusions...)
-	for i := range pack.Contract.Exclusions {
-		pack.Contract.Exclusions[i].SourcePaths = append([]string(nil), pack.Contract.Exclusions[i].SourcePaths...)
 	}
 	pack.Contract.OptionalModes = append([]OptionalMode(nil), pack.Contract.OptionalModes...)
 	for i := range pack.Contract.OptionalModes {
@@ -1243,7 +1224,7 @@ func validateBinding(kind string, binding Binding) error {
 	return nil
 }
 
-func validateDependencies(resources []Resource, identities map[string]bool, version int) error {
+func validateDependencies(resources []Resource, identities map[string]bool) error {
 	dependencies := make(map[string][]string, len(resources))
 	for _, resource := range resources {
 		identity := resource.Kind + ":" + resource.ID
@@ -1254,16 +1235,6 @@ func validateDependencies(resources []Resource, identities map[string]bool, vers
 			kind := strings.SplitN(dependency, ":", 2)[0]
 			if kind == "notice" {
 				return fmt.Errorf("resource %q dependency may not target notice", identity)
-			}
-			allowed := map[string]map[string]bool{
-				"skill":   {"asset": true},
-				"agent":   {"skill": true, "asset": true},
-				"command": {"skill": true, "agent": true, "asset": true},
-				"asset":   {"asset": true},
-				"notice":  {},
-			}
-			if version != manifestSchemaV4 && !allowed[resource.Kind][kind] {
-				return fmt.Errorf("resource %q may not depend on %s", identity, kind)
 			}
 		}
 		dependencies[identity] = resource.Requires
@@ -1357,34 +1328,14 @@ func validateResourceConflicts(resources []Resource, identities map[string]bool)
 	return nil
 }
 
-func validateContract(contract Contract, resources []Resource) error {
-	if contract.Exclusions == nil || contract.OptionalModes == nil {
-		return fmt.Errorf("contract exclusions and optional_modes are required arrays")
+func validateOptionalModes(modes []OptionalMode) error {
+	if modes == nil {
+		return fmt.Errorf("optional_modes is a required array")
 	}
-	if !sortedByID(contract.Exclusions, func(value Exclusion) string { return value.ID }) || !sortedByID(contract.OptionalModes, func(value OptionalMode) string { return value.ID }) {
-		return fmt.Errorf("contract entries must be sorted by id without duplicates")
+	if !sortedByID(modes, func(value OptionalMode) string { return value.ID }) {
+		return fmt.Errorf("optional_modes entries must be sorted by id without duplicates")
 	}
-	sources := make([]string, 0, len(resources))
-	for _, resource := range resources {
-		sources = append(sources, filepath.ToSlash(filepath.Clean(resource.Source)))
-	}
-	for _, exclusion := range contract.Exclusions {
-		if !idPattern.MatchString(exclusion.ID) || strings.TrimSpace(exclusion.Reason) == "" || exclusion.SourcePaths == nil || len(exclusion.SourcePaths) == 0 || !sort.StringsAreSorted(exclusion.SourcePaths) || hasDuplicateStrings(exclusion.SourcePaths) {
-			return fmt.Errorf("exclusion %q must have an id, reason, and sorted source paths", exclusion.ID)
-		}
-		for _, path := range exclusion.SourcePaths {
-			if err := validateSourcePath(path); err != nil {
-				return fmt.Errorf("exclusion %q: %w", exclusion.ID, err)
-			}
-			clean := filepath.ToSlash(filepath.Clean(path))
-			for _, source := range sources {
-				if clean == source || strings.HasPrefix(clean, source+"/") || strings.HasPrefix(source, clean+"/") {
-					return fmt.Errorf("exclusion %q path %q overlaps selected resource %q", exclusion.ID, path, source)
-				}
-			}
-		}
-	}
-	for _, mode := range contract.OptionalModes {
+	for _, mode := range modes {
 		if !idPattern.MatchString(mode.ID) || mode.Authorities == nil || len(mode.Authorities) == 0 || !sortedPortableSet(mode.Authorities, func(value string) bool { return portableAuthorities[value] }) {
 			return fmt.Errorf("optional mode %q authorities must be sorted supported values", mode.ID)
 		}
@@ -1430,7 +1381,7 @@ func sortedByID[T any](values []T, id func(T) string) bool {
 	return true
 }
 
-func validatePackSources(pack Pack, bundleRoot string) error {
+func validatePackResourceSources(pack Pack, bundleRoot string) error {
 	for _, resource := range pack.Resources {
 		if resource.Kind == "skill" || resource.Kind == "instruction" || resource.Kind == "agent" || resource.Kind == "command" || resource.Kind == "asset" || resource.Kind == "notice" {
 			if err := validateSource(bundleRoot, resource); err != nil {

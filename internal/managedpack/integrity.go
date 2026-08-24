@@ -15,6 +15,9 @@ func ValidateRepositoryIntegrity(ctx context.Context, repositoryRoot string) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if err := rejectRetiredRepositoryPaths(repositoryRoot); err != nil {
+		return err
+	}
 
 	managedPacksRoot := filepath.Join(repositoryRoot, "managed-packs")
 	registry, err := LoadRegistry(filepath.Join(managedPacksRoot, "registry.json"))
@@ -31,6 +34,30 @@ func ValidateRepositoryIntegrity(ctx context.Context, repositoryRoot string) err
 		return err
 	}
 	return validateBundledCatalog(ctx, filepath.Join(repositoryRoot, "bundle"), registrations, admissions)
+}
+
+var retiredRepositoryPaths = []string{
+	"bundle/compatibility",
+	"bundle/history",
+	"bundle/pack-template",
+	"bundle/sources",
+	"bundle/sources.json",
+	"internal/packclassification",
+	"internal/packsync",
+	"internal/packsyncworkflow",
+	"internal/tools/syncpacksource",
+	"schemas/pack-source",
+}
+
+func rejectRetiredRepositoryPaths(repositoryRoot string) error {
+	for _, relative := range retiredRepositoryPaths {
+		if _, err := os.Lstat(filepath.Join(repositoryRoot, filepath.FromSlash(relative))); err == nil {
+			return fmt.Errorf("retired generic Pack Source path %q must not exist", relative)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("inspect retired generic Pack Source path %q: %w", relative, err)
+		}
+	}
+	return nil
 }
 
 func loadRepositoryAdmissions(ctx context.Context, root string, registrations map[string]Registration) (map[string]AdmissionRecord, error) {

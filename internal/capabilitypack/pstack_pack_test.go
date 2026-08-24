@@ -17,8 +17,8 @@ func TestCheckedInPstackPackPreservesCompatibilityMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.manifestVersion != manifestSchemaV4 || !pack.Selectable {
-		t.Fatalf("pstack identity = version %q schema %d selectable %v", pack.Version, pack.manifestVersion, pack.Selectable)
+	if !pack.Selectable {
+		t.Fatalf("pstack selectable = %v", pack.Selectable)
 	}
 	if got, want := pack.Surfaces, []Surface{SurfaceClaude, SurfaceCodex, SurfaceOpenCode}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("pstack surfaces = %v want %v", got, want)

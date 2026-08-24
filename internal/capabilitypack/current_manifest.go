@@ -118,7 +118,6 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field selectable is required", path)
 	}
 	pack := Pack{
-		manifestVersion:      manifestSchemaV4,
 		ID:                   raw.ID,
 		Version:              raw.Version,
 		Description:          raw.Description,
@@ -126,7 +125,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 		Surfaces:             raw.Surfaces,
 		ReadinessObligations: raw.ReadinessObligations,
 		Requires:             Requirements{Tools: raw.ExternalRequirements},
-		Contract:             Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+		Contract:             Contract{OptionalModes: []OptionalMode{}},
 	}
 	for i, encoded := range raw.Resources {
 		wire, err := decodeCurrentResource(encoded)
@@ -147,7 +146,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: %w", path, err)
 	}
 	if validateSources {
-		if err := validatePackSources(pack, bundleRoot); err != nil {
+		if err := validatePackResourceSources(pack, bundleRoot); err != nil {
 			return Pack{}, fmt.Errorf("invalid Pack manifest %s: %w", path, err)
 		}
 	}
@@ -166,12 +165,11 @@ func decodeCurrentResource(encoded json.RawMessage) (currentResourceWire, error)
 // manifest against the same capability vocabulary used by Packy's catalog.
 // Managed Pack provenance and closure remain owned by internal/managedpack.
 func ValidateProjectPack(pack Pack, projectRoot string) error {
-	pack.manifestVersion = manifestSchemaV4
-	pack.Contract = Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}}
+	pack.Contract = Contract{OptionalModes: []OptionalMode{}}
 	if err := validateCurrentPack(pack); err != nil {
 		return err
 	}
-	return validatePackSources(pack, projectRoot)
+	return validatePackResourceSources(pack, projectRoot)
 }
 
 func validateCurrentPack(pack Pack) error {
@@ -195,9 +193,6 @@ func validateCurrentPack(pack Pack) error {
 	}
 	if pack.Resources == nil {
 		return fmt.Errorf("Pack %q field resources is a required non-null array", pack.ID)
-	}
-	if pack.Contract.Exclusions == nil {
-		return fmt.Errorf("Pack %q field exclusions is a required non-null array", pack.ID)
 	}
 	identities := make(map[string]bool, len(pack.Resources))
 	ordered := make([]string, 0, len(pack.Resources))
@@ -224,7 +219,7 @@ func validateCurrentPack(pack Pack) error {
 	if !sort.StringsAreSorted(ordered) {
 		return fmt.Errorf("Pack %q field resources must be sorted by kind and id", pack.ID)
 	}
-	if err := validateDependencies(pack.Resources, identities, manifestSchemaV4); err != nil {
+	if err := validateDependencies(pack.Resources, identities); err != nil {
 		return fmt.Errorf("Pack %q: %w", pack.ID, err)
 	}
 	if err := validateClaudeCompositionCapabilities(pack, identities); err != nil {
@@ -233,8 +228,8 @@ func validateCurrentPack(pack Pack) error {
 	if err := validateResourceConflicts(pack.Resources, identities); err != nil {
 		return fmt.Errorf("Pack %q: %w", pack.ID, err)
 	}
-	if err := validateContract(pack.Contract, pack.Resources); err != nil {
-		return fmt.Errorf("Pack %q field exclusions: %w", pack.ID, err)
+	if err := validateOptionalModes(pack.Contract.OptionalModes); err != nil {
+		return fmt.Errorf("Pack %q: %w", pack.ID, err)
 	}
 	acquisitions := map[string]string{}
 	for _, resource := range pack.Resources {

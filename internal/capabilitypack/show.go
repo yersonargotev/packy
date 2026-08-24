@@ -9,9 +9,9 @@ import (
 
 const packProvenanceLimitation = "Packy's Pack Admission Record is the immutable release and provenance authority; it remains outside the end-user bundle."
 
-// PackProvenanceIdentity is the stable runtime identity whose immutable
-// release provenance is sealed by Packy's external Pack Admission Record.
-type PackProvenanceIdentity struct {
+// PackCatalogIdentity is the stable runtime identity whose immutable release
+// provenance is sealed by Packy's external Pack Admission Record.
+type PackCatalogIdentity struct {
 	PackID        string `json:"pack_id"`
 	Version       string `json:"version"`
 	SchemaVersion int    `json:"schema_version"`
@@ -59,7 +59,7 @@ type DescriptiveResource struct {
 // ShowReport is the detached domain result used by pack show renderers.
 type ShowReport struct {
 	Detail                CatalogDetail
-	SourceIdentity        PackProvenanceIdentity
+	CatalogIdentity       PackCatalogIdentity
 	ResourceCounts        ResourceCounts
 	ResourceInventory     []DescriptiveResource
 	ResourceGraph         ResourceGraph
@@ -200,10 +200,10 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 	pack := detail.Pack
 	report := ShowReport{
 		Detail: detail,
-		SourceIdentity: PackProvenanceIdentity{
+		CatalogIdentity: PackCatalogIdentity{
 			PackID:        pack.ID,
 			Version:       pack.Version,
-			SchemaVersion: pack.manifestVersion,
+			SchemaVersion: 1,
 			Limitation:    packProvenanceLimitation,
 		},
 		ResourceCounts:    pack.ResourceCounts(),

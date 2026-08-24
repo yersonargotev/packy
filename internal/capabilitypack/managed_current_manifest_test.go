@@ -59,9 +59,6 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("resources = %#v, want %#v", got, want)
 	}
-	if pack.Contract.Exclusions == nil || len(pack.Contract.Exclusions) != 0 {
-		t.Fatalf("runtime exclusions = %#v, want non-nil empty", pack.Contract.Exclusions)
-	}
 }
 
 func TestLoadCurrentManifestRejectsInvalidManagedPackWire(t *testing.T) {

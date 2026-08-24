@@ -18,7 +18,7 @@ func sortedStrings(values []string) []string {
 	return result
 }
 
-type packShowSourceIdentityJSON struct {
+type packShowCatalogIdentityJSON struct {
 	PackID        string `json:"pack_id"`
 	Version       string `json:"version"`
 	SchemaVersion int    `json:"schema_version"`
@@ -57,7 +57,7 @@ type packShowJSON struct {
 	ID                    string                               `json:"id"`
 	Version               string                               `json:"version"`
 	Description           string                               `json:"description"`
-	SourceIdentity        packShowSourceIdentityJSON           `json:"source_identity"`
+	CatalogIdentity       packShowCatalogIdentityJSON          `json:"source_identity"`
 	Surfaces              []capabilitypack.Surface             `json:"surfaces"`
 	Requires              packShowRequirementsJSON             `json:"requires"`
 	ResourceCounts        capabilitypack.ResourceCounts        `json:"resource_counts"`
@@ -80,9 +80,9 @@ func packShowDocument(report capabilitypack.ShowReport) packShowJSON {
 	return packShowJSON{
 		SchemaVersion: packShowJSONSchemaVersion, Report: "pack-show", CatalogState: "current",
 		ID: pack.ID, Version: pack.Version, Description: pack.Description,
-		SourceIdentity: packShowSourceIdentityJSON{
-			PackID: report.SourceIdentity.PackID, Version: report.SourceIdentity.Version,
-			SchemaVersion: report.SourceIdentity.SchemaVersion, Limitation: report.SourceIdentity.Limitation,
+		CatalogIdentity: packShowCatalogIdentityJSON{
+			PackID: report.CatalogIdentity.PackID, Version: report.CatalogIdentity.Version,
+			SchemaVersion: report.CatalogIdentity.SchemaVersion, Limitation: report.CatalogIdentity.Limitation,
 		},
 		Surfaces: surfaces,
 		Requires: packShowRequirementsJSON{
@@ -124,10 +124,10 @@ func renderPackShowHuman(w io.Writer, report capabilitypack.ShowReport) error {
 		return err
 	}
 	if _, err := fmt.Fprintf(w,
-		"%s %s\nCatalog state: %s\nDescription: %s\nSource identity: pack=%s version=%s schema=%d\nSource limitation: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
+		"%s %s\nCatalog state: %s\nDescription: %s\nCatalog identity: pack=%s version=%s schema=%d\nProvenance authority: %s\nSupported CLI surfaces: %s\nRequires global tools: %s\nResources: %d skill, %d instruction, %d mcp_server, %d lifecycle, %d agent, %d command, %d asset, %d notice\nLifecycle availability: fresh_activation=%s catalog_update=%s lifecycle_verbs=%s automatic_downgrade=%s\n",
 		document.ID, document.Version, document.CatalogState, document.Description,
-		document.SourceIdentity.PackID, document.SourceIdentity.Version, document.SourceIdentity.SchemaVersion,
-		document.SourceIdentity.Limitation, joinSurfaces(document.Surfaces), joinOrNone(document.Requires.Tools),
+		document.CatalogIdentity.PackID, document.CatalogIdentity.Version, document.CatalogIdentity.SchemaVersion,
+		document.CatalogIdentity.Limitation, joinSurfaces(document.Surfaces), joinOrNone(document.Requires.Tools),
 		document.ResourceCounts.Skills, document.ResourceCounts.Instructions,
 		document.ResourceCounts.MCPServers, document.ResourceCounts.Lifecycles, document.ResourceCounts.Agents,
 		document.ResourceCounts.Commands, document.ResourceCounts.Assets, document.ResourceCounts.Notices,
@@ -193,9 +193,9 @@ func renderPackShowContract(w io.Writer, contract capabilitypack.LifecycleContra
 	}
 	for _, exclusion := range contract.Exclusions {
 		if _, err := fmt.Fprintf(w,
-			"Exclusion: %s — %s; resource_kind=%s surface=%s mode=%s code=%s source_paths=%s\n",
+			"Exclusion: %s — %s; resource_kind=%s surface=%s mode=%s code=%s\n",
 			exclusion.ID, exclusion.Reason, factOrNone(exclusion.ResourceKind), factOrNone(string(exclusion.Surface)),
-			factOrNone(exclusion.Mode), factOrNone(exclusion.Code), joinFacts(exclusion.SourcePaths),
+			factOrNone(exclusion.Mode), factOrNone(exclusion.Code),
 		); err != nil {
 			return err
 		}

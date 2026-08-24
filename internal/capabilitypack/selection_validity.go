@@ -89,9 +89,6 @@ func (validity SelectionValidity) MarshalJSON() ([]byte, error) {
 func SelectionValidityFor(pack Pack, surface Surface) SelectionValidity {
 	all, _ := selectionAvailability(pack, ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}, surface)
 	result := SelectionValidity{All: all, Roots: []ResourceSelectability{}}
-	if pack.manifestVersion != manifestSchemaV4 {
-		return result
-	}
 	for _, resource := range pack.Resources {
 		if resource.Kind == "asset" || resource.Kind == "notice" {
 			continue
@@ -121,9 +118,6 @@ func selectionAvailability(pack Pack, selection ResourceSelection, surface Surfa
 	selection, err := canonicalSelection(selection)
 	if err != nil {
 		return SelectionAvailability{}, err
-	}
-	if pack.manifestVersion != manifestSchemaV4 {
-		return SelectionAvailability{Available: true, Reasons: []SelectionValidityReason{}, OptionalExclusions: []SelectionValidityReason{}}, nil
 	}
 	roots, optional, err := surfaceSelectionRoots(pack, selection, surface)
 	if err != nil {
@@ -191,7 +185,7 @@ func surfaceSelectionRoots(pack Pack, selection ResourceSelection, surface Surfa
 		return nil, nil, err
 	}
 	optional := []SelectionValidityReason{}
-	if selection.Mode != SelectionAll || pack.manifestVersion != manifestSchemaV4 {
+	if selection.Mode != SelectionAll {
 		return roots, optional, nil
 	}
 	resources := resourceMap(pack)
@@ -218,9 +212,6 @@ func selectPackResourcesForSurface(pack Pack, selection ResourceSelection, surfa
 	selection, err := canonicalSelection(selection)
 	if err != nil {
 		return Pack{}, err
-	}
-	if pack.manifestVersion != manifestSchemaV4 {
-		return selectPackResources(pack, selection)
 	}
 	expanded := withSurfaceCapabilityDependencies(pack, surface)
 	if selection.Mode != SelectionAll {
