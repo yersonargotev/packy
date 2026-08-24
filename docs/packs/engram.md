@@ -11,6 +11,14 @@ Upstream Engram CLI memory workflows for agent work
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `engram`
 
+## Provenance
+
+- Managed Pack Project: [`yersonargotev/engram`](https://github.com/yersonargotev/engram)
+- Immutable release: [`pack-v3.1.1`](https://github.com/yersonargotev/engram/releases/tag/pack-v3.1.1)
+- Pack Admission Record: [`managed-packs/admissions/engram/3.1.1.json`](../../managed-packs/admissions/engram/3.1.1.json)
+
+This immutable Managed Pack release, sealed by Packy's Pack Admission Record, is the provenance authority for the bundled Pack.
+
 ## Resources
 
 ### Notice
@@ -27,10 +35,6 @@ Upstream Engram CLI memory workflows for agent work
   - Dependencies: None.
   - Notices: `notice:mit`
   - Codex capabilities: `external-executable-acquisition`
-
-## Pack exclusions
-
-None.
 
 ## Inspect and preview
 

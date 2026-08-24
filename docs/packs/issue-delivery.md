@@ -11,6 +11,14 @@ Deliver issues through policy-driven or Matt-configured workflows
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: `gh`, `git`
 
+## Provenance
+
+- Managed Pack Project: [`yersonargotev/issue-deliver-pack`](https://github.com/yersonargotev/issue-deliver-pack)
+- Immutable release: [`pack-v1.1.2`](https://github.com/yersonargotev/issue-deliver-pack/releases/tag/pack-v1.1.2)
+- Pack Admission Record: [`managed-packs/admissions/issue-delivery/1.1.2.json`](../../managed-packs/admissions/issue-delivery/1.1.2.json)
+
+This immutable Managed Pack release, sealed by Packy's Pack Admission Record, is the provenance authority for the bundled Pack.
+
 ## Resources
 
 ### Notice
@@ -34,10 +42,6 @@ Deliver issues through policy-driven or Matt-configured workflows
   - Role: `operational`
   - Dependencies: `skill:deliver-issue`
   - Notices: `notice:mit`
-
-## Pack exclusions
-
-None.
 
 ## Inspect and preview
 

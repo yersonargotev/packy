@@ -28,6 +28,10 @@ func TestFacadeShowReturnsCanonicalDescriptiveResourceInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wantAuthority := "Packy's Pack Admission Record is the immutable release and provenance authority; it remains outside the end-user bundle."
+	if report.SourceIdentity.Limitation != wantAuthority {
+		t.Fatalf("source identity authority = %q, want %q", report.SourceIdentity.Limitation, wantAuthority)
+	}
 	want := []DescriptiveResource{
 		{
 			Resource:     ResourceIdentity{Kind: "asset", ID: "rubric"},

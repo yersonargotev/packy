@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yersonargotev/packy/internal/capabilitypack"
+	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/testprocess"
 )
 
@@ -43,6 +45,7 @@ func TestPackDocumentationCheckRejectsDriftedOutput(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			temporaryRoot := t.TempDir()
 			copyTree(t, filepath.Join(root, "bundle"), filepath.Join(temporaryRoot, "bundle"))
+			copyTree(t, filepath.Join(root, "managed-packs"), filepath.Join(temporaryRoot, "managed-packs"))
 			generatedRoot := filepath.Join(temporaryRoot, "docs", "packs")
 			copyTree(t, filepath.Join(root, "docs", "packs"), generatedRoot)
 			mutate(t, generatedRoot)
@@ -87,10 +90,37 @@ func TestGeneratedPackPagesExposeDecisionUsefulInventory(t *testing.T) {
 		for _, required := range []string{
 			"## Purpose", "- Version:", "- Supported surfaces:", "- Readiness obligations:", "- External requirements:",
 			"## Resources", "  - Role:", "  - Dependencies:", "  - Notices:",
-			"## Pack exclusions", "## Inspect and preview", "packy show", "--dry-run",
+			"## Provenance", "Managed Pack Project:", "Immutable release:", "Pack Admission Record:", "provenance authority",
+			"## Inspect and preview", "packy show", "--dry-run",
 		} {
 			if !strings.Contains(text, required) {
 				t.Errorf("docs/packs/%s is missing %q", entry.Name(), required)
+			}
+		}
+	}
+}
+
+func TestGeneratedPackPagesIdentifyManagedReleaseProvenanceAuthority(t *testing.T) {
+	root := repositoryRoot(t)
+	bundleRoot := filepath.Join(root, "bundle")
+	registry, err := managedpack.LoadRegistry(filepath.Join(root, "managed-packs", "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, registration := range registry.Packs {
+		pack, err := capabilitypack.LoadCurrentManifest(filepath.Join(bundleRoot, "packs", registration.PackID, "pack.json"), bundleRoot, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recordPath := filepath.Join(root, "managed-packs", "admissions", registration.PackID, pack.Version+".json")
+		record, err := managedpack.LoadAdmissionRecord(recordPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page := readFile(t, filepath.Join(root, "docs", "packs", registration.PackID+".md"))
+		for _, required := range []string{"## Provenance", registration.Project, record.Tag, "Pack Admission Record", "provenance authority"} {
+			if !strings.Contains(page, required) {
+				t.Errorf("docs/packs/%s.md is missing provenance text %q", registration.PackID, required)
 			}
 		}
 	}

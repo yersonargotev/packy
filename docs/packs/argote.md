@@ -11,6 +11,14 @@ Yerson Argote's engineering and communication guidance
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
+## Provenance
+
+- Managed Pack Project: [`yersonargotev/argote`](https://github.com/yersonargotev/argote)
+- Immutable release: [`pack-v1.0.3`](https://github.com/yersonargotev/argote/releases/tag/pack-v1.0.3)
+- Pack Admission Record: [`managed-packs/admissions/argote/1.0.3.json`](../../managed-packs/admissions/argote/1.0.3.json)
+
+This immutable Managed Pack release, sealed by Packy's Pack Admission Record, is the provenance authority for the bundled Pack.
+
 ## Resources
 
 ### Instruction
@@ -28,10 +36,6 @@ Yerson Argote's engineering and communication guidance
   - Role: `operational`
   - Dependencies: None.
   - Notices: None.
-
-## Pack exclusions
-
-None.
 
 ## Inspect and preview
 

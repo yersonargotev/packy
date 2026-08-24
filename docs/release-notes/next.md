@@ -58,6 +58,13 @@ adds the pstack Pack, and updates the bundled Matty and Engram Packs.
 - Managed Pack preventive validation now materializes and runtime-loads the
   exact sealed bundle before publication, checks every supported
   surface/selection row, and reports actionable content-free exact-copy drift.
+- The seven current Packs now resolve exclusively through the Managed Pack
+  Registry and their exact current Pack Admission Records: Addy `2.0.3`,
+  Argote `1.0.3`, Engram `3.1.1`, Issue Delivery `1.1.2`, Matty `1.1.0`,
+  Orchestrate `1.0.2`, and pstack `1.0.1`. Generated Pack pages link each
+  immutable Managed Pack Project release and Admission Record as the bundled
+  Pack's provenance authority; the retired catalog-maintenance schemas,
+  loaders, configuration, classification, evidence, and workflows are gone.
 
 The release artifact format is unchanged.
 

@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const packSourceIdentityLimitation = "Packy records the trusted pack ID, version, and manifest schema, but no upstream source provenance."
+const packProvenanceLimitation = "Packy's Pack Admission Record is the immutable release and provenance authority; it remains outside the end-user bundle."
 
-// PackSourceIdentity is the stable source identity Packy can derive from its
-// trusted domain facts. Upstream repository provenance is not part of Pack.
-type PackSourceIdentity struct {
+// PackProvenanceIdentity is the stable runtime identity whose immutable
+// release provenance is sealed by Packy's external Pack Admission Record.
+type PackProvenanceIdentity struct {
 	PackID        string `json:"pack_id"`
 	Version       string `json:"version"`
 	SchemaVersion int    `json:"schema_version"`
@@ -59,7 +59,7 @@ type DescriptiveResource struct {
 // ShowReport is the detached domain result used by pack show renderers.
 type ShowReport struct {
 	Detail                CatalogDetail
-	SourceIdentity        PackSourceIdentity
+	SourceIdentity        PackProvenanceIdentity
 	ResourceCounts        ResourceCounts
 	ResourceInventory     []DescriptiveResource
 	ResourceGraph         ResourceGraph
@@ -200,11 +200,11 @@ func (f Facade) show(ctx context.Context, id string) (ShowReport, error) {
 	pack := detail.Pack
 	report := ShowReport{
 		Detail: detail,
-		SourceIdentity: PackSourceIdentity{
+		SourceIdentity: PackProvenanceIdentity{
 			PackID:        pack.ID,
 			Version:       pack.Version,
 			SchemaVersion: pack.manifestVersion,
-			Limitation:    packSourceIdentityLimitation,
+			Limitation:    packProvenanceLimitation,
 		},
 		ResourceCounts:    pack.ResourceCounts(),
 		ResourceInventory: detail.ResourceInventory,

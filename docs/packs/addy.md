@@ -11,6 +11,14 @@ Addy agent skills
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
+## Provenance
+
+- Managed Pack Project: [`yersonargotev/skills-addy`](https://github.com/yersonargotev/skills-addy)
+- Immutable release: [`pack-v2.0.3`](https://github.com/yersonargotev/skills-addy/releases/tag/pack-v2.0.3)
+- Pack Admission Record: [`managed-packs/admissions/addy/2.0.3.json`](../../managed-packs/admissions/addy/2.0.3.json)
+
+This immutable Managed Pack release, sealed by Packy's Pack Admission Record, is the provenance authority for the bundled Pack.
+
 ## Resources
 
 ### Agent
@@ -247,10 +255,6 @@ Addy agent skills
   - Dependencies: `asset:accessibility-checklist`, `asset:definition-of-done`, `asset:observability-checklist`, `asset:orchestration-patterns`, `asset:performance-checklist`, `asset:security-checklist`, `asset:testing-patterns`
   - Notices: `notice:mit`
   - Claude capabilities: `claude-composite-skill`
-
-## Pack exclusions
-
-None.
 
 ## Inspect and preview
 
