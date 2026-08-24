@@ -1,0 +1,43 @@
+{
+  "schema_version": 6,
+  "report": "pack-show",
+  "catalog_state": "current",
+  "id": "engram",
+  "version": "1.0.1",
+  "description": "Persistent memory for agent work",
+  "catalog_identity": {
+    "pack_id": "engram",
+    "version": "1.0.1",
+    "schema_version": 1,
+    "limitation": "Packy's Pack Admission Record is the immutable release and provenance authority; it remains outside the end-user bundle."
+  },
+  "surfaces": ["claude", "codex", "opencode"],
+  "requires": { "tools": ["engram"] },
+  "resource_counts": {},
+  "resource_inventory": [
+    {
+      "resource": { "kind": "instruction", "id": "engram-memory" },
+      "description": "Guides agents to recall prior project work and preserve durable decisions and discoveries",
+      "role": "operational",
+      "dependencies": [],
+      "notices": []
+    },
+    {
+      "resource": { "kind": "lifecycle", "id": "engram-memory" },
+      "description": "Runs Engram's host setup so Codex and OpenCode receive their native memory integration",
+      "role": "operational",
+      "dependencies": [],
+      "notices": []
+    },
+    {
+      "resource": { "kind": "mcp_server", "id": "engram" },
+      "description": "Makes Engram memory tools available to agents through MCP",
+      "role": "operational",
+      "dependencies": [],
+      "notices": []
+    }
+  ],
+  "lifecycle_availability": {},
+  "surface_contracts": [],
+  "resource_graph": {}
+}

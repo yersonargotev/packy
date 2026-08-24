@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/capabilitypack"
 )
 
-const packShowJSONSchemaVersion = 5
+const packShowJSONSchemaVersion = 6
 
 func sortedStrings(values []string) []string {
 	result := append([]string{}, values...)
@@ -57,7 +57,7 @@ type packShowJSON struct {
 	ID                    string                               `json:"id"`
 	Version               string                               `json:"version"`
 	Description           string                               `json:"description"`
-	CatalogIdentity       packShowCatalogIdentityJSON          `json:"source_identity"`
+	CatalogIdentity       packShowCatalogIdentityJSON          `json:"catalog_identity"`
 	Surfaces              []capabilitypack.Surface             `json:"surfaces"`
 	Requires              packShowRequirementsJSON             `json:"requires"`
 	ResourceCounts        capabilitypack.ResourceCounts        `json:"resource_counts"`

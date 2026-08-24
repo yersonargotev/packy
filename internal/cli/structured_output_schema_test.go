@@ -20,7 +20,7 @@ var structuredOutputFixtures = []struct {
 	{"v1", "pack-audit.json", "pack-audit.schema.json"},
 	{"v1", "pack-list.json", "pack-list.schema.json"},
 	{"v3", "doctor.json", "doctor.schema.json"},
-	{"v5", "pack-show.json", "pack-show.schema.json"},
+	{"v6", "pack-show.json", "pack-show.schema.json"},
 	{"v11", "pack-status.json", "pack-status.schema.json"},
 	{"v11", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
 	{"v11", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
@@ -265,7 +265,7 @@ func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
 	load := func(t *testing.T, name string) map[string]any {
 		t.Helper()
-		version := map[string]string{"pack-show.json": "v5", "pack-status.json": "v9"}[name]
+		version := map[string]string{"pack-show.json": "v6", "pack-status.json": "v9"}[name]
 		data, err := os.ReadFile(filepath.Join("testdata", "structured-output", version, name))
 		if err != nil {
 			t.Fatal(err)
@@ -300,7 +300,7 @@ func TestPackOperatorSchemasRejectCanonicalNegativeTwins(t *testing.T) {
 	})
 	t.Run("missing fact", func(t *testing.T) {
 		document := load(t, "pack-show.json")
-		delete(document, "source_identity")
+		delete(document, "catalog_identity")
 		reject(t, "pack-show.schema.json", document)
 	})
 	t.Run("incomplete descriptive resource", func(t *testing.T) {
