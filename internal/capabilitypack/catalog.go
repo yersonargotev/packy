@@ -402,14 +402,6 @@ type Pack struct {
 	Requires             Requirements
 	Resources            []Resource
 	Contract             Contract
-	SourceReference      *SourceReference
-}
-
-// SourceReference is optional informational metadata. Reviewed Pack content is
-// authoritative; this reference grants no synchronization or admission power.
-type SourceReference struct {
-	Repository string `json:"repository"`
-	Revision   string `json:"revision"`
 }
 
 type ResourceCounts struct {
@@ -642,10 +634,6 @@ func (c Catalog) catalogMetadata(id string) (Pack, error) {
 }
 
 func clonePack(pack Pack) Pack {
-	if pack.SourceReference != nil {
-		copy := *pack.SourceReference
-		pack.SourceReference = &copy
-	}
 	pack.Surfaces = append([]Surface(nil), pack.Surfaces...)
 	pack.ReadinessObligations = append([]ReadinessObligation(nil), pack.ReadinessObligations...)
 	pack.Requires.Tools = append([]string(nil), pack.Requires.Tools...)

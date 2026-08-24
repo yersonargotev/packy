@@ -18,8 +18,6 @@ type currentManifest struct {
 	ReadinessObligations []ReadinessObligation `json:"readiness_obligations"`
 	ExternalRequirements []string              `json:"external_requirements"`
 	Resources            []json.RawMessage     `json:"resources"`
-	Exclusions           []Exclusion           `json:"exclusions"`
-	SourceReference      *SourceReference      `json:"source_reference,omitempty"`
 }
 
 type managedCurrentManifest struct {
@@ -73,9 +71,8 @@ type managedResourceOriginWire struct {
 	Relationship string `json:"relationship"`
 }
 
-// LoadCurrentManifest loads either the legacy current Pack contract retained
-// during migration or a materialized Managed Pack Project schema v1 contract.
-// It rejects historical manifest generations and unknown fields.
+// LoadCurrentManifest loads a materialized Managed Pack Project schema v1
+// contract. It rejects manifests outside the current authoring model.
 func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -87,14 +84,10 @@ func LoadCurrentManifest(path, bundleRoot string, validateSources bool) (Pack, e
 	if err := json.Unmarshal(data, &shape); err != nil {
 		return Pack{}, fmt.Errorf("decode Pack manifest %s: %w", path, err)
 	}
-	if shape.SchemaVersion != nil {
-		return loadManagedCurrentManifest(data, path, bundleRoot, validateSources)
+	if shape.SchemaVersion == nil {
+		return Pack{}, fmt.Errorf("invalid Pack manifest %s: Managed Pack schema_version is required", path)
 	}
-	var raw currentManifest
-	if err := strictDecode(data, &raw); err != nil {
-		return Pack{}, fmt.Errorf("decode Pack manifest %s: %w", path, err)
-	}
-	return loadCurrentManifestRuntime(raw, path, bundleRoot, validateSources, false)
+	return loadManagedCurrentManifest(data, path, bundleRoot, validateSources)
 }
 
 func loadManagedCurrentManifest(data []byte, path, bundleRoot string, validateSources bool) (Pack, error) {
@@ -117,11 +110,10 @@ func loadManagedCurrentManifest(data []byte, path, bundleRoot string, validateSo
 		ReadinessObligations: managed.ReadinessObligations,
 		ExternalRequirements: managed.ExternalRequirements,
 		Resources:            managed.Resources,
-		Exclusions:           []Exclusion{},
-	}, path, bundleRoot, validateSources, true)
+	}, path, bundleRoot, validateSources)
 }
 
-func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, validateSources, managed bool) (Pack, error) {
+func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, validateSources bool) (Pack, error) {
 	if raw.Selectable == nil {
 		return Pack{}, fmt.Errorf("invalid Pack manifest %s: field selectable is required", path)
 	}
@@ -134,11 +126,10 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 		Surfaces:             raw.Surfaces,
 		ReadinessObligations: raw.ReadinessObligations,
 		Requires:             Requirements{Tools: raw.ExternalRequirements},
-		Contract:             Contract{Exclusions: raw.Exclusions, OptionalModes: []OptionalMode{}},
-		SourceReference:      raw.SourceReference,
+		Contract:             Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
 	}
 	for i, encoded := range raw.Resources {
-		wire, err := decodeCurrentResource(encoded, managed)
+		wire, err := decodeCurrentResource(encoded)
 		if err != nil {
 			return Pack{}, fmt.Errorf("Pack %q resource %d: %w", raw.ID, i, err)
 		}
@@ -163,14 +154,7 @@ func loadCurrentManifestRuntime(raw currentManifest, path, bundleRoot string, va
 	return pack, nil
 }
 
-func decodeCurrentResource(encoded json.RawMessage, managed bool) (currentResourceWire, error) {
-	if !managed {
-		var wire currentResourceWire
-		if err := strictDecode(encoded, &wire); err != nil {
-			return currentResourceWire{}, err
-		}
-		return wire, nil
-	}
+func decodeCurrentResource(encoded json.RawMessage) (currentResourceWire, error) {
 	var wire managedCurrentResourceWire
 	if err := strictDecode(encoded, &wire); err != nil {
 		return currentResourceWire{}, err
@@ -184,7 +168,6 @@ func decodeCurrentResource(encoded json.RawMessage, managed bool) (currentResour
 func ValidateProjectPack(pack Pack, projectRoot string) error {
 	pack.manifestVersion = manifestSchemaV4
 	pack.Contract = Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}}
-	pack.SourceReference = nil
 	if err := validateCurrentPack(pack); err != nil {
 		return err
 	}
@@ -215,9 +198,6 @@ func validateCurrentPack(pack Pack) error {
 	}
 	if pack.Contract.Exclusions == nil {
 		return fmt.Errorf("Pack %q field exclusions is a required non-null array", pack.ID)
-	}
-	if pack.SourceReference != nil && (strings.TrimSpace(pack.SourceReference.Repository) == "" || strings.TrimSpace(pack.SourceReference.Revision) == "") {
-		return fmt.Errorf("Pack %q field source_reference requires repository and revision", pack.ID)
 	}
 	identities := make(map[string]bool, len(pack.Resources))
 	ordered := make([]string, 0, len(pack.Resources))

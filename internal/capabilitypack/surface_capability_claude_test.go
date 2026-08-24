@@ -273,6 +273,7 @@ func writeClaudeCompositionPack(t *testing.T, bundle, packID, version, workflow 
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
+  "schema_version": 1,
   "id": %q,
   "version": %q,
   "description": "Synthetic Claude composition",
@@ -280,6 +281,7 @@ func writeClaudeCompositionPack(t *testing.T, bundle, packID, version, workflow 
   "surfaces": ["claude"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
+  "origins": [],
   "resources": [
     {
       "kind": "agent", "id": "reviewer", "source": "agents/reviewer.md", "description": "Reviews changes", "mode": "subagent",
@@ -297,8 +299,7 @@ func writeClaudeCompositionPack(t *testing.T, bundle, packID, version, workflow 
       "bindings": [{"surface":"claude","projection":"skill","name":"workflow","invocation":"/workflow","mode":"native","sharing":"exclusive","capabilities":[{"type":"claude-composite-skill","claude_composite_skill":{"dependencies":[],"references":[{"kind":"asset","id":"guide"}]}}]}],
       "surface_exclusions": []
     }
-  ],
-  "exclusions": []
+  ]
 }`, packID, version)
 	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
