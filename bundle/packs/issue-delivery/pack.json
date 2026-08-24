@@ -1,107 +1,116 @@
 {
-  "description": "Deliver issues through policy-driven or Matt-configured workflows",
-  "exclusions": [],
-  "external_requirements": [
-    "gh",
-    "git"
-  ],
+  "schema_version": 1,
   "id": "issue-delivery",
+  "version": "1.1.2",
+  "description": "Deliver issues through policy-driven or Matt-configured workflows",
+  "selectable": true,
+  "surfaces": [
+    "codex"
+  ],
   "readiness_obligations": [
     "runtime-usability",
     "surface-authorization"
   ],
+  "external_requirements": [
+    "gh",
+    "git"
+  ],
+  "origins": [
+    {
+      "id": "mattpocock-skills",
+      "repository": "mattpocock/skills",
+      "commit": "84fdeffd12f2ee307994d1eb6feb48173b6e0502",
+      "revision": "84fdeffd12f2ee307994d1eb6feb48173b6e0502"
+    }
+  ],
   "resources": [
     {
-      "attribution": "Copyright (c) 2026 Yerson Argote",
-      "bindings": [],
-      "conflicts": [],
-      "description": "Preserve the upstream issue-delivery MIT license and attribution",
-      "id": "mit",
       "kind": "notice",
-      "license": "MIT",
-      "requires": [],
+      "id": "mit",
       "source": "notices/issue-delivery-mit",
+      "description": "Preserve the Issue Delivery MIT license and attribution",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 Yerson Argote",
+      "requires": [],
+      "conflicts": [],
+      "bindings": [],
       "surface_exclusions": []
     },
     {
+      "kind": "skill",
+      "id": "deliver-issue",
+      "source": "skills/deliver-issue",
+      "description": "Deliver one approved issue through implementation, review, protected merge, and cleanup",
+      "requires": [],
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
       "bindings": [
         {
-          "capabilities": [],
+          "surface": "codex",
+          "projection": "skill",
+          "name": "deliver-issue",
           "invocation": "$deliver-issue",
           "mode": "native",
-          "name": "deliver-issue",
-          "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "capabilities": []
         }
       ],
-      "conflicts": [],
-      "description": "Deliver one approved issue through implementation, review, protected merge, and cleanup",
-      "id": "deliver-issue",
-      "kind": "skill",
-      "notices": [
-        "notice:mit"
-      ],
-      "requires": [],
-      "source": "skills/deliver-issue",
       "surface_exclusions": []
     },
     {
+      "kind": "skill",
+      "id": "deliver-issue-matt",
+      "source": "skills/deliver-issue-matt",
+      "description": "Deliver one ready issue with Matt's workflow; requires the tdd and code-review skills from the matty Pack at runtime",
+      "requires": [],
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "origin": {
+        "id": "mattpocock-skills",
+        "path": "skills/engineering/implement",
+        "relationship": "adapted"
+      },
       "bindings": [
         {
-          "capabilities": [],
+          "surface": "codex",
+          "projection": "skill",
+          "name": "deliver-issue-matt",
           "invocation": "$deliver-issue-matt",
           "mode": "native",
-          "name": "deliver-issue-matt",
-          "projection": "skill",
           "sharing": "exclusive",
-          "surface": "codex"
+          "capabilities": []
         }
       ],
-      "conflicts": [],
-      "description": "Deliver one ready issue with Matt's workflow; requires the tdd and code-review skills from the matty Pack at runtime",
-      "id": "deliver-issue-matt",
-      "kind": "skill",
-      "notices": [
-        "notice:mit"
-      ],
-      "requires": [],
-      "source": "skills/deliver-issue-matt",
       "surface_exclusions": []
     },
     {
-      "bindings": [
-        {
-          "capabilities": [],
-          "invocation": "$setup-issue-delivery",
-          "mode": "native",
-          "name": "setup-issue-delivery",
-          "projection": "skill",
-          "sharing": "exclusive",
-          "surface": "codex"
-        }
-      ],
-      "conflicts": [],
-      "description": "Set up repository-owned issue-delivery policy and its delivery skill",
-      "id": "setup-issue-delivery",
       "kind": "skill",
-      "notices": [
-        "notice:mit"
-      ],
+      "id": "setup-issue-delivery",
+      "source": "skills/setup-issue-delivery",
+      "description": "Set up repository-owned issue-delivery policy and its delivery skill",
       "requires": [
         "skill:deliver-issue"
       ],
-      "source": "skills/setup-issue-delivery",
+      "conflicts": [],
+      "notices": [
+        "notice:mit"
+      ],
+      "bindings": [
+        {
+          "surface": "codex",
+          "projection": "skill",
+          "name": "setup-issue-delivery",
+          "invocation": "$setup-issue-delivery",
+          "mode": "native",
+          "sharing": "exclusive",
+          "capabilities": []
+        }
+      ],
       "surface_exclusions": []
     }
-  ],
-  "selectable": true,
-  "source_reference": {
-    "repository": "https://github.com/yersonargotev/issue-deliver-pack.git",
-    "revision": "1.1.1"
-  },
-  "surfaces": [
-    "codex"
-  ],
-  "version": "1.1.1"
+  ]
 }
