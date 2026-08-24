@@ -20,7 +20,7 @@ func TestIssue704IssueDeliveryManagedPackOwnsCurrentRuntimeContractAndClosure(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.ID != "issue-delivery" || pack.Version != "1.1.2" || !pack.Selectable || pack.SourceReference != nil ||
+	if pack.ID != "issue-delivery" || pack.Version != "1.1.2" || !pack.Selectable ||
 		!reflect.DeepEqual(pack.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) ||
 		!reflect.DeepEqual(pack.ReadinessObligations, []capabilitypack.ReadinessObligation{capabilitypack.ReadinessRuntimeUsability, capabilitypack.ReadinessSurfaceAuthorization}) ||
 		!reflect.DeepEqual(pack.Requires.Tools, []string{"gh", "git"}) {
@@ -103,43 +103,4 @@ func assertIssue704Skill(t *testing.T, resource capabilitypack.Resource, id, sou
 	if binding.Surface != capabilitypack.SurfaceCodex || binding.Projection != "skill" || binding.Name != id || binding.Invocation != invocation || binding.Mode != "native" || binding.Sharing != "exclusive" || len(binding.Capabilities) != 0 {
 		t.Fatalf("Issue Delivery skill %s binding = %#v", id, binding)
 	}
-}
-
-func TestIssue704IssueDeliveryLegacyAuthorityIsAbsent(t *testing.T) {
-	root := repositoryRoot(t)
-	for _, relative := range []string{
-		"bundle/compatibility/issue-delivery",
-		"bundle/history/issue-delivery",
-		"bundle/sources/issue-delivery-source.lock.json",
-		"docs/research/evidence/issue-deliver-pack-1.0.0-legal-admission.json",
-		"docs/research/evidence/issue-deliver-pack-1.1.0-legal-admission.json",
-		"docs/research/evidence/issue-deliver-pack-1.1.1-legal-admission.json",
-		"docs/research/evidence/generic-issue-delivery-pack-viability.md",
-		"internal/packsync/issue_delivery_legal_admission_test.go",
-	} {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative))); !os.IsNotExist(err) {
-			t.Errorf("legacy Issue Delivery authority remains at %s: %v", relative, err)
-		}
-	}
-
-	manifestPath := filepath.Join(root, "bundle", "packs", "issue-delivery", "pack.json")
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rawManifest map[string]json.RawMessage
-	if err := json.Unmarshal(data, &rawManifest); err != nil {
-		t.Fatal(err)
-	}
-	for _, key := range []string{"exclusions", "source_reference"} {
-		if _, ok := rawManifest[key]; ok {
-			t.Errorf("legacy Issue Delivery manifest field %q remains", key)
-		}
-	}
-
-	sources := loadCheckedInSources(t, root)
-	if len(sources) != 0 {
-		t.Errorf("legacy Pack Source registrations remain: %#v", sources)
-	}
-	assertRemainingLegacySourcesAreClosed(t, root, sources)
 }

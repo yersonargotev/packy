@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/yersonargotev/packy/internal/capabilitypack"
@@ -20,7 +19,7 @@ func TestIssue705OrchestrateManagedPackOwnsCurrentRuntimeContractAndClosure(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.ID != "orchestrate" || pack.Version != "1.0.2" || !pack.Selectable || pack.SourceReference != nil ||
+	if pack.ID != "orchestrate" || pack.Version != "1.0.2" || !pack.Selectable ||
 		!reflect.DeepEqual(pack.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) ||
 		!reflect.DeepEqual(pack.ReadinessObligations, []capabilitypack.ReadinessObligation{capabilitypack.ReadinessRuntimeUsability, capabilitypack.ReadinessSurfaceAuthorization}) ||
 		len(pack.Requires.Tools) != 0 {
@@ -96,139 +95,5 @@ func assertIssue705Binding(t *testing.T, binding capabilitypack.Binding, project
 	t.Helper()
 	if binding.Surface != capabilitypack.SurfaceCodex || binding.Projection != projection || binding.Name != name || binding.Invocation != invocation || binding.Mode != "native" || binding.Sharing != "exclusive" || len(binding.Capabilities) != 0 {
 		t.Fatalf("Orchestrate %s binding = %#v", projection, binding)
-	}
-}
-
-func TestIssue705OrchestrateLegacyAuthorityIsAbsentAndRemainingSourcesAreClosed(t *testing.T) {
-	root := repositoryRoot(t)
-	for _, relative := range []string{
-		"bundle/compatibility/orchestrate",
-		"bundle/history/orchestrate",
-		"bundle/sources/orchestrate-source.lock.json",
-		"docs/research/evidence/orchestrate-skill-1.0.0-legal-admission.json",
-		"docs/research/evidence/orchestrate-skill-1.0.1-legal-admission.json",
-	} {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative))); !os.IsNotExist(err) {
-			t.Errorf("legacy Orchestrate authority remains at %s: %v", relative, err)
-		}
-	}
-
-	manifestPath := filepath.Join(root, "bundle", "packs", "orchestrate", "pack.json")
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rawManifest map[string]json.RawMessage
-	if err := json.Unmarshal(data, &rawManifest); err != nil {
-		t.Fatal(err)
-	}
-	for _, key := range []string{"exclusions", "source_reference"} {
-		if _, ok := rawManifest[key]; ok {
-			t.Errorf("legacy Orchestrate manifest field %q remains", key)
-		}
-	}
-
-	sources := loadCheckedInSources(t, root)
-	for _, source := range sources {
-		if source.ID == "orchestrate-source" {
-			t.Errorf("legacy Orchestrate source registration remains: %#v", source)
-		}
-		for _, resource := range source.Resources {
-			if resource.PackID == "orchestrate" {
-				t.Errorf("legacy Orchestrate source binding remains in %s", source.ID)
-			}
-		}
-	}
-	assertRemainingLegacySourcesAreClosed(t, root, sources)
-}
-
-type checkedInSourceConfiguration struct {
-	ID         string `json:"id"`
-	Repository string `json:"repository"`
-	Resources  []struct {
-		PackID string `json:"pack_id"`
-	} `json:"resources"`
-}
-
-func loadCheckedInSources(t *testing.T, root string) []checkedInSourceConfiguration {
-	t.Helper()
-	var configuration struct {
-		Sources []checkedInSourceConfiguration `json:"sources"`
-	}
-	data, err := os.ReadFile(filepath.Join(root, "bundle", "sources.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &configuration); err != nil {
-		t.Fatal(err)
-	}
-	return configuration.Sources
-}
-
-func assertRemainingLegacySourcesAreClosed(t *testing.T, root string, sources []checkedInSourceConfiguration) {
-	t.Helper()
-	consumerPacks := make(map[string]struct{})
-	sourceRepositories := make(map[string]struct{})
-	for _, source := range sources {
-		sourceRepositories[source.Repository] = struct{}{}
-		lockPath := filepath.Join(root, "bundle", "sources", source.ID+".lock.json")
-		if info, err := os.Stat(lockPath); err != nil || !info.Mode().IsRegular() {
-			t.Errorf("source %s lock is not a regular file: %v", source.ID, err)
-		}
-		for _, resource := range source.Resources {
-			consumerPacks[resource.PackID] = struct{}{}
-			manifestPath := filepath.Join(root, "bundle", "packs", resource.PackID, "pack.json")
-			pack, err := capabilitypack.LoadCurrentManifest(manifestPath, filepath.Join(root, "bundle"), true)
-			if err != nil {
-				t.Errorf("load source consumer %s: %v", resource.PackID, err)
-				continue
-			}
-			if pack.SourceReference == nil {
-				t.Errorf("source %s consumer %s lacks source_reference", source.ID, resource.PackID)
-			}
-		}
-	}
-	for _, relativeRoot := range []string{"bundle/history", "bundle/compatibility"} {
-		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(relativeRoot)))
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			if _, ok := consumerPacks[entry.Name()]; !ok {
-				t.Errorf("%s/%s has no remaining Pack Source consumer", relativeRoot, entry.Name())
-			}
-		}
-	}
-
-	evidenceRoot := filepath.Join(root, "docs", "research", "evidence")
-	entries, err := os.ReadDir(evidenceRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "-legal-admission.json") {
-			continue
-		}
-		var evidence struct {
-			Candidate struct {
-				Repository string `json:"repository"`
-			} `json:"candidate"`
-		}
-		data, err := os.ReadFile(filepath.Join(evidenceRoot, entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(data, &evidence); err != nil {
-			t.Fatalf("decode %s: %v", entry.Name(), err)
-		}
-		if _, ok := sourceRepositories[evidence.Candidate.Repository]; !ok {
-			t.Errorf("legacy legal evidence %s has no remaining Pack Source repository", entry.Name())
-		}
 	}
 }

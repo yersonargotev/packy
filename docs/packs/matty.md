@@ -11,6 +11,14 @@ Matty workflow
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
+## Provenance
+
+- Managed Pack Project: [`yersonargotev/skills-mattpocock`](https://github.com/yersonargotev/skills-mattpocock)
+- Immutable release: [`pack-v1.1.0`](https://github.com/yersonargotev/skills-mattpocock/releases/tag/pack-v1.1.0)
+- Pack Admission Record: [`managed-packs/admissions/matty/1.1.0.json`](../../managed-packs/admissions/matty/1.1.0.json)
+
+This immutable Managed Pack release, sealed by Packy's Pack Admission Record, is the provenance authority for the bundled Pack.
+
 ## Resources
 
 ### Notice
@@ -148,10 +156,6 @@ Matty workflow
   - Role: `operational`
   - Dependencies: None.
   - Notices: `notice:mit`
-
-## Pack exclusions
-
-None.
 
 ## Inspect and preview
 

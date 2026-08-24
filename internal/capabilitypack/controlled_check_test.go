@@ -260,7 +260,7 @@ func TestFileControlledCheckStoreRejectsUnknownJSONFields(t *testing.T) {
 }
 
 func controlledCheckTestPack(id string) Pack {
-	return Pack{manifestVersion: manifestSchemaV4, ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}}, Contract: Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}}}
+	return Pack{ID: id, Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}, Resources: []Resource{{Kind: "skill", ID: "guide", Source: "guide", Description: "Guide", Requires: []string{}, Conflicts: []string{}, Bindings: testCapabilityBindings("guide"), SurfaceExclusions: []SurfaceExclusion{}}}, Contract: Contract{OptionalModes: []OptionalMode{}}}
 }
 
 func controlledCheckTestObservation(revision, host string) SurfaceInspection {

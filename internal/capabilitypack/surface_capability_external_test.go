@@ -277,6 +277,7 @@ func writePrimaryPromptPack(t *testing.T, bundle, packID string) {
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
+  "schema_version": 1,
   "id": %q,
   "version": "1.0.0",
   "description": "Synthetic OpenCode primary prompt tracer",
@@ -284,6 +285,7 @@ func writePrimaryPromptPack(t *testing.T, bundle, packID string) {
   "surfaces": ["opencode"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
+  "origins": [],
   "resources": [
     {
       "kind": "skill", "id": "alpha-owner", "source": %q, "description": "Owns the primary prompt", "requires": [], "conflicts": [],
@@ -295,8 +297,7 @@ func writePrimaryPromptPack(t *testing.T, bundle, packID string) {
       "bindings": [{"surface": "opencode", "projection": "skill", "name": %q, "invocation": %q, "mode": "native", "sharing": "exclusive", "capabilities": []}],
       "surface_exclusions": []
     }
-  ],
-  "exclusions": []
+  ]
 }
 `, packID, "skills/"+packID, packID+"-owner", packID+"-owner", packID+"-primary", "instructions/"+packID+".md", packID+"-plain", packID+"-plain")
 	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(manifest), 0o600); err != nil {
@@ -325,6 +326,7 @@ func writeProjectInstructionPack(t *testing.T, bundle, packID string, surface ca
 		t.Fatal(err)
 	}
 	manifest := fmt.Sprintf(`{
+  "schema_version": 1,
   "id": %q,
   "version": "1.0.0",
   "description": "Synthetic capability tracer",
@@ -332,6 +334,7 @@ func writeProjectInstructionPack(t *testing.T, bundle, packID string, surface ca
   "surfaces": [%q],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
+  "origins": [],
   "resources": [{
     "kind": "skill",
     "id": %q,
@@ -352,8 +355,7 @@ func writeProjectInstructionPack(t *testing.T, bundle, packID string, surface ca
       }]
     }],
     "surface_exclusions": []
-  }],
-  "exclusions": []
+  }]
 }
 `, packID, surface, packID+"-skill", "skills/"+packID, surface, packID+"-skill", packID+"-skill", packID+"-guidance", "instructions/"+packID+".md")
 	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(manifest), 0o600); err != nil {

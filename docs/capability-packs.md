@@ -72,29 +72,26 @@ resources, projected paths, and content digests. Packy uses that receipt to:
 Preview always runs before application. Use `--force` only after inspecting a
 drift report; its authority is limited to paths in the targeted receipt.
 
-## Authoring one Pack
+## Authoring and promoting one Pack
 
-Start from [the standard template](../bundle/pack-template/README.md):
+Every Pack is authored in exactly one public, maintainer-controlled [Managed Pack Project](managed-pack-projects.md).
+Each project owns one `pack.json` manifest using schema v1, and its declared
+bundle-relative resource roots form the complete authoring contract;
+the bundled catalog is not an authoring location.
 
-1. Copy `bundle/pack-template` to `bundle/packs/<pack-id>`.
-2. Add or edit reviewed content beneath the Pack directory.
-3. Edit the one `pack.json` manifest.
-4. Select the new Pack SemVer as the maintainer.
-5. Run the focused validator:
-
-   ```sh
-   ./scripts/validate-pack-content.sh <pack-id>
-   ```
-6. Regenerate the committed Pack catalog:
-
-   ```sh
-   go run ./internal/tools/packdocs
-   ```
+1. Create or update the Managed Pack Project's reviewed resources and root
+   manifest.
+2. Choose the Pack SemVer and declare immutable external origins and notices
+   for every derived resource.
+3. Run the reusable Managed Pack validation workflow before publishing.
+4. Publish the complete immutable `pack-v<version>` release.
+5. Have Packy promote the registered release. Promotion independently
+   reacquires, validates, and admits it before proposing the catalog update.
 
 The manifest declares Pack identity, version, description, selectability,
 surfaces, resources, bindings, intra-Pack dependencies, external requirements,
-concrete conflicts, and exclusions. The focused validator reports the Pack and
-invalid field or resource directly.
+and concrete conflicts. The [Managed Pack Project contract](managed-pack-projects.md)
+defines its schema, closure, validation, registry, and promotion details.
 
 Every binding declares a non-null `capabilities` array. Most bindings use an
 empty array. A binding that needs reusable host-native behavior selects only a
@@ -117,9 +114,9 @@ of tool readiness: every declared name is observed generically through PATH,
 and no tool receives acquisition merely because of its name. Acquisition never
 authorizes a tool-owned host setup command.
 
-The generated Pack catalog is derived from the manifests; it is not a second
-authoring source or manually maintained snapshot. Review and merge the manifest
-and content together through the normal GitHub pull-request flow.
+The generated Pack catalog is derived from admitted Managed Pack releases; it
+is not a second authoring source or manually maintained snapshot. Review and
+merge promotion proposals through the normal GitHub pull-request flow.
 
 ## Project use
 

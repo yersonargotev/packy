@@ -20,7 +20,7 @@ func (c Catalog) ResolveIntentPack(ctx context.Context, id, version string) (Pac
 	return c.resolveIntentPack(ctx, id, version)
 }
 
-func (c Catalog) validateUpdateRoute(id, _, toVersion string, _ int, _ Surface) error {
+func (c Catalog) validateUpdateRoute(id, _, toVersion string, _ Surface) error {
 	pack, err := c.catalogMetadata(id)
 	if err != nil {
 		return err

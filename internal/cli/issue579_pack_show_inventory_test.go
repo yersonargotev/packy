@@ -41,7 +41,7 @@ func TestPackShowHumanRendersDeterministicDescriptiveInventory(t *testing.T) {
 	}
 }
 
-func TestPackShowJSONV5IncludesDescriptiveInventory(t *testing.T) {
+func TestPackShowJSONV6IncludesDescriptiveInventory(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -64,8 +64,8 @@ func TestPackShowJSONV5IncludesDescriptiveInventory(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 5 {
-		t.Fatalf("schema version = %d, want 5", document.SchemaVersion)
+	if document.SchemaVersion != 6 {
+		t.Fatalf("schema version = %d, want 6", document.SchemaVersion)
 	}
 	if len(document.ResourceInventory) != 2 {
 		t.Fatalf("resource inventory = %#v", document.ResourceInventory)

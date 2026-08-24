@@ -614,7 +614,7 @@ func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (Recon
 	if err != nil {
 		return ReconciliationPlan{}, err
 	}
-	if err := f.catalog.validateUpdateRoute(request.PackID, intent.Version, current.Version, current.manifestVersion, request.Surface); err != nil {
+	if err := f.catalog.validateUpdateRoute(request.PackID, intent.Version, current.Version, request.Surface); err != nil {
 		return ReconciliationPlan{}, err
 	}
 	activation.Selection, err = canonicalSelection(intent.Selection)
@@ -659,9 +659,6 @@ func (f Facade) previewDeactivate(ctx context.Context, request DeactivationReque
 	if len(request.Resources) > 0 {
 		if !active || !intent.Active {
 			return ReconciliationPlan{}, fmt.Errorf("cannot remove resources from inactive capability pack %q", request.PackID)
-		}
-		if requested.manifestVersion != manifestSchemaV4 {
-			return ReconciliationPlan{}, fmt.Errorf("resource-scoped deactivation requires manifest schema_version 4")
 		}
 		nextSelection, selectionErr := removeResourceSelectionRoots(requested, selection, request.Resources)
 		if selectionErr != nil {

@@ -9,10 +9,9 @@ import (
 
 func TestFacadeShowExplainsPerSurfaceRootAndAllSelectability(t *testing.T) {
 	pack := Pack{
-		manifestVersion: manifestSchemaV4,
-		ID:              "app",
-		Version:         "1.0.0",
-		Surfaces:        []Surface{SurfaceCodex},
+		ID:       "app",
+		Version:  "1.0.0",
+		Surfaces: []Surface{SurfaceCodex},
 		Resources: []Resource{
 			{
 				Kind: "command", ID: "consumer",
@@ -71,7 +70,7 @@ func TestFacadeShowExplainsPerSurfaceRootAndAllSelectability(t *testing.T) {
 
 func TestExternalExecutableAcquisitionIsSelectedOnlyWithItsDeclaringResourceClosure(t *testing.T) {
 	pack := Pack{
-		manifestVersion: manifestSchemaV4, ID: "portable", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Requires: Requirements{Tools: []string{"engram"}},
+		ID: "portable", Version: "1.0.0", Surfaces: []Surface{SurfaceCodex}, Requires: Requirements{Tools: []string{"engram"}},
 		Resources: []Resource{
 			{Kind: "mcp_server", ID: "memory", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceCodex, Capabilities: []SurfaceCapability{{Type: SurfaceCapabilityExternalExecutableAcquisition, ExternalExecutableAcquisition: &ExternalExecutableAcquisitionCapability{Tool: "engram"}}}}}, SurfaceExclusions: []SurfaceExclusion{}},
 			{Kind: "skill", ID: "plain", Requires: []string{}, Bindings: []Binding{{Surface: SurfaceCodex}}, SurfaceExclusions: []SurfaceExclusion{}},
@@ -112,10 +111,9 @@ func planHasAction(plan ReconciliationPlan, id string) bool {
 
 func TestConflictingSelectionBlocksWithRolesChainsAndNoMutation(t *testing.T) {
 	pack := Pack{
-		manifestVersion: manifestSchemaV4,
-		ID:              "app",
-		Version:         "1.0.0",
-		Surfaces:        []Surface{SurfaceCodex},
+		ID:       "app",
+		Version:  "1.0.0",
+		Surfaces: []Surface{SurfaceCodex},
 		Resources: []Resource{
 			{
 				Kind: "command", ID: "consumer",
@@ -176,10 +174,9 @@ func TestConflictingSelectionBlocksWithRolesChainsAndNoMutation(t *testing.T) {
 func TestAddingConflictingRootPreservesActiveCustomIntent(t *testing.T) {
 	current := ResourceSelection{Mode: SelectionCustom, Roots: []ResourceIdentity{{Kind: "skill", ID: "left"}}}
 	pack := Pack{
-		manifestVersion: manifestSchemaV4,
-		ID:              "app",
-		Version:         "1.0.0",
-		Surfaces:        []Surface{SurfaceCodex},
+		ID:       "app",
+		Version:  "1.0.0",
+		Surfaces: []Surface{SurfaceCodex},
 		Resources: []Resource{
 			{
 				Kind: "skill", ID: "left", Conflicts: []string{"skill:right"}, Notices: []string{},
@@ -220,10 +217,9 @@ func TestAddingConflictingRootPreservesActiveCustomIntent(t *testing.T) {
 
 func TestAllOmitsOptionalSurfaceExclusionsWhileCustomRootBlocks(t *testing.T) {
 	pack := Pack{
-		manifestVersion: manifestSchemaV4,
-		ID:              "app",
-		Version:         "1.0.0",
-		Surfaces:        []Surface{SurfaceCodex},
+		ID:       "app",
+		Version:  "1.0.0",
+		Surfaces: []Surface{SurfaceCodex},
 		Resources: []Resource{
 			{
 				Kind: "skill", ID: "included", Notices: []string{},

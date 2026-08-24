@@ -2,7 +2,7 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 10
+const StatusSchemaVersion = 11
 
 type JSONIntent struct {
 	State     string            `json:"state"`

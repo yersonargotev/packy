@@ -18,9 +18,9 @@ import (
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/authorityphase"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubacquisition"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubproposal"
+	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubsource"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/offlinevalidation"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/repositorycandidate"
-	"github.com/yersonargotev/packy/internal/packsync/githubsource"
 )
 
 const usage = "usage: promotepack <pack-id>@<version>"

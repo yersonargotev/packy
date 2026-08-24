@@ -185,12 +185,6 @@ func selectPackResources(pack Pack, selection ResourceSelection) (Pack, error) {
 	if err != nil {
 		return Pack{}, err
 	}
-	if selection.Mode == SelectionAll && pack.manifestVersion != manifestSchemaV4 {
-		return clonePack(pack), nil
-	}
-	if pack.manifestVersion != manifestSchemaV4 {
-		return Pack{}, fmt.Errorf("custom resource selection requires manifest schema_version 4")
-	}
 	return selectPackResourceClosure(pack, selection)
 }
 
@@ -331,11 +325,7 @@ func resourceSelectionFacts(pack Pack, selection ResourceSelection, surface Surf
 	selection, _ = canonicalSelection(selection)
 	selected := map[string]bool{}
 	if active {
-		if selection.Mode == SelectionAll && pack.manifestVersion != manifestSchemaV4 {
-			for _, resource := range pack.Resources {
-				selected[resource.Kind+":"+resource.ID] = true
-			}
-		} else if roots, err := resourceSelectionRoots(pack, selection); err == nil {
+		if roots, err := resourceSelectionRoots(pack, selection); err == nil {
 			if _, chains, err := resolveResourceClosure(pack, roots); err == nil {
 				for identity := range chains {
 					selected[identity] = true

@@ -11,6 +11,14 @@ Apply pstack's reviewed portable engineering workflows and principles
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
+## Provenance
+
+- Managed Pack Project: [`yersonargotev/pstack`](https://github.com/yersonargotev/pstack)
+- Immutable release: [`pack-v1.0.1`](https://github.com/yersonargotev/pstack/releases/tag/pack-v1.0.1)
+- Pack Admission Record: [`managed-packs/admissions/pstack/1.0.1.json`](../../managed-packs/admissions/pstack/1.0.1.json)
+
+This immutable Managed Pack release, sealed by Packy's Pack Admission Record, is the provenance authority for the bundled Pack.
+
 ## Resources
 
 ### Notice
@@ -126,10 +134,6 @@ Apply pstack's reviewed portable engineering workflows and principles
   - Role: `operational`
   - Dependencies: None.
   - Notices: `notice:pstack-mit`
-
-## Pack exclusions
-
-None.
 
 ## Inspect and preview
 

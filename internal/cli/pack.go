@@ -520,7 +520,7 @@ func newPackDeactivateCommand(opts Options, workstationResolver *workstation.Res
 	}}
 	cmd.Flags().StringVar(&surface, "surface", "", "CLI surface (claude, codex, or opencode)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
-	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Remove a manifest-v4 operational resource root (<kind>:<id>); repeatable")
+	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Remove one operational resource root (<kind>:<id>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	cmd.Flags().BoolVar(&project, "project", false, "Deactivate exact personal runtime effects for the current project")
 	cmd.Flags().BoolVar(&force, "force", false, "Remove drifted paths proven to belong to this installed Pack receipt")
@@ -873,7 +873,7 @@ func newPackActivateCommand(opts Options, workstationResolver *workstation.Resol
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the immutable plan without approval or mutation")
 	cmd.Flags().BoolVar(&project, "project", false, "Activate personal runtime effects from the current project installation")
 	cmd.Flags().StringArrayVar(&aliasValues, "alias", nil, "Set a surface-local alias (<kind>:<logical-id>=<host-name>); repeatable")
-	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one manifest-v4 operational resource (<kind>:<id>); repeatable")
+	cmd.Flags().StringArrayVar(&resourceValues, "resource", nil, "Select one operational resource root (<kind>:<id>); repeatable")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit stable versioned JSON events")
 	_ = cmd.MarkFlagRequired("surface")
 	return cmd

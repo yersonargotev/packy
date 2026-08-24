@@ -53,7 +53,7 @@ func TestResourceGraphForAllTreatsEveryOperationalResourceAsSelectableRoot(t *te
 }
 
 func TestSensitiveEffectOriginsIncludeOnlySurfaceCapabilityDependencies(t *testing.T) {
-	pack := Pack{manifestVersion: manifestSchemaV4, ID: "synthetic", Resources: []Resource{
+	pack := Pack{ID: "synthetic", Resources: []Resource{
 		{Kind: "agent", ID: "reviewer", Permissions: []string{"network"}, Requires: []string{}},
 		{Kind: "skill", ID: "workflow", Requires: []string{}, Bindings: []Binding{{
 			Surface: SurfaceClaude,
@@ -88,10 +88,7 @@ func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
 				{Surface: SurfaceCodex, Projection: "agent", Name: "reviewer", Invocation: "delegate", Mode: "degraded", Degradation: "no nested delegation", Sharing: "exclusive"},
 			}},
 			{Kind: "skill", ID: "run", Permissions: []string{"process"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "run", Invocation: "$run", Mode: "native", Sharing: "shared"}}},
-		}, Contract: Contract{
-			Exclusions:    []Exclusion{{ID: "hooks", SourcePaths: []string{"z", "a"}, Reason: "excluded"}},
-			OptionalModes: []OptionalMode{{ID: "deploy", Authorities: []string{"write", "network"}, Fallback: "prompt"}},
-		}}
+		}, Contract: Contract{OptionalModes: []OptionalMode{{ID: "deploy", Authorities: []string{"write", "network"}, Fallback: "prompt"}}}}
 	aliases := []SurfaceAlias{{Kind: "skill", ID: "run", Name: "z"}, {Kind: "agent", ID: "reviewer", Name: "a"}}
 	got := LifecycleContractFor(pack, SurfaceCodex, aliases)
 	if got.Counts != (ResourceCounts{Agents: 1, Skills: 1}) {
@@ -106,11 +103,8 @@ func TestLifecycleContractForIsCanonicalAndSurfaceScoped(t *testing.T) {
 	if !reflect.DeepEqual(got.PromptAuthorities, []string{"filesystem", "network", "process", "write"}) {
 		t.Fatalf("authorities = %#v", got.PromptAuthorities)
 	}
-	if got.Aliases[0].Kind != "agent" || !reflect.DeepEqual(got.Exclusions[0].SourcePaths, []string{"a", "z"}) {
+	if got.Aliases[0].Kind != "agent" {
 		t.Fatalf("contract not canonical: %#v", got)
-	}
-	if pack.Contract.Exclusions[0].SourcePaths[0] != "z" {
-		t.Fatal("derivation mutated pack")
 	}
 }
 
@@ -147,11 +141,11 @@ func TestLifecycleCompatibilityIsIndependentFromReadinessAndIntent(t *testing.T)
 		pack Pack
 		want Compatibility
 	}{
-		{"complete", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{resource(&Binding{Surface: SurfaceClaude, Mode: "native"}, nil)}}, CompatibilityComplete},
-		{"degraded binding", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{resource(&Binding{Surface: SurfaceClaude, Mode: "degraded", Degradation: "fallback"}, nil)}}, CompatibilityDegraded},
-		{"optional exclusion", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{resource(nil, &SurfaceExclusion{Surface: SurfaceClaude, Mode: "optional"})}}, CompatibilityDegraded},
-		{"mandatory exclusion", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{resource(nil, &SurfaceExclusion{Surface: SurfaceClaude, Mode: "mandatory"})}}, CompatibilityBlocked},
-		{"missing outcome", Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{{Kind: "instruction", ID: "guide"}}}, CompatibilityBlocked},
+		{"complete", Pack{Resources: []Resource{resource(&Binding{Surface: SurfaceClaude, Mode: "native"}, nil)}}, CompatibilityComplete},
+		{"degraded binding", Pack{Resources: []Resource{resource(&Binding{Surface: SurfaceClaude, Mode: "degraded", Degradation: "fallback"}, nil)}}, CompatibilityDegraded},
+		{"optional exclusion", Pack{Resources: []Resource{resource(nil, &SurfaceExclusion{Surface: SurfaceClaude, Mode: "optional"})}}, CompatibilityDegraded},
+		{"mandatory exclusion", Pack{Resources: []Resource{resource(nil, &SurfaceExclusion{Surface: SurfaceClaude, Mode: "mandatory"})}}, CompatibilityBlocked},
+		{"missing outcome", Pack{Resources: []Resource{{Kind: "instruction", ID: "guide"}}}, CompatibilityBlocked},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -164,7 +158,7 @@ func TestLifecycleCompatibilityIsIndependentFromReadinessAndIntent(t *testing.T)
 }
 
 func TestLifecycleCompatibilityBlocksExcludedDependencyAndRendersSurfaceExclusion(t *testing.T) {
-	pack := Pack{manifestVersion: manifestSchemaV3, Resources: []Resource{
+	pack := Pack{Resources: []Resource{
 		{Kind: "instruction", ID: "guide", Requires: []string{"lifecycle:memory"}, Bindings: []Binding{{Surface: SurfaceClaude, Mode: "native"}}},
 		{Kind: "lifecycle", ID: "memory", SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceClaude, Mode: "optional", Code: "generic-lifecycle-unsupported", Reason: "requires an explicit typed hook"}}},
 	}}
@@ -183,7 +177,7 @@ func TestLifecycleCompatibilityBlocksExcludedDependencyAndRendersSurfaceExclusio
 }
 
 func TestReconciliationPlanJSONReportIsDeterministicAndComplete(t *testing.T) {
-	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "lifecycle-report", Version: "1.0.0", manifestVersion: manifestSchemaV3}, operation: OperationActivate,
+	plan := ReconciliationPlan{id: "p", digest: "d", pack: Pack{ID: "lifecycle-report", Version: "1.0.0"}, operation: OperationActivate,
 		surface: SurfaceCodex, intentRevision: 3, aliases: []SurfaceAlias{{Kind: "skill", ID: "z", Name: "z"}},
 		readiness: ReadinessStatus{Configured: ReadinessFalse, Authorized: ReadinessUnknown, Usable: ReadinessUnknown}, conditions: []ReadinessCondition{{Type: ConditionRuntimeUsability, Dimension: ReadinessUsable, Value: ReadinessUnknown, Reason: ReasonRuntimeUnobservable, Message: "runtime usability cannot be observed", Evidence: []string{}, Freshness: ReadinessFreshness{ObservedAt: "2026-08-09T00:00:00Z", ValidityIdentity: "lifecycle-report/usable"}}}, pendingEvidence: []string{"z", "a"},
 		blockers:            []PlanBlocker{{Kind: BlockerAlias, Subject: "z", Detail: "collision"}},

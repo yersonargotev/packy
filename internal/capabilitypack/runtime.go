@@ -149,7 +149,7 @@ func (e RuntimePreflightError) Error() string {
 }
 
 // EvaluateRuntimeModes validates exact evidence coverage and evaluates every
-// declared manifest-v4 mode. maxAge must be positive; an observation older
+// declared runtime mode. maxAge must be positive; an observation older
 // than maxAge is normalized to unverified/stale.
 func EvaluateRuntimeModes(pack Pack, records []RuntimeModeEvidence, now time.Time, maxAge time.Duration) ([]RuntimeModeResult, error) {
 	if now.IsZero() || maxAge <= 0 {

@@ -12,8 +12,7 @@ import (
 
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubacquisition"
-	"github.com/yersonargotev/packy/internal/packsync"
-	"github.com/yersonargotev/packy/internal/packsync/githubsource"
+	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubsource"
 )
 
 var _ githubacquisition.Source = (*githubsource.Client)(nil)
@@ -23,8 +22,8 @@ func TestAdapterAcquireCopiesOneImmutableReleaseAndItsOrigins(t *testing.T) {
 	projectCommit := strings.Repeat("a", 40)
 	originCommit := strings.Repeat("b", 40)
 	source := newFakeSource(t)
-	source.releases = []packsync.Release{validSourceRelease("pack-v1.2.3")}
-	source.releaseCandidates = []packsync.Candidate{
+	source.releases = []githubsource.Release{validSourceRelease("pack-v1.2.3")}
+	source.releaseCandidates = []githubsource.Candidate{
 		validReleaseCandidate("Example/Managed", projectCommit),
 		validReleaseCandidate("example/managed", projectCommit),
 	}
@@ -105,7 +104,7 @@ func TestAdapterAcquireRejectsOversizedAnnotatedTagChainBeforeSnapshot(t *testin
 	t.Setenv("TMPDIR", temporary)
 	source := releaseOnlySource(t)
 	candidate := source.releaseCandidates[0]
-	candidate.TagObjects = make([]packsync.TagObject, 33)
+	candidate.TagObjects = make([]githubsource.TagObject, 33)
 	for index := range candidate.TagObjects {
 		sha := fmt.Sprintf("%040x", index+1)
 		targetSHA := candidate.Commit
@@ -114,7 +113,7 @@ func TestAdapterAcquireRejectsOversizedAnnotatedTagChainBeforeSnapshot(t *testin
 			targetSHA = fmt.Sprintf("%040x", index+2)
 			targetType = "tag"
 		}
-		candidate.TagObjects[index] = packsync.TagObject{SHA: sha, TargetSHA: targetSHA, TargetType: targetType}
+		candidate.TagObjects[index] = githubsource.TagObject{SHA: sha, TargetSHA: targetSHA, TargetType: targetType}
 	}
 	candidate.TagRefSHA = candidate.TagObjects[0].SHA
 	source.releaseCandidates[0] = candidate
@@ -215,7 +214,7 @@ func TestAdapterAcquireRejectsOriginEvidenceThatMovesDuringSnapshot(t *testing.T
 	originCommit := strings.Repeat("b", 40)
 	manifest := fmt.Sprintf(`{"origins":[{"id":"upstream","repository":"upstream/source","commit":%q}]}`, originCommit)
 	source := validAcquisitionSource(t, manifest)
-	source.snapshotHook = func(_ string, candidate packsync.Candidate) error {
+	source.snapshotHook = func(_ string, candidate githubsource.Candidate) error {
 		if candidate.Commit == originCommit {
 			moved := source.commitCandidates[originCommit]
 			moved.RepositoryID++
@@ -234,7 +233,7 @@ func TestAdapterAcquireRejectsLinksAndCleansPartialSnapshots(t *testing.T) {
 	temporary := t.TempDir()
 	t.Setenv("TMPDIR", temporary)
 	source := validAcquisitionSource(t, `{"origins":[]}`)
-	source.snapshotHook = func(snapshot string, _ packsync.Candidate) error {
+	source.snapshotHook = func(snapshot string, _ githubsource.Candidate) error {
 		return os.Symlink("pack.json", filepath.Join(snapshot, "alias"))
 	}
 
@@ -253,40 +252,40 @@ type fakeFile struct {
 
 type fakeSource struct {
 	t                 *testing.T
-	releases          []packsync.Release
-	releaseCandidates []packsync.Candidate
-	commitCandidates  map[string]packsync.Candidate
+	releases          []githubsource.Release
+	releaseCandidates []githubsource.Candidate
+	commitCandidates  map[string]githubsource.Candidate
 	snapshots         map[string]map[string]fakeFile
-	snapshotHook      func(string, packsync.Candidate) error
+	snapshotHook      func(string, githubsource.Candidate) error
 }
 
 func newFakeSource(t *testing.T) *fakeSource {
 	t.Helper()
-	return &fakeSource{t: t, commitCandidates: map[string]packsync.Candidate{}, snapshots: map[string]map[string]fakeFile{}}
+	return &fakeSource{t: t, commitCandidates: map[string]githubsource.Candidate{}, snapshots: map[string]map[string]fakeFile{}}
 }
 
-func (source *fakeSource) Releases(context.Context, packsync.SourceConfig) ([]packsync.Release, error) {
-	return append([]packsync.Release(nil), source.releases...), nil
+func (source *fakeSource) Releases(context.Context, string) ([]githubsource.Release, error) {
+	return append([]githubsource.Release(nil), source.releases...), nil
 }
 
-func (source *fakeSource) ResolveRelease(_ context.Context, _ packsync.SourceConfig, _ packsync.Release) (packsync.Candidate, error) {
+func (source *fakeSource) ResolveRelease(_ context.Context, _ string, _ githubsource.Release) (githubsource.Candidate, error) {
 	if len(source.releaseCandidates) == 0 {
-		return packsync.Candidate{}, fmt.Errorf("unexpected ResolveRelease call")
+		return githubsource.Candidate{}, fmt.Errorf("unexpected ResolveRelease call")
 	}
 	result := source.releaseCandidates[0]
 	source.releaseCandidates = source.releaseCandidates[1:]
 	return result, nil
 }
 
-func (source *fakeSource) ResolveCommit(_ context.Context, _ packsync.SourceConfig, sha string) (packsync.Candidate, error) {
+func (source *fakeSource) ResolveCommit(_ context.Context, _ string, sha string) (githubsource.Candidate, error) {
 	result, ok := source.commitCandidates[sha]
 	if !ok {
-		return packsync.Candidate{}, fmt.Errorf("unexpected ResolveCommit(%q)", sha)
+		return githubsource.Candidate{}, fmt.Errorf("unexpected ResolveCommit(%q)", sha)
 	}
 	return result, nil
 }
 
-func (source *fakeSource) WithGitTreeSnapshot(_ context.Context, candidate packsync.Candidate, temporaryRoot string, visit func(string) error) error {
+func (source *fakeSource) WithGitTreeSnapshot(_ context.Context, candidate githubsource.Candidate, temporaryRoot string, visit func(string) error) error {
 	if err := os.MkdirAll(temporaryRoot, 0o755); err != nil {
 		return err
 	}
@@ -316,30 +315,30 @@ func (source *fakeSource) WithGitTreeSnapshot(_ context.Context, candidate packs
 	return removeErr
 }
 
-func validSourceRelease(tag string) packsync.Release {
-	return packsync.Release{ID: 202, Tag: tag, Immutable: true, PublishedAt: mustTime()}
+func validSourceRelease(tag string) githubsource.Release {
+	return githubsource.Release{ID: 202, Tag: tag, Immutable: true, PublishedAt: mustTime()}
 }
 
-func validReleaseCandidate(repository, commit string) packsync.Candidate {
+func validReleaseCandidate(repository, commit string) githubsource.Candidate {
 	release := validSourceRelease("pack-v1.2.3")
-	return packsync.Candidate{
+	return githubsource.Candidate{
 		Repository: repository, RepositoryID: 101, Public: true, Release: &release,
 		TagRefName: "refs/tags/pack-v1.2.3", TagRefType: "tag", TagRefSHA: strings.Repeat("d", 40),
-		TagObjects: []packsync.TagObject{{SHA: strings.Repeat("d", 40), TargetSHA: commit, TargetType: "commit"}},
+		TagObjects: []githubsource.TagObject{{SHA: strings.Repeat("d", 40), TargetSHA: commit, TargetType: "commit"}},
 		Commit:     commit, Tree: strings.Repeat("c", 40),
 	}
 }
 
-func validCommitCandidate(repository, commit string) packsync.Candidate {
-	return packsync.Candidate{Repository: repository, RepositoryID: 303, Public: true, Commit: commit, Tree: strings.Repeat("e", 40)}
+func validCommitCandidate(repository, commit string) githubsource.Candidate {
+	return githubsource.Candidate{Repository: repository, RepositoryID: 303, Public: true, Commit: commit, Tree: strings.Repeat("e", 40)}
 }
 
 func releaseOnlySource(t *testing.T) *fakeSource {
 	t.Helper()
 	commit := strings.Repeat("a", 40)
 	source := newFakeSource(t)
-	source.releases = []packsync.Release{validSourceRelease("pack-v1.2.3")}
-	source.releaseCandidates = []packsync.Candidate{validReleaseCandidate("example/managed", commit)}
+	source.releases = []githubsource.Release{validSourceRelease("pack-v1.2.3")}
+	source.releaseCandidates = []githubsource.Candidate{validReleaseCandidate("example/managed", commit)}
 	return source
 }
 

@@ -12,9 +12,9 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy audit --json` | `schemas/cli/v1/pack-audit.schema.json` |
 | `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
-| `packy show PACK --json` | `schemas/cli/v5/pack-show.schema.json` |
-| global Pack status | `schemas/cli/v10/pack-status.schema.json` |
-| global Pack lifecycle | `schemas/cli/v10/pack-lifecycle.schema.json` |
+| `packy show PACK --json` | `schemas/cli/v6/pack-show.schema.json` |
+| global Pack status | `schemas/cli/v11/pack-status.schema.json` |
+| global Pack lifecycle | `schemas/cli/v11/pack-lifecycle.schema.json` |
 | project Pack lifecycle | `schemas/project/v1.0.0/` |
 
 Canonical fixtures live under `internal/cli/testdata/`. Repository tests compile
@@ -62,11 +62,12 @@ secret material are never recorded or emitted.
 Arrays representing sets use their schema-defined deterministic order. Arrays
 representing work preserve execution order.
 
-Pack show v5 adds `resource_inventory`, the domain-owned descriptive list of
-every Pack resource. Each entry includes its identity, purpose, role, direct
-dependencies, and relevant notices; entries and relationships use canonical
-resource-identity order. Lifecycle and status resource graphs retain their
-existing schemas and operational selection semantics.
+Pack show v6 exposes the current Managed Pack as `catalog_identity` and includes
+`resource_inventory`, the domain-owned descriptive list of every Pack resource.
+Each entry includes its identity, purpose, role, direct dependencies, and
+relevant notices; entries and relationships use canonical resource-identity
+order. Lifecycle and status resource graphs retain their operational selection
+semantics.
 
 ## Redaction
 

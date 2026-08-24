@@ -8,9 +8,8 @@ import (
 
 func TestEvaluateRuntimeFitnessBuildsDeterministicSurfaceSelectionMatrix(t *testing.T) {
 	pack := Pack{
-		manifestVersion: manifestSchemaV4,
-		ID:              "fitness",
-		Surfaces:        []Surface{SurfaceOpenCode, SurfaceCodex},
+		ID:       "fitness",
+		Surfaces: []Surface{SurfaceOpenCode, SurfaceCodex},
 		Resources: []Resource{
 			{Kind: "asset", ID: "payload"},
 			{Kind: "notice", ID: "license"},
@@ -92,7 +91,7 @@ func TestEvaluateRuntimeFitnessRejectsUnavailableSelections(t *testing.T) {
 	}{
 		{
 			name: "dependency unavailable",
-			pack: Pack{manifestVersion: manifestSchemaV4, ID: "dependency", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+			pack: Pack{ID: "dependency", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
 				{Kind: "skill", ID: "consumer", Requires: []string{"instruction:missing-here"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "consumer"}}},
 				{Kind: "instruction", ID: "missing-here", Bindings: []Binding{{Surface: SurfaceOpenCode, Projection: "instruction", Name: "missing-here"}}, SurfaceExclusions: []SurfaceExclusion{{Surface: SurfaceCodex, Mode: "optional", Code: "unsupported", Reason: "not supported"}}},
 			}},
@@ -100,7 +99,7 @@ func TestEvaluateRuntimeFitnessRejectsUnavailableSelections(t *testing.T) {
 		},
 		{
 			name: "conflict",
-			pack: Pack{manifestVersion: manifestSchemaV4, ID: "conflict", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+			pack: Pack{ID: "conflict", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
 				{Kind: "skill", ID: "left", Conflicts: []string{"skill:right"}, Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "left"}}},
 				{Kind: "skill", ID: "right", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "right"}}},
 			}},
@@ -118,7 +117,7 @@ func TestEvaluateRuntimeFitnessRejectsUnavailableSelections(t *testing.T) {
 }
 
 func TestEvaluateRuntimeFitnessRejectsProjectionNameCollision(t *testing.T) {
-	pack := Pack{manifestVersion: manifestSchemaV4, ID: "collision", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
+	pack := Pack{ID: "collision", Surfaces: []Surface{SurfaceCodex}, Resources: []Resource{
 		{Kind: "skill", ID: "left", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "same"}}},
 		{Kind: "skill", ID: "right", Bindings: []Binding{{Surface: SurfaceCodex, Projection: "skill", Name: "same"}}},
 	}}

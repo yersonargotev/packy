@@ -69,8 +69,8 @@ func validClaudeCapabilityPack() Pack {
 		}},
 	}
 	return Pack{
-		manifestVersion: manifestSchemaV4, ID: "synthetic", Version: "1.0.0", Description: "Synthetic", Selectable: true,
+		ID: "synthetic", Version: "1.0.0", Description: "Synthetic", Selectable: true,
 		Surfaces: []Surface{SurfaceClaude}, ReadinessObligations: []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization},
-		Requires: Requirements{Tools: []string{}}, Resources: []Resource{agent, asset, skill}, Contract: Contract{Exclusions: []Exclusion{}, OptionalModes: []OptionalMode{}},
+		Requires: Requirements{Tools: []string{}}, Resources: []Resource{agent, asset, skill}, Contract: Contract{OptionalModes: []OptionalMode{}},
 	}
 }

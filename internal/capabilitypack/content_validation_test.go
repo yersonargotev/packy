@@ -226,6 +226,7 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
 		t.Fatal(err)
 	}
 	manifest := []byte(`{
+  "schema_version": 1,
   "id": "resource-descriptions",
   "version": "1.0.0",
   "description": "Synthetic resource description fixture",
@@ -233,6 +234,7 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
   "surfaces": ["codex"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": [],
+  "origins": [],
   "resources": [
     {
       "kind": "agent", "id": "reviewer", "source": "agents/reviewer.md",
@@ -269,8 +271,7 @@ func writeResourceDescriptionFixture(t *testing.T, bundle string) string {
       "bindings": [{"surface": "codex", "projection": "skill", "name": "api-design", "invocation": "$api-design", "mode": "native", "sharing": "exclusive", "capabilities": []}],
       "surface_exclusions": []
     }
-  ],
-  "exclusions": []
+  ]
 }
 `)
 	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
@@ -300,7 +301,7 @@ func TestValidatePackContentReportsCurrentContractErrors(t *testing.T) {
 		mutate func(map[string]any)
 		want   string
 	}{
-		{"legacy schema selector", func(m map[string]any) { m["schema_version"] = 4 }, "unknown field"},
+		{"wrong schema version", func(m map[string]any) { m["schema_version"] = 4 }, "schema_version must be 1"},
 		{"runtime modes", func(m map[string]any) { currentFixtureResource(m)["runtime_modes"] = []any{} }, "unknown field"},
 		{"root migrations", func(m map[string]any) { m["root_migrations"] = []any{} }, "unknown field"},
 		{"cross-Pack capabilities", func(m map[string]any) { m["provides"] = []any{"cap:example"} }, "unknown field"},
@@ -317,9 +318,9 @@ func TestValidatePackContentReportsCurrentContractErrors(t *testing.T) {
 		{"unsupported surface", func(m map[string]any) { m["surfaces"] = []any{"mobile"} }, "unsupported CLI surface"},
 		{"invalid external requirement", func(m map[string]any) { m["external_requirements"] = []any{"Example Tool"} }, "external_requirements"},
 		{"unknown concrete conflict", func(m map[string]any) { currentFixtureResource(m)["conflicts"] = []any{"skill:missing"} }, `conflict "skill:missing" does not exist`},
-		{"overlapping exclusion", func(m map[string]any) {
+		{"retired exclusions", func(m map[string]any) {
 			m["exclusions"] = []any{map[string]any{"id": "selected", "source_paths": []any{"packs/example-pack/instructions/guide.md"}, "reason": "must remain selected"}}
-		}, "overlaps selected resource"},
+		}, "unknown field"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -405,26 +406,6 @@ func mustReadFile(t *testing.T, path string) []byte {
 	return data
 }
 
-func TestCheckedInPackTemplateUsesCurrentContract(t *testing.T) {
-	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pack, err := ValidatePackContent(bundle, filepath.Join(bundle, "pack-template"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pack.ID != "example-pack" || pack.Version != "1.0.0" || pack.Selectable {
-		t.Fatalf("template Pack = %#v", pack)
-	}
-	if len(pack.Resources) != 1 || strings.TrimSpace(pack.Resources[0].Description) == "" {
-		t.Fatalf("template resources = %#v", pack.Resources)
-	}
-	if got, want := pack.ReadinessObligations, []ReadinessObligation{ReadinessRuntimeUsability, ReadinessSurfaceAuthorization}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("template readiness obligations = %#v, want %#v", got, want)
-	}
-}
-
 func TestCheckedInCurrentManifestsOmitRetiredContractTerms(t *testing.T) {
 	bundle, err := filepath.Abs(filepath.Join("..", "..", "bundle"))
 	if err != nil {
@@ -474,6 +455,7 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
 		t.Fatal(err)
 	}
 	manifest := `{
+  "schema_version": 1,
   "id": "` + id + `",
   "version": "1.0.0",
   "description": "Example Pack",
@@ -481,6 +463,7 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
   "surfaces": ["codex"],
   "readiness_obligations": ["runtime-usability", "surface-authorization"],
   "external_requirements": ["example-tool"],
+  "origins": [],
   "resources": [
     {
       "kind": "instruction",
@@ -502,12 +485,7 @@ func writeCurrentPackFixture(t *testing.T, bundle, id string) string {
       ],
       "surface_exclusions": []
     }
-  ],
-  "exclusions": [],
-  "source_reference": {
-    "repository": "https://example.com/example-pack.git",
-    "revision": "v1.0.0"
-  }
+  ]
 }`
 	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
@@ -542,7 +520,7 @@ func writePortableFixture(t *testing.T, bundle, id, source string) {
 	if err := os.WriteFile(filepath.Join(bundle, source), []byte("inert\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared","capabilities":[{"type":"project-instruction","project_instruction":{"id":"guidance","source":"` + source + `"}}]}],"surface_exclusions":[]}],"exclusions":[]}`
+	manifest := `{"schema_version":1,"id":"` + id + `","version":"1.0.0","description":"Fixture","selectable":true,"surfaces":["codex"],"readiness_obligations":["runtime-usability","surface-authorization"],"external_requirements":[],"origins":[],"resources":[{"kind":"instruction","id":"guidance","source":"` + source + `","description":"Explains the reviewed guidance","requires":[],"conflicts":[],"bindings":[{"surface":"codex","projection":"instruction","name":"guidance","invocation":"guidance","mode":"native","sharing":"shared","capabilities":[{"type":"project-instruction","project_instruction":{"id":"guidance","source":"` + source + `"}}]}],"surface_exclusions":[]}]}`
 	if err := os.WriteFile(filepath.Join(bundle, "packs", id, "pack.json"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -59,12 +59,6 @@ func TestLoadCurrentManifestLoadsMaterializedManagedPackWithoutChangingManifest(
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("resources = %#v, want %#v", got, want)
 	}
-	if pack.Contract.Exclusions == nil || len(pack.Contract.Exclusions) != 0 {
-		t.Fatalf("runtime exclusions = %#v, want non-nil empty", pack.Contract.Exclusions)
-	}
-	if pack.SourceReference != nil {
-		t.Fatalf("runtime source reference = %#v, want nil", pack.SourceReference)
-	}
 }
 
 func TestLoadCurrentManifestRejectsInvalidManagedPackWire(t *testing.T) {
@@ -130,91 +124,20 @@ func TestLoadCurrentManifestRejectsInvalidManagedPackWire(t *testing.T) {
 	}
 }
 
-// TODO(#706): Delete this pinned fixture and its loader coverage with the
-// retired legacy manifest loader.
-func TestLoadCurrentManifestStillLoadsPinnedLegacyManifestDuringMigration(t *testing.T) {
+func TestLoadCurrentManifestRejectsManifestWithoutManagedSchemaVersion(t *testing.T) {
 	bundleRoot := t.TempDir()
-	manifestPath := writeLegacyCurrentManifestFixture(t, bundleRoot)
+	manifestPath := filepath.Join(bundleRoot, "packs", "missing-schema", "pack.json")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte(`{"id":"missing-schema"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
-	pack, err := LoadCurrentManifest(manifestPath, bundleRoot, true)
-	if err != nil {
-		t.Fatal(err)
+	_, err := LoadCurrentManifest(manifestPath, bundleRoot, true)
+	if err == nil || !strings.Contains(err.Error(), "Managed Pack schema_version is required") {
+		t.Fatalf("manifest error = %v, want missing Managed Pack schema_version", err)
 	}
-	if pack.ID != "legacy-loader" || pack.Version != "7.8.9" || !pack.Selectable {
-		t.Fatalf("legacy Pack identity and selection semantics = %#v", pack)
-	}
-	if len(pack.Resources) != 1 || pack.Contract.Exclusions == nil {
-		t.Fatalf("legacy resources or exclusions were not preserved: resources=%d exclusions=%#v", len(pack.Resources), pack.Contract.Exclusions)
-	}
-	if got, want := pack.SourceReference, (&SourceReference{
-		Repository: "https://example.test/legacy-loader.git",
-		Revision:   "7.8.9",
-	}); !reflect.DeepEqual(got, want) {
-		t.Fatalf("legacy source reference = %#v, want %#v", got, want)
-	}
-}
-
-func writeLegacyCurrentManifestFixture(t *testing.T, bundleRoot string) string {
-	t.Helper()
-	manifestPath := filepath.Join(bundleRoot, "packs", "legacy-loader", "pack.json")
-	sourcePath := filepath.Join(bundleRoot, "instructions", "legacy-loader.md")
-	for _, path := range []string{manifestPath, sourcePath} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(sourcePath, []byte("# Pinned legacy guidance\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	manifest := []byte(`{
-  "id": "legacy-loader",
-  "version": "7.8.9",
-  "description": "Pinned synthetic legacy loader fixture",
-  "selectable": true,
-  "surfaces": ["codex"],
-  "readiness_obligations": ["runtime-usability", "surface-authorization"],
-  "external_requirements": [],
-  "resources": [
-    {
-      "kind": "instruction",
-      "id": "guide",
-      "source": "instructions/legacy-loader.md",
-      "description": "Projects pinned legacy guidance",
-      "requires": [],
-      "conflicts": [],
-      "bindings": [
-        {
-          "surface": "codex",
-          "projection": "instruction",
-          "name": "guide",
-          "invocation": "guide",
-          "mode": "native",
-          "sharing": "shared",
-          "capabilities": [
-            {
-              "type": "project-instruction",
-              "project_instruction": {
-                "id": "guide",
-                "source": "instructions/legacy-loader.md"
-              }
-            }
-          ]
-        }
-      ],
-      "surface_exclusions": []
-    }
-  ],
-  "exclusions": [],
-  "source_reference": {
-    "repository": "https://example.test/legacy-loader.git",
-    "revision": "7.8.9"
-  }
-}
-`)
-	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return manifestPath
 }
 
 func writeManagedCurrentManifestFixture(t *testing.T, bundleRoot string) (string, []byte) {

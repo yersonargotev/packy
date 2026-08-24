@@ -53,11 +53,18 @@ adds the pstack Pack, and updates the bundled Matty and Engram Packs.
 - The reviewed Issue Delivery Pack advances to `1.1.2` through the public
   `yersonargotev/issue-deliver-pack` Managed Pack Project release
   `pack-v1.1.2`, preserving its three Codex skills and Packy integration and
-  dependency behavior while replacing legacy source, history, legal, and
-  compatibility authority with its Pack Admission Record.
+  dependency behavior while recording its immutable project and origin
+  provenance in its Pack Admission Record.
 - Managed Pack preventive validation now materializes and runtime-loads the
   exact sealed bundle before publication, checks every supported
   surface/selection row, and reports actionable content-free exact-copy drift.
+- The seven current Packs now resolve exclusively through the Managed Pack
+  Registry and their exact current Pack Admission Records: Addy `2.0.3`,
+  Argote `1.0.3`, Engram `3.1.1`, Issue Delivery `1.1.2`, Matty `1.1.0`,
+  Orchestrate `1.0.2`, and pstack `1.0.1`. Generated Pack pages link each
+  immutable Managed Pack Project release and Admission Record as the bundled
+  Pack's provenance authority; the retired catalog-maintenance schemas,
+  loaders, configuration, classification, evidence, and workflows are gone.
 
 The release artifact format is unchanged.
 

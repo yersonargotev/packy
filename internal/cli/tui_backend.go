@@ -958,10 +958,7 @@ func surfaceCapabilitiesForTUI(resource capabilitypack.Resource) []tui.SurfaceCa
 }
 
 func exclusionsForTUI(pack capabilitypack.Pack) []tui.Exclusion {
-	result := make([]tui.Exclusion, 0, len(pack.Contract.Exclusions))
-	for _, exclusion := range pack.Contract.Exclusions {
-		result = append(result, tui.Exclusion{ID: exclusion.ID, Reason: exclusion.Reason})
-	}
+	result := []tui.Exclusion{}
 	for _, resource := range pack.Resources {
 		for _, exclusion := range resource.SurfaceExclusions {
 			result = append(result, tui.Exclusion{

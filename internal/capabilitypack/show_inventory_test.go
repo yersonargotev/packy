@@ -8,11 +8,10 @@ import (
 
 func TestFacadeShowReturnsCanonicalDescriptiveResourceInventory(t *testing.T) {
 	pack := Pack{
-		manifestVersion: manifestSchemaV4,
-		ID:              "example",
-		Version:         "1.0.0",
-		Description:     "Example Pack",
-		Surfaces:        []Surface{SurfaceCodex},
+		ID:          "example",
+		Version:     "1.0.0",
+		Description: "Example Pack",
+		Surfaces:    []Surface{SurfaceCodex},
 		Resources: []Resource{
 			{Kind: "notice", ID: "terms", Description: "Explains the license terms."},
 			{Kind: "skill", ID: "review", Description: "Reviews a change.", Requires: []string{"asset:rubric"}, Notices: []string{"notice:terms"}},
@@ -27,6 +26,13 @@ func TestFacadeShowReturnsCanonicalDescriptiveResourceInventory(t *testing.T) {
 	report, err := facade.Show(context.Background(), pack.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	wantAuthority := "Packy's Pack Admission Record is the immutable release and provenance authority; it remains outside the end-user bundle."
+	if report.CatalogIdentity.Limitation != wantAuthority {
+		t.Fatalf("catalog identity authority = %q, want %q", report.CatalogIdentity.Limitation, wantAuthority)
+	}
+	if report.CatalogIdentity.SchemaVersion != 1 {
+		t.Fatalf("Managed Pack schema version = %d, want 1", report.CatalogIdentity.SchemaVersion)
 	}
 	want := []DescriptiveResource{
 		{

@@ -21,7 +21,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/yersonargotev/packy/internal/managedpack"
 	"github.com/yersonargotev/packy/internal/managedpackpromotion"
-	"github.com/yersonargotev/packy/internal/packsync"
+	"github.com/yersonargotev/packy/internal/managedpackpromotion/githubsource"
 )
 
 var (
@@ -37,10 +37,10 @@ const (
 
 // Source is the smallest read-only boundary needed from githubsource.Client.
 type Source interface {
-	Releases(context.Context, packsync.SourceConfig) ([]packsync.Release, error)
-	ResolveRelease(context.Context, packsync.SourceConfig, packsync.Release) (packsync.Candidate, error)
-	ResolveCommit(context.Context, packsync.SourceConfig, string) (packsync.Candidate, error)
-	WithGitTreeSnapshot(context.Context, packsync.Candidate, string, func(string) error) error
+	Releases(context.Context, string) ([]githubsource.Release, error)
+	ResolveRelease(context.Context, string, githubsource.Release) (githubsource.Candidate, error)
+	ResolveCommit(context.Context, string, string) (githubsource.Candidate, error)
+	WithGitTreeSnapshot(context.Context, githubsource.Candidate, string, func(string) error) error
 }
 
 // Adapter implements managedpackpromotion.Acquirer with a read-only source.
@@ -83,8 +83,7 @@ func (adapter Adapter) Acquire(ctx context.Context, project string, coordinate m
 		}
 	}()
 
-	config := sourceConfig(project)
-	releases, err := adapter.source.Releases(ctx, config)
+	releases, err := adapter.source.Releases(ctx, project)
 	if err != nil {
 		return result, fmt.Errorf("list Managed Pack releases: %w", err)
 	}
@@ -92,7 +91,7 @@ func (adapter Adapter) Acquire(ctx context.Context, project string, coordinate m
 	if err != nil {
 		return result, err
 	}
-	first, err := adapter.source.ResolveRelease(ctx, config, selected)
+	first, err := adapter.source.ResolveRelease(ctx, project, selected)
 	if err != nil {
 		return result, fmt.Errorf("resolve Managed Pack release: %w", err)
 	}
@@ -110,7 +109,7 @@ func (adapter Adapter) Acquire(ctx context.Context, project string, coordinate m
 	}
 	originRoots := make(map[string]string, len(origins))
 	for _, origin := range origins {
-		candidate, resolveErr := adapter.source.ResolveCommit(ctx, sourceConfig(origin.Repository), origin.Commit)
+		candidate, resolveErr := adapter.source.ResolveCommit(ctx, origin.Repository, origin.Commit)
 		if resolveErr != nil {
 			return result, fmt.Errorf("resolve origin %q exact commit: %w", origin.ID, resolveErr)
 		}
@@ -121,7 +120,7 @@ func (adapter Adapter) Acquire(ctx context.Context, project string, coordinate m
 		if err := adapter.snapshot(ctx, candidate, filepath.Join(root, "staging-origin-"+origin.ID), destination); err != nil {
 			return result, fmt.Errorf("acquire origin %q snapshot: %w", origin.ID, err)
 		}
-		finalOrigin, resolveErr := adapter.source.ResolveCommit(ctx, sourceConfig(origin.Repository), origin.Commit)
+		finalOrigin, resolveErr := adapter.source.ResolveCommit(ctx, origin.Repository, origin.Commit)
 		if resolveErr != nil {
 			return result, fmt.Errorf("re-resolve origin %q exact commit: %w", origin.ID, resolveErr)
 		}
@@ -134,7 +133,7 @@ func (adapter Adapter) Acquire(ctx context.Context, project string, coordinate m
 		originRoots[origin.ID] = destination
 	}
 
-	final, err := adapter.source.ResolveRelease(ctx, config, selected)
+	final, err := adapter.source.ResolveRelease(ctx, project, selected)
 	if err != nil {
 		return result, fmt.Errorf("re-resolve Managed Pack release: %w", err)
 	}
@@ -159,38 +158,34 @@ func (adapter Adapter) Acquire(ctx context.Context, project string, coordinate m
 	return result, nil
 }
 
-func sourceConfig(repository string) packsync.SourceConfig {
-	return packsync.SourceConfig{Provider: "github", Repository: repository}
-}
-
-func selectRelease(releases []packsync.Release, coordinate managedpackpromotion.Coordinate) (packsync.Release, error) {
+func selectRelease(releases []githubsource.Release, coordinate managedpackpromotion.Coordinate) (githubsource.Release, error) {
 	want := "pack-v" + coordinate.Version
-	matches := make([]packsync.Release, 0, 1)
+	matches := make([]githubsource.Release, 0, 1)
 	for _, release := range releases {
 		if release.Tag == want {
 			matches = append(matches, release)
 		}
 	}
 	if len(matches) != 1 {
-		return packsync.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, fmt.Sprintf("expected exactly one release tagged %q, found %d", want, len(matches)))
+		return githubsource.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, fmt.Sprintf("expected exactly one release tagged %q, found %d", want, len(matches)))
 	}
 	release := matches[0]
 	switch {
 	case release.ID <= 0:
-		return packsync.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release ID must be positive")
+		return githubsource.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release ID must be positive")
 	case release.PublishedAt.IsZero():
-		return packsync.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release is not published")
+		return githubsource.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release is not published")
 	case release.Draft:
-		return packsync.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release is a draft")
+		return githubsource.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release is a draft")
 	case release.Prerelease:
-		return packsync.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release is a prerelease")
+		return githubsource.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release is a prerelease")
 	case !release.Immutable:
-		return packsync.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release does not report GitHub immutability")
+		return githubsource.Release{}, managedpackpromotion.Reject(managedpackpromotion.GateRelease, "release does not report GitHub immutability")
 	}
 	return release, nil
 }
 
-func validateReleaseCandidate(candidate packsync.Candidate, project string, selected packsync.Release) string {
+func validateReleaseCandidate(candidate githubsource.Candidate, project string, selected githubsource.Release) string {
 	if !strings.EqualFold(candidate.Repository, project) {
 		return fmt.Sprintf("resolved repository %q does not match registered project %q", candidate.Repository, project)
 	}
@@ -224,7 +219,7 @@ func validateReleaseCandidate(candidate packsync.Candidate, project string, sele
 	return ""
 }
 
-func validateTagChain(candidate packsync.Candidate) string {
+func validateTagChain(candidate githubsource.Candidate) string {
 	if len(candidate.TagObjects) == 0 {
 		return "annotated release tag has no tag object chain"
 	}
@@ -253,7 +248,7 @@ func validateTagChain(candidate packsync.Candidate) string {
 	return ""
 }
 
-func releaseEvidence(project string, candidate packsync.Candidate) managedpackpromotion.Release {
+func releaseEvidence(project string, candidate githubsource.Candidate) managedpackpromotion.Release {
 	var tagObjects []managedpackpromotion.TagObject
 	if candidate.TagObjects != nil {
 		tagObjects = make([]managedpackpromotion.TagObject, len(candidate.TagObjects))
@@ -272,7 +267,7 @@ func releaseEvidence(project string, candidate packsync.Candidate) managedpackpr
 	}
 }
 
-func sameReleaseEvidence(first, final packsync.Candidate) bool {
+func sameReleaseEvidence(first, final githubsource.Candidate) bool {
 	return strings.EqualFold(first.Repository, final.Repository) &&
 		first.RepositoryID == final.RepositoryID && first.Public == final.Public &&
 		reflect.DeepEqual(first.Release, final.Release) && first.TagRefName == final.TagRefName &&
@@ -351,7 +346,7 @@ func requireJSONEOF(decoder *json.Decoder) error {
 	return nil
 }
 
-func validateOriginCandidate(candidate packsync.Candidate, origin managedpack.Origin) string {
+func validateOriginCandidate(candidate githubsource.Candidate, origin managedpack.Origin) string {
 	if !strings.EqualFold(candidate.Repository, origin.Repository) {
 		return fmt.Sprintf("origin %q resolved repository %q instead of %q", origin.ID, candidate.Repository, origin.Repository)
 	}
@@ -370,13 +365,13 @@ func validateOriginCandidate(candidate packsync.Candidate, origin managedpack.Or
 	return ""
 }
 
-func sameOriginEvidence(first, final packsync.Candidate) bool {
+func sameOriginEvidence(first, final githubsource.Candidate) bool {
 	return strings.EqualFold(first.Repository, final.Repository) &&
 		first.RepositoryID == final.RepositoryID && first.Public == final.Public &&
 		first.Commit == final.Commit && first.Tree == final.Tree
 }
 
-func (adapter Adapter) snapshot(ctx context.Context, candidate packsync.Candidate, stagingRoot, destination string) error {
+func (adapter Adapter) snapshot(ctx context.Context, candidate githubsource.Candidate, stagingRoot, destination string) error {
 	if err := os.Mkdir(stagingRoot, 0o700); err != nil {
 		return err
 	}

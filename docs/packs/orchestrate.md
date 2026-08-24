@@ -11,6 +11,14 @@ Coordinate focused Codex subagents
 - Readiness obligations: `runtime-usability`, `surface-authorization`
 - External requirements: None.
 
+## Provenance
+
+- Managed Pack Project: [`yersonargotev/orchestrate-skill`](https://github.com/yersonargotev/orchestrate-skill)
+- Immutable release: [`pack-v1.0.2`](https://github.com/yersonargotev/orchestrate-skill/releases/tag/pack-v1.0.2)
+- Pack Admission Record: [`managed-packs/admissions/orchestrate/1.0.2.json`](../../managed-packs/admissions/orchestrate/1.0.2.json)
+
+This immutable Managed Pack release, sealed by Packy's Pack Admission Record, is the provenance authority for the bundled Pack.
+
 ## Resources
 
 ### Lifecycle
@@ -33,10 +41,6 @@ Coordinate focused Codex subagents
   - Role: `operational`
   - Dependencies: None.
   - Notices: `notice:mit`
-
-## Pack exclusions
-
-None.
 
 ## Inspect and preview
 

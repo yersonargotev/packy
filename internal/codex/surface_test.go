@@ -226,7 +226,7 @@ func TestPortableCodexWorkflowProjectsNativeBindingsAndRequiredDegradation(t *te
 		{Kind: "asset", ID: "unrelated", Source: "content/references/unrelated.md"},
 		{Kind: "agent", ID: "coach", Source: "content/agents/coach.md", Description: "Coach ideas", Mode: "subagent", Tools: []string{"browser"}, Permissions: []string{"browser", "network"}, Bindings: codexBinding("agent", "addy-coach", "@addy-coach", "native", "")},
 		{Kind: "skill", ID: "idea", Source: "content/skills/idea", Bindings: codexBinding("skill", "addy-idea", "$addy-idea", "native", "")},
-	}, Contract: capabilitypack.Contract{Exclusions: []capabilitypack.Exclusion{{ID: "hooks", SourcePaths: []string{"hooks/pre-commit"}, Reason: "inert"}}}}
+	}}
 	adapter := NewSurfaceAdapterWithConfig(root, filepath.Join(root, "home", ".agents", "skills"), filepath.Join(root, "home", ".codex", "AGENTS.md"), filepath.Join(root, "home", ".codex", "config.toml"))
 
 	first, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: pack})
