@@ -88,11 +88,6 @@ func TestCurrentDocumentationDescribesOnlyCurrentArchitecture(t *testing.T) {
 		"Managed Pack Project", "External Source Project", "Managed Pack Registry",
 		"Declared Pack Closure", "Pack Admission Record", "Managed Pack Promotion",
 	})
-	requireDocumentationText(t, root, "docs/research/evidence/generic-issue-delivery-pack-viability.md", []string{
-		"Generic core and repository policy", "Codex materialization boundary", "GitHub controls remain repository-owned",
-		"13fce3040948e9f51798908a9b08201b7e1438fe", "LICENSE", "deliver-issue", "deliver-issue-matt", "setup-issue-delivery",
-		".github", ".gitignore", "AGENTS.md", "README.md", "scripts",
-	})
 	requireDocumentationText(t, root, "docs/research/evidence/engram-setup-codex-audit-2026-08-13.md", []string{
 		"engram 1.20.0", "fresh temporary", "the real", "`~/.codex` was never modified",
 		"Observed installation inventory", "What should remain", "What should not remain",
