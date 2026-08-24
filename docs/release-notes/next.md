@@ -1,57 +1,39 @@
 # {{TAG}} — Packy v0.2
 
-This release adds a shareable Pack trust audit and versioned JSON catalog
-output, makes interruption and failed initialization safer, expands TUI search,
-adds the pstack Pack, and updates the bundled Matty and Engram Packs.
+This release completes Packy's move to immutable Managed Pack Projects, updates
+all seven bundled Packs, advances structured output to the current catalog and
+provenance model, and fixes surface-capability resource closure.
 
 ## Changes since the previous release
 
-- `packy audit` now combines workstation health, active global Pack health,
-  and portable verification of the current project's Pack contract in one
-  deterministic, redacted report. `packy audit --json` emits the checked-in
-  `packy-audit` v1 contract.
-- Audit preserves Packy's three-valued readiness semantics: unknown runtime
-  observations remain informational, warnings exit successfully, and only
-  confirmed failures return a non-zero status after emitting the full report.
-- Running Audit outside a Git worktree or in a project without a Pack contract
-  is informational. When a contract exists, Audit uses the same personal-state-
-  free verification boundary as `packy verify`.
-
-- `packy list --json` now emits the checked-in `pack-list` v1 contract with
-  every current Pack and deterministic Pack and surface ordering. The existing
-  human-readable table is unchanged.
-- `Ctrl+C` now cancels pre-Apply initialization, preview, Installed Source Git
-  operations, and lock waits, while cleanup failures remain visible. Once TUI
-  Apply begins, exit remains deferred through repeated interrupts until Apply
-  and a bounded fresh inspection finish.
-- A failed `packy init` now preserves an accepted empty Installed Source with
-  its identity and permissions intact. An initially absent source remains
-  absent, and publication refuses to replace a concurrently created
-  destination.
-- TUI catalog search now matches case-insensitive literal text across Pack IDs
-  and descriptions, supported surfaces, external requirements, resource IDs,
-  descriptions and requirements, and surface capability types and tool names.
-- The reviewed Argote Pack advances to `1.0.3` through the public
+- The reviewed Addy Pack advances from `1.1.0` to `2.0.3` through the public
+  `yersonargotev/skills-addy` Managed Pack Project release `pack-v2.0.3`,
+  expanding its reviewed skills and supporting resources. Its `spec` command
+  now asks for an approved capability map before independently testable
+  capabilities are specified in dependency order.
+- The reviewed Argote Pack advances from `1.0.2` to `1.0.3` through the public
   `yersonargotev/argote` Managed Pack Project release `pack-v1.0.3`, preserving
   its engineering and communication guidance on Claude Code, Codex, and
   OpenCode.
-- The reviewed pstack Pack advances to `1.0.1` through its public Managed Pack
-  Project release, preserving 26 portable engineering skills for Claude Code,
-  Codex, and OpenCode while sealing their origin and license evidence.
-- The Matty Pack advances to `1.0.4` with the eight selected skill updates from
-  upstream `v1.2.3`, while retaining its existing surface bindings and
-  Packy-owned capabilities.
-- The reviewed Engram Pack advances to `3.1.1` through the public
+- The reviewed pstack Pack advances from `1.0.0` to `1.0.1` through the public
+  `yersonargotev/pstack` Managed Pack Project release `pack-v1.0.1`, preserving
+  26 portable engineering skills for Claude Code, Codex, and OpenCode while
+  sealing their origin and license evidence.
+- The reviewed Matty Pack advances from `1.0.4` to `1.1.0` through the public
+  `yersonargotev/skills-mattpocock` Managed Pack Project release
+  `pack-v1.1.0`, refreshing its reviewed skill and instruction content across
+  Claude Code, Codex, and OpenCode.
+- The reviewed Engram Pack advances from `3.1.0` to `3.1.1` through the public
   `yersonargotev/engram` Managed Pack Project release `pack-v3.1.1`, updating
   Packy's outdated `engram-memory-cli` guidance while preserving its selective
   Codex-only runtime contract.
-- The reviewed Orchestrate Pack advances to `1.0.2` through the public
-  `yersonargotev/orchestrate-skill` Managed Pack Project release
+- The reviewed Orchestrate Pack advances from `1.0.1` to `1.0.2` through the
+  public `yersonargotev/orchestrate-skill` Managed Pack Project release
   `pack-v1.0.2`, preserving the exact `$orchestrate` skill and MIT notice,
   authoring the source-less `coordinate-session` lifecycle, and keeping runtime
   usability unknown until the controlled capability check runs.
-- The reviewed Issue Delivery Pack advances to `1.1.2` through the public
-  `yersonargotev/issue-deliver-pack` Managed Pack Project release
+- The reviewed Issue Delivery Pack advances from `1.1.1` to `1.1.2` through
+  the public `yersonargotev/issue-deliver-pack` Managed Pack Project release
   `pack-v1.1.2`, preserving its three Codex skills and Packy integration and
   dependency behavior while recording its immutable project and origin
   provenance in its Pack Admission Record.
@@ -65,6 +47,15 @@ adds the pstack Pack, and updates the bundled Matty and Engram Packs.
   immutable Managed Pack Project release and Admission Record as the bundled
   Pack's provenance authority; the retired catalog-maintenance schemas,
   loaders, configuration, classification, evidence, and workflows are gone.
+- `packy show --json` advances from the checked-in `pack-show` v5 contract to
+  v6, replacing `source_identity` with `catalog_identity`. Human-readable show
+  output now names the current Catalog identity and its provenance authority.
+- Global Pack status and lifecycle JSON advance from v10 to v11. Their resource
+  graphs now reflect the selected CLI surface, and exclusions no longer expose
+  the retired `source_paths` field from the old catalog-maintenance model.
+- Selection, activation, status, and controlled runtime checks now retain
+  resources required through surface capabilities, including project
+  instructions and primary prompts, in the selected resource closure.
 
 The release artifact format is unchanged.
 
