@@ -120,7 +120,7 @@ func TestResolverRejectsMalformedRepositoryObject(t *testing.T) {
 	}
 }
 
-func TestResolverFollowsRedirectWithoutCredentials(t *testing.T) {
+func TestResolverDoesNotForwardCredentialsAcrossRedirect(t *testing.T) {
 	originRoot, _, headCommit := writeOriginRepository(t)
 	projectRoot := t.TempDir()
 	if _, err := git.PlainClone(filepath.Join(projectRoot, "upstream.git"), true, &git.CloneOptions{URL: originRoot}); err != nil {
