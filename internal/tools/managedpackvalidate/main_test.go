@@ -98,6 +98,9 @@ func TestResolverRejectsUnknownCheckout(t *testing.T) {
 func TestResolverRejectsMalformedRepositoryObject(t *testing.T) {
 	originRoot, _, headCommit := writeOriginRepository(t)
 	objectPath := filepath.Join(originRoot, ".git", "objects", headCommit.String()[:2], headCommit.String()[2:])
+	if err := os.Chmod(objectPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(objectPath, []byte("malformed object\n"), 0o444); err != nil {
 		t.Fatal(err)
 	}

@@ -138,6 +138,9 @@ func TestValidateInstalledSourceRefRejectsMalformedCommitObject(t *testing.T) {
 		t.Fatal(err)
 	}
 	objectPath := filepath.Join(root, ".git", "objects", commit.String()[:2], commit.String()[2:])
+	if err := os.Chmod(objectPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(objectPath, []byte("malformed object\n"), 0o444); err != nil {
 		t.Fatal(err)
 	}
