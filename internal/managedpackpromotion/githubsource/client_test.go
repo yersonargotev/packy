@@ -220,6 +220,27 @@ func TestClientRejectsUnprovableTreeAndCleans(t *testing.T) {
 			},
 			want: "portable path collision",
 		},
+		{
+			name: "unicode normalization collision",
+			response: func() map[string]any {
+				response := validTreeResponse()
+				response["tree"] = []map[string]any{
+					{"path": "Café", "mode": "100644", "type": "blob", "sha": testManifestSHA, "size": 17},
+					{"path": "Cafe\u0301", "mode": "100644", "type": "blob", "sha": testManifestSHA, "size": 17},
+				}
+				return response
+			},
+			want: "portable path collision",
+		},
+		{
+			name: "malformed object ID",
+			response: func() map[string]any {
+				response := validTreeResponse()
+				response["tree"].([]map[string]any)[0]["sha"] = "not-an-object-id"
+				return response
+			},
+			want: "malformed object ID",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

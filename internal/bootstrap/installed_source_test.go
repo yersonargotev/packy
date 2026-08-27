@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
@@ -88,6 +91,63 @@ func TestValidateInstalledSourceRefUsesDescriptor(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), filepath.Join(root, "bundle", "skills")) {
 		t.Fatalf("ValidateInstalledSourceRef error = %v, want descriptor path", err)
+	}
+}
+
+func TestValidateInstalledSourceRefChecksRepositoryCheckout(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	repository, firstCommit := writeInstalledSourceRepository(t, root)
+	if _, err := repository.CreateTag("v1.2.3", firstCommit, nil); err != nil {
+		t.Fatal(err)
+	}
+	opts := BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		RepositoryRef:   "v1.2.3",
+	}
+	if err := ValidateInstalledSourceRef(context.Background(), opts); err != nil {
+		t.Fatalf("ValidateInstalledSourceRef() error = %v", err)
+	}
+
+	worktree, err := repository.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "newer.txt"), []byte("newer\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worktree.Add("newer.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worktree.Commit("newer", &git.CommitOptions{Author: testGitSignature()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateInstalledSourceRef(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "is stale") {
+		t.Fatalf("ValidateInstalledSourceRef() error = %v, want stale checkout", err)
+	}
+
+	opts.RepositoryRef = "missing"
+	if err := ValidateInstalledSourceRef(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "is stale") {
+		t.Fatalf("ValidateInstalledSourceRef() missing ref error = %v, want stale checkout", err)
+	}
+}
+
+func TestValidateInstalledSourceRefRejectsMalformedCommitObject(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	repository, commit := writeInstalledSourceRepository(t, root)
+	if _, err := repository.CreateTag("v1.2.3", commit, nil); err != nil {
+		t.Fatal(err)
+	}
+	objectPath := filepath.Join(root, ".git", "objects", commit.String()[:2], commit.String()[2:])
+	if err := os.WriteFile(objectPath, []byte("malformed object\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ValidateInstalledSourceRef(context.Background(), BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root),
+		RepositoryRef:   "v1.2.3",
+	})
+	if err == nil || !strings.Contains(err.Error(), "is stale") {
+		t.Fatalf("ValidateInstalledSourceRef() error = %v, want bounded stale-checkout rejection", err)
 	}
 }
 
@@ -715,6 +775,37 @@ func writeValidInstalledSource(t *testing.T, root string) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func writeInstalledSourceRepository(t *testing.T, root string) (*git.Repository, plumbing.Hash) {
+	t.Helper()
+	writeValidInstalledSource(t, root)
+	repository, err := git.PlainInit(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktree, err := repository.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []string{
+		"bundle/skills/engineering/ask-matt/SKILL.md",
+		"bundle/skills/productivity/grilling/SKILL.md",
+		"bundle/skills/in-progress/loop-me/SKILL.md",
+	} {
+		if _, err := worktree.Add(relative); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commit, err := worktree.Commit("fixture", &git.CommitOptions{Author: testGitSignature()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repository, commit
+}
+
+func testGitSignature() *object.Signature {
+	return &object.Signature{Name: "Packy Test", Email: "packy@example.invalid", When: time.Unix(1, 0).UTC()}
 }
 
 func TestBootstrapOptionsHasOneInstalledSourceLocation(t *testing.T) {
