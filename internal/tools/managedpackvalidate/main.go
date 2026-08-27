@@ -32,8 +32,9 @@ func (values originFlags) Set(value string) error {
 }
 
 type resolver struct {
-	local     map[string]string
-	temporary string
+	local         map[string]string
+	temporary     string
+	repositoryURL func(managedpack.Origin) string
 }
 
 func (r resolver) Resolve(ctx context.Context, origin managedpack.Origin) (string, error) {
@@ -41,8 +42,12 @@ func (r resolver) Resolve(ctx context.Context, origin managedpack.Origin) (strin
 		return root, nil
 	}
 	target := filepath.Join(r.temporary, origin.ID)
+	url := "https://github.com/" + origin.Repository + ".git"
+	if r.repositoryURL != nil {
+		url = r.repositoryURL(origin)
+	}
 	repository, err := git.PlainCloneContext(ctx, target, false, &git.CloneOptions{
-		URL:      "https://github.com/" + origin.Repository + ".git",
+		URL:      url,
 		Tags:     git.AllTags,
 		Progress: io.Discard,
 	})
