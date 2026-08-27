@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/cgi"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,7 +138,8 @@ func TestResolverFollowsRedirectWithoutCredentials(t *testing.T) {
 	sinkRequests := 0
 	redirectRequests := 0
 	requestedPaths := []string{}
-	authorizations := []string{}
+	originAuthorizations := []string{}
+	sinkAuthorizations := []string{}
 	backendHandler := &cgi.Handler{
 		Path: backend,
 		Env: append(testprocess.Env(t),
@@ -149,7 +152,7 @@ func TestResolverFollowsRedirectWithoutCredentials(t *testing.T) {
 		sinkRequests++
 		requestedPaths = append(requestedPaths, request.URL.RequestURI())
 		if authorization := request.Header.Get("Authorization"); authorization != "" {
-			authorizations = append(authorizations, authorization)
+			sinkAuthorizations = append(sinkAuthorizations, authorization)
 		}
 		serverMu.Unlock()
 		backendHandler.ServeHTTP(writer, request)
@@ -159,18 +162,24 @@ func TestResolverFollowsRedirectWithoutCredentials(t *testing.T) {
 		serverMu.Lock()
 		redirectRequests++
 		if authorization := request.Header.Get("Authorization"); authorization != "" {
-			authorizations = append(authorizations, authorization)
+			originAuthorizations = append(originAuthorizations, authorization)
 		}
 		serverMu.Unlock()
 		http.Redirect(writer, request, sink.URL+request.URL.RequestURI(), http.StatusTemporaryRedirect)
 	}))
 	defer redirect.Close()
+	authenticatedOrigin, err := url.Parse(redirect.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authenticatedOrigin.Host = net.JoinHostPort("localhost", authenticatedOrigin.Port())
+	authenticatedOrigin.User = url.UserPassword("packy-test", "fixture-password")
 
 	resolved, err := (resolver{
 		local:     map[string]string{},
 		temporary: t.TempDir(),
 		repositoryURL: func(managedpack.Origin) string {
-			return redirect.URL + "/upstream.git"
+			return authenticatedOrigin.String() + "/upstream.git"
 		},
 	}).Resolve(context.Background(), managedpack.Origin{
 		ID: "upstream", Repository: "example/upstream", Commit: headCommit.String(),
@@ -179,7 +188,8 @@ func TestResolverFollowsRedirectWithoutCredentials(t *testing.T) {
 	originRequestCount := redirectRequests
 	sinkRequestCount := sinkRequests
 	paths := append([]string(nil), requestedPaths...)
-	credentials := append([]string(nil), authorizations...)
+	originCredentialCount := len(originAuthorizations)
+	sinkCredentialCount := len(sinkAuthorizations)
 	serverMu.Unlock()
 	if err != nil {
 		t.Fatalf("Resolve() error = %v; requested paths = %v", err, paths)
@@ -187,8 +197,11 @@ func TestResolverFollowsRedirectWithoutCredentials(t *testing.T) {
 	if originRequestCount == 0 || sinkRequestCount == 0 {
 		t.Fatalf("redirected clone requests: origin = %d, sink = %d, paths = %v", originRequestCount, sinkRequestCount, paths)
 	}
-	if len(credentials) != 0 {
-		t.Fatalf("redirected clone sent Authorization headers: %q", credentials)
+	if originCredentialCount == 0 {
+		t.Fatal("origin did not receive fixture authentication")
+	}
+	if sinkCredentialCount != 0 {
+		t.Fatalf("redirect target received %d Authorization headers", sinkCredentialCount)
 	}
 	if content, err := os.ReadFile(filepath.Join(resolved, "guide.txt")); err != nil || string(content) != "second\n" {
 		t.Fatalf("redirected clone content = %q, %v", content, err)
