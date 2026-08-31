@@ -1138,10 +1138,11 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 		return ApplyResult{}, ErrApprovalMismatch
 	}
 	if request.Plan.noOp {
-		if _, err := f.preflightPlan(ctx, request.Plan); err != nil {
+		preflight, err := f.preflightPlan(ctx, request.Plan)
+		if err != nil {
 			return ApplyResult{}, err
 		}
-		return ApplyResult{Verified: true, PlanID: request.Plan.id, Readiness: request.Plan.readiness, PendingHumanActions: request.Plan.PendingHumanActions()}, nil
+		return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: packOwnershipCount(preflight.state.Ownership, request.Plan.pack.ID, request.Plan.surface), Readiness: request.Plan.readiness, PendingHumanActions: request.Plan.PendingHumanActions()}, nil
 	}
 	if !request.Interactive {
 		return ApplyResult{}, ErrInteractiveRequired
@@ -1368,7 +1369,17 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	if len(pendingHumanActions) == 0 {
 		pendingHumanActions = append(pendingHumanActions, verified.PendingHumanActions...)
 	}
-	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: len(state.Ownership), Readiness: readiness, Conditions: conditions, PendingHumanActions: pendingHumanActions}, nil
+	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: packOwnershipCount(state.Ownership, request.Plan.pack.ID, request.Plan.surface), Readiness: readiness, Conditions: conditions, PendingHumanActions: pendingHumanActions}, nil
+}
+
+func packOwnershipCount(values []ProjectionOwnership, packID string, surface Surface) int {
+	count := 0
+	for _, owner := range values {
+		if ownershipBelongsToReceipt(owner, packID, surface) {
+			count++
+		}
+	}
+	return count
 }
 
 func expectedReadinessProjections(values []ObservedProjection, blockers []PlanBlocker) []ProjectionStatus {
