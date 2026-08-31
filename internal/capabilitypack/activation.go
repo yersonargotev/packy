@@ -1368,7 +1368,13 @@ func (f Facade) apply(ctx context.Context, request ApplyRequest) (ApplyResult, e
 	if len(pendingHumanActions) == 0 {
 		pendingHumanActions = append(pendingHumanActions, verified.PendingHumanActions...)
 	}
-	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: len(state.Ownership), Readiness: readiness, Conditions: conditions, PendingHumanActions: pendingHumanActions}, nil
+	ownedProjections := 0
+	for _, owner := range state.Ownership {
+		if ownershipBelongsToReceipt(owner, request.Plan.pack.ID, request.Plan.surface) {
+			ownedProjections++
+		}
+	}
+	return ApplyResult{Verified: true, PlanID: request.Plan.id, Projections: ownedProjections, Readiness: readiness, Conditions: conditions, PendingHumanActions: pendingHumanActions}, nil
 }
 
 func expectedReadinessProjections(values []ObservedProjection, blockers []PlanBlocker) []ProjectionStatus {
