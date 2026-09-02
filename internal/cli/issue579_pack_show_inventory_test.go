@@ -36,6 +36,12 @@ func TestPackShowHumanRendersDeterministicDescriptiveInventory(t *testing.T) {
 	if !strings.Contains(first, want) {
 		t.Fatalf("pack show output lacks descriptive inventory line %q:\n%s", want, first)
 	}
+	if checkedInPackVersion(t, "engram") == "3.3.0" {
+		asset := "Resource: asset:protocol-contract-v1 — Machine-verifiable Engram Protocol contract v1 compatibility metadata; role=supporting dependencies=none notices=none"
+		if !strings.Contains(first, asset) {
+			t.Fatalf("pack show output lacks descriptive inventory line %q:\n%s", asset, first)
+		}
+	}
 	if strings.Contains(first, "Resource: skill:engram-memory-cli role=") {
 		t.Fatalf("pack show retained the description-less resource graph line:\n%s", first)
 	}
@@ -59,6 +65,7 @@ func TestPackShowJSONV6IncludesDescriptiveInventory(t *testing.T) {
 	}
 	var document struct {
 		SchemaVersion     int                                  `json:"schema_version"`
+		Version           string                               `json:"version"`
 		ResourceInventory []capabilitypack.DescriptiveResource `json:"resource_inventory"`
 	}
 	if err := json.Unmarshal([]byte(output), &document); err != nil {
@@ -67,19 +74,41 @@ func TestPackShowJSONV6IncludesDescriptiveInventory(t *testing.T) {
 	if document.SchemaVersion != 6 {
 		t.Fatalf("schema version = %d, want 6", document.SchemaVersion)
 	}
-	if len(document.ResourceInventory) != 2 {
+	type expectedResource struct {
+		identity    string
+		description string
+		role        capabilitypack.ResourceInventoryRole
+	}
+	expected := []expectedResource{
+		{
+			identity:    "notice:mit",
+			description: "Preserve the upstream Engram MIT license and attribution",
+			role:        capabilitypack.ResourceInventoryRoleNotice,
+		},
+		{
+			identity:    "skill:engram-memory-cli",
+			description: "Uses Engram project memory safely through the CLI",
+			role:        capabilitypack.ResourceInventoryRoleOperational,
+		},
+	}
+	switch document.Version {
+	case "3.1.2":
+	case "3.3.0":
+		expected = append([]expectedResource{{
+			identity:    "asset:protocol-contract-v1",
+			description: "Machine-verifiable Engram Protocol contract v1 compatibility metadata",
+			role:        capabilitypack.ResourceInventoryRoleSupporting,
+		}}, expected...)
+	default:
+		t.Fatalf("unreviewed Engram version %s", document.Version)
+	}
+	if len(document.ResourceInventory) != len(expected) {
 		t.Fatalf("resource inventory = %#v", document.ResourceInventory)
 	}
-	first := document.ResourceInventory[0]
-	if first.Resource.String() != "notice:mit" ||
-		first.Description != "Preserve the upstream Engram MIT license and attribution" ||
-		first.Role != capabilitypack.ResourceInventoryRoleNotice {
-		t.Fatalf("first resource inventory entry = %#v", first)
-	}
-	second := document.ResourceInventory[1]
-	if second.Resource.String() != "skill:engram-memory-cli" ||
-		second.Description != "Uses Engram project memory safely through the CLI" ||
-		second.Role != capabilitypack.ResourceInventoryRoleOperational {
-		t.Fatalf("second resource inventory entry = %#v", second)
+	for i, want := range expected {
+		resource := document.ResourceInventory[i]
+		if resource.Resource.String() != want.identity || resource.Description != want.description || resource.Role != want.role {
+			t.Fatalf("resource inventory entry %d = %#v", i, resource)
+		}
 	}
 }
