@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "pack_id": "engram",
+  "pack_version": "3.3.0",
+  "project": "yersonargotev/engram",
+  "repository_id": 1164428006,
+  "release_id": 381238880,
+  "release_immutable": true,
+  "tag": "pack-v3.3.0",
+  "tag_ref_type": "commit",
+  "tag_ref_sha": "fc44fe325e5061a0ff45be03bdc9aae67faef59e",
+  "tag_objects": [],
+  "commit": "fc44fe325e5061a0ff45be03bdc9aae67faef59e",
+  "root_tree": "b012475076e3795bb9de282bf3bce5da9a92ad69",
+  "manifest_sha256": "9bed746986c705191d806c4a298e480becf251bd12189a5b191a8c9862169a74",
+  "closure_sha256": "a3442a3f27fdbbb9bebdad00d7e3aea969085843273350375a9c9839c13948a3",
+  "files": [
+    {
+      "path": "assets/protocol-contract-v1.json",
+      "mode": "100644",
+      "sha256": "d6998bc1e053878410487dddae05de39839590f0bd9335c73fcbdd7f5aff2c54"
+    },
+    {
+      "path": "notices/engram-mit",
+      "mode": "100644",
+      "sha256": "09608597ddda4e5f9033ac407a0d401986d96376c47f6d46789ca38db672dc15"
+    },
+    {
+      "path": "pack.json",
+      "mode": "100644",
+      "sha256": "9bed746986c705191d806c4a298e480becf251bd12189a5b191a8c9862169a74"
+    },
+    {
+      "path": "skills/engram-memory-cli/SKILL.md",
+      "mode": "100644",
+      "sha256": "5e8e94eeea4dc6fb2d389999f0de92b1182784f6700bb89332f1040295c0b3a9"
+    },
+    {
+      "path": "skills/engram-memory-cli/agents/openai.yaml",
+      "mode": "100644",
+      "sha256": "84d73deddb7bac3074c9a1e91ca05b767bc65229936039bd4009481456355bbd"
+    },
+    {
+      "path": "skills/engram-memory-cli/references/curation.md",
+      "mode": "100644",
+      "sha256": "72e53269063e4d7b91de736e4387d0cf34e84a97abb687df547cd554f9bf9c03"
+    }
+  ]
+}
