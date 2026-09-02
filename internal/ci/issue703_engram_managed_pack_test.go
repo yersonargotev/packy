@@ -22,24 +22,16 @@ func TestIssue703EngramManagedPackOwnsCurrentRuntimeContractAndClosure(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.ID != "engram" || pack.Version == "" || !reflect.DeepEqual(pack.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) ||
+	if pack.ID != "engram" || pack.Version != "3.3.0" || !reflect.DeepEqual(pack.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) ||
 		!reflect.DeepEqual(pack.ReadinessObligations, []capabilitypack.ReadinessObligation{capabilitypack.ReadinessRuntimeUsability, capabilitypack.ReadinessSurfaceAuthorization}) ||
 		!reflect.DeepEqual(pack.Requires.Tools, []string{"engram"}) {
 		t.Fatalf("Engram runtime identity = %#v", pack)
 	}
 	counts := pack.ResourceCounts()
-	if counts.Skills != 1 || counts.Notices != 1 || counts.MCPServers != 0 || counts.Lifecycles != 0 || counts.Agents != 0 || counts.Commands != 0 || counts.Instructions != 0 {
+	if counts.Skills != 1 || counts.Notices != 1 || counts.MCPServers != 0 || counts.Lifecycles != 0 || counts.Agents != 0 || counts.Commands != 0 || counts.Assets != 1 || counts.Instructions != 0 {
 		t.Fatalf("Engram resource counts = %#v", counts)
 	}
-	wantAssets := 0
-	switch pack.Version {
-	case "3.1.2":
-	case "3.3.0":
-		wantAssets = 1
-	default:
-		t.Fatalf("unreviewed Engram version %s", pack.Version)
-	}
-	if counts.Assets != wantAssets || len(pack.Resources) != 2+wantAssets {
+	if len(pack.Resources) != 3 {
 		t.Fatalf("Engram resources = %#v", pack.Resources)
 	}
 	var asset, notice, skill *capabilitypack.Resource
@@ -56,7 +48,7 @@ func TestIssue703EngramManagedPackOwnsCurrentRuntimeContractAndClosure(t *testin
 			t.Fatalf("unexpected Engram resource = %#v", resource)
 		}
 	}
-	if wantAssets == 1 && (asset == nil || asset.Source != "assets/protocol-contract-v1.json" || asset.Description != "Machine-verifiable Engram Protocol contract v1 compatibility metadata" || len(asset.Requires) != 0 || len(asset.Conflicts) != 0 || len(asset.Bindings) != 0 || len(asset.SurfaceExclusions) != 0) {
+	if asset == nil || asset.Source != "assets/protocol-contract-v1.json" || asset.Description != "Machine-verifiable Engram Protocol contract v1 compatibility metadata" || len(asset.Requires) != 0 || len(asset.Conflicts) != 0 || len(asset.Bindings) != 0 || len(asset.SurfaceExclusions) != 0 {
 		t.Fatalf("Engram protocol contract asset = %#v", asset)
 	}
 	if notice == nil || notice.Source != "notices/engram-mit" || notice.License != "MIT" || notice.Attribution != "Copyright (c) 2026 Alan Buscaglia" {
