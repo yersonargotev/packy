@@ -36,11 +36,9 @@ func TestPackShowHumanRendersDeterministicDescriptiveInventory(t *testing.T) {
 	if !strings.Contains(first, want) {
 		t.Fatalf("pack show output lacks descriptive inventory line %q:\n%s", want, first)
 	}
-	if checkedInPackVersion(t, "engram") == "3.3.0" {
-		asset := "Resource: asset:protocol-contract-v1 — Machine-verifiable Engram Protocol contract v1 compatibility metadata; role=supporting dependencies=none notices=none"
-		if !strings.Contains(first, asset) {
-			t.Fatalf("pack show output lacks descriptive inventory line %q:\n%s", asset, first)
-		}
+	asset := "Resource: asset:protocol-contract-v1 — Machine-verifiable Engram Protocol contract v1 compatibility metadata; role=supporting dependencies=none notices=none"
+	if !strings.Contains(first, asset) {
+		t.Fatalf("pack show output lacks descriptive inventory line %q:\n%s", asset, first)
 	}
 	if strings.Contains(first, "Resource: skill:engram-memory-cli role=") {
 		t.Fatalf("pack show retained the description-less resource graph line:\n%s", first)
@@ -65,7 +63,6 @@ func TestPackShowJSONV6IncludesDescriptiveInventory(t *testing.T) {
 	}
 	var document struct {
 		SchemaVersion     int                                  `json:"schema_version"`
-		Version           string                               `json:"version"`
 		ResourceInventory []capabilitypack.DescriptiveResource `json:"resource_inventory"`
 	}
 	if err := json.Unmarshal([]byte(output), &document); err != nil {
@@ -81,6 +78,11 @@ func TestPackShowJSONV6IncludesDescriptiveInventory(t *testing.T) {
 	}
 	expected := []expectedResource{
 		{
+			identity:    "asset:protocol-contract-v1",
+			description: "Machine-verifiable Engram Protocol contract v1 compatibility metadata",
+			role:        capabilitypack.ResourceInventoryRoleSupporting,
+		},
+		{
 			identity:    "notice:mit",
 			description: "Preserve the upstream Engram MIT license and attribution",
 			role:        capabilitypack.ResourceInventoryRoleNotice,
@@ -90,17 +92,6 @@ func TestPackShowJSONV6IncludesDescriptiveInventory(t *testing.T) {
 			description: "Uses Engram project memory safely through the CLI",
 			role:        capabilitypack.ResourceInventoryRoleOperational,
 		},
-	}
-	switch document.Version {
-	case "3.1.2":
-	case "3.3.0":
-		expected = append([]expectedResource{{
-			identity:    "asset:protocol-contract-v1",
-			description: "Machine-verifiable Engram Protocol contract v1 compatibility metadata",
-			role:        capabilitypack.ResourceInventoryRoleSupporting,
-		}}, expected...)
-	default:
-		t.Fatalf("unreviewed Engram version %s", document.Version)
 	}
 	if len(document.ResourceInventory) != len(expected) {
 		t.Fatalf("resource inventory = %#v", document.ResourceInventory)
