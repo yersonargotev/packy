@@ -28,17 +28,41 @@ func TestIssue703EngramManagedPackOwnsCurrentRuntimeContractAndClosure(t *testin
 		t.Fatalf("Engram runtime identity = %#v", pack)
 	}
 	counts := pack.ResourceCounts()
-	if counts.Skills != 1 || counts.Notices != 1 || counts.MCPServers != 0 || counts.Lifecycles != 0 || counts.Agents != 0 || counts.Commands != 0 || counts.Assets != 0 || counts.Instructions != 0 {
+	if counts.Skills != 1 || counts.Notices != 1 || counts.MCPServers != 0 || counts.Lifecycles != 0 || counts.Agents != 0 || counts.Commands != 0 || counts.Instructions != 0 {
 		t.Fatalf("Engram resource counts = %#v", counts)
 	}
-	if len(pack.Resources) != 2 {
+	wantAssets := 0
+	switch pack.Version {
+	case "3.1.2":
+	case "3.3.0":
+		wantAssets = 1
+	default:
+		t.Fatalf("unreviewed Engram version %s", pack.Version)
+	}
+	if counts.Assets != wantAssets || len(pack.Resources) != 2+wantAssets {
 		t.Fatalf("Engram resources = %#v", pack.Resources)
 	}
-	notice, skill := pack.Resources[0], pack.Resources[1]
-	if notice.Kind != "notice" || notice.ID != "mit" || notice.Source != "notices/engram-mit" || notice.License != "MIT" || notice.Attribution != "Copyright (c) 2026 Alan Buscaglia" {
+	var asset, notice, skill *capabilitypack.Resource
+	for i := range pack.Resources {
+		resource := &pack.Resources[i]
+		switch resource.Kind + ":" + resource.ID {
+		case "asset:protocol-contract-v1":
+			asset = resource
+		case "notice:mit":
+			notice = resource
+		case "skill:engram-memory-cli":
+			skill = resource
+		default:
+			t.Fatalf("unexpected Engram resource = %#v", resource)
+		}
+	}
+	if wantAssets == 1 && (asset == nil || asset.Source != "assets/protocol-contract-v1.json" || asset.Description != "Machine-verifiable Engram Protocol contract v1 compatibility metadata" || len(asset.Requires) != 0 || len(asset.Conflicts) != 0 || len(asset.Bindings) != 0 || len(asset.SurfaceExclusions) != 0) {
+		t.Fatalf("Engram protocol contract asset = %#v", asset)
+	}
+	if notice == nil || notice.Source != "notices/engram-mit" || notice.License != "MIT" || notice.Attribution != "Copyright (c) 2026 Alan Buscaglia" {
 		t.Fatalf("Engram legal notice = %#v", notice)
 	}
-	if skill.Kind != "skill" || skill.ID != "engram-memory-cli" || skill.Source != "skills/engram-memory-cli" || !reflect.DeepEqual(skill.Notices, []string{"notice:mit"}) || len(skill.Bindings) != 1 {
+	if skill == nil || skill.Source != "skills/engram-memory-cli" || !reflect.DeepEqual(skill.Notices, []string{"notice:mit"}) || len(skill.Bindings) != 1 {
 		t.Fatalf("Engram skill = %#v", skill)
 	}
 	binding := skill.Bindings[0]
