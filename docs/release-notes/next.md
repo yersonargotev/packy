@@ -5,11 +5,12 @@ boundaries through patched dependencies and expanded validation coverage.
 
 ## Changes since the previous release
 
-- The reviewed Engram Pack advances from `3.1.1` to `3.3.0` through the public
-  `yersonargotev/engram` Managed Pack Project release `pack-v3.3.0`. It adds a
+- The reviewed Engram Pack advances from `3.1.1` to `3.3.1` through the public
+  `yersonargotev/engram` Managed Pack Project release `pack-v3.3.1`. It adds a
   machine-verifiable Protocol v1 compatibility asset and updates its Codex
   memory guidance with bounded Recall, Terminal Memory preflight and checkpoint
-  outcomes, mixed results, and explicit continuation.
+  outcomes, mixed results, explicit continuation, and direct terminal recording
+  without routine checkpoint status probes.
 - Git and text-processing dependencies advance to patched releases, including
   `go-git` `5.19.2` and `x/text` `0.39.0`. Repository validation now covers
   exact installed-source and Managed Pack checkouts, rejects malformed Git
