@@ -69,8 +69,8 @@
   },
   "distributions": {
     "managed_pack": {
-      "version": "3.3.0",
-      "skill_sha256": "5e8e94eeea4dc6fb2d389999f0de92b1182784f6700bb89332f1040295c0b3a9",
+      "version": "3.3.1",
+      "skill_sha256": "e37b45dbfa8c26c398d7cdbf996354433f1505f6054a1129122c48a2b830009f",
       "legacy_compatible": true,
       "supported_protocol": {
         "minimum": 1,
