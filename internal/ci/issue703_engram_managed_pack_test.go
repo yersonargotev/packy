@@ -22,7 +22,7 @@ func TestIssue703EngramManagedPackOwnsCurrentRuntimeContractAndClosure(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.ID != "engram" || (pack.Version != "3.3.0" && pack.Version != "3.3.1") || !reflect.DeepEqual(pack.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) ||
+	if pack.ID != "engram" || pack.Version != "3.3.1" || !reflect.DeepEqual(pack.Surfaces, []capabilitypack.Surface{capabilitypack.SurfaceCodex}) ||
 		!reflect.DeepEqual(pack.ReadinessObligations, []capabilitypack.ReadinessObligation{capabilitypack.ReadinessRuntimeUsability, capabilitypack.ReadinessSurfaceAuthorization}) ||
 		!reflect.DeepEqual(pack.Requires.Tools, []string{"engram"}) {
 		t.Fatalf("Engram runtime identity = %#v", pack)
