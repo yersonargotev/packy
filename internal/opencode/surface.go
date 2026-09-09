@@ -41,6 +41,9 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		observation capabilitypack.SurfaceInspection
 		err         error
 	)
+	if transition.ReceiptOwnership != nil {
+		return a.inspectReceipt(transition.ReceiptOwnership)
+	}
 	if len(transition.ResidualOwnership) > 0 {
 		observation, err = a.inspectOwnershipResidual(ctx, transition.Desired, transition.ResidualOwnership, transition.ResolvedExecutables)
 	} else if transition.Prior.ID != "" {

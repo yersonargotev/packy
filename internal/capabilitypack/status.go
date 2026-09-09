@@ -21,6 +21,7 @@ type IntentStatus struct {
 	Revision  int
 	Version   string
 	Selection ResourceSelection
+	Resources []ResourceIdentity
 }
 
 type PackLifecycleState string
@@ -124,7 +125,14 @@ func UnknownOptionalAuthorities(pack Pack) []OptionalAuthorityObservation {
 	return result
 }
 
+// HistoricalEvidenceStatus states whether the applied manifest semantics are available.
+type HistoricalEvidenceStatus struct {
+	Available bool   `json:"available"`
+	Message   string `json:"message,omitempty"`
+}
+
 type StatusEntry struct {
+	HistoricalEvidence             HistoricalEvidenceStatus
 	Pack                           Pack
 	Surface                        Surface
 	Intent                         IntentStatus
@@ -360,6 +368,14 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 		return StatusReport{}, fmt.Errorf("pack %q does not support CLI surface %q", request.PackID, request.Surface)
 	}
 	if request.Resource != "" {
+		entry := report.Entries[0]
+		if !entry.HistoricalEvidence.Available {
+			for _, resource := range entry.Intent.Resources {
+				if resource == focused {
+					return StatusReport{}, fmt.Errorf("resource %q is selected in the installed receipt, but its historical resource semantics are unavailable for Pack %s@%s", focused.String(), entry.Pack.ID, entry.Intent.Version)
+				}
+			}
+		}
 		for i := range report.Entries[0].Resources {
 			resource := &report.Entries[0].Resources[i]
 			if resource.Resource == focused {
@@ -398,7 +414,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	if adapter == nil {
 		return StatusEntry{}, fmt.Errorf("no activation adapter configured for CLI surface %q", surface)
 	}
-	entry := StatusEntry{Pack: pack, Surface: surface}
+	entry := StatusEntry{Pack: pack, Surface: surface, HistoricalEvidence: HistoricalEvidenceStatus{Available: true}}
 	var err error
 	var evidencePack Pack
 	ownedResidual := hasPackOwnership(state.Ownership, pack.ID)
@@ -409,7 +425,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 			return StatusEntry{}, err
 		}
 		entry.Contract = LifecycleContractFor(pack, surface, intent.Aliases)
-		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection}
+		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection, Resources: append([]ResourceIdentity{}, intent.Resources...)}
 		if intent.Active {
 			entry.ActivationRole = ActivationExplicit
 		} else {
@@ -417,12 +433,15 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		}
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
+		if intent.Active && intent.Version != pack.Version {
+			return f.receiptStatusEntry(ctx, entry, intent, state, adapter)
+		}
 		if intent.Active || ownedResidual {
-			evidencePack, err = f.catalog.resolveIntentPack(ctx, intent.PackID, intent.Version)
-			if err != nil {
-				return StatusEntry{}, err
-			}
-		} else if evidencePack, err = f.catalog.Show(ctx, pack.ID); err != nil {
+			evidencePack, err = f.catalog.resolveIntentPack(ctx, pack.ID, intent.Version)
+		} else {
+			evidencePack, err = f.catalog.Show(ctx, pack.ID)
+		}
+		if err != nil {
 			return StatusEntry{}, err
 		}
 	} else if evidencePack, err = f.catalog.Show(ctx, pack.ID); err != nil {

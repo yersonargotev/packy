@@ -903,7 +903,7 @@ func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[str
 				if observed, ok := statuses[pack.ID][string(surface)]; ok {
 					status = observed
 					status.Supported = true
-					if status.InstalledVersion != "" {
+					if status.Installation != "" && status.InstalledVersion != "" {
 						status.UpdateAvailable = capabilitypack.ProjectUpdateAvailable(capabilitypack.ProjectInstallationState(status.Installation), status.InstalledVersion, pack.Version)
 					}
 				}
@@ -976,6 +976,8 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
 			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateActionAvailable,
+			InstalledVersion:               entry.Intent.Version,
+			HistoricalEvidenceMessage:      entry.HistoricalEvidence.Message,
 			Configured:                     readinessForTUI(entry.Readiness.Configured),
 			Authorized:                     readinessForTUI(entry.Readiness.Authorized),
 			Usable:                         readinessForTUI(entry.Readiness.Usable),

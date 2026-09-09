@@ -1096,24 +1096,6 @@ func activationFacade(ctx context.Context, opts Options, workstationResolver *wo
 			claudePacks[pack.ID+"@"+pack.Version] = pack
 		}
 	}
-	claudeState, err := store.LoadSnapshot(ctx, capabilitypack.SurfaceClaude)
-	if err != nil {
-		return capabilitypack.Facade{}, fmt.Errorf("load Claude activation contracts: %w", err)
-	}
-	claudeIntents := claudeState.Intents
-	if len(claudeIntents) == 0 && claudeState.Intent.PackID != "" {
-		claudeIntents = []capabilitypack.ActivationIntent{claudeState.Intent}
-	}
-	for _, intent := range claudeIntents {
-		if !intent.Active || intent.Surface != capabilitypack.SurfaceClaude {
-			continue
-		}
-		pack, resolveErr := composition.catalog.ResolveIntentPack(ctx, intent.PackID, intent.Version)
-		if resolveErr != nil {
-			return capabilitypack.Facade{}, fmt.Errorf("resolve Claude activation contract %s@%s: %w", intent.PackID, intent.Version, resolveErr)
-		}
-		claudePacks[intent.PackID+"@"+intent.Version] = pack
-	}
 	ownership := claudecode.NewCapabilityPackOwnershipProvider(store, claudePacks, claudeLayout, composition.bundleRoot)
 	var claudeAdapter *claudecode.SurfaceAdapter
 	if opts.ClaudeAuthorization != nil {
@@ -1796,8 +1778,13 @@ func renderPackStatusOverview(cmd *cobra.Command, report capabilitypack.StatusRe
 }
 
 func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry, focused *capabilitypack.ResourceStatus) error {
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), len(entry.Resources), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s on %s\nIntent: %s\nLifecycle state: %s\nUpdate available: %s\nResources: %d selected\nReadiness: configured=%s, authorized=%s, usable=%s\nControlled runtime check: %s result=%s observed_at=%s\nReceipt ownership: %d projected paths\nDrift: %d projections\nProjections: %d verified; %d drifted; %d ambiguous; %d missing; %d unmanaged\nBlockers: %s\nPending human actions: %s\nEvidence: %s\n", entry.Pack.ID, entry.Pack.Version, entry.Surface, renderIntent(entry.Intent), entry.LifecycleState, renderUpdateAvailability(entry), statusSelectedResourceCount(entry), readinessValue(entry.Readiness.Configured), readinessValue(entry.Readiness.Authorized), readinessValue(entry.Readiness.Usable), entry.ControlledCheck.State, entry.ControlledCheck.Result, entry.ControlledCheck.ObservedAt, receiptOwnershipCount(entry.ProjectionDetails), receiptDriftCount(entry.ProjectionDetails), entry.Projections.Verified, entry.Projections.Drifted, entry.Projections.Ambiguous, entry.Projections.Missing, entry.Projections.Unmanaged, renderPendingAction(entry.Blockers), renderPendingAction(entry.PendingHumanActions), renderPendingAction(entry.Evidence)); err != nil {
 		return err
+	}
+	if entry.HistoricalEvidence.Message != "" {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Historical evidence: unavailable; %s\n", entry.HistoricalEvidence.Message); err != nil {
+			return err
+		}
 	}
 	if entry.Intent.Active {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Activation role: %s\n", entry.ActivationRole); err != nil {
@@ -1805,6 +1792,13 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		}
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Selection mode: %s\n", entry.Intent.Selection.Mode); err != nil {
 			return err
+		}
+		if entry.HistoricalEvidence.Message != "" {
+			for _, resource := range entry.Intent.Resources {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Receipt resource: %s\n", resource); err != nil {
+					return err
+				}
+			}
 		}
 		for _, selection := range entry.ResourceSelections {
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Resource selection: %s role=%s dependency_chain=%s\n",
@@ -1851,6 +1845,9 @@ func renderPackStatusDetail(cmd *cobra.Command, entry capabilitypack.StatusEntry
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Projection: %s target=%s owner=%s health=%s observed=%s desired=%s\n", projection.ID, projection.Target, projection.Owner, projection.Health, projection.ObservedFingerprint, projection.DesiredFingerprint); err != nil {
 			return err
 		}
+	}
+	if entry.HistoricalEvidence.Message != "" {
+		return nil
 	}
 	if err := renderPackContract(cmd, entry.Contract); err != nil {
 		return err
@@ -1955,9 +1952,20 @@ func renderRuntimeModes(cmd *cobra.Command, modes []capabilitypack.RuntimeModeRe
 	return nil
 }
 
+func statusSelectedResourceCount(entry capabilitypack.StatusEntry) int {
+	if entry.IntentPresent {
+		return len(entry.Intent.Resources)
+	}
+	return len(entry.Resources)
+}
+
 func renderStatusAction(entry capabilitypack.StatusEntry) string {
 	if entry.UpdateAvailable {
-		return "update to " + entry.Pack.Version
+		action := "update to " + entry.Pack.Version
+		if entry.HistoricalEvidence.Message != "" {
+			action += "; historical evidence unavailable"
+		}
+		return action
 	}
 	return renderPendingAction(entry.PendingHumanActions)
 }

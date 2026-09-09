@@ -13,7 +13,7 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy list --json` | `schemas/cli/v1/pack-list.schema.json` |
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
 | `packy show PACK --json` | `schemas/cli/v6/pack-show.schema.json` |
-| global Pack status | `schemas/cli/v11/pack-status.schema.json` |
+| global Pack status | `schemas/cli/v12/pack-status.schema.json` |
 | global Pack lifecycle | `schemas/cli/v11/pack-lifecycle.schema.json` |
 | project Pack lifecycle | `schemas/project/v1.0.0/` |
 
@@ -75,3 +75,10 @@ Reports never include action payload contents, credentials, authentication
 material, or MCP environment values. Environment-bearing command arguments keep
 the key and replace the value with `<redacted>`. Paths that would disclose a
 real home or project root use their documented placeholders.
+
+Global status v12 preserves the applied identity and selected resource identities
+in `intent`, separately from catalog-current `pack_version`. When the installed
+manifest is no longer available, `historical_evidence.available` is false and
+its message explains the unavailable resource, dependency, and contract facts.
+Projection health still compares fresh surface observations with the exact
+receipt digests. Read-only inspection never advances the receipt version.

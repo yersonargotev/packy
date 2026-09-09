@@ -147,6 +147,7 @@ type SurfaceStatus struct {
 	Active                         bool
 	UpdateAvailable                bool
 	InstalledVersion               string
+	HistoricalEvidenceMessage      string
 	Installation                   string
 	Runtime                        string
 	Configured                     string
@@ -1427,6 +1428,15 @@ func (m Model) renderDetailContent(pack Pack) string {
 				runtime = "pending"
 			}
 			lines = append(lines, "  Project installation: "+installation, "  Personal runtime activation: "+runtime)
+		}
+		if status.Active {
+			lines = append(lines, "  Installed version: "+status.InstalledVersion)
+		}
+		if status.UpdateAvailable {
+			lines = append(lines, "  Update available")
+		}
+		if status.HistoricalEvidenceMessage != "" {
+			lines = append(lines, "  Historical evidence: unavailable; "+status.HistoricalEvidenceMessage)
 		}
 		lines = append(lines,
 			fmt.Sprintf("  configured=%s authorized=%s usable=%s", status.Configured, status.Authorized, status.Usable),

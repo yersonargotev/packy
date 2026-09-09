@@ -726,6 +726,76 @@ func TestTUIBackendUninstallSelectedSurfaceRetainsOtherSurface(t *testing.T) {
 	}
 }
 
+func TestTUIProductionBackendUpdatesAnOlderGlobalPack(t *testing.T) {
+	for _, surface := range []string{"codex", "opencode", "claude"} {
+		t.Run(surface, func(t *testing.T) {
+			synthetic := testsupport.PortableAllSurfaces("tui-global-update")
+			manifest := synthetic.Manifest()
+			fixture := newSyntheticCLIFixture(t, &fakeTerminal{}, synthetic)
+			opts := fixture.options
+			outsideProject := t.TempDir()
+			opts.Getwd = func() (string, error) { return outsideProject, nil }
+			opts = opts.withDefaults()
+			backend := newTUIBackend(opts, newWorkstationResolver(opts))
+			activate, err := backend.Preview(context.Background(), tui.PreviewRequest{
+				Operation: "activate", PackID: manifest.ID, Surface: surface, Scope: "global", Selection: tui.Selection{Mode: "all"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: activate, ApprovedPhases: requiredTUIPhases(activate)}, func(tui.ApplyProgress) {}); err != nil {
+				t.Fatal(err)
+			}
+			if err := synthetic.Candidate().WithExactCopyBytes("instruction:guidance", ".", []byte("# Updated guidance\n\nNew catalog content.\n")).WriteBundle(fixture.bundleRoot); err != nil {
+				t.Fatal(err)
+			}
+			before := snapshotTree(t, fixture.home)
+			dashboard, err := backend.Load(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(dashboard.Setup.Blockers) != 0 {
+				t.Fatalf("older installed version blocked the dashboard: %#v", dashboard.Setup.Blockers)
+			}
+			pack := findTUIPack(dashboard.Global.Packs, manifest.ID)
+			if pack == nil {
+				t.Fatal("installed Pack missing from dashboard")
+			}
+			index := slices.IndexFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == surface })
+			if index < 0 || !pack.SurfaceStatuses[index].UpdateAvailable || pack.SurfaceStatuses[index].InstalledVersion != manifest.Version {
+				t.Fatalf("older installed version did not offer Update: %#v", pack)
+			}
+			if pack.SurfaceStatuses[index].Drift != 0 || pack.SurfaceStatuses[index].Ownership == 0 {
+				t.Fatalf("catalog changes replaced receipt evidence: %#v", pack.SurfaceStatuses[index])
+			}
+			if after := snapshotTree(t, fixture.home); after != before {
+				t.Fatal("loading status changed the installed Pack")
+			}
+			if surface != "codex" {
+				return
+			}
+			update, err := backend.Preview(context.Background(), tui.PreviewRequest{Operation: "update", PackID: manifest.ID, Surface: surface, Scope: "global"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if update.PackVersion != synthetic.CandidateVersion() {
+				t.Fatalf("update targets %s, want %s", update.PackVersion, synthetic.CandidateVersion())
+			}
+			if _, err := backend.Apply(context.Background(), tui.ApplyRequest{Preview: update, ApprovedPhases: requiredTUIPhases(update)}, func(tui.ApplyProgress) {}); err != nil {
+				t.Fatal(err)
+			}
+			dashboard, err = backend.Load(context.Background())
+			if err != nil || len(dashboard.Setup.Blockers) != 0 {
+				t.Fatalf("updated dashboard: %#v, %v", dashboard.Setup, err)
+			}
+			pack = findTUIPack(dashboard.Global.Packs, manifest.ID)
+			if pack == nil || slices.ContainsFunc(pack.SurfaceStatuses, func(status tui.SurfaceStatus) bool { return status.Name == surface && status.UpdateAvailable }) {
+				t.Fatalf("updated Pack still offers Update: %#v", pack)
+			}
+		})
+	}
+}
+
 func TestTUIProductionBackendUpdatesAnInstalledProjectPack(t *testing.T) {
 	synthetic := testsupport.PortableAllSurfaces("tui-project-update")
 	manifest := synthetic.Manifest()

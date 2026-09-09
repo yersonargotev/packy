@@ -317,9 +317,11 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 	observation.ActivePacks = make([]setuphealth.ActivePack, 0, len(status.Entries))
 	for _, entry := range status.Entries {
 		observation.ActivePacks = append(observation.ActivePacks, setuphealth.ActivePack{
-			ID:                   entry.Pack.ID,
-			Surface:              string(entry.Surface),
-			InspectionFailed:     entry.InspectionFailed,
+			ID:                        entry.Pack.ID,
+			Surface:                   string(entry.Surface),
+			InspectionFailed:          entry.InspectionFailed,
+			HistoricalEvidenceMessage: entry.HistoricalEvidence.Message,
+			IntentVersion:             entry.Intent.Version, CatalogVersion: entry.Pack.Version,
 			UpdateAvailable:      entry.UpdateAvailable,
 			ProjectionProblems:   entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
 			MissingRequirements:  len(entry.MissingRequirements),

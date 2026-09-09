@@ -2,14 +2,15 @@ package capabilitypack
 
 import "sort"
 
-const StatusSchemaVersion = 11
+const StatusSchemaVersion = 12
 
 type JSONIntent struct {
-	State     string            `json:"state"`
-	Active    *bool             `json:"active"`
-	Revision  *int              `json:"revision"`
-	Version   string            `json:"version,omitempty"`
-	Selection ResourceSelection `json:"selection"`
+	State     string             `json:"state"`
+	Active    *bool              `json:"active"`
+	Revision  *int               `json:"revision"`
+	Version   string             `json:"version,omitempty"`
+	Selection ResourceSelection  `json:"selection"`
+	Resources []ResourceIdentity `json:"resources"`
 }
 
 type JSONReadiness = ReadinessStatus
@@ -66,12 +67,13 @@ type JSONStatusEntry struct {
 	PackVersion         string                        `json:"pack_version"`
 	Surface             Surface                       `json:"surface"`
 	Intent              JSONIntent                    `json:"intent"`
+	HistoricalEvidence  HistoricalEvidenceStatus      `json:"historical_evidence"`
 	UpdateAvailable     bool                          `json:"update_available"`
 	Projections         JSONProjectionSummary         `json:"projection_summary"`
 	ProjectionDetails   []JSONProjectionStatus        `json:"projection_details"`
 	ResourceSelections  []JSONResourceSelectionStatus `json:"resource_selections"`
 	Resources           []JSONResourceStatus          `json:"resources"`
-	Contract            LifecycleContract             `json:"contract"`
+	Contract            *LifecycleContract            `json:"contract"`
 	Readiness           JSONReadiness                 `json:"readiness"`
 	Conditions          []ReadinessCondition          `json:"conditions"`
 	OptionalAuthorities []JSONOptionalAuthority       `json:"optional_authorities"`
@@ -99,21 +101,26 @@ func (report StatusReport) JSONReport(targeted bool) JSONStatusReport {
 	}
 	entries := make([]JSONStatusEntry, 0, len(report.Entries))
 	for _, entry := range report.Entries {
-		intent := JSONIntent{State: "absent", Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}
+		intent := JSONIntent{State: "absent", Resources: []ResourceIdentity{}, Selection: ResourceSelection{Mode: SelectionAll, Roots: []ResourceIdentity{}}}
 		if entry.IntentPresent {
 			active, revision := entry.Intent.Active, entry.Intent.Revision
 			selection, _ := canonicalSelection(entry.Intent.Selection)
-			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version, Selection: selection}
+			intent = JSONIntent{State: "known", Active: &active, Revision: &revision, Version: entry.Intent.Version, Selection: selection, Resources: append([]ResourceIdentity{}, entry.Intent.Resources...)}
+		}
+		var contract *LifecycleContract
+		if entry.HistoricalEvidence.Available {
+			value := entry.Contract
+			contract = &value
 		}
 		entries = append(entries, JSONStatusEntry{
 			Pack: entry.Pack.ID, PackVersion: entry.Pack.Version, Surface: entry.Surface,
-			Intent: intent, UpdateAvailable: entry.UpdateAvailable, Projections: JSONProjectionSummary{Verified: entry.Projections.Verified, Missing: entry.Projections.Missing, Drifted: entry.Projections.Drifted, Ambiguous: entry.Projections.Ambiguous, Unmanaged: entry.Projections.Unmanaged},
+			HistoricalEvidence: entry.HistoricalEvidence, Intent: intent, UpdateAvailable: entry.UpdateAvailable, Projections: JSONProjectionSummary{Verified: entry.Projections.Verified, Missing: entry.Projections.Missing, Drifted: entry.Projections.Drifted, Ambiguous: entry.Projections.Ambiguous, Unmanaged: entry.Projections.Unmanaged},
 			Readiness:           entry.Readiness,
 			Conditions:          append([]ReadinessCondition{}, entry.Conditions...),
 			OptionalAuthorities: jsonOptionalAuthorities(entry.OptionalAuthorities),
 			RuntimeModes:        sortedRuntimeModeResults(entry.RuntimeModes),
 			ControlledCheck:     entry.ControlledCheck,
-			ProjectionDetails:   jsonProjectionDetails(entry.ProjectionDetails), Contract: entry.Contract,
+			ProjectionDetails:   jsonProjectionDetails(entry.ProjectionDetails), Contract: contract,
 			ResourceSelections: jsonResourceSelectionDetails(entry.ResourceSelections),
 			Resources:          jsonResourceStatuses(entry.Resources),
 			Blockers:           sortedCopy(entry.Blockers), Evidence: sortedCopy(entry.Evidence), PendingHumanActions: sortedCopy(entry.PendingHumanActions),
