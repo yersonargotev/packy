@@ -246,7 +246,7 @@ func TestPackStatusSchemaAcceptsUnobservableExternalRequirementReason(t *testing
 
 func TestPackLifecycleSchemaRejectsIncompleteReadinessCondition(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", ".."))
-	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v11", "pack-lifecycle-preview.json"))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v12", "pack-lifecycle-preview.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
