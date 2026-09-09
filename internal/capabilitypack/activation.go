@@ -231,10 +231,16 @@ const (
 // inspection. Capability-pack decides which facts are relevant to each use
 // case; adapters only translate those facts into host projections.
 type SurfaceTransition struct {
-	Prior                  Pack
-	Desired                Pack
-	CurrentOwnership       []ProjectionOwnership
-	ResidualOwnership      []ProjectionOwnership
+	// ObservationOnly requests status facts without reconstructing mutation
+	// authority for unrelated installed Packs. It grants no apply authority.
+	ObservationOnly   bool
+	Prior             Pack
+	Desired           Pack
+	CurrentOwnership  []ProjectionOwnership
+	ResidualOwnership []ProjectionOwnership
+	// ReceiptOwnership requests read-only observation of exact installed projections.
+	// A non-nil slice excludes all manifest-based projection discovery.
+	ReceiptOwnership       []ProjectionOwnership
 	ResolvedExecutables    []ExecutableResolution
 	ProjectRoot            string
 	ProjectInstallation    *ProjectInstallation
@@ -2444,6 +2450,9 @@ func cloneSurfaceTransition(value SurfaceTransition) SurfaceTransition {
 	value.Desired = clonePack(value.Desired)
 	value.CurrentOwnership = cloneOwnership(value.CurrentOwnership)
 	value.ResidualOwnership = cloneOwnership(value.ResidualOwnership)
+	if value.ReceiptOwnership != nil {
+		value.ReceiptOwnership = append([]ProjectionOwnership{}, value.ReceiptOwnership...)
+	}
 	value.ResolvedExecutables = cloneResolutions(value.ResolvedExecutables)
 	value.ProjectEffectReceipts = append([]ProjectActivationEffectReceipt(nil), value.ProjectEffectReceipts...)
 	if value.ProjectInstallation != nil {

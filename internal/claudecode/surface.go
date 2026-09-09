@@ -54,6 +54,9 @@ func NewSurfaceAdapter(bundleRoot string, layout CanonicalLayout, stateRoot, exe
 }
 
 func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabilitypack.SurfaceTransition) (capabilitypack.SurfaceInspection, error) {
+	if transition.ReceiptOwnership != nil {
+		return a.inspectReceipt(transition.ReceiptOwnership)
+	}
 	if transition.ProjectInstallation != nil {
 		if transition.ProjectRoot == "" || len(transition.ProjectInstallation.Manifest.Packs) != 1 {
 			return capabilitypack.SurfaceInspection{}, fmt.Errorf("locked Claude project inspection requires one manifest pack and the project root")
@@ -64,7 +67,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)
 	}
 	ownership := OwnershipSnapshot{}
-	if a.ownership != nil {
+	if a.ownership != nil && !transition.ObservationOnly {
 		var err error
 		ownership, err = a.ownership.ObserveOwnership(ctx)
 		if err != nil {

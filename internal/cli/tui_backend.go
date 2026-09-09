@@ -900,14 +900,14 @@ func catalogPacksForTUI(details []capabilitypack.CatalogDetail, statuses map[str
 			status := tui.SurfaceStatus{Name: string(surface), Supported: supported}
 			if supported {
 				status.Configured, status.Authorized, status.Usable = "no", "no", "no"
-				if observed, ok := statuses[pack.ID][string(surface)]; ok {
-					status = observed
-					status.Supported = true
-					if status.InstalledVersion != "" {
-						status.UpdateAvailable = capabilitypack.ProjectUpdateAvailable(capabilitypack.ProjectInstallationState(status.Installation), status.InstalledVersion, pack.Version)
-					}
-				}
 				view.Surfaces = append(view.Surfaces, string(surface))
+			}
+			if observed, ok := statuses[pack.ID][string(surface)]; ok {
+				status = observed
+				status.Supported = supported
+				if status.Installation != "" && status.InstalledVersion != "" {
+					status.UpdateAvailable = capabilitypack.ProjectUpdateAvailable(capabilitypack.ProjectInstallationState(status.Installation), status.InstalledVersion, pack.Version)
+				}
 			}
 			view.SurfaceStatuses = append(view.SurfaceStatuses, status)
 		}
@@ -976,6 +976,9 @@ func globalStatusesForTUI(report capabilitypack.StatusReport) map[string]map[str
 		status := tui.SurfaceStatus{
 			Name: string(entry.Surface), Supported: true,
 			Active: entry.IntentPresent && entry.Intent.Active, UpdateAvailable: entry.UpdateActionAvailable,
+			CatalogUpdateAvailable:         entry.UpdateAvailable,
+			InstalledVersion:               entry.Intent.Version,
+			HistoricalEvidenceMessage:      entry.HistoricalEvidence.Message,
 			Configured:                     readinessForTUI(entry.Readiness.Configured),
 			Authorized:                     readinessForTUI(entry.Readiness.Authorized),
 			Usable:                         readinessForTUI(entry.Readiness.Usable),

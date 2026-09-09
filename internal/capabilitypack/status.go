@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 )
@@ -21,6 +22,7 @@ type IntentStatus struct {
 	Revision  int
 	Version   string
 	Selection ResourceSelection
+	Resources []ResourceIdentity
 }
 
 type PackLifecycleState string
@@ -124,7 +126,14 @@ func UnknownOptionalAuthorities(pack Pack) []OptionalAuthorityObservation {
 	return result
 }
 
+// HistoricalEvidenceStatus states whether the applied manifest semantics are available.
+type HistoricalEvidenceStatus struct {
+	Available bool   `json:"available"`
+	Message   string `json:"message,omitempty"`
+}
+
 type StatusEntry struct {
+	HistoricalEvidence             HistoricalEvidenceStatus
 	Pack                           Pack
 	Surface                        Surface
 	Intent                         IntentStatus
@@ -344,12 +353,31 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 		return StatusReport{}, fmt.Errorf("a pack is required when --surface is specified")
 	}
 	var report StatusReport
+	states := map[Surface]ActivationState{}
 	for _, pack := range packs {
-		for _, surface := range pack.Surfaces {
+		for _, surface := range statusSurfaces() {
 			if request.Surface != "" && request.Surface != surface {
 				continue
 			}
-			entry, err := f.statusEntry(ctx, pack, surface, request.PackyHome)
+			if f.activation == nil || f.activation.store == nil {
+				return StatusReport{}, fmt.Errorf("surface inspection is not configured")
+			}
+			state, loaded := states[surface]
+			if !loaded {
+				var err error
+				state, err = f.activation.store.LoadSnapshot(ctx, surface)
+				if err != nil {
+					return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
+				}
+				states[surface] = state
+			}
+			if !slices.Contains(pack.Surfaces, surface) {
+				intent, installed := intentForPack(state, pack.ID, surface)
+				if !installed || !intent.Active {
+					continue
+				}
+			}
+			entry, err := f.statusEntryWithStateAt(ctx, pack, surface, state, request.PackyHome)
 			if err != nil {
 				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
 			}
@@ -360,6 +388,14 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 		return StatusReport{}, fmt.Errorf("pack %q does not support CLI surface %q", request.PackID, request.Surface)
 	}
 	if request.Resource != "" {
+		entry := report.Entries[0]
+		if !entry.HistoricalEvidence.Available {
+			for _, resource := range entry.Intent.Resources {
+				if resource == focused {
+					return StatusReport{}, fmt.Errorf("resource %q is selected in the installed receipt, but its historical resource semantics are unavailable for Pack %s@%s", focused.String(), entry.Pack.ID, entry.Intent.Version)
+				}
+			}
+		}
 		for i := range report.Entries[0].Resources {
 			resource := &report.Entries[0].Resources[i]
 			if resource.Resource == focused {
@@ -378,17 +414,6 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 	return report, nil
 }
 
-func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface, packyHome string) (StatusEntry, error) {
-	if f.activation == nil || f.activation.store == nil {
-		return StatusEntry{}, fmt.Errorf("surface inspection is not configured")
-	}
-	state, err := f.activation.store.LoadSnapshot(ctx, surface)
-	if err != nil {
-		return StatusEntry{}, err
-	}
-	return f.statusEntryWithStateAt(ctx, pack, surface, state, packyHome)
-}
-
 func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Surface, state ActivationState) (StatusEntry, error) {
 	return f.statusEntryWithStateAt(ctx, pack, surface, state, "")
 }
@@ -398,7 +423,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 	if adapter == nil {
 		return StatusEntry{}, fmt.Errorf("no activation adapter configured for CLI surface %q", surface)
 	}
-	entry := StatusEntry{Pack: pack, Surface: surface}
+	entry := StatusEntry{Pack: pack, Surface: surface, HistoricalEvidence: HistoricalEvidenceStatus{Available: true}}
 	var err error
 	var evidencePack Pack
 	ownedResidual := hasPackOwnership(state.Ownership, pack.ID)
@@ -409,7 +434,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 			return StatusEntry{}, err
 		}
 		entry.Contract = LifecycleContractFor(pack, surface, intent.Aliases)
-		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection}
+		entry.Intent = IntentStatus{Active: intent.Active, Revision: intent.Revision, Version: intent.Version, Selection: selection, Resources: append([]ResourceIdentity{}, intent.Resources...)}
 		if intent.Active {
 			entry.ActivationRole = ActivationExplicit
 		} else {
@@ -417,12 +442,18 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		}
 		entry.IntentPresent = true
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
+		if intent.Active && intent.Version != pack.Version {
+			return f.receiptStatusEntry(ctx, entry, intent, state, adapter)
+		}
+		if intent.Active && !slices.Contains(pack.Surfaces, surface) {
+			return StatusEntry{}, fmt.Errorf("installed receipt surface %q is absent from matching catalog Pack %s@%s", surface, pack.ID, pack.Version)
+		}
 		if intent.Active || ownedResidual {
-			evidencePack, err = f.catalog.resolveIntentPack(ctx, intent.PackID, intent.Version)
-			if err != nil {
-				return StatusEntry{}, err
-			}
-		} else if evidencePack, err = f.catalog.Show(ctx, pack.ID); err != nil {
+			evidencePack, err = f.catalog.resolveIntentPack(ctx, pack.ID, intent.Version)
+		} else {
+			evidencePack, err = f.catalog.Show(ctx, pack.ID)
+		}
+		if err != nil {
 			return StatusEntry{}, err
 		}
 	} else if evidencePack, err = f.catalog.Show(ctx, pack.ID); err != nil {
@@ -474,7 +505,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 			}
 		}
 	}
-	observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{Desired: relevantPack, CurrentOwnership: state.Ownership, ResolvedExecutables: resolutions})
+	observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{ObservationOnly: true, Desired: relevantPack, CurrentOwnership: state.Ownership, ResolvedExecutables: resolutions})
 	if inspectErr != nil {
 		return StatusEntry{}, inspectErr
 	}

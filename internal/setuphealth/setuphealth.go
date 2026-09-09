@@ -53,18 +53,22 @@ type Report struct {
 // ActivePack is the compact, detached status input Doctor needs. Detailed
 // readiness evidence remains owned by capability-pack status.
 type ActivePack struct {
-	ID                      string
-	Surface                 string
-	InspectionFailed        bool
-	UpdateAvailable         bool
-	ProjectionProblems      int
-	MissingRequirements     int
-	PendingHumanActions     int
-	Conditions              []ReadinessCondition
-	ControlledCheckState    string
-	ControlledCheckResult   string
-	ControlledCheckObserved string
-	ControlledCheckIdentity string
+	ID                        string
+	Surface                   string
+	HistoricalEvidenceMessage string
+	IntentVersion             string
+	CatalogVersion            string
+	InspectionFailed          bool
+	UpdateAvailable           bool
+	UpdateActionUnavailable   bool
+	ProjectionProblems        int
+	MissingRequirements       int
+	PendingHumanActions       int
+	Conditions                []ReadinessCondition
+	ControlledCheckState      string
+	ControlledCheckResult     string
+	ControlledCheckObserved   string
+	ControlledCheckIdentity   string
 }
 
 // ReadinessCondition is the detached condition fact Doctor needs from a Pack
@@ -136,7 +140,14 @@ func diagnoseActivePack(pack ActivePack) []Check {
 		if severity == Pass {
 			severity = Warn
 		}
-		findings = append(findings, "an update is available")
+		update := "an update is available"
+		if pack.IntentVersion != "" && pack.CatalogVersion != "" {
+			update += fmt.Sprintf(" (%s -> %s)", pack.IntentVersion, pack.CatalogVersion)
+		}
+		if pack.UpdateActionUnavailable {
+			update += " but cannot be applied on this surface"
+		}
+		findings = append(findings, update)
 	}
 	for _, condition := range pack.Conditions {
 		if condition.Value != "false" {
@@ -154,7 +165,7 @@ func diagnoseActivePack(pack ActivePack) []Check {
 		findings = append(findings, fmt.Sprintf("%d pending human actions", pack.PendingHumanActions))
 	}
 	if len(findings) == 0 {
-		checks := append(informationalConditions(name, pack.Conditions), controlledCheckInformation(name, pack)...)
+		checks := append(informationalConditions(name, pack.Conditions), packEvidenceInformation(name, pack)...)
 		return append([]Check{{Name: name, Scope: CheckScopeGlobal, Severity: Pass, Detail: fmt.Sprintf("active pack %s on %s has no confirmed health problems", pack.ID, pack.Surface)}}, checks...)
 	}
 
@@ -162,10 +173,10 @@ func diagnoseActivePack(pack ActivePack) []Check {
 	if pack.ProjectionProblems > 0 {
 		remediation = append([]string{fmt.Sprintf("packy activate %s --surface %s", pack.ID, pack.Surface)}, remediation...)
 	}
-	if pack.UpdateAvailable {
+	if pack.UpdateAvailable && !pack.UpdateActionUnavailable {
 		remediation = append([]string{fmt.Sprintf("packy update %s --surface %s", pack.ID, pack.Surface)}, remediation...)
 	}
-	checks := append(informationalConditions(name, pack.Conditions), controlledCheckInformation(name, pack)...)
+	checks := append(informationalConditions(name, pack.Conditions), packEvidenceInformation(name, pack)...)
 	return append([]Check{{
 		Name:     name,
 		Scope:    CheckScopeGlobal,
@@ -174,11 +185,15 @@ func diagnoseActivePack(pack ActivePack) []Check {
 	}}, checks...)
 }
 
-func controlledCheckInformation(packName string, pack ActivePack) []Check {
-	if pack.ControlledCheckState != "current" && pack.ControlledCheckState != "stale" {
-		return nil
+func packEvidenceInformation(packName string, pack ActivePack) []Check {
+	var checks []Check
+	if pack.HistoricalEvidenceMessage != "" {
+		checks = append(checks, Check{Name: packName + "-historical-evidence", Scope: CheckScopeGlobal, Severity: Info, Detail: pack.HistoricalEvidenceMessage})
 	}
-	return []Check{{Name: packName + "-controlled-runtime-check", Scope: CheckScopeGlobal, Severity: Info, Detail: fmt.Sprintf("controlled runtime check state=%s result=%s observed_at=%s identity=%s", pack.ControlledCheckState, pack.ControlledCheckResult, pack.ControlledCheckObserved, pack.ControlledCheckIdentity)}}
+	if pack.ControlledCheckState != "current" && pack.ControlledCheckState != "stale" {
+		return checks
+	}
+	return append(checks, Check{Name: packName + "-controlled-runtime-check", Scope: CheckScopeGlobal, Severity: Info, Detail: fmt.Sprintf("controlled runtime check state=%s result=%s observed_at=%s identity=%s", pack.ControlledCheckState, pack.ControlledCheckResult, pack.ControlledCheckObserved, pack.ControlledCheckIdentity)})
 }
 
 func informationalConditions(packName string, conditions []ReadinessCondition) []Check {
