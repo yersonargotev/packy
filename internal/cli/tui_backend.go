@@ -587,7 +587,7 @@ func globalPreviewForTUI(report capabilitypack.JSONLifecyclePlan) tui.Preview {
 		ID: report.PlanID, Digest: report.Digest, Operation: string(report.Operation), Disposition: string(report.Disposition),
 		PackID: report.Pack, PackVersion: report.PackVersion, Surface: string(report.Surface), Scope: "global",
 		Selection:      tui.Selection{Mode: string(report.Selection.Mode), Roots: resourceIdentitiesForTUI(report.Selection.Roots)},
-		Diff:           tui.PreviewDiff{Added: report.ContractDiff.Added, Changed: report.ContractDiff.Changed, Removed: report.ContractDiff.Removed, Retained: report.ContractDiff.Retained},
+		Diff:           tui.PreviewDiff{BaselineAvailable: report.ContractDiff.BaselineAvailable, UnavailableReason: report.ContractDiff.UnavailableReason, Added: report.ContractDiff.Added, Changed: report.ContractDiff.Changed, Removed: report.ContractDiff.Removed, Retained: report.ContractDiff.Retained},
 		PendingActions: append([]string(nil), report.PendingHumanActions...),
 	}
 	for _, resource := range report.ResourceGraph.Resources {

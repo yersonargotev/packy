@@ -14,7 +14,7 @@ persists the resulting installed Pack receipt, not the preview.
 | `packy doctor --json` | `schemas/cli/v3/doctor.schema.json` |
 | `packy show PACK --json` | `schemas/cli/v6/pack-show.schema.json` |
 | global Pack status | `schemas/cli/v12/pack-status.schema.json` |
-| global Pack lifecycle | `schemas/cli/v11/pack-lifecycle.schema.json` |
+| global Pack lifecycle | `schemas/cli/v12/pack-lifecycle.schema.json` |
 | project Pack lifecycle | `schemas/project/v1.0.0/` |
 
 Canonical fixtures live under `internal/cli/testdata/`. Repository tests compile
@@ -86,3 +86,14 @@ Active receipted surfaces remain inspectable even when the current catalog no
 longer supports them. A newer catalog version is distinct from an applicable
 update: human output, Doctor, and the TUI do not recommend an update on a
 surface the current catalog has retired.
+
+Global lifecycle v12 exposes `contract_diff.baseline_available`. When the applied
+Pack version's contract cannot be reconstructed, it is false and
+`unavailable_reason` is `historical_contract_unavailable`. All four classification
+arrays are empty because added, changed, removed, and retained classifications
+are unavailable; those empty arrays do not assert that the contract is unchanged.
+Human and TUI previews explain the same limitation. The update's target resources,
+planned actions, and readiness remain available independently of the comparison.
+When the installed version matches the current catalog, Packy reconstructs the
+baseline using the receipt's selected resources. Available comparisons set
+`baseline_available` to true and omit `unavailable_reason`.

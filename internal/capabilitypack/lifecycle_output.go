@@ -10,7 +10,7 @@ import (
 	"github.com/yersonargotev/packy/internal/reportredaction"
 )
 
-const LifecycleJSONSchemaVersion = 11
+const LifecycleJSONSchemaVersion = 12
 
 type ResourceRole string
 
@@ -590,10 +590,12 @@ type JSONLifecyclePlan struct {
 }
 
 type JSONContractDiff struct {
-	Added    []string `json:"added"`
-	Changed  []string `json:"changed"`
-	Removed  []string `json:"removed"`
-	Retained []string `json:"retained"`
+	BaselineAvailable bool     `json:"baseline_available"`
+	UnavailableReason string   `json:"unavailable_reason,omitempty"`
+	Added             []string `json:"added"`
+	Changed           []string `json:"changed"`
+	Removed           []string `json:"removed"`
+	Retained          []string `json:"retained"`
 }
 
 func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
@@ -618,7 +620,12 @@ func (p ReconciliationPlan) JSONReport(dryRun bool) JSONLifecyclePlan {
 		return blockers[i].Detail < blockers[j].Detail
 	})
 	contract := p.LifecycleContract()
-	diff := lifecycleContractDiff(p.beforeCompositionFacts, p.compositionFacts)
+	before := p.beforeCompositionFacts
+	if p.operation == OperationUpdate {
+		before = p.updateContractFacts
+	}
+	baselineAvailable := p.operation != OperationUpdate || p.updateContractFacts != nil
+	diff := lifecycleContractDiff(before, p.compositionFacts, baselineAvailable)
 	selection, _ := canonicalSelection(p.selection)
 	return JSONLifecyclePlan{SchemaVersion: LifecycleJSONSchemaVersion, Report: "pack-lifecycle-preview", PlanID: p.id,
 		Operation: p.operation, Disposition: p.Disposition(), Digest: p.digest, Pack: p.pack.ID, PackVersion: p.pack.Version,
@@ -659,7 +666,12 @@ func actionForReport(action ProjectionAction) ProjectionAction {
 	return action
 }
 
-func lifecycleContractDiff(before, after []Pack) JSONContractDiff {
+func lifecycleContractDiff(before, after []Pack, baselineAvailable bool) JSONContractDiff {
+	diff := JSONContractDiff{BaselineAvailable: baselineAvailable, Added: []string{}, Changed: []string{}, Removed: []string{}, Retained: []string{}}
+	if !baselineAvailable {
+		diff.UnavailableReason = "historical_contract_unavailable"
+		return diff
+	}
 	prior, next := map[string]string{}, map[string]string{}
 	collect := func(target map[string]string, packs []Pack) {
 		for _, pack := range packs {
@@ -670,7 +682,6 @@ func lifecycleContractDiff(before, after []Pack) JSONContractDiff {
 	}
 	collect(prior, before)
 	collect(next, after)
-	diff := JSONContractDiff{Added: []string{}, Changed: []string{}, Removed: []string{}, Retained: []string{}}
 	for id, digest := range next {
 		if old, ok := prior[id]; !ok {
 			diff.Added = append(diff.Added, id)
