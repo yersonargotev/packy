@@ -300,11 +300,13 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 	}
 	facade, err := activationFacade(ctx, opts, resolver)
 	if err != nil {
+		observation.CatalogFailure = err.Error()
 		observation.ActivePacks = failedActivePackObservations(intentObservation.Intents)
 		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
 	}
 	status, err := facade.ActiveStatus(ctx)
 	if err != nil {
+		observation.CatalogFailure = err.Error()
 		observation.ActivePacks = failedActivePackObservations(intentObservation.Intents)
 		return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil
 	}

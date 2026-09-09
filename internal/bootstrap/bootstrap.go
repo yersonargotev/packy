@@ -12,6 +12,7 @@ import (
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/yersonargotev/packy/internal/bundletransaction"
 	"github.com/yersonargotev/packy/internal/skillbundle"
 )
 
@@ -50,6 +51,11 @@ func EnsureInstalledSource(ctx context.Context, opts BootstrapOptions) (Bootstra
 	result := BootstrapResult{}
 	validationErr := validateInstalledSource(ctx, opts.InstalledSource.Root())
 	if validationErr == nil {
+		guard, err := bundletransaction.Acquire(ctx, opts.InstalledSource.Root())
+		if err != nil {
+			return BootstrapResult{}, err
+		}
+		defer guard.Release()
 		updated, err := ensureInstalledSourceRef(ctx, opts)
 		if err != nil {
 			return BootstrapResult{}, err
@@ -180,50 +186,54 @@ func fetchInstalledSourceRef(ctx context.Context, opts BootstrapOptions, ref str
 	return err
 }
 
+// ValidateInstalledSourceRef checks the default checkout's local Git identity
+// without acquiring a bundle lock, running Git, or changing the filesystem.
+// Callers must hold the bundle transaction lock through content validation and
+// catalog loading so those checks observe the same source.
 func ValidateInstalledSourceRef(ctx context.Context, opts BootstrapOptions) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	root := opts.InstalledSource.Root()
+	if strings.TrimSpace(root) == "" {
+		return errors.New("installed source root is required")
+	}
+	invalid := func(err error) error {
+		return fmt.Errorf("default Installed Source is missing or invalid at %s; move it aside to preserve its contents, then run packy init to initialize it: %w", root, err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		if _, entryErr := os.Lstat(root); os.IsNotExist(entryErr) {
+			return fmt.Errorf("default Installed Source is missing or invalid at %s; run packy init to initialize it: %w", root, err)
+		}
+		return invalid(err)
+	}
+	if !info.IsDir() {
+		return invalid(errors.New("checkout root is not a directory"))
+	}
+	repository, err := git.PlainOpenWithOptions(root, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
+	if err != nil {
+		return invalid(fmt.Errorf("inspect Installed Source git metadata: %w", err))
+	}
+	head, err := repository.Head()
+	if err != nil {
+		return invalid(fmt.Errorf("inspect Installed Source HEAD: %w", err))
+	}
+	if _, err := repository.CommitObject(head.Hash()); err != nil {
+		return invalid(fmt.Errorf("inspect Installed Source HEAD commit: %w", err))
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ref := strings.TrimSpace(opts.RepositoryRef)
 	if ref == "" {
 		return nil
 	}
-	if strings.TrimSpace(opts.InstalledSource.Root()) == "" {
-		return errors.New("installed source root is required")
-	}
-	if err := validateInstalledSource(ctx, opts.InstalledSource.Root()); err != nil {
-		if contextErr := ctx.Err(); contextErr != nil {
-			return contextErr
-		}
-		return fmt.Errorf("default Installed Source is missing or invalid at %s; run packy init to initialize it", skillbundle.InstalledSourceRoot(opts.InstalledSource))
-	}
-	matches, err := repositoryRefMatchesReadOnly(opts, fmt.Sprintf("run packy init to align it with %s", ref))
-	if err != nil {
-		return err
-	}
-	if !matches {
-		return fmt.Errorf("default Installed Source at %s is stale for Packy %s; run packy init to align it before managing capability packs", opts.InstalledSource.Root(), ref)
+	target, err := repository.ResolveRevision(plumbing.Revision(ref + "^{commit}"))
+	if err != nil || head.Hash() != *target {
+		return fmt.Errorf("default Installed Source at %s is stale for Packy %s; run packy init to align it before managing capability packs", root, ref)
 	}
 	return nil
-}
-
-// repositoryRefMatchesReadOnly validates the already-installed checkout
-// without invoking Git. Lifecycle Preview uses this path so dry-runs never
-// execute commands; mutating bootstrap operations continue to use Git itself.
-func repositoryRefMatchesReadOnly(opts BootstrapOptions, missingGitReason string) (bool, error) {
-	repository, err := git.PlainOpenWithOptions(opts.InstalledSource.Root(), &git.PlainOpenOptions{EnableDotGitCommonDir: true})
-	if err != nil {
-		if errors.Is(err, git.ErrRepositoryNotExists) {
-			return false, fmt.Errorf("Installed Source at %s is not a git checkout; %s. Move it aside or pass --source-root", opts.InstalledSource.Root(), missingGitReason)
-		}
-		return false, fmt.Errorf("inspect Installed Source git metadata: %w", err)
-	}
-	head, err := repository.Head()
-	if err != nil {
-		return false, fmt.Errorf("inspect Installed Source HEAD: %w", err)
-	}
-	target, err := repository.ResolveRevision(plumbing.Revision(opts.RepositoryRef + "^{commit}"))
-	if err != nil {
-		return false, nil
-	}
-	return head.Hash() == *target, nil
 }
 
 func repositoryRefMatches(ctx context.Context, opts BootstrapOptions, missingGitReason string) (bool, error) {

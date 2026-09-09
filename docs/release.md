@@ -19,6 +19,16 @@ packy init
 Direct-download users choose the archive matching their OS and architecture,
 verify it with `SHA256SUMS`, extract `packy` onto `PATH`, and run `packy init`.
 
+Catalog operations validate the default Installed Source at
+`~/.local/share/packy` offline before consuming it: its Git checkout must match
+the running release, and its manifests and resource closures must match the
+release's Managed Pack Registry and Admission Records. These checks never
+repair or change the checkout. Run `packy init` to align a clean older source;
+for an invalid or modified checkout, move it aside to preserve local changes,
+then run `packy init` to create a fresh copy. Repository-ancestor sources and
+explicit `PACKY_SKILLS_SOURCE` overrides remain editable development sources;
+`packy init --source-root <path>` can initialize such a separate checkout.
+
 Users moving from `v0.1.x` first follow the
 [one-time v0.2 reset](reset-v0.2.md).
 

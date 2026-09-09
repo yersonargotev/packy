@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/yersonargotev/packy/internal/bundletransaction"
 	"github.com/yersonargotev/packy/internal/workstation"
 )
 
@@ -89,7 +91,7 @@ func TestValidateInstalledSourceRefUsesDescriptor(t *testing.T) {
 		InstalledSource: InstalledSourceAt(root),
 		RepositoryRef:   "v1.2.3",
 	})
-	if err == nil || !strings.Contains(err.Error(), filepath.Join(root, "bundle", "skills")) {
+	if err == nil || !strings.Contains(err.Error(), root) {
 		t.Fatalf("ValidateInstalledSourceRef error = %v, want descriptor path", err)
 	}
 }
@@ -149,8 +151,208 @@ func TestValidateInstalledSourceRefRejectsMalformedCommitObject(t *testing.T) {
 		InstalledSource: InstalledSourceAt(root),
 		RepositoryRef:   "v1.2.3",
 	})
-	if err == nil || !strings.Contains(err.Error(), "is stale") {
-		t.Fatalf("ValidateInstalledSourceRef() error = %v, want bounded stale-checkout rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "missing or invalid") {
+		t.Fatalf("ValidateInstalledSourceRef() error = %v, want invalid checkout rejection", err)
+	}
+}
+
+func TestValidateInstalledSourceRefIsReadOnlyAndWorksUnderBundleLock(t *testing.T) {
+	tests := []struct {
+		name    string
+		change  func(t *testing.T, root string)
+		invalid bool
+		stale   bool
+	}{
+		{name: "clean"},
+		{name: "missing root", invalid: true, change: func(t *testing.T, root string) {
+			if err := os.RemoveAll(root); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "root is a file", invalid: true, change: func(t *testing.T, root string) {
+			if err := os.RemoveAll(root); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(root, []byte("not a checkout"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "not a Git checkout", invalid: true, change: func(t *testing.T, root string) {
+			if err := os.RemoveAll(filepath.Join(root, ".git")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "malformed HEAD", invalid: true, change: func(t *testing.T, root string) {
+			if err := os.WriteFile(filepath.Join(root, ".git", "HEAD"), []byte("invalid HEAD\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "missing HEAD commit", invalid: true, change: func(t *testing.T, root string) {
+			if err := os.WriteFile(filepath.Join(root, ".git", "HEAD"), []byte(strings.Repeat("1", 40)+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "missing release ref", stale: true, change: func(t *testing.T, root string) {
+			if err := os.Remove(filepath.Join(root, ".git", "refs", "tags", "v1.2.3")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		for _, ref := range []string{"", "v1.2.3"} {
+			t.Run(tt.name+"/ref="+ref, func(t *testing.T) {
+				parent := t.TempDir()
+				root := filepath.Join(parent, "installed")
+				repository, commit := writeInstalledSourceRepository(t, root)
+				if _, err := repository.CreateTag("v1.2.3", commit, nil); err != nil {
+					t.Fatal(err)
+				}
+				if tt.change != nil {
+					tt.change(t, root)
+				}
+				before := installedSourceSnapshot(t, parent)
+				// No executable can be found: diagnosis must use local metadata only.
+				t.Setenv("PATH", t.TempDir())
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				if info, err := os.Stat(root); err == nil && info.IsDir() {
+					guard, err := bundletransaction.Acquire(ctx, root)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer guard.Release()
+				}
+				err := ValidateInstalledSourceRef(ctx, BootstrapOptions{
+					InstalledSource: InstalledSourceAt(root), RepositoryRef: ref,
+				})
+				switch {
+				case tt.invalid:
+					if err == nil || !strings.Contains(err.Error(), "missing or invalid") || !strings.Contains(err.Error(), "run packy init to initialize it") {
+						t.Fatalf("error = %v; want invalid checkout with initialization guidance", err)
+					}
+					wantPreservation := tt.name != "missing root"
+					if got := strings.Contains(err.Error(), "move it aside to preserve its contents, then run packy init"); got != wantPreservation {
+						t.Fatalf("error = %v; preservation guidance = %t, want %t", err, got, wantPreservation)
+					}
+				case tt.stale && ref != "":
+					want := "is stale for Packy v1.2.3; run packy init to align it before managing capability packs"
+					if err == nil || !strings.Contains(err.Error(), want) {
+						t.Fatalf("error = %v; want stale checkout with alignment guidance", err)
+					}
+				default:
+					if err != nil {
+						t.Fatalf("ValidateInstalledSourceRef: %v", err)
+					}
+				}
+				if after := installedSourceSnapshot(t, parent); !reflect.DeepEqual(before, after) {
+					t.Fatal("read-only validation changed the installed source")
+				}
+			})
+		}
+	}
+}
+
+type installedSourceEntry struct {
+	Mode     fs.FileMode
+	Modified time.Time
+	Bytes    string
+}
+
+func installedSourceSnapshot(t *testing.T, root string) map[string]installedSourceEntry {
+	t.Helper()
+	entries := make(map[string]installedSourceEntry)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		value := installedSourceEntry{Mode: info.Mode(), Modified: info.ModTime()}
+		if !entry.IsDir() {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			value.Bytes = string(content)
+		}
+		entries[path] = value
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+func TestEnsureInstalledSourceWaitsForCatalogObservationWithoutMutation(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	writeInstalledSourceRepository(t, root)
+	guard, err := bundletransaction.Acquire(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard.Release()
+	before := installedSourceSnapshot(t, root)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err = EnsureInstalledSource(ctx, BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root), RepositoryRef: "v2.0.0",
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("EnsureInstalledSource error = %v; want cancellation waiting for catalog lock", err)
+	}
+	if after := installedSourceSnapshot(t, root); !reflect.DeepEqual(before, after) {
+		t.Fatal("blocked initialization changed the installed source")
+	}
+}
+
+func TestEnsureInstalledSourceHoldsBundleLockDuringUpdate(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "installed")
+	writeInstalledSourceRepository(t, root)
+	before := installedSourceSnapshot(t, root)
+	bin := t.TempDir()
+	script := `#!/bin/sh
+shift 2
+case "$1" in
+  rev-parse)
+    case "$3" in
+      HEAD) echo old ;;
+      *) echo new ;;
+    esac
+    ;;
+  status) exit 0 ;;
+  *) exit 23 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	stopped := errors.New("stop before fetch")
+	checked := false
+	_, err := EnsureInstalledSource(context.Background(), BootstrapOptions{
+		InstalledSource: InstalledSourceAt(root), RepositoryRef: "v2.0.0",
+		ReportProgress: func(string) error {
+			checked = true
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			guard, err := bundletransaction.Acquire(ctx, root)
+			if guard != nil {
+				guard.Release()
+			}
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("catalog acquired lock during source update: %v", err)
+			}
+			return stopped
+		},
+	})
+	if !checked || !errors.Is(err, stopped) {
+		t.Fatalf("EnsureInstalledSource = %v, checked = %t; want stop before fetch", err, checked)
+	}
+	if after := installedSourceSnapshot(t, root); !reflect.DeepEqual(before, after) {
+		t.Fatal("stopped initialization changed the installed source")
 	}
 }
 
