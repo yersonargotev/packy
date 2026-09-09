@@ -82,3 +82,7 @@ manifest is no longer available, `historical_evidence.available` is false and
 its message explains the unavailable resource, dependency, and contract facts.
 Projection health still compares fresh surface observations with the exact
 receipt digests. Read-only inspection never advances the receipt version.
+Active receipted surfaces remain inspectable even when the current catalog no
+longer supports them. A newer catalog version is distinct from an applicable
+update: human output, Doctor, and the TUI do not recommend an update on a
+surface the current catalog has retired.

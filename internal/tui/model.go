@@ -146,6 +146,7 @@ type SurfaceStatus struct {
 	Supported                      bool
 	Active                         bool
 	UpdateAvailable                bool
+	CatalogUpdateAvailable         bool
 	InstalledVersion               string
 	HistoricalEvidenceMessage      string
 	Installation                   string
@@ -654,6 +655,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.startPreview()
 			} else if m.inspecting && m.selectedPack() != nil {
 				m.surfaceIndex = preferredSurfaceIndex(*m.selectedPack(), m.project)
+				if len(supportedSurfaces(*m.selectedPack())) == 0 && hasInstalledSurface(*m.selectedPack()) {
+					break
+				}
 				if m.project {
 					actions := m.lifecycleActions()
 					m.operation = projectLifecycleOperation(m.selectedSurfaceStatus())
@@ -859,6 +863,9 @@ func firstLifecycleAction(status SurfaceStatus) string {
 }
 
 func (m Model) lifecycleActions() []string {
+	if pack := m.selectedPack(); pack != nil && len(supportedSurfaces(*pack)) == 0 && hasInstalledSurface(*pack) {
+		return nil
+	}
 	status := m.selectedSurfaceStatus()
 	if m.project {
 		return projectLifecycleActionsForStatus(status)
@@ -1416,9 +1423,13 @@ func (m Model) renderDetailContent(pack Pack) string {
 	for _, status := range pack.SurfaceStatuses {
 		if !status.Supported {
 			lines = append(lines, lipgloss.NewStyle().Bold(true).Render(status.Name+": unsupported")+"  "+statusBadge("unsupported"))
-			continue
+			if !status.Active && status.InstalledVersion == "" {
+				continue
+			}
+			lines = append(lines, "  Current catalog does not support this surface; installed receipt evidence follows")
+		} else {
+			lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(mochaSapphire).Render("◆ "+status.Name+": supported")+"  "+statusBadge("supported"))
 		}
-		lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(mochaSapphire).Render("◆ "+status.Name+": supported")+"  "+statusBadge("supported"))
 		if m.project {
 			installation, runtime := status.Installation, status.Runtime
 			if installation == "" {
@@ -1432,7 +1443,7 @@ func (m Model) renderDetailContent(pack Pack) string {
 		if status.Active {
 			lines = append(lines, "  Installed version: "+status.InstalledVersion)
 		}
-		if status.UpdateAvailable {
+		if status.UpdateAvailable || status.CatalogUpdateAvailable {
 			lines = append(lines, "  Update available")
 		}
 		if status.HistoricalEvidenceMessage != "" {
@@ -1460,7 +1471,9 @@ func (m Model) detailAction() string {
 	action := "Enter select resources"
 	if !m.project {
 		actions := m.lifecycleActions()
-		if len(actions) > 1 {
+		if len(actions) == 0 {
+			action = "No applicable global action"
+		} else if len(actions) > 1 {
 			action = "Enter choose lifecycle action"
 		} else if len(actions) == 1 && actions[0] == "check" {
 			action = "Enter select resources for controlled runtime check"
@@ -1621,6 +1634,15 @@ func operationalRoots(pack Pack) []Resource {
 		}
 	}
 	return result
+}
+
+func hasInstalledSurface(pack Pack) bool {
+	for _, status := range pack.SurfaceStatuses {
+		if status.Active || status.InstalledVersion != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func supportedSurfaces(pack Pack) []string {

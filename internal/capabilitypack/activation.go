@@ -231,6 +231,9 @@ const (
 // inspection. Capability-pack decides which facts are relevant to each use
 // case; adapters only translate those facts into host projections.
 type SurfaceTransition struct {
+	// ObservationOnly requests status facts without reconstructing mutation
+	// authority for unrelated installed Packs. It grants no apply authority.
+	ObservationOnly   bool
 	Prior             Pack
 	Desired           Pack
 	CurrentOwnership  []ProjectionOwnership

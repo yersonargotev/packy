@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -27,7 +28,7 @@ func (f Facade) receiptStatusEntry(ctx context.Context, entry StatusEntry, inten
 	entry.Contract = LifecycleContract{}
 	entry.HistoricalEvidence = HistoricalEvidenceStatus{Message: fmt.Sprintf("Pack %s@%s manifest is unavailable; installed projection and readiness policy evidence is retained, but resource, dependency, contract, and runtime semantics are unavailable", intent.PackID, intent.Version)}
 	entry.LifecycleState = PackLifecycleActive
-	entry.UpdateActionAvailable = true
+	entry.UpdateActionAvailable = slices.Contains(entry.Pack.Surfaces, intent.Surface)
 	entry.ControlledCheck = ControlledCheckStatus{State: ControlledCheckUnknown}
 	policy := Pack{ID: intent.PackID, Version: intent.Version, ReadinessObligations: append([]ReadinessObligation{}, intent.ReadinessObligations...), Requires: Requirements{Tools: append([]string{}, intent.ExternalRequirements...)}}
 	resolutions, resolveErr := f.resolveExecutables(ctx, policy, intent.Surface, false)
@@ -43,7 +44,7 @@ func (f Facade) receiptStatusEntry(ctx context.Context, entry StatusEntry, inten
 			entry.PendingHumanActions = append(entry.PendingHumanActions, fmt.Sprintf("install %s and rerun status; Packy will not install it during Status", resolution.Tool))
 		}
 	}
-	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ReceiptOwnership: owners, CurrentOwnership: adapterOwnershipForSurface(state.Ownership, intent.Surface)})
+	observation, err := inspectSurface(ctx, adapter, SurfaceTransition{ObservationOnly: true, ReceiptOwnership: owners, CurrentOwnership: adapterOwnershipForSurface(state.Ownership, intent.Surface)})
 	if err != nil {
 		return StatusEntry{}, err
 	}

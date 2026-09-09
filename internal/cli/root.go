@@ -322,12 +322,13 @@ func diagnoseSetupHealth(ctx context.Context, opts Options, resolver *workstatio
 			InspectionFailed:          entry.InspectionFailed,
 			HistoricalEvidenceMessage: entry.HistoricalEvidence.Message,
 			IntentVersion:             entry.Intent.Version, CatalogVersion: entry.Pack.Version,
-			UpdateAvailable:      entry.UpdateAvailable,
-			ProjectionProblems:   entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
-			MissingRequirements:  len(entry.MissingRequirements),
-			PendingHumanActions:  len(entry.PendingHumanActions),
-			Conditions:           setupHealthConditions(entry.Conditions),
-			ControlledCheckState: string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
+			UpdateAvailable:         entry.UpdateAvailable,
+			UpdateActionUnavailable: entry.UpdateAvailable && !entry.UpdateActionAvailable,
+			ProjectionProblems:      entry.Projections.Missing + entry.Projections.Drifted + entry.Projections.Ambiguous + entry.Projections.Unmanaged,
+			MissingRequirements:     len(entry.MissingRequirements),
+			PendingHumanActions:     len(entry.PendingHumanActions),
+			Conditions:              setupHealthConditions(entry.Conditions),
+			ControlledCheckState:    string(entry.ControlledCheck.State), ControlledCheckResult: string(entry.ControlledCheck.Result), ControlledCheckObserved: entry.ControlledCheck.ObservedAt, ControlledCheckIdentity: entry.ControlledCheck.ValidityIdentity,
 		})
 	}
 	return setuphealth.Diagnose(snapshot.Home(), snapshot.ConfigurationHome(), observation), nil

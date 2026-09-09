@@ -1962,6 +1962,9 @@ func statusSelectedResourceCount(entry capabilitypack.StatusEntry) int {
 func renderStatusAction(entry capabilitypack.StatusEntry) string {
 	if entry.UpdateAvailable {
 		action := "update to " + entry.Pack.Version
+		if !entry.UpdateActionAvailable {
+			action = "catalog version " + entry.Pack.Version + "; update unavailable on this surface"
+		}
 		if entry.HistoricalEvidence.Message != "" {
 			action += "; historical evidence unavailable"
 		}

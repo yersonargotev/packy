@@ -95,3 +95,35 @@ func TestReceiptInspectionBindsHookEventAndRejectsDuplicateEvidence(t *testing.T
 		t.Fatal("accepted ambiguous hook evidence")
 	}
 }
+
+func TestStatusObservationDoesNotResolveUnrelatedHistoricalMutationOwnership(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	layout := NewCanonicalLayout(home)
+	state := capabilitypack.ActivationState{Intent: capabilitypack.ActivationIntent{PackID: "older", Version: "1.0.0", Active: true, Surface: capabilitypack.SurfaceClaude}}
+	binding := capabilitypack.Binding{Surface: capabilitypack.SurfaceClaude, Projection: "command_hook", Name: "session", Hook: &capabilitypack.CommandHook{Type: "command", Event: "SessionStart", Command: "example", Args: []string{"start"}, TimeoutSeconds: 10, Failure: "warn"}}
+	current := capabilitypack.Pack{ID: "other", Version: "1.0.0", Surfaces: []capabilitypack.Surface{capabilitypack.SurfaceClaude}, Resources: []capabilitypack.Resource{{Kind: "lifecycle", ID: "session", Bindings: []capabilitypack.Binding{binding}}}}
+	settings, err := MergeCommandHook(nil, fromBindingHook(binding), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(layout.ConfigDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.SettingsFile, settings, 0600); err != nil {
+		t.Fatal(err)
+	}
+	provider := NewCapabilityPackOwnershipProvider(ownershipStore{state}, map[string]capabilitypack.Pack{"older": {ID: "older", Version: "2.0.0"}, "other": current}, layout, t.TempDir())
+	adapter := NewSurfaceAdapter("", layout, "", "", nil, provider)
+	observation, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{ObservationOnly: true, Desired: current})
+	if err != nil {
+		t.Fatalf("unrelated historical receipt blocked current Pack Status: %v", err)
+	}
+	if len(observation.Projections) != 1 || !observation.Projections[0].Exists || observation.Projections[0].ObservedFingerprint != observation.Projections[0].DesiredFingerprint {
+		t.Fatalf("exact current hook reported false drift without mutation ownership: %+v", observation.Projections)
+	}
+	if _, err := adapter.InspectSurface(context.Background(), capabilitypack.SurfaceTransition{Desired: current}); err == nil || !strings.Contains(err.Error(), "no exact registered adapter contract") {
+		t.Fatalf("mutation inspection lost strict historical ownership guard: %v", err)
+	}
+}

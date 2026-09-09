@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 )
@@ -352,12 +353,31 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 		return StatusReport{}, fmt.Errorf("a pack is required when --surface is specified")
 	}
 	var report StatusReport
+	states := map[Surface]ActivationState{}
 	for _, pack := range packs {
-		for _, surface := range pack.Surfaces {
+		for _, surface := range statusSurfaces() {
 			if request.Surface != "" && request.Surface != surface {
 				continue
 			}
-			entry, err := f.statusEntry(ctx, pack, surface, request.PackyHome)
+			if f.activation == nil || f.activation.store == nil {
+				return StatusReport{}, fmt.Errorf("surface inspection is not configured")
+			}
+			state, loaded := states[surface]
+			if !loaded {
+				var err error
+				state, err = f.activation.store.LoadSnapshot(ctx, surface)
+				if err != nil {
+					return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
+				}
+				states[surface] = state
+			}
+			if !slices.Contains(pack.Surfaces, surface) {
+				intent, installed := intentForPack(state, pack.ID, surface)
+				if !installed || !intent.Active {
+					continue
+				}
+			}
+			entry, err := f.statusEntryWithStateAt(ctx, pack, surface, state, request.PackyHome)
 			if err != nil {
 				return StatusReport{}, fmt.Errorf("inspect pack %q on %s: %w", pack.ID, surface, err)
 			}
@@ -394,17 +414,6 @@ func (f Facade) status(ctx context.Context, request StatusRequest) (StatusReport
 	return report, nil
 }
 
-func (f Facade) statusEntry(ctx context.Context, pack Pack, surface Surface, packyHome string) (StatusEntry, error) {
-	if f.activation == nil || f.activation.store == nil {
-		return StatusEntry{}, fmt.Errorf("surface inspection is not configured")
-	}
-	state, err := f.activation.store.LoadSnapshot(ctx, surface)
-	if err != nil {
-		return StatusEntry{}, err
-	}
-	return f.statusEntryWithStateAt(ctx, pack, surface, state, packyHome)
-}
-
 func (f Facade) statusEntryWithState(ctx context.Context, pack Pack, surface Surface, state ActivationState) (StatusEntry, error) {
 	return f.statusEntryWithStateAt(ctx, pack, surface, state, "")
 }
@@ -435,6 +444,9 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 		entry.UpdateAvailable = intent.Active && intent.Version != pack.Version
 		if intent.Active && intent.Version != pack.Version {
 			return f.receiptStatusEntry(ctx, entry, intent, state, adapter)
+		}
+		if intent.Active && !slices.Contains(pack.Surfaces, surface) {
+			return StatusEntry{}, fmt.Errorf("installed receipt surface %q is absent from matching catalog Pack %s@%s", surface, pack.ID, pack.Version)
 		}
 		if intent.Active || ownedResidual {
 			evidencePack, err = f.catalog.resolveIntentPack(ctx, pack.ID, intent.Version)
@@ -493,7 +505,7 @@ func (f Facade) statusEntryWithStateAt(ctx context.Context, pack Pack, surface S
 			}
 		}
 	}
-	observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{Desired: relevantPack, CurrentOwnership: state.Ownership, ResolvedExecutables: resolutions})
+	observation, inspectErr := inspectSurface(ctx, adapter, SurfaceTransition{ObservationOnly: true, Desired: relevantPack, CurrentOwnership: state.Ownership, ResolvedExecutables: resolutions})
 	if inspectErr != nil {
 		return StatusEntry{}, inspectErr
 	}

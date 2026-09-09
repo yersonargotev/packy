@@ -60,6 +60,7 @@ type ActivePack struct {
 	CatalogVersion            string
 	InspectionFailed          bool
 	UpdateAvailable           bool
+	UpdateActionUnavailable   bool
 	ProjectionProblems        int
 	MissingRequirements       int
 	PendingHumanActions       int
@@ -143,6 +144,9 @@ func diagnoseActivePack(pack ActivePack) []Check {
 		if pack.IntentVersion != "" && pack.CatalogVersion != "" {
 			update += fmt.Sprintf(" (%s -> %s)", pack.IntentVersion, pack.CatalogVersion)
 		}
+		if pack.UpdateActionUnavailable {
+			update += " but cannot be applied on this surface"
+		}
 		findings = append(findings, update)
 	}
 	for _, condition := range pack.Conditions {
@@ -169,7 +173,7 @@ func diagnoseActivePack(pack ActivePack) []Check {
 	if pack.ProjectionProblems > 0 {
 		remediation = append([]string{fmt.Sprintf("packy activate %s --surface %s", pack.ID, pack.Surface)}, remediation...)
 	}
-	if pack.UpdateAvailable {
+	if pack.UpdateAvailable && !pack.UpdateActionUnavailable {
 		remediation = append([]string{fmt.Sprintf("packy update %s --surface %s", pack.ID, pack.Surface)}, remediation...)
 	}
 	checks := append(informationalConditions(name, pack.Conditions), packEvidenceInformation(name, pack)...)

@@ -67,7 +67,7 @@ func (a *SurfaceAdapter) InspectSurface(ctx context.Context, transition capabili
 		return a.inspectProject(ctx, transition.Desired, transition.ProjectRoot)
 	}
 	ownership := OwnershipSnapshot{}
-	if a.ownership != nil {
+	if a.ownership != nil && !transition.ObservationOnly {
 		var err error
 		ownership, err = a.ownership.ObserveOwnership(ctx)
 		if err != nil {

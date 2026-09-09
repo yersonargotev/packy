@@ -19,7 +19,7 @@ func receiptStatusFixture(t *testing.T, mutate func(*ActivationState), inspect f
 	adapter := &fakeSurfaceAdapter{inspect: inspect}
 	if inspect == nil {
 		adapter.inspect = func(transition SurfaceTransition) SurfaceInspection {
-			if transition.Desired.ID != "" || transition.Prior.ID != "" || transition.ReceiptOwnership == nil {
+			if !transition.ObservationOnly || transition.Desired.ID != "" || transition.Prior.ID != "" || transition.ReceiptOwnership == nil {
 				t.Fatal("historical status consulted manifest projections")
 			}
 			observed := SurfaceInspection{Revision: "receipt-v1", Readiness: ReadinessObservation{AuthorizationObserved: true, Authorized: true, UsabilityObserved: true, Usable: true}}
@@ -136,5 +136,70 @@ func TestReceiptStatusExplainsUnavailableFocusedResource(t *testing.T) {
 	_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex, Resource: "skill:retired-guide"})
 	if err == nil || !strings.Contains(err.Error(), "selected in the installed receipt") || !strings.Contains(err.Error(), "historical resource semantics are unavailable") {
 		t.Fatalf("focused resource error = %v", err)
+	}
+}
+
+func TestReceiptStatusRetainsSurfaceRemovedFromCurrentCatalog(t *testing.T) {
+	for _, request := range []StatusRequest{{PackID: "changing", Surface: SurfaceCodex}, {}} {
+		name := "overview"
+		if request.PackID != "" {
+			name = "targeted"
+		}
+		t.Run(name, func(t *testing.T) {
+			facade, store, _ := receiptStatusFixture(t, nil, nil)
+			facade.catalog.packs[0].Surfaces = []Surface{SurfaceOpenCode}
+			facade.catalog.packs[0].Resources = nil
+			facade.activation.adapters[SurfaceOpenCode] = &fakeSurfaceAdapter{}
+			report, err := facade.Status(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, entry := range report.Entries {
+				if entry.Surface != SurfaceCodex {
+					continue
+				}
+				found = true
+				if entry.Pack.Version != "2.0.0" || entry.Intent.Version != "1.0.0" || !entry.UpdateAvailable || entry.UpdateActionAvailable || entry.HistoricalEvidence.Available || entry.Projections.Verified != 1 || len(entry.Resources) != 0 || len(entry.ResourceSelections) != 0 || len(entry.Contract.Bindings) != 0 {
+					t.Fatalf("removed surface lost receipt evidence: %+v", entry)
+				}
+			}
+			if !found {
+				t.Fatalf("active receipted surface omitted: %+v", report)
+			}
+			if len(store.saves) != 0 {
+				t.Fatal("inspection mutated state")
+			}
+		})
+	}
+}
+
+func TestReceiptStatusRejectsUnsupportedSurfaceWithoutActiveReceipt(t *testing.T) {
+	for _, surface := range []Surface{SurfaceCodex, Surface("unrecognized")} {
+		t.Run(string(surface), func(t *testing.T) {
+			facade, store, adapter := receiptStatusFixture(t, nil, nil)
+			facade.catalog.packs[0].Surfaces = []Surface{SurfaceOpenCode}
+			store.state.Intent.Active = false
+			_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: surface})
+			if err == nil || !strings.Contains(err.Error(), "does not support CLI surface") {
+				t.Fatalf("unsupported surface error = %v", err)
+			}
+			if adapter.inspectCalls != 0 {
+				t.Fatal("inspected unsupported surface without active receipt")
+			}
+		})
+	}
+}
+
+func TestReceiptStatusRejectsSurfaceInconsistentWithMatchingManifest(t *testing.T) {
+	facade, _, adapter := receiptStatusFixture(t, nil, nil)
+	facade.catalog.packs[0].Surfaces = []Surface{SurfaceOpenCode}
+	facade.catalog.packs[0].Version = "1.0.0"
+	_, err := facade.Status(context.Background(), StatusRequest{PackID: "changing", Surface: SurfaceCodex})
+	if err == nil || !strings.Contains(err.Error(), "absent from matching catalog Pack") {
+		t.Fatalf("inconsistent surface error = %v", err)
+	}
+	if adapter.inspectCalls != 0 {
+		t.Fatal("inspected manifest-inconsistent receipt")
 	}
 }

@@ -14,3 +14,11 @@ func TestHistoricalEvidenceAbsencePreservesActionableUpdate(t *testing.T) {
 		t.Fatalf("missing update/evidence: %#v", report.Checks)
 	}
 }
+
+func TestRemovedSurfaceUpdateDoesNotRecommendImpossibleMutation(t *testing.T) {
+	report := Diagnose("/sandbox/home", "/sandbox/config", Observation{ActivePacks: []ActivePack{{ID: "older", Surface: "claude", IntentVersion: "1.0.0", CatalogVersion: "1.0.1", UpdateAvailable: true, UpdateActionUnavailable: true, HistoricalEvidenceMessage: "Historical manifest is unavailable"}}})
+	detail := report.Checks[1].Detail
+	if report.Summary.Failures != 0 || report.Summary.Warnings != 1 || strings.Contains(detail, "packy update") || !strings.Contains(detail, "1.0.0 -> 1.0.1") || !strings.Contains(detail, "cannot be applied on this surface") || !strings.Contains(detail, "packy status older --surface claude") {
+		t.Fatalf("misleading removed-surface diagnosis: %#v", report)
+	}
+}
