@@ -1,19 +1,35 @@
 # {{TAG}} — Packy v0.2
 
-This release updates the reviewed Engram Pack and makes global lifecycle results
-report Pack-scoped projection ownership accurately.
+This release improves global Pack inspection and update previews, and validates
+the default Installed Source before using its catalog.
 
 ## Changes since the previous release
 
-- The reviewed Engram Pack advances from `3.1.2` to `3.3.1` through the public
-  `yersonargotev/engram` Managed Pack Project release `pack-v3.3.1`. It adds a
-  machine-verifiable Protocol v1 compatibility asset and updates its Codex
-  memory guidance with bounded Recall, Terminal Memory preflight and checkpoint
-  outcomes, mixed results, explicit continuation, and direct terminal recording
-  without routine checkpoint status probes.
-- Successful global lifecycle operations now report only the verified
-  projections owned by the selected Pack. Unrelated active Packs no longer
-  inflate the count shown by the CLI, JSON output, or TUI.
+- Global status checks receipt-owned projections on Codex, OpenCode, and Claude
+  Code even when the installed Pack's historical manifest is unavailable. It
+  preserves the installed version and selected resources separately from the
+  current catalog version, reports unavailable historical evidence explicitly,
+  and inspects active receipts on retired surfaces without recommending an
+  unsupported update. Read-only inspection does not advance the receipt.
+- Global update previews explicitly report when the installed version's
+  historical contract is unavailable, instead of implying that its contract is
+  unchanged. Target resources, planned actions, and readiness remain available.
+  When the installed version matches the catalog, comparisons use the receipt's
+  selected resources as the baseline.
+- Global status and lifecycle JSON advance to schema **v12**. Status includes
+  historical-evidence availability; lifecycle contract diffs include
+  `baseline_available` and, when unavailable,
+  `historical_contract_unavailable`. Empty classification arrays in that case
+  mean the comparison is unavailable, not that there are no changes.
+- Catalog operations validate the default Installed Source at
+  `~/.local/share/packy` offline before consuming it. Its Git checkout must match
+  the running release, and its manifests and declared resource closures must
+  match the release's Managed Pack Registry and Pack Admission Records. These
+  checks do not repair or modify the checkout. Run `packy init` to align a clean
+  older source; move an invalid or modified checkout aside to preserve local
+  changes, then run `packy init` to create a fresh copy. Repository-ancestor
+  sources and explicit `PACKY_SKILLS_SOURCE` overrides remain editable
+  development sources.
 
 The release artifact format is unchanged.
 
