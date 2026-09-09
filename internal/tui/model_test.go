@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -1741,4 +1742,39 @@ func runModelCommandTrackingQuit(t *testing.T, model tea.Model, command tea.Cmd)
 		}
 	}
 	return current, exited
+}
+
+func TestUpdatePreviewDisplaysContractBaselineAvailability(t *testing.T) {
+	for _, available := range []bool{true, false} {
+		t.Run(fmt.Sprint(available), func(t *testing.T) {
+			diff := tui.PreviewDiff{BaselineAvailable: available}
+			want := "Contract diff baseline: available"
+			if available {
+				diff.Retained = []string{"skill:guide"}
+			} else {
+				diff.UnavailableReason = "historical_contract_unavailable"
+				want = "Contract diff baseline: unavailable (historical_contract_unavailable)"
+			}
+			backend := &fakeBackend{
+				dashboard: tui.Dashboard{Health: tui.Health{Status: "healthy"}, Global: tui.Scope{Available: true, Packs: []tui.Pack{{
+					ID: "contract-fixture", Version: "2.0.0", SurfaceStatuses: []tui.SurfaceStatus{{Name: "codex", Supported: true, Active: true, UpdateAvailable: true}},
+				}}}},
+				preview: tui.Preview{ID: "update", Digest: "exact", Operation: "update", Disposition: "applicable", PackID: "contract-fixture", PackVersion: "2.0.0", Surface: "codex", Scope: "global", Diff: diff},
+			}
+			model := loadModel(t, backend)
+			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			model, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			model = runModelMessage(t, model, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+			view := ansi.Strip(model.View().Content)
+			if !strings.Contains(view, want) {
+				t.Fatalf("missing availability %q:\n%s", want, view)
+			}
+			if available && !strings.Contains(view, "Retained: skill:guide") {
+				t.Fatalf("missing retained resources:\n%s", view)
+			}
+			if !available && !strings.Contains(view, "empty categories do not mean no changes") {
+				t.Fatalf("missing unavailable meaning:\n%s", view)
+			}
+		})
+	}
 }

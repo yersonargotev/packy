@@ -1265,6 +1265,15 @@ func renderActivationPlan(cmd *cobra.Command, plan capabilitypack.Reconciliation
 		return err
 	}
 	structured := plan.JSONReport(dryRun)
+	if structured.ContractDiff.BaselineAvailable {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Contract diff baseline: available"); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Contract diff baseline: unavailable (%s)\nPrior resource contract is unavailable; empty categories do not mean no changes.\n", structured.ContractDiff.UnavailableReason); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Contract diff: added=%s changed=%s removed=%s retained=%s\n", joinFacts(structured.ContractDiff.Added), joinFacts(structured.ContractDiff.Changed), joinFacts(structured.ContractDiff.Removed), joinFacts(structured.ContractDiff.Retained)); err != nil {
 		return err
 	}

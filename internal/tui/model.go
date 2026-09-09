@@ -66,7 +66,11 @@ type PreviewResource struct {
 
 type PreviewAuthority struct{ Resource, Detail string }
 type PreviewEffect struct{ Kind, Target, Description string }
-type PreviewDiff struct{ Added, Changed, Removed, Retained []string }
+type PreviewDiff struct {
+	Added, Changed, Removed, Retained []string
+	BaselineAvailable                 bool
+	UnavailableReason                 string
+}
 type PreviewBlocker struct{ Kind, Subject, Detail string }
 type PreviewPhase struct {
 	Kind             string
@@ -1736,6 +1740,14 @@ func (m Model) renderPreview(preview Preview) string {
 			line += " — " + effect.Description
 		}
 		lines = append(lines, line)
+	}
+	if preview.Scope == "global" {
+		if preview.Diff.BaselineAvailable {
+			lines = append(lines, "", "Contract diff baseline: available")
+		} else {
+			lines = append(lines, "", "Contract diff baseline: unavailable ("+preview.Diff.UnavailableReason+")",
+				"  Prior resource contract is unavailable; empty categories do not mean no changes.")
+		}
 	}
 	lines = append(lines, "", "Diff",
 		"  Added: "+joinOrNone(preview.Diff.Added),

@@ -22,9 +22,10 @@ var structuredOutputFixtures = []struct {
 	{"v3", "doctor.json", "doctor.schema.json"},
 	{"v6", "pack-show.json", "pack-show.schema.json"},
 	{"v12", "pack-status.json", "pack-status.schema.json"},
-	{"v11", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
-	{"v11", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
-	{"v11", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
+	{"v12", "pack-lifecycle-apply.json", "pack-lifecycle.schema.json"},
+	{"v12", "pack-lifecycle-failure.json", "pack-lifecycle.schema.json"},
+	{"v12", "pack-lifecycle-preview.json", "pack-lifecycle.schema.json"},
+	{"v12", "pack-lifecycle-unavailable-preview.json", "pack-lifecycle.schema.json"},
 }
 
 func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
@@ -156,6 +157,40 @@ func TestStructuredOutputSchemasValidateFixturesAndProducers(t *testing.T) {
 		t.Fatal("absent project verification unexpectedly passed")
 	}
 	assertProjectStructuredOutput(t, root, "project-verification.schema.json", failedVerification)
+}
+
+func TestLifecycleSchemaRejectsInvalidContractDiffBaseline(t *testing.T) {
+	root, _ := filepath.Abs(filepath.Join("..", ".."))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "structured-output", "v12", "pack-lifecycle-preview.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, diff := range map[string]string{
+		"missing indicator":     `{"added":[],"changed":[],"removed":[],"retained":[]}`,
+		"invalid indicator":     `{"baseline_available":"false","added":[],"changed":[],"removed":[],"retained":[]}`,
+		"missing reason":        `{"baseline_available":false,"added":[],"changed":[],"removed":[],"retained":[]}`,
+		"invalid reason":        `{"baseline_available":false,"unavailable_reason":"unknown","added":[],"changed":[],"removed":[],"retained":[]}`,
+		"available with reason": `{"baseline_available":true,"unavailable_reason":"historical_contract_unavailable","added":[],"changed":[],"removed":[],"retained":[]}`,
+		"unavailable added":     `{"baseline_available":false,"unavailable_reason":"historical_contract_unavailable","added":["skill:example"],"changed":[],"removed":[],"retained":[]}`,
+		"unavailable changed":   `{"baseline_available":false,"unavailable_reason":"historical_contract_unavailable","added":[],"changed":["skill:example"],"removed":[],"retained":[]}`,
+		"unavailable removed":   `{"baseline_available":false,"unavailable_reason":"historical_contract_unavailable","added":[],"changed":[],"removed":["skill:example"],"retained":[]}`,
+		"unavailable retained":  `{"baseline_available":false,"unavailable_reason":"historical_contract_unavailable","added":[],"changed":[],"removed":[],"retained":["skill:example"]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var document map[string]json.RawMessage
+			if err := json.Unmarshal(fixture, &document); err != nil {
+				t.Fatal(err)
+			}
+			document["contract_diff"] = json.RawMessage(diff)
+			data, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := validateStructuredOutput(t, root, "pack-lifecycle.schema.json", data); err == nil {
+				t.Fatalf("invalid contract diff passed: %s", diff)
+			}
+		})
+	}
 }
 
 func TestStructuredOutputV3DoctorSchemaRejectsWrongVersionAndUnknownFields(t *testing.T) {

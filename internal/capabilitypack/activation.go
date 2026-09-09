@@ -472,6 +472,7 @@ type ReconciliationPlan struct {
 	beforeIntentFacts      []ActivationIntent
 	ownershipFacts         []ProjectionOwnership
 	beforeCompositionFacts []Pack
+	updateContractFacts    []Pack
 	aliases                []SurfaceAlias
 	previousAliases        []SurfaceAlias
 	selection              ResourceSelection
@@ -637,6 +638,15 @@ func (f Facade) previewUpdate(ctx context.Context, request UpdateRequest) (Recon
 	plan, err := f.preview(ctx, activation, OperationUpdate, intent.Version, request.Force)
 	if err != nil {
 		return ReconciliationPlan{}, err
+	}
+	if intent.Version == plan.pack.Version && slices.Equal(intent.Resources, packResourceIdentities(plan.pack)) {
+		before, err := f.compose(current, state, request.Surface, true)
+		if err != nil {
+			return ReconciliationPlan{}, err
+		}
+		// The current immutable version and receipt closure support the prior contract.
+		// Comparison facts do not grant projection reconciliation authority.
+		plan.updateContractFacts = before.packs
 	}
 	plan.seal()
 	return plan, nil
@@ -1712,6 +1722,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		BeforeIntentFacts []ActivationIntent
 		OwnershipFacts    []ProjectionOwnership
 		Before            []Pack
+		UpdateContract    []Pack
 		Aliases           []SurfaceAlias
 		PreviousAliases   []SurfaceAlias
 		Selection         ResourceSelection
@@ -1719,7 +1730,7 @@ func (p ReconciliationPlan) sealPayload() any {
 		PartialSelection  bool
 		SelectionValidity SelectionValidity
 		Force             bool
-	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.documentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.sensitiveEffects, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.blockers, p.compositionFacts, p.intentFacts, p.beforeIntentFacts, p.ownershipFacts, p.beforeCompositionFacts, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.partialSelection, p.selectionValidity, p.force}
+	}{p.pack.ID, p.pack.Version, p.operation, p.surface, p.intentRevision, p.documentRevision, p.oldVersion, p.observationFingerprint, p.phases, p.desired, p.portable, p.resolutions, p.runtimeModeResults, p.sensitiveEffects, p.readiness, p.pendingHumanActions, p.noOp, p.activations, p.blockers, p.compositionFacts, p.intentFacts, p.beforeIntentFacts, p.ownershipFacts, p.beforeCompositionFacts, p.updateContractFacts, p.aliases, p.previousAliases, p.selection, p.previousSelection, p.partialSelection, p.selectionValidity, p.force}
 }
 
 func ownershipByID(values []ProjectionOwnership, id string) (ProjectionOwnership, bool) {
